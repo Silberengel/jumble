@@ -1700,7 +1700,7 @@ class ClientService extends EventTarget {
   ) {
     const timelineBatchId = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
     const timelineT0 = performance.now()
-    logger.info('[RelayOp] timeline_wave_begin', {
+    logger.debug('[RelayOp] timeline_wave_begin', {
       timelineBatchId,
       shardCount: subRequests.length,
       relayCountsPerShard: subRequests.map((r) => r.urls.length),

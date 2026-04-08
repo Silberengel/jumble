@@ -90,7 +90,7 @@ function maybeLogDevIndexRelayUnreachableHint(): void {
   const now = Date.now()
   if (now - lastDevIndexRelayTransportHintAt < DEV_INDEX_RELAY_TRANSPORT_HINT_MS) return
   lastDevIndexRelayTransportHintAt = now
-  logger.info(
+  logger.debug(
     'HTTP index relay is unreachable in dev. Start the relay, or set VITE_DEV_INDEX_RELAY_TARGET if it is not on the default URL.'
   )
 }

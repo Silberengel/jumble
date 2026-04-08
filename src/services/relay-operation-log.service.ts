@@ -135,7 +135,7 @@ function groupTerminalsByOutcome(rows: RelayOpTerminalRow[]): Record<string, { c
  * Tracks one logical subscribe/query wave: one `batch_begin` and one `batch_end` with per-relay outcomes.
  */
 export type RelaySubscribeOpBatchOptions = {
-  /** `debug` hides high-volume query REQs unless jumble-debug / VITE_DEBUG is on. */
+  /** `info` logs every REQ wave at INFO; default `debug` keeps subscribe noise behind jumble-debug / VITE_DEBUG. */
   logLevel?: 'info' | 'debug'
   /** Invoked once when this REQ wave finishes (same `rows` as `batch_end` / `terminals`). */
   onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
@@ -190,7 +190,7 @@ export class RelaySubscribeOpBatch {
     this.t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
     this.source = source
     this.grouped = grouped
-    this.logLevel = options?.logLevel ?? 'info'
+    this.logLevel = options?.logLevel ?? 'debug'
     this.onBatchEnd = options?.onBatchEnd
   }
 
@@ -329,7 +329,7 @@ export class RelayPublishOpBatch {
   }
 
   logBegin(): void {
-    logger.info('[RelayOp] publish_batch_begin', {
+    logger.debug('[RelayOp] publish_batch_begin', {
       batchId: this.batchId,
       source: this.source,
       eventId: this.eventId,
@@ -370,7 +370,7 @@ export class RelayPublishOpBatch {
           ]
             .filter(Boolean)
             .join('\n')
-    logger.info('[RelayOp] publish_batch_end', {
+    logger.debug('[RelayOp] publish_batch_end', {
       batchId: this.batchId,
       source: this.source,
       eventId: this.eventId,

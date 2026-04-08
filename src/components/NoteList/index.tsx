@@ -1018,7 +1018,7 @@ const NoteList = forwardRef(
 
       if (feedPaintSessionPendingRef.current) {
         feedPaintSessionPendingRef.current = false
-        logger.info('[FeedPaint] Session cache committed (DOM)', {
+        logger.debug('[FeedPaint] Session cache committed (DOM)', {
           feedKey: feedKeyShort,
           snapshotKey: snapshotKeyShort,
           eventCount: events.length,
@@ -1030,7 +1030,7 @@ const NoteList = forwardRef(
         feedPaintRelayPendingRef.current = false
         const meta = feedPaintRelayMetaRef.current
         feedPaintRelayMetaRef.current = null
-        logger.info('[FeedPaint] Relay/network results committed (DOM)', {
+        logger.debug('[FeedPaint] Relay/network results committed (DOM)', {
           feedKey: feedKeyShort,
           snapshotKey: snapshotKeyShort,
           committedEventCount: events.length,

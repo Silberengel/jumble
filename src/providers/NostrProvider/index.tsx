@@ -140,7 +140,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
-      logger.info('[NostrProvider] Restoring session (login / first account)…')
+      logger.debug('[NostrProvider] Restoring session (login / first account)…')
       if (hasNostrLoginHash()) {
         return await loginByNostrLoginHash()
       }
@@ -153,7 +153,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
     init()
       .then(() => {
-        logger.info('[NostrProvider] Session restore finished; feeds and UI can initialize')
+        logger.debug('[NostrProvider] Session restore finished; feeds and UI can initialize')
         setIsInitialized(true)
       })
       .catch((e) => {
@@ -221,7 +221,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
       hydrationGenForThisRun = accountHydrationGenerationRef.current += 1
       setIsAccountSessionHydrating(true)
-      logger.info('[NostrProvider] Account session hydrate: loading cache and relays…', {
+      logger.debug('[NostrProvider] Account session hydrate: loading cache and relays…', {
         pubkeySlice: account.pubkey.slice(0, 12),
         hydrationGen: hydrationGenForThisRun
       })
@@ -639,11 +639,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
         storage.setAccountNetworkHydrateAt(account.pubkey, Date.now())
         void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })
-        logger.info('[NostrProvider] Account session hydrate: core relay/profile merge finished; client prewarm started (parallel)', {
+        logger.debug('[NostrProvider] Account session hydrate: core relay/profile merge finished; client prewarm started (parallel)', {
           pubkeySlice: account.pubkey.slice(0, 12)
         })
       } else {
-        logger.info('[NostrProvider] Skipped network hydrate (within min interval); IndexedDB cache only', {
+        logger.debug('[NostrProvider] Skipped network hydrate (within min interval); IndexedDB cache only', {
           pubkeySlice: account.pubkey.slice(0, 12),
           lastNetworkHydrateAt,
           ageMs: Date.now() - (lastNetworkHydrateAt ?? 0)

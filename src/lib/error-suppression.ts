@@ -18,11 +18,14 @@ export function suppressExpectedErrors() {
       return
     }
     
-    // Suppress CORS errors for external websites
-    if (message.includes('CORS policy') || 
+    // Suppress CORS errors for external websites (EN + DE Firefox strings)
+    if (message.includes('CORS policy') ||
         message.includes('Access-Control-Allow-Origin') ||
         message.includes('has been blocked by CORS policy') ||
         message.includes('blocked by CORS policy') ||
+        message.includes('Quellübergreifende') ||
+        message.includes('Gleiche-Quelle-Regel') ||
+        message.includes('Cross-Origin') && message.includes('blockiert') ||
         (message.includes('Access to fetch at') && message.includes('has been blocked')) ||
         (message.includes('from origin') && message.includes('has been blocked'))) {
       return
@@ -128,7 +131,20 @@ export function suppressExpectedErrors() {
         (message.includes('fehlgeschlagen') && message.includes('URI')) ||
         message.includes('Laden der Medienressource') ||
         message.includes('Failed to load media resource') ||
-        message.includes('OpaqueResponseBlocking')) {
+        message.includes('OpaqueResponseBlocking') ||
+        (message.includes('image/svg+xml') &&
+          (message.includes('nicht unterstützt') ||
+            message.includes('Keine Decoder') ||
+            message.includes('Medien können nicht'))) ||
+        message.includes('A resource is blocked by OpaqueResponseBlocking')) {
+      return
+    }
+
+    // Firefox: failed WS to dead local/dev relays (wording varies by locale)
+    if (
+      message.includes('kann keine Verbindung') &&
+      (message.includes('WebSocket') || message.includes('ws://') || message.includes('wss://'))
+    ) {
       return
     }
     
@@ -158,7 +174,31 @@ export function suppressExpectedErrors() {
         message.includes('Medienressource') ||
         (message.includes('fehlgeschlagen') && message.includes('URI')) ||
         message.includes('Laden der Medienressource') ||
-        message.includes('Failed to load media resource')) {
+        message.includes('Failed to load media resource') ||
+        message.includes('OpaqueResponseBlocking') ||
+        message.includes('A resource is blocked by OpaqueResponseBlocking') ||
+        (message.includes('image/svg+xml') &&
+          (message.includes('nicht unterstützt') ||
+            message.includes('Keine Decoder') ||
+            message.includes('Medien können nicht')))) {
+      return
+    }
+
+    // German Firefox CORS (same-origin policy)
+    if (message.includes('Quellübergreifende') ||
+        message.includes('Gleiche-Quelle-Regel') ||
+        (message.includes('Cross-Origin') && message.includes('blockiert'))) {
+      return
+    }
+
+    if (
+      message.includes('kann keine Verbindung') &&
+      (message.includes('WebSocket') || message.includes('ws://') || message.includes('wss://'))
+    ) {
+      return
+    }
+
+    if (message.includes('NS_BINDING_ABORTED')) {
       return
     }
     
@@ -187,11 +227,14 @@ export function suppressExpectedErrors() {
       return
     }
     
-    // Suppress CORS policy warnings
-    if (message.includes('CORS policy') || 
+    // Suppress CORS policy warnings (EN + DE)
+    if (message.includes('CORS policy') ||
         message.includes('Access-Control-Allow-Origin') ||
         message.includes('has been blocked by CORS policy') ||
         message.includes('blocked by CORS policy') ||
+        message.includes('Quellübergreifende') ||
+        message.includes('Gleiche-Quelle-Regel') ||
+        (message.includes('Cross-Origin') && message.includes('blockiert')) ||
         (message.includes('Access to fetch') && message.includes('blocked')) ||
         (message.includes('from origin') && message.includes('blocked'))) {
       return
@@ -222,7 +265,8 @@ export function suppressExpectedErrors() {
     if (message.includes('NOTICE from') ||
         message.includes('Too many subscriptions') ||
         message.includes('Subscription rejected') ||
-        message.includes('too many concurrent REQs')) {
+        message.includes('too many concurrent REQs') ||
+        message.includes('too many kinds')) {
       return
     }
 
@@ -255,7 +299,13 @@ export function suppressExpectedErrors() {
     if (message.includes('NOTICE from') ||
         message.includes('Too many subscriptions') ||
         message.includes('Subscription rejected') ||
-        message.includes('too many concurrent REQs')) {
+        message.includes('too many concurrent REQs') ||
+        message.includes('too many kinds')) {
+      return
+    }
+
+    // Nostr browser extensions (signing / debug)
+    if (message.includes('[nos2x') || message.includes('nos2x-fox:')) {
       return
     }
     
