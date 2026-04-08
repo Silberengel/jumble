@@ -142,7 +142,7 @@ function EmbeddedNoteInvalid({
 
   return (
     <div
-      className={cn('text-left p-3 border border-destructive/30 rounded-lg bg-destructive/5', className)}
+      className={cn('not-prose max-w-full text-left p-3 border border-destructive/30 rounded-lg bg-destructive/5', className)}
       onClick={(e) => e.stopPropagation()}
       data-embedded-note-invalid
     >
@@ -221,7 +221,12 @@ function EmbeddedNoteContent({
   // If it has bookstr tags, render directly as bookstr content (no need to search)
   if (hasBookstrTags) {
     return (
-      <div data-embedded-note data-bookstr onClick={(e) => e.stopPropagation()}>
+      <div
+        data-embedded-note
+        data-bookstr
+        className="not-prose max-w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
         <EmbeddedBookstrEvent event={finalEvent} originalNoteId={noteId} className={className} />
       </div>
     )
@@ -230,7 +235,11 @@ function EmbeddedNoteContent({
   // NIP-52 calendar event (scheduled video call) – render as calendar card
   if (finalEvent.kind === ExtendedKind.CALENDAR_EVENT_TIME || finalEvent.kind === ExtendedKind.CALENDAR_EVENT_DATE) {
     return (
-      <div data-embedded-note onClick={(e) => e.stopPropagation()}>
+      <div
+        data-embedded-note
+        className="not-prose max-w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
         <EmbeddedCalendarEvent event={finalEvent} className={className} />
       </div>
     )
@@ -241,6 +250,7 @@ function EmbeddedNoteContent({
       <div
         data-embedded-note
         data-embedded-unsupported
+        className="not-prose max-w-full"
         onClick={(e) => e.stopPropagation()}
       >
         <UnknownNote
@@ -254,7 +264,11 @@ function EmbeddedNoteContent({
 
   // Otherwise, render as regular embedded note
   return (
-    <div data-embedded-note onClick={(e) => e.stopPropagation()}>
+    <div
+      data-embedded-note
+      className="not-prose max-w-full"
+      onClick={(e) => e.stopPropagation()}
+    >
       <MainNoteCard
         className={cn('w-full', className)}
         event={finalEvent}
@@ -269,7 +283,7 @@ function EmbeddedNoteContent({
 function EmbeddedNoteSkeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cn('text-left p-2 sm:p-3 border rounded-lg', className)}
+      className={cn('not-prose max-w-full text-left p-2 sm:p-3 border rounded-lg', className)}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center space-x-2">
@@ -479,7 +493,7 @@ function EmbeddedNoteNotFound({
     !triedExternal && hasExternalRelays && canSearchOnExternalRelays(noteId)
 
   return (
-    <div className={cn('text-left p-3 border rounded-lg', className)}>
+    <div className={cn('not-prose max-w-full text-left p-3 border rounded-lg', className)}>
       <div className="flex flex-col items-center text-muted-foreground gap-3">
         <div className="text-sm font-medium">{t('Note not found')}</div>
         

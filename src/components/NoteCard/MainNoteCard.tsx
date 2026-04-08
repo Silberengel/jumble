@@ -75,7 +75,10 @@ export default function MainNoteCard({
         navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
       }}
     >
-      <div className={`clickable ${embedded ? 'p-2 sm:p-3 border rounded-lg' : 'py-3'}`} style={embedded ? { position: 'relative', isolation: 'isolate', overflow: 'visible' } : undefined}>
+      <div
+        className={`clickable ${embedded ? 'not-prose p-2 sm:p-3 border rounded-lg' : 'py-3'}`}
+        style={embedded ? { position: 'relative', overflow: 'visible' } : undefined}
+      >
         {pinned && !embedded && (
           <div
             className="flex items-center gap-1.5 px-4 pb-1 text-muted-foreground"
