@@ -1,4 +1,5 @@
 import { buildHighlightDataFromEvent } from '@/lib/build-highlight-data'
+import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { useCreateHighlight } from './CreateHighlightContext'
 import { Event } from 'nostr-tools'
 import { Highlighter } from 'lucide-react'
@@ -90,10 +91,10 @@ export default function SelectionHighlightTrigger({
     }
 
     // Mobile: finger lifts — wait for the browser to settle the selection, then evaluate.
-    // The 600 ms matches the delay used in RssFeedItem for the same reason.
+    // Shorter delay on coarse pointers; contextmenu (below) is the reliable path when the OS shows the callout.
     const onTouchEnd = () => {
       isTouchActiveRef.current = false
-      schedule(600)
+      schedule(isMobileBrowserProfile() ? 280 : 600)
     }
 
     // Both: covers keyboard selection (Shift+Arrow) on desktop and selection-handle
@@ -103,14 +104,25 @@ export default function SelectionHighlightTrigger({
       schedule(80)
     }
 
+    // When the system opens the text callout / context menu, selection is still valid here; delayed
+    // touchend/selectionchange often misses on iOS/Android because the selection is cleared before we run.
+    const onContextMenu = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      const t = e.target
+      if (!(t instanceof Node) || !containerRef.current.contains(t)) return
+      queueMicrotask(() => evaluateSelection())
+    }
+
     document.addEventListener('touchstart', onTouchStart, { passive: true })
     document.addEventListener('touchend', onTouchEnd, { passive: true })
     document.addEventListener('selectionchange', onSelectionChange)
+    document.addEventListener('contextmenu', onContextMenu)
 
     return () => {
       document.removeEventListener('touchstart', onTouchStart)
       document.removeEventListener('touchend', onTouchEnd)
       document.removeEventListener('selectionchange', onSelectionChange)
+      document.removeEventListener('contextmenu', onContextMenu)
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [openHighlight, evaluateSelection])

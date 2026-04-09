@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron')
 const fs = require('fs')
 const path = require('path')
 
@@ -58,6 +58,38 @@ function createWindow() {
       void shell.openExternal(url)
     }
     return { action: 'deny' }
+  })
+
+  // Electron does not show Chromium’s full-page context menu; without this, users only get in-app UI
+  // (e.g. selection highlight) and no Copy / Paste / Select all for text fields and content.
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = []
+
+    if (params.linkURL && /^https?:\/\//i.test(params.linkURL)) {
+      template.push({
+        label: 'Open link in browser',
+        click: () => void shell.openExternal(params.linkURL)
+      })
+      template.push({ type: 'separator' })
+    }
+
+    template.push(
+      { role: 'cut', enabled: params.editFlags.canCut },
+      { role: 'copy', enabled: params.editFlags.canCopy },
+      { role: 'paste', enabled: params.editFlags.canPaste },
+      { type: 'separator' },
+      { role: 'selectAll', enabled: params.editFlags.canSelectAll }
+    )
+
+    if (isDev) {
+      template.push({ type: 'separator' })
+      template.push({
+        label: 'Inspect element',
+        click: () => win.webContents.inspectElement(params.x, params.y)
+      })
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: win })
   })
 }
 
