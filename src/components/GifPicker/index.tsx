@@ -538,9 +538,9 @@ export default function GifPicker({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen}>
+      <Drawer open={open} onOpenChange={setOpen} handleOnly>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
-        <DrawerContent portalContainer={portalContainer}>
+        <DrawerContent dragHandle="vaul" portalContainer={portalContainer}>
           <DrawerHeader className="sr-only">
             <DrawerTitle>{t('Choose a GIF')}</DrawerTitle>
           </DrawerHeader>

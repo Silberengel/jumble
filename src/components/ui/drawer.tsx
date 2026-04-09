@@ -72,8 +72,13 @@ const DrawerContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> & {
     hideOverlay?: boolean
     portalContainer?: HTMLElement | null
+    /**
+     * `vaul` — use Vaul’s real handle (`data-vaul-handle`). Pair with `handleOnly` on `Drawer` so
+     * scrolling inner content (e.g. emoji grid) does not drag the sheet.
+     */
+    dragHandle?: 'decorative' | 'vaul'
   }
->(({ className, children, hideOverlay = false, portalContainer, ...props }, ref) => (
+>(({ className, children, hideOverlay = false, portalContainer, dragHandle = 'decorative', ...props }, ref) => (
   <DrawerPortal container={portalContainer}>
     {!hideOverlay && <DrawerOverlay />}
     <DrawerPrimitive.Content
@@ -88,7 +93,11 @@ const DrawerContent = React.forwardRef<
       onOpenAutoFocus={(e) => e.preventDefault()}
       {...props}
     >
-      <div className="mx-auto mt-4 pb-2 mb-2 h-2 w-[100px] rounded-full bg-muted" />
+      {dragHandle === 'vaul' ? (
+        <DrawerPrimitive.Handle className="mx-auto mt-4 mb-2" />
+      ) : (
+        <div className="mx-auto mt-4 pb-2 mb-2 h-2 w-[100px] rounded-full bg-muted" />
+      )}
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>

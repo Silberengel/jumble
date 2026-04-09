@@ -24,9 +24,10 @@ export default function EmojiPickerDialog({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen}>
+      <Drawer open={open} onOpenChange={setOpen} handleOnly>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
         <DrawerContent
+          dragHandle="vaul"
           portalContainer={portalContainer}
           className="max-h-[min(88dvh,calc(100dvh-5rem))] px-2"
           onPointerDownOutside={(e) => {

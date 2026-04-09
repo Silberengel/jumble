@@ -276,8 +276,9 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
     return (
       <>
         {trigger}
-        <Drawer open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
+        <Drawer handleOnly open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
           <DrawerContent
+            dragHandle="vaul"
             onPointerDownOutside={(e) => {
               const t = e.target as HTMLElement | null
               if (t?.closest?.('[data-vaul-overlay]')) return
