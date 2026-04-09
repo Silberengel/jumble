@@ -6,6 +6,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
+import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
 import { NavigationService } from '@/services/navigation.service'
 // Page imports needed for primary note view
@@ -2254,6 +2255,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                   side="right"
                   className="w-full sm:max-w-[1042px] overflow-y-auto p-0"
                   hideClose
+                  onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
+                  onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
                 >
                   <div className="h-full">
                     {secondaryStack.map((item, index) => {

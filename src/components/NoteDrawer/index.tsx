@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import NotePage from '@/pages/secondary/NotePage'
 import { useSecondaryPage } from '@/PageManager'
@@ -53,19 +54,8 @@ export default function NoteDrawer({ open, onOpenChange, noteId, initialEvent }:
         side="right"
         className="w-full sm:max-w-[1042px] overflow-y-auto p-0"
         hideClose
-        onPointerDownOutside={(e) => {
-          // Prevent the drawer from closing when the user interacts with a lightbox portal.
-          // The lightbox renders into document.body (outside the Sheet DOM) so Radix UI
-          // would otherwise treat every click inside the lightbox as "outside" the drawer.
-          if (document.body.classList.contains('yarl__no_scroll')) {
-            e.preventDefault()
-          }
-        }}
-        onInteractOutside={(e) => {
-          if (document.body.classList.contains('yarl__no_scroll')) {
-            e.preventDefault()
-          }
-        }}
+        onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
+        onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
       >
         <div className="min-h-full">
           <NotePage
