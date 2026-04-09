@@ -72,6 +72,7 @@ import {
   Film,
   Laugh
 } from 'lucide-react'
+import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
 import { getMediaKindFromFile } from '@/lib/media-kind-detection'
 import { hasPrivateRelays, getPrivateRelayUrls } from '@/lib/private-relays'
 import mediaUpload from '@/services/media-upload.service'
@@ -99,6 +100,7 @@ import { getReplaceableCoordinateFromEvent, isProtectedEvent as isEventProtected
 import { Event, kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
 import EmojiPickerDialog from '../EmojiPickerDialog'
 import GifPicker from '../GifPicker'
@@ -1304,6 +1306,95 @@ export default function PostContent({
     uploadedMediaFileMap.current.clear()
   }
 
+  const inferKindFromEditorMediaUrl = (url: string): number | null => {
+    const path = url.split(/[?#]/)[0].toLowerCase()
+    if (/\.(jpg|jpeg|png|gif|webp|heic|avif|apng)$/i.test(path)) return ExtendedKind.PICTURE
+    if (/\.(mp3|m4a|mka|ogg|opus|wav|aac|flac)$/i.test(path)) return ExtendedKind.VOICE
+    if (/\.(mp4|webm|mov|mkv|m4v|ogv|avi|mpeg|mpg)$/i.test(path)) return ExtendedKind.SHORT_VIDEO
+    return null
+  }
+
+  const mimeFromUrlPathForKind = (url: string, kind: number): string => {
+    const path = url.split(/[?#]/)[0].toLowerCase()
+    if (kind === ExtendedKind.PICTURE) {
+      if (path.endsWith('.png')) return 'image/png'
+      if (path.endsWith('.webp')) return 'image/webp'
+      if (path.endsWith('.gif')) return 'image/gif'
+      return 'image/jpeg'
+    }
+    if (kind === ExtendedKind.VOICE) {
+      if (path.endsWith('.mka')) return 'audio/x-matroska'
+      if (path.endsWith('.ogg')) return 'audio/ogg'
+      if (path.endsWith('.webm')) return 'audio/webm'
+      return 'audio/mpeg'
+    }
+    if (path.endsWith('.mkv')) return 'video/x-matroska'
+    if (path.endsWith('.webm')) return 'video/webm'
+    return 'video/mp4'
+  }
+
+  const textLooksLikeImetaWithUrl = (s: string): boolean =>
+    /\bimeta\b[\s\S]{0,400}?\burl\s+https?:\/\//i.test(s)
+
+  const firstHttpUrlInNoteText = (s: string): string | undefined => {
+    const m = s.match(/https?:\/\/[^\s<>\])}'"]+/)
+    return m?.[0]
+  }
+
+  const canUseMediaKindFromUrlButton = useMemo(() => {
+    if (parentEvent || isDiscussionThread || isPublicMessage) return false
+    if (mediaNoteKind !== null && mediaUrl) return false
+    if (mediaImetaTags.length > 0) return true
+    if (mediaUrl) return true
+    if (textLooksLikeImetaWithUrl(text)) return true
+    const u = firstHttpUrlInNoteText(text)
+    return !!(u && inferKindFromEditorMediaUrl(u) !== null)
+  }, [
+    parentEvent,
+    isDiscussionThread,
+    isPublicMessage,
+    mediaNoteKind,
+    mediaUrl,
+    mediaImetaTags,
+    text
+  ])
+
+  /** When the editor already contains a media URL (e.g. after drop/paste) but kind stayed 1. */
+  const handleUseMediaNoteKindFromUrl = () => {
+    if (parentEvent || isDiscussionThread || isPublicMessage) return
+    if (mediaNoteKind !== null && mediaUrl) {
+      toast.info(t('Already publishing as a media note'))
+      return
+    }
+    const raw = textareaRef.current?.getText() ?? text
+    const m = raw.match(/https?:\/\/[^\s<>\])}'"]+/)
+    const found = m?.[0]
+    if (!found) {
+      toast.info(t('No media URL in note — upload or paste a link first'))
+      return
+    }
+    const kind = inferKindFromEditorMediaUrl(found)
+    if (kind === null) {
+      toast.info(t('Cannot infer media type from URL — use Note type → Media Note to upload'))
+      return
+    }
+    setIsPoll(false)
+    setIsHighlight(false)
+    setIsLongFormArticle(false)
+    setIsWikiArticle(false)
+    setIsWikiArticleMarkdown(false)
+    setIsPublicationContent(false)
+    setIsCitationInternal(false)
+    setIsCitationExternal(false)
+    setIsCitationHardcopy(false)
+    setIsCitationPrompt(false)
+    setIsDiscussionThread(false)
+    setMediaUrl(found)
+    setMediaNoteKind(kind)
+    const mime = mimeFromUrlPathForKind(found, kind)
+    setMediaImetaTags([['imeta', `url ${found}`, `m ${mime}`]])
+  }
+
   const isPlainShortNoteToolbar = useMemo(
     () =>
       !parentEvent &&
@@ -1402,7 +1493,7 @@ export default function PostContent({
   const handleUploadStart = (file: File, cancel: () => void) => {
     setUploadProgresses((prev) => [...prev, { file, progress: 0, cancel }])
     // Track file for media upload
-    if (file.type.startsWith('image/') || file.type.startsWith('audio/') || file.type.startsWith('video/')) {
+    if (fileLooksLikeUploadableMedia(file)) {
       const mapKey = `${file.name}-${file.size}-${file.lastModified}`
       uploadedMediaFileMap.current.set(mapKey, file)
       
@@ -1412,7 +1503,7 @@ export default function PostContent({
         const fileName = file.name.toLowerCase()
         // Mobile browsers may report m4a files as audio/m4a, audio/mp4, audio/x-m4a, or even video/mp4
         const isAudioMime = fileType.startsWith('audio/') || fileType === 'audio/mp4' || fileType === 'audio/x-m4a' || fileType === 'audio/m4a' || fileType === 'audio/webm' || fileType === 'audio/mpeg'
-        const isAudioExt = /\.(mp3|m4a|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
+        const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
         // For replies/PMs, webm/ogg/mp3/m4a files should be treated as audio since the microphone button only accepts audio/*
         // Even if the MIME type is incorrect, if it came through the audio uploader, it's audio
         const isWebmFile = /\.webm$/i.test(fileName)
@@ -1593,6 +1684,8 @@ export default function PostContent({
             const fileName = uploadingFile.name.toLowerCase()
             if (/\.webm$/i.test(fileName)) {
               mimeType = 'audio/webm'
+            } else if (/\.mka$/i.test(fileName)) {
+              mimeType = 'audio/x-matroska'
             } else if (/\.mp4$/i.test(fileName)) {
               mimeType = 'audio/mp4'
             }
@@ -1601,6 +1694,8 @@ export default function PostContent({
             const fileName = uploadingFile.name.toLowerCase()
             if (/\.webm$/i.test(fileName)) {
               mimeType = 'video/webm'
+            } else if (/\.mkv$/i.test(fileName)) {
+              mimeType = 'video/x-matroska'
             } else if (/\.mp4$/i.test(fileName)) {
               mimeType = 'video/mp4'
             }
@@ -1692,7 +1787,7 @@ export default function PostContent({
         // For replies/PMs, webm/ogg/mp3 files should be treated as audio since the microphone button only accepts audio/*
         // Mobile browsers may report m4a files as audio/m4a, audio/mp4, audio/x-m4a, or even video/mp4
         const isAudioMime = fileType.startsWith('audio/') || fileType === 'audio/mp4' || fileType === 'audio/x-m4a' || fileType === 'audio/m4a' || fileType === 'audio/webm' || fileType === 'audio/mpeg'
-        const isAudioExt = /\.(mp3|m4a|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
+        const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
         // m4a files are always audio, even if MIME type is video/mp4 (mobile browsers sometimes report this)
         const isM4aFile = /\.m4a$/i.test(fileName)
         const isMp4Audio = /\.mp4$/i.test(fileName) && isAudioMime
@@ -1732,6 +1827,8 @@ export default function PostContent({
             if (/\.m4a$/i.test(fileName)) {
               // m4a files are always audio, use audio/mp4 or audio/x-m4a
               mimeType = 'audio/mp4'
+            } else if (/\.mka$/i.test(fileName)) {
+              mimeType = 'audio/x-matroska'
             } else if (/\.webm$/i.test(fileName) && !mimeType.startsWith('audio/')) {
               mimeType = 'audio/webm'
             } else if (/\.ogg$/i.test(fileName) && !mimeType.startsWith('audio/')) {
@@ -2665,6 +2762,7 @@ export default function PostContent({
           onUploadStart={handleUploadStart}
           onUploadProgress={handleUploadProgress}
           onUploadEnd={handleUploadEnd}
+          onUploadSuccess={handleMediaUploadSuccess}
           kind={getDeterminedKind}
           highlightData={isHighlight ? highlightData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
@@ -2705,6 +2803,23 @@ export default function PostContent({
                 mediaNoteKind !== null ? t('Media Note') :
                 t('Short Note')
               return (
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-sm font-normal shrink-0"
+                    disabled={!canUseMediaKindFromUrlButton}
+                    title={
+                      canUseMediaKindFromUrlButton
+                        ? t('Use image/audio/video note kind for the media URL in the editor')
+                        : t('Media kind (disabled): add imeta tags, a media URL, or upload media first')
+                    }
+                    onClick={handleUseMediaNoteKindFromUrl}
+                  >
+                    <Upload className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline max-w-[7.5rem] truncate">{t('Media kind')}</span>
+                  </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="gap-1.5 h-8 text-sm font-normal">
@@ -2858,6 +2973,7 @@ export default function PostContent({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </div>
               )
             })() : undefined
           }
@@ -2962,7 +3078,7 @@ export default function PostContent({
           onUploadStart={handleUploadStart}
           onUploadEnd={handleUploadEnd}
           onProgress={handleUploadProgress}
-          accept="image/*,audio/*,video/*"
+          accept="image/*,audio/*,video/*,.mkv,.mka,video/x-matroska,audio/x-matroska"
           className="sr-only"
         >
           <button ref={mediaUploaderBtnRef} type="button" aria-hidden="true" tabIndex={-1} />
@@ -2977,7 +3093,7 @@ export default function PostContent({
               onUploadStart={handleUploadStart}
               onUploadEnd={handleUploadEnd}
               onProgress={handleUploadProgress}
-              accept="audio/*"
+              accept="audio/*,.mka,audio/x-matroska"
             >
               <Button 
                 type="button"
@@ -2991,9 +3107,7 @@ export default function PostContent({
             </Uploader>
           )}
           <Uploader
-            onUploadSuccess={({ url }) => {
-              textareaRef.current?.appendText(url, true)
-            }}
+            onUploadSuccess={handleMediaUploadSuccess}
             onUploadStart={handleUploadStart}
             onUploadEnd={handleUploadEnd}
             onProgress={handleUploadProgress}

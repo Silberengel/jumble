@@ -1,3 +1,4 @@
+import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
 import mediaUpload from '@/services/media-upload.service'
 import { Extension } from '@tiptap/core'
 import { EditorView } from '@tiptap/pm/view'
@@ -14,6 +15,8 @@ const DRAGOVER_CLASS_LIST = [
 
 export interface ClipboardAndDropHandlerOptions {
   onUploadStart?: (file: File, cancel: () => void) => void
+  /** Same contract as `Uploader` — required so drop/paste uploads set media note state (kind 20/21/22…), not only the URL in text. */
+  onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
   onUploadEnd?: (file: File) => void
   onUploadProgress?: (file: File, progress: number) => void
 }
@@ -60,9 +63,7 @@ export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerO
             view.dom.classList.remove(...DRAGOVER_CLASS_LIST)
 
             const items = Array.from(event.dataTransfer?.files ?? [])
-            const mediaFiles = items.filter(
-              (item) => item.type.includes('image') || item.type.includes('video')
-            )
+            const mediaFiles = items.filter((item) => fileLooksLikeUploadableMedia(item))
             if (!mediaFiles.length) return false
 
             uploadFiles(view, mediaFiles, options)
@@ -73,12 +74,9 @@ export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerO
             let handled = false
 
             for (const item of items) {
-              if (
-                item.kind === 'file' &&
-                (item.type.includes('image') || item.type.includes('video'))
-              ) {
+              if (item.kind === 'file') {
                 const file = item.getAsFile()
-                if (file) {
+                if (file && fileLooksLikeUploadableMedia(file)) {
                   uploadFiles(view, [file], options)
                   handled = true
                 }
@@ -176,6 +174,8 @@ async function uploadFiles(
           insertTr.setSelection(TextSelection.near(insertTr.doc.resolve(newPos)))
           view.dispatch(insertTr)
         }
+
+        options.onUploadSuccess?.({ url: result.url, tags: result.tags, file })
       })
       .catch((error) => {
         logger.error('Clipboard/drop upload failed', { error, file: file.name })

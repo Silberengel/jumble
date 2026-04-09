@@ -62,7 +62,7 @@ function extractUrlsFromContent(content: string): string[] {
       const mediaExtensions = [
         '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff',
         '.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.flv',
-        '.mp3', '.wav', '.flac', '.aac', '.m4a'
+        '.mp3', '.wav', '.flac', '.aac', '.m4a', '.mka'
       ]
       
       const isMediaFile = mediaExtensions.some(ext => pathname.endsWith(ext))

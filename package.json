@@ -85,6 +85,7 @@
     "i18next": "^24.2.0",
     "i18next-browser-languagedetector": "^8.0.4",
     "katex": "^0.16.25",
+    "lamejs": "^1.2.1",
     "lru-cache": "^11.0.2",
     "lucide-react": "^0.469.0",
     "marked": "^17.0.5",

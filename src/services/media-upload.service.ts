@@ -1,4 +1,5 @@
-import { compressImage } from '@/lib/compress-image'
+/** Compression runs entirely in-app before upload (`compress-upload-media`). */
+import { compressMediaForUpload } from '@/lib/compress-upload-media'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import { simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
@@ -33,8 +34,23 @@ class MediaUploadService {
   }
 
   async upload(file: File, options?: UploadOptions) {
-    // Compress images before upload: target ≤ 4 MB, down-scale to 2048 px max edge.
-    const toUpload = await compressImage(file, 4 * 1024 * 1024)
+    const toUpload = await compressMediaForUpload(file, { signal: options?.signal })
+
+    try {
+      const diag =
+        import.meta.env.DEV ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem('jumble-upload-log') === 'true')
+      if (diag) {
+        console.log('[media-upload] sending to server', {
+          backend: this.serviceConfig.type,
+          bytes: toUpload.size,
+          name: toUpload.name,
+          type: toUpload.type || '(empty)'
+        })
+      }
+    } catch {
+      // ignore
+    }
 
     let result: { url: string; tags: string[][] }
     if (this.serviceConfig.type === 'nip96') {

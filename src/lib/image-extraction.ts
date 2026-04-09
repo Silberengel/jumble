@@ -76,7 +76,8 @@ export function extractAllImagesFromEvent(event: Event): TImetaInfo[] {
   }
 
   // 7. Extract from content - general URL patterns that look like media
-  const mediaUrlRegex = /https?:\/\/[^\s<>"']+\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico|mp4|webm|ogg|avi|mov|wmv|flv|mkv)(?:\?[^\s<>"']*)?/gi
+  const mediaUrlRegex =
+    /https?:\/\/[^\s<>"']+\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico|mp4|webm|ogg|avi|mov|wmv|flv|mkv|mka)(?:\?[^\s<>"']*)?/gi
   while ((match = mediaUrlRegex.exec(event.content)) !== null) {
     addMedia(match[0])
   }

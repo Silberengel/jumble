@@ -13,7 +13,16 @@ import Text from '@tiptap/extension-text'
 import { TextSelection } from '@tiptap/pm/state'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Event } from 'nostr-tools'
-import { Dispatch, forwardRef, SetStateAction, useImperativeHandle, useState, useEffect, useMemo } from 'react'
+import {
+  Dispatch,
+  forwardRef,
+  SetStateAction,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { ClipboardAndDropHandler } from './ClipboardAndDropHandler'
 import Emoji from './Emoji'
@@ -44,6 +53,7 @@ const PostTextarea = forwardRef<
     onUploadStart?: (file: File, cancel: () => void) => void
     onUploadProgress?: (file: File, progress: number) => void
     onUploadEnd?: (file: File) => void
+    onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
     kind?: number
     highlightData?: HighlightData
     pollCreateData?: import('@/types').TPollCreateData
@@ -73,6 +83,7 @@ const PostTextarea = forwardRef<
       onUploadStart,
       onUploadProgress,
       onUploadEnd,
+      onUploadSuccess,
       kind = 1,
       highlightData,
       pollCreateData,
@@ -87,6 +98,8 @@ const PostTextarea = forwardRef<
     ref
   ) => {
     const { t } = useTranslation()
+    const onUploadSuccessRef = useRef(onUploadSuccess)
+    onUploadSuccessRef.current = onUploadSuccess
     const [activeTab, setActiveTab] = useState('preview')
     const [draftEventJson, setDraftEventJson] = useState<string>('')
     const [isLoadingJson, setIsLoadingJson] = useState(false)
@@ -150,7 +163,8 @@ const PostTextarea = forwardRef<
             onUploadStart?.(file, cancel)
           },
           onUploadEnd: (file) => onUploadEnd?.(file),
-          onUploadProgress: (file, p) => onUploadProgress?.(file, p)
+          onUploadProgress: (file, p) => onUploadProgress?.(file, p),
+          onUploadSuccess: (result) => onUploadSuccessRef.current?.(result)
         })
       ],
       editorProps: {

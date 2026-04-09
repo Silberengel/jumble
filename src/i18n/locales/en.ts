@@ -1843,6 +1843,16 @@ export default {
     'Upload Audio Comment': 'Upload Audio Comment',
     'Upload Audio Message': 'Upload Audio Message',
     'Upload Media': 'Upload Media',
+    'Media kind': 'Media kind',
+    'Use image/audio/video note kind for the media URL in the editor':
+      'Use image/audio/video note kind for the media URL in the editor',
+    'Already publishing as a media note': 'Already publishing as a media note',
+    'No media URL in note — upload or paste a link first':
+      'No media URL in note — upload or paste a link first',
+    'Cannot infer media type from URL — use Note type → Media Note to upload':
+      'Cannot infer media type from URL — use Note type → Media Note to upload',
+    'Media kind (disabled): add imeta tags, a media URL, or upload media first':
+      'Media kind (disabled): add imeta tags, a media URL, or upload media first',
     Upvote: 'Upvote',
     'User unmuted': 'User unmuted',
     'Version number (optional)': 'Version number (optional)',

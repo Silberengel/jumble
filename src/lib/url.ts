@@ -278,6 +278,8 @@ export function isMedia(url: string) {
       '.webm',
       '.ogg',
       '.mov',
+      '.mkv',
+      '.mka',
       '.mp3',
       '.wav',
       '.flac',
@@ -304,7 +306,8 @@ export function isAudio(url: string) {
       '.wma',
       '.ogg', // ogg can be audio
       '.webm', // webm can be audio (when uploaded via microphone button)
-      '.mp4' // mp4 can be audio (m4a files)
+      '.mp4', // mp4 can be audio (m4a files)
+      '.mka'
     ]
     return audioExtensions.some((ext) => new URL(url).pathname.toLowerCase().endsWith(ext))
   } catch {

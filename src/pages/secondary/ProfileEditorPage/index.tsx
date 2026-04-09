@@ -458,7 +458,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           onUploadStart={() => setUploadingAvatar(true)}
           onUploadEnd={() => setUploadingAvatar(false)}
           className="w-24 h-24 absolute bottom-0 left-4 translate-y-1/2 border-4 border-background cursor-pointer rounded-full"
-          accept="image/*,video/mp4,video/webm,video/quicktime"
+          accept="image/*,video/mp4,video/webm,video/quicktime,video/x-matroska,.mkv"
           maxFileSizeMb={2}
         >
           <div className="w-full h-full overflow-hidden rounded-full bg-muted">

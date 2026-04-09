@@ -1,19 +1,21 @@
 /**
  * Client-side image compression via the Canvas API.
  *
+ * Runs only in the browser (Canvas); no external compression APIs.
  * Called before every media upload to reduce bandwidth and server storage costs.
+ * Raster images are re-encoded (WebP/JPEG) when possible, not only when over the byte cap.
  * GIFs are returned unchanged (canvas flattens animation to a single frame).
  * Non-image files are returned unchanged.
  */
 
 /** Longest edge cap before re-encoding. */
-const MAX_DIMENSION_PX = 2048
-/** Try WebP at this quality first — typically 30-50 % smaller than JPEG at same perceptual quality. */
-const WEBP_QUALITY = 0.85
-/** Starting JPEG quality; stepped down by 0.1 until the file fits. */
-const JPEG_QUALITY_START = 0.82
+const MAX_DIMENSION_PX = 1920
+/** WebP quality — tuned for smaller uploads; JPEG ladder if still over `targetMaxBytes`. */
+const WEBP_QUALITY = 0.72
+/** Starting JPEG quality; stepped down until the file fits. */
+const JPEG_QUALITY_START = 0.74
 /** Never go below this quality during progressive reduction. */
-const JPEG_QUALITY_MIN = 0.35
+const JPEG_QUALITY_MIN = 0.32
 
 function canvasToBlob(
   canvas: HTMLCanvasElement,
@@ -37,7 +39,6 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
   if (!file.type.startsWith('image/')) return file
   if (file.type === 'image/gif') return file // canvas strips animation
   if (file.type === 'image/svg+xml') return file
-  if (file.size <= targetMaxBytes) return file
 
   let bitmap: ImageBitmap
   try {
@@ -66,7 +67,7 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
 
   const baseName = file.name.replace(/\.[^.]+$/, '')
 
-  // Try WebP first
+  // Try WebP first (always prefer a smaller or cap-compliant WebP)
   const webpBlob = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY)
   if (webpBlob && webpBlob.size <= targetMaxBytes) {
     return new File([webpBlob], `${baseName}.webp`, { type: 'image/webp' })
@@ -83,7 +84,34 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
     }
   }
 
-  // Return best effort result if it's at least smaller than the original
+  // If still over budget, shrink canvas further and retry WebP / JPEG
+  if (bestBlob && bestBlob.size > targetMaxBytes && (width > 640 || height > 640)) {
+    const factor = 0.72
+    const w2 = Math.max(320, Math.round(width * factor))
+    const h2 = Math.max(320, Math.round(height * factor))
+    const snap = await createImageBitmap(canvas)
+    canvas.width = w2
+    canvas.height = h2
+    ctx.drawImage(snap, 0, 0, w2, h2)
+    snap.close()
+    const smallWebp = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY - 0.08)
+    if (smallWebp && smallWebp.size < (bestBlob?.size ?? Infinity)) {
+      bestBlob = smallWebp
+    }
+    if (smallWebp && smallWebp.size <= targetMaxBytes) {
+      return new File([smallWebp], `${baseName}.webp`, { type: 'image/webp' })
+    }
+    for (let q = JPEG_QUALITY_START; q >= JPEG_QUALITY_MIN; q = Math.round((q - 0.1) * 10) / 10) {
+      const blob = await canvasToBlob(canvas, 'image/jpeg', q)
+      if (!blob) continue
+      if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob
+      if (blob.size <= targetMaxBytes) {
+        return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' })
+      }
+    }
+  }
+
+  // Return best effort if smaller than original
   if (bestBlob && bestBlob.size < file.size) {
     const isWebp = bestBlob.type === 'image/webp'
     return new File(

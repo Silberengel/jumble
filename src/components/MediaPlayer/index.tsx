@@ -42,8 +42,17 @@ export default function MediaPlayer({
     const url = new URL(src)
     const extension = url.pathname.split('.').pop()?.toLowerCase()
 
-    if (extension && ['mp3', 'wav', 'flac', 'aac', 'm4a', 'opus', 'wma'].includes(extension)) {
+    if (
+      extension &&
+      ['mp3', 'wav', 'flac', 'aac', 'm4a', 'opus', 'wma', 'mka'].includes(extension)
+    ) {
       setMediaType('audio')
+      return
+    }
+
+    // Matroska is video-first for feeds; avoids waiting on metadata probe (codec support still browser-dependent).
+    if (extension === 'mkv') {
+      setMediaType('video')
       return
     }
 

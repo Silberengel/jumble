@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { MEDIA_AUTO_LOAD_POLICY } from '@/constants'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import storage from '@/services/local-storage.service'
 import { WifiOff, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -19,7 +20,13 @@ function detectConnectionStatus(): { poor: boolean; offline: boolean } {
 
 export default function SlowConnectionHint() {
   const { t } = useTranslation()
-  const { autoplay, setAutoplay, mediaAutoLoadPolicy, setMediaAutoLoadPolicy } = useContentPolicy()
+  const contentPolicy = useContentPolicyOptional()
+  const autoplay = contentPolicy?.autoplay ?? storage.getAutoplay()
+  const mediaAutoLoadPolicy =
+    contentPolicy?.mediaAutoLoadPolicy ?? storage.getMediaAutoLoadPolicy()
+  const setAutoplay = contentPolicy?.setAutoplay ?? ((v: boolean) => storage.setAutoplay(v))
+  const setMediaAutoLoadPolicy =
+    contentPolicy?.setMediaAutoLoadPolicy ?? ((p) => storage.setMediaAutoLoadPolicy(p))
   const [status, setStatus] = useState(detectConnectionStatus)
   const [slowDismissed, setSlowDismissed] = useState(
     () => sessionStorage.getItem(SLOW_DISMISSED_KEY) === 'true'

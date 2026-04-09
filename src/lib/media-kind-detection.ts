@@ -18,9 +18,16 @@ export async function getMediaKindFromFile(file: File, isReply: boolean = false)
   // Check if it's audio or video
   // mp4, m4a, and webm files can be either audio or video, so check MIME type first
   // Mobile browsers may report m4a files as audio/m4a, audio/mp4, audio/x-m4a, or even video/mp4
-  const isAudioMime = fileType.startsWith('audio/') || fileType === 'audio/mp4' || fileType === 'audio/x-m4a' || fileType === 'audio/m4a' || fileType === 'audio/webm' || fileType === 'audio/mpeg'
+  const isAudioMime =
+    fileType.startsWith('audio/') ||
+    fileType === 'audio/mp4' ||
+    fileType === 'audio/x-m4a' ||
+    fileType === 'audio/m4a' ||
+    fileType === 'audio/webm' ||
+    fileType === 'audio/mpeg' ||
+    fileType === 'audio/x-matroska'
   const isVideoMime = fileType.startsWith('video/')
-  const isAudioExt = /\.(mp3|m4a|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
+  const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
   const isVideoExt = /\.(mp4|ogg|mov|avi|mkv|m4v)$/i.test(fileName)
   
   // m4a files are always audio, even if MIME type is video/mp4 (mobile browsers sometimes report this)
@@ -66,7 +73,11 @@ export async function getMediaKindFromFile(file: File, isReply: boolean = false)
 function getMediaDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file)
-    const media = document.createElement(file.type.startsWith('audio/') ? 'audio' : 'video')
+    const useAudio =
+      file.type.startsWith('audio/') ||
+      file.type === 'audio/x-matroska' ||
+      /\.mka$/i.test(file.name)
+    const media = document.createElement(useAudio ? 'audio' : 'video')
     
     media.onloadedmetadata = () => {
       const duration = media.duration || 0
