@@ -395,6 +395,8 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
 
           let frames = 0
           const maxFrames = Math.min(Math.ceil(durationSec * 100) + 2000, 500_000)
+          /** Yield to the event loop so React can paint (compression is CPU-heavy). */
+          const YIELD_EVERY_FRAMES = 30
 
           const step = () => {
             if (settled) return
@@ -416,7 +418,11 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
               finish()
               return
             }
-            requestAnimationFrame(step)
+            if (frames % YIELD_EVERY_FRAMES === 0) {
+              setTimeout(() => requestAnimationFrame(step), 0)
+            } else {
+              requestAnimationFrame(step)
+            }
           }
           requestAnimationFrame(step)
         })

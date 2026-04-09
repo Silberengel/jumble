@@ -11,6 +11,10 @@ import storage from './local-storage.service'
 type UploadOptions = {
   onProgress?: (progressPercent: number) => void
   signal?: AbortSignal
+  /** Fires synchronously before client-side compression (images/audio/video). */
+  onCompressStart?: () => void
+  /** Fires after compression finishes (or throws), before the HTTP upload. */
+  onCompressEnd?: () => void
 }
 
 export const UPLOAD_ABORTED_ERROR_MSG = 'Upload aborted'
@@ -34,7 +38,13 @@ class MediaUploadService {
   }
 
   async upload(file: File, options?: UploadOptions) {
-    const toUpload = await compressMediaForUpload(file, { signal: options?.signal })
+    options?.onCompressStart?.()
+    let toUpload: File
+    try {
+      toUpload = await compressMediaForUpload(file, { signal: options?.signal })
+    } finally {
+      options?.onCompressEnd?.()
+    }
 
     try {
       const diag =

@@ -7,8 +7,9 @@ export default function Uploader({
   children,
   onUploadSuccess,
   onUploadStart,
-  onUploadEnd,
-  onProgress,
+      onUploadEnd,
+      onProgress,
+      onUploadCompressPhase,
   className,
   accept = 'image/*',
   maxFileSizeMb
@@ -18,6 +19,8 @@ export default function Uploader({
   onUploadStart?: (file: File, cancel: () => void) => void
   onUploadEnd?: (file: File) => void
   onProgress?: (file: File, progress: number) => void
+  /** After local compression (before network upload). */
+  onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
   className?: string
   accept?: string
   /** Reject files whose size (before compression) exceeds this limit and show a toast. */
@@ -48,7 +51,9 @@ export default function Uploader({
         const abortController = abortControllerMap.get(file)
         const result = await mediaUpload.upload(file, {
           onProgress: (p) => onProgress?.(file, p),
-          signal: abortController?.signal
+          signal: abortController?.signal,
+          onCompressStart: () => onUploadCompressPhase?.(file, 'compressing'),
+          onCompressEnd: () => onUploadCompressPhase?.(file, 'uploading')
         })
         onUploadSuccess({ ...result, file })
         onUploadEnd?.(file)

@@ -54,6 +54,7 @@ const PostTextarea = forwardRef<
     onUploadProgress?: (file: File, progress: number) => void
     onUploadEnd?: (file: File) => void
     onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
+    onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
     kind?: number
     highlightData?: HighlightData
     pollCreateData?: import('@/types').TPollCreateData
@@ -84,6 +85,7 @@ const PostTextarea = forwardRef<
       onUploadProgress,
       onUploadEnd,
       onUploadSuccess,
+      onUploadCompressPhase,
       kind = 1,
       highlightData,
       pollCreateData,
@@ -100,6 +102,8 @@ const PostTextarea = forwardRef<
     const { t } = useTranslation()
     const onUploadSuccessRef = useRef(onUploadSuccess)
     onUploadSuccessRef.current = onUploadSuccess
+    const onUploadCompressPhaseRef = useRef(onUploadCompressPhase)
+    onUploadCompressPhaseRef.current = onUploadCompressPhase
     const [activeTab, setActiveTab] = useState('preview')
     const [draftEventJson, setDraftEventJson] = useState<string>('')
     const [isLoadingJson, setIsLoadingJson] = useState(false)
@@ -164,7 +168,9 @@ const PostTextarea = forwardRef<
           },
           onUploadEnd: (file) => onUploadEnd?.(file),
           onUploadProgress: (file, p) => onUploadProgress?.(file, p),
-          onUploadSuccess: (result) => onUploadSuccessRef.current?.(result)
+          onUploadSuccess: (result) => onUploadSuccessRef.current?.(result),
+          onUploadCompressPhase: (file, phase) =>
+            onUploadCompressPhaseRef.current?.(file, phase)
         })
       ],
       editorProps: {

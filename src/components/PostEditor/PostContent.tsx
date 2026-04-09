@@ -203,7 +203,7 @@ export default function PostContent({
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
   const [uploadProgresses, setUploadProgresses] = useState<
-    { file: File; progress: number; cancel: () => void }[]
+    { file: File; progress: number; cancel: () => void; phase: 'compressing' | 'uploading' }[]
   >([])
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [createCustomEventOpen, setCreateCustomEventOpen] = useState(false)
@@ -1490,8 +1490,22 @@ export default function PostContent({
     }
   }
 
+  const handleUploadCompressPhase = useCallback((file: File, phase: 'compressing' | 'uploading') => {
+    setUploadProgresses((prev) =>
+      prev.map((row) => (row.file === file ? { ...row, phase } : row))
+    )
+  }, [])
+
   const handleUploadStart = (file: File, cancel: () => void) => {
-    setUploadProgresses((prev) => [...prev, { file, progress: 0, cancel }])
+    setUploadProgresses((prev) => [
+      ...prev,
+      {
+        file,
+        progress: 0,
+        cancel,
+        phase: fileLooksLikeUploadableMedia(file) ? 'compressing' : 'uploading'
+      }
+    ])
     // Track file for media upload
     if (fileLooksLikeUploadableMedia(file)) {
       const mapKey = `${file.name}-${file.size}-${file.lastModified}`
@@ -1541,7 +1555,11 @@ export default function PostContent({
 
   const handleUploadProgress = (file: File, progress: number) => {
     setUploadProgresses((prev) =>
-      prev.map((item) => (item.file === file ? { ...item, progress } : item))
+      prev.map((item) =>
+        item.file === file
+          ? { ...item, progress, phase: progress > 0 ? 'uploading' : item.phase }
+          : item
+      )
     )
   }
 
@@ -2763,6 +2781,7 @@ export default function PostContent({
           onUploadProgress={handleUploadProgress}
           onUploadEnd={handleUploadEnd}
           onUploadSuccess={handleMediaUploadSuccess}
+          onUploadCompressPhase={handleUploadCompressPhase}
           kind={getDeterminedKind}
           highlightData={isHighlight ? highlightData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
@@ -3024,17 +3043,29 @@ export default function PostContent({
         </div>
       )}
       {uploadProgresses.length > 0 &&
-        uploadProgresses.map(({ file, progress, cancel }, index) => (
+        uploadProgresses.map(({ file, progress, cancel, phase }, index) => (
           <div key={`${file.name}-${index}`} className="mt-2 flex items-end gap-2">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-xs text-muted-foreground mb-1">
+              <div className="truncate text-xs text-muted-foreground mb-0.5">
                 {file.name ?? t('Uploading...')}
               </div>
+              <div className="text-[11px] text-muted-foreground mb-1 leading-snug">
+                {phase === 'compressing'
+                  ? t('Compressing on your device before upload (large videos can take several minutes)…')
+                  : t('Uploading to media server…')}
+              </div>
               <div className="h-0.5 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-[width] duration-200 ease-out"
-                  style={{ width: `${progress}%` }}
-                />
+                {phase === 'compressing' ? (
+                  <div
+                    className="h-full w-1/3 max-w-[45%] animate-pulse rounded-full bg-primary motion-reduce:animate-none motion-reduce:w-full motion-reduce:opacity-60"
+                    aria-hidden
+                  />
+                ) : (
+                  <div
+                    className="h-full bg-primary transition-[width] duration-200 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                )}
               </div>
             </div>
             <button
@@ -3078,6 +3109,7 @@ export default function PostContent({
           onUploadStart={handleUploadStart}
           onUploadEnd={handleUploadEnd}
           onProgress={handleUploadProgress}
+          onUploadCompressPhase={handleUploadCompressPhase}
           accept="image/*,audio/*,video/*,.mkv,.mka,video/x-matroska,audio/x-matroska"
           className="sr-only"
         >
@@ -3093,6 +3125,7 @@ export default function PostContent({
               onUploadStart={handleUploadStart}
               onUploadEnd={handleUploadEnd}
               onProgress={handleUploadProgress}
+              onUploadCompressPhase={handleUploadCompressPhase}
               accept="audio/*,.mka,audio/x-matroska"
             >
               <Button 
@@ -3111,6 +3144,7 @@ export default function PostContent({
             onUploadStart={handleUploadStart}
             onUploadEnd={handleUploadEnd}
             onProgress={handleUploadProgress}
+            onUploadCompressPhase={handleUploadCompressPhase}
             accept="image/*"
           >
             <Button type="button" variant="ghost" size="icon" title={t('Upload Image')}>

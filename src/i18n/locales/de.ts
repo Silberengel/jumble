@@ -1858,6 +1858,8 @@ export default {
     '🔞 NSFW 🔞': '🔞 NSFW 🔞',
     'Choose a suggested topic or type your own. It becomes a normalized tag (e.g. my-topic).':
       'Choose a suggested topic or type your own. It becomes a normalized tag (e.g. my-topic).',
+    'Compressing on your device before upload (large videos can take several minutes)…':
+      'Wird auf deinem Gerät vor dem Upload komprimiert (große Videos können mehrere Minuten dauern)…',
     'Failed to refresh': 'Failed to refresh',
     'Invalid article link.': 'Invalid article link.',
     Likes: 'Likes',
@@ -1874,6 +1876,7 @@ export default {
     'Synthetic event (no author)': 'Synthetic event (no author)',
     'Topic is required': 'Topic is required',
     'Type a topic or pick from the list': 'Type a topic or pick from the list',
+    'Uploading to media server…': 'Wird zum Medienserver hochgeladen…',
     profileEditorRefreshCacheHint: 'profileEditorRefreshCacheHint',
     startupSessionHydrating: 'startupSessionHydrating'
   }

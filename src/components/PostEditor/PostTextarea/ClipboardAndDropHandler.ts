@@ -19,6 +19,8 @@ export interface ClipboardAndDropHandlerOptions {
   onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
   onUploadEnd?: (file: File) => void
   onUploadProgress?: (file: File, progress: number) => void
+  /** Same as `Uploader.onUploadCompressPhase` — keeps the post editor progress row in sync during local compression. */
+  onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
 }
 
 export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerOptions>({
@@ -138,7 +140,9 @@ async function uploadFiles(
     mediaUpload
       .upload(file, {
         onProgress: (p) => options.onUploadProgress?.(file, p),
-        signal: abortController?.signal
+        signal: abortController?.signal,
+        onCompressStart: () => options.onUploadCompressPhase?.(file, 'compressing'),
+        onCompressEnd: () => options.onUploadCompressPhase?.(file, 'uploading')
       })
       .then((result) => {
         options.onUploadEnd?.(file)
