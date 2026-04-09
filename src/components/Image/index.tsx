@@ -5,7 +5,7 @@ import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
 import { ImageOff } from 'lucide-react'
-import { CSSProperties, HTMLAttributes, useEffect, useMemo, useRef, useState } from 'react'
+import { CSSProperties, HTMLAttributes, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /** Browsers often never fire `onError` for invalid URIs, ORB, or stalled fetches — this forces a visible error. */
@@ -38,6 +38,7 @@ export default function Image({
   errorPlaceholder = <ImageOff />,
   style: wrapperStyleProp,
   holdUntilClick = false,
+  onClick,
   ...props
 }: HTMLAttributes<HTMLSpanElement> & {
   classNames?: {
@@ -49,11 +50,9 @@ export default function Image({
   hideIfError?: boolean
   errorPlaceholder?: React.ReactNode
   /**
-   * When true, the full image is NOT loaded until the user interacts.
-   * Shows a blurhash canvas if available, otherwise a skeleton placeholder.
-   * Intended for inline note images: clicking opens the lightbox (via the
-   * onClick handler passed from MarkdownArticle) without ever loading the
-   * full image inline.
+   * When true, the full image is not loaded until the user interacts.
+   * The first click runs {@link onClick} (e.g. open lightbox) and also reveals the
+   * inline `<img>` so after the lightbox closes the real image can show from cache.
    */
   holdUntilClick?: boolean
 }) {
@@ -165,11 +164,16 @@ export default function Image({
     setIsLoading(true)
   }
 
+  const handleWrapperClick = (e: React.MouseEvent<HTMLSpanElement>) => {
+    if (holdUntilClick && !revealed) handleReveal()
+    onClick?.(e)
+  }
+
   return (
     <span
       className={cn('relative overflow-hidden block w-full', classNames.wrapper)}
       style={mergedWrapperStyle}
-      onClick={!revealed ? handleReveal : undefined}
+      onClick={handleWrapperClick}
       {...props}
     >
       {displaySkeleton && !showErrorState && (
@@ -209,7 +213,7 @@ export default function Image({
           title={finalAlt || undefined}
           referrerPolicy="no-referrer"
           decoding="async"
-          loading="lazy"
+          loading={wasInitiallyHeldRef.current ? 'eager' : 'lazy'}
           draggable={false}
           onLoad={handleLoad}
           onError={handleError}
@@ -269,7 +273,7 @@ function BlurHashCanvas({ blurHash, className = '' }: { blurHash: string; classN
     }
   }, [blurHash])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pixels || !canvasRef.current) return
 
     const canvas = canvasRef.current

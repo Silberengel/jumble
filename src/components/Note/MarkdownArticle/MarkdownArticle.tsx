@@ -28,7 +28,7 @@ import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import { TEmoji, TImetaInfo } from '@/types'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import Lightbox from 'yet-another-react-lightbox'
@@ -4646,6 +4646,11 @@ export default function MarkdownArticle({
     
     return images
   }, [extractedMedia.images, metadata.image])
+
+  const lightboxSlides = useMemo(
+    () => allImages.map((img) => lightboxSlideFromImeta(img)),
+    [allImages]
+  )
   
   // Helper function to extract image filename/hash from URL for comparison
   // This helps identify the same image hosted on different domains
@@ -4751,14 +4756,21 @@ export default function MarkdownArticle({
     return links
   }, [event.content])
   
-  // Image gallery state
+  // Image gallery state — portal mounts only while active so feed re-renders don't run N closed Lightboxes on body.
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
-  
+  const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
+
   const openLightbox = useCallback((index: number) => {
     setLightboxIndex(index)
     setLightboxOpen(true)
+    setLightboxPortalActive(true)
   }, [])
+
+  useLayoutEffect(() => {
+    setLightboxOpen(false)
+    setLightboxPortalActive(false)
+  }, [lazyMedia])
   
   // Filter tag media to only show what's not in content
   const leftoverTagMedia = useMemo(() => {
@@ -5181,43 +5193,47 @@ export default function MarkdownArticle({
       )}
       </div>
       
-      {/* Image gallery lightbox */}
-      {allImages.length > 0 && createPortal(
-        <div
-          data-lightbox-overlay
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          <Lightbox
-            index={lightboxIndex}
-            slides={allImages.map((img) => lightboxSlideFromImeta(img))}
-            plugins={[Video, Zoom]}
-            open={lightboxOpen}
-            close={() => setLightboxOpen(false)}
-            on={{
-              view: ({ index }) => setLightboxIndex(index)
-            }}
-            controller={{
-              closeOnBackdropClick: false,
-              closeOnPullUp: true,
-              closeOnPullDown: true
-            }}
-            render={{
-              buttonPrev: allImages.length <= 1 ? () => null : undefined,
-              buttonNext: allImages.length <= 1 ? () => null : undefined
-            }}
-            styles={{
-              toolbar: { paddingTop: '2.25rem' }
-            }}
-            carousel={{
-              finite: false
-            }}
-          />
-        </div>,
-        document.body
-      )}
+      {/* Image gallery lightbox — mount portal only when open; avoids N× Lightbox reconciling on body when policy/feed re-renders */}
+      {allImages.length > 0 &&
+        lightboxPortalActive &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-lightbox-overlay
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Lightbox
+              index={lightboxIndex}
+              slides={lightboxSlides}
+              plugins={[Video, Zoom]}
+              open={lightboxOpen}
+              close={() => setLightboxOpen(false)}
+              on={{
+                view: ({ index }) => setLightboxIndex(index),
+                exited: () => setLightboxPortalActive(false)
+              }}
+              controller={{
+                closeOnBackdropClick: false,
+                closeOnPullUp: true,
+                closeOnPullDown: true
+              }}
+              render={{
+                buttonPrev: allImages.length <= 1 ? () => null : undefined,
+                buttonNext: allImages.length <= 1 ? () => null : undefined
+              }}
+              styles={{
+                toolbar: { paddingTop: '2.25rem' }
+              }}
+              carousel={{
+                finite: false
+              }}
+            />
+          </div>,
+          document.body
+        )}
     </>
   )
 }

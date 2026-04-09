@@ -1,18 +1,28 @@
 import { isBlurhashValid } from 'blurhash'
 
 /**
- * Stable, varied BlurHash strings for lazy media (no imeta). Picked from the reference
- * encoder corpus; each validates with {@link isBlurhashValid}.
+ * Stable, varied BlurHash strings for lazy media (no NIP-94 blurHash).
+ *
+ * Earlier we used a small set from the BlurHash reference corpus; several of those decode
+ * to very high average luminance (~0.7–0.85 on a 0–1 scale), so at 32×32 scaled up they
+ * read as “empty white” boxes — especially next to real colorful hashes from imeta.
+ *
+ * This list mixes medium-luma reference hashes with encodings of saturated solids and
+ * gradients (all validated). URL hashing still picks deterministically among them.
  */
 const PLACEHOLDER_BLURHASHES = [
   'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
   'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.',
-  'LjIY%^?bH?xu_4t8V_NHxZxbx]ae',
-  'L6PZfSjE.Adjc0j]WCWVH?j?bHwc',
-  'LKO2?U%2Tw[w]~RBVZRi};RPxuwH',
   'LdHxL5Rk^6#M@-5c,1J5@[or[Q6.',
   'LGF?UQ%2Tw[w]~RBVZRi};RPxuwH',
-  'L6PZ0Si_.AyE_3t7t7R**0o#D%IU'
+  'U18:W20c[[Os-ZNrjta}fQfQfQfQ-ZNrjta}',
+  'U1Ed6O05}-I[}rEhoKazfQfQfQfQ}rEhoKaz',
+  'U32?$,uWklo{kWk9fjfjfQfQfQfQkWk9fjfj',
+  'U08DbR00omx9?IRhfSjsfQfQfQfQ?IRhfSjs',
+  'U56aYxGKfmkEogbIfRfRfQfQfQfQogbIfRfR',
+  'L19GOz-afQ-a-aj]fQj]fQfQfQfQ',
+  'L03eAJuifQuiuikCfQkCfQfQfQfQ',
+  'L1D*FJ}rfQ}r}roLfQoLfQfQfQfQ'
 ].filter((h) => isBlurhashValid(h).result)
 
 function fallbackHashString(s: string): number {

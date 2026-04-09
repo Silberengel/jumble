@@ -98,7 +98,14 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
 
   const updateMediaAutoLoadPolicy = (policy: TMediaAutoLoadPolicy) => {
     storage.setMediaAutoLoadPolicy(policy)
-    setMediaAutoLoadPolicy(policy)
+    // Defer React state: Radix Select fires onValueChange while its portal is still unmounting.
+    // An immediate full-tree re-render (feed + body portals) races removeChild and throws.
+    const run = () => setMediaAutoLoadPolicy(policy)
+    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+      window.setTimeout(run, 0)
+    } else {
+      run()
+    }
   }
 
   return (

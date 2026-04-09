@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import mediaManager from '@/services/media-manager.service'
 import { YouTubePlayer } from '@/types/youtube'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ExternalLink from '../ExternalLink'
 import logger from '@/lib/logger'
@@ -20,23 +20,21 @@ export default function YoutubeEmbeddedPlayer({
   const { t } = useTranslation()
   const contentPolicy = useContentPolicyOptional()
   const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
-  const [display, setDisplay] = useState(autoLoadMedia)
+  const [userClickedLoad, setUserClickedLoad] = useState(false)
   const { videoId, isShort } = useMemo(() => parseYoutubeUrl(url), [url])
   const [initSuccess, setInitSuccess] = useState(false)
   const [error, setError] = useState(false)
   const playerRef = useRef<YouTubePlayer | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (autoLoadMedia) {
-      setDisplay(true)
-    } else {
-      setDisplay(false)
-    }
+  useLayoutEffect(() => {
+    if (!autoLoadMedia) setUserClickedLoad(false)
   }, [autoLoadMedia])
 
+  const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
+
   useEffect(() => {
-    if (!videoId || !containerRef.current || (!mustLoad && !display)) return
+    if (!videoId || !containerRef.current || !showEmbed) return
 
     let cancelled = false
 
@@ -71,24 +69,28 @@ export default function YoutubeEmbeddedPlayer({
 
     return () => {
       cancelled = true
-      if (playerRef.current) {
-        playerRef.current.destroy()
-        playerRef.current = null
+      const player = playerRef.current
+      playerRef.current = null
+      if (!player) return
+      try {
+        player.destroy()
+      } catch {
+        // React often removes the host node first when auto-load media is turned off; YT then hits removeChild errors.
       }
     }
-  }, [videoId, display, mustLoad])
+  }, [videoId, showEmbed])
 
   if (error) {
     return <ExternalLink url={url} />
   }
 
-  if (!mustLoad && !display) {
+  if (!mustLoad && !showEmbed) {
     return (
       <div
         className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline truncate w-fit cursor-pointer"
         onClick={(e) => {
           e.stopPropagation()
-          setDisplay(true)
+          setUserClickedLoad(true)
         }}
       >
         [{t('Click to load YouTube video')}]

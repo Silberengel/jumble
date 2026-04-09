@@ -1,7 +1,7 @@
 import { isImage } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import AudioPlayer from '../AudioPlayer'
 import VideoPlayer from '../VideoPlayer'
 import ExternalLink from '../ExternalLink'
@@ -48,7 +48,8 @@ export default function MediaPlayer({
   blurHash?: string
 }) {
   const { autoLoadMedia } = useContentPolicy()
-  const [display, setDisplay] = useState(autoLoadMedia)
+  /** Tap-to-load when {@link autoLoadMedia} is off; cleared when policy switches back to never. */
+  const [userClickedLoad, setUserClickedLoad] = useState(false)
   const [mediaType, setMediaType] = useState<'video' | 'audio' | null>(null)
   const [probeFailed, setProbeFailed] = useState(false)
   const [embedPainted, setEmbedPainted] = useState(false)
@@ -66,14 +67,10 @@ export default function MediaPlayer({
   /** Probe result wins when set (e.g. audio-only mp4); URL hint avoids a blank frame before useEffect runs. */
   const effectiveMediaType = mediaType ?? urlEmbedTypeHint
 
-  const showEmbed = mustLoad || display
+  const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
 
-  useEffect(() => {
-    if (autoLoadMedia) {
-      setDisplay(true)
-    } else {
-      setDisplay(false)
-    }
+  useLayoutEffect(() => {
+    if (!autoLoadMedia) setUserClickedLoad(false)
   }, [autoLoadMedia])
 
   useEffect(() => {
@@ -148,13 +145,13 @@ export default function MediaPlayer({
     setEmbedPainted(true)
   }, [])
 
-  if (!mustLoad && !display) {
+  if (!mustLoad && !showEmbed) {
     return (
       <LazyMediaTapPlaceholder
         src={src}
         posterUrl={imagePoster}
         blurHash={blurHash}
-        onActivate={() => setDisplay(true)}
+        onActivate={() => setUserClickedLoad(true)}
         className={className}
       />
     )

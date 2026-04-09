@@ -4,7 +4,7 @@ import logger from '@/lib/logger'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
-import { ReactNode, useEffect, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import Lightbox from 'yet-another-react-lightbox'
@@ -63,6 +63,15 @@ export default function ImageGallery({
   }
 
   const displayImages = images.slice(start, end)
+  /** Tap-to-load: no shared grid lightbox — each image uses {@link ImageWithLightbox}. */
+  const tapToLoadGallery = !mustLoad && !autoLoadMedia
+
+  useLayoutEffect(() => {
+    if (tapToLoadGallery) {
+      setIndex(-1)
+      setLightboxPortalActive(false)
+    }
+  }, [tapToLoadGallery])
 
   if (displayImages.length === 1) {
     return (
@@ -77,21 +86,23 @@ export default function ImageGallery({
     )
   }
 
-  if (!mustLoad && !autoLoadMedia) {
-    return displayImages.map((image, i) => (
-      <ImageWithLightbox
-        key={i}
-        image={image}
-        className="max-h-[80vh] sm:max-h-[50vh] object-contain"
-        classNames={{
-          wrapper: galleryImageWrapper(className)
-        }}
-      />
-    ))
-  }
-
   let imageContent: ReactNode | null = null
-  if (displayImages.length === 2 || displayImages.length === 4) {
+  if (tapToLoadGallery) {
+    imageContent = (
+      <>
+        {displayImages.map((image, i) => (
+          <ImageWithLightbox
+            key={i}
+            image={image}
+            className="max-h-[80vh] sm:max-h-[50vh] object-contain"
+            classNames={{
+              wrapper: galleryImageWrapper(className)
+            }}
+          />
+        ))}
+      </>
+    )
+  } else if (displayImages.length === 2 || displayImages.length === 4) {
     imageContent = (
       <div className="grid grid-cols-2 gap-2 w-full max-w-[400px]">
         {displayImages.map((image, i) => (
@@ -120,7 +131,7 @@ export default function ImageGallery({
   }
 
   const portal =
-    lightboxPortalActive && typeof document !== 'undefined'
+    !tapToLoadGallery && lightboxPortalActive && typeof document !== 'undefined'
       ? createPortal(
           <div
             data-lightbox-overlay

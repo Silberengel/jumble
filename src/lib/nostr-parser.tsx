@@ -15,6 +15,7 @@ import { Event } from 'nostr-tools'
 import { NOSTR_PARSER_REGEX } from '@/lib/content-patterns'
 import logger from '@/lib/logger'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
+import { useState } from 'react'
 
 export interface ParsedNostrContent {
   elements: Array<{
@@ -528,6 +529,50 @@ function getNostrType(bech32Id: string): 'npub' | 'nprofile' | 'nevent' | 'naddr
   return null
 }
 
+function NostrInlineVideo({ mediaUrl, fallbackText }: { mediaUrl: string; fallbackText: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <span className="whitespace-pre-wrap break-words text-primary hover:underline">
+        {fallbackText}
+      </span>
+    )
+  }
+  return (
+    <video
+      src={mediaUrl}
+      controls
+      className="max-w-full sm:max-w-[400px] w-full h-auto rounded-lg my-2 block"
+      preload="metadata"
+      onError={() => setFailed(true)}
+    >
+      Your browser does not support the video tag.
+    </video>
+  )
+}
+
+function NostrInlineAudio({ mediaUrl, fallbackText }: { mediaUrl: string; fallbackText: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <span className="whitespace-pre-wrap break-words text-primary hover:underline">
+        {fallbackText}
+      </span>
+    )
+  }
+  return (
+    <audio
+      src={mediaUrl}
+      controls
+      className="w-full my-2 block"
+      preload="metadata"
+      onError={() => setFailed(true)}
+    >
+      Your browser does not support the audio tag.
+    </audio>
+  )
+}
+
 /**
  * Render parsed nostr content as React elements
  */
@@ -560,47 +605,21 @@ export function renderNostrContent(
         
         if (element.type === 'video' && element.mediaUrl) {
           return (
-            <video
+            <NostrInlineVideo
               key={index}
-              src={element.mediaUrl}
-              controls
-              className="max-w-full sm:max-w-[400px] w-full h-auto rounded-lg my-2 block"
-              preload="metadata"
-              onError={(e) => {
-                // Fallback to text if video fails to load
-                const target = e.target as HTMLVideoElement
-                target.style.display = 'none'
-                const textSpan = document.createElement('span')
-                textSpan.className = 'whitespace-pre-wrap break-words text-primary hover:underline'
-                textSpan.textContent = element.content
-                target.parentNode?.insertBefore(textSpan, target.nextSibling)
-              }}
-            >
-              Your browser does not support the video tag.
-            </video>
+              mediaUrl={element.mediaUrl}
+              fallbackText={element.content}
+            />
           )
         }
-        
+
         if (element.type === 'audio' && element.mediaUrl) {
           return (
-            <audio
+            <NostrInlineAudio
               key={index}
-              src={element.mediaUrl}
-              controls
-              className="w-full my-2 block"
-              preload="metadata"
-              onError={(e) => {
-                // Fallback to text if audio fails to load
-                const target = e.target as HTMLAudioElement
-                target.style.display = 'none'
-                const textSpan = document.createElement('span')
-                textSpan.className = 'whitespace-pre-wrap break-words text-primary hover:underline'
-                textSpan.textContent = element.content
-                target.parentNode?.insertBefore(textSpan, target.nextSibling)
-              }}
-            >
-              Your browser does not support the audio tag.
-            </audio>
+              mediaUrl={element.mediaUrl}
+              fallbackText={element.content}
+            />
           )
         }
         

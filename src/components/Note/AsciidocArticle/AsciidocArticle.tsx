@@ -528,6 +528,11 @@ export default function AsciidocArticle({
     
     return images
   }, [extractedMedia.images, metadata.image])
+
+  const lightboxSlides = useMemo(
+    () => allImages.map((img) => lightboxSlideFromImeta(img)),
+    [allImages]
+  )
   
   // Create image index map for lightbox
   const imageIndexMap = useMemo(() => {
@@ -571,11 +576,13 @@ export default function AsciidocArticle({
   
   // Note: contentLinks removed - WebPreview is disabled for AsciiDoc articles
   
-  // Image gallery state
+  // Image gallery state — portal only while open (see MarkdownArticle lightbox comment).
   const [lightboxIndex, setLightboxIndex] = useState(-1)
-  
+  const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
+
   const openLightbox = useCallback((index: number) => {
     setLightboxIndex(index)
+    setLightboxPortalActive(true)
   }, [])
   
   // Filter tag media to only show what's not in content
@@ -2122,39 +2129,45 @@ export default function AsciidocArticle({
       </div>
       
       {/* Image gallery lightbox */}
-      {allImages.length > 0 && createPortal(
-        <div
-          data-lightbox-overlay
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          <Lightbox
-            index={lightboxIndex}
-            slides={allImages.map((img) => lightboxSlideFromImeta(img))}
-            plugins={[Video, Zoom]}
-            open={lightboxIndex >= 0}
-            close={() => setLightboxIndex(-1)}
-            controller={{
-              closeOnBackdropClick: false,
-              closeOnPullUp: true,
-              closeOnPullDown: true
-            }}
-            render={{
-              buttonPrev: allImages.length <= 1 ? () => null : undefined,
-              buttonNext: allImages.length <= 1 ? () => null : undefined
-            }}
-            styles={{
-              toolbar: { paddingTop: '2.25rem' }
-            }}
-            carousel={{
-              finite: false
-            }}
-          />
-        </div>,
-        document.body
-      )}
+      {allImages.length > 0 &&
+        lightboxPortalActive &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-lightbox-overlay
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Lightbox
+              index={lightboxIndex}
+              slides={lightboxSlides}
+              plugins={[Video, Zoom]}
+              open={lightboxIndex >= 0}
+              close={() => setLightboxIndex(-1)}
+              on={{
+                exited: () => setLightboxPortalActive(false)
+              }}
+              controller={{
+                closeOnBackdropClick: false,
+                closeOnPullUp: true,
+                closeOnPullDown: true
+              }}
+              render={{
+                buttonPrev: allImages.length <= 1 ? () => null : undefined,
+                buttonNext: allImages.length <= 1 ? () => null : undefined
+              }}
+              styles={{
+                toolbar: { paddingTop: '2.25rem' }
+              }}
+              carousel={{
+                finite: false
+              }}
+            />
+          </div>,
+          document.body
+        )}
     </>
   )
 }
