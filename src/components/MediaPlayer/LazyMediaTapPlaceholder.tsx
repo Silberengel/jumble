@@ -58,7 +58,9 @@ function BlurHashLayer({ blurHash, className }: { blurHash: string; className?: 
 
 const frameClass = (kind: 'video' | 'audio', className?: string) =>
   cn(
-    'relative w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm',
+    // `not-prose`: poster <img> lives inside MarkdownArticle `.prose`; typography adds img margins
+    // that break `absolute inset-0` layout and show a blurhash band above the still.
+    'not-prose relative w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm',
     kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
     className
   )
@@ -89,7 +91,7 @@ function MediaPlaceholderLayers({
         <img
           src={poster}
           alt=""
-          className="absolute inset-0 z-[1] h-full w-full object-cover"
+          className="absolute inset-0 z-[1] m-0 h-full w-full max-w-none object-cover object-center"
           loading="eager"
           decoding="async"
         />
@@ -187,7 +189,8 @@ export default function LazyMediaTapPlaceholder({
       className={cn(
         // `block` + `p-0` + `leading-none`: native <button> keeps a line-box / padding; with only
         // absolutely positioned children that shifts the stack and the play icon looks bottom-heavy.
-        'group relative block w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 p-0 text-left leading-none shadow-sm outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
+        // `not-prose`: see frameClass — poster img must not inherit prose img margins inside notes.
+        'not-prose group relative block w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 p-0 text-left leading-none shadow-sm outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
         kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
         className
       )}

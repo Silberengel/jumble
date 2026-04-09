@@ -4,6 +4,7 @@ import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isImage, isMedia, isVideo } from '@/lib/url'
 import { generateImageByPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { toProfile } from '@/lib/link'
+import { seedProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { cn } from '@/lib/utils'
 import { useSmartProfileNavigationOptional } from '@/PageManager'
 import type { TProfile } from '@/types'
@@ -254,6 +255,7 @@ export default function UserAvatar({
       style={{ position: 'relative', zIndex: 10, isolation: 'isolate', display: 'block' }}
       onClick={(e) => {
         e.stopPropagation()
+        if (profile) seedProfileForNavigation(profile)
         navigateToProfile(toProfile(displayPubkey))
       }}
     >

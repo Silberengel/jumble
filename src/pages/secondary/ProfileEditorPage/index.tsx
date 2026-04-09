@@ -472,21 +472,43 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   return (
     <SecondaryPageLayout ref={ref} index={index} title={profile.username} controls={controls}>
       {/* Banner & avatar uploaders */}
-      <div className="relative bg-cover bg-center mb-2">
-        {/* Avatar first in DOM + higher fetch priority so it loads before the banner (same as profile view). */}
+      <div className="relative isolate mb-2 bg-cover bg-center">
+        {/* Banner under avatar in stacking order; fetchPriority still loads the pic first. */}
+        <Uploader
+          onUploadSuccess={onBannerUploadSuccess}
+          onUploadStart={() => setUploadingBanner(true)}
+          onUploadEnd={() => setUploadingBanner(false)}
+          className="relative z-0 w-full cursor-pointer overflow-hidden"
+          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
+          maxCompressedSizeMb={5}
+        >
+          <ProfileBanner
+            banner={banner}
+            pubkey={account.pubkey}
+            className="w-full aspect-[3/1]"
+            imageFetchPriority="low"
+          />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">
+            {uploadingBanner ? (
+              <Skeleton className="size-9 shrink-0 rounded-md" aria-hidden />
+            ) : (
+              <Upload size={36} />
+            )}
+          </div>
+        </Uploader>
         <Uploader
           onUploadSuccess={onAvatarUploadSuccess}
           onUploadStart={() => setUploadingAvatar(true)}
           onUploadEnd={() => setUploadingAvatar(false)}
-          className="z-10 w-24 h-24 absolute bottom-0 left-4 translate-y-1/2 border-4 border-background cursor-pointer rounded-full"
+          className="absolute bottom-0 left-4 z-20 h-24 w-24 translate-y-1/2 cursor-pointer rounded-full border-4 border-background md:h-48 md:w-48"
           accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
           maxCompressedSizeMb={2}
         >
-          <div className="w-full h-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-full overflow-hidden rounded-full bg-muted">
             {isVideo(avatar) ? (
               <video
                 src={avatar}
-                className="w-full h-full object-cover object-center"
+                className="h-full w-full object-cover object-center"
                 autoPlay
                 muted
                 loop
@@ -494,7 +516,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                 fetchPriority="high"
               />
             ) : (
-              <Avatar className="w-full h-full">
+              <Avatar className="h-full w-full">
                 <AvatarImage
                   src={avatar}
                   className="object-cover object-center"
@@ -507,33 +529,11 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               </Avatar>
             )}
           </div>
-          <div className="absolute top-0 bg-muted/30 w-full h-full rounded-full flex flex-col justify-center items-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center rounded-full bg-muted/30">
             {uploadingAvatar ? (
               <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />
             ) : (
               <Upload />
-            )}
-          </div>
-        </Uploader>
-        <Uploader
-          onUploadSuccess={onBannerUploadSuccess}
-          onUploadStart={() => setUploadingBanner(true)}
-          onUploadEnd={() => setUploadingBanner(false)}
-          className="relative z-0 w-full cursor-pointer"
-          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
-          maxCompressedSizeMb={5}
-        >
-          <ProfileBanner
-            banner={banner}
-            pubkey={account.pubkey}
-            className="w-full aspect-[3/1]"
-            imageFetchPriority="low"
-          />
-          <div className="absolute top-0 bg-muted/30 w-full h-full flex flex-col justify-center items-center">
-            {uploadingBanner ? (
-              <Skeleton className="size-9 shrink-0 rounded-md" aria-hidden />
-            ) : (
-              <Upload size={36} />
             )}
           </div>
         </Uploader>

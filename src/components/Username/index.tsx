@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
 import { toProfile } from '@/lib/link'
+import { seedProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { formatPubkey, userIdToPubkey, pubkeyToNpub, formatNpub } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { useSmartProfileNavigationOptional } from '@/PageManager'
@@ -63,6 +64,7 @@ export default function Username({
         onClick={(e) => {
           e.stopPropagation()
           onNavigate?.()
+          seedProfileForNavigation(profile)
           navigateToProfile(toProfile(profilePubkey))
         }}
       >

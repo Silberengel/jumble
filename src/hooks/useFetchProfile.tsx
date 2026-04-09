@@ -1,5 +1,6 @@
 import { PROFILE_FETCH_PROMISE_TIMEOUT_MS } from '@/constants'
 import { getProfileFromEvent } from '@/lib/event-metadata'
+import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
@@ -309,6 +310,21 @@ export function useFetchProfile(id?: string, skipCache = false) {
         setPubkey(extractedPubkey)
         setIsFetching(false)
         setError(null)
+        return
+      }
+    }
+
+    // Userbadge → profile panel: feed row already had this profile, but secondary stack is outside NoteFeedProfileContext.
+    if (extractedPubkey && !skipCache) {
+      const fromNavigation = getSeededProfileForNavigation(extractedPubkey)
+      if (fromNavigation) {
+        setProfile(fromNavigation)
+        setPubkey(extractedPubkey)
+        setIsFetching(false)
+        setError(null)
+        processingPubkeyRef.current = extractedPubkey
+        initializedPubkeysRef.current.add(extractedPubkey)
+        effectRunCountRef.current.delete(extractedPubkey)
         return
       }
     }

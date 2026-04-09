@@ -199,7 +199,7 @@ export default function MediaPlayer({
     'transition-opacity duration-300 ease-out motion-reduce:transition-none'
 
   return (
-    <div className="relative w-full max-w-[400px] shrink-0 self-start">
+    <div className="not-prose relative w-full max-w-[400px] shrink-0 self-start">
       {!embedPainted ? (
         <div className="relative z-10 w-full">
           <MediaEmbedBlurFrame

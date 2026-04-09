@@ -539,15 +539,17 @@ function NostrInlineVideo({ mediaUrl, fallbackText }: { mediaUrl: string; fallba
     )
   }
   return (
-    <video
-      src={mediaUrl}
-      controls
-      className="max-w-full sm:max-w-[400px] w-full h-auto rounded-lg my-2 block"
-      preload="metadata"
-      onError={() => setFailed(true)}
-    >
-      Your browser does not support the video tag.
-    </video>
+    <div className="not-prose my-2 max-w-full sm:max-w-[400px] w-full">
+      <video
+        src={mediaUrl}
+        controls
+        className="m-0 max-w-full w-full h-auto rounded-lg block"
+        preload="metadata"
+        onError={() => setFailed(true)}
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
   )
 }
 

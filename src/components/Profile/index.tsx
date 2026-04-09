@@ -378,9 +378,9 @@ export default function Profile({
     return (
       <>
         <div>
-          <div className="relative bg-cover bg-center mb-2">
-            <Skeleton className="w-full aspect-[3/1] rounded-none" />
-            <Skeleton className="w-24 h-24 md:w-48 md:h-48 absolute bottom-0 left-3 translate-y-1/2 border-4 border-background rounded-full" />
+          <div className="relative isolate mb-2 bg-cover bg-center">
+            <Skeleton className="relative z-0 w-full aspect-[3/1] rounded-none" />
+            <Skeleton className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 rounded-full border-4 border-background md:h-48 md:w-48" />
           </div>
         </div>
         <div className="px-4">
@@ -404,10 +404,16 @@ export default function Profile({
   return (
     <>
       <div>
-        <div className="relative bg-cover bg-center mb-2">
-          {/* Avatar first in DOM + higher fetch priority so it loads before the wide banner. */}
+        <div className="relative isolate mb-2 bg-cover bg-center">
+          {/* Banner first in paint order; avatar uses higher z-index so it always sits on top. fetchPriority still prefers the pic over the banner. */}
+          <ProfileBanner
+            banner={banner}
+            pubkey={pubkey}
+            className="relative z-0 w-full overflow-hidden aspect-[3/1]"
+            imageFetchPriority="low"
+          />
           {isVideo(avatar ?? '') ? (
-            <div className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 z-10 translate-y-1/2 border-4 border-background overflow-hidden rounded-full bg-muted">
+            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 overflow-hidden rounded-full border-4 border-background bg-muted md:h-48 md:w-48">
               <video
                 src={avatar}
                 className="h-full w-full object-cover object-center"
@@ -419,7 +425,7 @@ export default function Profile({
               />
             </div>
           ) : (
-            <Avatar className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 z-10 translate-y-1/2 border-4 border-background">
+            <Avatar className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 border-4 border-background md:h-48 md:w-48">
               <AvatarImage
                 src={avatar}
                 className="object-cover object-center"
@@ -431,12 +437,6 @@ export default function Profile({
               </AvatarFallback>
             </Avatar>
           )}
-          <ProfileBanner
-            banner={banner}
-            pubkey={pubkey}
-            className="relative z-0 w-full aspect-[3/1]"
-            imageFetchPriority="low"
-          />
         </div>
         <div className="px-4">
           <div className="flex justify-end h-8 gap-2 items-center">

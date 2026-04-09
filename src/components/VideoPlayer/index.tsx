@@ -160,13 +160,16 @@ export default function VideoPlayer({
         setError(true)
       }}
     >
-      <div ref={containerRef} className="relative w-full max-w-full overflow-hidden">
+      <div ref={containerRef} className="not-prose relative w-full max-w-full overflow-hidden">
         <video
           ref={videoRef}
           controls
           playsInline
           preload={onReady ? (hlsMode === 'hlsjs' ? 'auto' : 'metadata') : 'none'}
-          className={cn('rounded-lg max-h-[80vh] sm:max-h-[60vh] border w-full h-auto max-w-full', className)}
+          className={cn(
+            'm-0 max-w-full rounded-lg max-h-[80vh] sm:max-h-[60vh] border w-full h-auto',
+            className
+          )}
           src={hlsMode === 'hlsjs' ? undefined : src}
           poster={poster}
           onClick={(e) => e.stopPropagation()}

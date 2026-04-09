@@ -44,7 +44,7 @@ export default function ZapStreamEmbeddedPlayer({
       title="zap.stream"
       src={embedSrc}
       className={cn(
-        'rounded-lg border w-full max-w-[400px] aspect-video max-h-[min(70vh,28rem)]',
+        'not-prose rounded-lg border w-full max-w-[400px] aspect-video max-h-[min(70vh,28rem)]',
         className
       )}
       allow="autoplay; encrypted-media; fullscreen; clipboard-write"

@@ -114,7 +114,12 @@ export default function YoutubeEmbeddedPlayer({
     return <ExternalLink url={url} />
   }
   return (
-    <div className={cn('rounded-lg border overflow-hidden w-full max-w-[400px]', frameClassName)}>
+    <div
+      className={cn(
+        'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
+        frameClassName
+      )}
+    >
       <div ref={containerRef} className="w-full h-full" />
     </div>
   )
