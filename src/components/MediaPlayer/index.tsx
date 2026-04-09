@@ -1,22 +1,24 @@
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import AudioPlayer from '../AudioPlayer'
 import VideoPlayer from '../VideoPlayer'
 import ExternalLink from '../ExternalLink'
+import LazyMediaTapPlaceholder from './LazyMediaTapPlaceholder'
 
 export default function MediaPlayer({
   src,
   className,
   mustLoad = false,
-  poster
+  poster,
+  blurHash
 }: {
   src: string
   className?: string
   mustLoad?: boolean
   poster?: string
+  /** NIP-94 / imeta blurhash for lazy placeholder when poster is missing */
+  blurHash?: string
 }) {
-  const { t } = useTranslation()
   const { autoLoadMedia } = useContentPolicy()
   const [display, setDisplay] = useState(autoLoadMedia)
   const [mediaType, setMediaType] = useState<'video' | 'audio' | null>(null)
@@ -50,7 +52,6 @@ export default function MediaPlayer({
       return
     }
 
-    // Matroska / Ogg Theora: treat as video first (codec support is browser-dependent).
     if (extension === 'mkv' || extension === 'ogv') {
       setMediaType('video')
       return
@@ -59,8 +60,6 @@ export default function MediaPlayer({
     const video = document.createElement('video')
     video.src = src
     video.preload = 'metadata'
-    // Only set crossOrigin for resources that support it (prevents CORS errors)
-    // video.crossOrigin = 'anonymous'
 
     video.onloadedmetadata = () => {
       setMediaType(video.videoWidth > 0 || video.videoHeight > 0 ? 'video' : 'audio')
@@ -77,15 +76,13 @@ export default function MediaPlayer({
 
   if (!mustLoad && !display) {
     return (
-      <div
-        className="text-primary hover:underline truncate w-fit cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          setDisplay(true)
-        }}
-      >
-        [{t('Click to load media')}]
-      </div>
+      <LazyMediaTapPlaceholder
+        src={src}
+        posterUrl={poster}
+        blurHash={blurHash}
+        onActivate={() => setDisplay(true)}
+        className={className}
+      />
     )
   }
 

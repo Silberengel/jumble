@@ -362,6 +362,8 @@ export default function Content({
             src={video.url}
             className="w-full max-w-full"
             mustLoad={mustLoadMedia}
+            poster={video.image || video.thumb}
+            blurHash={video.blurHash}
           />
         </div>
       ))}
@@ -373,6 +375,8 @@ export default function Content({
           src={audio.url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          poster={audio.thumb}
+          blurHash={audio.blurHash}
         />
       ))}
       
@@ -406,12 +410,15 @@ export default function Content({
             return null
           }
           renderedUrls.add(cleanedUrl)
+          const tagMediaInfo = mediaMap.get(cleanedUrl)
           return (
-            <MediaPlayer 
-              className="mt-2" 
-              key={index} 
-              src={cleanedUrl} 
-              mustLoad={mustLoadMedia} 
+            <MediaPlayer
+              className="mt-2"
+              key={index}
+              src={cleanedUrl}
+              mustLoad={mustLoadMedia}
+              poster={tagMediaInfo?.image || tagMediaInfo?.thumb}
+              blurHash={tagMediaInfo?.blurHash}
             />
           )
         }
@@ -431,14 +438,15 @@ export default function Content({
           if (isVideoUrl || isAudioUrl || mediaMap.has(cleanedUrl)) {
             renderedUrls.add(cleanedUrl)
             const mediaInfo = mediaMap.get(cleanedUrl)
-            const poster = mediaInfo?.image
+            const poster = mediaInfo?.image || mediaInfo?.thumb
             return (
-              <MediaPlayer 
-                className="mt-2" 
-                key={`url-media-${index}`} 
-                src={cleanedUrl} 
+              <MediaPlayer
+                className="mt-2"
+                key={`url-media-${index}`}
+                src={cleanedUrl}
                 mustLoad={mustLoadMedia}
                 poster={poster}
+                blurHash={mediaInfo?.blurHash}
               />
             )
           }
