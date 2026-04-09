@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from './zap-stream-url'
+import {
+  canonicalZapStreamWatchUrl,
+  isZapStreamWatchUrl,
+  naddrFromZapStreamWatchUrl
+} from './zap-stream-url'
 
 const SAMPLE =
   'https://zap.stream/naddr1qqjrqcmzv3nr2des95ergdp3956xzdf595uxzefk94nxzefnxgukycnzxyexyqgewaehxw309aex2mrp0yh8xmn0wf6zuum0vd5kzmp0qgsv73dxhgfk8tt76gf6q788zrfyz9dwwgwfk3aar6l5gk82a76v9fgrqsqqqan84z6qnu'
@@ -31,5 +35,12 @@ describe('zap-stream-url', () => {
   it('isZapStreamWatchUrl mirrors canonical', () => {
     expect(isZapStreamWatchUrl(SAMPLE)).toBe(true)
     expect(isZapStreamWatchUrl('https://zap.stream/')).toBe(false)
+  })
+
+  it('naddrFromZapStreamWatchUrl returns the naddr segment', () => {
+    expect(naddrFromZapStreamWatchUrl(SAMPLE)).toBe(
+      'naddr1qqjrqcmzv3nr2des95ergdp3956xzdf595uxzefk94nxzefnxgukycnzxyexyqgewaehxw309aex2mrp0yh8xmn0wf6zuum0vd5kzmp0qgsv73dxhgfk8tt76gf6q788zrfyz9dwwgwfk3aar6l5gk82a76v9fgrqsqqqan84z6qnu'
+    )
+    expect(naddrFromZapStreamWatchUrl('https://zap.stream/')).toBeNull()
   })
 })

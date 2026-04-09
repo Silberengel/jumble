@@ -5,7 +5,7 @@ import Wikilink from '@/components/UniversalContent/Wikilink'
 import { BookstrContent } from '@/components/Bookstr'
 import WebPreview from '@/components/WebPreview'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
-import ZapStreamEmbeddedPlayer from '@/components/ZapStreamEmbeddedPlayer'
+import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNoteList } from '@/lib/link'
@@ -2239,7 +2239,12 @@ function parseMarkdownContentLegacy(
       const { url } = pattern.data
       parts.push(
         <div key={`zapstream-url-${patternIdx}`} className="my-2">
-          <ZapStreamEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          <ZapStreamLiveEventEmbed
+            url={url}
+            className="max-w-[400px]"
+            containingEvent={containingEvent}
+            showFull={!lazyMedia}
+          />
         </div>
       )
     } else if (pattern.type === 'relay-url') {
@@ -3417,7 +3422,12 @@ function parseMarkdownContentMarked(
                 if (isZapStreamUrl(cleaned)) {
                   return (
                     <div key={`${key}-line-zapstream-${lineIdx}`} className="my-2">
-                      <ZapStreamEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                      <ZapStreamLiveEventEmbed
+                        url={cleaned}
+                        className="max-w-[400px]"
+                        containingEvent={containingEvent}
+                        showFull={!lazyMedia}
+                      />
                     </div>
                   )
                 }
@@ -3577,7 +3587,12 @@ function parseMarkdownContentMarked(
         if (isZapStreamUrl(cleaned)) {
           return (
             <div key={`${key}-zapstream-url`} className="my-2">
-              <ZapStreamEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+              <ZapStreamLiveEventEmbed
+                url={cleaned}
+                className="max-w-[400px]"
+                containingEvent={containingEvent}
+                showFull={!lazyMedia}
+              />
             </div>
           )
         }
@@ -5379,7 +5394,12 @@ export default function MarkdownArticle({
           <div className="space-y-4 mb-6">
             {leftoverTagZapStreamUrls.map((url) => (
               <div key={`tag-zapstream-${url}`} className="my-2">
-                <ZapStreamEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                <ZapStreamLiveEventEmbed
+                  url={url}
+                  className="max-w-[400px]"
+                  containingEvent={event}
+                  showFull={!lazyMedia}
+                />
               </div>
             ))}
           </div>

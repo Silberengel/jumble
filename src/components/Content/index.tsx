@@ -26,7 +26,7 @@ import ImageGallery from '../ImageGallery'
 import MediaPlayer from '../MediaPlayer'
 import SpotifyEmbeddedPlayer from '../SpotifyEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
-import ZapStreamEmbeddedPlayer from '../ZapStreamEmbeddedPlayer'
+import ZapStreamLiveEventEmbed from '../ZapStreamLiveEventEmbed'
 import WebPreview from '../WebPreview'
 import { toNote } from '@/lib/link'
 import { YOUTUBE_URL_REGEX } from '@/constants'
@@ -459,11 +459,12 @@ export default function Content({
       ))}
 
       {zapstreamUrlsFromTags.map((url) => (
-        <ZapStreamEmbeddedPlayer
+        <ZapStreamLiveEventEmbed
           key={`tag-zapstream-${url}`}
           url={url}
           className="mt-2"
-          mustLoad={mustLoadMedia}
+          containingEvent={event}
+          showFull={mustLoadMedia}
         />
       ))}
       
@@ -617,11 +618,12 @@ export default function Content({
         }
         if (node.type === 'zapstream') {
           return (
-            <ZapStreamEmbeddedPlayer
+            <ZapStreamLiveEventEmbed
               key={index}
               url={node.data}
               className="mt-2"
-              mustLoad={mustLoadMedia}
+              containingEvent={event}
+              showFull={mustLoadMedia}
             />
           )
         }

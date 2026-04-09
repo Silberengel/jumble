@@ -48,3 +48,8 @@ export function parseYoutubeUrl(url: string): { videoId: string | null; isShort:
     return { videoId: null, isShort: false }
   }
 }
+
+/** True when the in-app YouTube player can embed this URL (watch, Shorts, live, youtu.be, embed). */
+export function isEmbeddableYoutubeUrl(url: string): boolean {
+  return parseYoutubeUrl(url).videoId != null
+}

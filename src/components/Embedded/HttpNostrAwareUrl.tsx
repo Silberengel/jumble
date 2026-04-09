@@ -14,6 +14,10 @@ import { EmbeddedMention } from './EmbeddedMention'
 import { EmbeddedNormalUrl } from './EmbeddedNormalUrl'
 import { EmbeddedNote } from './EmbeddedNote'
 import WebPreview from '@/components/WebPreview'
+import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
+import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
+import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
+import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
 type RenderMode = 'note-content' | 'article'
 
@@ -40,6 +44,27 @@ export function HttpNostrAwareUrl({
   )
 
   const cleaned = cleanUrl(url) || url
+
+  if (isZapStreamWatchUrl(cleaned)) {
+    return (
+      <ZapStreamLiveEventEmbed
+        url={cleaned}
+        className={className}
+        containingEvent={containingEvent}
+        showFull={renderMode === 'article'}
+      />
+    )
+  }
+
+  if (isEmbeddableYoutubeUrl(cleaned)) {
+    return (
+      <YoutubeEmbeddedPlayer
+        url={cleaned}
+        className={cn('mt-2 max-w-[400px]', className)}
+        mustLoad={renderMode === 'article'}
+      />
+    )
+  }
 
   if (sameOriginTarget) {
     if (sameOriginTarget.kind === 'event') {

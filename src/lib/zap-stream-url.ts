@@ -26,3 +26,16 @@ export function canonicalZapStreamWatchUrl(raw: string): string | null {
 export function isZapStreamWatchUrl(url: string): boolean {
   return canonicalZapStreamWatchUrl(url) != null
 }
+
+/** NIP-19 `naddr1…` path segment from a zap.stream watch URL (embed as kind 30311 / LiveEvent). */
+export function naddrFromZapStreamWatchUrl(raw: string): string | null {
+  const canon = canonicalZapStreamWatchUrl(raw)
+  if (!canon) return null
+  try {
+    const seg = new URL(canon).pathname.split('/').filter(Boolean)[0]
+    if (seg?.startsWith('naddr1')) return seg
+    return null
+  } catch {
+    return null
+  }
+}
