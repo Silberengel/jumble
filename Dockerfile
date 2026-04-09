@@ -34,6 +34,29 @@ RUN printf "server {\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
 \n\
+    # PWA: service worker + precache manifest must not be long-cached or browsers never see\n\
+    # updates (VersionUpdateBanner stays hidden; About shows an old APP_VERSION from precache).\n\
+    location = /sw.js {\n\
+        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n\
+        add_header Pragma \"no-cache\";\n\
+        expires off;\n\
+        try_files \$uri =404;\n\
+    }\n\
+\n\
+    location ~* ^/workbox-[^/]+\\.js\$ {\n\
+        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n\
+        add_header Pragma \"no-cache\";\n\
+        expires off;\n\
+        try_files \$uri =404;\n\
+    }\n\
+\n\
+    location = /index.html {\n\
+        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n\
+        add_header Pragma \"no-cache\";\n\
+        expires off;\n\
+        try_files \$uri =404;\n\
+    }\n\
+\n\
     # Detect social media scrapers and other bots\n\
     set \$is_scraper 0;\n\
     if (\$http_user_agent ~* \"facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|WhatsApp|Applebot|Googlebot|bingbot|YandexBot|Baiduspider|Slurp|DuckDuckBot|Baiduspider|YandexBot|Sogou|Exabot|facebot|ia_archiver\") {\n\
