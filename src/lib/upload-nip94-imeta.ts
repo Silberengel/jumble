@@ -84,6 +84,119 @@ function videoDimensionsFromFile(file: File): Promise<{ width: number; height: n
   })
 }
 
+/** Frame grab + blurhash for one video file (used for NIP-94 before/after main upload). */
+export type VideoNip94PreviewResult = {
+  blurhash: string | null
+  posterJpeg: File | null
+  width: number
+  height: number
+}
+
+const VIDEO_PREVIEW_LOAD_MS = 18_000
+const VIDEO_PREVIEW_SEEK_MS = 12_000
+
+/**
+ * Decode one frame from a local video file: JPEG poster (for separate upload) + blurhash + dimensions.
+ * Never throws; returns null fields on failure (unsupported codec, timeout, etc.).
+ */
+export async function extractVideoNip94Preview(file: File): Promise<VideoNip94PreviewResult | null> {
+  if (!file.type.startsWith('video/')) return null
+
+  const objectUrl = URL.createObjectURL(file)
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'auto'
+
+  const cleanup = () => {
+    try {
+      URL.revokeObjectURL(objectUrl)
+    } catch {
+      /* ignore */
+    }
+    video.removeAttribute('src')
+    video.load()
+  }
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('load timeout')), VIDEO_PREVIEW_LOAD_MS)
+      const done = (err?: Error) => {
+        clearTimeout(timer)
+        if (err) reject(err)
+        else resolve()
+      }
+      video.onloadeddata = () => done()
+      video.onerror = () => done(new Error('video load error'))
+      video.src = objectUrl
+    })
+
+    const w = video.videoWidth
+    const h = video.videoHeight
+    if (!w || !h) return null
+
+    const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+    const tseek = dur > 0 ? Math.min(Math.max(0.05, dur * 0.1), dur - 0.05) : 0.1
+    video.currentTime = tseek
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('seek timeout')), VIDEO_PREVIEW_SEEK_MS)
+      video.onseeked = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      video.onerror = () => {
+        clearTimeout(timer)
+        reject(new Error('seek error'))
+      }
+    })
+
+    const maxPosterSide = 1280
+    const ps = Math.min(1, maxPosterSide / Math.max(w, h))
+    const pw = Math.max(1, Math.round(w * ps))
+    const ph = Math.max(1, Math.round(h * ps))
+    const canvas = document.createElement('canvas')
+    canvas.width = pw
+    canvas.height = ph
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return { blurhash: null, posterJpeg: null, width: w, height: h }
+    ctx.drawImage(video, 0, 0, pw, ph)
+
+    const maxBh = 64
+    const bs = Math.min(1, maxBh / Math.max(pw, ph))
+    const bw = Math.max(1, Math.round(pw * bs))
+    const bhH = Math.max(1, Math.round(ph * bs))
+    const bhCanvas = document.createElement('canvas')
+    bhCanvas.width = bw
+    bhCanvas.height = bhH
+    const bhCtx = bhCanvas.getContext('2d')
+    let blurhash: string | null = null
+    if (bhCtx) {
+      bhCtx.drawImage(canvas, 0, 0, bw, bhH)
+      try {
+        const { data } = bhCtx.getImageData(0, 0, bw, bhH)
+        blurhash = encodeBlurhash(data, bw, bhH, 4, 3)
+      } catch {
+        blurhash = null
+      }
+    }
+
+    const jpegBlob: Blob | null = await new Promise((res) =>
+      canvas.toBlob((b) => res(b), 'image/jpeg', 0.82)
+    )
+    const base = file.name.replace(/\.[^.]+$/, '') || 'video'
+    const posterJpeg = jpegBlob
+      ? new File([jpegBlob], `${base}-poster.jpg`, { type: 'image/jpeg' })
+      : null
+
+    return { blurhash, posterJpeg, width: w, height: h }
+  } catch {
+    return null
+  } finally {
+    cleanup()
+  }
+}
+
 function shouldTryBlurhash(mime: string | undefined): boolean {
   if (!mime || !mime.startsWith('image/')) return false
   if (mime === 'image/svg+xml') return false
@@ -194,7 +307,11 @@ export function nip94PairsToImetaTag(pairs: string[][]): string[] {
 /**
  * Client-side NIP-94 fields for the uploaded bytes (post-compression) and final URL.
  */
-export async function buildClientNip94Pairs(file: File, url: string): Promise<string[][]> {
+export async function buildClientNip94Pairs(
+  file: File,
+  url: string,
+  videoPreview?: VideoNip94PreviewResult | null
+): Promise<string[][]> {
   const pairs: string[][] = [['url', url]]
 
   const mime = guessMimeFromFile(file)
@@ -217,9 +334,19 @@ export async function buildClientNip94Pairs(file: File, url: string): Promise<st
       }
     }
   } else if (mime?.startsWith('video/')) {
-    const dim = await videoDimensionsFromFile(file)
+    let vp = videoPreview
+    if (!vp) {
+      vp = await extractVideoNip94Preview(file)
+    }
+    const dim =
+      vp && vp.width > 0 && vp.height > 0
+        ? { width: vp.width, height: vp.height }
+        : await videoDimensionsFromFile(file)
     if (dim) {
       pairs.push(['dim', `${dim.width}x${dim.height}`])
+    }
+    if (vp?.blurhash) {
+      pairs.push(['blurhash', vp.blurhash])
     }
   }
 

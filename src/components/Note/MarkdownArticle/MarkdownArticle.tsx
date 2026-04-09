@@ -4836,7 +4836,8 @@ export default function MarkdownArticle({
       if (info.m?.startsWith('video/') || isVideo(info.url)) {
         const cleaned = cleanUrl(info.url)
         const posterUrl = info.image || info.thumb
-        if (cleaned && posterUrl) {
+        // thumb is often wrongly set to the same video URL; only real image URLs work as <img poster>.
+        if (cleaned && posterUrl && isImage(posterUrl)) {
           map.set(cleaned, posterUrl)
         }
       }

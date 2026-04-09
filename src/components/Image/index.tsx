@@ -2,6 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { isRenderableMediaUrl, isSafeMediaUrl } from '@/lib/url'
 import { TImetaInfo } from '@/types'
+import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
 import { ImageOff } from 'lucide-react'
 import { CSSProperties, HTMLAttributes, useEffect, useMemo, useRef, useState } from 'react'
@@ -79,6 +80,15 @@ export default function Image({
 
   const badSrc = !imageUrl?.trim() || !isRenderableMediaUrl(imageUrl.trim())
   const showErrorState = hasError || badSrc
+
+  /** NIP-94 blurhash when present; otherwise a stable URL-derived placeholder (many events omit blurhash). */
+  const effectiveBlurHash = useMemo(() => {
+    const fromTag = blurHash?.trim()
+    if (fromTag) return fromTag
+    const u = url?.trim()
+    if (!u) return undefined
+    return blurHashPlaceholderForMediaUrl(u)
+  }, [blurHash, url])
 
   const clearLoadWatch = () => {
     if (loadWatchRef.current != null) {
@@ -163,13 +173,15 @@ export default function Image({
       {...props}
     >
       {displaySkeleton && !showErrorState && (
-        <span className="absolute inset-0 z-10 block rounded-lg bg-muted/30">
-          {blurHash ? (
+        <span className="absolute inset-0 z-10 block rounded-lg bg-muted/40">
+          {effectiveBlurHash ? (
             <BlurHashCanvas
-              blurHash={blurHash}
+              blurHash={effectiveBlurHash}
               className={cn(
                 'absolute inset-0 transition-opacity duration-500 rounded-lg',
-                !revealed ? 'opacity-100' : 'opacity-0'
+                // Keep placeholder visible while the full image is still loading (auto-load),
+                // otherwise both blur and <img> are opacity-0 and only a faint bg shows (looks like a white box).
+                !revealed || isLoading ? 'opacity-100' : 'opacity-0'
               )}
             />
           ) : !revealed && !isLoading ? (
@@ -271,12 +283,22 @@ function BlurHashCanvas({ blurHash, className = '' }: { blurHash: string; classN
 
   if (!blurHash) return null
 
+  // Failed decode or unsupported hash: empty <canvas> often paints as solid white — use muted fill instead.
+  if (!pixels) {
+    return (
+      <span
+        className={cn('block h-full w-full rounded-lg bg-muted object-cover', className)}
+        aria-hidden
+      />
+    )
+  }
+
   return (
     <canvas
       ref={canvasRef}
       width={blurHashWidth}
       height={blurHashHeight}
-      className={cn('w-full h-full object-cover rounded-lg', className)}
+      className={cn('h-full w-full object-cover rounded-lg', className)}
       style={{
         imageRendering: 'auto',
         filter: 'blur(0.5px)'

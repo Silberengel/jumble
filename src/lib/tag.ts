@@ -19,6 +19,27 @@ export function tagNameEquals(tagName: string) {
 
 const NOTE_HEX_ID_RE = /^[0-9a-f]{64}$/i
 
+/**
+ * Some clients publish non-NIP-94 `m` values, e.g. `gif(694866 bytes)`.
+ * Map common image tokens to a proper MIME type for routing and media extraction.
+ */
+function normalizeImetaMimeField(raw: string): string {
+  const s = raw.trim()
+  if (/^(image|video|audio)\//i.test(s)) return s
+  const m = s.match(/^(gif|jpe?g|png|webp|avif|heic|svg)\b/i)
+  if (m) {
+    const k = m[1].toLowerCase()
+    if (k === 'jpeg' || k === 'jpg') return 'image/jpeg'
+    if (k === 'svg') return 'image/svg+xml'
+    if (k === 'gif') return 'image/gif'
+    if (k === 'png') return 'image/png'
+    if (k === 'webp') return 'image/webp'
+    if (k === 'avif') return 'image/avif'
+    if (k === 'heic') return 'image/heic'
+  }
+  return s
+}
+
 /** First hex event id on an `e` / `E` tag (reactions, reposts, replies). */
 export function getFirstHexEventIdFromETags(tags: string[][]): string | undefined {
   for (const t of tags) {
@@ -160,7 +181,7 @@ export function getImetaInfoFromImetaTag(tag: string[], pubkey?: string): TImeta
   }
   
   if (mimeType) {
-    imeta.m = mimeType
+    imeta.m = normalizeImetaMimeField(mimeType)
   }
   
   // Parse alt text

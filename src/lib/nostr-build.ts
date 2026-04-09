@@ -1,13 +1,15 @@
 /**
- * Utilities for nostr.build CDN URLs.
+ * Utilities for nostr.build media URLs.
  *
- * nostr.build generates a lightweight thumbnail at /thumb/<filename> for every
- * uploaded image. Thumbnails are typically < 50 KB regardless of the original
- * file size — a huge bandwidth win for profile pictures and feed previews.
- * Note: the /thumb/ route only works for image files — never apply it to video URLs.
+ * Thumbnails at `/thumb/<path>` are served on **i.nostr.build** only. Other hosts
+ * (e.g. **cdn.nostr.build**) do not provide that route — never rewrite those URLs.
+ *
+ * The /thumb/ route is for **images** only — never apply it to video URLs.
  */
 
 import { isVideo } from './url'
+
+const I_NOSTR_BUILD = 'i.nostr.build'
 
 /** Returns true when a URL is hosted on any nostr.build domain. */
 export function isNostrBuildUrl(url: string): boolean {
@@ -20,15 +22,17 @@ export function isNostrBuildUrl(url: string): boolean {
   }
 }
 
-/** Returns true when the URL is on nostr.build but does NOT yet use the /thumb/ path, and is not a video file. */
+/**
+ * True when we may rewrite `url` to i.nostr.build’s `/thumb/…` variant.
+ * Only **i.nostr.build** serves generated thumbs; cdn.nostr.build does not.
+ */
 export function canUseNostrBuildThumb(url: string): boolean {
   const u = (url ?? '').trim()
   if (!u) return false
-  // /thumb/ is image-only on nostr.build — never apply it to video files
   if (isVideo(u)) return false
   try {
     const parsed = new URL(u)
-    if (!parsed.hostname.endsWith('nostr.build')) return false
+    if (parsed.hostname !== I_NOSTR_BUILD) return false
     const p = parsed.pathname
     return p !== '/thumb' && !p.startsWith('/thumb/')
   } catch {
@@ -37,9 +41,8 @@ export function canUseNostrBuildThumb(url: string): boolean {
 }
 
 /**
- * Returns the nostr.build thumbnail URL for `url`, inserting `/thumb` before the
- * filename path segment. Returns the original URL unchanged if it is not on
- * nostr.build, already uses /thumb/, or cannot be parsed.
+ * Returns the i.nostr.build thumbnail URL for `url` (insert `/thumb` before the path).
+ * Returns `url` unchanged if not on i.nostr.build, already under /thumb/, or invalid.
  */
 export function toNostrBuildThumbUrl(url: string): string {
   const u = (url ?? '').trim()

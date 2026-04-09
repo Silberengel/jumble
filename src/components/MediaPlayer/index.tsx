@@ -1,5 +1,6 @@
+import { isImage } from '@/lib/url'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import AudioPlayer from '../AudioPlayer'
 import VideoPlayer from '../VideoPlayer'
 import ExternalLink from '../ExternalLink'
@@ -22,6 +23,14 @@ export default function MediaPlayer({
   const { autoLoadMedia } = useContentPolicy()
   const [display, setDisplay] = useState(autoLoadMedia)
   const [mediaType, setMediaType] = useState<'video' | 'audio' | null>(null)
+
+  // imeta `thumb` / `image` are sometimes the same .mp4 as `url` — <img> cannot use that, and it
+  // would hide the blurhash placeholder in LazyMediaTapPlaceholder.
+  const imagePoster = useMemo(() => {
+    const p = poster?.trim()
+    if (!p) return undefined
+    return isImage(p) ? p : undefined
+  }, [poster])
 
   useEffect(() => {
     if (autoLoadMedia) {
@@ -78,7 +87,7 @@ export default function MediaPlayer({
     return (
       <LazyMediaTapPlaceholder
         src={src}
-        posterUrl={poster}
+        posterUrl={imagePoster}
         blurHash={blurHash}
         onActivate={() => setDisplay(true)}
         className={className}
@@ -91,7 +100,7 @@ export default function MediaPlayer({
   }
 
   if (mediaType === 'video') {
-    return <VideoPlayer src={src} className={className} poster={poster} />
+    return <VideoPlayer src={src} className={className} poster={imagePoster} />
   }
 
   return <AudioPlayer src={src} className={className} />

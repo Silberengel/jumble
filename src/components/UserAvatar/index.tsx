@@ -28,12 +28,25 @@ const loadedAvatarUrls = new Set<string>()
  * Non-blocking HEAD request to get Content-Length for a URL.
  * Result is cached permanently in memory. Resolves null on CORS failure or missing header.
  */
+const AVATAR_HEAD_TIMEOUT_MS = 3000
+
 async function fetchUrlSizeBytes(url: string): Promise<number | null> {
   if (urlSizeCache.has(url)) return urlSizeCache.get(url)!
   try {
-    const res = await fetch(url, { method: 'HEAD' })
+    const ctrl = new AbortController()
+    const timer = window.setTimeout(() => ctrl.abort(), AVATAR_HEAD_TIMEOUT_MS)
+    const res = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
+    clearTimeout(timer)
+    if (!res.ok) {
+      urlSizeCache.set(url, null)
+      return null
+    }
     const cl = res.headers.get('content-length')
     const size = cl ? parseInt(cl, 10) : null
+    if (size != null && !Number.isFinite(size)) {
+      urlSizeCache.set(url, null)
+      return null
+    }
     urlSizeCache.set(url, size)
     return size
   } catch {
@@ -59,8 +72,7 @@ function useDeferRemoteProfileAvatar(
     if (!a || !isHttpOrHttpsUrl(a)) return ''
     // Video files don't have a /thumb/ route — serve them as-is.
     if (isVideo(a)) return a
-    // Always use the nostr.build thumbnail route for profile pictures — it's
-    // typically < 50 KB regardless of the original file size.
+    // i.nostr.build serves /thumb/… for images (cdn.nostr.build does not).
     return toNostrBuildThumbUrl(a)
   }, [profileAvatar])
 

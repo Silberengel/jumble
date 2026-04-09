@@ -1,8 +1,10 @@
 /** Compression runs entirely in-app before upload (`compress-upload-media`). */
 import { compressMediaForUpload } from '@/lib/compress-upload-media'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
+import logger from '@/lib/logger'
 import {
   buildClientNip94Pairs,
+  extractVideoNip94Preview,
   mergeNip94Pairs,
   nip94PairsToImetaTag
 } from '@/lib/upload-nip94-imeta'
@@ -87,14 +89,32 @@ class MediaUploadService {
       // ignore
     }
 
-    let result: { url: string; tags: string[][] }
-    if (this.serviceConfig.type === 'nip96') {
-      result = await this.uploadByNip96(this.serviceConfig.service, toUpload, options)
-    } else {
-      result = await this.uploadByBlossom(toUpload, options)
+    const videoPreviewPromise =
+      toUpload.type.startsWith('video/') ? extractVideoNip94Preview(toUpload) : Promise.resolve(null)
+
+    const uploadPromise =
+      this.serviceConfig.type === 'nip96'
+        ? this.uploadByNip96(this.serviceConfig.service, toUpload, options)
+        : this.uploadByBlossom(toUpload, options)
+
+    const [videoPreview, result] = await Promise.all([videoPreviewPromise, uploadPromise])
+
+    const clientPairs = await buildClientNip94Pairs(toUpload, result.url, videoPreview)
+
+    if (videoPreview?.posterJpeg) {
+      try {
+        const posterResult =
+          this.serviceConfig.type === 'nip96'
+            ? await this.uploadByNip96(this.serviceConfig.service, videoPreview.posterJpeg, options)
+            : await this.uploadByBlossom(videoPreview.posterJpeg, options)
+        clientPairs.push(['image', posterResult.url], ['thumb', posterResult.url])
+      } catch (e) {
+        logger.warn('Video poster frame upload failed; imeta may omit image/thumb', {
+          error: String(e)
+        })
+      }
     }
 
-    const clientPairs = await buildClientNip94Pairs(toUpload, result.url)
     const mergedTags = mergeNip94Pairs(clientPairs, result.tags)
     this.imetaTagMap.set(result.url, nip94PairsToImetaTag(mergedTags))
     return { url: result.url, tags: mergedTags }
