@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
 import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
-import { isVideo } from '@/lib/url'
+import { isImage, isMedia, isVideo } from '@/lib/url'
 import { generateImageByPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,11 @@ const AVATAR_HEAD_TIMEOUT_MS = 3000
 
 async function fetchUrlSizeBytes(url: string): Promise<number | null> {
   if (urlSizeCache.has(url)) return urlSizeCache.get(url)!
+  // Cross-origin HEAD to image/media URLs usually has no CORS — Firefox logs errors even when we catch.
+  if (isImage(url) || isMedia(url)) {
+    urlSizeCache.set(url, null)
+    return null
+  }
   try {
     const ctrl = new AbortController()
     const timer = window.setTimeout(() => ctrl.abort(), AVATAR_HEAD_TIMEOUT_MS)

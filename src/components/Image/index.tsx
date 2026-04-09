@@ -5,7 +5,17 @@ import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
 import { ImageOff } from 'lucide-react'
-import { CSSProperties, HTMLAttributes, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  CSSProperties,
+  HTMLAttributes,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useTranslation } from 'react-i18next'
 
 /** Browsers often never fire `onError` for invalid URIs, ORB, or stalled fetches — this forces a visible error. */
@@ -53,25 +63,31 @@ export default function Image({
    * When true, the full image is not loaded until the user interacts.
    * The first click runs {@link onClick} (e.g. open lightbox) and also reveals the
    * inline `<img>` so after the lightbox closes the real image can show from cache.
+   *
+   * Under {@link ContentPolicyProvider}, the user’s media auto-load setting overrides a stale
+   * `holdUntilClick` from parents (e.g. MarkdownArticle’s default `lazyMedia`).
    */
   holdUntilClick?: boolean
 }) {
   const { t } = useTranslation()
+  const contentPolicy = useContentPolicyOptional()
+  /** Tap-to-load only if the parent asked and policy allows (or there is no policy — trust the parent). */
+  const effectiveHoldUntilClick =
+    holdUntilClick && (contentPolicy !== undefined ? !contentPolicy.autoLoadMedia : true)
+
   const urlOk = !!url?.trim()
-  // When holdUntilClick is active we start in the "held" state (regardless of blurHash).
-  const shouldHold = holdUntilClick
-  const [revealed, setRevealed] = useState(!shouldHold)
-  const [isLoading, setIsLoading] = useState(urlOk && revealed)
+  const [revealed, setRevealed] = useState(!effectiveHoldUntilClick)
+  const [isLoading, setIsLoading] = useState(urlOk && !effectiveHoldUntilClick)
   const [displaySkeleton, setDisplaySkeleton] = useState(urlOk)
   const [hasError, setHasError] = useState(!urlOk)
   const [imageUrl, setImageUrl] = useState(url)
   const [fallbackIndex, setFallbackIndex] = useState(0)
   const loadWatchRef = useRef<number | null>(null)
-  // Track whether this image started in the held state (required an explicit click to reveal).
-  // The timeout is only meaningful when the user already triggered a load — for auto-revealed
-  // images, <img loading="lazy"> delays the browser request until the element nears the viewport,
-  // so a 10 s timeout would fire before off-screen images are even fetched.
-  const wasInitiallyHeldRef = useRef(holdUntilClick)
+  // Kept in sync in the reset effect; load-timeout runs only while tap-to-load is actually active.
+  const wasInitiallyHeldRef = useRef(effectiveHoldUntilClick)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  /** Deduplicate onLoad vs sync cache hit vs decode() — otherwise blurhash can stick when `onLoad` never runs. */
+  const loadSettledRef = useRef(false)
 
   const finalAlt = imetaAlt || alt
   const openLinkHref =
@@ -98,8 +114,10 @@ export default function Image({
 
   useEffect(() => {
     setImageUrl(url)
+    loadSettledRef.current = false
+    wasInitiallyHeldRef.current = effectiveHoldUntilClick
+    const shouldHold = effectiveHoldUntilClick
     setRevealed(!shouldHold)
-    setIsLoading(!!url?.trim() && !shouldHold)
     setHasError(false)
     setDisplaySkeleton(true)
     setFallbackIndex(0)
@@ -108,18 +126,44 @@ export default function Image({
       setIsLoading(false)
       setHasError(true)
       setDisplaySkeleton(false)
+      return
     }
-  // shouldHold is derived from props — intentionally not in deps to avoid reset loops
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url])
+    setIsLoading(!shouldHold)
+  }, [url, effectiveHoldUntilClick])
+
+  const notifyLoaded = useCallback(() => {
+    if (loadSettledRef.current) return
+    loadSettledRef.current = true
+    clearLoadWatch()
+    setIsLoading(false)
+    setHasError(false)
+    setTimeout(() => setDisplaySkeleton(false), 600)
+  }, [])
+
+  // Cached images are often `complete` before `onLoad` is attached (feed mounts many cards at once).
+  useLayoutEffect(() => {
+    if (!revealed || badSrc || !imageUrl?.trim() || loadSettledRef.current) return
+    const el = imgRef.current
+    if (!el) return
+    if (el.complete && el.naturalWidth > 0) {
+      notifyLoaded()
+      return
+    }
+    if (!effectiveHoldUntilClick && typeof el.decode === 'function') {
+      let cancelled = false
+      el.decode().then(() => {
+        if (!cancelled && el.naturalWidth > 0) notifyLoaded()
+      }).catch(() => {})
+      return () => {
+        cancelled = true
+      }
+    }
+  }, [revealed, badSrc, imageUrl, effectiveHoldUntilClick, notifyLoaded])
 
   useEffect(() => {
     clearLoadWatch()
     if (badSrc || !url?.trim() || !revealed) return
-    // Skip the timeout for auto-load images (holdUntilClick was false from mount).
-    // Their <img loading="lazy"> request hasn't necessarily started yet when revealed
-    // becomes true, so the timeout would fire before the browser even fetches the image.
-    // For those images, onError is sufficient — it fires whenever the browser does try.
+    // No stall-timeout when not in tap-to-load mode; only that path waits on user-driven reveal.
     if (!wasInitiallyHeldRef.current) return
     loadWatchRef.current = window.setTimeout(() => {
       loadWatchRef.current = null
@@ -137,6 +181,7 @@ export default function Image({
     if (fallback && fallbackIndex < fallback.length) {
       const next = fallback[fallbackIndex]
       setFallbackIndex((prev) => prev + 1)
+      loadSettledRef.current = false
       setImageUrl(next)
       return
     }
@@ -146,10 +191,7 @@ export default function Image({
   }
 
   const handleLoad = () => {
-    clearLoadWatch()
-    setIsLoading(false)
-    setHasError(false)
-    setTimeout(() => setDisplaySkeleton(false), 600)
+    notifyLoaded()
   }
 
   const reserveStyle = wrapperReserveStyle(dim, showErrorState)
@@ -165,7 +207,7 @@ export default function Image({
   }
 
   const handleWrapperClick = (e: React.MouseEvent<HTMLSpanElement>) => {
-    if (holdUntilClick && !revealed) handleReveal()
+    if (effectiveHoldUntilClick && !revealed) handleReveal()
     onClick?.(e)
   }
 
@@ -199,7 +241,7 @@ export default function Image({
               )}
             />
           )}
-          {!revealed && holdUntilClick && fileSizeBytes != null && (
+          {!revealed && effectiveHoldUntilClick && fileSizeBytes != null && (
             <span className="absolute bottom-2 right-2 z-20 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm select-none pointer-events-none">
               {formatFileSize(fileSizeBytes)}
             </span>
@@ -208,12 +250,14 @@ export default function Image({
       )}
       {!showErrorState && revealed && (
         <img
+          ref={imgRef}
           src={imageUrl}
           alt={finalAlt}
           title={finalAlt || undefined}
           referrerPolicy="no-referrer"
-          decoding="async"
-          loading={wasInitiallyHeldRef.current ? 'eager' : 'lazy'}
+          decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
+          // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
+          loading="eager"
           draggable={false}
           onLoad={handleLoad}
           onError={handleError}

@@ -1334,11 +1334,8 @@ export default function PostContent({
     setIsCitationHardcopy(false)
     setIsCitationPrompt(false)
     setIsDiscussionThread(false)
+    // Short note (kind 1) still supports NIP-94 imeta; only Clear should drop uploads/tags.
     setMediaNoteKind(null)
-    setMediaUrl('')
-    setMediaImetaTags([])
-    composerImetaTagsRef.current = []
-    uploadedMediaFileMap.current.clear()
   }
 
   const inferKindFromEditorMediaUrl = (url: string): number | null => {
@@ -1605,7 +1602,7 @@ export default function PostContent({
           // Note: URL will be inserted when upload completes in handleMediaUploadSuccess
         }
       }
-      // Root short-note composer: do not switch to a native media kind on upload — user uses "Media kind".
+      // Root composer: native media kind is set in processMediaUpload after kind detection (ambiguous types use the dialog).
     }
   }
 
@@ -1689,7 +1686,11 @@ export default function PostContent({
         setMediaNoteKind(resolvedKind)
       } else {
         resolvedKind = await getMediaKindFromFile(uploadingFile, false)
-        // Root composer: keep kind 1 until the user uses "Media kind" (ambiguous webm/mp4 still sets kind via dialog).
+        const isRootComposer = !parentEvent && !isPublicMessage && !(isDiscussionThread && !parentEvent)
+        if (isRootComposer) {
+          setMediaNoteKind(resolvedKind)
+          setMediaUrl(url)
+        }
       }
 
       const imetaTag = mediaUpload.getImetaTagByUrl(url)
@@ -1839,8 +1840,11 @@ export default function PostContent({
           const imetaTag = mediaUpload.getImetaTagByUrl(url)
           if (imetaTag) {
             setMediaImetaTags([imetaTag])
+            composerImetaTagsRef.current = [imetaTag]
           } else if (tags && tags.length > 0) {
-            setMediaImetaTags([nip94PairsToImetaTag(tags)])
+            const nipRow = nip94PairsToImetaTag(tags)
+            setMediaImetaTags([nipRow])
+            composerImetaTagsRef.current = [nipRow]
           } else {
             const basicImetaTag: string[] = ['imeta', `url ${url}`]
             // For webm/ogg/mp3/m4a files uploaded via microphone, ensure MIME type is set to audio/*
@@ -1863,6 +1867,7 @@ export default function PostContent({
               basicImetaTag.push(`m ${mimeType}`)
             }
             setMediaImetaTags([basicImetaTag])
+            composerImetaTagsRef.current = [basicImetaTag]
           }
           // Insert the URL into the editor content so it shows in the edit pane
           // Use setTimeout to ensure the state has updated and editor is ready
@@ -1917,9 +1922,8 @@ export default function PostContent({
     setIsCitationPrompt(false)
     setIsDiscussionThread(false)
 
-    // Clear uploaded file from map and picture accumulation ref
+    // Clear uploaded file map (upload finished). Keep composerImetaTagsRef in sync with mediaImetaTags — do not wipe here.
     uploadedMediaFileMap.current.clear()
-    composerImetaTagsRef.current = []
   }
 
   const handleArticleToggle = (type: 'longform' | 'wiki' | 'wiki-markdown' | 'publication') => {

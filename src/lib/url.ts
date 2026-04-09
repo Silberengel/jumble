@@ -358,6 +358,9 @@ export function isVideo(url: string) {
 /**
  * Return true if the URL looks like a fetchable web page (http(s) with a plausible host).
  * Used to skip OG metadata fetch for invalid or non-http URLs (e.g. "https://1.4ghz/").
+ *
+ * Direct image/video/audio URLs (e.g. nostr.build `…/file.jpg`) are not HTML; OG metadata fetch uses
+ * `fetch` with `mode: "cors"`, which fails on 301/CDN responses without ACAO and spams the console.
  */
 export function isLikelyWebPageUrl(url: string): boolean {
   try {
@@ -365,8 +368,9 @@ export function isLikelyWebPageUrl(url: string): boolean {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
     const host = parsed.hostname || ''
     if (!host) return false
-    // Require a dot (e.g. example.com) or localhost so we skip bare hostnames like "1.4ghz"
-    return host.includes('.') || host === 'localhost'
+    if (!host.includes('.') && host !== 'localhost') return false
+    if (isImage(url) || isMedia(url)) return false
+    return true
   } catch {
     return false
   }
