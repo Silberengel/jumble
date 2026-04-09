@@ -110,7 +110,7 @@ export default function ZapDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex gap-2 items-center">
             <div className="shrink-0">{t('Zap to')}</div>

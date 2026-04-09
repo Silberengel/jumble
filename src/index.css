@@ -611,6 +611,12 @@
 .yarl__portal {
   pointer-events: auto;
 }
+
+/* Bitcoin Connect (Alby) payment UI: web component on document.body while a Sheet/Dialog may
+   still be tearing down; same pointer-events issue as the lightbox when nested under Radix. */
+bc-modal {
+  pointer-events: auto;
+}
 @media (max-width: 768px) {
   .yarl__slide_captions_container {
     padding: 12px;

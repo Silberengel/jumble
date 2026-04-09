@@ -103,58 +103,62 @@ class LightningService {
     }
 
     return new Promise((resolve) => {
+      // Close our Radix dialog first; opening bc-modal in the same turn can leave body
+      // pointer-events stuck so the payment UI is visible but inert (esp. from Sheet / secondary pane).
       closeOuterModel?.()
-      let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
-      let subCloser: SubCloser | undefined
-      const { setPaid } = launchPaymentModal({
-        invoice: pr,
-        onPaid: (response) => {
-          clearInterval(checkPaymentInterval)
-          subCloser?.close()
-          resolve({ preimage: response.preimage, invoice: pr })
-        },
-        onCancelled: () => {
-          clearInterval(checkPaymentInterval)
-          subCloser?.close()
-          resolve(null)
-        }
-      })
-
-      if (verify) {
-        checkPaymentInterval = setInterval(async () => {
-          const invoice = new Invoice({ pr, verify })
-          const paid = await invoice.verifyPayment()
-
-          if (paid && invoice.preimage) {
-            setPaid({
-              preimage: invoice.preimage
-            })
+      window.setTimeout(() => {
+        let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
+        let subCloser: SubCloser | undefined
+        const { setPaid } = launchPaymentModal({
+          invoice: pr,
+          onPaid: (response) => {
+            clearInterval(checkPaymentInterval)
+            subCloser?.close()
+            resolve({ preimage: response.preimage, invoice: pr })
+          },
+          onCancelled: () => {
+            clearInterval(checkPaymentInterval)
+            subCloser?.close()
+            resolve(null)
           }
-        }, 1000)
-      } else {
-        const filter: Filter = {
-          kinds: [kinds.Zap],
-          '#p': [recipient],
-          since: dayjs().subtract(1, 'minute').unix()
-        }
-        if (event) {
-          filter['#e'] = [event.id]
-        }
-        subCloser = client.subscribe(
-          senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 4),
-          filter,
-          {
-            onevent: (evt) => {
-              const info = getZapInfoFromEvent(evt)
-              if (!info) return
+        })
 
-              if (info.invoice === pr) {
-                setPaid({ preimage: info.preimage ?? '' })
+        if (verify) {
+          checkPaymentInterval = setInterval(async () => {
+            const invoice = new Invoice({ pr, verify })
+            const paid = await invoice.verifyPayment()
+
+            if (paid && invoice.preimage) {
+              setPaid({
+                preimage: invoice.preimage
+              })
+            }
+          }, 1000)
+        } else {
+          const filter: Filter = {
+            kinds: [kinds.Zap],
+            '#p': [recipient],
+            since: dayjs().subtract(1, 'minute').unix()
+          }
+          if (event) {
+            filter['#e'] = [event.id]
+          }
+          subCloser = client.subscribe(
+            senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 4),
+            filter,
+            {
+              onevent: (evt) => {
+                const info = getZapInfoFromEvent(evt)
+                if (!info) return
+
+                if (info.invoice === pr) {
+                  setPaid({ preimage: info.preimage ?? '' })
+                }
               }
             }
-          }
-        )
-      }
+          )
+        }
+      }, 0)
     })
   }
 
@@ -228,55 +232,57 @@ class LightningService {
 
     return new Promise((resolve) => {
       closeOuterModel?.()
-      let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
-      let subCloser: SubCloser | undefined
-      const { setPaid } = launchPaymentModal({
-        invoice: pr,
-        onPaid: (response) => {
-          clearInterval(checkPaymentInterval)
-          subCloser?.close()
-          resolve({ preimage: response.preimage, invoice: pr })
-        },
-        onCancelled: () => {
-          clearInterval(checkPaymentInterval)
-          subCloser?.close()
-          resolve(null)
-        }
-      })
-
-      if (verify) {
-        checkPaymentInterval = setInterval(async () => {
-          const invoice = new Invoice({ pr, verify })
-          const paid = await invoice.verifyPayment()
-
-          if (paid && invoice.preimage) {
-            setPaid({
-              preimage: invoice.preimage
-            })
+      window.setTimeout(() => {
+        let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
+        let subCloser: SubCloser | undefined
+        const { setPaid } = launchPaymentModal({
+          invoice: pr,
+          onPaid: (response) => {
+            clearInterval(checkPaymentInterval)
+            subCloser?.close()
+            resolve({ preimage: response.preimage, invoice: pr })
+          },
+          onCancelled: () => {
+            clearInterval(checkPaymentInterval)
+            subCloser?.close()
+            resolve(null)
           }
-        }, 1000)
-      } else {
-        const filter: Filter = {
-          kinds: [kinds.Zap],
-          '#p': [rec],
-          '#e': [pollEvent.id],
-          since: dayjs().subtract(1, 'minute').unix()
-        }
-        subCloser = client.subscribe(
-          senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 4),
-          filter,
-          {
-            onevent: (evt) => {
-              const info = getZapInfoFromEvent(evt)
-              if (!info) return
+        })
 
-              if (info.invoice === pr) {
-                setPaid({ preimage: info.preimage ?? '' })
+        if (verify) {
+          checkPaymentInterval = setInterval(async () => {
+            const invoice = new Invoice({ pr, verify })
+            const paid = await invoice.verifyPayment()
+
+            if (paid && invoice.preimage) {
+              setPaid({
+                preimage: invoice.preimage
+              })
+            }
+          }, 1000)
+        } else {
+          const filter: Filter = {
+            kinds: [kinds.Zap],
+            '#p': [rec],
+            '#e': [pollEvent.id],
+            since: dayjs().subtract(1, 'minute').unix()
+          }
+          subCloser = client.subscribe(
+            senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 4),
+            filter,
+            {
+              onevent: (evt) => {
+                const info = getZapInfoFromEvent(evt)
+                if (!info) return
+
+                if (info.invoice === pr) {
+                  setPaid({ preimage: info.preimage ?? '' })
+                }
               }
             }
-          }
-        )
-      }
+          )
+        }
+      }, 0)
     })
   }
 
@@ -292,15 +298,17 @@ class LightningService {
 
     return new Promise((resolve) => {
       closeOuterModel?.()
-      launchPaymentModal({
-        invoice: invoice,
-        onPaid: (response) => {
-          resolve({ preimage: response.preimage, invoice: invoice })
-        },
-        onCancelled: () => {
-          resolve(null)
-        }
-      })
+      window.setTimeout(() => {
+        launchPaymentModal({
+          invoice: invoice,
+          onPaid: (response) => {
+            resolve({ preimage: response.preimage, invoice: invoice })
+          },
+          onCancelled: () => {
+            resolve(null)
+          }
+        })
+      }, 0)
     })
   }
 

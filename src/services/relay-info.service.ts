@@ -187,7 +187,12 @@ class RelayInfoService {
       })
       return data
     } catch (err) {
-      logger.warn('[RelayInfo] NIP-11 fetch threw', { url, err })
+      // Browser NIP-11 is often cross-origin without CORS → TypeError / "NetworkError". Expected; Firefox still logs CORS separately.
+      if (err instanceof TypeError) {
+        logger.debug('[RelayInfo] NIP-11 fetch failed (likely CORS or network)', { url })
+      } else {
+        logger.warn('[RelayInfo] NIP-11 fetch threw', { url, err })
+      }
       return undefined
     }
   }
