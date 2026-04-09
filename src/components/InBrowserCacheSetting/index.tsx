@@ -1,22 +1,20 @@
 import { Button } from '@/components/ui/button'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Trash2, RefreshCw, Database, WrapText, Search, X, TriangleAlert, Terminal, XCircle } from 'lucide-react'
+import { Trash2, RefreshCw, Database, X, Terminal, XCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
 import client from '@/services/client.service'
-import indexedDb, { StoreNames } from '@/services/indexed-db.service'
+import indexedDb from '@/services/indexed-db.service'
 import postEditorCache from '@/services/post-editor-cache.service'
 import { StorageKey } from '@/constants'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { toast } from 'sonner'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
-import { Event } from 'nostr-tools'
+import { useCacheBrowser } from '../../contexts/cache-browser-context'
 
 export default function InBrowserCacheSetting() {
   const { t } = useTranslation()
@@ -26,33 +24,13 @@ export default function InBrowserCacheSetting() {
     relayList,
     requestAccountNetworkHydrate
   } = useNostr()
-  const [cacheInfo, setCacheInfo] = useState<Record<string, number>>({})
-  const [browsingCache, setBrowsingCache] = useState(false)
-  const [selectedStore, setSelectedStore] = useState<string | null>(null)
-  const [storeItems, setStoreItems] = useState<any[]>([])
-  const [loadingItems, setLoadingItems] = useState(false)
-  const [wordWrapEnabled, setWordWrapEnabled] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
+  const { openBrowseCache } = useCacheBrowser()
   const [consoleLogs, setConsoleLogs] = useState<Array<{ type: string; message: string; formattedParts?: Array<{ text: string; style?: string }>; timestamp: number }>>([])
   const [showConsoleLogs, setShowConsoleLogs] = useState(false)
   const [consoleLogSearch, setConsoleLogSearch] = useState('')
   const [consoleLogLevel, setConsoleLogLevel] = useState<'errors-warnings' | 'all'>('all')
   const [cacheRefreshBusy, setCacheRefreshBusy] = useState(false)
   const consoleLogRef = useRef<Array<{ type: string; message: string; formattedParts?: Array<{ text: string; style?: string }>; timestamp: number }>>([])
-
-  useEffect(() => {
-    loadCacheInfo()
-  }, [])
-
-  const loadCacheInfo = async () => {
-    try {
-      const info = await indexedDb.getStoreInfo()
-      setCacheInfo(info)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.error('Failed to load cache info', { error: message })
-    }
-  }
 
   const handleClearCache = async () => {
     if (!confirm(t('Are you sure you want to clear all cached data? This will delete all stored events and settings from your browser.'))) {
@@ -102,7 +80,6 @@ export default function InBrowserCacheSetting() {
 
       postEditorCache.clearAllPostCaches()
       client.clearInMemoryCaches()
-      await loadCacheInfo()
 
       toast.success(t('Cache cleared successfully'))
       setTimeout(() => window.location.reload(), 1500)
@@ -116,7 +93,6 @@ export default function InBrowserCacheSetting() {
     try {
       setCacheRefreshBusy(true)
       await indexedDb.forceDatabaseUpgrade()
-      await loadCacheInfo()
       if (pubkey) {
         await requestAccountNetworkHydrate()
         await syncUserDeletionTombstones(pubkey, relayList)
@@ -128,14 +104,6 @@ export default function InBrowserCacheSetting() {
     } finally {
       setCacheRefreshBusy(false)
     }
-  }
-
-  const handleBrowseCache = () => {
-    setBrowsingCache(true)
-    setSelectedStore(null)
-    setStoreItems([])
-    setSearchQuery('')
-    loadCacheInfo()
   }
 
   const handleClearServiceWorker = async () => {
@@ -319,258 +287,6 @@ export default function InBrowserCacheSetting() {
     return filtered
   }, [consoleLogs, consoleLogSearch, consoleLogLevel])
 
-  const handleStoreClick = async (storeName: string) => {
-    setSelectedStore(storeName)
-    setSearchQuery('')
-    setLoadingItems(true)
-    try {
-      const items = storeName === 'publicationEvents'
-        ? await indexedDb.getPublicationStoreItems(storeName)
-        : await indexedDb.getStoreItems(storeName)
-      setStoreItems(items)
-    } catch (error) {
-      logger.error('Failed to load store items', { error })
-      toast.error(t('Failed to load store items'))
-      setStoreItems([])
-    } finally {
-      setLoadingItems(false)
-    }
-  }
-
-  const filteredStoreItems = useMemo(() => {
-    if (!searchQuery.trim()) return storeItems
-    const query = searchQuery.toLowerCase().trim()
-    return storeItems.filter(item => {
-      if (item.key?.toLowerCase().includes(query)) return true
-      try {
-        if (JSON.stringify(item.value).toLowerCase().includes(query)) return true
-      } catch (e) { /* skip */ }
-      if (new Date(item.addedAt).toLocaleString().toLowerCase().includes(query)) return true
-      return false
-    })
-  }, [storeItems, searchQuery])
-
-  const handleDeleteItem = async (key: string) => {
-    if (!selectedStore) return
-    try {
-      if (selectedStore === 'publicationEvents') {
-        const parts = key.split(':')
-        const pubkey = parts[0]
-        const d = parts[1] || undefined
-        const result = await indexedDb.deletePublicationAndNestedEvents(pubkey, d)
-        toast.success(t('Deleted {{count}} event(s)', { count: result.deleted }))
-      } else {
-        await indexedDb.deleteStoreItem(selectedStore, key)
-        toast.success(t('Item deleted successfully'))
-      }
-      const items = selectedStore === 'publicationEvents'
-        ? await indexedDb.getPublicationStoreItems(selectedStore)
-        : await indexedDb.getStoreItems(selectedStore)
-      setStoreItems(items)
-      loadCacheInfo()
-    } catch (error) {
-      logger.error('Failed to delete item', { error })
-      toast.error(t('Failed to delete item'))
-    }
-  }
-
-  const handleDeleteAllItems = async () => {
-    if (!selectedStore) return
-    if (!confirm(t('Are you sure you want to delete all items from this store?'))) return
-    try {
-      await indexedDb.clearStore(selectedStore)
-      setStoreItems([])
-      loadCacheInfo()
-      toast.success(t('All items deleted successfully'))
-    } catch (error) {
-      logger.error('Failed to delete all items', { error })
-      toast.error(t('Failed to delete all items'))
-    }
-  }
-
-  const handleCleanupDuplicates = async () => {
-    if (!selectedStore) return
-    if (!confirm(t('Clean up duplicate replaceable events? This will keep only the newest version of each event.'))) return
-    setLoadingItems(true)
-    try {
-      const result = await indexedDb.cleanupDuplicateReplaceableEvents(selectedStore)
-      const items = await indexedDb.getStoreItems(selectedStore)
-      setStoreItems(items)
-      setSearchQuery('')
-      loadCacheInfo()
-      const itemsAfterCleanup = await indexedDb.getStoreItems(selectedStore)
-      const actualCount = itemsAfterCleanup.length
-      if (actualCount !== result.kept) {
-        toast.success(t('Cleaned up {{deleted}} duplicate entries, kept {{kept}} (total items after cleanup: {{total}})', {
-          deleted: result.deleted, kept: result.kept, total: actualCount
-        }))
-      } else {
-        toast.success(t('Cleaned up {{deleted}} duplicate entries, kept {{kept}}', { deleted: result.deleted, kept: result.kept }))
-      }
-    } catch (error) {
-      logger.error('Failed to cleanup duplicates', { error })
-      if (error instanceof Error && error.message === 'Not a replaceable event store') {
-        toast.error(t('This store does not contain replaceable events'))
-      } else {
-        toast.error(t('Failed to cleanup duplicates'))
-      }
-    } finally {
-      setLoadingItems(false)
-    }
-  }
-
-  const isInvalidEvent = useCallback((item: { key: string; value: any; addedAt: number }, storeName?: string | null): boolean => {
-    if (!item) return true
-    if (storeName === 'rssFeedItems') {
-      return !(item.value || (item as any).item)
-    }
-    if (storeName === StoreNames.PIPER_TTS_CACHE) {
-      const v = item.value as { blob?: unknown; mimeType?: string } | null
-      return !(v && typeof v.mimeType === 'string' && v.blob instanceof Blob)
-    }
-    if (!item.value) return true
-    const event = item.value as Event
-    if (!event.pubkey || !event.kind || typeof event.created_at !== 'number') return true
-    if (!event.tags || !Array.isArray(event.tags)) return true
-    if (!event.id || !event.sig) return true
-    return false
-  }, [])
-
-  const getInvalidEventExplanation = useCallback((item: { key: string; value: any; addedAt: number }): string => {
-    if (!item || !item.value) return t('Event has no value data')
-    const event = item.value as Event
-    const missing: string[] = []
-    if (!event.pubkey) missing.push(t('pubkey'))
-    if (!event.kind) missing.push(t('kind'))
-    if (typeof event.created_at !== 'number') missing.push(t('created_at'))
-    if (!event.tags || !Array.isArray(event.tags)) missing.push(t('tags'))
-    if (!event.id) missing.push(t('id'))
-    if (!event.sig) missing.push(t('sig'))
-    if (missing.length > 0) return t('Event is missing required fields: {{fields}}', { fields: missing.join(', ') })
-    return t('Event appears to be invalid or corrupted')
-  }, [t])
-
-  const renderStoreListView = () =>
-    Object.keys(cacheInfo).length === 0 ? (
-      <div className="text-sm text-muted-foreground">{t('No cached data found.')}</div>
-    ) : (
-      Object.entries(cacheInfo).map(([storeName, count]) => (
-        <div
-          key={storeName}
-          className="border rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-          onClick={() => handleStoreClick(storeName)}
-        >
-          <div className="font-semibold text-sm break-words">{storeName}</div>
-          <div className="text-xs text-muted-foreground mt-1">{count} {t('items')}</div>
-        </div>
-      ))
-    )
-
-  const renderStoreItemsView = () =>
-    loadingItems ? (
-      <div className="space-y-2 py-6" role="status" aria-busy="true">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-md" />
-        ))}
-      </div>
-    ) : (
-      <>
-        <div className="relative py-1">
-          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder={t('Search items...')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        {storeItems.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{t('No items in this store.')}</div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-muted-foreground">
-                {filteredStoreItems.length} {t('of')} {storeItems.length} {t('items')}
-                {searchQuery.trim() && ` ${t('matching')} "${searchQuery}"`}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleCleanupDuplicates} className="h-7 text-xs">
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  {t('Cleanup Duplicates')}
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleDeleteAllItems} className="h-7 text-xs">
-                  <Trash2 className="h-3 w-3 mr-1" />
-                  {t('Delete All')}
-                </Button>
-              </div>
-            </div>
-            {filteredStoreItems.length === 0 ? (
-              <div className="text-sm text-muted-foreground">{t('No items match your search.')}</div>
-            ) : (
-              filteredStoreItems.map((item, index) => {
-                const nestedCount = (item as any).nestedCount
-                const invalid = isInvalidEvent(item, selectedStore)
-                const invalidExplanation = invalid ? getInvalidEventExplanation(item) : ''
-                return (
-                  <div key={item.key || index} className="border rounded-lg p-3 break-words relative">
-                    <div className="absolute top-2 right-2 flex items-center gap-1">
-                      {invalid && (
-                        <HoverCard>
-                          <HoverCardTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400"
-                              title={invalidExplanation}
-                            >
-                              <TriangleAlert className="h-3 w-3" />
-                            </Button>
-                          </HoverCardTrigger>
-                          <HoverCardContent className="w-80">
-                            <div className="space-y-2">
-                              <div className="font-semibold text-sm flex items-center gap-2">
-                                <TriangleAlert className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-                                {t('Invalid Event')}
-                              </div>
-                              <div className="text-sm text-muted-foreground">{invalidExplanation}</div>
-                            </div>
-                          </HoverCardContent>
-                        </HoverCard>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteItem(item.key)}
-                        className="h-6 w-6 p-0"
-                        title={t('Delete item')}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <div className={`font-semibold text-xs mb-2 break-all ${invalid ? 'pr-16' : 'pr-8'}`}>
-                      {item.key}
-                      {typeof nestedCount === 'number' && nestedCount > 0 && (
-                        <span className="ml-2 text-muted-foreground">
-                          ({nestedCount} {t('nested events')})
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground mb-2">
-                      {t('Added at')}: {new Date(item.addedAt).toLocaleString()}
-                    </div>
-                    <pre className={`text-xs bg-muted p-2 rounded overflow-auto max-h-96 select-text ${wordWrapEnabled ? 'overflow-x-hidden whitespace-pre-wrap break-words' : 'overflow-x-auto whitespace-pre'}`}>
-                      {JSON.stringify(item.value, null, 2)}
-                    </pre>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        )}
-      </>
-    )
-
   const renderConsoleLogList = () =>
     filteredConsoleLogs.length === 0 ? (
       <div className="text-muted-foreground p-4 text-center">
@@ -655,39 +371,6 @@ export default function InBrowserCacheSetting() {
     </div>
   )
 
-  const browseCacheHeader = (
-    <div className="flex items-center justify-between">
-      <div className="flex-1">
-        {selectedStore ? (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setSelectedStore(null); setStoreItems([]) }}
-            >
-              ← {t('Back')}
-            </Button>
-            {selectedStore}
-          </div>
-        ) : (
-          t('Browse Cache')
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setWordWrapEnabled(!wordWrapEnabled)}
-        title={wordWrapEnabled ? t('Disable word wrap') : t('Enable word wrap')}
-      >
-        <WrapText className={`h-4 w-4 ${wordWrapEnabled ? '' : 'opacity-50'}`} />
-      </Button>
-    </div>
-  )
-
-  const browseCacheDescription = selectedStore
-    ? t('View cached items in this store.')
-    : t('View details about cached data in IndexedDB stores. Click on a store to view its items.')
-
   return (
     <div className="space-y-4">
       <div className="text-xs text-muted-foreground space-y-1">
@@ -713,7 +396,7 @@ export default function InBrowserCacheSetting() {
           <RefreshCw className={`mr-2 h-4 w-4 ${cacheRefreshBusy ? 'animate-spin' : ''}`} />
           {t('Refresh Cache')}
         </Button>
-        <Button variant="outline" className="shrink-0" onClick={handleBrowseCache}>
+        <Button variant="outline" className="shrink-0" onClick={openBrowseCache}>
           <Database className="mr-2 h-4 w-4" />
           {t('Browse Cache')}
         </Button>
@@ -726,34 +409,6 @@ export default function InBrowserCacheSetting() {
           {t('View Console Logs')} ({consoleLogRef.current.length})
         </Button>
       </div>
-
-      {isSmallScreen ? (
-        <Drawer open={browsingCache} onOpenChange={setBrowsingCache}>
-          <DrawerContent className="max-h-[90vh]">
-            <DrawerHeader>
-              {browseCacheHeader}
-              <DrawerTitle className="sr-only">{t('Browse Cache')}</DrawerTitle>
-              <DrawerDescription>{browseCacheDescription}</DrawerDescription>
-            </DrawerHeader>
-            <div className={`px-4 pb-4 space-y-4 overflow-y-auto ${wordWrapEnabled ? 'overflow-x-hidden break-words' : 'overflow-x-auto'}`}>
-              {!selectedStore ? renderStoreListView() : renderStoreItemsView()}
-            </div>
-          </DrawerContent>
-        </Drawer>
-      ) : (
-        <Dialog open={browsingCache} onOpenChange={setBrowsingCache}>
-          <DialogContent className="max-w-[1000px] max-h-[1000px] overflow-y-auto overflow-x-hidden">
-            <DialogHeader>
-              {browseCacheHeader}
-              <DialogTitle className="sr-only">{t('Browse Cache')}</DialogTitle>
-              <DialogDescription>{browseCacheDescription}</DialogDescription>
-            </DialogHeader>
-            <div className={`space-y-4 ${wordWrapEnabled ? 'overflow-x-hidden break-words' : 'overflow-x-auto'}`}>
-              {!selectedStore ? renderStoreListView() : renderStoreItemsView()}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
 
       {isSmallScreen ? (
         <Drawer open={showConsoleLogs} onOpenChange={setShowConsoleLogs}>

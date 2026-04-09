@@ -28,6 +28,7 @@ import { ZapProvider } from '@/providers/ZapProvider'
 import SlowConnectionHint from '@/components/SlowConnectionHint'
 import StartupSessionBanner from '@/components/StartupSessionBanner'
 import VersionUpdateBanner from '@/components/VersionUpdateBanner'
+import { CacheBrowserProvider } from './contexts/cache-browser-context'
 import { PageManager } from './PageManager'
 
 export default function App(): JSX.Element {
@@ -58,7 +59,9 @@ export default function App(): JSX.Element {
                                           <KindFilterProvider>
                                             <UserPreferencesProvider>
                                               <LiveActivitiesProvider>
-                                                <PageManager />
+                                                <CacheBrowserProvider>
+                                                  <PageManager />
+                                                </CacheBrowserProvider>
                                               </LiveActivitiesProvider>
                                               <ReadAloudPlayerModal />
                                               <PublishSuccessSubtleIndicator />

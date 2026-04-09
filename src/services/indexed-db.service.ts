@@ -39,6 +39,43 @@ type TValue<T = any> = {
   masterPublicationKey?: string // For nested publication events, link to master publication
 }
 
+/** One matching row from {@link IndexedDbService.searchAllCachedEventsFullText}. */
+export type TCachedEventSearchHit = {
+  storeName: string
+  key: string
+  value: Event
+  addedAt: number
+}
+
+function isLikelyCachedNostrEvent(v: unknown): v is Event {
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.id === 'string' &&
+    o.id.length > 0 &&
+    typeof o.pubkey === 'string' &&
+    o.pubkey.length > 0 &&
+    typeof o.kind === 'number' &&
+    typeof o.content === 'string' &&
+    Array.isArray(o.tags)
+  )
+}
+
+function cachedEventMatchesFullTextQuery(ev: Event, qLower: string): boolean {
+  if (!qLower) return false
+  if (ev.id.toLowerCase().includes(qLower)) return true
+  if (ev.pubkey.toLowerCase().includes(qLower)) return true
+  if (String(ev.kind).includes(qLower)) return true
+  if ((ev.content ?? '').toLowerCase().includes(qLower)) return true
+  for (const tag of ev.tags ?? []) {
+    if (!Array.isArray(tag)) continue
+    for (const cell of tag) {
+      if (String(cell).toLowerCase().includes(qLower)) return true
+    }
+  }
+  return false
+}
+
 export const StoreNames = {
   PROFILE_EVENTS: 'profileEvents',
   RELAY_LIST_EVENTS: 'relayListEvents',
@@ -88,6 +125,22 @@ export const StoreNames = {
   /** Piper / read-aloud WAV blobs keyed by SHA-256 of endpoint + text + speed. */
   PIPER_TTS_CACHE: 'piperTtsCache'
 }
+
+/** Object stores skipped by full-text cache search (blobs, settings, relay metadata, etc.). */
+const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set([
+  StoreNames.SETTINGS,
+  StoreNames.PIPER_TTS_CACHE,
+  StoreNames.RELAY_INFOS,
+  StoreNames.NIP66_DISCOVERY,
+  StoreNames.GIF_CACHE,
+  StoreNames.TIMELINE_STATE,
+  StoreNames.PUBLIC_LIVELY_RELAYS,
+  StoreNames.RSS_FEED_ITEMS,
+  StoreNames.FOLLOWING_FAVORITE_RELAYS,
+  StoreNames.RELAY_SETS,
+  StoreNames.MUTE_DECRYPTED_TAGS,
+  StoreNames.FAVORITE_RELAYS
+])
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
 const DB_VERSION = 34
@@ -1463,6 +1516,112 @@ class IndexedDbService {
         reject(event)
       }
     })
+  }
+
+  /**
+   * Scan object stores (excluding blobs, settings, and relay-only metadata) for rows that look like
+   * Nostr events. Case-insensitive match on id, pubkey, kind, content, and every tag cell.
+   */
+  async searchAllCachedEventsFullText(
+    query: string,
+    options?: { limit?: number }
+  ): Promise<TCachedEventSearchHit[]> {
+    await this.initPromise
+    const qLower = query.trim().toLowerCase()
+    const limit = Math.min(Math.max(options?.limit ?? 400, 1), 2000)
+    if (!qLower || !this.db) {
+      return []
+    }
+
+    const storeNames = Array.from(this.db.objectStoreNames).filter(
+      (name) => !CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES.has(name)
+    )
+    const results: TCachedEventSearchHit[] = []
+    const seen = new Set<string>()
+
+    for (const storeName of storeNames) {
+      if (results.length >= limit) break
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          if (!this.db!.objectStoreNames.contains(storeName)) {
+            resolve()
+            return
+          }
+          const transaction = this.db!.transaction(storeName, 'readonly')
+          const store = transaction.objectStore(storeName)
+          const cursorReq = store.openCursor()
+
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result as IDBCursorWithValue | null
+            if (!cursor) {
+              transaction.commit()
+              resolve()
+              return
+            }
+            if (results.length >= limit) {
+              transaction.commit()
+              resolve()
+              return
+            }
+
+            const raw = cursor.value
+
+            if (storeName === StoreNames.EVENT_ARCHIVE) {
+              const row = raw as TArchivedEventRow
+              if (row?.value && isLikelyCachedNostrEvent(row.value)) {
+                const ev = row.value
+                if (cachedEventMatchesFullTextQuery(ev, qLower)) {
+                  const dedupeKey = `${storeName}:${row.key}`
+                  if (!seen.has(dedupeKey)) {
+                    seen.add(dedupeKey)
+                    results.push({
+                      storeName,
+                      key: row.key,
+                      value: ev,
+                      addedAt: row.addedAt
+                    })
+                  }
+                }
+              }
+            } else {
+              const item = raw as TValue
+              if (
+                item?.value != null &&
+                typeof item.key === 'string' &&
+                isLikelyCachedNostrEvent(item.value)
+              ) {
+                const ev = item.value
+                if (cachedEventMatchesFullTextQuery(ev, qLower)) {
+                  const dedupeKey = `${storeName}:${item.key}`
+                  if (!seen.has(dedupeKey)) {
+                    seen.add(dedupeKey)
+                    results.push({
+                      storeName,
+                      key: item.key,
+                      value: ev,
+                      addedAt: item.addedAt ?? 0
+                    })
+                  }
+                }
+              }
+            }
+
+            cursor.continue()
+          }
+
+          cursorReq.onerror = (ev) => {
+            transaction.commit()
+            reject(idbEventToError(ev))
+          }
+        })
+      } catch (e) {
+        logger.warn('[IndexedDB] searchAllCachedEventsFullText store failed', { storeName, e })
+      }
+    }
+
+    results.sort((a, b) => b.addedAt - a.addedAt)
+    return results
   }
 
   /** Remove a replaceable event from cache so the next fetch will load from relays. */

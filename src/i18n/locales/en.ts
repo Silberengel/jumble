@@ -1264,6 +1264,13 @@ export default {
     'Brief summary (optional)': 'Brief summary (optional)',
     'Brief summary of the article (optional)': 'Brief summary of the article (optional)',
     'Browse Cache': 'Browse Cache',
+    'Search cached events...': 'Search cached events...',
+    'No cached events match your search.': 'No cached events match your search.',
+    'Showing first {{count}} cached event matches.': 'Showing first {{count}} cached event matches.',
+    'Open in store': 'Open in store',
+    'Browse cache root description':
+      'View IndexedDB stores, or search all cached Nostr-like events (content, tags, id, pubkey, kind) across stores.',
+    'Copy event JSON': 'Copy event JSON',
     'C-Tag': 'C-Tag',
     'Cache Relays': 'Cache Relays',
     'Cache cleared successfully': 'Cache cleared successfully',
@@ -1847,7 +1854,7 @@ export default {
     'View cached items in this store.': 'View cached items in this store.',
     'View definition': 'View definition',
     'View details about cached data in IndexedDB stores. Click on a store to view its items.':
-      'View details about cached data in IndexedDB stores. Click on a store to view its items.',
+      'View IndexedDB stores, or search all cached Nostr-like events (content, tags, id, pubkey, kind) across stores.',
     'View on Alexandria': 'View on Alexandria',
     'View on DecentNewsroom': 'View on DecentNewsroom',
     'View on Wikistr': 'View on Wikistr',

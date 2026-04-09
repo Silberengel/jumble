@@ -16,10 +16,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatPubkey, formatNpub, generateImageByPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
+import { useCacheBrowser } from '../contexts/cache-browser-context'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
-import { ArrowDownUp, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
+import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -34,6 +35,7 @@ function AccountDropdownItems({
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
+  const { openBrowseCache } = useCacheBrowser()
 
   return (
     <>
@@ -44,6 +46,14 @@ function AccountDropdownItems({
       <DropdownMenuItem onClick={() => navigate('settings')}>
         <Settings className="size-4" />
         {t('Settings')}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() => {
+          openBrowseCache()
+        }}
+      >
+        <Database className="size-4" />
+        {t('Browse Cache')}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={onSwitchAccount}>
