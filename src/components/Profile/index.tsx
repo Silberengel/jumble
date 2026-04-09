@@ -405,19 +405,38 @@ export default function Profile({
     <>
       <div>
         <div className="relative bg-cover bg-center mb-2">
-          <ProfileBanner banner={banner} pubkey={pubkey} className="w-full aspect-[3/1]" />
+          {/* Avatar first in DOM + higher fetch priority so it loads before the wide banner. */}
           {isVideo(avatar ?? '') ? (
-            <div className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 translate-y-1/2 border-4 border-background overflow-hidden rounded-full bg-muted">
-              <video src={avatar} className="h-full w-full object-cover object-center" autoPlay muted loop playsInline />
+            <div className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 z-10 translate-y-1/2 border-4 border-background overflow-hidden rounded-full bg-muted">
+              <video
+                src={avatar}
+                className="h-full w-full object-cover object-center"
+                autoPlay
+                muted
+                loop
+                playsInline
+                fetchPriority="high"
+              />
             </div>
           ) : (
-            <Avatar className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 translate-y-1/2 border-4 border-background">
-              <AvatarImage src={avatar} className="object-cover object-center" />
+            <Avatar className="w-24 h-24 md:w-48 md:h-48 absolute left-3 bottom-0 z-10 translate-y-1/2 border-4 border-background">
+              <AvatarImage
+                src={avatar}
+                className="object-cover object-center"
+                fetchPriority="high"
+                loading="eager"
+              />
               <AvatarFallback>
-                <img src={defaultImage} />
+                <img src={defaultImage} alt="" />
               </AvatarFallback>
             </Avatar>
           )}
+          <ProfileBanner
+            banner={banner}
+            pubkey={pubkey}
+            className="relative z-0 w-full aspect-[3/1]"
+            imageFetchPriority="low"
+          />
         </div>
         <div className="px-4">
           <div className="flex justify-end h-8 gap-2 items-center">

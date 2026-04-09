@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  liveEventInlinePlaybackFromEvent,
   parseLiveActivityEvent,
   preferredLiveJoinUrlForEvent,
   resolveParentSpacesForLiveActivities
@@ -190,6 +191,35 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
     expect(item).not.toBeNull()
     expect(item?.joinUrl).toBe('https://meet.example.com/space/xyz')
     expect(item?.title).toBe('Annual Meeting')
+  })
+})
+
+describe('liveEventInlinePlaybackFromEvent', () => {
+  it('prefers MP3 r tag over HLS streaming', () => {
+    const ev = base(30311, [
+      ['d', 'chill'],
+      ['streaming', 'https://cdn.example/hls/chill/index.m3u8'],
+      ['r', 'https://stream.example/listen/chill/radio.mp3']
+    ])
+    expect(liveEventInlinePlaybackFromEvent(ev)).toEqual({
+      src: 'https://stream.example/listen/chill/radio.mp3',
+      mode: 'audio'
+    })
+  })
+
+  it('falls back to HLS streaming when no direct audio URL', () => {
+    const ev = base(30311, [
+      ['d', 'chill'],
+      ['streaming', 'https://cdn.example/hls/chill/index.m3u8']
+    ])
+    expect(liveEventInlinePlaybackFromEvent(ev)).toEqual({
+      src: 'https://cdn.example/hls/chill/index.m3u8',
+      mode: 'video'
+    })
+  })
+
+  it('returns null for non-30311', () => {
+    expect(liveEventInlinePlaybackFromEvent(base(1, [['d', 'x']]))).toBeNull()
   })
 })
 

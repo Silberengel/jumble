@@ -1,7 +1,8 @@
-import { isImage } from '@/lib/url'
+import { isHlsPlaylistUrl, isImage } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import AudioPlayer from '../AudioPlayer'
 import VideoPlayer from '../VideoPlayer'
 import ExternalLink from '../ExternalLink'
@@ -23,7 +24,7 @@ function embedMediaTypeHintFromUrl(src: string): 'video' | 'audio' | null {
     }
     if (
       extension &&
-      ['mp4', 'webm', 'm4v', 'mov', 'avi', '3gp', '3g2'].includes(extension)
+      ['mp4', 'webm', 'm4v', 'mov', 'avi', '3gp', '3g2', 'm3u8', 'm3u'].includes(extension)
     ) {
       return 'video'
     }
@@ -47,6 +48,7 @@ export default function MediaPlayer({
   /** NIP-94 / imeta blurhash for lazy placeholder when poster is missing */
   blurHash?: string
 }) {
+  const { t } = useTranslation()
   const { autoLoadMedia } = useContentPolicy()
   /** Tap-to-load when {@link autoLoadMedia} is off; cleared when policy switches back to never. */
   const [userClickedLoad, setUserClickedLoad] = useState(false)
@@ -99,6 +101,12 @@ export default function MediaPlayer({
     let cancelled = false
 
     try {
+      // Firefox/Chrome do not expose HLS via <video> metadata probe — it fails and looked like “no player”.
+      if (isHlsPlaylistUrl(src)) {
+        setMediaType('video')
+        return
+      }
+
       const url = new URL(src)
       const extension = url.pathname.split('.').pop()?.toLowerCase()
 
@@ -145,6 +153,20 @@ export default function MediaPlayer({
     setEmbedPainted(true)
   }, [])
 
+  const blurLoadingHint = useMemo(() => {
+    if (!showEmbed) return undefined
+    if (effectiveMediaType === null) {
+      return t('Preparing player…', { defaultValue: 'Preparing player…' })
+    }
+    if (!embedPainted) {
+      if (isHlsPlaylistUrl(src)) {
+        return t('Starting stream…', { defaultValue: 'Starting stream…' })
+      }
+      return t('Loading media…', { defaultValue: 'Loading media…' })
+    }
+    return undefined
+  }, [showEmbed, effectiveMediaType, embedPainted, src, t])
+
   if (!mustLoad && !showEmbed) {
     return (
       <LazyMediaTapPlaceholder
@@ -168,6 +190,7 @@ export default function MediaPlayer({
         posterUrl={imagePoster}
         blurHash={blurHash}
         className={className}
+        loadingHint={blurLoadingHint}
       />
     )
   }
@@ -176,23 +199,18 @@ export default function MediaPlayer({
     'transition-opacity duration-300 ease-out motion-reduce:transition-none'
 
   return (
-    <div className="relative w-full max-w-[400px]">
-      <div
-        className={cn(
-          layerTransition,
-          embedPainted
-            ? 'pointer-events-none absolute inset-0 z-10 opacity-0'
-            : 'relative z-10 w-full opacity-100'
-        )}
-        aria-hidden={embedPainted}
-      >
-        <MediaEmbedBlurFrame
-          src={src}
-          posterUrl={imagePoster}
-          blurHash={blurHash}
-          className={className}
-        />
-      </div>
+    <div className="relative w-full max-w-[400px] shrink-0 self-start">
+      {!embedPainted ? (
+        <div className="relative z-10 w-full">
+          <MediaEmbedBlurFrame
+            src={src}
+            posterUrl={imagePoster}
+            blurHash={blurHash}
+            className={className}
+            loadingHint={blurLoadingHint}
+          />
+        </div>
+      ) : null}
       <div
         className={cn(
           layerTransition,

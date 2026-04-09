@@ -4,6 +4,8 @@ import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
 import { BookstrContent } from '@/components/Bookstr'
 import WebPreview from '@/components/WebPreview'
+import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
+import ZapStreamEmbeddedPlayer from '@/components/ZapStreamEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNoteList } from '@/lib/link'
@@ -22,7 +24,15 @@ import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { Event, kinds } from 'nostr-tools'
 import Emoji from '@/components/Emoji'
-import { ExtendedKind, WS_URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
+import {
+  ExtendedKind,
+  SPOTIFY_OPEN_URL_REGEX,
+  WS_URL_REGEX,
+  YOUTUBE_URL_REGEX,
+  ZAP_STREAM_WATCH_URL_REGEX
+} from '@/constants'
+import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { EMOJI_SHORT_CODE_REGEX, NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
@@ -355,6 +365,18 @@ function isYouTubeUrl(url: string): boolean {
   // Keep the 'i' flag for case-insensitivity but remove 'g' to avoid state issues
   const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
   const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
+  return regex.test(url)
+}
+
+function isSpotifyUrl(url: string): boolean {
+  const flags = SPOTIFY_OPEN_URL_REGEX.flags.replace('g', '')
+  const regex = new RegExp(SPOTIFY_OPEN_URL_REGEX.source, flags)
+  return regex.test(url)
+}
+
+function isZapStreamUrl(url: string): boolean {
+  const flags = ZAP_STREAM_WATCH_URL_REGEX.flags.replace('g', '')
+  const regex = new RegExp(ZAP_STREAM_WATCH_URL_REGEX.source, flags)
   return regex.test(url)
 }
 
@@ -1115,6 +1137,8 @@ function parseMarkdownContentLegacy(
       const url = match[2]
       const shouldRenderAsWebPreview = isStandalone && 
         !isYouTubeUrl(url) && 
+        !isSpotifyOpenUrl(url) &&
+        !isZapStreamWatchUrl(url) &&
         !isWebsocketUrl(url) &&
         (url.startsWith('http://') || url.startsWith('https://'))
       
@@ -1181,6 +1205,55 @@ function parseMarkdownContentLegacy(
       }
     }
   })
+
+  const spotifyUrlMatches = Array.from(content.matchAll(SPOTIFY_OPEN_URL_REGEX))
+  spotifyUrlMatches.forEach(match => {
+    if (match.index !== undefined) {
+      const url = match[0]
+      const start = match.index
+      const end = match.index + match[0].length
+      const isInMarkdown = patterns.some(p =>
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url') &&
+        start >= p.index &&
+        start < p.end
+      )
+      if (!isInMarkdown && !isWithinBlockPattern(start, end, blockPatterns) && isSpotifyUrl(url)) {
+        patterns.push({
+          index: start,
+          end: end,
+          type: 'spotify-url',
+          data: { url }
+        })
+      }
+    }
+  })
+
+  const zapstreamUrlMatches = Array.from(content.matchAll(ZAP_STREAM_WATCH_URL_REGEX))
+  zapstreamUrlMatches.forEach((match) => {
+    if (match.index !== undefined) {
+      const url = match[0]
+      const start = match.index
+      const end = match.index + match[0].length
+      const isInMarkdown = patterns.some(
+        (p) =>
+          (p.type === 'markdown-link' ||
+            p.type === 'markdown-image-link' ||
+            p.type === 'markdown-image' ||
+            p.type === 'youtube-url' ||
+            p.type === 'spotify-url') &&
+          start >= p.index &&
+          start < p.end
+      )
+      if (!isInMarkdown && !isWithinBlockPattern(start, end, blockPatterns) && isZapStreamUrl(url)) {
+        patterns.push({
+          index: start,
+          end: end,
+          type: 'zapstream-url',
+          data: { url }
+        })
+      }
+    }
+  })
   
   // Relay URLs (wss:// or ws://) - not in markdown links
   const relayUrlMatches = Array.from(content.matchAll(WS_URL_REGEX))
@@ -1191,7 +1264,7 @@ function parseMarkdownContentLegacy(
       const end = match.index + match[0].length
       // Only add if not already covered by a markdown link/image-link/image or YouTube URL and not in block pattern
       const isInMarkdown = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url') && 
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url') && 
         start >= p.index && 
         start < p.end
       )
@@ -1220,7 +1293,7 @@ function parseMarkdownContentLegacy(
       // Only add if not already covered by other patterns and not in block pattern
       const isInOther = patterns.some(p => 
         (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || 
-         p.type === 'relay-url' || p.type === 'youtube-url') && 
+         p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url') && 
         start >= p.index && 
         start < p.end
       )
@@ -1263,7 +1336,7 @@ function parseMarkdownContentLegacy(
       // Only add if not already covered by other patterns (including markdown links with bookstr URLs) and not in block pattern
       const isInOther = patterns.some(p => 
         (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || 
-         p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'bookstr-url') && 
+         p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url' || p.type === 'bookstr-url') && 
         start >= p.index && 
         start < p.end
       )
@@ -1302,7 +1375,7 @@ function parseMarkdownContentLegacy(
       const end = match.index + match[0].length
       // Only add if not already covered by other patterns and not in block pattern
       const isInOther = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'nostr') && 
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url' || p.type === 'nostr') && 
         start >= p.index && 
         start < p.end
       )
@@ -1334,7 +1407,7 @@ function parseMarkdownContentLegacy(
       const end = match.index + match[0].length
       // Only add if not already covered by other patterns and not in block pattern
       const isInOther = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'citation') && 
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url' || p.type === 'citation') && 
         start >= p.index && 
         start < p.end
       )
@@ -2153,6 +2226,20 @@ function parseMarkdownContentLegacy(
             className="max-w-[400px]"
             mustLoad={!lazyMedia}
           />
+        </div>
+      )
+    } else if (pattern.type === 'spotify-url') {
+      const { url } = pattern.data
+      parts.push(
+        <div key={`spotify-url-${patternIdx}`} className="my-2">
+          <SpotifyEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+        </div>
+      )
+    } else if (pattern.type === 'zapstream-url') {
+      const { url } = pattern.data
+      parts.push(
+        <div key={`zapstream-url-${patternIdx}`} className="my-2">
+          <ZapStreamEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
         </div>
       )
     } else if (pattern.type === 'relay-url') {
@@ -3320,6 +3407,20 @@ function parseMarkdownContentMarked(
                     </div>
                   )
                 }
+                if (isSpotifyUrl(cleaned)) {
+                  return (
+                    <div key={`${key}-line-spotify-${lineIdx}`} className="my-2">
+                      <SpotifyEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                    </div>
+                  )
+                }
+                if (isZapStreamUrl(cleaned)) {
+                  return (
+                    <div key={`${key}-line-zapstream-${lineIdx}`} className="my-2">
+                      <ZapStreamEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                    </div>
+                  )
+                }
                 if (isVideo(cleaned) || isAudio(cleaned)) {
                   const poster = videoPosterMap?.get(cleaned)
                   return (
@@ -3463,6 +3564,20 @@ function parseMarkdownContentMarked(
                 className="max-w-[400px]"
                 mustLoad={!lazyMedia}
               />
+            </div>
+          )
+        }
+        if (isSpotifyUrl(cleaned)) {
+          return (
+            <div key={`${key}-spotify-url`} className="my-2">
+              <SpotifyEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+            </div>
+          )
+        }
+        if (isZapStreamUrl(cleaned)) {
+          return (
+            <div key={`${key}-zapstream-url`} className="my-2">
+              <ZapStreamEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
             </div>
           )
         }
@@ -4596,6 +4711,47 @@ export default function MarkdownArticle({
     
     return youtubeUrls
   }, [event.id, JSON.stringify(event.tags)])
+
+  const tagSpotifyUrls = useMemo(() => {
+    const spotifyUrls: string[] = []
+    const seenUrls = new Set<string>()
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return
+        if (!isSpotifyUrl(url)) return
+
+        const cleaned = cleanUrl(url)
+        if (cleaned && !seenUrls.has(cleaned)) {
+          spotifyUrls.push(cleaned)
+          seenUrls.add(cleaned)
+        }
+      })
+
+    return spotifyUrls
+  }, [event.id, JSON.stringify(event.tags)])
+
+  const tagZapStreamUrls = useMemo(() => {
+    const zapUrls: string[] = []
+    const seenUrls = new Set<string>()
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return
+        if (!isZapStreamWatchUrl(url)) return
+        const c = canonicalZapStreamWatchUrl(cleanUrl(url) || url)
+        if (c && !seenUrls.has(c)) {
+          seenUrls.add(c)
+          zapUrls.push(c)
+        }
+      })
+
+    return zapUrls
+  }, [event.id, JSON.stringify(event.tags)])
   
   // Extract non-media links from tags (excluding YouTube URLs)
   const tagLinks = useMemo(() => {
@@ -4610,7 +4766,9 @@ export default function MarkdownArticle({
         if (isPseudoNostrHttpsUrl(url)) return
         if (isImage(url) || isMedia(url)) return
         if (isYouTubeUrl(url)) return // Exclude YouTube URLs
-        
+        if (isSpotifyUrl(url)) return
+        if (isZapStreamWatchUrl(url)) return
+
         const cleaned = cleanUrl(url)
         if (cleaned && !seenUrls.has(cleaned)) {
           links.push(cleaned)
@@ -4736,7 +4894,35 @@ export default function MarkdownArticle({
     }
     return urls
   }, [event.content])
-  
+
+  const spotifyUrlsInContent = useMemo(() => {
+    const urls = new Set<string>()
+    const urlRegex = /https?:\/\/[^\s<>"']+/g
+    let match
+    while ((match = urlRegex.exec(event.content)) !== null) {
+      const url = match[0]
+      const cleaned = cleanUrl(url)
+      if (cleaned && isSpotifyUrl(cleaned)) {
+        urls.add(cleaned)
+      }
+    }
+    return urls
+  }, [event.content])
+
+  const zapstreamUrlsInContent = useMemo(() => {
+    const urls = new Set<string>()
+    const urlRegex = /https?:\/\/[^\s<>"']+/g
+    let match
+    while ((match = urlRegex.exec(event.content)) !== null) {
+      const url = match[0]
+      const cleaned = cleanUrl(url)
+      if (!cleaned) continue
+      const c = canonicalZapStreamWatchUrl(cleaned)
+      if (c) urls.add(c)
+    }
+    return urls
+  }, [event.content])
+
   // Extract non-media links from content (excluding YouTube URLs)
   const contentLinks = useMemo(() => {
     const links: string[] = []
@@ -4745,7 +4931,14 @@ export default function MarkdownArticle({
     let match
     while ((match = urlRegex.exec(event.content)) !== null) {
       const url = match[0]
-      if ((url.startsWith('http://') || url.startsWith('https://')) && !isImage(url) && !isMedia(url) && !isYouTubeUrl(url)) {
+      if (
+        (url.startsWith('http://') || url.startsWith('https://')) &&
+        !isImage(url) &&
+        !isMedia(url) &&
+        !isYouTubeUrl(url) &&
+        !isSpotifyUrl(url) &&
+        !isZapStreamWatchUrl(url)
+      ) {
         const cleaned = cleanUrl(url)
         if (cleaned && !seenUrls.has(cleaned)) {
           links.push(cleaned)
@@ -4803,6 +4996,17 @@ export default function MarkdownArticle({
       return cleaned && !youtubeUrlsInContent.has(cleaned)
     })
   }, [tagYouTubeUrls, youtubeUrlsInContent])
+
+  const leftoverTagSpotifyUrls = useMemo(() => {
+    return tagSpotifyUrls.filter((url) => {
+      const cleaned = cleanUrl(url)
+      return cleaned && !spotifyUrlsInContent.has(cleaned)
+    })
+  }, [tagSpotifyUrls, spotifyUrlsInContent])
+
+  const leftoverTagZapStreamUrls = useMemo(() => {
+    return tagZapStreamUrls.filter((canon) => !zapstreamUrlsInContent.has(canon))
+  }, [tagZapStreamUrls, zapstreamUrlsInContent])
   
   // Filter tag links to only show what's not in content (to avoid duplicate WebPreview cards)
   const leftoverTagLinks = useMemo(() => {
@@ -5155,6 +5359,29 @@ export default function MarkdownArticle({
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {leftoverTagSpotifyUrls.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {leftoverTagSpotifyUrls.map((url) => {
+              const cleaned = cleanUrl(url)
+              return (
+                <div key={`tag-spotify-${cleaned}`} className="my-2">
+                  <SpotifyEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {leftoverTagZapStreamUrls.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {leftoverTagZapStreamUrls.map((url) => (
+              <div key={`tag-zapstream-${url}`} className="my-2">
+                <ZapStreamEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+              </div>
+            ))}
           </div>
         )}
       

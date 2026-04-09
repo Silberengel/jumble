@@ -7,11 +7,14 @@ import { cn } from '@/lib/utils'
 export default function ProfileBanner({
   pubkey,
   banner,
-  className
+  className,
+  imageFetchPriority
 }: {
   pubkey: string
   banner?: string
   className?: string
+  /** Prefer loading the profile picture first on profile pages (`low` defers the banner). */
+  imageFetchPriority?: 'high' | 'low' | 'auto'
 }) {
   const defaultBanner = useMemo(() => generateImageByPubkey(pubkey), [pubkey])
   const [bannerUrl, setBannerUrl] = useState(banner ?? defaultBanner)
@@ -34,6 +37,7 @@ export default function ProfileBanner({
           muted
           loop
           playsInline
+          fetchPriority={imageFetchPriority}
           aria-label={`${pubkey} banner`}
           onError={() => setBannerUrl(defaultBanner)}
         />
@@ -46,6 +50,7 @@ export default function ProfileBanner({
       image={{ url: bannerUrl, pubkey }}
       alt={`${pubkey} banner`}
       className={cn('rounded-none', className)}
+      fetchPriority={imageFetchPriority}
       onError={() => setBannerUrl(defaultBanner)}
     />
   )

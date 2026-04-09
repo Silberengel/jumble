@@ -26,6 +26,7 @@ const KIND_FILTER_OPTIONS = [
   { kindGroup: [ExtendedKind.VIDEO, ExtendedKind.SHORT_VIDEO], label: 'Video Posts' },
   { kindGroup: [ExtendedKind.DISCUSSION], label: 'Discussions' },
   { kindGroup: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME], label: 'Calendar Events' },
+  { kindGroup: [kinds.LiveEvent], label: 'Live streams' },
   { kindGroup: [ExtendedKind.ZAP_RECEIPT], label: 'Zaps' },
   { kindGroup: [kinds.Repost, ExtendedKind.GENERIC_REPOST], label: 'Boosts' },
   { kindGroup: [ExtendedKind.GIT_REPO_ANNOUNCEMENT], label: 'Git repositories' },

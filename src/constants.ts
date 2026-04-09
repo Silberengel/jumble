@@ -675,6 +675,8 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.ZAP_RECEIPT,
   ExtendedKind.CALENDAR_EVENT_DATE,
   ExtendedKind.CALENDAR_EVENT_TIME,
+  /** NIP-53 live stream / radio ticker — shown in feed with inline play when tags allow. */
+  kinds.LiveEvent,
   ExtendedKind.PUBLICATION,
   ExtendedKind.WIKI_ARTICLE,
   ExtendedKind.WIKI_ARTICLE_MARKDOWN,
@@ -776,7 +778,15 @@ export const LN_INVOICE_REGEX = /(ln(?:bc|tb|bcrt))([0-9]+[munp]?)?1([02-9ac-hj-
 export const EMOJI_REGEX =
   /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA70}-\u{1FAFF}]|[\u{1F004}]|[\u{1F0CF}]|[\u{1F18E}]|[\u{3030}]|[\u{2B50}]|[\u{2B55}]|[\u{2934}-\u{2935}]|[\u{2B05}-\u{2B07}]|[\u{2B1B}-\u{2B1C}]|[\u{3297}]|[\u{3299}]|[\u{303D}]|[\u{00A9}]|[\u{00AE}]|[\u{2122}]|[\u{23E9}-\u{23EF}]|[\u{23F0}]|[\u{23F3}]|[\u{FE00}-\u{FE0F}]|[\u{200D}]/gu
 export const YOUTUBE_URL_REGEX =
-  /https?:\/\/(?:(?:www|m)\.)?(?:youtube\.com\/(?:watch\?[^#\s]*|embed\/[\w-]+|shorts\/[\w-]+|live\/[\w-]+)|youtu\.be\/[\w-]+)(?:\?[^#\s]*)?(?:#[^\s]*)?/gi
+  /https?:\/\/(?:(?:(?:www|m|music)\.)?youtube\.com\/(?:watch\?[^#\s]*|embed\/[\w-]+|shorts\/[\w-]+|live\/[\w-]+)|(?:www\.)?youtube-nocookie\.com\/(?:watch\?[^#\s]*|embed\/[\w-]+|shorts\/[\w-]+|live\/[\w-]+)|youtu\.be\/[\w-]+)(?:\?[^#\s]*)?(?:#[^\s]*)?/gi
+
+/** open.spotify.com track / album / playlist / episode / show (optional intl-xx segment). */
+export const SPOTIFY_OPEN_URL_REGEX =
+  /https?:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:track|album|playlist|episode|show)\/[a-zA-Z0-9]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
+
+/** zap.stream live player: path must be a bare NIP-19 naddr (`/naddr1…`). */
+export const ZAP_STREAM_WATCH_URL_REGEX =
+  /https?:\/\/(?:www\.)?zap\.stream\/(naddr1[02-9ac-hj-np-z]+)(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
 
 /** Maintainer / official zap recipient pubkey for this distribution. */
 export const IMWALD_MAINTAINER_PUBKEY =

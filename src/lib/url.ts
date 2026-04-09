@@ -355,6 +355,16 @@ export function isVideo(url: string) {
   }
 }
 
+/** HLS / MPEG-DASH manifests (often tagged as `streaming` on NIP-53 live events). */
+export function isHlsPlaylistUrl(url: string): boolean {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    return path.endsWith('.m3u8') || path.endsWith('.m3u')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Return true if the URL looks like a fetchable web page (http(s) with a plausible host).
  * Used to skip OG metadata fetch for invalid or non-http URLs (e.g. "https://1.4ghz/").

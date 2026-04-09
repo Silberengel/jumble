@@ -1,11 +1,12 @@
 import { ensureYouTubeIframeApi } from '@/lib/youtube-iframe-api'
+import { parseYoutubeUrl } from '@/lib/youtube-url'
 import { cn } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import mediaManager from '@/services/media-manager.service'
 import { YouTubePlayer } from '@/types/youtube'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import ExternalLink from '../ExternalLink'
+import LazyMediaTapPlaceholder from '../MediaPlayer/LazyMediaTapPlaceholder'
 import logger from '@/lib/logger'
 
 export default function YoutubeEmbeddedPlayer({
@@ -17,7 +18,6 @@ export default function YoutubeEmbeddedPlayer({
   className?: string
   mustLoad?: boolean
 }) {
-  const { t } = useTranslation()
   const contentPolicy = useContentPolicyOptional()
   const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
   const [userClickedLoad, setUserClickedLoad] = useState(false)
@@ -32,6 +32,20 @@ export default function YoutubeEmbeddedPlayer({
   }, [autoLoadMedia])
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
+
+  const posterUrl = useMemo(
+    () => (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
+    [videoId]
+  )
+
+  const frameClassName = useMemo(
+    () =>
+      cn(
+        isShort ? 'aspect-[9/16] max-h-[80vh] sm:max-h-[60vh]' : 'aspect-video max-h-[60vh]',
+        className
+      ),
+    [isShort, className]
+  )
 
   useEffect(() => {
     if (!videoId || !containerRef.current || !showEmbed) return
@@ -86,15 +100,13 @@ export default function YoutubeEmbeddedPlayer({
 
   if (!mustLoad && !showEmbed) {
     return (
-      <div
-        className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline truncate w-fit cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          setUserClickedLoad(true)
-        }}
-      >
-        [{t('Click to load YouTube video')}]
-      </div>
+      <LazyMediaTapPlaceholder
+        src={url}
+        mediaKind="video"
+        posterUrl={posterUrl}
+        onActivate={() => setUserClickedLoad(true)}
+        className={frameClassName}
+      />
     )
   }
 
@@ -102,35 +114,8 @@ export default function YoutubeEmbeddedPlayer({
     return <ExternalLink url={url} />
   }
   return (
-    <div
-      className={cn(
-        'rounded-lg border overflow-hidden',
-        isShort ? 'aspect-[9/16] max-h-[80vh] sm:max-h-[60vh]' : 'aspect-video max-h-[60vh]',
-        className
-      )}
-    >
+    <div className={cn('rounded-lg border overflow-hidden w-full max-w-[400px]', frameClassName)}>
       <div ref={containerRef} className="w-full h-full" />
     </div>
   )
-}
-
-function parseYoutubeUrl(url: string) {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
-    /youtube\.com\/watch\?.*v=([^&\n?#]+)/,
-    /youtube\.com\/shorts\/([^&\n?#]+)/,
-    /youtube\.com\/live\/([^&\n?#]+)/
-  ]
-
-  let videoId: string | null = null
-  let isShort = false
-  for (const [index, pattern] of patterns.entries()) {
-    const match = url.match(pattern)
-    if (match) {
-      videoId = match[1].trim()
-      isShort = index === 2 // Check if it's a short video
-      break
-    }
-  }
-  return { videoId, isShort }
 }

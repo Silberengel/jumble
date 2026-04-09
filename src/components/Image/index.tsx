@@ -48,6 +48,7 @@ export default function Image({
   errorPlaceholder = <ImageOff />,
   style: wrapperStyleProp,
   holdUntilClick = false,
+  fetchPriority,
   onClick,
   ...props
 }: HTMLAttributes<HTMLSpanElement> & {
@@ -59,6 +60,8 @@ export default function Image({
   alt?: string
   hideIfError?: boolean
   errorPlaceholder?: React.ReactNode
+  /** Passed to the inner `<img>` (e.g. profile banner vs avatar load order). */
+  fetchPriority?: 'high' | 'low' | 'auto'
   /**
    * When true, the full image is not loaded until the user interacts.
    * The first click runs {@link onClick} (e.g. open lightbox) and also reveals the
@@ -137,7 +140,9 @@ export default function Image({
     clearLoadWatch()
     setIsLoading(false)
     setHasError(false)
-    setTimeout(() => setDisplaySkeleton(false), 600)
+    // Unmount blurhash/skeleton immediately — keeping z-10 overlay (even at opacity-0) leaves bg-muted/40
+    // and canvas layers visible as odd tinted bands until delayed teardown.
+    setDisplaySkeleton(false)
   }, [])
 
   // Cached images are often `complete` before `onLoad` is attached (feed mounts many cards at once).
@@ -258,6 +263,7 @@ export default function Image({
           decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
           loading="eager"
+          fetchPriority={fetchPriority}
           draggable={false}
           onLoad={handleLoad}
           onError={handleError}

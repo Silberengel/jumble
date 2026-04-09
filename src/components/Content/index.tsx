@@ -24,10 +24,14 @@ import PaytoLink from '../PaytoLink'
 import Emoji from '../Emoji'
 import ImageGallery from '../ImageGallery'
 import MediaPlayer from '../MediaPlayer'
+import SpotifyEmbeddedPlayer from '../SpotifyEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
+import ZapStreamEmbeddedPlayer from '../ZapStreamEmbeddedPlayer'
 import WebPreview from '../WebPreview'
 import { toNote } from '@/lib/link'
 import { YOUTUBE_URL_REGEX } from '@/constants'
+import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
 // Helper function to check if a URL is a YouTube URL
 function isYouTubeUrl(url: string): boolean {
@@ -120,7 +124,9 @@ export default function Content({
           !isPseudoNostrHttpsUrl(url) &&
           !isImage(url) &&
           !isMedia(url) &&
-          !isYouTubeUrl(url)
+          !isYouTubeUrl(url) &&
+          !isSpotifyOpenUrl(url) &&
+          !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
           if (
@@ -147,7 +153,7 @@ export default function Content({
     
     // Check if YouTube URL is already in content
     const hasYouTubeInContent = nodes?.some(node => node.type === 'youtube') || false
-    
+
     event.tags
       .filter(tag => tag[0] === 'r' && tag[1])
       .forEach(tag => {
@@ -161,10 +167,61 @@ export default function Content({
           }
         }
       })
-    
+
     return urls
   }, [event, nodes])
-  
+
+  const spotifyUrlsFromTags = useMemo(() => {
+    if (!event) return []
+    const urls: string[] = []
+    const seenUrls = new Set<string>()
+    const hasSpotifyInContent = nodes?.some((node) => node.type === 'spotify') || false
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (isSpotifyOpenUrl(url)) {
+          const cleaned = cleanUrl(url)
+          if (cleaned && !hasSpotifyInContent && !seenUrls.has(cleaned)) {
+            urls.push(cleaned)
+            seenUrls.add(cleaned)
+          }
+        }
+      })
+
+    return urls
+  }, [event, nodes])
+
+  const zapStreamCanonicalInContent = useMemo(() => {
+    if (!nodes) return new Set<string>()
+    const s = new Set<string>()
+    for (const n of nodes) {
+      if (n.type !== 'zapstream') continue
+      const raw = cleanUrl(n.data) || n.data
+      const c = canonicalZapStreamWatchUrl(raw)
+      if (c) s.add(c)
+    }
+    return s
+  }, [nodes])
+
+  const zapstreamUrlsFromTags = useMemo(() => {
+    if (!event) return []
+    const urls: string[] = []
+    const seen = new Set<string>()
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!isZapStreamWatchUrl(url)) return
+        const canon = canonicalZapStreamWatchUrl(cleanUrl(url) || url)
+        if (!canon || zapStreamCanonicalInContent.has(canon) || seen.has(canon)) return
+        seen.add(canon)
+        urls.push(canon)
+      })
+    return urls
+  }, [event, zapStreamCanonicalInContent])
+
   // Extract HTTP/HTTPS links from r tags (excluding those already in content, YouTube URLs, images, and media)
   const tagLinks = useMemo(() => {
     if (!event) return []
@@ -183,7 +240,9 @@ export default function Content({
           !isPseudoNostrHttpsUrl(url) &&
           !isImage(url) &&
           !isMedia(url) &&
-          !isYouTubeUrl(url)
+          !isYouTubeUrl(url) &&
+          !isSpotifyOpenUrl(url) &&
+          !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
           // Only include if not already in content links and not already seen in tags
@@ -193,7 +252,7 @@ export default function Content({
           }
         }
       })
-    
+
     return links
   }, [event, contentLinks])
 
@@ -389,6 +448,24 @@ export default function Content({
           mustLoad={mustLoadMedia}
         />
       ))}
+
+      {spotifyUrlsFromTags.map((url) => (
+        <SpotifyEmbeddedPlayer
+          key={`tag-spotify-${url}`}
+          url={url}
+          className="mt-2"
+          mustLoad={mustLoadMedia}
+        />
+      ))}
+
+      {zapstreamUrlsFromTags.map((url) => (
+        <ZapStreamEmbeddedPlayer
+          key={`tag-zapstream-${url}`}
+          url={url}
+          className="mt-2"
+          mustLoad={mustLoadMedia}
+        />
+      ))}
       
       {nodes && nodes.length > 0 && nodes.map((node, index) => {
         if (node.type === 'text') {
@@ -521,6 +598,26 @@ export default function Content({
         if (node.type === 'youtube') {
           return (
             <YoutubeEmbeddedPlayer
+              key={index}
+              url={node.data}
+              className="mt-2"
+              mustLoad={mustLoadMedia}
+            />
+          )
+        }
+        if (node.type === 'spotify') {
+          return (
+            <SpotifyEmbeddedPlayer
+              key={index}
+              url={node.data}
+              className="mt-2"
+              mustLoad={mustLoadMedia}
+            />
+          )
+        }
+        if (node.type === 'zapstream') {
+          return (
+            <ZapStreamEmbeddedPlayer
               key={index}
               url={node.data}
               className="mt-2"

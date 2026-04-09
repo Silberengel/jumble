@@ -473,28 +473,12 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     <SecondaryPageLayout ref={ref} index={index} title={profile.username} controls={controls}>
       {/* Banner & avatar uploaders */}
       <div className="relative bg-cover bg-center mb-2">
-        <Uploader
-          onUploadSuccess={onBannerUploadSuccess}
-          onUploadStart={() => setUploadingBanner(true)}
-          onUploadEnd={() => setUploadingBanner(false)}
-          className="w-full relative cursor-pointer"
-          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
-          maxCompressedSizeMb={5}
-        >
-          <ProfileBanner banner={banner} pubkey={account.pubkey} className="w-full aspect-[3/1]" />
-          <div className="absolute top-0 bg-muted/30 w-full h-full flex flex-col justify-center items-center">
-            {uploadingBanner ? (
-              <Skeleton className="size-9 shrink-0 rounded-md" aria-hidden />
-            ) : (
-              <Upload size={36} />
-            )}
-          </div>
-        </Uploader>
+        {/* Avatar first in DOM + higher fetch priority so it loads before the banner (same as profile view). */}
         <Uploader
           onUploadSuccess={onAvatarUploadSuccess}
           onUploadStart={() => setUploadingAvatar(true)}
           onUploadEnd={() => setUploadingAvatar(false)}
-          className="w-24 h-24 absolute bottom-0 left-4 translate-y-1/2 border-4 border-background cursor-pointer rounded-full"
+          className="z-10 w-24 h-24 absolute bottom-0 left-4 translate-y-1/2 border-4 border-background cursor-pointer rounded-full"
           accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
           maxCompressedSizeMb={2}
         >
@@ -507,12 +491,18 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                 muted
                 loop
                 playsInline
+                fetchPriority="high"
               />
             ) : (
               <Avatar className="w-full h-full">
-                <AvatarImage src={avatar} className="object-cover object-center" />
+                <AvatarImage
+                  src={avatar}
+                  className="object-cover object-center"
+                  fetchPriority="high"
+                  loading="eager"
+                />
                 <AvatarFallback>
-                  <img src={defaultImage} />
+                  <img src={defaultImage} alt="" />
                 </AvatarFallback>
               </Avatar>
             )}
@@ -522,6 +512,28 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />
             ) : (
               <Upload />
+            )}
+          </div>
+        </Uploader>
+        <Uploader
+          onUploadSuccess={onBannerUploadSuccess}
+          onUploadStart={() => setUploadingBanner(true)}
+          onUploadEnd={() => setUploadingBanner(false)}
+          className="relative z-0 w-full cursor-pointer"
+          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
+          maxCompressedSizeMb={5}
+        >
+          <ProfileBanner
+            banner={banner}
+            pubkey={account.pubkey}
+            className="w-full aspect-[3/1]"
+            imageFetchPriority="low"
+          />
+          <div className="absolute top-0 bg-muted/30 w-full h-full flex flex-col justify-center items-center">
+            {uploadingBanner ? (
+              <Skeleton className="size-9 shrink-0 rounded-md" aria-hidden />
+            ) : (
+              <Upload size={36} />
             )}
           </div>
         </Uploader>

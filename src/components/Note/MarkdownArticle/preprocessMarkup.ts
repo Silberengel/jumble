@@ -1,6 +1,8 @@
 import { NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { isImage, isVideo, isAudio } from '@/lib/url'
 import { URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
+import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
 /**
  * Check if a URL is a YouTube URL
@@ -80,9 +82,17 @@ export function preprocessMarkdownMediaLinks(content: string): string {
     const isVideoUrl = isVideo(url)
     const isAudioUrl = isAudio(url)
     const isYouTube = isYouTubeUrl(url)
-    
+
     // Skip YouTube URLs - they should be left as plain text so they can be detected and rendered as YouTube embeds
     if (isYouTube) {
+      continue
+    }
+
+    if (isSpotifyOpenUrl(url)) {
+      continue
+    }
+
+    if (isZapStreamWatchUrl(url)) {
       continue
     }
     
@@ -194,7 +204,7 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     const isVideoUrl = isVideo(url)
     const isAudioUrl = isAudio(url)
     const isYouTube = isYouTubeUrl(url)
-    
+
     let replacement: string
     if (isImageUrl) {
       // Images: convert to image::url[]

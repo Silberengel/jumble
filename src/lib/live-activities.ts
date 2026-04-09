@@ -1,4 +1,5 @@
 import { FAST_READ_RELAY_URLS } from '@/constants'
+import { isAudio, isHlsPlaylistUrl, isVideo } from '@/lib/url'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import {
   dedupeNormalizeRelayUrlsOrdered,
@@ -550,4 +551,42 @@ export function msUntilNextQuarterHour(): number {
   const minsPastQuarter = m % 15
   const secsUntil = (15 - minsPastQuarter) * 60 - s - ms / 1000
   return Math.max(0, Math.floor(secsUntil * 1000))
+}
+
+function isStreamableHttpUrl(s: string): boolean {
+  const t = s.trim()
+  return t.startsWith('https://') || t.startsWith('http://')
+}
+
+function tagValues(ev: Event, name: string): string[] {
+  const out: string[] = []
+  for (const t of ev.tags) {
+    if (t[0] === name && t[1]?.trim()) out.push(t[1].trim())
+  }
+  return out
+}
+
+export type LiveEventInlinePlayback = { src: string; mode: 'audio' | 'video' }
+
+/**
+ * Pick a URL the in-app {@link MediaPlayer} can use for NIP-53 kind 30311 (live / radio).
+ * Prefers direct audio (`r` or `streaming`, e.g. Icecast `.mp3`) over HLS manifests.
+ */
+export function liveEventInlinePlaybackFromEvent(ev: Event): LiveEventInlinePlayback | null {
+  if (ev.kind !== 30311) return null
+  const rUrls = tagValues(ev, 'r').filter(isStreamableHttpUrl)
+  const streaming = tagValues(ev, 'streaming').find(isStreamableHttpUrl)
+
+  for (const u of rUrls) {
+    if (isAudio(u)) return { src: u, mode: 'audio' }
+  }
+  if (streaming && isAudio(streaming)) return { src: streaming, mode: 'audio' }
+
+  for (const u of rUrls) {
+    if (isHlsPlaylistUrl(u) || isVideo(u)) return { src: u, mode: 'video' }
+  }
+  if (streaming && (isHlsPlaylistUrl(streaming) || isVideo(streaming))) {
+    return { src: streaming, mode: 'video' }
+  }
+  return null
 }

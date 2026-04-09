@@ -14,6 +14,8 @@ import {
 import { PAYTO_URI_REGEX } from '@/lib/payto'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
 import { isImage, isMedia } from './url'
+import { isSpotifyOpenUrl } from './spotify-url'
+import { isZapStreamWatchUrl } from './zap-stream-url'
 
 export type TEmbeddedNodeType =
   | 'text'
@@ -29,6 +31,8 @@ export type TEmbeddedNodeType =
   | 'emoji'
   | 'invoice'
   | 'youtube'
+  | 'spotify'
+  | 'zapstream'
   | 'payto'
 
 export type TEmbeddedNode =
@@ -117,6 +121,10 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
       type = 'media'
     } else if (isYouTubeUrl(url)) {
       type = 'youtube'
+    } else if (isSpotifyOpenUrl(url)) {
+      type = 'spotify'
+    } else if (isZapStreamWatchUrl(url)) {
+      type = 'zapstream'
     }
 
     // Add the match as specific type

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { resolveMediaBlurPlaceholder } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
-import { Music2, Play } from 'lucide-react'
+import { Loader2, Music2, Play } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -58,7 +58,7 @@ function BlurHashLayer({ blurHash, className }: { blurHash: string; className?: 
 
 const frameClass = (kind: 'video' | 'audio', className?: string) =>
   cn(
-    'relative w-full max-w-[400px] overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm',
+    'relative w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm',
     kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
     className
   )
@@ -67,14 +67,17 @@ function MediaPlaceholderLayers({
   src,
   posterUrl,
   blurHash,
-  showTapChrome
+  showTapChrome,
+  mediaKind
 }: {
   src: string
   posterUrl?: string
   blurHash?: string
   showTapChrome: boolean
+  /** When set, overrides extension-based guess (e.g. Spotify / YouTube URLs). */
+  mediaKind?: 'video' | 'audio'
 }) {
-  const kind = guessMediaKindFromUrl(src)
+  const kind = mediaKind ?? guessMediaKindFromUrl(src)
   const hash = resolveMediaBlurPlaceholder(src, blurHash)
   const poster = posterUrl?.trim()
 
@@ -93,7 +96,10 @@ function MediaPlaceholderLayers({
       ) : null}
       <span className="absolute inset-0 z-[2] bg-gradient-to-t from-black/55 via-black/25 to-black/15" aria-hidden />
       {showTapChrome ? (
-        <span className="absolute inset-0 z-[3] flex items-center justify-center" aria-hidden>
+        <span
+          className="absolute inset-0 z-[3] grid place-items-center"
+          aria-hidden
+        >
           <span className="flex size-14 items-center justify-center rounded-full bg-black/55 text-white shadow-md backdrop-blur-[2px] transition-transform group-hover:scale-105 group-focus-visible:scale-105">
             {kind === 'video' ? (
               <Play className="size-8 fill-current pl-1" strokeWidth={0} />
@@ -112,20 +118,46 @@ export function MediaEmbedBlurFrame({
   src,
   posterUrl,
   blurHash,
-  className
+  className,
+  mediaKind,
+  loadingHint
 }: {
   src: string
   posterUrl?: string
   blurHash?: string
   className?: string
+  mediaKind?: 'video' | 'audio'
+  /** Shown over the frame (e.g. live HLS) so long stalls are not a silent blank. */
+  loadingHint?: string
 }) {
-  const kind = guessMediaKindFromUrl(src)
+  const kind = mediaKind ?? guessMediaKindFromUrl(src)
   return (
     <div
       className={cn(frameClass(kind, className), 'pointer-events-none select-none')}
-      aria-hidden
+      aria-hidden={loadingHint ? undefined : true}
+      aria-busy={loadingHint ? true : undefined}
     >
-      <MediaPlaceholderLayers src={src} posterUrl={posterUrl} blurHash={blurHash} showTapChrome={false} />
+      <div className="absolute inset-0 overflow-hidden rounded-lg">
+        <MediaPlaceholderLayers
+          src={src}
+          posterUrl={posterUrl}
+          blurHash={blurHash}
+          showTapChrome={false}
+          mediaKind={mediaKind}
+        />
+        {loadingHint ? (
+          <div
+            className="absolute inset-x-0 bottom-0 z-[4] flex justify-center p-3 pt-8 bg-gradient-to-t from-black/70 to-transparent"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="inline-flex max-w-[min(100%,18rem)] items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+              <span className="truncate">{loadingHint}</span>
+            </span>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -135,23 +167,27 @@ export default function LazyMediaTapPlaceholder({
   posterUrl,
   blurHash,
   onActivate,
-  className
+  className,
+  mediaKind
 }: {
   src: string
   posterUrl?: string
   blurHash?: string
   onActivate: () => void
   className?: string
+  mediaKind?: 'video' | 'audio'
 }) {
   const { t } = useTranslation()
-  const kind = guessMediaKindFromUrl(src)
+  const kind = mediaKind ?? guessMediaKindFromUrl(src)
   const label = t('Click to load media')
 
   return (
     <button
       type="button"
       className={cn(
-        'group w-full max-w-[400px] overflow-hidden rounded-lg border border-border bg-muted/30 text-left shadow-sm outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
+        // `block` + `p-0` + `leading-none`: native <button> keeps a line-box / padding; with only
+        // absolutely positioned children that shifts the stack and the play icon looks bottom-heavy.
+        'group relative block w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 p-0 text-left leading-none shadow-sm outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
         kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
         className
       )}
@@ -163,7 +199,15 @@ export default function LazyMediaTapPlaceholder({
       aria-label={label}
       title={label}
     >
-      <MediaPlaceholderLayers src={src} posterUrl={posterUrl} blurHash={blurHash} showTapChrome />
+      <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+        <MediaPlaceholderLayers
+          src={src}
+          posterUrl={posterUrl}
+          blurHash={blurHash}
+          showTapChrome
+          mediaKind={mediaKind}
+        />
+      </span>
     </button>
   )
 }
