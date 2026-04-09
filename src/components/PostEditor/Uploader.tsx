@@ -10,9 +10,11 @@ export default function Uploader({
       onUploadEnd,
       onProgress,
       onUploadCompressPhase,
+      onUploadCompressProgress,
   className,
   accept = 'image/*',
-  maxFileSizeMb
+  maxFileSizeMb,
+  maxCompressedSizeMb
 }: {
   children: React.ReactNode
   onUploadSuccess: (result: { url: string; tags: string[][]; file?: File }) => void
@@ -21,10 +23,14 @@ export default function Uploader({
   onProgress?: (file: File, progress: number) => void
   /** After local compression (before network upload). */
   onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
+  /** 0–100 during local compression only. */
+  onUploadCompressProgress?: (file: File, percent: number) => void
   className?: string
   accept?: string
-  /** Reject files whose size (before compression) exceeds this limit and show a toast. */
+  /** Reject files whose original size exceeds this limit (before compression). */
   maxFileSizeMb?: number
+  /** Reject when compressed size exceeds this limit (after local encode, before upload). */
+  maxCompressedSizeMb?: number
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -53,7 +59,9 @@ export default function Uploader({
           onProgress: (p) => onProgress?.(file, p),
           signal: abortController?.signal,
           onCompressStart: () => onUploadCompressPhase?.(file, 'compressing'),
-          onCompressEnd: () => onUploadCompressPhase?.(file, 'uploading')
+          onCompressEnd: () => onUploadCompressPhase?.(file, 'uploading'),
+          onCompressProgress: (p) => onUploadCompressProgress?.(file, p),
+          maxCompressedSizeMb
         })
         onUploadSuccess({ ...result, file })
         onUploadEnd?.(file)

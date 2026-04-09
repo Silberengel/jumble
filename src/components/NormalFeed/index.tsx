@@ -127,7 +127,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
         { value: 'posts', label: 'Notes' },
         { value: 'postsAndReplies', label: 'Replies' }
       ]
-      if (isMainFeed) base.push({ value: 'media', label: 'Media' })
+      if (isMainFeed) base.push({ value: 'media', label: 'Gallery' })
       return base
     },
     [isMainFeed]

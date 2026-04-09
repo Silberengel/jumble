@@ -11,15 +11,16 @@ import {
   isMedia,
   isVideo,
   isAudio,
-  isWebsocketUrl,
-  preferBlossomPrimalDisplayUrl
+  isWebsocketUrl
 } from '@/lib/url'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, Root } from 'react-dom/client'
+import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import Lightbox from 'yet-another-react-lightbox'
+import Video from 'yet-another-react-lightbox/plugins/video'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import { EmbeddedNote, EmbeddedMention } from '@/components/Embedded'
 import EmbeddedCitation from '@/components/EmbeddedCitation'
@@ -505,14 +506,14 @@ export default function AsciidocArticle({
   // Get all images for gallery (deduplicated)
   const allImages = useMemo(() => {
     const seenUrls = new Set<string>()
-    const images: Array<{ url: string; alt?: string }> = []
+    const images: Array<{ url: string; alt?: string; m?: string; image?: string }> = []
     
     // Add images from extractedMedia
     extractedMedia.images.forEach(img => {
       const cleaned = cleanUrl(img.url)
       if (cleaned && !seenUrls.has(cleaned)) {
         seenUrls.add(cleaned)
-        images.push({ url: img.url, alt: img.alt })
+        images.push({ url: img.url, alt: img.alt, m: img.m, image: img.image })
       }
     })
     
@@ -2131,11 +2132,8 @@ export default function AsciidocArticle({
         >
           <Lightbox
             index={lightboxIndex}
-            slides={allImages.map(({ url, alt }) => ({
-              src: preferBlossomPrimalDisplayUrl(url),
-              alt: alt || url
-            }))}
-            plugins={[Zoom]}
+            slides={allImages.map((img) => lightboxSlideFromImeta(img))}
+            plugins={[Video, Zoom]}
             open={lightboxIndex >= 0}
             close={() => setLightboxIndex(-1)}
             controller={{

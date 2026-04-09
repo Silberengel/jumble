@@ -297,6 +297,7 @@ export default {
     'Display replies': '답글 표시',
     Notes: '노트',
     Replies: '답글',
+    Gallery: '갤러리',
     Notifications: '알림',
     'no more notifications': '더 이상 알림 없음',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

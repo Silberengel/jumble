@@ -1,6 +1,11 @@
 /** Compression runs entirely in-app before upload (`compress-upload-media`). */
 import { compressMediaForUpload } from '@/lib/compress-upload-media'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
+import {
+  buildClientNip94Pairs,
+  mergeNip94Pairs,
+  nip94PairsToImetaTag
+} from '@/lib/upload-nip94-imeta'
 import { simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
 import { BlossomClient } from 'blossom-client-sdk'
@@ -15,6 +20,13 @@ type UploadOptions = {
   onCompressStart?: () => void
   /** Fires after compression finishes (or throws), before the HTTP upload. */
   onCompressEnd?: () => void
+  /** 0–100 during local compression (encode), not network upload. */
+  onCompressProgress?: (percent: number) => void
+  /**
+   * Reject when the compressed file size (bytes sent to the server) exceeds this limit.
+   * Checked after `compressMediaForUpload`, before HTTP upload.
+   */
+  maxCompressedSizeMb?: number
 }
 
 export const UPLOAD_ABORTED_ERROR_MSG = 'Upload aborted'
@@ -41,9 +53,22 @@ class MediaUploadService {
     options?.onCompressStart?.()
     let toUpload: File
     try {
-      toUpload = await compressMediaForUpload(file, { signal: options?.signal })
+      toUpload = await compressMediaForUpload(file, {
+        signal: options?.signal,
+        onCompressProgress: options?.onCompressProgress
+      })
     } finally {
       options?.onCompressEnd?.()
+    }
+
+    if (
+      options?.maxCompressedSizeMb !== undefined &&
+      toUpload.size > options.maxCompressedSizeMb * 1024 * 1024
+    ) {
+      const mb = (toUpload.size / (1024 * 1024)).toFixed(1)
+      throw new Error(
+        `After compression the file is ${mb} MB; maximum allowed is ${options.maxCompressedSizeMb} MB.`
+      )
     }
 
     try {
@@ -69,10 +94,10 @@ class MediaUploadService {
       result = await this.uploadByBlossom(toUpload, options)
     }
 
-    if (result.tags.length > 0) {
-      this.imetaTagMap.set(result.url, ['imeta', ...result.tags.map(([n, v]) => `${n} ${v}`)])
-    }
-    return result
+    const clientPairs = await buildClientNip94Pairs(toUpload, result.url)
+    const mergedTags = mergeNip94Pairs(clientPairs, result.tags)
+    this.imetaTagMap.set(result.url, nip94PairsToImetaTag(mergedTags))
+    return { url: result.url, tags: mergedTags }
   }
 
   private async uploadByBlossom(file: File, options?: UploadOptions) {
@@ -187,7 +212,24 @@ class MediaUploadService {
       xhr.responseType = 'json'
       xhr.setRequestHeader('Authorization', auth)
 
+      let pseudoTimer: number | undefined
+      let pseudo = 0
+      const stopPseudo = () => {
+        if (pseudoTimer !== undefined) {
+          window.clearInterval(pseudoTimer)
+          pseudoTimer = undefined
+        }
+      }
+      const startPseudo = () => {
+        if (pseudoTimer !== undefined) return
+        pseudoTimer = window.setInterval(() => {
+          pseudo = Math.min(pseudo + 2, 92)
+          options?.onProgress?.(pseudo)
+        }, 220)
+      }
+
       const handleAbort = () => {
+        stopPseudo()
         try {
           xhr.abort()
         } catch {
@@ -202,20 +244,29 @@ class MediaUploadService {
         options.signal.addEventListener('abort', handleAbort, { once: true })
       }
 
+      options?.onProgress?.(0)
+      startPseudo()
+
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
+        if (event.lengthComputable && event.total > 0) {
+          stopPseudo()
           const percent = Math.round((event.loaded / event.total) * 100)
           options?.onProgress?.(percent)
         }
       }
-      xhr.onerror = () => reject(new Error('Network error'))
+      xhr.onerror = () => {
+        stopPseudo()
+        reject(new Error('Network error'))
+      }
       xhr.onload = () => {
+        stopPseudo()
         if (xhr.status >= 200 && xhr.status < 300) {
           const data = xhr.response
           try {
             const tags = z.array(z.array(z.string())).parse(data?.nip94_event?.tags ?? [])
             const url = tags.find(([tagName]: string[]) => tagName === 'url')?.[1]
             if (url) {
+              options?.onProgress?.(100)
               resolve({ url, tags })
             } else {
               reject(new Error('No url found'))

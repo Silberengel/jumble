@@ -297,6 +297,7 @@ export default {
     'Display replies': '返信を表示',
     Notes: 'ノート',
     Replies: '返信',
+    Gallery: 'ギャラリー',
     Notifications: '通知',
     'no more notifications': 'これ以上通知はありません',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

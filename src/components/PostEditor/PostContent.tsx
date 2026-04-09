@@ -73,6 +73,7 @@ import {
   Laugh
 } from 'lucide-react'
 import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
+import { nip94PairsToImetaTag } from '@/lib/upload-nip94-imeta'
 import { getMediaKindFromFile } from '@/lib/media-kind-detection'
 import { hasPrivateRelays, getPrivateRelayUrls } from '@/lib/private-relays'
 import mediaUpload from '@/services/media-upload.service'
@@ -1492,7 +1493,20 @@ export default function PostContent({
 
   const handleUploadCompressPhase = useCallback((file: File, phase: 'compressing' | 'uploading') => {
     setUploadProgresses((prev) =>
-      prev.map((row) => (row.file === file ? { ...row, phase } : row))
+      prev.map((row) =>
+        row.file === file
+          ? { ...row, phase, progress: phase === 'uploading' ? 0 : row.progress }
+          : row
+      )
+    )
+  }, [])
+
+  const handleUploadCompressProgress = useCallback((file: File, percent: number) => {
+    const p = Math.max(0, Math.min(100, Math.round(percent)))
+    setUploadProgresses((prev) =>
+      prev.map((row) =>
+        row.file === file && row.phase === 'compressing' ? { ...row, progress: p } : row
+      )
     )
   }, [])
 
@@ -1556,9 +1570,7 @@ export default function PostContent({
   const handleUploadProgress = (file: File, progress: number) => {
     setUploadProgresses((prev) =>
       prev.map((item) =>
-        item.file === file
-          ? { ...item, progress, phase: progress > 0 ? 'uploading' : item.phase }
-          : item
+        item.file === file ? { ...item, progress } : item
       )
     )
   }
@@ -1648,8 +1660,8 @@ export default function PostContent({
         let newImetaTag: string[]
         if (imetaTag) {
           newImetaTag = imetaTag
-        } else if (tags && tags.length > 0 && tags[0]) {
-          newImetaTag = tags[0]
+        } else if (tags && tags.length > 0) {
+          newImetaTag = nip94PairsToImetaTag(tags)
         } else {
           // Create a basic imeta tag if none exists
           newImetaTag = ['imeta', `url ${url}`]
@@ -1692,7 +1704,7 @@ export default function PostContent({
         if (imetaTag) {
           setMediaImetaTags([imetaTag])
         } else if (tags && tags.length > 0) {
-          setMediaImetaTags(tags)
+          setMediaImetaTags([nip94PairsToImetaTag(tags)])
         } else {
           const basicImetaTag: string[] = ['imeta', `url ${url}`]
           // Update MIME type based on selected kind
@@ -1835,7 +1847,7 @@ export default function PostContent({
           if (imetaTag) {
             setMediaImetaTags([imetaTag])
           } else if (tags && tags.length > 0) {
-            setMediaImetaTags(tags)
+            setMediaImetaTags([nip94PairsToImetaTag(tags)])
           } else {
             const basicImetaTag: string[] = ['imeta', `url ${url}`]
             // For webm/ogg/mp3/m4a files uploaded via microphone, ensure MIME type is set to audio/*
@@ -2782,6 +2794,7 @@ export default function PostContent({
           onUploadEnd={handleUploadEnd}
           onUploadSuccess={handleMediaUploadSuccess}
           onUploadCompressPhase={handleUploadCompressPhase}
+          onUploadCompressProgress={handleUploadCompressProgress}
           kind={getDeterminedKind}
           highlightData={isHighlight ? highlightData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
@@ -3055,7 +3068,7 @@ export default function PostContent({
                   : t('Uploading to media server…')}
               </div>
               <div className="h-0.5 w-full rounded-full bg-muted overflow-hidden">
-                {phase === 'compressing' ? (
+                {phase === 'compressing' && progress <= 0 ? (
                   <div
                     className="h-full w-1/3 max-w-[45%] animate-pulse rounded-full bg-primary motion-reduce:animate-none motion-reduce:w-full motion-reduce:opacity-60"
                     aria-hidden
@@ -3063,7 +3076,9 @@ export default function PostContent({
                 ) : (
                   <div
                     className="h-full bg-primary transition-[width] duration-200 ease-out"
-                    style={{ width: `${progress}%` }}
+                    style={{
+                      width: `${phase === 'compressing' ? Math.max(2, progress) : progress}%`
+                    }}
                   />
                 )}
               </div>
@@ -3110,6 +3125,7 @@ export default function PostContent({
           onUploadEnd={handleUploadEnd}
           onProgress={handleUploadProgress}
           onUploadCompressPhase={handleUploadCompressPhase}
+          onUploadCompressProgress={handleUploadCompressProgress}
           accept="image/*,audio/*,video/*,.mkv,.mka,video/x-matroska,audio/x-matroska"
           className="sr-only"
         >
@@ -3126,6 +3142,7 @@ export default function PostContent({
               onUploadEnd={handleUploadEnd}
               onProgress={handleUploadProgress}
               onUploadCompressPhase={handleUploadCompressPhase}
+              onUploadCompressProgress={handleUploadCompressProgress}
               accept="audio/*,.mka,audio/x-matroska"
             >
               <Button 
@@ -3145,6 +3162,7 @@ export default function PostContent({
             onUploadEnd={handleUploadEnd}
             onProgress={handleUploadProgress}
             onUploadCompressPhase={handleUploadCompressPhase}
+            onUploadCompressProgress={handleUploadCompressProgress}
             accept="image/*"
           >
             <Button type="button" variant="ghost" size="icon" title={t('Upload Image')}>

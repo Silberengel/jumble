@@ -16,8 +16,7 @@ import {
   isAudio,
   isWebsocketUrl,
   isPseudoNostrHttpsUrl,
-  isSafeMediaUrl,
-  preferBlossomPrimalDisplayUrl
+  isSafeMediaUrl
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
@@ -31,7 +30,9 @@ import { TEmoji, TImetaInfo } from '@/types'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import Lightbox from 'yet-another-react-lightbox'
+import Video from 'yet-another-react-lightbox/plugins/video'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import CalendarEventContent from '@/components/CalendarEventContent'
 import { EmbeddedNote, EmbeddedMention, HttpNostrAwareUrl } from '@/components/Embedded'
@@ -4544,14 +4545,14 @@ export default function MarkdownArticle({
   // Get all images for gallery (deduplicated)
   const allImages = useMemo(() => {
     const seenUrls = new Set<string>()
-    const images: Array<{ url: string; alt?: string }> = []
+    const images: Array<Pick<TImetaInfo, 'url' | 'alt' | 'm' | 'image'>> = []
     
     // Add images from extractedMedia
     extractedMedia.images.forEach(img => {
       const cleaned = cleanUrl(img.url)
       if (cleaned && !seenUrls.has(cleaned)) {
         seenUrls.add(cleaned)
-        images.push({ url: img.url, alt: img.alt })
+        images.push({ url: img.url, alt: img.alt, m: img.m, image: img.image })
       }
     })
     
@@ -5093,11 +5094,8 @@ export default function MarkdownArticle({
         >
           <Lightbox
             index={lightboxIndex}
-            slides={allImages.map(({ url, alt }) => ({
-              src: preferBlossomPrimalDisplayUrl(url),
-              alt: alt || url
-            }))}
-            plugins={[Zoom]}
+            slides={allImages.map((img) => lightboxSlideFromImeta(img))}
+            plugins={[Video, Zoom]}
             open={lightboxOpen}
             close={() => setLightboxOpen(false)}
             on={{

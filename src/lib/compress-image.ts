@@ -35,15 +35,29 @@ function canvasToBlob(
  *  4. If nothing fits, return the best (smallest) result even if still over limit,
  *     unless it is bigger than the original — in which case return the original.
  */
-export async function compressImage(file: File, targetMaxBytes: number): Promise<File> {
-  if (!file.type.startsWith('image/')) return file
-  if (file.type === 'image/gif') return file // canvas strips animation
-  if (file.type === 'image/svg+xml') return file
+export async function compressImage(
+  file: File,
+  targetMaxBytes: number,
+  onProgress?: (percent: number) => void
+): Promise<File> {
+  const report = (p: number) => onProgress?.(Math.max(0, Math.min(100, Math.round(p))))
 
+  if (!file.type.startsWith('image/')) return file
+  if (file.type === 'image/gif') {
+    report(100)
+    return file // canvas strips animation
+  }
+  if (file.type === 'image/svg+xml') {
+    report(100)
+    return file
+  }
+
+  report(5)
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch {
+    report(100)
     return file
   }
 
@@ -60,29 +74,45 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     bitmap.close()
+    report(100)
     return file
   }
   ctx.drawImage(bitmap, 0, 0, width, height)
   bitmap.close()
+  report(22)
 
   const baseName = file.name.replace(/\.[^.]+$/, '')
 
   // Try WebP first (always prefer a smaller or cap-compliant WebP)
   const webpBlob = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY)
+  report(38)
   if (webpBlob && webpBlob.size <= targetMaxBytes) {
+    report(100)
     return new File([webpBlob], `${baseName}.webp`, { type: 'image/webp' })
   }
 
   // Progressive JPEG quality reduction
   let bestBlob: Blob | null = webpBlob
+  let step = 0
+  const jpegSteps = Math.max(
+    1,
+    Math.ceil((JPEG_QUALITY_START - JPEG_QUALITY_MIN) / 0.1) + 1
+  )
   for (let q = JPEG_QUALITY_START; q >= JPEG_QUALITY_MIN; q = Math.round((q - 0.1) * 10) / 10) {
     const blob = await canvasToBlob(canvas, 'image/jpeg', q)
     if (!blob) continue
     if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob
     if (blob.size <= targetMaxBytes) {
+      report(100)
       return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' })
     }
+    step++
+    if (step % 2 === 0) {
+      report(40 + Math.min(35, (step / jpegSteps) * 35))
+    }
   }
+
+  report(72)
 
   // If still over budget, shrink canvas further and retry WebP / JPEG
   if (bestBlob && bestBlob.size > targetMaxBytes && (width > 640 || height > 640)) {
@@ -94,11 +124,13 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
     canvas.height = h2
     ctx.drawImage(snap, 0, 0, w2, h2)
     snap.close()
+    report(78)
     const smallWebp = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY - 0.08)
     if (smallWebp && smallWebp.size < (bestBlob?.size ?? Infinity)) {
       bestBlob = smallWebp
     }
     if (smallWebp && smallWebp.size <= targetMaxBytes) {
+      report(100)
       return new File([smallWebp], `${baseName}.webp`, { type: 'image/webp' })
     }
     for (let q = JPEG_QUALITY_START; q >= JPEG_QUALITY_MIN; q = Math.round((q - 0.1) * 10) / 10) {
@@ -106,6 +138,7 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
       if (!blob) continue
       if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob
       if (blob.size <= targetMaxBytes) {
+        report(100)
         return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' })
       }
     }
@@ -114,6 +147,7 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
   // Return best effort if smaller than original
   if (bestBlob && bestBlob.size < file.size) {
     const isWebp = bestBlob.type === 'image/webp'
+    report(100)
     return new File(
       [bestBlob],
       `${baseName}${isWebp ? '.webp' : '.jpg'}`,
@@ -121,5 +155,6 @@ export async function compressImage(file: File, targetMaxBytes: number): Promise
     )
   }
 
+  report(100)
   return file
 }

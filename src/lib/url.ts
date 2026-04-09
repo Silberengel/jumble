@@ -209,7 +209,17 @@ export function isLocalNetworkUrl(urlString: string): boolean {
 
 export function isImage(url: string) {
   try {
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.svg']
+    const imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.webp',
+      '.avif',
+      '.apng',
+      '.heic',
+      '.svg'
+    ]
     const parsedUrl = new URL(url)
     
     // Check pathname for image extensions
@@ -251,7 +261,10 @@ export function isImage(url: string) {
     // Check for image-related query parameters (common in image proxy services)
     // e.g., output=webp, format=webp, etc.
     const outputParam = parsedUrl.searchParams.get('output') || parsedUrl.searchParams.get('format')
-    if (outputParam && ['webp', 'jpg', 'jpeg', 'png', 'gif'].includes(outputParam.toLowerCase())) {
+    if (
+      outputParam &&
+      ['webp', 'jpg', 'jpeg', 'png', 'gif', 'avif', 'svg', 'apng'].includes(outputParam.toLowerCase())
+    ) {
       return true
     }
     
@@ -277,6 +290,7 @@ export function isMedia(url: string) {
       '.mp4',
       '.webm',
       '.ogg',
+      '.ogv',
       '.mov',
       '.mkv',
       '.mka',
@@ -296,6 +310,8 @@ export function isMedia(url: string) {
 
 export function isAudio(url: string) {
   try {
+    const path = new URL(url).pathname.toLowerCase()
+    // Matroska: .mka is audio-only; .mkv is video — do not treat mkv as audio by extension.
     const audioExtensions = [
       '.mp3',
       '.wav',
@@ -304,12 +320,12 @@ export function isAudio(url: string) {
       '.m4a',
       '.opus',
       '.wma',
-      '.ogg', // ogg can be audio
-      '.webm', // webm can be audio (when uploaded via microphone button)
-      '.mp4', // mp4 can be audio (m4a files)
-      '.mka'
+      '.mka',
+      '.ogg',
+      '.webm',
+      '.mp4'
     ]
-    return audioExtensions.some((ext) => new URL(url).pathname.toLowerCase().endsWith(ext))
+    return audioExtensions.some((ext) => path.endsWith(ext))
   } catch {
     return false
   }
@@ -317,6 +333,7 @@ export function isAudio(url: string) {
 
 export function isVideo(url: string) {
   try {
+    const path = new URL(url).pathname.toLowerCase()
     const videoExtensions = [
       '.mp4',
       '.webm',
@@ -326,9 +343,10 @@ export function isVideo(url: string) {
       '.flv',
       '.mkv',
       '.m4v',
-      '.3gp'
+      '.3gp',
+      '.ogv'
     ]
-    return videoExtensions.some((ext) => new URL(url).pathname.toLowerCase().endsWith(ext))
+    return videoExtensions.some((ext) => path.endsWith(ext))
   } catch {
     return false
   }

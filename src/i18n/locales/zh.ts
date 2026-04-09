@@ -296,6 +296,7 @@ export default {
     'Display replies': '显示回复',
     Notes: '笔记',
     Replies: '回复',
+    Gallery: '画廊',
     Notifications: '通知',
     'no more notifications': '到底了',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

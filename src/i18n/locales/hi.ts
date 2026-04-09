@@ -297,6 +297,7 @@ export default {
     'Display replies': 'उत्तर प्रदर्शित करें',
     Notes: 'नोट्स',
     Replies: 'उत्तर',
+    Gallery: 'गैलरी',
     Notifications: 'सूचनाएं',
     'no more notifications': 'कोई और सूचनाएं नहीं',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

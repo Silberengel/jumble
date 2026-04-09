@@ -1,4 +1,5 @@
 import { generateImageByPubkey } from '@/lib/pubkey'
+import { isVideo } from '@/lib/url'
 import { useEffect, useMemo, useState } from 'react'
 import Image from '../Image'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,23 @@ export default function ProfileBanner({
       setBannerUrl(defaultBanner)
     }
   }, [defaultBanner, banner])
+
+  if (isVideo(bannerUrl)) {
+    return (
+      <div className={cn('overflow-hidden rounded-none', className)}>
+        <video
+          src={bannerUrl}
+          className="h-full w-full object-cover object-center"
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-label={`${pubkey} banner`}
+          onError={() => setBannerUrl(defaultBanner)}
+        />
+      </div>
+    )
+  }
 
   return (
     <Image

@@ -1,5 +1,4 @@
 import { randomString } from '@/lib/random'
-import { preferBlossomPrimalDisplayUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
@@ -7,8 +6,10 @@ import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import Lightbox from 'yet-another-react-lightbox'
 import Captions from 'yet-another-react-lightbox/plugins/captions'
+import Video from 'yet-another-react-lightbox/plugins/video'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import 'yet-another-react-lightbox/plugins/captions.css'
 import Image from '../Image'
@@ -118,15 +119,11 @@ export default function ImageGallery({
           <Lightbox
             index={index}
             slides={(() => {
-              const slides = images.map(({ url, alt }) => ({
-                src: preferBlossomPrimalDisplayUrl(url),
-                alt: alt || url,
-                title: alt || undefined
-              }))
+              const slides = images.map((img) => lightboxSlideFromImeta(img))
               logger.debug('[ImageGallery] Lightbox slides:', { index, slidesCount: slides.length, slides })
               return slides
             })()}
-            plugins={[Zoom, Captions]}
+            plugins={[Video, Zoom, Captions]}
             open={index >= 0}
             close={() => setIndex(-1)}
             controller={{

@@ -297,6 +297,7 @@ export default {
     'Display replies': 'แสดงการตอบกลับ',
     Notes: 'โน้ต',
     Replies: 'การตอบกลับ',
+    Gallery: 'แกลเลอรี',
     Notifications: 'การแจ้งเตือน',
     'no more notifications': 'ไม่มีการแจ้งเตือนเพิ่มเติม',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

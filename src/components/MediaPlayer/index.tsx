@@ -50,8 +50,8 @@ export default function MediaPlayer({
       return
     }
 
-    // Matroska is video-first for feeds; avoids waiting on metadata probe (codec support still browser-dependent).
-    if (extension === 'mkv') {
+    // Matroska / Ogg Theora: treat as video first (codec support is browser-dependent).
+    if (extension === 'mkv' || extension === 'ogv') {
       setMediaType('video')
       return
     }

@@ -5,10 +5,11 @@ import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { preferBlossomPrimalDisplayUrl } from '@/lib/url'
+import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import { useTranslation } from 'react-i18next'
 import Lightbox from 'yet-another-react-lightbox'
 import Captions from 'yet-another-react-lightbox/plugins/captions'
+import Video from 'yet-another-react-lightbox/plugins/video'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import 'yet-another-react-lightbox/plugins/captions.css'
 import Image from '../Image'
@@ -91,14 +92,8 @@ export default function ImageWithLightbox({
         >
           <Lightbox
             index={index}
-            slides={[
-              {
-                src: preferBlossomPrimalDisplayUrl(image.url),
-                alt: image.alt || image.url,
-                title: image.alt || undefined
-              }
-            ]}
-            plugins={[Zoom, Captions]}
+            slides={[lightboxSlideFromImeta(image)]}
+            plugins={[Video, Zoom, Captions]}
             open={index >= 0}
             close={() => setIndex(-1)}
             controller={{

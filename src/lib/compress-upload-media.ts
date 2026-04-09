@@ -72,11 +72,25 @@ function fileLooksLikeMatroskaAudio(file: File): boolean {
   return /\.mka$/i.test(file.name) || file.type === 'audio/x-matroska'
 }
 
-async function compressAudioToMp3(file: File, signal?: AbortSignal): Promise<File> {
+async function compressAudioToMp3(
+  file: File,
+  signal?: AbortSignal,
+  onProgress?: (percent: number) => void
+): Promise<File> {
   if (!file.type.startsWith('audio/') && !fileLooksLikeMatroskaAudio(file)) return file
+
+  let lastP = -1
+  const bump = (p: number) => {
+    const n = Math.max(0, Math.min(100, Math.round(p)))
+    if (n > lastP) {
+      lastP = n
+      onProgress?.(n)
+    }
+  }
 
   const ctx = new AudioContext()
   try {
+    bump(4)
     const ab = await file.arrayBuffer()
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
@@ -84,11 +98,16 @@ async function compressAudioToMp3(file: File, signal?: AbortSignal): Promise<Fil
     try {
       audioBuffer = await ctx.decodeAudioData(ab.slice(0))
     } catch {
+      bump(100)
       return file
     }
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    if (audioBuffer.duration <= 0 || !Number.isFinite(audioBuffer.duration)) return file
+    if (audioBuffer.duration <= 0 || !Number.isFinite(audioBuffer.duration)) {
+      bump(100)
+      return file
+    }
 
+    bump(18)
     const length = Math.ceil(audioBuffer.duration * AUDIO_TARGET_SAMPLE_RATE)
     const offline = new OfflineAudioContext(1, length, AUDIO_TARGET_SAMPLE_RATE)
     const monoSrc = offline.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate)
@@ -112,6 +131,7 @@ async function compressAudioToMp3(file: File, signal?: AbortSignal): Promise<Fil
     const rendered = await offline.startRendering()
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
+    bump(32)
     const pcm = float32ToInt16(rendered.getChannelData(0))
     const { Mp3Encoder } = await import('lamejs')
     const enc = new Mp3Encoder(1, AUDIO_TARGET_SAMPLE_RATE, AUDIO_MP3_KBPS)
@@ -119,6 +139,9 @@ async function compressAudioToMp3(file: File, signal?: AbortSignal): Promise<Fil
 
     for (let i = 0; i < pcm.length; i += MP3_FRAME_SAMPLES) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (i % (MP3_FRAME_SAMPLES * 80) === 0) {
+        bump(34 + Math.floor(62 * (i / Math.max(1, pcm.length))))
+      }
       if (i % (MP3_FRAME_SAMPLES * 200) === 0) {
         await new Promise((r) => setTimeout(r, 0))
       }
@@ -135,12 +158,18 @@ async function compressAudioToMp3(file: File, signal?: AbortSignal): Promise<Fil
       chunks.push(new Uint8Array(tail.buffer.slice(tail.byteOffset, tail.byteOffset + tail.byteLength)) as BlobPart)
     }
 
+    bump(96)
     const blob = new Blob(chunks, { type: 'audio/mpeg' })
-    if (blob.size === 0 || blob.size >= file.size * 0.97) return file
+    if (blob.size === 0 || blob.size >= file.size * 0.97) {
+      bump(100)
+      return file
+    }
     const base = file.name.replace(/\.[^.]+$/, '') || 'audio'
+    bump(100)
     return new File([blob], `${base}.mp3`, { type: 'audio/mpeg' })
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
+    bump(100)
     return file
   } finally {
     await ctx.close().catch(() => {})
@@ -222,7 +251,11 @@ function waitVideoEvent(el: HTMLVideoElement, name: keyof HTMLMediaElementEventM
   })
 }
 
-async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<File> {
+async function compressVideoToWebm(
+  file: File,
+  signal?: AbortSignal,
+  onProgress?: (percent: number) => void
+): Promise<File> {
   if (!fileLooksLikeVideo(file)) return file
   const mime = pickVideoMime()
   if (!mime) {
@@ -239,6 +272,15 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
     return file
   }
 
+  let lastVp = -1
+  const bump = (p: number) => {
+    const n = Math.max(0, Math.min(100, Math.round(p)))
+    if (n > lastVp) {
+      lastVp = n
+      onProgress?.(n)
+    }
+  }
+
   const objUrl = URL.createObjectURL(file)
   const video = document.createElement('video')
   video.src = objUrl
@@ -249,12 +291,14 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
   try {
     await waitVideoEvent(video, 'loadedmetadata')
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    bump(6)
 
     const probeStream = captureStreamFromVideoElement(video)
     if (!probeStream) {
       uploadCompressionDiag(
         'video skip: video.captureStream / mozCaptureStream not available (try another browser or disable strict privacy flags)'
       )
+      bump(100)
       return file
     }
     probeStream.getTracks().forEach((t) => t.stop())
@@ -263,10 +307,12 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
     if (!Number.isFinite(duration) || duration <= 0 || duration > MAX_VIDEO_DURATION_SEC) {
       uploadCompressionDiag('video skip: bad or too long duration', { duration })
       logger.debug('[compress-upload] video duration skip', { duration })
+      bump(100)
       return file
     }
     if (videoWidth < 2 || videoHeight < 2) {
       uploadCompressionDiag('video skip: dimensions too small', { videoWidth, videoHeight })
+      bump(100)
       return file
     }
 
@@ -397,6 +443,7 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
           const maxFrames = Math.min(Math.ceil(durationSec * 100) + 2000, 500_000)
           /** Yield to the event loop so React can paint (compression is CPU-heavy). */
           const YIELD_EVERY_FRAMES = 30
+          const PROGRESS_EVERY_FRAMES = 6
 
           const step = () => {
             if (settled) return
@@ -413,6 +460,9 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
               return
             }
             frames++
+            if (frames === 1 || frames % PROGRESS_EVERY_FRAMES === 0) {
+              bump(8 + Math.floor(84 * (frames / maxFrames)))
+            }
             if (frames > maxFrames) {
               video.pause()
               finish()
@@ -472,6 +522,7 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
           maxWidthPx: maxW,
           outName: out.name
         })
+        bump(100)
         return out
       }
     }
@@ -481,11 +532,13 @@ async function compressVideoToWebm(file: File, signal?: AbortSignal): Promise<Fi
       mime
     })
     logger.debug('[compress-upload] video re-encode: all passes kept original')
+    bump(100)
     return file
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
     uploadCompressionDiag('video skip: encode pipeline error', { error: String(e) })
     logger.debug('[compress-upload] video compress failed', { e })
+    bump(100)
     return file
   } finally {
     URL.revokeObjectURL(objUrl)
@@ -498,6 +551,8 @@ export type CompressMediaOptions = {
   signal?: AbortSignal
   /** Raster images are scaled/encoded until under this size when possible (default 2 MiB — fits typical profile `picture` limits). */
   imageTargetMaxBytes?: number
+  /** 0–100 during local compression only (not HTTP upload). */
+  onCompressProgress?: (percent: number) => void
 }
 
 /** Default cap for raster image uploads (profile pics and inline media). */
@@ -515,16 +570,20 @@ export async function compressMediaForUpload(file: File, options?: CompressMedia
   let branch: 'image' | 'audio' | 'video' | 'none' = 'none'
   let out: File = file
 
+  const onProg = options?.onCompressProgress
+
   if (file.type.startsWith('image/')) {
     branch = 'image'
-    out = await compressImage(file, imageTarget)
+    out = await compressImage(file, imageTarget, onProg)
   } else if (file.type.startsWith('audio/') || fileLooksLikeMatroskaAudio(file)) {
     branch = 'audio'
-    out = await compressAudioToMp3(file, signal)
+    out = await compressAudioToMp3(file, signal, onProg)
   } else if (fileLooksLikeVideo(file)) {
     branch = 'video'
-    out = await compressVideoToWebm(file, signal)
+    out = await compressVideoToWebm(file, signal, onProg)
   }
+
+  onProg?.(100)
 
   uploadCompressionDiag('compressMediaForUpload result', {
     branch,

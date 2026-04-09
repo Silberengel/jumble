@@ -297,6 +297,7 @@ export default {
     'Display replies': 'Afficher les réponses',
     Notes: 'Notes',
     Replies: 'Réponses',
+    Gallery: 'Galerie',
     Notifications: 'Notifications',
     'no more notifications': 'plus de notifications',
     'Using private key login is insecure. It is recommended to use a browser extension for login, such as alby, nostr-keyx or nos2x. If you must use a private key, please set a password for encryption at minimum.':

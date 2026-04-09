@@ -73,6 +73,41 @@ const TAG_LABELS: Record<string, string> = {
   birthday: 'Birthday',
 }
 
+/**
+ * Profile banner & avatar file picker: all images and videos the OS/browser exposes as
+ * `image/*` or `video/*`, plus common extensions when `File.type` is empty (e.g. Linux).
+ * Banner and avatar sizes are limited after compression (`maxCompressedSizeMb` on each uploader).
+ */
+const PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT = [
+  'image/*',
+  'video/*',
+  '.mkv',
+  '.m4v',
+  '.mov',
+  '.webm',
+  '.ogv',
+  '.avi',
+  '.mpeg',
+  '.mpg',
+  '.mp4',
+  '.3gp',
+  '.wmv',
+  '.flv',
+  '.heic',
+  '.heif',
+  '.avif',
+  '.apng',
+  '.svg',
+  '.webp',
+  '.gif',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.bmp',
+  '.ico',
+  'video/x-matroska'
+].join(',')
+
 const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const { t } = useTranslation()
   const { pop } = useSecondaryPage()
@@ -443,6 +478,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           onUploadStart={() => setUploadingBanner(true)}
           onUploadEnd={() => setUploadingBanner(false)}
           className="w-full relative cursor-pointer"
+          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
+          maxCompressedSizeMb={5}
         >
           <ProfileBanner banner={banner} pubkey={account.pubkey} className="w-full aspect-[3/1]" />
           <div className="absolute top-0 bg-muted/30 w-full h-full flex flex-col justify-center items-center">
@@ -458,8 +495,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           onUploadStart={() => setUploadingAvatar(true)}
           onUploadEnd={() => setUploadingAvatar(false)}
           className="w-24 h-24 absolute bottom-0 left-4 translate-y-1/2 border-4 border-background cursor-pointer rounded-full"
-          accept="image/*,video/mp4,video/webm,video/quicktime,video/x-matroska,.mkv"
-          maxFileSizeMb={2}
+          accept={PROFILE_IMAGE_VIDEO_UPLOADER_ACCEPT}
+          maxCompressedSizeMb={2}
         >
           <div className="w-full h-full overflow-hidden rounded-full bg-muted">
             {isVideo(avatar) ? (
