@@ -51,6 +51,8 @@ export type TLiveActivityItem = {
   joinUrl: string
   updatedAt: number
   fromFollowedHost: boolean
+  /** Full Nostr event (for navigation cache — same payload the strip already loaded). */
+  event: Event
 }
 
 function firstTagValue(ev: Event, name: string): string | undefined {
@@ -488,7 +490,8 @@ export function parseLiveActivityEvent(
     imageUrl,
     joinUrl,
     updatedAt: ev.created_at,
-    fromFollowedHost: followSet.has(ev.pubkey)
+    fromFollowedHost: followSet.has(ev.pubkey),
+    event: ev
   }
 }
 

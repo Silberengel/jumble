@@ -604,6 +604,8 @@ export default {
     'liveActivities.regionLabel': 'Live spaces and streams',
     'liveActivities.fromFollow': 'From someone you follow',
     'liveActivities.goToSlide': 'Show live item {{n}}',
+    'liveActivities.viewNoteTitle': 'Open this live activity as a note (play in app, links below)',
+    'liveActivities.openJoinPageTitle': 'Open the join page in a new tab (e.g. zap.stream or the room site)',
     'liveActivities.settingsToggle': 'Live activities banner',
     'liveActivities.settingsHint':
       'Shows NIP-53 live rooms (audio/video spaces) from your relays. Updates on a quarter-hour schedule and when the app finishes its initial session warm-up.',

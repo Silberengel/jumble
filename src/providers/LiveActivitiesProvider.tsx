@@ -11,38 +11,12 @@ import logger from '@/lib/logger'
 import client from '@/services/client.service'
 import storage from '@/services/local-storage.service'
 import { registerLiveActivitiesPrewarmCallback } from '@/services/live-activities-prewarm-bridge'
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { LiveActivitiesContext } from './live-activities-context'
 import { useFavoriteRelays } from './FavoriteRelaysProvider'
 import { useFollowListOptional } from './follow-list-context'
 import { useNostr } from './NostrProvider'
 import { useUserPreferencesOptional } from './UserPreferencesProvider'
-
-type TLiveActivitiesContext = {
-  items: TLiveActivityItem[]
-  loading: boolean
-}
-
-const LiveActivitiesContext = createContext<TLiveActivitiesContext | undefined>(undefined)
-
-export function useLiveActivities(): TLiveActivitiesContext {
-  const ctx = useContext(LiveActivitiesContext)
-  if (!ctx) {
-    throw new Error('useLiveActivities must be used within LiveActivitiesProvider')
-  }
-  return ctx
-}
-
-export function useLiveActivitiesOptional(): TLiveActivitiesContext | undefined {
-  return useContext(LiveActivitiesContext)
-}
 
 export function LiveActivitiesProvider({ children }: { children: React.ReactNode }) {
   const { pubkey, relayList, isInitialized, isAccountSessionHydrating } = useNostr()

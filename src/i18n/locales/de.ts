@@ -609,6 +609,10 @@ export default {
     'liveActivities.regionLabel': 'Live-Räume und Streams',
     'liveActivities.fromFollow': 'Von jemandem, dem du folgst',
     'liveActivities.goToSlide': 'Live-Eintrag {{n}} anzeigen',
+    'liveActivities.viewNoteTitle':
+      'Diese Live-Aktivität als Beitrag öffnen (Wiedergabe in der App, Links darunter)',
+    'liveActivities.openJoinPageTitle':
+      'Join-Seite in neuem Tab öffnen (z. B. zap.stream oder die Raum-Website)',
     'liveActivities.settingsToggle': 'Banner für Live-Aktivitäten',
     'liveActivities.settingsHint':
       'Zeigt NIP-53-Live-Räume (Audio/Video) von deinen Relays. Aktualisierung zur Viertelstunde und nach dem ersten Session-Warm-up.',
