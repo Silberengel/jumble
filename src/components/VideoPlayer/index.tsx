@@ -6,7 +6,18 @@ import ExternalLink from '../ExternalLink'
 import { MediaErrorBoundary } from '../MediaErrorBoundary'
 import logger from '@/lib/logger'
 
-export default function VideoPlayer({ src, className, poster }: { src: string; className?: string; poster?: string }) {
+export default function VideoPlayer({
+  src,
+  className,
+  poster,
+  onReady
+}: {
+  src: string
+  className?: string
+  poster?: string
+  /** Fires when the first frame is available (e.g. to swap out a blurhash placeholder). */
+  onReady?: () => void
+}) {
   const { autoplay } = useContentPolicy()
   const [error, setError] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -42,6 +53,12 @@ export default function VideoPlayer({ src, className, poster }: { src: string; c
     }
   }, [autoplay])
 
+  useEffect(() => {
+    if (error) {
+      onReady?.()
+    }
+  }, [error, onReady])
+
   if (error) {
     return <ExternalLink url={src} />
   }
@@ -49,10 +66,9 @@ export default function VideoPlayer({ src, className, poster }: { src: string; c
   return (
     <MediaErrorBoundary
       fallback={<ExternalLink url={src} />}
-      onError={(error) => {
-        // Don't log expected media errors
-        if (error.name !== 'AbortError' && !error.message.includes('play() request was interrupted')) {
-          logger.warn('Video player error', error)
+      onError={(err) => {
+        if (err.name !== 'AbortError' && !err.message.includes('play() request was interrupted')) {
+          logger.warn('Video player error', err)
         }
         setError(true)
       }}
@@ -62,11 +78,12 @@ export default function VideoPlayer({ src, className, poster }: { src: string; c
           ref={videoRef}
           controls
           playsInline
-          preload="none"
+          preload={onReady ? 'metadata' : 'none'}
           className={cn('rounded-lg max-h-[80vh] sm:max-h-[60vh] border w-full h-auto max-w-full', className)}
           src={src}
           poster={poster}
           onClick={(e) => e.stopPropagation()}
+          onLoadedData={() => onReady?.()}
           onPlay={(event) => {
             mediaManager.play(event.currentTarget)
           }}

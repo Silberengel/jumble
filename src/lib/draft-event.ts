@@ -154,6 +154,60 @@ export function createRepostDraftEvent(event: Event): TDraftEvent {
   }
 }
 
+function imetaUrlFromTagRow(tag: string[]): string | undefined {
+  const item = tag.find((x) => typeof x === 'string' && x.startsWith('url '))
+  if (!item) return undefined
+  const raw = item.slice(4).trim()
+  return cleanUrl(raw) || raw
+}
+
+/** Append NIP-94 `imeta` rows from uploads; skip URLs already present on existing `imeta` tags. */
+export function mergeUploadImetaTagsInto(tags: string[][], mediaImetaTags?: string[][]): void {
+  if (!mediaImetaTags?.length) return
+  const seen = new Set<string>()
+  for (const t of tags) {
+    if (t[0] === 'imeta') {
+      const u = imetaUrlFromTagRow(t)
+      if (u) seen.add(u)
+    }
+  }
+  for (const row of mediaImetaTags) {
+    const u = imetaUrlFromTagRow(row)
+    if (u) {
+      if (seen.has(u)) continue
+      seen.add(u)
+    }
+    tags.push(row)
+  }
+}
+
+/** NIP-94 `imeta` rows from the upload cache for HTTP(S) URLs that appear in `content`. */
+export function collectUploadImetaTagsForContentUrls(content: string): string[][] {
+  if (!content) return []
+  const re = /https?:\/\/[^\s<>"']+/g
+  const out: string[][] = []
+  const seen = new Set<string>()
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    const raw = m[0]
+    const keys = [raw]
+    const c = cleanUrl(raw)
+    if (c && c !== raw) keys.push(c)
+    for (const key of keys) {
+      const tag = mediaUpload.getImetaTagByUrl(key)
+      if (tag) {
+        const u = imetaUrlFromTagRow(tag)
+        if (u && !seen.has(u)) {
+          seen.add(u)
+          out.push(tag)
+        }
+        break
+      }
+    }
+  }
+  return out
+}
+
 export async function createShortTextNoteDraftEvent(
   content: string,
   mentions: string[],
@@ -166,6 +220,8 @@ export async function createShortTextNoteDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    /** NIP-94 imeta rows from uploads (audio/video/images as plain URLs in content). */
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   // Process content to prefix nostr addresses before other transformations
@@ -182,6 +238,8 @@ export async function createShortTextNoteDraftEvent(
   if (images && images.length) {
     tags.push(...generateImetaTags(images))
   }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
 
   // q tags
   tags.push(...quoteEventHexIds.map((eventId) => buildQTag(eventId)))
@@ -250,6 +308,7 @@ export async function createCommentDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   // Process content to prefix nostr addresses before other transformations
@@ -275,6 +334,8 @@ export async function createCommentDraftEvent(
   if (images && images.length) {
     tags.push(...generateImetaTags(images))
   }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
 
   tags.push(
     ...mentions.filter((pubkey) => pubkey !== parentEvent.pubkey).map((pubkey) => buildPTag(pubkey))
@@ -372,15 +433,12 @@ export async function createPublicMessageReplyDraftEvent(
     .concat(quoteEventHexIds.map((eventId) => buildQTag(eventId)))
     .concat(quoteReplaceableCoordinates.map((coordinate) => buildReplaceableQTag(coordinate)))
 
-  // Add media imeta tags if provided (for audio/video)
-  if (options.mediaImetaTags && options.mediaImetaTags.length > 0) {
-    tags.push(...options.mediaImetaTags)
-  }
-
   const images = extractImagesFromContent(transformedEmojisContent)
   if (images && images.length) {
     tags.push(...generateImetaTags(images))
   }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
 
   // For kind 24 replies, we use 'q' tag for the parent event (as per NIP-A4)
   tags.push(buildQTag(parentEvent.id))
@@ -449,15 +507,12 @@ export async function createPublicMessageDraftEvent(
   const tags = emojiTags
     .concat(hashtags.map((hashtag) => buildTTag(hashtag)))
 
-  // Add media imeta tags if provided (for audio/video)
-  if (options.mediaImetaTags && options.mediaImetaTags.length > 0) {
-    tags.push(...options.mediaImetaTags)
-  }
-
   const images = extractImagesFromContent(transformedEmojisContent)
   if (images && images.length) {
     tags.push(...generateImetaTags(images))
   }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
 
   // Add 'p' tags for recipients
   tags.push(
@@ -971,7 +1026,8 @@ export async function createPollDraftEvent(
     addExpirationTag,
     expirationMonths,
     addQuietTag,
-    quietDays
+    quietDays,
+    mediaImetaTags
   }: {
     addClientTag?: boolean // accepted for API compat; client tag is added in publish()
     isNsfw?: boolean
@@ -979,6 +1035,7 @@ export async function createPollDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(question)
@@ -993,6 +1050,8 @@ export async function createPollDraftEvent(
   if (images && images.length) {
     tags.push(...generateImetaTags(images))
   }
+
+  mergeUploadImetaTagsInto(tags, mediaImetaTags)
 
   // q tags
   tags.push(...quoteEventHexIds.map((eventId) => buildQTag(eventId)))
@@ -1507,6 +1566,7 @@ export async function createHighlightDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    mediaImetaTags?: string[][]
   }
 ): Promise<TDraftEvent> {
   const tags: string[][] = []
@@ -1635,6 +1695,8 @@ export async function createHighlightDraftEvent(
     tags.push(buildQuietTag(options.quietDays))
   }
 
+  mergeUploadImetaTagsInto(tags, options?.mediaImetaTags)
+
   return setDraftEventCache({
     kind: 9802, // NIP-84 highlight kind
     tags,
@@ -1656,6 +1718,8 @@ export async function createVoiceDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    /** Extra NIP-94 rows from uploads (merged after content-derived imeta, deduped by URL). */
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -1664,6 +1728,11 @@ export async function createVoiceDraftEvent(
   const tags: string[][] = []
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
+  const images = extractImagesFromContent(transformedEmojisContent)
+  if (images && images.length) {
+    tags.push(...generateImetaTags(images))
+  }
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...imetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
@@ -1700,6 +1769,8 @@ export async function createVoiceCommentDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    /** NIP-94 rows from file upload (merged before `imetaTags`; deduped by URL). */
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -1717,6 +1788,11 @@ export async function createVoiceCommentDraftEvent(
   const tags: string[][] = []
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
+  const images = extractImagesFromContent(transformedEmojisContent)
+  if (images && images.length) {
+    tags.push(...generateImetaTags(images))
+  }
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...imetaTags)
   tags.push(...quoteEventHexIds.map((eventId) => buildQTag(eventId)))
   tags.push(...quoteReplaceableCoordinates.map((coordinate) => buildReplaceableQTag(coordinate)))
@@ -1799,6 +1875,7 @@ export async function createPictureDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -1811,6 +1888,7 @@ export async function createPictureDraftEvent(
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
   tags.push(...imetaTags)
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
 
   if (options.isNsfw) {
@@ -1857,6 +1935,7 @@ export async function createVideoDraftEvent(
     expirationMonths?: number
     addQuietTag?: boolean
     quietDays?: number
+    mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -1869,6 +1948,7 @@ export async function createVideoDraftEvent(
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
   tags.push(...imetaTags)
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
   if (options.isNsfw) {

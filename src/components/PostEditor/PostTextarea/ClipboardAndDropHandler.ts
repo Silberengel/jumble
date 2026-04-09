@@ -15,7 +15,7 @@ const DRAGOVER_CLASS_LIST = [
 
 export interface ClipboardAndDropHandlerOptions {
   onUploadStart?: (file: File, cancel: () => void) => void
-  /** Same contract as `Uploader` — required so drop/paste uploads set media note state (kind 20/21/22…), not only the URL in text. */
+  /** Same contract as `Uploader` — drop/paste uploads append URLs + imeta while staying on kind 1 unless the user picks a native media kind. */
   onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
   onUploadEnd?: (file: File) => void
   onUploadProgress?: (file: File, progress: number) => void

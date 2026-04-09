@@ -25,7 +25,11 @@ import {
   UNSIGNED_EXPERIMENTAL_KIND_MIN,
   isUnsignedExperimentalKind
 } from '@/constants'
-import { applyImwaldAttributionTags } from '@/lib/draft-event'
+import {
+  applyImwaldAttributionTags,
+  collectUploadImetaTagsForContentUrls,
+  mergeUploadImetaTagsInto
+} from '@/lib/draft-event'
 import { createFakeEvent } from '@/lib/event'
 import logger from '@/lib/logger'
 import {
@@ -161,6 +165,12 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
 
   const normalizedTags = useMemo(() => tagsFromRows(tagRows), [tagRows])
 
+  const tagsWithContentUploadImeta = useMemo(() => {
+    const next = [...normalizedTags]
+    mergeUploadImetaTagsInto(next, collectUploadImetaTagsForContentUrls(content))
+    return next
+  }, [normalizedTags, content])
+
   const previewEvent = useMemo(() => {
     if (isCreate && parsedCreateKind === null) return null
     const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
@@ -168,7 +178,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     const base: TDraftEvent = {
       kind: k,
       content,
-      tags: normalizedTags,
+      tags: tagsWithContentUploadImeta,
       created_at: now
     }
     const withAttribution = applyImwaldAttributionTags(base, {
@@ -181,7 +191,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       pubkey: pubkey ?? '',
       created_at: now
     })
-  }, [isCreate, parsedCreateKind, sourceEvent, content, normalizedTags, pubkey])
+  }, [isCreate, parsedCreateKind, sourceEvent, content, tagsWithContentUploadImeta, pubkey])
 
   const buildDraftJson = useCallback(() => {
     if (isCreate && parsedCreateKind === null) {
@@ -198,7 +208,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     const base: TDraftEvent = {
       kind: k,
       content,
-      tags: normalizedTags,
+      tags: tagsWithContentUploadImeta,
       created_at: dayjs().unix()
     }
     const withAttribution = applyImwaldAttributionTags(base, {
@@ -218,7 +228,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       _note: unsignedNote
     }
     return JSON.stringify(draft, null, 2)
-  }, [isCreate, parsedCreateKind, sourceEvent, pubkey, content, normalizedTags, t])
+  }, [isCreate, parsedCreateKind, sourceEvent, pubkey, content, tagsWithContentUploadImeta, t])
 
   const draftJson = activeTab === 'json' ? buildDraftJson() : ''
 
@@ -279,7 +289,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         const draft = {
           kind: publishKind,
           content,
-          tags: normalizedTags,
+          tags: tagsWithContentUploadImeta,
           created_at: dayjs().unix()
         }
         const newEvent = await publish(draft, {

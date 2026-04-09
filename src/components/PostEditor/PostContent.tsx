@@ -34,7 +34,8 @@ import {
   createCitationExternalDraftEvent,
   createCitationHardcopyDraftEvent,
   createCitationPromptDraftEvent,
-  applyImwaldAttributionTags
+  applyImwaldAttributionTags,
+  mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
 import { ExtendedKind } from '@/constants'
 import { cn, isTouchDevice } from '@/lib/utils'
@@ -42,7 +43,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useFeed } from '@/providers/FeedProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
-import { normalizeUrl, rewritePlainTextHttpUrls } from '@/lib/url'
+import { cleanUrl, normalizeUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import postEditorCache from '@/services/post-editor-cache.service'
@@ -303,8 +304,9 @@ export default function PostContent({
   const [showMediaKindDialog, setShowMediaKindDialog] = useState(false)
   const [pendingMediaUpload, setPendingMediaUpload] = useState<{ url: string; tags: string[][]; file: File } | null>(null)
   const uploadedMediaFileMap = useRef<Map<string, File>>(new Map())
-  /** Accumulates imeta tags for kind 20 (picture) so multiple rapid uploads don’t overwrite each other. */
-  const pictureImetaTagsRef = useRef<string[][]>([])
+  /** Accumulates imeta tags across uploads (short note or multi-attachment) so files are not dropped. */
+  const composerImetaTagsRef = useRef<string[][]>([])
+  const mediaNoteKindRef = useRef<number | null>(null)
   /** Stable auto d-tag when the field is left empty; `{ slug, value }` resets when article subtype changes. */
   const articleDTagFallbackRef = useRef<{ slug: string; value: string } | null>(null)
 
@@ -323,10 +325,26 @@ export default function PostContent({
   }, [isLongFormArticle, isWikiArticle, isWikiArticleMarkdown, isPublicationContent])
 
   useEffect(() => {
-    if (mediaNoteKind === ExtendedKind.PICTURE && mediaImetaTags.length > 0) {
-      pictureImetaTagsRef.current = mediaImetaTags
-    }
-  }, [mediaNoteKind, mediaImetaTags])
+    mediaNoteKindRef.current = mediaNoteKind
+  }, [mediaNoteKind])
+
+  const appendComposerImetaTag = useCallback((newTag: string[]) => {
+    const urlItem = newTag.find((x) => typeof x === 'string' && x.startsWith('url '))
+    const rawUrl = urlItem?.slice(4)?.trim()
+    const normalized = rawUrl ? cleanUrl(rawUrl) || rawUrl : ''
+    const exists =
+      normalized &&
+      composerImetaTagsRef.current.some((tag) => {
+        const u = tag.find((x) => typeof x === 'string' && x.startsWith('url '))
+        if (!u) return false
+        const r = u.slice(4).trim()
+        return (cleanUrl(r) || r) === normalized
+      })
+    if (exists) return
+    composerImetaTagsRef.current = [...composerImetaTagsRef.current, newTag]
+    setMediaImetaTags([...composerImetaTagsRef.current])
+  }, [])
+
   const isFirstRender = useRef(true)
 
   const allAvailableTopics = useMemo(
@@ -618,6 +636,8 @@ export default function PostContent({
 
   // Shared function to create draft event - used by both preview and posting
   const createDraftEvent = useCallback(async (cleanedText: string): Promise<any> => {
+    const uploadImetaTagsOpt = mediaImetaTags.length > 0 ? mediaImetaTags : undefined
+
     // Get expiration and quiet settings
     const isChattingKind = (kind: number) => 
       kind === kinds.ShortTextNote || 
@@ -647,7 +667,7 @@ export default function PostContent({
         expirationMonths,
         addQuietTag,
         quietDays,
-        mediaImetaTags: mediaNoteKind !== null && mediaUrl ? mediaImetaTags : undefined
+        mediaImetaTags: uploadImetaTagsOpt
       })
     } else if (parentEvent && parentEvent.kind === ExtendedKind.PUBLIC_MESSAGE) {
       // For PM replies, always create PM even if there's media
@@ -658,7 +678,7 @@ export default function PostContent({
         expirationMonths,
         addQuietTag,
         quietDays,
-        mediaImetaTags: mediaNoteKind !== null && mediaUrl ? mediaImetaTags : undefined
+        mediaImetaTags: uploadImetaTagsOpt
       })
     }
 
@@ -682,18 +702,20 @@ export default function PostContent({
         tags,
         created_at: dayjs().unix()
       }
+      mergeUploadImetaTagsInto(draft.tags, uploadImetaTagsOpt)
       return draft
     }
 
     // Check for voice comments (only for non-PM replies)
     if (parentEvent && mediaNoteKind === ExtendedKind.VOICE_COMMENT) {
       const url = mediaUrl || 'placeholder://audio'
-      const tags = mediaImetaTags.length > 0 ? mediaImetaTags : [['imeta', `url ${url}`, 'm audio/mpeg']]
+      const voiceImetaRows =
+        mediaImetaTags.length > 0 ? [] : [['imeta', `url ${url}`, 'm audio/mpeg']]
       return await createVoiceCommentDraftEvent(
         cleanedText,
         parentEvent,
         url,
-        tags,
+        voiceImetaRows,
         mentions,
         {
           addClientTag,
@@ -702,7 +724,8 @@ export default function PostContent({
           addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE_COMMENT),
           expirationMonths,
           addQuietTag,
-          quietDays
+          quietDays,
+          mediaImetaTags: uploadImetaTagsOpt
         }
       )
     }
@@ -710,10 +733,12 @@ export default function PostContent({
     // Media notes
     if (mediaNoteKind !== null && mediaUrl) {
       if (mediaNoteKind === ExtendedKind.VOICE) {
+        const voiceImetaRows =
+          mediaImetaTags.length > 0 ? [] : [['imeta', `url ${mediaUrl}`, 'm audio/mpeg']]
         return await createVoiceDraftEvent(
           cleanedText,
           mediaUrl,
-          mediaImetaTags,
+          voiceImetaRows,
           mentions,
           {
             addClientTag,
@@ -721,7 +746,8 @@ export default function PostContent({
             addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE),
             expirationMonths,
             addQuietTag,
-            quietDays
+            quietDays,
+            mediaImetaTags: uploadImetaTagsOpt
           }
         )
       } else if (mediaNoteKind === ExtendedKind.PICTURE) {
@@ -735,7 +761,8 @@ export default function PostContent({
             addExpirationTag: false,
             expirationMonths,
             addQuietTag,
-            quietDays
+            quietDays,
+            mediaImetaTags: uploadImetaTagsOpt
           }
         )
       } else if (mediaNoteKind === ExtendedKind.VIDEO || mediaNoteKind === ExtendedKind.SHORT_VIDEO) {
@@ -750,7 +777,8 @@ export default function PostContent({
             addExpirationTag: false,
             expirationMonths,
             addQuietTag,
-            quietDays
+            quietDays,
+            mediaImetaTags: uploadImetaTagsOpt
           }
         )
       }
@@ -929,7 +957,8 @@ export default function PostContent({
           addExpirationTag: false,
           expirationMonths,
           addQuietTag,
-          quietDays
+          quietDays,
+          mediaImetaTags: uploadImetaTagsOpt
         }
       )
     }
@@ -944,7 +973,8 @@ export default function PostContent({
         addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.COMMENT),
         expirationMonths,
         addQuietTag,
-        quietDays
+        quietDays,
+        mediaImetaTags: uploadImetaTagsOpt
       })
     }
 
@@ -956,11 +986,12 @@ export default function PostContent({
         addExpirationTag: false,
         expirationMonths,
         addQuietTag,
-        quietDays
+        quietDays,
+        mediaImetaTags: uploadImetaTagsOpt
       })
     }
 
-    // Default: Short text note
+    // Default: Short text note (kind 1), with optional NIP-94 imeta from uploads while still in "short note" mode
     return await createShortTextNoteDraftEvent(cleanedText, mentions, {
       parentEvent,
       addClientTag,
@@ -969,7 +1000,8 @@ export default function PostContent({
       addExpirationTag: addExpirationTag && isChattingKind(kinds.ShortTextNote),
       expirationMonths,
       addQuietTag,
-      quietDays
+      quietDays,
+      mediaImetaTags: uploadImetaTagsOpt
     })
   }, [
     parentEvent,
@@ -1260,6 +1292,7 @@ export default function PostContent({
       setMediaNoteKind(null)
       setMediaUrl('')
       setMediaImetaTags([])
+      composerImetaTagsRef.current = []
     }
   }
 
@@ -1283,6 +1316,7 @@ export default function PostContent({
       setMediaNoteKind(null)
       setMediaUrl('')
       setMediaImetaTags([])
+      composerImetaTagsRef.current = []
     }
   }
 
@@ -1303,7 +1337,7 @@ export default function PostContent({
     setMediaNoteKind(null)
     setMediaUrl('')
     setMediaImetaTags([])
-    pictureImetaTagsRef.current = []
+    composerImetaTagsRef.current = []
     uploadedMediaFileMap.current.clear()
   }
 
@@ -1395,7 +1429,19 @@ export default function PostContent({
     setMediaUrl(found)
     setMediaNoteKind(kind)
     const mime = mimeFromUrlPathForKind(found, kind)
-    setMediaImetaTags([['imeta', `url ${found}`, `m ${mime}`]])
+    const synth: string[] = ['imeta', `url ${found}`, `m ${mime}`]
+    const foundNorm = cleanUrl(found) || found
+    setMediaImetaTags((prev) => {
+      const has = prev.some((tag) => {
+        const u = tag.find((x) => typeof x === 'string' && x.startsWith('url '))
+        if (!u) return false
+        const r = u.slice(4).trim()
+        return (cleanUrl(r) || r) === foundNorm
+      })
+      const next = has ? prev : [...prev, synth]
+      composerImetaTagsRef.current = next
+      return next
+    })
   }
 
   const isPlainShortNoteToolbar = useMemo(
@@ -1413,8 +1459,7 @@ export default function PostContent({
       !isCitationHardcopy &&
       !isCitationPrompt &&
       !isDiscussionThread &&
-      mediaNoteKind === null &&
-      !mediaUrl,
+      mediaNoteKind === null,
     [
       parentEvent,
       isPoll,
@@ -1429,8 +1474,7 @@ export default function PostContent({
       isCitationHardcopy,
       isCitationPrompt,
       isDiscussionThread,
-      mediaNoteKind,
-      mediaUrl
+      mediaNoteKind
     ]
   )
 
@@ -1454,6 +1498,7 @@ export default function PostContent({
       setMediaNoteKind(null)
       setMediaUrl('')
       setMediaImetaTags([])
+      composerImetaTagsRef.current = []
       setAddClientTag(true)
     }
   }
@@ -1471,6 +1516,7 @@ export default function PostContent({
       setMediaNoteKind(null)
       setMediaUrl('')
       setMediaImetaTags([])
+      composerImetaTagsRef.current = []
       const draft = postEditorCache.getThreadDraft()
       if (draft) {
         setThreadTitle(draft.title)
@@ -1558,14 +1604,8 @@ export default function PostContent({
           }
           // Note: URL will be inserted when upload completes in handleMediaUploadSuccess
         }
-      } else if (!isDiscussionThread) {
-        // For new posts, detect the kind from the file (async)
-        getMediaKindFromFile(file, false)
-          .then((kind) => setMediaNoteKind(kind))
-          .catch((error) => {
-            logger.error('Error detecting media kind in handleUploadStart', { error, file: file.name })
-          })
       }
+      // Root short-note composer: do not switch to a native media kind on upload — user uses "Media kind".
     }
   }
 
@@ -1643,127 +1683,78 @@ export default function PostContent({
 
   const processMediaUpload = async (url: string, tags: string[][], uploadingFile: File, selectedKind?: number) => {
     try {
-      let kind: number
-      
+      let resolvedKind: number
       if (selectedKind !== undefined) {
-        // Use the selected kind
-        kind = selectedKind
+        resolvedKind = selectedKind
+        setMediaNoteKind(resolvedKind)
       } else {
-        // Auto-detect the kind
-        kind = await getMediaKindFromFile(uploadingFile, false)
+        resolvedKind = await getMediaKindFromFile(uploadingFile, false)
+        // Root composer: keep kind 1 until the user uses "Media kind" (ambiguous webm/mp4 still sets kind via dialog).
       }
-      
-      setMediaNoteKind(kind)
-      
-      // For picture notes, support multiple images by accumulating imeta tags
-      if (kind === ExtendedKind.PICTURE) {
-        // Get imeta tag from media upload service
-        const imetaTag = mediaUpload.getImetaTagByUrl(url)
-        let newImetaTag: string[]
-        if (imetaTag) {
-          newImetaTag = imetaTag
-        } else if (tags && tags.length > 0) {
-          newImetaTag = nip94PairsToImetaTag(tags)
-        } else {
-          // Create a basic imeta tag if none exists
-          newImetaTag = ['imeta', `url ${url}`]
-          if (uploadingFile.type) {
-            newImetaTag.push(`m ${uploadingFile.type}`)
-          }
-        }
-        
-        // Accumulate multiple imeta tags for picture notes (use ref so rapid multi-upload doesn’t lose tags)
-        const urlExists = pictureImetaTagsRef.current.some((tag) => {
-          const urlItem = tag.find((item) => item.startsWith('url '))
-          return urlItem && urlItem.slice(4).trim() === url
-        })
-        if (!urlExists) {
-          pictureImetaTagsRef.current = [...pictureImetaTagsRef.current, newImetaTag]
-          setMediaImetaTags([...pictureImetaTagsRef.current])
-        }
 
-        // Set the first URL as the primary mediaUrl (for backwards compatibility)
-        if (!mediaUrl) {
-          setMediaUrl(url)
-        }
-        
-        // Insert the URL into the editor content so it shows in the edit pane
-        // Use setTimeout to ensure the state has updated and editor is ready
-        setTimeout(() => {
-          if (textareaRef.current) {
-            // Check the actual editor content, not the state variable (which might be stale)
-            const currentText = textareaRef.current.getText()
-            if (!currentText.includes(url)) {
-              textareaRef.current.appendText(url, true)
-            }
-          }
-        }, 100)
+      const imetaTag = mediaUpload.getImetaTagByUrl(url)
+      let newImetaTag: string[]
+      if (imetaTag) {
+        newImetaTag = imetaTag
+      } else if (tags && tags.length > 0) {
+        newImetaTag = nip94PairsToImetaTag(tags)
       } else {
-        // For non-picture media, replace the existing tags (single media)
-        pictureImetaTagsRef.current = []
-        setMediaUrl(url)
-        const imetaTag = mediaUpload.getImetaTagByUrl(url)
-        if (imetaTag) {
-          setMediaImetaTags([imetaTag])
-        } else if (tags && tags.length > 0) {
-          setMediaImetaTags([nip94PairsToImetaTag(tags)])
-        } else {
-          const basicImetaTag: string[] = ['imeta', `url ${url}`]
-          // Update MIME type based on selected kind
-          let mimeType = uploadingFile.type
-          if (selectedKind === ExtendedKind.VOICE || selectedKind === ExtendedKind.VOICE_COMMENT) {
-            // Ensure audio MIME type
-            const fileName = uploadingFile.name.toLowerCase()
-            if (/\.webm$/i.test(fileName)) {
-              mimeType = 'audio/webm'
-            } else if (/\.mka$/i.test(fileName)) {
-              mimeType = 'audio/x-matroska'
-            } else if (/\.mp4$/i.test(fileName)) {
-              mimeType = 'audio/mp4'
-            }
-          } else if (selectedKind === ExtendedKind.VIDEO || selectedKind === ExtendedKind.SHORT_VIDEO) {
-            // Ensure video MIME type
-            const fileName = uploadingFile.name.toLowerCase()
-            if (/\.webm$/i.test(fileName)) {
-              mimeType = 'video/webm'
-            } else if (/\.mkv$/i.test(fileName)) {
-              mimeType = 'video/x-matroska'
-            } else if (/\.mp4$/i.test(fileName)) {
-              mimeType = 'video/mp4'
-            }
+        newImetaTag = ['imeta', `url ${url}`]
+        let mimeType = uploadingFile.type
+        const kindHint = selectedKind ?? resolvedKind
+        if (kindHint === ExtendedKind.VOICE || kindHint === ExtendedKind.VOICE_COMMENT) {
+          const fileName = uploadingFile.name.toLowerCase()
+          if (/\.webm$/i.test(fileName)) {
+            mimeType = 'audio/webm'
+          } else if (/\.mka$/i.test(fileName)) {
+            mimeType = 'audio/x-matroska'
+          } else if (/\.mp4$/i.test(fileName)) {
+            mimeType = 'audio/mp4'
           }
-          if (mimeType) {
-            basicImetaTag.push(`m ${mimeType}`)
+        } else if (kindHint === ExtendedKind.VIDEO || kindHint === ExtendedKind.SHORT_VIDEO) {
+          const fileName = uploadingFile.name.toLowerCase()
+          if (/\.webm$/i.test(fileName)) {
+            mimeType = 'video/webm'
+          } else if (/\.mkv$/i.test(fileName)) {
+            mimeType = 'video/x-matroska'
+          } else if (/\.mp4$/i.test(fileName)) {
+            mimeType = 'video/mp4'
           }
-          setMediaImetaTags([basicImetaTag])
         }
-        
-        // Insert the URL into the editor content so it shows in the edit pane
-        // Use setTimeout to ensure the state has updated and editor is ready
-        setTimeout(() => {
-          if (textareaRef.current) {
-            // Check the actual editor content, not the state variable (which might be stale)
-            const currentText = textareaRef.current.getText()
-            if (!currentText.includes(url)) {
-              textareaRef.current.appendText(url, true)
-            }
-          }
-        }, 100)
+        if (mimeType) {
+          newImetaTag.push(`m ${mimeType}`)
+        }
       }
+
+      appendComposerImetaTag(newImetaTag)
+
+      if (selectedKind !== undefined) {
+        setMediaUrl(url)
+      } else if (mediaNoteKindRef.current !== null) {
+        setMediaUrl((prev) => prev || url)
+      }
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          const currentText = textareaRef.current.getText()
+          if (!currentText.includes(url)) {
+            textareaRef.current.appendText(url, true)
+          }
+        }
+      }, 100)
     } catch (error) {
       logger.error('Error processing media upload', { error, file: uploadingFile.name })
-      // Fallback to picture if processing fails
-      setMediaNoteKind(ExtendedKind.PICTURE)
       const imetaTag = mediaUpload.getImetaTagByUrl(url)
-      const tagToAdd = imetaTag ?? (() => {
-        const basic: string[] = ['imeta', `url ${url}`]
-        if (uploadingFile.type) basic.push(`m ${uploadingFile.type}`)
-        return basic
-      })()
-      pictureImetaTagsRef.current = [...pictureImetaTagsRef.current, tagToAdd]
-      setMediaImetaTags([...pictureImetaTagsRef.current])
-      if (!mediaUrl) {
-        setMediaUrl(url)
+      const tagToAdd =
+        imetaTag ??
+        (() => {
+          const basic: string[] = ['imeta', `url ${url}`]
+          if (uploadingFile.type) basic.push(`m ${uploadingFile.type}`)
+          return basic
+        })()
+      appendComposerImetaTag(tagToAdd)
+      if (mediaNoteKindRef.current !== null) {
+        setMediaUrl((prev) => prev || url)
       }
     }
   }
@@ -1890,6 +1881,7 @@ export default function PostContent({
           setMediaNoteKind(null)
           setMediaUrl('')
           setMediaImetaTags([])
+          composerImetaTagsRef.current = []
           // Just add the media URL to the text content
           textareaRef.current?.appendText(url, true)
           return // Don't set media note kind for non-audio in replies/PMs
@@ -1927,7 +1919,7 @@ export default function PostContent({
 
     // Clear uploaded file from map and picture accumulation ref
     uploadedMediaFileMap.current.clear()
-    pictureImetaTagsRef.current = []
+    composerImetaTagsRef.current = []
   }
 
   const handleArticleToggle = (type: 'longform' | 'wiki' | 'wiki-markdown' | 'publication') => {
@@ -2069,7 +2061,7 @@ export default function PostContent({
       sourceValue: ''
     })
     uploadedMediaFileMap.current.clear()
-    pictureImetaTagsRef.current = []
+    composerImetaTagsRef.current = []
     setUploadProgresses([])
   }
 

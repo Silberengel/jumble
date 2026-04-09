@@ -11,9 +11,11 @@ import logger from '@/lib/logger'
 interface AudioPlayerProps {
   src: string
   className?: string
+  /** Fires when enough data is buffered to play (e.g. to swap out a blurhash placeholder). */
+  onReady?: () => void
 }
 
-export default function AudioPlayer({ src, className }: AudioPlayerProps) {
+export default function AudioPlayer({ src, className, onReady }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -21,6 +23,25 @@ export default function AudioPlayer({ src, className }: AudioPlayerProps) {
   const [error, setError] = useState(false)
   const seekTimeoutRef = useRef<NodeJS.Timeout>()
   const isSeeking = useRef(false)
+
+  useEffect(() => {
+    if (!onReady) return
+    const audio = audioRef.current
+    if (!audio) return
+    const notify = () => onReady()
+    if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      notify()
+      return
+    }
+    audio.addEventListener('canplay', notify, { once: true })
+    return () => audio.removeEventListener('canplay', notify)
+  }, [src, onReady])
+
+  useEffect(() => {
+    if (error) {
+      onReady?.()
+    }
+  }, [error, onReady])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -104,7 +125,7 @@ export default function AudioPlayer({ src, className }: AudioPlayerProps) {
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <audio ref={audioRef} src={src} preload="metadata" onError={() => setError(false)} />
+        <audio ref={audioRef} src={src} preload="metadata" onError={() => setError(true)} />
 
         {/* Play/Pause Button */}
         <Button size="icon" className="rounded-full shrink-0" onClick={togglePlay}>
