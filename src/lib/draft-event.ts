@@ -33,7 +33,7 @@ import {
 import { cleanUrl } from '@/lib/url'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
-import { generateBech32IdFromETag, tagNameEquals } from './tag'
+import { generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
 
 function canonicalizeHttpUrlForITags(url: string): string {
   if (!url.startsWith('http://') && !url.startsWith('https://')) return url
@@ -1812,22 +1812,34 @@ export async function createPictureDraftEvent(
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
   tags.push(...imetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
-  
+
   if (options.isNsfw) {
     tags.push(buildNsfwTag())
   }
-  
+
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
   }
-  
+
   if (options.addQuietTag && options.quietDays) {
     tags.push(buildQuietTag(options.quietDays))
   }
-  
+
+  // Kind 20 caption is user text only; the file URL lives in `imeta`. Many indexers and caches
+  // still deliver full tags, but mirroring the URL in `content` matches kind-1-style clients and
+  // keeps {@link Content} / URL extraction working when tags are missing or non-standard.
+  const mediaUrlFromImeta = imetaTags
+    .map((t) => getImetaInfoFromImetaTag(t))
+    .find((info) => info?.url)?.url
+  let pictureContent = transformedEmojisContent
+  if (mediaUrlFromImeta && !pictureContent.includes(mediaUrlFromImeta)) {
+    const trimmed = pictureContent.trimEnd()
+    pictureContent = trimmed ? `${trimmed}\n\n${mediaUrlFromImeta}` : mediaUrlFromImeta
+  }
+
   return setDraftEventCache({
     kind: ExtendedKind.PICTURE,
-    content: transformedEmojisContent,
+    content: pictureContent,
     tags
   })
 }

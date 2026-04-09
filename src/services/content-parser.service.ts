@@ -774,7 +774,7 @@ class ContentParserService {
     imageMatches.forEach(match => {
       const url = match.match(/!\[[^\]]*\]\(([^)]+)\)/)?.[1]
       if (url && !seenUrls.has(url)) {
-        const isVideo = /\.(mp4|webm|ogg)$/i.test(url)
+        const isVideo = /\.(mp4|webm|ogg|ogv|mov|mkv|m4v|3gp|3g2)$/i.test(url)
         media.push({ 
           url, 
           pubkey: event?.pubkey || '', 
@@ -789,7 +789,7 @@ class ContentParserService {
     asciidocImageMatches.forEach(match => {
       const url = match.match(/image::([^\[]+)\[/)?.[1]
       if (url && !seenUrls.has(url)) {
-        const isVideo = /\.(mp4|webm|ogg)$/i.test(url)
+        const isVideo = /\.(mp4|webm|ogg|ogv|mov|mkv|m4v|3gp|3g2)$/i.test(url)
         media.push({ 
           url, 
           pubkey: event?.pubkey || '', 
@@ -804,7 +804,7 @@ class ContentParserService {
     rawUrls.forEach(url => {
       if (!seenUrls.has(url)) {
         const isImage = /\.(jpeg|jpg|png|gif|webp|svg)$/i.test(url)
-        const isVideo = /\.(mp4|webm|ogg)$/i.test(url)
+        const isVideo = /\.(mp4|webm|ogg|ogv|mov|mkv|m4v|3gp|3g2)$/i.test(url)
         if (isImage || isVideo) {
           media.push({ 
             url, 

@@ -18,6 +18,8 @@ const EXT_TO_MIME: Record<string, string> = {
   '.mkv': 'video/x-matroska',
   '.mov': 'video/quicktime',
   '.avi': 'video/x-msvideo',
+  '.3gp': 'video/3gpp',
+  '.3g2': 'video/3gpp2',
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
   '.mka': 'audio/x-matroska',

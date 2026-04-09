@@ -77,7 +77,7 @@ export function extractAllImagesFromEvent(event: Event): TImetaInfo[] {
 
   // 7. Extract from content - general URL patterns that look like media
   const mediaUrlRegex =
-    /https?:\/\/[^\s<>"']+\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico|mp4|webm|ogg|avi|mov|wmv|flv|mkv|mka)(?:\?[^\s<>"']*)?/gi
+    /https?:\/\/[^\s<>"']+\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico|mp4|webm|ogg|avi|mov|wmv|flv|mkv|mka|3gp|3g2|ogv)(?:\?[^\s<>"']*)?/gi
   while ((match = mediaUrlRegex.exec(event.content)) !== null) {
     addMedia(match[0])
   }
@@ -160,7 +160,7 @@ export function isImageUrl(url: string): boolean {
  * Check if URL is likely a video
  */
 function isVideoUrl(url: string): boolean {
-  const videoExtensions = /\.(mp4|webm|ogg|avi|mov|wmv|flv|mkv|m4v|3gp|ogv)(\?.*)?$/i
+  const videoExtensions = /\.(mp4|webm|ogg|avi|mov|wmv|flv|mkv|m4v|3gp|3g2|ogv)(\?.*)?$/i
   const videoDomains = [
     'youtube.com',
     'youtu.be',

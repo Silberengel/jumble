@@ -47,6 +47,40 @@ import { isContentSpacingDebug, reprString } from '@/lib/content-spacing-debug'
 import logger from '@/lib/logger'
 
 /**
+ * Inline/block image metadata: use merged rows from {@link extractAllMediaFromEvent} first
+ * (imeta + content + upload cache), then raw `imeta` tags on the event with URL / filename fallback.
+ */
+function resolveImetaForMarkdownImageUrl(
+  cleaned: string,
+  eventPubkey: string,
+  args: {
+    resolveFromExtractedMedia?: (cleaned: string) => TImetaInfo | undefined
+    containingEvent?: Event
+    getImageIdentifier?: (url: string) => string | null
+  }
+): TImetaInfo {
+  const fromExtracted = args.resolveFromExtractedMedia?.(cleaned)
+  if (fromExtracted) return { ...fromExtracted, url: cleaned }
+
+  if (args.containingEvent) {
+    const infos = getImetaInfosFromEvent(args.containingEvent)
+    const hit = infos.find((i) => cleanUrl(i.url) === cleaned)
+    if (hit) return { ...hit, url: cleaned }
+    if (args.getImageIdentifier) {
+      const id = args.getImageIdentifier(cleaned)
+      if (id) {
+        const byId = infos.find((i) => {
+          const ic = cleanUrl(i.url)
+          return !!ic && args.getImageIdentifier!(ic) === id
+        })
+        if (byId) return { ...byId, url: cleaned }
+      }
+    }
+  }
+  return { url: cleaned, pubkey: eventPubkey }
+}
+
+/**
  * Truncate link display text to 200 characters, adding ellipsis if truncated
  */
 function truncateLinkText(text: string, maxLength: number = 200): string {
@@ -604,6 +638,8 @@ function parseMarkdownContentLegacy(
     containingEvent?: Event
     /** Hold images as placeholders until clicked (lightbox). False in detail/full views. */
     lazyMedia?: boolean
+    /** Prefer rows from {@link useMediaExtraction} / {@link extractAllMediaFromEvent} for blurHash etc. */
+    resolveImetaForImageUrl?: (cleaned: string) => TImetaInfo | undefined
   }
 ): { nodes: React.ReactNode[]; hashtagsInContent: Set<string>; footnotes: Map<string, string>; citations: Array<{ id: string; type: string; citationId: string }> } {
   const {
@@ -619,7 +655,8 @@ function parseMarkdownContentLegacy(
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
     containingEvent,
-    lazyMedia = true
+    lazyMedia = true,
+    resolveImetaForImageUrl
   } = options
   const parts: React.ReactNode[] = []
   const hashtagsInContent = new Set<string>()
@@ -627,16 +664,12 @@ function parseMarkdownContentLegacy(
   const citations: Array<{ id: string; type: string; citationId: string }> = []
   let lastIndex = 0
 
-  // Build imeta lookup map once for blurHash and other NIP-94 metadata
-  const imetaByCleanedUrl = new Map<string, TImetaInfo>()
-  if (containingEvent) {
-    getImetaInfosFromEvent(containingEvent).forEach((info) => {
-      const cleaned = cleanUrl(info.url)
-      if (cleaned) imetaByCleanedUrl.set(cleaned, info)
-    })
-  }
   const imetaInfoForUrl = (cleaned: string): TImetaInfo =>
-    imetaByCleanedUrl.get(cleaned) ?? { url: cleaned, pubkey: eventPubkey }
+    resolveImetaForMarkdownImageUrl(cleaned, eventPubkey, {
+      resolveFromExtractedMedia: resolveImetaForImageUrl,
+      containingEvent,
+      getImageIdentifier
+    })
 
   // Helper function to check if an index range falls within any block-level pattern
   const isWithinBlockPattern = (start: number, end: number, blockPatterns: Array<{ index: number; end: number }>): boolean => {
@@ -2932,6 +2965,7 @@ function parseMarkdownContentMarked(
     containingEvent?: Event
     /** Hold images as placeholders until clicked (lightbox). False in detail/full views. */
     lazyMedia?: boolean
+    resolveImetaForImageUrl?: (cleaned: string) => TImetaInfo | undefined
   }
 ): { nodes: React.ReactNode[]; hashtagsInContent: Set<string>; footnotes: Map<string, string>; citations: Array<{ id: string; type: string; citationId: string }> } {
   const {
@@ -2946,18 +2980,17 @@ function parseMarkdownContentMarked(
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
     containingEvent,
-    lazyMedia = true
+    lazyMedia = true,
+    resolveImetaForImageUrl
   } = options
 
   /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview returns null when autoLoadMedia is off. */
-  const imetaInfoForStandaloneImageUrl = (cleaned: string): TImetaInfo => {
-    if (containingEvent) {
-      const infos = getImetaInfosFromEvent(containingEvent)
-      const hit = infos.find((i) => cleanUrl(i.url) === cleaned)
-      if (hit) return { ...hit, url: cleaned }
-    }
-    return { url: cleaned, pubkey: eventPubkey }
-  }
+  const imetaInfoForStandaloneImageUrl = (cleaned: string): TImetaInfo =>
+    resolveImetaForMarkdownImageUrl(cleaned, eventPubkey, {
+      resolveFromExtractedMedia: resolveImetaForImageUrl,
+      containingEvent,
+      getImageIdentifier
+    })
 
   const renderStandaloneHttpsImageBlock = (cleaned: string, reactKey: string) => {
     let imageIndex = imageIndexMap.get(cleaned)
@@ -4801,6 +4834,18 @@ export default function MarkdownArticle({
 
   // Parse markdown content with post-processing for nostr: links and hashtags
   const { nodes: parsedContent, hashtagsInContent } = useMemo(() => {
+    const resolveImetaForImageUrl = (cleaned: string): TImetaInfo | undefined => {
+      for (const img of extractedMedia.images) {
+        const ic = cleanUrl(img.url)
+        if (!ic) continue
+        if (ic === cleaned) return { ...img, url: cleaned }
+        const idC = getImageIdentifier(cleaned)
+        const idI = getImageIdentifier(ic)
+        if (idC && idI && idC === idI) return { ...img, url: cleaned }
+      }
+      return undefined
+    }
+
     const parseOptions = {
       eventPubkey: event.pubkey,
       imageIndexMap,
@@ -4814,6 +4859,7 @@ export default function MarkdownArticle({
       fullCalendarInvite,
       containingEvent: event,
       lazyMedia,
+      resolveImetaForImageUrl,
       suppressStandaloneWebPreviewCleanedUrls:
         webPreviewSuppressCleanedSet.size > 0 ? webPreviewSuppressCleanedSet : undefined
     }
@@ -4840,7 +4886,8 @@ export default function MarkdownArticle({
     emojiInfos,
     fullCalendarInvite,
     lazyMedia,
-    webPreviewSuppressCleanedSet
+    webPreviewSuppressCleanedSet,
+    extractedMedia.images
   ])
   
   // Filter metadata tags to only show what's not already in content

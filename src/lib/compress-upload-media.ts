@@ -40,7 +40,7 @@ const VIDEO_TARGET_BITRATE_MIN = 450_000
 const VIDEO_AUDIO_BITRATE = 96_000
 
 /** Browsers often leave `File.type` empty for some paths; still treat as video. */
-const VIDEO_FILENAME_RE = /\.(mp4|m4v|mov|mkv|webm|ogv|avi|mpeg|mpg)$/i
+const VIDEO_FILENAME_RE = /\.(mp4|m4v|mov|mkv|webm|ogv|avi|mpeg|mpg|3gp|3g2)$/i
 
 /** Image/audio extensions for drag/drop and paste when `File.type` is empty (common on Linux). */
 const IMAGE_FILENAME_RE = /\.(jpe?g|png|gif|webp|bmp|svg|ico|heic|heif|avif)$/i

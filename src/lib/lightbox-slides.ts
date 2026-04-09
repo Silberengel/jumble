@@ -17,6 +17,8 @@ function sourceTypeFromPath(url: string, kind: 'video' | 'audio'): string {
   if (path.endsWith('.webm')) return 'video/webm'
   if (path.endsWith('.mkv')) return 'video/x-matroska'
   if (path.endsWith('.ogv')) return 'video/ogg'
+  if (path.endsWith('.3gp')) return 'video/3gpp'
+  if (path.endsWith('.3g2')) return 'video/3gpp2'
   return 'video/mp4'
 }
 

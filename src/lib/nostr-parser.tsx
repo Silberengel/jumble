@@ -167,7 +167,7 @@ export function parseNostrContent(content: string, event?: Event): ParsedNostrCo
     // Check if it's media (video/audio)
     else if (isMedia(cleanedUrl)) {
       // Determine if it's video or audio based on extension
-      const isVideo = /\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv|m4v)$/i.test(cleanedUrl)
+      const isVideo = /\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv|m4v|3gp|3g2|ogv)$/i.test(cleanedUrl)
       allMatches.push({
         type: isVideo ? 'video' : 'audio',
         match: urlMatch,
@@ -416,7 +416,7 @@ export function parseNostrContent(content: string, event?: Event): ParsedNostrCo
         
         if (!alreadyProcessed) {
           // Determine if it's video or audio based on extension
-          const isVideo = /\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv|m4v)$/i.test(imetaInfo.url)
+          const isVideo = /\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv|m4v|3gp|3g2|ogv)$/i.test(imetaInfo.url)
           elements.push({
             type: isVideo ? 'video' : 'audio',
             content: imetaInfo.url,

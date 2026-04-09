@@ -28,7 +28,7 @@ export async function getMediaKindFromFile(file: File, isReply: boolean = false)
     fileType === 'audio/x-matroska'
   const isVideoMime = fileType.startsWith('video/')
   const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
-  const isVideoExt = /\.(mp4|ogg|mov|avi|mkv|m4v)$/i.test(fileName)
+  const isVideoExt = /\.(mp4|ogg|mov|avi|mkv|m4v|3gp|3g2)$/i.test(fileName)
   
   // m4a files are always audio, even if MIME type is video/mp4 (mobile browsers sometimes report this)
   const isM4aFile = /\.m4a$/i.test(fileName)

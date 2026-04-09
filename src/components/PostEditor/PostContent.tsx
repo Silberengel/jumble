@@ -1311,7 +1311,7 @@ export default function PostContent({
     const path = url.split(/[?#]/)[0].toLowerCase()
     if (/\.(jpg|jpeg|png|gif|webp|heic|avif|apng)$/i.test(path)) return ExtendedKind.PICTURE
     if (/\.(mp3|m4a|mka|ogg|opus|wav|aac|flac)$/i.test(path)) return ExtendedKind.VOICE
-    if (/\.(mp4|webm|mov|mkv|m4v|ogv|avi|mpeg|mpg)$/i.test(path)) return ExtendedKind.SHORT_VIDEO
+    if (/\.(mp4|webm|mov|mkv|m4v|ogv|avi|mpeg|mpg|3gp|3g2)$/i.test(path)) return ExtendedKind.SHORT_VIDEO
     return null
   }
 
@@ -1331,6 +1331,8 @@ export default function PostContent({
     }
     if (path.endsWith('.mkv')) return 'video/x-matroska'
     if (path.endsWith('.webm')) return 'video/webm'
+    if (path.endsWith('.3gp')) return 'video/3gpp'
+    if (path.endsWith('.3g2')) return 'video/3gpp2'
     return 'video/mp4'
   }
 

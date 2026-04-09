@@ -1,5 +1,5 @@
 import { TEmoji, TImetaInfo } from '@/types'
-import { cleanUrl } from './url'
+import { cleanUrl, isImage, isMedia } from './url'
 import { isBlurhashValid } from 'blurhash'
 import { nip19 } from 'nostr-tools'
 import { isValidPubkey } from './pubkey'
@@ -78,20 +78,59 @@ export function getImetaInfoFromImetaTag(tag: string[], pubkey?: string): TImeta
       url = tag[urlIndex + 1]
     }
   }
-  
+
+  // Some publishers use a bare https URL as a tag value (e.g. ["imeta", "https://…"]) without `url `.
+  if (!url) {
+    const spaceMime = tag.find((item) => typeof item === 'string' && item.startsWith('m '))?.slice(2)
+    const mIdx = tag.findIndex((item) => item === 'm')
+    const sepMime =
+      mIdx !== -1 && mIdx + 1 < tag.length && typeof tag[mIdx + 1] === 'string'
+        ? tag[mIdx + 1]
+        : undefined
+    const mimeHint = spaceMime || sepMime
+
+    for (let i = 1; i < tag.length; i++) {
+      const item = tag[i]
+      if (typeof item !== 'string') continue
+      const t = item.trim()
+      if (!/^https?:\/\//i.test(t)) continue
+      if (
+        isImage(t) ||
+        isMedia(t) ||
+        (mimeHint &&
+          (mimeHint.startsWith('image/') ||
+            mimeHint.startsWith('video/') ||
+            mimeHint.startsWith('audio/')))
+      ) {
+        url = t
+        break
+      }
+    }
+  }
+
   if (!url) return null
 
   // Clean the URL to remove tracking parameters
   const cleanedUrl = cleanUrl(url)
   const imeta: TImetaInfo = { url: cleanedUrl, pubkey }
   
-  // Parse blurhash
+  // Parse blurhash (`blurhash …` NIP-94; some publishers use `bh …` only)
   const blurHashItem = tag.find((item) => item.startsWith('blurhash '))
-  const blurHash = blurHashItem?.slice(9)
-  if (blurHash) {
-    const validRes = isBlurhashValid(blurHash)
+  const blurHashFromTag = blurHashItem?.slice(9)?.trim()
+  if (blurHashFromTag) {
+    const validRes = isBlurhashValid(blurHashFromTag)
     if (validRes.result) {
-      imeta.blurHash = blurHash
+      imeta.blurHash = blurHashFromTag
+    }
+  }
+  if (!imeta.blurHash) {
+    const bhItem = tag.find((item) => item.startsWith('bh '))
+    const bh = bhItem?.slice(3)?.trim()
+    if (bh) {
+      const validRes = isBlurhashValid(bh)
+      if (validRes.result) {
+        imeta.blurHash = bh
+      }
     }
   }
   

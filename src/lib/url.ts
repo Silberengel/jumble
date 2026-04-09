@@ -294,6 +294,8 @@ export function isMedia(url: string) {
       '.mov',
       '.mkv',
       '.mka',
+      '.3gp',
+      '.3g2',
       '.mp3',
       '.wav',
       '.flac',
@@ -344,6 +346,7 @@ export function isVideo(url: string) {
       '.mkv',
       '.m4v',
       '.3gp',
+      '.3g2',
       '.ogv'
     ]
     return videoExtensions.some((ext) => path.endsWith(ext))

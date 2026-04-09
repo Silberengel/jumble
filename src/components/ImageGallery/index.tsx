@@ -1,7 +1,7 @@
 import { randomString } from '@/lib/random'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { ReactNode, useEffect, useMemo, useState } from 'react'
@@ -14,6 +14,9 @@ import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import 'yet-another-react-lightbox/plugins/captions.css'
 import Image from '../Image'
 import ImageWithLightbox from '../ImageWithLightbox'
+
+const galleryImageWrapper = (className?: string) =>
+  cn('w-full max-w-full min-w-0', className)
 
 export default function ImageGallery({
   className,
@@ -29,8 +32,11 @@ export default function ImageGallery({
   mustLoad?: boolean
 }) {
   const id = useMemo(() => `image-gallery-${randomString()}`, [])
-  const { autoLoadMedia } = useContentPolicy()
+  const contentPolicy = useContentPolicyOptional()
+  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
   const [index, setIndex] = useState(-1)
+  const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
+
   useEffect(() => {
     if (index >= 0) {
       modalManager.register(id, () => {
@@ -39,17 +45,37 @@ export default function ImageGallery({
     } else {
       modalManager.unregister(id)
     }
-  }, [index])
+  }, [id, index])
 
   const handlePhotoClick = (event: React.MouseEvent, current: number) => {
     event.stopPropagation()
     event.preventDefault()
     const newIndex = start + current
-    logger.debug('[ImageGallery] Click:', { start, current, newIndex, totalImages: images.length, displayImages: displayImages.length })
+    logger.debug('[ImageGallery] Click:', {
+      start,
+      current,
+      newIndex,
+      totalImages: images.length,
+      displayImages: displayImages.length
+    })
+    setLightboxPortalActive(true)
     setIndex(newIndex)
   }
 
   const displayImages = images.slice(start, end)
+
+  if (displayImages.length === 1) {
+    return (
+      <ImageWithLightbox
+        image={displayImages[0]}
+        mustLoad={mustLoad}
+        className="max-h-[80vh] sm:max-h-[50vh] object-contain"
+        classNames={{
+          wrapper: galleryImageWrapper(className)
+        }}
+      />
+    )
+  }
 
   if (!mustLoad && !autoLoadMedia) {
     return displayImages.map((image, i) => (
@@ -58,26 +84,14 @@ export default function ImageGallery({
         image={image}
         className="max-h-[80vh] sm:max-h-[50vh] object-contain"
         classNames={{
-          wrapper: cn('w-fit max-w-full', className)
+          wrapper: galleryImageWrapper(className)
         }}
       />
     ))
   }
 
   let imageContent: ReactNode | null = null
-  if (displayImages.length === 1) {
-    imageContent = (
-      <Image
-        key={0}
-        className="max-h-[80vh] sm:max-h-[50vh] cursor-zoom-in object-contain max-w-[400px]"
-        classNames={{
-          errorPlaceholder: 'aspect-square h-[30vh]'
-        }}
-        image={displayImages[0]}
-        onClick={(e) => handlePhotoClick(e, 0)}
-      />
-    )
-  } else if (displayImages.length === 2 || displayImages.length === 4) {
+  if (displayImages.length === 2 || displayImages.length === 4) {
     imageContent = (
       <div className="grid grid-cols-2 gap-2 w-full max-w-[400px]">
         {displayImages.map((image, i) => (
@@ -105,46 +119,58 @@ export default function ImageGallery({
     )
   }
 
+  const portal =
+    lightboxPortalActive && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            data-lightbox-overlay
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Lightbox
+              index={index}
+              slides={(() => {
+                const slides = images.map((img) => lightboxSlideFromImeta(img))
+                logger.debug('[ImageGallery] Lightbox slides:', {
+                  index,
+                  slidesCount: slides.length,
+                  slides
+                })
+                return slides
+              })()}
+              plugins={[Video, Zoom, Captions]}
+              open={index >= 0}
+              close={() => setIndex(-1)}
+              on={{
+                exited: () => setLightboxPortalActive(false)
+              }}
+              controller={{
+                closeOnBackdropClick: false,
+                closeOnPullUp: true,
+                closeOnPullDown: true
+              }}
+              render={{
+                buttonPrev: images.length <= 1 ? () => null : undefined,
+                buttonNext: images.length <= 1 ? () => null : undefined
+              }}
+              styles={{
+                toolbar: { paddingTop: '2.25rem' }
+              }}
+              carousel={{
+                finite: false
+              }}
+            />
+          </div>,
+          document.body
+        )
+      : null
+
   return (
-    <div className={cn(displayImages.length === 1 ? 'w-fit max-w-[400px]' : 'w-full', className)}>
+    <div className={cn('w-full', className)}>
       {imageContent}
-      {createPortal(
-        <div
-          data-lightbox-overlay
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          <Lightbox
-            index={index}
-            slides={(() => {
-              const slides = images.map((img) => lightboxSlideFromImeta(img))
-              logger.debug('[ImageGallery] Lightbox slides:', { index, slidesCount: slides.length, slides })
-              return slides
-            })()}
-            plugins={[Video, Zoom, Captions]}
-            open={index >= 0}
-            close={() => setIndex(-1)}
-            controller={{
-              closeOnBackdropClick: false,
-              closeOnPullUp: true,
-              closeOnPullDown: true
-            }}
-            render={{
-              buttonPrev: images.length <= 1 ? () => null : undefined,
-              buttonNext: images.length <= 1 ? () => null : undefined
-            }}
-            styles={{
-              toolbar: { paddingTop: '2.25rem' }
-            }}
-            carousel={{
-              finite: false
-            }}
-          />
-        </div>,
-        document.body
-      )}
+      {portal}
     </div>
   )
 }

@@ -1,6 +1,11 @@
 import { Event } from 'nostr-tools'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import { cleanUrl, isImage, isMedia, isAudio, isVideo } from '@/lib/url'
+
+/** Any URL we may embed or extract from note bodies (incl. video-only extensions like .3gp). */
+function isEmbeddableMediaUrl(cleaned: string): boolean {
+  return isImage(cleaned) || isMedia(cleaned) || isVideo(cleaned) || isAudio(cleaned)
+}
 import { TImetaInfo } from '@/types'
 import mediaUpload from './media-upload.service'
 import { getImetaInfoFromImetaTag } from '@/lib/tag'
@@ -29,8 +34,7 @@ export function extractAllMediaFromEvent(
     const cleaned = cleanUrl(url)
     if (!cleaned || seenUrls.has(cleaned)) return
 
-    // Only add if it's actually an image or media file
-    if (!isImage(cleaned) && !isMedia(cleaned)) return
+    if (!isEmbeddableMediaUrl(cleaned)) return
 
     seenUrls.add(cleaned)
 
@@ -60,15 +64,44 @@ export function extractAllMediaFromEvent(
   imetaInfos.forEach((info) => {
     const cleaned = cleanUrl(info.url)
     if (!cleaned || seenUrls.has(cleaned)) return
+    const nip94Signals = !!(info.blurHash || info.dim || info.x)
     if (
       info.m?.startsWith('image/') ||
       info.m?.startsWith('video/') ||
       info.m?.startsWith('audio/') ||
       isImage(info.url) ||
-      isMedia(info.url)
+      isMedia(info.url) ||
+      isVideo(info.url) ||
+      isAudio(info.url) ||
+      // Blossom / NIP-94 URLs often have no file extension; metadata still identifies the blob.
+      (nip94Signals && !!info.url)
     ) {
       seenUrls.add(cleaned)
       allMedia.push({ ...info, url: cleaned })
+    }
+  })
+
+  // Non-standard imeta layouts (no `url ` prefix, concatenated fields, etc.)
+  const looseHttpsFromImetaValue = (s: string): string[] => {
+    const out: string[] = []
+    const re = /https?:\/\/[^\s<>"'[\]()]+/gi
+    let m: RegExpExecArray | null
+    re.lastIndex = 0
+    while ((m = re.exec(s)) !== null) {
+      out.push(m[0])
+    }
+    return out
+  }
+
+  event.tags.forEach((tag) => {
+    if (tag[0] !== 'imeta') return
+    if (getImetaInfoFromImetaTag(tag, event.pubkey)) return
+    for (let i = 1; i < tag.length; i++) {
+      const part = tag[i]
+      if (typeof part !== 'string') continue
+      for (const raw of looseHttpsFromImetaValue(part)) {
+        addMedia(raw, event.pubkey)
+      }
     }
   })
 
@@ -87,7 +120,7 @@ export function extractAllMediaFromEvent(
     while ((imgMatch = markdownImageRegex.exec(content)) !== null) {
       if (imgMatch[1]) {
         const url = imgMatch[1]
-        if (isImage(url) || isMedia(url)) {
+        if (isEmbeddableMediaUrl(cleanUrl(url) || url)) {
           addMedia(url)
         }
       }
@@ -98,17 +131,36 @@ export function extractAllMediaFromEvent(
     const urlMatches = content.matchAll(urlRegex)
     for (const match of urlMatches) {
       const url = match[0]
-      if (isImage(url) || isMedia(url)) {
+      const c = cleanUrl(url) || url
+      if (isEmbeddableMediaUrl(c)) {
         addMedia(url)
       }
     }
   }
 
   // 5. Try to match content URLs with imeta tags for better metadata (alt, dim, blurHash, m)
+  const imageIdentityKey = (url: string): string | null => {
+    try {
+      const u = cleanUrl(url)
+      if (!u) return null
+      const pathname = new URL(u).pathname
+      const filename = pathname.split('/').pop() || ''
+      if (filename && /^[a-f0-9]{32,}\.(png|jpg|jpeg|gif|webp|svg|avif|apng)$/i.test(filename)) {
+        return filename.toLowerCase()
+      }
+      return u
+    } catch {
+      return cleanUrl(url) || null
+    }
+  }
+
   imetaInfos.forEach((imeta) => {
     const imetaUrl = cleanUrl(imeta.url)
+    const imetaKey = imetaUrl ? imageIdentityKey(imetaUrl) : null
     allMedia.forEach((media, index) => {
-      if (imetaUrl === media.url) {
+      if (imetaUrl && imetaUrl === media.url) {
+        allMedia[index] = { ...media, ...imeta, url: media.url }
+      } else if (imetaKey && imetaKey === imageIdentityKey(media.url)) {
         allMedia[index] = { ...media, ...imeta, url: media.url }
       } else {
         // Try to get imeta from media upload service

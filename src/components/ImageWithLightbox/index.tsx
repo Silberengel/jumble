@@ -1,12 +1,11 @@
 import { randomString } from '@/lib/random'
 import { cn } from '@/lib/utils'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
-import { useTranslation } from 'react-i18next'
 import Lightbox from 'yet-another-react-lightbox'
 import Captions from 'yet-another-react-lightbox/plugins/captions'
 import Video from 'yet-another-react-lightbox/plugins/video'
@@ -17,26 +16,22 @@ import Image from '../Image'
 export default function ImageWithLightbox({
   image,
   className,
-  classNames = {}
+  classNames = {},
+  /** When true, load inline image immediately (ignore tap-to-load policy). */
+  mustLoad = false
 }: {
   image: TImetaInfo
   className?: string
   classNames?: {
     wrapper?: string
   }
+  mustLoad?: boolean
 }) {
   const id = useMemo(() => `image-with-lightbox-${randomString()}`, [])
-  const { t } = useTranslation()
-  const { autoLoadMedia } = useContentPolicy()
-  const [display, setDisplay] = useState(autoLoadMedia)
+  const contentPolicy = useContentPolicyOptional()
+  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
   const [index, setIndex] = useState(-1)
-
-  useEffect(() => {
-    setDisplay(autoLoadMedia)
-    if (!autoLoadMedia) {
-      setIndex(-1)
-    }
-  }, [autoLoadMedia])
+  const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
 
   useEffect(() => {
     if (index >= 0) {
@@ -51,67 +46,63 @@ export default function ImageWithLightbox({
   const handlePhotoClick = (event: React.MouseEvent) => {
     event.stopPropagation()
     event.preventDefault()
+    setLightboxPortalActive(true)
     setIndex(0)
   }
 
-  // The portal is always mounted (not conditional on `index >= 0`) so that React
-  // never removes it while yet-another-react-lightbox is mid-cleanup, which would
-  // otherwise cause "Node.removeChild: The node to be removed is not a child of
-  // this node". Visibility is controlled via the `open` prop instead.
+  const holdUntilClick = !mustLoad && !autoLoadMedia
+
+  const portal =
+    lightboxPortalActive && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            data-lightbox-overlay
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Lightbox
+              index={index}
+              slides={[lightboxSlideFromImeta(image)]}
+              plugins={[Video, Zoom, Captions]}
+              open={index >= 0}
+              close={() => setIndex(-1)}
+              on={{
+                exited: () => setLightboxPortalActive(false)
+              }}
+              controller={{
+                closeOnBackdropClick: false,
+                closeOnPullUp: true,
+                closeOnPullDown: true
+              }}
+              render={{
+                buttonPrev: () => null,
+                buttonNext: () => null
+              }}
+              styles={{
+                toolbar: { paddingTop: '2.25rem' }
+              }}
+            />
+          </div>,
+          document.body
+        )
+      : null
+
   return (
-    <div className="max-w-[400px]">
-      {display ? (
-        <Image
-          key={0}
-          className={className}
-          classNames={{
-            wrapper: cn('rounded-lg cursor-zoom-in', classNames.wrapper),
-            errorPlaceholder: 'aspect-square h-[30vh]'
-          }}
-          image={image}
-          onClick={(e) => handlePhotoClick(e)}
-        />
-      ) : (
-        <span
-          className="text-primary hover:underline truncate w-fit cursor-pointer inline-block"
-          onClick={(e) => {
-            e.stopPropagation()
-            setDisplay(true)
-          }}
-        >
-          [{t('Click to load image')}]
-        </span>
-      )}
-      {createPortal(
-        <div
-          data-lightbox-overlay
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          <Lightbox
-            index={index}
-            slides={[lightboxSlideFromImeta(image)]}
-            plugins={[Video, Zoom, Captions]}
-            open={index >= 0}
-            close={() => setIndex(-1)}
-            controller={{
-              closeOnBackdropClick: false,
-              closeOnPullUp: true,
-              closeOnPullDown: true
-            }}
-            render={{
-              buttonPrev: () => null,
-              buttonNext: () => null
-            }}
-            styles={{
-              toolbar: { paddingTop: '2.25rem' }
-            }}
-          />
-        </div>,
-        document.body
-      )}
+    <div className="w-full max-w-[400px]">
+      <Image
+        key={0}
+        className={className}
+        classNames={{
+          wrapper: cn('rounded-lg cursor-zoom-in', classNames.wrapper),
+          errorPlaceholder: 'aspect-square h-[30vh]'
+        }}
+        image={image}
+        holdUntilClick={holdUntilClick}
+        onClick={(e) => handlePhotoClick(e)}
+      />
+      {portal}
     </div>
   )
 }
