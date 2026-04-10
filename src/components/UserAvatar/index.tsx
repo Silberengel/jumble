@@ -2,7 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
 import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isImage, isMedia, isVideo } from '@/lib/url'
-import { generateImageByPubkey, userIdToPubkey } from '@/lib/pubkey'
+import { generateImageByPubkey, isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { toProfile } from '@/lib/link'
 import { seedProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { cn } from '@/lib/utils'
@@ -181,12 +181,15 @@ export default function UserAvatar({
   const pubkey = useMemo(() => {
     if (!userId) return ''
     const decodedPubkey = userIdToPubkey(userId)
-    return decodedPubkey || profile?.pubkey || ''
+    if (isValidPubkey(decodedPubkey)) return decodedPubkey
+    const fromProfile = profile?.pubkey
+    return fromProfile && isValidPubkey(fromProfile) ? fromProfile : ''
   }, [userId, profile?.pubkey])
-  
+
+  const identiconSource = pubkey || userId.trim()
   const defaultAvatar = useMemo(
-    () => (pubkey ? generateImageByPubkey(pubkey) : ''),
-    [pubkey]
+    () => (identiconSource ? generateImageByPubkey(identiconSource) : ''),
+    [identiconSource]
   )
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -235,12 +238,11 @@ export default function UserAvatar({
     if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
   }
 
-  // Use pubkey from decoded userId if profile isn't loaded yet
   const displayPubkey = profile?.pubkey || pubkey || ''
+  const profileNavTarget =
+    userId.startsWith('npub1') || userId.startsWith('nprofile1') ? userId : displayPubkey
 
-  // If we have a pubkey (from decoding npub/nprofile or profile), show avatar even without profile
-  // Otherwise show skeleton while loading
-  if (!profile && !pubkey) {
+  if (!userId.trim()) {
     return (
       <Skeleton className={cn('shrink-0', UserAvatarSizeCnMap[size], 'rounded-full', className)} />
     )
@@ -255,8 +257,9 @@ export default function UserAvatar({
       style={{ position: 'relative', zIndex: 10, isolation: 'isolate', display: 'block' }}
       onClick={(e) => {
         e.stopPropagation()
+        if (!profileNavTarget) return
         if (profile) seedProfileForNavigation(profile)
-        navigateToProfile(toProfile(displayPubkey))
+        navigateToProfile(toProfile(profileNavTarget))
       }}
     >
       {!imgError && currentSrc ? (
@@ -288,7 +291,7 @@ export default function UserAvatar({
       ) : (
         // Show initials or placeholder when image fails
         <div className="h-full w-full flex items-center justify-center text-xs font-medium text-muted-foreground">
-          {displayPubkey ? displayPubkey.slice(0, 2).toUpperCase() : ''}
+          {(displayPubkey || userId).slice(0, 2).toUpperCase()}
         </div>
       )}
     </div>
@@ -320,12 +323,15 @@ export function SimpleUserAvatar({
   const pubkey = useMemo(() => {
     if (!userId) return ''
     const decodedPubkey = userIdToPubkey(userId)
-    return decodedPubkey || profile?.pubkey || ''
+    if (isValidPubkey(decodedPubkey)) return decodedPubkey
+    const fromProfile = profile?.pubkey
+    return fromProfile && isValidPubkey(fromProfile) ? fromProfile : ''
   }, [userId, profile?.pubkey])
-  
+
+  const identiconSource = pubkey || userId.trim()
   const defaultAvatar = useMemo(
-    () => (pubkey ? generateImageByPubkey(pubkey) : ''),
-    [pubkey]
+    () => (identiconSource ? generateImageByPubkey(identiconSource) : ''),
+    [identiconSource]
   )
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -372,15 +378,12 @@ export function SimpleUserAvatar({
     if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
   }
 
-  // If we have a pubkey (from decoding npub/nprofile or profile), show avatar even without profile
-  // Otherwise show skeleton while loading
-  if (!profile && !pubkey) {
+  if (!userId.trim()) {
     return (
       <Skeleton className={cn('shrink-0', UserAvatarSizeCnMap[size], 'rounded-full', className)} />
     )
   }
 
-  // Use pubkey from decoded userId if profile isn't loaded yet
   const displayPubkey = profile?.pubkey || pubkey || ''
   
   // Render image directly instead of using Radix UI Avatar for better reliability
@@ -418,7 +421,7 @@ export function SimpleUserAvatar({
       ) : (
         // Show initials or placeholder when image fails
         <div className="h-full w-full flex items-center justify-center text-xs font-medium text-muted-foreground">
-          {displayPubkey ? displayPubkey.slice(0, 2).toUpperCase() : ''}
+          {(displayPubkey || userId).slice(0, 2).toUpperCase()}
         </div>
       )}
     </div>

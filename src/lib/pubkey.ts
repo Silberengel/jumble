@@ -1,6 +1,15 @@
 import { LRUCache } from 'lru-cache'
+import { sha256 } from '@noble/hashes/sha2'
 import { nip19 } from 'nostr-tools'
 import logger from '@/lib/logger'
+
+/** 64-char lowercase hex for identicon math; hashes arbitrary strings (e.g. bad npub paste). */
+function stableHexSeedForIdenticon(input: string): string {
+  const t = input.trim()
+  if (/^[0-9a-f]{64}$/i.test(t)) return t.toLowerCase()
+  const bytes = sha256(new TextEncoder().encode(t))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 export function formatPubkey(pubkey: string) {
   const npub = pubkeyToNpub(pubkey)
@@ -40,23 +49,29 @@ export function pubkeyToNpub(pubkey: string) {
 }
 
 export function userIdToPubkey(userId: string) {
-  if (userId.startsWith('npub1') || userId.startsWith('nprofile1')) {
-    try {
-      const { type, data } = nip19.decode(userId)
-      if (type === 'npub') {
-        return data
-      } else if (type === 'nprofile') {
-        return data.pubkey
-      }
-    } catch (error) {
-      logger.error('Error decoding userId', { userId, error })
-    }
-  }
   const trimmed = userId.trim()
+  if (!trimmed) return ''
+
+  if (trimmed.startsWith('npub1') || trimmed.startsWith('nprofile1')) {
+    try {
+      const { type, data } = nip19.decode(trimmed)
+      if (type === 'npub' && typeof data === 'string' && isValidPubkey(data)) {
+        return data.toLowerCase()
+      }
+      if (type === 'nprofile' && data && typeof data.pubkey === 'string' && isValidPubkey(data.pubkey)) {
+        return data.pubkey.toLowerCase()
+      }
+    } catch {
+      // Wrong-length or bad-checksum bech32 — do not pass the literal npub string downstream as "hex pubkey"
+      logger.debug('userIdToPubkey: nip19 decode failed', { len: trimmed.length, prefix: trimmed.slice(0, 12) })
+    }
+    return ''
+  }
+
   if (/^[0-9a-f]{64}$/i.test(trimmed)) {
     return trimmed.toLowerCase()
   }
-  return userId
+  return trimmed
 }
 
 /** Lowercase 64-char hex pubkeys for stable Maps, REQ filters, and tag comparison. */
@@ -95,12 +110,15 @@ const pubkeyImageCache = new LRUCache<string, string>({ max: 1000 })
 const CACHE_VERSION = 'v2'
 
 export function generateImageByPubkey(pubkey: string): string {
-  const cacheKey = `${CACHE_VERSION}:${pubkey}`
+  const seed = stableHexSeedForIdenticon(pubkey)
+  const cacheKey = `${CACHE_VERSION}:${seed}`
   if (pubkeyImageCache.has(cacheKey)) {
     return pubkeyImageCache.get(cacheKey)!
   }
 
-  const paddedPubkey = pubkey.padEnd(66, '0')
+  const paddedPubkey = seed.padEnd(66, '0')
+  /** XML/HTML id tokens must not contain `nevent1…` or other punctuation from pasted ids */
+  const svgIdSafe = `g${seed.slice(0, 20)}`
 
   // Split into 3 parts for colors and the rest for control points
   const colors: string[] = []
@@ -123,11 +141,11 @@ export function generateImageByPubkey(pubkey: string): string {
       const c = colors[index % (colors.length - 1)]
 
       return `
-        <radialGradient id="grad${index}-${pubkey}" cx="${cx}%" cy="${cy}%" r="${r}%">
+        <radialGradient id="grad${index}-${svgIdSafe}" cx="${cx}%" cy="${cy}%" r="${r}%">
           <stop offset="0%" style="stop-color:${c};stop-opacity:1" />
           <stop offset="100%" style="stop-color:${c};stop-opacity:0" />
         </radialGradient>
-        <rect width="100%" height="100%" fill="url(#grad${index}-${pubkey})" />
+        <rect width="100%" height="100%" fill="url(#grad${index}-${svgIdSafe})" />
       `
     })
     .join('')

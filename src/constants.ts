@@ -106,6 +106,13 @@ export const MAX_PUBLISH_RELAYS = 20
 /** After a publish wave, failed NIP-65 write (outbox) relays are retried once after this delay. */
 export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
 
+/**
+ * Cap how long we wait on NIP-65 / inbox relay-list fetches before publishing.
+ * Without this, a stuck `fetchRelayList` / `fetchRelayLists` can leave republish toasts loading forever
+ * (the 30s publish timeout only runs after targets are resolved).
+ */
+export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 12_000
+
 /** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
 export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
 

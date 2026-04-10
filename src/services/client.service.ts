@@ -13,6 +13,7 @@ import {
   relaysAfterSocialKindBlockedStrip,
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_PUBLISH_RELAYS,
+  PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS,
   TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY,
@@ -502,7 +503,18 @@ class ClientService extends EventTarget {
   /** NIP-65 `write` URLs for `event.pubkey`, filtered for publish (no read-only / social-kind blocks). */
   private async getUserOutboxRelayUrlsForPublish(event: NEvent): Promise<string[]> {
     try {
-      const relayList = await this.fetchRelayList(event.pubkey)
+      const relayList = await Promise.race([
+        this.fetchRelayList(event.pubkey),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
+        )
+      ])
+      if (relayList == null) {
+        logger.warn('[PublishEvent] fetchRelayList timed out while resolving outboxes; publishing without NIP-65 prepend', {
+          pubkey: event.pubkey.slice(0, 12)
+        })
+        return []
+      }
       const wsOut = (relayList?.write ?? [])
         .map((u) => normalizeUrl(u) || u)
         .filter((u): u is string => !!u)
@@ -646,7 +658,21 @@ class ClientService extends EventTarget {
     event: NEvent,
     favoriteRelayUrls: string[] = []
   ): Promise<string[]> {
-    return this.prioritizePublishUrlList(relayUrls, event, favoriteRelayUrls)
+    const fallbackOrder = (): string[] =>
+      this.filterPublishingRelays(dedupeNormalizeRelayUrlsOrdered(relayUrls), event).slice(0, MAX_PUBLISH_RELAYS)
+
+    return await Promise.race([
+      this.prioritizePublishUrlList(relayUrls, event, favoriteRelayUrls),
+      new Promise<string[]>((resolve) =>
+        setTimeout(() => {
+          logger.warn('[PublishEvent] prioritizePublishUrlList timed out; using deduped relay order without inbox fetch', {
+            kind: event.kind,
+            relayCount: relayUrls.length
+          })
+          resolve(fallbackOrder())
+        }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
+      )
+    ])
   }
 
   /**

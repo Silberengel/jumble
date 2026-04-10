@@ -21,6 +21,8 @@ vi.mock('@/PageManager', () => ({
 
 vi.mock('@/lib/pubkey', () => ({
   userIdToPubkey: (id: string) => (id.startsWith('npub') ? 'decoded_pubkey' : id),
+  isValidPubkey: (pk: string) =>
+    /^[0-9a-f]{64}$/i.test(pk) || pk === 'test_pubkey' || pk === 'decoded_pubkey',
   generateImageByPubkey: (_pubkey: string) =>
     `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="gray"/></svg>`)}`
 }))

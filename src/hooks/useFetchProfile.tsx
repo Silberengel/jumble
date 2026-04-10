@@ -417,9 +417,9 @@ export function useFetchProfile(id?: string, skipCache = false) {
     })
     
     if (!extractedPubkey) {
-      logger.error('[useFetchProfile] Invalid id - could not extract pubkey', {
-        id,
-        idLength: id.length
+      logger.debug('[useFetchProfile] Invalid id - could not extract pubkey', {
+        idLength: id.length,
+        prefix: id.slice(0, 16)
       })
       setProfile(null)
       setPubkey(null)
@@ -431,11 +431,10 @@ export function useFetchProfile(id?: string, skipCache = false) {
     
     // Validate pubkey format
     if (extractedPubkey.length !== 64 || !/^[0-9a-f]{64}$/.test(extractedPubkey)) {
-      logger.error('[useFetchProfile] Invalid pubkey format', {
-        id,
-        extractedPubkey,
-        pubkeyLength: extractedPubkey.length,
-        expectedLength: 64
+      logger.debug('[useFetchProfile] Invalid pubkey format (non-hex id passed through userIdToPubkey)', {
+        idLength: id.length,
+        extractedLen: extractedPubkey.length,
+        prefix: id.slice(0, 12)
       })
       setProfile(null)
       setPubkey(null)
