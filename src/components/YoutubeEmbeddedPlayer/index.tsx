@@ -1,3 +1,4 @@
+import { isImwaldElectron } from '@/lib/client-platform'
 import { ensureYouTubeIframeApi } from '@/lib/youtube-iframe-api'
 import { parseYoutubeUrl } from '@/lib/youtube-url'
 import { cn } from '@/lib/utils'
@@ -32,6 +33,8 @@ export default function YoutubeEmbeddedPlayer({
   }, [autoLoadMedia])
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
+  /** Packaged app uses `file:`; YT’s JS API often errors there; a plain embed iframe works. */
+  const useNativeEmbed = isImwaldElectron()
 
   const posterUrl = useMemo(
     () => (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
@@ -48,6 +51,7 @@ export default function YoutubeEmbeddedPlayer({
   )
 
   useEffect(() => {
+    if (useNativeEmbed) return
     if (!videoId || !containerRef.current || !showEmbed) return
 
     let cancelled = false
@@ -92,9 +96,9 @@ export default function YoutubeEmbeddedPlayer({
         // React often removes the host node first when auto-load media is turned off; YT then hits removeChild errors.
       }
     }
-  }, [videoId, showEmbed])
+  }, [videoId, showEmbed, useNativeEmbed])
 
-  if (error) {
+  if (error && !useNativeEmbed) {
     return <ExternalLink url={url} />
   }
 
@@ -113,6 +117,27 @@ export default function YoutubeEmbeddedPlayer({
   if (!videoId && !initSuccess) {
     return <ExternalLink url={url} />
   }
+
+  if (useNativeEmbed && videoId) {
+    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?playsinline=1&rel=0`
+    return (
+      <div
+        className={cn(
+          'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
+          frameClassName
+        )}
+      >
+        <iframe
+          className="h-full w-full min-h-[12rem] border-0"
+          src={embedSrc}
+          title="YouTube video"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
