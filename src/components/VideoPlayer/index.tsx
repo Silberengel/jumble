@@ -1,6 +1,6 @@
 import { isImwaldElectron } from '@/lib/client-platform'
 import { isHlsPlaylistUrl } from '@/lib/url'
-import { cn, isInViewport } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import mediaManager from '@/services/media-manager.service'
 import Hls from 'hls.js'
@@ -97,24 +97,52 @@ export default function VideoPlayer({
 
     if (!video || !container) return
 
+    /**
+     * Mobile: `threshold: 1` + a second `isInViewport` (full element inside innerHeight) caused
+     * play/pause thrash as the toolbar/resizes and subpixel layout toggled visibility. That produced
+     * a buffering spinner loop (Loader2) and stutter. Use fractional visibility + debounced pause.
+     */
+    const PLAY_AFTER_VISIBLE_RATIO = 0.35
+    const PAUSE_BELOW_RATIO = 0.12
+    const PLAY_DELAY_MS = 200
+    const PAUSE_DELAY_MS = 450
+
+    let playTimer: ReturnType<typeof setTimeout> | undefined
+    let pauseTimer: ReturnType<typeof setTimeout> | undefined
+
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          setTimeout(() => {
-            if (isInViewport(container)) {
-              mediaManager.autoPlay(video)
-            }
-          }, 200)
-        } else {
-          mediaManager.pause(video)
+        const ratio = entry.intersectionRatio
+        if (ratio >= PLAY_AFTER_VISIBLE_RATIO) {
+          if (pauseTimer !== undefined) {
+            clearTimeout(pauseTimer)
+            pauseTimer = undefined
+          }
+          if (playTimer !== undefined) return
+          playTimer = setTimeout(() => {
+            playTimer = undefined
+            mediaManager.autoPlay(video)
+          }, PLAY_DELAY_MS)
+        } else if (ratio <= PAUSE_BELOW_RATIO) {
+          if (playTimer !== undefined) {
+            clearTimeout(playTimer)
+            playTimer = undefined
+          }
+          if (pauseTimer !== undefined) return
+          pauseTimer = setTimeout(() => {
+            pauseTimer = undefined
+            mediaManager.pause(video)
+          }, PAUSE_DELAY_MS)
         }
       },
-      { threshold: 1 }
+      { threshold: [0, 0.1, 0.2, 0.35, 0.5, 0.75, 1] }
     )
 
     observer.observe(container)
 
     return () => {
+      if (playTimer !== undefined) clearTimeout(playTimer)
+      if (pauseTimer !== undefined) clearTimeout(pauseTimer)
       observer.unobserve(container)
     }
   }, [autoplay, src, hlsMode])

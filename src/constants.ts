@@ -107,9 +107,10 @@ export const MAX_PUBLISH_RELAYS = 20
 export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
 
 /**
- * Cap how long we wait on NIP-65 / inbox relay-list fetches before publishing.
- * Without this, a stuck `fetchRelayList` / `fetchRelayLists` can leave republish toasts loading forever
- * (the 30s publish timeout only runs after targets are resolved).
+ * Cap how long we wait on NIP-65 / inbox relay-list resolution (including `fetchRelayLists` network phase
+ * and kind-10432 fetch) before publishing or falling back to IndexedDB-only merge.
+ * Without this, a stuck `fetchReplaceableEventsFromProfileFetchRelays` can block the UI even when kind
+ * 10002 is already in IndexedDB (the 30s publish timeout only runs after targets are resolved).
  */
 export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 12_000
 

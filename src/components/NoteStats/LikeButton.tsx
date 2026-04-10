@@ -35,7 +35,13 @@ import { useTranslation } from 'react-i18next'
 import Emoji from '../Emoji'
 import EmojiPicker, { EMOJI_PICKER_REACTIONS } from '../EmojiPicker'
 import { formatCount } from './utils'
-import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
+import {
+  type RelayStatus,
+  showPublishingError,
+  showPublishingFeedback,
+  showSimplePublishSuccess
+} from '@/lib/publishing-feedback'
+import { LoginRequiredError } from '@/lib/nostr-errors'
 import { WEB_EXTERNAL_REACTION_PUBLISHED_EVENT } from '@/lib/rss-web-feed'
 
 export default function LikeButton({ event, hideCount = false }: { event: Event; hideCount?: boolean }) {
@@ -177,7 +183,29 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
           }
         }
       } catch (error) {
+        if (error instanceof LoginRequiredError) {
+          return
+        }
         logger.error('Like failed', { error, eventId: event.id })
+        if (error instanceof AggregateError && (error as AggregateError & { relayStatuses?: RelayStatus[] }).relayStatuses) {
+          const relayStatuses = (error as AggregateError & { relayStatuses: RelayStatus[] }).relayStatuses
+          const successCount = relayStatuses.filter((s) => s.success).length
+          showPublishingFeedback(
+            {
+              success: successCount > 0,
+              relayStatuses,
+              successCount,
+              totalCount: relayStatuses.length
+            },
+            {
+              message:
+                successCount > 0 ? t('Reaction published to some relays') : t('Failed to publish reaction'),
+              duration: 6000
+            }
+          )
+        } else {
+          showPublishingError(error instanceof Error ? error.message : t('Failed to publish reaction'))
+        }
       } finally {
         setLiking(false)
         clearTimeout(timer)

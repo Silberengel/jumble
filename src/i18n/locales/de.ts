@@ -1398,6 +1398,7 @@ export default {
     'Failed to pin note': 'Failed to pin note',
     'Failed to publish post': 'Failed to publish post',
     'Failed to publish reply': 'Failed to publish reply',
+    'Failed to publish reaction': 'Reaktion konnte nicht veröffentlicht werden',
     'Failed to publish thread': 'Failed to publish thread',
     'Failed to publish to some relays. Please try again or use different relays.':
       'Failed to publish to some relays. Please try again or use different relays.',
@@ -1642,6 +1643,7 @@ export default {
     'Rate limited. Please wait before trying again.':
       'Rate limited. Please wait before trying again.',
     'Reaction published': 'Reaction published',
+    'Reaction published to some relays': 'Reaktion auf einigen Relays veröffentlicht',
     'Reaction removed': 'Reaction removed',
     'Read full article': 'Read full article',
     'Reading group entry': 'Reading group entry',

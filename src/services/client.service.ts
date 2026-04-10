@@ -653,7 +653,12 @@ class ClientService extends EventTarget {
       .slice(0, MAX_PUBLISH_RELAYS)
   }
 
-  private async capPublishRelayUrlsForPublish(
+  /**
+   * Same ordering as {@link prioritizePublishUrlList} but bounded so relay-list / inbox fetches
+   * cannot block publishing indefinitely. Used from {@link determineTargetRelays} (before
+   * {@link publishEvent}) and from {@link capPublishRelayUrlsForPublish}.
+   */
+  private async prioritizePublishUrlListWithTimeout(
     relayUrls: string[],
     event: NEvent,
     favoriteRelayUrls: string[] = []
@@ -673,6 +678,72 @@ class ClientService extends EventTarget {
         }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
       )
     ])
+  }
+
+  private async capPublishRelayUrlsForPublish(
+    relayUrls: string[],
+    event: NEvent,
+    favoriteRelayUrls: string[] = []
+  ): Promise<string[]> {
+    return this.prioritizePublishUrlListWithTimeout(relayUrls, event, favoriteRelayUrls)
+  }
+
+  private emptyRelayListForPublish(): TRelayList {
+    return {
+      write: [],
+      read: [],
+      originalRelays: [],
+      httpRead: [],
+      httpWrite: [],
+      httpOriginalRelays: []
+    }
+  }
+
+  /** Bounded wait so NIP-65 fetch cannot block publishing (reactions, replies without relay picker, etc.). */
+  private async fetchRelayListWithPublishTimeout(pubkey: string): Promise<TRelayList> {
+    const empty = this.emptyRelayListForPublish()
+    try {
+      return await Promise.race([
+        this.fetchRelayList(pubkey),
+        new Promise<TRelayList>((resolve) =>
+          setTimeout(() => {
+            logger.warn('[DetermineTargetRelays] fetchRelayList timed out; using empty outbox', {
+              pubkeySlice: pubkey.slice(0, 12)
+            })
+            resolve(empty)
+          }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
+        )
+      ])
+    } catch (err) {
+      logger.warn('[DetermineTargetRelays] fetchRelayList failed, using fallback relays', {
+        pubkeySlice: pubkey.slice(0, 12),
+        error: err instanceof Error ? err.message : String(err)
+      })
+      return empty
+    }
+  }
+
+  private async fetchRelayListsWithPublishTimeout(pubkeys: string[]): Promise<TRelayList[]> {
+    if (pubkeys.length === 0) return []
+    try {
+      return await Promise.race([
+        this.fetchRelayLists(pubkeys),
+        new Promise<TRelayList[]>((resolve) =>
+          setTimeout(() => {
+            logger.warn('[DetermineTargetRelays] fetchRelayLists timed out; skipping context inbox merge', {
+              pubkeyCount: pubkeys.length
+            })
+            resolve(pubkeys.map(() => this.emptyRelayListForPublish()))
+          }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
+        )
+      ])
+    } catch (err) {
+      logger.warn('[DetermineTargetRelays] fetchRelayLists failed', {
+        pubkeyCount: pubkeys.length,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      return pubkeys.map(() => this.emptyRelayListForPublish())
+    }
   }
 
   /**
@@ -703,7 +774,7 @@ class ClientService extends EventTarget {
     // For Report events, always include user's write relays first, then add seen relays if they're write-capable
     if (event.kind === kinds.Report) {
       // Start with user's write relays (outboxes) - these are the primary targets for reports
-      const relayList = await this.fetchRelayList(event.pubkey)
+      const relayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
       const reportHttpWrites = (relayList?.httpWrite ?? [])
         .map((url) => normalizeHttpRelayUrl(url) || url)
         .filter((u): u is string => !!u)
@@ -757,7 +828,19 @@ class ClientService extends EventTarget {
       event.kind === ExtendedKind.PUBLIC_MESSAGE ||
       event.kind === ExtendedKind.CALENDAR_EVENT_RSVP
     ) {
-      const authorRelayList = await this.fetchRelayList(event.pubkey).catch(() => ({ write: [] as string[], read: [] as string[], httpWrite: [] as string[], httpRead: [] as string[] }))
+      const recipientPubkeys = Array.from(
+        new Set(
+          event.tags.filter((t) => t[0] === 'p' && t[1] && isValidPubkey(t[1])).map((t) => t[1] as string)
+        )
+      ).filter((p) => p !== event.pubkey)
+      const recipientListsPromise =
+        recipientPubkeys.length > 0
+          ? this.fetchRelayListsWithPublishTimeout(recipientPubkeys)
+          : Promise.resolve([] as TRelayList[])
+      const [authorRelayList, recipientRelayLists] = await Promise.all([
+        this.fetchRelayListWithPublishTimeout(event.pubkey),
+        recipientListsPromise
+      ])
       const authorHttpWrites = (authorRelayList?.httpWrite ?? [])
         .map((url) => normalizeHttpRelayUrl(url))
         .filter((url): url is string => !!url)
@@ -768,20 +851,12 @@ class ClientService extends EventTarget {
       if (authorWrite.length === 0) {
         authorWrite = [...FAST_WRITE_RELAY_URLS]
       }
-      const recipientPubkeys = Array.from(
-        new Set(
-          event.tags.filter((t) => t[0] === 'p' && t[1] && isValidPubkey(t[1])).map((t) => t[1] as string)
-        )
-      ).filter((p) => p !== event.pubkey)
       let recipientRead: string[] = []
-      if (recipientPubkeys.length > 0) {
-        const recipientRelayLists = await this.fetchRelayLists(recipientPubkeys)
-        recipientRead = recipientRelayLists.flatMap((rl) => [
-          ...(rl?.httpRead ?? []).map((url) => normalizeHttpRelayUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u)),
-          ...(rl?.read ?? []).map((url) => normalizeUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u))
-        ])
-        recipientRead = dedupeNormalizeRelayUrlsOrdered(recipientRead)
-      }
+      recipientRead = recipientRelayLists.flatMap((rl) => [
+        ...(rl?.httpRead ?? []).map((url) => normalizeHttpRelayUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u)),
+        ...(rl?.read ?? []).map((url) => normalizeUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u))
+      ])
+      recipientRead = dedupeNormalizeRelayUrlsOrdered(recipientRead)
       let pubRelays = mergeRelayPriorityLayers(
         [relayUrlsLocalsFirst(authorWrite), dedupeNormalizeRelayUrlsOrdered(recipientRead)],
         blockedRelayUrls,
@@ -818,20 +893,13 @@ class ClientService extends EventTarget {
       if (event.kind === ExtendedKind.SPELL) {
         let spellRelayList: TRelayList | undefined
         try {
-          spellRelayList = await this.fetchRelayList(event.pubkey)
+          spellRelayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
         } catch (err) {
           logger.warn('[DetermineTargetRelays] fetchRelayList failed for spell', {
             pubkey: event.pubkey,
             error: err instanceof Error ? err.message : String(err)
           })
-          spellRelayList = {
-            write: [],
-            read: [],
-            originalRelays: [],
-            httpRead: [],
-            httpWrite: [],
-            httpOriginalRelays: []
-          }
+          spellRelayList = this.emptyRelayListForPublish()
         }
         const spellHttpWrites = (spellRelayList?.httpWrite ?? [])
           .map((url) => normalizeHttpRelayUrl(url))
@@ -862,25 +930,26 @@ class ClientService extends EventTarget {
 
       const bootstrapExtras: string[] = [...(additionalRelayUrls ?? [])]
       let authorInboxFromContext: string[] = []
-      if (
+      const shouldMergeContextInboxes =
         !specifiedRelayUrls?.length &&
         ![kinds.Contacts, kinds.Mutelist, ExtendedKind.FOLLOW_SET].includes(event.kind)
-      ) {
-        const ctxPubkeys = this.collectReplyAndMentionPubkeys(event)
-        if (ctxPubkeys.length > 0) {
-          const relayLists = await this.fetchRelayLists(ctxPubkeys)
-          relayLists.forEach((relayList) => {
-            for (const u of relayList.httpRead ?? []) {
-              const n = normalizeHttpRelayUrl(u) || u
-              if (n) authorInboxFromContext.push(n)
-            }
-            for (const u of relayList.read ?? []) {
-              const n = normalizeUrl(u) || u
-              if (n) authorInboxFromContext.push(n)
-            }
-          })
+      const ctxPubkeys = shouldMergeContextInboxes ? this.collectReplyAndMentionPubkeys(event) : []
+      const relayListsPromise =
+        ctxPubkeys.length > 0
+          ? this.fetchRelayListsWithPublishTimeout(ctxPubkeys)
+          : Promise.resolve([] as TRelayList[])
+      const relayListPromise = this.fetchRelayListWithPublishTimeout(event.pubkey)
+      const [relayLists, relayList] = await Promise.all([relayListsPromise, relayListPromise])
+      relayLists.forEach((rl) => {
+        for (const u of rl.httpRead ?? []) {
+          const n = normalizeHttpRelayUrl(u) || u
+          if (n) authorInboxFromContext.push(n)
         }
-      }
+        for (const u of rl.read ?? []) {
+          const n = normalizeUrl(u) || u
+          if (n) authorInboxFromContext.push(n)
+        }
+      })
       if (
         [
           kinds.RelayList,
@@ -918,34 +987,9 @@ class ClientService extends EventTarget {
         event.kind === ExtendedKind.FAVORITE_RELAYS ||
         event.kind === kinds.Relaysets
       ) {
-        logger.debug('[DetermineTargetRelays] Fetching user relay list for event publication', {
+        logger.debug('[DetermineTargetRelays] User relay list resolved for publication', {
           pubkey: event.pubkey,
-          kind: event.kind
-        })
-      }
-      let relayList: TRelayList | undefined
-      try {
-        relayList = await this.fetchRelayList(event.pubkey)
-      } catch (err) {
-        logger.warn('[DetermineTargetRelays] fetchRelayList failed, using fallback relays', {
-          pubkey: event.pubkey,
-          error: err instanceof Error ? err.message : String(err)
-        })
-        relayList = {
-          write: [],
-          read: [],
-          originalRelays: [],
-          httpRead: [],
-          httpWrite: [],
-          httpOriginalRelays: []
-        }
-      }
-      if (
-        event.kind === kinds.RelayList ||
-        event.kind === ExtendedKind.FAVORITE_RELAYS ||
-        event.kind === kinds.Relaysets
-      ) {
-        logger.debug('[DetermineTargetRelays] User relay list fetched', {
+          kind: event.kind,
           hasRelayList: !!relayList,
           writeRelayCount: relayList?.write?.length ?? 0,
           readRelayCount: relayList?.read?.length ?? 0,
@@ -1000,7 +1044,7 @@ class ClientService extends EventTarget {
 
     if (specifiedRelayUrls?.length) {
       const checkedCount = specifiedRelayUrls.length
-      relays = await this.prioritizePublishUrlList(relays, event, favoriteRelayUrls ?? [])
+      relays = await this.prioritizePublishUrlListWithTimeout(relays, event, favoriteRelayUrls ?? [])
       if (checkedCount > relays.length) {
         logger.info('[Publish] Relay picker: checked count exceeds per-publish cap (stage 1)', {
           checkedInRelayPicker: checkedCount,
@@ -3330,39 +3374,28 @@ class ClientService extends EventTarget {
     return requestPromise
   }
 
-  async fetchRelayLists(pubkeys: string[]): Promise<TRelayList[]> {
-    // First check IndexedDB for offline/quick access (prioritizes cache relays for offline use)
-    const storedRelayEvents = await Promise.all(
-      pubkeys.map(pubkey => indexedDb.getReplaceableEvent(pubkey, kinds.RelayList))
-    )
-    const storedCacheRelayEvents = await Promise.all(
-      pubkeys.map(pubkey => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS))
-    )
-    const storedHttpRelayEvents = await Promise.all(
-      pubkeys.map(pubkey => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.HTTP_RELAY_LIST))
-    )
-
-    // Then fetch from relays (will update cache if newer)
-    const relayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(pubkeys, kinds.RelayList)
-    const httpRelayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-      pubkeys,
-      ExtendedKind.HTTP_RELAY_LIST
-    )
-
-    // Fetch cache relays from multiple sources: FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, and user's inboxes/outboxes
-    const cacheRelayEvents = await this.fetchCacheRelayEventsFromMultipleSources(pubkeys, relayEvents, storedRelayEvents)
-
+  /**
+   * Merge NIP-65 (10002), HTTP relay list (10243), and cache relays (10432) from network and/or IndexedDB.
+   * Network arrays may be sparse/undefined per index; stored* always filled from IDB reads.
+   */
+  private mergeRelayListsBundle(
+    pubkeys: string[],
+    relayEvents: (NEvent | null | undefined)[],
+    httpRelayEvents: (NEvent | null | undefined)[],
+    cacheRelayEvents: (NEvent | null | undefined)[],
+    storedRelayEvents: (NEvent | null | undefined)[],
+    storedHttpRelayEvents: (NEvent | null | undefined)[],
+    storedCacheRelayEvents: (NEvent | null | undefined)[]
+  ): TRelayList[] {
     return pubkeys.map((targetPubkey, index) => {
       const isOwnRelayList =
         this.pubkey != null && hexPubkeysEqual(this.pubkey, userIdToPubkey(targetPubkey))
 
-      // Use stored cache relay event if available (for offline), otherwise use fetched one
       const storedCacheEvent = storedCacheRelayEvents[index]
       const cacheEvent = cacheRelayEvents[index] || storedCacheEvent
 
       const httpRelayEvent = httpRelayEvents[index] || storedHttpRelayEvents[index]
 
-      // Use stored relay event if no network event (for offline), otherwise use fetched one
       const storedRelayEvent = storedRelayEvents[index]
       const relayEvent = relayEvents[index] || storedRelayEvent
 
@@ -3388,27 +3421,22 @@ class ClientService extends EventTarget {
         ...emptyHttp
       }
 
-      // Merge kind 10432 (cache relays) only for the logged-in user — never use someone else's local relays.
       if (isOwnRelayList && cacheEvent) {
         const cacheRelayList = getRelayListFromEvent(cacheEvent)
 
-        // Merge read relays - cache relays first, then others (for offline priority)
         const mergedRead = [...cacheRelayList.read, ...relayList.read]
         const mergedWrite = [...cacheRelayList.write, ...relayList.write]
         const mergedOriginalRelays = new Map<string, TMailboxRelay>()
 
-        // Add cache relay original relays first (prioritized)
-        cacheRelayList.originalRelays.forEach(relay => {
+        cacheRelayList.originalRelays.forEach((relay) => {
           mergedOriginalRelays.set(relay.url, relay)
         })
-        // Then add regular relay original relays
-        relayList.originalRelays.forEach(relay => {
+        relayList.originalRelays.forEach((relay) => {
           if (!mergedOriginalRelays.has(relay.url)) {
             mergedOriginalRelays.set(relay.url, relay)
           }
         })
 
-        // Deduplicate while preserving order (cache relays first)
         return mergeKind10243({
           write: Array.from(new Set(mergedWrite)),
           read: Array.from(new Set(mergedRead)),
@@ -3417,7 +3445,6 @@ class ClientService extends EventTarget {
         })
       }
 
-      // If no merged cache path, return original relay list or default (with own cache as fallback only)
       if (!relayEvent) {
         if (isOwnRelayList && storedCacheEvent) {
           const cacheRelayList = getRelayListFromEvent(storedCacheEvent)
@@ -3442,6 +3469,119 @@ class ClientService extends EventTarget {
 
       return mergeKind10243(relayList)
     })
+  }
+
+  /** Background refresh so UI/publish can use IDB immediately while relays catch up. */
+  private refreshRelayListsFromNetwork(
+    pubkeys: string[],
+    storedKind10002: (NEvent | null | undefined)[]
+  ): void {
+    void (async () => {
+      try {
+        const relayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+          pubkeys,
+          kinds.RelayList
+        )
+        await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+          pubkeys,
+          ExtendedKind.HTTP_RELAY_LIST
+        )
+        await this.fetchCacheRelayEventsFromMultipleSources(pubkeys, relayEvents, storedKind10002)
+      } catch {
+        /* best-effort */
+      }
+    })()
+  }
+
+  async fetchRelayLists(pubkeys: string[]): Promise<TRelayList[]> {
+    if (pubkeys.length === 0) return []
+
+    const storedRelayEvents = await Promise.all(
+      pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, kinds.RelayList))
+    )
+    const storedCacheRelayEvents = await Promise.all(
+      pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS))
+    )
+    const storedHttpRelayEvents = await Promise.all(
+      pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.HTTP_RELAY_LIST))
+    )
+
+    const budgetMs = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+    const allHaveKind10002 = pubkeys.every((_, i) => storedRelayEvents[i] != null)
+
+    const networkBundle = async (): Promise<{
+      relayEvents: (NEvent | null | undefined)[]
+      httpRelayEvents: (NEvent | null | undefined)[]
+      cacheRelayEvents: (NEvent | null | undefined)[]
+    }> => {
+      const relayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+        pubkeys,
+        kinds.RelayList
+      )
+      const httpRelayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+        pubkeys,
+        ExtendedKind.HTTP_RELAY_LIST
+      )
+      const cacheRelayEvents = await this.fetchCacheRelayEventsFromMultipleSources(
+        pubkeys,
+        relayEvents,
+        storedRelayEvents
+      )
+      return { relayEvents, httpRelayEvents, cacheRelayEvents }
+    }
+
+    if (allHaveKind10002) {
+      this.refreshRelayListsFromNetwork(pubkeys, storedRelayEvents)
+      logger.debug(
+        '[FetchRelayLists] Kind 10002 present in IndexedDB for all pubkeys; merging locally, network refresh in background',
+        { count: pubkeys.length }
+      )
+      const cacheRelayEvents = await Promise.race([
+        this.fetchCacheRelayEventsFromMultipleSources(pubkeys, storedRelayEvents, storedRelayEvents),
+        new Promise<(NEvent | null | undefined)[]>((resolve) =>
+          setTimeout(() => resolve(storedCacheRelayEvents.map((e) => e ?? undefined)), budgetMs)
+        )
+      ])
+      return this.mergeRelayListsBundle(
+        pubkeys,
+        storedRelayEvents.map((e) => e ?? undefined),
+        storedHttpRelayEvents.map((e) => e ?? undefined),
+        cacheRelayEvents,
+        storedRelayEvents,
+        storedHttpRelayEvents,
+        storedCacheRelayEvents
+      )
+    }
+
+    const raced = await Promise.race([
+      networkBundle(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs))
+    ])
+    if (raced != null) {
+      return this.mergeRelayListsBundle(
+        pubkeys,
+        raced.relayEvents,
+        raced.httpRelayEvents,
+        raced.cacheRelayEvents,
+        storedRelayEvents,
+        storedHttpRelayEvents,
+        storedCacheRelayEvents
+      )
+    }
+
+    logger.warn('[FetchRelayLists] Network relay-list fetch exceeded budget; using IndexedDB / empty network layer only', {
+      pubkeyCount: pubkeys.length
+    })
+    const cacheRelayEvents = storedCacheRelayEvents.map((e) => e ?? undefined)
+    return this.mergeRelayListsBundle(
+      pubkeys,
+      pubkeys.map(() => undefined),
+      pubkeys.map(() => undefined),
+      cacheRelayEvents,
+      storedRelayEvents,
+      storedHttpRelayEvents,
+      storedCacheRelayEvents
+    )
   }
 
   async forceUpdateRelayListEvent(pubkey: string) {
@@ -3471,11 +3611,18 @@ class ClientService extends EventTarget {
       return storedCacheRelayEvents
     }
 
-    // Fetch from PROFILE_FETCH_RELAY_URLS
-    const cacheRelayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-      pubkeysToFetch,
-      ExtendedKind.CACHE_RELAYS
-    )
+    const cacheRelayEvents = await Promise.race([
+      this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+        pubkeysToFetch,
+        ExtendedKind.CACHE_RELAYS
+      ),
+      new Promise<(NEvent | undefined)[]>((resolve) =>
+        setTimeout(
+          () => resolve(pubkeysToFetch.map(() => undefined)),
+          PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+        )
+      )
+    ])
 
     // Map results back to original pubkey order
     return pubkeys.map((pubkey, index) => {
