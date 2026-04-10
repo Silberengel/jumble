@@ -1,6 +1,6 @@
 /**
  * Single source of truth for :emoji: shortcodes and nostr: bech32 patterns.
- * Used by MarkdownArticle, parseContent, nostr-parser, previews, post editor, AsciiDoc, etc.
+ * Used by MarkdownArticle, parseContent, previews, post editor, AsciiDoc, etc.
  */
 
 // --- Emoji (:shortcode:) ----------------------------------------------------
@@ -81,7 +81,7 @@ export const NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX = new RegExp(
 /** Legacy bare bech32 (no nostr: prefix) */
 export const LEGACY_PROFILE_BECH32_REGEX = new RegExp(`${BECH32_NPUB}|${BECH32_NPROFILE}`, 'g')
 
-/** nostr-parser.tsx: boundary + lookahead so punctuation does not stick to bech32 */
+/** Boundary + lookahead so punctuation does not stick to bech32 */
 export const NOSTR_PARSER_LOOKAHEAD = '(?=\\s|$|>|\\]|,|\\.|!|\\?|;|:)'
 export const NOSTR_PARSER_REGEX = new RegExp(
   `(?:^|\\s|>|\\[)nostr:(${NOSTR_CONTENT_BECH32_ALT})${NOSTR_PARSER_LOOKAHEAD}`,

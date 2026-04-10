@@ -1,3 +1,7 @@
+/**
+ * Ambient augmentations (no imports — must stay a script so these merge into global scope).
+ * Runtime polyfills live in {@link ./polyfill.ts}; target lib is ES2020.
+ */
 interface Array<T> {
   findLast(predicate: (value: T, index: number, obj: T[]) => boolean, thisArg?: any): T | undefined
 }

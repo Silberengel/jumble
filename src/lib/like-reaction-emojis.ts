@@ -1,5 +1,5 @@
 /**
- * Single source for the quick-like emoji row used by SuggestedEmojis and the EmojiPicker
+ * Single source for the quick-like emoji row used by the EmojiPicker / LikeButton
  * reactions row. Also re-exported as EMOJI_PICKER_REACTIONS for LikeButton.
  */
 export const DEFAULT_SUGGESTED_EMOJIS = ['❤️', '👍', '🔥', '😂', '😢', '🫂', '🚀'] as const

@@ -276,7 +276,7 @@ export default function Highlight({
       
       // Events with special preview cards that should always use full preview
       const specialCardKinds = [
-        kinds.LongFormArticle, // 30023 - has LongFormArticlePreview
+        kinds.LongFormArticle, // 30023 — long-form preview card
         ExtendedKind.POLL, // Has PollPreview
         ExtendedKind.DISCUSSION, // Has DiscussionNote
         ExtendedKind.VIDEO, // Has VideoNotePreview
