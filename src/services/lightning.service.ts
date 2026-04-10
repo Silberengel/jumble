@@ -20,6 +20,7 @@ import { queryService, replaceableEventService } from './client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
+import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
 
 export type TRecentSupporter = { pubkey: string; amount: number; comment?: string }
 
@@ -103,10 +104,7 @@ class LightningService {
     }
 
     return new Promise((resolve) => {
-      // Close our Radix dialog first; opening bc-modal in the same turn can leave body
-      // pointer-events stuck so the payment UI is visible but inert (esp. from Sheet / secondary pane).
-      closeOuterModel?.()
-      window.setTimeout(() => {
+      runAfterReleasingRadixScrollLock(closeOuterModel, () => {
         let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
         let subCloser: SubCloser | undefined
         const { setPaid } = launchPaymentModal({
@@ -158,7 +156,7 @@ class LightningService {
             }
           )
         }
-      }, 0)
+      })
     })
   }
 
@@ -231,8 +229,7 @@ class LightningService {
     }
 
     return new Promise((resolve) => {
-      closeOuterModel?.()
-      window.setTimeout(() => {
+      runAfterReleasingRadixScrollLock(closeOuterModel, () => {
         let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
         let subCloser: SubCloser | undefined
         const { setPaid } = launchPaymentModal({
@@ -282,7 +279,7 @@ class LightningService {
             }
           )
         }
-      }, 0)
+      })
     })
   }
 
@@ -297,8 +294,7 @@ class LightningService {
     }
 
     return new Promise((resolve) => {
-      closeOuterModel?.()
-      window.setTimeout(() => {
+      runAfterReleasingRadixScrollLock(closeOuterModel, () => {
         launchPaymentModal({
           invoice: invoice,
           onPaid: (response) => {
@@ -308,7 +304,7 @@ class LightningService {
             resolve(null)
           }
         })
-      }, 0)
+      })
     })
   }
 
