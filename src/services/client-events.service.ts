@@ -31,8 +31,9 @@ import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 
 /**
- * Build comprehensive relay list for event-by-id fetch: user's inboxes (+ cache), relay hints,
- * author outboxes/inboxes when known, FAST_READ_RELAY_URLS, and SEARCHABLE_RELAY_URLS.
+ * Build comprehensive relay list for event-by-id fetch: user's inboxes (+ cache), **favorite relays
+ * (kind 10012, same as sidebar menu)**, relay hints, author outboxes/inboxes when known,
+ * FAST_READ_RELAY_URLS, and SEARCHABLE_RELAY_URLS.
  */
 async function buildComprehensiveRelayListForEvents(
   authorPubkey: string | undefined,
@@ -48,7 +49,8 @@ async function buildComprehensiveRelayListForEvents(
     containingEventRelays,
     includeFastReadRelays: true,
     includeSearchableRelays: true,
-    includeLocalRelays: true
+    includeLocalRelays: true,
+    includeFavoriteRelays: Boolean(client.pubkey)
   })
 }
 
@@ -107,6 +109,27 @@ export class EventService {
       return undefined
     }
     return e
+  }
+
+  /**
+   * Session cache is keyed by event `id` (hex). `fetchEvent("naddr1…")` has no hex until a REQ returns;
+   * scan for a replaceable whose `kind`/`pubkey`/`d` matches the naddr (e.g. live 30311 already loaded from ticker/embed).
+   */
+  private getSessionEventIfMatchingNaddr(data: {
+    pubkey: string
+    kind: number
+    identifier: string
+  }): NEvent | undefined {
+    const pk = data.pubkey.toLowerCase()
+    const { kind, identifier } = data
+    for (const [, ev] of this.sessionEventCache.entries()) {
+      if (shouldDropEventOnIngest(ev)) continue
+      if (!isReplaceableEvent(ev.kind)) continue
+      if (ev.kind !== kind || ev.pubkey.toLowerCase() !== pk) continue
+      const d = ev.tags.find((t) => t[0] === 'd')?.[1] ?? ''
+      if (d === identifier) return ev
+    }
+    return undefined
   }
 
   private notifySessionEventWaiters(hexId: string): void {
@@ -175,8 +198,15 @@ export class EventService {
           case 'nevent':
             hexId = data.id
             break
-          case 'naddr':
+          case 'naddr': {
+            const fromSession = this.getSessionEventIfMatchingNaddr({
+              pubkey: data.pubkey,
+              kind: data.kind,
+              identifier: data.identifier
+            })
+            if (fromSession) return fromSession
             break
+          }
         }
       } catch {
         return undefined

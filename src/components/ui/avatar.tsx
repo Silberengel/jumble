@@ -17,12 +17,16 @@ Avatar.displayName = AvatarPrimitive.Root.displayName
 
 const AvatarImage = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Image>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image> & {
+    /** Prefer banner LCP order; forwarded to `<img>` as HTML `fetchpriority` (React warns on `fetchPriority`). */
+    fetchPriority?: 'high' | 'low' | 'auto'
+  }
+>(({ className, fetchPriority, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
     className={cn('aspect-square h-full w-full', className)}
     {...props}
+    {...(fetchPriority ? { fetchpriority: fetchPriority } : {})}
   />
 ))
 AvatarImage.displayName = AvatarPrimitive.Image.displayName

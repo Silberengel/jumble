@@ -263,7 +263,7 @@ export default function Image({
           decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
           loading="eager"
-          fetchPriority={fetchPriority}
+          {...(fetchPriority ? { fetchpriority: fetchPriority } : {})}
           draggable={false}
           onLoad={handleLoad}
           onError={handleError}

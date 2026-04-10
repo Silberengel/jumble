@@ -1,11 +1,13 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { FAST_READ_RELAY_URLS, SEARCHABLE_RELAY_URLS, ExtendedKind } from '@/constants'
+import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import { useFetchEvent } from '@/hooks'
 import { normalizeUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState } from 'react'
 import { Event, nip19 } from 'nostr-tools'
@@ -311,6 +313,14 @@ function EmbeddedNoteNotFound({
   containingEvent?: Event // Event that contains this embedded note - use its author's relays and relay hints
 }) {
   const { t } = useTranslation()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const menuRelayUrls = useMemo(
+    () =>
+      getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+        .map((url) => normalizeUrl(url))
+        .filter((url): url is string => Boolean(url)),
+    [favoriteRelays, blockedRelays]
+  )
   const [isSearchingExternal, setIsSearchingExternal] = useState(false)
   const [triedExternal, setTriedExternal] = useState(false)
   const [externalRelays, setExternalRelays] = useState<string[]>([])
@@ -392,7 +402,12 @@ function EmbeddedNoteNotFound({
         .filter((url): url is string => Boolean(url))
 
       const externalRelays = Array.from(
-        new Set([...normalizedHints, ...normalizedSearchableRelays, ...normalizedFastRead])
+        new Set([
+          ...normalizedHints,
+          ...menuRelayUrls,
+          ...normalizedSearchableRelays,
+          ...normalizedFastRead
+        ])
       )
 
       setExternalRelays(externalRelays)
@@ -409,7 +424,7 @@ function EmbeddedNoteNotFound({
 
     getExternalRelays()
     // containingEvent supplies e/a/q relay hints + author NIP-65 list — must rerun when parent loads
-  }, [noteId, containingEvent?.id])
+  }, [noteId, containingEvent?.id, menuRelayUrls])
 
   const handleTryExternalRelays = async () => {
     if (isSearchingExternal) return

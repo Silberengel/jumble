@@ -234,6 +234,18 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
         const localRelays = await getCacheRelayUrls(userPubkey)
         localRelays.forEach(addRelay)
       }
+      // Menu / feed “favorite relays” (kind 10012) — same list as the sidebar; not part of NIP-65 alone.
+      if (includeFavoriteRelays) {
+        try {
+          const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
+          favoriteRelays.forEach(addRelay)
+          logger.debug('[RelayListBuilder] Added user favorite relays (with inboxes path)', {
+            count: favoriteRelays.length
+          })
+        } catch (error) {
+          logger.debug('[RelayListBuilder] Failed to fetch user favorite relays', { error })
+        }
+      }
     } catch (error) {
       logger.debug('[RelayListBuilder] Failed to fetch user inboxes', { error })
     }

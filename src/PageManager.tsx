@@ -423,6 +423,7 @@ export function useSmartNoteNavigation() {
     
     // If event is provided, store it in navigation event store to avoid re-fetching
     if (event) {
+      navigationEventStore.clear()
       navigationEventStore.setEvent(event)
       client.addEventToCache(event)
     }
@@ -487,6 +488,7 @@ export function useSmartNoteNavigationOptional() {
     }
     const { noteId } = parsed
     if (event) {
+      navigationEventStore.clear()
       navigationEventStore.setEvent(event)
       client.addEventToCache(event)
     }
