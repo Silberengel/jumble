@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { StorageKey } from '@/constants'
 import {
@@ -22,7 +21,6 @@ function platformLabel(): string {
 
 export default function EventArchiveCacheSettings() {
   const { t } = useTranslation()
-  const [enabled, setEnabled] = useState(true)
   const [maxMb, setMaxMb] = useState('')
   const [maxEvents, setMaxEvents] = useState('')
   const [sessionLru, setSessionLru] = useState('')
@@ -51,14 +49,12 @@ export default function EventArchiveCacheSettings() {
   }, [t])
 
   useEffect(() => {
-    setEnabled(window.localStorage.getItem(StorageKey.EVENT_ARCHIVE_ENABLED) !== 'false')
     setMaxMb(window.localStorage.getItem(StorageKey.EVENT_ARCHIVE_MAX_MB) ?? '')
     setMaxEvents(window.localStorage.getItem(StorageKey.EVENT_ARCHIVE_MAX_EVENTS) ?? '')
     setSessionLru(window.localStorage.getItem(StorageKey.SESSION_EVENT_LRU_MAX) ?? '')
   }, [])
 
   const apply = useCallback(() => {
-    window.localStorage.setItem(StorageKey.EVENT_ARCHIVE_ENABLED, enabled ? 'true' : 'false')
     const mb = maxMb.trim()
     if (mb) window.localStorage.setItem(StorageKey.EVENT_ARCHIVE_MAX_MB, mb)
     else window.localStorage.removeItem(StorageKey.EVENT_ARCHIVE_MAX_MB)
@@ -71,7 +67,7 @@ export default function EventArchiveCacheSettings() {
     client.reapplySessionLruFromSettings()
     invalidateArchiveFootprintCache()
     toast.success(t('eventArchive.appliedToast'))
-  }, [enabled, maxMb, maxEvents, sessionLru, t])
+  }, [maxMb, maxEvents, sessionLru, t])
 
   const effective = getEventArchiveConfig()
 
@@ -80,17 +76,6 @@ export default function EventArchiveCacheSettings() {
       <h3 className="text-base font-medium">{t('eventArchive.sectionTitle')}</h3>
       <p className="text-muted-foreground text-sm">{t('eventArchive.sectionBlurb')}</p>
       <p className="text-muted-foreground text-xs">{defaultsHint}</p>
-
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="event-archive-enabled" className="text-sm font-normal">
-          {t('eventArchive.enablePersist')}
-        </Label>
-        <Switch
-          id="event-archive-enabled"
-          checked={enabled}
-          onCheckedChange={(v) => setEnabled(Boolean(v))}
-        />
-      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
@@ -152,7 +137,6 @@ export default function EventArchiveCacheSettings() {
 
       <p className="text-muted-foreground text-xs">
         {t('eventArchive.effectiveSummary', {
-          enabled: effective.enabled ? t('eventArchive.on') : t('eventArchive.off'),
           mb: Math.round(effective.maxBytes / (1024 * 1024)),
           events: effective.maxEvents,
           lru: effective.sessionLruMax

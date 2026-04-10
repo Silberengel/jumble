@@ -1,6 +1,10 @@
 import { StorageKey } from '@/constants'
 import { isImwaldElectron, isMobileBrowserProfile } from '@/lib/client-platform'
 
+/** Removed from settings; strip so manual `localStorage` edits cannot flip archive behavior. */
+const LEGACY_EVENT_ARCHIVE_ENABLED_KEY = 'eventArchiveEnabled'
+let legacyEventArchiveEnabledKeyRemoved = false
+
 /** Platform defaults (overridable in Cache settings). */
 export const EVENT_ARCHIVE_DEFAULTS = {
   sessionLruMobile: 100,
@@ -15,21 +19,10 @@ export const EVENT_ARCHIVE_DEFAULTS = {
 } as const
 
 export type TEventArchiveConfig = {
-  enabled: boolean
   /** Soft byte budget (approximate, from JSON size). */
   maxBytes: number
   maxEvents: number
   sessionLruMax: number
-}
-
-function readBool(key: string, defaultTrue: boolean): boolean {
-  try {
-    const v = window.localStorage.getItem(key)
-    if (v === null) return defaultTrue
-    return v !== 'false' && v !== '0'
-  } catch {
-    return defaultTrue
-  }
 }
 
 function readPositiveInt(key: string, fallback: number): number {
@@ -63,14 +56,21 @@ function defaultMaxEvents(): number {
 
 /**
  * Effective archive + session LRU limits (reads Cache settings from localStorage).
+ * Disk archive is always on; only caps are configurable.
  */
 export function getEventArchiveConfig(): TEventArchiveConfig {
-  const enabled = readBool(StorageKey.EVENT_ARCHIVE_ENABLED, true)
+  if (typeof window !== 'undefined' && !legacyEventArchiveEnabledKeyRemoved) {
+    legacyEventArchiveEnabledKeyRemoved = true
+    try {
+      window.localStorage.removeItem(LEGACY_EVENT_ARCHIVE_ENABLED_KEY)
+    } catch {
+      // ignore
+    }
+  }
   const maxMb = readPositiveInt(StorageKey.EVENT_ARCHIVE_MAX_MB, defaultMaxMb())
   const maxEvents = readPositiveInt(StorageKey.EVENT_ARCHIVE_MAX_EVENTS, defaultMaxEvents())
   const sessionLruMax = readPositiveInt(StorageKey.SESSION_EVENT_LRU_MAX, defaultSessionLruMax())
   return {
-    enabled,
     maxBytes: Math.max(8, maxMb) * 1024 * 1024,
     maxEvents: Math.max(50, maxEvents),
     sessionLruMax: Math.max(32, Math.min(200_000, sessionLruMax))

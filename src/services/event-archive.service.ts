@@ -58,7 +58,6 @@ function approxEventBytes(ev: Event): number {
 
 async function trimArchiveIfNeeded(): Promise<void> {
   const cfg = getEventArchiveConfig()
-  if (!cfg.enabled) return
   await ensureFootprint()
   let guard = 0
   while (
@@ -78,8 +77,7 @@ async function trimArchiveIfNeeded(): Promise<void> {
 }
 
 async function flushArchiveQueue(): Promise<void> {
-  const cfg = getEventArchiveConfig()
-  if (!cfg.enabled || pending.size === 0) return
+  if (pending.size === 0) return
   const batch = [...pending.values()]
   pending.clear()
   for (const ev of batch) {
@@ -107,8 +105,6 @@ function scheduleFlush(): void {
 
 /** Queue a non-replaceable event for IndexedDB archive (Electron + mobile + desktop web; caps differ). */
 export function queuePersistSeenEvent(ev: Event): void {
-  const cfg = getEventArchiveConfig()
-  if (!cfg.enabled) return
   if (shouldSkipArchiving(ev)) return
   const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
   if (!/^[0-9a-f]{64}$/.test(id)) return
@@ -117,15 +113,12 @@ export function queuePersistSeenEvent(ev: Event): void {
 }
 
 export async function loadArchivedEventForFetch(hexId: string): Promise<Event | undefined> {
-  const cfg = getEventArchiveConfig()
-  if (!cfg.enabled) return undefined
   const ev = await indexedDb.getArchivedEventById(hexId, true)
   if (!ev || shouldDropEventOnIngest(ev)) return undefined
   return ev
 }
 
 export async function prefetchArchivedEvents(hexIds: string[]): Promise<Event[]> {
-  const cfg = getEventArchiveConfig()
-  if (!cfg.enabled || hexIds.length === 0) return []
+  if (hexIds.length === 0) return []
   return indexedDb.getArchivedEventsByIds(hexIds)
 }

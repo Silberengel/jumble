@@ -634,7 +634,7 @@ export default {
       'Refresh Cache runs an IndexedDB upgrade check, re-fetches your relay lists and profile-related events from the network (same work as the automatic startup sync), syncs kind-5 deletions into tombstones and removes deleted items from the local cache, then refreshes the store counts below.',
     'eventArchive.sectionTitle': 'Notes & feed archive',
     'eventArchive.sectionBlurb':
-      'Keeps notes, reactions, and timeline order on disk so feeds can load offline or on slow links. Replaceable data (profiles, relay lists, publications) stays in its existing stores — this archive only fills gaps for “firehose” events. Turn off to rely on relays only.',
+      'Keeps notes, reactions, and timeline order on disk so feeds can load offline or on slow links. Replaceable data (profiles, relay lists, publications) stays in its existing stores — this archive only fills gaps for “firehose” events.',
     'eventArchive.defaultsMobile':
       'This device profile uses small defaults: about {{lru}} events in memory, ~{{mb}} MB / {{ev}} archived events (reactions/zaps drop first).',
     'eventArchive.defaultsElectron':
@@ -646,7 +646,7 @@ export default {
     'eventArchive.maxEvents': 'Max archived events, blank = default',
     'eventArchive.sessionLru': 'In-memory session cache (event count), blank = default',
     'eventArchive.effectiveSummary':
-      'Currently: {{enabled}} — ~{{mb}} MB budget, {{events}} events, {{lru}} session LRU.',
+      'Currently: ~{{mb}} MB budget, {{events}} events, {{lru}} session LRU.',
     'eventArchive.on': 'on',
     'eventArchive.off': 'off',
     'eventArchive.apply': 'Apply cache settings',
