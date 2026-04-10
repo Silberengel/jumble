@@ -136,6 +136,7 @@ export function BacklinkAvatarStrip({
                 userId={e.pubkey}
                 size="medium"
                 className="ring-1 ring-border/40"
+                deferRemoteAvatar={false}
               />
             </button>
           )
@@ -205,6 +206,7 @@ export default function ThreadQuoteBacklink({
           'mt-0.5 ring-1',
           isWarning ? 'ring-amber-600/35 dark:ring-amber-400/35' : 'ring-border/40'
         )}
+        deferRemoteAvatar={false}
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">

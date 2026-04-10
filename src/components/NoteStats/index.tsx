@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
+import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
 import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
@@ -33,7 +34,8 @@ export default function NoteStats({
 }) {
   const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
-  const { relays: statsRelays, key: statsRelaysKey } = useNoteStatsRelayHints()
+  const { relays: hintRelays, key: hintRelaysKey } = useNoteStatsRelayHints()
+  const { relayUrls: rssUrlThreadRelays, key: rssUrlThreadRelaysKey } = useRssUrlThreadQueryRelays()
   const [loading, setLoading] = useState(false)
   
   // Hide boost button for discussion events and replies to discussions
@@ -45,6 +47,9 @@ export default function NoteStats({
 
   /** Synthetic RSS article root: no boost/quote/zap; still show reaction breakdown (NIP-25 + kind-17 web). */
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
+  /** Match {@link RssUrlThreadStatsBar}: inbox/favorites/fast-read merge — plain hints miss many #i indexers. */
+  const statsRelays = isRssArticleRoot ? rssUrlThreadRelays : hintRelays
+  const statsRelaysKey = isRssArticleRoot ? rssUrlThreadRelaysKey : hintRelaysKey
   const isZapPoll = event.kind === ExtendedKind.ZAP_POLL
 
   /** Emoji reaction pills (aggregated likes). Shown for RSS/Web URL threads so the side panel matches feed rows. */

@@ -84,6 +84,7 @@ function quietDevIndexRelayProxyErrors(devIndexRelayTarget: string): Plugin {
 export default defineConfig(({ mode }) => {
   // `.env.local` is not on `process.env` when this file is evaluated unless we load it.
   const env = loadEnv(mode, process.cwd(), '')
+  /** gc_index_relay (or compatible) HTTP API; app POSTs to /api/events/filter. HTTP 500 in the browser means this process errored, not that Vite failed. */
   const devIndexRelayTarget =
     env.VITE_DEV_INDEX_RELAY_TARGET?.trim() || 'http://127.0.0.1:4000'
 

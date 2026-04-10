@@ -433,7 +433,12 @@ export default function Note({
                 ) : (
                   <ReactionEmojiDisplay event={event} />
                 )}
-                <UserAvatar userId={event.pubkey} size={size === 'small' ? 'medium' : 'normal'} maxFileSizeKb={500} />
+                <UserAvatar
+                  userId={event.pubkey}
+                  size={size === 'small' ? 'medium' : 'normal'}
+                  maxFileSizeKb={showFull ? 2048 : 500}
+                  deferRemoteAvatar={!showFull}
+                />
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-hidden">
                   <Username
                     userId={event.pubkey}
@@ -480,7 +485,12 @@ export default function Note({
               </>
             ) : (
               <>
-                <UserAvatar userId={event.pubkey} size={size === 'small' ? 'medium' : 'normal'} maxFileSizeKb={500} />
+                <UserAvatar
+                  userId={event.pubkey}
+                  size={size === 'small' ? 'medium' : 'normal'}
+                  maxFileSizeKb={showFull ? 2048 : 500}
+                  deferRemoteAvatar={!showFull}
+                />
                 <div className="flex-1 w-0">
                   <div className="flex gap-2 items-center">
                     <Username

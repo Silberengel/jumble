@@ -207,9 +207,12 @@ export default function RssFeedItem({
       }
     }
 
+    const eventTargetElement = (t: EventTarget | null): Element | null =>
+      t instanceof Element ? t : t instanceof Node ? t.parentElement : null
+
     const handleMouseUp = (e: MouseEvent) => {
       // Don't process if clicking on the highlight button itself
-      if ((e.target as HTMLElement).closest('.highlight-button-container')) {
+      if (eventTargetElement(e.target)?.closest('.highlight-button-container')) {
         return
       }
 
@@ -222,8 +225,8 @@ export default function RssFeedItem({
 
     const handleClick = (e: MouseEvent) => {
       // Hide button if clicking outside the selection area and not on the button itself
-      const target = e.target as HTMLElement
-      if (showHighlightButton && !target.closest('.highlight-button-container')) {
+      const target = eventTargetElement(e.target)
+      if (showHighlightButton && !target?.closest('.highlight-button-container')) {
         // Check if there's still a valid selection
         const selection = window.getSelection()
         if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
@@ -464,7 +467,7 @@ export default function RssFeedItem({
       .replace(/\]\]\s*>\s*$/g, '') // Remove trailing ]]> from CDATA
       .replace(/^\s*<!\[CDATA\[/g, '') // Remove leading CDATA declaration
       .replace(/<\?xml[^>]*\?>/gi, '') // Remove XML declarations
-      .replace(/<\!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
+      .replace(/<!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
       .trim()
     
     // Basic sanitization: remove script tags and dangerous attributes

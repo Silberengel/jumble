@@ -8,7 +8,7 @@ import { seedProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { cn } from '@/lib/utils'
 import { useSmartProfileNavigationOptional } from '@/PageManager'
 import type { TProfile } from '@/types'
-import { useMemo, useState, useEffect, useRef, type RefObject } from 'react'
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 /** Only defer network fetches for typical profile picture URLs (not data:, blob:, etc.). */
 function isHttpOrHttpsUrl(url: string): boolean {
@@ -31,10 +31,35 @@ const loadedAvatarUrls = new Set<string>()
  */
 const AVATAR_HEAD_TIMEOUT_MS = 3000
 
+/** Pixels beyond the viewport edge to treat as “visible” for avatar load (matches IO rootMargin intent). */
+const AVATAR_VIEWPORT_MARGIN_PX = 320
+
+function elementIsNearViewport(el: HTMLElement, marginPx: number): boolean {
+  const rect = el.getBoundingClientRect()
+  const vh = window.innerHeight
+  const vw = window.innerWidth
+  return (
+    rect.bottom >= -marginPx &&
+    rect.top <= vh + marginPx &&
+    rect.right >= -marginPx &&
+    rect.left <= vw + marginPx
+  )
+}
+
+function isSameOriginUrl(url: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return new URL(url).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
 async function fetchUrlSizeBytes(url: string): Promise<number | null> {
   if (urlSizeCache.has(url)) return urlSizeCache.get(url)!
-  // Cross-origin HEAD to image/media URLs usually has no CORS — Firefox logs errors even when we catch.
-  if (isImage(url) || isMedia(url)) {
+  // Cross-origin HEAD almost never exposes Content-Length to JS without CORS; browsers still log CORS failures.
+  // Skip HEAD for images/media (no point) and for all other cross-origin URLs (HTML homepages, libravatar, etc.).
+  if (isImage(url) || isMedia(url) || !isSameOriginUrl(url)) {
     urlSizeCache.set(url, null)
     return null
   }
@@ -71,7 +96,9 @@ function useDeferRemoteProfileAvatar(
   profileAvatar: string | undefined,
   fallbackSrc: string,
   containerRef: RefObject<HTMLDivElement | null>,
-  maxFileSizeBytes?: number
+  maxFileSizeBytes?: number,
+  /** When false, load remote avatars immediately (threads / small lists where every face should appear fast). */
+  deferRemote = true
 ): string {
   const remoteHttp = useMemo(() => {
     const a = profileAvatar?.trim()
@@ -107,14 +134,31 @@ function useDeferRemoteProfileAvatar(
     return ''
   }, [profileAvatar])
 
-  const [allowRemote, setAllowRemote] = useState(() => remoteHttp === '' || alreadyCached)
+  const [allowRemote, setAllowRemote] = useState(
+    () => !deferRemote || remoteHttp === '' || alreadyCached
+  )
+
+  // When metadata arrives, avoid resetting to identicon + waiting for IO on rows that are
+  // already on screen (previously: useEffect(false) then IntersectionObserver → noticeable delay).
+  useLayoutEffect(() => {
+    if (!deferRemote) {
+      setAllowRemote(true)
+      return
+    }
+    if (remoteHttp === '' || alreadyCached) {
+      setAllowRemote(true)
+      return
+    }
+    const el = containerRef.current
+    if (el && elementIsNearViewport(el, AVATAR_VIEWPORT_MARGIN_PX)) {
+      setAllowRemote(true)
+      return
+    }
+    setAllowRemote(false)
+  }, [remoteHttp, alreadyCached, deferRemote])
 
   useEffect(() => {
-    setAllowRemote(remoteHttp === '' || alreadyCached)
-  }, [remoteHttp, alreadyCached])
-
-  useEffect(() => {
-    if (!remoteHttp || allowRemote) return
+    if (!deferRemote || !remoteHttp || allowRemote) return
     if (typeof IntersectionObserver === 'undefined') {
       setAllowRemote(true)
       return
@@ -127,11 +171,11 @@ function useDeferRemoteProfileAvatar(
           setAllowRemote(true)
         }
       },
-      { root: null, rootMargin: '200px', threshold: 0.01 }
+      { root: null, rootMargin: `${AVATAR_VIEWPORT_MARGIN_PX}px`, threshold: 0.01 }
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [remoteHttp, allowRemote, containerRef])
+  }, [remoteHttp, allowRemote, containerRef, deferRemote])
 
   if (sizeBlocked) return fallbackSrc
   return nonHttpAvatar || (remoteHttp && allowRemote ? remoteHttp : '') || fallbackSrc
@@ -153,7 +197,8 @@ export default function UserAvatar({
   className,
   size = 'normal',
   prefetchedProfile,
-  maxFileSizeKb = 2048
+  maxFileSizeKb = 2048,
+  deferRemoteAvatar = true
 }: {
   userId: string
   className?: string
@@ -166,6 +211,11 @@ export default function UserAvatar({
    * Defaults to 2048 (2 MB). Pass a lower value (e.g. 500) for dense feed contexts.
    */
   maxFileSizeKb?: number
+  /**
+   * When false, start loading the remote picture as soon as metadata exists (no viewport deferral).
+   * Use in threads and short lists so participants are recognizable immediately.
+   */
+  deferRemoteAvatar?: boolean
 }) {
   const { profile: fetchedProfile } = useFetchProfile(userId)
   const profile = useMemo(() => {
@@ -209,7 +259,8 @@ export default function UserAvatar({
     profile?.avatar,
     defaultAvatar,
     containerRef,
-    maxFileSizeKb != null ? maxFileSizeKb * 1024 : undefined
+    maxFileSizeKb != null ? maxFileSizeKb * 1024 : undefined,
+    deferRemoteAvatar
   )
 
   // All hooks must be called before any early returns
@@ -285,8 +336,9 @@ export default function UserAvatar({
             style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
             onError={handleImageError}
             onLoad={handleImageLoad}
-            loading="lazy"
+            loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
             decoding="async"
+            fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
           />
         )
       ) : (
@@ -304,13 +356,15 @@ export function SimpleUserAvatar({
   size = 'normal',
   className,
   prefetchedProfile,
-  maxFileSizeKb = 2048
+  maxFileSizeKb = 2048,
+  deferRemoteAvatar = true
 }: {
   userId: string
   size?: 'large' | 'big' | 'semiBig' | 'normal' | 'medium' | 'small' | 'xSmall' | 'tiny'
   className?: string
   prefetchedProfile?: TProfile
   maxFileSizeKb?: number
+  deferRemoteAvatar?: boolean
 }) {
   const { profile: fetchedProfile } = useFetchProfile(userId)
   const profile = useMemo(() => {
@@ -350,7 +404,8 @@ export function SimpleUserAvatar({
     profile?.avatar,
     defaultAvatar,
     containerRef,
-    maxFileSizeKb != null ? maxFileSizeKb * 1024 : undefined
+    maxFileSizeKb != null ? maxFileSizeKb * 1024 : undefined,
+    deferRemoteAvatar
   )
   
   // All hooks must be called before any early returns
@@ -416,8 +471,9 @@ export function SimpleUserAvatar({
             style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
             onError={handleImageError}
             onLoad={handleImageLoad}
-            loading="lazy"
+            loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
             decoding="async"
+            fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
           />
         )
       ) : (

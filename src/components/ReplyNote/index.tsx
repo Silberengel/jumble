@@ -103,7 +103,13 @@ export default function ReplyNote({
     >
       <Collapsible>
         <div className="flex space-x-2 items-start px-4 pt-3">
-          <UserAvatar userId={headerUserId} size="medium" className="shrink-0 mt-0.5" maxFileSizeKb={500} />
+          <UserAvatar
+            userId={headerUserId}
+            size="medium"
+            className="shrink-0 mt-0.5"
+            maxFileSizeKb={2048}
+            deferRemoteAvatar={false}
+          />
           <div className="w-full overflow-hidden">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 w-0">

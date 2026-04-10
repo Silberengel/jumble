@@ -33,15 +33,23 @@ import { useReply } from '@/providers/ReplyProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import {
+  NoteFeedProfileContext,
+  type NoteFeedProfileContextValue,
+  useNoteFeedProfileContext
+} from '@/providers/NoteFeedProfileContext'
 import client, { eventService, queryService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
+import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import {
   buildRssArticleUrlThreadInteractionFilters,
+  buildRssWebNostrQueryRelayUrls,
   isRssArticleUrlThreadInteraction
 } from '@/lib/rss-web-feed'
+import type { TProfile } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -62,6 +70,8 @@ type TRootInfo =
 
 const LIMIT = 200
 const SHOW_COUNT = 10
+const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 50
+const THREAD_PROFILE_CHUNK = 80
 
 function partitionZapReceipts(items: NEvent[]) {
   const zaps: NEvent[] = []
@@ -202,6 +212,45 @@ function isWebThreadTailKind(kind: number): boolean {
   return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind) || WEB_THREAD_EXTRA_TAIL_KINDS.has(kind)
 }
 
+/** Kind 1111 / 1244 that includes the thread root id on an e/E tag (common on relays; stricter root-tag walks may miss these). */
+function commentReferencesThreadRootEventHex(evt: NEvent, rootHexLower: string): boolean {
+  if (evt.kind !== ExtendedKind.COMMENT && evt.kind !== ExtendedKind.VOICE_COMMENT) return false
+  const h = rootHexLower.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(h)) return false
+  return evt.tags.some(
+    (t) => (t[0] === 'e' || t[0] === 'E') && typeof t[1] === 'string' && t[1].toLowerCase() === h
+  )
+}
+
+function replyIdPresentInRepliesMap(
+  map: Map<string, { events: NEvent[]; eventIdSet: Set<string> }>,
+  replyId: string
+): boolean {
+  for (const { events } of map.values()) {
+    if (events.some((e) => e.id === replyId)) return true
+  }
+  return false
+}
+
+function replyMatchesThreadForList(
+  evt: NEvent,
+  opEvent: NEvent,
+  rootInfo: TRootInfo,
+  isDiscussionRoot: boolean
+): boolean {
+  if (rootInfo.type === 'I') {
+    return isRssArticleUrlThreadInteraction(evt, rootInfo.id)
+  }
+  if (
+    isDiscussionRoot &&
+    rootInfo.type === 'E' &&
+    commentReferencesThreadRootEventHex(evt, rootInfo.id)
+  ) {
+    return true
+  }
+  return replyBelongsToNoteThread(evt, opEvent, rootInfo)
+}
+
 function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   if (item.kind === kinds.Highlights) return t('highlighted this note')
   if (item.kind === kinds.ShortTextNote) return t('quoted this note')
@@ -262,7 +311,7 @@ function ReplyNoteList({
   const { hideContentMentioningMutedUsers } = useContentPolicy()
   const { pubkey: userPubkey } = useNostr()
   const { zapReplyThreshold } = useZap()
-  const { blockedRelays } = useFavoriteRelays()
+  const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const [rootInfo, setRootInfo] = useState<TRootInfo | undefined>(undefined)
   const { repliesMap, addReplies } = useReply()
@@ -382,7 +431,7 @@ function ReplyNoteList({
         ) {
           return
         }
-        if (rootInfo && !replyBelongsToNoteThread(evt, event, rootInfo)) return
+        if (rootInfo && !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
 
         replyIdSet.add(evt.id)
         replyEvents.push(evt)
@@ -467,7 +516,8 @@ function ReplyNoteList({
     mutePubkeySet,
     hideContentMentioningMutedUsers,
     sort,
-    zapReplyThreshold
+    zapReplyThreshold,
+    isDiscussionRoot
   ])
 
   const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
@@ -548,6 +598,124 @@ function ReplyNoteList({
     }
     return zapsThenTimeSorted(merged, 'desc')
   }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo])
+
+  const parentNoteFeed = useNoteFeedProfileContext()
+  const threadProfileLoadedRef = useRef<Set<string>>(new Set())
+  const threadProfileBatchGenRef = useRef(0)
+  const [threadProfileBatch, setThreadProfileBatch] = useState<{
+    profiles: Map<string, TProfile>
+    pending: Set<string>
+    version: number
+  }>(() => ({ profiles: new Map(), pending: new Set(), version: 0 }))
+
+  useEffect(() => {
+    threadProfileLoadedRef.current.clear()
+    threadProfileBatchGenRef.current += 1
+    setThreadProfileBatch({ profiles: new Map(), pending: new Set(), version: 0 })
+  }, [event.id])
+
+  const threadNoteFeedProfileValue = useMemo<NoteFeedProfileContextValue>(() => {
+    const profiles = new Map<string, TProfile>(parentNoteFeed?.profiles ?? [])
+    for (const [k, v] of threadProfileBatch.profiles) profiles.set(k, v)
+    const pending = new Set<string>(parentNoteFeed?.pendingPubkeys ?? [])
+    threadProfileBatch.pending.forEach((p) => pending.add(p))
+    return {
+      profiles,
+      pendingPubkeys: pending,
+      version: (parentNoteFeed?.version ?? 0) * 1_000_000 + threadProfileBatch.version
+    }
+  }, [parentNoteFeed, threadProfileBatch])
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const gen = threadProfileBatchGenRef.current
+      const candidates = new Set<string>()
+      const addPk = (p: string | undefined) => {
+        if (p && p.length === 64 && /^[0-9a-f]{64}$/i.test(p)) {
+          candidates.add(p.toLowerCase())
+        }
+      }
+      const addFromEvt = (e: NEvent) => {
+        addPk(e.pubkey)
+        let n = 0
+        for (const tag of e.tags) {
+          if (tag[0] === 'p' && tag[1]) {
+            addPk(tag[1])
+            n++
+            if (n >= 4) break
+          }
+        }
+      }
+      addFromEvt(event)
+      for (const e of mergedFeed) addFromEvt(e)
+
+      const parentProfiles = parentNoteFeed?.profiles
+      const parentPending = parentNoteFeed?.pendingPubkeys
+      const need = [...candidates].filter((pk) => {
+        if (parentProfiles?.has(pk)) return false
+        if (parentPending?.has(pk)) return false
+        if (threadProfileLoadedRef.current.has(pk)) return false
+        return true
+      })
+      if (need.length === 0) return
+
+      need.forEach((pk) => threadProfileLoadedRef.current.add(pk))
+
+      setThreadProfileBatch((prev) => {
+        const pending = new Set(prev.pending)
+        let changed = false
+        for (const pk of need) {
+          if (!pending.has(pk)) {
+            pending.add(pk)
+            changed = true
+          }
+        }
+        if (!changed) return prev
+        return { ...prev, pending, version: prev.version + 1 }
+      })
+
+      void (async () => {
+        const chunks: string[][] = []
+        for (let i = 0; i < need.length; i += THREAD_PROFILE_CHUNK) {
+          chunks.push(need.slice(i, i + THREAD_PROFILE_CHUNK))
+        }
+        const settled = await Promise.allSettled(
+          chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
+        )
+        if (gen !== threadProfileBatchGenRef.current) return
+
+        setThreadProfileBatch((prev) => {
+          const next = new Map(prev.profiles)
+          const pend = new Set(prev.pending)
+          settled.forEach((res, idx) => {
+            const chunk = chunks[idx]!
+            if (res.status === 'rejected') {
+              chunk.forEach((pk) => threadProfileLoadedRef.current.delete(pk))
+              chunk.forEach((pk) => pend.delete(pk))
+              return
+            }
+            const profiles = res.value
+            for (const p of profiles) {
+              next.set(p.pubkey, p)
+              pend.delete(p.pubkey)
+            }
+            for (const pk of chunk) {
+              pend.delete(pk)
+              if (!next.has(pk)) {
+                next.set(pk, {
+                  pubkey: pk,
+                  npub: pubkeyToNpub(pk) ?? '',
+                  username: formatPubkey(pk)
+                })
+              }
+            }
+          })
+          return { profiles: next, pending: pend, version: prev.version + 1 }
+        })
+      })()
+    }, THREAD_PROFILE_BATCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(handle)
+  }, [event, mergedFeed, parentNoteFeed?.version])
 
   const [timelineKey] = useState<string | undefined>(undefined)
   const [until, setUntil] = useState<number | undefined>(undefined)
@@ -692,6 +860,72 @@ function ReplyNoteList({
     hideContentMentioningMutedUsers
   ])
 
+  /** When note-stats counted discussion replies we did not REQ in the thread, fetch by id (same idea as RSS threads). */
+  const discussionStatsHydratedReplyIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    discussionStatsHydratedReplyIdsRef.current.clear()
+  }, [event.id])
+
+  useEffect(() => {
+    if (event.kind !== ExtendedKind.DISCUSSION || !rootInfo || rootInfo.type !== 'E') return
+    const fromStats = noteStats?.replies
+    if (!fromStats?.length) return
+    const threadRoot = rootInfo
+
+    const candidates = fromStats.filter(
+      (r) =>
+        !replyIdPresentInRepliesMap(repliesMap, r.id) &&
+        !discussionStatsHydratedReplyIdsRef.current.has(r.id)
+    )
+    if (candidates.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const batch: NEvent[] = []
+      for (const { id } of candidates) {
+        discussionStatsHydratedReplyIdsRef.current.add(id)
+        try {
+          const ev = await eventService.fetchEvent(id)
+          if (cancelled) return
+          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true)) {
+            batch.push(ev)
+          } else {
+            discussionStatsHydratedReplyIdsRef.current.delete(id)
+          }
+        } catch {
+          discussionStatsHydratedReplyIdsRef.current.delete(id)
+        }
+      }
+      if (!cancelled && batch.length > 0) {
+        const ok = batch.filter(
+          (e) =>
+            !shouldHideThreadResponseEvent(
+              e,
+              mutePubkeySet,
+              hideContentMentioningMutedUsers
+            )
+        )
+        if (ok.length > 0) addReplies(ok)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    event.kind,
+    event.id,
+    event,
+    rootInfo,
+    noteStats?.replies,
+    noteStats?.updatedAt,
+    repliesMap,
+    addReplies,
+    mutePubkeySet,
+    hideContentMentioningMutedUsers
+  ])
+
   const onNewReply = useCallback(
     (evt: NEvent) => {
       if (
@@ -718,7 +952,7 @@ function ReplyNoteList({
     const handleEventPublished = (data: Event) => {
       const ce = data as CustomEvent<NEvent>
       const evt = ce.detail
-      if (!evt || !replyBelongsToNoteThread(evt, event, rootInfo)) return
+      if (!evt || !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
       onNewReply(evt)
     }
 
@@ -726,7 +960,7 @@ function ReplyNoteList({
     return () => {
       client.removeEventListener('newEvent', handleEventPublished)
     }
-  }, [rootInfo, event, onNewReply])
+  }, [rootInfo, event, onNewReply, isDiscussionRoot])
 
   const replyFetchGenRef = useRef(0)
 
@@ -782,6 +1016,27 @@ function ReplyNoteList({
             replyBlockedRelays,
             threadRelayHints
           )
+
+          // URL/article threads (NIP-22 `#i`): synthetic root has no e-tags or seen-relay hints — merge the same
+          // relay stack as RSS+Web discovery / {@link RssUrlThreadStatsBar} so replies match feed stats.
+          if (rootInfo.type === 'I') {
+            const rssLayer = await buildRssWebNostrQueryRelayUrls({
+              accountPubkey: userPubkey ?? null,
+              favoriteRelays: favoriteRelays ?? [],
+              blockedRelays: blockedRelays ?? []
+            })
+            const seenNorm = new Set(
+              finalRelayUrls.map((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase()).filter(Boolean)
+            )
+            for (const u of rssLayer) {
+              const n = normalizeAnyRelayUrl(u) || u?.trim()
+              if (!n) continue
+              const k = n.toLowerCase()
+              if (seenNorm.has(k)) continue
+              seenNorm.add(k)
+              finalRelayUrls.push(n)
+            }
+          }
 
           const filters: Filter[] = []
           if (rootInfo.type === 'E') {
@@ -871,10 +1126,7 @@ function ReplyNoteList({
 
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
-            const match =
-              rootInfo.type === 'I'
-                ? isRssArticleUrlThreadInteraction(evt, rootInfo.id)
-                : replyBelongsToNoteThread(evt, event, rootInfo)
+            const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
             if (!match) return false
             return !shouldHideThreadResponseEvent(
               evt,
@@ -942,6 +1194,53 @@ function ReplyNoteList({
               }
             }
           }
+
+          // Second pass for kind-11 discussions: nested 1111/1 chains are keyed under parent ids in
+          // ReplyProvider; fetching #e:[comment-id] fills gaps the root-scoped REQ can miss.
+          if (
+            event.kind === ExtendedKind.DISCUSSION &&
+            rootInfo.type === 'E' &&
+            regularReplies.length > 0
+          ) {
+            const commentKinds = [
+              ExtendedKind.COMMENT,
+              ExtendedKind.VOICE_COMMENT,
+              kinds.ShortTextNote
+            ]
+            const parentIds = regularReplies
+              .filter((evt) => commentKinds.includes(evt.kind))
+              .map((evt) => evt.id)
+            if (parentIds.length > 0) {
+              const nestedFilters: Filter[] = [
+                { '#e': parentIds, kinds: commentKinds, limit: LIMIT },
+                {
+                  '#E': parentIds,
+                  kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
+                  limit: LIMIT
+                }
+              ]
+              const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
+                onevent: (evt: NEvent) => {
+                  if (fetchGeneration !== replyFetchGenRef.current) return
+                  if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+                    return
+                  if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
+                  addReplies([evt])
+                }
+              })
+              if (fetchGeneration !== replyFetchGenRef.current) return
+              const validNested = nestedReplies.filter(
+                (evt) =>
+                  !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers) &&
+                  replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
+              )
+              if (validNested.length > 0) {
+                discussionFeedCache.setCachedReplies(rootInfo, validNested)
+                const merged = discussionFeedCache.getCachedReplies(rootInfo)
+                addReplies(merged ?? validNested)
+              }
+            }
+          }
         } catch (error) {
           logger.error('[ReplyNoteList] Error fetching replies:', error)
           if (fetchGeneration !== replyFetchGenRef.current) return
@@ -962,10 +1261,12 @@ function ReplyNoteList({
     event.id,
     event.kind,
     blockedRelays,
+    favoriteRelays,
     browsingRelayUrls,
     addReplies,
     mutePubkeySet,
-    hideContentMentioningMutedUsers
+    hideContentMentioningMutedUsers,
+    isDiscussionRoot
   ])
 
   useEffect(() => {
@@ -1007,10 +1308,7 @@ function ReplyNoteList({
     const events = await client.loadMoreTimeline(timelineKey, until, LIMIT)
     const olderEvents = events.filter((evt) => {
       if (!rootInfo) return false
-      const matchesThread =
-        rootInfo.type === 'I'
-          ? isRssArticleUrlThreadInteraction(evt, rootInfo.id)
-          : replyBelongsToNoteThread(evt, event, rootInfo)
+      const matchesThread = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
       if (!matchesThread) return false
       return !shouldHideThreadResponseEvent(
         evt,
@@ -1031,7 +1329,8 @@ function ReplyNoteList({
     event,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
-    addReplies
+    addReplies,
+    isDiscussionRoot
   ])
 
   const highlightReply = useCallback((eventId: string, scrollTo = true) => {
@@ -1095,6 +1394,7 @@ function ReplyNoteList({
   )
 
   return (
+    <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
     <div className="min-h-[80vh] pb-12">
       {loading && <LoadingBar />}
       {!loading && until && (
@@ -1264,6 +1564,7 @@ function ReplyNoteList({
       <div ref={bottomRef} />
       {loading && <ReplyNoteSkeleton />}
     </div>
+    </NoteFeedProfileContext.Provider>
   )
 }
 

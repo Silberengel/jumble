@@ -160,6 +160,12 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
 
+  useEffect(() => {
+    const pk = finalEvent?.pubkey?.trim().toLowerCase()
+    if (!pk || !/^[0-9a-f]{64}$/.test(pk)) return
+    void client.fetchProfilesForPubkeys([pk])
+  }, [finalEvent?.id, finalEvent?.pubkey])
+
   const getNoteTypeTitle = (kind: number): string => {
     switch (kind) {
       case 1: // kinds.ShortTextNote
@@ -552,7 +558,9 @@ function ParentNote({
           navigateToNote(toNote(event ?? eventBech32Id))
         }}
       >
-        {event && <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" />}
+        {event && (
+          <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" deferRemoteAvatar={false} />
+        )}
         <div 
           className="truncate flex-1"
           onClick={(e) => {

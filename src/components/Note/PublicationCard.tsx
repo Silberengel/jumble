@@ -1,5 +1,6 @@
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
+import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional } from '@/PageManager'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
@@ -41,7 +42,7 @@ export default function PublicationCard({
   }
 
   const bookstrMetadataComponent = isBookstrEvent && (
-    <div className="text-xs text-muted-foreground space-x-2">
+    <div className="flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {bookMetadata.type && <span>Type: {bookMetadata.type}</span>}
       {bookMetadata.book && <span>Book: {formatBookName(bookMetadata.book)}</span>}
       {bookMetadata.chapter && <span>Chapter: {bookMetadata.chapter}</span>}
@@ -51,41 +52,44 @@ export default function PublicationCard({
   )
 
   const tagsComponent = metadata.tags.length > 0 && (
-    <div className="flex gap-1 flex-wrap">
+    <div className="flex w-full min-w-0 max-w-full flex-wrap gap-1 content-start">
       {metadata.tags.map((tag) => (
         <div
           key={tag}
-          className="flex items-center rounded-full text-xs px-2.5 py-0.5 bg-muted text-muted-foreground max-w-32 cursor-pointer hover:bg-accent hover:text-accent-foreground"
+          className="flex max-w-full min-w-0 items-center gap-0.5 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground cursor-pointer hover:bg-accent hover:text-accent-foreground sm:max-w-[min(100%,8rem)]"
           onClick={(e) => {
             e.stopPropagation()
             push(toNoteList({ hashtag: tag, kinds: [kinds.LongFormArticle] }))
           }}
         >
-          #<span className="truncate">{tag}</span>
+          <span className="shrink-0">#</span>
+          <span className="min-w-0 truncate">{tag}</span>
         </div>
       ))}
     </div>
   )
 
   const summaryComponent = metadata.summary && (
-    <div className="text-base text-muted-foreground line-clamp-4">{metadata.summary}</div>
+    <div className="min-w-0 max-w-full text-base text-muted-foreground line-clamp-4 break-words">
+      {metadata.summary}
+    </div>
   )
 
   if (isSmallScreen) {
     return (
-      <div className={className}>
+      <div className={cn('w-full min-w-0', className)}>
         <div 
-          className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
+          className="min-w-0 cursor-pointer rounded-lg border p-4 transition-colors hover:bg-muted/50"
           onClick={handleCardClick}
         >
           {metadata.image && autoLoadMedia && (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
-              className="w-full max-w-[400px] aspect-video mb-3"
+              className="mb-3 aspect-video w-full max-w-full"
               hideIfError
             />
           )}
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}
             {!titleComponent && bookstrMetadataComponent && <div className="h-0" />}
@@ -98,20 +102,20 @@ export default function PublicationCard({
   }
 
   return (
-    <div className={className}>
+    <div className={cn('w-full min-w-0', className)}>
       <div 
-        className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
+        className="min-w-0 cursor-pointer overflow-hidden rounded-lg border p-4 transition-colors hover:bg-muted/50"
         onClick={handleCardClick}
       >
-        <div className="flex gap-4">
+        <div className="flex min-w-0 gap-4">
           {metadata.image && autoLoadMedia && (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
-              className="rounded-lg aspect-[4/3] xl:aspect-video object-cover bg-foreground h-44 max-w-[400px]"
+              className="aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg bg-foreground object-cover xl:aspect-video xl:max-w-[400px]"
               hideIfError
             />
           )}
-          <div className="flex-1 w-0 space-y-2">
+          <div className="min-h-0 min-w-[10rem] flex-1 basis-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}
             {!titleComponent && bookstrMetadataComponent && <div className="h-0" />}
