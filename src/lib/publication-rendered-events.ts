@@ -32,11 +32,6 @@ export function getRenderedPublicationEventsVersion(): number {
   return renderedVersion
 }
 
-export function getRenderedPublicationEvents(publicationId: string): Event[] {
-  const pubId = normId(publicationId)
-  return [...(renderedByPublication.get(pubId)?.values() ?? [])]
-}
-
 /**
  * Deep collection for nested 30040 publications that were rendered in this session.
  */

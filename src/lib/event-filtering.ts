@@ -5,7 +5,7 @@ import storage from '@/services/local-storage.service'
 /**
  * Check if an event has expired based on its expiration tag
  */
-export function isEventExpired(event: Event): boolean {
+function isEventExpired(event: Event): boolean {
   const expirationTag = event.tags.find(tag => tag[0] === 'expiration')
   if (!expirationTag || !expirationTag[1]) {
     return false
@@ -22,7 +22,7 @@ export function isEventExpired(event: Event): boolean {
 /**
  * Check if an event is in quiet mode based on its quiet tag
  */
-export function isEventInQuietMode(event: Event): boolean {
+function isEventInQuietMode(event: Event): boolean {
   const quietTag = event.tags.find(tag => tag[0] === 'quiet')
   if (!quietTag || !quietTag[1]) {
     return false

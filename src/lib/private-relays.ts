@@ -56,21 +56,6 @@ export async function getPrivateRelayUrls(pubkey: string): Promise<string[]> {
 }
 
 /**
- * Check if user has cache relays set
- * @param pubkey - User's public key
- * @returns Promise<boolean> - true if user has at least one cache relay
- */
-export async function hasCacheRelays(pubkey: string): Promise<boolean> {
-  const cacheRelayEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
-  if (cacheRelayEvent) {
-    // Check if cache relay event has any relays
-    const hasRelays = cacheRelayEvent.tags.some(tag => tag[0] === 'relay' && tag[1])
-    return hasRelays
-  }
-  return false
-}
-
-/**
  * Get cache relay URLs only
  * @param pubkey - User's public key
  * @returns Promise<string[]> - Array of cache relay URLs

@@ -3,7 +3,7 @@
  * profile_badges list), then separate batches for comments on notes, comments on profile (#a), and
  * profile reactions (#e + #a); badge NIP-58 resolution and reports run after. `onPartial` fires as
  * relays return events (coalesced per microtask). Session cache writes stay at completion only.
- * Ordering matches {@link useProfileInteractions}.
+ * Ordering matches the former standalone profile-interactions hook (removed; logic lives here).
  */
 
 import { ExtendedKind } from '@/constants'
@@ -230,7 +230,7 @@ export async function fetchProfileAccordionBundle(args: {
   }
 
   // Keep phase 1 free of #a reaction/comment: many relays handle those poorly when batched with
-  // zaps/notes/badges. Match {@link useProfileInteractions} — dedicated REQ(s) for profile comments
+  // zaps/notes/badges. Same ordering as interactions hook — dedicated REQ(s) for profile comments
   // and reactions after we have note ids + kind-0 id.
   const phase1Filters: Filter[] = [
     { '#p': [pubkey], kinds: [kinds.Zap], limit: 100 },

@@ -24,7 +24,7 @@ const RELATIVE_UNIT_SECONDS: Record<string, number> = {
  * Resolve relative time to Unix timestamp.
  * "now" -> current time; "7d" -> now - 7*86400; "1704067200" -> 1704067200.
  */
-export function resolveRelativeTime(value: string): number {
+function resolveRelativeTime(value: string): number {
   const trimmed = (value || '').trim()
   if (trimmed === 'now' || trimmed === '') {
     return Math.floor(Date.now() / 1000)
@@ -63,7 +63,7 @@ export const SPELL_CATALOG_SYNC_LIMIT = 200
 export const SPELL_CATALOG_SYNC_LIMIT_WITH_FOLLOWS = 600
 
 /** Max distinct pubkeys in one catalog REQ (relay compatibility). Your pubkey is always first. */
-export const SPELL_CATALOG_MAX_AUTHORS = 400
+const SPELL_CATALOG_MAX_AUTHORS = 400
 
 /**
  * If no relay sends EOSE, stop showing the catalog sync state and close the sub after this long.
@@ -143,15 +143,6 @@ export function getRelaysForSpell(
     return dedupeRelayUrls([...primary, ...FAST_WRITE_RELAY_URLS])
   }
   return dedupeRelayUrls(primary)
-}
-
-/** Spell lists at least one relay URL in its `relays` tag. */
-export function spellHasExplicitRelays(spell: Event): boolean {
-  const relayTag = spell.tags.find(tagNameEquals('relays'))
-  if (!relayTag || relayTag.length < 2) return false
-  return relayTag
-    .slice(1)
-    .some((u) => typeof u === 'string' && (u.startsWith('wss://') || u.startsWith('ws://')))
 }
 
 /**
@@ -246,11 +237,6 @@ export function spellEventToFilter(spell: Event, ctx: SpellExecutionContext): Fi
   }
 
   return filter
-}
-
-/** Spell uses COUNT: run filter against relays and show a numeric result (not a feed). */
-export function spellIsCount(spell: Event): boolean {
-  return spell.tags.find(tagNameEquals('cmd'))?.[1] === 'COUNT'
 }
 
 /**

@@ -1,7 +1,7 @@
 import { ExtendedKind } from '@/constants'
 import type { Event } from 'nostr-tools'
 
-export function getDTagValue(event: Event): string | undefined {
+function getDTagValue(event: Event): string | undefined {
   const t = event.tags.find((x) => x[0] === 'd' && x[1])?.[1]
   return t
 }
@@ -45,7 +45,7 @@ export function eventMatchesDTagLooseQuery(needle: string, event: Event): boolea
 }
 
 /** Sort key: exact d-tag match first, then prefix, substring, then non-d / content-only. */
-export function dTagMatchRank(needle: string, dVal: string | undefined): number {
+function dTagMatchRank(needle: string, dVal: string | undefined): number {
   if (!dVal) return 4
   const nl = needle.trim().toLowerCase()
   const dl = dVal.toLowerCase()

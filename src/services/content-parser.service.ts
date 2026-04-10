@@ -1150,4 +1150,3 @@ class ContentParserService {
 
 // Export singleton instance
 export const contentParserService = new ContentParserService()
-export default contentParserService

@@ -11,17 +11,6 @@ import { isVideo } from './url'
 
 const I_NOSTR_BUILD = 'i.nostr.build'
 
-/** Returns true when a URL is hosted on any nostr.build domain. */
-export function isNostrBuildUrl(url: string): boolean {
-  const u = (url ?? '').trim()
-  if (!u) return false
-  try {
-    return new URL(u).hostname.endsWith('nostr.build')
-  } catch {
-    return false
-  }
-}
-
 /**
  * True when we may rewrite `url` to i.nostr.build’s `/thumb/…` variant.
  * Only **i.nostr.build** serves generated thumbs; cdn.nostr.build does not.

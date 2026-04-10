@@ -28,7 +28,7 @@ export type TLanguage = keyof typeof LANGUAGE_META
 
 export const LocalizedLanguageNames: { [key in TLanguage]: string } = { ...LANGUAGE_META }
 
-export const supportedLanguages = Object.keys(LANGUAGE_META) as TLanguage[]
+const supportedLanguages = Object.keys(LANGUAGE_META) as TLanguage[]
 
 const localeModules = import.meta.glob<{ default: Resource }>('./locales/*.ts')
 
@@ -40,7 +40,7 @@ function normalizeToSupported(lng: string): TLanguage {
   return supportedLanguages.find((s) => lng.startsWith(s)) ?? 'en'
 }
 
-export async function ensureLocaleLoaded(code: TLanguage): Promise<void> {
+async function ensureLocaleLoaded(code: TLanguage): Promise<void> {
   if (code === 'en') return
   if (i18n.hasResourceBundle(code, 'translation')) return
   const load = localeModules[localePath(code)]

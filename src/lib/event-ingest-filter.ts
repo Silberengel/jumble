@@ -7,7 +7,7 @@ import { kinds } from 'nostr-tools'
  * Detects **kind-1 note** spam where `content` is a stringified JSON **object** (game/app payloads, etc.)
  * instead of human-readable text. Scoped to {@link kinds.ShortTextNote} only.
  */
-export function isStringifiedJsonObjectContentNostrEvent(
+function isStringifiedJsonObjectContentNostrEvent(
   event: Pick<NEvent, 'kind' | 'content'>
 ): boolean {
   if (event.kind !== kinds.ShortTextNote) return false
@@ -26,7 +26,7 @@ export function isStringifiedJsonObjectContentNostrEvent(
  * Kind-31987 noise: missing `d` (relay URL). Rating formats differ across clients; do not drop at ingest
  * (feeds and cards already treat unknown ratings as zero stars).
  */
-export function isIncompleteRelayReviewIngest(event: NEvent): boolean {
+function isIncompleteRelayReviewIngest(event: NEvent): boolean {
   if (event.kind !== ExtendedKind.RELAY_REVIEW) return false
   return !getRelayUrlFromRelayReviewEvent(event)
 }

@@ -25,7 +25,7 @@ const CORNYCHAT_LABEL_NAMESPACE = 'com.cornychat'
 const EMPTY_PARENT_MAP = new Map<string, Event>()
 
 /** Max extra REQ filters when resolving 30312 parents for 30313 meetings (relay limits). */
-export const LIVE_ACTIVITIES_MAX_PARENT_FETCH = 32
+const LIVE_ACTIVITIES_MAX_PARENT_FETCH = 32
 
 export type LiveActivitiesFetchEventsFn = (
   urls: string[],
@@ -36,7 +36,7 @@ export type LiveActivitiesFetchEventsFn = (
 /** NIP-53 live streaming (30311), meeting space (30312), meeting (30313). */
 export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
-export const LIVE_ACTIVITIES_MAX_ITEMS = 10
+const LIVE_ACTIVITIES_MAX_ITEMS = 10
 
 export const LIVE_ACTIVITIES_SLIDE_INTERVAL_MS = 30_000
 
@@ -342,7 +342,7 @@ function isActiveLiveActivityStatus(ev: Event): boolean {
 }
 
 /** Parse NIP-33 address `kind:hex64pubkey:d` (used in `a` tags and dedupe keys). */
-export function parseNip33Address(ref: string): { kind: number; pubkey: string; d: string } | null {
+function parseNip33Address(ref: string): { kind: number; pubkey: string; d: string } | null {
   const m = /^(\d+):([0-9a-f]{64}):(.+)$/i.exec(ref.trim())
   if (!m) return null
   const kind = Number(m[1])
@@ -351,7 +351,7 @@ export function parseNip33Address(ref: string): { kind: number; pubkey: string; 
 }
 
 /** Parent meeting space (30312) address from a 30313 event’s `a` tag, if any. */
-export function firstParent30312Address(ev: Event): string | null {
+function firstParent30312Address(ev: Event): string | null {
   for (const t of ev.tags) {
     if (t[0] !== 'a' || !t[1]) continue
     const p = parseNip33Address(t[1])
@@ -394,7 +394,7 @@ function dedupeLatestForLiveTicker(events: Event[]): Map<string, Event> {
 }
 
 /** Latest 30312 space event per address from an event list (no network). */
-export function parent30312MapFromEvents(events: Event[]): Map<string, Event> {
+function parent30312MapFromEvents(events: Event[]): Map<string, Event> {
   const m = new Map<string, Event>()
   for (const ev of events) {
     if (ev.kind !== 30312) continue

@@ -16,16 +16,16 @@ function trimSlash(base: string): string {
   return base.replace(/\/+$/, '')
 }
 
-export function indexRelayFilterUrl(baseUrl: string): string {
+function indexRelayFilterUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/events/filter`
 }
 
-export function indexRelayPublishUrl(baseUrl: string): string {
+function indexRelayPublishUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/events`
 }
 
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
-export function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
+function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   const lim = f.limit
   const capped = lim == null || lim < 1 ? 100 : Math.min(100, lim)

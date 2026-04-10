@@ -97,7 +97,7 @@ export function buildAuthorInboxOutboxRelayUrls(
  * Profile pins + Medien: author NIP-65 tier (pass from {@link buildAuthorInboxOutboxRelayUrls}), then
  * {@link READ_ONLY_RELAY_URLS}, then {@link FAST_READ_RELAY_URLS}; dedupe, blocked-stripped, capped.
  */
-export const PROFILE_AUGMENTED_READ_MAX_RELAYS = 16
+const PROFILE_AUGMENTED_READ_MAX_RELAYS = 16
 
 export function buildProfileAugmentedReadRelayUrls(
   authorRelayUrls: string[],
@@ -159,7 +159,7 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
  * Profile page pins + feed: viewed author's NIP-65 read + write (REQ tier 1), then logged-in user's favorites,
  * then fast-read defaults from constants, deduped and blocked-stripped, capped at this count.
  */
-export const PROFILE_PAGE_FEED_MAX_RELAYS = 6
+const PROFILE_PAGE_FEED_MAX_RELAYS = 6
 
 export const PROFILE_PAGE_PINS_RESOLVE_LIMIT = 10
 

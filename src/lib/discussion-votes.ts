@@ -1,9 +1,9 @@
 import type { TEmoji } from '@/types'
 
 /** Canonical reaction `content` for discussion upvotes (kind 7). */
-export const DISCUSSION_UPVOTE = '+'
+const DISCUSSION_UPVOTE = '+'
 /** Canonical reaction `content` for discussion downvotes (kind 7). */
-export const DISCUSSION_DOWNVOTE = '-'
+const DISCUSSION_DOWNVOTE = '-'
 
 /** Shown in discussion UIs; legacy reaction `content` used the same characters. */
 export const DISCUSSION_UPVOTE_DISPLAY = '⬆️'
@@ -40,15 +40,6 @@ export function isDiscussionDownvoteEmoji(emoji: TEmoji | string | undefined | n
 
 export function isDiscussionVoteEmoji(emoji: TEmoji | string | undefined | null): boolean {
   return isDiscussionUpvoteEmoji(emoji) || isDiscussionDownvoteEmoji(emoji)
-}
-
-/** Group legacy arrow reactions with +/- for one pill per direction. */
-export function canonicalDiscussionVoteKey(
-  emoji: TEmoji | string | undefined | null
-): typeof DISCUSSION_UPVOTE | typeof DISCUSSION_DOWNVOTE | null {
-  if (isDiscussionUpvoteEmoji(emoji)) return DISCUSSION_UPVOTE
-  if (isDiscussionDownvoteEmoji(emoji)) return DISCUSSION_DOWNVOTE
-  return null
 }
 
 export const DISCUSSION_VOTE_EMOJIS = [DISCUSSION_UPVOTE, DISCUSSION_DOWNVOTE] as const

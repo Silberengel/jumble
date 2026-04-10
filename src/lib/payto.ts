@@ -83,7 +83,7 @@ export const PAYTO_KNOWN_TYPES: Record<
  * Short labels accepted after payto:// that map to a canonical type.
  * e.g. payto://BTC/..., payto://LBTC/..., payto://DOGE/... are recognized as bitcoin, lightning, dogecoin.
  */
-export const PAYTO_TYPE_ALIASES: Record<string, string> = {
+const PAYTO_TYPE_ALIASES: Record<string, string> = {
   btc: 'bitcoin',
   lbtc: 'lightning',
   doge: 'dogecoin',
@@ -107,7 +107,7 @@ export function getPaytoIconChar(type: string): string | null {
 }
 
 /** Logo filename in /payto_logos/ for types that have an asset. Any image format works: .svg, .gif, .jpg, .png, .webp, etc. */
-export const PAYTO_LOGO_FILES: Record<string, string> = {
+const PAYTO_LOGO_FILES: Record<string, string> = {
   ethereum: 'ethereum-eth-logo.svg',
   monero: 'Monero.png',
   litecoin: 'Litecoin.png',
@@ -138,7 +138,7 @@ export const PAYTO_LOGO_FILES: Record<string, string> = {
 }
 
 /** Profile/page URL template for types that have a web profile. Use {authority} as placeholder. Null = no direct link. */
-export const PAYTO_PROFILE_URL_TEMPLATES: Record<string, string> = {
+const PAYTO_PROFILE_URL_TEMPLATES: Record<string, string> = {
   paypal: 'https://paypal.me/{authority}',
   venmo: 'https://venmo.com/{authority}',
   revolut: 'https://revolut.me/{authority}',

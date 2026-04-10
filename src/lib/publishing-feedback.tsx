@@ -8,7 +8,7 @@ export type PublishSuccessSubtleDetail = { message?: string }
 
 export const PUBLISH_SUCCESS_SUBTLE_EVENT = 'jumble:publishSuccessSubtle'
 
-export function emitPublishSuccessSubtle(message?: string): void {
+function emitPublishSuccessSubtle(message?: string): void {
   if (typeof window === 'undefined') return
   window.dispatchEvent(
     new CustomEvent<PublishSuccessSubtleDetail>(PUBLISH_SUCCESS_SUBTLE_EVENT, {

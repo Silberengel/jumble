@@ -164,7 +164,7 @@ export function buildPrioritizedReadRelayUrls(opts: {
 /**
  * Ordered layers for publish / write (before merge, blocked strip, kind-1 strip, cap).
  */
-export function buildWriteRelayPriorityLayers(opts: {
+function buildWriteRelayPriorityLayers(opts: {
   userWriteRelays: string[]
   authorReadRelays?: string[]
   favoriteRelays?: string[]

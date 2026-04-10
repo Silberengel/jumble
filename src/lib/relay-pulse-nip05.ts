@@ -27,10 +27,3 @@ export function collectAggregatedNip05sFromKind0(event: Event): string[] {
   }
   return [...set]
 }
-
-export function truncateAbout(about: string | undefined, maxLen: number): string {
-  if (!about) return ''
-  const t = about.trim()
-  if (t.length <= maxLen) return t
-  return `${t.slice(0, maxLen)}…`
-}

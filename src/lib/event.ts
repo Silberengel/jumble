@@ -107,10 +107,6 @@ export function isReplaceableEvent(kind: number) {
   )
 }
 
-export function isPictureEvent(event: Event) {
-  return event.kind === ExtendedKind.PICTURE
-}
-
 export function isProtectedEvent(event: Event) {
   return event.tags.some(([tagName]) => tagName === '-')
 }
@@ -320,49 +316,6 @@ export function resolveDeclaredThreadRootEventHex(startHexId: string): string {
   return cur
 }
 
-/** True if event references target as root, parent, or quoted (#q, #a) — used to hide redundant preview when showing quotes of current note. */
-export function eventReferencesEventId(
-  event: Event | undefined,
-  targetHexIdOrEvent: string | Event
-): boolean {
-  if (!event) return false
-  const targetEvent = typeof targetHexIdOrEvent === 'object' ? targetHexIdOrEvent : undefined
-  const targetHexId =
-    typeof targetHexIdOrEvent === 'string'
-      ? targetHexIdOrEvent.toLowerCase()
-      : targetHexIdOrEvent.id?.toLowerCase()
-  const targetCoordinate =
-    targetEvent && isReplaceableEvent(targetEvent.kind)
-      ? getReplaceableCoordinateFromEvent(targetEvent)
-      : undefined
-
-  const qRef = getQuotedReferenceFromQTags(event)
-
-  if (targetHexId) {
-    const rootId = getRootETag(event)?.[1]?.toLowerCase()
-    if (rootId === targetHexId) return true
-    const parentId = getParentETag(event)?.[1]?.toLowerCase()
-    if (parentId === targetHexId) return true
-    if (qRef?.hexId === targetHexId) return true
-    const eTags = event.tags.filter((t) => t[0] === 'e' || t[0] === 'E')
-    if (eTags.some((t) => t[1]?.toLowerCase() === targetHexId)) return true
-  }
-
-  if (targetCoordinate) {
-    const targetCoordNorm = normalizeReplaceableCoordinateString(targetCoordinate)
-    const aTags = event.tags.filter((t) => t[0] === 'a' || t[0] === 'A')
-    if (aTags.some((t) => normalizeReplaceableCoordinateString(t[1] ?? '') === targetCoordNorm)) return true
-    if (
-      qRef?.coordinate &&
-      normalizeReplaceableCoordinateString(qRef.coordinate) === targetCoordNorm
-    ) {
-      return true
-    }
-  }
-
-  return false
-}
-
 export function getRootBech32Id(event?: Event) {
   const eTag = getRootETag(event)
   if (!eTag) {
@@ -396,7 +349,7 @@ export function replaceableEventDedupeKey(event: Event): string {
 }
 
 /** Normalize `kind:pubkey:d` for comparisons (lowercase pubkey; preserve d). */
-export function normalizeReplaceableCoordinateString(coord: string): string {
+function normalizeReplaceableCoordinateString(coord: string): string {
   const m = /^(\d+):([0-9a-f]{64}):(.*)$/i.exec(coord.trim())
   if (!m) return coord.trim().toLowerCase()
   return getReplaceableCoordinate(Number(m[1]), m[2].toLowerCase(), m[3])
@@ -411,7 +364,7 @@ function stripNostrUriScheme(s: string): string {
 /**
  * NIP-10 / NIP-18: `q` tag value is `<event-id>` or `<event-address>` (coordinate), or NIP-19 bech32.
  */
-export function parseQTagReferenceValue(
+function parseQTagReferenceValue(
   raw: string | undefined | null
 ): { hexId?: string; coordinate?: string } | undefined {
   if (raw == null) return undefined
@@ -474,13 +427,6 @@ export function getQuotedReferenceFromQTags(event: Event): {
 /** Hex id from `q` when the reference resolves to a fixed id (not coordinate-only). */
 export function getQuotedEventHexIdFromQTags(event: Event): string | undefined {
   return getQuotedReferenceFromQTags(event)?.hexId
-}
-
-/** Kind 1 whose `q` points at this hex id (legacy helper). */
-export function kind1QuotesEventHexId(event: Event, hexId: string): boolean {
-  if (event.kind !== kinds.ShortTextNote) return false
-  const ref = getQuotedReferenceFromQTags(event)
-  return !!ref?.hexId && ref.hexId === hexId.trim().toLowerCase()
 }
 
 /** Kind 1 quote-of-root: match `q` hex and/or replaceable coordinate (and bech32 decoding). */
@@ -549,7 +495,7 @@ export function getImetaInfosFromEvent(event: Event) {
   return imeta
 }
 
-export function getEmbeddedNoteBech32Ids(event: Event) {
+function getEmbeddedNoteBech32Ids(event: Event) {
   const cache = EVENT_EMBEDDED_NOTES_CACHE.get(event.id)
   if (cache) return cache
 
@@ -619,7 +565,7 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
   }
 }
 
-export function getEmbeddedPubkeys(event: Event) {
+function getEmbeddedPubkeys(event: Event) {
   const cache = EVENT_EMBEDDED_PUBKEYS_CACHE.get(event.id)
   if (cache) return cache
 
@@ -729,37 +675,6 @@ export function compareEvents(a: Event, b: Event): number {
     return a.id < b.id ? 1 : -1
   }
   return 0
-}
-
-// Returns the event that should be retained when comparing two events
-export function getRetainedEvent(a: Event, b: Event): Event {
-  if (compareEvents(a, b) > 0) {
-    return a
-  }
-  return b
-}
-
-/**
- * Collapse replaceable/addressable events to one per NIP-01 coordinate (`kind:pubkey` or `kind:pubkey:d`),
- * keeping the newest (`created_at`, then lexicographically smallest `id` on ties).
- * Non-replaceable events are keyed by `id` only.
- */
-export function dedupeToLatestPerReplaceableCoordinate(events: Event[]): Event[] {
-  const byKey = new Map<string, Event>()
-  for (const e of events) {
-    if (!isReplaceableEvent(e.kind)) {
-      byKey.set(e.id, e)
-      continue
-    }
-    const coord = getReplaceableCoordinateFromEvent(e)
-    const existing = byKey.get(coord)
-    if (!existing) {
-      byKey.set(coord, e)
-      continue
-    }
-    byKey.set(coord, getRetainedEvent(e, existing))
-  }
-  return [...byKey.values()]
 }
 
 /** External article URL from `i` / `I` tags (e.g. kind 1111 comments on web content). */

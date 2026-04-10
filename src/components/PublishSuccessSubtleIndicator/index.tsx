@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
- * When publish success toasts are off, {@link emitPublishSuccessSubtle} shows this instead:
- * small green check + label, bottom-right, auto-dismiss.
+ * When publish success toasts are off, `publishing-feedback` dispatches {@link PUBLISH_SUCCESS_SUBTLE_EVENT}
+ * so we show a small green check + label, bottom-right, auto-dismiss.
  */
 export default function PublishSuccessSubtleIndicator() {
   const { t } = useTranslation()

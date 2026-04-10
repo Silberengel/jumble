@@ -33,7 +33,7 @@ function dedupeNormalizedRelayUrls(urls: string[]): string[] {
  * Relays to bootstrap Explore replaceable fetches (e.g. kind 10012 batch) before NIP-65 resolves.
  * PROFILE_FETCH + FAST_READ.
  */
-export function exploreDiscoveryBootstrapRelayUrls(): string[] {
+function exploreDiscoveryBootstrapRelayUrls(): string[] {
   return dedupeNormalizedRelayUrls([...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS])
 }
 
@@ -427,110 +427,4 @@ export async function buildReplyReadRelayList(
     includeLocalRelays: true,
     blockedRelays
   })
-}
-
-/**
- * Build relay list for writing replies/comments
- * WRITE to: OP author's outboxes + OP author's inboxes + reply-to author's inboxes + user's outboxes + local relay
- */
-export async function buildReplyWriteRelayList(
-  opAuthorPubkey: string | undefined,
-  replyToAuthorPubkey: string | undefined,
-  userPubkey: string | undefined,
-  blockedRelays: string[] = []
-): Promise<string[]> {
-  const relayUrls = new Set<string>()
-  const normalizedBlocked = new Set(
-    (blockedRelays || []).map(url => {
-      const normalized = normalizeUrl(url) || url
-      return normalized.toLowerCase()
-    }).filter((url): url is string => !!url)
-  )
-
-  const addRelay = (url: string | undefined) => {
-    if (!url) return
-    if (isHttpRelayUrl(url)) return
-    const normalized = normalizeAnyRelayUrl(url)
-    if (!normalized) return
-    // Filter blocked (case-insensitive comparison)
-    if (normalizedBlocked.has(normalized.toLowerCase())) return
-    relayUrls.add(normalized)
-  }
-
-  // OP author's outboxes
-  if (opAuthorPubkey) {
-    try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(opAuthorPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), 2000)
-      })
-      const opRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (opRelayList) {
-        const opOutboxes = [
-          ...(opRelayList.write || []).slice(0, 10)
-        ]
-        opOutboxes.forEach(addRelay)
-
-        const opInboxes = [
-          ...(opRelayList.read || []).slice(0, 10)
-        ]
-        opInboxes.forEach(addRelay)
-      }
-    } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch OP author relay list', { error })
-    }
-  }
-
-  // Reply-to author's inboxes
-  if (replyToAuthorPubkey && replyToAuthorPubkey !== opAuthorPubkey) {
-    try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(replyToAuthorPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), 2000)
-      })
-      const replyToRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (replyToRelayList) {
-        const replyToInboxes = [
-          ...(replyToRelayList.read || []).slice(0, 10)
-        ]
-        replyToInboxes.forEach(addRelay)
-      }
-    } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch reply-to author relay list', { error })
-    }
-  }
-
-  // User's outboxes
-  if (userPubkey) {
-    try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(userPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), 2000)
-      })
-      const userRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (userRelayList) {
-        const userOutboxes = [
-          ...(userRelayList.write || []).slice(0, 10)
-        ]
-        userOutboxes.forEach(addRelay)
-      }
-      
-      // User's local relay (kind 10432)
-      const localRelays = await getCacheRelayUrls(userPubkey)
-      localRelays.forEach(addRelay)
-    } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch user relay list', { error })
-    }
-  }
-
-  // Fast write relays as fallback
-  FAST_WRITE_RELAY_URLS.forEach(addRelay)
-
-  return Array.from(relayUrls)
 }

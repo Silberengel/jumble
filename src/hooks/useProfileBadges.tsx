@@ -5,19 +5,9 @@ import {
   fetchNip58BadgeDefinition,
   mergeNip58BadgeRelayPool
 } from '@/lib/fetch-badge-nip58'
-import {
-  profileAccordionGetCachedBadges,
-  profileAccordionGetCachedRelayUrls,
-  profileAccordionRelayUrlsKey,
-  profileAccordionSetBadges
-} from '@/lib/profile-accordion-session-cache'
-import { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { Event } from 'nostr-tools'
 import { tagNameEquals } from '@/lib/tag'
-import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
-import { buildProfileRelayUrls } from '@/lib/profile-relay-urls'
 
 export type TProfileBadge = {
   /** Badge definition coordinate (e.g. "30009:alice:bravery") */
@@ -49,14 +39,7 @@ function parseATag(aTag: string): { kind: number; pubkey: string; d: string } | 
   return { kind, pubkey: pk.toLowerCase(), d }
 }
 
-/** True when we should re-resolve the badge definition (missing media but coordinate looks like kind 30009). */
-function badgeNeedsDefinitionMedia(b: TProfileBadge): boolean {
-  if (b.thumb || b.image) return false
-  const parsed = parseATag(b.a)
-  return !!(parsed && parsed.kind === ExtendedKind.BADGE_DEFINITION)
-}
-
-export function mergeProfileBadgesByAwardId(seed: TProfileBadge[], fresh: TProfileBadge[]): TProfileBadge[] {
+function mergeProfileBadgesByAwardId(seed: TProfileBadge[], fresh: TProfileBadge[]): TProfileBadge[] {
   const m = new Map<string, TProfileBadge>()
   for (const b of seed) m.set(b.awardId, b)
   for (const b of fresh) m.set(b.awardId, b)
@@ -89,123 +72,9 @@ export async function enrichBadgesFromIndexedDb(badges: TProfileBadge[]): Promis
   )
 }
 
-/** NIP-58: Fetches profile badges (kind 30008) and resolves badge definitions (kind 30009). */
-/** Pass relayUrls to share with other profile fetches. */
-export function useProfileBadges(pubkey: string | undefined, relayUrls?: string[]) {
-  const { blockedRelays } = useFavoriteRelays()
-  const blockedRelaysRef = useRef(blockedRelays)
-  blockedRelaysRef.current = blockedRelays
-  const relayUrlsRef = useRef(relayUrls)
-  relayUrlsRef.current = relayUrls
-  const blockedRelaysKey = profileAccordionRelayUrlsKey(blockedRelays)
-  const relayUrlsKey = profileAccordionRelayUrlsKey(relayUrls ?? [])
-
-  const [badges, setBadges] = useState<TProfileBadge[]>([])
-  const [loading, setLoading] = useState(false)
-  const fetchIdRef = useRef(0)
-
-  const fetchBadges = useCallback(async (force = false) => {
-    const myFetchId = (fetchIdRef.current += 1)
-
-    if (!pubkey) {
-      if (myFetchId === fetchIdRef.current) {
-        setBadges([])
-        setLoading(false)
-      }
-      return
-    }
-
-    const relayUrlsLatest = relayUrlsRef.current
-    let urls =
-      relayUrlsLatest && relayUrlsLatest.length > 0
-        ? relayUrlsLatest
-        : profileAccordionGetCachedRelayUrls(pubkey) ?? []
-
-    if (force || urls.length === 0) {
-      urls = await buildProfileRelayUrls(pubkey, blockedRelaysRef.current)
-    }
-    const relayKey = profileAccordionRelayUrlsKey(urls)
-
-    const seedBadges = profileAccordionGetCachedBadges(pubkey, relayKey)
-    let deferLoading = !!(force && seedBadges?.length)
-
-    if (!force) {
-      const cached = seedBadges
-      if (cached?.length) {
-        if (cached.some(badgeNeedsDefinitionMedia)) {
-          const enriched = await enrichBadgesFromIndexedDb(cached)
-          if (!enriched.some(badgeNeedsDefinitionMedia)) {
-            if (myFetchId !== fetchIdRef.current) return
-            setBadges(enriched)
-            profileAccordionSetBadges(pubkey, relayKey, enriched)
-            setLoading(false)
-            return
-          }
-          deferLoading = false
-          // Session cache was incomplete and IndexedDB has no definitions — fetch from network below.
-        } else {
-          if (myFetchId !== fetchIdRef.current) return
-          setBadges(cached)
-          setLoading(false)
-          return
-        }
-      }
-    }
-
-    if (force && seedBadges?.length && myFetchId === fetchIdRef.current) {
-      setBadges(seedBadges)
-    }
-
-    if (myFetchId !== fetchIdRef.current) return
-    if (!deferLoading) {
-      setLoading(true)
-    }
-
-    try {
-      const events = await queryService.fetchEvents(
-        urls,
-        { authors: [pubkey], kinds: [ExtendedKind.PROFILE_BADGES], '#d': ['profile_badges'] },
-        { eoseTimeout: 2000, globalTimeout: 15000, firstRelayResultGraceMs: false }
-      )
-      const profileBadgesEvent = events.sort((a, b) => b.created_at - a.created_at)[0]
-
-      if (!profileBadgesEvent || myFetchId !== fetchIdRef.current) {
-        if (myFetchId === fetchIdRef.current && !seedBadges?.length) setBadges([])
-        return
-      }
-
-      const merged = await resolveProfileBadgeList(
-        profileBadgesEvent,
-        urls,
-        blockedRelaysRef.current,
-        seedBadges
-      )
-
-      if (myFetchId !== fetchIdRef.current) return
-      setBadges(merged)
-      profileAccordionSetBadges(pubkey, relayKey, merged)
-    } catch {
-      if (myFetchId !== fetchIdRef.current) return
-      if (!seedBadges?.length) setBadges([])
-    } finally {
-      if (myFetchId === fetchIdRef.current) setLoading(false)
-    }
-  }, [pubkey, blockedRelaysKey, relayUrlsKey])
-
-  const refresh = useCallback(() => {
-    void fetchBadges(true)
-  }, [pubkey, fetchBadges])
-
-  useEffect(() => {
-    void fetchBadges(false)
-  }, [fetchBadges])
-
-  return { badges, loading, refresh }
-}
-
 /**
  * Resolves NIP-58 badge definitions/awards for the newest kind-30008 `profile_badges` event.
- * Shared by {@link useProfileBadges} and profile accordion bundle fetch.
+ * Used by profile accordion bundle fetch.
  */
 export async function resolveProfileBadgeList(
   profileBadgesEvent: Event | undefined,

@@ -2,7 +2,7 @@
 
 export const SITE_NAME = 'Imwald'
 
-export const SITE_TAGLINE =
+const SITE_TAGLINE =
   'A user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery.'
 
 export function getSiteOrigin(): string {

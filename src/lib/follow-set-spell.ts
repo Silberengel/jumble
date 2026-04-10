@@ -1,7 +1,7 @@
 import { tagNameEquals } from '@/lib/tag'
 import type { Event } from 'nostr-tools'
 
-export const FOLLOW_SET_SPELL_PREFIX = 'followset:' as const
+const FOLLOW_SET_SPELL_PREFIX = 'followset:' as const
 
 export function isFollowSetSpellId(s: string): boolean {
   return s.startsWith(FOLLOW_SET_SPELL_PREFIX)

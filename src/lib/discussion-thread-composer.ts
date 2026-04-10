@@ -35,20 +35,20 @@ export type TDiscussionDynamicTopics = {
   }[]
 }
 
-export type TTopicRow = { id: string; label: string; icon: LucideIcon }
+type TTopicRow = { id: string; label: string; icon: LucideIcon }
 
 type TopicListEntry = { id: string; label: string }
 
-export function extractImagesFromContent(content: string): string[] {
+function extractImagesFromContent(content: string): string[] {
   const imageRegex = /(https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)(\?[^\s]*)?)/gi
   return content.match(imageRegex) || []
 }
 
-export function generateImetaTagsFromUrls(imageUrls: string[]): string[][] {
+function generateImetaTagsFromUrls(imageUrls: string[]): string[][] {
   return imageUrls.map((url) => ['imeta', 'url', url])
 }
 
-export function buildDiscussionNsfwTag(): string[] {
+function buildDiscussionNsfwTag(): string[] {
   return ['content-warning', '']
 }
 

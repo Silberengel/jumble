@@ -85,150 +85,9 @@ export function extractHashtagsFromContent(content: string): string[] {
 }
 
 /**
- * Extract t-tags from event tags
- */
-export function extractTTagsFromEvent(event: NostrEvent): string[] {
-  return event.tags
-    .filter(tag => tag[0] === 't' && tag[1])
-    .map(tag => normalizeTopic(tag[1]))
-}
-
-/**
- * Extract all topics (both hashtags and t-tags) from an event
- */
-export function extractAllTopics(event: NostrEvent): string[] {
-  const hashtags = extractHashtagsFromContent(event.content)
-  const tTags = extractTTagsFromEvent(event)
-  
-  // Combine and deduplicate
-  const allTopics = [...new Set([...hashtags, ...tTags])]
-  
-  return allTopics
-}
-
-/**
- * Group threads by their primary topic and collect subtopic statistics
- */
-export interface TopicAnalysis {
-  primaryTopic: string
-  subtopics: Map<string, Set<string>> // subtopic -> set of npubs
-  threads: NostrEvent[]
-}
-
-export function analyzeThreadTopics(
-  threads: NostrEvent[],
-  availableTopicIds: string[]
-): Map<string, TopicAnalysis> {
-  const topicMap = new Map<string, TopicAnalysis>()
-  
-  for (const thread of threads) {
-    const allTopics = extractAllTopics(thread)
-    
-    
-    // Find the primary topic (first match from available topics)
-    let primaryTopic = 'general'
-    for (const topic of allTopics) {
-      if (availableTopicIds.includes(topic)) {
-        primaryTopic = topic
-        break
-      }
-    }
-    
-    // Get or create topic analysis
-    if (!topicMap.has(primaryTopic)) {
-      topicMap.set(primaryTopic, {
-        primaryTopic,
-        subtopics: new Map(),
-        threads: []
-      })
-    }
-    
-    const analysis = topicMap.get(primaryTopic)!
-    analysis.threads.push(thread)
-    
-    // Track subtopics (all topics except the primary one and 'all'/'all-topics')
-    // For 'general' topic, include all other topics as subtopics
-    // Special case: Always include 'readings' as a subtopic for literature threads
-    const subtopics = allTopics.filter(
-      t => t !== primaryTopic && t !== 'all' && t !== 'all-topics'
-    )
-    
-    // Special handling for literature threads with 'readings' hashtag
-    if (primaryTopic === 'literature' && allTopics.includes('readings')) {
-      // Ensure 'readings' is included as a subtopic
-      if (!subtopics.includes('readings')) {
-        subtopics.push('readings')
-      }
-    }
-    
-    for (const subtopic of subtopics) {
-      if (!analysis.subtopics.has(subtopic)) {
-        analysis.subtopics.set(subtopic, new Set())
-      }
-      analysis.subtopics.get(subtopic)!.add(thread.pubkey)
-    }
-  }
-  
-  return topicMap
-}
-
-/**
- * Get dynamic subtopics for a given main topic
- * Returns subtopics that have been used by more than minNpubs unique npubs
- */
-export function getDynamicSubtopics(
-  analysis: TopicAnalysis | undefined,
-  minNpubs: number = 3
-): string[] {
-  if (!analysis) return []
-  
-  const subtopics: string[] = []
-  
-  
-  for (const [subtopic, npubs] of analysis.subtopics.entries()) {
-    if (npubs.size >= minNpubs) {
-      subtopics.push(subtopic)
-    }
-  }
-  
-  // Sort alphabetically
-  return subtopics.sort()
-}
-
-/**
- * Check if a thread matches a specific subtopic
- */
-export function threadMatchesSubtopic(
-  thread: NostrEvent,
-  subtopic: string
-): boolean {
-  const allTopics = extractAllTopics(thread)
-  return allTopics.includes(subtopic)
-}
-
-/**
- * Get the categorized topic for a thread
- */
-export function getCategorizedTopic(
-  thread: NostrEvent,
-  availableTopicIds: string[]
-): string {
-  const allTopics = extractAllTopics(thread)
-  
-  // Find the first matching topic from available topics
-  for (const topic of allTopics) {
-    if (availableTopicIds.includes(topic)) {
-      return topic
-    }
-  }
-  
-  return 'general'
-}
-
-/**
  * Extract h-tag (group ID) from event tags
  */
-export function extractHTagFromEvent(event: NostrEvent): string | null {
+function extractHTagFromEvent(event: NostrEvent): string | null {
   const hTag = event.tags.find(tag => tag[0] === 'h' && tag[1])
   return hTag ? hTag[1] : null
 }
@@ -237,7 +96,7 @@ export function extractHTagFromEvent(event: NostrEvent): string | null {
  * Parse group identifier from h-tag and relay sources
  * Supports both "relay'group-id" format and bare group IDs
  */
-export function parseGroupIdentifier(
+function parseGroupIdentifier(
   hTag: string, 
   relaySources: string[]
 ): { groupId: string; groupRelay: string | null; fullIdentifier: string } {
@@ -263,16 +122,9 @@ export function parseGroupIdentifier(
 }
 
 /**
- * Check if a discussion belongs to a group
- */
-export function isGroupDiscussion(event: NostrEvent): boolean {
-  return extractHTagFromEvent(event) !== null
-}
-
-/**
  * Build display name for a group
  */
-export function buildGroupDisplayName(
+function buildGroupDisplayName(
   groupId: string,
   groupRelay: string | null
 ): string {

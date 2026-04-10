@@ -6,7 +6,7 @@
 // Track suppressed errors to avoid spam
 const suppressedErrors = new Set<string>()
 
-export function suppressExpectedErrors() {
+function suppressExpectedErrors() {
   // Override console.error to filter out expected errors
   const originalConsoleError = console.error
   

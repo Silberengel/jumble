@@ -556,7 +556,7 @@ export type CompressMediaOptions = {
 }
 
 /** Default cap for raster image uploads (profile pics and inline media). */
-export const DEFAULT_IMAGE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024
+const DEFAULT_IMAGE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024
 
 /**
  * Compress media before upload. Non-media types are returned unchanged.

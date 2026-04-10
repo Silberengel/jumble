@@ -8,7 +8,7 @@ import { relayUrlsLocalsFirst } from '@/lib/relay-url-priority'
 import type { TRelayList } from '@/types'
 
 /** First N NIP-65 `write` (outbox) URLs per followed pubkey, follow-list order; locals first per author. */
-export const FOLLOW_OUTBOX_AGGREGATE_PER_AUTHOR = 2
+const FOLLOW_OUTBOX_AGGREGATE_PER_AUTHOR = 2
 
 /** Plain `ws://` relays are almost always someone else's LAN; the client cannot use them for third-party reads. */
 function isNonPublicWsRelayUrl(normalizedUrl: string): boolean {

@@ -2,7 +2,6 @@ import { Event, nip19 } from 'nostr-tools'
 import { getNoteBech32Id } from './event'
 import { TSearchParams } from '@/types'
 
-export const toHome = () => '/'
 export const toNote = (eventOrId: Event | string) => {
   if (typeof eventOrId === 'string') return `/notes/${eventOrId}`
   const nevent = getNoteBech32Id(eventOrId)
@@ -62,7 +61,6 @@ export const toSearch = (params?: TSearchParams) => {
   }
   return `/search?${query.toString()}`
 }
-export const toSettings = () => '/settings'
 export const toRelaySettings = (tag?: 'mailbox' | 'favorite-relays') => {
   return '/settings/relays' + (tag ? '#' + tag : '')
 }
@@ -83,10 +81,8 @@ export const toBookmarksList = () => '/bookmarks'
 
 export const toPinsList = () => '/pins'
 export const toInterestsList = () => '/interests'
-export const toSpells = () => '/spells'
 
 export const toChachiChat = (relay: string, d: string) => {
   return `https://chachi.chat/${relay.replace(/^wss?:\/\//, '').replace(/\/$/, '')}/${d}`
 }
-export const toNjump = (id: string) => `https://njump.me/${id}`
 export const toAlexandria = (id: string) => `https://next-alexandria.gitcitadel.eu/events?id=${encodeURIComponent(id)}`

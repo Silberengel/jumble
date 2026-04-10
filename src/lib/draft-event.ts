@@ -1471,7 +1471,7 @@ const IMWALD_ATTRIBUTION_ALT_TEXT = 'This event was published by https://jumble.
  * True for `alt` tags that are *our* app attribution (current or legacy Jumble/Imwald wording).
  * Does not match arbitrary user `alt` text unless it clearly points at this app.
  */
-export function isImwaldAppAttributionAltTag(tag: string[]): boolean {
+function isImwaldAppAttributionAltTag(tag: string[]): boolean {
   if (!Array.isArray(tag) || tag[0] !== 'alt' || tag.length < 2) return false
   const raw = tag[1]
   if (typeof raw !== 'string') return false
@@ -2435,47 +2435,6 @@ export function createCitationPromptDraftEvent(
   
   return {
     kind: ExtendedKind.CITATION_PROMPT,
-    content,
-    tags,
-    created_at: dayjs().unix()
-  }
-}
-
-/** Git Republic release (kind 1642); mirrors `releases-service` tag layout. */
-export function createGitReleaseDraftEvent(
-  content: string,
-  options: {
-    repoOwnerPubkey: string
-    repoId: string
-    tagName: string
-    tagHash: string
-    title?: string
-    downloadUrl?: string
-    isDraft?: boolean
-    isPrerelease?: boolean
-  }
-): TDraftEvent {
-  const repoAddress = `${ExtendedKind.GIT_REPO_ANNOUNCEMENT}:${options.repoOwnerPubkey}:${options.repoId}`
-  const tags: string[][] = [
-    ['a', repoAddress],
-    ['p', options.repoOwnerPubkey],
-    ['tag', options.tagName],
-    ['r', options.tagHash, '', 'tag']
-  ]
-  if (options.title) {
-    tags.push(['title', options.title])
-  }
-  if (options.downloadUrl) {
-    tags.push(['r', options.downloadUrl, '', 'download'])
-  }
-  if (options.isDraft) {
-    tags.push(['draft', 'true'])
-  }
-  if (options.isPrerelease) {
-    tags.push(['prerelease', 'true'])
-  }
-  return {
-    kind: ExtendedKind.GIT_RELEASE,
     content,
     tags,
     created_at: dayjs().unix()

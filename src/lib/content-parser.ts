@@ -8,8 +8,7 @@ import {
 import {
   EMBEDDED_EVENT_REGEX,
   EMBEDDED_MENTION_REGEX,
-  EMOJI_SHORT_CODE_REGEX,
-  LEGACY_PROFILE_BECH32_REGEX
+  EMOJI_SHORT_CODE_REGEX
 } from '@/lib/content-patterns'
 import { PAYTO_URI_REGEX } from '@/lib/payto'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
@@ -59,12 +58,7 @@ export const EmbeddedMentionParser: TContentParser = {
   regex: EMBEDDED_MENTION_REGEX
 }
 
-export const EmbeddedLegacyMentionParser: TContentParser = {
-  type: 'legacy-mention',
-  regex: LEGACY_PROFILE_BECH32_REGEX
-}
-
-export const EmbeddedEventParser: TContentParser = {
+const EmbeddedEventParser: TContentParser = {
   type: 'event',
   regex: EMBEDDED_EVENT_REGEX
 }
@@ -74,12 +68,12 @@ export const EmbeddedWebsocketUrlParser: TContentParser = {
   regex: WS_URL_REGEX
 }
 
-export const EmbeddedEmojiParser: TContentParser = {
+const EmbeddedEmojiParser: TContentParser = {
   type: 'emoji',
   regex: EMOJI_SHORT_CODE_REGEX
 }
 
-export const EmbeddedLNInvoiceParser: TContentParser = {
+const EmbeddedLNInvoiceParser: TContentParser = {
   type: 'invoice',
   regex: LN_INVOICE_REGEX
 }

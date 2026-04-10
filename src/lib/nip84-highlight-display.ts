@@ -8,7 +8,7 @@ import type { Event } from 'nostr-tools'
  * - `["textquoteselector", prefix, suffix]` (3 items)
  * - `["textquoteselector", "-", prefix, suffix]` — leading "-" = empty slot (Hypothesis-style)
  */
-export function parseTextQuoteSelectorParts(tag: readonly string[]): { prefix: string; suffix: string } {
+function parseTextQuoteSelectorParts(tag: readonly string[]): { prefix: string; suffix: string } {
   if (tag.length < 2 || tag[0] !== 'textquoteselector') {
     return { prefix: '', suffix: '' }
   }
@@ -28,7 +28,7 @@ export function parseTextQuoteSelectorParts(tag: readonly string[]): { prefix: s
 }
 
 /** `["textpositionselector", start, end]` — character offsets into a full document string. */
-export function parseTextPositionSelector(tag: readonly string[]): { start: number; end: number } | null {
+function parseTextPositionSelector(tag: readonly string[]): { start: number; end: number } | null {
   if (tag.length < 3 || tag[0] !== 'textpositionselector') return null
   const start = parseInt(tag[1] ?? '', 10)
   const end = parseInt(tag[2] ?? '', 10)

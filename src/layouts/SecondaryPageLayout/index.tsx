@@ -145,7 +145,7 @@ const SecondaryPageLayout = forwardRef(
 SecondaryPageLayout.displayName = 'SecondaryPageLayout'
 export default SecondaryPageLayout
 
-export function SecondaryPageTitlebar({
+function SecondaryPageTitlebar({
   title,
   controls,
   hideBackButton = false,

@@ -5,7 +5,7 @@ const MAX_ENTRIES = 18
 
 type StoredEmoji = string | { shortcode: string; url: string }
 
-export function getRecentlyUsedEmojis(): (string | TEmoji)[] {
+function getRecentlyUsedEmojis(): (string | TEmoji)[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []

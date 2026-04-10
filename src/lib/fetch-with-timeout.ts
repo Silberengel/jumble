@@ -1,5 +1,5 @@
 /** Default cap for HTTP fetches so tabs cannot hang indefinitely on bad networks or servers. */
-export const DEFAULT_FETCH_TIMEOUT_MS = 30_000
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000
 
 /**
  * `fetch` with a wall-clock timeout. Honors an optional caller `signal` (abort propagates both ways).

@@ -59,4 +59,3 @@ if (import.meta.env.DEV) {
   ;(window as any).jumbleDebug = debugUtils
 }
 
-export default debugUtils

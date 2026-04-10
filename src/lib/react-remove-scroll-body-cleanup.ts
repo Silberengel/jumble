@@ -5,7 +5,7 @@
  * that class is still present, the UI can paint on top but ignore all clicks (notably after closing
  * our Zap dialog from a secondary pane / sheet).
  */
-export function stripReactRemoveScrollBodyLocks(): void {
+function stripReactRemoveScrollBodyLocks(): void {
   if (typeof document === 'undefined') return
   const body = document.body
   const toRemove: string[] = []
@@ -18,7 +18,7 @@ export function stripReactRemoveScrollBodyLocks(): void {
 }
 
 /** Slightly longer than Radix dialog exit animation (`duration-200` in our `DialogContent`). */
-export const MS_AFTER_RADIX_DIALOG_FOR_EXTERNAL_MODAL = 280
+const MS_AFTER_RADIX_DIALOG_FOR_EXTERNAL_MODAL = 280
 
 /**
  * Call `closeOuterModel` (e.g. close Zap `Dialog`), wait for scroll-lock cleanup when applicable,
