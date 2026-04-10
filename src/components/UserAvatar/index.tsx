@@ -216,7 +216,8 @@ export default function UserAvatar({
   const [imgError, setImgError] = useState(false)
   const [currentSrc, setCurrentSrc] = useState(avatarSrc)
 
-  const isVideoAvatar = useMemo(() => isVideo(profile?.avatar?.trim() ?? ''), [profile?.avatar])
+  /** Must match `currentSrc`: deferred / fallback identicon is SVG — never pass it to `<video>`. */
+  const isVideoAvatar = useMemo(() => isVideo(currentSrc), [currentSrc])
 
   // Reset error state when src changes
   useEffect(() => {
@@ -356,7 +357,8 @@ export function SimpleUserAvatar({
   const [imgError, setImgError] = useState(false)
   const [currentSrc, setCurrentSrc] = useState(avatarSrc)
 
-  const isVideoAvatar = useMemo(() => isVideo(profile?.avatar?.trim() ?? ''), [profile?.avatar])
+  /** Must match `currentSrc`: deferred / fallback identicon is SVG — never pass it to `<video>`. */
+  const isVideoAvatar = useMemo(() => isVideo(currentSrc), [currentSrc])
 
   // Reset error state when src changes
   useEffect(() => {

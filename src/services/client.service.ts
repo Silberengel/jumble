@@ -227,6 +227,10 @@ async function mapPoolWithConcurrency<T, R>(
   return results
 }
 
+/** Many features call `fetchRelayLists` in parallel; each timeout used to emit an identical WARN. */
+let fetchRelayListBudgetWarnLastMs = 0
+const FETCH_RELAY_LIST_BUDGET_WARN_MIN_INTERVAL_MS = 60_000
+
 class ClientService extends EventTarget {
   static instance: ClientService
 
@@ -3569,9 +3573,14 @@ class ClientService extends EventTarget {
       )
     }
 
-    logger.warn('[FetchRelayLists] Network relay-list fetch exceeded budget; using IndexedDB / empty network layer only', {
-      pubkeyCount: pubkeys.length
-    })
+    const now = Date.now()
+    if (now - fetchRelayListBudgetWarnLastMs >= FETCH_RELAY_LIST_BUDGET_WARN_MIN_INTERVAL_MS) {
+      fetchRelayListBudgetWarnLastMs = now
+      logger.warn(
+        '[FetchRelayLists] Network relay-list fetch exceeded budget; using IndexedDB / empty network layer only',
+        { pubkeyCount: pubkeys.length }
+      )
+    }
     const cacheRelayEvents = storedCacheRelayEvents.map((e) => e ?? undefined)
     return this.mergeRelayListsBundle(
       pubkeys,

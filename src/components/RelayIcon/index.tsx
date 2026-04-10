@@ -8,8 +8,11 @@ import { useMemo } from 'react'
 /**
  * Resolve an image URL from NIP-11.  Handles:
  * - Absolute HTTP(S) URLs → used as-is
- * - Relative paths (e.g. "/favicon.ico") → resolved against the relay's base HTTP URL
- * - ws(s):// URLs some relays mistakenly return → ignored, fall through to favicon
+ * - Relative paths (e.g. "/logo.png") → resolved against the relay's base HTTP URL
+ * - ws(s):// URLs some relays mistakenly return → ignored
+ *
+ * We do not fetch `https://host/favicon.ico` as a fallback: many relays return HTML/404 there,
+ * which triggers Firefox Opaque Response Blocking noise and broken `<img>` loads.
  */
 function resolveRelayImageUrl(raw: string, relayUrl: string): string | undefined {
   if (!raw) return undefined
@@ -47,16 +50,7 @@ export default function RelayIcon({
       return nip11Icon
     }
 
-    // Fall back to /favicon.ico at the relay's host
-    try {
-      const u = new URL(url)
-      const scheme = u.protocol === 'wss:' ? 'https:' : 'http:'
-      const favicon = `${scheme}//${u.host}/favicon.ico`
-      logger.debug('[RelayIcon] using favicon fallback', { url, rawIcon, favicon })
-      return favicon
-    } catch {
-      return undefined
-    }
+    return undefined
   }, [url, relayInfo])
 
   return (

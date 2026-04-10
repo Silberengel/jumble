@@ -83,7 +83,7 @@ export default function FollowPackPreview({
         return
       }
       if (!followList) return
-      const { follow } = followList
+      const { followMany } = followList
       const toFollow = packPubkeys.filter((p) => !followingSet.has(p) && !muteSetHas(mutePubkeySet, p))
       if (toFollow.length === 0) {
         const mutedCount = packPubkeys.filter((p) => muteSetHas(mutePubkeySet, p) && !followingSet.has(p)).length
@@ -96,9 +96,7 @@ export default function FollowPackPreview({
       }
       setBusy(true)
       try {
-        for (const pubkeyToFollow of toFollow) {
-          await follow(pubkeyToFollow)
-        }
+        await followMany(toFollow)
         toast.success(t('Followed {{count}} users', { count: toFollow.length }))
       } catch (error) {
         logger.error('Failed to follow pack', { error })

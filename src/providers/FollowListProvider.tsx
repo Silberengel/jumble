@@ -32,9 +32,8 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
     })
   }, [accountPubkey, favoriteRelays, blockedRelays])
 
-  const follow = async (pubkey: string) => {
-    if (!accountPubkey) return
-
+  const mergeLatestFollowTags = async (): Promise<{ tags: string[][]; content: string | undefined } | null> => {
+    if (!accountPubkey) return null
     const relays = await buildMergeRelays()
     let latest =
       (await fetchLatestReplaceableListEvent(accountPubkey, kinds.Contacts, relays)) ?? null
@@ -43,13 +42,32 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
     }
     if (!latest) {
       const result = confirm(t('FollowListNotFoundConfirmation'))
-
-      if (!result) {
-        return
-      }
+      if (!result) return null
     }
-    const mergedTags = dedupePTagsAppendPubkey(latest?.tags ?? [], pubkey)
-    const newFollowListDraftEvent = createFollowListDraftEvent(mergedTags, latest?.content)
+    return { tags: latest?.tags ?? [], content: latest?.content }
+  }
+
+  const follow = async (pubkey: string) => {
+    if (!accountPubkey) return
+    const base = await mergeLatestFollowTags()
+    if (base === null) return
+    const mergedTags = dedupePTagsAppendPubkey(base.tags, pubkey)
+    const newFollowListDraftEvent = createFollowListDraftEvent(mergedTags, base.content)
+    const newFollowListEvent = await publish(newFollowListDraftEvent)
+    await updateFollowListEvent(newFollowListEvent)
+  }
+
+  const followMany = async (pubkeys: string[]) => {
+    if (!accountPubkey) return
+    const unique = [...new Set(pubkeys.map((p) => p.trim().toLowerCase()).filter(Boolean))]
+    if (unique.length === 0) return
+    const base = await mergeLatestFollowTags()
+    if (base === null) return
+    let mergedTags = base.tags
+    for (const pk of unique) {
+      mergedTags = dedupePTagsAppendPubkey(mergedTags, pk)
+    }
+    const newFollowListDraftEvent = createFollowListDraftEvent(mergedTags, base.content)
     const newFollowListEvent = await publish(newFollowListDraftEvent)
     await updateFollowListEvent(newFollowListEvent)
   }
@@ -78,6 +96,7 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
       value={{
         followings,
         follow,
+        followMany,
         unfollow
       }}
     >

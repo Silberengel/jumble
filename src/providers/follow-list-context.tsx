@@ -3,6 +3,8 @@ import { createContext, useContext } from 'react'
 export type TFollowListContext = {
   followings: string[]
   follow: (pubkey: string) => Promise<void>
+  /** One fetch + one kind-3 publish after merging all pubkeys (use for follow packs, not per-user loops). */
+  followMany: (pubkeys: string[]) => Promise<void>
   unfollow: (pubkey: string) => Promise<void>
 }
 

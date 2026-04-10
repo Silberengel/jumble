@@ -285,6 +285,15 @@ function suppressExpectedErrors() {
   console.log = (...args: any[]) => {
     const message = args.join(' ')
     
+    // Firefox ORB: cross-origin favicon / relay icon requests often hit HTML or wrong MIME; not actionable in-app.
+    if (
+      message.includes('OpaqueResponseBlocking') ||
+      (message.includes('favicon.ico') &&
+        (message.includes('blocked') || message.includes('blockiert')))
+    ) {
+      return
+    }
+
     // Suppress React DevTools suggestion (only show once)
     if (message.includes('Download the React DevTools')) {
       return
