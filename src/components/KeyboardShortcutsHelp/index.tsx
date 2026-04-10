@@ -24,8 +24,6 @@ import {
 import { useTranslation } from 'react-i18next'
 import readmeMarkdown from '../../../README.md?raw'
 
-export { useKeyboardShortcutsHelp } from '@/contexts/keyboard-shortcuts-help-context'
-
 function Kbd({ children }: { children: ReactNode }) {
   return (
     <kbd className="pointer-events-none inline-flex h-6 min-w-[1.25rem] shrink-0 items-center justify-center rounded border border-border bg-muted px-1.5 font-mono text-[11px] font-medium text-muted-foreground">

@@ -35,7 +35,7 @@ import UserAvatar from '../UserAvatar'
 import Username from '../Username'
 
 /** Curated follow list for guests (hex from npub). */
-export const RECOMMENDED_FOLLOW_CURATOR_NPUB =
+const RECOMMENDED_FOLLOW_CURATOR_NPUB =
   'npub1m4ny6hjqzepn4rxknuq94c2gpqzr29ufkkw7ttcxyak7v43n6vvsajc2jl' as const
 
 const MAX_FOLLOWS = 1000

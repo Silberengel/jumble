@@ -10,8 +10,6 @@ import tippy, { GetReferenceClientRect, Instance, Props } from 'tippy.js'
 import MentionList, { MentionListHandle, MentionListProps, type MentionListItem } from './MentionList'
 import { NEVENT_NADDR_PICKER_ID } from './constants'
 
-export { NEVENT_NADDR_PICKER_ID } from './constants'
-
 export type { PickerSearchMode }
 
 const MENTION_EXTENSION_NAME = 'mention'

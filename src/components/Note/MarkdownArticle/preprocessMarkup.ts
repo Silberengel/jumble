@@ -1,4 +1,3 @@
-import { NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { isImage, isVideo, isAudio } from '@/lib/url'
 import { URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
@@ -227,33 +226,6 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     // Replace the URL
     processed = processed.substring(0, index) + replacement + processed.substring(index + url.length)
   }
-  
-  return processed
-}
-
-/**
- * Post-process content to convert nostr: links and hashtags
- * This should be applied AFTER markup processing
- */
-export function postProcessNostrLinks(content: string): string {
-  let processed = content
-  
-  // Convert nostr: prefixed links to embedded format
-  // nostr:npub1... -> [nostr:npub1...]
-  // nostr:note1... -> [nostr:note1...]
-  // etc.
-  const nostrRegex = new RegExp(NOSTR_URI_INLINE_REGEX.source, NOSTR_URI_INLINE_REGEX.flags)
-  processed = processed.replace(nostrRegex, (match) => {
-    // Already in a link? Don't double-wrap
-    // Check if it's already in markdown link syntax [text](nostr:...)
-    // or AsciiDoc link syntax link:nostr:...[text]
-    return match // Keep as is for now, will be processed by the parser
-  })
-  
-  // Convert hashtags to links
-  // #tag -> link:/notes?t=tag[#tag] (for AsciiDoc) or [#tag](/notes?t=tag) (for Markdown)
-  // But only if not already in a link
-  // We'll handle this in the rendering phase to avoid breaking markup
   
   return processed
 }

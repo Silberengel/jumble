@@ -7,7 +7,7 @@ type TRelaySetsSettingComponentContext = {
   setExpandedRelaySetId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
-export const RelaySetsSettingComponentContext = createContext<
+const RelaySetsSettingComponentContext = createContext<
   TRelaySetsSettingComponentContext | undefined
 >(undefined)
 

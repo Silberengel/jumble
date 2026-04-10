@@ -30,7 +30,7 @@ type NeventNaddrPickerDialogProps = {
   initialMode?: PickerSearchMode
 }
 
-export function NeventNaddrPickerDialog({
+function NeventNaddrPickerDialog({
   open,
   onOpenChange,
   onSelect,
