@@ -1,5 +1,5 @@
 import { Event, kinds } from 'nostr-tools'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
+import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT, READ_ONLY_RELAY_URLS } from '@/constants'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
@@ -175,12 +175,18 @@ class RelaySelectionService {
     }
 
     const deduplicatedRelays = order.map((o) => o.url)
-    const filtered = this.filterBlockedRelays(deduplicatedRelays, context.blockedRelays)
+    const filtered = this.filterReadOnlyRelays(
+      this.filterBlockedRelays(deduplicatedRelays, context.blockedRelays)
+    )
     const relayTypes: Record<string, RelaySourceType> = {}
     order.forEach(({ url, type }) => {
       if (filtered.includes(url)) relayTypes[url] = type
     })
-    return { relays: filtered, relayTypes, randomRelayUrls }
+    return {
+      relays: filtered,
+      relayTypes,
+      randomRelayUrls: this.filterReadOnlyRelays(randomRelayUrls)
+    }
   }
 
   /**
@@ -429,8 +435,7 @@ class RelaySelectionService {
       selectedRelays = Array.from(new Set(selectedRelays))
     }
 
-    // Filter out blocked relays
-    return this.filterBlockedRelays(selectedRelays, context.blockedRelays)
+    return this.filterReadOnlyRelays(this.filterBlockedRelays(selectedRelays, context.blockedRelays))
   }
 
   /**
@@ -797,6 +802,20 @@ class RelaySelectionService {
     } catch {
       return url
     }
+  }
+
+  /**
+   * Strip relays that never accept writes ({@link READ_ONLY_RELAY_URLS}) so they do not appear in the publish picker.
+   * Same set as `ClientService` uses when filtering publish targets.
+   */
+  private filterReadOnlyRelays(relays: string[]): string[] {
+    const readOnlySet = new Set(
+      READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
+    )
+    return relays.filter((relay) => {
+      const n = normalizeAnyRelayUrl(relay) || relay
+      return !readOnlySet.has(n)
+    })
   }
 
   /**

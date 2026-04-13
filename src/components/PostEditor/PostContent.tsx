@@ -37,7 +37,7 @@ import {
   applyImwaldAttributionTags,
   mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, MAX_PUBLISH_RELAYS } from '@/constants'
 import { cn, isTouchDevice } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFeed } from '@/providers/FeedProvider'
@@ -78,6 +78,7 @@ import { nip94PairsToImetaTag } from '@/lib/upload-nip94-imeta'
 import { getMediaKindFromFile } from '@/lib/media-kind-detection'
 import { hasPrivateRelays, getPrivateRelayUrls } from '@/lib/private-relays'
 import mediaUpload from '@/services/media-upload.service'
+import type { TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
 import { successfulPublishRelayUrls, type TRelayPublishStatus } from '@/lib/publish-relay-urls'
 import client, { eventService } from '@/services/client.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
@@ -219,6 +220,12 @@ export default function PostContent({
   )
   const [isProtectedEvent, setIsProtectedEvent] = useState(false)
   const [additionalRelayUrls, setAdditionalRelayUrls] = useState<string[]>([])
+  /** When set, too many relays are checked vs the per-publish cap; publish stays disabled until unchecking. */
+  const [relayCapBlockInfo, setRelayCapBlockInfo] = useState<{
+    outboxSlotsInPublish: number
+    selectedContacted: number
+    selectedTotal: number
+  } | null>(null)
   const [isHighlight, setIsHighlight] = useState(!!initialHighlightData)
   const [highlightData, setHighlightData] = useState<HighlightData>(
     initialHighlightData || {
@@ -386,6 +393,22 @@ export default function PostContent({
     isNsfw
   ])
 
+  const handleRelayPublishCapChange = useCallback((preview: TPrePublishRelayCapPreview) => {
+    if (preview.blocksPublish) {
+      setRelayCapBlockInfo({
+        outboxSlotsInPublish: preview.outboxSlotsInPublish,
+        selectedContacted: preview.selectedContacted,
+        selectedTotal: preview.selectedTotal
+      })
+    } else {
+      setRelayCapBlockInfo(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isPoll) setRelayCapBlockInfo(null)
+  }, [isPoll])
+
   const canPost = useMemo(() => {
     const discussionOk =
       !isDiscussionThread ||
@@ -413,7 +436,8 @@ export default function PostContent({
       (!isCitationInternal || !!citationInternalCTag.trim()) &&
       (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
       (!isCitationHardcopy || !!citationAccessedOn.trim()) &&
-      (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim()))
+      (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim())) &&
+      relayCapBlockInfo === null
     )
     
     return result
@@ -447,7 +471,8 @@ export default function PostContent({
     threadIsReadingGroup,
     threadReadingAuthor,
     threadReadingSubject,
-    threadSelectedGroup
+    threadSelectedGroup,
+    relayCapBlockInfo
   ])
 
   // Clear highlight data when initialHighlightData changes or is removed
@@ -3104,12 +3129,29 @@ export default function PostContent({
           <PostRelaySelector
             setIsProtectedEvent={setIsProtectedEvent}
             setAdditionalRelayUrls={setAdditionalRelayUrls}
+            onRelayPublishCapChange={handleRelayPublishCapChange}
             parentEvent={parentEvent}
             openFrom={openFrom}
             content={text}
             isPublicMessage={isPublicMessage}
             mentions={extractedMentions}
           />
+          {relayCapBlockInfo && (
+            <p className="mt-2 text-sm text-amber-600 dark:text-amber-500" role="alert">
+              {relayCapBlockInfo.outboxSlotsInPublish > 0
+                ? t('Publish relay cap hint with outbox first', {
+                    max: MAX_PUBLISH_RELAYS,
+                    reservedSlots: relayCapBlockInfo.outboxSlotsInPublish,
+                    selected: relayCapBlockInfo.selectedTotal,
+                    selectedContacted: relayCapBlockInfo.selectedContacted
+                  })
+                : t('Publish relay cap hint', {
+                    max: MAX_PUBLISH_RELAYS,
+                    selected: relayCapBlockInfo.selectedTotal,
+                    selectedContacted: relayCapBlockInfo.selectedContacted
+                  })}
+            </p>
+          )}
           {isDiscussionThread && threadErrors.relay && (
             <p className="mt-1 text-sm text-destructive">{threadErrors.relay}</p>
           )}

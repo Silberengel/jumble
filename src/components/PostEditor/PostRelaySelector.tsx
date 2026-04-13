@@ -1,13 +1,6 @@
-import {
-  ExtendedKind,
-  isSocialKindBlockedKind,
-  MAX_PUBLISH_RELAYS,
-  READ_ONLY_RELAY_URLS,
-  SOCIAL_KIND_BLOCKED_RELAY_URLS
-} from '@/constants'
+import { ExtendedKind, isSocialKindBlockedKind, MAX_PUBLISH_RELAYS, SOCIAL_KIND_BLOCKED_RELAY_URLS } from '@/constants'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
-import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
-import { simplifyUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import { simplifyUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -25,15 +18,31 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import logger from '@/lib/logger'
+import { computePrePublishRelayCapPreview, type TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
 
 /** Stable default when `mentions` is omitted — inline `= []` is a new array every render and retriggers effects. */
 const NO_MENTIONS: string[] = []
+
+/** Keep auto-selection within {@link MAX_PUBLISH_RELAYS}, preserving {@link selectableRelaysOrder} (top of list first). */
+function capAutoSelectedRelays(selectableRelaysOrder: string[], selectedWithCache: string[]): string[] {
+  const norm = (u: string) => normalizeAnyRelayUrl(u) || u
+  const selectedNormSet = new Set(selectedWithCache.map(norm))
+  const ordered: string[] = []
+  for (const url of selectableRelaysOrder) {
+    if (selectedNormSet.has(norm(url))) ordered.push(url)
+  }
+  for (const url of selectedWithCache) {
+    if (!ordered.some((u) => norm(u) === norm(url))) ordered.push(url)
+  }
+  return ordered.slice(0, MAX_PUBLISH_RELAYS)
+}
 
 export default function PostRelaySelector({
   parentEvent: _parentEvent,
   openFrom,
   setIsProtectedEvent,
   setAdditionalRelayUrls,
+  onRelayPublishCapChange,
   content: postContent = '',
   isPublicMessage = false,
   mentions = NO_MENTIONS
@@ -42,6 +51,8 @@ export default function PostRelaySelector({
   openFrom?: string[]
   setIsProtectedEvent: Dispatch<SetStateAction<boolean>>
   setAdditionalRelayUrls: Dispatch<SetStateAction<string[]>>
+  /** Notifies the post form when the relay cap prevents honoring every checked relay (so the form can disable publish and show a banner). */
+  onRelayPublishCapChange?: (preview: TPrePublishRelayCapPreview) => void
   content?: string
   isPublicMessage?: boolean
   mentions?: string[]
@@ -91,61 +102,29 @@ export default function PostRelaySelector({
     return false
   }, [_parentEvent])
 
-  /**
-   * Same merge order as {@link ClientService.publishEvent}: NIP-65 write list first, then relays checked here,
-   * then cap at {@link MAX_PUBLISH_RELAYS}. Drives the cap hint so users see reserved “prepended” slots.
-   */
-  const publishCapPreview = useMemo(() => {
-    const applySocialOutboxFilter =
-      !isPublicMessage &&
-      (_parentEvent == null ||
-        isDiscussionReply ||
-        (_parentEvent != null && isSocialKindBlockedKind(_parentEvent.kind)))
+  const publishCapPreview = useMemo(
+    () =>
+      computePrePublishRelayCapPreview({
+        relayListWrite: relayList?.write,
+        relayListHttpWrite: relayList?.httpWrite,
+        selectedRelayUrls,
+        isPublicMessage,
+        parentEvent: _parentEvent,
+        isDiscussionReply
+      }),
+    [
+      relayList?.write,
+      relayList?.httpWrite,
+      selectedRelayUrls,
+      isPublicMessage,
+      _parentEvent,
+      isDiscussionReply
+    ]
+  )
 
-    const wsOut = (relayList?.write ?? [])
-      .map((u) => normalizeUrl(u) || u)
-      .filter((u): u is string => !!u)
-    const httpOut = (relayList?.httpWrite ?? [])
-      .map((u) => normalizeHttpRelayUrl(u) || u)
-      .filter((u): u is string => !!u)
-    let outbox = dedupeNormalizeRelayUrlsOrdered([...httpOut, ...wsOut])
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u))
-    const socialBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-    outbox = dedupeNormalizeRelayUrlsOrdered(
-      outbox.filter((url) => {
-        const n = normalizeAnyRelayUrl(url) || url
-        if (readOnlySet.has(n)) return false
-        if (applySocialOutboxFilter && socialBlockedSet.has(n)) return false
-        return true
-      })
-    )
-
-    const merged = dedupeNormalizeRelayUrlsOrdered([...outbox, ...selectedRelayUrls])
-    const capped = merged.slice(0, MAX_PUBLISH_RELAYS)
-    const outboxNormSet = new Set(outbox)
-    const outboxSlotsInPublish = capped.filter((u) => outboxNormSet.has(u)).length
-    const selectedNorm = selectedRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u)
-    const selectedContacted = selectedNorm.filter((u) => capped.includes(u)).length
-
-    const showCapHint =
-      merged.length > MAX_PUBLISH_RELAYS ||
-      selectedRelayUrls.length >= MAX_PUBLISH_RELAYS ||
-      selectedContacted < selectedRelayUrls.length
-
-    return {
-      outboxSlotsInPublish,
-      selectedContacted,
-      selectedTotal: selectedRelayUrls.length,
-      showCapHint
-    }
-  }, [
-    relayList?.write,
-    relayList?.httpWrite,
-    selectedRelayUrls,
-    isPublicMessage,
-    _parentEvent,
-    isDiscussionReply
-  ])
+  useEffect(() => {
+    onRelayPublishCapChange?.(publishCapPreview)
+  }, [publishCapPreview, onRelayPublishCapChange])
 
   /**
    * Relay selection only cares about nostr:… mentions in the draft (see relay-selection.service).
@@ -242,8 +221,9 @@ export default function PostRelaySelector({
         if (!hasManualSelection || selectableRelaysChanged) {
           const cacheRelays = result.selectableRelays.filter(url => isLocalNetworkUrl(url))
           const selectedWithCache = Array.from(new Set([...result.selectedRelays, ...cacheRelays]))
-          setSelectedRelayUrls(selectedWithCache)
-          setDescription(describeRelaySelection(selectedWithCache))
+          const capped = capAutoSelectedRelays(result.selectableRelays, selectedWithCache)
+          setSelectedRelayUrls(capped)
+          setDescription(describeRelaySelection(capped))
           if (selectableRelaysChanged && hasManualSelection) {
             setHasManualSelection(false)
           }
@@ -395,6 +375,7 @@ export default function PostRelaySelector({
 
   const capHintEl =
     publishCapPreview.showCapHint &&
+    !publishCapPreview.blocksPublish &&
     (publishCapPreview.outboxSlotsInPublish > 0 ? (
       <span className="text-xs text-amber-600 dark:text-amber-500">
         {t('Publish relay cap hint with outbox first', {
