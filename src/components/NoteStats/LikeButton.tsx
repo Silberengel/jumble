@@ -34,7 +34,6 @@ import logger from '@/lib/logger'
 import { useTranslation } from 'react-i18next'
 import Emoji from '../Emoji'
 import EmojiPicker, { EMOJI_PICKER_REACTIONS } from '../EmojiPicker'
-import { formatCount } from './utils'
 import {
   type RelayStatus,
   showPublishingError,
@@ -57,6 +56,8 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
   const inQuietMode = shouldHideInteractions(event)
   const isReplyToDiscussion = useReplyUnderDiscussionRoot(event)
   const showDiscussionVotes = isDiscussion || isReplyToDiscussion
+
+  const statsLoaded = noteStats?.updatedAt != null
 
   const { myLastEmoji, likeCount, upVoteCount, downVoteCount } = useMemo(() => {
     const stats = noteStats || {}
@@ -234,12 +235,20 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
       ) : myLastEmoji ? (
         <>
           <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: 'size-4' }} />
-          {!hideCount && !!likeCount && <div className="text-sm">{formatCount(likeCount)}</div>}
+          {!hideCount && statsLoaded && (
+            <div className="text-sm tabular-nums">
+              {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
+            </div>
+          )}
         </>
       ) : (
         <>
           <SmilePlus />
-          {!hideCount && !!likeCount && <div className="text-sm">{formatCount(likeCount)}</div>}
+          {!hideCount && statsLoaded && (
+            <div className="text-sm tabular-nums">
+              {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
+            </div>
+          )}
         </>
       )}
     </button>

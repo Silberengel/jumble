@@ -570,6 +570,11 @@ export class ReplaceableEventService {
           })
         }
         const isSlowReplaceableBatch = kind === kinds.Metadata || kind === 10001
+        const multiAuthorBatch = pubkeys.length > 1
+        // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
+        // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
+        const useReplaceableRace =
+          !isSlowReplaceableBatch || !multiAuthorBatch
         const events = await this.queryService.query(
           relayUrls,
           {
@@ -578,7 +583,7 @@ export class ReplaceableEventService {
           },
           undefined,
           {
-            replaceableRace: true,
+            replaceableRace: useReplaceableRace,
             eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
             globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000
           }
@@ -876,7 +881,7 @@ export class ReplaceableEventService {
         setTimeout(() => {
           logger.debug('[ReplaceableEventService] fetchRelayList timeout, giving up', { pubkey })
           resolve(null)
-        }, 2000)
+        }, 10_000)
       })
       authorRelayList = await Promise.race([relayListPromise, timeoutPromise])
     } catch (error) {

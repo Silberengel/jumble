@@ -1627,7 +1627,7 @@ export default function PostContent({
           // Note: URL will be inserted when upload completes in handleMediaUploadSuccess
         }
       }
-      // Root composer: native media kind is set in processMediaUpload after kind detection (ambiguous types use the dialog).
+      // Root composer: video/voice kinds are set in processMediaUpload; images stay kind 1 with imeta (ambiguous types use the dialog).
     }
   }
 
@@ -1708,14 +1708,17 @@ export default function PostContent({
       let resolvedKind: number
       if (selectedKind !== undefined) {
         resolvedKind = selectedKind
-        setMediaNoteKind(resolvedKind)
       } else {
         resolvedKind = await getMediaKindFromFile(uploadingFile, false)
-        const isRootComposer = !parentEvent && !isPublicMessage && !(isDiscussionThread && !parentEvent)
-        if (isRootComposer) {
-          setMediaNoteKind(resolvedKind)
-          setMediaUrl(url)
-        }
+      }
+
+      // New-post composer: images stay kind 1 (short text + imeta + URL), not kind 20 picture notes.
+      if (resolvedKind === ExtendedKind.PICTURE) {
+        setMediaNoteKind(null)
+        setMediaUrl('')
+      } else {
+        setMediaNoteKind(resolvedKind)
+        setMediaUrl(url)
       }
 
       const imetaTag = mediaUpload.getImetaTagByUrl(url)
@@ -1753,12 +1756,6 @@ export default function PostContent({
       }
 
       appendComposerImetaTag(newImetaTag)
-
-      if (selectedKind !== undefined) {
-        setMediaUrl(url)
-      } else if (mediaNoteKindRef.current !== null) {
-        setMediaUrl((prev) => prev || url)
-      }
 
       setTimeout(() => {
         if (textareaRef.current) {

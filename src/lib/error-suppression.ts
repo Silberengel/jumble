@@ -299,8 +299,8 @@ function suppressExpectedErrors() {
       return
     }
     
-    // Suppress Workbox logs
-    if (message.includes('workbox') || message.includes('[NoteStats]')) {
+    // Suppress Workbox logs (do not filter [NoteStats] — app diagnostics use that tag)
+    if (message.includes('workbox')) {
       return
     }
     

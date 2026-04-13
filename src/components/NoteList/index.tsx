@@ -1294,7 +1294,8 @@ const NoteList = forwardRef(
                   next.set(pk, {
                     pubkey: pk,
                     npub: pubkeyToNpub(pk) ?? '',
-                    username: formatPubkey(pk)
+                    username: formatPubkey(pk),
+                    batchPlaceholder: true
                   })
                 }
               }

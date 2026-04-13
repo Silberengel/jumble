@@ -1,13 +1,43 @@
 import { PROFILE_FETCH_PROMISE_TIMEOUT_MS } from '@/constants'
+import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
 import { userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
-import { replaceableEventService } from '@/services/client.service'
+import { eventService, replaceableEventService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import { TProfile } from '@/types'
+import { kinds } from 'nostr-tools'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import logger from '@/lib/logger'
+
+/**
+ * Session LRU + IndexedDB kind 0 without ReplaceableEventService / batched DataLoader.
+ * Used when the hook's fetch race times out or the batch path is slow while disk/session already has metadata.
+ */
+async function tryHydrateProfileFromLocalCaches(
+  pubkey: string,
+  skipCache: boolean
+): Promise<TProfile | null> {
+  if (skipCache) return null
+  const pk = pubkey.toLowerCase()
+
+  const sessionEv = eventService.getSessionMetadataForPubkey(pk)
+  if (sessionEv) {
+    return getProfileFromEvent(sessionEv)
+  }
+
+  try {
+    const idbEv = await indexedDb.getReplaceableEvent(pk, kinds.Metadata)
+    if (idbEv && !shouldDropEventOnIngest(idbEv)) {
+      return getProfileFromEvent(idbEv)
+    }
+  } catch {
+    /* IDB not ready */
+  }
+  return null
+}
 
 // CRITICAL: Global deduplication - shared across ALL hook instances
 // This prevents multiple components from fetching the same profile simultaneously
@@ -158,7 +188,16 @@ export function useFetchProfile(id?: string, skipCache = false) {
       try {
         globalFetchingPubkeys.add(pubkey)
         const startTime = Date.now()
-        
+
+        const quick = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+        if (quick) {
+          logger.debug('[useFetchProfile] Profile from session/IndexedDB (fast path)', {
+            pubkey: pubkey.substring(0, 8),
+            hasAvatar: !!quick.avatar
+          })
+          return quick
+        }
+
         // CRITICAL: Add timeout to prevent infinite hangs (must exceed batched metadata query globalTimeout)
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
@@ -210,6 +249,14 @@ export function useFetchProfile(id?: string, skipCache = false) {
             fetchTime: `${fetchTime}ms`
           })
         }
+        const afterMiss = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+        if (afterMiss) {
+          logger.debug('[useFetchProfile] Profile from session/IndexedDB after network miss', {
+            pubkey: pubkey.substring(0, 8),
+            hasAvatar: !!afterMiss.avatar
+          })
+          return afterMiss
+        }
         return null
       } catch (err) {
         const isTimeout = err instanceof Error && err.message.includes('timeout')
@@ -220,6 +267,14 @@ export function useFetchProfile(id?: string, skipCache = false) {
           })
           // Set cooldown period after timeout to prevent cascade of duplicate fetches
           globalFetchCooldowns.set(pubkey, Date.now() + 10000) // 10 second cooldown
+          const fallback = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+          if (fallback) {
+            logger.debug('[useFetchProfile] Profile from session/IndexedDB after fetch timeout', {
+              pubkey: pubkey.substring(0, 8),
+              hasAvatar: !!fallback.avatar
+            })
+            return fallback
+          }
           // Return null on timeout instead of throwing - allows UI to show fallback
           return null
         }
@@ -293,10 +348,12 @@ export function useFetchProfile(id?: string, skipCache = false) {
     // Extract pubkey early to check if id has changed
     const extractedPubkey = userIdToPubkey(id)
 
-    // Note feeds: profiles are batch-fetched in NoteList — skip per-row relay storms while pending
+    // Note feeds: profiles are batch-fetched in NoteList — skip per-row relay storms while pending.
+    // Batch may only synthesize a pubkey row when kind 0 is missing; those must not skip fetchProfileEvent
+    // or avatars stay on identicons forever.
     if (extractedPubkey && noteFeed && !skipCache) {
       const fromBatch = noteFeed.profiles.get(extractedPubkey)
-      if (fromBatch) {
+      if (fromBatch && !fromBatch.batchPlaceholder) {
         setProfile(fromBatch)
         setPubkey(extractedPubkey)
         setIsFetching(false)

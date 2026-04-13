@@ -54,6 +54,12 @@ class NoteStatsService {
   private noteStatsMap: Map<string, Partial<TNoteStats>> = new Map()
   private noteStatsSubscribers = new Map<string, Set<() => void>>()
   private processingCache = new Set<string>()
+  private readonly hexNoteStatsIdRe = /^[0-9a-f]{64}$/i
+
+  /** Canonical map key: reactions often copy `e` tag casing; UI uses lowercase ids from parsed events. */
+  private statsKey(id: string): string {
+    return this.hexNoteStatsIdRe.test(id) ? id.toLowerCase() : id
+  }
 
   // Batch processing
   private pendingEvents = new Set<string>()
@@ -65,9 +71,14 @@ class NoteStatsService {
   /** Prevents overlapping processBatch runs (reentrant calls corrupted pendingEvents). */
   private processBatchRunning = false
   private readonly BATCH_DELAY = 200
-  private readonly MAX_BATCH_SIZE = 24
+  /** Small slices so a slow batch does not block newer cards (e.g. spell feed swaps placeholder rows → discussions). */
+  private readonly MAX_BATCH_SIZE = 8
+  /** Avoid 20+ simultaneous stats REQs (relay strikes / hangs); each slice runs in waves. */
+  private readonly STATS_SLICE_CONCURRENCY = 4
   /** Client-only RSS/Web thread roots are not on relays; use the event passed into {@link fetchNoteStats}. */
   private pendingSyntheticRootById = new Map<string, Event>()
+  /** Root event from {@link fetchNoteStats} (feed/card already has it; avoids fetchEvent miss → no stats UI). */
+  private pendingStatsRootEventById = new Map<string, Event>()
 
   constructor() {
     if (!NoteStatsService.instance) {
@@ -102,15 +113,35 @@ class NoteStatsService {
   }
 
   async fetchNoteStats(event: Event, _pubkey?: string | null, favoriteRelays?: string[] | null) {
-    const eventId = event.id
+    const eventId = this.statsKey(event.id)
+    const idShort = `${eventId.slice(0, 12)}…`
 
     if (this.pendingEvents.has(eventId)) {
       this.mergeFavoriteRelaysIntoPending(eventId, favoriteRelays)
+      if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
+        this.pendingSyntheticRootById.set(eventId, event)
+      } else {
+        this.pendingStatsRootEventById.set(eventId, event)
+      }
+      logger.debug('[NoteStats] fetchNoteStats: merged into existing pending batch', {
+        eventId: idShort,
+        kind: event.kind,
+        pendingSize: this.pendingEvents.size
+      })
       return
     }
 
     if (this.processingCache.has(eventId)) {
       this.mergeFavoriteRelaysIntoDeferred(eventId, favoriteRelays)
+      if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
+        this.pendingSyntheticRootById.set(eventId, event)
+      } else {
+        this.pendingStatsRootEventById.set(eventId, event)
+      }
+      logger.debug('[NoteStats] fetchNoteStats: deferred (already processing same id)', {
+        eventId: idShort,
+        kind: event.kind
+      })
       return
     }
 
@@ -118,7 +149,16 @@ class NoteStatsService {
     this.pendingEvents.add(eventId)
     if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
       this.pendingSyntheticRootById.set(eventId, event)
+    } else {
+      this.pendingStatsRootEventById.set(eventId, event)
     }
+
+    logger.debug('[NoteStats] fetchNoteStats: queued new id', {
+      eventId: idShort,
+      kind: event.kind,
+      pendingSize: this.pendingEvents.size,
+      immediateBatch: this.pendingEvents.size >= this.MAX_BATCH_SIZE
+    })
 
     this.armStatsBatchTimer()
     if (this.pendingEvents.size >= this.MAX_BATCH_SIZE && !this.processBatchRunning) {
@@ -132,12 +172,16 @@ class NoteStatsService {
 
   private async processBatch() {
     if (this.processBatchRunning) {
+      logger.debug('[NoteStats] processBatch: skipped (already running)', {
+        pendingSize: this.pendingEvents.size
+      })
       return
     }
     if (this.pendingEvents.size === 0) {
       return
     }
 
+    logger.info('[NoteStats] processBatch: running', { pendingSize: this.pendingEvents.size })
     this.processBatchRunning = true
     if (this.batchTimeout) {
       clearTimeout(this.batchTimeout)
@@ -150,7 +194,16 @@ class NoteStatsService {
         for (const id of eventsToProcess) {
           this.pendingEvents.delete(id)
         }
-        await Promise.all(eventsToProcess.map((eventId) => this.processSingleEvent(eventId)))
+        logger.info('[NoteStats] processBatch slice', {
+          count: eventsToProcess.length,
+          ids: eventsToProcess.map((id) => `${id.slice(0, 12)}…`),
+          remainingPending: this.pendingEvents.size,
+          concurrency: this.STATS_SLICE_CONCURRENCY
+        })
+        for (let i = 0; i < eventsToProcess.length; i += this.STATS_SLICE_CONCURRENCY) {
+          const chunk = eventsToProcess.slice(i, i + this.STATS_SLICE_CONCURRENCY)
+          await Promise.all(chunk.map((eventId) => this.processSingleEvent(eventId)))
+        }
       }
     } finally {
       this.processBatchRunning = false
@@ -162,32 +215,65 @@ class NoteStatsService {
 
   private async processSingleEvent(eventId: string) {
     if (this.processingCache.has(eventId)) {
-      logger.debug('[NoteStats] Skipping concurrent fetch for event', eventId.substring(0, 8))
+      logger.debug('[NoteStats] processSingleEvent: skip (concurrent in-flight)', {
+        eventId: `${eventId.slice(0, 12)}…`
+      })
       return
     }
-    
+
     this.processingCache.add(eventId)
 
     const favoriteRelays = this.pendingFetchFavoriteRelays.get(eventId)
     this.pendingFetchFavoriteRelays.delete(eventId)
 
+    let publishedStatsSnapshot = false
+    const markStatsLoaded = (rawStatsKey: string, reason: string) => {
+      if (publishedStatsSnapshot) return
+      publishedStatsSnapshot = true
+      const statsKey = this.statsKey(rawStatsKey)
+      this.noteStatsMap.set(statsKey, {
+        ...(this.noteStatsMap.get(statsKey) ?? {}),
+        updatedAt: dayjs().unix()
+      })
+      const subscriberCount = this.noteStatsSubscribers.get(statsKey)?.size ?? 0
+      logger.info('[NoteStats] processSingleEvent: snapshot published', {
+        statsKey: `${statsKey.slice(0, 12)}…`,
+        reason,
+        subscriberCount
+      })
+      this.notifyNoteStats(statsKey)
+    }
+
+    let resolvedEvent: Event | undefined
     try {
+      logger.debug('[NoteStats] processSingleEvent: start', { eventId: `${eventId.slice(0, 12)}…` })
       // Synthetic RSS/Web thread parents are not published; use the instance from fetchNoteStats.
       const synthetic = this.pendingSyntheticRootById.get(eventId)
       this.pendingSyntheticRootById.delete(eventId)
-      const event = synthetic ?? (await eventService.fetchEvent(eventId))
-      if (!event) {
-        logger.debug('[NoteStats] Event not found:', eventId.substring(0, 8))
+      const callerRoot = this.pendingStatsRootEventById.get(eventId)
+      this.pendingStatsRootEventById.delete(eventId)
+      resolvedEvent = synthetic ?? callerRoot ?? (await eventService.fetchEvent(eventId))
+      const rootSource = synthetic ? 'synthetic-rss' : callerRoot ? 'caller-card' : resolvedEvent ? 'fetchEvent' : 'none'
+      logger.debug('[NoteStats] processSingleEvent: root resolution', {
+        eventId: `${eventId.slice(0, 12)}…`,
+        rootSource,
+        resolvedKind: resolvedEvent?.kind
+      })
+      if (!resolvedEvent) {
+        logger.debug('[NoteStats] processSingleEvent: no root event — publishing empty snapshot', {
+          eventId: `${eventId.slice(0, 12)}…`
+        })
+        markStatsLoaded(eventId, 'no-root-event')
         return
       }
 
-      const finalRelayUrls = await this.buildNoteStatsRelayList(event, favoriteRelays)
-      
-      const replaceableCoordinate = isReplaceableEvent(event.kind)
-        ? getReplaceableCoordinateFromEvent(event)
+      const finalRelayUrls = await this.buildNoteStatsRelayList(resolvedEvent, favoriteRelays)
+
+      const replaceableCoordinate = isReplaceableEvent(resolvedEvent.kind)
+        ? getReplaceableCoordinateFromEvent(resolvedEvent)
         : undefined
 
-      const { nonSocial, social } = this.buildFilterGroups(event, replaceableCoordinate)
+      const { nonSocial, social } = this.buildFilterGroups(resolvedEvent, replaceableCoordinate)
       const fetchOpts = {
         eoseTimeout: 10_000,
         globalTimeout: 28_000,
@@ -195,11 +281,17 @@ class NoteStatsService {
       }
 
       const events: Event[] = []
-      logger.debug('[NoteStats] Fetching stats for event', event.id.substring(0, 8), 'from', finalRelayUrls.length, 'relays')
+      logger.debug(
+        '[NoteStats] Fetching stats for event',
+        resolvedEvent.id.substring(0, 8),
+        'from',
+        finalRelayUrls.length,
+        'relays'
+      )
 
       const { queryService } = await import('@/services/client.service')
       const onStatsEvent = (evt: Event) => {
-        this.updateNoteStatsByEvents([evt], event.pubkey)
+        this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey)
         events.push(evt)
       }
       if (nonSocial.length > 0) {
@@ -214,16 +306,23 @@ class NoteStatsService {
           onevent: onStatsEvent
         })
       }
-      
-      logger.debug('[NoteStats] Fetched', events.length, 'events for stats')
 
-      this.noteStatsMap.set(event.id, {
-        ...(this.noteStatsMap.get(event.id) ?? {}),
-        updatedAt: dayjs().unix()
+      logger.debug('[NoteStats] processSingleEvent: relay fetch finished', {
+        eventId: `${resolvedEvent.id.slice(0, 12)}…`,
+        interactionEventsReceived: events.length
       })
-      // Always notify: when relays return 0 rows, no updateNoteStatsByEvents ran — subscribers would never re-render.
-      this.notifyNoteStats(event.id)
+
+      markStatsLoaded(resolvedEvent.id, 'fetch-ok')
+    } catch (err) {
+      logger.warn('[NoteStats] processSingleEvent failed', {
+        eventId: eventId.substring(0, 8),
+        error: err instanceof Error ? err.message : String(err)
+      })
+      markStatsLoaded(resolvedEvent?.id ?? eventId, 'catch-after-error')
     } finally {
+      if (!publishedStatsSnapshot) {
+        markStatsLoaded(resolvedEvent?.id ?? eventId, 'finally-fallback')
+      }
       this.processingCache.delete(eventId)
       if (this.inFlightDeferredFavoriteRelays.has(eventId)) {
         const deferred = this.inFlightDeferredFavoriteRelays.get(eventId)!
@@ -338,14 +437,15 @@ class NoteStatsService {
       return { nonSocial, social }
     }
 
+    const rootId = this.statsKey(event.id)
     const nonSocial: Filter[] = [
-      { '#e': [event.id], kinds: [kinds.Reaction], limit: reactionLimit },
-      { '#e': [event.id], kinds: [kinds.Zap], limit: 100 }
+      { '#e': [rootId], kinds: [kinds.Reaction], limit: reactionLimit },
+      { '#e': [rootId], kinds: [kinds.Zap], limit: 100 }
     ]
 
     const social: Filter[] = [
       {
-        '#e': [event.id],
+        '#e': [rootId],
         kinds: [
           ...nip18RepostKinds,
           kinds.ShortTextNote,
@@ -356,7 +456,7 @@ class NoteStatsService {
         limit: interactionLimit
       },
       {
-        '#q': [event.id],
+        '#q': [rootId],
         kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
         limit: 50
       }
@@ -392,27 +492,28 @@ class NoteStatsService {
 
 
   subscribeNoteStats(noteId: string, callback: () => void) {
-    let set = this.noteStatsSubscribers.get(noteId)
+    const key = this.statsKey(noteId)
+    let set = this.noteStatsSubscribers.get(key)
     if (!set) {
       set = new Set()
-      this.noteStatsSubscribers.set(noteId, set)
+      this.noteStatsSubscribers.set(key, set)
     }
     set.add(callback)
     return () => {
       set?.delete(callback)
-      if (set?.size === 0) this.noteStatsSubscribers.delete(noteId)
+      if (set?.size === 0) this.noteStatsSubscribers.delete(key)
     }
   }
 
   private notifyNoteStats(noteId: string) {
-    const set = this.noteStatsSubscribers.get(noteId)
+    const set = this.noteStatsSubscribers.get(this.statsKey(noteId))
     if (set) {
       set.forEach((cb) => cb())
     }
   }
 
   getNoteStats(id: string): Partial<TNoteStats> | undefined {
-    return this.noteStatsMap.get(id)
+    return this.noteStatsMap.get(this.statsKey(id))
   }
 
   addZap(
@@ -424,18 +525,19 @@ class NoteStatsService {
     created_at: number = dayjs().unix(),
     notify: boolean = true
   ) {
-    const old = this.noteStatsMap.get(eventId) || {}
+    const key = this.statsKey(eventId)
+    const old = this.noteStatsMap.get(key) || {}
     const zapPrSet = old.zapPrSet || new Set()
     const zaps = old.zaps || []
     if (zapPrSet.has(pr)) return
 
     zapPrSet.add(pr)
     zaps.push({ pr, pubkey, amount, comment, created_at })
-    this.noteStatsMap.set(eventId, { ...old, zapPrSet, zaps })
+    this.noteStatsMap.set(key, { ...old, zapPrSet, zaps })
     if (notify) {
-      this.notifyNoteStats(eventId)
+      this.notifyNoteStats(key)
     }
-    return eventId
+    return key
   }
 
   /**
@@ -465,7 +567,7 @@ class NoteStatsService {
     }
     
     updatedEventIdSet.forEach((eventId) => {
-      this.notifyNoteStats(eventId)
+      this.notifyNoteStats(this.statsKey(eventId))
     })
   }
 
@@ -547,6 +649,7 @@ class NoteStatsService {
       }
     }
     if (!targetEventId) return
+    targetEventId = this.statsKey(targetEventId)
 
     const old = this.noteStatsMap.get(targetEventId) || {}
     const likeIdSet = old.likeIdSet || new Set()
@@ -574,8 +677,9 @@ class NoteStatsService {
     const url = getWebExternalReactionTargetUrl(evt)
     if (!url) return
 
-    const targetEventId =
+    const targetEventId = this.statsKey(
       forcedTargetEventId ?? rssArticleStableEventId(canonicalizeRssArticleUrl(url))
+    )
 
     const old = this.noteStatsMap.get(targetEventId) || {}
     const likeIdSet = old.likeIdSet || new Set()
@@ -595,17 +699,18 @@ class NoteStatsService {
   }
 
   removeLike(eventId: string, reactionEventId: string) {
-    const old = this.noteStatsMap.get(eventId) || {}
+    const key = this.statsKey(eventId)
+    const old = this.noteStatsMap.get(key) || {}
     const likeIdSet = old.likeIdSet || new Set()
     const likes = old.likes || []
     
-    if (!likeIdSet.has(reactionEventId)) return eventId
+    if (!likeIdSet.has(reactionEventId)) return key
 
     likeIdSet.delete(reactionEventId)
     const newLikes = likes.filter(like => like.id !== reactionEventId)
-    this.noteStatsMap.set(eventId, { ...old, likeIdSet, likes: newLikes })
-    this.notifyNoteStats(eventId)
-    return eventId
+    this.noteStatsMap.set(key, { ...old, likeIdSet, likes: newLikes })
+    this.notifyNoteStats(key)
+    return key
   }
 
   /** Target id for repost stats: `e` first (NIP-18 for both kind 6 and 16), then embedded JSON, then `a` (generic only). */
@@ -638,8 +743,9 @@ class NoteStatsService {
   }
 
   private addRepostByEvent(evt: Event, originalEventAuthor?: string, forcedTargetEventId?: string) {
-    const eventId = this.repostStatsTargetId(evt, forcedTargetEventId)
-    if (!eventId) return
+    const rawId = this.repostStatsTargetId(evt, forcedTargetEventId)
+    if (!rawId) return
+    const eventId = this.statsKey(rawId)
 
     const old = this.noteStatsMap.get(eventId) || {}
     const repostPubkeySet = old.repostPubkeySet || new Set()
@@ -707,8 +813,9 @@ class NoteStatsService {
     }
 
     if (!originalEventId) return
+    const replyKey = this.statsKey(originalEventId)
 
-    const old = this.noteStatsMap.get(originalEventId) || {}
+    const old = this.noteStatsMap.get(replyKey) || {}
     const replyIdSet = old.replyIdSet || new Set()
     const replies = old.replies || []
 
@@ -720,8 +827,8 @@ class NoteStatsService {
 
     replyIdSet.add(evt.id)
     replies.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
-    this.noteStatsMap.set(originalEventId, { ...old, replyIdSet, replies })
-    return originalEventId
+    this.noteStatsMap.set(replyKey, { ...old, replyIdSet, replies })
+    return replyKey
   }
 
   private isQuoteByEvent(evt: Event): boolean {
@@ -731,8 +838,9 @@ class NoteStatsService {
   private addQuoteByEvent(evt: Event, originalEventAuthor?: string) {
     const quotedEventId = evt.tags.find(tag => tag[0] === 'q')?.[1]
     if (!quotedEventId) return
+    const quoteKey = this.statsKey(quotedEventId)
 
-    const old = this.noteStatsMap.get(quotedEventId) || {}
+    const old = this.noteStatsMap.get(quoteKey) || {}
     const quoteIdSet = old.quoteIdSet || new Set()
     const quotes = old.quotes || []
 
@@ -744,8 +852,8 @@ class NoteStatsService {
 
     quoteIdSet.add(evt.id)
     quotes.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
-    this.noteStatsMap.set(quotedEventId, { ...old, quoteIdSet, quotes })
-    return quotedEventId
+    this.noteStatsMap.set(quoteKey, { ...old, quoteIdSet, quotes })
+    return quoteKey
   }
 
   private addHighlightByEvent(evt: Event, originalEventAuthor?: string) {
@@ -757,8 +865,9 @@ class NoteStatsService {
       }
     }
     if (!highlightedEventId) return
+    const highlightKey = this.statsKey(highlightedEventId)
 
-    const old = this.noteStatsMap.get(highlightedEventId) || {}
+    const old = this.noteStatsMap.get(highlightKey) || {}
     const highlightIdSet = old.highlightIdSet || new Set()
     const highlights = old.highlights || []
 
@@ -770,15 +879,15 @@ class NoteStatsService {
 
     highlightIdSet.add(evt.id)
     highlights.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
-    this.noteStatsMap.set(highlightedEventId, { ...old, highlightIdSet, highlights })
-    return highlightedEventId
+    this.noteStatsMap.set(highlightKey, { ...old, highlightIdSet, highlights })
+    return highlightKey
   }
 
   /** Kind 39701: count one bookmark per pubkey for this article URL (synthetic thread id). */
   private addWebBookmarkByArticleUrlEvent(evt: Event): string | undefined {
     const url = getWebBookmarkArticleUrl(evt)
     if (!url) return
-    const targetId = rssArticleStableEventId(canonicalizeRssArticleUrl(url))
+    const targetId = this.statsKey(rssArticleStableEventId(canonicalizeRssArticleUrl(url)))
     const old = this.noteStatsMap.get(targetId) || {}
     const bookmarkPubkeySet = old.bookmarkPubkeySet ?? new Set<string>()
     if (bookmarkPubkeySet.has(evt.pubkey)) return targetId
@@ -792,7 +901,7 @@ class NoteStatsService {
   private addBookmarkListRefsByEvent(evt: Event) {
     for (const tag of evt.tags) {
       if (tag[0] !== 'e' || !tag[1]) continue
-      const targetId = tag[1]
+      const targetId = this.statsKey(tag[1])
       const old = this.noteStatsMap.get(targetId) || {}
       const bookmarkPubkeySet = old.bookmarkPubkeySet ?? new Set<string>()
       if (bookmarkPubkeySet.has(evt.pubkey)) continue

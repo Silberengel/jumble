@@ -26,6 +26,12 @@ export default function ReplyButton({ event, hideCount = false }: { event: Event
       hasReplied
     }
   }, [noteStats, event.id, hideUntrustedInteractions, isUserTrusted, pubkey])
+  const statsLoaded = noteStats?.updatedAt != null
+  const replyCountLabel = statsLoaded
+    ? replyCount >= 100
+      ? '99+'
+      : String(replyCount)
+    : formatCount(replyCount)
   const [open, setOpen] = useState(false)
 
   return (
@@ -44,7 +50,9 @@ export default function ReplyButton({ event, hideCount = false }: { event: Event
         title={t('Reply')}
       >
         <MessageCircle />
-        {!hideCount && !!replyCount && <div className="text-sm">{formatCount(replyCount)}</div>}
+        {!hideCount && replyCountLabel !== '' && (
+          <div className="text-sm tabular-nums">{replyCountLabel}</div>
+        )}
       </button>
       <PostEditor parentEvent={event} open={open} setOpen={setOpen} />
     </>

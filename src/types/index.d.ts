@@ -24,6 +24,11 @@ export type TProfile = {
   avatar?: string
   /** File size of the profile picture in bytes, sourced from a matching imeta tag in the kind-0 event. */
   pictureSize?: number
+  /**
+   * Synthesized in feed profile batch when kind 0 was missing; {@link useFetchProfile} should still
+   * run a per-pubkey fetch so avatars and display names can load.
+   */
+  batchPlaceholder?: boolean
   nip05?: string
   nip05List?: string[]
   about?: string

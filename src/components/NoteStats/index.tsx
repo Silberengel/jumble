@@ -7,6 +7,7 @@ import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
 import { shouldHideInteractions } from '@/lib/event-filtering'
+import logger from '@/lib/logger'
 import { Event } from 'nostr-tools'
 import { useEffect, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
@@ -57,6 +58,11 @@ export default function NoteStats({
 
   useEffect(() => {
     if (!fetchIfNotExisting) return
+    logger.debug('[NoteStats] UI: scheduling fetchNoteStats', {
+      eventId: `${event.id.slice(0, 12)}…`,
+      kind: event.kind,
+      hintRelayCount: statsRelays.length
+    })
     setLoading(true)
     noteStatsService.fetchNoteStats(event, pubkey, statsRelays).finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
