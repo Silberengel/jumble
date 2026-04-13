@@ -37,10 +37,14 @@ function searchStandardEmojiShortcodes(query: string): string[] {
 
 const suggestion = {
   items: async ({ query }: { query: string }) => {
-    const custom = await customEmojiService.searchEmojis(query, client.pubkey ?? null)
-    const customSet = new Set(custom)
-    const standard = searchStandardEmojiShortcodes(query).filter((s) => !customSet.has(s))
-    return [...custom, ...standard].slice(0, 50)
+    const customIds = await customEmojiService.searchEmojis(query, client.pubkey ?? null)
+    const customShortcodes = new Set(
+      customIds
+        .map((id) => customEmojiService.getEmojiById(id)?.shortcode)
+        .filter((s): s is string => Boolean(s))
+    )
+    const standard = searchStandardEmojiShortcodes(query).filter((s) => !customShortcodes.has(s))
+    return [...customIds, ...standard].slice(0, 50)
   },
 
   render: () => {

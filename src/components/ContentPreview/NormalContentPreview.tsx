@@ -1,6 +1,5 @@
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
+import { useEmojiInfosForEvent } from '@/hooks'
 import { Event } from 'nostr-tools'
-import { useMemo } from 'react'
 import Content from './Content'
 
 export default function NormalContentPreview({
@@ -10,6 +9,6 @@ export default function NormalContentPreview({
   event: Event
   className?: string
 }) {
-  const emojiInfos = useMemo(() => getEmojiInfosFromEmojiTags(event.tags), [event.tags])
+  const emojiInfos = useEmojiInfosForEvent(event)
   return <Content content={event.content} className={className} emojiInfos={emojiInfos} />
 }

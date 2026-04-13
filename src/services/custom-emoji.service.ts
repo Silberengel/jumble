@@ -41,16 +41,32 @@ class CustomEmojiService {
   }
 
   /**
-   * Load NIP-30 emoji sets (kind 10030) and packs (30030) for the account.
-   * Merges `userEmojiListEvent` with a relay fetch so we still load when hydrate missed the event
-   * (same idea as aitherboard’s picker: fetch author emoji kinds from read relays).
+   * Load NIP-30 custom emoji for the account: kind 0 `emoji` tags, kind 10030 list (+ `a` → 30030 sets), and 30030 packs.
+   * Merges `userEmojiListEvent` / `metadataEvent` with a relay fetch so we still load when hydrate missed events.
    */
-  async init(userEmojiListEvent: Event | null, accountPubkey?: string | null) {
+  async init(
+    userEmojiListEvent: Event | null,
+    accountPubkey?: string | null,
+    metadataEvent?: Event | null,
+    /** Events we just published (or must win over a slow relay fetch), merged before inventory fetch. */
+    seedEvents?: Event[] | null
+  ) {
     this.reset()
     const pk = accountPubkey?.trim().toLowerCase() ?? ''
     const hasPk = /^[0-9a-f]{64}$/.test(pk)
 
     const byId = new Map<string, Event>()
+    for (const ev of seedEvents ?? []) {
+      if (!ev?.id || !hasPk) continue
+      if (ev.pubkey.trim().toLowerCase() !== pk) continue
+      if (
+        ev.kind === kinds.Metadata ||
+        ev.kind === kinds.UserEmojiList ||
+        ev.kind === kinds.Emojisets
+      ) {
+        byId.set(ev.id, ev)
+      }
+    }
     if (
       userEmojiListEvent &&
       hasPk &&
@@ -66,6 +82,24 @@ class CustomEmojiService {
     }
 
     const events = [...byId.values()]
+
+    const latestMetadata =
+      events
+        .filter(
+          (e) =>
+            e.kind === kinds.Metadata && e.pubkey.trim().toLowerCase() === pk
+        )
+        .sort((a, b) => b.created_at - a.created_at)[0] ??
+      (metadataEvent &&
+      metadataEvent.kind === kinds.Metadata &&
+      metadataEvent.pubkey.trim().toLowerCase() === pk
+        ? metadataEvent
+        : null)
+
+    if (latestMetadata) {
+      await this.addEmojisToIndex(getEmojisFromEvent(latestMetadata), pk)
+    }
+
     if (events.length === 0) {
       this.notifyIndexUpdate()
       return
@@ -123,8 +157,8 @@ class CustomEmojiService {
 
   getEmojiById(id?: string): TEmoji | undefined {
     if (!id) return undefined
-
-    return this.emojiMap.get(id)
+    if (/^[0-9a-f]{64}$/.test(id)) return this.emojiMap.get(id)
+    return Array.from(this.emojiMap.values()).find((e) => e.shortcode === id)
   }
 
   /** Returns the emojis that the viewer themselves authored, sorted by shortcode. */
@@ -161,8 +195,10 @@ class CustomEmojiService {
     }))
   }
 
-  isCustomEmojiId(shortcode: string) {
-    return this.emojiMap.has(shortcode)
+  isCustomEmojiId(name: string) {
+    if (!name) return false
+    if (/^[0-9a-f]{64}$/.test(name)) return this.emojiMap.has(name)
+    return Array.from(this.emojiMap.values()).some((e) => e.shortcode === name)
   }
 
   private async addEmojisToIndex(emojis: TEmoji[], authorPubkeyLower: string) {

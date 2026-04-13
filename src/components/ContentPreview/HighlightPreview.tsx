@@ -1,7 +1,6 @@
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
+import { useEmojiInfosForEvent } from '@/hooks'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Content from './Content'
 
@@ -13,7 +12,7 @@ export default function HighlightPreview({
   className?: string
 }) {
   const { t } = useTranslation()
-  const emojiInfos = useMemo(() => getEmojiInfosFromEmojiTags(event.tags), [event])
+  const emojiInfos = useEmojiInfosForEvent(event)
 
   return (
     <div className={cn('pointer-events-none', className)}>

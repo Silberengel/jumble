@@ -785,8 +785,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       void customEmojiService.init(null, null)
       return
     }
-    void customEmojiService.init(userEmojiListEvent, account.pubkey)
-  }, [userEmojiListEvent, account?.pubkey])
+    void customEmojiService.init(userEmojiListEvent, account.pubkey, profileEvent)
+  }, [userEmojiListEvent, account?.pubkey, profileEvent])
 
   /**
    * If session restore temporarily fell back to read-only (`npub`) while the stored
@@ -1533,6 +1533,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     setInterestListEvent(stored)
   }
 
+  const updateUserEmojiListEvent = async (ev: Event) => {
+    try {
+      await indexedDb.putReplaceableEvent(ev)
+    } catch (e) {
+      logger.warn('[NostrProvider] updateUserEmojiListEvent: putReplaceableEvent failed', { error: e })
+    }
+    void replaceableEventService.updateReplaceableEventCache(ev).catch(() => {})
+    /** Same as profile: keep the event we just published in UI even if IDB keeps an older winner for the coordinate. */
+    setUserEmojiListEvent(ev)
+  }
+
   const updateFavoriteRelaysEvent = async (favoriteRelaysEvent: Event) => {
     const stored = await indexedDb.putReplaceableEvent(favoriteRelaysEvent)
     /** Always sync UI to IndexedDB winner (same-second updates must not leave stale list + relay sets). */
@@ -1609,6 +1620,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         updateMuteListEvent,
         updateBookmarkListEvent,
         updateInterestListEvent,
+        updateUserEmojiListEvent,
         updateFavoriteRelaysEvent,
         updateBlockedRelaysEvent,
         updateRssFeedListEvent,

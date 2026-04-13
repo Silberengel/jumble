@@ -117,6 +117,13 @@ export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 12_000
 /** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
 export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
 
+/**
+ * Maximum `kinds` length in a single NIP-01 filter. Some relays NOTICE "too many kinds" and reject the
+ * entire REQ (e.g. strfry derivatives, relay.vukihreedia.xyz). QueryService splits larger arrays into
+ * multiple filters with the same tag scope.
+ */
+export const RELAY_FILTER_MAX_KINDS_PER_OBJECT = 10
+
 /** `SimplePool.ensureRelay` WebSocket handshake timeout (parallel multi-relay + slow TLS). */
 export const RELAY_POOL_CONNECTION_TIMEOUT_MS = 20_000
 

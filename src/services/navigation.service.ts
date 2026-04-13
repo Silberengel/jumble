@@ -16,6 +16,7 @@ import GeneralSettingsPage from '@/pages/secondary/GeneralSettingsPage'
 import TranslationPage from '@/pages/secondary/TranslationPage'
 import RssFeedSettingsPage from '@/pages/secondary/RssFeedSettingsPage'
 import FollowSetsSettingsPage from '@/pages/secondary/FollowSetsSettingsPage'
+import EmojiSetsSettingsPage from '@/pages/secondary/EmojiSetsSettingsPage'
 import CacheSettingsPage from '@/pages/secondary/CacheSettingsPage'
 import PersonalListsSettingsPage from '@/pages/secondary/PersonalListsSettingsPage'
 import NotePage from '@/pages/secondary/NotePage'
@@ -45,6 +46,7 @@ export type ViewType =
   | 'bookmarks'
   | 'pins'
   | 'interests'
+  | 'user-emojis'
   | 'others-relay-settings'
   | null
 
@@ -96,6 +98,7 @@ export class URLParser {
         'translation',
         'rss-feeds',
         'follow-sets',
+        'emoji-sets',
         'cache',
         'personal-lists'
       ])
@@ -162,6 +165,8 @@ export class ComponentFactory {
         return React.createElement(RssFeedSettingsPage, { index: 0, hideTitlebar: true })
       case 'follow-sets':
         return React.createElement(FollowSetsSettingsPage, { index: 0, hideTitlebar: true })
+      case 'emoji-sets':
+        return React.createElement(EmojiSetsSettingsPage, { index: 0, hideTitlebar: true })
       case 'cache':
         return React.createElement(CacheSettingsPage, { index: 0, hideTitlebar: true })
       case 'personal-lists':
@@ -270,6 +275,7 @@ export class NavigationService {
       if (pathname.includes('/wallet')) return 'Wallet Settings'
       if (pathname.includes('/posts')) return 'Post Settings'
       if (pathname.includes('/translation')) return 'Translation Settings'
+      if (pathname.includes('/emoji-sets')) return 'Emoji sets'
       return 'Settings'
     }
     if (viewType === 'profile') {
@@ -294,6 +300,7 @@ export class NavigationService {
     if (viewType === 'bookmarks') return 'Bookmarks'
     if (viewType === 'pins') return 'Pinned notes'
     if (viewType === 'interests') return 'Interests'
+    if (viewType === 'user-emojis') return 'Custom emoji list'
     if (viewType === 'others-relay-settings') return 'Relays and Storage Settings'
     return 'Page'
   }

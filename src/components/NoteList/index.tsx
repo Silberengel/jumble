@@ -1285,16 +1285,18 @@ const NoteList = forwardRef(
               }
               const profiles = res.value
               for (const p of profiles) {
-                next.set(p.pubkey, p)
-                pend.delete(p.pubkey)
+                const pkNorm = p.pubkey.toLowerCase()
+                next.set(pkNorm, { ...p, pubkey: pkNorm })
+                pend.delete(pkNorm)
               }
               for (const pk of chunk) {
-                pend.delete(pk)
-                if (!next.has(pk)) {
-                  next.set(pk, {
-                    pubkey: pk,
-                    npub: pubkeyToNpub(pk) ?? '',
-                    username: formatPubkey(pk),
+                const pkNorm = pk.toLowerCase()
+                pend.delete(pkNorm)
+                if (!next.has(pkNorm)) {
+                  next.set(pkNorm, {
+                    pubkey: pkNorm,
+                    npub: pubkeyToNpub(pkNorm) ?? '',
+                    username: formatPubkey(pkNorm),
                     batchPlaceholder: true
                   })
                 }

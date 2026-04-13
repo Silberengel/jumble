@@ -30,6 +30,7 @@ import {
   getArticleUrlFromCommentITags,
   NIP22_URL_SCOPE_KIND
 } from '@/lib/rss-article'
+import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
 import { cleanUrl } from '@/lib/url'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
@@ -894,6 +895,24 @@ export function createFollowSetDraftEvent(tags: string[][], content = '', create
   }
 }
 
+export function createUserEmojiListDraftEvent(tags: string[][], content = '', created_at?: number): TDraftEvent {
+  return {
+    kind: kinds.UserEmojiList,
+    content,
+    created_at: created_at ?? dayjs().unix(),
+    tags
+  }
+}
+
+export function createEmojiSetDraftEvent(tags: string[][], content = '', created_at?: number): TDraftEvent {
+  return {
+    kind: kinds.Emojisets,
+    content,
+    created_at: created_at ?? dayjs().unix(),
+    tags
+  }
+}
+
 export function createProfileDraftEvent(content: string, tags: string[][] = []): TDraftEvent {
   return {
     kind: kinds.Metadata,
@@ -1347,24 +1366,30 @@ function extractImagesFromContent(content: string) {
 export function transformCustomEmojisInContent(content: string) {
   const emojiTags: string[][] = []
   let processedContent = content
-  const matches = content.match(/:[a-zA-Z0-9]+:/g)
+  const seen = new Set<string>()
+  const re = new RegExp(EMOJI_SHORT_CODE_REGEX.source, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    const full = m[0]
+    const shortcode = m[1]?.trim() ?? ''
+    if (!shortcode || seen.has(full)) continue
+    seen.add(full)
 
-  const emojiIdSet = new Set<string>()
-  matches?.forEach((m) => {
-    if (emojiIdSet.has(m)) return
-    emojiIdSet.add(m)
-
-    const emoji = customEmojiService.getEmojiById(m.slice(1, -1))
+    const emoji = customEmojiService.getEmojiById(shortcode)
     if (emoji) {
       emojiTags.push(buildEmojiTag(emoji))
-      processedContent = processedContent.replace(new RegExp(m, 'g'), `:${emoji.shortcode}:`)
+      processedContent = processedContent.replace(new RegExp(escapeRegExp(full), 'g'), `:${emoji.shortcode}:`)
     }
-  })
+  }
 
   return {
     emojiTags,
     content: processedContent
   }
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export function buildATag(event: Event, upperCase: boolean = false) {

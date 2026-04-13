@@ -36,14 +36,17 @@ export const UPLOAD_ABORTED_ERROR_MSG = 'Upload aborted'
 class MediaUploadService {
   static instance: MediaUploadService
 
-  private serviceConfig: TMediaUploadServiceConfig = storage.getMediaUploadServiceConfig()
+  /** Set in constructor so we do not read `storage` at class field init (circular import TDZ with client.service → draft-event → this module). */
+  private serviceConfig!: TMediaUploadServiceConfig
   private nip96ServiceUploadUrlMap = new Map<string, string | undefined>()
   private imetaTagMap = new Map<string, string[]>()
 
   constructor() {
-    if (!MediaUploadService.instance) {
-      MediaUploadService.instance = this
+    if (MediaUploadService.instance) {
+      return MediaUploadService.instance
     }
+    this.serviceConfig = storage.getMediaUploadServiceConfig()
+    MediaUploadService.instance = this
     return MediaUploadService.instance
   }
 

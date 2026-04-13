@@ -364,10 +364,45 @@ export function useFetchProfile(id?: string, skipCache = false) {
         return
       }
       if (noteFeed.pendingPubkeys.has(extractedPubkey)) {
+        const pkLower = extractedPubkey.toLowerCase()
+        const sessionEv = eventService.getSessionMetadataForPubkey(pkLower)
+        if (sessionEv) {
+          const quick = getProfileFromEvent(sessionEv)
+          setProfile(quick)
+          setPubkey(extractedPubkey)
+          setIsFetching(false)
+          setError(null)
+          processingPubkeyRef.current = extractedPubkey
+          initializedPubkeysRef.current.add(extractedPubkey)
+          effectRunCountRef.current.delete(extractedPubkey)
+          return
+        }
         setPubkey(extractedPubkey)
         setIsFetching(false)
         setError(null)
-        return
+        const pendingCancelled = { current: false }
+        void tryHydrateProfileFromLocalCaches(pkLower, false).then((quick) => {
+          if (pendingCancelled.current || !quick) return
+          setProfile(quick)
+          setIsFetching(false)
+          setError(null)
+          processingPubkeyRef.current = extractedPubkey
+          initializedPubkeysRef.current.add(extractedPubkey)
+          effectRunCountRef.current.delete(extractedPubkey)
+        })
+        return () => {
+          pendingCancelled.current = true
+          if (processingPubkeyRef.current === extractedPubkey) {
+            processingPubkeyRef.current = null
+          }
+          if (checkIntervalRef.current) {
+            clearInterval(checkIntervalRef.current)
+            checkIntervalRef.current = null
+          }
+          if (extractedPubkey) {
+            effectRunCountRef.current.delete(extractedPubkey)
+          }
+        }
       }
     }
 

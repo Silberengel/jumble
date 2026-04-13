@@ -712,7 +712,12 @@ export function getEmojisAndEmojiSetsFromEvent(event: Event) {
         url: tagValues[1]
       })
     } else if (tagName === 'a' && tagValues[0]) {
-      emojiSetPointers.push(tagValues[0])
+      const coord = tagValues[0]
+      const kindStr = coord.split(':')[0]
+      const kind = parseInt(kindStr ?? '', 10)
+      if (kind === kinds.Emojisets) {
+        emojiSetPointers.push(tagValues[0])
+      }
     }
   })
 

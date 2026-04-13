@@ -9,7 +9,7 @@ import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNoteList } from '@/lib/link'
-import { useMediaExtraction } from '@/hooks'
+import { useEmojiInfosForEvent, useMediaExtraction } from '@/hooks'
 import {
   cleanUrl,
   isImage,
@@ -35,7 +35,6 @@ import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { EMOJI_SHORT_CODE_REGEX, NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import { TEmoji, TImetaInfo } from '@/types'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
@@ -88,6 +87,12 @@ function resolveImetaForMarkdownImageUrl(
     }
   }
   return { url: cleaned, pubkey: eventPubkey }
+}
+
+/** Author custom emoji image URL → slide index in the note lightbox ({@link lightboxSlideFromImeta}). */
+type TInlineEmojiLightbox = {
+  imageIndexMap: Map<string, number>
+  openLightbox: (index: number) => void
 }
 
 /**
@@ -683,6 +688,7 @@ function parseMarkdownContentLegacy(
     lazyMedia = true,
     resolveImetaForImageUrl
   } = options
+  const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
   const parts: React.ReactNode[] = []
   const hashtagsInContent = new Set<string>()
   const footnotes = new Map<string, string>()
@@ -1854,7 +1860,7 @@ function parseMarkdownContentLegacy(
                     normalizedText = normalizedText.replace(/[ \t]{2,}/g, ' ')
                     normalizedText = normalizedText.trim()
                     if (normalizedText) {
-                      const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`, footnotes, emojiInfos)
+                      const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                       parts.push(
                         <p key={`text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`} className="mb-1 last:mb-0">
                           {textContent}
@@ -1917,7 +1923,7 @@ function parseMarkdownContentLegacy(
                 normalizedText = normalizedText.replace(/[ \t]{2,}/g, ' ')
                 normalizedText = normalizedText.trim()
                 if (normalizedText) {
-                  const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-final`, footnotes, emojiInfos)
+                  const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-final`, footnotes, emojiInfos, undefined, emojiLightbox)
                   parts.push(
                     <p key={`text-${patternIdx}-para-${paraIdx}-final`} className="mb-1 last:mb-0">
                       {textContent}
@@ -1937,7 +1943,7 @@ function parseMarkdownContentLegacy(
               normalizedPara = normalizedPara.trim()
               if (normalizedPara) {
                 // Process paragraph for inline formatting (which will handle markdown links)
-                const paraContent = parseInlineMarkdown(normalizedPara, `text-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos)
+                const paraContent = parseInlineMarkdown(normalizedPara, `text-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 // Wrap in paragraph tag (no whitespace-pre-wrap, let normal text wrapping handle it)
                 parts.push(
                   <p key={`text-${patternIdx}-para-${paraIdx}`} className="mb-1 last:mb-0">
@@ -2179,7 +2185,7 @@ function parseMarkdownContentLegacy(
       const { text, url } = pattern.data
       // Process the link text for inline formatting (bold, italic, etc.)
       const linkContent = stripNestedAnchorsFromNodes(
-        parseInlineMarkdown(text, `link-${patternIdx}`, footnotes, emojiInfos),
+        parseInlineMarkdown(text, `link-${patternIdx}`, footnotes, emojiInfos, undefined, emojiLightbox),
         `link-${patternIdx}-sanitized`
       )
       // Markdown links should always be rendered as inline links, not block-level components
@@ -2269,7 +2275,7 @@ function parseMarkdownContentLegacy(
     } else if (pattern.type === 'header') {
       const { level, text } = pattern.data
       // Parse the header text for inline formatting (but not nested headers)
-      const headerContent = parseInlineMarkdown(text, `header-${patternIdx}`, footnotes, emojiInfos)
+      const headerContent = parseInlineMarkdown(text, `header-${patternIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
       const HeaderTag = `h${Math.min(level, 6)}` as keyof JSX.IntrinsicElements
       parts.push(
         <HeaderTag 
@@ -2292,7 +2298,7 @@ function parseMarkdownContentLegacy(
       )
     } else if (pattern.type === 'bullet-list-item') {
       const { text } = pattern.data
-      const listContent = parseInlineMarkdown(text, `bullet-${patternIdx}`, footnotes, emojiInfos)
+      const listContent = parseInlineMarkdown(text, `bullet-${patternIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
       parts.push(
         <li key={`bullet-${patternIdx}`} className="list-disc list-inside my-1">
           {listContent}
@@ -2300,7 +2306,7 @@ function parseMarkdownContentLegacy(
       )
     } else if (pattern.type === 'numbered-list-item') {
       const { text, number } = pattern.data
-      const listContent = parseInlineMarkdown(text, `numbered-${patternIdx}`, footnotes, emojiInfos)
+      const listContent = parseInlineMarkdown(text, `numbered-${patternIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
       const itemNumber = number ? parseInt(number, 10) : undefined
       parts.push(
         <li key={`numbered-${patternIdx}`} className="leading-tight" value={itemNumber}>
@@ -2322,7 +2328,7 @@ function parseMarkdownContentLegacy(
                       key={`th-${patternIdx}-${cellIdx}`} 
                       className="border border-gray-300 dark:border-gray-700 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold text-left"
                     >
-                      {parseInlineMarkdown(cell, `table-header-${patternIdx}-${cellIdx}`, footnotes, emojiInfos)}
+                      {parseInlineMarkdown(cell, `table-header-${patternIdx}-${cellIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)}
                     </th>
                   ))}
                 </tr>
@@ -2335,7 +2341,7 @@ function parseMarkdownContentLegacy(
                         key={`td-${patternIdx}-${rowIdx}-${cellIdx}`} 
                         className="border border-gray-300 dark:border-gray-700 px-4 py-2"
                       >
-                        {parseInlineMarkdown(cell, `table-cell-${patternIdx}-${rowIdx}-${cellIdx}`, footnotes, emojiInfos)}
+                        {parseInlineMarkdown(cell, `table-cell-${patternIdx}-${rowIdx}-${cellIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)}
                       </td>
                     ))}
                   </tr>
@@ -2374,7 +2380,7 @@ function parseMarkdownContentLegacy(
         // Join paragraph lines with newlines to preserve line breaks (especially before em-dashes)
         // This preserves the original formatting of the blockquote
         const paragraphText = paragraphLines.join('\n')
-        const paragraphContent = parseInlineMarkdown(paragraphText, `blockquote-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos)
+        const paragraphContent = parseInlineMarkdown(paragraphText, `blockquote-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
         
         return (
           <p key={`blockquote-${patternIdx}-para-${paraIdx}`} className="mb-1 last:mb-0 whitespace-pre-line">
@@ -2397,7 +2403,7 @@ function parseMarkdownContentLegacy(
       // Each line should have the > prefix preserved
       const greentextContent = lines.map((line: string, lineIdx: number) => {
         // Parse inline markdown for each line (for links, hashtags, etc.)
-        const lineContent = parseInlineMarkdown(line, `greentext-${patternIdx}-line-${lineIdx}`, footnotes, emojiInfos)
+        const lineContent = parseInlineMarkdown(line, `greentext-${patternIdx}-line-${lineIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
         return (
           <React.Fragment key={`greentext-${patternIdx}-line-${lineIdx}`}>
             {lineIdx > 0 && <br />}
@@ -2664,7 +2670,7 @@ function parseMarkdownContentLegacy(
                   normalizedPara = normalizedPara.replace(/[ \t]{2,}/g, ' ')
                   normalizedPara = normalizedPara.trim()
                   if (normalizedPara) {
-                    const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${imgIdx}-${paraIdx}`, footnotes, emojiInfos)
+                    const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${imgIdx}-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                     parts.push(
                       <p key={`text-end-para-${imgIdx}-${paraIdx}`} className="mb-1 last:mb-0">
                         {paraContent}
@@ -2720,7 +2726,7 @@ function parseMarkdownContentLegacy(
               normalizedPara = normalizedPara.replace(/[ \t]{2,}/g, ' ')
               normalizedPara = normalizedPara.trim()
               if (normalizedPara) {
-                const paraContent = parseInlineMarkdown(normalizedPara, `text-end-final-para-${paraIdx}`, footnotes, emojiInfos)
+                const paraContent = parseInlineMarkdown(normalizedPara, `text-end-final-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 parts.push(
                   <p key={`text-end-final-para-${paraIdx}`} className="mb-1 last:mb-0">
                     {paraContent}
@@ -2739,7 +2745,7 @@ function parseMarkdownContentLegacy(
             normalizedPara = normalizedPara.replace(/[ \t]{2,}/g, ' ')
             normalizedPara = normalizedPara.trim()
             if (normalizedPara) {
-              const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${paraIdx}`, footnotes, emojiInfos)
+              const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
               parts.push(
                 <p key={`text-end-para-${paraIdx}`} className="mb-1 last:mb-0">
                   {paraContent}
@@ -2762,7 +2768,7 @@ function parseMarkdownContentLegacy(
       normalizedPara = normalizedPara.replace(/[ \t]{2,}/g, ' ')
       normalizedPara = normalizedPara.trim()
       if (!normalizedPara) return null
-      const paraContent = parseInlineMarkdown(normalizedPara, `text-only-para-${paraIdx}`, footnotes, emojiInfos)
+      const paraContent = parseInlineMarkdown(normalizedPara, `text-only-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
       return (
         <p key={`text-only-para-${paraIdx}`} className="mb-1 last:mb-0">
           {paraContent}
@@ -2882,7 +2888,7 @@ function parseMarkdownContentLegacy(
               const originalLine = listItemOriginalLines.get(patternIndex)
               if (originalLine) {
                 // Render the original line with inline markdown processing
-                const lineContent = parseInlineMarkdown(originalLine, `single-list-item-${partIdx}`, footnotes, emojiInfos)
+                const lineContent = parseInlineMarkdown(originalLine, `single-list-item-${partIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 wrappedParts.push(
                   <span key={`list-item-content-${partIdx}`}>
                     {lineContent}
@@ -2929,7 +2935,7 @@ function parseMarkdownContentLegacy(
               className="text-sm text-gray-700 dark:text-gray-300"
             >
               <span className="font-semibold">[{id}]:</span>{' '}
-              <span>{parseInlineMarkdown(text, `footnote-${id}`, footnotes, emojiInfos)}</span>
+              <span>{parseInlineMarkdown(text, `footnote-${id}`, footnotes, emojiInfos, undefined, emojiLightbox)}</span>
               {' '}
               <a 
                 href={`#footnote-ref-${id}`}
@@ -3082,6 +3088,7 @@ function parseMarkdownContentMarked(
     lazyMedia = true,
     resolveImetaForImageUrl
   } = options
+  const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
 
   /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview returns null when autoLoadMedia is off. */
   const imetaInfoForStandaloneImageUrl = (cleaned: string): TImetaInfo =>
@@ -3166,7 +3173,7 @@ function parseMarkdownContentMarked(
           const txt = String(token.text ?? token.raw ?? '')
           collectHashtags(txt)
           out.push(
-            ...parseInlineMarkdownLegacy(txt, `${key}-text`, footnotes, emojiInfos, navigateToHashtag)
+            ...parseInlineMarkdownLegacy(txt, `${key}-text`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)
           )
           break
         }
@@ -3288,7 +3295,7 @@ function parseMarkdownContentMarked(
           if (txt) {
             collectHashtags(txt)
             out.push(
-              ...parseInlineMarkdownLegacy(txt, `${key}-fallback`, footnotes, emojiInfos, navigateToHashtag)
+              ...parseInlineMarkdownLegacy(txt, `${key}-fallback`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)
             )
           }
         }
@@ -3531,7 +3538,7 @@ function parseMarkdownContentMarked(
         if (before.trim().length > 0) {
           nodes.push(
             <p key={`${key}-nostr-raw-segment-${segmentIdx++}`} className="mb-1 last:mb-0">
-              {parseInlineMarkdown(before, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag)}
+              {parseInlineMarkdown(before, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}
             </p>
           )
         }
@@ -3554,7 +3561,7 @@ function parseMarkdownContentMarked(
       if (after.trim().length > 0) {
         nodes.push(
           <p key={`${key}-nostr-raw-segment-${segmentIdx++}`} className="mb-1 last:mb-0">
-            {parseInlineMarkdown(after, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag)}
+            {parseInlineMarkdown(after, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}
           </p>
         )
       }
@@ -3992,7 +3999,7 @@ function parseMarkdownContentMarked(
           {Array.from(footnotes.entries()).map(([id, text]) => (
             <li key={`footnote-${id}`} id={`footnote-${id}`} className="text-sm text-gray-700 dark:text-gray-300">
               <span className="font-semibold">[{id}]:</span>{' '}
-              <span>{parseInlineMarkdown(text, `footnote-${id}`, footnotes, emojiInfos, navigateToHashtag)}</span>{' '}
+              <span>{parseInlineMarkdown(text, `footnote-${id}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}</span>{' '}
               <a
                 href={`#footnote-ref-${id}`}
                 className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs"
@@ -4031,7 +4038,8 @@ function parseInlineMarkdown(
   keyPrefix: string,
   _footnotes: Map<string, string> = new Map(),
   emojiInfos: TEmoji[] = [],
-  navigateToHashtag?: (href: string) => void
+  navigateToHashtag?: (href: string) => void,
+  emojiLightbox?: TInlineEmojiLightbox
 ): React.ReactNode[] {
   const normalized = text.replace(/\n/g, ' ').replace(/[ \t]{2,}/g, ' ')
   const tokens = lexInlineProtected(normalized) as any[]
@@ -4039,7 +4047,7 @@ function parseInlineMarkdown(
 
   // Fast path: keep old behavior when there is no markdown syntax.
   if (!hasMarkdownSyntax) {
-    return parseInlineMarkdownLegacy(normalized, keyPrefix, _footnotes, emojiInfos, navigateToHashtag)
+    return parseInlineMarkdownLegacy(normalized, keyPrefix, _footnotes, emojiInfos, navigateToHashtag, emojiLightbox)
   }
 
   const renderTokens = (list: any[], path: string): React.ReactNode[] => {
@@ -4055,7 +4063,8 @@ function parseInlineMarkdown(
             `${keyPrefix}-${tokenKey}-text`,
             _footnotes,
             emojiInfos,
-            navigateToHashtag
+            navigateToHashtag,
+            emojiLightbox
           )
         )
         continue
@@ -4143,7 +4152,8 @@ function parseInlineMarkdown(
           `${keyPrefix}-${tokenKey}-fallback`,
           _footnotes,
           emojiInfos,
-          navigateToHashtag
+          navigateToHashtag,
+          emojiLightbox
         )
       )
     }
@@ -4153,7 +4163,7 @@ function parseInlineMarkdown(
   const rendered = renderTokens(tokens, `${keyPrefix}-md`)
   return rendered.length > 0
     ? rendered
-    : parseInlineMarkdownLegacy(normalized, keyPrefix, _footnotes, emojiInfos, navigateToHashtag)
+    : parseInlineMarkdownLegacy(normalized, keyPrefix, _footnotes, emojiInfos, navigateToHashtag, emojiLightbox)
 }
 
 function parseInlineMarkdownLegacy(
@@ -4161,7 +4171,8 @@ function parseInlineMarkdownLegacy(
   keyPrefix: string,
   _footnotes: Map<string, string> = new Map(),
   emojiInfos: TEmoji[] = [],
-  navigateToHashtag?: (href: string) => void
+  navigateToHashtag?: (href: string) => void,
+  emojiLightbox?: TInlineEmojiLightbox
 ): React.ReactNode[] {
   if (isContentSpacingDebug() && text.includes('nostr:')) {
     // eslint-disable-next-line no-console
@@ -4396,7 +4407,7 @@ function parseInlineMarkdownLegacy(
       if (url.startsWith('payto://')) {
         parts.push(
           <PaytoLink key={`${keyPrefix}-payto-link-${i}`} paytoUri={url} className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words">
-            {parseInlineMarkdownLegacy(text, `${keyPrefix}-link-${i}`, _footnotes, emojiInfos)}
+            {parseInlineMarkdownLegacy(text, `${keyPrefix}-link-${i}`, _footnotes, emojiInfos, undefined, emojiLightbox)}
           </PaytoLink>
         )
       } else {
@@ -4404,7 +4415,9 @@ function parseInlineMarkdownLegacy(
           text,
           `${keyPrefix}-link-${i}`,
           _footnotes,
-          emojiInfos
+          emojiInfos,
+          undefined,
+          emojiLightbox
         )
         parts.push(
           <a
@@ -4499,7 +4512,21 @@ function parseInlineMarkdownLegacy(
       const shortcode = pattern.data as string
       const custom = emojiInfos.find((e) => e.shortcode === shortcode)
       if (custom) {
-        parts.push(<Emoji key={`${keyPrefix}-emoji-${i}`} emoji={custom} classNames={{ img: 'size-4 inline-block' }} />)
+        const cleanedUrl = cleanUrl(custom.url)
+        const lbIdx =
+          cleanedUrl && emojiLightbox ? emojiLightbox.imageIndexMap.get(cleanedUrl) : undefined
+        parts.push(
+          <Emoji
+            key={`${keyPrefix}-emoji-${i}`}
+            emoji={custom}
+            classNames={{ img: 'size-4 inline-block' }}
+            onImageClick={
+              typeof lbIdx === 'number' && emojiLightbox
+                ? () => emojiLightbox.openLightbox(lbIdx)
+                : undefined
+            }
+          />
+        )
       } else {
         const native = shortcodeToEmoji(shortcode, emojis) ?? shortcodeToEmoji(shortcode.replace(/\s+/g, '_'), emojis)
         if (native?.emoji) {
@@ -4606,6 +4633,7 @@ export default function MarkdownArticle({
   const { navigateToHashtag } = useSmartHashtagNavigationOptional()
   const { navigateToRelay } = useSmartRelayNavigationOptional()
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
+  const emojiInfos = useEmojiInfosForEvent(event)
   const iArticleUrl = useMemo(() => getHttpUrlFromITags(event), [event])
 
   const webPreviewSuppressCleanedSet = useMemo(() => {
@@ -4817,8 +4845,17 @@ export default function MarkdownArticle({
       }
     }
     
+    for (const em of emojiInfos) {
+      const raw = em.url?.trim()
+      if (!raw) continue
+      const cleaned = cleanUrl(raw)
+      if (!cleaned || seenUrls.has(cleaned)) continue
+      seenUrls.add(cleaned)
+      images.push({ url: raw, alt: `:${em.shortcode}:` })
+    }
+
     return images
-  }, [extractedMedia.images, metadata.image])
+  }, [extractedMedia.images, metadata.image, emojiInfos])
 
   const lightboxSlides = useMemo(
     () => allImages.map((img) => lightboxSlideFromImeta(img)),
@@ -5052,12 +5089,12 @@ export default function MarkdownArticle({
     processed = normalizeSetextHeaders(processed)
     // Normalize backticks (inline code and code blocks)
     processed = normalizeBackticks(processed)
-    // Replace standard :shortcode: with Unicode (custom emojis stay as shortcode for tag lookup)
-    const customShortcodes = event.tags.filter((t) => t[0] === 'emoji').map((t) => t[1]).filter(Boolean)
+    // Replace standard :shortcode: with Unicode (custom emojis stay as shortcode for tag / profile lookup)
+    const customShortcodes = emojiInfos.map((e) => e.shortcode)
     processed = replaceStandardEmojiShortcodesInContent(processed, customShortcodes)
     // Then preprocess media links
     return preprocessMarkdownMediaLinks(processed)
-  }, [event.content, event.tags])
+  }, [event.content, emojiInfos])
   
   // Create video poster map from imeta tags
   const videoPosterMap = useMemo(() => {
@@ -5108,8 +5145,6 @@ export default function MarkdownArticle({
     })
     return map
   }, [event.id, JSON.stringify(event.tags)])
-
-  const emojiInfos = useMemo(() => getEmojiInfosFromEmojiTags(event.tags), [event.tags])
 
   // Parse markdown content with post-processing for nostr: links and hashtags
   const { nodes: parsedContent, hashtagsInContent } = useMemo(() => {

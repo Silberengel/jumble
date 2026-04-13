@@ -29,6 +29,8 @@ const CacheSettingsPageLazy = lazy(() => import('./pages/secondary/CacheSettings
 const RssFeedSettingsPageLazy = lazy(() => import('./pages/secondary/RssFeedSettingsPage'))
 const FollowSetsSettingsPageLazy = lazy(() => import('./pages/secondary/FollowSetsSettingsPage'))
 const PersonalListsSettingsPageLazy = lazy(() => import('./pages/secondary/PersonalListsSettingsPage'))
+const UserEmojiListPageLazy = lazy(() => import('./pages/secondary/UserEmojiListPage'))
+const EmojiSetsSettingsPageLazy = lazy(() => import('./pages/secondary/EmojiSetsSettingsPage'))
 const SearchPageLazy = lazy(() => import('./pages/secondary/SearchPage'))
 const SettingsPageLazy = lazy(() => import('./pages/secondary/SettingsPage'))
 const TranslationPageLazy = lazy(() => import('./pages/secondary/TranslationPage'))
@@ -85,12 +87,14 @@ const ROUTES = [
   { path: '/settings/translation', element: SR(TranslationPageLazy) },
   { path: '/settings/rss-feeds', element: SR(RssFeedSettingsPageLazy) },
   { path: '/settings/follow-sets', element: SR(FollowSetsSettingsPageLazy) },
+  { path: '/settings/emoji-sets', element: SR(EmojiSetsSettingsPageLazy) },
   { path: '/settings/personal-lists', element: SR(PersonalListsSettingsPageLazy) },
   { path: '/profile-editor', element: SR(ProfileEditorPageLazy) },
   { path: '/mutes', element: SR(MuteListPageLazy) },
   { path: '/bookmarks', element: SR(BookmarkListPageLazy) },
   { path: '/pins', element: SR(PinListPageLazy) },
   { path: '/interests', element: SR(InterestListPageLazy) },
+  { path: '/user-emojis', element: SR(UserEmojiListPageLazy) },
   { path: '/follow-packs', element: SR(FollowPacksRedirectLazy) }
 ]
 

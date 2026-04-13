@@ -1,17 +1,25 @@
-import { useMediaExtraction } from '@/hooks'
+import { useEmojiInfosForEvent, useMediaExtraction } from '@/hooks'
 import { parseContent, PARSE_CONTENT_PARSERS_NOTE_TEXT } from '@/lib/content-parser'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
 import logger from '@/lib/logger'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import { cn } from '@/lib/utils'
 import { getHttpUrlFromITags } from '@/lib/event'
 import { httpUrlSkipsBottomWebPreview } from '@/lib/nostr-from-http-url'
 import { cleanUrl, isImage, isMedia, isAudio, isVideo, isPseudoNostrHttpsUrl } from '@/lib/url'
-import { TImetaInfo } from '@/types'
+import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
+import { randomString } from '@/lib/random'
+import modalManager from '@/services/modal-manager.service'
+import { TEmoji, TImetaInfo } from '@/types'
 import { Event } from 'nostr-tools'
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import Lightbox from 'yet-another-react-lightbox'
+import Captions from 'yet-another-react-lightbox/plugins/captions'
+import Video from 'yet-another-react-lightbox/plugins/video'
+import Zoom from 'yet-another-react-lightbox/plugins/zoom'
+import 'yet-another-react-lightbox/plugins/captions.css'
 import {
   EmbeddedHashtag,
   EmbeddedLNInvoice,
@@ -88,11 +96,55 @@ export default function Content({
 
   // Use unified media extraction service
   const extractedMedia = useMediaExtraction(event, _content)
-  
-  const { nodes, emojiInfos } = useMemo(() => {
-    if (!_content) return {}
+  const emojiInfos = useEmojiInfosForEvent(event ?? undefined)
 
-    const emojiInfos = getEmojiInfosFromEmojiTags(event?.tags)
+  const customEmojiLightboxId = useMemo(() => `content-custom-emoji-lb-${randomString()}`, [])
+  const { customEmojiSlides, customEmojiIndexByCleanedUrl } = useMemo(() => {
+    const seen = new Set<string>()
+    const ordered: TEmoji[] = []
+    for (const e of emojiInfos) {
+      const c = cleanUrl(e.url)
+      if (!c || seen.has(c)) continue
+      seen.add(c)
+      ordered.push(e)
+    }
+    const slides = ordered.map((e) =>
+      lightboxSlideFromImeta({ url: e.url, alt: `:${e.shortcode}:` })
+    )
+    const byUrl = new Map<string, number>()
+    ordered.forEach((e, i) => {
+      const c = cleanUrl(e.url)
+      if (c) byUrl.set(c, i)
+    })
+    return { customEmojiSlides: slides, customEmojiIndexByCleanedUrl: byUrl }
+  }, [emojiInfos])
+
+  const [customEmojiLbIndex, setCustomEmojiLbIndex] = useState(-1)
+  const [customEmojiLbPortal, setCustomEmojiLbPortal] = useState(false)
+
+  useEffect(() => {
+    if (customEmojiLbIndex >= 0) {
+      modalManager.register(customEmojiLightboxId, () => setCustomEmojiLbIndex(-1))
+    } else {
+      modalManager.unregister(customEmojiLightboxId)
+    }
+  }, [customEmojiLightboxId, customEmojiLbIndex])
+
+  const openCustomEmojiLightbox = useCallback(
+    (emoji: TEmoji) => {
+      const c = cleanUrl(emoji.url)
+      const idx = c ? customEmojiIndexByCleanedUrl.get(c) : undefined
+      if (typeof idx === 'number') {
+        setCustomEmojiLbIndex(idx)
+        setCustomEmojiLbPortal(true)
+      }
+    },
+    [customEmojiIndexByCleanedUrl]
+  )
+
+  const nodes = useMemo(() => {
+    if (!_content) return undefined
+
     const customShortcodes = emojiInfos.map((e) => e.shortcode)
     const normalized = replaceStandardEmojiShortcodesInContent(_content, customShortcodes)
     if (normalized.includes('nostr:')) {
@@ -103,10 +155,8 @@ export default function Content({
       })
     }
 
-    const nodes = parseContent(normalized, PARSE_CONTENT_PARSERS_NOTE_TEXT)
-
-    return { nodes, emojiInfos }
-  }, [_content, event])
+    return parseContent(normalized, PARSE_CONTENT_PARSERS_NOTE_TEXT)
+  }, [_content, emojiInfos])
 
   // Extract HTTP/HTTPS links from content nodes (in order of appearance) for WebPreview cards at bottom
   // Exclude YouTube URLs, images, and media (they're rendered separately)
@@ -591,7 +641,17 @@ export default function Content({
         if (node.type === 'emoji') {
           const shortcode = node.data.slice(1, -1).trim()
           const emoji = emojiInfos.find((e) => e.shortcode === shortcode)
-          if (emoji) return <Emoji classNames={{ img: 'mb-1' }} emoji={emoji} key={index} />
+          if (emoji) {
+            const canOpen = customEmojiIndexByCleanedUrl.has(cleanUrl(emoji.url) || '')
+            return (
+              <Emoji
+                classNames={{ img: 'mb-1' }}
+                emoji={emoji}
+                key={index}
+                onImageClick={canOpen ? () => openCustomEmojiLightbox(emoji) : undefined}
+              />
+            )
+          }
           const native = shortcodeToEmoji(shortcode, emojis) ?? shortcodeToEmoji(shortcode.replace(/\s+/g, '_'), emojis)
           if (native?.emoji) return <Emoji classNames={{ img: 'mb-1' }} emoji={native.emoji} key={index} />
           return <span key={index}>{node.data}</span>
@@ -649,6 +709,43 @@ export default function Content({
           ))}
         </div>
       )}
+
+      {customEmojiLbPortal &&
+        customEmojiSlides.length > 0 &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-lightbox-overlay
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Lightbox
+              index={customEmojiLbIndex}
+              slides={customEmojiSlides}
+              plugins={[Video, Zoom, Captions]}
+              open={customEmojiLbIndex >= 0}
+              close={() => setCustomEmojiLbIndex(-1)}
+              on={{
+                exited: () => setCustomEmojiLbPortal(false)
+              }}
+              controller={{
+                closeOnBackdropClick: false,
+                closeOnPullUp: true,
+                closeOnPullDown: true
+              }}
+              render={{
+                buttonPrev: customEmojiSlides.length <= 1 ? () => null : undefined,
+                buttonNext: customEmojiSlides.length <= 1 ? () => null : undefined
+              }}
+              styles={{
+                toolbar: { paddingTop: '2.25rem' }
+              }}
+            />
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

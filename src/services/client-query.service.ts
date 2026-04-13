@@ -7,6 +7,7 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_CONCURRENT_SUBS_PER_RELAY,
+  RELAY_FILTER_MAX_KINDS_PER_OBJECT,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
@@ -87,9 +88,28 @@ function sanitizeETagFilter(filter: Filter): Filter | null {
   return f
 }
 
+/** Relays often cap kinds-per-filter; duplicate the filter with chunked `kinds` so REQs are not dropped. */
+function splitFiltersByMaxKindCount(filters: Filter[]): Filter[] {
+  const max = RELAY_FILTER_MAX_KINDS_PER_OBJECT
+  if (max <= 0) return filters
+  const out: Filter[] = []
+  for (const f of filters) {
+    const k = f.kinds
+    if (!Array.isArray(k) || k.length <= max) {
+      out.push(f)
+      continue
+    }
+    for (let i = 0; i < k.length; i += max) {
+      out.push({ ...f, kinds: k.slice(i, i + max) })
+    }
+  }
+  return out
+}
+
 function sanitizeFiltersBeforeReq(filter: Filter | Filter[]): Filter[] {
   const asArray = Array.isArray(filter) ? filter : [filter]
-  return asArray.map(sanitizeETagFilter).filter((f): f is Filter => !!f)
+  const sanitized = asArray.map(sanitizeETagFilter).filter((f): f is Filter => !!f)
+  return splitFiltersByMaxKindCount(sanitized)
 }
 
 export interface QueryOptions {
@@ -255,8 +275,9 @@ export class QueryService {
   ): Promise<NEvent[]> {
     const sanitizedFilters = sanitizeFiltersBeforeReq(filter)
     if (sanitizedFilters.length === 0) return []
+    /** One chunk → pass a single Filter (compat); several (e.g. kinds split) → full array for WS + HTTP. */
     const effectiveFilter: Filter | Filter[] =
-      Array.isArray(filter) ? sanitizedFilters : sanitizedFilters[0]
+      sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters
     const eoseTimeout = options?.eoseTimeout ?? 500
     const globalTimeout = options?.globalTimeout ?? 10000
     const replaceableRace = options?.replaceableRace ?? false

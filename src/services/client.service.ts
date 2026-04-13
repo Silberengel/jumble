@@ -3720,22 +3720,21 @@ class ClientService extends EventTarget {
    */
   async fetchEmojiSetEvents(pointers: string[]): Promise<NEvent[]> {
     if (!pointers?.length) return []
-    const out: NEvent[] = []
-    for (const coord of pointers) {
+    const tasks = pointers.map(async (coord) => {
       const parts = coord.split(':')
-      if (parts.length < 3) continue
+      if (parts.length < 3) return null
       const kind = parseInt(parts[0]!, 10)
       const authorPk = parts[1]?.trim().toLowerCase()
-      if (!authorPk || Number.isNaN(kind)) continue
+      if (!authorPk || Number.isNaN(kind)) return null
       const d = parts.slice(2).join(':')
       try {
-        const ev = await this.replaceableEventService.fetchReplaceableEvent(authorPk, kind, d)
-        if (ev) out.push(ev)
+        return (await this.replaceableEventService.fetchReplaceableEvent(authorPk, kind, d)) ?? null
       } catch {
-        /* ignore per-pointer failures */
+        return null
       }
-    }
-    return out
+    })
+    const settled = await Promise.all(tasks)
+    return settled.filter((ev): ev is NEvent => Boolean(ev))
   }
 
   /**
@@ -3754,9 +3753,9 @@ class ClientService extends EventTarget {
     const capped = urls.slice(0, 20)
     if (capped.length === 0) return []
     return this.queryService.fetchEvents(capped, {
-      kinds: [kinds.UserEmojiList, kinds.Emojisets],
+      kinds: [kinds.Metadata, kinds.UserEmojiList, kinds.Emojisets],
       authors: [pk],
-      limit: 80
+      limit: 120
     })
   }
 

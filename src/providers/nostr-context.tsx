@@ -63,6 +63,7 @@ export type TNostrContext = {
   updateFavoriteRelaysEvent: (favoriteRelaysEvent: Event) => Promise<void>
   updateBlockedRelaysEvent: (blockedRelaysEvent: Event) => Promise<void>
   updateRssFeedListEvent: (rssFeedListEvent: Event) => Promise<void>
+  updateUserEmojiListEvent: (userEmojiListEvent: Event) => Promise<void>
   /**
    * Re-run the full account network hydrate (relay lists + replaceable merge + prewarm), bypassing the
    * 24h throttle. Resolves when the hydrate pass finishes. No-op when logged out.

@@ -70,6 +70,7 @@ export const toGeneralSettings = () => '/settings/general'
 export const toTranslation = () => '/settings/translation'
 export const toRssFeedSettings = () => '/settings/rss-feeds'
 export const toFollowSetsSettings = () => '/settings/follow-sets'
+export const toEmojiSetsSettings = () => '/settings/emoji-sets'
 export const toCacheSettings = () => '/settings/cache'
 export const toPersonalListsSettings = () => '/settings/personal-lists'
 export const toProfileEditor = () => '/profile-editor'
@@ -81,6 +82,7 @@ export const toBookmarksList = () => '/bookmarks'
 
 export const toPinsList = () => '/pins'
 export const toInterestsList = () => '/interests'
+export const toUserEmojiList = () => '/user-emojis'
 
 export const toChachiChat = (relay: string, d: string) => {
   return `https://chachi.chat/${relay.replace(/^wss?:\/\//, '').replace(/\/$/, '')}/${d}`

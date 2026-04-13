@@ -665,6 +665,49 @@ class IndexedDbService {
     })
   }
 
+  /** All cached kind 30030 rows for a pubkey (keys are `pubkey:d`). */
+  async getEmojiSetEventsForPubkey(pubkeyHex: string): Promise<Event[]> {
+    const pk = pubkeyHex.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return []
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EMOJI_SET_EVENTS)) return []
+    const prefix = `${pk}:`
+    const range = IDBKeyRange.lowerBound(prefix)
+    return new Promise((resolve, reject) => {
+      const out: Event[] = []
+      const tx = this.db!.transaction(StoreNames.EMOJI_SET_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.EMOJI_SET_EVENTS)
+      const req = store.openCursor(range)
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        const rowKey = String(cursor.key ?? '')
+        if (!rowKey.startsWith(prefix)) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        const ev = (cursor.value as TValue<Event>)?.value
+        if (
+          ev &&
+          ev.kind === kinds.Emojisets &&
+          ev.pubkey.trim().toLowerCase() === pk
+        ) {
+          out.push(ev)
+        }
+        cursor.continue()
+      }
+      req.onerror = () => {
+        tx.commit()
+        reject(req.error)
+      }
+    })
+  }
+
   async getMuteDecryptedTags(id: string): Promise<string[][] | null> {
     await this.initPromise
     return new Promise((resolve, reject) => {

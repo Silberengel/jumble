@@ -9,23 +9,26 @@ import {
   useSmartInterestListNavigation,
   useSmartMuteListNavigation,
   useSmartPinListNavigation,
-  useSmartSettingsNavigation
+  useSmartSettingsNavigation,
+  useSmartUserEmojiListNavigation
 } from '@/PageManager'
 import {
   toBookmarksList,
+  toEmojiSetsSettings,
   toFollowSetsSettings,
   toFollowingList,
   toInterestsList,
   toMuteList,
-  toPinsList
+  toPinsList,
+  toUserEmojiList
 } from '@/lib/link'
 import { useNostr } from '@/providers/NostrProvider'
-import { Bookmark, ChevronRight, Hash, Pin, Users, VolumeX } from 'lucide-react'
+import { Bookmark, ChevronRight, Hash, Pin, Smile, Sticker, Users, VolumeX } from 'lucide-react'
 import { forwardRef, HTMLProps, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
- * Hub for Nostr “personal lists” (mute list, follows, NIP-51 bookmarks, pins, interest topics) — not the same as NIP-B0 web bookmarks.
+ * Hub for Nostr “personal lists” (mute list, follows, NIP-51 bookmarks, pins, interest topics, NIP-30 emoji list & sets) — not the same as NIP-B0 web bookmarks.
  */
 const PersonalListsSettingsPage = forwardRef(
   ({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
@@ -38,6 +41,7 @@ const PersonalListsSettingsPage = forwardRef(
     const { navigateToBookmarkList } = useSmartBookmarkListNavigation()
     const { navigateToPinList } = useSmartPinListNavigation()
     const { navigateToInterestList } = useSmartInterestListNavigation()
+    const { navigateToUserEmojiList } = useSmartUserEmojiListNavigation()
     const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
     const [contentKey, setContentKey] = useState(0)
     const bump = useCallback(() => setContentKey((k) => k + 1), [])
@@ -106,6 +110,22 @@ const PersonalListsSettingsPage = forwardRef(
               <ChevronRight />
             </SettingRow>
           ) : null}
+          {pubkey ? (
+            <SettingRow className="clickable" onClick={() => navigateToUserEmojiList(toUserEmojiList())}>
+              <div className="flex items-center gap-3">
+                <Smile />
+                <div>{t('User emoji list')}</div>
+              </div>
+              <ChevronRight />
+            </SettingRow>
+          ) : null}
+          <SettingRow className="clickable" onClick={() => navigateToSettings(toEmojiSetsSettings())}>
+            <div className="flex items-center gap-3">
+              <Sticker />
+              <div>{t('Emoji sets')}</div>
+            </div>
+            <ChevronRight />
+          </SettingRow>
           <SettingRow className="clickable" onClick={() => navigateToSettings(toFollowSetsSettings())}>
             <div className="flex items-center gap-3">
               <Users />

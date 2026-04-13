@@ -1,4 +1,5 @@
 import Content from '@/components/Content'
+import ReactionEmojiDisplay from '@/components/Note/ReactionEmojiDisplay'
 import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
 import ProfileBadgeDetailDialog from './ProfileBadgeDetailDialog'
@@ -7,8 +8,6 @@ import { formatAmount } from '@/lib/lightning'
 import { cn } from '@/lib/utils'
 import { toNote, toProfile } from '@/lib/link'
 import { useSecondaryPage } from '@/PageManager'
-import Emoji from '@/components/Emoji'
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import type { TProfileZap } from '@/hooks/useProfileInteractions'
 import type { TProfileBadge } from '@/hooks/useProfileBadges'
 import type { TProfileFollowPack } from '@/hooks/useProfileFollowPacks'
@@ -74,10 +73,9 @@ function ZapBadge({ zap }: { zap: TProfileZap }) {
 
 function ReactionBadge({ event }: { event: Event }) {
   const { push } = useSecondaryPage()
-  const emojiInfos = getEmojiInfosFromEmojiTags(event.tags)
-  const displayContent = event.content.trim() || (emojiInfos[0] ? emojiInfos[0].shortcode : '+')
-  const isPlus = displayContent === '+'
-  const isMinus = displayContent === '-'
+  const raw = event.content.trim()
+  const isPlus = raw === '+'
+  const isMinus = raw === '-'
   return (
     <button
       type="button"
@@ -89,10 +87,10 @@ function ReactionBadge({ event }: { event: Event }) {
         <ThumbsUp className="size-3 shrink-0 text-primary" aria-hidden />
       ) : isMinus ? (
         <ThumbsDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      ) : typeof displayContent === 'string' && !displayContent.startsWith(':') ? (
-        <span className="text-xs shrink-0">{displayContent}</span>
+      ) : raw && !raw.startsWith(':') ? (
+        <span className="text-xs shrink-0">{raw}</span>
       ) : (
-        <Emoji emoji={emojiInfos[0] ?? displayContent} classNames={{ img: 'size-3' }} />
+        <ReactionEmojiDisplay event={event} variant="compact" maxRawLength={64} className="shrink-0" />
       )}
       <Username userId={event.pubkey} className="truncate text-xs text-muted-foreground min-w-0" skeletonClassName="h-3" />
     </button>
@@ -110,7 +108,11 @@ function CommentBadge({ event }: { event: Event }) {
       <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" />
       <MessageCircle className="size-3 shrink-0 text-primary" aria-hidden />
       <span className="truncate text-xs text-muted-foreground min-w-0">
-        <Content content={event.content} className="text-xs [&_p]:text-xs [&_p]:m-0 [&_p]:inline" />
+        <Content
+          event={event}
+          content={event.content}
+          className="text-xs [&_p]:text-xs [&_p]:m-0 [&_p]:inline"
+        />
       </span>
     </button>
   )

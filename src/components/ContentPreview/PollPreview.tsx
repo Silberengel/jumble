@@ -1,7 +1,7 @@
 import { POLL_TYPE } from '@/constants'
 import { getPollMetadataFromEvent } from '@/lib/event-metadata'
 import { parsePollOptionVisualParts } from '@/lib/poll-option-display'
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
+import { useEmojiInfosForEvent } from '@/hooks'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -11,7 +11,7 @@ import Content from './Content'
 
 export default function PollPreview({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()
-  const emojiInfos = useMemo(() => getEmojiInfosFromEmojiTags(event.tags), [event])
+  const emojiInfos = useEmojiInfosForEvent(event)
   const poll = useMemo(() => getPollMetadataFromEvent(event), [event])
   const content = event.content?.trim()
 

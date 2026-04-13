@@ -103,6 +103,7 @@ const PrimaryMuteListPageLazy = lazy(() => import('@/pages/secondary/MuteListPag
 const PrimaryBookmarkListPageLazy = lazy(() => import('@/pages/secondary/BookmarkListPage'))
 const PrimaryPinListPageLazy = lazy(() => import('@/pages/secondary/PinListPage'))
 const PrimaryInterestListPageLazy = lazy(() => import('@/pages/secondary/InterestListPage'))
+const PrimaryUserEmojiListPageLazy = lazy(() => import('@/pages/secondary/UserEmojiListPage'))
 const PrimaryOthersRelaySettingsPageLazy = lazy(() => import('@/pages/secondary/OthersRelaySettingsPage'))
 const SecondaryRelayPageLazy = lazy(() => import('@/pages/secondary/RelayPage'))
 
@@ -842,6 +843,26 @@ export function useSmartInterestListNavigation() {
   }
 
   return { navigateToInterestList }
+}
+
+export function useSmartUserEmojiListNavigation() {
+  const { setPrimaryNoteView } = usePrimaryNoteView()
+  const { push: pushSecondaryPage } = useSecondaryPage()
+  const { isSmallScreen } = useScreenSize()
+
+  const navigateToUserEmojiList = (url: string) => {
+    if (isSmallScreen) {
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<PrimaryUserEmojiListPageLazy index={0} hideTitlebar={true} />),
+        'user-emojis'
+      )
+    } else {
+      pushSecondaryPage(url)
+    }
+  }
+
+  return { navigateToUserEmojiList }
 }
 
 // Fixed: Others relay settings navigation now uses primary note view on mobile, secondary routing on desktop
@@ -1808,6 +1829,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       primaryViewType === 'bookmarks' ||
       primaryViewType === 'pins' ||
       primaryViewType === 'interests' ||
+      primaryViewType === 'user-emojis' ||
       primaryViewType === 'mute'
     ) {
       setPrimaryNoteView(null)

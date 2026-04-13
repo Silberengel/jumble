@@ -1,9 +1,8 @@
 import Emoji from '@/components/Emoji'
 import { ExtendedKind } from '@/constants'
+import { fetchAuthorNip30EmojiInfos } from '@/lib/nip30-author-emojis'
 import { resolveReactionEmojiSync } from '@/lib/reaction-display'
-import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import { cn } from '@/lib/utils'
-import { replaceableEventService } from '@/services/client.service'
 import { TEmoji } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { useEffect, useMemo, useState } from 'react'
@@ -42,9 +41,8 @@ export default function ReactionEmojiDisplay({
     if (sync.mode !== 'profile' || (event.kind !== kinds.Reaction && event.kind !== ExtendedKind.EXTERNAL_REACTION))
       return
     let cancelled = false
-    replaceableEventService.fetchReplaceableEvent(event.pubkey, kinds.Metadata).then((pe) => {
-      if (cancelled || !pe) return
-      const infos = getEmojiInfosFromEmojiTags(pe.tags)
+    void fetchAuthorNip30EmojiInfos(event.pubkey).then((infos) => {
+      if (cancelled) return
       const hit = infos.find((i) => i.shortcode === sync.shortcode)
       if (hit) setValue(hit)
     })
