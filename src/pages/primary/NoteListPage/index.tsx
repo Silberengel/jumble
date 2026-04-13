@@ -24,6 +24,7 @@ import React, {
 import { useTranslation } from 'react-i18next'
 import { FavoriteRelaysActiveStripMobileBar } from '@/components/FavoriteRelaysActiveStrip'
 import FavoriteRelaysFeedPicker from '@/components/FavoriteRelaysFeedPicker'
+import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
 import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
 import Logo from '@/assets/Logo'
 import RelaysFeed from './RelaysFeed'
@@ -136,20 +137,29 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
     </>
   )
 
+  /** Desktop: nav/logo/account live in titlebar only on small screens; refresh moves to subheader when present. Omit empty h-12 strip. */
+  const showNoteListTitlebar =
+    isSmallScreen ||
+    !usesSubHeader ||
+    (feedInfo.feedType === 'relay' && !!feedInfo.id)
+
   return (
     <PrimaryPageLayout
       pageName="feed"
       ref={layoutRef}
+      suppressMobileDefaultActiveRelaysButton
       titlebar={
-        <NoteListPageTitlebar
-          layoutRef={layoutRef}
-          onFeedRefresh={runFeedRefresh}
-          showTitlebarRefresh={!usesSubHeader}
-          showRelayDetails={showRelayDetails}
-          setShowRelayDetails={
-            feedInfo.feedType === 'relay' && !!feedInfo.id ? setShowRelayDetails : undefined
-          }
-        />
+        showNoteListTitlebar ? (
+          <NoteListPageTitlebar
+            layoutRef={layoutRef}
+            onFeedRefresh={runFeedRefresh}
+            showTitlebarRefresh={!usesSubHeader}
+            showRelayDetails={showRelayDetails}
+            setShowRelayDetails={
+              feedInfo.feedType === 'relay' && !!feedInfo.id ? setShowRelayDetails : undefined
+            }
+          />
+        ) : null
       }
       subHeader={subHeader}
       displayScrollToTopButton
@@ -283,7 +293,12 @@ function NoteListPageTitlebar({
             <Info />
           </Button>
         )}
-        {isSmallScreen && <HelpAndAccountMenu variant="titlebar" />}
+        {isSmallScreen ? (
+          <>
+            <ActiveRelaysTitlebarButton />
+            <HelpAndAccountMenu variant="titlebar" />
+          </>
+        ) : null}
       </div>
     </div>
   )

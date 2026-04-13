@@ -1,4 +1,5 @@
 import { ImwaldBrandBar } from '@/assets/Logo'
+import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
 import ScrollToTopButton from '@/components/ScrollToTopButton'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { Titlebar } from '@/components/Titlebar'
@@ -11,6 +12,7 @@ import {
 import { useSecondaryPage } from '@/PageManager'
 import { DeepBrowsingProvider } from '@/providers/DeepBrowsingProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
+import { cn } from '@/lib/utils'
 import { ChevronLeft } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -158,20 +160,26 @@ function SecondaryPageTitlebar({
   hideBottomBorder?: boolean
   titlebar?: React.ReactNode
 }): JSX.Element {
+  const { isSmallScreen } = useScreenSize()
+  const titlebarInset = isSmallScreen
+    ? 'py-1 pl-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))]'
+    : 'p-1'
+
   if (titlebar) {
     return (
       <Titlebar
-        className="flex min-w-0 items-center gap-2 p-1"
+        className={cn('flex min-w-0 items-center gap-2', titlebarInset)}
         hideBottomBorder={hideBottomBorder}
       >
         <ReadOnlySessionIndicator variant="titlebar" />
         <div className="min-h-0 min-w-0 flex-1 h-full">{titlebar}</div>
+        {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
       </Titlebar>
     )
   }
   return (
     <Titlebar
-      className="flex min-w-0 gap-1 p-1 items-center font-semibold"
+      className={cn('flex min-w-0 gap-1 items-center font-semibold', titlebarInset)}
       hideBottomBorder={hideBottomBorder}
     >
       <ReadOnlySessionIndicator variant="titlebar" />
@@ -185,7 +193,10 @@ function SecondaryPageTitlebar({
             <BackButton>{title}</BackButton>
           </div>
         )}
-        <div className="flex-shrink-0">{controls}</div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {controls}
+          {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
+        </div>
       </div>
     </Titlebar>
   )

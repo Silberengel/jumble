@@ -2758,6 +2758,18 @@ class ClientService extends EventTarget {
     return this.getSeenEventRelayUrls(eventId).find((url) => !isLocalNetworkUrl(url)) ?? ''
   }
 
+  /** Relay URLs in the pool whose WebSocket is currently connected (`listConnectionStatus`). */
+  getConnectedRelayUrls(): string[] {
+    const status = this.pool.listConnectionStatus()
+    const out: string[] = []
+    for (const [url, connected] of status) {
+      if (!connected) continue
+      const n = normalizeAnyRelayUrl(url) || url
+      out.push(n)
+    }
+    return [...new Set(out)].sort((a, b) => a.localeCompare(b))
+  }
+
   trackEventSeenOn(eventId: string, relay: AbstractRelay) {
     const key = canonicalSeenOnEventId(eventId)
     let set = this.pool.seenOn.get(key)
