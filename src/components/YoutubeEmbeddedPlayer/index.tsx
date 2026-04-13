@@ -38,9 +38,9 @@ export default function YoutubeEmbeddedPlayer({
    * YouTube in Electron:
    * - **Iframe API** (`YT.Player`) against `http(s)://localhost` often ends in error **153** (player configuration)
    *   in recent Chromium/Electron builds; it worked more reliably in plain browsers only.
-   * - **Native `/embed/` iframe** works if the `origin` query param matches the real page origin. Use
-   *   `window.location.origin` for dev (`http://127.0.0.1:5173`, etc.). On **`file:`** there is no valid https
-   *   origin — omit `origin` (a fake `https://…` origin caused **150**).
+   * - **Native `/embed/` iframe** works if the `origin` query param matches the real page origin (dev server,
+   *   or packaged app: loopback static server — see `electron/main.cjs`). On raw **`file:`** omit `origin`
+   *   (a fake `https://…` origin caused **150**).
    * Non-Electron: keep the Iframe API (unchanged from pre–Electron-split behavior).
    */
   const useNativeEmbed = isImwaldElectron()

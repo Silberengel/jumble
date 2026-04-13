@@ -42,11 +42,8 @@ const _moduleHref: string = import.meta.url
 
 /**
  * URL for a file from `public/` (banner, favicon, payto logos, etc.).
- * Uses Vite `base`: `/` on the web, `./` when built for Electron (`loadFile` + `file:`).
- *
- * Electron packaged builds use `file:` + client-side history paths like `/notes/…`, which replace
- * the document URL with `file:///notes/…`. Relative `BASE_URL` links would then resolve next to that
- * bogus path and 404.
+ * Uses Vite `base`: `/` for web and packaged Electron (renderer is served from `http://127.0.0.1:*`; see
+ * `electron/main.cjs`). The `file:` branch remains for opening `dist/index.html` directly from disk.
  *
  * For `file:` we derive the `dist/` root from the chunk's own URL. The chunk lives at
  * `dist/assets/*.js`, so `/assets/` marks the boundary: everything before it is the dist root.

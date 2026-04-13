@@ -33,6 +33,7 @@ import {
 } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
+import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
 import { EMOJI_SHORT_CODE_REGEX, NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { TEmoji, TImetaInfo } from '@/types'
@@ -3408,7 +3409,7 @@ function parseMarkdownContentMarked(
             if (/^https?:\/\/\S+$/i.test(line)) {
               const cleaned = cleanUrl(line)
               if (cleaned) {
-                if (isYouTubeUrl(cleaned)) {
+                if (isEmbeddableYoutubeUrl(cleaned)) {
                   return (
                     <div key={`${key}-line-youtube-${lineIdx}`} className="my-2">
                       <YoutubeEmbeddedPlayer
@@ -3573,7 +3574,7 @@ function parseMarkdownContentMarked(
     if (/^https?:\/\/\S+$/i.test(paragraphText)) {
       const cleaned = cleanUrl(paragraphText)
       if (cleaned) {
-        if (isYouTubeUrl(cleaned)) {
+        if (isEmbeddableYoutubeUrl(cleaned)) {
           return (
             <div key={`${key}-youtube-url`} className="my-2">
               <YoutubeEmbeddedPlayer
@@ -3646,6 +3647,39 @@ function parseMarkdownContentMarked(
     }
 
     const paragraphTokens = lexInlineProtected(rawParagraphText)
+
+    // One GFM autolink only: embed using `href` even when `paragraphText`/`token.text` do not match
+    // `^https?://…$` (marked quirks, odd whitespace, or autolink vs raw mismatch).
+    if (Array.isArray(paragraphTokens) && paragraphTokens.length === 1 && paragraphTokens[0]?.type === 'link') {
+      const soleHref = cleanUrl(String(paragraphTokens[0].href ?? ''))
+      if (soleHref && isEmbeddableYoutubeUrl(soleHref)) {
+        return (
+          <div key={`${key}-youtube-sole-link`} className="my-2">
+            <YoutubeEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          </div>
+        )
+      }
+      if (soleHref && isSpotifyUrl(soleHref)) {
+        return (
+          <div key={`${key}-spotify-sole-link`} className="my-2">
+            <SpotifyEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          </div>
+        )
+      }
+      if (soleHref && isZapStreamUrl(soleHref)) {
+        return (
+          <div key={`${key}-zapstream-sole-link`} className="my-2">
+            <ZapStreamLiveEventEmbed
+              url={soleHref}
+              className="max-w-[400px]"
+              containingEvent={containingEvent}
+              showFull={!lazyMedia}
+            />
+          </div>
+        )
+      }
+    }
+
     const parseNostrHref = (href: string): string | null => {
       if (!href.toLowerCase().startsWith('nostr:')) return null
       const raw = href.slice(6).trim()
@@ -3677,6 +3711,47 @@ function parseMarkdownContentMarked(
 
         let segmentIdx = 0
         paragraphTokens.forEach((t: any, idx: number) => {
+          // Same paragraph can mix ![](video) with GFM autolinks (single line break → one <p> in marked).
+          // Without this, YouTube/Spotify/zap.stream links are pushed into inlineSegment and render as plain <a>.
+          if (t?.type === 'link') {
+            const cleaned = cleanUrl(String(t.href ?? ''))
+            if (cleaned && isEmbeddableYoutubeUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-yt-with-media-${idx}`} className="my-2">
+                  <YoutubeEmbeddedPlayer
+                    url={cleaned}
+                    className="max-w-[400px]"
+                    mustLoad={!lazyMedia}
+                  />
+                </div>
+              )
+              return
+            }
+            if (cleaned && isSpotifyUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-spotify-with-media-${idx}`} className="my-2">
+                  <SpotifyEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+              return
+            }
+            if (cleaned && isZapStreamUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-zapstream-with-media-${idx}`} className="my-2">
+                  <ZapStreamLiveEventEmbed
+                    url={cleaned}
+                    className="max-w-[400px]"
+                    containingEvent={containingEvent}
+                    showFull={!lazyMedia}
+                  />
+                </div>
+              )
+              return
+            }
+          }
           if (t?.type !== 'image') {
             inlineSegment.push(t)
             return
@@ -3766,7 +3841,7 @@ function parseMarkdownContentMarked(
       const hasInlineYouTubeLink = paragraphTokens.some((t: any) => {
         if (t?.type !== 'link') return false
         const cleaned = cleanUrl(String(t.href ?? ''))
-        return !!cleaned && isYouTubeUrl(cleaned)
+        return !!cleaned && isEmbeddableYoutubeUrl(cleaned)
       })
       if (hasInlineYouTubeLink) {
         const nodes: React.ReactNode[] = []
@@ -3788,7 +3863,7 @@ function parseMarkdownContentMarked(
             return
           }
           const cleaned = cleanUrl(String(t.href ?? ''))
-          if (!cleaned || !isYouTubeUrl(cleaned)) {
+          if (!cleaned || !isEmbeddableYoutubeUrl(cleaned)) {
             inlineSegment.push(t)
             return
           }
