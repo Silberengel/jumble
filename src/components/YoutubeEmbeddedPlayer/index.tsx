@@ -34,9 +34,9 @@ export default function YoutubeEmbeddedPlayer({
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
   /**
-   * Electron + dev server (http/https): use the same YT Iframe API as the browser — plain `/embed/` iframes often
-   * show error 150 (player configuration) in Electron while the API path works.
-   * Packaged app loads `file:`; keep a plain iframe there and pass a stable `origin` so YouTube accepts the embed.
+   * Electron + dev server (http/https): plain `/embed/` iframes often show error 150; use the Iframe API like the browser.
+   * Packaged app loads `file:`: use a plain embed URL only. Do not pass a fake `origin` query param — YouTube matches it
+   * to the real embedder and `file:` will not match `https://…`, which triggers error 150.
    */
   const useNativeEmbed =
     isImwaldElectron() &&
@@ -126,14 +126,7 @@ export default function YoutubeEmbeddedPlayer({
   }
 
   if (useNativeEmbed && videoId) {
-    // `file:` has no usable origin for YT; use the canonical web app origin (matches typical production URL).
-    const embedParams = new URLSearchParams({
-      playsinline: '1',
-      rel: '0',
-      enablejsapi: '1',
-      origin: 'https://jumble.imwald.eu'
-    })
-    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${embedParams}`
+    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?playsinline=1&rel=0`
     return (
       <div
         className={cn(
