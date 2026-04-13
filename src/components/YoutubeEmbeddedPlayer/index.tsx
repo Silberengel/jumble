@@ -33,8 +33,15 @@ export default function YoutubeEmbeddedPlayer({
   }, [autoLoadMedia])
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
-  /** Packaged app uses `file:`; YT’s JS API often errors there; a plain embed iframe works. */
-  const useNativeEmbed = isImwaldElectron()
+  /**
+   * Electron + dev server (http/https): use the same YT Iframe API as the browser — plain `/embed/` iframes often
+   * show error 150 (player configuration) in Electron while the API path works.
+   * Packaged app loads `file:`; keep a plain iframe there and pass a stable `origin` so YouTube accepts the embed.
+   */
+  const useNativeEmbed =
+    isImwaldElectron() &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'file:'
 
   const posterUrl = useMemo(
     () => (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
@@ -119,7 +126,14 @@ export default function YoutubeEmbeddedPlayer({
   }
 
   if (useNativeEmbed && videoId) {
-    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?playsinline=1&rel=0`
+    // `file:` has no usable origin for YT; use the canonical web app origin (matches typical production URL).
+    const embedParams = new URLSearchParams({
+      playsinline: '1',
+      rel: '0',
+      enablejsapi: '1',
+      origin: 'https://jumble.imwald.eu'
+    })
+    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${embedParams}`
     return (
       <div
         className={cn(

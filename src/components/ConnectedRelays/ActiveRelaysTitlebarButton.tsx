@@ -1,4 +1,4 @@
-import { useSecondaryPage } from '@/PageManager'
+import { useSmartRelayNavigation } from '@/PageManager'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerOverlay } from '@/components/ui/drawer'
 import {
@@ -42,7 +42,7 @@ function rowTitle(
 export function ActiveRelaysTitlebarButton() {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { push } = useSecondaryPage()
+  const { navigateToRelay } = useSmartRelayNavigation()
   const { rows, connectedCount } = useRelayConnectionRows()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
@@ -94,7 +94,7 @@ export function ActiveRelaysTitlebarButton() {
                   title={rowTitle(url, connected, sessionStriked, t)}
                   onClick={() => {
                     setDrawerOpen(false)
-                    setTimeout(() => push(toRelay(url)), 50)
+                    setTimeout(() => navigateToRelay(toRelay(url)), 50)
                   }}
                 >
                   <RelayIcon url={url} />
@@ -118,7 +118,7 @@ export function ActiveRelaysTitlebarButton() {
           <DropdownMenuItem
             key={url}
             title={rowTitle(url, connected, sessionStriked, t)}
-            onClick={() => push(toRelay(url))}
+            onClick={() => navigateToRelay(toRelay(url))}
             className={cn('min-w-52 gap-2', rowClass(connected, sessionStriked))}
           >
             <RelayIcon url={url} />

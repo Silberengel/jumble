@@ -1,4 +1,3 @@
-import { ImwaldBrandBar } from '@/assets/Logo'
 import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
 import ScrollToTopButton from '@/components/ScrollToTopButton'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
@@ -93,20 +92,13 @@ const SecondaryPageLayout = forwardRef(
             }}
           >
             {title && (
-              <>
-                <div className="flex justify-center py-1 border-b">
-                  <span className="text-green-600 dark:text-green-500 font-semibold text-sm">
-                    Imwald
-                  </span>
-                </div>
-                <SecondaryPageTitlebar
-                  title={title}
-                  controls={controls}
-                  hideBackButton={hideBackButton}
-                  hideBottomBorder={hideTitlebarBottomBorder}
-                  titlebar={titlebar}
-                />
-              </>
+              <SecondaryPageTitlebar
+                title={title}
+                controls={controls}
+                hideBackButton={hideBackButton}
+                hideBottomBorder={hideTitlebarBottomBorder}
+                titlebar={titlebar}
+              />
             )}
             {children}
           </div>
@@ -119,16 +111,13 @@ const SecondaryPageLayout = forwardRef(
       <DeepBrowsingProvider active={currentIndex === index} scrollAreaRef={scrollAreaRef}>
         <div className="flex h-full min-h-0 min-w-0 flex-col">
           {title && (
-            <>
-              <ImwaldBrandBar />
-              <SecondaryPageTitlebar
-                title={title}
-                controls={controls}
-                hideBackButton={hideBackButton}
-                hideBottomBorder={hideTitlebarBottomBorder}
-                titlebar={titlebar}
-              />
-            </>
+            <SecondaryPageTitlebar
+              title={title}
+              controls={controls}
+              hideBackButton={hideBackButton}
+              hideBottomBorder={hideTitlebarBottomBorder}
+              titlebar={titlebar}
+            />
           )}
           <div
             ref={scrollAreaRef}

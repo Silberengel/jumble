@@ -1,4 +1,4 @@
-import { useSecondaryPage } from '@/PageManager'
+import { useSmartRelayNavigation } from '@/PageManager'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -42,7 +42,7 @@ function rowTitle(
  */
 export function ConnectedRelaysSidebarStrip({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { push } = useSecondaryPage()
+  const { navigateToRelay } = useSmartRelayNavigation()
   const { rows } = useRelayConnectionRows()
   const shown = rows.slice(0, MAX_ICONS)
   const overflowRows = rows.slice(MAX_ICONS)
@@ -64,13 +64,21 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
       </p>
       <div className="flex flex-wrap justify-center gap-1 xl:justify-start">
         {shown.map(({ url, connected, sessionStriked }) => (
-          <span
+          <Button
             key={url}
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'h-5 w-5 min-h-5 min-w-5 shrink-0 rounded-full p-0 hover:bg-muted/80',
+              rowMuted(connected, sessionStriked) && 'opacity-40 grayscale'
+            )}
             title={rowTitle(url, connected, sessionStriked, t)}
-            className={cn('inline-flex', rowMuted(connected, sessionStriked) && 'opacity-40 grayscale')}
+            aria-label={rowTitle(url, connected, sessionStriked, t)}
+            onClick={() => navigateToRelay(toRelay(url))}
           >
             <RelayIcon url={url} className="h-5 w-5" iconSize={11} />
-          </span>
+          </Button>
         ))}
         {overflow > 0 ? (
           <DropdownMenu>
@@ -96,7 +104,7 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
                   key={url}
                   className={cn('min-w-0 gap-2', rowMenuClass(connected, sessionStriked))}
                   title={rowTitle(url, connected, sessionStriked, t)}
-                  onClick={() => push(toRelay(url))}
+                  onClick={() => navigateToRelay(toRelay(url))}
                 >
                   <RelayIcon url={url} className="h-5 w-5 shrink-0" iconSize={11} />
                   <span className="truncate">{simplifyUrl(url)}</span>
