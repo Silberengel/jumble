@@ -541,35 +541,41 @@ export function getLongFormArticleMetadataFromEvent(event: Event) {
 
 export function getLiveEventMetadataFromEvent(event: Event) {
   let title: string | undefined
+  let room: string | undefined
   let summary: string | undefined
   let image: string | undefined
+  let thumb: string | undefined
   let status: string | undefined
   const tags = new Set<string>()
 
   event.tags.forEach(([tagName, tagValue]) => {
     if (tagName === 'title') {
       title = tagValue
+    } else if (tagName === 'room' && tagValue?.trim()) {
+      room = tagValue.trim()
     } else if (tagName === 'summary') {
       summary = tagValue
-    } else if (tagName === 'image') {
-      image = tagValue
-    } else if (tagName === 'status') {
-      status = tagValue
+    } else if (tagName === 'image' && tagValue?.trim()) {
+      image = tagValue.trim()
+    } else if (tagName === 'thumb' && tagValue?.trim()) {
+      thumb = tagValue.trim()
+    } else if (tagName === 'status' && tagValue?.trim()) {
+      status = tagValue.trim().toLowerCase()
     } else if (tagName === 't' && tagValue && tags.size < 6) {
       tags.add(tagValue.toLowerCase())
     }
   })
 
-  if (!title) {
-    const dTag = event.tags.find(tagNameEquals('d'))?.[1]
-    if (dTag) {
-      title = dTagToTitleCase(dTag)
-    } else {
-      title = 'no title'
-    }
+  const dTag = event.tags.find(tagNameEquals('d'))?.[1]
+  const dTitle = dTag ? dTagToTitleCase(dTag) : undefined
+  /** NIP-53 meeting space (30312) uses `room`; live ticker / meeting (30311/30313) use `title` first. */
+  if (event.kind === 30312) {
+    title = room || title || dTitle || 'no title'
+  } else {
+    title = title || room || dTitle || 'no title'
   }
 
-  return { title, summary, image, status, tags: Array.from(tags) }
+  return { title, summary, image, thumb, status, tags: Array.from(tags) }
 }
 
 export function getGroupMetadataFromEvent(event: Event) {

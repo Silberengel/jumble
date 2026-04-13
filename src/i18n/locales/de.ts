@@ -499,6 +499,8 @@ export default {
     'Opened by URL — not from your RSS list. Nostr thread is still tied to this link.':
       'Per URL geöffnet — nicht aus deiner RSS-Liste. Der Nostr-Thread hängt weiter an diesem Link.',
     'Open in browser': 'Im Browser öffnen',
+    'liveEvent.hlsPlaybackUnavailable':
+      'Wiedergabe hier fehlgeschlagen (Stream offline, beendet oder blockiert). Die gehostete Watch-Seite kannst du unten trotzdem öffnen.',
     'Web page': 'Webseite',
     Open: 'Öffnen',
     'Sorry! The note cannot be found 😔': 'Entschuldigung! Die Notiz wurde nicht gefunden 😔',

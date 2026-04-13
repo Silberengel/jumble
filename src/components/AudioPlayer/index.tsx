@@ -11,11 +11,13 @@ import logger from '@/lib/logger'
 interface AudioPlayerProps {
   src: string
   className?: string
+  /** Optional cover / still (e.g. NIP-53 `image` on live events). */
+  poster?: string
   /** Fires when enough data is buffered to play (e.g. to swap out a blurhash placeholder). */
   onReady?: () => void
 }
 
-export default function AudioPlayer({ src, className, onReady }: AudioPlayerProps) {
+export default function AudioPlayer({ src, className, poster, onReady }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -107,6 +109,8 @@ export default function AudioPlayer({ src, className, onReady }: AudioPlayerProp
     return <ExternalLink url={src} />
   }
 
+  const cover = poster?.trim()
+
   return (
     <MediaErrorBoundary
       fallback={<ExternalLink url={src} />}
@@ -118,34 +122,44 @@ export default function AudioPlayer({ src, className, onReady }: AudioPlayerProp
         setError(true)
       }}
     >
-      <div
-        className={cn(
-          'flex items-center gap-3 py-2 pl-2 pr-4 border rounded-full max-w-md',
-          className
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <audio ref={audioRef} src={src} preload="metadata" onError={() => setError(true)} />
+      <div className={cn('flex w-full max-w-md flex-col gap-2', className)} onClick={(e) => e.stopPropagation()}>
+        {cover ? (
+          <div className="not-prose overflow-hidden rounded-lg border border-border bg-muted shadow-sm">
+            <img
+              src={cover}
+              alt=""
+              className="aspect-video w-full max-h-48 object-cover"
+              referrerPolicy="no-referrer"
+              draggable={false}
+            />
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            'flex w-full items-center gap-3 rounded-full border py-2 pl-2 pr-4',
+            !cover && 'max-w-md'
+          )}
+        >
+          <audio ref={audioRef} src={src} preload="metadata" onError={() => setError(true)} />
 
-        {/* Play/Pause Button */}
-        <Button size="icon" className="rounded-full shrink-0" onClick={togglePlay}>
-          {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
-        </Button>
+          <Button size="icon" className="shrink-0 rounded-full" onClick={togglePlay}>
+            {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
+          </Button>
 
-        {/* Progress Section */}
-        <div className="flex-1 relative">
-          <Slider
-            value={[currentTime]}
-            max={duration || 100}
-            step={1}
-            onValueChange={handleSeek}
-            hideThumb
-            enableHoverAnimation
-          />
-        </div>
+          <div className="relative min-w-0 flex-1">
+            <Slider
+              value={[currentTime]}
+              max={duration || 100}
+              step={1}
+              onValueChange={handleSeek}
+              hideThumb
+              enableHoverAnimation
+            />
+          </div>
 
-        <div className="text-sm font-mono text-muted-foreground">
-          {formatTime(Math.max(duration - currentTime, 0))}
+          <div className="shrink-0 font-mono text-sm text-muted-foreground">
+            {formatTime(Math.max(duration - currentTime, 0))}
+          </div>
         </div>
       </div>
     </MediaErrorBoundary>

@@ -9,6 +9,9 @@ const RENDERABLE_NOTE_KINDS = new Set<number>([
   ExtendedKind.POLL_RESPONSE,
   kinds.CommunityDefinition,
   kinds.LiveEvent,
+  /** NIP-53 meeting space (30312) and meeting (30313); rendered like kind 30311 in Note. */
+  30312,
+  30313,
   ExtendedKind.GROUP_METADATA,
   ExtendedKind.PUBLIC_MESSAGE,
   ExtendedKind.ZAP_REQUEST,

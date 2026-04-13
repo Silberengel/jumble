@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  filterLiveActivityItemsByReachableMedia,
   liveEventInlinePlaybackFromEvent,
   parseLiveActivityEvent,
   preferredLiveJoinUrlForEvent,
@@ -17,6 +18,74 @@ const base = (kind: number, tags: string[][], pubkey = 'a'.repeat(64)): Event =>
     sig: 'c'.repeat(128),
     created_at: 1_700_000_000
   }) as Event
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('filterLiveActivityItemsByReachableMedia', () => {
+  it('removes 30311 when HLS manifest responds 204', async () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(30311, [
+      ['d', 's1'],
+      ['status', 'live'],
+      ['title', 'X'],
+      ['streaming', 'https://example.com/live.m3u8']
+    ], pk)
+    const item = parseLiveActivityEvent(ev, new Set())
+    expect(item).not.toBeNull()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        text: async () => ''
+      })
+    )
+    const out = await filterLiveActivityItemsByReachableMedia([item!])
+    expect(out).toHaveLength(0)
+  })
+
+  it('keeps 30311 when HLS manifest has body', async () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(30311, [
+      ['d', 's1'],
+      ['status', 'live'],
+      ['title', 'X'],
+      ['streaming', 'https://example.com/live.m3u8']
+    ], pk)
+    const item = parseLiveActivityEvent(ev, new Set())
+    expect(item).not.toBeNull()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '#EXTM3U\n'
+      })
+    )
+    const out = await filterLiveActivityItemsByReachableMedia([item!])
+    expect(out).toHaveLength(1)
+  })
+
+  it('does not fetch for 30312 items', async () => {
+    const ev = base(30312, [
+      ['d', 'room-1'],
+      ['room', 'Hall'],
+      ['status', 'open'],
+      ['service', 'https://meet.example.com/r/abc']
+    ])
+    const item = parseLiveActivityEvent(ev, new Set())
+    expect(item).not.toBeNull()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await filterLiveActivityItemsByReachableMedia([item!])
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(out).toHaveLength(1)
+  })
+})
 
 describe('parseLiveActivityEvent (NIP-53)', () => {
   it('accepts 30312 meeting space when status is open (not live)', () => {
@@ -88,6 +157,43 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
       ['streaming', 'https://example.com/x.m3u8']
     ])
     expect(parseLiveActivityEvent(ev, new Set())).toBeNull()
+  })
+
+  it('30311 Nostr Nests LiveKit uses nostrnests.com naddr, not zap.stream', () => {
+    const pk = 'f'.repeat(64)
+    const ev = base(
+      30311,
+      [
+        ['d', 'eaf66800-fdaa-4796-b755-e34cec4fd485'],
+        ['status', 'live'],
+        ['title', 'test'],
+        ['service', 'https://nostrnests.com'],
+        ['streaming', 'wss+livekit://nostrnests.com:443']
+      ],
+      pk
+    )
+    const naddr = nip19.naddrEncode({
+      kind: 30311,
+      pubkey: pk,
+      identifier: 'eaf66800-fdaa-4796-b755-e34cec4fd485'
+    })
+    const join = `https://nostrnests.com/${naddr}`
+    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(join)
+    expect(preferredLiveJoinUrlForEvent(ev)).toBe(join)
+  })
+
+  it('accepts 30311 when status is LIVE (case-insensitive)', () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(
+      30311,
+      [
+        ['d', 's1'],
+        ['status', 'LIVE'],
+        ['streaming', 'https://example.com/live/stream.m3u8']
+      ],
+      pk
+    )
+    expect(parseLiveActivityEvent(ev, new Set())).not.toBeNull()
   })
 
   it('uses zap.stream naddr page for 30311 when streaming is only HLS manifest', () => {
@@ -218,6 +324,19 @@ describe('liveEventInlinePlaybackFromEvent', () => {
     })
   })
 
+  it('picks first playable streaming URL when multiple streaming tags exist', () => {
+    const ev = base(30311, [
+      ['d', 'chill'],
+      ['streaming', 'moq://relay.example:1443/'],
+      ['streaming', 'https://session.example/api/not-a-manifest'],
+      ['streaming', 'https://cdn.example/hls/chill/index.m3u8']
+    ])
+    expect(liveEventInlinePlaybackFromEvent(ev)).toEqual({
+      src: 'https://cdn.example/hls/chill/index.m3u8',
+      mode: 'video'
+    })
+  })
+
   it('returns null for non-30311', () => {
     expect(liveEventInlinePlaybackFromEvent(base(1, [['d', 'x']]))).toBeNull()
   })
@@ -243,6 +362,31 @@ describe('preferredLiveJoinUrlForEvent (Nostr Nests & Corny Chat)', () => {
       relays: ['wss://nos.lol']
     })
     expect(preferredLiveJoinUrlForEvent(ev)).toBe(`https://nostrnests.com/${naddr}`)
+  })
+
+  it('30312 Nests fork: prefers web origin /naddr over API service URL', () => {
+    const pk = '3f770d65d3a764a9c5cb503ae123e62ec7598ad035d836e2a810f3877a745b24'
+    const ev = base(
+      30312,
+      [
+        ['d', 'c69dfcf4-627c-4227-bc73-c6fa47f99a13'],
+        ['room', 'TEST'],
+        ['status', 'open'],
+        ['service', 'https://nestsdev.derekross.me/api/v1/nests'],
+        ['streaming', 'wss+livekit://livekit:7880'],
+        ['client', 'nestsdev.derekross.me']
+      ],
+      pk
+    )
+    const naddr = nip19.naddrEncode({
+      kind: 30312,
+      pubkey: pk,
+      identifier: 'c69dfcf4-627c-4227-bc73-c6fa47f99a13'
+    })
+    expect(preferredLiveJoinUrlForEvent(ev)).toBe(`https://nestsdev.derekross.me/${naddr}`)
+    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(
+      `https://nestsdev.derekross.me/${naddr}`
+    )
   })
 
   it('Corny Chat kind 1: prefers r over service when they differ', () => {

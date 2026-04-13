@@ -39,7 +39,8 @@ export default function MediaPlayer({
   className,
   mustLoad = false,
   poster,
-  blurHash
+  blurHash,
+  fallbackPageUrl
 }: {
   src: string
   className?: string
@@ -47,6 +48,8 @@ export default function MediaPlayer({
   poster?: string
   /** NIP-94 / imeta blurhash for lazy placeholder when poster is missing */
   blurHash?: string
+  /** Passed to {@link VideoPlayer} when HLS/video playback fails (e.g. NIP-53 zap.stream join URL). */
+  fallbackPageUrl?: string
 }) {
   const { t } = useTranslation()
   const { autoLoadMedia } = useContentPolicy()
@@ -221,9 +224,20 @@ export default function MediaPlayer({
         aria-hidden={!embedPainted}
       >
         {effectiveMediaType === 'video' ? (
-          <VideoPlayer src={src} className={className} poster={imagePoster} onReady={onEmbedReady} />
+          <VideoPlayer
+            src={src}
+            className={className}
+            poster={imagePoster}
+            onReady={onEmbedReady}
+            fallbackPageUrl={fallbackPageUrl}
+          />
         ) : (
-          <AudioPlayer src={src} className={className} onReady={onEmbedReady} />
+          <AudioPlayer
+            src={src}
+            className={className}
+            poster={imagePoster}
+            onReady={onEmbedReady}
+          />
         )}
       </div>
     </div>

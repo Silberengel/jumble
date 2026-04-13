@@ -172,6 +172,67 @@ function nostrNestsWebUrlForAddressable(ev: Event): string | undefined {
   return naddrPageUrlForAddressable(ev, NOSTR_NESTS_WEB_ORIGIN)
 }
 
+/**
+ * Self-hosted or dev [Nostr Nests](https://github.com/nostrnests/nests) (LiveKit): `streaming` is
+ * `wss+livekit://…` and `service` is an HTTPS URL on the web app host (often `…/api/v1/nests`).
+ * Join URL is `https://<host>/<naddr>` like production nostrnests.com.
+ */
+function nestsForkLiveKit30312WebOrigin(ev: Event): string | undefined {
+  if (ev.kind !== 30312) return undefined
+  const stream = firstTagValue(ev, 'streaming')?.trim() ?? ''
+  if (!stream.startsWith('wss+livekit://')) return undefined
+
+  const svcRaw = firstTagValue(ev, 'service')?.trim()
+  if (!svcRaw) return undefined
+  let svcUrl: URL
+  try {
+    svcUrl = new URL(svcRaw)
+  } catch {
+    return undefined
+  }
+  if (svcUrl.protocol !== 'https:') return undefined
+  const svcHost = svcUrl.hostname.toLowerCase().replace(/^www\./, '')
+  const pathLower = svcUrl.pathname.toLowerCase()
+
+  const clientRaw = firstTagValue(ev, 'client')?.trim()
+  const clientHost = clientRaw
+    ? clientRaw.split(':')[0].toLowerCase().replace(/^www\./, '')
+    : ''
+
+  const pathSuggestsNests = pathLower.includes('/nests')
+  const clientMatchesService = Boolean(clientHost && clientHost === svcHost)
+
+  if (!pathSuggestsNests && !clientMatchesService) return undefined
+
+  return svcUrl.origin
+}
+
+/**
+ * Nostr Nests [publishes](https://github.com/nostrnests/nests) kind 30311 tickers with `wss+livekit://…` and
+ * `service` on `nostrnests.com`. Those streams are not playable on [zap.stream](https://github.com/v0l/zap.stream);
+ * open the native nest page instead (same `/:naddr` pattern as kind 30312).
+ */
+function isNostrNests30311WebJoin(ev: Event): boolean {
+  if (ev.kind !== 30311) return false
+  const svc = firstTagValue(ev, 'service')?.trim()
+  if (svc) {
+    try {
+      const h = new URL(svc).hostname.toLowerCase().replace(/^www\./, '')
+      if (h === 'nostrnests.com') return true
+    } catch {
+      /* ignore */
+    }
+  }
+  const stream = firstTagValue(ev, 'streaming')?.trim() ?? ''
+  if (stream.startsWith('wss+livekit://')) {
+    const rest = stream.slice('wss+livekit://'.length)
+    const hostPart = rest.split('/')[0] ?? ''
+    const host = hostPart.split(':')[0]?.toLowerCase() ?? ''
+    return host === 'nostrnests.com' || host.endsWith('.nostrnests.com')
+  }
+  return false
+}
+
 function firstHttpsJoinFromTagNames(ev: Event, names: readonly string[]): string | undefined {
   for (const name of names) {
     const raw = firstTagValue(ev, name)
@@ -244,12 +305,14 @@ function isCornyChatKind1Invite(ev: Event): boolean {
 
 /**
  * URL to open for this activity.
+ * **30311 (Nostr Nests + LiveKit):** `service` / `wss+livekit://…` on `nostrnests.com` → [nostrnests.com/naddr…](https://nostrnests.com/).
  * **30311 (Corny Chat):** Prefer [`origin/_/integrations/nostr/naddr…`](https://github.com/vicariousdrama/cornychat) when
  * `L`/`com.cornychat` is present (instance origin from `r`/`service`, host checked against `l` when tagged).
  * **30311 (other):** Always use canonical [zap.stream/naddr…](https://zap.stream) when `d` is present so we never
  * stick on stale `service`/`r` URLs publishers no longer use. zap.stream loads the same NIP-53 event and
  * plays `streaming` / etc. Fallbacks only if naddr cannot be built.
  * **30312 (Nostr Nests official MoQ):** Prefer [nostrnests.com/naddr…](https://nostrnests.com/) over `streaming` (MoQ).
+ * **30312 (Nests fork + LiveKit):** `wss+livekit://…` and HTTPS `service` on the same host as `client` (or `…/nests` in the path) → `https://<instance>/<naddr>`.
  * **Kind 1 (Corny Chat invite):** Prefer `r` → `service` → `streaming` per pantry publish shape.
  * **Other 30312 / 30313:** Use tagged https URLs, bare `naddr1`, or (for 30313) parent space URLs via {@link resolveJoinUrl}.
  */
@@ -260,6 +323,10 @@ function isCornyChatKind1Invite(ev: Event): boolean {
  * Everyone else gets the zap.stream player URL, which resolves the same replaceable event by naddr.
  */
 function joinUrlFor30311Ticker(ev: Event): string | undefined {
+  if (isNostrNests30311WebJoin(ev)) {
+    const nests = nostrNestsWebUrlForAddressable(ev)
+    if (nests) return nests
+  }
   if (isCornyChat30311(ev)) {
     const corny = cornyChatNaddrIntegrationUrl(ev)
     if (corny) return corny
@@ -272,11 +339,18 @@ function joinUrlFor30311Ticker(ev: Event): string | undefined {
  * Kind 30312 is the NIP-53 “meeting space” ticker (Jitsi-style rooms, Nostr Nests, etc.).
  * [Nostr Nests](https://github.com/nostrnests/nests) official rooms use MoQ (`moq.nostrnests.com` / `moq-auth.nostrnests.com`);
  * `streaming` there is not a normal browser page, so we open [nostrnests.com/naddr…](https://nostrnests.com/) instead.
+ * Self-hosted LiveKit nests use {@link nestsForkLiveKit30312WebOrigin} for the same `/:naddr` join pattern.
  * Other 30312 publishers keep using `service` / `r` / … from the generic branch below.
  */
 function joinUrlFor30312Space(ev: Event): string | undefined {
-  if (!isNostrNestsOfficialMoq30312(ev)) return undefined
-  return nostrNestsWebUrlForAddressable(ev)
+  if (isNostrNestsOfficialMoq30312(ev)) {
+    return nostrNestsWebUrlForAddressable(ev)
+  }
+  const forkOrigin = nestsForkLiveKit30312WebOrigin(ev)
+  if (forkOrigin) {
+    return naddrPageUrlForAddressable(ev, forkOrigin)
+  }
+  return undefined
 }
 
 function pickJoinUrl(ev: Event): string | undefined {
@@ -331,7 +405,7 @@ export function preferredLiveJoinUrlForEvent(ev: Event): string | undefined {
  * - 30313 meeting in a space: `planned` | `live` | `ended`
  */
 function isActiveLiveActivityStatus(ev: Event): boolean {
-  const status = firstTagValue(ev, 'status')
+  const status = firstTagValue(ev, 'status')?.trim().toLowerCase()
   if (ev.kind === 30312) {
     return status === 'open' || status === 'private'
   }
@@ -578,18 +652,88 @@ export type LiveEventInlinePlayback = { src: string; mode: 'audio' | 'video' }
 export function liveEventInlinePlaybackFromEvent(ev: Event): LiveEventInlinePlayback | null {
   if (ev.kind !== 30311) return null
   const rUrls = tagValues(ev, 'r').filter(isStreamableHttpUrl)
-  const streaming = tagValues(ev, 'streaming').find(isStreamableHttpUrl)
+  /** NIP-53 allows several `streaming` tags (e.g. MoQ + HLS); pick the first URL we can actually play in-browser. */
+  const streamingUrls = tagValues(ev, 'streaming').filter(isStreamableHttpUrl)
 
   for (const u of rUrls) {
     if (isAudio(u)) return { src: u, mode: 'audio' }
   }
-  if (streaming && isAudio(streaming)) return { src: streaming, mode: 'audio' }
-
+  for (const u of streamingUrls) {
+    if (isAudio(u)) return { src: u, mode: 'audio' }
+  }
   for (const u of rUrls) {
     if (isHlsPlaylistUrl(u) || isVideo(u)) return { src: u, mode: 'video' }
   }
-  if (streaming && (isHlsPlaylistUrl(streaming) || isVideo(streaming))) {
-    return { src: streaming, mode: 'video' }
+  for (const u of streamingUrls) {
+    if (isHlsPlaylistUrl(u) || isVideo(u)) return { src: u, mode: 'video' }
   }
   return null
+}
+
+const LIVE_ACTIVITIES_STREAM_PROBE_MS = 6000
+
+/**
+ * Best-effort check that the URL used for inline playback returns usable media (not empty manifest, not 404).
+ * On CORS/network/timeout failure returns true so we do not hide streams we could not verify.
+ */
+async function isInlinePlaybackUrlReachable(url: string, timeoutMs: number): Promise<boolean> {
+  const ctrl = new AbortController()
+  const timer = globalThis.setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    if (isHlsPlaylistUrl(url)) {
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        signal: ctrl.signal,
+        cache: 'no-store'
+      })
+      if (res.status === 204) return false
+      if (!res.ok) return false
+      const text = await res.text()
+      return text.trim().length > 0
+    }
+
+    let res = await fetch(url, {
+      method: 'HEAD',
+      mode: 'cors',
+      signal: ctrl.signal,
+      cache: 'no-store'
+    })
+    if (res.ok && res.status !== 204) return true
+    if (res.status === 405 || res.status === 501) {
+      res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        signal: ctrl.signal,
+        cache: 'no-store',
+        headers: { Range: 'bytes=0-0' }
+      })
+      return (res.ok || res.status === 206) && res.status !== 204
+    }
+    return false
+  } catch {
+    return true
+  } finally {
+    globalThis.clearTimeout(timer)
+  }
+}
+
+/**
+ * Removes kind 30311 live activities from the sidebar/mobile carousel when their inline `r`/`streaming`
+ * endpoint is clearly dead (e.g. empty HLS manifest). Meetings/spaces (30312/30313) are unchanged.
+ */
+export async function filterLiveActivityItemsByReachableMedia(
+  items: TLiveActivityItem[],
+  timeoutMs = LIVE_ACTIVITIES_STREAM_PROBE_MS
+): Promise<TLiveActivityItem[]> {
+  const checked = await Promise.all(
+    items.map(async (item) => {
+      if (item.kind !== 30311) return item
+      const playback = liveEventInlinePlaybackFromEvent(item.event)
+      if (!playback) return item
+      const ok = await isInlinePlaybackUrlReachable(playback.src, timeoutMs)
+      return ok ? item : null
+    })
+  )
+  return checked.filter((x): x is TLiveActivityItem => x != null)
 }

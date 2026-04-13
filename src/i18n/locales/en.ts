@@ -496,6 +496,8 @@ export default {
     'Opened by URL — not from your RSS list. Nostr thread is still tied to this link.':
       'Opened by URL — not from your RSS list. Nostr thread is still tied to this link.',
     'Open in browser': 'Open in browser',
+    'liveEvent.hlsPlaybackUnavailable':
+      'Inline playback failed (the stream may be offline, ended, or blocked). You can still open the hosted watch page below.',
     'Web page': 'Web page',
     Open: 'Open',
     'Sorry! The note cannot be found 😔': 'Sorry! The note cannot be found 😔',

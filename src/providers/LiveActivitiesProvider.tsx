@@ -1,5 +1,6 @@
 import {
   buildLiveActivitiesRelayUrls,
+  filterLiveActivityItemsByReachableMedia,
   LIVE_ACTIVITY_KINDS,
   mergeLiveActivityEvents,
   msUntilNextQuarterHour,
@@ -61,8 +62,14 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
         client.fetchEvents(u, f, o)
       )
       const merged = mergeLiveActivityEvents(events, followings, parentByAddress)
-      setItems(merged)
-      logger.debug('[LiveActivities] poll done', { relayCount: urls.length, raw: events.length, merged: merged.length })
+      const reachable = await filterLiveActivityItemsByReachableMedia(merged)
+      setItems(reachable)
+      logger.debug('[LiveActivities] poll done', {
+        relayCount: urls.length,
+        raw: events.length,
+        merged: merged.length,
+        afterStreamProbe: reachable.length
+      })
     } catch (e) {
       logger.warn('[LiveActivities] poll failed', { err: e })
       setItems([])

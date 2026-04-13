@@ -24,13 +24,16 @@ export default function VideoPlayer({
   src,
   className,
   poster,
-  onReady
+  onReady,
+  fallbackPageUrl
 }: {
   src: string
   className?: string
   poster?: string
   /** Fires when the first frame is available (e.g. to swap out a blurhash placeholder). */
   onReady?: () => void
+  /** When inline playback fails (e.g. empty HLS manifest), link here instead of showing a raw manifest URL. */
+  fallbackPageUrl?: string
 }) {
   const { t } = useTranslation()
   const { autoplay } = useContentPolicy()
@@ -177,6 +180,32 @@ export default function VideoPlayer({
   }, [src, onReady, hlsMode])
 
   if (error) {
+    if (fallbackPageUrl?.trim()) {
+      return (
+        <div
+          className="not-prose w-full space-y-2 rounded-lg border border-border bg-card p-3 shadow-sm"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {poster ? (
+            <img
+              src={poster}
+              alt=""
+              className="aspect-video w-full max-h-[40vh] rounded-md object-cover"
+            />
+          ) : null}
+          <p className="text-sm leading-snug text-muted-foreground">{t('liveEvent.hlsPlaybackUnavailable')}</p>
+          <a
+            href={fallbackPageUrl.trim()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex text-sm font-medium text-green-600 underline-offset-2 hover:underline dark:text-green-400 dark:hover:text-green-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {t('Open in browser')}
+          </a>
+        </div>
+      )
+    }
     return <ExternalLink url={src} />
   }
 

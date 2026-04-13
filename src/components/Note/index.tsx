@@ -298,7 +298,7 @@ export default function Note({
     )
   } else if (event.kind === kinds.LongFormArticle) {
     content = renderEventContent({ hideMetadata: true })
-  } else if (event.kind === kinds.LiveEvent) {
+  } else if (event.kind === kinds.LiveEvent || event.kind === 30312 || event.kind === 30313) {
     content = <LiveEvent className="mt-2" event={event} />
   } else if (event.kind === ExtendedKind.GROUP_METADATA) {
     content = <GroupMetadata className="mt-2" event={event} originalNoteId={originalNoteId} />
