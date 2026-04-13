@@ -533,6 +533,7 @@ export default {
     'Seen on': 'Gesehen auf',
     'Active relays': 'Aktive Relays',
     'Not connected': 'Nicht verbunden',
+    'Relay session striked': 'Diese Sitzung übersprungen (zu viele Verbindungsfehler)',
     'More relays': '+{{count}} Relays',
     'Temporarily display this reply': 'Antwort vorübergehend anzeigen',
     'Note not found': 'Die Notiz wurde nicht gefunden',

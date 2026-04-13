@@ -1,7 +1,7 @@
 import './index.css'
 import './polyfill'
-import './services/lightning.service'
 import './lib/error-suppression'
+import './services/lightning.service'
 import './lib/debug-utils'
 import { fetchWithTimeout } from './lib/fetch-with-timeout'
 

@@ -17,8 +17,24 @@ import RelayIcon from '../RelayIcon'
 
 const MAX_ICONS = 14
 
-function rowMenuClass(connected: boolean) {
-  return cn(!connected && 'opacity-50 text-muted-foreground')
+function rowMuted(connected: boolean, sessionStriked: boolean) {
+  return !connected || sessionStriked
+}
+
+function rowMenuClass(connected: boolean, sessionStriked: boolean) {
+  return cn(rowMuted(connected, sessionStriked) && 'opacity-50 text-muted-foreground')
+}
+
+function rowTitle(
+  url: string,
+  connected: boolean,
+  sessionStriked: boolean,
+  t: (k: string) => string
+) {
+  const base = simplifyUrl(url)
+  if (sessionStriked) return `${base} — ${t('Relay session striked')}`
+  if (!connected) return `${base} — ${t('Not connected')}`
+  return base
 }
 
 /**
@@ -47,13 +63,11 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
         {t('Active relays')}
       </p>
       <div className="flex flex-wrap justify-center gap-1 xl:justify-start">
-        {shown.map(({ url, connected }) => (
+        {shown.map(({ url, connected, sessionStriked }) => (
           <span
             key={url}
-            title={
-              connected ? simplifyUrl(url) : `${simplifyUrl(url)} — ${t('Not connected')}`
-            }
-            className={cn('inline-flex', !connected && 'opacity-40 grayscale')}
+            title={rowTitle(url, connected, sessionStriked, t)}
+            className={cn('inline-flex', rowMuted(connected, sessionStriked) && 'opacity-40 grayscale')}
           >
             <RelayIcon url={url} className="h-5 w-5" iconSize={11} />
           </span>
@@ -77,11 +91,11 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
                 {t('More relays', { count: overflow })}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {overflowRows.map(({ url, connected }) => (
+              {overflowRows.map(({ url, connected, sessionStriked }) => (
                 <DropdownMenuItem
                   key={url}
-                  className={cn('min-w-0 gap-2', rowMenuClass(connected))}
-                  title={connected ? simplifyUrl(url) : `${simplifyUrl(url)} — ${t('Not connected')}`}
+                  className={cn('min-w-0 gap-2', rowMenuClass(connected, sessionStriked))}
+                  title={rowTitle(url, connected, sessionStriked, t)}
                   onClick={() => push(toRelay(url))}
                 >
                   <RelayIcon url={url} className="h-5 w-5 shrink-0" iconSize={11} />

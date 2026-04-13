@@ -529,6 +529,7 @@ export default {
     'Seen on': 'Seen on',
     'Active relays': 'Active relays',
     'Not connected': 'Not connected',
+    'Relay session striked': 'Skipped this session (too many connection failures)',
     'More relays': '+{{count}} relays',
     'Temporarily display this reply': 'Temporarily display this reply',
     'Note not found': 'Note not found',

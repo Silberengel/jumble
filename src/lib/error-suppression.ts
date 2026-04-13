@@ -6,18 +6,96 @@
 // Track suppressed errors to avoid spam
 const suppressedErrors = new Set<string>()
 
+/** Flatten console args so URLs and Error messages are visible (join(' ') loses nested fields). */
+function formatConsoleArgs(args: readonly unknown[]): string {
+  const parts: string[] = []
+  for (const a of args) {
+    if (typeof a === 'string') {
+      parts.push(a)
+    } else if (a instanceof Error) {
+      parts.push(a.message, a.stack ?? '')
+    } else if (a !== null && typeof a === 'object') {
+      const o = a as Record<string, unknown>
+      if (typeof o.message === 'string') parts.push(o.message)
+      if (typeof o.reason === 'string') parts.push(o.reason)
+      if (typeof o.url === 'string') parts.push(o.url)
+    } else {
+      parts.push(String(a))
+    }
+  }
+  return parts.join(' ')
+}
+
+function isExpectedFaviconNetworkNoise(message: string): boolean {
+  if (!message.includes('favicon.ico')) return false
+  return (
+    message.includes('NS_BINDING') ||
+    message.includes('aborted') ||
+    message.includes('ORB') ||
+    message.includes('CORRUPTED') ||
+    message.includes('404') ||
+    message.includes('403') ||
+    message.includes('blockiert') ||
+    message.includes('blocked') ||
+    message.includes('CORS') ||
+    message.includes('Failed to load') ||
+    message.includes('Laden fehlgeschlagen') ||
+    message.includes('net::ERR_')
+  )
+}
+
+function isExpectedRelayWebSocketNoise(message: string): boolean {
+  if (message.includes('WebSocket connection to') || message.includes('Close received after close')) {
+    return true
+  }
+  // Firefox EN (straight and curly apostrophe)
+  if (
+    (message.includes('establish a connection to the server') ||
+      message.includes('Firefox can') ||
+      message.includes('Firefox can\u2019t')) &&
+    (message.includes('wss://') || message.includes('ws://'))
+  ) {
+    return true
+  }
+  // Firefox DE + other locales often omit the word "WebSocket"
+  if (
+    message.includes('kann keine Verbindung') &&
+    (message.includes('wss://') || message.includes('ws://') || message.includes('Server unter'))
+  ) {
+    return true
+  }
+  // Gecko network codes for dead relays / TLS issues
+  if (
+    message.includes('NS_ERROR_CONNECTION_REFUSED') ||
+    message.includes('NS_ERROR_NET_RESET') ||
+    message.includes('NS_ERROR_NET_INTERRUPT') ||
+    message.includes('NS_ERROR_NET_TIMEOUT') ||
+    message.includes('NS_ERROR_UNKNOWN_HOST')
+  ) {
+    return true
+  }
+  return false
+}
+
 function suppressExpectedErrors() {
   // Override console.error to filter out expected errors
   const originalConsoleError = console.error
   
   console.error = (...args: any[]) => {
-    const message = args.join(' ')
-    
-    // Suppress favicon 404 errors
-    if (message.includes('favicon.ico') && message.includes('404')) {
+    const message = formatConsoleArgs(args)
+
+    if (isExpectedFaviconNetworkNoise(message)) {
       return
     }
-    
+
+    if (isExpectedRelayWebSocketNoise(message)) {
+      return
+    }
+
+    if (message.includes('NS_BINDING_ABORTED')) {
+      return
+    }
+
     // Suppress CORS errors for external websites (EN + DE Firefox strings)
     if (message.includes('CORS policy') ||
         message.includes('Access-Control-Allow-Origin') ||
@@ -106,11 +184,6 @@ function suppressExpectedErrors() {
       return
     }
     
-    // Suppress WebSocket connection errors
-    if (message.includes('WebSocket connection to') || message.includes('failed:') || message.includes('Close received after close')) {
-      return
-    }
-    
     // Suppress Ping timeout errors
     if (message.includes('Ping timeout')) {
       return
@@ -136,15 +209,8 @@ function suppressExpectedErrors() {
           (message.includes('nicht unterstützt') ||
             message.includes('Keine Decoder') ||
             message.includes('Medien können nicht'))) ||
-        message.includes('A resource is blocked by OpaqueResponseBlocking')) {
-      return
-    }
-
-    // Firefox: failed WS to dead local/dev relays (wording varies by locale)
-    if (
-      message.includes('kann keine Verbindung') &&
-      (message.includes('WebSocket') || message.includes('ws://') || message.includes('wss://'))
-    ) {
+        message.includes('A resource is blocked by OpaqueResponseBlocking') ||
+        message.includes('NS_ERROR_CORRUPTED_CONTENT')) {
       return
     }
     
@@ -166,7 +232,15 @@ function suppressExpectedErrors() {
   const originalConsoleWarn = console.warn
   
   console.warn = (...args: any[]) => {
-    const message = args.join(' ')
+    const message = formatConsoleArgs(args)
+
+    if (isExpectedFaviconNetworkNoise(message)) {
+      return
+    }
+
+    if (isExpectedRelayWebSocketNoise(message)) {
+      return
+    }
     
     // Suppress invalid URI / failed media resource (e.g. empty img src)
     if (message.includes('Ungültige URI') ||
@@ -188,13 +262,6 @@ function suppressExpectedErrors() {
     if (message.includes('Quellübergreifende') ||
         message.includes('Gleiche-Quelle-Regel') ||
         (message.includes('Cross-Origin') && message.includes('blockiert'))) {
-      return
-    }
-
-    if (
-      message.includes('kann keine Verbindung') &&
-      (message.includes('WebSocket') || message.includes('ws://') || message.includes('wss://'))
-    ) {
       return
     }
 
@@ -283,7 +350,11 @@ function suppressExpectedErrors() {
   const originalConsoleLog = console.log
   
   console.log = (...args: any[]) => {
-    const message = args.join(' ')
+    const message = formatConsoleArgs(args)
+
+    if (isExpectedFaviconNetworkNoise(message) || isExpectedRelayWebSocketNoise(message)) {
+      return
+    }
     
     // Firefox ORB: cross-origin favicon / relay icon requests often hit HTML or wrong MIME; not actionable in-app.
     if (
