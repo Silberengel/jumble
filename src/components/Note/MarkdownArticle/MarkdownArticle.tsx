@@ -3305,8 +3305,8 @@ function parseMarkdownContentMarked(
   }
 
   const renderParagraph = (token: any, key: string): React.ReactNode => {
-    const paragraphText = String(token.text ?? '').trim()
-    const rawParagraphText = String(token.text ?? '')
+    const rawParagraphText = String(token.text ?? token.raw ?? '')
+    const paragraphText = rawParagraphText.trim()
     const standaloneMath = parseDelimitedMath(rawParagraphText.trim())
     if (standaloneMath) {
       return (
@@ -3645,7 +3645,7 @@ function parseMarkdownContentMarked(
       }
     }
 
-    const paragraphTokens = lexInlineProtected(String(token.text ?? token.raw ?? ''))
+    const paragraphTokens = lexInlineProtected(rawParagraphText)
     const parseNostrHref = (href: string): string | null => {
       if (!href.toLowerCase().startsWith('nostr:')) return null
       const raw = href.slice(6).trim()
@@ -3758,6 +3758,56 @@ function parseMarkdownContentMarked(
         flushInlineSegment(segmentIdx++)
         if (nodes.length > 0) {
           return <div key={`${key}-nostr-inline-mix`}>{nodes}</div>
+        }
+      }
+
+      // GFM autolinks become `link` tokens; without this, "…text\nhttps://youtube.com/…" can become
+      // [text, br, link] and fall through to a single <p> with a plain anchor instead of an embed.
+      const hasInlineYouTubeLink = paragraphTokens.some((t: any) => {
+        if (t?.type !== 'link') return false
+        const cleaned = cleanUrl(String(t.href ?? ''))
+        return !!cleaned && isYouTubeUrl(cleaned)
+      })
+      if (hasInlineYouTubeLink) {
+        const nodes: React.ReactNode[] = []
+        let inlineSegment: any[] = []
+        const flushInlineSegment = (segmentIdx: number) => {
+          if (inlineSegment.length === 0) return
+          nodes.push(
+            <p key={`${key}-yt-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+              {renderInlineTokens(inlineSegment, `${key}-yt-inline-segment-${segmentIdx}`)}
+            </p>
+          )
+          inlineSegment = []
+        }
+
+        let segmentIdx = 0
+        paragraphTokens.forEach((t: any, idx: number) => {
+          if (t?.type !== 'link') {
+            inlineSegment.push(t)
+            return
+          }
+          const cleaned = cleanUrl(String(t.href ?? ''))
+          if (!cleaned || !isYouTubeUrl(cleaned)) {
+            inlineSegment.push(t)
+            return
+          }
+
+          flushInlineSegment(segmentIdx++)
+          nodes.push(
+            <div key={`${key}-yt-embed-${idx}`} className="my-2">
+              <YoutubeEmbeddedPlayer
+                url={cleaned}
+                className="max-w-[400px]"
+                mustLoad={!lazyMedia}
+              />
+            </div>
+          )
+        })
+
+        flushInlineSegment(segmentIdx++)
+        if (nodes.length > 0) {
+          return <div key={`${key}-yt-inline-mix`}>{nodes}</div>
         }
       }
     }

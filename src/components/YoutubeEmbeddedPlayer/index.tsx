@@ -33,15 +33,29 @@ export default function YoutubeEmbeddedPlayer({
   }, [autoLoadMedia])
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
+
   /**
-   * Electron + dev server (http/https): plain `/embed/` iframes often show error 150; use the Iframe API like the browser.
-   * Packaged app loads `file:`: use a plain embed URL only. Do not pass a fake `origin` query param — YouTube matches it
-   * to the real embedder and `file:` will not match `https://…`, which triggers error 150.
+   * YouTube in Electron:
+   * - **Iframe API** (`YT.Player`) against `http(s)://localhost` often ends in error **153** (player configuration)
+   *   in recent Chromium/Electron builds; it worked more reliably in plain browsers only.
+   * - **Native `/embed/` iframe** works if the `origin` query param matches the real page origin. Use
+   *   `window.location.origin` for dev (`http://127.0.0.1:5173`, etc.). On **`file:`** there is no valid https
+   *   origin — omit `origin` (a fake `https://…` origin caused **150**).
+   * Non-Electron: keep the Iframe API (unchanged from pre–Electron-split behavior).
    */
-  const useNativeEmbed =
-    isImwaldElectron() &&
-    typeof window !== 'undefined' &&
-    window.location.protocol === 'file:'
+  const useNativeEmbed = isImwaldElectron()
+
+  const nativeEmbedSrc = useMemo(() => {
+    if (!videoId || !isImwaldElectron()) return null
+    const params = new URLSearchParams({ playsinline: '1', rel: '0' })
+    if (typeof window !== 'undefined') {
+      const { protocol, origin } = window.location
+      if (protocol === 'http:' || protocol === 'https:') {
+        params.set('origin', origin)
+      }
+    }
+    return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${params}`
+  }, [videoId])
 
   const posterUrl = useMemo(
     () => (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
@@ -125,8 +139,7 @@ export default function YoutubeEmbeddedPlayer({
     return <ExternalLink url={url} />
   }
 
-  if (useNativeEmbed && videoId) {
-    const embedSrc = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?playsinline=1&rel=0`
+  if (useNativeEmbed && nativeEmbedSrc) {
     return (
       <div
         className={cn(
@@ -136,9 +149,9 @@ export default function YoutubeEmbeddedPlayer({
       >
         <iframe
           className="h-full w-full min-h-[12rem] border-0"
-          src={embedSrc}
+          src={nativeEmbedSrc}
           title="YouTube video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
         />
       </div>
