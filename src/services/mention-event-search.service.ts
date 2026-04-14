@@ -10,7 +10,9 @@ import client from './client.service'
 import indexedDb from './indexed-db.service'
 
 const DEFAULT_NOTES_LIMIT = 20
-const DEFAULT_NPUBS_LIMIT = 100
+
+/** Max npubs in the @-mention dropdown (local + follows + relay merge). */
+export const MENTION_NPUB_DROPDOWN_LIMIT = 50
 
 /** Kinds for nevent search: notes, threads, long-form, etc. */
 export const NEVENT_KINDS = [
@@ -100,8 +102,9 @@ export async function searchNotesForPicker(
  */
 export async function searchNpubsForMention(
   query: string,
-  limit: number = DEFAULT_NPUBS_LIMIT,
+  limit: number = MENTION_NPUB_DROPDOWN_LIMIT,
   onUpdate?: (npubs: string[]) => void
 ): Promise<string[]> {
-  return client.searchNpubsForMention(query, limit, onUpdate)
+  const capped = Math.min(Math.max(1, Math.floor(limit)), MENTION_NPUB_DROPDOWN_LIMIT)
+  return client.searchNpubsForMention(query, capped, onUpdate)
 }

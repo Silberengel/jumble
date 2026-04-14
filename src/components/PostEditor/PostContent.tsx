@@ -309,7 +309,12 @@ export default function PostContent({
 
   const [hasPrivateRelaysAvailable, setHasPrivateRelaysAvailable] = useState(false)
   const [showMediaKindDialog, setShowMediaKindDialog] = useState(false)
-  const [pendingMediaUpload, setPendingMediaUpload] = useState<{ url: string; tags: string[][]; file: File } | null>(null)
+  const [pendingMediaUpload, setPendingMediaUpload] = useState<{
+    url: string
+    tags: string[][]
+    file: File
+    urlAlreadyInEditor?: boolean
+  } | null>(null)
   const uploadedMediaFileMap = useRef<Map<string, File>>(new Map())
   /** Accumulates imeta tags across uploads (short note or multi-attachment) so files are not dropped. */
   const composerImetaTagsRef = useRef<string[][]>([])
@@ -1695,15 +1700,23 @@ export default function PostContent({
   const handleMediaKindSelection = (selectedKind: number) => {
     if (!pendingMediaUpload) return
     
-    const { url, tags, file } = pendingMediaUpload
+    const { url, tags, file, urlAlreadyInEditor } = pendingMediaUpload
     setShowMediaKindDialog(false)
     setPendingMediaUpload(null)
     
     // Process the upload with the selected kind
-    processMediaUpload(url, tags, file, selectedKind)
+    processMediaUpload(url, tags, file, selectedKind, {
+      skipComposerUrlAppend: urlAlreadyInEditor === true
+    })
   }
 
-  const processMediaUpload = async (url: string, tags: string[][], uploadingFile: File, selectedKind?: number) => {
+  const processMediaUpload = async (
+    url: string,
+    tags: string[][],
+    uploadingFile: File,
+    selectedKind?: number,
+    opts?: { skipComposerUrlAppend?: boolean }
+  ) => {
     try {
       let resolvedKind: number
       if (selectedKind !== undefined) {
@@ -1757,14 +1770,16 @@ export default function PostContent({
 
       appendComposerImetaTag(newImetaTag)
 
-      setTimeout(() => {
-        if (textareaRef.current) {
-          const currentText = textareaRef.current.getText()
-          if (!currentText.includes(url)) {
-            textareaRef.current.appendText(url, true)
+      if (!opts?.skipComposerUrlAppend) {
+        setTimeout(() => {
+          if (textareaRef.current) {
+            const currentText = textareaRef.current.getText()
+            if (!currentText.includes(url)) {
+              textareaRef.current.appendText(url, true)
+            }
           }
-        }
-      }, 100)
+        }, 100)
+      }
     } catch (error) {
       logger.error('Error processing media upload', { error, file: uploadingFile.name })
       const imetaTag = mediaUpload.getImetaTagByUrl(url)
@@ -1785,11 +1800,13 @@ export default function PostContent({
   const handleMediaUploadSuccess = async ({
     url,
     tags,
-    file: fileFromCallback
+    file: fileFromCallback,
+    urlAlreadyInEditor
   }: {
     url: string
     tags: string[][]
     file?: File
+    urlAlreadyInEditor?: boolean
   }) => {
     try {
       let uploadingFile: File | undefined = fileFromCallback
@@ -1809,12 +1826,14 @@ export default function PostContent({
       }
 
       if (isDiscussionThread && !parentEvent) {
-        setTimeout(() => {
-          const ed = textareaRef.current
-          if (ed && !ed.getText().includes(url)) {
-            ed.appendText(url, true)
-          }
-        }, 100)
+        if (!urlAlreadyInEditor) {
+          setTimeout(() => {
+            const ed = textareaRef.current
+            if (ed && !ed.getText().includes(url)) {
+              ed.appendText(url, true)
+            }
+          }, 100)
+        }
         uploadedMediaFileMap.current.delete(`${uploadingFile.name}-${uploadingFile.size}-${uploadingFile.lastModified}`)
         handleUploadEnd(uploadingFile)
         return
@@ -1893,15 +1912,15 @@ export default function PostContent({
           }
           // Insert the URL into the editor content so it shows in the edit pane
           // Use setTimeout to ensure the state has updated and editor is ready
-          setTimeout(() => {
-            if (textareaRef.current) {
-              // Check if URL is already in the text
-              const currentText = text || ''
-              if (!currentText.includes(url)) {
-                textareaRef.current.appendText(url, true)
+          if (!urlAlreadyInEditor) {
+            setTimeout(() => {
+              const ed = textareaRef.current
+              if (!ed) return
+              if (!ed.getText().includes(url)) {
+                ed.appendText(url, true)
               }
-            }
-          }, 100)
+            }, 100)
+          }
         } else {
           // Non-audio media in replies/PMs - don't set mediaNoteKind, will be handled as regular comment/PM
           // Clear any existing media note kind
@@ -1909,21 +1928,32 @@ export default function PostContent({
           setMediaUrl('')
           setMediaImetaTags([])
           composerImetaTagsRef.current = []
-          // Just add the media URL to the text content
-          textareaRef.current?.appendText(url, true)
+          if (!urlAlreadyInEditor) {
+            const ed = textareaRef.current
+            if (ed && !ed.getText().includes(url)) {
+              ed.appendText(url, true)
+            }
+          }
           return // Don't set media note kind for non-audio in replies/PMs
         }
       } else {
         // For new posts, check if file is ambiguous (could be audio or video)
         if (isAmbiguousMediaFile(uploadingFile)) {
           // Show dialog to let user choose
-          setPendingMediaUpload({ url, tags, file: uploadingFile })
+          setPendingMediaUpload({
+            url,
+            tags,
+            file: uploadingFile,
+            urlAlreadyInEditor: urlAlreadyInEditor === true
+          })
           setShowMediaKindDialog(true)
           return
         }
         
         // Not ambiguous, auto-detect and process
-        await processMediaUpload(url, tags, uploadingFile)
+        await processMediaUpload(url, tags, uploadingFile, undefined, {
+          skipComposerUrlAppend: urlAlreadyInEditor === true
+        })
       }
     } catch (error) {
       logger.error('Error in handleMediaUploadSuccess', { error })

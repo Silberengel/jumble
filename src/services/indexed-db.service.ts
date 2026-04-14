@@ -61,6 +61,33 @@ function isLikelyCachedNostrEvent(v: unknown): v is Event {
   )
 }
 
+/** Kind 0 JSON fields for profile search (display name, handle, NIP-05). */
+function profileMetadataMatchesQuery(ev: Event, qLower: string): boolean {
+  if (!qLower || ev.kind !== kinds.Metadata) return false
+  if (ev.pubkey.toLowerCase().includes(qLower)) return true
+  try {
+    const profileObj = JSON.parse(ev.content) as Record<string, unknown>
+    const nip05Raw = profileObj.nip05
+    const nip05 =
+      typeof nip05Raw === 'string'
+        ? nip05Raw
+            .split('@')
+            .map((s: string) => s.trim())
+            .join(' ')
+        : ''
+    const text = [
+      typeof profileObj.display_name === 'string' ? profileObj.display_name.trim() : '',
+      typeof profileObj.name === 'string' ? profileObj.name.trim() : '',
+      nip05
+    ]
+      .join(' ')
+      .toLowerCase()
+    return text.includes(qLower)
+  } catch {
+    return false
+  }
+}
+
 function cachedEventMatchesFullTextQuery(ev: Event, qLower: string): boolean {
   if (!qLower) return false
   if (ev.id.toLowerCase().includes(qLower)) return true
@@ -768,6 +795,49 @@ class IndexedDbService {
       req.onerror = (event) => {
         transaction.commit()
         reject(event)
+      }
+    })
+  }
+
+  /**
+   * Scan cached kind-0 rows for a handle / display name / NIP-05 substring (case-insensitive).
+   * Newest replaceable wins per pubkey.
+   */
+  async searchProfileEventsInCache(query: string, limit: number): Promise<Event[]> {
+    const qLower = query.trim().toLowerCase()
+    if (!qLower || limit <= 0) return []
+    await this.initPromise
+    if (!this.db) return []
+
+    return new Promise((resolve, reject) => {
+      const byPubkey = new Map<string, Event>()
+      const transaction = this.db!.transaction(StoreNames.PROFILE_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PROFILE_EVENTS)
+      const request = store.openCursor()
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result as IDBCursorWithValue | null
+        if (!cursor) {
+          transaction.commit()
+          const list = [...byPubkey.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limit)
+          resolve(list)
+          return
+        }
+        const row = cursor.value as TValue<Event>
+        const value = row?.value
+        if (value && profileMetadataMatchesQuery(value, qLower)) {
+          const pk = value.pubkey.toLowerCase()
+          const prev = byPubkey.get(pk)
+          if (!prev || value.created_at > prev.created_at) {
+            byPubkey.set(pk, value)
+          }
+        }
+        cursor.continue()
+      }
+
+      request.onerror = () => {
+        transaction.commit()
+        reject(request.error ?? new Error('searchProfileEventsInCache failed'))
       }
     })
   }

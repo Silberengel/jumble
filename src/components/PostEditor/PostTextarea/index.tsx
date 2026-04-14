@@ -33,6 +33,9 @@ import Preview from './Preview'
 import { HighlightData } from '../HighlightEditor'
 import { getKindDescription } from '@/lib/kind-description'
 
+/** Draft JSON uses relay fetches (e.g. thread root); cap wait so the Json tab cannot spin forever. */
+const DRAFT_JSON_PREVIEW_TIMEOUT_MS = 25_000
+
 export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
   insertText: (text: string) => void
@@ -53,7 +56,12 @@ const PostTextarea = forwardRef<
     onUploadStart?: (file: File, cancel: () => void) => void
     onUploadProgress?: (file: File, progress: number) => void
     onUploadEnd?: (file: File) => void
-    onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
+    onUploadSuccess?: (result: {
+      url: string
+      tags: string[][]
+      file: File
+      urlAlreadyInEditor?: boolean
+    }) => void
     onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
     onUploadCompressProgress?: (file: File, percent: number) => void
     kind?: number
@@ -111,11 +119,14 @@ const PostTextarea = forwardRef<
     const [activeTab, setActiveTab] = useState('preview')
     const [draftEventJson, setDraftEventJson] = useState<string>('')
     const [isLoadingJson, setIsLoadingJson] = useState(false)
-    
+    /** Bumps when preview tab is shown or a new JSON fetch starts; completions only apply if seq still matches. */
+    const jsonPanelFetchSeq = useRef(0)
+
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
-    
+
     useEffect(() => {
       if (activeTab === 'preview') {
+        jsonPanelFetchSeq.current += 1
         setDraftEventJson('')
         setIsLoadingJson(false)
         return
@@ -125,27 +136,44 @@ const PostTextarea = forwardRef<
         return
       }
 
-      let cancelled = false
+      const seq = ++jsonPanelFetchSeq.current
       setIsLoadingJson(true)
+
+      let timeoutId: number | undefined = window.setTimeout(() => {
+        timeoutId = undefined
+        if (seq !== jsonPanelFetchSeq.current) return
+        setDraftEventJson(
+          `Error generating JSON: Timed out after ${Math.round(DRAFT_JSON_PREVIEW_TIMEOUT_MS / 1000)}s (relays or network slow)`
+        )
+        setIsLoadingJson(false)
+      }, DRAFT_JSON_PREVIEW_TIMEOUT_MS)
+
+      const clearJsonTimeout = () => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId)
+          timeoutId = undefined
+        }
+      }
 
       void Promise.resolve(getDraftEventJson())
         .then((json) => {
-          if (cancelled) return
+          clearJsonTimeout()
+          if (seq !== jsonPanelFetchSeq.current) return
           setDraftEventJson(json)
           setIsLoadingJson(false)
         })
         .catch((error: unknown) => {
-          if (cancelled) return
+          clearJsonTimeout()
+          if (seq !== jsonPanelFetchSeq.current) return
           const msg = error instanceof Error ? error.message : String(error)
           setDraftEventJson(`Error generating JSON: ${msg}`)
           setIsLoadingJson(false)
         })
 
-      return () => {
-        cancelled = true
-      }
       // `text` is included so JSON refreshes when the parent memoizes `getDraftEventJson` too narrowly;
       // `kind` catches compose-mode switches even if callback identity were ever stable across them.
+      // Use `jsonPanelFetchSeq` instead of an effect cleanup `cancelled` flag so a superseded fetch
+      // does not skip `setIsLoadingJson(false)` and leave the Json tab stuck on "Loading...".
     }, [activeTab, getDraftEventJson, kind, text])
     const editor = useEditor({
       // TipTap + Radix Dialog/Tabs: defer init so React 18 does not warn about flushSync in a lifecycle.

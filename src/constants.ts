@@ -624,6 +624,15 @@ export const NIP_SEARCH_DOCUMENT_KINDS: readonly number[] = [
   ExtendedKind.PUBLICATION_CONTENT
 ]
 
+/**
+ * Primary Search page NIP-50 `kinds`: profiles, short notes, and document kinds.
+ * Search used only {@link NIP_SEARCH_DOCUMENT_KINDS} before, so handles and npub-related
+ * metadata (kind 0) and normal notes (kind 1) never matched.
+ */
+export const NIP_SEARCH_PAGE_KINDS: readonly number[] = Array.from(
+  new Set<number>([kinds.Metadata, kinds.ShortTextNote, ...NIP_SEARCH_DOCUMENT_KINDS])
+).sort((a, b) => a - b)
+
 export function relayFilterIncludesDocumentRelayKind(filter: Filter): boolean {
   const k = filter.kinds
   if (k === undefined) return false

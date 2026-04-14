@@ -1,7 +1,12 @@
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
+import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { TProfile } from '@/types'
 import { useEffect, useState } from 'react'
+
+const PROFILE_SEARCH_RELAY_URLS = Array.from(
+  new Set(PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
+)
 
 export function useSearchProfiles(search: string, limit: number) {
   const [isFetching, setIsFetching] = useState(false)
@@ -25,13 +30,10 @@ export function useSearchProfiles(search: string, limit: number) {
           return
         }
         const existingPubkeys = new Set(profiles.map((profile) => profile.pubkey))
-        const fetchedProfiles = await client.searchProfiles(
-          SEARCHABLE_RELAY_URLS,
-          {
-            search,
-            limit
-          }
-        )
+        const fetchedProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
+          search,
+          limit
+        })
         if (fetchedProfiles.length) {
           fetchedProfiles.forEach((profile) => {
             if (existingPubkeys.has(profile.pubkey)) {

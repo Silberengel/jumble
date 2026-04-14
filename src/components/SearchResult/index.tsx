@@ -1,7 +1,7 @@
 import {
   FAST_READ_RELAY_URLS,
   FAST_WRITE_RELAY_URLS,
-  NIP_SEARCH_DOCUMENT_KINDS,
+  NIP_SEARCH_PAGE_KINDS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
@@ -58,10 +58,19 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     return (
       <NormalFeed
         subRequests={[
-          { urls: searchRelays, filter: { search: searchParams.search, kinds: [...NIP_SEARCH_DOCUMENT_KINDS] } }
+          {
+            urls: searchRelays,
+            filter: {
+              search: searchParams.search,
+              kinds: [...NIP_SEARCH_PAGE_KINDS],
+              limit: 100
+            }
+          }
         ]}
+        useFilterAsIs
+        clientSideKindFilter
         progressiveWarmupQuery={searchParams.search}
-        progressiveDocumentKinds={NIP_SEARCH_DOCUMENT_KINDS}
+        progressiveDocumentKinds={NIP_SEARCH_PAGE_KINDS}
         oneShotAfterMergeComparator={(a, b) => compareEventsForDTagQuery(searchParams.search, a, b)}
       />
     )

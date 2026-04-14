@@ -835,6 +835,7 @@ export class ReplaceableEventService {
           Promise.resolve(sessionEv)
         )
         await this.indexProfile(sessionEv)
+        void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
         return sessionEv
       }
     }

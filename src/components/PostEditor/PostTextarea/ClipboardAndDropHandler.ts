@@ -16,7 +16,13 @@ const DRAGOVER_CLASS_LIST = [
 export interface ClipboardAndDropHandlerOptions {
   onUploadStart?: (file: File, cancel: () => void) => void
   /** Same contract as `Uploader` — drop/paste uploads append URLs + imeta while staying on kind 1 unless the user picks a native media kind. */
-  onUploadSuccess?: (result: { url: string; tags: string[][]; file: File }) => void
+  onUploadSuccess?: (result: {
+    url: string
+    tags: string[][]
+    file: File
+    /** True when the URL was already written into the ProseMirror doc (replace placeholder). */
+    urlAlreadyInEditor?: boolean
+  }) => void
   onUploadEnd?: (file: File) => void
   onUploadProgress?: (file: File, progress: number) => void
   /** Same as `Uploader.onUploadCompressPhase` — keeps the post editor progress row in sync during local compression. */
@@ -181,7 +187,12 @@ async function uploadFiles(
           view.dispatch(insertTr)
         }
 
-        options.onUploadSuccess?.({ url: result.url, tags: result.tags, file })
+        options.onUploadSuccess?.({
+          url: result.url,
+          tags: result.tags,
+          file,
+          urlAlreadyInEditor: true
+        })
       })
       .catch((error) => {
         logger.error('Clipboard/drop upload failed', { error, file: file.name })

@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SimpleUsername } from '@/components/Username'
-import { searchNpubsForMention } from '@/services/mention-event-search.service'
+import {
+  MENTION_NPUB_DROPDOWN_LIMIT,
+  searchNpubsForMention
+} from '@/services/mention-event-search.service'
 import { AtSign, FileSearch } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -43,7 +46,7 @@ export function MentionAndEventToolbarButtons({
     }
     mentionDebounceRef.current = setTimeout(() => {
       setMentionLoading(true)
-      searchNpubsForMention(q, 20)
+      searchNpubsForMention(q, MENTION_NPUB_DROPDOWN_LIMIT)
         .then((list) => {
           setMentionResults(list ?? [])
         })

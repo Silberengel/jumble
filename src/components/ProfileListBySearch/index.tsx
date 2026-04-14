@@ -1,5 +1,6 @@
 import { useSecondaryPage } from '@/PageManager'
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
+import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { normalizeUrl } from '@/lib/url'
 import { toProfile } from '@/lib/link'
 import client from '@/services/client.service'
 import { cn } from '@/lib/utils'
@@ -8,6 +9,10 @@ import { useEffect, useRef, useState } from 'react'
 import UserItem, { UserItemSkeleton } from '../UserItem'
 
 const LIMIT = 50
+
+const PROFILE_SEARCH_RELAY_URLS = Array.from(
+  new Set(PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
+)
 
 export function ProfileListBySearch({ search }: { search: string }) {
   const { push } = useSecondaryPage()
@@ -51,21 +56,40 @@ export function ProfileListBySearch({ search }: { search: string }) {
   }, [hasMore, search, until])
 
   const loadMore = async () => {
-    const profiles = await client.searchProfiles(SEARCHABLE_RELAY_URLS, {
+    const nextSeen = new Set(pubkeySet)
+    const batchPubkeys: string[] = []
+
+    if (pubkeySet.size === 0) {
+      const cached = await client.searchProfilesFromIndexedDBCache(search, LIMIT)
+      for (const p of cached) {
+        if (!nextSeen.has(p.pubkey)) {
+          nextSeen.add(p.pubkey)
+          batchPubkeys.push(p.pubkey)
+        }
+      }
+    }
+
+    const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
       search,
       until,
       limit: LIMIT
     })
-    const newPubkeySet = new Set<string>()
-    profiles.forEach((profile) => {
-      if (!pubkeySet.has(profile.pubkey)) {
-        newPubkeySet.add(profile.pubkey)
+    for (const profile of relayProfiles) {
+      if (!nextSeen.has(profile.pubkey)) {
+        nextSeen.add(profile.pubkey)
+        batchPubkeys.push(profile.pubkey)
       }
-    })
-    setPubkeySet((prev) => new Set([...prev, ...newPubkeySet]))
-    setHasMore(profiles.length >= LIMIT)
-    const lastProfileCreatedAt = profiles[profiles.length - 1].created_at
-    setUntil(lastProfileCreatedAt ? lastProfileCreatedAt - 1 : 0)
+    }
+
+    if (batchPubkeys.length === 0) {
+      setHasMore(false)
+      return
+    }
+
+    setPubkeySet((prev) => new Set([...prev, ...batchPubkeys]))
+    setHasMore(relayProfiles.length >= LIMIT)
+    const last = relayProfiles[relayProfiles.length - 1]
+    setUntil(last?.created_at ? last.created_at - 1 : 0)
   }
 
   return (

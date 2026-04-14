@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
@@ -188,6 +188,36 @@ function loadRenderer(win) {
     })
 }
 
+/**
+ * Packaged (and dev) renderer runs on http://127.0.0.1; hls.js and other fetches hit third-party
+ * streams without CORS. Chromium still enforces CORS, so inject a permissive ACAO on subresources only.
+ */
+function relaxCorsForRendererSubresources() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') {
+      callback({ cancel: false, responseHeaders: details.responseHeaders })
+      return
+    }
+    const raw = details.responseHeaders
+    if (!raw) {
+      callback({ cancel: false })
+      return
+    }
+    const responseHeaders = { ...raw }
+    for (const key of Object.keys(responseHeaders)) {
+      const lower = key.toLowerCase()
+      if (
+        lower === 'access-control-allow-origin' ||
+        lower === 'access-control-allow-credentials'
+      ) {
+        delete responseHeaders[key]
+      }
+    }
+    responseHeaders['Access-Control-Allow-Origin'] = ['*']
+    callback({ cancel: false, responseHeaders })
+  })
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -249,6 +279,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  relaxCorsForRendererSubresources()
+
   ipcMain.handle('imwald:reload-app', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return false

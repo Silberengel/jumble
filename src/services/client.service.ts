@@ -330,6 +330,12 @@ class ClientService extends EventTarget {
     this.queryService.setQueryResultIngest((events) => {
       for (const e of events) {
         this.eventService.addEventToCache(e)
+        // Kind 0 from timelines/REQs was only kept in the session LRU, not in PROFILE_EVENTS or FlexSearch,
+        // so @-mention / profile search missed people you already saw on feeds (e.g. notifications).
+        if (e.kind === kinds.Metadata && !shouldDropEventOnIngest(e)) {
+          void this.addUsernameToIndex(e)
+          void indexedDb.putReplaceableEvent(e).catch(() => {})
+        }
       }
     })
     this.bookstrService = createBookstrService(this.queryService)
@@ -3024,8 +3030,9 @@ class ClientService extends EventTarget {
       kinds: [kinds.Metadata]
     }, undefined, {
       replaceableRace: true,
-      eoseTimeout: 200,
-      globalTimeout: 3000
+      // Search spans many relays; sub-second EOSE was cutting off almost all index relays.
+      eoseTimeout: 4500,
+      globalTimeout: 9000
     })
 
     const profileEvents = events.sort((a, b) => b.created_at - a.created_at)
@@ -3059,7 +3066,7 @@ class ClientService extends EventTarget {
 
   /**
    * Npubs for @-mention dropdown: (1) follow-list profiles matching the query,
-   * (2) local index, (3) relay search on SEARCHABLE_RELAY_URLS (same as search page).
+   * (2) local index, (3) kind-0 relay search on PROFILE_FETCH_RELAY_URLS (deduped).
    * Returns cached results immediately, then streams relay results via callback.
    */
   /**
@@ -3161,7 +3168,7 @@ class ClientService extends EventTarget {
 
   async searchNpubsForMention(
     query: string,
-    limit: number = 100,
+    limit: number = 50,
     onUpdate?: (npubs: string[]) => void
   ): Promise<string[]> {
     const q = query.trim()
@@ -3185,10 +3192,29 @@ class ClientService extends EventTarget {
     const matchProfileText = (p: TProfile) =>
       ((p.username ?? '') + ' ' + (p.original_username ?? '') + ' ' + (p.nip05 ?? '')).toLowerCase()
 
+    // Relay query starts immediately so it can run in parallel with local + follow work (slow relays).
+    const profileSearchRelayUrls = dedupeNormalizeRelayUrlsOrdered(
+      PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    )
+    const relayTask =
+      q.length >= 1
+        ? this.searchProfiles(profileSearchRelayUrls, {
+            search: q,
+            limit
+          }).catch(() => [] as TProfile[])
+        : Promise.resolve([] as TProfile[])
+
     // 1. Local index first (FlexSearch + session) — fills the @-mention list immediately.
-    //    Previously follow-list ran first and awaited up to 80 fetchProfile() calls, so the dropdown
-    //    stayed empty until those finished; @nevent / @naddr stayed instant (sync branch in suggestion.ts).
-    const local = await this.searchNpubsFromLocal(q, limit)
+    //    Cap how many local hits we take so we never fill `limit` here alone; otherwise we returned
+    //    early and skipped relay search entirely (bad for handle search beyond the local index).
+    const localCap = Math.min(limit, 24)
+    let local: string[] = []
+    try {
+      local = await this.searchNpubsFromLocal(q, localCap)
+    } catch {
+      // FlexSearch / session search should not throw; if it does, still return relay + follow hits.
+      local = []
+    }
     for (const npub of local) {
       if (addNpub(npub)) {
         updateIfNeeded()
@@ -3203,32 +3229,58 @@ class ClientService extends EventTarget {
       return out
     }
 
-    // 2. Follow list — IndexedDB-cached profiles only (no network per follow; relay search still covers gaps)
+    // 2. Follow list — must never block TipTap `items()`: no await here.
+    //    Previously we awaited merge when the follow list was in IDB; that ran up to 80 parallel
+    //    getReplaceableEvent(metadata) calls and could stall Firefox for seconds with no dropdown.
     if (this.pubkey && qLower.length >= 1) {
-      try {
-        const followListEvent = await this.replaceableEventService.fetchFollowListEvent(this.pubkey)
-        const followPubkeys = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-        const toCheck = followPubkeys.slice(0, 80)
+      const pk = this.pubkey.trim().toLowerCase()
+      const viewerPubkey = this.pubkey
 
-        const cachedRows = await Promise.all(
-          toCheck.map(async (pubkey) => {
-            const npub = pubkeyToNpub(pubkey)
-            if (!npub) return null
-            const p = await this.replaceableEventService.getProfileFromIndexedDB(npub)
-            return p ? { npub, p } : null
-          })
-        )
+      const mergeFollowMatches = async (followListEvent: NEvent | undefined | null) => {
+        if (!followListEvent || out.length >= limit) return
+        try {
+          const followPubkeys = getPubkeysFromPTags(followListEvent.tags)
+            .map((hex) => hex.trim().toLowerCase())
+            .filter((hex) => /^[0-9a-f]{64}$/.test(hex))
+            .slice(0, 80)
+          if (followPubkeys.length === 0) return
 
-        for (const row of cachedRows) {
-          if (!row || out.length >= limit) break
-          if (!matchProfileText(row.p).includes(qLower)) continue
-          if (addNpub(row.npub)) {
-            updateIfNeeded()
+          const events = await indexedDb.getManyReplaceableEvents(followPubkeys, kinds.Metadata)
+          for (let i = 0; i < followPubkeys.length; i++) {
+            if (out.length >= limit) break
+            const ev = events[i]
+            if (!ev) continue
+            const p = getProfileFromEvent(ev)
+            const npub = pubkeyToNpub(followPubkeys[i]!)
+            if (!npub) continue
+            if (!matchProfileText(p).includes(qLower)) continue
+            if (addNpub(npub)) {
+              updateIfNeeded()
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      void (async () => {
+        try {
+          const cachedFollow = await indexedDb.getReplaceableEvent(pk, kinds.Contacts)
+          if (cachedFollow) {
+            await mergeFollowMatches(cachedFollow)
+          } else {
+            const ev = await this.replaceableEventService.fetchFollowListEvent(viewerPubkey)
+            await mergeFollowMatches(ev)
+          }
+        } catch {
+          try {
+            const ev = await this.replaceableEventService.fetchFollowListEvent(viewerPubkey)
+            await mergeFollowMatches(ev)
+          } catch {
+            // ignore
           }
         }
-      } catch {
-        // ignore follow-list errors; relay search still runs
-      }
+      })()
     }
 
     if (out.length >= limit) {
@@ -3238,13 +3290,10 @@ class ClientService extends EventTarget {
       return out
     }
 
-    // 3. Relay search (slow, but runs in background and updates incrementally)
+    // 3. Relay search — merge after local + follow so ordering stays local → follows → wider index.
+    //    relayTask was started at the beginning; do not await before return (first paint stays fast).
     if (q.length >= 1) {
-      // Start relay search in background - don't await, let it update via callback
-      this.searchProfiles(SEARCHABLE_RELAY_URLS, {
-        search: q,
-        limit: limit - out.length
-      })
+      relayTask
         .then((relayProfiles) => {
           for (const p of relayProfiles) {
             const npub = pubkeyToNpub(p.pubkey)
@@ -3254,8 +3303,7 @@ class ClientService extends EventTarget {
             }
             if (out.length >= limit) break
           }
-          
-          // Prime profile cache for relay results
+
           relayProfiles.forEach((p) => {
             const npub = pubkeyToNpub(p.pubkey)
             if (npub) {
@@ -3276,10 +3324,52 @@ class ClientService extends EventTarget {
     return out
   }
 
-  async searchProfilesFromLocal(query: string, limit: number = 100) {
-    const npubs = await this.searchNpubsFromLocal(query, limit)
-    const profiles = await Promise.all(npubs.map((npub) => this.replaceableEventService.fetchProfile(npub)))
-    return profiles.filter((profile) => !!profile) as TProfile[]
+  /** Kind-0 profiles whose metadata is already in IndexedDB (substring match on name / nip05 / pubkey hex). */
+  async searchProfilesFromIndexedDBCache(query: string, limit: number = 100): Promise<TProfile[]> {
+    const q = query.trim()
+    if (!q || limit <= 0) return []
+    const events = await indexedDb.searchProfileEventsInCache(q, limit)
+    return events.map((e) => getProfileFromEvent(e))
+  }
+
+  /**
+   * Profile search local sources: IndexedDB kind-0 cache first, then FlexSearch/session npubs + fetchProfile.
+   */
+  async searchProfilesFromLocal(query: string, limit: number = 100): Promise<TProfile[]> {
+    const q = query.trim()
+    if (!q) return []
+
+    const seen = new Set<string>()
+    const out: TProfile[] = []
+
+    const fromIdb = await this.searchProfilesFromIndexedDBCache(q, limit)
+    for (const p of fromIdb) {
+      const pk = p.pubkey.toLowerCase()
+      if (seen.has(pk)) continue
+      seen.add(pk)
+      out.push(p)
+      if (out.length >= limit) return out
+    }
+
+    const remaining = limit - out.length
+    if (remaining <= 0) return out
+
+    const npubs = await this.searchNpubsFromLocal(q, remaining)
+    for (const npub of npubs) {
+      let pkHex: string
+      try {
+        pkHex = userIdToPubkey(npub).toLowerCase()
+      } catch {
+        continue
+      }
+      if (seen.has(pkHex)) continue
+      const p = await this.replaceableEventService.fetchProfile(npub)
+      if (!p) continue
+      seen.add(pkHex)
+      out.push(p)
+      if (out.length >= limit) break
+    }
+    return out
   }
 
   private async addUsernameToIndex(profileEvent: NEvent) {

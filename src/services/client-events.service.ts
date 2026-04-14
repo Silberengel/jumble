@@ -461,15 +461,19 @@ export class EventService {
       if (out.length >= limit) break
       try {
         const o = JSON.parse(ev.content) as Record<string, unknown>
-        const blob = [
-          o.display_name,
-          o.name,
-          typeof o.nip05 === 'string' ? o.nip05 : ''
-        ]
+        const nip05 =
+          typeof o.nip05 === 'string'
+            ? o.nip05
+                .split('@')
+                .map((s: string) => s.trim())
+                .join(' ')
+            : ''
+        const blob = [o.display_name, o.name, nip05]
           .map((x) => (typeof x === 'string' ? x : ''))
           .join(' ')
           .toLowerCase()
-        if (blob.includes(q)) {
+        const qNeedle = q.startsWith('@') ? q.slice(1) : q
+        if (blob.includes(q) || (qNeedle.length > 0 && blob.includes(qNeedle))) {
           out.push(ev.pubkey.toLowerCase())
         }
       } catch {

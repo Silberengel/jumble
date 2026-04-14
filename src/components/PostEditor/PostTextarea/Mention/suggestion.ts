@@ -1,4 +1,5 @@
 import {
+  MENTION_NPUB_DROPDOWN_LIMIT,
   searchNpubsForMention,
   type PickerSearchMode
 } from '@/services/mention-event-search.service'
@@ -99,9 +100,12 @@ const suggestion = {
     
     // Start search with callback - returns cached results immediately, then updates with relay results
     backgroundSearchController = new AbortController()
-    const results = await searchNpubsForMention(query, 20, updateComponent)
-    
-    return results ?? []
+    try {
+      const results = await searchNpubsForMention(query, MENTION_NPUB_DROPDOWN_LIMIT, updateComponent)
+      return results ?? []
+    } catch {
+      return []
+    }
   },
 
   render: () => {

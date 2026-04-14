@@ -51,10 +51,16 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
 
     const updateTime = () => {
       if (!isSeeking.current) {
-        setCurrentTime(audio.currentTime)
+        const t = audio.currentTime
+        if (Number.isFinite(t)) {
+          setCurrentTime(t)
+        }
       }
     }
-    const updateDuration = () => setDuration(audio.duration)
+    const updateDuration = () => {
+      const d = audio.duration
+      setDuration(Number.isFinite(d) && d > 0 ? d : 0)
+    }
     const handleEnded = () => setIsPlaying(false)
     const handlePause = () => setIsPlaying(false)
     const handlePlay = () => setIsPlaying(true)
@@ -92,15 +98,26 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
     const audio = audioRef.current
     if (!audio) return
 
+    let t = value[0]
+    if (!Number.isFinite(t) || t < 0) {
+      return
+    }
+    const d = audio.duration
+    if (Number.isFinite(d) && d > 0) {
+      t = Math.min(t, d)
+    }
+
     isSeeking.current = true
-    setCurrentTime(value[0])
+    setCurrentTime(t)
 
     if (seekTimeoutRef.current) {
       clearTimeout(seekTimeoutRef.current)
     }
 
     seekTimeoutRef.current = setTimeout(() => {
-      audio.currentTime = value[0]
+      if (Number.isFinite(t) && t >= 0) {
+        audio.currentTime = t
+      }
       isSeeking.current = false
     }, 300)
   }
@@ -148,8 +165,8 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
 
           <div className="relative min-w-0 flex-1">
             <Slider
-              value={[currentTime]}
-              max={duration || 100}
+              value={[Number.isFinite(currentTime) ? currentTime : 0]}
+              max={Number.isFinite(duration) && duration > 0 ? duration : 100}
               step={1}
               onValueChange={handleSeek}
               hideThumb
