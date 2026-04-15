@@ -23,6 +23,7 @@ import {
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
+import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import Emoji from '@/components/Emoji'
 import {
@@ -613,16 +614,6 @@ function normalizeBackticks(content: string): string {
  * Note: Only converts if the text line has at least 2 characters to avoid
  * creating headers from fragments like "D\n------" which would become "## D"
  */
-/**
- * Normalize excessive newlines - reduce 3+ consecutive newlines (with optional whitespace) to exactly 2
- */
-function normalizeNewlines(content: string): string {
-  // Match sequences of 3 or more newlines with optional whitespace between them
-  // Pattern: newline, optional whitespace, newline, optional whitespace, one or more newlines
-  // Replace with exactly 2 newlines
-  return content.replace(/\n\s*\n\s*\n+/g, '\n\n')
-}
-
 /**
  * Normalize single newlines within bold/italic spans to spaces
  * This allows bold/italic formatting to work across single line breaks
@@ -3237,6 +3228,14 @@ function parseMarkdownContentMarked(
     }
   }
 
+  /** CommonMark / GFM optional title in `()` for links and images — surfaced as native `title` + hover cue. */
+  const markdownTokenTitle = (token: { title?: string | null }): string | undefined => {
+    const raw = token.title
+    if (raw == null) return undefined
+    const s = String(raw).trim()
+    return s.length > 0 ? s : undefined
+  }
+
   const renderInlineTokens = (tokens: any[], keyPrefix: string): React.ReactNode[] => {
     const out: React.ReactNode[] = []
     for (let i = 0; i < tokens.length; i++) {
@@ -3294,6 +3293,11 @@ function parseMarkdownContentMarked(
         }
         case 'link': {
           const href = String(token.href ?? '')
+          const linkTip = markdownTokenTitle(token)
+          const linkVisual = cn(
+            'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words',
+            linkTip && 'cursor-help underline decoration-dotted decoration-current/70 underline-offset-2'
+          )
           const children = stripNestedAnchorsFromNodes(
             renderInlineTokens(token.tokens ?? [{ type: 'text', text: token.text ?? href }], `${key}-link`),
             `${key}-link-sanitized`
@@ -3303,7 +3307,8 @@ function parseMarkdownContentMarked(
               <PaytoLink
                 key={`${key}-payto`}
                 paytoUri={href}
-                className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+                className={linkVisual}
+                linkTitle={linkTip}
               >
                 {children}
               </PaytoLink>
@@ -3315,7 +3320,8 @@ function parseMarkdownContentMarked(
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+                title={linkTip}
+                className={linkVisual}
               >
                 {children}
               </a>
@@ -3331,6 +3337,7 @@ function parseMarkdownContentMarked(
           const cleaned = cleanUrl(src)
           if (!cleaned) break
           const label = String(token.text ?? '')
+          const imageTip = markdownTokenTitle(token)
           if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
             const poster = videoPosterMap?.get(cleaned)
             out.push(
@@ -3366,6 +3373,7 @@ function parseMarkdownContentMarked(
               key={`${key}-img-inline`}
               image={{ ...baseImeta, url: src }}
               alt={label || 'image'}
+              tooltipTitle={imageTip}
               className="w-full rounded-lg cursor-zoom-in"
               classNames={{
                 wrapper: 'not-prose my-2 block max-w-[400px] mx-auto rounded-lg w-full',
@@ -4115,6 +4123,7 @@ function parseMarkdownContentMarked(
             key={`${key}-img-block`}
             image={imetaInfoForStandaloneImageUrl(cleaned)}
             alt={imageToken.text || 'image'}
+            tooltipTitle={markdownTokenTitle(imageToken)}
             className="w-full rounded-lg cursor-zoom-in my-0"
             classNames={{ wrapper: 'my-2 block max-w-[400px] mx-auto' }}
             holdUntilClick={lazyMedia}
@@ -4133,12 +4142,31 @@ function parseMarkdownContentMarked(
 
   const renderBlockTokens = (tokens: any[], keyPrefix: string): React.ReactNode[] => {
     const nodes: React.ReactNode[] = []
+    /** Marked emits `space` for inter-block newlines; ≥2 are required between blocks—extras are user intent. */
+    const spaceTokenExtraGapEm = (t: { raw?: string }): number => {
+      const raw = String(t.raw ?? '')
+      const newlineCount = raw.match(/\n/g)?.length ?? 0
+      const extraLines = Math.max(0, newlineCount - 2)
+      return Math.min(extraLines, 12) * 1.25
+    }
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]
       const key = `${keyPrefix}-${i}`
       switch (token.type) {
-        case 'space':
+        case 'space': {
+          const gapEm = spaceTokenExtraGapEm(token)
+          if (gapEm > 0) {
+            nodes.push(
+              <div
+                key={`${key}-space`}
+                className="not-prose pointer-events-none select-none"
+                aria-hidden
+                style={{ minHeight: `${gapEm}em` }}
+              />
+            )
+          }
           break
+        }
         case 'paragraph':
           nodes.push(renderParagraph(token, key))
           break
@@ -4268,7 +4296,9 @@ function parseMarkdownContentMarked(
 
           const listBody = React.createElement(
             ListTag,
-            { className: listClass },
+            token.ordered
+              ? { className: listClass, start: startNum }
+              : { className: listClass },
             items.map((item: any, itemIdx: number) => (
               <li
                 key={`${key}-li-${itemIdx}`}
@@ -5451,8 +5481,7 @@ export default function MarkdownArticle({
   const preprocessedContent = useMemo(() => {
     // First unescape JSON-encoded escape sequences
     let processed = unescapeJsonContent(event.content)
-    // Normalize excessive newlines (reduce 3+ to 2)
-    processed = normalizeNewlines(processed)
+    // Keep multi-newline runs intact so Marked `space` tokens can reproduce intentional vertical gaps.
     // Normalize single newlines within bold/italic spans to spaces
     processed = normalizeInlineFormattingNewlines(processed)
     // Normalize Setext-style headers (H1 with ===, H2 with ---)
@@ -5615,6 +5644,13 @@ export default function MarkdownArticle({
   return (
     <>
       <style>{`
+        /* Padding (not margin) so separation does not collapse with the prior list's margin */
+        .prose > div.break-words > ul + ul,
+        .prose > div.break-words > ul + ol,
+        .prose > div.break-words > ol + ul,
+        .prose > div.break-words > ol + ol {
+          padding-top: 0.75rem;
+        }
         .prose ol[class*="list-decimal"] {
           list-style-type: decimal !important;
         }

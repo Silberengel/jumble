@@ -50,6 +50,8 @@ export default function Image({
   holdUntilClick = false,
   fetchPriority,
   onClick,
+  /** Native tooltip on hover (e.g. Markdown `![alt](url "title")`). When set, overrides alt-as-title on `<img>`. */
+  tooltipTitle,
   ...props
 }: HTMLAttributes<HTMLSpanElement> & {
   classNames?: {
@@ -58,6 +60,8 @@ export default function Image({
   }
   image: TImetaInfo
   alt?: string
+  /** Shown as the `<img title>` tooltip when non-empty. */
+  tooltipTitle?: string
   hideIfError?: boolean
   errorPlaceholder?: React.ReactNode
   /** Passed to the inner `<img>` (e.g. profile banner vs avatar load order). */
@@ -93,6 +97,10 @@ export default function Image({
   const loadSettledRef = useRef(false)
 
   const finalAlt = imetaAlt || alt
+  const imgTitle =
+    tooltipTitle != null && String(tooltipTitle).trim() !== ''
+      ? String(tooltipTitle).trim()
+      : finalAlt || undefined
   const openLinkHref =
     (isSafeMediaUrl(url) && url.trim()) || (isSafeMediaUrl(imageUrl) && imageUrl.trim()) || ''
 
@@ -216,9 +224,15 @@ export default function Image({
     onClick?.(e)
   }
 
+  const titled = tooltipTitle != null && String(tooltipTitle).trim() !== ''
+
   return (
     <span
-      className={cn('relative overflow-hidden block w-full', classNames.wrapper)}
+      className={cn(
+        'relative overflow-hidden block w-full',
+        classNames.wrapper,
+        titled && 'cursor-help rounded-lg ring-1 ring-inset ring-dotted ring-muted-foreground/45'
+      )}
       style={mergedWrapperStyle}
       onClick={handleWrapperClick}
       {...props}
@@ -258,7 +272,7 @@ export default function Image({
           ref={imgRef}
           src={imageUrl}
           alt={finalAlt}
-          title={finalAlt || undefined}
+          title={imgTitle}
           referrerPolicy="no-referrer"
           decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.

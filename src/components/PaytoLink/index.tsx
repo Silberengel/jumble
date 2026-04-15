@@ -23,7 +23,9 @@ export default function PaytoLink({
   pubkey,
   onOpenZap,
   className,
-  children
+  children,
+  /** When set (e.g. Markdown link title), used as the native `title` tooltip instead of the default payto hint. */
+  linkTitle
 }: {
   paytoUri?: string
   type?: string
@@ -33,6 +35,7 @@ export default function PaytoLink({
   onOpenZap?: (pubkey: string) => void
   className?: string
   children?: React.ReactNode
+  linkTitle?: string
 }) {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -78,6 +81,7 @@ export default function PaytoLink({
   const iconChar = getPaytoIconChar(type)
   const profileUrl = getPaytoProfileUrl(type, authority)
   const content = children ?? <span className="break-all">{authority}</span>
+  const overrideTip = linkTitle?.trim()
 
   const iconEl = (
     <span className="shrink-0 flex items-center justify-center w-4 h-4 text-[1rem] leading-none" aria-hidden>
@@ -106,7 +110,10 @@ export default function PaytoLink({
           'text-primary hover:underline cursor-pointer text-left break-words inline-flex items-center gap-1.5',
           className
         )}
-        title={categoryLabel ? `${displayLabel} (${categoryLabel}): ${t('Open on website')}` : `${displayLabel}: ${t('Open on website')}`}
+        title={
+          overrideTip ||
+          (categoryLabel ? `${displayLabel} (${categoryLabel}): ${t('Open on website')}` : `${displayLabel}: ${t('Open on website')}`)
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {iconEl}
@@ -124,7 +131,14 @@ export default function PaytoLink({
           'text-primary hover:underline cursor-pointer text-left break-words inline-flex items-center gap-1.5',
           className
         )}
-        title={known && categoryLabel ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}` : known ? `${displayLabel}: ${t('Click to open payment options')}` : t('Click to copy address')}
+        title={
+          overrideTip ||
+          (known && categoryLabel
+            ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}`
+            : known
+              ? `${displayLabel}: ${t('Click to open payment options')}`
+              : t('Click to copy address'))
+        }
       >
         {iconEl}
         {content}

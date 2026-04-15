@@ -176,8 +176,31 @@ export function AdvancedEventLabMarkupToolbar({
               )
             })}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n---\n'))}>
-              {t('Advanced lab tb horizontalRule')}
+            <DropdownMenuItem
+              onClick={() =>
+                run((v) =>
+                  labInsertRaw(
+                    v,
+                    sliceRef,
+                    `\n${t('Advanced lab tb heading placeholder')}\n===\n`
+                  )
+                )
+              }
+            >
+              {t('Advanced lab tb setextH1')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                run((v) =>
+                  labInsertRaw(
+                    v,
+                    sliceRef,
+                    `\n${t('Advanced lab tb heading placeholder')}\n---\n`
+                  )
+                )
+              }
+            >
+              {t('Advanced lab tb setextH2')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -196,6 +219,12 @@ export function AdvancedEventLabMarkupToolbar({
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '*', 'italic'))}>
               {t('Advanced lab tb italic')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '__', 'bold'))}>
+              {t('Advanced lab tb boldUnderscore')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '_', 'italic'))}>
+              {t('Advanced lab tb italicUnderscore')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '~~', 'strikethrough'))}>
               {t('Advanced lab tb strike')}
@@ -224,6 +253,44 @@ export function AdvancedEventLabMarkupToolbar({
               <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb image')}
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() =>
+                run((v) =>
+                  labInsertSnippet(
+                    v,
+                    sliceRef,
+                    '[',
+                    'link text',
+                    '](https://example.com "Link title")'
+                  )
+                )
+              }
+            >
+              <Link2 className="h-3.5 w-3.5 mr-2 inline" />
+              {t('Advanced lab tb linkTitled')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                run((v) =>
+                  labInsertSnippet(
+                    v,
+                    sliceRef,
+                    '![',
+                    'alt text',
+                    '](https://example.com/image.png "Image title")'
+                  )
+                )
+              }
+            >
+              <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
+              {t('Advanced lab tb imageTitled')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '  \n'))}>
+              <Pilcrow className="h-3.5 w-3.5 mr-2 inline" />
+              {t('Advanced lab tb hardBreak')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -240,9 +307,27 @@ export function AdvancedEventLabMarkupToolbar({
               <List className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb bulletList')}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
+              <List className="h-3.5 w-3.5 mr-2 inline" />
+              {t('Advanced lab tb bulletListStar')}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n1. first\n2. second\n'))}>
               <ListOrdered className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb orderedList')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                run((v) =>
+                  labInsertRaw(
+                    v,
+                    sliceRef,
+                    '\n4. item starting at four\n5. next item\n'
+                  )
+                )
+              }
+            >
+              <ListOrdered className="h-3.5 w-3.5 mr-2 inline" />
+              {t('Advanced lab tb orderedListStart')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
@@ -454,16 +539,32 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 text-xs shrink-0"
-          title={t('Advanced lab tb hrTitle')}
-          onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n---\n'))}
-        >
-          <Minus className="h-3.5 w-3.5" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 text-xs shrink-0"
+              title={t('Advanced lab tb horizontalRules')}
+            >
+              <Minus className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3 w-3 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="z-[280] w-48">
+            <DropdownMenuLabel>{t('Advanced lab tb horizontalRules')}</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n---\n'))}>
+              {t('Advanced lab tb hrDashes')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n***\n'))}>
+              {t('Advanced lab tb hrAsterisks')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n___\n'))}>
+              {t('Advanced lab tb hrUnderscores')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     )
   }
