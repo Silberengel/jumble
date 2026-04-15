@@ -34,4 +34,5 @@ public/.og-image.raster.svg
 
 .venv-i18n
 .local-piper-data
+.local-libretranslate
 scripts/i18n-overrides/.gaps

@@ -1,5 +1,6 @@
 # Minimal compose for running the published image (e.g. on remote server).
-# Usage: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# Full stack (jumble + NIP-66 + og-proxy + Piper + LanguageTool + LibreTranslate): npm run stack:remote
+# Usage (app only): docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 #
 # Apache (unchanged on your host) should keep (order: specific paths before catch-all /):
 #   ProxyPass /sites/ http://127.0.0.1:8090/sites/
@@ -83,8 +84,69 @@ services:
     container_name: imwald-libretranslate
     ports:
       - '127.0.0.1:5000:5000'
+    tty: true
+    environment:
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de}
+    volumes:
+      - ./.local-libretranslate/share:/home/libretranslate/.local/share
+      - ./.local-libretranslate/cache:/home/libretranslate/.local/cache
     restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 2048M
+
+  # --- profile `stack`: OG proxy + Piper (Apache → 8090 / 9876). One command: npm run stack:remote ---
+  # First-party images: silberengel/* (override with OG_PROXY_IMAGE / WYOMING_PIPER_IMAGE / PIPER_HTTP_PROXY_IMAGE).
+  og-proxy:
+    image: ${OG_PROXY_IMAGE:-silberengel/wikistr:latest-og-proxy}
+    profiles: ['stack']
+    container_name: og-proxy
+    ports:
+      - '127.0.0.1:8090:8090'
+    environment:
+      PROXY_PORT: '8090'
+      PROXY_ALLOW_ORIGIN: ${OG_PROXY_ALLOW_ORIGIN:-https://jumble.imwald.eu}
+      PROXY_TIMEOUT_MS: '30000'
+      PROXY_MAX_BODY_BYTES: '5242880'
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+    restart: unless-stopped
+
+  piper-wyoming:
+    image: ${WYOMING_PIPER_IMAGE:-silberengel/wyoming-piper:latest}
+    profiles: ['stack']
+    container_name: piper-tts
+    command:
+      - --voice
+      - en_US-lessac-medium
+      - --uri
+      - tcp://0.0.0.0:10200
+      - --data-dir
+      - /data
+    volumes:
+      - piper-stack-data:/data
+    expose:
+      - '10200'
+    restart: unless-stopped
+
+  piper-tts-proxy:
+    profiles: ['stack']
+    container_name: imwald-piper-tts-proxy
+    build:
+      context: .
+      dockerfile: services/piper-tts-proxy/Dockerfile
+    image: ${PIPER_HTTP_PROXY_IMAGE:-silberengel/imwald-piper-tts-proxy:latest}
+    environment:
+      NODE_ENV: production
+      PORT: '9876'
+      PIPER_TTS_HOST: piper-wyoming
+      PIPER_TTS_PORT: '10200'
+    ports:
+      - '127.0.0.1:9876:9876'
+    depends_on:
+      - piper-wyoming
+    restart: unless-stopped
+
+volumes:
+  piper-stack-data:

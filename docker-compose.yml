@@ -12,17 +12,21 @@ services:
     networks:
       - jumble
 
-  proxy-server:
-    image: ghcr.io/danvergara/jumble-proxy-server:latest
-    environment:
-      - ALLOW_ORIGIN=${JUMBLE_SOCIAL_URL:-http://localhost:8089}
-      - JUMBLE_PROXY_GITHUB_TOKEN=${JUMBLE_PROXY_GITHUB_TOKEN:-}
-      - ENABLE_PPROF=true
-      - PORT=8080
+  og-proxy:
+    image: ${OG_PROXY_IMAGE:-silberengel/wikistr:latest-og-proxy}
+    container_name: jumble-og-proxy
     ports:
-      - "8090:8080"
+      - '127.0.0.1:8090:8090'
+    environment:
+      PROXY_PORT: '8090'
+      PROXY_ALLOW_ORIGIN: ${OG_PROXY_ALLOW_ORIGIN:-http://localhost:5173}
+      PROXY_TIMEOUT_MS: '30000'
+      PROXY_MAX_BODY_BYTES: '5242880'
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
     networks:
       - jumble
+    restart: unless-stopped
 
   # Optional: same as docker-compose.dev.yml — `docker compose --profile editor-tools up -d languagetool libretranslate`
   languagetool:
@@ -41,6 +45,12 @@ services:
     container_name: jumble-libretranslate
     ports:
       - '5000:5000'
+    tty: true
+    environment:
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de}
+    volumes:
+      - ./.local-libretranslate/share:/home/libretranslate/.local/share
+      - ./.local-libretranslate/cache:/home/libretranslate/.local/cache
     networks:
       - jumble
     restart: unless-stopped

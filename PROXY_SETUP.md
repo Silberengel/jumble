@@ -187,7 +187,7 @@ VITE_TRANSLATE_URL=/api/translate
 
 **Production:** `docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate` publishes **127.0.0.1:8010** and **127.0.0.1:5000** (loopback-only). Proxy those paths from Apache/nginx to the SPA origin, and bake the client with `LANGUAGE_TOOL_URL=/api/languagetool` and `TRANSLATE_URL=/api/translate` when running `./scripts/build-and-push-prod.sh`.
 
-**Notes:** LanguageTool’s JVM image often needs **~1–2 GiB** RAM. LibreTranslate may **download models** on first start (can take several minutes).
+**Notes:** LanguageTool’s JVM image often needs **~1–2 GiB** RAM. LibreTranslate **does not listen on port 5000 until models are ready**; without **`LT_LOAD_ONLY`** it may pull **many gigabytes** first, so the Vite proxy can show **`ECONNRESET` on `/translate`** while booting. Compose sets **`LT_LOAD_ONLY=en,de`** by default (override with **`LT_LOAD_ONLY`**). Models are stored under **`.local-libretranslate/share`** and **`.local-libretranslate/cache`** (gitignored) with **bind mounts** so they survive **`docker compose down`**, image updates, and container recreate. **`scripts/ensure-libretranslate-dirs.sh`** (run automatically by **`npm run dev:all`**, **`npm run stack:remote`**, **`npm run docker:editor-tools`**, etc.) creates those dirs and **`chown`s them to UID 1032** via a short **Alpine** container so the LibreTranslate user can write. If you start **`libretranslate` by hand**, run **`npm run docker:prep-libretranslate`** once first. First download can still take **several minutes**; use **`docker logs -f jumble-libretranslate`** until **`curl http://127.0.0.1:5000/languages`** returns JSON.
 
 ## LibreTranslate (same-origin `/api/translate`)
 
