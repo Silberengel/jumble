@@ -1,3 +1,4 @@
+import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
 import { isImage, isVideo, isAudio } from '@/lib/url'
 import { URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
@@ -137,10 +138,15 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     })
     
     // Fallback: protect regular wikilinks if they weren't processed yet
-    processed = processed.replace(/\[\[([^\]]+)\]\]/g, (_match, linkContent) => {
-      // Skip if this was already processed as a bookstr wikilink
+    processed = processed.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
       if (linkContent.startsWith('book::')) {
-        return _match
+        return match
+      }
+      if (linkContent.startsWith('citation::')) {
+        return match
+      }
+      if (shouldLeaveDoubleBracketForAsciidoctor(processed, offset, match.length, linkContent)) {
+        return match
       }
       return `+++WIKILINK:${linkContent}+++`
     })

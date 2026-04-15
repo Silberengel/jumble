@@ -36,6 +36,7 @@ import {
   NOSTR_ASCIIDOC_TEXT_NODE_REGEX,
   NOSTR_HTML_BECH32_RELAXED
 } from '@/lib/content-patterns'
+import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
 import logger from '@/lib/logger'
 import { extractBookMetadata } from '@/lib/bookstr-parser'
 import { ExtendedKind } from '@/constants'
@@ -396,14 +397,17 @@ export default function AsciidocArticle({
     
     // Then protect regular wikilinks by converting them to passthrough format
     // This prevents AsciiDoc from processing them and prevents URLs inside from being processed
-    content = content.replace(/\[\[([^\]]+)\]\]/g, (_match, linkContent) => {
+    content = content.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
       // Skip if this was already processed as a bookstr wikilink (shouldn't happen, but safety check)
       if (linkContent.startsWith('book::')) {
-        return _match
+        return match
       }
       // Skip citations - they're already processed above
       if (linkContent.startsWith('citation::')) {
-        return _match
+        return match
+      }
+      if (shouldLeaveDoubleBracketForAsciidoctor(content, offset, match.length, linkContent)) {
+        return match
       }
       // Convert to AsciiDoc passthrough format so it's preserved
       return `+++WIKILINK:${linkContent}+++`

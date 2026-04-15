@@ -43,6 +43,23 @@ export function labInsertRaw(
   labSyncSliceFromView(view, sliceRef)
 }
 
+/** Like {@link labInsertRaw}, but skips a leading newline when the selection starts at document position 0 (avoids an empty first line). */
+export function labInsertRawWithOptionalBlockLeadNl(
+  view: EditorView,
+  sliceRef: { current: AdvancedEventLabSlice | null },
+  body: string
+) {
+  const sel = view.state.selection.main
+  const needsLeadNl = sel.from > 0
+  const insert = needsLeadNl ? `\n${body}` : body
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert },
+    selection: EditorSelection.cursor(sel.from + insert.length)
+  })
+  view.focus()
+  labSyncSliceFromView(view, sliceRef)
+}
+
 /** If there is a selection, wrap it; otherwise insert snippet with placeholder between delimiters. */
 export function labWrapOrSnippet(
   view: EditorView,

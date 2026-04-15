@@ -13,10 +13,13 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { EditorView } from '@codemirror/view'
 import {
+  Anchor,
   Braces,
   ChevronDown,
   Code2,
+  Film,
   Heading,
+  Hash,
   Image as ImageIcon,
   Link2,
   List,
@@ -27,12 +30,18 @@ import {
   Sigma,
   Table2,
   Type,
-  ListTodo
+  ListTodo,
+  Volume2
 } from 'lucide-react'
 import type { MutableRefObject } from 'react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { labInsertRaw, labInsertSnippet, labWrapOrSnippet } from './markup-insert'
+import {
+  labInsertRaw,
+  labInsertRawWithOptionalBlockLeadNl,
+  labInsertSnippet,
+  labWrapOrSnippet
+} from './markup-insert'
 
 /** Languages for fenced / source blocks (labels are English; widely recognized by highlighters). */
 const CODE_LANGUAGES = [
@@ -110,6 +119,17 @@ export function AdvancedEventLabMarkupToolbar({
     const v = viewRef.current
     if (!v) return
     fn(v)
+  }
+
+  /** Contiguous document header per https://docs.asciidoctor.org/asciidoc/latest/document/header/ (no blank lines until after the last header line). */
+  const adocInsertFullHeader = (titleLine: string) => {
+    run((v) =>
+      labInsertRawWithOptionalBlockLeadNl(
+        v,
+        sliceRef,
+        `${titleLine}\n${t('Advanced lab tb adocHeaderAuthorLine')}\n${t('Advanced lab tb adocHeaderRevisionLine')}\n${t('Advanced lab tb adocHeaderAttrsBlock')}\n\n== ${t('Advanced lab tb sectionTitle')}\n`
+      )
+    )
   }
 
   const mdFence = (lang: string) => {
@@ -584,11 +604,21 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="h-3 w-3 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-60">
+        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(80vh,32rem)] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocTitlesHint')}</DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, `\n= ${t('Advanced lab tb documentTitle')}\n`))}>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `= ${t('Advanced lab tb documentTitle')}\n`)
+              )
+            }
+          >
             {t('Advanced lab tb adocLevel0')}
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => adocInsertFullHeader(`= ${t('Advanced lab tb documentTitle')}`)}>
+            {t('Advanced lab tb adocLevel0WithHeader')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           {(
             [
               'Advanced lab tb adocSection1',
@@ -662,6 +692,24 @@ export function AdvancedEventLabMarkupToolbar({
             <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocImage')}
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, ' +\n'))}>
+            {t('Advanced lab tb adocLineBreak')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '^', 'sup'))}>
+            {t('Advanced lab tb adocSuperscript')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labWrapOrSnippet(v, sliceRef, '~', 'sub'))}>
+            {t('Advanced lab tb adocSubscript')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => run((v) => labInsertSnippet(v, sliceRef, '+++', 'raw or HTML', '+++'))}
+          >
+            {t('Advanced lab tb adocPassthrough')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'footnote:[Footnote text]'))}>
+            {t('Advanced lab tb adocFootnote')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -682,6 +730,20 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\nterm:: definition line\n'))}>
             {t('Advanced lab tb adocLabeled')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(
+                  v,
+                  sliceRef,
+                  '\n[start=4]\n. fourth item\n. fifth item\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb adocOrderedStart')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -759,6 +821,166 @@ export function AdvancedEventLabMarkupToolbar({
           >
             {t('Advanced lab tb adocWarning')}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(
+                  v,
+                  sliceRef,
+                  '\n[IMPORTANT]\n====\n',
+                  'Important body',
+                  '\n====\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb adocImportant')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(
+                  v,
+                  sliceRef,
+                  '\n[CAUTION]\n====\n',
+                  'Caution body',
+                  '\n====\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb adocCaution')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(
+                  v,
+                  sliceRef,
+                  '\n[example]\n====\n',
+                  'Example body',
+                  '\n====\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb adocExampleBlock')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(v, sliceRef, '\n****\n', 'Sidebar body', '\n****\n')
+              )
+            }
+          >
+            {t('Advanced lab tb adocSidebar')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(
+                  v,
+                  sliceRef,
+                  '\n[listing]\n----\n',
+                  'Listing body (often line-oriented text)',
+                  '\n----\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb adocListing')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(v, sliceRef, '\n--\n', 'Open block body', '\n--\n')
+              )
+            }
+          >
+            {t('Advanced lab tb adocOpenBlock')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1 text-xs shrink-0">
+            <Anchor className="h-3.5 w-3.5" />
+            {t('Advanced lab tb adocStructure')}
+            <ChevronDown className="h-3 w-3 opacity-60" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(70vh,28rem)] overflow-y-auto">
+          <DropdownMenuLabel>{t('Advanced lab tb adocStructureHint')}</DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(
+                  v,
+                  sliceRef,
+                  '\n|===\n|Column 1 |Column 2\n\n|Cell A |Cell B\n|===\n'
+                )
+              )
+            }
+          >
+            <Table2 className="h-3.5 w-3.5 mr-2 inline" />
+            {t('Advanced lab tb adocTable')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, '[#section-anchor]\n'))
+            }
+          >
+            <Hash className="h-3.5 w-3.5 mr-2 inline" />
+            {t('Advanced lab tb adocAnchor')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(v, sliceRef, '<<section-anchor,', 'link label', '>>')
+              )
+            }
+          >
+            <Link2 className="h-3.5 w-3.5 mr-2 inline" />
+            {t('Advanced lab tb adocXref')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(v, sliceRef, '\nvideo::https://example.com/video.mp4[width=640]\n')
+              )
+            }
+          >
+            <Film className="h-3.5 w-3.5 mr-2 inline" />
+            {t('Advanced lab tb adocVideo')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(v, sliceRef, '\naudio::https://example.com/audio.mp3[]\n')
+              )
+            }
+          >
+            <Volume2 className="h-3.5 w-3.5 mr-2 inline" />
+            {t('Advanced lab tb adocAudio')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, '\n// Comment line\n'))}>
+            {t('Advanced lab tb adocComment')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'kbd:[Ctrl+T]'))}>
+            {t('Advanced lab tb adockbd')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => run((v) => labInsertRaw(v, sliceRef, 'menu:View[Zoom > In]'))}
+          >
+            {t('Advanced lab tb adocMenu')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'btn:[OK]'))}>
+            {t('Advanced lab tb adocBtn')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -817,6 +1039,20 @@ export function AdvancedEventLabMarkupToolbar({
           >
             {t('Advanced lab tb adocStemInline')}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => run((v) => labInsertSnippet(v, sliceRef, 'latexmath:[', 'x^2 + y^2', ']'))}
+          >
+            {t('Advanced lab tb adocLatexmathInline')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertSnippet(v, sliceRef, '\n[stem]\n++++\n', 'E = mc^2', '\n++++\n')
+              )
+            }
+          >
+            {t('Advanced lab tb adocStemBlock')}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\frac{a}{b}', ']'))}
@@ -835,6 +1071,46 @@ export function AdvancedEventLabMarkupToolbar({
             onClick={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\int_{a}^{b} f(x)\\,dx', ']'))}
           >
             {t('Advanced lab tb katexInt')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(
+                  v,
+                  sliceRef,
+                  '\n[stem]\n++++\n\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}\n++++\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb katexMatrix')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              run((v) =>
+                labInsertRaw(
+                  v,
+                  sliceRef,
+                  '\n[stem]\n++++\n\\begin{cases} x & x > 0 \\\\ -x & x \\le 0 \\end{cases}\n++++\n'
+                )
+              )
+            }
+          >
+            {t('Advanced lab tb katexCases')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>{t('Advanced lab tb mathGreek')}</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\alpha]'))}>
+            <code className="text-xs mr-2">{'\\alpha'}</code> {t('Advanced lab tb greekAlpha')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\beta]'))}>
+            <code className="text-xs mr-2">{'\\beta'}</code> {t('Advanced lab tb greekBeta')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\pi]'))}>
+            <code className="text-xs mr-2">{'\\pi'}</code> {t('Advanced lab tb greekPi')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\infty]'))}>
+            <code className="text-xs mr-2">{'\\infty'}</code> {t('Advanced lab tb greekInfty')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
