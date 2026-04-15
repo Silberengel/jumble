@@ -183,33 +183,24 @@ function SuppressedLiveStreamEmbed({ noteId, className }: { noteId: string; clas
   )
 }
 
-function EmbeddedNoteContent({
+/**
+ * Fetches and renders an embedded note. Split out so we never call {@link useFetchEvent} with `undefined`
+ * (skipping fetch for suppressed live naddrs is handled in the parent without that hook).
+ */
+function EmbeddedNoteFetched({
   noteId,
   className,
   containingEvent,
-  showFull = false
+  showFull,
+  allowLiveEmbeds
 }: {
   noteId: string
   className?: string
   containingEvent?: Event
-  showFull?: boolean
+  showFull: boolean
+  allowLiveEmbeds: boolean
 }) {
-  const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
-  const allowLiveEmbeds = liveActivityKindsEnabledInPicker(showKinds, feedKindFilterBypass)
-
-  const naddrTargetsLiveActivityOnly = useMemo(() => {
-    try {
-      const dec = nip19.decode(noteId.trim())
-      if (dec.type !== 'naddr') return false
-      return LIVE_ACTIVITY_KINDS.includes(dec.data.kind as (typeof LIVE_ACTIVITY_KINDS)[number])
-    } catch {
-      return false
-    }
-  }, [noteId])
-
-  const skipLiveActivityFetch = naddrTargetsLiveActivityOnly && !allowLiveEmbeds
-
-  const { event, isFetching } = useFetchEvent(skipLiveActivityFetch ? undefined : noteId)
+  const { event, isFetching } = useFetchEvent(noteId)
   const [retryEvent, setRetryEvent] = useState<Event | undefined>(undefined)
   const [isRetrying, setIsRetrying] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
@@ -217,7 +208,6 @@ function EmbeddedNoteContent({
 
   // If the first fetch fails, try a force retry (max 3 attempts)
   useEffect(() => {
-    if (skipLiveActivityFetch) return
     if (!isFetching && !event && !isRetrying && retryCount < maxRetries) {
       setIsRetrying(true)
       setRetryCount(prev => prev + 1)
@@ -240,11 +230,7 @@ function EmbeddedNoteContent({
           setIsRetrying(false)
         })
     }
-  }, [isFetching, event, noteId, isRetrying, retryCount, skipLiveActivityFetch])
-
-  if (skipLiveActivityFetch) {
-    return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
-  }
+  }, [isFetching, event, noteId, isRetrying, retryCount])
 
   const finalEvent = event || retryEvent
   const finalIsFetching = isFetching || (isRetrying && retryCount <= maxRetries)
@@ -327,6 +313,47 @@ function EmbeddedNoteContent({
         originalNoteId={noteId}
       />
     </div>
+  )
+}
+
+function EmbeddedNoteContent({
+  noteId,
+  className,
+  containingEvent,
+  showFull = false
+}: {
+  noteId: string
+  className?: string
+  containingEvent?: Event
+  showFull?: boolean
+}) {
+  const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
+  const allowLiveEmbeds = liveActivityKindsEnabledInPicker(showKinds, feedKindFilterBypass)
+
+  const naddrTargetsLiveActivityOnly = useMemo(() => {
+    try {
+      const dec = nip19.decode(noteId.trim())
+      if (dec.type !== 'naddr') return false
+      return LIVE_ACTIVITY_KINDS.includes(dec.data.kind as (typeof LIVE_ACTIVITY_KINDS)[number])
+    } catch {
+      return false
+    }
+  }, [noteId])
+
+  const skipLiveActivityFetch = naddrTargetsLiveActivityOnly && !allowLiveEmbeds
+
+  if (skipLiveActivityFetch) {
+    return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
+  }
+
+  return (
+    <EmbeddedNoteFetched
+      noteId={noteId}
+      className={className}
+      containingEvent={containingEvent}
+      showFull={showFull}
+      allowLiveEmbeds={allowLiveEmbeds}
+    />
   )
 }
 

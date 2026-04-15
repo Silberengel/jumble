@@ -80,7 +80,7 @@ import {
 import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
 import MediaGridItem from '../MediaGridItem'
 
-const LIMIT = 100 // Increased from 200 to load more events per request
+const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
 /** Single-relay explore: kindless REQ cap (relay returns whatever it has, up to this many). */
 const RELAY_EXPLORE_LIMIT = SINGLE_RELAY_KINDLESS_REQ_LIMIT
@@ -97,7 +97,55 @@ if (import.meta.env.DEV && import.meta.hot) {
   import.meta.hot.on('vite:beforeUpdate', bumpSuppressRelayEmptyFeedToast)
   import.meta.hot.on('vite:beforeFullReload', bumpSuppressRelayEmptyFeedToast)
 }
-const SHOW_COUNT = 20 // Increased from 10 to show more events at once, reducing scroll load frequency
+const SHOW_COUNT = 36 // Initial visible-row quota (filtered); higher = more rows on first paint
+/** Extra visible-row quota each time the user reaches the bottom while draining an already-loaded timeline. */
+const REVEAL_BATCH_STEP = 96
+/**
+ * One “load more” chains relay pages until at least this many **new** events (after kind filter + id de-dupe) are
+ * collected, so sparse kind filters do not feel stuck at ~10 rows per scroll.
+ */
+const LOAD_MORE_MIN_NEW_EVENTS = 22
+const LOAD_MORE_MAX_CHAIN_PAGES = 12
+/** Wall-clock cap for chained load-more fetches (sparse filters + slow relays). */
+const LOAD_MORE_CHAIN_BUDGET_MS = 5_000
+/**
+ * IntersectionObserver: extend the viewport root downward so the bottom sentinel can fire load-more while the
+ * user is still well above the physical list end (px).
+ */
+const LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX = 3200
+/**
+ * When the user scrolls down inside the feed scroll container and is within this distance of the bottom (px),
+ * start load-more (uses viewport height of that container, with a floor).
+ */
+const LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT = 2.35
+const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
+/** Min ms between scroll-driven load-more attempts (loadMore also throttles internally). */
+const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180
+
+function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | null {
+  if (!node) return null
+  let el: HTMLElement | null = node.parentElement
+  while (el && el !== document.documentElement) {
+    const { overflowY } = getComputedStyle(el)
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') return el
+    el = el.parentElement
+  }
+  return null
+}
+
+function distanceFromScrollBottom(scrollRoot: HTMLElement | Window): number {
+  if (scrollRoot === window) {
+    const doc = document.documentElement
+    return doc.scrollHeight - window.scrollY - window.innerHeight
+  }
+  const el = scrollRoot as HTMLElement
+  return el.scrollHeight - el.scrollTop - el.clientHeight
+}
+
+function scrollRootClientHeight(scrollRoot: HTMLElement | Window): number {
+  return scrollRoot === window ? window.innerHeight : (scrollRoot as HTMLElement).clientHeight
+}
+
 /**
  * When building visible rows, scan this many merged-timeline events at most. Previously we only looked at the first
  * {@link showCount} events then filtered — with “posts only”, kind filters, and mutes, most of those could be hidden
@@ -433,7 +481,7 @@ const NoteList = forwardRef(
       oneShotFirstRelayGraceMs,
       /** Max events kept after merging one-shot REQ batches (default 100). */
       oneShotMergedCap,
-      /** Initial visible rows and each “reveal more” step when scrolling cached events (default first {@link SHOW_COUNT}, then 2× per step). */
+      /** Initial visible rows and each “reveal more” step when scrolling cached events (default first {@link SHOW_COUNT}, then {@link REVEAL_BATCH_STEP} per step unless overridden). */
       revealBatchSize,
       /** When set with {@link oneShotFetch}, logs fetch + filter diagnostics to the console (e.g. faux spells). */
       oneShotDebugLabel,
@@ -569,10 +617,18 @@ const NoteList = forwardRef(
       displayTimelineSourceRef.current = timelineEventsForFilter
     }, [timelineEventsForFilter])
     const bottomRef = useRef<HTMLDivElement | null>(null)
+    /** List root for resolving the feed’s scroll container (desktop primary layout scrolls a div, not `window`). */
+    const feedRootRef = useRef<HTMLDivElement | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
     const spellFeedFirstPaintLoggedKeyRef = useRef('')
     const consecutiveEmptyRef = useRef(0) // Track consecutive empty results to prevent infinite retries
     const loadMoreTimeoutRef = useRef<NodeJS.Timeout | null>(null) // Throttle loadMore calls to prevent stuttering
+    /**
+     * True when the scan for {@link filteredEvents} reached the end of the loaded timeline but still has fewer
+     * than {@link showCount} visible rows (aggressive kind/reply/mute filters). {@link loadMore} must not skip
+     * relay pagination based on raw `events.length - showCount` — that difference is not “unrevealed buffer”.
+     */
+    const bufferExhaustedForVisibleQuotaRef = useRef(false)
     /** Batched profile + embed prefetch after timeline updates (avoids N×9s profile storms while relays stream). */
     const timelinePrefetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const lastEventsForTimelinePrefetchRef = useRef<Event[]>([])
@@ -968,7 +1024,7 @@ const NoteList = forwardRef(
       shouldHideEventRef.current = shouldHideEvent
     }, [shouldHideEvent])
 
-    const filteredEvents = useMemo(() => {
+    const { items: filteredEvents, bufferExhaustedForVisibleQuota } = useMemo(() => {
       const idSet = new Set<string>()
       const out: Event[] = []
       const target = showCount
@@ -977,8 +1033,9 @@ const NoteList = forwardRef(
         Math.min(MAX_TIMELINE_EVENTS_SCAN_FOR_VISIBLE, Math.max(target * 60, 400))
       )
 
-      for (let i = 0; i < maxScan && out.length < target; i++) {
-        const evt = timelineEventsForFilter[i]
+      let i = 0
+      for (; i < maxScan && i < timelineEventsForFilter.length && out.length < target; i++) {
+        const evt = timelineEventsForFilter[i]!
         if (applyKindPickerInUi) {
           if (!effectiveShowKinds.includes(evt.kind)) continue
           if (evt.kind === kinds.ShortTextNote) {
@@ -996,7 +1053,9 @@ const NoteList = forwardRef(
         idSet.add(id)
         out.push(evt)
       }
-      return out
+      const scannedToEndOfBuffer = i >= timelineEventsForFilter.length
+      const exhausted = out.length < target && scannedToEndOfBuffer
+      return { items: out, bufferExhaustedForVisibleQuota: exhausted }
     }, [
       timelineEventsForFilter,
       showCount,
@@ -1008,6 +1067,10 @@ const NoteList = forwardRef(
       showKind1111,
       applyKindPickerInUi
     ])
+
+    useEffect(() => {
+      bufferExhaustedForVisibleQuotaRef.current = bufferExhaustedForVisibleQuota
+    }, [bufferExhaustedForVisibleQuota])
 
     useLayoutEffect(() => {
       if (!feedPaintSessionPendingRef.current && !feedPaintRelayPendingRef.current) return
@@ -2524,8 +2587,7 @@ const NoteList = forwardRef(
     useEffect(() => {
       const options: IntersectionObserverInit = {
         root: null,
-        // Trigger when user is 400px from the bottom so we start loading before they reach the end
-        rootMargin: '0px 0px 400px 0px',
+        rootMargin: `0px 0px ${LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX}px 0px`,
         threshold: 0
       }
 
@@ -2544,15 +2606,20 @@ const NoteList = forwardRef(
         // Show more events immediately if we have them cached
         if (currentShowCount < currentEvents.length) {
           const remaining = currentEvents.length - currentShowCount
-          const step = revealBatchSize ?? SHOW_COUNT * 2
+          const step = revealBatchSize ?? REVEAL_BATCH_STEP
           const increment = Math.min(step, remaining)
           setShowCount((prev) => prev + increment)
-          // Only preload more if we have plenty cached (more than 3/4 of LIMIT)
-          // BUT: Always try to load more if we have very few events (might be due to filtering)
-          if (currentEvents.length - currentShowCount > LIMIT * 0.75 && currentEvents.length >= 50) {
+          // `showCount` is a *visible-row quota*, not an offset into the raw merged timeline. Skipping relay
+          // fetch when `events.length - showCount` is large breaks sparse feeds (e.g. only zap receipts): the
+          // buffer can hold many raw events while every visible row is already shown — we must still REQ.
+          const exhausted = bufferExhaustedForVisibleQuotaRef.current
+          if (
+            !exhausted &&
+            currentEvents.length >= 50 &&
+            currentEvents.length - currentShowCount > LIMIT * 0.75
+          ) {
             return
           }
-          // If we have very few events, always try to load more (might be aggressive filtering)
           if (currentEvents.length < 50) {
             // Continue to loadMore below even if we have cached events
             // This ensures we keep loading when filtering is aggressive
@@ -2623,31 +2690,46 @@ const NoteList = forwardRef(
               return
             }
 
-            let fetchBatch = newEvents
             const narrowLoadMore =
               useFilterAsIsRef.current &&
               clientSideKindFilterRef.current &&
               withKindFilterRef.current &&
               !seeAllFeedEventsRef.current &&
               (!allowKindlessRelayExploreRef.current || !showAllKindsRef.current)
-            let toAppend = narrowLoadMore
-              ? fetchBatch.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
-              : fetchBatch
 
-            if (
-              narrowLoadMore &&
-              toAppend.length === 0 &&
-              fetchBatch.length > 0
-            ) {
-              let skipUntil = Math.min(...fetchBatch.map((e) => e.created_at)) - 1
-              for (let depth = 0; depth < 8 && toAppend.length === 0; depth++) {
-                fetchBatch = await client.loadMoreTimeline(latestTimelineKey, skipUntil, LIMIT)
-                if (fetchBatch.length === 0) break
-                toAppend = fetchBatch.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
-                if (toAppend.length > 0) break
-                skipUntil = Math.min(...fetchBatch.map((e) => e.created_at)) - 1
+            const existingIds = new Set(latestEvents.map((e) => e.id))
+            const kindPasses = (e: Event) =>
+              !narrowLoadMore || effectiveShowKindsRef.current.includes(e.kind)
+
+            const noveltyFromBatch = (batch: Event[]) => {
+              const out: Event[] = []
+              for (const e of batch) {
+                if (!kindPasses(e)) continue
+                if (existingIds.has(e.id)) continue
+                existingIds.add(e.id)
+                out.push(e)
               }
+              return out
             }
+
+            let fetchBatch: Event[] = newEvents
+            const accumulated: Event[] = noveltyFromBatch(fetchBatch)
+            const chainDeadlineMs = Date.now() + LOAD_MORE_CHAIN_BUDGET_MS
+
+            for (
+              let chain = 0;
+              chain < LOAD_MORE_MAX_CHAIN_PAGES && accumulated.length < LOAD_MORE_MIN_NEW_EVENTS;
+              chain++
+            ) {
+              if (fetchBatch.length === 0) break
+              if (Date.now() >= chainDeadlineMs) break
+              const skipUntil = Math.min(...fetchBatch.map((e) => e.created_at)) - 1
+              fetchBatch = await client.loadMoreTimeline(latestTimelineKey, skipUntil, LIMIT)
+              if (fetchBatch.length === 0) break
+              accumulated.push(...noveltyFromBatch(fetchBatch))
+            }
+
+            const toAppend = accumulated
 
             if (toAppend.length === 0) {
               consecutiveEmptyRef.current += 1
@@ -2726,6 +2808,61 @@ const NoteList = forwardRef(
         }, 50) // Reduced delay from 100ms to 50ms for more responsive scrolling
       }
 
+      let scrollPrefetchTarget: HTMLElement | Window | null = null
+      let scrollPrefetchRafId = 0
+      let lastScrollTopForPrefetchDir = 0
+      let lastScrollPrefetchInvokeMs = 0
+
+      const onScrollPrefetch = () => {
+        if (scrollPrefetchRafId) return
+        scrollPrefetchRafId = requestAnimationFrame(() => {
+          scrollPrefetchRafId = 0
+          const now = Date.now()
+          if (now - lastScrollPrefetchInvokeMs < LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS) return
+          if (loadingRef.current) return
+          if (feedFullSearchEventsRef.current !== null) return
+          const t = scrollPrefetchTarget
+          if (!t) return
+          const top = t === window ? window.scrollY : (t as HTMLElement).scrollTop
+          if (top <= lastScrollTopForPrefetchDir + 6) {
+            lastScrollTopForPrefetchDir = top
+            return
+          }
+          lastScrollTopForPrefetchDir = top
+
+          const ch = scrollRootClientHeight(t)
+          const threshold = Math.max(
+            LOAD_MORE_SCROLL_PREFETCH_MIN_PX,
+            ch * LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT
+          )
+          if (distanceFromScrollBottom(t) >= threshold) return
+
+          lastScrollPrefetchInvokeMs = now
+          const ev = eventsRef.current
+          const sc = showCountRef.current
+          if (sc < ev.length || hasMoreRef.current) {
+            loadMore()
+          }
+        })
+      }
+
+      const wireScrollPrefetch = () => {
+        const anchor = feedRootRef.current
+        const parent = getNearestScrollableAncestor(anchor)
+        const next: HTMLElement | Window = parent ?? window
+        if (scrollPrefetchTarget && scrollPrefetchTarget !== next) {
+          scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
+        }
+        scrollPrefetchTarget = next
+        lastScrollTopForPrefetchDir =
+          next === window ? window.scrollY : (next as HTMLElement).scrollTop
+        next.addEventListener('scroll', onScrollPrefetch, { passive: true })
+      }
+
+      const wireScrollPrefetchSoonId = window.setTimeout(() => {
+        wireScrollPrefetch()
+      }, 0)
+
       const observerInstance = new IntersectionObserver((entries) => {
         if (!entries[0].isIntersecting || loadingRef.current) return
         const ev = eventsRef.current
@@ -2742,6 +2879,15 @@ const NoteList = forwardRef(
       }
 
       return () => {
+        if (scrollPrefetchRafId) {
+          cancelAnimationFrame(scrollPrefetchRafId)
+          scrollPrefetchRafId = 0
+        }
+        window.clearTimeout(wireScrollPrefetchSoonId)
+        if (scrollPrefetchTarget) {
+          scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
+          scrollPrefetchTarget = null
+        }
         if (observerInstance && currentBottomRef) {
           observerInstance.unobserve(currentBottomRef)
         }
@@ -2751,9 +2897,7 @@ const NoteList = forwardRef(
           loadMoreTimeoutRef.current = null
         }
       }
-    // Dependencies are handled via refs to avoid stale closures in async callbacks
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [timelineSubscriptionKey])
 
     // CRITICAL: Prefetch embedded events (referenced in e tags, a tags, and content)
     // This ensures embedded events are ready before user scrolls to them
@@ -3232,7 +3376,7 @@ const NoteList = forwardRef(
     )
 
     return (
-      <div>
+      <div ref={feedRootRef}>
         <div ref={topRef} className="scroll-mt-[calc(6rem+1px)]" />
         <NoteFeedProfileContext.Provider value={noteFeedProfileContextValue}>
           {supportTouch ? (

@@ -133,7 +133,7 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
         preserveTimelineOnSubRequestsChange
         mergeTimelineWhenSubRequestFiltersMatch
         /** Same live {@link client.subscribeTimeline} path as {@link useProfileTimeline} on the Posts tab; filter is native media kinds only. */
-        revealBatchSize={20}
+        revealBatchSize={48}
         filterMutedNotes={false}
         showKind1OPs
         showKind1Replies

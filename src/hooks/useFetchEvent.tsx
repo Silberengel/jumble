@@ -21,7 +21,9 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
   useEffect(() => {
     if (!eventId) {
       setIsFetching(false)
-      setError(new Error('No id provided'))
+      setEvent(undefined)
+      // Do not setError here: this effect re-runs when callback deps (e.g. addReplies) change identity;
+      // allocating a new Error each time would force updates and can exceed React's max update depth.
       return
     }
 
