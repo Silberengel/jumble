@@ -119,6 +119,32 @@ Expect **200** and a WAV file. **Local dev:** `npm run dev` proxies `/api/piper-
 
 Rebuild the Imwald image after changing `VITE_READ_ALOUD_TTS_URL`; `Dockerfile` passes `ARG`/`ENV` `VITE_READ_ALOUD_TTS_URL` into `npm run build`.
 
+## LanguageTool (same-origin `/api/languagetool`)
+
+The advanced event lab can call **`POST /v2/check`** on a self-hosted [LanguageTool](https://github.com/languagetool-org/languagetool) server. Set **`VITE_LANGUAGE_TOOL_URL=/api/languagetool`** at build time and proxy to your LT HTTP port (default **8010**).
+
+Apache (before the catch-all `ProxyPass /`):
+
+```apache
+ProxyPass        /api/languagetool http://127.0.0.1:8010
+ProxyPassReverse /api/languagetool http://127.0.0.1:8010
+```
+
+**Local dev:** `vite.config.ts` proxies `/api/languagetool` → `http://127.0.0.1:8010` with path rewrite so `/api/languagetool/v2/check` reaches LT’s `/v2/check`.
+
+If `VITE_LANGUAGE_TOOL_URL` is empty, grammar hints in the lab are disabled.
+
+## LibreTranslate (same-origin `/api/translate`)
+
+Optional **`VITE_TRANSLATE_URL=/api/translate`** for `POST /translate` (LibreTranslate-compatible). Example Apache:
+
+```apache
+ProxyPass        /api/translate http://127.0.0.1:5000
+ProxyPassReverse /api/translate http://127.0.0.1:5000
+```
+
+**Local dev:** `vite.config.ts` proxies `/api/translate` → `http://127.0.0.1:5000` with path rewrite.
+
 ## Update Proxy Server's ALLOW_ORIGIN
 
 Since users access via `https://jumble.imwald.eu`, you need to update the proxy server's `ALLOW_ORIGIN`:

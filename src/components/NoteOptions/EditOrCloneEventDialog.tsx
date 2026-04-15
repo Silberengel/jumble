@@ -42,10 +42,13 @@ import { useNostr } from '@/providers/NostrProvider'
 import storage from '@/services/local-storage.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Code2, Plus, Trash2 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
+import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 
 function normalizeTagRow(row: string[]): string[] | null {
   const trimmed = row.map((c) => c.trim())
@@ -128,13 +131,15 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const isCreate = mode === 'create'
   const sourceEvent = !isCreate ? props.sourceEvent : null
 
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
   const [content, setContent] = useState(() => sourceEvent?.content ?? '')
   const [createKindInput, setCreateKindInput] = useState('1')
   const [tagRows, setTagRows] = useState<string[][]>([['', '']])
   const [activeTab, setActiveTab] = useState('edit')
   const [publishing, setPublishing] = useState(false)
+  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const [advancedLabInitial, setAdvancedLabInitial] = useState<AdvancedEventLabSlice | null>(null)
   const prevOpenRef = useRef(false)
 
   const parsedCreateKind = useMemo(
@@ -346,7 +351,21 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         ? t('Clone or fork this event')
         : t('Create custom event')
 
+  const openAdvancedLab = useCallback(() => {
+    if (isCreate && parsedCreateKind === null) return
+    const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
+    setAdvancedLabInitial({
+      kind: k,
+      content,
+      tags: normalizedTags.map((row) => [...row])
+    })
+    setAdvancedLabOpen(true)
+  }, [isCreate, parsedCreateKind, sourceEvent, content, normalizedTags])
+
+  const labKind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent?.kind ?? 0
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[95vw] max-w-3xl flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-2 pr-14">
@@ -360,10 +379,21 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
 
         <div className="flex-1 min-h-0 flex flex-col px-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0 gap-2">
-            <TabsList className="w-auto justify-start shrink-0">
+            <TabsList className="w-auto justify-start shrink-0 flex flex-wrap gap-1">
               <TabsTrigger value="edit">{t('Edit')}</TabsTrigger>
               <TabsTrigger value="preview">{t('Preview')}</TabsTrigger>
               <TabsTrigger value="json">{t('Json')}</TabsTrigger>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 ml-1"
+                onClick={openAdvancedLab}
+                title={t('Advanced event lab')}
+              >
+                <Code2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">{t('Advanced event lab')}</span>
+              </Button>
             </TabsList>
 
             <TabsContent value="edit" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
@@ -546,5 +576,27 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <AdvancedEventLabDialog
+      open={advancedLabOpen}
+      onOpenChange={(o) => {
+        setAdvancedLabOpen(o)
+        if (!o) setAdvancedLabInitial(null)
+      }}
+      initial={advancedLabInitial}
+      kindEditable={isCreate}
+      markupMode={isAsciidocMarkupKind(labKind) ? 'asciidoc' : 'markdown'}
+      i18nLanguage={i18n.language}
+      contextEventId={!isCreate && sourceEvent ? sourceEvent.id : null}
+      onApply={(payload) => {
+        setContent(payload.content)
+        setTagRows(payload.tags.length > 0 ? payload.tags.map((r) => [...r]) : [['', '']])
+        if (isCreate) {
+          setCreateKindInput(String(payload.kind))
+        }
+        setAdvancedLabOpen(false)
+        setAdvancedLabInitial(null)
+      }}
+    />
+    </>
   )
 }

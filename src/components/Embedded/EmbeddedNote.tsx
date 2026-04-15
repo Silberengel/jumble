@@ -1,6 +1,8 @@
 import { Skeleton } from '@/components/ui/skeleton'
+import ExternalLink from '@/components/ExternalLink'
 import { FAST_READ_RELAY_URLS, SEARCHABLE_RELAY_URLS, ExtendedKind } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
+import { LIVE_ACTIVITY_KINDS, liveActivityKindsEnabledInPicker } from '@/lib/live-activities'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import { useFetchEvent } from '@/hooks'
 import { normalizeUrl } from '@/lib/url'
@@ -8,6 +10,7 @@ import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState } from 'react'
 import { Event, nip19 } from 'nostr-tools'
@@ -162,6 +165,24 @@ function EmbeddedNoteInvalid({
   )
 }
 
+function SuppressedLiveStreamEmbed({ noteId, className }: { noteId: string; className?: string }) {
+  const { t } = useTranslation()
+  const trimmed = noteId.trim()
+  const njump = `https://njump.me/${trimmed}`
+
+  return (
+    <div
+      className={cn('not-prose max-w-full rounded-lg border p-3 text-left', className)}
+      onClick={(e) => e.stopPropagation()}
+      data-live-embed-suppressed
+    >
+      <p className="mb-2 text-xs text-muted-foreground">{t('liveStreamEmbedSuppressed')}</p>
+      <ExternalLink url={njump} className="text-sm break-all" />
+      <ClientSelect className="mt-2 w-full" originalNoteId={trimmed || undefined} />
+    </div>
+  )
+}
+
 function EmbeddedNoteContent({
   noteId,
   className,
@@ -173,7 +194,22 @@ function EmbeddedNoteContent({
   containingEvent?: Event
   showFull?: boolean
 }) {
-  const { event, isFetching } = useFetchEvent(noteId)
+  const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
+  const allowLiveEmbeds = liveActivityKindsEnabledInPicker(showKinds, feedKindFilterBypass)
+
+  const naddrTargetsLiveActivityOnly = useMemo(() => {
+    try {
+      const dec = nip19.decode(noteId.trim())
+      if (dec.type !== 'naddr') return false
+      return LIVE_ACTIVITY_KINDS.includes(dec.data.kind as (typeof LIVE_ACTIVITY_KINDS)[number])
+    } catch {
+      return false
+    }
+  }, [noteId])
+
+  const skipLiveActivityFetch = naddrTargetsLiveActivityOnly && !allowLiveEmbeds
+
+  const { event, isFetching } = useFetchEvent(skipLiveActivityFetch ? undefined : noteId)
   const [retryEvent, setRetryEvent] = useState<Event | undefined>(undefined)
   const [isRetrying, setIsRetrying] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
@@ -181,6 +217,7 @@ function EmbeddedNoteContent({
 
   // If the first fetch fails, try a force retry (max 3 attempts)
   useEffect(() => {
+    if (skipLiveActivityFetch) return
     if (!isFetching && !event && !isRetrying && retryCount < maxRetries) {
       setIsRetrying(true)
       setRetryCount(prev => prev + 1)
@@ -203,7 +240,11 @@ function EmbeddedNoteContent({
           setIsRetrying(false)
         })
     }
-  }, [isFetching, event, noteId, isRetrying, retryCount])
+  }, [isFetching, event, noteId, isRetrying, retryCount, skipLiveActivityFetch])
+
+  if (skipLiveActivityFetch) {
+    return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
+  }
 
   const finalEvent = event || retryEvent
   const finalIsFetching = isFetching || (isRetrying && retryCount <= maxRetries)
@@ -214,6 +255,13 @@ function EmbeddedNoteContent({
 
   if (!finalEvent) {
     return <EmbeddedNoteNotFound className={className} noteId={noteId} onEventFound={setRetryEvent} containingEvent={containingEvent} />
+  }
+
+  if (
+    !allowLiveEmbeds &&
+    LIVE_ACTIVITY_KINDS.includes(finalEvent.kind as (typeof LIVE_ACTIVITY_KINDS)[number])
+  ) {
+    return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
   }
 
   // Check if this event has bookstr tags (at least "book" tag)

@@ -4,6 +4,20 @@ import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { JSONContent } from '@tiptap/react'
 import { nip19 } from 'nostr-tools'
 
+/**
+ * Build a minimal TipTap document from plain text (one paragraph per `\n`).
+ * Used when applying edits from the advanced CodeMirror lab so `parseEditorJsonToText` stays consistent.
+ */
+export function plainTextToTipTapDoc(plain: string): JSONContent {
+  const normalized = plain.replace(/\r\n/g, '\n')
+  const lines = normalized.length === 0 ? [''] : normalized.split('\n')
+  const paragraphs: JSONContent[] = lines.map((line) => ({
+    type: 'paragraph',
+    content: line ? [{ type: 'text', text: line }] : []
+  }))
+  return { type: 'doc', content: paragraphs }
+}
+
 export function parseEditorJsonToText(node?: JSONContent) {
   const rawJoined = _parseEditorJsonToText(node)
   let text = rawJoined.trim()

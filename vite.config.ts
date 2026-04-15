@@ -108,6 +108,16 @@ export default defineConfig(({ mode }) => {
           target: 'http://127.0.0.1:9876',
           changeOrigin: true
         },
+        '/api/languagetool': {
+          target: 'http://127.0.0.1:8010',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/api\/languagetool/u, '') || '/'
+        },
+        '/api/translate': {
+          target: 'http://127.0.0.1:5000',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/api\/translate/u, '') || '/'
+        },
         '/sites': {
           target: 'http://127.0.0.1:8090',
           changeOrigin: true

@@ -1002,6 +1002,7 @@ const NoteList = forwardRef(
       showCount,
       shouldHideEvent,
       showKinds,
+      effectiveShowKinds,
       showKind1OPs,
       showKind1Replies,
       showKind1111,

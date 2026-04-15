@@ -8,6 +8,8 @@
 #     Alias: JUMBLE_PROXY_SERVER_URL (deprecated). Must match the public origin where Apache serves the app.
 #   READ_ALOUD_TTS_URL — build-arg VITE_READ_ALOUD_TTS_URL (default /api/piper-tts).
 #     Same-origin: Apache proxies /api/piper-tts → aitherboard (e.g. :9876). Override only if you use CORS on another host.
+#   LANGUAGE_TOOL_URL — build-arg VITE_LANGUAGE_TOOL_URL (default empty). Example: /api/languagetool with Apache → LanguageTool :8010.
+#   TRANSLATE_URL — build-arg VITE_TRANSLATE_URL (default empty). Example: /api/translate with Apache → LibreTranslate :5000.
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,11 +25,15 @@ IMAGE_MONITOR="silberengel/imwald-jumble-nip66-monitor"
 # Override: IMWALD_PROXY_SERVER_URL=https://other.example ./scripts/build-and-push-prod.sh
 PROXY_ORIGIN="${IMWALD_PROXY_SERVER_URL:-${JUMBLE_PROXY_SERVER_URL:-https://jumble.imwald.eu}}"
 READ_ALOUD_TTS_URL="${READ_ALOUD_TTS_URL:-/api/piper-tts}"
+LANGUAGE_TOOL_URL="${LANGUAGE_TOOL_URL:-}"
+TRANSLATE_URL="${TRANSLATE_URL:-}"
 
-echo "Building main app (version: $VERSION, VITE_PROXY_SERVER=$PROXY_ORIGIN, VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL)"
+echo "Building main app (version: $VERSION, VITE_PROXY_SERVER=$PROXY_ORIGIN, VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL, VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL, VITE_TRANSLATE_URL=$TRANSLATE_URL)"
 docker build \
   --build-arg "VITE_PROXY_SERVER=$PROXY_ORIGIN" \
   --build-arg "VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL" \
+  --build-arg "VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL" \
+  --build-arg "VITE_TRANSLATE_URL=$TRANSLATE_URL" \
   -t "$IMAGE_APP:latest" -t "$IMAGE_APP:$VERSION" .
 
 echo "Building NIP-66 monitor (version: $VERSION)"

@@ -497,6 +497,8 @@ export default {
       'Opened by URL — not from your RSS list. Nostr thread is still tied to this link.',
     'Open in browser': 'Open in browser',
     'liveEvent.zapStreamPlayer': 'Live stream (zap.stream)',
+    'liveStreamEmbedSuppressed':
+      'Inline live stream is hidden because your kind filter excludes NIP-53 streams. Open via njump or another client below.',
     'liveEvent.hlsPlaybackUnavailable':
       'Inline playback failed (the stream may be offline, ended, or blocked). You can still open the hosted watch page below.',
     'liveEvent.hideFromCarousel': 'Hide from carousel',
@@ -953,6 +955,21 @@ export default {
     'See all events hint':
       'Feed requests omit kind filters and every kind is shown (still subject to relay limits and other feed rules). For testing new event kinds.',
     'Use filter hint': 'Only the kinds you select below are requested and shown.',
+    'Advanced event lab': 'Advanced editor',
+    'Advanced lab hint':
+      'Edit markup and JSON (kind, content, tags). id, pubkey, sig, and created_at are assigned when you publish.',
+    'Advanced lab markup': 'Markup',
+    'Advanced lab markup placeholder': 'Note body (Markdown or AsciiDoc)',
+    'Advanced lab tags JSON': 'Kind, content, and tags (JSON)',
+    'Advanced lab json placeholder': '{ "kind": 1, "content": "…", "tags": [] }',
+    'Advanced lab grammar language': 'Grammar check language',
+    'Advanced lab translate': 'Translate body',
+    'Advanced lab translation target': 'Target language',
+    'Advanced lab translate not configured': 'Translation URL is not set (VITE_TRANSLATE_URL).',
+    'Advanced lab translate done': 'Translation inserted into the editor.',
+    'Advanced lab use translation read aloud': 'Use body for read-aloud (this note)',
+    'Advanced lab read aloud buffer set':
+      'The next read-aloud for this note will use the current body text (translated if you translated first).',
     Apply: 'Apply',
     Reset: 'Reset',
     'Share something on this Relay': 'Share something on this Relay',

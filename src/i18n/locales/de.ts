@@ -500,6 +500,8 @@ export default {
       'Per URL geöffnet — nicht aus deiner RSS-Liste. Der Nostr-Thread hängt weiter an diesem Link.',
     'Open in browser': 'Im Browser öffnen',
     'liveEvent.zapStreamPlayer': 'Livestream (zap.stream)',
+    'liveStreamEmbedSuppressed':
+      'Der eingebettete Livestream ist ausgeblendet, weil dein Kind-Filter NIP-53-Streams ausschließt. Unten per njump oder anderem Client öffnen.',
     'liveEvent.hlsPlaybackUnavailable':
       'Wiedergabe hier fehlgeschlagen (Stream offline, beendet oder blockiert). Die gehostete Watch-Seite kannst du unten trotzdem öffnen.',
     'liveEvent.hideFromCarousel': 'Im Karussell ausblenden',
@@ -952,6 +954,21 @@ export default {
     'See all events hint':
       'Feed-Anfragen ohne Kind-Filter; alle Event-Arten werden angezeigt (Relay-Limits und andere Regeln gelten weiter). Zum Testen neuer Event-Kinds.',
     'Use filter hint': 'Nur unten ausgewählte Kinds werden angefragt und angezeigt.',
+    'Advanced event lab': 'Erweiterter Editor',
+    'Advanced lab hint':
+      'Markup und JSON (kind, content, tags) bearbeiten. id, pubkey, sig und created_at werden beim Veröffentlichen gesetzt.',
+    'Advanced lab markup': 'Markup',
+    'Advanced lab markup placeholder': 'Notiztext (Markdown oder AsciiDoc)',
+    'Advanced lab tags JSON': 'Kind, Inhalt und Tags (JSON)',
+    'Advanced lab json placeholder': '{ "kind": 1, "content": "…", "tags": [] }',
+    'Advanced lab grammar language': 'Sprache für Grammatikprüfung',
+    'Advanced lab translate': 'Text übersetzen',
+    'Advanced lab translation target': 'Zielsprache',
+    'Advanced lab translate not configured': 'Übersetzungs-URL ist nicht gesetzt (VITE_TRANSLATE_URL).',
+    'Advanced lab translate done': 'Übersetzung wurde in den Editor eingefügt.',
+    'Advanced lab use translation read aloud': 'Text für Vorlesen verwenden (diese Notiz)',
+    'Advanced lab read aloud buffer set':
+      'Das nächste Vorlesen dieser Notiz nutzt den aktuellen Text (ggf. nach Übersetzung).',
     Apply: 'Anwenden',
     Reset: 'Zurücksetzen',
     'Share something on this Relay': 'Teile etwas auf diesem Relay',

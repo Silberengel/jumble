@@ -1,4 +1,5 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
+import { takeReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import {
   buildPiperTtsCacheKey,
   getPiperTtsCacheBudget,
@@ -671,7 +672,10 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
     return 'unsupported'
   }
 
-  const text = buildReadAloudPlainText(event)
+  const translationOverride = takeReadAloudTranslationForEvent(event.id)
+  const text = translationOverride
+    ? stripMarkupForReadAloud(translationOverride)
+    : buildReadAloudPlainText(event)
   if (!text) {
     return 'empty'
   }

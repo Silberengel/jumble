@@ -35,6 +35,7 @@ import {
   createCitationHardcopyDraftEvent,
   createCitationPromptDraftEvent,
   applyImwaldAttributionTags,
+  collectUploadImetaTagsForContentUrls,
   mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
 import { ExtendedKind, MAX_PUBLISH_RELAYS } from '@/constants'
@@ -71,7 +72,8 @@ import {
   Music,
   Video,
   Film,
-  Laugh
+  Laugh,
+  Code2
 } from 'lucide-react'
 import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
 import { nip94PairsToImetaTag } from '@/lib/upload-nip94-imeta'
@@ -119,6 +121,9 @@ import { MentionAndEventToolbarButtons } from './PostTextarea/Mention/MentionAnd
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'
+import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
+import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 
 export default function PostContent({
   defaultContent = '',
@@ -142,7 +147,7 @@ export default function PostContent({
   /** Optional hot/discussion topics (e.g. from Discussions spell) for the thread composer. */
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
   const { userGroups } = useGroupList()
   const { feedInfo } = useFeed()
@@ -203,6 +208,9 @@ export default function PostContent({
   )
   const [text, setText] = useState('')
   const textareaRef = useRef<TPostTextareaHandle>(null)
+  const labTagOverrideRef = useRef<string[][] | null>(null)
+  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const [advancedLabInitial, setAdvancedLabInitial] = useState<AdvancedEventLabSlice | null>(null)
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
   const [uploadProgresses, setUploadProgresses] = useState<
@@ -1074,6 +1082,14 @@ export default function PostContent({
     t
   ])
 
+  const applyLabTagOverrideToDraft = useCallback((draft: TDraftEvent): TDraftEvent => {
+    if (!labTagOverrideRef.current) return draft
+    const tags = labTagOverrideRef.current.map((r) => [...r])
+    labTagOverrideRef.current = null
+    mergeUploadImetaTagsInto(tags, collectUploadImetaTagsForContentUrls(draft.content))
+    return { ...draft, tags }
+  }, [])
+
   // Function to generate draft event JSON for preview
   const getDraftEventJson = useCallback(async (): Promise<string> => {
     if (!pubkey) {
@@ -1083,13 +1099,35 @@ export default function PostContent({
     try {
       // Clean tracking parameters from URLs in the post content
       const cleanedText = rewritePlainTextHttpUrls(text)
-      
-      const draftEvent = await createDraftEvent(cleanedText)
+
+      let draftEvent = await createDraftEvent(cleanedText)
+      draftEvent = applyLabTagOverrideToDraft(draftEvent)
       return JSON.stringify(applyImwaldAttributionTags(draftEvent, { addClientTag }), null, 2)
     } catch (error) {
       return JSON.stringify({ error: error instanceof Error ? error.message : String(error) }, null, 2)
     }
-  }, [text, pubkey, isDiscussionThread, createDraftEvent, addClientTag])
+  }, [text, pubkey, isDiscussionThread, createDraftEvent, addClientTag, applyLabTagOverrideToDraft])
+
+  const handleOpenAdvancedLab = useCallback(async () => {
+    await checkLogin(async () => {
+      if (!pubkey) {
+        toast.error(t('Log in to publish'))
+        return
+      }
+      try {
+        const cleanedText = rewritePlainTextHttpUrls(text)
+        const d = await createDraftEvent(cleanedText)
+        setAdvancedLabInitial({
+          kind: d.kind,
+          content: d.content,
+          tags: (d.tags ?? []).map((row: string[]) => [...row])
+        })
+        setAdvancedLabOpen(true)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }, [checkLogin, pubkey, text, createDraftEvent, t])
 
   const post = async (e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -1162,6 +1200,7 @@ export default function PostContent({
 
         // Create draft event using shared function
         draftEvent = await createDraftEvent(cleanedText)
+        draftEvent = applyLabTagOverrideToDraft(draftEvent)
 
         const publishSuccessMessage = parentEvent
           ? t('Reply published')
@@ -2855,8 +2894,7 @@ export default function PostContent({
           addClientTag={addClientTag}
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
-          headerActions={
-            !parentEvent ? (() => {
+          headerActions={(() => {
               const ActiveIcon =
                 isLongFormArticle ? FileText :
                 isWikiArticle ? FileText :
@@ -2886,6 +2924,19 @@ export default function PostContent({
                 t('Short Note')
               return (
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-sm font-normal shrink-0"
+                    onClick={() => void handleOpenAdvancedLab()}
+                    title={t('Advanced event lab')}
+                  >
+                    <Code2 className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline max-w-[9rem] truncate">{t('Advanced event lab')}</span>
+                  </Button>
+                  {!parentEvent ? (
+                    <>
                   <Button
                     type="button"
                     variant="outline"
@@ -3055,9 +3106,11 @@ export default function PostContent({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                    </>
+                  ) : null}
                 </div>
               )
-            })() : undefined
+            })()
           }
         />
       {isDiscussionThread && !parentEvent && (
@@ -3482,6 +3535,22 @@ export default function PostContent({
           </div>
         </DialogContent>
       </Dialog>
+      <AdvancedEventLabDialog
+        open={advancedLabOpen}
+        onOpenChange={(o) => {
+          setAdvancedLabOpen(o)
+          if (!o) setAdvancedLabInitial(null)
+        }}
+        initial={advancedLabInitial}
+        kindEditable={false}
+        markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
+        i18nLanguage={i18n.language}
+        contextEventId={parentEvent?.id ?? null}
+        onApply={(payload) => {
+          labTagOverrideRef.current = payload.tags.map((r) => [...r])
+          textareaRef.current?.setDocumentFromPlainText(payload.content)
+        }}
+      />
       <EditOrCloneEventDialog
         open={createCustomEventOpen}
         onOpenChange={setCreateCustomEventOpen}

@@ -1,5 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { parseEditorJsonToText } from '@/lib/tiptap'
+import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
 import customEmojiService from '@/services/custom-emoji.service'
 import postEditorCache from '@/services/post-editor-cache.service'
@@ -11,7 +11,7 @@ import Paragraph from '@tiptap/extension-paragraph'
 import Placeholder from '@tiptap/extension-placeholder'
 import Text from '@tiptap/extension-text'
 import { TextSelection } from '@tiptap/pm/state'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { Editor, EditorContent, useEditor } from '@tiptap/react'
 import { Event } from 'nostr-tools'
 import {
   Dispatch,
@@ -42,6 +42,8 @@ export type TPostTextareaHandle = {
   insertEmoji: (emoji: string | TEmoji) => void
   clear: () => void
   getText: () => string
+  /** Replace editor from plain `content` (e.g. advanced lab). Syncs TipTap JSON cache and parent `text`. */
+  setDocumentFromPlainText: (plain: string) => void
 }
 
 const PostTextarea = forwardRef<
@@ -121,6 +123,7 @@ const PostTextarea = forwardRef<
     const [isLoadingJson, setIsLoadingJson] = useState(false)
     /** Bumps when preview tab is shown or a new JSON fetch starts; completions only apply if seq still matches. */
     const jsonPanelFetchSeq = useRef(0)
+    const editorRef = useRef<Editor | null>(null)
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
 
@@ -237,10 +240,13 @@ const PostTextarea = forwardRef<
       }
     })
 
+    editorRef.current = editor
+
     useImperativeHandle(ref, () => ({
       appendText: (text: string, addNewline = false) => {
-        if (editor) {
-          let chain = editor
+        const ed = editorRef.current
+        if (ed) {
+          let chain = ed
             .chain()
             .focus()
             .command(({ tr, dispatch }) => {
@@ -260,11 +266,13 @@ const PostTextarea = forwardRef<
         }
       },
       insertText: (text: string) => {
+        const editor = editorRef.current
         if (editor) {
           editor.chain().focus().insertContent(text).run()
         }
       },
       insertEmoji: (emoji: string | TEmoji) => {
+        const editor = editorRef.current
         if (editor) {
           if (typeof emoji === 'string') {
             editor.chain().insertContent(emoji).run()
@@ -277,6 +285,7 @@ const PostTextarea = forwardRef<
         }
       },
       clear: () => {
+        const editor = editorRef.current
         if (editor) {
           // Clear the editor content and reset to empty document
           editor.chain().clearContent().run()
@@ -286,10 +295,19 @@ const PostTextarea = forwardRef<
         }
       },
       getText: () => {
+        const editor = editorRef.current
         if (editor) {
           return editor.getText()
         }
         return ''
+      },
+      setDocumentFromPlainText: (plain: string) => {
+        const editor = editorRef.current
+        if (!editor) return
+        const json = plainTextToTipTapDoc(plain)
+        editor.chain().setContent(json).run()
+        postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
+        setText(parseEditorJsonToText(editor.getJSON()))
       }
     }))
 

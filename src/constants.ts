@@ -27,6 +27,19 @@ export const GITREPUBLIC_WEB_BASE_URL = (
 export const READ_ALOUD_TTS_URL =
   (import.meta.env.VITE_READ_ALOUD_TTS_URL as string | undefined)?.trim() || ''
 
+/**
+ * Self-hosted LanguageTool HTTP API (same-origin proxy recommended; path is base URL without `/v2/check`).
+ * Example: `/api/languagetool` proxied to `http://127.0.0.1:8010`. Empty disables grammar hints in the advanced lab.
+ */
+export const LANGUAGE_TOOL_URL =
+  (import.meta.env.VITE_LANGUAGE_TOOL_URL as string | undefined)?.trim() || ''
+
+/**
+ * LibreTranslate-compatible `POST /translate` base (no trailing slash). Empty disables translate actions in the lab.
+ */
+export const TRANSLATE_URL =
+  (import.meta.env.VITE_TRANSLATE_URL as string | undefined)?.trim() || ''
+
 /** HiveTalk (WebRTC video call) base URL; override with VITE_HIVETALK_BASE_URL for self-hosted instances. */
 export const HIVETALK_BASE_URL =
   (import.meta.env.VITE_HIVETALK_BASE_URL as string | undefined) ?? 'https://vanilla.hivetalk.org'

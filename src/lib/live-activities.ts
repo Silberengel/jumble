@@ -36,6 +36,15 @@ export type LiveActivitiesFetchEventsFn = (
 /** NIP-53 live streaming (30311), meeting space (30312), meeting (30313). */
 export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
+/** True when the home kind picker (or “see all events”) allows NIP-53 live activity rows and inline embeds. */
+export function liveActivityKindsEnabledInPicker(
+  showKinds: readonly number[],
+  feedKindFilterBypass: boolean
+): boolean {
+  if (feedKindFilterBypass) return true
+  return LIVE_ACTIVITY_KINDS.some((k) => showKinds.includes(k))
+}
+
 /**
  * Stable NIP-33 address `kind:pubkey:d` for a live-activity replaceable event (carousel dedupe / user hide list).
  * Must match {@link parseLiveActivityEvent} `address` and {@link dedupeLatestForLiveTicker} keys exactly
