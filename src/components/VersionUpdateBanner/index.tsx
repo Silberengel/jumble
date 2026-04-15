@@ -5,10 +5,19 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 
+function readVersionUpdateDismissed(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return sessionStorage.getItem('versionUpdateDismissed') === 'true'
+  } catch {
+    return false
+  }
+}
+
 export default function VersionUpdateBanner() {
   const { t } = useTranslation()
   const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [isDismissed, setIsDismissed] = useState(false)
+  const [isDismissed, setIsDismissed] = useState(readVersionUpdateDismissed)
   const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
@@ -107,24 +116,40 @@ export default function VersionUpdateBanner() {
   }, [])
 
   const handleUpdate = () => {
+    try {
+      sessionStorage.setItem('versionUpdateDismissed', 'true')
+    } catch {
+      // ignore quota or private browsing
+    }
+    setIsDismissed(true)
     setIsUpdating(true)
-    // Reload the page to activate the new service worker
-    window.location.reload()
+
+    const reload = () => {
+      window.location.reload()
+    }
+
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      reload()
+      return
+    }
+
+    void navigator.serviceWorker
+      .getRegistration()
+      .then((registration) => {
+        registration?.waiting?.postMessage({ type: 'SKIP_WAITING' })
+        reload()
+      })
+      .catch(reload)
   }
 
   const handleDismiss = () => {
     setIsDismissed(true)
-    // Store dismissal in sessionStorage to avoid showing it again this session
-    sessionStorage.setItem('versionUpdateDismissed', 'true')
-  }
-
-  // Check if user already dismissed this session
-  useEffect(() => {
-    const dismissed = sessionStorage.getItem('versionUpdateDismissed')
-    if (dismissed === 'true') {
-      setIsDismissed(true)
+    try {
+      sessionStorage.setItem('versionUpdateDismissed', 'true')
+    } catch {
+      // ignore quota or private browsing
     }
-  }, [])
+  }
 
   if (!updateAvailable || isDismissed) {
     return null
