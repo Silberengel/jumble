@@ -35,6 +35,26 @@ describe('liveActivityAddressFromEvent', () => {
       ['title', 'X']
     ], pk)
     expect(liveActivityAddressFromEvent(ev)).toBe(`30311:${pk}:my-stream`)
+    expect(parseLiveActivityEvent(ev, new Set())?.address).toBe(`30311:${pk}:my-stream`)
+  })
+
+  it('matches parseLiveActivityEvent address when d tag has surrounding spaces (raw d)', () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(
+      30312,
+      [
+        ['d', '  spaced-room  '],
+        ['room', 'R'],
+        ['status', 'open'],
+        ['service', 'https://meet.example/r/abc']
+      ],
+      pk
+    )
+    const addr = liveActivityAddressFromEvent(ev)
+    const parsed = parseLiveActivityEvent(ev, new Set())
+    expect(parsed).not.toBeNull()
+    expect(addr).toBe(parsed!.address)
+    expect(addr).toBe(`30312:${pk}:  spaced-room  `)
   })
 
   it('returns null without d tag', () => {

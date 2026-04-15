@@ -38,13 +38,14 @@ export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
 /**
  * Stable NIP-33 address `kind:pubkey:d` for a live-activity replaceable event (carousel dedupe / user hide list).
+ * Must match {@link parseLiveActivityEvent} `address` and {@link dedupeLatestForLiveTicker} keys exactly
+ * (raw `d` tag value from the event, same as {@link firstTagValue}).
  */
 export function liveActivityAddressFromEvent(ev: Event): string | null {
   if (!LIVE_ACTIVITY_KINDS.includes(ev.kind as (typeof LIVE_ACTIVITY_KINDS)[number])) return null
-  for (const t of ev.tags) {
-    if (t[0] === 'd' && t[1]?.trim()) return `${ev.kind}:${ev.pubkey}:${t[1].trim()}`
-  }
-  return null
+  const dTag = firstTagValue(ev, 'd')
+  if (!dTag) return null
+  return `${ev.kind}:${ev.pubkey}:${dTag}`
 }
 
 const LIVE_ACTIVITIES_MAX_ITEMS = 10
@@ -518,9 +519,8 @@ function dedupeEventsById(events: Event[]): Event[] {
 function dedupeLatestForLiveTicker(events: Event[]): Map<string, Event> {
   const byAddress = new Map<string, Event>()
   for (const ev of events) {
-    const d = firstTagValue(ev, 'd')
-    if (!d) continue
-    const addr = `${ev.kind}:${ev.pubkey}:${d}`
+    const addr = liveActivityAddressFromEvent(ev)
+    if (!addr) continue
     const prev = byAddress.get(addr)
     if (!prev || ev.created_at > prev.created_at) {
       byAddress.set(addr, ev)
@@ -534,9 +534,8 @@ function parent30312MapFromEvents(events: Event[]): Map<string, Event> {
   const m = new Map<string, Event>()
   for (const ev of events) {
     if (ev.kind !== 30312) continue
-    const d = firstTagValue(ev, 'd')
-    if (!d) continue
-    const addr = `30312:${ev.pubkey}:${d}`
+    const addr = liveActivityAddressFromEvent(ev)
+    if (!addr) continue
     const prev = m.get(addr)
     if (!prev || ev.created_at > prev.created_at) m.set(addr, ev)
   }
@@ -615,7 +614,8 @@ export function parseLiveActivityEvent(
   const summary = firstTagValue(ev, 'summary')?.trim() || ''
   const image = firstTagValue(ev, 'image')
   const imageUrl = image?.startsWith('https://') ? image : undefined
-  const address = `${ev.kind}:${ev.pubkey}:${dTag}`
+  const address = liveActivityAddressFromEvent(ev)
+  if (!address) return null
   return {
     address,
     kind: ev.kind,
