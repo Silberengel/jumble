@@ -2421,6 +2421,8 @@ class IndexedDbService {
 
   /** Settings key for favorite spell event ids (JSON array of strings). */
   static readonly SPELL_FAVORITE_IDS_KEY = 'spellFavoriteIds'
+  /** Settings key: JSON array of NIP-33 addresses `kind:pubkey:d` hidden from the live-activities carousel. */
+  static readonly HIDDEN_LIVE_ACTIVITY_ADDRESSES_KEY = 'hiddenLiveActivityAddresses'
 
   /**
    * Store a NIP-A7 spell event (kind 777) in IndexedDB by event id.
@@ -2508,6 +2510,28 @@ class IndexedDbService {
    */
   async setSpellFavoriteIds(ids: string[]): Promise<void> {
     await this.setSetting(IndexedDbService.SPELL_FAVORITE_IDS_KEY, JSON.stringify(ids))
+  }
+
+  /**
+   * NIP-33 addresses (`kind:pubkey:d`) the user chose to hide from the live-activities carousel (IndexedDB settings).
+   */
+  async getHiddenLiveActivityAddresses(): Promise<Set<string>> {
+    const raw = await this.getSetting(IndexedDbService.HIDDEN_LIVE_ACTIVITY_ADDRESSES_KEY)
+    if (!raw?.trim()) return new Set()
+    try {
+      const arr = JSON.parse(raw) as unknown
+      if (!Array.isArray(arr)) return new Set()
+      return new Set(arr.filter((x): x is string => typeof x === 'string' && x.length > 0))
+    } catch {
+      return new Set()
+    }
+  }
+
+  async setHiddenLiveActivityAddresses(addresses: readonly string[]): Promise<void> {
+    await this.setSetting(
+      IndexedDbService.HIDDEN_LIVE_ACTIVITY_ADDRESSES_KEY,
+      JSON.stringify([...new Set(addresses)])
+    )
   }
 
   /**

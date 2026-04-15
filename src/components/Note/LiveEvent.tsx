@@ -3,16 +3,18 @@ import { Button } from '@/components/ui/button'
 import { createFakeEvent } from '@/lib/event'
 import { getLiveEventMetadataFromEvent } from '@/lib/event-metadata'
 import {
+  liveActivityAddressFromEvent,
   liveEventInlinePlaybackFromEvent,
   liveEventZapStreamWatchUrl,
   preferredLiveJoinUrlForEvent
 } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useLiveActivitiesOptional } from '@/providers/useLiveActivities'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
 import { ExternalLink } from 'lucide-react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ClientSelect from '../ClientSelect'
 import Image from '../Image'
@@ -21,6 +23,7 @@ import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 
 export default function LiveEvent({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()
+  const liveActivities = useLiveActivitiesOptional()
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
   const contentPolicy = useContentPolicyOptional()
@@ -57,6 +60,15 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
     ) : (
       <Badge variant="secondary">{metadata.status}</Badge>
     ))
+
+  const liveActivityAddress = useMemo(() => liveActivityAddressFromEvent(event), [event])
+  const carouselHidden = Boolean(
+    liveActivityAddress && liveActivities?.carouselHiddenAddresses.has(liveActivityAddress)
+  )
+  const onToggleCarouselHidden = useCallback(() => {
+    if (!liveActivityAddress || !liveActivities) return
+    void liveActivities.toggleLiveActivityCarouselHidden(liveActivityAddress)
+  }, [liveActivityAddress, liveActivities])
 
   const titleComponent = (
     <div className="text-xl font-semibold break-words min-w-0 sm:line-clamp-1">{metadata.title}</div>
@@ -120,7 +132,30 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
         {cover}
         <div className="min-w-0 flex-1 space-y-1">
           {titleComponent}
-          {liveStatusComponent}
+          {liveStatusComponent || (liveActivityAddress && liveActivities) ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {liveStatusComponent}
+              {liveActivityAddress && liveActivities ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs shrink-0"
+                  title={
+                    carouselHidden
+                      ? t('liveEvent.showInCarouselTitle')
+                      : t('liveEvent.hideFromCarouselTitle')
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleCarouselHidden()
+                  }}
+                >
+                  {carouselHidden ? t('liveEvent.showInCarousel') : t('liveEvent.hideFromCarousel')}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           {nowPlaying}
           {summaryComponent}
           {tagsComponent}

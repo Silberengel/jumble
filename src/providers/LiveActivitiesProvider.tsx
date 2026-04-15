@@ -10,6 +10,7 @@ import {
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
 import client from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import storage from '@/services/local-storage.service'
 import { registerLiveActivitiesPrewarmCallback } from '@/services/live-activities-prewarm-bridge'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,12 +31,16 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
 
   const [items, setItems] = useState<TLiveActivityItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [carouselHiddenAddresses, setCarouselHiddenAddresses] = useState<ReadonlySet<string>>(() => new Set())
+  const rawItemsRef = useRef<TLiveActivityItem[]>([])
+  const hiddenCarouselRef = useRef<Set<string>>(new Set())
 
   const relayRead = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
   const relayWrite = relayList?.write ?? []
 
   const refresh = useCallback(async () => {
     if (!showLiveActivitiesBanner) {
+      rawItemsRef.current = []
       setItems([])
       return
     }
@@ -48,6 +53,7 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       relayListWrite: relayWrite
     })
     if (loggedIn && urls.length === 0) {
+      rawItemsRef.current = []
       setItems([])
       return
     }
@@ -63,7 +69,8 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       )
       const merged = mergeLiveActivityEvents(events, followings, parentByAddress)
       const reachable = await filterLiveActivityItemsByReachableMedia(merged)
-      setItems(reachable)
+      rawItemsRef.current = reachable
+      setItems(reachable.filter((i) => !hiddenCarouselRef.current.has(i.address)))
       logger.debug('[LiveActivities] poll done', {
         relayCount: urls.length,
         raw: events.length,
@@ -72,6 +79,7 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       })
     } catch (e) {
       logger.warn('[LiveActivities] poll failed', { err: e })
+      rawItemsRef.current = []
       setItems([])
     } finally {
       setLoading(false)
@@ -85,6 +93,33 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
     relayWrite,
     followings
   ])
+
+  const toggleLiveActivityCarouselHidden = useCallback(async (address: string) => {
+    const next = new Set(hiddenCarouselRef.current)
+    if (next.has(address)) next.delete(address)
+    else next.add(address)
+    hiddenCarouselRef.current = next
+    setCarouselHiddenAddresses(next)
+    try {
+      await indexedDb.setHiddenLiveActivityAddresses([...next])
+    } catch (e) {
+      logger.warn('[LiveActivities] persist carousel hide failed', { err: e })
+    }
+    setItems(rawItemsRef.current.filter((i) => !next.has(i.address)))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void indexedDb.getHiddenLiveActivityAddresses().then((s) => {
+      if (cancelled) return
+      hiddenCarouselRef.current = s
+      setCarouselHiddenAddresses(s)
+      setItems(rawItemsRef.current.filter((i) => !s.has(i.address)))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -129,7 +164,15 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
     }
   }, [showLiveActivitiesBanner])
 
-  const value = useMemo(() => ({ items, loading }), [items, loading])
+  const value = useMemo(
+    () => ({
+      items,
+      loading,
+      carouselHiddenAddresses,
+      toggleLiveActivityCarouselHidden
+    }),
+    [items, loading, carouselHiddenAddresses, toggleLiveActivityCarouselHidden]
+  )
 
   return <LiveActivitiesContext.Provider value={value}>{children}</LiveActivitiesContext.Provider>
 }

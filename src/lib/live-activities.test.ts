@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   filterLiveActivityItemsByReachableMedia,
+  liveActivityAddressFromEvent,
   liveEventInlinePlaybackFromEvent,
   liveEventZapStreamWatchUrl,
   parseLiveActivityEvent,
@@ -23,6 +24,23 @@ const base = (kind: number, tags: string[][], pubkey = 'a'.repeat(64)): Event =>
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('liveActivityAddressFromEvent', () => {
+  it('returns kind:pubkey:d for 30311 with d tag', () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(30311, [
+      ['d', 'my-stream'],
+      ['status', 'live'],
+      ['title', 'X']
+    ], pk)
+    expect(liveActivityAddressFromEvent(ev)).toBe(`30311:${pk}:my-stream`)
+  })
+
+  it('returns null without d tag', () => {
+    const ev = base(30311, [['status', 'live']])
+    expect(liveActivityAddressFromEvent(ev)).toBeNull()
+  })
 })
 
 describe('filterLiveActivityItemsByReachableMedia', () => {

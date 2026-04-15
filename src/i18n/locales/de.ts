@@ -502,6 +502,11 @@ export default {
     'liveEvent.zapStreamPlayer': 'Livestream (zap.stream)',
     'liveEvent.hlsPlaybackUnavailable':
       'Wiedergabe hier fehlgeschlagen (Stream offline, beendet oder blockiert). Die gehostete Watch-Seite kannst du unten trotzdem öffnen.',
+    'liveEvent.hideFromCarousel': 'Im Karussell ausblenden',
+    'liveEvent.showInCarousel': 'Im Karussell anzeigen',
+    'liveEvent.hideFromCarouselTitle':
+      'Diesen Stream im Live-Karussell ausblenden (lokal in diesem Browser gespeichert). Erneut klicken, um ihn wieder anzuzeigen.',
+    'liveEvent.showInCarouselTitle': 'Diesen Stream wieder im Live-Karussell anzeigen.',
     'Web page': 'Webseite',
     Open: 'Öffnen',
     'Sorry! The note cannot be found 😔': 'Entschuldigung! Die Notiz wurde nicht gefunden 😔',

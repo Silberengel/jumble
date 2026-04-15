@@ -36,6 +36,17 @@ export type LiveActivitiesFetchEventsFn = (
 /** NIP-53 live streaming (30311), meeting space (30312), meeting (30313). */
 export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
+/**
+ * Stable NIP-33 address `kind:pubkey:d` for a live-activity replaceable event (carousel dedupe / user hide list).
+ */
+export function liveActivityAddressFromEvent(ev: Event): string | null {
+  if (!LIVE_ACTIVITY_KINDS.includes(ev.kind as (typeof LIVE_ACTIVITY_KINDS)[number])) return null
+  for (const t of ev.tags) {
+    if (t[0] === 'd' && t[1]?.trim()) return `${ev.kind}:${ev.pubkey}:${t[1].trim()}`
+  }
+  return null
+}
+
 const LIVE_ACTIVITIES_MAX_ITEMS = 10
 
 export const LIVE_ACTIVITIES_SLIDE_INTERVAL_MS = 30_000

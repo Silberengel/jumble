@@ -499,6 +499,11 @@ export default {
     'liveEvent.zapStreamPlayer': 'Live stream (zap.stream)',
     'liveEvent.hlsPlaybackUnavailable':
       'Inline playback failed (the stream may be offline, ended, or blocked). You can still open the hosted watch page below.',
+    'liveEvent.hideFromCarousel': 'Hide from carousel',
+    'liveEvent.showInCarousel': 'Show in carousel',
+    'liveEvent.hideFromCarouselTitle':
+      'Hide this stream in the live carousel (saved in this browser on this device). Click again to show it.',
+    'liveEvent.showInCarouselTitle': 'Show this stream in the live carousel again.',
     'Web page': 'Web page',
     Open: 'Open',
     'Sorry! The note cannot be found 😔': 'Sorry! The note cannot be found 😔',
