@@ -60,6 +60,46 @@ services:
       - jumble
     restart: unless-stopped
 
+  # Wyoming Piper + HTTP bridge (read-aloud). Profile local-tts — matches vite /api/piper-tts → :9876, Wyoming :10200.
+  # Mount voices under ./.local-piper-data/voices (see PROXY_SETUP.md) or use your existing piper-data path.
+  piper-wyoming:
+    image: silberengel/wyoming-piper:latest
+    profiles: ['local-tts']
+    container_name: jumble-piper-wyoming
+    command:
+      - --voice
+      - en_US-lessac-medium
+      - --uri
+      - tcp://0.0.0.0:10200
+      - --data-dir
+      - /data
+    volumes:
+      - ./.local-piper-data:/data
+    expose:
+      - '10200'
+    networks:
+      - jumble
+    restart: unless-stopped
+
+  piper-tts-proxy:
+    profiles: ['local-tts']
+    container_name: jumble-piper-tts-proxy
+    build:
+      context: .
+      dockerfile: services/piper-tts-proxy/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: '9876'
+      PIPER_TTS_HOST: piper-wyoming
+      PIPER_TTS_PORT: '10200'
+    ports:
+      - '127.0.0.1:9876:9876'
+    depends_on:
+      - piper-wyoming
+    networks:
+      - jumble
+    restart: unless-stopped
+
 volumes:
   relay-data:
 

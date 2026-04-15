@@ -33,4 +33,5 @@ dev-dist
 public/.og-image.raster.svg
 
 .venv-i18n
+.local-piper-data
 scripts/i18n-overrides/.gaps
