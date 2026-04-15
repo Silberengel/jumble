@@ -1,6 +1,5 @@
 import LoginDialog from '@/components/LoginDialog'
 import LogoutDialog from '@/components/LogoutDialog'
-import { KeyboardShortcutsHelpButton } from '@/components/KeyboardShortcutsHelp'
 import KeyboardShortcutsHelpSidebarButton from '@/components/Sidebar/KeyboardShortcutsHelpSidebarButton'
 import SidebarItem from '@/components/Sidebar/SidebarItem'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -17,10 +16,11 @@ import { formatPubkey, formatNpub, generateImageByPubkey, pubkeyToNpub } from '@
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useCacheBrowser } from '../contexts/cache-browser-context'
+import { useKeyboardShortcutsHelp } from '@/contexts/keyboard-shortcuts-help-context'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
-import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
+import { ArrowDownUp, CircleHelp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -28,17 +28,34 @@ export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 
 function AccountDropdownItems({
   onSwitchAccount,
-  onLogoutClick
+  onLogoutClick,
+  includeHelp
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
+  /** Titlebar (mobile): help lives here so the relay strip has more room. */
+  includeHelp?: boolean
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
   const { openBrowseCache } = useCacheBrowser()
+  const { openHelp } = useKeyboardShortcutsHelp()
 
   return (
     <>
+      {includeHelp ? (
+        <>
+          <DropdownMenuItem
+            onClick={() => {
+              openHelp()
+            }}
+          >
+            <CircleHelp className="size-4" />
+            {t('help.title')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      ) : null}
       <DropdownMenuItem onClick={() => navigate('profile')}>
         <User className="size-4" />
         {t('Profile')}
@@ -120,7 +137,11 @@ function SidebarAccountMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="z-[220]">
-        <AccountDropdownItems onSwitchAccount={onSwitchAccount} onLogoutClick={onLogoutClick} />
+        <AccountDropdownItems
+          onSwitchAccount={onSwitchAccount}
+          onLogoutClick={onLogoutClick}
+          includeHelp={false}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -174,23 +195,27 @@ function TitlebarAccountMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="bottom" className="z-[220]">
-        <AccountDropdownItems onSwitchAccount={onSwitchAccount} onLogoutClick={onLogoutClick} />
+        <AccountDropdownItems
+          onSwitchAccount={onSwitchAccount}
+          onLogoutClick={onLogoutClick}
+          includeHelp
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
 }
 
 /**
- * Help (?) + account avatar with the same dropdown on sidebar (desktop) and titlebar (mobile).
+ * Sidebar: help (?) above account. Titlebar (mobile): help is inside the account menu so the relay strip has more room.
  */
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
+  const { openHelp } = useKeyboardShortcutsHelp()
   const [loginDialogOpen, setLoginDialogOpen] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
-  const help =
-    variant === 'sidebar' ? <KeyboardShortcutsHelpSidebarButton /> : <KeyboardShortcutsHelpButton />
+  const help = variant === 'sidebar' ? <KeyboardShortcutsHelpSidebarButton /> : null
 
   let account: ReactNode
   if (pubkey) {
@@ -223,10 +248,26 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
   const wrapClass =
     variant === 'titlebar' ? 'flex shrink-0 items-center gap-1' : 'flex flex-col space-y-2'
 
+  /** Logged-out titlebar: keep ? next to login so help stays reachable without opening login. */
+  const titlebarHelpWhenLoggedOut =
+    variant === 'titlebar' && !pubkey ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="titlebar-icon"
+        onClick={() => openHelp()}
+        title={t('help.title')}
+        aria-label={t('help.title')}
+      >
+        <CircleHelp />
+      </Button>
+    ) : null
+
   return (
     <>
       <div className={wrapClass}>
         {help}
+        {titlebarHelpWhenLoggedOut}
         {account}
       </div>
       <LoginDialog open={loginDialogOpen} setOpen={setLoginDialogOpen} />

@@ -50,7 +50,7 @@ export function ActiveRelaysTitlebarButton() {
     <Button
       variant="ghost"
       size="titlebar-icon"
-      className="shrink-0 gap-0.5 text-muted-foreground hover:text-primary disabled:opacity-40"
+      className="shrink-0 gap-0.5 text-muted-foreground hover:text-primary disabled:opacity-40 max-sm:mr-3 max-sm:pr-1"
       title={t('Active relays')}
       aria-label={t('Active relays')}
       disabled={rows.length === 0}

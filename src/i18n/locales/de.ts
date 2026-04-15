@@ -621,6 +621,8 @@ export default {
     'liveActivities.regionLabel': 'Live-Räume und Streams',
     'liveActivities.fromFollow': 'Von jemandem, dem du folgst',
     'liveActivities.goToSlide': 'Live-Eintrag {{n}} anzeigen',
+    'liveActivities.swipeToBrowse':
+      'Wische auf dem Banner nach links oder rechts, um zwischen Live-Aktivitäten zu wechseln.',
     'liveActivities.viewNoteTitle':
       'Diese Live-Aktivität als Beitrag öffnen (Wiedergabe in der App, Links darunter)',
     'liveActivities.openJoinPageTitle':

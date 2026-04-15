@@ -616,6 +616,8 @@ export default {
     'liveActivities.regionLabel': 'Live spaces and streams',
     'liveActivities.fromFollow': 'From someone you follow',
     'liveActivities.goToSlide': 'Show live item {{n}}',
+    'liveActivities.swipeToBrowse':
+      'Swipe left or right on the banner to switch between live activities.',
     'liveActivities.viewNoteTitle': 'Open this live activity as a note (play in app, links below)',
     'liveActivities.openJoinPageTitle': 'Open the join page in a new tab (e.g. zap.stream or the room site)',
     'liveActivities.settingsToggle': 'Live activities banner',
