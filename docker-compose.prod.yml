@@ -12,6 +12,12 @@
 # NIP-66 monitor: set NIP66_MONITOR_NSEC (and optionally NIP66_MONITOR_NPUB) in the host env or .env.
 # - Cron service `jumble-nip66-monitor` (Imwald NIP-66 monitor image) uses NIP66_MONITOR_NSEC to publish 30166/10166; nsec never goes to the client.
 # - Set NIP66_MONITOR_NPUB (npub1... derived from the same key) so the relay info page shows the monitor's avatar and handle in the NIP-66 liveliness section.
+#
+# Optional editor tools (LanguageTool + LibreTranslate): profile `editor-tools`
+#   docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate
+# Then Apache (or nginx) must proxy same-origin paths baked into the SPA, e.g. /api/languagetool → http://127.0.0.1:8010
+# and /api/translate → http://127.0.0.1:5000. Build the app image with:
+#   LANGUAGE_TOOL_URL=/api/languagetool TRANSLATE_URL=/api/translate ./scripts/build-and-push-prod.sh
 
 services:
   jumble:
@@ -58,3 +64,27 @@ services:
       resources:
         limits:
           memory: 128M
+
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    profiles: ['editor-tools']
+    container_name: imwald-languagetool
+    ports:
+      - '127.0.0.1:8010:8010'
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    profiles: ['editor-tools']
+    container_name: imwald-libretranslate
+    ports:
+      - '127.0.0.1:5000:5000'
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2048M

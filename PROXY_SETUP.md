@@ -134,6 +134,29 @@ ProxyPassReverse /api/languagetool http://127.0.0.1:8010
 
 If `VITE_LANGUAGE_TOOL_URL` is empty, grammar hints in the lab are disabled.
 
+### Docker sidecars (LanguageTool + LibreTranslate)
+
+The repo defines optional Compose services on **host ports 8010** and **5000** (same targets as `vite.config.ts`). They use profile **`editor-tools`** so a plain `docker compose up` does not pull them unless you ask.
+
+```bash
+# Dev compose (with relay, etc.): start only grammar + translate
+docker compose -f docker-compose.dev.yml --profile editor-tools up -d languagetool libretranslate
+
+# Or npm alias
+npm run docker:editor-tools
+```
+
+Then point Vite at the proxies (e.g. **`.env.local`**):
+
+```
+VITE_LANGUAGE_TOOL_URL=/api/languagetool
+VITE_TRANSLATE_URL=/api/translate
+```
+
+**Production:** `docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate` publishes **127.0.0.1:8010** and **127.0.0.1:5000** (loopback-only). Proxy those paths from Apache/nginx to the SPA origin, and bake the client with `LANGUAGE_TOOL_URL=/api/languagetool` and `TRANSLATE_URL=/api/translate` when running `./scripts/build-and-push-prod.sh`.
+
+**Notes:** LanguageTool’s JVM image often needs **~1–2 GiB** RAM. LibreTranslate may **download models** on first start (can take several minutes).
+
 ## LibreTranslate (same-origin `/api/translate`)
 
 Optional **`VITE_TRANSLATE_URL=/api/translate`** for `POST /translate` (LibreTranslate-compatible). Example Apache:
@@ -144,6 +167,8 @@ ProxyPassReverse /api/translate http://127.0.0.1:5000
 ```
 
 **Local dev:** `vite.config.ts` proxies `/api/translate` → `http://127.0.0.1:5000` with path rewrite.
+
+If `VITE_TRANSLATE_URL` is empty, translate actions in the advanced lab are hidden.
 
 ## Update Proxy Server's ALLOW_ORIGIN
 

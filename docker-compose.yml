@@ -24,5 +24,26 @@ services:
     networks:
       - jumble
 
+  # Optional: same as docker-compose.dev.yml — `docker compose --profile editor-tools up -d languagetool libretranslate`
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    profiles: ['editor-tools']
+    container_name: jumble-languagetool
+    ports:
+      - '8010:8010'
+    networks:
+      - jumble
+    restart: unless-stopped
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    profiles: ['editor-tools']
+    container_name: jumble-libretranslate
+    ports:
+      - '5000:5000'
+    networks:
+      - jumble
+    restart: unless-stopped
+
 networks:
   jumble:

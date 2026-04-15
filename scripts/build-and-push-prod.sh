@@ -63,3 +63,4 @@ echo "Pushing tag $GIT_TAG to origin"
 git push origin "$GIT_TAG"
 
 echo "Done. On the server: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
+echo "Optional LanguageTool + LibreTranslate: docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate (see PROXY_SETUP.md)"

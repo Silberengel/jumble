@@ -37,6 +37,29 @@ services:
       - jumble
     restart: unless-stopped
 
+  # Advanced Event Lab: grammar (LanguageTool) + machine translate (LibreTranslate).
+  # Matches vite.config.ts → 127.0.0.1:8010 / :5000. Start with:
+  #   docker compose -f docker-compose.dev.yml --profile editor-tools up -d languagetool libretranslate
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    profiles: ['editor-tools']
+    container_name: jumble-languagetool
+    ports:
+      - '8010:8010'
+    networks:
+      - jumble
+    restart: unless-stopped
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    profiles: ['editor-tools']
+    container_name: jumble-libretranslate
+    ports:
+      - '5000:5000'
+    networks:
+      - jumble
+    restart: unless-stopped
+
 volumes:
   relay-data:
 
