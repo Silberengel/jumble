@@ -19,8 +19,8 @@ export const GITREPUBLIC_WEB_BASE_URL = (
   .replace(/\/$/, '')
 
 /**
- * Piper TTS (same contract as aitherboard `POST /api/piper-tts`: JSON `{ text, voice?, speed? }`, body `audio/wav`).
- * Default production: `/api/piper-tts` (same origin; reverse-proxy to aitherboard — see PROXY_SETUP.md).
+ * Piper TTS (same contract as `POST /api/piper-tts`: JSON `{ text, voice?, speed? }`, body `audio/wav`).
+ * Default production: `/api/piper-tts` (same origin; reverse-proxy to Wyoming — e.g. `services/piper-tts-proxy` or any host implementing that path — see PROXY_SETUP.md).
  * For cross-origin aitherboard instead, set full URL and configure CORS on that host.
  * If empty, read-aloud uses the Web Speech API only.
  */

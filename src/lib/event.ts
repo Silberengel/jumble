@@ -36,15 +36,29 @@ function listThreadLinkETags(event: Event): string[][] {
   return event.tags.filter(([n]) => n === 'e' || n === 'E')
 }
 
+/** Hex note ids on `e`/`E` that are not this event's id (some clients emit a bogus self-`e` on kind 1111). */
+function listThreadLinkETagsExcludingSelf(event: Event): string[][] {
+  const self = event.id.toLowerCase()
+  return listThreadLinkETags(event).filter(
+    ([, id]) => typeof id === 'string' && /^[0-9a-f]{64}$/i.test(id) && id.toLowerCase() !== self
+  )
+}
+
 /**
  * Parent `e` for kind 1111 / voice comment: prefer `reply` marker, else last `e` when multiple
  * (NIP-10 root-then-reply), else first. Avoids treating the thread root as the parent when clients omit uppercase `E`.
+ * Ignores `e`/`E` whose id is this event (bad self-links); parent then falls through to {@link getParentATag} / naddr.
  */
 function getParentETagCommentOrDiscussion(event: Event): string[] | undefined {
   const isETag = (n: string) => n === 'e' || n === 'E'
-  const byMarker = event.tags.find(([tagName, , , marker]) => isETag(tagName) && marker === 'reply')
+  const self = event.id.toLowerCase()
+  const byMarker = event.tags.find(([tagName, id, , marker]) => {
+    if (!isETag(tagName) || marker !== 'reply' || typeof id !== 'string') return false
+    if (!/^[0-9a-f]{64}$/i.test(id)) return false
+    return id.toLowerCase() !== self
+  })
   if (byMarker) return byMarker
-  const etags = listThreadLinkETags(event)
+  const etags = listThreadLinkETagsExcludingSelf(event)
   if (etags.length >= 2) return etags[etags.length - 1]
   return etags[0]
 }
@@ -55,11 +69,18 @@ function getParentETagCommentOrDiscussion(event: Event): string[] | undefined {
  */
 function getRootETagCommentOrDiscussion(event: Event): string[] | undefined {
   const isETag = (n: string) => n === 'e' || n === 'E'
-  const byMarker = event.tags.find(([tagName, , , marker]) => isETag(tagName) && marker === 'root')
+  const self = event.id.toLowerCase()
+  const byMarker = event.tags.find(([tagName, id, , marker]) => {
+    if (!isETag(tagName) || marker !== 'root' || typeof id !== 'string') return false
+    if (!/^[0-9a-f]{64}$/i.test(id)) return false
+    return id.toLowerCase() !== self
+  })
   if (byMarker) return byMarker
-  const upperE = event.tags.find(tagNameEquals('E'))
+  const upperE = event.tags.find(
+    (t) => t[0] === 'E' && typeof t[1] === 'string' && /^[0-9a-f]{64}$/i.test(t[1]) && t[1].toLowerCase() !== self
+  )
   if (upperE) return upperE
-  const etags = listThreadLinkETags(event)
+  const etags = listThreadLinkETagsExcludingSelf(event)
   if (etags.length >= 2) return etags[0]
   return etags[0]
 }

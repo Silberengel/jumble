@@ -16,6 +16,7 @@
     "dev": "vite --host",
     "dev:refresh": "rm -rf node_modules/.vite && vite --host",
     "docker:editor-tools": "docker compose -f docker-compose.dev.yml --profile editor-tools up -d languagetool libretranslate",
+    "piper-tts-proxy": "cross-env NODE_ENV=development npx --yes tsx services/piper-tts-proxy/http.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "knip": "npx --yes knip@5",

@@ -99,16 +99,48 @@ docker-compose up -d
 
 ## Read-aloud / Piper TTS (same-origin `/api/piper-tts`)
 
-The client uses **`POST /api/piper-tts`** on the **same host** as the app (default build: `VITE_READ_ALOUD_TTS_URL=/api/piper-tts`) so the browser does not need cross-origin CORS to aitherboard.
+The client uses **`POST /api/piper-tts`** on the **same host** as the app (default build: `VITE_READ_ALOUD_TTS_URL=/api/piper-tts`) so the browser does not need cross-origin CORS.
 
-Add these **before** the catch-all `ProxyPass /` to the Imwald static container (same ordering as `/sites/`):
+**Backend:** Wyoming Piper (`silberengel/wyoming-piper`, TCP **10200**) has no HTTP API. You need a small bridge that accepts `POST /api/piper-tts` and talks Wyoming over TCP.
+
+- **In this repo:** `services/piper-tts-proxy/` — HTTP server with the same JSON/WAV contract as the old aitherboard route. Build from repo root:
+  - `docker build -f services/piper-tts-proxy/Dockerfile -t imwald-piper-tts-proxy .`
+  - Run on **the same Docker network** as the `piper-tts` container so hostname **`piper-tts`** resolves, e.g.:
+    - `docker network create piper-stack` (once)
+    - `docker network connect piper-stack piper-tts`
+    - `docker run -d --name imwald-piper-tts-proxy --restart unless-stopped --network piper-stack -p 127.0.0.1:9876:9876 -e PIPER_TTS_HOST=piper-tts -e PIPER_TTS_PORT=10200 imwald-piper-tts-proxy`
+  - Alternatively, publish Wyoming on the host (`-p 127.0.0.1:10200:10200` on `piper-tts`) and run the proxy with `--network host` and `PIPER_TTS_HOST=127.0.0.1`.
+
+Add these **before** the catch-all `ProxyPass /` to the Imwald static container (same ordering as `/sites/`). Example **full** fragment (matches a typical TLS vhost; adjust `ServerName` / SSL paths as you do today):
 
 ```apache
+ProxyPreserveHost On
+ProxyRequests Off
+
+# WebSocket upgrade handling - CRITICAL for Nostr apps
+RewriteEngine On
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^/?(.*) "ws://127.0.0.1:8089/$1" [P,L]
+
+# OG / link preview (before catch-all)
+ProxyPass        /sites/ http://127.0.0.1:8090/sites/
+ProxyPassReverse /sites/ http://127.0.0.1:8090/sites/
+
+# Read-aloud Piper — same-origin /api/piper-tts → imwald-piper-tts-proxy (HTTP) → Wyoming piper-tts:10200 (before catch-all)
 ProxyPass        /api/piper-tts http://127.0.0.1:9876/api/piper-tts
 ProxyPassReverse /api/piper-tts http://127.0.0.1:9876/api/piper-tts
+
+# Static SPA (catch-all — must be last)
+ProxyPass        / http://127.0.0.1:8089/
+ProxyPassReverse / http://127.0.0.1:8089/
+
+ProxyAddHeaders On
+Header always set X-Forwarded-Proto "https"
+Header always set X-Forwarded-Port "443"
 ```
 
-Use the port where **aitherboard** listens (example: `9876`). Reload Apache, then test:
+Use the port where **`imwald-piper-tts-proxy`** listens (example **`9876`**). Reload Apache, then test:
 
 ```bash
 curl -sS -o /tmp/t.wav -w "%{http_code}\n" -H "Content-Type: application/json" \
