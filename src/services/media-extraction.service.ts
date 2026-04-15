@@ -1,10 +1,10 @@
 import { Event } from 'nostr-tools'
 import { getImetaInfosFromEvent } from '@/lib/event'
-import { cleanUrl, isImage, isMedia, isAudio, isVideo } from '@/lib/url'
+import { cleanUrl, isImage, isMedia, isAudio, isVideo, isHlsPlaylistUrl } from '@/lib/url'
 
-/** Any URL we may embed or extract from note bodies (incl. video-only extensions like .3gp). */
+/** Any URL we may embed or extract from note bodies (incl. video-only extensions like .3gp, HLS manifests). */
 function isEmbeddableMediaUrl(cleaned: string): boolean {
-  return isImage(cleaned) || isMedia(cleaned) || isVideo(cleaned) || isAudio(cleaned)
+  return isImage(cleaned) || isMedia(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)
 }
 import { TImetaInfo } from '@/types'
 import mediaUpload from './media-upload.service'
@@ -43,6 +43,8 @@ export function extractAllMediaFromEvent(
     if (!mime) {
       if (isImage(cleaned)) {
         mime = 'image/*'
+      } else if (isHlsPlaylistUrl(cleaned)) {
+        mime = 'video/*'
       } else if (isAudio(cleaned)) {
         mime = 'audio/*'
       } else if (isVideo(cleaned)) {
@@ -69,10 +71,12 @@ export function extractAllMediaFromEvent(
       info.m?.startsWith('image/') ||
       info.m?.startsWith('video/') ||
       info.m?.startsWith('audio/') ||
+      info.m === 'application/vnd.apple.mpegurl' ||
       isImage(info.url) ||
       isMedia(info.url) ||
       isVideo(info.url) ||
       isAudio(info.url) ||
+      isHlsPlaylistUrl(info.url) ||
       // Blossom / NIP-94 URLs often have no file extension; metadata still identifies the blob.
       (nip94Signals && !!info.url)
     ) {
@@ -111,7 +115,16 @@ export function extractAllMediaFromEvent(
     addMedia(imageTag[1])
   }
 
-  // 3. Extract from content (if provided)
+  // 3. Live streams in `r` tags (often next to imeta for poster / blurhash)
+  event.tags.forEach((tag) => {
+    if (tag[0] !== 'r' || !tag[1]) return
+    const c = cleanUrl(tag[1]) || tag[1]
+    if (isHlsPlaylistUrl(c)) {
+      addMedia(tag[1], event.pubkey, 'video/*')
+    }
+  })
+
+  // 4. Extract from content (if provided)
   if (content) {
     // First, extract from markdown image syntax: ![alt](url) or [![](url)](link)
     // This handles images inside links
@@ -138,7 +151,7 @@ export function extractAllMediaFromEvent(
     }
   }
 
-  // 5. Try to match content URLs with imeta tags for better metadata (alt, dim, blurHash, m)
+  // 6. Try to match content URLs with imeta tags for better metadata (alt, dim, blurHash, m)
   const imageIdentityKey = (url: string): string | null => {
     try {
       const u = cleanUrl(url)
@@ -183,7 +196,7 @@ export function extractAllMediaFromEvent(
   allMedia.forEach((media) => {
     if (media.m?.startsWith('image/') || isImage(media.url)) {
       images.push(media)
-    } else if (media.m?.startsWith('video/') || isVideo(media.url)) {
+    } else if (media.m?.startsWith('video/') || isVideo(media.url) || isHlsPlaylistUrl(media.url)) {
       videos.push(media)
     } else if (media.m?.startsWith('audio/') || isAudio(media.url)) {
       audio.push(media)
@@ -191,7 +204,7 @@ export function extractAllMediaFromEvent(
       // Fallback: try to determine by URL extension
       if (isImage(media.url)) {
         images.push(media)
-      } else if (isVideo(media.url)) {
+      } else if (isVideo(media.url) || isHlsPlaylistUrl(media.url)) {
         videos.push(media)
       } else if (isAudio(media.url)) {
         audio.push(media)

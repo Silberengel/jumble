@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   filterLiveActivityItemsByReachableMedia,
   liveEventInlinePlaybackFromEvent,
+  liveEventZapStreamWatchUrl,
   parseLiveActivityEvent,
   preferredLiveJoinUrlForEvent,
   resolveParentSpacesForLiveActivities
 } from './live-activities'
+import { isZapStreamWatchPageUrl } from '@/lib/url'
 import { nip19, type Event } from 'nostr-tools'
 
 const base = (kind: number, tags: string[][], pubkey = 'a'.repeat(64)): Event =>
@@ -182,6 +184,21 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
     expect(preferredLiveJoinUrlForEvent(ev)).toBe(join)
   })
 
+  it('30311 Nostr Nests LiveKit does not use zap.stream for inline playback when only LiveKit tags', () => {
+    const pk = 'f'.repeat(64)
+    const ev = base(
+      30311,
+      [
+        ['d', 'eaf66800-fdaa-4796-b755-e34cec4fd485'],
+        ['status', 'live'],
+        ['service', 'https://nostrnests.com'],
+        ['streaming', 'wss+livekit://nostrnests.com:443']
+      ],
+      pk
+    )
+    expect(liveEventInlinePlaybackFromEvent(ev)).toBeNull()
+  })
+
   it('accepts 30311 when status is LIVE (case-insensitive)', () => {
     const pk = 'a'.repeat(64)
     const ev = base(
@@ -226,7 +243,7 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
     expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(`https://zap.stream/${naddr}`)
   })
 
-  it('30311 Corny Chat uses instance /_/integrations/nostr/<naddr> (not zap.stream)', () => {
+  it('30311 Corny Chat uses tagged HTTPS room URL for join (open in browser)', () => {
     const pk = 'd'.repeat(64)
     const dVal = '1700000000123'
     const ev = base(
@@ -243,15 +260,25 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
       ],
       pk
     )
-    const naddr = nip19.naddrEncode({
-      kind: 30311,
-      pubkey: pk,
-      identifier: dVal,
-      relays: ['wss://nos.lol']
-    })
-    const expected = `https://cornychat.com/_/integrations/nostr/${naddr}`
-    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(expected)
-    expect(preferredLiveJoinUrlForEvent(ev)).toBe(expected)
+    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe('https://cornychat.com/myroom')
+    expect(preferredLiveJoinUrlForEvent(ev)).toBe('https://cornychat.com/myroom')
+  })
+
+  it('30311 Corny Chat resolves jam host when audiospace `l` label comes before hostname `l`', () => {
+    const pk = 'd'.repeat(64)
+    const ev = base(
+      30311,
+      [
+        ['d', '1'],
+        ['status', 'live'],
+        ['L', 'com.cornychat'],
+        ['l', 'audiospace', 'com.cornychat'],
+        ['l', 'cornychat.com', 'com.cornychat'],
+        ['r', 'https://cornychat.com/moooooonboi']
+      ],
+      pk
+    )
+    expect(preferredLiveJoinUrlForEvent(ev)).toBe('https://cornychat.com/moooooonboi')
   })
 
   it('30311 Corny Chat falls back to zap.stream when `l` host disagrees with `r`', () => {
@@ -300,6 +327,26 @@ describe('parseLiveActivityEvent (NIP-53)', () => {
   })
 })
 
+describe('isZapStreamWatchPageUrl', () => {
+  it('matches zap.stream naddr watch paths only', () => {
+    expect(isZapStreamWatchPageUrl('https://zap.stream/naddr1qvzqqqqqqqqqqqq')).toBe(true)
+    expect(isZapStreamWatchPageUrl('https://www.zap.stream/naddr1qabc')).toBe(true)
+    expect(isZapStreamWatchPageUrl('https://zap.stream/')).toBe(false)
+    expect(isZapStreamWatchPageUrl('https://zap.stream/about')).toBe(false)
+    expect(isZapStreamWatchPageUrl('https://evil.test/naddr1qxxx')).toBe(false)
+  })
+})
+
+describe('liveEventZapStreamWatchUrl', () => {
+  it('returns zap.stream naddr only for kind 30311 with d tag', () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(30311, [['d', 'sid'], ['status', 'live']], pk)
+    const naddr = nip19.naddrEncode({ kind: 30311, pubkey: pk, identifier: 'sid' })
+    expect(liveEventZapStreamWatchUrl(ev)).toBe(`https://zap.stream/${naddr}`)
+    expect(liveEventZapStreamWatchUrl(base(1, [['d', 'x']]))).toBeUndefined()
+  })
+})
+
 describe('liveEventInlinePlaybackFromEvent', () => {
   it('prefers MP3 r tag over HLS streaming', () => {
     const ev = base(30311, [
@@ -340,6 +387,34 @@ describe('liveEventInlinePlaybackFromEvent', () => {
   it('returns null for non-30311', () => {
     expect(liveEventInlinePlaybackFromEvent(base(1, [['d', 'x']]))).toBeNull()
   })
+
+  it('30311 Corny room-page tags use zap.stream naddr for inline playback', () => {
+    const pk = 'd'.repeat(64)
+    const dVal = '1700000000123'
+    const ev = base(
+      30311,
+      [
+        ['d', dVal],
+        ['status', 'live'],
+        ['L', 'com.cornychat'],
+        ['l', 'cornychat.com', 'com.cornychat'],
+        ['r', 'https://cornychat.com/myroom'],
+        ['streaming', 'https://cornychat.com/myroom'],
+        ['relays', 'wss://nos.lol']
+      ],
+      pk
+    )
+    const naddr = nip19.naddrEncode({
+      kind: 30311,
+      pubkey: pk,
+      identifier: dVal,
+      relays: ['wss://nos.lol']
+    })
+    expect(liveEventInlinePlaybackFromEvent(ev)).toEqual({
+      src: `https://zap.stream/${naddr}`,
+      mode: 'video'
+    })
+  })
 })
 
 describe('preferredLiveJoinUrlForEvent (Nostr Nests & Corny Chat)', () => {
@@ -364,7 +439,7 @@ describe('preferredLiveJoinUrlForEvent (Nostr Nests & Corny Chat)', () => {
     expect(preferredLiveJoinUrlForEvent(ev)).toBe(`https://nostrnests.com/${naddr}`)
   })
 
-  it('30312 Nests fork: prefers web origin /naddr over API service URL', () => {
+  it('30312 Nests fork: rejects docker-internal LiveKit host (no public join URL)', () => {
     const pk = '3f770d65d3a764a9c5cb503ae123e62ec7598ad035d836e2a810f3877a745b24'
     const ev = base(
       30312,
@@ -378,15 +453,31 @@ describe('preferredLiveJoinUrlForEvent (Nostr Nests & Corny Chat)', () => {
       ],
       pk
     )
+    expect(preferredLiveJoinUrlForEvent(ev)).toBeUndefined()
+    expect(parseLiveActivityEvent(ev, new Set())).toBeNull()
+  })
+
+  it('30312 Nests fork: prefers web origin /naddr when LiveKit host matches the tagged instance', () => {
+    const pk = 'a'.repeat(64)
+    const ev = base(
+      30312,
+      [
+        ['d', 'room-d'],
+        ['room', 'Fork room'],
+        ['status', 'open'],
+        ['client', 'fork.example.com'],
+        ['service', 'https://fork.example.com/api/v1/nests'],
+        ['streaming', 'wss+livekit://media.fork.example.com:7880']
+      ],
+      pk
+    )
     const naddr = nip19.naddrEncode({
       kind: 30312,
       pubkey: pk,
-      identifier: 'c69dfcf4-627c-4227-bc73-c6fa47f99a13'
+      identifier: 'room-d'
     })
-    expect(preferredLiveJoinUrlForEvent(ev)).toBe(`https://nestsdev.derekross.me/${naddr}`)
-    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(
-      `https://nestsdev.derekross.me/${naddr}`
-    )
+    expect(preferredLiveJoinUrlForEvent(ev)).toBe(`https://fork.example.com/${naddr}`)
+    expect(parseLiveActivityEvent(ev, new Set())?.joinUrl).toBe(`https://fork.example.com/${naddr}`)
   })
 
   it('Corny Chat kind 1: prefers r over service when they differ', () => {

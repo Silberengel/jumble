@@ -5,6 +5,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ExtendedKind, PROFILE_FEED_KINDS } from '@/constants'
+import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
 import { useKindFilter } from '@/providers/KindFilterProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -26,7 +27,7 @@ const KIND_FILTER_OPTIONS = [
   { kindGroup: [ExtendedKind.VIDEO, ExtendedKind.SHORT_VIDEO], label: 'Video Posts' },
   { kindGroup: [ExtendedKind.DISCUSSION], label: 'Discussions' },
   { kindGroup: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME], label: 'Calendar Events' },
-  { kindGroup: [kinds.LiveEvent], label: 'Live streams' },
+  { kindGroup: [...LIVE_ACTIVITY_KINDS], label: 'Live streams' },
   { kindGroup: [ExtendedKind.ZAP_RECEIPT], label: 'Zaps' },
   { kindGroup: [kinds.Repost, ExtendedKind.GENERIC_REPOST], label: 'Boosts' },
   { kindGroup: [ExtendedKind.GIT_REPO_ANNOUNCEMENT], label: 'Git repositories' },

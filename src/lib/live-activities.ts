@@ -152,6 +152,15 @@ function zapStreamUrlForAddressable(ev: Event): string | undefined {
 }
 
 /**
+ * Canonical [zap.stream](https://zap.stream) watch URL for a kind **30311** ticker (`naddr` from `d` + relay hints).
+ * Use as {@link MediaPlayer} `fallbackPageUrl` when direct HLS/audio in-app playback fails or is unavailable.
+ */
+export function liveEventZapStreamWatchUrl(ev: Event): string | undefined {
+  if (ev.kind !== 30311) return undefined
+  return zapStreamUrlForAddressable(ev)
+}
+
+/**
  * Official Nostr Nests ([nostrnests/nests](https://github.com/nostrnests/nests)) rooms tag MoQ relay + moq-auth;
  * `streaming` is not a browser join URL — prefer the web app naddr route.
  */
@@ -208,6 +217,51 @@ function nestsForkLiveKit30312WebOrigin(ev: Event): string | undefined {
 }
 
 /**
+ * `wss+livekit://livekit:7880`-style tags use Docker-internal DNS; browsers cannot reach them while `service`
+ * points at a public HTTPS origin. Skip join/carousel for that misconfiguration instead of surfacing a dead room.
+ */
+function liveKitWssHostPlausibleForNests30312(ev: Event): boolean {
+  if (ev.kind !== 30312) return true
+  const stream = firstTagValue(ev, 'streaming')?.trim() ?? ''
+  if (!stream.startsWith('wss+livekit://')) return true
+
+  const rest = stream.slice('wss+livekit://'.length)
+  const hostPart = rest.split('/')[0] ?? ''
+  const streamHost = (hostPart.split(':')[0] ?? '').toLowerCase()
+  if (!streamHost) return false
+
+  const blocked = new Set([
+    'livekit',
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    'host.docker.internal'
+  ])
+  if (blocked.has(streamHost)) return false
+
+  const svcRaw = firstTagValue(ev, 'service')?.trim()
+  let serviceHostname = ''
+  if (svcRaw) {
+    try {
+      serviceHostname = new URL(svcRaw).hostname.toLowerCase().replace(/^www\./, '')
+    } catch {
+      return false
+    }
+  }
+  const clientRaw = firstTagValue(ev, 'client')?.trim()
+  const clientHost = clientRaw ? clientRaw.split(':')[0].toLowerCase().replace(/^www\./, '') : ''
+
+  if (streamHost === serviceHostname) return true
+  if (clientHost && streamHost === clientHost) return true
+  if (serviceHostname && streamHost.endsWith(`.${serviceHostname}`)) return true
+  if (clientHost && streamHost.endsWith(`.${clientHost}`)) return true
+
+  if (!streamHost.includes('.')) return false
+
+  return false
+}
+
+/**
  * Nostr Nests [publishes](https://github.com/nostrnests/nests) kind 30311 tickers with `wss+livekit://…` and
  * `service` on `nostrnests.com`. Those streams are not playable on [zap.stream](https://github.com/v0l/zap.stream);
  * open the native nest page instead (same `/:naddr` pattern as kind 30312).
@@ -256,39 +310,25 @@ function isCornyChat30311(ev: Event): boolean {
 
 /**
  * `l` tag value `jamHost` from Corny pantry (`['l', jamHost, 'com.cornychat']`), when present.
- * Used to ensure `r`/`service` URLs belong to the same instance before building an integration link.
+ * Used to ensure `r`/`service` room URLs belong to the same instance as the tagged jam host.
  */
 function cornyChatJamHost(ev: Event): string | undefined {
+  /** Pantry emits both `['l','<jamHost>','com.cornychat']` and `['l','audiospace','com.cornychat']`; prefer a hostname-like value for URL checks. */
+  let nonHost: string | undefined
   for (const t of ev.tags) {
     if (t[0] === 'l' && t[1] && t[2] === CORNYCHAT_LABEL_NAMESPACE) {
-      return t[1].trim().toLowerCase()
+      const v = t[1].trim().toLowerCase()
+      if (v.includes('.')) return v
+      nonHost ??= v
     }
   }
-  return undefined
+  return nonHost
 }
 
-/** `https://<instance>` from Corny room links in `r` / `service` / `streaming`. */
-function cornyChatWebOriginFromEvent(ev: Event): string | undefined {
-  const raw = firstHttpsJoinFromTagNames(ev, ['r', 'service', 'streaming'])
-  if (!raw) return undefined
-  try {
-    const u = new URL(raw)
-    if (u.protocol !== 'https:') return undefined
-    const jamHost = cornyChatJamHost(ev)
-    if (jamHost && u.hostname.toLowerCase() !== jamHost) return undefined
-    return u.origin
-  } catch {
-    return undefined
-  }
-}
-
-/** `https://<corny-instance>/_/integrations/nostr/<naddr>` — matches Corny’s nostr handler route. */
-function cornyChatNaddrIntegrationUrl(ev: Event): string | undefined {
-  if (!isCornyChat30311(ev)) return undefined
-  const origin = cornyChatWebOriginFromEvent(ev)
-  if (!origin) return undefined
-  const base = `${origin}/_/integrations/nostr`
-  return naddrPageUrlForAddressable(ev, base)
+function cornyPageHostMatchesJamHost(pageHost: string, jamHost: string): boolean {
+  const h = pageHost.toLowerCase()
+  const j = jamHost.toLowerCase()
+  return h === j || h === `www.${j}`
 }
 
 /** [Corny Chat](https://github.com/vicariousdrama/cornychat) kind-1 invites: same room URL on `r` / `service` / `streaming`; prefer `r` (explicit room link). */
@@ -306,11 +346,9 @@ function isCornyChatKind1Invite(ev: Event): boolean {
 /**
  * URL to open for this activity.
  * **30311 (Nostr Nests + LiveKit):** `service` / `wss+livekit://…` on `nostrnests.com` → [nostrnests.com/naddr…](https://nostrnests.com/).
- * **30311 (Corny Chat):** Prefer [`origin/_/integrations/nostr/naddr…`](https://github.com/vicariousdrama/cornychat) when
- * `L`/`com.cornychat` is present (instance origin from `r`/`service`, host checked against `l` when tagged).
- * **30311 (other):** Always use canonical [zap.stream/naddr…](https://zap.stream) when `d` is present so we never
- * stick on stale `service`/`r` URLs publishers no longer use. zap.stream loads the same NIP-53 event and
- * plays `streaming` / etc. Fallbacks only if naddr cannot be built.
+ * **30311 (Corny Chat):** Prefer the tagged HTTPS room page on `r` / `service` / `streaming` for “Open in browser”
+ * (host must match `l` jam host when present). In-app playback uses [zap.stream](https://zap.stream) via {@link liveEventInlinePlaybackFromEvent}.
+ * **30311 (other):** [zap.stream/naddr…](https://zap.stream) when `d` is present.
  * **30312 (Nostr Nests official MoQ):** Prefer [nostrnests.com/naddr…](https://nostrnests.com/) over `streaming` (MoQ).
  * **30312 (Nests fork + LiveKit):** `wss+livekit://…` and HTTPS `service` on the same host as `client` (or `…/nests` in the path) → `https://<instance>/<naddr>`.
  * **Kind 1 (Corny Chat invite):** Prefer `r` → `service` → `streaming` per pantry publish shape.
@@ -318,9 +356,8 @@ function isCornyChatKind1Invite(ev: Event): boolean {
  */
 /**
  * Kind 30311 is shared by every NIP-53 “live stream” ticker (zap.stream, Corny Chat, etc.).
- * There is no single tag that means “zap.stream”; we only special-case publishers that label themselves
- * (Corny uses [`L`, `com.cornychat`](https://github.com/vicariousdrama/cornychat/blob/main/pantry/nostr/nostr.js)).
- * Everyone else gets the zap.stream player URL, which resolves the same replaceable event by naddr.
+ * Corny-labelled events use [`L`, `com.cornychat`](https://github.com/vicariousdrama/cornychat/blob/main/pantry/nostr/nostr.js).
+ * In-app playback without direct media tags uses zap.stream; browser join for Corny uses the room URL when valid.
  */
 function joinUrlFor30311Ticker(ev: Event): string | undefined {
   if (isNostrNests30311WebJoin(ev)) {
@@ -328,9 +365,18 @@ function joinUrlFor30311Ticker(ev: Event): string | undefined {
     if (nests) return nests
   }
   if (isCornyChat30311(ev)) {
-    const corny = cornyChatNaddrIntegrationUrl(ev)
-    if (corny) return corny
-    // Corny-labelled but unsafe/missing room URL vs `l` host, or missing `d`: fall through to zap.stream.
+    const direct = firstHttpsJoinFromTagNames(ev, ['r', 'service', 'streaming'])
+    if (direct) {
+      try {
+        const host = new URL(direct).hostname
+        const jamHost = cornyChatJamHost(ev)
+        if (!jamHost || cornyPageHostMatchesJamHost(host, jamHost)) {
+          return direct
+        }
+      } catch {
+        /* fall through */
+      }
+    }
   }
   return zapStreamUrlForAddressable(ev)
 }
@@ -348,6 +394,7 @@ function joinUrlFor30312Space(ev: Event): string | undefined {
   }
   const forkOrigin = nestsForkLiveKit30312WebOrigin(ev)
   if (forkOrigin) {
+    if (!liveKitWssHostPlausibleForNests30312(ev)) return undefined
     return naddrPageUrlForAddressable(ev, forkOrigin)
   }
   return undefined
@@ -362,6 +409,10 @@ function pickJoinUrl(ev: Event): string | undefined {
   if (ev.kind === 30312) {
     const nests = joinUrlFor30312Space(ev)
     if (nests) return nests
+    const stream = firstTagValue(ev, 'streaming')?.trim() ?? ''
+    if (stream.startsWith('wss+livekit://') && nestsForkLiveKit30312WebOrigin(ev)) {
+      return undefined
+    }
   }
 
   if (isCornyChatKind1Invite(ev)) {
@@ -647,7 +698,8 @@ export type LiveEventInlinePlayback = { src: string; mode: 'audio' | 'video' }
 
 /**
  * Pick a URL the in-app {@link MediaPlayer} can use for NIP-53 kind 30311 (live / radio).
- * Prefers direct audio (`r` or `streaming`, e.g. Icecast `.mp3`) over HLS manifests.
+ * Prefers direct audio (`r` or `streaming`, e.g. Icecast `.mp3`) over HLS manifests, then
+ * [zap.stream `naddr`](https://zap.stream) when there is no playable URL in tags (except Nostr Nests LiveKit tickers).
  */
 export function liveEventInlinePlaybackFromEvent(ev: Event): LiveEventInlinePlayback | null {
   if (ev.kind !== 30311) return null
@@ -666,6 +718,10 @@ export function liveEventInlinePlaybackFromEvent(ev: Event): LiveEventInlinePlay
   }
   for (const u of streamingUrls) {
     if (isHlsPlaylistUrl(u) || isVideo(u)) return { src: u, mode: 'video' }
+  }
+  if (!isNostrNests30311WebJoin(ev)) {
+    const zapWatch = zapStreamUrlForAddressable(ev)
+    if (zapWatch) return { src: zapWatch, mode: 'video' }
   }
   return null
 }

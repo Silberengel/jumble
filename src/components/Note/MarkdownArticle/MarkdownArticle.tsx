@@ -18,7 +18,8 @@ import {
   isAudio,
   isWebsocketUrl,
   isPseudoNostrHttpsUrl,
-  isSafeMediaUrl
+  isSafeMediaUrl,
+  isHlsPlaylistUrl
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
@@ -2029,7 +2030,7 @@ function parseMarkdownContentLegacy(
             />
           </div>
         )
-      } else if (isVideo(cleaned) || isAudio(cleaned)) {
+      } else if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
         const poster = videoPosterMap?.get(cleaned)
         parts.push(
           <div key={`media-${patternIdx}`} className="my-2">
@@ -2128,7 +2129,7 @@ function parseMarkdownContentLegacy(
     } else if (pattern.type === 'markdown-link-standalone') {
       const { url } = pattern.data
       const cleanedStandalone = cleanUrl(url)
-      if (cleanedStandalone && (isVideo(cleanedStandalone) || isAudio(cleanedStandalone))) {
+      if (cleanedStandalone && (isVideo(cleanedStandalone) || isAudio(cleanedStandalone) || isHlsPlaylistUrl(cleanedStandalone))) {
         const poster = videoPosterMap?.get(cleanedStandalone)
         parts.push(
           <div key={`media-standalone-${patternIdx}`} className="my-2">
@@ -3243,17 +3244,18 @@ function parseMarkdownContentMarked(
           const cleaned = cleanUrl(src)
           if (!cleaned) break
           const label = String(token.text ?? '')
-          if (isVideo(cleaned) || isAudio(cleaned)) {
+          if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
+            const poster = videoPosterMap?.get(cleaned)
             out.push(
-              <a
-                key={`${key}-media-link`}
-                href={src}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
-              >
-                {label || src}
-              </a>
+              <div key={`${key}-media-inline`} className="my-2 not-prose">
+                <MediaPlayer
+                  src={cleaned}
+                  poster={poster}
+                  blurHash={mediaBlurHashMap?.get(cleaned)}
+                  className="max-w-[400px]"
+                  mustLoad={!lazyMedia}
+                />
+              </div>
             )
             break
           }
@@ -3439,7 +3441,7 @@ function parseMarkdownContentMarked(
                     </div>
                   )
                 }
-                if (isVideo(cleaned) || isAudio(cleaned)) {
+                if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
                   const poster = videoPosterMap?.get(cleaned)
                   return (
                     <div key={`${key}-line-media-${lineIdx}`} className="my-2">
@@ -3604,7 +3606,7 @@ function parseMarkdownContentMarked(
             </div>
           )
         }
-        if (isVideo(cleaned) || isAudio(cleaned)) {
+        if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
           const poster = videoPosterMap?.get(cleaned)
           return (
             <div key={`${key}-media-url`} className="my-2">
@@ -3678,6 +3680,20 @@ function parseMarkdownContentMarked(
           </div>
         )
       }
+      if (soleHref && (isVideo(soleHref) || isAudio(soleHref) || isHlsPlaylistUrl(soleHref))) {
+        const poster = videoPosterMap?.get(soleHref)
+        return (
+          <div key={`${key}-direct-media-sole-link`} className="my-2">
+            <MediaPlayer
+              src={soleHref}
+              className="max-w-[400px]"
+              mustLoad={!lazyMedia}
+              poster={poster}
+              blurHash={mediaBlurHashMap?.get(soleHref)}
+            />
+          </div>
+        )
+      }
     }
 
     const parseNostrHref = (href: string): string | null => {
@@ -3694,7 +3710,7 @@ function parseMarkdownContentMarked(
       const hasInlineMediaImageToken = paragraphTokens.some((t) => {
         if (t?.type !== 'image') return false
         const cleaned = cleanUrl(String(t.href ?? ''))
-        return !!cleaned && (isVideo(cleaned) || isAudio(cleaned))
+        return !!cleaned && (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))
       })
       if (hasInlineMediaImageToken) {
         const nodes: React.ReactNode[] = []
@@ -3751,6 +3767,22 @@ function parseMarkdownContentMarked(
               )
               return
             }
+            if (cleaned && (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))) {
+              flushInlineSegment(segmentIdx++)
+              const poster = videoPosterMap?.get(cleaned)
+              nodes.push(
+                <div key={`${key}-inline-direct-media-with-mixed-${idx}`} className="my-2">
+                  <MediaPlayer
+                    src={cleaned}
+                    poster={poster}
+                    blurHash={mediaBlurHashMap?.get(cleaned)}
+                    className="max-w-[400px]"
+                    mustLoad={!lazyMedia}
+                  />
+                </div>
+              )
+              return
+            }
           }
           if (t?.type !== 'image') {
             inlineSegment.push(t)
@@ -3758,7 +3790,7 @@ function parseMarkdownContentMarked(
           }
           const src = String(t.href ?? '')
           const cleaned = cleanUrl(src)
-          if (!cleaned || (!isVideo(cleaned) && !isAudio(cleaned))) {
+          if (!cleaned || (!isVideo(cleaned) && !isAudio(cleaned) && !isHlsPlaylistUrl(cleaned))) {
             inlineSegment.push(t)
             return
           }
@@ -3885,6 +3917,57 @@ function parseMarkdownContentMarked(
           return <div key={`${key}-yt-inline-mix`}>{nodes}</div>
         }
       }
+
+      const hasInlineDirectMediaLink = paragraphTokens.some((t: any) => {
+        if (t?.type !== 'link') return false
+        const cleaned = cleanUrl(String(t.href ?? ''))
+        return !!cleaned && (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))
+      })
+      if (hasInlineDirectMediaLink) {
+        const nodes: React.ReactNode[] = []
+        let inlineSegment: any[] = []
+        const flushInlineSegment = (segmentIdx: number) => {
+          if (inlineSegment.length === 0) return
+          nodes.push(
+            <p key={`${key}-direct-media-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+              {renderInlineTokens(inlineSegment, `${key}-direct-media-inline-segment-${segmentIdx}`)}
+            </p>
+          )
+          inlineSegment = []
+        }
+
+        let segmentIdx = 0
+        paragraphTokens.forEach((t: any, idx: number) => {
+          if (t?.type !== 'link') {
+            inlineSegment.push(t)
+            return
+          }
+          const cleaned = cleanUrl(String(t.href ?? ''))
+          if (!cleaned || (!isVideo(cleaned) && !isAudio(cleaned) && !isHlsPlaylistUrl(cleaned))) {
+            inlineSegment.push(t)
+            return
+          }
+
+          flushInlineSegment(segmentIdx++)
+          const poster = videoPosterMap?.get(cleaned)
+          nodes.push(
+            <div key={`${key}-inline-direct-media-${idx}`} className="my-2">
+              <MediaPlayer
+                src={cleaned}
+                poster={poster}
+                blurHash={mediaBlurHashMap?.get(cleaned)}
+                className="max-w-[400px]"
+                mustLoad={!lazyMedia}
+              />
+            </div>
+          )
+        })
+
+        flushInlineSegment(segmentIdx++)
+        if (nodes.length > 0) {
+          return <div key={`${key}-direct-media-inline-mix`}>{nodes}</div>
+        }
+      }
     }
 
     // If the paragraph is a single markdown image token, render it as block media/image
@@ -3894,7 +3977,7 @@ function parseMarkdownContentMarked(
       const src = String(imageToken.href ?? '')
       const cleaned = cleanUrl(src)
       if (cleaned) {
-        if (isVideo(cleaned) || isAudio(cleaned)) {
+        if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
           const poster = videoPosterMap?.get(cleaned)
           return (
             <div key={`${key}-media-block`} className="my-2">
@@ -4806,12 +4889,17 @@ export default function MarkdownArticle({
     imetaInfos.forEach((info) => {
       const cleaned = cleanUrl(info.url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned)) return
+      if (!isImage(cleaned) && !isMedia(cleaned) && !isHlsPlaylistUrl(cleaned)) return
       
       seenUrls.add(cleaned)
       if (info.m?.startsWith('image/') || isImage(cleaned)) {
         media.push({ url: info.url, type: 'image' })
-      } else if (info.m?.startsWith('video/') || isVideo(cleaned)) {
+      } else if (
+        info.m?.startsWith('video/') ||
+        isVideo(cleaned) ||
+        isHlsPlaylistUrl(cleaned) ||
+        /mpegurl/i.test(info.m || '')
+      ) {
         media.push({
           url: info.url,
           type: 'video',
@@ -4833,12 +4921,12 @@ export default function MarkdownArticle({
       const url = tag[1]
       const cleaned = cleanUrl(url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned)) return
+      if (!isImage(cleaned) && !isMedia(cleaned) && !isHlsPlaylistUrl(cleaned)) return
       
       seenUrls.add(cleaned)
       if (isImage(cleaned)) {
         media.push({ url, type: 'image' })
-      } else if (isVideo(cleaned)) {
+      } else if (isVideo(cleaned) || isHlsPlaylistUrl(cleaned)) {
         media.push({ url, type: 'video' })
       } else if (isAudio(cleaned)) {
         media.push({ url, type: 'audio' })
@@ -4932,7 +5020,7 @@ export default function MarkdownArticle({
         const url = tag[1]
         if (!url.startsWith('http://') && !url.startsWith('https://')) return
         if (isPseudoNostrHttpsUrl(url)) return
-        if (isImage(url) || isMedia(url)) return
+        if (isImage(url) || isMedia(url) || isHlsPlaylistUrl(url)) return
         if (isYouTubeUrl(url)) return // Exclude YouTube URLs
         if (isSpotifyUrl(url)) return
         if (isZapStreamWatchUrl(url)) return
@@ -5043,7 +5131,7 @@ export default function MarkdownArticle({
     while ((match = urlRegex.exec(event.content)) !== null) {
       const url = match[0]
       const cleaned = cleanUrl(url)
-      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned))) {
+      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))) {
         urls.add(cleaned)
         // Also add image identifier for filename-based matching
         const identifier = getImageIdentifier(cleaned)
@@ -5112,6 +5200,7 @@ export default function MarkdownArticle({
         (url.startsWith('http://') || url.startsWith('https://')) &&
         !isImage(url) &&
         !isMedia(url) &&
+        !isHlsPlaylistUrl(url) &&
         !isYouTubeUrl(url) &&
         !isSpotifyUrl(url) &&
         !isZapStreamWatchUrl(url)
@@ -5226,17 +5315,48 @@ export default function MarkdownArticle({
     const map = new Map<string, string>()
     const imetaInfos = getImetaInfosFromEvent(event)
     imetaInfos.forEach((info) => {
-      if (info.m?.startsWith('video/') || isVideo(info.url)) {
-        const cleaned = cleanUrl(info.url)
+      const cleaned = cleanUrl(info.url)
+      if (!cleaned) return
+      const isHls = isHlsPlaylistUrl(cleaned) || /mpegurl/i.test(info.m || '')
+      if (info.m?.startsWith('video/') || isVideo(info.url) || isHls) {
         const posterUrl = info.image || info.thumb
         // thumb is often wrongly set to the same video URL; only real image URLs work as <img poster>.
-        if (cleaned && posterUrl && isImage(posterUrl)) {
+        if (posterUrl && isImage(posterUrl)) {
           map.set(cleaned, posterUrl)
         }
       }
     })
+
+    const imetaImageCleaned = new Set<string>()
+    imetaInfos.forEach((info) => {
+      const c = cleanUrl(info.url)
+      if (!c || isHlsPlaylistUrl(c)) return
+      if (isImage(c) || info.m?.startsWith('image/')) {
+        imetaImageCleaned.add(c)
+      }
+    })
+    if (imetaImageCleaned.size === 1) {
+      const solePoster = [...imetaImageCleaned][0]!
+      const hlsOnNote = new Set<string>()
+      for (const v of extractedMedia.videos) {
+        const c = cleanUrl(v.url)
+        if (c && isHlsPlaylistUrl(c)) hlsOnNote.add(c)
+      }
+      event.tags
+        .filter((t) => t[0] === 'r' && t[1])
+        .forEach((t) => {
+          const c = cleanUrl(t[1]!)
+          if (c && isHlsPlaylistUrl(c)) hlsOnNote.add(c)
+        })
+      for (const h of hlsOnNote) {
+        if (h !== solePoster && !map.has(h)) {
+          map.set(h, solePoster)
+        }
+      }
+    }
+
     return map
-  }, [event.id, JSON.stringify(event.tags)])
+  }, [event.id, JSON.stringify(event.tags), extractedMedia.videos])
   
   // Create thumbnail map from imeta tags (for images)
   // Maps original image URL to thumbnail URL
@@ -5508,7 +5628,7 @@ export default function MarkdownArticle({
                       src={media.url}
                       className="max-w-full sm:max-w-[400px] w-full"
                       mustLoad={!lazyMedia}
-                      poster={media.poster}
+                      poster={media.poster ?? videoPosterMap?.get(cleaned)}
                       blurHash={media.blurHash}
                     />
                   </div>

@@ -549,20 +549,20 @@ export function getLiveEventMetadataFromEvent(event: Event) {
   const tags = new Set<string>()
 
   event.tags.forEach(([tagName, tagValue]) => {
-    if (tagName === 'title') {
-      title = tagValue
+    if (tagName === 'title' && tagValue?.trim()) {
+      title = tagValue.trim()
     } else if (tagName === 'room' && tagValue?.trim()) {
       room = tagValue.trim()
-    } else if (tagName === 'summary') {
-      summary = tagValue
+    } else if (tagName === 'summary' && tagValue?.trim()) {
+      summary = tagValue.trim()
     } else if (tagName === 'image' && tagValue?.trim()) {
       image = tagValue.trim()
     } else if (tagName === 'thumb' && tagValue?.trim()) {
       thumb = tagValue.trim()
     } else if (tagName === 'status' && tagValue?.trim()) {
       status = tagValue.trim().toLowerCase()
-    } else if (tagName === 't' && tagValue && tags.size < 6) {
-      tags.add(tagValue.toLowerCase())
+    } else if (tagName === 't' && tagValue?.trim() && tags.size < 6) {
+      tags.add(tagValue.trim().toLowerCase())
     }
   })
 

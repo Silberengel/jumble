@@ -1,4 +1,4 @@
-import { isHlsPlaylistUrl, isImage } from '@/lib/url'
+import { isHlsPlaylistUrl, isImage, isZapStreamWatchPageUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -8,8 +8,11 @@ import VideoPlayer from '../VideoPlayer'
 import ExternalLink from '../ExternalLink'
 import LazyMediaTapPlaceholder, { MediaEmbedBlurFrame } from './LazyMediaTapPlaceholder'
 
+type MediaSurface = 'video' | 'audio' | 'iframe' | null
+
 /** Same rules as the metadata probe, but synchronous so the first paint can show the embed stack. */
-function embedMediaTypeHintFromUrl(src: string): 'video' | 'audio' | null {
+function embedMediaSurfaceHintFromUrl(src: string): MediaSurface {
+  if (isZapStreamWatchPageUrl(src)) return 'iframe'
   try {
     const url = new URL(src)
     const extension = url.pathname.split('.').pop()?.toLowerCase()
@@ -55,7 +58,7 @@ export default function MediaPlayer({
   const { autoLoadMedia } = useContentPolicy()
   /** Tap-to-load when {@link autoLoadMedia} is off; cleared when policy switches back to never. */
   const [userClickedLoad, setUserClickedLoad] = useState(false)
-  const [mediaType, setMediaType] = useState<'video' | 'audio' | null>(null)
+  const [mediaType, setMediaType] = useState<MediaSurface>(null)
   const [probeFailed, setProbeFailed] = useState(false)
   const [embedPainted, setEmbedPainted] = useState(false)
   const readyOnceRef = useRef(false)
@@ -68,9 +71,9 @@ export default function MediaPlayer({
     return isImage(p) ? p : undefined
   }, [poster])
 
-  const urlEmbedTypeHint = useMemo(() => embedMediaTypeHintFromUrl(src), [src])
+  const urlEmbedSurfaceHint = useMemo(() => embedMediaSurfaceHintFromUrl(src), [src])
   /** Probe result wins when set (e.g. audio-only mp4); URL hint avoids a blank frame before useEffect runs. */
-  const effectiveMediaType = mediaType ?? urlEmbedTypeHint
+  const effectiveMediaType = mediaType ?? urlEmbedSurfaceHint
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
 
@@ -107,6 +110,11 @@ export default function MediaPlayer({
       // Firefox/Chrome do not expose HLS via <video> metadata probe — it fails and looked like “no player”.
       if (isHlsPlaylistUrl(src)) {
         setMediaType('video')
+        return
+      }
+
+      if (isZapStreamWatchPageUrl(src)) {
+        setMediaType('iframe')
         return
       }
 
@@ -162,6 +170,9 @@ export default function MediaPlayer({
       return t('Preparing player…', { defaultValue: 'Preparing player…' })
     }
     if (!embedPainted) {
+      if (isZapStreamWatchPageUrl(src)) {
+        return t('Starting stream…', { defaultValue: 'Starting stream…' })
+      }
       if (isHlsPlaylistUrl(src)) {
         return t('Starting stream…', { defaultValue: 'Starting stream…' })
       }
@@ -223,7 +234,18 @@ export default function MediaPlayer({
         )}
         aria-hidden={!embedPainted}
       >
-        {effectiveMediaType === 'video' ? (
+        {effectiveMediaType === 'iframe' ? (
+          <iframe
+            src={src}
+            title={t('liveEvent.zapStreamPlayer')}
+            className={cn('aspect-video h-[min(520px,70dvh)] w-full rounded-md border border-border bg-black', className)}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+            allow="autoplay; encrypted-media; microphone; clipboard-write"
+            onLoad={onEmbedReady}
+          />
+        ) : effectiveMediaType === 'video' ? (
           <VideoPlayer
             src={src}
             className={className}

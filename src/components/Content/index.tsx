@@ -7,7 +7,7 @@ import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { cn } from '@/lib/utils'
 import { getHttpUrlFromITags } from '@/lib/event'
 import { httpUrlSkipsBottomWebPreview } from '@/lib/nostr-from-http-url'
-import { cleanUrl, isImage, isMedia, isAudio, isVideo, isPseudoNostrHttpsUrl } from '@/lib/url'
+import { cleanUrl, isImage, isMedia, isAudio, isVideo, isHlsPlaylistUrl, isPseudoNostrHttpsUrl } from '@/lib/url'
 import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import { randomString } from '@/lib/random'
 import modalManager from '@/services/modal-manager.service'
@@ -174,6 +174,7 @@ export default function Content({
           !isPseudoNostrHttpsUrl(url) &&
           !isImage(url) &&
           !isMedia(url) &&
+          !isHlsPlaylistUrl(url) &&
           !isYouTubeUrl(url) &&
           !isSpotifyOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
@@ -290,6 +291,7 @@ export default function Content({
           !isPseudoNostrHttpsUrl(url) &&
           !isImage(url) &&
           !isMedia(url) &&
+          !isHlsPlaylistUrl(url) &&
           !isYouTubeUrl(url) &&
           !isSpotifyOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
@@ -314,7 +316,12 @@ export default function Content({
     if (!cleaned) return
     if (img.m?.startsWith('image/')) {
       imageMap.set(cleaned, img)
-    } else if (img.m?.startsWith('video/') || img.m?.startsWith('audio/') || img.m === 'media/*') {
+    } else if (
+      img.m?.startsWith('video/') ||
+      img.m?.startsWith('audio/') ||
+      img.m === 'media/*' ||
+      isHlsPlaylistUrl(cleaned)
+    ) {
       mediaMap.set(cleaned, img)
     } else if (isImage(cleaned)) {
       imageMap.set(cleaned, img)
@@ -365,26 +372,26 @@ export default function Content({
       const cleanedUrl = cleanUrl(node.data)
       mediaInContent.add(cleanedUrl)
       const mediaInfo = mediaMap.get(cleanedUrl)
-      if (mediaInfo) {
-        if (isVideo(cleanedUrl) || mediaInfo.m?.startsWith('video/')) {
-          if (!videosInContent.find(v => v.url === cleanedUrl)) {
-            videosInContent.push(mediaInfo)
-          }
-        } else if (isAudio(cleanedUrl) || mediaInfo.m?.startsWith('audio/')) {
-          if (!audioInContent.find(a => a.url === cleanedUrl)) {
-            audioInContent.push(mediaInfo)
-          }
+      if (isVideo(cleanedUrl) || isHlsPlaylistUrl(cleanedUrl) || mediaInfo?.m?.startsWith('video/')) {
+        const row = mediaInfo || { url: cleanedUrl, pubkey: event?.pubkey, m: 'video/*' }
+        if (!videosInContent.find((v) => v.url === cleanedUrl)) {
+          videosInContent.push(row)
+        }
+      } else if (isAudio(cleanedUrl) || mediaInfo?.m?.startsWith('audio/')) {
+        const row = mediaInfo || { url: cleanedUrl, pubkey: event?.pubkey, m: 'audio/*' }
+        if (!audioInContent.find((a) => a.url === cleanedUrl)) {
+          audioInContent.push(row)
         }
       }
     } else if (node.type === 'url') {
       const cleanedUrl = cleanUrl(node.data)
-      if (isImage(cleanedUrl)) {
+        if (isImage(cleanedUrl)) {
         mediaInContent.add(cleanedUrl)
         const imageInfo = imageMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey }
         if (!imagesInContent.find(img => img.url === cleanedUrl)) {
           imagesInContent.push(imageInfo)
         }
-      } else if (isVideo(cleanedUrl)) {
+      } else if (isVideo(cleanedUrl) || isHlsPlaylistUrl(cleanedUrl)) {
         mediaInContent.add(cleanedUrl)
         const videoInfo = mediaMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey, m: 'video/*' }
         if (!videosInContent.find(v => v.url === cleanedUrl)) {
@@ -562,8 +569,8 @@ export default function Content({
             return null
           }
           
-          // Check video/audio first - never put them in ImageGallery
-          if (isVideoUrl || isAudioUrl || mediaMap.has(cleanedUrl)) {
+          // Check video/audio/HLS first - never put them in ImageGallery
+          if (isVideoUrl || isAudioUrl || isHlsPlaylistUrl(cleanedUrl) || mediaMap.has(cleanedUrl)) {
             renderedUrls.add(cleanedUrl)
             const mediaInfo = mediaMap.get(cleanedUrl)
             const poster = mediaInfo?.image || mediaInfo?.thumb

@@ -499,6 +499,7 @@ export default {
     'Opened by URL — not from your RSS list. Nostr thread is still tied to this link.':
       'Per URL geöffnet — nicht aus deiner RSS-Liste. Der Nostr-Thread hängt weiter an diesem Link.',
     'Open in browser': 'Im Browser öffnen',
+    'liveEvent.zapStreamPlayer': 'Livestream (zap.stream)',
     'liveEvent.hlsPlaybackUnavailable':
       'Wiedergabe hier fehlgeschlagen (Stream offline, beendet oder blockiert). Die gehostete Watch-Seite kannst du unten trotzdem öffnen.',
     'Web page': 'Webseite',

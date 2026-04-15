@@ -365,6 +365,23 @@ export function isHlsPlaylistUrl(url: string): boolean {
   }
 }
 
+const ZAP_STREAM_EMBED_HOSTS = new Set(['zap.stream', 'www.zap.stream'])
+
+/**
+ * True for [zap.stream](https://zap.stream) watch URLs (`/naddr1…` / `nevent1…`), which are HTML apps — not `<video src>`.
+ * Used so the in-app player embeds an iframe instead of probing metadata on a document URL.
+ */
+export function isZapStreamWatchPageUrl(url: string): boolean {
+  try {
+    const u = new URL(url.trim())
+    if (!ZAP_STREAM_EMBED_HOSTS.has(u.hostname.toLowerCase())) return false
+    const firstSeg = u.pathname.split('/').filter(Boolean)[0] ?? ''
+    return firstSeg.startsWith('naddr1') || firstSeg.startsWith('nevent1')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Return true if the URL looks like a fetchable web page (http(s) with a plausible host).
  * Used to skip OG metadata fetch for invalid or non-http URLs (e.g. "https://1.4ghz/").

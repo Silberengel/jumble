@@ -4,6 +4,7 @@ import { createFakeEvent } from '@/lib/event'
 import { getLiveEventMetadataFromEvent } from '@/lib/event-metadata'
 import {
   liveEventInlinePlaybackFromEvent,
+  liveEventZapStreamWatchUrl,
   preferredLiveJoinUrlForEvent
 } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
   const metadata = useMemo(() => getLiveEventMetadataFromEvent(event), [event])
   const playback = useMemo(() => liveEventInlinePlaybackFromEvent(event), [event])
   const joinUrl = useMemo(() => preferredLiveJoinUrlForEvent(event), [event])
+  const zapStreamFallbackUrl = useMemo(() => liveEventZapStreamWatchUrl(event), [event])
   /** Video/HLS: prefer `thumb`, then `image`. Audio: prefer NIP-53 `image`, then `thumb` (still on the player). */
   const posterUrl = metadata.thumb ?? metadata.image
   const inlinePlayerPoster =
@@ -131,7 +133,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
             src={playback.src}
             poster={inlinePlayerPoster}
             className="w-full"
-            fallbackPageUrl={joinUrl ?? undefined}
+            fallbackPageUrl={zapStreamFallbackUrl ?? joinUrl ?? undefined}
           />
         </div>
       ) : null}
