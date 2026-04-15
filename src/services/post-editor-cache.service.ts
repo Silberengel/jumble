@@ -1,9 +1,10 @@
 import { StorageKey } from '@/constants'
+import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import { parseEditorJsonToText } from '@/lib/tiptap'
 import storage from '@/services/local-storage.service'
 import { TPollCreateData } from '@/types'
 import { Content } from '@tiptap/react'
 import { Event } from 'nostr-tools'
-import { parseEditorJsonToText } from '@/lib/tiptap'
 
 const PERSIST_DEBOUNCE_MS = 5_000
 
@@ -32,6 +33,8 @@ type TPersistedDraft = {
   postContentCache: Record<string, Content>
   postSettingsCache: Record<string, TPostSettings>
   threadDraft: TThreadDraft | null
+  /** Advanced event lab (CodeMirror) drafts keyed by {@link PostEditorCacheService.generateCacheKey} or custom keys. */
+  advancedLabDrafts?: Record<string, AdvancedEventLabSlice>
 }
 
 class PostEditorCacheService {
@@ -39,6 +42,7 @@ class PostEditorCacheService {
 
   private postContentCache: Map<string, Content> = new Map()
   private postSettingsCache: Map<string, TPostSettings> = new Map()
+  private advancedLabDrafts: Map<string, AdvancedEventLabSlice> = new Map()
   private threadDraftCache: TThreadDraft | null = null
   private persistTimeoutId: ReturnType<typeof setTimeout> | null = null
   private restoredFromStorage = false
@@ -106,6 +110,13 @@ class PostEditorCacheService {
       if (data.threadDraft) {
         this.threadDraftCache = data.threadDraft
       }
+      if (data.advancedLabDrafts && typeof data.advancedLabDrafts === 'object') {
+        Object.entries(data.advancedLabDrafts).forEach(([k, v]) => {
+          if (v && typeof v === 'object' && typeof (v as AdvancedEventLabSlice).content === 'string') {
+            this.advancedLabDrafts.set(k, v as AdvancedEventLabSlice)
+          }
+        })
+      }
     } catch {
       // Ignore corrupt or stale data
     }
@@ -133,11 +144,16 @@ class PostEditorCacheService {
       this.postSettingsCache.forEach((v, k) => {
         postSettingsCache[k] = v
       })
+      const advancedLabDrafts: Record<string, AdvancedEventLabSlice> = {}
+      this.advancedLabDrafts.forEach((v, k) => {
+        advancedLabDrafts[k] = v
+      })
       const data: TPersistedDraft = {
         accountPubkey: account.pubkey,
         postContentCache,
         postSettingsCache,
-        threadDraft: this.threadDraftCache
+        threadDraft: this.threadDraftCache,
+        advancedLabDrafts
       }
       window.localStorage.setItem(StorageKey.POST_EDITOR_DRAFT, JSON.stringify(data))
     } catch {
@@ -153,6 +169,7 @@ class PostEditorCacheService {
     }
     this.postContentCache.clear()
     this.postSettingsCache.clear()
+    this.advancedLabDrafts.clear()
     this.threadDraftCache = null
     this.keysRestoredThisSession.clear()
     this.restoredFromStorage = false
@@ -207,11 +224,38 @@ class PostEditorCacheService {
     this.schedulePersist()
   }
 
+  getAdvancedLabDraft(key: string): AdvancedEventLabSlice | undefined {
+    this.restoreFromStorageIfNeeded()
+    return this.advancedLabDrafts.get(key)
+  }
+
+  setAdvancedLabDraft(key: string, slice: AdvancedEventLabSlice) {
+    this.restoreFromStorageIfNeeded()
+    const copy: AdvancedEventLabSlice = {
+      kind: slice.kind,
+      content: slice.content,
+      tags: slice.tags.map((row) => [...row])
+    }
+    this.advancedLabDrafts.set(key, copy)
+    this.schedulePersist()
+  }
+
+  clearAdvancedLabDraft(key: string) {
+    this.restoreFromStorageIfNeeded()
+    if (!this.advancedLabDrafts.delete(key)) return
+    if (this.persistTimeoutId) {
+      clearTimeout(this.persistTimeoutId)
+      this.persistTimeoutId = null
+    }
+    this.persistNow()
+  }
+
   clearPostCache({ kind, defaultContent, parentEvent }: TCacheKeyParams) {
     const cacheKey = this.generateCacheKey({ kind, defaultContent, parentEvent })
     this.keysRestoredThisSession.delete(cacheKey)
     this.postContentCache.delete(cacheKey)
     this.postSettingsCache.delete(cacheKey)
+    this.advancedLabDrafts.delete(cacheKey)
     if (this.persistTimeoutId) {
       clearTimeout(this.persistTimeoutId)
       this.persistTimeoutId = null
@@ -224,6 +268,7 @@ class PostEditorCacheService {
     this.keysRestoredThisSession.clear()
     this.postContentCache.clear()
     this.postSettingsCache.clear()
+    this.advancedLabDrafts.clear()
     if (this.persistTimeoutId) {
       clearTimeout(this.persistTimeoutId)
       this.persistTimeoutId = null

@@ -159,6 +159,43 @@ function parseDelimitedMath(value: string): ParsedMathDelimiter {
   return null
 }
 
+/**
+ * Marked often emits **one** paragraph token for several consecutive `$$…$$` blocks (only newline between
+ * closings and openings). {@link parseDelimitedMath} only handles a single span that fills the whole string,
+ * so split here and render each display block with KaTeX.
+ */
+function splitParagraphByDisplayMath(
+  raw: string
+): Array<{ kind: 'math'; expression: string } | { kind: 'markdown'; text: string }> | null {
+  if (!raw.includes('$$')) return null
+  const out: Array<{ kind: 'math'; expression: string } | { kind: 'markdown'; text: string }> = []
+  let i = 0
+  while (i < raw.length) {
+    const open = raw.indexOf('$$', i)
+    if (open === -1) {
+      const rest = raw.slice(i)
+      if (rest.trim()) out.push({ kind: 'markdown', text: rest })
+      break
+    }
+    if (open > i) {
+      const before = raw.slice(i, open)
+      if (before.trim()) out.push({ kind: 'markdown', text: before })
+    }
+    const close = raw.indexOf('$$', open + 2)
+    if (close === -1) {
+      const tail = raw.slice(open)
+      if (tail.trim()) out.push({ kind: 'markdown', text: tail })
+      break
+    }
+    const expression = raw.slice(open + 2, close).trim()
+    if (expression) out.push({ kind: 'math', expression })
+    i = close + 2
+    while (i < raw.length && /\s/.test(raw[i]!)) i++
+  }
+  if (!out.some((s) => s.kind === 'math')) return null
+  return out
+}
+
 function collectMathInlinePatterns(text: string): Array<{ index: number; end: number; type: 'math-inline' | 'math-block'; data: string }> {
   const patterns: Array<{ index: number; end: number; type: 'math-inline' | 'math-block'; data: string }> = []
 
@@ -387,12 +424,36 @@ function isZapStreamUrl(url: string): boolean {
   return regex.test(url)
 }
 
+/** Uppercase label for fenced code blocks in the article preview (e.g. TYPESCRIPT, C#). */
+function formatFenceLanguageLabel(lang: string): string {
+  const raw = lang.trim()
+  if (!raw) return ''
+  const id = raw.toLowerCase()
+  const map: Record<string, string> = {
+    csharp: 'C#',
+    cpp: 'C++',
+    'c++': 'C++',
+    javascript: 'JAVASCRIPT',
+    js: 'JAVASCRIPT',
+    typescript: 'TYPESCRIPT',
+    ts: 'TYPESCRIPT',
+    tsx: 'TSX',
+    jsx: 'JSX',
+    bash: 'BASH',
+    shell: 'SHELL',
+    sh: 'SHELL',
+    dockerfile: 'DOCKERFILE'
+  }
+  return map[id] ?? id.toUpperCase()
+}
+
 /**
  * CodeBlock component that renders code with syntax highlighting using highlight.js
  */
 function CodeBlock({ id, code, language }: { id: string; code: string; language: string }) {
   const codeRef = useRef<HTMLDivElement>(null)
-  
+  const label = formatFenceLanguageLabel(language)
+
   useEffect(() => {
     let cancelled = false
     const initHighlight = async () => {
@@ -419,10 +480,22 @@ function CodeBlock({ id, code, language }: { id: string; code: string; language:
       window.clearTimeout(timeoutId)
     }
   }, [code, language])
-  
+
   return (
-    <div className="my-4 overflow-x-auto">
-      <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700 whitespace-pre-wrap">
+    <div className="my-4 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+      {label ? (
+        <div
+          className="rounded-t-lg border-b border-gray-200 dark:border-gray-700 bg-muted/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          aria-hidden
+        >
+          {label}
+        </div>
+      ) : null}
+      <pre
+        className={`bg-gray-50 dark:bg-gray-900 p-4 whitespace-pre-wrap ${
+          label ? 'rounded-b-lg' : 'rounded-lg'
+        }`}
+      >
         <div ref={codeRef}>
           <code
             id={id}
@@ -3205,6 +3278,20 @@ function parseMarkdownContentMarked(
             <InlineCode key={`${key}-code`} keyPrefix={`${key}-code`} code={String(token.text ?? '')} />
           )
           break
+        case 'checkbox': {
+          const checked = Boolean(token.checked)
+          out.push(
+            <span
+              key={`${key}-chk`}
+              className="inline-flex h-[1.25em] shrink-0 select-none items-center justify-center text-[1.05rem] leading-none text-foreground"
+              aria-label={checked ? 'Checked task item' : 'Unchecked task item'}
+              role="img"
+            >
+              {checked ? '\u2611' : '\u2610'}
+            </span>
+          )
+          break
+        }
         case 'link': {
           const href = String(token.href ?? '')
           const children = stripNestedAnchorsFromNodes(
@@ -3310,6 +3397,30 @@ function parseMarkdownContentMarked(
   const renderParagraph = (token: any, key: string): React.ReactNode => {
     const rawParagraphText = String(token.text ?? token.raw ?? '')
     const paragraphText = rawParagraphText.trim()
+    const displayMathSplit = splitParagraphByDisplayMath(rawParagraphText)
+    if (displayMathSplit) {
+      return (
+        <div key={`${key}-display-math-split`} className="space-y-2">
+          {displayMathSplit.map((seg, idx) =>
+            seg.kind === 'math' ? (
+              <MathExpression
+                key={`${key}-dm-${idx}`}
+                keyPrefix={`${key}-dm-${idx}`}
+                expression={seg.expression}
+                displayMode
+              />
+            ) : (
+              <p key={`${key}-dmt-${idx}`} className="mb-1 last:mb-0">
+                {renderInlineTokens(
+                  lexInlineProtected(seg.text.trim()),
+                  `${key}-dmt-${idx}`
+                )}
+              </p>
+            )
+          )}
+        </div>
+      )
+    }
     const standaloneMath = parseDelimitedMath(rawParagraphText.trim())
     if (standaloneMath) {
       return (
@@ -4111,12 +4222,32 @@ function parseMarkdownContentMarked(
           break
         }
         case 'list': {
+          const items: any[] = token.items ?? []
+          const isTaskList = items.some((it: any) => it.task)
           const ListTag = token.ordered ? 'ol' : 'ul'
-          const listClass = token.ordered
-            ? 'list-decimal list-outside my-2 ml-6'
-            : 'list-disc list-outside my-2 ml-6 space-y-1'
+          const listClass = isTaskList
+            ? 'my-2 ml-0 list-none space-y-1.5'
+            : token.ordered
+              ? 'list-decimal list-outside my-2 ml-6'
+              : 'list-disc list-outside my-2 ml-6 space-y-1'
+          const startNum = token.ordered ? Number((token as { start?: number }).start ?? 1) : 1
+
           const renderListItemContent = (item: any, itemKey: string): React.ReactNode => {
             const itemTokens = item.tokens ?? [{ type: 'text', text: item.text ?? '' }]
+
+            if (item.task) {
+              if (
+                itemTokens.length === 1 &&
+                itemTokens[0]?.type === 'paragraph' &&
+                Array.isArray(itemTokens[0].tokens)
+              ) {
+                return renderInlineTokens(itemTokens[0].tokens, `${itemKey}-task-p`)
+              }
+              if (itemTokens.some((t: any) => t.type === 'checkbox')) {
+                return renderInlineTokens(itemTokens, `${itemKey}-task-flat`)
+              }
+            }
+
             if (itemTokens.length === 1) {
               const single = itemTokens[0]
               if (single.type === 'text') {
@@ -4134,15 +4265,40 @@ function parseMarkdownContentMarked(
             }
             return renderBlockTokens(itemTokens, itemKey)
           }
+
+          const listBody = React.createElement(
+            ListTag,
+            { className: listClass },
+            items.map((item: any, itemIdx: number) => (
+              <li
+                key={`${key}-li-${itemIdx}`}
+                className={isTaskList ? 'flex list-none items-center gap-2' : undefined}
+              >
+                {isTaskList && token.ordered ? (
+                  <span
+                    className="inline-flex min-w-[1.25rem] shrink-0 items-center justify-end self-center text-right text-xs tabular-nums leading-none text-muted-foreground"
+                    aria-hidden
+                  >
+                    {startNum + itemIdx}.
+                  </span>
+                ) : null}
+                {isTaskList ? (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {renderListItemContent(item, `${key}-li-${itemIdx}`)}
+                  </div>
+                ) : (
+                  renderListItemContent(item, `${key}-li-${itemIdx}`)
+                )}
+              </li>
+            ))
+          )
           nodes.push(
-            React.createElement(
-              ListTag,
-              { key: `${key}-list`, className: listClass },
-              (token.items ?? []).map((item: any, itemIdx: number) => (
-                <li key={`${key}-li-${itemIdx}`}>
-                  {renderListItemContent(item, `${key}-li-${itemIdx}`)}
-                </li>
-              ))
+            isTaskList ? (
+              <div key={`${key}-tasklist`} className="not-prose max-w-none">
+                {listBody}
+              </div>
+            ) : (
+              React.cloneElement(listBody, { key: `${key}-list` })
             )
           )
           break

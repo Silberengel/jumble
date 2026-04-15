@@ -4,7 +4,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -39,7 +38,7 @@ import {
   mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
 import { ExtendedKind, MAX_PUBLISH_RELAYS } from '@/constants'
-import { cn, isTouchDevice } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFeed } from '@/providers/FeedProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -54,12 +53,9 @@ import {
   Book,
   Check,
   ChevronDown,
-  ImageUp,
   ListTodo,
   MessageCircle,
   MessagesSquare,
-  Settings,
-  Smile,
   Users,
   X,
   Highlighter,
@@ -68,11 +64,8 @@ import {
   Quote,
   StickyNote,
   Upload,
-  Mic,
   Music,
   Video,
-  Film,
-  Laugh,
   Code2
 } from 'lucide-react'
 import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
@@ -107,9 +100,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
-import EmojiPickerDialog from '../EmojiPickerDialog'
-import GifPicker from '../GifPicker'
-import MemePicker from '../MemePicker'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Mentions, { extractMentions } from './Mentions'
 import PollEditor from './PollEditor'
@@ -117,13 +107,53 @@ import PostOptions from './PostOptions'
 import PostRelaySelector from './PostRelaySelector'
 import PostTextarea, { TPostTextareaHandle } from './PostTextarea'
 import { NeventPickerProvider } from './PostTextarea/Mention/NeventNaddrPickerDialog'
-import { MentionAndEventToolbarButtons } from './PostTextarea/Mention/MentionAndEventToolbarButtons'
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'
-import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
-import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import AdvancedEventLabDialog, {
+  type AdvancedLabBodyHandle
+} from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
+import {
+  PostEditorFormatToolbar,
+  type PostEditorFormatToolbarUploadHandlers
+} from './PostEditorFormatToolbar'
+import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
+
+function stripUrlForImageExtensionCheck(url: string): string {
+  return url.trim().split(/[#?]/)[0].toLowerCase()
+}
+
+function imageUrlLooksLikeHttpImage(url: string): boolean {
+  return /\.(gif|jpe?g|png|webp|avif|bmp|svg)$/i.test(stripUrlForImageExtensionCheck(url))
+}
+
+function labInsertShouldBecomeMarkupImage(txt: string): boolean {
+  const t = txt.trim()
+  if (!/^https?:\/\//i.test(t)) return false
+  if (/^\s*!\[/.test(t)) return false
+  if (/^\s*image::/i.test(t)) return false
+  if (imageUrlLooksLikeHttpImage(t)) return true
+  try {
+    const host = new URL(t).hostname.toLowerCase()
+    if (host.endsWith('tenor.com') || host.endsWith('giphy.com')) return true
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
+function formatMarkupImageAppend(url: string, asciidoc: boolean): string {
+  const safe = url.trim()
+  if (asciidoc) return `\nimage::${safe}[Image]\n`
+  return `\n![image](${safe})\n`
+}
+
+function formatMarkupImageAtCursor(url: string, asciidoc: boolean): string {
+  const safe = url.trim()
+  if (asciidoc) return `image::${safe}[Image]`
+  return `![image](${safe})`
+}
 
 export default function PostContent({
   defaultContent = '',
@@ -210,6 +240,15 @@ export default function PostContent({
   const textareaRef = useRef<TPostTextareaHandle>(null)
   const labTagOverrideRef = useRef<string[][] | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const advancedLabOpenRef = useRef(false)
+  useEffect(() => {
+    advancedLabOpenRef.current = advancedLabOpen
+  }, [advancedLabOpen])
+  const advancedLabBodyApiRef = useRef<AdvancedLabBodyHandle | null>(null)
+  const getActiveComposerBody = () =>
+    advancedLabOpenRef.current && advancedLabBodyApiRef.current
+      ? advancedLabBodyApiRef.current
+      : textareaRef.current
   const [advancedLabInitial, setAdvancedLabInitial] = useState<AdvancedEventLabSlice | null>(null)
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
@@ -627,6 +666,22 @@ export default function PostContent({
     isPoll,
     parentEvent
   ])
+
+  const getDeterminedKindRef = useRef(getDeterminedKind)
+  getDeterminedKindRef.current = getDeterminedKind
+
+  const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
+    const ed = getActiveComposerBody()
+    if (!ed || ed.getText().includes(url)) return
+    if (ed === advancedLabBodyApiRef.current && treatAsImage) {
+      ed.appendText(
+        formatMarkupImageAppend(url, isAsciidocMarkupKind(getDeterminedKindRef.current)),
+        false
+      )
+      return
+    }
+    ed.appendText(url, true)
+  }
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -1098,7 +1153,8 @@ export default function PostContent({
 
     try {
       // Clean tracking parameters from URLs in the post content
-      const cleanedText = rewritePlainTextHttpUrls(text)
+      const body = textareaRef.current?.getText() ?? text
+      const cleanedText = rewritePlainTextHttpUrls(body)
 
       let draftEvent = await createDraftEvent(cleanedText)
       draftEvent = applyLabTagOverrideToDraft(draftEvent)
@@ -1108,6 +1164,40 @@ export default function PostContent({
     }
   }, [text, pubkey, isDiscussionThread, createDraftEvent, addClientTag, applyLabTagOverrideToDraft])
 
+  const applyComposerDraftJson = useCallback(
+    (raw: string) => {
+      const parsed = parseLabSlice(raw.trim())
+      if (!parsed.ok) {
+        toast.error(parsed.error)
+        return false
+      }
+      if (parsed.value.kind !== getDeterminedKind) {
+        toast.error(
+          t('composerJsonKindMismatch', {
+            expected: String(getDeterminedKind),
+            got: String(parsed.value.kind)
+          })
+        )
+        return false
+      }
+      labTagOverrideRef.current = parsed.value.tags.map((r) => [...r])
+      textareaRef.current?.setDocumentFromPlainText(parsed.value.content)
+      toast.success(t('composerJsonApplySuccess'))
+      return true
+    },
+    [getDeterminedKind, t]
+  )
+
+  const advancedLabPersistenceKey = useMemo(
+    () =>
+      postEditorCache.generateCacheKey({
+        kind: getDeterminedKind,
+        defaultContent,
+        parentEvent
+      }),
+    [getDeterminedKind, defaultContent, parentEvent]
+  )
+
   const handleOpenAdvancedLab = useCallback(async () => {
     await checkLogin(async () => {
       if (!pubkey) {
@@ -1115,19 +1205,39 @@ export default function PostContent({
         return
       }
       try {
-        const cleanedText = rewritePlainTextHttpUrls(text)
-        const d = await createDraftEvent(cleanedText)
-        setAdvancedLabInitial({
-          kind: d.kind,
-          content: d.content,
-          tags: (d.tags ?? []).map((row: string[]) => [...row])
-        })
+        const body = textareaRef.current?.getText() ?? text
+        const cleanedText = rewritePlainTextHttpUrls(body)
+        let d = await createDraftEvent(cleanedText)
+        d = applyLabTagOverrideToDraft(d)
+        const labKey = advancedLabPersistenceKey
+        const saved = postEditorCache.getAdvancedLabDraft(labKey)
+        if (saved && saved.kind === d.kind) {
+          setAdvancedLabInitial({
+            kind: saved.kind,
+            content: saved.content,
+            tags: saved.tags.map((row: string[]) => [...row])
+          })
+        } else {
+          setAdvancedLabInitial({
+            kind: d.kind,
+            content: d.content,
+            tags: (d.tags ?? []).map((row: string[]) => [...row])
+          })
+        }
         setAdvancedLabOpen(true)
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))
       }
     })
-  }, [checkLogin, pubkey, text, createDraftEvent, t])
+  }, [
+    checkLogin,
+    pubkey,
+    text,
+    createDraftEvent,
+    applyLabTagOverrideToDraft,
+    advancedLabPersistenceKey,
+    t
+  ])
 
   const post = async (e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -1810,13 +1920,12 @@ export default function PostContent({
       appendComposerImetaTag(newImetaTag)
 
       if (!opts?.skipComposerUrlAppend) {
+        const treatAsImage =
+          resolvedKind === ExtendedKind.PICTURE ||
+          (uploadingFile.type?.startsWith('image/') ?? false) ||
+          imageUrlLooksLikeHttpImage(url)
         setTimeout(() => {
-          if (textareaRef.current) {
-            const currentText = textareaRef.current.getText()
-            if (!currentText.includes(url)) {
-              textareaRef.current.appendText(url, true)
-            }
-          }
+          appendUploadedUrlToComposer(url, treatAsImage)
         }, 100)
       }
     } catch (error) {
@@ -1867,10 +1976,7 @@ export default function PostContent({
       if (isDiscussionThread && !parentEvent) {
         if (!urlAlreadyInEditor) {
           setTimeout(() => {
-            const ed = textareaRef.current
-            if (ed && !ed.getText().includes(url)) {
-              ed.appendText(url, true)
-            }
+            appendUploadedUrlToComposer(url, imageUrlLooksLikeHttpImage(url))
           }, 100)
         }
         uploadedMediaFileMap.current.delete(`${uploadingFile.name}-${uploadingFile.size}-${uploadingFile.lastModified}`)
@@ -1953,11 +2059,7 @@ export default function PostContent({
           // Use setTimeout to ensure the state has updated and editor is ready
           if (!urlAlreadyInEditor) {
             setTimeout(() => {
-              const ed = textareaRef.current
-              if (!ed) return
-              if (!ed.getText().includes(url)) {
-                ed.appendText(url, true)
-              }
+              appendUploadedUrlToComposer(url, false)
             }, 100)
           }
         } else {
@@ -1968,10 +2070,7 @@ export default function PostContent({
           setMediaImetaTags([])
           composerImetaTagsRef.current = []
           if (!urlAlreadyInEditor) {
-            const ed = textareaRef.current
-            if (ed && !ed.getText().includes(url)) {
-              ed.appendText(url, true)
-            }
+            appendUploadedUrlToComposer(url, imageUrlLooksLikeHttpImage(url))
           }
           return // Don't set media note kind for non-audio in replies/PMs
         }
@@ -2016,6 +2115,25 @@ export default function PostContent({
     // Clear uploaded file map (upload finished). Keep composerImetaTagsRef in sync with mediaImetaTags — do not wipe here.
     uploadedMediaFileMap.current.clear()
   }
+
+  const toolbarUploadHandlers = useMemo<PostEditorFormatToolbarUploadHandlers>(
+    () => ({
+      onUploadSuccess: handleMediaUploadSuccess,
+      onUploadStart: handleUploadStart,
+      onUploadEnd: handleUploadEnd,
+      onProgress: handleUploadProgress,
+      onUploadCompressPhase: handleUploadCompressPhase,
+      onUploadCompressProgress: handleUploadCompressProgress
+    }),
+    [
+      handleMediaUploadSuccess,
+      handleUploadStart,
+      handleUploadEnd,
+      handleUploadProgress,
+      handleUploadCompressPhase,
+      handleUploadCompressProgress
+    ]
+  )
 
   const handleArticleToggle = (type: 'longform' | 'wiki' | 'wiki-markdown' | 'publication') => {
     if (parentEvent) return // Can't create articles as replies
@@ -2888,6 +3006,8 @@ export default function PostContent({
           highlightData={isHighlight ? highlightData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
           getDraftEventJson={getDraftEventJson}
+          expectedDraftKind={pubkey ? getDeterminedKind : undefined}
+          onApplyComposerDraftJson={pubkey ? applyComposerDraftJson : undefined}
           extraPreviewTags={
             isDiscussionThread && !parentEvent ? discussionPreviewExtraTags : rssReplyExtraPreviewTags
           }
@@ -3254,90 +3374,19 @@ export default function PostContent({
       )}
       <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
         <div className="flex gap-2 items-center min-w-0 shrink-0">
-          {/* Audio button for replies and new PMs - placed before image button */}
-          {(parentEvent || isPublicMessage) && (
-            <Uploader
-              onUploadSuccess={handleMediaUploadSuccess}
-              onUploadStart={handleUploadStart}
-              onUploadEnd={handleUploadEnd}
-              onProgress={handleUploadProgress}
-              onUploadCompressPhase={handleUploadCompressPhase}
-              onUploadCompressProgress={handleUploadCompressProgress}
-              accept="audio/*,.mka,audio/x-matroska"
-            >
-              <Button 
-                type="button"
-                variant="ghost" 
-                size="icon" 
-                title={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
-                className={mediaNoteKind === ExtendedKind.VOICE_COMMENT || (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE) ? 'bg-accent' : ''}
-              >
-                <Mic className="h-4 w-4" />
-              </Button>
-            </Uploader>
-          )}
-          <Uploader
-            onUploadSuccess={handleMediaUploadSuccess}
-            onUploadStart={handleUploadStart}
-            onUploadEnd={handleUploadEnd}
-            onProgress={handleUploadProgress}
-            onUploadCompressPhase={handleUploadCompressPhase}
-            onUploadCompressProgress={handleUploadCompressProgress}
-            accept="image/*"
-          >
-            <Button type="button" variant="ghost" size="icon" title={t('Upload Image')}>
-              <ImageUp />
-            </Button>
-          </Uploader>
-          <Separator orientation="vertical" className="h-6 shrink-0" />
-          {/* I'm not sure why, but after triggering the virtual keyboard,
-              opening the emoji picker drawer causes an issue,
-              the emoji I tap isn't the one that gets inserted. */}
-          {!isTouchDevice() && (
-            <EmojiPickerDialog
-              onEmojiClick={(emoji) => {
-                if (!emoji) return
-                textareaRef.current?.insertEmoji(emoji)
-              }}
-            >
-              <Button type="button" variant="ghost" size="icon" title={t('Insert emoji')}>
-                <Smile />
-              </Button>
-            </EmojiPickerDialog>
-          )}
-          <GifPicker
-            onSelect={(gifUrl) => {
-              textareaRef.current?.insertText(gifUrl)
-            }}
-          >
-            <Button type="button" variant="ghost" size="icon" title={t('Insert GIF')}>
-              <Film className="h-4 w-4" />
-            </Button>
-          </GifPicker>
-          <MemePicker
-            onSelect={(memeUrl) => {
-              textareaRef.current?.insertText(memeUrl)
-            }}
-          >
-            <Button type="button" variant="ghost" size="icon" title={t('Insert meme')}>
-              <Laugh className="h-4 w-4" />
-            </Button>
-          </MemePicker>
-          <Separator orientation="vertical" className="h-6 shrink-0" />
-          <MentionAndEventToolbarButtons
-            insertAtCursor={(text) => textareaRef.current?.insertText(text)}
-            variant="ghost"
+          <PostEditorFormatToolbar
+            insertText={(txt) => textareaRef.current?.insertText(txt)}
+            insertEmoji={(em) => textareaRef.current?.insertEmoji(em)}
+            upload={toolbarUploadHandlers}
+            showAudioUpload={Boolean(parentEvent || isPublicMessage)}
+            audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
+            audioButtonHighlighted={
+              mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
+              (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
+            }
+            showMoreOptions={showMoreOptions}
+            onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
           />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            title={t('More options')}
-            className={showMoreOptions ? 'bg-accent' : ''}
-            onClick={() => setShowMoreOptions((pre) => !pre)}
-          >
-            <Settings />
-          </Button>
         </div>
         <div className="flex gap-2 items-center shrink-0">
           <Mentions
@@ -3546,6 +3595,36 @@ export default function PostContent({
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}
         contextEventId={parentEvent?.id ?? null}
+        draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
+        bodyApiRef={advancedLabBodyApiRef}
+        formatToolbar={
+          <PostEditorFormatToolbar
+            insertText={(txt) => {
+              const lab = advancedLabBodyApiRef.current
+              if (!lab) return
+              if (labInsertShouldBecomeMarkupImage(txt)) {
+                lab.insertText(
+                  formatMarkupImageAtCursor(
+                    txt,
+                    isAsciidocMarkupKind(getDeterminedKindRef.current)
+                  )
+                )
+              } else {
+                lab.insertText(txt)
+              }
+            }}
+            insertEmoji={(em) => advancedLabBodyApiRef.current?.insertEmoji(em)}
+            upload={toolbarUploadHandlers}
+            showAudioUpload={Boolean(parentEvent || isPublicMessage)}
+            audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
+            audioButtonHighlighted={
+              mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
+              (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
+            }
+            showMoreOptions={showMoreOptions}
+            onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
+          />
+        }
         onApply={(payload) => {
           labTagOverrideRef.current = payload.tags.map((r) => [...r])
           textareaRef.current?.setDocumentFromPlainText(payload.content)

@@ -64,13 +64,28 @@ export default function EmojiPicker({
       const handleClick = (e: Event) => {
         const detail = (e as CustomEvent).detail as {
           unicode?: string
-          emoji: { custom?: boolean; shortcodes?: string[]; url?: string }
+          emoji: {
+            custom?: boolean
+            unicode?: string
+            name?: string
+            shortcodes?: string[]
+            url?: string
+          }
         }
         let result: string | TEmoji | undefined
         if (detail.unicode) {
           result = detail.unicode
-        } else if (detail.emoji?.custom && detail.emoji.shortcodes?.[0] && detail.emoji.url) {
-          result = { shortcode: detail.emoji.shortcodes[0], url: detail.emoji.url }
+        } else {
+          const em = detail.emoji
+          // emoji-picker-element: native emojis have `unicode`; custom entries have `url` (+ name / shortcodes).
+          if (em?.url && !em.unicode) {
+            const shortcode = em.shortcodes?.[0] ?? em.name
+            if (shortcode) {
+              result = { shortcode, url: em.url }
+            }
+          } else if (em?.custom && em.shortcodes?.[0] && em.url) {
+            result = { shortcode: em.shortcodes[0], url: em.url }
+          }
         }
         if (result !== undefined) recordEmojiUsed(result)
         onEmojiClick(result, e)

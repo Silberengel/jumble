@@ -40,6 +40,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import storage from '@/services/local-storage.service'
+import postEditorCache from '@/services/post-editor-cache.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'
 import { AlertTriangle, Code2, Plus, Trash2 } from 'lucide-react'
@@ -146,6 +147,19 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     () => (isCreate ? parseEventKindInput(createKindInput) : null),
     [isCreate, createKindInput]
   )
+
+  /** Stable lab draft bucket (separate from composer {@link postEditorCache.generateCacheKey}). */
+  const advancedLabDraftPersistenceKey = useMemo(() => {
+    if (isCreate) {
+      if (parsedCreateKind === null) return null
+      return `event-lab:ecc:create:${parsedCreateKind}`
+    }
+    const id = sourceEvent!.id.trim()
+    const normalized = /^[0-9a-f]{64}$/i.test(id) ? id.toLowerCase() : id
+    return mode === 'edit'
+      ? `event-lab:ecc:edit:${normalized}`
+      : `event-lab:ecc:clone:${normalized}`
+  }, [isCreate, parsedCreateKind, sourceEvent, mode])
 
   const kind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent!.kind
 
@@ -587,6 +601,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       markupMode={isAsciidocMarkupKind(labKind) ? 'asciidoc' : 'markdown'}
       i18nLanguage={i18n.language}
       contextEventId={!isCreate && sourceEvent ? sourceEvent.id : null}
+      draftPersistenceKey={
+        advancedLabOpen && advancedLabDraftPersistenceKey ? advancedLabDraftPersistenceKey : null
+      }
       onApply={(payload) => {
         setContent(payload.content)
         setTagRows(payload.tags.length > 0 ? payload.tags.map((r) => [...r]) : [['', '']])
