@@ -21,7 +21,7 @@ import {
   buildLanguageToolPreferenceList,
   pickLanguageToolCodeForTranslateTarget
 } from '@/lib/languagetool-language-order'
-import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
   fetchTranslateLanguages,
@@ -41,6 +41,7 @@ import {
   lineNumbers,
   placeholder as cmPlaceholder
 } from '@codemirror/view'
+import { Undo2 } from 'lucide-react'
 import type { MutableRefObject, ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -52,6 +53,81 @@ import postEditorCache from '@/services/post-editor-cache.service'
 import type { TEmoji } from '@/types'
 
 const PREVIEW_DEBOUNCE_MS = 200
+
+const LAB_UNDO_STORAGE_V = 1 as const
+const LAB_UNDO_INTERVAL_MS = 30_000
+const LAB_UNDO_MAX_CHECKPOINTS = 10
+
+function labUndoSessionStorageKey(storageId: string): string {
+  return `jumble:advLabUndo:${storageId}`
+}
+
+function cloneLabSlice(s: AdvancedEventLabSlice): AdvancedEventLabSlice {
+  return { kind: s.kind, content: s.content, tags: s.tags.map((row) => [...row]) }
+}
+
+function labSlicesEqual(a: AdvancedEventLabSlice, b: AdvancedEventLabSlice): boolean {
+  if (a.kind !== b.kind || a.content !== b.content) return false
+  return JSON.stringify(a.tags) === JSON.stringify(b.tags)
+}
+
+function parseCheckpointEntry(raw: unknown): AdvancedEventLabSlice | null {
+  let json: string
+  try {
+    json = JSON.stringify(raw)
+  } catch {
+    return null
+  }
+  const parsed = parseLabSlice(json)
+  return parsed.ok ? parsed.value : null
+}
+
+function loadLabCheckpointsFromSession(
+  storageId: string,
+  base: AdvancedEventLabSlice
+): AdvancedEventLabSlice[] | null {
+  if (!storageId || typeof sessionStorage === 'undefined') return null
+  try {
+    const key = labUndoSessionStorageKey(storageId)
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const o = JSON.parse(raw) as { v?: number; checkpoints?: unknown }
+    if (!o || o.v !== LAB_UNDO_STORAGE_V || !Array.isArray(o.checkpoints)) return null
+    const out: AdvancedEventLabSlice[] = []
+    for (const row of o.checkpoints) {
+      const slice = parseCheckpointEntry(row)
+      if (!slice) return null
+      out.push(slice)
+    }
+    if (out.length === 0) return null
+    const last = out[out.length - 1]!
+    if (!labSlicesEqual(last, base)) return null
+    return out.slice(0, LAB_UNDO_MAX_CHECKPOINTS).map(cloneLabSlice)
+  } catch {
+    return null
+  }
+}
+
+function persistLabCheckpointsToSession(storageId: string, checkpoints: AdvancedEventLabSlice[]): void {
+  if (!storageId || typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(
+      labUndoSessionStorageKey(storageId),
+      JSON.stringify({ v: LAB_UNDO_STORAGE_V, checkpoints })
+    )
+  } catch {
+    // quota / private mode
+  }
+}
+
+function clearLabCheckpointsSession(storageId: string): void {
+  if (!storageId || typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.removeItem(labUndoSessionStorageKey(storageId))
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Subset of {@link TPostTextareaHandle} so media upload + toolbar can target the lab surface. */
 export type AdvancedLabBodyHandle = {
@@ -149,6 +225,9 @@ export default function AdvancedEventLabDialog({
   const markupView = useRef<EditorView | null>(null)
   const sliceRef = useRef<AdvancedEventLabSlice | null>(null)
   const draftPersistenceKeyRef = useRef<string | null>(null)
+  const labUndoAnonIdRef = useRef<string | null>(null)
+  const labCheckpointsRef = useRef<AdvancedEventLabSlice[]>([])
+  const [undoUiTick, setUndoUiTick] = useState(0)
   const labPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previewDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const schedulePreviewUpdateRef = useRef<(text: string) => void>(() => {})
@@ -190,6 +269,21 @@ export default function AdvancedEventLabDialog({
   }, [schedulePreviewUpdate])
 
   draftPersistenceKeyRef.current = draftPersistenceKey ?? null
+
+  useEffect(() => {
+    if (!open) labUndoAnonIdRef.current = null
+  }, [open])
+
+  const undoSessionId = useMemo(() => {
+    if (!open) return ''
+    if (draftPersistenceKey) return draftPersistenceKey
+    if (!labUndoAnonIdRef.current) labUndoAnonIdRef.current = crypto.randomUUID()
+    return labUndoAnonIdRef.current
+  }, [open, draftPersistenceKey])
+
+  const bumpUndoUi = useCallback(() => {
+    setUndoUiTick((n) => n + 1)
+  }, [])
 
   const flushLabDraftNow = useCallback((key: string) => {
     const v = markupView.current
@@ -275,6 +369,103 @@ export default function AdvancedEventLabDialog({
       })
     }, LAB_DRAFT_DEBOUNCE_MS)
   }, [])
+
+  const restoreSliceInEditor = useCallback(
+    (slice: AdvancedEventLabSlice) => {
+      const v = markupView.current
+      if (!v) return
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: slice.content },
+        selection: EditorSelection.cursor(0)
+      })
+      sliceRef.current = cloneLabSlice(slice)
+      setPreviewDoc(slice.content)
+      scheduleLabDraftPersist()
+      if (isLanguageToolConfigured()) requestAdvancedLabGrammarLint(v)
+      bumpUndoUi()
+    },
+    [bumpUndoUi, scheduleLabDraftPersist]
+  )
+
+  const pushLabCheckpoint = useCallback(() => {
+    const v = markupView.current
+    const s = sliceRef.current
+    if (!v || !s || !undoSessionId) return
+    const snap = cloneLabSlice({
+      kind: s.kind,
+      content: v.state.doc.toString(),
+      tags: s.tags.map((row) => [...row])
+    })
+    const cp = labCheckpointsRef.current
+    const last = cp[cp.length - 1]
+    if (last && labSlicesEqual(last, snap)) return
+    cp.push(snap)
+    while (cp.length > LAB_UNDO_MAX_CHECKPOINTS) cp.shift()
+    persistLabCheckpointsToSession(undoSessionId, cp)
+    bumpUndoUi()
+  }, [undoSessionId, bumpUndoUi])
+
+  const handleUndoCheckpoint = useCallback(() => {
+    const v = markupView.current
+    const s = sliceRef.current
+    if (!v || !s || !undoSessionId) return
+    const cp = labCheckpointsRef.current
+    if (cp.length === 0) {
+      toast.message(t('Advanced lab undo checkpoint none'))
+      return
+    }
+    const live = cloneLabSlice({
+      kind: s.kind,
+      content: v.state.doc.toString(),
+      tags: s.tags.map((row) => [...row])
+    })
+    const last = cp[cp.length - 1]!
+    if (!labSlicesEqual(live, last)) {
+      restoreSliceInEditor(last)
+      persistLabCheckpointsToSession(undoSessionId, cp)
+      toast.success(t('Advanced lab undo checkpoint restored'))
+      return
+    }
+    if (cp.length < 2) {
+      toast.message(t('Advanced lab undo checkpoint none'))
+      return
+    }
+    cp.pop()
+    const target = cp[cp.length - 1]!
+    restoreSliceInEditor(target)
+    persistLabCheckpointsToSession(undoSessionId, cp)
+    toast.success(t('Advanced lab undo checkpoint restored'))
+  }, [undoSessionId, restoreSliceInEditor, t])
+
+  const canUndoCheckpoint = useMemo(() => {
+    if (!open) return false
+    const v = markupView.current
+    const s = sliceRef.current
+    const cp = labCheckpointsRef.current
+    if (!v || !s || cp.length === 0) return false
+    const live: AdvancedEventLabSlice = {
+      kind: s.kind,
+      content: v.state.doc.toString(),
+      tags: s.tags.map((row) => [...row])
+    }
+    const last = cp[cp.length - 1]!
+    if (!labSlicesEqual(live, last)) return true
+    return cp.length >= 2
+  }, [undoUiTick, open, previewDoc])
+
+  useEffect(() => {
+    if (!open || !initial) return
+    const pushId = window.setInterval(() => {
+      pushLabCheckpoint()
+    }, LAB_UNDO_INTERVAL_MS)
+    const uiId = window.setInterval(() => {
+      bumpUndoUi()
+    }, 2500)
+    return () => {
+      clearInterval(pushId)
+      clearInterval(uiId)
+    }
+  }, [open, initial, pushLabCheckpoint, bumpUndoUi])
 
   const ltList = useMemo(
     () => buildLanguageToolPreferenceList(i18nLanguage ?? i18n.language),
@@ -416,6 +607,17 @@ export default function AdvancedEventLabDialog({
 
       markupView.current = new EditorView({ state: mkState, parent: mkEl })
 
+      const loaded =
+        undoSessionId && undoSessionId.length > 0
+          ? loadLabCheckpointsFromSession(undoSessionId, baseSlice)
+          : null
+      labCheckpointsRef.current =
+        loaded && loaded.length > 0 ? loaded : [cloneLabSlice(baseSlice)]
+      if (undoSessionId) {
+        persistLabCheckpointsToSession(undoSessionId, labCheckpointsRef.current)
+      }
+      bumpUndoUi()
+
       if (bodyApiRef) {
         bodyApiRef.current = {
           getText: () => markupView.current?.state.doc.toString() ?? '',
@@ -485,7 +687,9 @@ export default function AdvancedEventLabDialog({
     t,
     bodyApiRef,
     scheduleLabDraftPersist,
-    flushLabDraftNow
+    flushLabDraftNow,
+    undoSessionId,
+    bumpUndoUi
   ])
 
   const handleApply = () => {
@@ -505,6 +709,10 @@ export default function AdvancedEventLabDialog({
     onApply(payload)
     if (draftPersistenceKeyRef.current) {
       postEditorCache.clearAdvancedLabDraft(draftPersistenceKeyRef.current)
+    }
+    if (undoSessionId) {
+      clearLabCheckpointsSession(undoSessionId)
+      labCheckpointsRef.current = []
     }
     handleDialogOpenChange(false)
   }
@@ -676,6 +884,17 @@ export default function AdvancedEventLabDialog({
                 {t('Advanced lab use translation read aloud')}
               </Button>
             ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canUndoCheckpoint}
+              title={t('Advanced lab undo checkpoint hint')}
+              onClick={handleUndoCheckpoint}
+            >
+              <Undo2 className="h-4 w-4 mr-1 inline" />
+              {t('Advanced lab undo checkpoint')}
+            </Button>
           </div>
         </div>
 

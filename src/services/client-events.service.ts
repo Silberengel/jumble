@@ -26,6 +26,7 @@ import {
   queuePersistSeenEvent
 } from './event-archive.service'
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
+import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -507,6 +508,33 @@ export class EventService {
         results.push(event)
         if (results.length >= limit) break
       }
+    }
+
+    return results
+  }
+
+  /**
+   * Session cache: NIP-32 citation kinds (30–33) matched on title/summary/content and related tags
+   * (not NIP-50 relay semantics).
+   */
+  getSessionCitationFieldSearch(query: string, limit: number): NEvent[] {
+    const results: NEvent[] = []
+    const q = query.trim()
+    if (!q || limit <= 0) return results
+
+    const kindSet = new Set<number>([
+      ExtendedKind.CITATION_INTERNAL,
+      ExtendedKind.CITATION_EXTERNAL,
+      ExtendedKind.CITATION_HARDCOPY,
+      ExtendedKind.CITATION_PROMPT
+    ])
+
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (shouldDropEventOnIngest(event)) continue
+      if (!kindSet.has(event.kind)) continue
+      if (!citationPickerMatchesQuery(event, q)) continue
+      results.push(event)
+      if (results.length >= limit) break
     }
 
     return results

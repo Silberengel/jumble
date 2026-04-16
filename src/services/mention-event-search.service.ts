@@ -3,10 +3,14 @@
  * Both use the same pattern: cache first, then IndexedDB, then relays, up to limit.
  */
 
+import { buildCitationPickerSearchRelayUrls } from '@/lib/citation-picker-relays'
+import {
+  citationPickerMatchesQuery,
+  tryParseCitationEventIdFromQuery
+} from '@/lib/citation-picker-search'
 import { ExtendedKind, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { kinds, type Event as NEvent } from 'nostr-tools'
-import { eventService, queryService } from './client.service'
-import client from './client.service'
+import client, { eventService, queryService } from './client.service'
 import indexedDb from './indexed-db.service'
 
 const DEFAULT_NOTES_LIMIT = 20
@@ -54,6 +58,85 @@ export const NADDR_KINDS = [
 
 export type PickerSearchMode = 'nevent' | 'naddr'
 
+/** True when `kindFilter` is exactly the four NIP-32 citation kinds (any order, each once). */
+function isCitationOnlyKindFilter(kindFilter: readonly number[] | undefined): boolean {
+  if (!kindFilter?.length) return false
+  const a = [...CITATION_PICKER_KINDS].sort((x, y) => x - y)
+  const b = [...kindFilter].sort((x, y) => x - y)
+  if (a.length !== b.length) return false
+  return a.every((k, i) => k === b[i])
+}
+
+async function searchCitationEventsForPickerInternal(
+  q: string,
+  limit: number,
+  kindsList: number[]
+): Promise<NEvent[]> {
+  const seen = new Set<string>()
+  const out: NEvent[] = []
+
+  const push = (evt: NEvent, requireFieldMatch: boolean) => {
+    if (seen.has(evt.id)) return
+    if (requireFieldMatch && !citationPickerMatchesQuery(evt, q)) return
+    seen.add(evt.id)
+    out.push(evt)
+  }
+
+  const idHex = tryParseCitationEventIdFromQuery(q)
+  if (idHex) {
+    const ev = await client.fetchEvent(idHex)
+    if (ev && kindsList.includes(ev.kind)) push(ev, false)
+    if (out.length >= limit) return out.slice(0, limit)
+  }
+
+  for (const ev of eventService.getSessionCitationFieldSearch(q, limit)) {
+    push(ev, false)
+    if (out.length >= limit) return out.slice(0, limit)
+  }
+
+  const fromArch = await indexedDb.getCachedAndArchivedCitationFieldSearch(
+    q,
+    limit - out.length,
+    kindsList,
+    { archiveScanMaxMs: 14_000 }
+  )
+  for (const ev of fromArch) {
+    push(ev, false)
+    if (out.length >= limit) return out.slice(0, limit)
+  }
+
+  const relayUrls = await buildCitationPickerSearchRelayUrls()
+  const need = limit - out.length
+  if (need <= 0) return out.slice(0, limit)
+
+  const nip50Limit = Math.max(need, 8)
+  const broadLimit = Math.min(160, Math.max(need * 8, 48))
+
+  const [fromNip50, fromBroad] = await Promise.all([
+    queryService.fetchEvents(
+      relayUrls,
+      { kinds: kindsList, search: q, limit: nip50Limit },
+      { eoseTimeout: 8500, globalTimeout: 14_000 }
+    ),
+    queryService.fetchEvents(
+      SEARCHABLE_RELAY_URLS,
+      { kinds: kindsList, limit: broadLimit },
+      { eoseTimeout: 5000, globalTimeout: 9000 }
+    )
+  ])
+
+  for (const ev of fromNip50) {
+    push(ev, true)
+    if (out.length >= limit) return out.slice(0, limit)
+  }
+  for (const ev of fromBroad) {
+    push(ev, true)
+    if (out.length >= limit) break
+  }
+
+  return out.slice(0, limit)
+}
+
 /**
  * Search for events: session cache → IndexedDB → relays. Merges and dedupes by event id, up to limit.
  * @param mode - 'nevent' uses NEVENT_KINDS (1,11,20,21,22,9802), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
@@ -70,6 +153,11 @@ export async function searchEventsForPicker(
 
   const kindsList =
     kindFilter && kindFilter.length > 0 ? [...kindFilter] : mode === 'nevent' ? [...NEVENT_KINDS] : [...NADDR_KINDS]
+
+  if (isCitationOnlyKindFilter(kindFilter)) {
+    return searchCitationEventsForPickerInternal(q, limit, kindsList)
+  }
+
   const seen = new Set<string>()
   const out: NEvent[] = []
 

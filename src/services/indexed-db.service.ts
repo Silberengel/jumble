@@ -8,6 +8,7 @@ import { TNip66RelayDiscovery, TRelayInfo } from '@/types'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 import { isReplaceableEvent, getReplaceableCoordinateFromEvent } from '@/lib/event'
+import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 
 /** Hot archive row in {@link StoreNames.EVENT_ARCHIVE}. */
@@ -1402,6 +1403,103 @@ class IndexedDbService {
       }
     }).catch((e: unknown) => {
       logger.warn('[indexedDb] getCachedAndArchivedEventsMatchingLocalSearch archive scan failed', { e })
+    })
+
+    return [...fromPub, ...rest].slice(0, limit)
+  }
+
+  /**
+   * Publication store + {@link StoreNames.EVENT_ARCHIVE}: citation kinds (30–33) where the query matches
+   * body/title/summary/author and other citation tags via {@link citationPickerMatchesQuery} (not relay NIP-50).
+   */
+  async getCachedAndArchivedCitationFieldSearch(
+    query: string,
+    limit: number,
+    allowedKinds: number[],
+    options?: { archiveScanMaxMs?: number }
+  ): Promise<Event[]> {
+    await this.initPromise
+    const qRaw = query.trim()
+    if (!qRaw || allowedKinds.length === 0 || limit <= 0) return []
+
+    const kindSet = new Set(allowedKinds)
+    const fromPub: Event[] = []
+
+    if (this.db?.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+        const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+        const request = store.openCursor()
+
+        request.onsuccess = () => {
+          const cursor = (request as IDBRequest<IDBCursorWithValue>).result
+          if (!cursor || fromPub.length >= limit) {
+            transaction.commit()
+            resolve()
+            return
+          }
+          const item = cursor.value as TValue<Event> | undefined
+          if (item?.value) {
+            const event = item.value as Event
+            if (kindSet.has(event.kind) && citationPickerMatchesQuery(event, qRaw)) {
+              fromPub.push(event)
+            }
+          }
+          cursor.continue()
+        }
+
+        request.onerror = (event) => {
+          transaction.commit()
+          reject(event)
+        }
+      }).catch((e: unknown) => {
+        logger.warn('[indexedDb] getCachedAndArchivedCitationFieldSearch publication scan failed', { e })
+      })
+    }
+
+    if (fromPub.length >= limit) return fromPub.slice(0, limit)
+
+    const seen = new Set(fromPub.map((e) => e.id))
+    const rest: Event[] = []
+    const scanStart = Date.now()
+    const archiveScanMaxMs = options?.archiveScanMaxMs
+
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) {
+      return fromPub
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = transaction.objectStore(StoreNames.EVENT_ARCHIVE)
+      const request = store.openCursor()
+
+      request.onsuccess = () => {
+        if (archiveScanMaxMs !== undefined && Date.now() - scanStart >= archiveScanMaxMs) {
+          transaction.commit()
+          resolve()
+          return
+        }
+        const cursor = (request as IDBRequest<IDBCursorWithValue>).result
+        if (!cursor || fromPub.length + rest.length >= limit) {
+          transaction.commit()
+          resolve()
+          return
+        }
+        const row = cursor.value as TArchivedEventRow
+        const ev = row?.value
+        if (ev && kindSet.has(ev.kind) && !seen.has(ev.id) && citationPickerMatchesQuery(ev, qRaw)) {
+          seen.add(ev.id)
+          rest.push(ev)
+        }
+        cursor.continue()
+      }
+
+      request.onerror = (e) => {
+        transaction.commit()
+        reject(idbEventToError(e))
+      }
+    }).catch((e: unknown) => {
+      logger.warn('[indexedDb] getCachedAndArchivedCitationFieldSearch archive scan failed', { e })
     })
 
     return [...fromPub, ...rest].slice(0, limit)

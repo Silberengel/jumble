@@ -957,6 +957,11 @@ export default {
     'Advanced event lab': 'Erweiterter Editor',
     'Advanced lab applyError': 'Editor ist nicht bereit. Bitte erneut versuchen.',
     'Advanced lab cancel undo': 'Abbrechen und Änderungen verwerfen',
+    'Advanced lab undo checkpoint': 'Checkpoint wiederherstellen',
+    'Advanced lab undo checkpoint hint':
+      'Etwa alle 30 Sekunden speichert dieser Tab den Editor (Kind, Text, Tags) in der Sitzung, bis zu 10 Versionen. Nutzen Sie das nach einer Übersetzung oder großen Änderung, die Sie rückgängig machen möchten.',
+    'Advanced lab undo checkpoint none': 'Kein älterer Checkpoint zum Wiederherstellen.',
+    'Advanced lab undo checkpoint restored': 'Editor auf einen gespeicherten Checkpoint zurückgesetzt.',
     'Advanced lab markup label markdown': 'Markdown',
     'Advanced lab markup label asciidoc': 'AsciiDoc',
     'Advanced lab preview': 'Vorschau',

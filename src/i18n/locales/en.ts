@@ -958,6 +958,11 @@ export default {
     'Advanced event lab': 'Advanced editor',
     'Advanced lab applyError': 'Editor is not ready. Try again.',
     'Advanced lab cancel undo': 'Cancel and Undo Changes',
+    'Advanced lab undo checkpoint': 'Restore checkpoint',
+    'Advanced lab undo checkpoint hint':
+      'About every 30 seconds this tab saves the editor (kind, body, tags) in session storage, up to 10 versions. Use this after a translation or bulk edit you want to roll back.',
+    'Advanced lab undo checkpoint none': 'No older checkpoint to restore.',
+    'Advanced lab undo checkpoint restored': 'Editor restored to a saved checkpoint.',
     'Advanced lab markup label markdown': 'Markdown',
     'Advanced lab markup label asciidoc': 'AsciiDoc',
     'Advanced lab preview': 'Preview',
