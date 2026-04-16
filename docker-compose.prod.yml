@@ -1,4 +1,5 @@
 # Production stack: jumble + NIP-66 monitor + og-proxy + Wyoming Piper + Piper HTTP proxy + LanguageTool + LibreTranslate.
+# `docker compose up -d` starts every service here (including piper-tts-proxy) if images exist; it only pulls images that are missing locally. To refresh :latest first: `docker compose pull` or `docker compose up -d --pull always`.
 # Remote: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 # First-time LibreTranslate bind mounts: bash scripts/ensure-libretranslate-dirs.sh (see scripts/README-deploy.md).
 # Images built/pushed by ./scripts/build-and-push-prod.sh (app, monitor, piper-tts-proxy); others pull from Hub.
