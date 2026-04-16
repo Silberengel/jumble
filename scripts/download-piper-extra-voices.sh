@@ -4,7 +4,12 @@
 #   DEST_DIR defaults to repo/.local-piper-data (Wyoming --data-dir in docker-compose.dev.yml).
 # Env: HF_BASE — override Hugging Face resolve base (default rhasspy/piper-voices/main).
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+if [[ "$(basename "$_SCRIPT_DIR")" == "scripts" ]]; then
+  ROOT="$(cd "$_SCRIPT_DIR/.." && pwd)"
+else
+  ROOT="$_SCRIPT_DIR"
+fi
 DEST="${1:-${PIPER_DOWNLOAD_DIR:-$ROOT/.local-piper-data}}"
 HF="${HF_BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/main}"
 

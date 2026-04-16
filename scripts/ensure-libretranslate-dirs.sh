@@ -5,13 +5,18 @@
 #        - ./.local-piper-data (dev compose bind mount), and
 #        - Docker volume <project>_piper-stack-data when it exists (docker-compose.prod.yml Wyoming /data).
 #
-# Run from repo root: bash scripts/ensure-libretranslate-dirs.sh
+# Run: bash scripts/ensure-libretranslate-dirs.sh   (or copy to repo root and ./ensure-libretranslate-dirs.sh)
 #
 # Optional env:
 #   COMPOSE_PROJECT_NAME — Docker Compose project name (default: basename of repo dir), for volume jumble_piper-stack-data.
 #   SKIP_PIPER_VOICES=1 — only fix LibreTranslate permissions, do not download Piper (~hundreds of MB).
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+if [[ "$(basename "$_SCRIPT_DIR")" == "scripts" ]]; then
+  ROOT="$(cd "$_SCRIPT_DIR/.." && pwd)"
+else
+  ROOT="$_SCRIPT_DIR"
+fi
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT")}"
 PIPER_VOL="${PROJECT}_piper-stack-data"
 
