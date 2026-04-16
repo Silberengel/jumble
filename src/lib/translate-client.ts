@@ -1,4 +1,5 @@
 import { TRANSLATE_URL } from '@/constants'
+import { electronAwareFetch } from '@/lib/electron-aware-fetch'
 import logger from '@/lib/logger'
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex } from '@noble/hashes/utils'
@@ -82,7 +83,7 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
     return languagesCache.list
   }
   const url = `${base}/languages`
-  const res = await fetch(url)
+  const res = await electronAwareFetch(url)
   if (!res.ok) {
     logger.warn('[Translate] /languages failed', { status: res.status })
     languagesCache = null
@@ -130,7 +131,7 @@ export async function translatePlainText(
   }
 
   const url = `${base}/translate`
-  const res = await fetch(url, {
+  const res = await electronAwareFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { LANGUAGE_TOOL_URL } from '@/constants'
+import { electronAwareFetch } from '@/lib/electron-aware-fetch'
 import logger from '@/lib/logger'
 
 export type LanguageToolMatch = {
@@ -35,7 +36,7 @@ export async function languageToolCheck(
   body.set('language', language)
   body.set('enabledOnly', 'false')
 
-  const res = await fetch(url, {
+  const res = await electronAwareFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),

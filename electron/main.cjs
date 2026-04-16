@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron')
 const fs = require('fs')
 const http = require('http')
+const https = require('https')
 const path = require('path')
 
 /** True when running from source (`electron .`); false when packaged. */
@@ -228,6 +229,101 @@ function relaxCorsForRendererSubresources() {
   })
 }
 
+/** Hostnames allowed for main-process translate / LanguageTool proxy (HTTPS only, except loopback HTTP for dev). */
+function parseImwaldBackendHosts() {
+  const raw = process.env.IMWALD_ELECTRON_BACKEND_HOSTS || 'jumble.imwald.eu'
+  return new Set(
+    raw
+      .split(/[,;\s]+/u)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
+const imwaldBackendHosts = parseImwaldBackendHosts()
+
+function isAllowedImwaldBackendUrl(urlString) {
+  let u
+  try {
+    u = new URL(urlString)
+  } catch {
+    return false
+  }
+  const path = u.pathname
+  if (!path.startsWith('/api/translate') && !path.startsWith('/api/languagetool')) {
+    return false
+  }
+  const host = u.hostname.toLowerCase()
+  if (u.protocol === 'https:' && imwaldBackendHosts.has(host)) return true
+  if (u.protocol === 'http:' && (host === '127.0.0.1' || host === 'localhost')) return true
+  return false
+}
+
+const STRIP_OUTBOUND_REQUEST_HEADERS = new Set([
+  'host',
+  'connection',
+  'content-length',
+  'transfer-encoding',
+  'keep-alive'
+])
+
+function requestImwaldBackend(urlString, { method, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlString)
+    const useTls = u.protocol === 'https:'
+    const lib = useTls ? https : http
+    const port = u.port || (useTls ? 443 : 80)
+    const safeHeaders = {}
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        if (STRIP_OUTBOUND_REQUEST_HEADERS.has(k.toLowerCase())) continue
+        if (typeof v === 'string') safeHeaders[k] = v
+      }
+    }
+    const opts = {
+      hostname: u.hostname,
+      port,
+      path: `${u.pathname}${u.search}`,
+      method: (method || 'GET').toUpperCase(),
+      headers: safeHeaders
+    }
+    const req = lib.request(opts, (res) => {
+      const chunks = []
+      res.on('data', (chunk) => chunks.push(chunk))
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks)
+        const outHeaders = {}
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v === undefined) continue
+          outHeaders[k] = Array.isArray(v) ? v.join(', ') : String(v)
+        }
+        resolve({
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || '',
+          headers: outHeaders,
+          body: buf.toString('utf8')
+        })
+      })
+    })
+    req.on('error', reject)
+    if (body) req.write(body, 'utf8')
+    req.end()
+  })
+}
+
+function registerImwaldBackendRequestIpc() {
+  ipcMain.handle('imwald:backend-request', async (_event, payload) => {
+    const url = payload && typeof payload.url === 'string' ? payload.url : ''
+    if (!isAllowedImwaldBackendUrl(url)) {
+      throw new Error('imwald:backend-request: URL not allowed')
+    }
+    const method = payload && typeof payload.method === 'string' ? payload.method : 'GET'
+    const headers = payload && payload.headers && typeof payload.headers === 'object' ? payload.headers : {}
+    const body = payload && typeof payload.body === 'string' ? payload.body : null
+    return requestImwaldBackend(url, { method, headers, body })
+  })
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -290,6 +386,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   relaxCorsForRendererSubresources()
+  registerImwaldBackendRequestIpc()
 
   ipcMain.handle('imwald:reload-app', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)

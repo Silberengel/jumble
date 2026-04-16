@@ -14,6 +14,20 @@ declare global {
       isElectron: true
       /** Ask Electron main to reload index safely (avoids file:// history path reload issues). */
       reloadApp?: () => Promise<boolean>
+      /**
+       * Allowlisted HTTP(S) from main (translate + LanguageTool). See `electronAwareFetch`.
+       */
+      backendRequest?: (payload: {
+        url: string
+        method: string
+        headers: Record<string, string>
+        body: string | null
+      }) => Promise<{
+        status: number
+        statusText: string
+        headers: Record<string, string>
+        body: string
+      }>
     }
   }
 }
