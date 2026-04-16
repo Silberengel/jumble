@@ -1,6 +1,11 @@
 import { linter, type Diagnostic } from '@codemirror/lint'
 import { Annotation, EditorSelection, type Extension } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
+import {
+  getMarkupProtectRanges,
+  rangeIntersectsMerged,
+  type AdvancedLabMarkupMode
+} from '@/lib/advanced-lab-markup-protect'
 import { languageToolCheck, type LanguageToolMatch } from '@/lib/languagetool-client'
 
 /** Local LanguageTool is slow on cold JVM; keep payloads bounded (LT has ~20–30k limits anyway). */
@@ -76,8 +81,13 @@ function matchToDiagnostic(docLen: number, m: LanguageToolMatch): Diagnostic | n
  * Async grammar/style lint for CodeMirror using LanguageTool `/v2/check`.
  * Per-editor state (debounce / abort) lives in the closure so promises always settle and stale fetches are cancelled.
  * `getLanguage` is read on each lint pass so the UI can change language without remounting the editor.
+ * `getMarkupMode` selects which line-prefix syntax is treated as non-checkable markup.
  */
-export function languageToolLintExtension(getLanguage: () => string, debounceMs: number): Extension {
+export function languageToolLintExtension(
+  getLanguage: () => string,
+  debounceMs: number,
+  getMarkupMode: () => AdvancedLabMarkupMode
+): Extension {
   let requestSeq = 0
   let inFlight: AbortController | null = null
 
@@ -105,6 +115,8 @@ export function languageToolLintExtension(getLanguage: () => string, debounceMs:
         const ac = new AbortController()
         inFlight = ac
 
+        const protectMerged = getMarkupProtectRanges(toSend, getMarkupMode())
+
         void languageToolCheck(toSend, getLanguage(), ac.signal)
           .then((res) => {
             if (seq !== requestSeq) {
@@ -114,6 +126,7 @@ export function languageToolLintExtension(getLanguage: () => string, debounceMs:
             const docLen = view.state.doc.length
             const out: Diagnostic[] = []
             for (const m of res.matches ?? []) {
+              if (rangeIntersectsMerged(m.offset, m.length, protectMerged)) continue
               const d = matchToDiagnostic(docLen, m)
               if (d) out.push(d)
             }

@@ -32,7 +32,7 @@ import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import logger from '@/lib/logger'
 import { useTranslation } from 'react-i18next'
-import Emoji from '../Emoji'
+import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
 import EmojiPicker, { EMOJI_PICKER_REACTIONS } from '../EmojiPicker'
 import {
   type RelayStatus,
@@ -234,7 +234,7 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
         <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
       ) : myLastEmoji ? (
         <>
-          <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: 'size-4' }} />
+          <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
           {!hideCount && statsLoaded && (
             <div className="text-sm tabular-nums">
               {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}

@@ -68,10 +68,10 @@ export default function ReactionEmojiDisplay({
         classNames={{
           img:
             variant === 'thread'
-              ? 'size-3.5 max-h-[1em] w-auto rounded-sm opacity-90'
+              ? 'size-[calc(0.875rem*4/3)] max-h-[1em] w-auto rounded-sm opacity-90'
               : variant === 'compact'
-                ? 'size-4 max-h-[1em] w-auto rounded-sm'
-                : 'size-7 max-h-[1.5em] w-auto rounded-sm',
+                ? 'size-[calc(1rem*4/3)] max-h-[1em] w-auto rounded-sm'
+                : 'size-[calc(1.75rem*4/3)] max-h-[1.5em] w-auto rounded-sm',
           text:
             variant === 'thread'
               ? 'text-sm leading-none'

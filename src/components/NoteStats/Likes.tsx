@@ -12,7 +12,7 @@ import storage from '@/services/local-storage.service'
 import { TEmoji } from '@/types'
 import { Event } from 'nostr-tools'
 import { useMemo, useRef, useState } from 'react'
-import Emoji from '../Emoji'
+import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
 import Username from '../Username'
 import logger from '@/lib/logger'
 
@@ -179,7 +179,7 @@ export default function Likes({ event }: { event: Event }) {
                           animation: isCompleted === key ? 'shake 0.5s ease-in-out infinite' : undefined
                         }}
                       >
-                        <Emoji emoji={emoji} classNames={{ img: 'size-4' }} />
+                        <Emoji emoji={emoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
                       </div>
                     )}
                     <div className="text-sm">{pubkeys.size}</div>

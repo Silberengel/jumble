@@ -25,7 +25,7 @@ import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
-import Emoji from '@/components/Emoji'
+import Emoji, { EMOJI_IMG_INLINE_CLASS } from '@/components/Emoji'
 import {
   ExtendedKind,
   SPOTIFY_OPEN_URL_REGEX,
@@ -3374,6 +3374,7 @@ function parseMarkdownContentMarked(
               image={{ ...baseImeta, url: src }}
               alt={label || 'image'}
               tooltipTitle={imageTip}
+              showAltCaption={Boolean(label.trim())}
               className="w-full rounded-lg cursor-zoom-in"
               classNames={{
                 wrapper: 'not-prose my-2 block max-w-[400px] mx-auto rounded-lg w-full',
@@ -4124,6 +4125,7 @@ function parseMarkdownContentMarked(
             image={imetaInfoForStandaloneImageUrl(cleaned)}
             alt={imageToken.text || 'image'}
             tooltipTitle={markdownTokenTitle(imageToken)}
+            showAltCaption={Boolean(String(imageToken.text ?? '').trim())}
             className="w-full rounded-lg cursor-zoom-in my-0"
             classNames={{ wrapper: 'my-2 block max-w-[400px] mx-auto' }}
             holdUntilClick={lazyMedia}
@@ -4913,7 +4915,7 @@ function parseInlineMarkdownLegacy(
           <Emoji
             key={`${keyPrefix}-emoji-${i}`}
             emoji={custom}
-            classNames={{ img: 'size-4 inline-block' }}
+            classNames={{ img: `${EMOJI_IMG_INLINE_CLASS} inline-block` }}
             onImageClick={
               typeof lbIdx === 'number' && emojiLightbox
                 ? () => emojiLightbox.openLightbox(lbIdx)
@@ -4924,7 +4926,9 @@ function parseInlineMarkdownLegacy(
       } else {
         const native = shortcodeToEmoji(shortcode, emojis) ?? shortcodeToEmoji(shortcode.replace(/\s+/g, '_'), emojis)
         if (native?.emoji) {
-          parts.push(<Emoji key={`${keyPrefix}-emoji-${i}`} emoji={native.emoji} classNames={{ img: 'size-4' }} />)
+          parts.push(
+            <Emoji key={`${keyPrefix}-emoji-${i}`} emoji={native.emoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
+          )
         } else {
           parts.push(<span key={`${keyPrefix}-emoji-${i}`}>{`:${shortcode}:`}</span>)
         }
@@ -5244,7 +5248,15 @@ export default function MarkdownArticle({
       }
     }
     
+    const shortcodesInBody = new Set<string>()
+    const scRe = new RegExp(EMOJI_SHORT_CODE_REGEX.source, 'g')
+    let scMatch: RegExpExecArray | null
+    while ((scMatch = scRe.exec(event.content)) !== null) {
+      shortcodesInBody.add(scMatch[1].trim().toLowerCase())
+    }
+
     for (const em of emojiInfos) {
+      if (!shortcodesInBody.has(em.shortcode.trim().toLowerCase())) continue
       const raw = em.url?.trim()
       if (!raw) continue
       const cleaned = cleanUrl(raw)
@@ -5254,7 +5266,7 @@ export default function MarkdownArticle({
     }
 
     return images
-  }, [extractedMedia.images, metadata.image, emojiInfos])
+  }, [extractedMedia.images, metadata.image, emojiInfos, event.content])
 
   const lightboxSlides = useMemo(
     () => allImages.map((img) => lightboxSlideFromImeta(img)),

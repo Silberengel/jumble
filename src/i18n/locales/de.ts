@@ -959,6 +959,8 @@ export default {
     'Advanced lab cancel undo': 'Abbrechen und Änderungen verwerfen',
     'Advanced lab markup label markdown': 'Markdown',
     'Advanced lab markup label asciidoc': 'AsciiDoc',
+    'Advanced lab preview': 'Vorschau',
+    'Advanced lab preview empty': 'Noch nichts in der Vorschau.',
     'Advanced lab markup placeholder markdown': 'Notiztext (Markdown)',
     'Advanced lab markup placeholder asciidoc': 'Notiztext (AsciiDoc)',
     'Advanced lab tags JSON': 'Kind, Inhalt und Tags (JSON)',

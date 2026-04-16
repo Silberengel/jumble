@@ -21,16 +21,25 @@ import { useTranslation } from 'react-i18next'
 /** Browsers often never fire `onError` for invalid URIs, ORB, or stalled fetches — this forces a visible error. */
 const IMAGE_LOAD_TIMEOUT_MS = 10_000
 
-/** Without reserved height, `absolute` skeleton + `opacity-0` img collapse to 0×0 — looks like “nothing”. */
+/**
+ * Without reserved height, `absolute` skeleton + `opacity-0` img collapse to 0×0 — looks like “nothing”.
+ * The tall `minHeight` fallback is only for that placeholder phase; keeping it after load (with no `dim`)
+ * leaves a box taller than the `<img>` when `height:100%` cannot resolve, which often reads as a white band
+ * under transparent GIFs or in dark UI.
+ */
 function wrapperReserveStyle(
   dim: { width: number; height: number } | undefined,
-  showError: boolean
+  showError: boolean,
+  useMinHeightPlaceholder: boolean
 ): CSSProperties | undefined {
   if (showError) return undefined
   if (dim && dim.width > 0 && dim.height > 0) {
     return { aspectRatio: `${dim.width} / ${dim.height}` }
   }
-  return { minHeight: 'min(30vh, 280px)' }
+  if (useMinHeightPlaceholder) {
+    return { minHeight: 'min(30vh, 280px)' }
+  }
+  return undefined
 }
 
 function formatFileSize(bytes: number): string {
@@ -50,6 +59,8 @@ export default function Image({
   holdUntilClick = false,
   fetchPriority,
   onClick,
+  showAltCaption = false,
+  caption,
   /** Native tooltip on hover (e.g. Markdown `![alt](url "title")`). When set, overrides alt-as-title on `<img>`. */
   tooltipTitle,
   ...props
@@ -62,6 +73,10 @@ export default function Image({
   alt?: string
   /** Shown as the `<img title>` tooltip when non-empty. */
   tooltipTitle?: string
+  /** When true, show {@link caption} or non-empty alt below the image (lightbox-style caption). */
+  showAltCaption?: boolean
+  /** Caption below the image; defaults to resolved alt when {@link showAltCaption} is true. */
+  caption?: string
   hideIfError?: boolean
   errorPlaceholder?: React.ReactNode
   /** Passed to the inner `<img>` (e.g. profile banner vs avatar load order). */
@@ -100,7 +115,17 @@ export default function Image({
   const imgTitle =
     tooltipTitle != null && String(tooltipTitle).trim() !== ''
       ? String(tooltipTitle).trim()
-      : finalAlt || undefined
+      : (() => {
+          const a = (finalAlt ?? '').trim()
+          // Markdown uses `alt="image"` when `![](url)` has no label — not a real caption/tooltip.
+          return a && a !== 'image' ? a : undefined
+        })()
+  const captionLine = (() => {
+    if (!showAltCaption) return ''
+    const c = (caption ?? finalAlt ?? '').trim()
+    if (c && c !== 'image') return c
+    return ''
+  })()
   const openLinkHref =
     (isSafeMediaUrl(url) && url.trim()) || (isSafeMediaUrl(imageUrl) && imageUrl.trim()) || ''
 
@@ -207,7 +232,11 @@ export default function Image({
     notifyLoaded()
   }
 
-  const reserveStyle = wrapperReserveStyle(dim, showErrorState)
+  const reserveStyle = wrapperReserveStyle(
+    dim,
+    showErrorState,
+    displaySkeleton && !showErrorState
+  )
   const mergedWrapperStyle: CSSProperties | undefined =
     reserveStyle || wrapperStyleProp
       ? { ...reserveStyle, ...wrapperStyleProp }
@@ -224,19 +253,20 @@ export default function Image({
     onClick?.(e)
   }
 
-  const titled = tooltipTitle != null && String(tooltipTitle).trim() !== ''
+  const hasHoverTip = Boolean(imgTitle)
 
   return (
-    <span
-      className={cn(
-        'relative overflow-hidden block w-full',
-        classNames.wrapper,
-        titled && 'cursor-help rounded-lg ring-1 ring-inset ring-dotted ring-muted-foreground/45'
-      )}
-      style={mergedWrapperStyle}
-      onClick={handleWrapperClick}
-      {...props}
-    >
+    <span className={cn('block w-full not-prose', classNames.wrapper)}>
+      <span
+        className={cn(
+          'relative overflow-hidden block w-full rounded-lg bg-background',
+          hasHoverTip && 'cursor-help ring-1 ring-inset ring-dotted ring-muted-foreground/45'
+        )}
+        style={mergedWrapperStyle}
+        title={imgTitle}
+        onClick={handleWrapperClick}
+        {...props}
+      >
       {displaySkeleton && !showErrorState && (
         <span className="absolute inset-0 z-10 block rounded-lg bg-muted/40">
           {effectiveBlurHash ? (
@@ -272,7 +302,6 @@ export default function Image({
           ref={imgRef}
           src={imageUrl}
           alt={finalAlt}
-          title={imgTitle}
           referrerPolicy="no-referrer"
           decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
@@ -319,6 +348,10 @@ export default function Image({
           ) : null}
         </span>
       )}
+      </span>
+      {captionLine ? (
+        <span className="mt-1 block px-1 text-center text-xs leading-snug text-muted-foreground">{captionLine}</span>
+      ) : null}
     </span>
   )
 }

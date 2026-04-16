@@ -1,3 +1,5 @@
+import { normalizeTranslateLangCode } from '@/lib/translate-client'
+
 /**
  * Build LanguageTool `language` codes with UI language first, then English, then German, then others.
  * @see https://api.languagetool.org/v2/languages
@@ -112,6 +114,32 @@ function mapI18nToLt(i18nLanguage: string): string {
   if (LT_ALIASES[full]) return LT_ALIASES[full]!
   if (LT_ALIASES[base]) return LT_ALIASES[base]!
   return 'en-US'
+}
+
+/**
+ * Map a LibreTranslate / lab target language code to a LanguageTool `language` value
+ * (after {@link normalizeTranslateLangCode}).
+ */
+export function translateTargetToLanguageToolCode(translateCode: string): string {
+  const n = normalizeTranslateLangCode(translateCode).toLowerCase().replace(/_/gu, '-')
+  if (LT_ALIASES[n]) return LT_ALIASES[n]!
+  const base = n.split(/-/u)[0] ?? n
+  if (LT_ALIASES[base]) return LT_ALIASES[base]!
+  return 'en-US'
+}
+
+/** Prefer a code present in `ltList` (lab grammar dropdown) when possible. */
+export function pickLanguageToolCodeForTranslateTarget(
+  translateCode: string,
+  ltList: readonly string[]
+): string {
+  const mapped = translateTargetToLanguageToolCode(translateCode)
+  if (ltList.includes(mapped)) return mapped
+  const base = mapped.split(/-/u)[0]?.toLowerCase() ?? ''
+  const hit = ltList.find(
+    (c) => c.toLowerCase() === mapped.toLowerCase() || c.toLowerCase().startsWith(`${base}-`)
+  )
+  return hit ?? ltList[0] ?? mapped
 }
 
 export function buildLanguageToolPreferenceList(i18nLanguage: string | undefined): string[] {

@@ -17,12 +17,15 @@ import {
 import logger from '@/lib/logger'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
-import { buildLanguageToolPreferenceList } from '@/lib/languagetool-language-order'
+import {
+  buildLanguageToolPreferenceList,
+  pickLanguageToolCodeForTranslateTarget
+} from '@/lib/languagetool-language-order'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
   fetchTranslateLanguages,
   isTranslateConfigured,
-  translatePlainText,
   type TranslateLanguageOption
 } from '@/lib/translate-client'
 import { setReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
@@ -43,9 +46,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AdvancedEventLabMarkupToolbar } from './AdvancedEventLabMarkupToolbar'
+import { AdvancedEventLabPreviewPane } from './AdvancedEventLabPreviewPane'
 import customEmojiService from '@/services/custom-emoji.service'
 import postEditorCache from '@/services/post-editor-cache.service'
 import type { TEmoji } from '@/types'
+
+const PREVIEW_DEBOUNCE_MS = 200
 
 /** Subset of {@link TPostTextareaHandle} so media upload + toolbar can target the lab surface. */
 export type AdvancedLabBodyHandle = {
@@ -99,6 +105,10 @@ export type AdvancedEventLabDialogProps = {
    * clears this draft so the next open is seeded from TipTap again.
    */
   draftPersistenceKey?: string | null
+  /** Lab preview: resolve custom `:shortcode:` from this author's NIP-30 inventory when tags do not define them. */
+  previewAuthorPubkey?: string | null
+  /** Lab preview: `emoji` tags on the fake event (e.g. copied from the event being edited). */
+  previewEmojiTags?: string[][]
 }
 
 function useDarkModeFlag(): boolean {
@@ -129,7 +139,9 @@ export default function AdvancedEventLabDialog({
   onApply,
   bodyApiRef,
   formatToolbar,
-  draftPersistenceKey = null
+  draftPersistenceKey = null,
+  previewAuthorPubkey = null,
+  previewEmojiTags
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   const dark = useDarkModeFlag()
@@ -138,10 +150,44 @@ export default function AdvancedEventLabDialog({
   const sliceRef = useRef<AdvancedEventLabSlice | null>(null)
   const draftPersistenceKeyRef = useRef<string | null>(null)
   const labPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previewDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const schedulePreviewUpdateRef = useRef<(text: string) => void>(() => {})
   /** When true, closing is from Apply (draft already cleared); skip discard cleanup. */
   const skipClearLabDraftOnCloseRef = useRef(false)
   /** Debounce writes to the draft map; pagehide/beforeunload flush immediately to disk. */
   const LAB_DRAFT_DEBOUNCE_MS = 500
+
+  const [previewDoc, setPreviewDoc] = useState('')
+
+  const mergedLabPreviewEmojiTags = useMemo(() => {
+    if (!open || !initial) return []
+    const fromInitial = initial.tags.filter(([n]) => n === 'emoji').map((r) => [...r])
+    const fromProp = previewEmojiTags ?? []
+    const m = new Map<string, string[]>()
+    for (const row of fromInitial) {
+      const sc = row[1]?.trim()
+      if (sc) m.set(sc.toLowerCase(), row)
+    }
+    for (const row of fromProp) {
+      const sc = row[1]?.trim()
+      if (sc) m.set(sc.toLowerCase(), row)
+    }
+    return [...m.values()]
+  }, [open, initial, previewEmojiTags])
+
+  const schedulePreviewUpdate = useCallback((text: string) => {
+    if (previewDebounceTimerRef.current) {
+      clearTimeout(previewDebounceTimerRef.current)
+    }
+    previewDebounceTimerRef.current = setTimeout(() => {
+      previewDebounceTimerRef.current = null
+      setPreviewDoc(text)
+    }, PREVIEW_DEBOUNCE_MS)
+  }, [])
+
+  useEffect(() => {
+    schedulePreviewUpdateRef.current = schedulePreviewUpdate
+  }, [schedulePreviewUpdate])
 
   draftPersistenceKeyRef.current = draftPersistenceKey ?? null
 
@@ -179,6 +225,16 @@ export default function AdvancedEventLabDialog({
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [open, draftPersistenceKey, flushLabDraftNow])
+
+  useEffect(() => {
+    if (!open) {
+      if (previewDebounceTimerRef.current) {
+        clearTimeout(previewDebounceTimerRef.current)
+        previewDebounceTimerRef.current = null
+      }
+      setPreviewDoc('')
+    }
+  }, [open])
 
   const handleDialogOpenChange = useCallback(
     (next: boolean) => {
@@ -311,6 +367,7 @@ export default function AdvancedEventLabDialog({
         tags: initial.tags.map((row) => [...row])
       }
       sliceRef.current = baseSlice
+      setPreviewDoc(baseSlice.content)
 
       const markupLang: Extension =
         markupMode === 'asciidoc' ? StreamLanguage.define(asciidoc) : markdown()
@@ -331,7 +388,7 @@ export default function AdvancedEventLabDialog({
           '&': { maxHeight: '100%' },
           '.cm-scroller': { overflow: 'auto' },
           '.cm-content': {
-            minHeight: 'min(50dvh, 42rem)',
+            minHeight: 'min(22dvh, 11rem)',
             fontFamily: 'var(--font-mono, ui-monospace, monospace)'
           }
         }),
@@ -341,11 +398,14 @@ export default function AdvancedEventLabDialog({
           const s = sliceRef.current
           if (!s) return
           s.content = content
+          schedulePreviewUpdateRef.current(content)
           scheduleLabDraftPersist()
         })
       ]
       if (isLanguageToolConfigured()) {
-        mkExtensions.push(languageToolLintExtension(() => ltLangRef.current, 650))
+        mkExtensions.push(
+          languageToolLintExtension(() => ltLangRef.current, 650, () => markupMode)
+        )
       }
       if (dark) mkExtensions.push(oneDark)
 
@@ -402,6 +462,10 @@ export default function AdvancedEventLabDialog({
     return () => {
       cancelled = true
       cancelAnimationFrame(rafId)
+      if (previewDebounceTimerRef.current) {
+        clearTimeout(previewDebounceTimerRef.current)
+        previewDebounceTimerRef.current = null
+      }
       if (labPersistTimerRef.current) {
         clearTimeout(labPersistTimerRef.current)
         labPersistTimerRef.current = null
@@ -463,13 +527,24 @@ export default function AdvancedEventLabDialog({
       inputChars: text.length
     })
     try {
-      const out = await translatePlainText(text, translateTarget, translateSource)
+      const out = await translateAdvancedLabMarkup(text, translateTarget, translateSource, markupMode)
       if (!markupView.current) return
       markupView.current.dispatch({
         changes: { from: 0, to: markupView.current.state.doc.length, insert: out }
       })
       const s = sliceRef.current
       if (s) s.content = out
+      if (isLanguageToolConfigured()) {
+        const nextLt = pickLanguageToolCodeForTranslateTarget(translateTarget, ltList)
+        if (nextLt !== ltLang) {
+          logger.info('[AdvancedLab] grammar language synced after translate', {
+            from: ltLang,
+            to: nextLt,
+            translateTarget
+          })
+          setLtLang(nextLt)
+        }
+      }
       toast.success(t('Advanced lab translate done'))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -606,18 +681,33 @@ export default function AdvancedEventLabDialog({
 
         <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
 
-        <div className="flex-1 min-h-0 flex flex-col gap-1 px-4 py-2 overflow-hidden">
-          <span className="text-xs font-medium text-muted-foreground shrink-0">
-            {t(
-              markupMode === 'asciidoc'
-                ? 'Advanced lab markup label asciidoc'
-                : 'Advanced lab markup label markdown'
-            )}
-          </span>
-          <div
-            ref={markupHost}
-            className="flex-1 min-h-[min(50dvh,36rem)] border rounded-md overflow-hidden bg-muted/20"
-          />
+        <div className="flex-1 min-h-0 flex flex-col gap-3 px-4 py-2 overflow-hidden lg:flex-row lg:gap-0">
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-1 lg:pr-3">
+            <span className="text-xs font-medium text-muted-foreground shrink-0">
+              {t(
+                markupMode === 'asciidoc'
+                  ? 'Advanced lab markup label asciidoc'
+                  : 'Advanced lab markup label markdown'
+              )}
+            </span>
+            <div
+              ref={markupHost}
+              className="flex-1 min-h-[min(28dvh,14rem)] lg:min-h-[min(42dvh,24rem)] border rounded-md overflow-hidden bg-muted/20"
+            />
+          </div>
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-1 border-t border-border pt-3 lg:flex-[0_1_42%] lg:max-w-[min(50%,40rem)] lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
+            <span className="text-xs font-medium text-muted-foreground shrink-0">
+              {t('Advanced lab preview')}
+            </span>
+            <div className="flex-1 min-h-[min(24dvh,12rem)] lg:min-h-0 overflow-y-auto rounded-md border bg-muted/10 px-2 py-2">
+              <AdvancedEventLabPreviewPane
+                markupMode={markupMode}
+                source={previewDoc}
+                previewAuthorPubkey={previewAuthorPubkey}
+                previewEmojiTags={mergedLabPreviewEmojiTags}
+              />
+            </div>
+          </div>
         </div>
 
         {formatToolbar ? (

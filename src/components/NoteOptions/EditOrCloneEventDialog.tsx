@@ -378,6 +378,14 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
 
   const labKind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent?.kind ?? 0
 
+  const labPreviewEmojiTags = useMemo(
+    () =>
+      !isCreate && sourceEvent?.tags?.length
+        ? sourceEvent.tags.filter(([n]) => n === 'emoji').map((row) => [...row])
+        : [],
+    [isCreate, sourceEvent]
+  )
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -601,6 +609,8 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       markupMode={isAsciidocMarkupKind(labKind) ? 'asciidoc' : 'markdown'}
       i18nLanguage={i18n.language}
       contextEventId={!isCreate && sourceEvent ? sourceEvent.id : null}
+      previewAuthorPubkey={pubkey ?? null}
+      previewEmojiTags={labPreviewEmojiTags}
       draftPersistenceKey={
         advancedLabOpen && advancedLabDraftPersistenceKey ? advancedLabDraftPersistenceKey : null
       }

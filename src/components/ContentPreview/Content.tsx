@@ -7,7 +7,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import PaytoLink from '../PaytoLink'
 import { EmbeddedMentionText } from '../Embedded'
-import Emoji from '../Emoji'
+import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
 
 export default function Content({
   content,
@@ -52,9 +52,10 @@ export default function Content({
         if (node.type === 'emoji') {
           const shortcode = node.data.slice(1, -1).trim()
           const emoji = emojiInfos?.find((e) => e.shortcode === shortcode)
-          if (emoji) return <Emoji key={index} emoji={emoji} classNames={{ img: 'size-4' }} />
+          if (emoji) return <Emoji key={index} emoji={emoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
           const native = shortcodeToEmoji(shortcode, emojis) ?? shortcodeToEmoji(shortcode.replace(/\s+/g, '_'), emojis)
-          if (native?.emoji) return <Emoji key={index} emoji={native.emoji} classNames={{ img: 'size-4' }} />
+          if (native?.emoji)
+            return <Emoji key={index} emoji={native.emoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
           return node.data
         }
         return node.data

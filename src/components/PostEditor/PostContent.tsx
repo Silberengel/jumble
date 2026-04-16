@@ -3595,6 +3595,7 @@ export default function PostContent({
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}
         contextEventId={parentEvent?.id ?? null}
+        previewAuthorPubkey={pubkey ?? null}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
         formatToolbar={
