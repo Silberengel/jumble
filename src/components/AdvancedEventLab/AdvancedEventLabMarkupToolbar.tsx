@@ -1,4 +1,8 @@
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import {
+  AdvancedLabCitationPickerDialog,
+  type LabCitationDisplayType
+} from '@/components/AdvancedEventLab/AdvancedLabCitationPickerDialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import type { EditorView } from '@codemirror/view'
 import {
   Anchor,
+  BookMarked,
   Braces,
   ChevronDown,
   Code2,
@@ -34,7 +39,7 @@ import {
   Volume2
 } from 'lucide-react'
 import type { MutableRefObject } from 'react'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   labInsertRaw,
@@ -94,6 +99,16 @@ const CODE_LANGUAGES = [
   'protobuf'
 ] as const
 
+const LAB_CITATION_MENU_ITEMS: { type: LabCitationDisplayType; labelKey: string }[] = [
+  { type: 'inline', labelKey: 'Advanced lab citation type inline' },
+  { type: 'quote', labelKey: 'Advanced lab citation type quote' },
+  { type: 'end', labelKey: 'Advanced lab citation type end' },
+  { type: 'foot', labelKey: 'Advanced lab citation type foot' },
+  { type: 'foot-end', labelKey: 'Advanced lab citation type footEnd' },
+  { type: 'prompt-inline', labelKey: 'Advanced lab citation type promptInline' },
+  { type: 'prompt-end', labelKey: 'Advanced lab citation type promptEnd' }
+]
+
 export type AdvancedEventLabMarkupToolbarProps = {
   markupMode: 'markdown' | 'asciidoc'
   viewRef: MutableRefObject<EditorView | null>
@@ -108,6 +123,13 @@ export function AdvancedEventLabMarkupToolbar({
   const { t } = useTranslation()
   const [codeFilter, setCodeFilter] = useState('')
   const [langFilter, setLangFilter] = useState('')
+  const [citationPickerOpen, setCitationPickerOpen] = useState(false)
+  const [citationDisplayType, setCitationDisplayType] = useState<LabCitationDisplayType>('inline')
+
+  const openCitationPicker = (displayType: LabCitationDisplayType) => {
+    setCitationDisplayType(displayType)
+    setCitationPickerOpen(true)
+  }
 
   const filteredLangs = useMemo(() => {
     const q = codeFilter.trim().toLowerCase()
@@ -120,6 +142,37 @@ export function AdvancedEventLabMarkupToolbar({
     if (!v) return
     fn(v)
   }
+
+  const citationPicker = (
+    <AdvancedLabCitationPickerDialog
+      open={citationPickerOpen}
+      onOpenChange={setCitationPickerOpen}
+      displayType={citationDisplayType}
+      onInsertMacro={(macro) =>
+        run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `${macro}\n`))
+      }
+    />
+  )
+
+  const citationDropdown = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="h-8 gap-1 text-xs shrink-0">
+          <BookMarked className="h-3.5 w-3.5" />
+          {t('Advanced lab tb citations')}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="z-[280] w-[min(20rem,92vw)] max-h-80 overflow-y-auto">
+        <DropdownMenuLabel>{t('Advanced lab tb citationsHint')}</DropdownMenuLabel>
+        {LAB_CITATION_MENU_ITEMS.map(({ type, labelKey }) => (
+          <DropdownMenuItem key={type} onClick={() => openCitationPicker(type)}>
+            {t(labelKey)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
   /** Contiguous document header per https://docs.asciidoctor.org/asciidoc/latest/document/header/ (no blank lines until after the last header line). */
   const adocInsertFullHeader = (titleLine: string) => {
@@ -152,6 +205,7 @@ export function AdvancedEventLabMarkupToolbar({
 
   if (markupMode === 'markdown') {
     return (
+      <Fragment>
       <div className="flex flex-wrap items-center gap-1.5 min-w-0 overflow-x-auto border-b bg-muted/30 px-2 py-2">
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide shrink-0 mr-1">
           {t('Advanced lab tb markup tools')}
@@ -313,6 +367,8 @@ export function AdvancedEventLabMarkupToolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {citationDropdown}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -586,11 +642,14 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {citationPicker}
+      </Fragment>
     )
   }
 
   /* AsciiDoc */
   return (
+    <Fragment>
     <div className="flex flex-wrap items-center gap-1.5 min-w-0 overflow-x-auto border-b bg-muted/30 px-2 py-2">
       <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide shrink-0 mr-1">
         {t('Advanced lab tb markup tools')}
@@ -712,6 +771,8 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {citationDropdown}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1126,5 +1187,7 @@ export function AdvancedEventLabMarkupToolbar({
         <Minus className="h-3.5 w-3.5" />
       </Button>
     </div>
+    {citationPicker}
+    </Fragment>
   )
 }

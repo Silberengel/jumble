@@ -17,20 +17,28 @@ export const MENTION_NPUB_DROPDOWN_LIMIT = 50
 /** Kinds for nevent search: notes, threads, long-form, etc. */
 export const NEVENT_KINDS = [
   kinds.ShortTextNote,
-  ExtendedKind.PICTURE, 
-  ExtendedKind.VIDEO, 
-  ExtendedKind.SHORT_VIDEO, 
+  ExtendedKind.PICTURE,
+  ExtendedKind.VIDEO,
+  ExtendedKind.SHORT_VIDEO,
   ExtendedKind.POLL,
   ExtendedKind.ZAP_POLL,
-  ExtendedKind.COMMENT, 
-  ExtendedKind.VOICE, 
-  ExtendedKind.VOICE_COMMENT, 
-  ExtendedKind.PUBLIC_MESSAGE, 
+  ExtendedKind.COMMENT,
+  ExtendedKind.VOICE,
+  ExtendedKind.VOICE_COMMENT,
+  ExtendedKind.PUBLIC_MESSAGE,
   ExtendedKind.DISCUSSION,
-  ExtendedKind.CITATION_INTERNAL, 
-  ExtendedKind.CITATION_EXTERNAL, 
-  ExtendedKind.CITATION_HARDCOPY, 
-  ExtendedKind.CITATION_PROMPT, 
+  ExtendedKind.CITATION_INTERNAL,
+  ExtendedKind.CITATION_EXTERNAL,
+  ExtendedKind.CITATION_HARDCOPY,
+  ExtendedKind.CITATION_PROMPT
+] as const
+
+/** NIP-32 citation events only (Advanced lab citation picker, etc.). */
+export const CITATION_PICKER_KINDS = [
+  ExtendedKind.CITATION_INTERNAL,
+  ExtendedKind.CITATION_EXTERNAL,
+  ExtendedKind.CITATION_HARDCOPY,
+  ExtendedKind.CITATION_PROMPT
 ] as const
 
 /** Kinds for naddr search: calendar, publications, wiki, etc. */
@@ -49,16 +57,19 @@ export type PickerSearchMode = 'nevent' | 'naddr'
 /**
  * Search for events: session cache → IndexedDB → relays. Merges and dedupes by event id, up to limit.
  * @param mode - 'nevent' uses NEVENT_KINDS (1,11,20,21,22,9802), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
+ * @param kindFilter - When set, only these kinds are searched (overrides `mode` for the kinds list).
  */
 export async function searchEventsForPicker(
   query: string,
   limit: number = DEFAULT_NOTES_LIMIT,
-  mode: PickerSearchMode = 'nevent'
+  mode: PickerSearchMode = 'nevent',
+  kindFilter?: readonly number[]
 ): Promise<NEvent[]> {
   const q = query.trim()
   if (!q) return []
 
-  const kindsList = mode === 'nevent' ? [...NEVENT_KINDS] : [...NADDR_KINDS]
+  const kindsList =
+    kindFilter && kindFilter.length > 0 ? [...kindFilter] : mode === 'nevent' ? [...NEVENT_KINDS] : [...NADDR_KINDS]
   const seen = new Set<string>()
   const out: NEvent[] = []
 
@@ -83,6 +94,14 @@ export async function searchEventsForPicker(
   )
   fromRelays.forEach(addUnique)
   return out.slice(0, limit)
+}
+
+/** Search only NIP-32 citation events (kinds 30–33). */
+export async function searchCitationEventsForPicker(
+  query: string,
+  limit: number = DEFAULT_NOTES_LIMIT
+): Promise<NEvent[]> {
+  return searchEventsForPicker(query, limit, 'nevent', CITATION_PICKER_KINDS)
 }
 
 /**

@@ -65,7 +65,7 @@ function NeventNaddrPickerDialog({
     }
     let cancelled = false
     setLoading(true)
-    searchEventsForPicker(debouncedQuery, 20, mode)
+    searchEventsForPicker(debouncedQuery, 20, mode, undefined)
       .then((list) => {
         if (cancelled) return
         setEvents(list.slice(0, 15) as NEvent[])
