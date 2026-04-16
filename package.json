@@ -1,6 +1,6 @@
 {
   "name": "imwald",
-  "version": "23.0.6",
+  "version": "23.0.7",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",
@@ -34,7 +34,7 @@
     "i18n:gaps": "npx tsx scripts/export-en-parity-gaps.ts",
     "i18n:translate-de": "PYTHONUNBUFFERED=1 .venv-i18n/bin/python scripts/auto_translate_i18n.py de",
     "electron:dev": "concurrently -k -n vite,electron -c blue,green \"vite --host\" \"wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development electron .\"",
-    "build:electron": "tsc -b && vite build",
+    "build:electron": "cross-env VITE_PROXY_SERVER=https://jumble.imwald.eu VITE_READ_ALOUD_TTS_URL=https://jumble.imwald.eu/api/piper-tts VITE_LANGUAGE_TOOL_URL=https://jumble.imwald.eu/api/languagetool VITE_TRANSLATE_URL=https://jumble.imwald.eu/api/translate tsc -b && vite build",
     "electron:pack": "npm run build:electron && electron-builder",
     "og:image": "node scripts/generate-og-png.mjs"
   },
