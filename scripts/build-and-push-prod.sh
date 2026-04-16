@@ -12,8 +12,9 @@
 #     Alias: JUMBLE_PROXY_SERVER_URL (deprecated). Must match the public origin where Apache serves the app.
 #   READ_ALOUD_TTS_URL — build-arg VITE_READ_ALOUD_TTS_URL (default /api/piper-tts).
 #     Same-origin: Apache proxies /api/piper-tts → aitherboard (e.g. :9876). Override only if you use CORS on another host.
-#   LANGUAGE_TOOL_URL — build-arg VITE_LANGUAGE_TOOL_URL (default empty). Example: /api/languagetool with Apache → LanguageTool :8010.
-#   TRANSLATE_URL — build-arg VITE_TRANSLATE_URL (default empty). Example: /api/translate with Apache → LibreTranslate :5000.
+#   LANGUAGE_TOOL_URL — build-arg VITE_LANGUAGE_TOOL_URL (default /api/languagetool if unset). Same-origin Apache → LanguageTool :8010.
+#   TRANSLATE_URL — build-arg VITE_TRANSLATE_URL (default /api/translate if unset). Same-origin Apache → LibreTranslate :5000.
+#     Set either to an empty string to omit that feature from the bundle: LANGUAGE_TOOL_URL= TRANSLATE_URL= ./scripts/build-and-push-prod.sh
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,8 +31,9 @@ IMAGE_PIPER_PROXY="silberengel/imwald-piper-tts-proxy"
 # Override: IMWALD_PROXY_SERVER_URL=https://other.example ./scripts/build-and-push-prod.sh
 PROXY_ORIGIN="${IMWALD_PROXY_SERVER_URL:-${JUMBLE_PROXY_SERVER_URL:-https://jumble.imwald.eu}}"
 READ_ALOUD_TTS_URL="${READ_ALOUD_TTS_URL:-/api/piper-tts}"
-LANGUAGE_TOOL_URL="${LANGUAGE_TOOL_URL:-}"
-TRANSLATE_URL="${TRANSLATE_URL:-}"
+# Match .env.development and PROXY_SETUP.md (`:-` would force defaults even when empty; use `-` so LANGUAGE_TOOL_URL= disables).
+LANGUAGE_TOOL_URL="${LANGUAGE_TOOL_URL-/api/languagetool}"
+TRANSLATE_URL="${TRANSLATE_URL-/api/translate}"
 
 echo "Building main app (version: $VERSION, VITE_PROXY_SERVER=$PROXY_ORIGIN, VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL, VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL, VITE_TRANSLATE_URL=$TRANSLATE_URL)"
 docker build \
