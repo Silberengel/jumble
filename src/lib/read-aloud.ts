@@ -1,5 +1,5 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
-import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage, type TLanguage } from '@/i18n'
+import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage } from '@/i18n'
 import { getNoteTranslation } from '@/lib/note-translation-display'
 import {
   getPiperVoiceForChosenLanguage,

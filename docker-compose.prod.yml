@@ -1,6 +1,7 @@
-# Minimal compose for running the published image (e.g. on remote server).
-# Full stack (jumble + NIP-66 + og-proxy + Piper + LanguageTool + LibreTranslate): npm run stack:remote
-# Usage (app only): docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# Production stack: jumble + NIP-66 monitor + og-proxy + Wyoming Piper + Piper HTTP proxy + LanguageTool + LibreTranslate.
+# Remote: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# First-time LibreTranslate bind mounts: bash scripts/ensure-libretranslate-dirs.sh (see scripts/README-deploy.md).
+# Images built/pushed by ./scripts/build-and-push-prod.sh (app, monitor, piper-tts-proxy); others pull from Hub.
 #
 # Apache (unchanged on your host) should keep (order: specific paths before catch-all /):
 #   ProxyPass /sites/ http://127.0.0.1:8090/sites/
@@ -14,10 +15,8 @@
 # - Cron service `jumble-nip66-monitor` (Imwald NIP-66 monitor image) uses NIP66_MONITOR_NSEC to publish 30166/10166; nsec never goes to the client.
 # - Set NIP66_MONITOR_NPUB (npub1... derived from the same key) so the relay info page shows the monitor's avatar and handle in the NIP-66 liveliness section.
 #
-# Optional editor tools (LanguageTool + LibreTranslate): profile `editor-tools`
-#   docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate
-# Then Apache (or nginx) must proxy same-origin paths baked into the SPA, e.g. /api/languagetool → http://127.0.0.1:8010
-# and /api/translate → http://127.0.0.1:5000. Build the app image with:
+# Apache (or nginx) must proxy same-origin paths baked into the SPA, e.g. /api/languagetool → http://127.0.0.1:8010
+# and /api/translate → http://127.0.0.1:5000. Build the app with:
 #   LANGUAGE_TOOL_URL=/api/languagetool TRANSLATE_URL=/api/translate ./scripts/build-and-push-prod.sh
 
 services:
@@ -68,7 +67,6 @@ services:
 
   languagetool:
     image: silviof/docker-languagetool:latest
-    profiles: ['editor-tools']
     container_name: imwald-languagetool
     ports:
       - '127.0.0.1:8010:8010'
@@ -80,7 +78,6 @@ services:
 
   libretranslate:
     image: libretranslate/libretranslate:latest
-    profiles: ['editor-tools']
     container_name: imwald-libretranslate
     ports:
       - '127.0.0.1:5000:5000'
@@ -97,12 +94,11 @@ services:
         limits:
           memory: 2048M
 
-  # --- profile `stack`: OG proxy + Piper (Apache → 8090 / 9876). One command: npm run stack:remote ---
-  # First-party images: silberengel/* (override with OG_PROXY_IMAGE / WYOMING_PIPER_IMAGE / PIPER_HTTP_PROXY_IMAGE).
+  # OG proxy + Piper (Apache → 8090 / 9876). Piper HTTP image: silberengel/imwald-piper-tts-proxy (see build-and-push-prod.sh).
   og-proxy:
     image: ${OG_PROXY_IMAGE:-silberengel/wikistr:latest-og-proxy}
-    profiles: ['stack']
-    container_name: og-proxy
+    # Distinct name so `docker compose` does not assume an unrelated `og-proxy` container belongs to this project.
+    container_name: imwald-og-proxy
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -119,8 +115,8 @@ services:
 
   piper-wyoming:
     image: ${WYOMING_PIPER_IMAGE:-silberengel/wyoming-piper:latest}
-    profiles: ['stack']
-    container_name: piper-tts
+    # Distinct from ad-hoc stacks named `piper-tts`; Piper HTTP proxy reaches this service as `piper-wyoming`.
+    container_name: imwald-piper-wyoming
     command:
       - --voice
       - en_US-lessac-medium
@@ -135,11 +131,7 @@ services:
     restart: unless-stopped
 
   piper-tts-proxy:
-    profiles: ['stack']
     container_name: imwald-piper-tts-proxy
-    build:
-      context: .
-      dockerfile: services/piper-tts-proxy/Dockerfile
     image: ${PIPER_HTTP_PROXY_IMAGE:-silberengel/imwald-piper-tts-proxy:latest}
     environment:
       NODE_ENV: production
