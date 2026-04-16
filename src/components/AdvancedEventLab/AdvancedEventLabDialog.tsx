@@ -14,8 +14,9 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import logger from '@/lib/logger'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
-import { languageToolLintExtension } from '@/lib/languagetool-cm-linter'
+import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
 import { buildLanguageToolPreferenceList } from '@/lib/languagetool-language-order'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import {
@@ -224,6 +225,8 @@ export default function AdvancedEventLabDialog({
     [i18nLanguage, i18n.language]
   )
   const [ltLang, setLtLang] = useState(() => ltList[0] ?? 'en-US')
+  const ltLangRef = useRef(ltLang)
+  ltLangRef.current = ltLang
   const [translateLangs, setTranslateLangs] = useState<TranslateLanguageOption[]>([])
   const [translateLoad, setTranslateLoad] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [translateSource, setTranslateSource] = useState('auto')
@@ -234,6 +237,12 @@ export default function AdvancedEventLabDialog({
       setLtLang(ltList[0] ?? 'en-US')
     }
   }, [open, ltList])
+
+  useEffect(() => {
+    const v = markupView.current
+    if (!v || !open || !isLanguageToolConfigured()) return
+    requestAdvancedLabGrammarLint(v)
+  }, [ltLang, open])
 
   useEffect(() => {
     if (!open || !isTranslateConfigured()) {
@@ -336,7 +345,7 @@ export default function AdvancedEventLabDialog({
         })
       ]
       if (isLanguageToolConfigured()) {
-        mkExtensions.push(languageToolLintExtension(ltLang, 650))
+        mkExtensions.push(languageToolLintExtension(() => ltLangRef.current, 650))
       }
       if (dark) mkExtensions.push(oneDark)
 
@@ -407,7 +416,6 @@ export default function AdvancedEventLabDialog({
     open,
     initial,
     markupMode,
-    ltLang,
     dark,
     destroyEditors,
     t,
@@ -449,6 +457,11 @@ export default function AdvancedEventLabDialog({
       toast.message(t('Advanced lab translation same source target'))
       return
     }
+    logger.info('[AdvancedLab] translate button', {
+      source: translateSource,
+      target: translateTarget,
+      inputChars: text.length
+    })
     try {
       const out = await translatePlainText(text, translateTarget, translateSource)
       if (!markupView.current) return
@@ -487,7 +500,13 @@ export default function AdvancedEventLabDialog({
             {isLanguageToolConfigured() ? (
               <div className="space-y-1 min-w-[10rem]">
                 <Label htmlFor="lt-lang">{t('Advanced lab grammar language')}</Label>
-                <Select value={ltLang} onValueChange={setLtLang}>
+                <Select
+                  value={ltLang}
+                  onValueChange={(code) => {
+                    logger.info('[AdvancedLab] grammar language changed', { from: ltLang, to: code })
+                    setLtLang(code)
+                  }}
+                >
                   <SelectTrigger id="lt-lang" className="w-[220px]">
                     <SelectValue />
                   </SelectTrigger>
@@ -513,6 +532,10 @@ export default function AdvancedEventLabDialog({
                       <Select
                         value={translateSource}
                         onValueChange={(v) => {
+                          logger.info('[AdvancedLab] translation source language changed', {
+                            from: translateSource,
+                            to: v
+                          })
                           setTranslateSource(v)
                           if (v !== 'auto' && v === translateTarget) {
                             const alt = translateLangs.find((l) => l.code !== v)?.code
@@ -538,6 +561,10 @@ export default function AdvancedEventLabDialog({
                       <Select
                         value={translateTarget}
                         onValueChange={(v) => {
+                          logger.info('[AdvancedLab] translation target language changed', {
+                            from: translateTarget,
+                            to: v
+                          })
                           setTranslateTarget(v)
                           if (translateSource !== 'auto' && v === translateSource) {
                             setTranslateSource('auto')

@@ -119,6 +119,13 @@ export async function translatePlainText(
   const key = cacheKey(text, resolvedSource, resolvedTarget)
   const hit = memoryCache.get(key)
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    logger.info('[AdvancedLab] translate', {
+      source: resolvedSource,
+      target: resolvedTarget,
+      inputChars: text.length,
+      outputChars: hit.text.length,
+      cacheHit: true
+    })
     return hit.text
   }
 
@@ -145,5 +152,12 @@ export async function translatePlainText(
   const out = data.translatedText ?? ''
   pruneMemory()
   memoryCache.set(key, { text: out, at: Date.now() })
+  logger.info('[AdvancedLab] translate', {
+    source: resolvedSource,
+    target: resolvedTarget,
+    inputChars: text.length,
+    outputChars: out.length,
+    cacheHit: false
+  })
   return out
 }

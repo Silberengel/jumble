@@ -46,7 +46,13 @@ export async function languageToolCheck(
     logger.warn('[LanguageTool] HTTP error', { status: res.status, errText: errText.slice(0, 200) })
     throw new Error(`LanguageTool: ${res.status}`)
   }
-  return (await res.json()) as LanguageToolCheckResponse
+  const json = (await res.json()) as LanguageToolCheckResponse
+  logger.info('[AdvancedLab] LanguageTool check', {
+    language,
+    textChars: text.length,
+    matchCount: json.matches?.length ?? 0
+  })
+  return json
 }
 
 export function isLanguageToolConfigured(): boolean {
