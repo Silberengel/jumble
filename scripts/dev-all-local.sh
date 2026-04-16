@@ -9,5 +9,6 @@ bash "$ROOT/scripts/ensure-libretranslate-dirs.sh"
 docker compose -f docker-compose.dev.yml --profile editor-tools --profile local-tts build piper-tts-proxy
 docker compose -f docker-compose.dev.yml --profile editor-tools --profile local-tts up -d \
   og-proxy languagetool libretranslate piper-wyoming piper-tts-proxy
-echo "[dev:all] Jumble=Vite (.env.development → /sites, /api/piper-tts, lab APIs) | og-proxy :8090 | Piper :9876"
+echo "[dev:all] Jumble=Vite (.env.development → /sites→:8090 og-proxy, /api/* lab & Piper) | Piper HTTP :9876"
+echo "[dev:all] If Firefox logs ws://localhost:4869 failures, remove that URL from Settings → relays (or start your local cache/index relay there) — it is not the OG proxy."
 exec npm run dev

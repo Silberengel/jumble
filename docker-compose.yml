@@ -15,6 +15,9 @@ services:
   og-proxy:
     image: ${OG_PROXY_IMAGE:-silberengel/wikistr:latest-og-proxy}
     container_name: jumble-og-proxy
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - '127.0.0.1:8090:8090'
     environment:
@@ -47,7 +50,8 @@ services:
       - '5000:5000'
     tty: true
     environment:
-      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de}
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}
+      LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:
       - ./.local-libretranslate/share:/home/libretranslate/.local/share
       - ./.local-libretranslate/cache:/home/libretranslate/.local/cache

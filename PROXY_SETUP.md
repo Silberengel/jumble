@@ -187,7 +187,7 @@ VITE_TRANSLATE_URL=/api/translate
 
 **Production:** `docker compose -f docker-compose.prod.yml --profile editor-tools up -d languagetool libretranslate` publishes **127.0.0.1:8010** and **127.0.0.1:5000** (loopback-only). Proxy those paths from Apache/nginx to the SPA origin, and bake the client with `LANGUAGE_TOOL_URL=/api/languagetool` and `TRANSLATE_URL=/api/translate` when running `./scripts/build-and-push-prod.sh`.
 
-**Notes:** LanguageTool’s JVM image often needs **~1–2 GiB** RAM. LibreTranslate **does not listen on port 5000 until models are ready**; without **`LT_LOAD_ONLY`** it may pull **many gigabytes** first, so the Vite proxy can show **`ECONNRESET` on `/translate`** while booting. Compose sets **`LT_LOAD_ONLY=en,de`** by default (override with **`LT_LOAD_ONLY`**). Models are stored under **`.local-libretranslate/share`** and **`.local-libretranslate/cache`** (gitignored) with **bind mounts** so they survive **`docker compose down`**, image updates, and container recreate. **`scripts/ensure-libretranslate-dirs.sh`** (run automatically by **`npm run dev:all`**, **`npm run stack:remote`**, **`npm run docker:editor-tools`**, etc.) creates those dirs and **`chown`s them to UID 1032** via a short **Alpine** container so the LibreTranslate user can write. If you start **`libretranslate` by hand**, run **`npm run docker:prep-libretranslate`** once first. First download can still take **several minutes**; use **`docker logs -f jumble-libretranslate`** until **`curl http://127.0.0.1:5000/languages`** returns JSON.
+**Notes:** LanguageTool’s JVM image often needs **~1–2 GiB** RAM. LibreTranslate **does not listen on port 5000 until models are ready**; without **`LT_LOAD_ONLY`** it may pull **many gigabytes** first, so the Vite proxy can show **`ECONNRESET` on `/translate`** while booting. Compose defaults **`LT_LOAD_ONLY`** to **ten** widely used codes (**en, de, es, fr, it, pt, ru, zh, ja, ar** — see `libretranslate` in `docker-compose.dev.yml`). Override with **`LT_LOAD_ONLY`** to add or remove codes; first start downloads packs for every listed code. **`LT_UPDATE_MODELS`** defaults to **`true`** so if you **expand** `LT_LOAD_ONLY` later, a **recreated** container still **installs missing** Argos packages into the bind-mounted `.local-libretranslate` tree (otherwise an older en/de-only cache sticks). Set **`LT_UPDATE_MODELS=false`** after everything is installed if you want faster routine restarts. Models are stored under **`.local-libretranslate/share`** and **`.local-libretranslate/cache`** (gitignored) with **bind mounts** so they survive **`docker compose down`**, image updates, and container recreate. **`scripts/ensure-libretranslate-dirs.sh`** (run automatically by **`npm run dev:all`**, **`npm run stack:remote`**, **`npm run docker:editor-tools`**, etc.) creates those dirs and **`chown`s them to UID 1032** via a short **Alpine** container so the LibreTranslate user can write. If you start **`libretranslate` by hand**, run **`npm run docker:prep-libretranslate`** once first. First download can still take **several minutes**; use **`docker logs -f jumble-libretranslate`** until **`curl http://127.0.0.1:5000/languages`** returns JSON. If logs show **`Cannot update models`** / **`Unavailable language codes: …`**, one bad token in **`LT_LOAD_ONLY` aborts the whole install** (you stay on whatever was already on disk, often en/de only). **Norwegian** must be **`nb`** (Bokmål), not ISO **`no`**. After you shrink **`LT_LOAD_ONLY`**, run **`npm run docker:prune-libretranslate-packages`** to remove leftover Argos package dirs under **`.local-libretranslate/share/argos-translate/packages`** (and unused **MiniSBD** `.onnx` files); the script briefly stops **`jumble-libretranslate`** or **`imwald-libretranslate`**. Override codes with **`LT_LOAD_ONLY=…`** on the same command if they differ from the compose default.
 
 ## LibreTranslate (same-origin `/api/translate`)
 
@@ -354,6 +354,18 @@ docker build \
 - If using direct port access (8090), you need an SSL certificate for that port
 
 ## Troubleshooting
+
+### OG proxy (`docker logs …og-proxy`): `fetch failed` / `Retryable error`
+
+The **wikistr** image uses Node **`fetch`** to load the target URL. Inside Docker, transient DNS failures often show up as **`TypeError: fetch failed`** with cause **`getaddrinfo EAI_AGAIN`** (the proxy then retries and can spam logs). Compose sets **`dns: [1.1.1.1, 8.8.8.8]`** on **`og-proxy`** so lookups do not rely only on Docker’s internal resolver. If your network blocks third-party DNS, remove or override that **`dns`** block (compose override file or forked image).
+
+Quick checks:
+
+```bash
+docker exec jumble-og-proxy getent hosts example.com
+docker exec jumble-og-proxy node -e "fetch('https://example.com').then(r=>console.log('HTTP',r.status)).catch(e=>console.error(e.cause||e))"
+curl -sS -o /dev/null -w '%{http_code}\n' -H 'Origin: http://localhost:5173' 'http://127.0.0.1:8090/sites/?url=https%3A%2F%2Fexample.com'
+```
 
 ### If Proxy Returns Imwald HTML Instead of Requested Site
 

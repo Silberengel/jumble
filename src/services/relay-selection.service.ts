@@ -8,6 +8,7 @@ import { TRelaySet, TRelayList } from '@/types'
 import logger from '@/lib/logger'
 import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
 import nip66Service from '@/services/nip66.service'
 import storage from '@/services/local-storage.service'
 
@@ -233,7 +234,9 @@ class RelaySelectionService {
           })
         }
       } else {
-        relayList = mergeKind10243(getRelayListFromEvent(relayListEvent))
+        relayList = mergeKind10243(
+          stripLocalNetworkRelaysFromRelayList(getRelayListFromEvent(relayListEvent))
+        )
       }
 
       // Merge cache relays (kind 10432) into the relay list

@@ -2,12 +2,10 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -20,7 +18,12 @@ import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension } from '@/lib/languagetool-cm-linter'
 import { buildLanguageToolPreferenceList } from '@/lib/languagetool-language-order'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
-import { isTranslateConfigured, translatePlainText } from '@/lib/translate-client'
+import {
+  fetchTranslateLanguages,
+  isTranslateConfigured,
+  translatePlainText,
+  type TranslateLanguageOption
+} from '@/lib/translate-client'
 import { setReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
@@ -221,6 +224,9 @@ export default function AdvancedEventLabDialog({
     [i18nLanguage, i18n.language]
   )
   const [ltLang, setLtLang] = useState(() => ltList[0] ?? 'en-US')
+  const [translateLangs, setTranslateLangs] = useState<TranslateLanguageOption[]>([])
+  const [translateLoad, setTranslateLoad] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
+  const [translateSource, setTranslateSource] = useState('auto')
   const [translateTarget, setTranslateTarget] = useState('en')
 
   useEffect(() => {
@@ -228,6 +234,37 @@ export default function AdvancedEventLabDialog({
       setLtLang(ltList[0] ?? 'en-US')
     }
   }, [open, ltList])
+
+  useEffect(() => {
+    if (!open || !isTranslateConfigured()) {
+      setTranslateLangs([])
+      setTranslateLoad('idle')
+      return
+    }
+    let cancelled = false
+    setTranslateLoad('loading')
+    void fetchTranslateLanguages()
+      .then((list) => {
+        if (cancelled) return
+        if (!list.length) {
+          setTranslateLangs([])
+          setTranslateLoad('empty')
+          return
+        }
+        setTranslateLangs(list)
+        setTranslateSource('auto')
+        const codes = list.map((l) => l.code)
+        const tgt = codes.includes('en') ? 'en' : codes[0]!
+        setTranslateTarget(tgt)
+        setTranslateLoad('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setTranslateLoad('error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const destroyEditors = useCallback(() => {
     if (bodyApiRef) bodyApiRef.current = null
@@ -299,7 +336,7 @@ export default function AdvancedEventLabDialog({
         })
       ]
       if (isLanguageToolConfigured()) {
-        mkExtensions.push(languageToolLintExtension(ltLang, 450))
+        mkExtensions.push(languageToolLintExtension(ltLang, 650))
       }
       if (dark) mkExtensions.push(oneDark)
 
@@ -407,8 +444,13 @@ export default function AdvancedEventLabDialog({
     }
     const text = markupView.current?.state.doc.toString() ?? sliceRef.current?.content ?? ''
     if (!text.trim()) return
+    if (translateLoad !== 'ready' || translateLangs.length === 0) return
+    if (translateSource !== 'auto' && translateSource === translateTarget) {
+      toast.message(t('Advanced lab translation same source target'))
+      return
+    }
     try {
-      const out = await translatePlainText(text, translateTarget.trim() || 'en')
+      const out = await translatePlainText(text, translateTarget, translateSource)
       if (!markupView.current) return
       markupView.current.dispatch({
         changes: { from: 0, to: markupView.current.state.doc.length, insert: out }
@@ -434,12 +476,10 @@ export default function AdvancedEventLabDialog({
       <DialogContent
         overlayClassName="z-[205]"
         className={cnDialogShell()}
+        aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0 px-4 pt-4 pb-2 pr-12 border-b">
           <DialogTitle>{t('Advanced event lab')}</DialogTitle>
-          <DialogDescription className="text-left">
-            {t('Advanced lab hint')}
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-2 px-4 py-2 border-b shrink-0 flex-wrap">
@@ -462,20 +502,71 @@ export default function AdvancedEventLabDialog({
               </div>
             ) : null}
             {isTranslateConfigured() ? (
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="tr-tgt">{t('Advanced lab translation target')}</Label>
-                  <Input
-                    id="tr-tgt"
-                    className="w-24 font-mono text-sm"
-                    value={translateTarget}
-                    onChange={(e) => setTranslateTarget(e.target.value)}
-                    placeholder="en"
-                  />
-                </div>
-                <Button type="button" variant="secondary" size="sm" onClick={() => void handleTranslate()}>
-                  {t('Advanced lab translate')}
-                </Button>
+              <div className="flex flex-col gap-2 min-w-0">
+                {translateLoad === 'idle' || translateLoad === 'loading' ? (
+                  <p className="text-xs text-muted-foreground">{t('Advanced lab translation languages loading')}</p>
+                ) : null}
+                {translateLoad === 'ready' ? (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1 min-w-[10rem]">
+                      <Label htmlFor="tr-src">{t('Advanced lab translation source')}</Label>
+                      <Select
+                        value={translateSource}
+                        onValueChange={(v) => {
+                          setTranslateSource(v)
+                          if (v !== 'auto' && v === translateTarget) {
+                            const alt = translateLangs.find((l) => l.code !== v)?.code
+                            if (alt) setTranslateTarget(alt)
+                          }
+                        }}
+                      >
+                        <SelectTrigger id="tr-src" className="w-[220px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64">
+                          <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
+                          {translateLangs.map((l) => (
+                            <SelectItem key={l.code} value={l.code}>
+                              {l.name} ({l.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1 min-w-[10rem]">
+                      <Label htmlFor="tr-tgt">{t('Advanced lab translation target')}</Label>
+                      <Select
+                        value={translateTarget}
+                        onValueChange={(v) => {
+                          setTranslateTarget(v)
+                          if (translateSource !== 'auto' && v === translateSource) {
+                            setTranslateSource('auto')
+                          }
+                        }}
+                      >
+                        <SelectTrigger id="tr-tgt" className="w-[220px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64">
+                          {translateLangs.map((l) => (
+                            <SelectItem key={l.code} value={l.code}>
+                              {l.name} ({l.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => void handleTranslate()}>
+                      {t('Advanced lab translate')}
+                    </Button>
+                  </div>
+                ) : null}
+                {translateLoad === 'empty' ? (
+                  <p className="text-xs text-destructive">{t('Advanced lab translation languages empty')}</p>
+                ) : null}
+                {translateLoad === 'error' ? (
+                  <p className="text-xs text-destructive">{t('Advanced lab translation languages error')}</p>
+                ) : null}
               </div>
             ) : null}
             {contextEventId && isTranslateConfigured() ? (

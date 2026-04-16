@@ -3,8 +3,8 @@ import type { TRelayList } from '@/types'
 
 /**
  * Remove LAN / loopback relay URLs (e.g. ws://localhost:4869, 192.168.x.x).
- * Use for **another user's** NIP-65 list so we never open their private cache relays;
- * the viewer's own list should not be passed through this (they may use local cache relays).
+ * Apply to **kind 10002** (NIP-65): those URLs belong on kind 10432 (cache relays), not read/write outbox/inbox.
+ * Still use when merging **another user's** 10002 so we never open their LAN relays.
  */
 export function stripLocalNetworkRelaysFromRelayList(list: TRelayList): TRelayList {
   const keepUrl = (u: string): boolean => {

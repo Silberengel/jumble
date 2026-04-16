@@ -3520,12 +3520,14 @@ class ClientService extends EventTarget {
         return { ...list, httpRead: h.httpRead, httpWrite: h.httpWrite, httpOriginalRelays: h.httpOriginalRelays }
       }
 
-      const relayList = relayEvent ? getRelayListFromEvent(relayEvent) : {
+      const relayListFrom10002 = relayEvent ? getRelayListFromEvent(relayEvent) : {
         write: [],
         read: [],
         originalRelays: [],
         ...emptyHttp
       }
+      // LAN / loopback belong on kind 10432 (cache), not NIP-65 10002 — strip 10002 before merging cache.
+      const relayList = stripLocalNetworkRelaysFromRelayList(relayListFrom10002)
 
       if (isOwnRelayList && cacheEvent) {
         const cacheRelayList = getRelayListFromEvent(cacheEvent)
@@ -3567,10 +3569,6 @@ class ClientService extends EventTarget {
           originalRelays: [],
           ...emptyHttp
         })
-      }
-
-      if (!isOwnRelayList) {
-        return mergeKind10243(stripLocalNetworkRelaysFromRelayList(relayList))
       }
 
       return mergeKind10243(relayList)
