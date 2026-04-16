@@ -37,10 +37,11 @@ Registry paths keep the historical `imwald-jumble` name; retagging is optional a
    NIP66_MONITOR_NPUB=npub1...
    ```
 
-4. **Once per machine** (LibreTranslate bind mounts need UID 1032 on the host dirs):
+4. **Once per machine** (LibreTranslate UID 1032 + Piper ONNX into `.local-piper-data` and, if present, the `<project>_piper-stack-data` Docker volume):
    ```bash
    bash scripts/ensure-libretranslate-dirs.sh
    ```
+   Large download; re-runs skip existing `.onnx` pairs. Use `SKIP_PIPER_VOICES=1` to only fix LibreTranslate dirs. If the compose project name is not the repo folder name, set `COMPOSE_PROJECT_NAME` so the Piper volume matches (e.g. `jumble_piper-stack-data`).
 
 ## Remote server: pull and run
 

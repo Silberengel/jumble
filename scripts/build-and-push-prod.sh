@@ -76,5 +76,5 @@ git tag -a "$GIT_TAG" -m "Release $GIT_TAG"
 echo "Pushing tag $GIT_TAG to origin"
 git push origin "$GIT_TAG"
 
-echo "Done. On the server (repo clone): bash scripts/ensure-libretranslate-dirs.sh   # once, for LibreTranslate volume permissions"
+echo "Done. On the server (repo clone): bash scripts/ensure-libretranslate-dirs.sh   # LibreTranslate perms + Piper ONNX into .local-piper-data and piper-stack-data volume"
 echo "  docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"

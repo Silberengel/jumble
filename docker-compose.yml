@@ -53,8 +53,7 @@ services:
       LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}
       LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:
-      - ./.local-libretranslate/share:/home/libretranslate/.local/share
-      - ./.local-libretranslate/cache:/home/libretranslate/.local/cache
+      - ./.local-libretranslate:/home/libretranslate/.local
     networks:
       - jumble
     restart: unless-stopped

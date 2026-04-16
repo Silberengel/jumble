@@ -72,8 +72,7 @@ services:
       # Install missing packs when `LT_LOAD_ONLY` grows (persisted volume otherwise keeps old en/de-only index).
       LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:
-      - ./.local-libretranslate/share:/home/libretranslate/.local/share
-      - ./.local-libretranslate/cache:/home/libretranslate/.local/cache
+      - ./.local-libretranslate:/home/libretranslate/.local
     networks:
       - jumble
     restart: unless-stopped
