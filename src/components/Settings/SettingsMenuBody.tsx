@@ -4,7 +4,6 @@ import {
   toPostSettings,
   toRelaySettings,
   toCacheSettings,
-  toTranslation,
   toWallet,
   toRssFeedSettings,
   toPersonalListsSettings
@@ -19,7 +18,6 @@ import {
   Database,
   Info,
   KeyRound,
-  Languages,
   PencilLine,
   Rss,
   Server,
@@ -64,15 +62,6 @@ export default function SettingsMenuBody({ className }: { className?: string }) 
         </div>
         <ChevronRight />
       </SettingItem>
-      {!!pubkey && (
-        <SettingItem className="clickable" onClick={() => navigateToSettings(toTranslation())}>
-          <div className="flex items-center gap-4">
-            <Languages />
-            <div>{t('Translation')}</div>
-          </div>
-          <ChevronRight />
-        </SettingItem>
-      )}
       {!!pubkey && (
         <SettingItem className="clickable" onClick={() => navigateToSettings(toWallet())}>
           <div className="flex items-center gap-4">

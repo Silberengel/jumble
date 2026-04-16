@@ -12,6 +12,12 @@ import {
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
 import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, simplifyUrl } from '@/lib/url'
+import {
+  clearNoteTranslation,
+  getNoteTranslation,
+  setNoteTranslation,
+  subscribeNoteTranslations
+} from '@/lib/note-translation-display'
 import { speakNoteReadAloud } from '@/lib/read-aloud'
 import {
   buildPinListTagsAfterToggle,
@@ -46,11 +52,19 @@ import {
   Trash2,
   TriangleAlert,
   Video,
-  Volume2
+  Volume2,
+  Languages
 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { nip19 } from 'nostr-tools'
-import { useMemo, useState, useEffect, useRef, useContext } from 'react'
+import {
+  articleHasTranslatableTitle,
+  eventHasTranslatableTextBody,
+  translateNoteForDisplay
+} from '@/lib/translate-note-for-menu'
+import { isTranslateConfigured } from '@/lib/translate-client'
+import { LocalizedLanguageNames, SUPPORTED_APP_LANGUAGE_CODES, type TLanguage } from '@/i18n'
+import { useMemo, useState, useEffect, useRef, useContext, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import RelayIcon from '../RelayIcon'
@@ -141,7 +155,13 @@ export function useMenuActions({
   }, [])
   const { mutePubkeyPublicly, mutePubkeyPrivately, unmutePubkey, mutePubkeySet } = useMuteList()
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, event.pubkey), [mutePubkeySet, event])
-  
+
+  const noteTranslationFromMenu = useSyncExternalStore(
+    subscribeNoteTranslations,
+    () => getNoteTranslation(event.id),
+    () => getNoteTranslation(event.id)
+  )
+
   // Check if event is pinned
   const [isPinned, setIsPinned] = useState(false)
 
@@ -808,6 +828,50 @@ export function useMenuActions({
       const d = encodeURIComponent(dTag)
       window.open(`https://decentnewsroom.com/p/${p}/d/${d}`, '_blank', 'noopener,noreferrer')
     }
+
+    const noteSupportsTranslateMenu =
+      isTranslateConfigured() &&
+      (eventHasTranslatableTextBody(event) || articleHasTranslatableTitle(event))
+
+    const translateTargetSubmenu: SubMenuAction[] = noteSupportsTranslateMenu
+      ? [
+          {
+            label: t('Show original text'),
+            onClick: () => {
+              closeDrawer()
+              clearNoteTranslation(event.id)
+              toast.success(t('Showing original note text'))
+            }
+          },
+          ...SUPPORTED_APP_LANGUAGE_CODES.map(
+            (code: TLanguage, i): SubMenuAction => ({
+              label: LocalizedLanguageNames[code],
+              separator: i === 0,
+              onClick: () => {
+                closeDrawer()
+                void toast.promise(
+                  translateNoteForDisplay(event, code).then((out) => {
+                    setNoteTranslation(event.id, {
+                      lang: code,
+                      content: out.content,
+                      title: out.title
+                    })
+                  }),
+                  {
+                    loading: t('Translating note…'),
+                    success: t('Note translated', { language: LocalizedLanguageNames[code] }),
+                    error: (err: unknown) =>
+                      t('Note translation failed', {
+                        message: err instanceof Error ? err.message : String(err)
+                      })
+                  }
+                )
+              }
+            })
+          )
+        ]
+      : []
+
     const actions: MenuAction[] = [
       {
         icon: Copy,
@@ -842,6 +906,18 @@ export function useMenuActions({
                   }
                 })
               }
+            } as MenuAction
+          ]
+        : []),
+      ...(noteSupportsTranslateMenu
+        ? [
+            {
+              icon: Languages,
+              label: t('Translate note'),
+              onClick: isSmallScreen
+                ? () => showSubMenuActions(translateTargetSubmenu, t('Translate note'))
+                : undefined,
+              subMenu: isSmallScreen ? undefined : translateTargetSubmenu
             } as MenuAction
           ]
         : []),
@@ -1152,7 +1228,8 @@ export function useMenuActions({
     onOpenCallInvite,
     onOpenEditOrClone,
     canSignEvents,
-    profile
+    profile,
+    noteTranslationFromMenu
   ])
 
   return menuActions

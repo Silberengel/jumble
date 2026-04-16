@@ -33,7 +33,6 @@ const UserEmojiListPageLazy = lazy(() => import('./pages/secondary/UserEmojiList
 const EmojiSetsSettingsPageLazy = lazy(() => import('./pages/secondary/EmojiSetsSettingsPage'))
 const SearchPageLazy = lazy(() => import('./pages/secondary/SearchPage'))
 const SettingsPageLazy = lazy(() => import('./pages/secondary/SettingsPage'))
-const TranslationPageLazy = lazy(() => import('./pages/secondary/TranslationPage'))
 const WalletPageLazy = lazy(() => import('./pages/secondary/WalletPage'))
 const FollowPacksRedirectLazy = lazy(() => import('./pages/secondary/FollowPacksRedirect'))
 const RssArticlePageLazy = lazy(() => import('./pages/secondary/RssArticlePage'))
@@ -84,7 +83,6 @@ const ROUTES = [
   { path: '/settings/wallet', element: SR(WalletPageLazy) },
   { path: '/settings/posts', element: SR(PostSettingsPageLazy) },
   { path: '/settings/general', element: SR(GeneralSettingsPageLazy) },
-  { path: '/settings/translation', element: SR(TranslationPageLazy) },
   { path: '/settings/rss-feeds', element: SR(RssFeedSettingsPageLazy) },
   { path: '/settings/follow-sets', element: SR(FollowSetsSettingsPageLazy) },
   { path: '/settings/emoji-sets', element: SR(EmojiSetsSettingsPageLazy) },

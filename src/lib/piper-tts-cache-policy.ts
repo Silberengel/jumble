@@ -15,15 +15,18 @@ export function getPiperTtsCacheBudget(): { maxEntries: number; maxBytes: number
 }
 
 /**
- * Stable key for a Piper request: same URL + text + speed → same audio.
+ * Stable key for a Piper request: same URL + text + speed + voice → same audio.
  * Server upgrades / voice changes require a new endpoint URL or speed to bust the cache.
  */
 export async function buildPiperTtsCacheKey(
   endpointUrl: string,
   text: string,
-  speed: number
+  speed: number,
+  voice: string
 ): Promise<string> {
-  const payload = new TextEncoder().encode(JSON.stringify({ u: endpointUrl, t: text, s: speed }))
+  const payload = new TextEncoder().encode(
+    JSON.stringify({ u: endpointUrl, t: text, s: speed, v: voice })
+  )
   const digest = await crypto.subtle.digest('SHA-256', payload)
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))

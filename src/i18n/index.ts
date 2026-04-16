@@ -30,11 +30,15 @@ export const LocalizedLanguageNames: { [key in TLanguage]: string } = { ...LANGU
 
 const supportedLanguages = Object.keys(LANGUAGE_META) as TLanguage[]
 
+/** App UI languages (same set used for “Translate to …” in note menus). */
+export const SUPPORTED_APP_LANGUAGE_CODES: readonly TLanguage[] = supportedLanguages
+
 const localeModules = import.meta.glob<{ default: Resource }>('./locales/*.ts')
 
 const localePath = (code: TLanguage): string => `./locales/${code}.ts`
 
-function normalizeToSupported(lng: string): TLanguage {
+/** Normalize a browser / i18next language tag to a supported app locale. */
+export function normalizeToSupportedAppLanguage(lng: string): TLanguage {
   const exact = supportedLanguages.find((s) => lng === s)
   if (exact) return exact
   return supportedLanguages.find((s) => lng.startsWith(s)) ?? 'en'
@@ -71,7 +75,7 @@ export function initI18n(): Promise<void> {
         escapeValue: false
       },
       detection: {
-        convertDetectedLanguage: (lng) => normalizeToSupported(lng)
+        convertDetectedLanguage: (lng) => normalizeToSupportedAppLanguage(lng)
       }
     })
 
@@ -102,7 +106,7 @@ export function initI18n(): Promise<void> {
       }
     })
 
-    const target = normalizeToSupported(i18n.language)
+    const target = normalizeToSupportedAppLanguage(i18n.language)
     if (target !== 'en') {
       await ensureLocaleLoaded(target)
       await i18n.changeLanguage(target)

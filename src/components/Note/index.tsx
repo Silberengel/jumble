@@ -27,6 +27,7 @@ import { muteSetHas } from '@/lib/mute-set'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
+import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -139,6 +140,9 @@ export default function Note({
   const [postEditorOpen, setPostEditorOpen] = useState(false)
   const [publicMessageTo, setPublicMessageTo] = useState<string | null>(null)
   const [callInviteContent, setCallInviteContent] = useState<string | null>(null)
+  const noteTranslation = useNoteTranslation(event.id)
+  const displayEvent = useMemo(() => mergeTranslatedNote(event, noteTranslation), [event, noteTranslation])
+
   const reactionDisplay = useNotificationReactionDisplay(event)
   const webReactionParentUrl = useMemo(
     () =>
@@ -188,7 +192,7 @@ export default function Note({
       hideMetadata?: boolean
       className?: string
     } = {}) => {
-      if (isStringifiedJsonContent(event.content)) {
+      if (isStringifiedJsonContent(displayEvent.content)) {
         return (
           <pre
             className={cn(
@@ -196,15 +200,15 @@ export default function Note({
               className
             )}
           >
-            {event.content}
+            {displayEvent.content}
           </pre>
         )
       }
-      if (ASCIIDOC_CONTENT_KINDS.has(event.kind)) {
+      if (ASCIIDOC_CONTENT_KINDS.has(displayEvent.kind)) {
         return (
           <AsciidocArticle
             className={className}
-            event={event}
+            event={displayEvent}
             hideImagesAndInfo={hideMetadata}
           />
         )
@@ -212,21 +216,21 @@ export default function Note({
       return (
         <MarkdownArticle
           className={className}
-          event={event}
+          event={displayEvent}
           hideMetadata={hideMetadata}
           lazyMedia={!autoLoadMedia}
           fullCalendarInvite={fullCalendarInvite}
         />
       )
     },
-    [event, fullCalendarInvite, autoLoadMedia]
+    [displayEvent, fullCalendarInvite, autoLoadMedia]
   )
 
   let content: React.ReactNode
   
   if (!isRenderableNoteKind(event.kind)) {
     logger.debug('Note component - rendering UnknownNote for unsupported kind:', event.kind)
-    content = <UnknownNote className="mt-2" event={event} omitKindLabel />
+    content = <UnknownNote className="mt-2" event={displayEvent} omitKindLabel />
   } else if (muteSetHas(mutePubkeySet, event.pubkey) && !showMuted) {
     content = <MutedNote show={() => setShowMuted(true)} />
   } else if (!defaultShowNsfw && isNsfwEvent(event) && !showNsfw) {
@@ -234,11 +238,11 @@ export default function Note({
   } else if (isNip25ReactionKind(event.kind)) {
     content = null
   } else if (isNip18RepostKind(event.kind) || event.kind === ExtendedKind.POLL_RESPONSE) {
-    content = <NotificationEventCard className="mt-2" event={event} />
+    content = <NotificationEventCard className="mt-2" event={displayEvent} />
   } else if (event.kind === kinds.Highlights) {
     // Try to render the Highlight component with error boundary
     try {
-      content = <Highlight className="mt-2" event={event} />
+      content = <Highlight className="mt-2" event={displayEvent} />
     } catch (error) {
       logger.error('Note component - Error rendering Highlight component:', error)
       content = <div className="mt-2 p-4 bg-red-100 border border-red-500 rounded">
@@ -249,8 +253,8 @@ export default function Note({
       </div>
     }
   } else if (event.kind === ExtendedKind.WEB_BOOKMARK) {
-    const href = getWebBookmarkArticleUrl(event)
-    const title = event.tags.find((tag) => tag[0] === 'title')?.[1]?.trim()
+    const href = getWebBookmarkArticleUrl(displayEvent)
+    const title = displayEvent.tags.find((tag) => tag[0] === 'title')?.[1]?.trim()
     content = (
       <>
         {title ? (
@@ -269,43 +273,43 @@ export default function Note({
             <WebPreview url={href} className="w-full" />
           </div>
         ) : null}
-        {event.content?.trim() ? renderEventContent({ hideMetadata: true }) : null}
+        {displayEvent.content?.trim() ? renderEventContent({ hideMetadata: true }) : null}
       </>
     )
   } else if (event.kind === ExtendedKind.WIKI_ARTICLE) {
     content = showFull ? (
       renderEventContent()
     ) : (
-      <WikiCard className="mt-2" event={event} />
+      <WikiCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN) {
     content = showFull ? (
       renderEventContent()
     ) : (
-      <WikiCard className="mt-2" event={event} />
+      <WikiCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === ExtendedKind.PUBLICATION) {
     content = showFull ? (
-      <PublicationIndex className="mt-2" event={event} />
+      <PublicationIndex className="mt-2" event={displayEvent} />
     ) : (
-      <PublicationCard className="mt-2" event={event} />
+      <PublicationCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === ExtendedKind.PUBLICATION_CONTENT) {
     content = showFull ? (
       renderEventContent()
     ) : (
-      <PublicationCard className="mt-2" event={event} />
+      <PublicationCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === kinds.LongFormArticle) {
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === kinds.LiveEvent || event.kind === 30312 || event.kind === 30313) {
-    content = <LiveEvent className="mt-2" event={event} />
+    content = <LiveEvent className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.GROUP_METADATA) {
-    content = <GroupMetadata className="mt-2" event={event} originalNoteId={originalNoteId} />
+    content = <GroupMetadata className="mt-2" event={displayEvent} originalNoteId={originalNoteId} />
   } else if (event.kind === kinds.CommunityDefinition) {
-    content = <CommunityDefinition className="mt-2" event={event} />
+    content = <CommunityDefinition className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.DISCUSSION) {
-    const titleTag = event.tags.find(tag => tag[0] === 'title')
+    const titleTag = displayEvent.tags.find(tag => tag[0] === 'title')
     const title = titleTag?.[1] || 'Untitled Discussion'
     content = (
       <>
@@ -319,12 +323,12 @@ export default function Note({
     event.kind === ExtendedKind.CITATION_HARDCOPY ||
     event.kind === ExtendedKind.CITATION_PROMPT
   ) {
-    content = <CitationCard className="mt-2" event={event} />
+    content = <CitationCard className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.POLL) {
     content = (
       <>
         {renderEventContent({ hideMetadata: true })}
-        <Poll className="mt-2" event={event} />
+        <Poll className="mt-2" event={displayEvent} />
       </>
     )
   } else if (event.kind === ExtendedKind.ZAP_POLL) {
@@ -333,7 +337,7 @@ export default function Note({
         {renderEventContent({ hideMetadata: true })}
         <ZapPoll
           className="mt-2"
-          event={event}
+          event={displayEvent}
           voteHighlightOptionIndex={zapPollVoteHighlightOption}
         />
       </>
@@ -357,21 +361,21 @@ export default function Note({
   } else if (event.kind === ExtendedKind.VIDEO || event.kind === ExtendedKind.SHORT_VIDEO) {
     content = <VideoNote className="mt-2" event={event} />
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {
-    content = <RelayReview className="mt-2" event={event} />
+    content = <RelayReview className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.CALENDAR_EVENT_TIME || event.kind === ExtendedKind.CALENDAR_EVENT_DATE) {
-    content = <CalendarEventContent event={event} className="mt-2" showRsvp />
+    content = <CalendarEventContent event={displayEvent} className="mt-2" showRsvp />
   } else if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {
-    content = <Zap className="mt-2" event={event} />
+    content = <Zap className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.FOLLOW_PACK) {
-    content = <FollowPackPreview className="mt-2" event={event} />
+    content = <FollowPackPreview className="mt-2" event={displayEvent} />
   } else if (
     event.kind === ExtendedKind.GIT_REPO_ANNOUNCEMENT ||
     event.kind === ExtendedKind.GIT_ISSUE ||
     event.kind === ExtendedKind.GIT_RELEASE
   ) {
-    content = <GitRepublicEventCard className="mt-2" event={event} />
+    content = <GitRepublicEventCard className="mt-2" event={displayEvent} />
   } else if (event.kind === kinds.ShortTextNote || event.kind === ExtendedKind.COMMENT) {
     content = renderEventContent({ hideMetadata: true })
   } else {
@@ -381,7 +385,7 @@ export default function Note({
   const isSyntheticRssParent = isRssThreadSyntheticParentEvent(event)
 
   const wrappedContent = isHighlightableKind ? (
-    <SelectionHighlightTrigger event={event}>{content}</SelectionHighlightTrigger>
+    <SelectionHighlightTrigger event={displayEvent}>{content}</SelectionHighlightTrigger>
   ) : (
     content
   )

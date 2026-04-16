@@ -1,4 +1,7 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
+import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage, type TLanguage } from '@/i18n'
+import { getNoteTranslation } from '@/lib/note-translation-display'
+import { getPiperVoiceForChosenLanguage } from '@/lib/piper-voice-for-app-language'
 import { takeReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import {
   buildPiperTtsCacheKey,
@@ -66,6 +69,10 @@ export type ReadAloudSnapshot = {
   readAloudPiperTryStartedAt: number | null
   volume: number
   backend: string
+  /** Piper has no model for the chosen language; the English Piper voice is used instead. */
+  piperUsedEnglishVoiceFallback: boolean
+  /** Display name of the requested language when {@link piperUsedEnglishVoiceFallback} is true. */
+  piperVoiceRequestedLanguageName: string
 }
 
 const initialSnapshot: ReadAloudSnapshot = {
@@ -88,7 +95,9 @@ const initialSnapshot: ReadAloudSnapshot = {
   readAloudPiperSkipped: false,
   readAloudPiperTryStartedAt: null,
   volume: 1,
-  backend: ''
+  backend: '',
+  piperUsedEnglishVoiceFallback: false,
+  piperVoiceRequestedLanguageName: ''
 }
 
 let snapshot: ReadAloudSnapshot = { ...initialSnapshot }
@@ -295,7 +304,8 @@ async function fetchPiperTtsBlobForChunk(
   chunkIndex: number,
   totalChunks: number,
   text: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  voice: string
 ): Promise<Blob> {
   const url = READ_ALOUD_TTS_URL
   if (!url) {
@@ -307,7 +317,7 @@ async function fetchPiperTtsBlobForChunk(
   const budget = getPiperTtsCacheBudget()
   let cacheKey: string | undefined
   try {
-    cacheKey = await buildPiperTtsCacheKey(url, text, speed)
+    cacheKey = await buildPiperTtsCacheKey(url, text, speed, voice)
     const hit = await indexedDb.getPiperTtsBlobCache(cacheKey, ttlMs)
     if (hit && hit.size > 0) {
       return hit
@@ -321,7 +331,7 @@ async function fetchPiperTtsBlobForChunk(
     response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, speed }),
+      body: JSON.stringify({ text, speed, voice }),
       signal,
       timeoutMs: 120_000
     })
@@ -474,7 +484,7 @@ function playPiperBlob(blob: Blob, signal: AbortSignal): Promise<'ok' | 'error' 
   })
 }
 
-async function speakViaPiperTtsChunks(chunks: string[]): Promise<ReadAloudResult> {
+async function speakViaPiperTtsChunks(chunks: string[], piperVoice: string): Promise<ReadAloudResult> {
   stopReadAloudPlayback()
   readAloudAbort = new AbortController()
   const signal = readAloudAbort.signal
@@ -493,7 +503,7 @@ async function speakViaPiperTtsChunks(chunks: string[]): Promise<ReadAloudResult
       if (text === undefined) {
         p = Promise.reject(new Error(`Part ${index + 1} of ${chunks.length}: missing text`))
       } else {
-        p = fetchPiperTtsBlobForChunk(index, chunks.length, text, signal)
+        p = fetchPiperTtsBlobForChunk(index, chunks.length, text, signal, piperVoice)
       }
       chunkBlobPromises.set(index, p)
     }
@@ -637,6 +647,9 @@ async function speakViaWebSpeech(
     finishedAt: null,
     error: null,
     ...(!options?.fromPiperFallback ? { usedPiperFallback: false, piperFallbackDetail: null } : {}),
+    ...(options?.browserOnlyNoPiper
+      ? { piperUsedEnglishVoiceFallback: false, piperVoiceRequestedLanguageName: '' }
+      : {}),
     ...webspeechPiperFields
   })
 
@@ -673,14 +686,32 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
   }
 
   const translationOverride = takeReadAloudTranslationForEvent(event.id)
-  const text = translationOverride
-    ? stripMarkupForReadAloud(translationOverride)
-    : buildReadAloudPlainText(event)
+  const persistedTranslation = getNoteTranslation(event.id)
+  let text: string
+  if (translationOverride) {
+    text = stripMarkupForReadAloud(translationOverride)
+  } else if (persistedTranslation) {
+    let raw = persistedTranslation.content.trim()
+    if (KINDS_WITH_METADATA_TITLE.has(event.kind) && persistedTranslation.title?.trim()) {
+      raw = `${persistedTranslation.title.trim()}. ${raw}`
+    }
+    text = stripMarkupForReadAloud(raw)
+  } else {
+    text = buildReadAloudPlainText(event)
+  }
   if (!text) {
     return 'empty'
   }
 
   const title = readAloudTitleFromEvent(event)
+
+  const chosenReadAloudLang: TLanguage =
+    persistedTranslation?.lang ?? normalizeToSupportedAppLanguage(i18n.language || 'en')
+  const { voice: piperVoice, usedEnglishVoiceFallback } =
+    getPiperVoiceForChosenLanguage(chosenReadAloudLang)
+  const piperVoiceRequestedLanguageName = usedEnglishVoiceFallback
+    ? LocalizedLanguageNames[chosenReadAloudLang]
+    : ''
 
   if (READ_ALOUD_TTS_URL) {
     stopReadAloudPlayback()
@@ -707,12 +738,14 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
       piperFallbackDetail: null,
       readAloudPiperSkipped: false,
       readAloudPiperTryStartedAt: Date.now(),
-      backend: readAloudEndpointForLog()
+      backend: readAloudEndpointForLog(),
+      piperUsedEnglishVoiceFallback: usedEnglishVoiceFallback,
+      piperVoiceRequestedLanguageName
     })
 
     await yieldForReadAloudUi()
 
-    const piperResult = await speakViaPiperTtsChunks(chunks)
+    const piperResult = await speakViaPiperTtsChunks(chunks, piperVoice)
     if (piperResult === 'ok') {
       return 'ok'
     }

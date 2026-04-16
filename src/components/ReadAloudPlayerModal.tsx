@@ -115,6 +115,19 @@ export default function ReadAloudPlayerModal(): JSX.Element {
             <p className="font-medium text-foreground line-clamp-2">{snap.title}</p>
           ) : null}
           <p className="text-muted-foreground">{phaseLabel(snap, t)}</p>
+          {snap.piperUsedEnglishVoiceFallback && snap.piperVoiceRequestedLanguageName ? (
+            <div
+              role="status"
+              className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-foreground"
+            >
+              <p className="font-medium">{t('Read-aloud Piper English voice fallback title')}</p>
+              <p className="mt-1 text-muted-foreground">
+                {t('Read-aloud Piper English voice fallback detail', {
+                  language: snap.piperVoiceRequestedLanguageName
+                })}
+              </p>
+            </div>
+          ) : null}
           {snap.engine === 'piper' ? (
             <p className="text-xs text-muted-foreground break-all">
               {t('TTS endpoint')}: {snap.backend || '—'}

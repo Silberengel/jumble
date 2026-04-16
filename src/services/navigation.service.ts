@@ -13,7 +13,6 @@ import RelaySettingsPage from '@/pages/secondary/RelaySettingsPage'
 import WalletPage from '@/pages/secondary/WalletPage'
 import PostSettingsPage from '@/pages/secondary/PostSettingsPage'
 import GeneralSettingsPage from '@/pages/secondary/GeneralSettingsPage'
-import TranslationPage from '@/pages/secondary/TranslationPage'
 import RssFeedSettingsPage from '@/pages/secondary/RssFeedSettingsPage'
 import FollowSetsSettingsPage from '@/pages/secondary/FollowSetsSettingsPage'
 import EmojiSetsSettingsPage from '@/pages/secondary/EmojiSetsSettingsPage'
@@ -95,7 +94,6 @@ export class URLParser {
         'relays',
         'wallet',
         'posts',
-        'translation',
         'rss-feeds',
         'follow-sets',
         'emoji-sets',
@@ -159,8 +157,6 @@ export class ComponentFactory {
         return React.createElement(PostSettingsPage, { index: 0, hideTitlebar: true })
       case 'general':
         return React.createElement(GeneralSettingsPage, { index: 0, hideTitlebar: true })
-      case 'translation':
-        return React.createElement(TranslationPage, { index: 0, hideTitlebar: true })
       case 'rss-feeds':
         return React.createElement(RssFeedSettingsPage, { index: 0, hideTitlebar: true })
       case 'follow-sets':
@@ -274,7 +270,6 @@ export class NavigationService {
       if (pathname.includes('/cache')) return 'Cache & offline storage'
       if (pathname.includes('/wallet')) return 'Wallet Settings'
       if (pathname.includes('/posts')) return 'Post Settings'
-      if (pathname.includes('/translation')) return 'Translation Settings'
       if (pathname.includes('/emoji-sets')) return 'Emoji sets'
       return 'Settings'
     }
