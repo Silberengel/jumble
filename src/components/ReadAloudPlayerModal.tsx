@@ -115,17 +115,32 @@ export default function ReadAloudPlayerModal(): JSX.Element {
             <p className="font-medium text-foreground line-clamp-2">{snap.title}</p>
           ) : null}
           <p className="text-muted-foreground">{phaseLabel(snap, t)}</p>
-          {snap.piperUsedEnglishVoiceFallback && snap.piperVoiceRequestedLanguageName ? (
+          {(snap.piperUsedEnglishVoiceFallback || snap.piperUsedRelatedVoiceFallback) &&
+          snap.piperVoiceRequestedLanguageName ? (
             <div
               role="status"
               className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-foreground"
             >
-              <p className="font-medium">{t('Read-aloud Piper English voice fallback title')}</p>
-              <p className="mt-1 text-muted-foreground">
-                {t('Read-aloud Piper English voice fallback detail', {
-                  language: snap.piperVoiceRequestedLanguageName
-                })}
-              </p>
+              {snap.piperUsedEnglishVoiceFallback ? (
+                <>
+                  <p className="font-medium">{t('Read-aloud Piper English voice fallback title')}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {t('Read-aloud Piper English voice fallback detail', {
+                      language: snap.piperVoiceRequestedLanguageName
+                    })}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">{t('Read-aloud Piper related voice fallback title')}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {t('Read-aloud Piper related voice fallback detail', {
+                      language: snap.piperVoiceRequestedLanguageName,
+                      profile: snap.piperVoiceProfileName
+                    })}
+                  </p>
+                </>
+              )}
             </div>
           ) : null}
           {snap.engine === 'piper' ? (

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -18,11 +19,12 @@ import logger from '@/lib/logger'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
 import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
-import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
 import {
-  buildLabLanguageToolPreferenceList,
-  filterTranslateLanguagesWithLanguageToolPairing
-} from '@/lib/trinity-languages'
+  filterTranslateLanguagesWithGrammarCatalog,
+  translateLanguageOptionMatchesQuery
+} from '@/lib/language-display-meta'
+import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
+import { buildLabLanguageToolPreferenceList } from '@/lib/trinity-languages'
 import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
@@ -480,6 +482,37 @@ export default function AdvancedEventLabDialog({
   const [translateLoad, setTranslateLoad] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [translateSource, setTranslateSource] = useState('auto')
   const [translateTarget, setTranslateTarget] = useState('en')
+  const [ltLangFilter, setLtLangFilter] = useState('')
+  const [translateSrcFilter, setTranslateSrcFilter] = useState('')
+  const [translateTgtFilter, setTranslateTgtFilter] = useState('')
+
+  const ltListFiltered = useMemo(() => {
+    const f = ltList.filter((code) => translateLanguageOptionMatchesQuery(code, ltLangFilter))
+    return f.length > 0 ? f : ltList
+  }, [ltList, ltLangFilter])
+  const translateLangsFilteredSrc = useMemo(() => {
+    const f = translateLangs.filter((l) => translateLanguageOptionMatchesQuery(l.code, translateSrcFilter))
+    return f.length > 0 ? f : translateLangs
+  }, [translateLangs, translateSrcFilter])
+  const translateLangsFilteredTgt = useMemo(() => {
+    const f = translateLangs.filter((l) => translateLanguageOptionMatchesQuery(l.code, translateTgtFilter))
+    return f.length > 0 ? f : translateLangs
+  }, [translateLangs, translateTgtFilter])
+  const showTranslateSourceAuto = useMemo(() => {
+    const q = translateSrcFilter.trim().toLowerCase()
+    if (!q) return true
+    if (translateSource === 'auto') return true
+    const autoLabel = t('Advanced lab translation source auto').toLowerCase()
+    return q.includes('auto') || q.includes('detect') || autoLabel.includes(q)
+  }, [translateSrcFilter, translateSource, t])
+
+  useEffect(() => {
+    if (!open) {
+      setLtLangFilter('')
+      setTranslateSrcFilter('')
+      setTranslateTgtFilter('')
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -503,7 +536,7 @@ export default function AdvancedEventLabDialog({
     void fetchTranslateLanguages()
       .then((list) => {
         if (cancelled) return
-        const filtered = filterTranslateLanguagesWithLanguageToolPairing(list)
+        const filtered = filterTranslateLanguagesWithGrammarCatalog(list)
         if (!filtered.length) {
           setTranslateLangs([])
           setTranslateLoad('empty')
@@ -795,12 +828,31 @@ export default function AdvancedEventLabDialog({
                   <SelectTrigger id="lt-lang" className="min-w-[220px] max-w-md w-auto">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
-                    {ltList.map((code) => (
-                      <SelectItem key={code} value={code}>
-                        <LanguageSelectOptionLines tag={code} />
-                      </SelectItem>
-                    ))}
+                  <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                    <div
+                      className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <Input
+                        type="search"
+                        value={ltLangFilter}
+                        onChange={(e) => setLtLangFilter(e.target.value)}
+                        placeholder={t('Language list filter placeholder')}
+                        className="h-8"
+                        aria-label={t('Language list filter placeholder')}
+                      />
+                    </div>
+                    <div className="max-h-52 overflow-y-auto py-1">
+                      {ltListFiltered.map((code) => (
+                        <SelectItem
+                          key={code}
+                          value={code}
+                          className="items-start py-2.5 whitespace-normal"
+                        >
+                          <LanguageSelectOptionLines tag={code} className="w-full" />
+                        </SelectItem>
+                      ))}
+                    </div>
                   </SelectContent>
                 </Select>
               </div>
@@ -831,13 +883,34 @@ export default function AdvancedEventLabDialog({
                         <SelectTrigger id="tr-src" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
-                          <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
-                          {translateLangs.map((l) => (
-                            <SelectItem key={l.code} value={l.code}>
-                              <LanguageSelectOptionLines tag={l.code} />
-                            </SelectItem>
-                          ))}
+                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                          <div
+                            className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            <Input
+                              type="search"
+                              value={translateSrcFilter}
+                              onChange={(e) => setTranslateSrcFilter(e.target.value)}
+                              placeholder={t('Language list filter placeholder')}
+                              className="h-8"
+                              aria-label={t('Language list filter placeholder')}
+                            />
+                          </div>
+                          <div className="max-h-52 overflow-y-auto py-1">
+                            {showTranslateSourceAuto ? (
+                              <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
+                            ) : null}
+                            {translateLangsFilteredSrc.map((l) => (
+                              <SelectItem
+                                key={l.code}
+                                value={l.code}
+                                className="items-start py-2.5 whitespace-normal"
+                              >
+                                <LanguageSelectOptionLines tag={l.code} className="w-full" />
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
@@ -859,12 +932,31 @@ export default function AdvancedEventLabDialog({
                         <SelectTrigger id="tr-tgt" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
-                          {translateLangs.map((l) => (
-                            <SelectItem key={l.code} value={l.code}>
-                              <LanguageSelectOptionLines tag={l.code} />
-                            </SelectItem>
-                          ))}
+                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                          <div
+                            className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            <Input
+                              type="search"
+                              value={translateTgtFilter}
+                              onChange={(e) => setTranslateTgtFilter(e.target.value)}
+                              placeholder={t('Language list filter placeholder')}
+                              className="h-8"
+                              aria-label={t('Language list filter placeholder')}
+                            />
+                          </div>
+                          <div className="max-h-52 overflow-y-auto py-1">
+                            {translateLangsFilteredTgt.map((l) => (
+                              <SelectItem
+                                key={l.code}
+                                value={l.code}
+                                className="items-start py-2.5 whitespace-normal"
+                              >
+                                <LanguageSelectOptionLines tag={l.code} className="w-full" />
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>

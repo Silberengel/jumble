@@ -35,16 +35,22 @@ describe('pickLanguageToolCodeForTranslateTarget', () => {
 })
 
 describe('buildLabLanguageToolPreferenceList', () => {
-  it('puts client language first then en-US then LT codes from translate options', () => {
+  it('only lists LT codes for installed translate targets (no extra UI language)', () => {
     const list = buildLabLanguageToolPreferenceList('de', [
       { code: 'fr', name: 'French' },
       { code: 'es', name: 'Spanish' }
     ])
+    expect(list).toEqual(['fr-FR', 'es'])
+  })
+
+  it('prepends UI language and en-US when those targets are installed', () => {
+    const list = buildLabLanguageToolPreferenceList('de', [
+      { code: 'en', name: 'English' },
+      { code: 'de', name: 'German' },
+      { code: 'fr', name: 'French' }
+    ])
     expect(list[0]).toBe('de-DE')
     expect(list[1]).toBe('en-US')
-    expect(list.includes('de-DE')).toBe(true)
-    expect(list.indexOf('en-US')).toBe(1)
-    expect(list.includes('fr-FR')).toBe(true)
-    expect(list.includes('es')).toBe(true)
+    expect(list).toEqual(['de-DE', 'en-US', 'fr-FR'])
   })
 })

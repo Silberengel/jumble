@@ -67,9 +67,14 @@ import {
   isTranslateConfigured,
   type TranslateLanguageOption
 } from '@/lib/translate-client'
-import { languageSelectSingleLine } from '@/lib/language-display-meta'
+import {
+  filterTranslateLanguagesWithGrammarCatalog,
+  languageSelectSingleLine,
+  TRANSLATE_LANGUAGE_MENU_ITEM_CLASS
+} from '@/lib/language-display-meta'
+
+const EMPTY_TRANSLATE_MENU: readonly TranslateLanguageOption[] = []
 import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
-import { filterTranslateLanguagesWithLanguageToolPairing } from '@/lib/trinity-languages'
 import { useMemo, useState, useEffect, useRef, useContext, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -83,6 +88,8 @@ export interface SubMenuAction {
   onClick: () => void
   className?: string
   separator?: boolean
+  /** Lowercase haystack for submenu filter when the parent sets {@link MenuAction.subMenuSearchable}. */
+  filterHaystack?: string
 }
 
 export interface MenuAction {
@@ -92,12 +99,16 @@ export interface MenuAction {
   className?: string
   separator?: boolean
   subMenu?: SubMenuAction[]
+  /** Renders a filter field above submenu rows (e.g. translate targets). */
+  subMenuSearchable?: boolean
 }
+
+export type ShowSubMenuOptions = { subMenuSearchable?: boolean }
 
 interface UseMenuActionsProps {
   event: Event
   closeDrawer: () => void
-  showSubMenuActions: (subMenu: SubMenuAction[], title: string) => void
+  showSubMenuActions: (subMenu: SubMenuAction[], title: string, options?: ShowSubMenuOptions) => void
   setIsRawEventDialogOpen: (open: boolean) => void
   setIsReportDialogOpen: (open: boolean) => void
   isSmallScreen: boolean
@@ -168,16 +179,17 @@ export function useMenuActions({
     () => getNoteTranslation(event.id)
   )
 
-  const [translateMenuOptions, setTranslateMenuOptions] = useState<TranslateLanguageOption[]>([])
+  const [translateMenuOptions, setTranslateMenuOptions] =
+    useState<readonly TranslateLanguageOption[]>(EMPTY_TRANSLATE_MENU)
   useEffect(() => {
     if (!isTranslateConfigured()) {
-      setTranslateMenuOptions([])
+      setTranslateMenuOptions(EMPTY_TRANSLATE_MENU)
       return
     }
     let cancelled = false
     void fetchTranslateLanguages().then((list) => {
       if (cancelled) return
-      setTranslateMenuOptions(filterTranslateLanguagesWithLanguageToolPairing(list))
+      setTranslateMenuOptions(filterTranslateLanguagesWithGrammarCatalog(list))
     })
     return () => {
       cancelled = true
@@ -860,6 +872,7 @@ export function useMenuActions({
       ? [
           {
             label: t('Show original text'),
+            filterHaystack: `${t('Show original text')} show original`.toLowerCase(),
             onClick: () => {
               closeDrawer()
               clearNoteTranslation(event.id)
@@ -868,7 +881,9 @@ export function useMenuActions({
           },
           ...translateMenuOptions.map(
             (opt, i): SubMenuAction => ({
-              label: <LanguageSelectOptionLines tag={opt.code} compact />,
+              label: <LanguageSelectOptionLines tag={opt.code} compact className="w-full" />,
+              filterHaystack: `${opt.code} ${languageSelectSingleLine(opt.code)}`.toLowerCase(),
+              className: TRANSLATE_LANGUAGE_MENU_ITEM_CLASS,
               separator: i === 0,
               onClick: () => {
                 closeDrawer()
@@ -941,9 +956,13 @@ export function useMenuActions({
               icon: Languages,
               label: t('Translate note'),
               onClick: isSmallScreen
-                ? () => showSubMenuActions(translateTargetSubmenu, t('Translate note'))
+                ? () =>
+                    showSubMenuActions(translateTargetSubmenu, t('Translate note'), {
+                      subMenuSearchable: true
+                    })
                 : undefined,
-              subMenu: isSmallScreen ? undefined : translateTargetSubmenu
+              subMenu: isSmallScreen ? undefined : translateTargetSubmenu,
+              subMenuSearchable: true
             } as MenuAction
           ]
         : []),

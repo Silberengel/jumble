@@ -2,10 +2,19 @@
  * Canonical ISO-639-style language labels (English + endonym) for selection UI.
  * {@link getLanguageDisplayParts} falls back to `Intl.DisplayNames` when a code is missing here.
  *
+ * {@link TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS} lists every map key that LanguageTool also pairs with
+ * (deduped per grammar language). Translate menus use {@link filterTranslateLanguagesWithGrammarCatalog}
+ * on Libre `/languages` so only installed targets are offered.
+ *
  * JSX: {@link LanguageSelectOptionLines} in `language-select-option-lines.tsx` (this file stays `.ts`
  * so extensionless imports resolve cleanly under Vite).
  */
+import type { TranslateLanguageOption } from '@/lib/translate-client'
 import { normalizeTranslateLangCode } from '@/lib/translate-client'
+import {
+  translateCodeHasLanguageToolPairing,
+  translateTargetToLanguageToolCode
+} from '@/lib/languagetool-language-order'
 
 /** Lowercase keys: ISO 639-1 base, or BCP47 tag for regional overrides. */
 export const LANGUAGE_TRIPLE_BY_LOWER_KEY: Record<string, { english: string; native: string }> =
@@ -283,3 +292,93 @@ export function languageSelectSingleLine(tag: string): string {
   const p = getLanguageDisplayParts(tag)
   return `${p.codeLabel} — ${p.englishName} — ${p.nativeName}`
 }
+
+/**
+ * One LibreTranslate-style `code` per LanguageTool grammar language: every key in
+ * {@link LANGUAGE_TRIPLE_BY_LOWER_KEY} that {@link translateCodeHasLanguageToolPairing} accepts,
+ * deduped by LT target (shortest tag wins), sorted by English name.
+ */
+export function getOrderedTranslateGrammarLanguageCodes(): readonly string[] {
+  const candidates = Object.keys(LANGUAGE_TRIPLE_BY_LOWER_KEY).filter((k) =>
+    translateCodeHasLanguageToolPairing(k)
+  )
+  const byLt = new Map<string, string>()
+  for (const c of candidates) {
+    const lt = translateTargetToLanguageToolCode(c)
+    const prev = byLt.get(lt)
+    if (!prev || c.length < prev.length) {
+      byLt.set(lt, c)
+    }
+  }
+  const codes = [...byLt.values()]
+  codes.sort((a, b) => {
+    const ea = getLanguageDisplayParts(a).englishName.toLowerCase()
+    const eb = getLanguageDisplayParts(b).englishName.toLowerCase()
+    if (ea !== eb) return ea.localeCompare(eb, undefined, { sensitivity: 'base' })
+    return a.localeCompare(b)
+  })
+  return codes
+}
+
+export const ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES: readonly string[] =
+  getOrderedTranslateGrammarLanguageCodes()
+
+/** Same codes as {@link ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES} for LibreTranslate `Select` rows. */
+export const TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS: readonly TranslateLanguageOption[] =
+  ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES.map((code) => ({
+    code,
+    name: languageSelectSingleLine(code)
+  }))
+
+/** Case-insensitive match on code label, English, native, and single-line label. */
+export function translateLanguageOptionMatchesQuery(code: string, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const p = getLanguageDisplayParts(code)
+  const line = languageSelectSingleLine(code).toLowerCase()
+  return (
+    p.codeLabel.toLowerCase().includes(q) ||
+    p.englishName.toLowerCase().includes(q) ||
+    p.nativeName.toLowerCase().includes(q) ||
+    line.includes(q)
+  )
+}
+
+/**
+ * LibreTranslate `/languages` ∩ LanguageTool pairing: only targets the running server advertises
+ * (one row per LT language, shortest API code), ordered by the display catalog.
+ */
+export function filterTranslateLanguagesWithGrammarCatalog(
+  apiList: readonly TranslateLanguageOption[]
+): TranslateLanguageOption[] {
+  const withPairing = apiList.filter((l) => translateCodeHasLanguageToolPairing(l.code))
+  const byLt = new Map<string, TranslateLanguageOption>()
+  for (const l of withPairing) {
+    const lt = translateTargetToLanguageToolCode(l.code)
+    const prev = byLt.get(lt)
+    if (!prev || l.code.trim().length < prev.code.trim().length) {
+      byLt.set(lt, l)
+    }
+  }
+  const weight = (opt: TranslateLanguageOption): number => {
+    const lt = translateTargetToLanguageToolCode(opt.code)
+    const idx = ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES.findIndex(
+      (c) => translateTargetToLanguageToolCode(c) === lt
+    )
+    return idx === -1 ? 9999 : idx
+  }
+  return [...byLt.values()].sort((a, b) => {
+    const wa = weight(a)
+    const wb = weight(b)
+    if (wa !== wb) return wa - wb
+    return getLanguageDisplayParts(a.code).englishName.localeCompare(
+      getLanguageDisplayParts(b.code).englishName,
+      undefined,
+      { sensitivity: 'base' }
+    )
+  })
+}
+
+/** Submenu / dropdown row: align label block; content is horizontal (see `LanguageSelectOptionLines`). */
+export const TRANSLATE_LANGUAGE_MENU_ITEM_CLASS =
+  '!items-start h-auto min-h-0 whitespace-normal py-2 w-full text-left'

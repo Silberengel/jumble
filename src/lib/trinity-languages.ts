@@ -1,19 +1,17 @@
 /**
- * Piper “native” voices: codes with an entry in `TRINITY_PIPER_VOICE` match `getVoiceForLanguage` in
- * `services/piper-tts-proxy/server.ts`. Read-aloud uses {@link getPiperVoiceForChosenLanguage}: native
- * Piper for those codes, **English Piper** for every other translate target.
+ * Piper voices match `services/piper-tts-proxy/server.ts` `getVoiceForLanguage`.
+ * Read-aloud uses {@link getPiperVoiceForChosenLanguage}: native Piper for trinity UI codes, then
+ * **related** Piper (e.g. Chinese for Japanese/Korean, Russian for Ukrainian, Spanish for Portuguese),
+ * then **English** when no heuristic fits.
  *
- * **Translate UIs** (note menu, Advanced lab) list languages from LibreTranslate `/languages` that also
- * have an explicit LanguageTool mapping (`translateCodeHasLanguageToolPairing` in
- * `languagetool-language-order.ts`). That avoids offering targets LT cannot pair with, and avoids
- * showing “Turkish” when your LibreTranslate image has no `tr` Argos model (the API would error).
+ * **Translate UIs** use `filterTranslateLanguagesWithGrammarCatalog` in `language-display-meta.ts`:
+ * Libre `/languages` ∩ LanguageTool pairing (installed translate targets only).
  */
-import type { TranslateLanguageOption } from '@/lib/translate-client'
-import { normalizeTranslateLangCode } from '@/lib/translate-client'
 import {
-  translateCodeHasLanguageToolPairing,
-  translateTargetToLanguageToolCode
-} from '@/lib/languagetool-language-order'
+  normalizeTranslateLangCode,
+  type TranslateLanguageOption
+} from '@/lib/translate-client'
+import { translateTargetToLanguageToolCode } from '@/lib/languagetool-language-order'
 
 export const TRINITY_LANGUAGE_CODES = [
   'en',
@@ -85,70 +83,132 @@ export function trinityLanguageToolCode(code: string): string {
   return translateTargetToLanguageToolCode(code)
 }
 
-/**
- * LibreTranslate `/languages` entries that have an explicit LT mapping, deduped by LT grammar code
- * (one row per LanguageTool language; prefers shorter API codes like `zh` over `zh-CN`).
- */
-export function filterTranslateLanguagesWithLanguageToolPairing(
-  list: TranslateLanguageOption[]
-): TranslateLanguageOption[] {
-  const withPairing = list.filter((l) => translateCodeHasLanguageToolPairing(l.code))
-  const byLt = new Map<string, TranslateLanguageOption>()
-  for (const l of withPairing) {
-    const lt = translateTargetToLanguageToolCode(l.code)
-    const prev = byLt.get(lt)
-    if (!prev || l.code.trim().length < prev.code.trim().length) {
-      byLt.set(lt, l)
-    }
-  }
-  return Array.from(byLt.values()).sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-  )
+export type PiperVoiceResolution = {
+  voice: string
+  /** True when using `TRINITY_PIPER_VOICE.en` because no related model was chosen. */
+  usedEnglishVoiceFallback: boolean
+  /** True when using another trinity voice (e.g. `zh`) to approximate the requested language. */
+  usedRelatedVoiceFallback: boolean
+  /** Which trinity Piper profile is actually used (native, related, or `en`). */
+  piperProfileCode: TrinityLanguageCode
 }
 
-export function getPiperVoiceForTrinityLanguage(lang: TrinityLanguageCode): {
-  voice: string
-  usedEnglishVoiceFallback: boolean
-} {
+/**
+ * ISO 639-1 (or base BCP47 segment) → trinity Piper voice to approximate when we have no native model.
+ * Keep conservative: same-script / regional neighbors only where it helps more than English.
+ */
+const RELATED_PIPER_FOR_BASE: Record<string, TrinityLanguageCode> = {
+  ja: 'zh',
+  ko: 'zh',
+  uk: 'ru',
+  be: 'ru',
+  bg: 'ru',
+  mk: 'ru',
+  sr: 'ru',
+  bs: 'ru',
+  kk: 'ru',
+  ky: 'ru',
+  mn: 'ru',
+  tg: 'ru',
+  sk: 'cs',
+  sl: 'de',
+  hr: 'ru',
+  pt: 'es',
+  ca: 'es',
+  gl: 'es',
+  it: 'es',
+  ro: 'es',
+  la: 'es',
+  sq: 'es',
+  oc: 'es',
+  eu: 'es',
+  da: 'de',
+  sv: 'de',
+  no: 'de',
+  nb: 'de',
+  nn: 'de',
+  is: 'de',
+  fo: 'de',
+  lb: 'de',
+  fy: 'de',
+  gsw: 'de',
+  nds: 'de',
+  et: 'de',
+  lv: 'de',
+  fi: 'de',
+  hu: 'de',
+  el: 'es',
+  br: 'fr',
+  mt: 'es'
+}
+
+export function getPiperVoiceForTrinityLanguage(lang: TrinityLanguageCode): PiperVoiceResolution {
   return {
     voice: TRINITY_PIPER_VOICE[lang],
-    usedEnglishVoiceFallback: false
+    usedEnglishVoiceFallback: false,
+    usedRelatedVoiceFallback: false,
+    piperProfileCode: lang
   }
 }
 
-/** Native Piper when we ship a voice; otherwise English Piper (read-aloud / lab). */
-export function getPiperVoiceForChosenLanguage(lang: string): {
-  voice: string
-  usedEnglishVoiceFallback: boolean
-} {
-  if (isTrinityLanguageCode(lang)) {
-    return getPiperVoiceForTrinityLanguage(lang)
+function baseLangTag(raw: string): string {
+  const n = normalizeTranslateLangCode(raw).toLowerCase().replace(/_/gu, '-')
+  return n.split(/-/u)[0] ?? n
+}
+
+/** Piper voice for read-aloud: native trinity → related trinity → English. */
+export function getPiperVoiceForChosenLanguage(rawLang: string): PiperVoiceResolution {
+  const base = baseLangTag(rawLang)
+  const full = normalizeTranslateLangCode(rawLang).toLowerCase().replace(/_/gu, '-')
+
+  if (isTrinityLanguageCode(base)) {
+    return getPiperVoiceForTrinityLanguage(base)
   }
+  if (isTrinityLanguageCode(full)) {
+    return getPiperVoiceForTrinityLanguage(full)
+  }
+
+  const related = RELATED_PIPER_FOR_BASE[full] ?? RELATED_PIPER_FOR_BASE[base] ?? null
+
+  if (related) {
+    return {
+      voice: TRINITY_PIPER_VOICE[related],
+      usedEnglishVoiceFallback: false,
+      usedRelatedVoiceFallback: true,
+      piperProfileCode: related
+    }
+  }
+
   return {
     voice: TRINITY_FALLBACK_ENGLISH_VOICE,
-    usedEnglishVoiceFallback: lang !== 'en'
+    usedEnglishVoiceFallback: base !== 'en' && full !== 'en',
+    usedRelatedVoiceFallback: false,
+    piperProfileCode: 'en'
   }
 }
 
 /**
- * LanguageTool `language` dropdown for the lab: UI language’s LT code, `en-US`, then one entry per
- * translate target (from the filtered LibreTranslate list).
+ * LanguageTool `language` dropdown for the lab: same logical set as the translate targets (Libre
+ * `/languages` ∩ LT), so grammar never offers e.g. Spanish when the translator was not built with
+ * Spanish. Order: UI language’s LT (if installed), `en-US` (if English is installed), then other
+ * targets in **translate list order** (matches source/target dropdowns).
  */
 export function buildLabLanguageToolPreferenceList(
   i18nLanguage: string | undefined,
   translateLangs: readonly TranslateLanguageOption[]
 ): string[] {
+  const allowedLt = new Set(
+    translateLangs.map((l) => translateTargetToLanguageToolCode(l.code))
+  )
   const ordered: string[] = []
   const push = (c: string) => {
-    if (!ordered.includes(c)) ordered.push(c)
+    if (!ordered.includes(c) && allowedLt.has(c)) ordered.push(c)
   }
   const raw = (i18nLanguage ?? 'en').trim() || 'en'
   push(translateTargetToLanguageToolCode(raw))
   push('en-US')
-  const extras = translateLangs.map((l) => translateTargetToLanguageToolCode(l.code))
-  extras.sort((a, b) => a.localeCompare(b))
-  for (const c of extras) {
-    push(c)
+  for (const l of translateLangs) {
+    push(translateTargetToLanguageToolCode(l.code))
   }
   return ordered
 }

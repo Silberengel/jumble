@@ -84,8 +84,12 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
             </SelectTrigger>
             <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
               {SUPPORTED_APP_LANGUAGE_CODES.map((key) => (
-                <SelectItem key={key} value={key}>
-                  <LanguageSelectOptionLines tag={key} />
+                <SelectItem
+                  key={key}
+                  value={key}
+                  className="items-start py-2.5 whitespace-normal"
+                >
+                  <LanguageSelectOptionLines tag={key} className="w-full" />
                 </SelectItem>
               ))}
             </SelectContent>

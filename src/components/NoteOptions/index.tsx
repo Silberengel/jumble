@@ -7,7 +7,7 @@ import EditOrCloneEventDialog, { type TEditOrCloneMode } from './EditOrCloneEven
 import { MobileMenu } from './MobileMenu'
 import RawEventDialog from './RawEventDialog'
 import ReportDialog from './ReportDialog'
-import { SubMenuAction, useMenuActions } from './useMenuActions'
+import { SubMenuAction, useMenuActions, type ShowSubMenuOptions } from './useMenuActions'
 import PostEditor from '../PostEditor'
 import type { HighlightData } from '../PostEditor/HighlightEditor'
 
@@ -47,19 +47,27 @@ export default function NoteOptions({
   const [showSubMenu, setShowSubMenu] = useState(false)
   const [activeSubMenu, setActiveSubMenu] = useState<SubMenuAction[]>([])
   const [subMenuTitle, setSubMenuTitle] = useState('')
+  const [subMenuSearchable, setSubMenuSearchable] = useState(false)
 
   const closeDrawer = () => {
     setIsDrawerOpen(false)
     setShowSubMenu(false)
+    setSubMenuSearchable(false)
   }
 
   const goBackToMainMenu = () => {
     setShowSubMenu(false)
+    setSubMenuSearchable(false)
   }
 
-  const showSubMenuActions = (subMenu: SubMenuAction[], title: string) => {
+  const showSubMenuActions = (
+    subMenu: SubMenuAction[],
+    title: string,
+    options?: ShowSubMenuOptions
+  ) => {
     setActiveSubMenu(subMenu)
     setSubMenuTitle(title)
+    setSubMenuSearchable(Boolean(options?.subMenuSearchable))
     setShowSubMenu(true)
   }
 
@@ -101,6 +109,7 @@ export default function NoteOptions({
           showSubMenu={showSubMenu}
           activeSubMenu={activeSubMenu}
           subMenuTitle={subMenuTitle}
+          subMenuSearchable={subMenuSearchable}
           closeDrawer={closeDrawer}
           goBackToMainMenu={goBackToMainMenu}
         />

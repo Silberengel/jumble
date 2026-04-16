@@ -1,7 +1,11 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
 import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage, type TLanguage } from '@/i18n'
 import { getNoteTranslation } from '@/lib/note-translation-display'
-import { getPiperVoiceForChosenLanguage, isTrinityLanguageCode } from '@/lib/trinity-languages'
+import {
+  getPiperVoiceForChosenLanguage,
+  isTrinityLanguageCode,
+  TRINITY_LANGUAGE_DISPLAY_NAMES
+} from '@/lib/trinity-languages'
 import { takeReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import {
   buildPiperTtsCacheKey,
@@ -71,8 +75,12 @@ export type ReadAloudSnapshot = {
   backend: string
   /** Piper has no model for the chosen language; the English Piper voice is used instead. */
   piperUsedEnglishVoiceFallback: boolean
-  /** Display name of the requested language when {@link piperUsedEnglishVoiceFallback} is true. */
+  /** Piper uses another trinity voice (e.g. Chinese) to approximate the chosen language. */
+  piperUsedRelatedVoiceFallback: boolean
+  /** Display name of the requested language when a Piper fallback (English or related) applies. */
   piperVoiceRequestedLanguageName: string
+  /** Autonym of the Piper profile actually used when English or related fallback applies. */
+  piperVoiceProfileName: string
 }
 
 const initialSnapshot: ReadAloudSnapshot = {
@@ -97,7 +105,9 @@ const initialSnapshot: ReadAloudSnapshot = {
   volume: 1,
   backend: '',
   piperUsedEnglishVoiceFallback: false,
-  piperVoiceRequestedLanguageName: ''
+  piperUsedRelatedVoiceFallback: false,
+  piperVoiceRequestedLanguageName: '',
+  piperVoiceProfileName: ''
 }
 
 let snapshot: ReadAloudSnapshot = { ...initialSnapshot }
@@ -648,7 +658,12 @@ async function speakViaWebSpeech(
     error: null,
     ...(!options?.fromPiperFallback ? { usedPiperFallback: false, piperFallbackDetail: null } : {}),
     ...(options?.browserOnlyNoPiper
-      ? { piperUsedEnglishVoiceFallback: false, piperVoiceRequestedLanguageName: '' }
+      ? {
+          piperUsedEnglishVoiceFallback: false,
+          piperUsedRelatedVoiceFallback: false,
+          piperVoiceRequestedLanguageName: '',
+          piperVoiceProfileName: ''
+        }
       : {}),
     ...webspeechPiperFields
   })
@@ -707,14 +722,24 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
 
   const chosenReadAloudLang: string =
     persistedTranslation?.lang ?? normalizeToSupportedAppLanguage(i18n.language || 'en')
-  const { voice: piperVoice, usedEnglishVoiceFallback } =
-    getPiperVoiceForChosenLanguage(chosenReadAloudLang)
-  const piperVoiceRequestedLanguageName = usedEnglishVoiceFallback
-    ? (persistedTranslation?.langLabel ??
+  const {
+    voice: piperVoice,
+    usedEnglishVoiceFallback,
+    usedRelatedVoiceFallback,
+    piperProfileCode
+  } = getPiperVoiceForChosenLanguage(chosenReadAloudLang)
+  const piperNotice =
+    usedEnglishVoiceFallback || usedRelatedVoiceFallback
+      ? (persistedTranslation?.langLabel ??
         (isTrinityLanguageCode(chosenReadAloudLang)
           ? LocalizedLanguageNames[chosenReadAloudLang]
           : chosenReadAloudLang))
-    : ''
+      : ''
+  const piperVoiceRequestedLanguageName = piperNotice
+  const piperVoiceProfileName =
+    usedEnglishVoiceFallback || usedRelatedVoiceFallback
+      ? TRINITY_LANGUAGE_DISPLAY_NAMES[piperProfileCode]
+      : ''
 
   if (READ_ALOUD_TTS_URL) {
     stopReadAloudPlayback()
@@ -743,7 +768,9 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
       readAloudPiperTryStartedAt: Date.now(),
       backend: readAloudEndpointForLog(),
       piperUsedEnglishVoiceFallback: usedEnglishVoiceFallback,
-      piperVoiceRequestedLanguageName
+      piperUsedRelatedVoiceFallback: usedRelatedVoiceFallback,
+      piperVoiceRequestedLanguageName,
+      piperVoiceProfileName
     })
 
     await yieldForReadAloudUi()

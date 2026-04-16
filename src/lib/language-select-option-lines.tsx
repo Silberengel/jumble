@@ -9,23 +9,34 @@ type LinesProps = {
   className?: string
 }
 
-/** Three-line block: code (mono) · English · native — for `SelectItem` / menus. */
+/** One line: ISO/BCP47 code (mono) · English · native — for `SelectItem` / menus. */
 export function LanguageSelectOptionLines({ tag, compact, className }: LinesProps): ReactElement {
   const p = getLanguageDisplayParts(tag)
   return (
-    <div className={cn('flex flex-col gap-0.5 text-left', compact && 'max-w-[14rem]', className)}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-row flex-wrap items-baseline gap-x-2 gap-y-0.5 text-left',
+        compact && 'max-w-[20rem]',
+        className
+      )}
+    >
       <span
         className={cn(
-          'font-mono text-muted-foreground tabular-nums',
+          'shrink-0 font-mono tabular-nums text-muted-foreground',
           compact ? 'text-[10px]' : 'text-xs'
         )}
       >
         {p.codeLabel}
       </span>
-      <span className={cn('font-medium leading-tight', compact ? 'text-xs' : 'text-sm')}>
+      <span className={cn('min-w-0 font-medium leading-tight', compact ? 'text-xs' : 'text-sm')}>
         {p.englishName}
       </span>
-      <span className={cn('text-muted-foreground leading-tight', compact ? 'text-[10px]' : 'text-xs')}>
+      <span
+        className={cn(
+          'min-w-0 leading-tight text-muted-foreground',
+          compact ? 'text-[10px]' : 'text-xs'
+        )}
+      >
         {p.nativeName}
       </span>
     </div>
