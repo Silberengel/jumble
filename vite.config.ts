@@ -88,11 +88,41 @@ export default defineConfig(({ mode }) => {
   const devIndexRelayTarget =
     env.VITE_DEV_INDEX_RELAY_TARGET?.trim() || 'http://127.0.0.1:4000'
 
+  /**
+   * Desktop shell (`vite build --mode electron`): always bake public Imwald API origins into the bundle.
+   * Relying on `cross-env` in npm scripts alone is fragile (skipped builds, CI, wrong script). `define`
+   * wins over empty/missing `.env.*` for these keys.
+   */
+  const electronImwaldPublicDefaults = {
+    VITE_PROXY_SERVER: 'https://jumble.imwald.eu',
+    VITE_READ_ALOUD_TTS_URL: 'https://jumble.imwald.eu/api/piper-tts',
+    VITE_LANGUAGE_TOOL_URL: 'https://jumble.imwald.eu/api/languagetool',
+    VITE_TRANSLATE_URL: 'https://jumble.imwald.eu/api/translate'
+  } as const
+  const electronImwaldDefines: Record<string, string> =
+    mode === 'electron'
+      ? Object.fromEntries(
+          (
+            [
+              'VITE_PROXY_SERVER',
+              'VITE_READ_ALOUD_TTS_URL',
+              'VITE_LANGUAGE_TOOL_URL',
+              'VITE_TRANSLATE_URL'
+            ] as const
+          ).map((key) => {
+            const fromEnv = env[key]?.trim()
+            const fallback = electronImwaldPublicDefaults[key]
+            return [`import.meta.env.${key}`, JSON.stringify(fromEnv || fallback)]
+          })
+        )
+      : {}
+
   return {
     base: '/',
     define: {
       'import.meta.env.GIT_COMMIT': getGitHash(),
-      'import.meta.env.APP_VERSION': getAppVersion()
+      'import.meta.env.APP_VERSION': getAppVersion(),
+      ...electronImwaldDefines
     },
     resolve: {
       alias: {

@@ -340,7 +340,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // Packaged shell is loopback `http://127.0.0.1` → public HTTPS APIs; Chromium CORS blocks
+      // renderer `fetch` unless disabled for this window (IPC + net.fetch still used as defense).
+      webSecurity: !app.isPackaged
     }
   })
 
