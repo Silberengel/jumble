@@ -455,12 +455,22 @@ export function primalR2aMirrorForBlossomPrimalUrl(url: string | URL): string | 
 }
 
 /**
- * Display URL for note/imeta image `src`. Keep `https://blossom.primal.net/{sha256}.ext` as-is: it is the
- * canonical URL in events and usually loads reliably. Use {@link primalR2aMirrorForBlossomPrimalUrl} only
- * as a fallback in {@link Image} `onError` when the blossom host fails.
+ * URL for `<img src>` / `<video src>` / `<audio src>`. For `https://blossom.primal.net/{sha256}.ext`,
+ * returns the `r2a.primal.net/uploads2/…` mirror when known so the browser loads bytes directly.
+ * The blossom host often answers with redirects; following those cross-origin responses commonly hits
+ * ORB / hotlink rules and fails to decode in-app even though the file exists.
+ */
+export function resolvePrimalBlossomPlayableUrl(url: string): string {
+  const t = url.trim()
+  if (!t) return t
+  return primalR2aMirrorForBlossomPrimalUrl(t) ?? t
+}
+
+/**
+ * Display / lightbox URL for note media. Same as {@link resolvePrimalBlossomPlayableUrl} for Primal blossom links.
  */
 export function preferBlossomPrimalDisplayUrl(url: string): string {
-  return url
+  return resolvePrimalBlossomPlayableUrl(url)
 }
 
 /**

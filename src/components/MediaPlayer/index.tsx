@@ -1,4 +1,4 @@
-import { isHlsPlaylistUrl, isImage, isZapStreamWatchPageUrl } from '@/lib/url'
+import { isHlsPlaylistUrl, isImage, isZapStreamWatchPageUrl, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -63,15 +63,17 @@ export default function MediaPlayer({
   const [embedPainted, setEmbedPainted] = useState(false)
   const readyOnceRef = useRef(false)
 
+  const playableSrc = useMemo(() => resolvePrimalBlossomPlayableUrl(src), [src])
+
   // imeta `thumb` / `image` are sometimes the same .mp4 as `url` — <img> cannot use that, and it
   // would hide the blurhash placeholder in LazyMediaTapPlaceholder.
   const imagePoster = useMemo(() => {
     const p = poster?.trim()
     if (!p) return undefined
-    return isImage(p) ? p : undefined
+    return isImage(p) ? resolvePrimalBlossomPlayableUrl(p) : undefined
   }, [poster])
 
-  const urlEmbedSurfaceHint = useMemo(() => embedMediaSurfaceHintFromUrl(src), [src])
+  const urlEmbedSurfaceHint = useMemo(() => embedMediaSurfaceHintFromUrl(playableSrc), [playableSrc])
   /** Probe result wins when set (e.g. audio-only mp4); URL hint avoids a blank frame before useEffect runs. */
   const effectiveMediaType = mediaType ?? urlEmbedSurfaceHint
 
@@ -86,7 +88,7 @@ export default function MediaPlayer({
     setEmbedPainted(false)
     setMediaType(null)
     setProbeFailed(false)
-  }, [src])
+  }, [playableSrc])
 
   useEffect(() => {
     if (!showEmbed) {
@@ -96,7 +98,7 @@ export default function MediaPlayer({
     }
     readyOnceRef.current = false
     setEmbedPainted(false)
-    if (!src) {
+    if (!playableSrc) {
       setProbeFailed(true)
       return
     }
@@ -108,17 +110,17 @@ export default function MediaPlayer({
 
     try {
       // Firefox/Chrome do not expose HLS via <video> metadata probe — it fails and looked like “no player”.
-      if (isHlsPlaylistUrl(src)) {
+      if (isHlsPlaylistUrl(playableSrc)) {
         setMediaType('video')
         return
       }
 
-      if (isZapStreamWatchPageUrl(src)) {
+      if (isZapStreamWatchPageUrl(playableSrc)) {
         setMediaType('iframe')
         return
       }
 
-      const url = new URL(src)
+      const url = new URL(playableSrc)
       const extension = url.pathname.split('.').pop()?.toLowerCase()
 
       if (
@@ -135,7 +137,7 @@ export default function MediaPlayer({
       }
 
       const video = document.createElement('video')
-      video.src = src
+      video.src = playableSrc
       video.preload = 'metadata'
 
       video.onloadedmetadata = () => {
@@ -156,7 +158,7 @@ export default function MediaPlayer({
     } catch {
       setProbeFailed(true)
     }
-  }, [src, showEmbed])
+  }, [playableSrc, showEmbed])
 
   const onEmbedReady = useCallback(() => {
     if (readyOnceRef.current) return
@@ -170,21 +172,21 @@ export default function MediaPlayer({
       return t('Preparing player…', { defaultValue: 'Preparing player…' })
     }
     if (!embedPainted) {
-      if (isZapStreamWatchPageUrl(src)) {
+      if (isZapStreamWatchPageUrl(playableSrc)) {
         return t('Starting stream…', { defaultValue: 'Starting stream…' })
       }
-      if (isHlsPlaylistUrl(src)) {
+      if (isHlsPlaylistUrl(playableSrc)) {
         return t('Starting stream…', { defaultValue: 'Starting stream…' })
       }
       return t('Loading media…', { defaultValue: 'Loading media…' })
     }
     return undefined
-  }, [showEmbed, effectiveMediaType, embedPainted, src, t])
+  }, [showEmbed, effectiveMediaType, embedPainted, playableSrc, t])
 
   if (!mustLoad && !showEmbed) {
     return (
       <LazyMediaTapPlaceholder
-        src={src}
+        src={playableSrc}
         posterUrl={imagePoster}
         blurHash={blurHash}
         onActivate={() => setUserClickedLoad(true)}
@@ -200,7 +202,7 @@ export default function MediaPlayer({
   if (effectiveMediaType === null) {
     return (
       <MediaEmbedBlurFrame
-        src={src}
+        src={playableSrc}
         posterUrl={imagePoster}
         blurHash={blurHash}
         className={className}
@@ -217,7 +219,7 @@ export default function MediaPlayer({
       {!embedPainted ? (
         <div className="relative z-10 w-full">
           <MediaEmbedBlurFrame
-            src={src}
+            src={playableSrc}
             posterUrl={imagePoster}
             blurHash={blurHash}
             className={className}
@@ -247,7 +249,7 @@ export default function MediaPlayer({
           />
         ) : effectiveMediaType === 'video' ? (
           <VideoPlayer
-            src={src}
+            src={playableSrc}
             className={className}
             poster={imagePoster}
             onReady={onEmbedReady}
@@ -255,7 +257,7 @@ export default function MediaPlayer({
           />
         ) : (
           <AudioPlayer
-            src={src}
+            src={playableSrc}
             className={className}
             poster={imagePoster}
             onReady={onEmbedReady}

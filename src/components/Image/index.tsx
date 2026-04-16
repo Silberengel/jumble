@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { isRenderableMediaUrl, isSafeMediaUrl } from '@/lib/url'
+import { isRenderableMediaUrl, isSafeMediaUrl, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
 import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
@@ -102,7 +102,7 @@ export default function Image({
   const [isLoading, setIsLoading] = useState(urlOk && !effectiveHoldUntilClick)
   const [displaySkeleton, setDisplaySkeleton] = useState(urlOk)
   const [hasError, setHasError] = useState(!urlOk)
-  const [imageUrl, setImageUrl] = useState(url)
+  const [imageUrl, setImageUrl] = useState(() => resolvePrimalBlossomPlayableUrl(url ?? ''))
   const [fallbackIndex, setFallbackIndex] = useState(0)
   const loadWatchRef = useRef<number | null>(null)
   // Kept in sync in the reset effect; load-timeout runs only while tap-to-load is actually active.
@@ -149,7 +149,7 @@ export default function Image({
   }
 
   useEffect(() => {
-    setImageUrl(url)
+    setImageUrl(resolvePrimalBlossomPlayableUrl(url ?? ''))
     loadSettledRef.current = false
     wasInitiallyHeldRef.current = effectiveHoldUntilClick
     const shouldHold = effectiveHoldUntilClick
@@ -220,7 +220,7 @@ export default function Image({
       const next = fallback[fallbackIndex]
       setFallbackIndex((prev) => prev + 1)
       loadSettledRef.current = false
-      setImageUrl(next)
+      setImageUrl(resolvePrimalBlossomPlayableUrl(next))
       return
     }
     setIsLoading(false)
