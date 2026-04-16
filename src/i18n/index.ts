@@ -2,33 +2,18 @@ import dayjs from 'dayjs'
 import i18n, { Resource } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
+import { TRINITY_LANGUAGE_CODES, TRINITY_LANGUAGE_DISPLAY_NAMES } from '@/lib/trinity-languages'
 import en from './locales/en'
 
-/** Display names only — keeps this module small; locale strings load on demand (except English). */
-const LANGUAGE_META = {
-  ar: 'العربية',
-  de: 'Deutsch',
-  en: 'English',
-  es: 'Español',
-  fa: 'فارسی',
-  fr: 'Français',
-  hi: 'हिन्दी',
-  it: 'Italiano',
-  ja: '日本語',
-  ko: '한국어',
-  pl: 'Polski',
-  'pt-BR': 'Português (Brasil)',
-  'pt-PT': 'Português (Portugal)',
-  ru: 'Русский',
-  th: 'ไทย',
-  zh: '简体中文'
-} as const
+/** App UI locales with full bundles (see `trinity-languages.ts`); translate menus use Libre+LT from the API. */
+const LANGUAGE_META = TRINITY_LANGUAGE_DISPLAY_NAMES
 
 export type TLanguage = keyof typeof LANGUAGE_META
 
 export const LocalizedLanguageNames: { [key in TLanguage]: string } = { ...LANGUAGE_META }
 
-const supportedLanguages = Object.keys(LANGUAGE_META) as TLanguage[]
+/** Same codes as {@link TRINITY_LANGUAGE_CODES} — stable order for every language dropdown. */
+const supportedLanguages = [...TRINITY_LANGUAGE_CODES] as TLanguage[]
 
 /** App UI languages (same set used for “Translate to …” in note menus). */
 export const SUPPORTED_APP_LANGUAGE_CODES: readonly TLanguage[] = supportedLanguages
@@ -82,25 +67,17 @@ export function initI18n(): Promise<void> {
     i18n.services.formatter?.add('date', (timestamp, lng) => {
       switch (lng) {
         case 'zh':
-        case 'ja':
           return dayjs(timestamp).format('YYYY年MM月DD日')
         case 'pl':
         case 'de':
         case 'ru':
+        case 'cs':
           return dayjs(timestamp).format('DD.MM.YYYY')
-        case 'fa':
-          return dayjs(timestamp).format('YYYY/MM/DD')
-        case 'it':
         case 'es':
         case 'fr':
-        case 'pt-BR':
-        case 'pt-PT':
-        case 'ar':
-        case 'hi':
-        case 'th':
+        case 'nl':
+        case 'tr':
           return dayjs(timestamp).format('DD/MM/YYYY')
-        case 'ko':
-          return dayjs(timestamp).format('YYYY년 MM월 DD일')
         default:
           return dayjs(timestamp).format('MMM D, YYYY')
       }

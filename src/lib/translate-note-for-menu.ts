@@ -5,16 +5,10 @@ import {
   type AdvancedLabMarkupMode
 } from '@/lib/advanced-lab-markup-protect'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
-import type { TLanguage } from '@/i18n'
+import { normalizeTranslateLangCode } from '@/lib/translate-client'
 import type { Event } from 'nostr-tools'
 
 const CHUNK_MAX = 2500
-
-/** Map app UI locale codes to LibreTranslate `target` codes where they differ. */
-export function translateTargetFromAppLanguage(code: TLanguage): string {
-  if (code === 'pt-BR' || code === 'pt-PT') return 'pt'
-  return code
-}
 
 function looksLikeStringifiedJsonObject(content: string): boolean {
   const trimmed = content.trim()
@@ -74,11 +68,14 @@ async function translateLongProtectedBody(
   return blocks.join('\n')
 }
 
+/**
+ * @param targetCode LibreTranslate target as returned by `/languages` (e.g. `tr`, `zh-CN`).
+ */
 export async function translateNoteForDisplay(
   event: Event,
-  appLang: TLanguage
+  targetCode: string
 ): Promise<{ content: string; title?: string }> {
-  const target = translateTargetFromAppLanguage(appLang)
+  const target = normalizeTranslateLangCode(targetCode)
   const markupMode: AdvancedLabMarkupMode = isAsciidocMarkupKind(event.kind) ? 'asciidoc' : 'markdown'
   const meta = getLongFormArticleMetadataFromEvent(event)
   const origTitle = meta.title?.trim()

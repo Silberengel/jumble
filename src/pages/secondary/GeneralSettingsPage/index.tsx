@@ -8,7 +8,8 @@ import {
   NOTIFICATION_LIST_STYLE,
   RANDOM_PUBLISH_RELAY_COUNT
 } from '@/constants'
-import { changeAppLanguage, LocalizedLanguageNames, TLanguage } from '@/i18n'
+import { changeAppLanguage, SUPPORTED_APP_LANGUAGE_CODES, TLanguage } from '@/i18n'
+import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { cn, isSupportCheckConnectionType } from '@/lib/utils'
@@ -78,13 +79,13 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
             {t('Languages')}
           </Label>
           <Select defaultValue="en" value={language} onValueChange={handleLanguageChange}>
-            <SelectTrigger id="languages" className="w-48">
+            <SelectTrigger id="languages" className="min-w-[14rem] w-auto max-w-[min(100vw,22rem)]">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              {Object.entries(LocalizedLanguageNames).map(([key, value]) => (
+            <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
+              {SUPPORTED_APP_LANGUAGE_CODES.map((key) => (
                 <SelectItem key={key} value={key}>
-                  {value}
+                  <LanguageSelectOptionLines tag={key} />
                 </SelectItem>
               ))}
             </SelectContent>

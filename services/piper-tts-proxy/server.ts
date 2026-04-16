@@ -1024,7 +1024,7 @@ function detectLanguage(text: string): string {
  * To see available voices, check the piper-data folder or Wyoming server logs.
  */
 function getVoiceForLanguage(lang: string): string {
-  // Common voice mappings - adjust based on available voices in your piper-data directory
+  // Voice map keys / ids: keep in sync with `src/lib/trinity-languages.ts` (`TRINITY_PIPER_VOICE`).
   const voiceMap: Record<string, string> = {
     'en': 'en_US-lessac-medium', // Default English voice
     'de': 'de_DE-thorsten-medium', // German

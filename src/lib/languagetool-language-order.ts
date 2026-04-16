@@ -128,6 +128,14 @@ export function translateTargetToLanguageToolCode(translateCode: string): string
   return 'en-US'
 }
 
+/** True when this LibreTranslate-style code has an explicit `LT_ALIASES` mapping (not unknown→`en-US`). */
+export function translateCodeHasLanguageToolPairing(translateCode: string): boolean {
+  const n = normalizeTranslateLangCode(translateCode).toLowerCase().replace(/_/gu, '-')
+  const base = n.split(/-/u)[0] ?? n
+  return Object.prototype.hasOwnProperty.call(LT_ALIASES, n) ||
+    Object.prototype.hasOwnProperty.call(LT_ALIASES, base)
+}
+
 /** Prefer a code present in `ltList` (lab grammar dropdown) when possible. */
 export function pickLanguageToolCodeForTranslateTarget(
   translateCode: string,

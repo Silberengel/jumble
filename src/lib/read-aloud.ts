@@ -1,7 +1,7 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
 import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage, type TLanguage } from '@/i18n'
 import { getNoteTranslation } from '@/lib/note-translation-display'
-import { getPiperVoiceForChosenLanguage } from '@/lib/piper-voice-for-app-language'
+import { getPiperVoiceForChosenLanguage, isTrinityLanguageCode } from '@/lib/trinity-languages'
 import { takeReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import {
   buildPiperTtsCacheKey,
@@ -705,12 +705,15 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
 
   const title = readAloudTitleFromEvent(event)
 
-  const chosenReadAloudLang: TLanguage =
+  const chosenReadAloudLang: string =
     persistedTranslation?.lang ?? normalizeToSupportedAppLanguage(i18n.language || 'en')
   const { voice: piperVoice, usedEnglishVoiceFallback } =
     getPiperVoiceForChosenLanguage(chosenReadAloudLang)
   const piperVoiceRequestedLanguageName = usedEnglishVoiceFallback
-    ? LocalizedLanguageNames[chosenReadAloudLang]
+    ? (persistedTranslation?.langLabel ??
+        (isTrinityLanguageCode(chosenReadAloudLang)
+          ? LocalizedLanguageNames[chosenReadAloudLang]
+          : chosenReadAloudLang))
     : ''
 
   if (READ_ALOUD_TTS_URL) {

@@ -171,8 +171,6 @@ export type TAccountPointer = Pick<TAccount, 'pubkey' | 'signerType'>
 export type TFeedType = 'relays' | 'relay' | 'all-favorites'
 export type TFeedInfo = { feedType: TFeedType; id?: string }
 
-export type TLanguage = 'en' | 'zh' | 'pl'
-
 export type TImetaInfo = {
   url: string
   blurHash?: string

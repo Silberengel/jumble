@@ -7,21 +7,15 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import ar from '../src/i18n/locales/ar'
+import cs from '../src/i18n/locales/cs'
 import de from '../src/i18n/locales/de'
 import en from '../src/i18n/locales/en'
 import es from '../src/i18n/locales/es'
-import fa from '../src/i18n/locales/fa'
 import fr from '../src/i18n/locales/fr'
-import hi from '../src/i18n/locales/hi'
-import it from '../src/i18n/locales/it'
-import ja from '../src/i18n/locales/ja'
-import ko from '../src/i18n/locales/ko'
+import nl from '../src/i18n/locales/nl'
 import pl from '../src/i18n/locales/pl'
-import pt_BR from '../src/i18n/locales/pt-BR'
-import pt_PT from '../src/i18n/locales/pt-PT'
 import ru from '../src/i18n/locales/ru'
-import th from '../src/i18n/locales/th'
+import tr from '../src/i18n/locales/tr'
 import zh from '../src/i18n/locales/zh'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -41,22 +35,16 @@ function loadOverrides(localeFile: string): Record<string, string> {
 }
 
 const PACKAGES: { file: string; translation: Record<string, string>; header?: string }[] = [
-  { file: 'ar.ts', translation: ar.translation },
+  { file: 'cs.ts', translation: cs.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
   { file: 'de.ts', translation: de.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
   { file: 'en.ts', translation: en.translation },
-  { file: 'es.ts', translation: es.translation },
-  { file: 'fa.ts', translation: fa.translation },
-  { file: 'fr.ts', translation: fr.translation },
-  { file: 'hi.ts', translation: hi.translation },
-  { file: 'it.ts', translation: it.translation },
-  { file: 'ja.ts', translation: ja.translation },
-  { file: 'ko.ts', translation: ko.translation },
-  { file: 'pl.ts', translation: pl.translation },
-  { file: 'pt-BR.ts', translation: pt_BR.translation },
-  { file: 'pt-PT.ts', translation: pt_PT.translation },
-  { file: 'ru.ts', translation: ru.translation },
-  { file: 'th.ts', translation: th.translation },
-  { file: 'zh.ts', translation: zh.translation }
+  { file: 'es.ts', translation: es.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'fr.ts', translation: fr.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'nl.ts', translation: nl.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'pl.ts', translation: pl.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'ru.ts', translation: ru.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'tr.ts', translation: tr.translation, header: '// NOTE: Untranslated strings fall back to English.\n' },
+  { file: 'zh.ts', translation: zh.translation, header: '// NOTE: Untranslated strings fall back to English.\n' }
 ]
 
 function walk(dir: string, acc: string[] = []): string[] {

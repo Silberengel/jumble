@@ -1,9 +1,11 @@
-import type { TLanguage } from '@/i18n'
 import type { Event } from 'nostr-tools'
 import { useSyncExternalStore } from 'react'
 
 export type NoteTranslationEntry = {
-  lang: TLanguage
+  /** LibreTranslate `target` code (from `/languages`). */
+  lang: string
+  /** Human label from the translate service (read-aloud fallback when not an app UI locale). */
+  langLabel?: string
   content: string
   /** When present, replaces or inserts a `title` tag (articles, discussions, web bookmarks). */
   title?: string

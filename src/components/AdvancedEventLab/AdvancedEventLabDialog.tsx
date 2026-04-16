@@ -17,10 +17,12 @@ import {
 import logger from '@/lib/logger'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
+import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
+import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
 import {
-  buildLanguageToolPreferenceList,
-  pickLanguageToolCodeForTranslateTarget
-} from '@/lib/languagetool-language-order'
+  buildLabLanguageToolPreferenceList,
+  filterTranslateLanguagesWithLanguageToolPairing
+} from '@/lib/trinity-languages'
 import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
@@ -467,22 +469,21 @@ export default function AdvancedEventLabDialog({
     }
   }, [open, initial, pushLabCheckpoint, bumpUndoUi])
 
+  const [translateLangs, setTranslateLangs] = useState<TranslateLanguageOption[]>([])
   const ltList = useMemo(
-    () => buildLanguageToolPreferenceList(i18nLanguage ?? i18n.language),
-    [i18nLanguage, i18n.language]
+    () => buildLabLanguageToolPreferenceList(i18nLanguage ?? i18n.language, translateLangs),
+    [i18nLanguage, i18n.language, translateLangs]
   )
   const [ltLang, setLtLang] = useState(() => ltList[0] ?? 'en-US')
   const ltLangRef = useRef(ltLang)
   ltLangRef.current = ltLang
-  const [translateLangs, setTranslateLangs] = useState<TranslateLanguageOption[]>([])
   const [translateLoad, setTranslateLoad] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [translateSource, setTranslateSource] = useState('auto')
   const [translateTarget, setTranslateTarget] = useState('en')
 
   useEffect(() => {
-    if (open) {
-      setLtLang(ltList[0] ?? 'en-US')
-    }
+    if (!open) return
+    setLtLang((prev) => (ltList.includes(prev) ? prev : ltList[0] ?? 'en-US'))
   }, [open, ltList])
 
   useEffect(() => {
@@ -502,14 +503,15 @@ export default function AdvancedEventLabDialog({
     void fetchTranslateLanguages()
       .then((list) => {
         if (cancelled) return
-        if (!list.length) {
+        const filtered = filterTranslateLanguagesWithLanguageToolPairing(list)
+        if (!filtered.length) {
           setTranslateLangs([])
           setTranslateLoad('empty')
           return
         }
-        setTranslateLangs(list)
+        setTranslateLangs(filtered)
         setTranslateSource('auto')
-        const codes = list.map((l) => l.code)
+        const codes = filtered.map((l) => l.code)
         const tgt = codes.includes('en') ? 'en' : codes[0]!
         setTranslateTarget(tgt)
         setTranslateLoad('ready')
@@ -790,13 +792,13 @@ export default function AdvancedEventLabDialog({
                     setLtLang(code)
                   }}
                 >
-                  <SelectTrigger id="lt-lang" className="w-[220px]">
+                  <SelectTrigger id="lt-lang" className="min-w-[220px] max-w-md w-auto">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="max-h-64">
+                  <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
                     {ltList.map((code) => (
                       <SelectItem key={code} value={code}>
-                        {code}
+                        <LanguageSelectOptionLines tag={code} />
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -826,14 +828,14 @@ export default function AdvancedEventLabDialog({
                           }
                         }}
                       >
-                        <SelectTrigger id="tr-src" className="w-[220px]">
+                        <SelectTrigger id="tr-src" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64">
+                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
                           <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
                           {translateLangs.map((l) => (
                             <SelectItem key={l.code} value={l.code}>
-                              {l.name} ({l.code})
+                              <LanguageSelectOptionLines tag={l.code} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -854,13 +856,13 @@ export default function AdvancedEventLabDialog({
                           }
                         }}
                       >
-                        <SelectTrigger id="tr-tgt" className="w-[220px]">
+                        <SelectTrigger id="tr-tgt" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64">
+                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)]">
                           {translateLangs.map((l) => (
                             <SelectItem key={l.code} value={l.code}>
-                              {l.name} ({l.code})
+                              <LanguageSelectOptionLines tag={l.code} />
                             </SelectItem>
                           ))}
                         </SelectContent>

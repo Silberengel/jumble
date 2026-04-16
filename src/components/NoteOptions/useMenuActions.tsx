@@ -62,8 +62,14 @@ import {
   eventHasTranslatableTextBody,
   translateNoteForDisplay
 } from '@/lib/translate-note-for-menu'
-import { isTranslateConfigured } from '@/lib/translate-client'
-import { LocalizedLanguageNames, SUPPORTED_APP_LANGUAGE_CODES, type TLanguage } from '@/i18n'
+import {
+  fetchTranslateLanguages,
+  isTranslateConfigured,
+  type TranslateLanguageOption
+} from '@/lib/translate-client'
+import { languageSelectSingleLine } from '@/lib/language-display-meta'
+import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
+import { filterTranslateLanguagesWithLanguageToolPairing } from '@/lib/trinity-languages'
 import { useMemo, useState, useEffect, useRef, useContext, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -161,6 +167,22 @@ export function useMenuActions({
     () => getNoteTranslation(event.id),
     () => getNoteTranslation(event.id)
   )
+
+  const [translateMenuOptions, setTranslateMenuOptions] = useState<TranslateLanguageOption[]>([])
+  useEffect(() => {
+    if (!isTranslateConfigured()) {
+      setTranslateMenuOptions([])
+      return
+    }
+    let cancelled = false
+    void fetchTranslateLanguages().then((list) => {
+      if (cancelled) return
+      setTranslateMenuOptions(filterTranslateLanguagesWithLanguageToolPairing(list))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Check if event is pinned
   const [isPinned, setIsPinned] = useState(false)
@@ -831,6 +853,7 @@ export function useMenuActions({
 
     const noteSupportsTranslateMenu =
       isTranslateConfigured() &&
+      translateMenuOptions.length > 0 &&
       (eventHasTranslatableTextBody(event) || articleHasTranslatableTitle(event))
 
     const translateTargetSubmenu: SubMenuAction[] = noteSupportsTranslateMenu
@@ -843,23 +866,26 @@ export function useMenuActions({
               toast.success(t('Showing original note text'))
             }
           },
-          ...SUPPORTED_APP_LANGUAGE_CODES.map(
-            (code: TLanguage, i): SubMenuAction => ({
-              label: LocalizedLanguageNames[code],
+          ...translateMenuOptions.map(
+            (opt, i): SubMenuAction => ({
+              label: <LanguageSelectOptionLines tag={opt.code} compact />,
               separator: i === 0,
               onClick: () => {
                 closeDrawer()
                 void toast.promise(
-                  translateNoteForDisplay(event, code).then((out) => {
+                  translateNoteForDisplay(event, opt.code).then((out) => {
                     setNoteTranslation(event.id, {
-                      lang: code,
+                      lang: opt.code,
+                      langLabel: languageSelectSingleLine(opt.code),
                       content: out.content,
                       title: out.title
                     })
                   }),
                   {
                     loading: t('Translating note…'),
-                    success: t('Note translated', { language: LocalizedLanguageNames[code] }),
+                    success: t('Note translated', {
+                      language: languageSelectSingleLine(opt.code)
+                    }),
                     error: (err: unknown) =>
                       t('Note translation failed', {
                         message: err instanceof Error ? err.message : String(err)
@@ -1229,7 +1255,8 @@ export function useMenuActions({
     onOpenEditOrClone,
     canSignEvents,
     profile,
-    noteTranslationFromMenu
+    noteTranslationFromMenu,
+    translateMenuOptions
   ])
 
   return menuActions
