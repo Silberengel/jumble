@@ -1024,18 +1024,18 @@ function detectLanguage(text: string): string {
  * To see available voices, check the piper-data folder or Wyoming server logs.
  */
 function getVoiceForLanguage(lang: string): string {
-  // Voice map keys / ids: keep in sync with `src/lib/trinity-languages.ts` (`TRINITY_PIPER_VOICE`).
+  // Voice map keys / ids: keep in sync with `src/lib/trinity-languages.ts` (`TRINITY_PIPER_VOICE`, `EXTRA_READ_ALOUD_PIPER_VOICE`).
   const voiceMap: Record<string, string> = {
     'en': 'en_US-lessac-medium', // Default English voice
     'de': 'de_DE-thorsten-medium', // German
     'fr': 'fr_FR-siwis-medium', // French
     'es': 'es_ES-davefx-medium', // Spanish
-    // 'it': 'it_IT-riccardo-medium', // Italian - not available
+    'it': 'it_IT-paola-medium', // Italian (rhasspy/piper-voices; install via scripts/download-piper-extra-voices.sh)
     'ru': 'ru_RU-ruslan-medium', // Russian
     'zh': 'zh_CN-huayan-medium', // Chinese
-    // 'ar': 'ar_SA-hafez-medium', // Arabic - not available
+    'ar': 'ar_JO-kareem-medium', // Arabic (rhasspy/piper-voices; install via scripts/download-piper-extra-voices.sh)
     'pl': 'pl_PL-darkman-medium', // Polish
-    // 'pt': 'pt_BR-edresson-medium', // Portuguese - not available
+    'pt': 'pt_BR-cadu-medium', // Portuguese (BR; rhasspy/piper-voices; same script)
     'nl': 'nl_NL-mls-medium', // Dutch
     'cs': 'cs_CZ-jirka-medium', // Czech
     'tr': 'tr_TR-dfki-medium', // Turkish

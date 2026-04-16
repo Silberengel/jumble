@@ -1,7 +1,7 @@
 /**
- * Piper voices match `services/piper-tts-proxy/server.ts` `getVoiceForLanguage`.
+ * Piper voices match `services/piper-tts-proxy/server.ts` `getVoiceForLanguage` (`TRINITY_PIPER_VOICE` + `EXTRA_READ_ALOUD_PIPER_VOICE`).
  * Read-aloud uses {@link getPiperVoiceForChosenLanguage}: native Piper for trinity UI codes, then
- * **related** Piper (e.g. Chinese for Japanese/Korean, Russian for Ukrainian, Spanish for Portuguese),
+ * **related** Piper (e.g. Chinese for Japanese/Korean — no `ja`/`ko` in rhasspy/piper-voices yet),
  * then **English** when no heuristic fits.
  *
  * **Translate UIs** use `filterTranslateLanguagesWithGrammarCatalog` in `language-display-meta.ts`:
@@ -44,6 +44,18 @@ export const TRINITY_PIPER_VOICE: Record<TrinityLanguageCode, string> = {
   tr: 'tr_TR-dfki-medium'
 }
 
+/**
+ * Read-aloud Piper voices beyond app UI locales (rhasspy/piper-voices). Install files into
+ * `.local-piper-data` — see `scripts/download-piper-extra-voices.sh`.
+ */
+export const EXTRA_READ_ALOUD_PIPER_VOICE: Record<string, string> = {
+  ar: 'ar_JO-kareem-medium',
+  it: 'it_IT-paola-medium',
+  pt: 'pt_BR-cadu-medium'
+}
+
+export type PiperReadAloudProfileCode = TrinityLanguageCode | keyof typeof EXTRA_READ_ALOUD_PIPER_VOICE
+
 export const TRINITY_FALLBACK_ENGLISH_VOICE = TRINITY_PIPER_VOICE.en
 
 /** Native autonyms / labels for **app UI** locales (General settings); not the full translate menu. */
@@ -58,6 +70,17 @@ export const TRINITY_LANGUAGE_DISPLAY_NAMES: { [K in TrinityLanguageCode]: strin
   nl: 'Nederlands',
   cs: 'Čeština',
   tr: 'Türkçe'
+}
+
+export const PIPER_READ_ALOUD_PROFILE_LABELS: Record<PiperReadAloudProfileCode, string> = {
+  ...TRINITY_LANGUAGE_DISPLAY_NAMES,
+  ar: 'العربية',
+  it: 'Italiano',
+  pt: 'Português'
+}
+
+export function piperReadAloudProfileLabel(code: PiperReadAloudProfileCode): string {
+  return PIPER_READ_ALOUD_PROFILE_LABELS[code]
 }
 
 export function isTrinityLanguageCode(s: string): s is TrinityLanguageCode {
@@ -89,8 +112,8 @@ export type PiperVoiceResolution = {
   usedEnglishVoiceFallback: boolean
   /** True when using another trinity voice (e.g. `zh`) to approximate the requested language. */
   usedRelatedVoiceFallback: boolean
-  /** Which trinity Piper profile is actually used (native, related, or `en`). */
-  piperProfileCode: TrinityLanguageCode
+  /** Piper profile for UI labels (trinity locale or e.g. `ar` for Arabic read-aloud). */
+  piperProfileCode: PiperReadAloudProfileCode
 }
 
 /**
@@ -113,10 +136,8 @@ const RELATED_PIPER_FOR_BASE: Record<string, TrinityLanguageCode> = {
   sk: 'cs',
   sl: 'de',
   hr: 'ru',
-  pt: 'es',
   ca: 'es',
   gl: 'es',
-  it: 'es',
   ro: 'es',
   la: 'es',
   sq: 'es',
@@ -166,6 +187,16 @@ export function getPiperVoiceForChosenLanguage(rawLang: string): PiperVoiceResol
   }
   if (isTrinityLanguageCode(full)) {
     return getPiperVoiceForTrinityLanguage(full)
+  }
+
+  const extraVoice = EXTRA_READ_ALOUD_PIPER_VOICE[base]
+  if (extraVoice) {
+    return {
+      voice: extraVoice,
+      usedEnglishVoiceFallback: false,
+      usedRelatedVoiceFallback: false,
+      piperProfileCode: base as PiperReadAloudProfileCode
+    }
   }
 
   const related = RELATED_PIPER_FOR_BASE[full] ?? RELATED_PIPER_FOR_BASE[base] ?? null

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getPiperVoiceForChosenLanguage, TRINITY_PIPER_VOICE } from '@/lib/trinity-languages'
+import {
+  EXTRA_READ_ALOUD_PIPER_VOICE,
+  getPiperVoiceForChosenLanguage,
+  TRINITY_PIPER_VOICE
+} from '@/lib/trinity-languages'
 
 describe('getPiperVoiceForChosenLanguage', () => {
   it('uses native Piper for trinity codes', () => {
@@ -27,10 +31,19 @@ describe('getPiperVoiceForChosenLanguage', () => {
     expect(r.piperProfileCode).toBe('ru')
   })
 
-  it('routes Portuguese to Spanish Piper', () => {
+  it('uses native Portuguese Piper for pt', () => {
     const r = getPiperVoiceForChosenLanguage('pt')
-    expect(r.voice).toBe(TRINITY_PIPER_VOICE.es)
-    expect(r.usedRelatedVoiceFallback).toBe(true)
+    expect(r.voice).toBe(EXTRA_READ_ALOUD_PIPER_VOICE.pt)
+    expect(r.usedEnglishVoiceFallback).toBe(false)
+    expect(r.usedRelatedVoiceFallback).toBe(false)
+    expect(r.piperProfileCode).toBe('pt')
+  })
+
+  it('uses native Italian Piper for it', () => {
+    const r = getPiperVoiceForChosenLanguage('it')
+    expect(r.voice).toBe(EXTRA_READ_ALOUD_PIPER_VOICE.it)
+    expect(r.usedRelatedVoiceFallback).toBe(false)
+    expect(r.piperProfileCode).toBe('it')
   })
 
   it('routes Dutch-adjacent tags to German when not trinity native', () => {
@@ -39,8 +52,22 @@ describe('getPiperVoiceForChosenLanguage', () => {
     expect(r.usedRelatedVoiceFallback).toBe(true)
   })
 
-  it('falls back to English Piper for unmapped languages', () => {
+  it('uses native Arabic Piper when base is Arabic', () => {
     const r = getPiperVoiceForChosenLanguage('ar')
+    expect(r.voice).toBe(EXTRA_READ_ALOUD_PIPER_VOICE.ar)
+    expect(r.usedEnglishVoiceFallback).toBe(false)
+    expect(r.usedRelatedVoiceFallback).toBe(false)
+    expect(r.piperProfileCode).toBe('ar')
+  })
+
+  it('uses Arabic Piper for regional Arabic tags', () => {
+    const r = getPiperVoiceForChosenLanguage('ar-SA')
+    expect(r.voice).toBe(EXTRA_READ_ALOUD_PIPER_VOICE.ar)
+    expect(r.piperProfileCode).toBe('ar')
+  })
+
+  it('falls back to English Piper for unmapped languages', () => {
+    const r = getPiperVoiceForChosenLanguage('hi')
     expect(r.voice).toBe(TRINITY_PIPER_VOICE.en)
     expect(r.usedEnglishVoiceFallback).toBe(true)
     expect(r.usedRelatedVoiceFallback).toBe(false)

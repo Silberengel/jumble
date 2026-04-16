@@ -4,7 +4,7 @@ import { getNoteTranslation } from '@/lib/note-translation-display'
 import {
   getPiperVoiceForChosenLanguage,
   isTrinityLanguageCode,
-  TRINITY_LANGUAGE_DISPLAY_NAMES
+  piperReadAloudProfileLabel
 } from '@/lib/trinity-languages'
 import { takeReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
 import {
@@ -738,7 +738,7 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
   const piperVoiceRequestedLanguageName = piperNotice
   const piperVoiceProfileName =
     usedEnglishVoiceFallback || usedRelatedVoiceFallback
-      ? TRINITY_LANGUAGE_DISPLAY_NAMES[piperProfileCode]
+      ? piperReadAloudProfileLabel(piperProfileCode)
       : ''
 
   if (READ_ALOUD_TTS_URL) {

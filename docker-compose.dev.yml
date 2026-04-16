@@ -79,7 +79,7 @@ services:
     restart: unless-stopped
 
   # Wyoming Piper + HTTP bridge (read-aloud). Profile local-tts — matches vite /api/piper-tts → :9876, Wyoming :10200.
-  # Mount voices under ./.local-piper-data/voices (see PROXY_SETUP.md) or use your existing piper-data path.
+  # Mount voices under ./.local-piper-data (flat .onnx + .onnx.json). Extra voices: scripts/download-piper-extra-voices.sh
   piper-wyoming:
     image: ${WYOMING_PIPER_IMAGE:-silberengel/wyoming-piper:latest}
     profiles: ['local-tts']
