@@ -1,5 +1,3 @@
-import { isImwaldElectron } from '@/lib/client-platform'
-
 export type ImwaldBackendResponse = {
   status: number
   statusText: string
@@ -16,7 +14,8 @@ export async function electronAwareFetch(input: string, init?: RequestInit): Pro
     throw new DOMException('Aborted', 'AbortError')
   }
   const bridge = typeof window !== 'undefined' ? window.imwaldElectron : undefined
-  if (!isImwaldElectron() || typeof bridge?.backendRequest !== 'function') {
+  /** Prefer main-process fetch whenever the preload bridge exists (do not rely on `isElectron` alone). */
+  if (typeof bridge?.backendRequest !== 'function') {
     return fetch(input, init)
   }
 

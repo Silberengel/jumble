@@ -1,6 +1,6 @@
 {
   "name": "imwald",
-  "version": "23.0.9",
+  "version": "23.0.10",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",
@@ -170,6 +170,9 @@
       "dist/**/*",
       "electron/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "electron/**/*"
     ],
     "linux": {
       "target": [

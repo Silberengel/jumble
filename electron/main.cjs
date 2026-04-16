@@ -1,9 +1,8 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, Menu, session, net } = require('electron')
 const fs = require('fs')
 const http = require('http')
-const https = require('https')
 const path = require('path')
 
 /** True when running from source (`electron .`); false when packaged. */
@@ -209,6 +208,16 @@ function relaxCorsForRendererSubresources() {
       callback({ cancel: false, responseHeaders: details.responseHeaders })
       return
     }
+    // Main-process `net.fetch` (translate / LanguageTool IPC) has no `webContentsId` — do not rewrite
+    // response headers; the consumer is Node/Chromium fetch in main, not a renderer CORS check.
+    const url = String(details.url || '')
+    if (
+      !details.webContentsId &&
+      (/\/api\/translate(?:\/|\?|$)/u.test(url) || /\/api\/languagetool(?:\/|\?|$)/u.test(url))
+    ) {
+      callback({ cancel: false, responseHeaders: details.responseHeaders })
+      return
+    }
     const raw = details.responseHeaders
     if (!raw) {
       callback({ cancel: false })
@@ -267,51 +276,46 @@ const STRIP_OUTBOUND_REQUEST_HEADERS = new Set([
   'keep-alive'
 ])
 
-function requestImwaldBackend(urlString, { method, headers, body }) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(urlString)
-    const useTls = u.protocol === 'https:'
-    const lib = useTls ? https : http
-    const port = u.port || (useTls ? 443 : 80)
-    const safeHeaders = {}
-    if (headers && typeof headers === 'object') {
-      for (const [k, v] of Object.entries(headers)) {
-        if (STRIP_OUTBOUND_REQUEST_HEADERS.has(k.toLowerCase())) continue
-        if (typeof v === 'string') safeHeaders[k] = v
-      }
+/**
+ * Use Chromium’s network stack (same TLS / HTTP2 behavior as the browser). Node’s `https` can fail
+ * where `net.fetch` succeeds (e.g. cert chains, SNI, corporate proxies already trusted by Chromium).
+ */
+async function requestImwaldBackend(urlString, { method, headers, body }) {
+  const safeHeaders = {}
+  if (headers && typeof headers === 'object') {
+    for (const [k, v] of Object.entries(headers)) {
+      if (STRIP_OUTBOUND_REQUEST_HEADERS.has(k.toLowerCase())) continue
+      if (typeof v === 'string') safeHeaders[k] = v
     }
-    const opts = {
-      hostname: u.hostname,
-      port,
-      path: `${u.pathname}${u.search}`,
-      method: (method || 'GET').toUpperCase(),
-      headers: safeHeaders
-    }
-    const req = lib.request(opts, (res) => {
-      const chunks = []
-      res.on('data', (chunk) => chunks.push(chunk))
-      res.on('end', () => {
-        const buf = Buffer.concat(chunks)
-        const outHeaders = {}
-        for (const [k, v] of Object.entries(res.headers)) {
-          if (v === undefined) continue
-          outHeaders[k] = Array.isArray(v) ? v.join(', ') : String(v)
-        }
-        resolve({
-          status: res.statusCode || 0,
-          statusText: res.statusMessage || '',
-          headers: outHeaders,
-          body: buf.toString('utf8')
-        })
-      })
-    })
-    req.on('error', reject)
-    if (body) req.write(body, 'utf8')
-    req.end()
+  }
+  const m = (method || 'GET').toUpperCase()
+  const init = {
+    method: m,
+    headers: safeHeaders
+  }
+  if (body != null && m !== 'GET' && m !== 'HEAD') {
+    init.body = body
+  }
+  const res = await net.fetch(urlString, init)
+  const text = await res.text()
+  const outHeaders = {}
+  res.headers.forEach((value, key) => {
+    outHeaders[key] = value
   })
+  return {
+    status: res.status,
+    statusText: res.statusText || '',
+    headers: outHeaders,
+    body: text
+  }
 }
 
 function registerImwaldBackendRequestIpc() {
+  try {
+    ipcMain.removeHandler('imwald:backend-request')
+  } catch {
+    /* ignore if channel was never registered */
+  }
   ipcMain.handle('imwald:backend-request', async (_event, payload) => {
     const url = payload && typeof payload.url === 'string' ? payload.url : ''
     if (!isAllowedImwaldBackendUrl(url)) {
