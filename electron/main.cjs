@@ -190,9 +190,19 @@ function loadRenderer(win) {
 
 /**
  * Packaged (and dev) renderer runs on http://127.0.0.1; hls.js and other fetches hit third-party
- * streams without CORS. Chromium still enforces CORS, so inject a permissive ACAO on subresources only.
+ * streams without CORS. Chromium still enforces CORS, so inject permissive CORS on subresources only.
+ * LanguageTool / LibreTranslate use POST + non-simple Content-Type → preflight must see Allow-Methods /
+ * Allow-Headers, not only ACAO.
  */
 function relaxCorsForRendererSubresources() {
+  const stripCors = new Set([
+    'access-control-allow-origin',
+    'access-control-allow-credentials',
+    'access-control-allow-methods',
+    'access-control-allow-headers',
+    'access-control-expose-headers',
+    'access-control-max-age'
+  ])
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') {
       callback({ cancel: false, responseHeaders: details.responseHeaders })
@@ -205,15 +215,15 @@ function relaxCorsForRendererSubresources() {
     }
     const responseHeaders = { ...raw }
     for (const key of Object.keys(responseHeaders)) {
-      const lower = key.toLowerCase()
-      if (
-        lower === 'access-control-allow-origin' ||
-        lower === 'access-control-allow-credentials'
-      ) {
+      if (stripCors.has(key.toLowerCase())) {
         delete responseHeaders[key]
       }
     }
     responseHeaders['Access-Control-Allow-Origin'] = ['*']
+    responseHeaders['Access-Control-Allow-Methods'] = ['GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS']
+    responseHeaders['Access-Control-Allow-Headers'] = [
+      'Authorization,Content-Type,Accept,Accept-Language,Origin,X-Requested-With'
+    ]
     callback({ cancel: false, responseHeaders })
   })
 }

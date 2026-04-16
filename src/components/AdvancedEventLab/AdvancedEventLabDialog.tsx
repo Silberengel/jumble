@@ -21,6 +21,7 @@ import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/
 import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
 import {
   filterTranslateLanguagesWithGrammarCatalog,
+  TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS,
   translateLanguageOptionMatchesQuery
 } from '@/lib/language-display-meta'
 import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
@@ -536,21 +537,29 @@ export default function AdvancedEventLabDialog({
     void fetchTranslateLanguages()
       .then((list) => {
         if (cancelled) return
-        const filtered = filterTranslateLanguagesWithGrammarCatalog(list)
-        if (!filtered.length) {
+        const base = list.length > 0 ? list : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        const filtered = filterTranslateLanguagesWithGrammarCatalog(base)
+        const resolved = filtered.length > 0 ? filtered : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        if (!resolved.length) {
           setTranslateLangs([])
           setTranslateLoad('empty')
           return
         }
-        setTranslateLangs(filtered)
+        setTranslateLangs([...resolved])
         setTranslateSource('auto')
-        const codes = filtered.map((l) => l.code)
+        const codes = resolved.map((l) => l.code)
         const tgt = codes.includes('en') ? 'en' : codes[0]!
         setTranslateTarget(tgt)
         setTranslateLoad('ready')
       })
       .catch(() => {
-        if (!cancelled) setTranslateLoad('error')
+        if (cancelled) return
+        const resolved = TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        setTranslateLangs([...resolved])
+        setTranslateSource('auto')
+        const codes = resolved.map((l) => l.code)
+        setTranslateTarget(codes.includes('en') ? 'en' : codes[0]!)
+        setTranslateLoad('ready')
       })
     return () => {
       cancelled = true

@@ -70,6 +70,7 @@ import {
 import {
   filterTranslateLanguagesWithGrammarCatalog,
   languageSelectSingleLine,
+  TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS,
   TRANSLATE_LANGUAGE_MENU_ITEM_CLASS
 } from '@/lib/language-display-meta'
 
@@ -187,10 +188,18 @@ export function useMenuActions({
       return
     }
     let cancelled = false
-    void fetchTranslateLanguages().then((list) => {
-      if (cancelled) return
-      setTranslateMenuOptions(filterTranslateLanguagesWithGrammarCatalog(list))
-    })
+    void fetchTranslateLanguages()
+      .then((list) => {
+        if (cancelled) return
+        const base = list.length > 0 ? list : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        const filtered = filterTranslateLanguagesWithGrammarCatalog(base)
+        setTranslateMenuOptions(
+          filtered.length > 0 ? filtered : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setTranslateMenuOptions(TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS)
+      })
     return () => {
       cancelled = true
     }
