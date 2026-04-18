@@ -5,7 +5,9 @@
  * emphasis/strike delimiters, and AsciiDoc blocks, macros, stem, passthrough, xref.
  * Also: wiki `[[…]]` (incl. `book::`, `citation::`), `wikilink:`, `BOOKSTR_MARKER:…:BOOKSTR_END`,
  * `nostr:…` / bare NIP-19 bech32 (`npub1`…, `nprofile1`…, etc.), and `link:url[text]` macros.
+ * Raw `http://` / `https://` URLs (so blossom-style hosts `https://npub1….band/…/file.gif` are not split for translation).
  * NIP-style custom/native emoji shortcodes `:shortcode:` (see {@link EMOJI_SHORT_CODE_REGEX}).
+ * Markdown `#hashtag` tokens (Unicode letters/numbers/mark, `_`, `-`).
  */
 
 import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
@@ -762,6 +764,42 @@ function collectWikilinkMarkerRanges(text: string, merged: [number, number][]): 
   return ranges
 }
 
+/**
+ * Standalone `http://` / `https://` URLs (not only inside Markdown `[]()`).
+ * Without this, a host like `npub1….blossom.band/…/x.gif` is split: bare-npub protection covers only the
+ * first 63 chars after `npub1`, leaving `.gif` and the path in the translatable stream.
+ */
+function collectRawHttpUrlRanges(text: string, merged: [number, number][]): [number, number][] {
+  const ranges: [number, number][] = []
+  let i = 0
+  while (i < text.length - 7) {
+    if (posInMerged(i, merged)) {
+      i++
+      continue
+    }
+    const head = text.slice(i, i + 8).toLowerCase()
+    const isHttps = head.startsWith('https://')
+    const isHttp = !isHttps && head.startsWith('http://')
+    if (!isHttps && !isHttp) {
+      i++
+      continue
+    }
+    const start = i
+    i += isHttps ? 8 : 7
+    let end = i
+    while (end < text.length) {
+      const c = text[end]!
+      if (/\s/.test(c)) break
+      if (c === '<' || c === '>' || c === '"' || c === "'" || c === '`') break
+      if (c === ')' || c === ']' || c === '}') break
+      end++
+    }
+    if (end > start) ranges.push([start, end])
+    i = end
+  }
+  return ranges
+}
+
 /** AsciiDoc / Markdown `link:url[text]` and `menu:…[…]` (toolbar + jumble). */
 function collectLinkMenuColonMacros(text: string, merged: [number, number][]): [number, number][] {
   const ranges: [number, number][] = []
@@ -868,6 +906,19 @@ function collectAsciiDocXrefRanges(text: string, merged: [number, number][]): [n
   return ranges
 }
 
+/** `#tag` / `#plebchain` spans; skipped when already inside a frozen range (e.g. URL). */
+function collectMarkdownHashtagRanges(text: string, merged: [number, number][]): [number, number][] {
+  const ranges: [number, number][] = []
+  const re = /#[\p{L}\p{N}\p{M}_-]+/gu
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index
+    if (posInMerged(start, merged)) continue
+    ranges.push([start, start + m[0].length])
+  }
+  return ranges
+}
+
 /** `:shortcode:` spans (custom / native emoji); skipped when already inside code, links, etc. */
 function collectEmojiShortcodeRanges(text: string, merged: [number, number][]): [number, number][] {
   const ranges: [number, number][] = []
@@ -896,6 +947,8 @@ export function getMarkupProtectRanges(text: string, mode: AdvancedLabMarkupMode
   merged = mergeSortedRanges([...merged, ...bookstrPass, ...wikilinkM])
   const linkMenu = collectLinkMenuColonMacros(text, merged)
   merged = mergeSortedRanges([...merged, ...linkMenu])
+  const rawHttpUrls = collectRawHttpUrlRanges(text, merged)
+  merged = mergeSortedRanges([...merged, ...rawHttpUrls])
   const nostrBech = collectNostrAndBech32Ranges(text, merged)
   merged = mergeSortedRanges([...merged, ...nostrBech])
   const triplePlus = collectAsciiDocTriplePlusPassthrough(text, merged)
@@ -912,6 +965,8 @@ export function getMarkupProtectRanges(text: string, mode: AdvancedLabMarkupMode
     const bold = collectMarkdownDelimiterPairEdges(text, mergeSortedRanges([...merged, ...strike]), '**')
     const boldU = collectMarkdownDelimiterPairEdges(text, mergeSortedRanges([...merged, ...bold]), '__')
     merged = mergeSortedRanges([...merged, ...strike, ...bold, ...boldU])
+    const hashtags = collectMarkdownHashtagRanges(text, merged)
+    merged = mergeSortedRanges([...merged, ...hashtags])
   } else {
     const adocBlocks = collectAsciiDocStructuredBlocks(text, merged)
     merged = mergeSortedRanges([...merged, ...adocBlocks])

@@ -137,6 +137,20 @@ describe('getMarkupProtectRanges', () => {
     expect(rangeIntersectsMerged(t.lastIndexOf(npub), npub.length, merged)).toBe(true)
   })
 
+  it('markdown: freezes a full raw https URL (blossom npub-shaped host; .gif not translatable)', () => {
+    const url =
+      'https://npub1uq6dv4yq94704gk5r22jsqg9gy2wpxkk5dft9q5gugc8tj53nq2qg5q22d.blossom.band/efc560395efdc7327db278ea4a7677905f69fecf1e6db754f41309d62f8ddb23.gif'
+    const t = `See this\n${url}\nnext`
+    const merged = getMarkupProtectRanges(t, 'markdown')
+    expect(
+      merged.some(([a, b]) => {
+        const s = t.slice(a, b)
+        return s.startsWith('https://') && s.endsWith('.gif') && s.includes('blossom.band')
+      })
+    ).toBe(true)
+    expect(rangeIntersectsMerged(t.indexOf('.gif'), 4, merged)).toBe(true)
+  })
+
   it('freezes BOOKSTR_MARKER passthrough and WIKILINK marker', () => {
     const book = 'BOOKSTR_MARKER:foo:BOOKSTR_END'
     const wiki = 'WIKILINK:my-page[My Page]'
@@ -222,6 +236,27 @@ describe('translateAdvancedLabMarkup', () => {
   it('markdown: translates link label only', async () => {
     const out = await translateAdvancedLabMarkup('[Hi](https://x.com)', 'de', 'en', 'markdown')
     expect(out).toBe('[<Hi>](https://x.com)')
+  })
+
+  it('markdown: does not translate raw https URL (npub-like blossom host / .gif path)', async () => {
+    const url =
+      'https://npub1uq6dv4yq94704gk5r22jsqg9gy2wpxkk5dft9q5gugc8tj53nq2qg5q22d.blossom.band/x.gif'
+    const out = await translateAdvancedLabMarkup(`Before\n${url}\nAfter`, 'de', 'en', 'markdown')
+    expect(out).toContain(url)
+    expect(out).toBe('<Before>\n' + url + '\n<After>')
+  })
+
+  it('markdown: freezes #hashtag tokens when mixed with prose', () => {
+    const t = 'Cool #meme and #memestr stuff'
+    const merged = getMarkupProtectRanges(t, 'markdown')
+    expect(rangeIntersectsMerged(t.indexOf('#meme'), 5, merged)).toBe(true)
+    expect(rangeIntersectsMerged(t.indexOf('#memestr'), 8, merged)).toBe(true)
+  })
+
+  it('markdown: leaves hashtags unchanged inside translated prose', async () => {
+    const out = await translateAdvancedLabMarkup('Enjoy #meme today', 'de', 'en', 'markdown')
+    expect(out).toContain('#meme')
+    expect(out).toMatch(/#meme/)
   })
 
   it('markdown: translates optional link title in quotes', async () => {

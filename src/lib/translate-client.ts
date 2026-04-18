@@ -144,6 +144,14 @@ export function clearTranslateLanguagesCache(): void {
   advertisedTranslateApiCodes = null
 }
 
+/**
+ * LibreTranslate / Argos often corrupts hashtag-only lines (random glyphs, subtitle-like junk,
+ * dropped letters). Nostr-style hashtags must stay verbatim.
+ */
+export function shouldSkipMachineTranslatePlainCore(core: string): boolean {
+  return /^(?:#[\p{L}\p{N}\p{M}_-]+(?:\s+#[\p{L}\p{N}\p{M}_-]+)*)\s*$/u.test(core.trim())
+}
+
 export async function translatePlainText(
   text: string,
   targetLang: string,
@@ -159,6 +167,10 @@ export async function translatePlainText(
   const trailingWs = text.match(/\s*$/u)?.[0] ?? ''
   const core = text.slice(leadingWs.length, text.length - trailingWs.length)
   if (core === '') {
+    return text
+  }
+
+  if (shouldSkipMachineTranslatePlainCore(core)) {
     return text
   }
 
