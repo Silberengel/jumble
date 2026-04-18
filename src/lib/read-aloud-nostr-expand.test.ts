@@ -66,7 +66,6 @@ describe('expandNostrReferencesForReadAloud', () => {
     const profile = finalizeEvent(
       {
         kind: 0,
-        pubkey: pk,
         content: JSON.stringify({ display_name: 'Pat' }),
         tags: [],
         created_at: 1
@@ -82,7 +81,6 @@ describe('expandNostrReferencesForReadAloud', () => {
 
   it('uses unknown author when embedded note is cached but profile is not', () => {
     const sk = generateSecretKey()
-    const pk = getPublicKey(sk)
     const inner = finalizeEvent({ kind: 1, content: 'Hi', tags: [], created_at: 2 }, sk)
     const note = nip19.noteEncode(inner.id)
     peek.mockImplementation((id: string) => (id === note || id === inner.id ? (inner as Event) : undefined))
@@ -97,7 +95,6 @@ describe('expandNostrReferencesForReadAloud', () => {
     const profile = finalizeEvent(
       {
         kind: 0,
-        pubkey: pk,
         content: JSON.stringify({ name: 'n_name' }),
         tags: [],
         created_at: 1
