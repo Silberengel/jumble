@@ -3125,6 +3125,27 @@ function stripMarkdownGreentextMarker(trimmedLine: string): string {
 }
 
 /**
+ * Marked leaves unclosed `![alt](url` / `![alt](url "title` as a junk paragraph (text + autolink + text).
+ * When the whole trimmed paragraph is that fragment, recover alt, URL, and optional title.
+ */
+function tryRecoverMalformedMarkdownImageParagraph(
+  paragraphTrimmed: string
+): { alt: string; href: string; title?: string } | null {
+  const m = paragraphTrimmed.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)(.*)$/i)
+  if (!m) return null
+  const alt = m[1] ?? ''
+  const href = m[2] ?? ''
+  const tail = m[3] ?? ''
+  if (tail === '' || tail === ')') return { alt, href }
+  const fullTitled = /^\s+"([^"]*)"\s*\)\s*$/.exec(tail)
+  if (fullTitled) return { alt, href, title: fullTitled[1] }
+  const partialTitle = /^\s+"([^"]*)$/.exec(tail)
+  if (partialTitle) return { alt, href, title: partialTitle[1] }
+  if (/^\s*\)\s*$/.test(tail)) return { alt, href }
+  return null
+}
+
+/**
  * Marked-driven markdown renderer (standard markdown blocks/inline), while keeping
  * Nostr-specific enrichments (embeds, wikilinks, relay/profile navigation) custom.
  */
@@ -3451,6 +3472,43 @@ function parseMarkdownContentMarked(
           displayMode={standaloneMath.displayMode}
         />
       )
+    }
+    const recoveredMdImage = tryRecoverMalformedMarkdownImageParagraph(paragraphText)
+    if (recoveredMdImage) {
+      const cleaned = cleanUrl(recoveredMdImage.href)
+      if (cleaned && isImage(cleaned) && isSafeMediaUrl(cleaned)) {
+        const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
+        let imageIdx = imageIndexMap.get(cleaned)
+        if (imageIdx === undefined && getImageIdentifier) {
+          const id = getImageIdentifier(cleaned)
+          if (id) imageIdx = imageIndexMap.get(`__img_id:${id}`)
+        }
+        const alt = recoveredMdImage.alt || 'image'
+        const imageTip =
+          recoveredMdImage.title && recoveredMdImage.title.trim().length > 0
+            ? recoveredMdImage.title.trim()
+            : undefined
+        return (
+          <div key={`${key}-recovered-md-img`} className="my-2 not-prose block max-w-[400px] mx-auto">
+            <Image
+              image={{ ...baseImeta, url: recoveredMdImage.href }}
+              alt={alt}
+              tooltipTitle={imageTip}
+              showAltCaption={Boolean(recoveredMdImage.alt.trim())}
+              className="w-full rounded-lg cursor-zoom-in"
+              classNames={{
+                wrapper: 'not-prose my-2 block max-w-[400px] mx-auto rounded-lg w-full',
+                errorPlaceholder: 'aspect-square h-[30vh]'
+              }}
+              holdUntilClick={lazyMedia}
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation()
+                if (typeof imageIdx === 'number') openLightbox(imageIdx)
+              }}
+            />
+          </div>
+        )
+      }
     }
     const isNostrEventBech32 = (value: string): boolean =>
       value.startsWith('note') || value.startsWith('nevent') || value.startsWith('naddr')
@@ -5762,7 +5820,9 @@ export default function MarkdownArticle({
           color: #5eead4 !important;
         }
       `}</style>
-      <div className={`prose prose-zinc max-w-none dark:prose-invert break-words overflow-wrap-anywhere ${className || ''}`}>
+      <div
+        className={`prose prose-zinc max-w-none min-w-0 dark:prose-invert break-words overflow-wrap-anywhere ${className || ''}`}
+      >
         {iArticleUrl && !suppressITagArticleWebPreview && (
           <div className="not-prose mb-4 max-w-full">
             <WebPreview url={iArticleUrl} className="w-full" />

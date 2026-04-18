@@ -37,13 +37,13 @@ export const AdvancedEventLabPreviewPane = memo(function AdvancedEventLabPreview
 
   if (!source.trim()) {
     return (
-      <p className="text-sm text-muted-foreground px-1 py-2">{t('Advanced lab preview empty')}</p>
+      <p className="px-0 py-2 text-left text-sm text-muted-foreground">{t('Advanced lab preview empty')}</p>
     )
   }
 
   return (
     <Card className="border-0 bg-transparent p-0 shadow-none">
-      <div className="select-text max-w-none text-sm">
+      <div className="select-text min-w-0 max-w-none text-left text-sm">
         {markupMode === 'asciidoc' ? (
           <AsciidocArticle event={fakeEvent} hideImagesAndInfo={false} />
         ) : (

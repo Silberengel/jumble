@@ -101,6 +101,7 @@ import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import {
   buildPrioritizedWriteRelayUrls,
   dedupeNormalizeRelayUrlsOrdered,
+  filterContextAuthorReadRelaysForPublish,
   mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
@@ -621,7 +622,12 @@ class ClientService extends EventTarget {
           const n = normalizeUrl(u) || u
           if (n) authorReadSet.add(n)
         }
+        for (const u of list?.httpRead ?? []) {
+          const n = normalizeHttpRelayUrl(u) || u
+          if (n) authorReadSet.add(n)
+        }
       }
+      authorReadSet = new Set(filterContextAuthorReadRelaysForPublish([...authorReadSet]))
     }
 
     const favSet = new Set(

@@ -225,6 +225,9 @@ export default function AdvancedEventLabDialog({
   previewEmojiTags
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
+  /** `useTranslation().t` can change identity every render; never list it as a layout-effect dep (editor remount loop). */
+  const labTRef = useRef(t)
+  labTRef.current = t
   const dark = useDarkModeFlag()
   const markupHost = useRef<HTMLDivElement>(null)
   const markupView = useRef<EditorView | null>(null)
@@ -242,6 +245,10 @@ export default function AdvancedEventLabDialog({
   const LAB_DRAFT_DEBOUNCE_MS = 500
 
   const [previewDoc, setPreviewDoc] = useState('')
+
+  /** Stable while payload matches; avoids remounting the editor when the parent passes a new `initial` object reference. */
+  const labEditorMountFingerprint =
+    initial != null ? `${initial.kind}\0${initial.content}\0${JSON.stringify(initial.tags)}` : ''
 
   const mergedLabPreviewEmojiTags = useMemo(() => {
     if (!open || !initial) return []
@@ -470,7 +477,7 @@ export default function AdvancedEventLabDialog({
       clearInterval(pushId)
       clearInterval(uiId)
     }
-  }, [open, initial, pushLabCheckpoint, bumpUndoUi])
+  }, [open, labEditorMountFingerprint, pushLabCheckpoint, bumpUndoUi])
 
   const [translateLangs, setTranslateLangs] = useState<TranslateLanguageOption[]>([])
   const ltList = useMemo(
@@ -610,7 +617,7 @@ export default function AdvancedEventLabDialog({
         keymap.of([...defaultKeymap, ...historyKeymap]),
         lineNumbers(),
         cmPlaceholder(
-          t(
+          labTRef.current(
             markupMode === 'asciidoc'
               ? 'Advanced lab markup placeholder asciidoc'
               : 'Advanced lab markup placeholder markdown'
@@ -618,10 +625,11 @@ export default function AdvancedEventLabDialog({
         ),
         markupLang,
         EditorView.theme({
-          '&': { maxHeight: '100%' },
-          '.cm-scroller': { overflow: 'auto' },
+          '&': { height: '100%', maxHeight: '100%', minHeight: 0 },
+          '.cm-scroller': { overflow: 'auto', minHeight: 0 },
+          // Large dvh mins fight stacked flex/grid rows and overflow onto the preview; host + row cap height instead.
           '.cm-content': {
-            minHeight: 'min(22dvh, 11rem)',
+            minHeight: '11rem',
             fontFamily: 'var(--font-mono, ui-monospace, monospace)'
           }
         }),
@@ -722,11 +730,10 @@ export default function AdvancedEventLabDialog({
     }
   }, [
     open,
-    initial,
+    labEditorMountFingerprint,
     markupMode,
     dark,
     destroyEditors,
-    t,
     bodyApiRef,
     scheduleLabDraftPersist,
     flushLabDraftNow,
@@ -838,7 +845,10 @@ export default function AdvancedEventLabDialog({
                   <SelectTrigger id="lt-lang" className="min-w-[220px] max-w-md w-auto">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                  <SelectContent
+                    className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
                     <div
                       className="sticky top-0 z-10 border-b border-border bg-popover p-2"
                       onPointerDown={(e) => e.stopPropagation()}
@@ -893,7 +903,10 @@ export default function AdvancedEventLabDialog({
                         <SelectTrigger id="tr-src" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                        <SelectContent
+                          className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+                          onCloseAutoFocus={(e) => e.preventDefault()}
+                        >
                           <div
                             className="sticky top-0 z-10 border-b border-border bg-popover p-2"
                             onPointerDown={(e) => e.stopPropagation()}
@@ -942,7 +955,10 @@ export default function AdvancedEventLabDialog({
                         <SelectTrigger id="tr-tgt" className="min-w-[220px] max-w-md w-auto">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0">
+                        <SelectContent
+                          className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+                          onCloseAutoFocus={(e) => e.preventDefault()}
+                        >
                           <div
                             className="sticky top-0 z-10 border-b border-border bg-popover p-2"
                             onPointerDown={(e) => e.stopPropagation()}
@@ -1002,33 +1018,35 @@ export default function AdvancedEventLabDialog({
           </div>
         </div>
 
-        <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
+          <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
 
-        <div className="flex-1 min-h-0 flex flex-col gap-3 px-4 py-2 overflow-hidden lg:flex-row lg:gap-0">
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-1 lg:pr-3">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t(
-                markupMode === 'asciidoc'
-                  ? 'Advanced lab markup label asciidoc'
-                  : 'Advanced lab markup label markdown'
-              )}
-            </span>
-            <div
-              ref={markupHost}
-              className="flex-1 min-h-[min(28dvh,14rem)] lg:min-h-[min(42dvh,24rem)] border rounded-md overflow-hidden bg-muted/20"
-            />
-          </div>
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-1 border-t border-border pt-3 lg:flex-[0_1_42%] lg:max-w-[min(50%,40rem)] lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t('Advanced lab preview')}
-            </span>
-            <div className="flex-1 min-h-[min(24dvh,12rem)] lg:min-h-0 overflow-y-auto rounded-md border bg-muted/10 px-2 py-2">
-              <AdvancedEventLabPreviewPane
-                markupMode={markupMode}
-                source={previewDoc}
-                previewAuthorPubkey={previewAuthorPubkey}
-                previewEmojiTags={mergedLabPreviewEmojiTags}
+          <div className="flex min-h-0 flex-1 flex-col gap-0 px-4 py-2 max-lg:grid max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:flex lg:flex-row lg:py-2">
+            <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden max-lg:min-h-0 lg:flex-1 lg:pr-3">
+              <h3 className="shrink-0 text-left text-sm font-semibold leading-none text-foreground">
+                {t(
+                  markupMode === 'asciidoc'
+                    ? 'Advanced lab markup label asciidoc'
+                    : 'Advanced lab markup label markdown'
+                )}
+              </h3>
+              <div
+                ref={markupHost}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-muted/20 lg:min-h-[min(42dvh,24rem)]"
               />
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden -mx-4 border-t-2 border-border bg-muted/40 px-4 pb-3 pt-4 max-lg:min-h-0 max-lg:rounded-b-lg lg:mx-0 lg:mt-0 lg:flex-[0_1_42%] lg:max-w-[min(50%,40rem)] lg:rounded-none lg:border-t-0 lg:border-l lg:border-border lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:pl-3">
+              <h3 className="shrink-0 text-left text-sm font-semibold leading-none text-foreground">
+                {t('Advanced lab preview')}
+              </h3>
+              <div className="flex min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background py-2 pl-0 pr-0 text-left lg:bg-muted/10 lg:px-2">
+                <AdvancedEventLabPreviewPane
+                  markupMode={markupMode}
+                  source={previewDoc}
+                  previewAuthorPubkey={previewAuthorPubkey}
+                  previewEmojiTags={mergedLabPreviewEmojiTags}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1053,7 +1071,7 @@ export default function AdvancedEventLabDialog({
 /** Responsive shell: ~5× prior max width cap and ~3× vertical use of viewport (still clamped). */
 function cnDialogShell(): string {
   return [
-    'z-[250] max-w-none flex flex-col gap-0 p-0 overflow-hidden',
+    'z-[250] max-w-none flex min-h-0 flex-col gap-0 overflow-hidden p-0',
     'w-[min(98vw,calc(72rem*5))]',
     'h-[min(94vh,calc(28rem*3))]',
     'max-h-[min(96vh,90dvh)]'

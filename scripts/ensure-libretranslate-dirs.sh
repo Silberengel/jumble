@@ -10,7 +10,9 @@
 # as docker-compose `env_file` for libretranslate).
 #
 # Piper download logic lives in this file so you can copy **only** this script to a server and run it
-# from the repo root (still need curl, docker; full clone is easier: bash scripts/ensure-libretranslate-dirs.sh).
+# from the repo root (still need curl, docker). If `scripts/libretranslate-lt.default.env` is missing,
+# a built-in LT_LOAD_ONLY list is used (see load_stack_lt_load_only). Full clone is easiest:
+#   bash scripts/ensure-libretranslate-dirs.sh
 #
 # Internal entry: bash ensure-libretranslate-dirs.sh --download-piper-only [DEST]
 #   (used by scripts/download-piper-extra-voices.sh — keep Piper relpaths in sync with trinity-languages.ts)
@@ -30,21 +32,28 @@ _resolve_root() {
   fi
 }
 
+# Keep identical to scripts/libretranslate-lt.default.env in the repo (fallback when that file is absent).
+DEFAULT_LT_LOAD_ONLY='en,de,es,fr,it,pt,ru,zh,ar,nl,pl,cs,tr'
+
 load_stack_lt_load_only() {
   local f="${ROOT}/scripts/libretranslate-lt.default.env"
-  [[ -f "$f" ]] || {
-    echo "[ensure] Missing ${f}" >&2
-    exit 1
-  }
-  STACK_LT_LOAD_ONLY="$(grep -E '^[[:space:]]*LT_LOAD_ONLY=' "$f" | head -1 | sed 's/^[[:space:]]*LT_LOAD_ONLY=//')"
+  local f_alt="${ROOT}/libretranslate-lt.default.env"
+  if [[ -f "$f" ]]; then
+    STACK_LT_LOAD_ONLY="$(grep -E '^[[:space:]]*LT_LOAD_ONLY=' "$f" | head -1 | sed 's/^[[:space:]]*LT_LOAD_ONLY=//')"
+  elif [[ -f "$f_alt" ]]; then
+    STACK_LT_LOAD_ONLY="$(grep -E '^[[:space:]]*LT_LOAD_ONLY=' "$f_alt" | head -1 | sed 's/^[[:space:]]*LT_LOAD_ONLY=//')"
+  else
+    echo "[ensure] warn: missing ${f} (and ${f_alt}) — using built-in LT_LOAD_ONLY. Copy scripts/libretranslate-lt.default.env from the repo to customize." >&2
+    STACK_LT_LOAD_ONLY="$DEFAULT_LT_LOAD_ONLY"
+  fi
   [[ -n "$STACK_LT_LOAD_ONLY" ]] || {
-    echo "[ensure] LT_LOAD_ONLY empty in ${f}" >&2
+    echo "[ensure] LT_LOAD_ONLY empty (check ${f} or set LT_LOAD_ONLY before running)" >&2
     exit 1
   }
 }
 
 # Keep in sync with src/lib/trinity-languages.ts (TRINITY_PIPER_VOICE + EXTRA_READ_ALOUD_PIPER_VOICE)
-# and services/piper-tts-proxy/server.ts getVoiceForLanguage voiceMap.
+# and services/piper-tts-proxy/server.ts getVoiceForLanguage voiceMap (14 voices: 10 trinity + en-gb, ar, it, pt).
 download_piper_voices_to() {
   local dest="${1:?destination directory}"
   local hf="${HF_BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/main}"
@@ -74,8 +83,11 @@ download_piper_voices_to() {
       continue
     fi
     echo "Fetching ${base_name} …"
-    curl -fsSL -o "$onnx" "${hf}/${relpath}.onnx"
-    curl -fsSL -o "$json" "${hf}/${relpath}.onnx.json"
+    # HuggingFace can be slow or reset mid-transfer; retries + caps avoid hung deploys.
+    curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 600 \
+      -o "$onnx" "${hf}/${relpath}.onnx"
+    curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 600 \
+      -o "$json" "${hf}/${relpath}.onnx.json"
   done
   echo "Piper ONNX done → ${dest}"
 }

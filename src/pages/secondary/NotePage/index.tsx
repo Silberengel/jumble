@@ -14,7 +14,13 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchEvent, useFetchProfile } from '@/hooks'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
-import { getParentBech32Id, getParentETag, getRootBech32Id } from '@/lib/event'
+import {
+  getParentBech32Id,
+  getParentETag,
+  getParentEventHexId,
+  getRootBech32Id,
+  getRootEventHexId
+} from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { tagNameEquals } from '@/lib/tag'
@@ -109,8 +115,18 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   const [externalEvent, setExternalEvent] = useState<Event | undefined>(undefined)
   const finalEvent = event || externalEvent
   
-  const parentEventId = useMemo(() => getParentBech32Id(finalEvent), [finalEvent])
-  const rootEventId = useMemo(() => getRootBech32Id(finalEvent), [finalEvent])
+  const parentEventId = useMemo(() => {
+    if (!finalEvent) return undefined
+    const parentHex = getParentEventHexId(finalEvent)?.toLowerCase()
+    if (parentHex && parentHex === finalEvent.id.toLowerCase()) return undefined
+    return getParentBech32Id(finalEvent)
+  }, [finalEvent])
+  const rootEventId = useMemo(() => {
+    if (!finalEvent) return undefined
+    const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
+    if (rootHex && rootHex === finalEvent.id.toLowerCase()) return undefined
+    return getRootBech32Id(finalEvent)
+  }, [finalEvent])
   const rootITag = useMemo(
     () => (finalEvent?.kind === ExtendedKind.COMMENT ? finalEvent.tags.find(tagNameEquals('I')) : undefined),
     [finalEvent]
@@ -119,6 +135,12 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     useFetchEvent(rootEventId)
   const { isFetching: isFetchingParentEvent, event: parentEvent, refetch: refetchParent } =
     useFetchEvent(parentEventId)
+
+  const selfHex = finalEvent?.id?.toLowerCase()
+  const rootEventForStrip =
+    rootEvent && selfHex && rootEvent.id.toLowerCase() !== selfHex ? rootEvent : undefined
+  const parentEventForStrip =
+    parentEvent && selfHex && parentEvent.id.toLowerCase() !== selfHex ? parentEvent : undefined
 
   // When viewing a kind-24 invite (e.g. from notifications), extract calendar event naddr from content and show full calendar card with RSVP
   const calendarInviteNaddr = useMemo(() => {
@@ -456,20 +478,22 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     >
       <div className="px-4 pt-3 w-full">
         {rootITag && <ExternalRoot value={rootITag[1]} />}
-        {rootEventId && rootEventId !== parentEventId && (
-          <ParentNote
-            key={`root-note-${finalEvent.id}`}
-            isFetching={isFetchingRootEvent}
-            event={rootEvent}
-            eventBech32Id={rootEventId}
-            isConsecutive={isConsecutive(rootEvent, parentEvent)}
-          />
-        )}
-        {parentEventId && (
+        {rootEventId &&
+          rootEventId !== parentEventId &&
+          (isFetchingRootEvent || rootEventForStrip) && (
+            <ParentNote
+              key={`root-note-${finalEvent.id}`}
+              isFetching={isFetchingRootEvent}
+              event={rootEventForStrip}
+              eventBech32Id={rootEventId}
+              isConsecutive={isConsecutive(rootEventForStrip, parentEventForStrip)}
+            />
+          )}
+        {parentEventId && (isFetchingParentEvent || parentEventForStrip) && (
           <ParentNote
             key={`parent-note-${finalEvent.id}`}
             isFetching={isFetchingParentEvent}
-            event={parentEvent}
+            event={parentEventForStrip}
             eventBech32Id={parentEventId}
           />
         )}

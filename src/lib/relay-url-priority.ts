@@ -21,6 +21,25 @@ export function dedupeNormalizeRelayUrlsOrdered(urls: string[]): string[] {
   return out
 }
 
+/**
+ * NIP-65 **read** (inbox) hints from reply/mention context must never add LAN, loopback, or Tor-only
+ * endpoints to the publish list — those are the author's private reachability, not yours.
+ */
+export function filterContextAuthorReadRelaysForPublish(urls: string[]): string[] {
+  return dedupeNormalizeRelayUrlsOrdered(urls).filter((u) => {
+    const n = normalizeAnyRelayUrl(u) || u.trim()
+    if (!n) return false
+    if (isLocalNetworkUrl(u) || isLocalNetworkUrl(n)) return false
+    try {
+      const host = new URL(n).hostname
+      if (host.endsWith('.onion')) return false
+    } catch {
+      return false
+    }
+    return true
+  })
+}
+
 /** LAN / local host relays first, then the rest; deduped. */
 export function relayUrlsLocalsFirst(urls: string[]): string[] {
   const local: string[] = []
@@ -171,7 +190,7 @@ function buildWriteRelayPriorityLayers(opts: {
   extraRelays?: string[]
 }): string[][] {
   const tier1 = relayUrlsLocalsFirst(opts.userWriteRelays)
-  const tier2 = dedupeNormalizeRelayUrlsOrdered(opts.authorReadRelays ?? [])
+  const tier2 = filterContextAuthorReadRelaysForPublish(opts.authorReadRelays ?? [])
   const tier3 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
   const tier4 = dedupeNormalizeRelayUrlsOrdered(opts.extraRelays ?? [])
   const tier5 = normFastWrite()

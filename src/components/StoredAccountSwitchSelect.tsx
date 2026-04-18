@@ -1,14 +1,6 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
 import UserAvatar from '@/components/UserAvatar'
-import Username from '@/components/Username'
 import { cn } from '@/lib/utils'
-import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
+import { formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { useNostr } from '@/providers/NostrProvider'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +18,10 @@ type Props = {
 /**
  * Switch {@link useNostr} session among stored accounts (same as notifications spell).
  * Renders nothing when there is only one stored account or no session.
+ *
+ * Uses a native {@link HTMLSelectElement} instead of Radix Select: nested `UserAvatar` /
+ * `Username` inside `SelectItem` composes refs in ways that have triggered
+ * “Maximum update depth exceeded” on this page (Radix `compose-refs` + frequent re-renders).
  */
 export default function StoredAccountSwitchSelect({
   className,
@@ -59,8 +55,8 @@ export default function StoredAccountSwitchSelect({
   const handlePick = useCallback(
     async (v: string) => {
       const target = normalizeHexPubkey(v)
-      if (pubkey && hexPubkeysEqual(target, pubkey)) return
-      const nextAccount = accounts.find((a) => hexPubkeysEqual(a.pubkey, target))
+      if (pubkey && hexPubkeysEqual(target, normalizeHexPubkey(pubkey))) return
+      const nextAccount = accounts.find((a) => hexPubkeysEqual(normalizeHexPubkey(a.pubkey), target))
       if (!nextAccount) {
         toast.error(t('notificationsSwitchAccountFailed'))
         return
@@ -91,32 +87,23 @@ export default function StoredAccountSwitchSelect({
       >
         {t('notificationsViewAsAccount')}
       </span>
-      <Select
+      <UserAvatar userId={sessionPubkey} size="small" className="shrink-0" />
+      <select
+        className={cn(
+          'h-9 min-w-0 flex-1 cursor-pointer rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          triggerClassName
+        )}
         value={sessionPubkey}
         disabled={isAccountSessionHydrating}
-        onValueChange={(v) => void handlePick(v)}
+        aria-label={t('notificationsViewAsAccountAria')}
+        onChange={(e) => void handlePick(e.target.value)}
       >
-        <SelectTrigger
-          className={cn('h-9 min-w-0 flex-1', triggerClassName)}
-          aria-label={t('notificationsViewAsAccountAria')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper">
-          {storedAccountPubkeys.map((pk) => (
-            <SelectItem key={pk} value={pk}>
-              <span className="flex min-w-0 items-center gap-2">
-                <UserAvatar userId={pk} size="small" className="shrink-0" />
-                <Username
-                  userId={pk}
-                  className="min-w-0 truncate text-left font-normal"
-                  skeletonClassName="h-4 w-24"
-                />
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        {storedAccountPubkeys.map((pk) => (
+          <option key={pk} value={pk}>
+            {formatPubkey(pk)}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }

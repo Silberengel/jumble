@@ -19,12 +19,16 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+
     if (!eventId) {
       setIsFetching(false)
       setEvent(undefined)
       // Do not setError here: this effect re-runs when callback deps (e.g. addReplies) change identity;
       // allocating a new Error each time would force updates and can exceed React's max update depth.
-      return
+      return () => {
+        cancelled = true
+      }
     }
 
     const skipShortcuts = refetchToken > 0
@@ -47,7 +51,9 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
         addReplies([initialEvent])
         setIsFetching(false)
       }
-      return
+      return () => {
+        cancelled = true
+      }
     }
 
     // Check navigation event store first (events passed through navigation)
@@ -57,7 +63,9 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
         setEvent(navigationEvent)
         addReplies([navigationEvent])
         setIsFetching(false)
-        return
+        return () => {
+          cancelled = true
+        }
       }
     }
 
@@ -71,18 +79,27 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
           skipShortcuts
             ? await eventService.fetchEventForceRetry(eventId)
             : await eventService.fetchEvent(eventId)
+        if (cancelled) return
         if (fetchedEvent && !isEventDeleted(fetchedEvent)) {
           setEvent(fetchedEvent)
           addReplies([fetchedEvent])
         }
       } catch (error) {
-        setError(error as Error)
+        if (!cancelled) {
+          setError(error as Error)
+        }
       } finally {
-        setIsFetching(false)
+        if (!cancelled) {
+          setIsFetching(false)
+        }
       }
     }
 
-    fetchEvent()
+    void fetchEvent()
+
+    return () => {
+      cancelled = true
+    }
   }, [eventId, initialEvent, isEventDeleted, addReplies, refetchToken])
 
   useEffect(() => {
