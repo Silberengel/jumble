@@ -10,6 +10,17 @@ vi.mock('@/lib/translate-client', () => ({
 }))
 
 describe('getMarkupProtectRanges', () => {
+  it('kind-1 editor promo: most of body stays translatable (no runaway freeze before CodeMirror)', () => {
+    const t =
+      "I added an advanced editor to #imwald. I'm testing it, locally, and it seems like some sort of miracle. CodeMirror for Markdown and Asciidoc, grammar and spelling checks for all languages with my own instance of https://languagetool.org/, translations with LibreTranslate that can handle markup, citation event helper, Latex helper, custom emoji support, undo button, local autosave and recovery, npub/naddr/nevent mention, etc."
+    const merged = getMarkupProtectRanges(t, 'markdown')
+    const cm = t.indexOf('CodeMirror')
+    expect(cm).toBeGreaterThan(0)
+    expect(rangeIntersectsMerged(cm, 'CodeMirror'.length, merged)).toBe(false)
+    const frozen = merged.reduce((acc, [a, b]) => acc + (b - a), 0)
+    expect(frozen).toBeLessThan(t.length * 0.25)
+  })
+
   it('freezes ATX heading marker and following whitespace', () => {
     const merged = getMarkupProtectRanges('# Hello', 'markdown')
     expect(merged.some(([a, b]) => a === 0 && b === 2)).toBe(true)
@@ -240,10 +251,39 @@ describe('translateAdvancedLabMarkup', () => {
     expect(spy.mock.calls.map((c) => c[0])).toEqual(['Line1', 'Line2'])
   })
 
+  it('optional preserveEmbeddedNewlinesInTranslatable sends one translatePlainText per translatable segment', async () => {
+    const { translatePlainText } = await import('@/lib/translate-client')
+    const spy = vi.mocked(translatePlainText)
+    spy.mockClear()
+    spy.mockImplementation(async (s: string) => `<<${s}>>`)
+    await translateAdvancedLabMarkup('Line1\nLine2', 'de', 'en', 'markdown', {
+      preserveEmbeddedNewlinesInTranslatable: true
+    })
+    expect(spy.mock.calls.map((c) => c[0])).toEqual(['Line1\nLine2'])
+  })
+
   it('preserves blank lines between translated lines', async () => {
     const { translatePlainText } = await import('@/lib/translate-client')
     vi.mocked(translatePlainText).mockImplementation(async (s: string) => (s === 'A' ? 'Aa' : 'Bb'))
     const out = await translateAdvancedLabMarkup('A\n\nB', 'de', 'en', 'markdown')
     expect(out).toBe('Aa\n\nBb')
+  })
+
+  it('markdown: every blockquote line body is passed to translate (regression: middle line not frozen)', async () => {
+    const content =
+      'Far-right and far-left logic be like:\n\n' +
+      '> Stephen cheered when John was fired.\n' +
+      '> We do not like Stephen.\n' +
+      '> John should not have been fired.\n\n' +
+      'This is a logical argument the Germans call _Beifall von der falschen Seite._ Where you judge.'
+    const { translatePlainText } = await import('@/lib/translate-client')
+    const spy = vi.mocked(translatePlainText)
+    spy.mockClear()
+    spy.mockImplementation(async (s: string) => `[${s}]`)
+    await translateAdvancedLabMarkup(content, 'de', 'en', 'markdown')
+    const payloads = spy.mock.calls.map((c) => String(c[0]))
+    expect(payloads.some((p) => p.includes('We do not like Stephen'))).toBe(true)
+    expect(payloads.some((p) => p.includes('Stephen cheered when John was fired'))).toBe(true)
+    expect(payloads.some((p) => p.includes('John should not have been fired'))).toBe(true)
   })
 })

@@ -147,12 +147,27 @@ export class EventService {
 
   /**
    * Read parent/root (or any) event from the session cache without removing it.
-   * Accepts hex, note1, or nevent1 (not naddr).
+   * Accepts hex, note1, nevent1, or naddr1 (replaceable match in session LRU only).
    */
   peekSessionCachedEvent(noteId: string): NEvent | undefined {
-    const hex = this.resolveHexWaiterKey(noteId.trim())
-    if (!hex) return undefined
-    return this.getSessionEventIfAllowed(hex)
+    const trimmed = noteId.trim()
+    const hex = this.resolveHexWaiterKey(trimmed)
+    if (hex) {
+      return this.getSessionEventIfAllowed(hex)
+    }
+    try {
+      const { type, data } = nip19.decode(trimmed)
+      if (type === 'naddr') {
+        return this.getSessionEventIfMatchingNaddr({
+          pubkey: data.pubkey,
+          kind: data.kind,
+          identifier: data.identifier
+        })
+      }
+    } catch {
+      /* invalid */
+    }
+    return undefined
   }
 
   /**

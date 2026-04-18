@@ -15,7 +15,6 @@ import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, simplifyUrl } from '@/lib/
 import {
   clearNoteTranslation,
   getNoteTranslation,
-  setNoteTranslation,
   subscribeNoteTranslations
 } from '@/lib/note-translation-display'
 import { speakNoteReadAloud } from '@/lib/read-aloud'
@@ -60,7 +59,7 @@ import { nip19 } from 'nostr-tools'
 import {
   articleHasTranslatableTitle,
   eventHasTranslatableTextBody,
-  translateNoteForDisplay
+  translateNoteAndRelatedForDisplay
 } from '@/lib/translate-note-for-menu'
 import {
   fetchTranslateLanguages,
@@ -892,14 +891,12 @@ export function useMenuActions({
               onClick: () => {
                 closeDrawer()
                 void toast.promise(
-                  translateNoteForDisplay(event, opt.code).then((out) => {
-                    setNoteTranslation(event.id, {
-                      lang: opt.code,
-                      langLabel: languageSelectSingleLine(opt.code),
-                      content: out.content,
-                      title: out.title
-                    })
-                  }),
+                  translateNoteAndRelatedForDisplay(
+                    event,
+                    opt.code,
+                    languageSelectSingleLine(opt.code),
+                    (id) => client.fetchEvent(id)
+                  ),
                   {
                     loading: t('Translating note…'),
                     success: t('Note translated', {

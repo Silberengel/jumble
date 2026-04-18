@@ -153,6 +153,15 @@ export async function translatePlainText(
   if (!base) {
     throw new Error('Translation URL not configured')
   }
+
+  /** LibreTranslate often trims `q` / `translatedText`; keep edge whitespace so markup segments still join cleanly. */
+  const leadingWs = text.match(/^\s*/u)?.[0] ?? ''
+  const trailingWs = text.match(/\s*$/u)?.[0] ?? ''
+  const core = text.slice(leadingWs.length, text.length - trailingWs.length)
+  if (core === '') {
+    return text
+  }
+
   const resolvedTarget = translateApiLanguageCode(targetLang)
   const resolvedSource =
     sourceLang === 'auto' ? 'auto' : translateApiLanguageCode(sourceLang)
@@ -171,17 +180,17 @@ export async function translatePlainText(
     )
   }
 
-  const key = cacheKey(text, resolvedSource, resolvedTarget)
+  const key = cacheKey(core, resolvedSource, resolvedTarget)
   const hit = memoryCache.get(key)
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
     logger.info('[AdvancedLab] translate', {
       source: resolvedSource,
       target: resolvedTarget,
       inputChars: text.length,
-      outputChars: hit.text.length,
+      outputChars: hit.text.length + leadingWs.length + trailingWs.length,
       cacheHit: true
     })
-    return hit.text
+    return leadingWs + hit.text + trailingWs
   }
 
   const url = `${base}/translate`
@@ -189,7 +198,7 @@ export async function translatePlainText(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      q: text,
+      q: core,
       source: resolvedSource,
       target: resolvedTarget,
       format: 'text'
@@ -204,15 +213,15 @@ export async function translatePlainText(
     )
   }
   const data = (await res.json()) as { translatedText?: string }
-  const out = data.translatedText ?? ''
+  const outCore = data.translatedText ?? ''
   pruneMemory()
-  memoryCache.set(key, { text: out, at: Date.now() })
+  memoryCache.set(key, { text: outCore, at: Date.now() })
   logger.info('[AdvancedLab] translate', {
     source: resolvedSource,
     target: resolvedTarget,
     inputChars: text.length,
-    outputChars: out.length,
+    outputChars: leadingWs.length + outCore.length + trailingWs.length,
     cacheHit: false
   })
-  return out
+  return leadingWs + outCore + trailingWs
 }

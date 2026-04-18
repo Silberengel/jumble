@@ -998,10 +998,7 @@ function parseMarkdownContentLegacy(
     }
     // Blockquotes (> text or >) and Greentext (>text with no space)
     else if (line.match(/^>\s*/)) {
-      // Check if this is greentext: >text with no space after >
-      // Pattern: > followed immediately by non-whitespace, non-> character
-      const greentextMatch = line.match(/^>([^\s>].*)$/)
-      const isGreentext = greentextMatch !== null
+      const isGreentext = isMarkdownGreentextLine(line.trim())
       
       // Collect consecutive blockquote/greentext lines
       const blockquoteLines: string[] = []
@@ -1012,8 +1009,7 @@ function parseMarkdownContentLegacy(
       
       while (blockquoteLineIdx < lines.length) {
         const blockquoteLine = lines[blockquoteLineIdx]
-        const lineGreentextMatch = blockquoteLine.match(/^>([^\s>].*)$/)
-        const lineIsGreentext = lineGreentextMatch !== null
+        const lineIsGreentext = isMarkdownGreentextLine(blockquoteLine.trim())
         
         if (blockquoteLine.match(/^>\s*/)) {
           // If we started with greentext, only continue if this line is also greentext
@@ -1025,8 +1021,9 @@ function parseMarkdownContentLegacy(
             break
           }
           
-          // Strip the > prefix and optional space
-          const content = blockquoteLine.replace(/^>\s?/, '')
+          const content = lineIsGreentext
+            ? stripMarkdownGreentextMarker(blockquoteLine.trim())
+            : blockquoteLine.replace(/^>\s?/, '')
           blockquoteLines.push(content)
           blockquoteLineIdx++
           tempIndex += blockquoteLine.length + 1 // +1 for newline
@@ -2481,7 +2478,7 @@ function parseMarkdownContentLegacy(
       parts.push(
         <span
           key={`greentext-${patternIdx}`}
-          className="greentext block my-1"
+          className="not-prose greentext my-1 block text-[#4a7c3a] dark:text-[#8fbc8f]"
         >
           {greentextContent}
         </span>
@@ -3111,6 +3108,20 @@ function parseMarkdownContentLegacy(
   }
   
   return { nodes: wrappedParts, hashtagsInContent, footnotes, citations }
+}
+
+/**
+ * Block **quote** (sidebar): `> ` — `>` then ASCII space (CommonMark).
+ * **Greentext** (4chan-style): `>` not followed by that space, e.g. `>implying` vs `> implying`.
+ */
+function isMarkdownGreentextLine(trimmedLine: string): boolean {
+  if (!trimmedLine.startsWith('>')) return false
+  if (trimmedLine.length < 2) return false
+  return /^>(?! ).+$/.test(trimmedLine)
+}
+
+function stripMarkdownGreentextMarker(trimmedLine: string): string {
+  return trimmedLine.replace(/^>(?! )/, '')
 }
 
 /**
@@ -4224,13 +4235,17 @@ function parseMarkdownContentMarked(
         case 'blockquote': {
           const rawLines = String(token.raw ?? '')
             .split('\n')
+            .map((line) => line.replace(/\r$/u, ''))
             .filter((line) => line.trim().length > 0)
           const isGreentext =
-            rawLines.length > 0 && rawLines.every((line) => /^>([^\s>].*)$/.test(line.trim()))
+            rawLines.length > 0 && rawLines.every((line) => isMarkdownGreentextLine(line.trim()))
           if (isGreentext) {
-            const lines = rawLines.map((line) => line.replace(/^>\s?/, ''))
+            const lines = rawLines.map((line) => stripMarkdownGreentextMarker(line.trim()))
             nodes.push(
-              <div key={`${key}-gt`} className="greentext block my-1">
+              <div
+                key={`${key}-gt`}
+                className="not-prose greentext my-1 block text-[#4a7c3a] dark:text-[#8fbc8f]"
+              >
                 {lines.map((line, idx) => (
                   <React.Fragment key={`${key}-gt-line-${idx}`}>
                     {renderInlineTokens(lexInlineProtected(line) as any[], `${key}-gt-inline-${idx}`)}

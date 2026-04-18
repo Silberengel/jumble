@@ -13,6 +13,15 @@ import { translatePlainText } from '@/lib/translate-client'
 
 export type AdvancedLabMarkupMode = 'markdown' | 'asciidoc'
 
+export type TranslateAdvancedLabMarkupOptions = {
+  /**
+   * When true, translatable segments are sent in a single `translatePlainText` call per segment,
+   * preserving embedded newlines. Default splits on newlines so LibreTranslate cannot drop a line;
+   * coalesced Markdown blockquote runs use this so the model sees full quote context in one `q`.
+   */
+  preserveEmbeddedNewlinesInTranslatable?: boolean
+}
+
 function mergeSortedRanges(ranges: [number, number][]): [number, number][] {
   if (ranges.length === 0) return []
   const s = [...ranges].sort((a, b) => a[0] - b[0] || a[1] - b[1])
@@ -953,8 +962,12 @@ function buildSegments(text: string, merged: [number, number][]): Seg[] {
 async function translatePreservingLineBreaks(
   text: string,
   targetLang: string,
-  sourceLang: string
+  sourceLang: string,
+  opts?: TranslateAdvancedLabMarkupOptions
 ): Promise<string> {
+  if (opts?.preserveEmbeddedNewlinesInTranslatable && text.trim() !== '') {
+    return translatePlainText(text, targetLang, sourceLang)
+  }
   const pieces = text.split(/(\r?\n+)/)
   const out: string[] = []
   for (const p of pieces) {
@@ -976,11 +989,12 @@ export async function translateAdvancedLabMarkup(
   text: string,
   targetLang: string,
   sourceLang: string,
-  mode: AdvancedLabMarkupMode
+  mode: AdvancedLabMarkupMode,
+  options?: TranslateAdvancedLabMarkupOptions
 ): Promise<string> {
   const merged = getMarkupProtectRanges(text, mode)
   if (merged.length === 0) {
-    return translatePreservingLineBreaks(text, targetLang, sourceLang)
+    return translatePreservingLineBreaks(text, targetLang, sourceLang, options)
   }
   const segs = buildSegments(text, merged)
   const parts = await Promise.all(
@@ -988,7 +1002,7 @@ export async function translateAdvancedLabMarkup(
       const chunk = text.slice(s.start, s.end)
       if (!s.translatable) return chunk
       if (!chunk) return chunk
-      return translatePreservingLineBreaks(chunk, targetLang, sourceLang)
+      return translatePreservingLineBreaks(chunk, targetLang, sourceLang, options)
     })
   )
   return parts.join('')

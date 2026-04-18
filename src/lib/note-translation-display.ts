@@ -9,6 +9,11 @@ export type NoteTranslationEntry = {
   content: string
   /** When present, replaces or inserts a `title` tag (articles, discussions, web bookmarks). */
   title?: string
+  /**
+   * Related notes (parent preview, embedded) translated in the same action as this note.
+   * Cleared together when the user chooses “show original” on this note.
+   */
+  coTranslatedIds?: string[]
 }
 
 const map = new Map<string, NoteTranslationEntry>()
@@ -29,6 +34,12 @@ export function setNoteTranslation(eventId: string, entry: NoteTranslationEntry)
 }
 
 export function clearNoteTranslation(eventId: string): void {
+  const entry = map.get(eventId)
+  if (entry?.coTranslatedIds?.length) {
+    for (const id of entry.coTranslatedIds) {
+      map.delete(id)
+    }
+  }
   map.delete(eventId)
   emit()
 }

@@ -596,6 +596,17 @@
   margin: 0.25rem 0;
 }
 
+/* Tailwind Typography `prose` sets body/link colors; keep greentext green inside note prose. */
+.prose .greentext,
+.prose-invert .greentext {
+  color: #4a7c3a;
+}
+
+.dark .prose-invert .greentext,
+.dark .prose .greentext {
+  color: #8fbc8f;
+}
+
 /* Lightbox (yet-another-react-lightbox) caption title: wrap on narrow screens instead of truncating */
 .yarl__slide_title {
   white-space: normal !important;

@@ -1,6 +1,7 @@
 import { ExtendedKind, READ_ALOUD_TTS_URL } from '@/constants'
-import i18n, { LocalizedLanguageNames, normalizeToSupportedAppLanguage } from '@/i18n'
+import i18n, { LocalizedLanguageNames } from '@/i18n'
 import { getNoteTranslation } from '@/lib/note-translation-display'
+import { detectReadAloudContentLanguage } from '@/lib/read-aloud-content-language'
 import {
   getPiperVoiceForChosenLanguage,
   isTrinityLanguageCode,
@@ -14,10 +15,19 @@ import {
 } from '@/lib/piper-tts-cache-policy'
 import indexedDb from '@/services/indexed-db.service'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
-import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
+import {
+  BECH32_NADDR,
+  BECH32_NEVENT,
+  BECH32_NOTE,
+  BECH32_NPROFILE,
+  BECH32_NPUB,
+  NOSTR_URI_INLINE_REGEX
+} from '@/lib/content-patterns'
+import { getLongFormArticleMetadataFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { normalizeTranslateLangCode } from '@/lib/translate-client'
-import { Event, kinds } from 'nostr-tools'
+import client from '@/services/client.service'
+import { Event, kinds, nip19 } from 'nostr-tools'
 
 /** Keep each Piper request small: long JSON bodies and WAV responses can OOM or time out the server. */
 const PIPER_CHUNK_MAX_CHARS = 3600
@@ -301,6 +311,122 @@ function buildReadAloudPlainText(event: Event): string {
     }
   }
   return stripMarkupForReadAloud(raw)
+}
+
+/** Bare bech32 not prefixed with `nostr:` (negative lookbehind avoids matching inside `nostr:…`). */
+const READ_ALOUD_BARE_BECH32_REGEX = new RegExp(
+  `(?<!nostr:)\\b(?:${BECH32_NPUB}|${BECH32_NPROFILE}|${BECH32_NOTE}|${BECH32_NEVENT}|${BECH32_NADDR})`,
+  'gi'
+)
+
+const READ_ALOUD_NOSTR_EXPAND_MAX_DEPTH = 5
+
+function readAloudHasRichProfile(p: ReturnType<typeof getProfileFromEvent>): boolean {
+  return Boolean(
+    (p.original_username && p.original_username.trim()) || (p.nip05 && String(p.nip05).trim())
+  )
+}
+
+function readAloudProfileLabelForPubkey(hexPubkey: string): string | null {
+  const meta = client.eventService.getSessionMetadataForPubkey(hexPubkey)
+  if (!meta) return null
+  const p = getProfileFromEvent(meta)
+  if (!readAloudHasRichProfile(p)) return null
+  try {
+    const o = JSON.parse(meta.content || '{}') as { display_name?: string; name?: string }
+    const fromJson = (o.display_name?.trim() || o.name?.trim()) ?? ''
+    if (fromJson) return fromJson
+  } catch {
+    /* ignore */
+  }
+  return (p.original_username || p.nip05 || '').trim() || null
+}
+
+function readAloudAuthorNameForQuote(hexPubkey: string): string {
+  return readAloudProfileLabelForPubkey(hexPubkey) ?? i18n.t('Read aloud unknown author')
+}
+
+function replacementForNostrBech32ReadAloud(bech32: string, depth: number): string {
+  if (depth > READ_ALOUD_NOSTR_EXPAND_MAX_DEPTH) {
+    return i18n.t('Read aloud nostr reference unavailable')
+  }
+  const trimmed = bech32.trim()
+  try {
+    const decoded = nip19.decode(trimmed)
+    switch (decoded.type) {
+      case 'note':
+      case 'nevent':
+      case 'naddr': {
+        const ev = client.peekSessionCachedEvent(trimmed)
+        if (!ev) {
+          return i18n.t('Read aloud embedded note unavailable')
+        }
+        const quotedFrom = i18n.t('Read aloud quoted from', {
+          name: readAloudAuthorNameForQuote(ev.pubkey)
+        })
+        const body = buildReadAloudPlainText(ev)
+        return `${quotedFrom} ${expandNostrReferencesForReadAloud(body, depth + 1)}`
+      }
+      case 'npub':
+      case 'nprofile': {
+        const pk = decoded.type === 'npub' ? decoded.data : decoded.data.pubkey
+        const label = readAloudProfileLabelForPubkey(pk)
+        if (label) return label
+        return i18n.t('Read aloud nostr profile unavailable')
+      }
+      default: {
+        if ((decoded as { type: string }).type === 'nrelay') {
+          return i18n.t('Read aloud relay reference')
+        }
+        return i18n.t('Read aloud nostr reference unavailable')
+      }
+    }
+  } catch {
+    return i18n.t('Read aloud nostr reference unavailable')
+  }
+}
+
+function replaceAllNostrUriInline(text: string, depth: number): string {
+  const re = new RegExp(NOSTR_URI_INLINE_REGEX.source, NOSTR_URI_INLINE_REGEX.flags)
+  const matches = [...text.matchAll(re)]
+  matches.sort((a, b) => (b.index ?? 0) - (a.index ?? 0))
+  let out = text
+  for (const m of matches) {
+    const idx = m.index
+    const full = m[0]
+    const inner = m[1]
+    if (idx === undefined || !full || !inner) continue
+    const replacement = replacementForNostrBech32ReadAloud(inner, depth)
+    out = out.slice(0, idx) + replacement + out.slice(idx + full.length)
+  }
+  return out
+}
+
+function replaceAllBareNostrBech32(text: string, depth: number): string {
+  const matches = [...text.matchAll(READ_ALOUD_BARE_BECH32_REGEX)]
+  matches.sort((a, b) => (b.index ?? 0) - (a.index ?? 0))
+  let out = text
+  for (const m of matches) {
+    const idx = m.index
+    const full = m[0]
+    if (idx === undefined || !full) continue
+    const replacement = replacementForNostrBech32ReadAloud(full, depth)
+    out = out.slice(0, idx) + replacement + out.slice(idx + full.length)
+  }
+  return out
+}
+
+/**
+ * Expands `nostr:` links and bare Nostr bech32 using session cache only (no network).
+ * Exported for unit tests.
+ */
+export function expandNostrReferencesForReadAloud(text: string, depth = 0): string {
+  if (depth > READ_ALOUD_NOSTR_EXPAND_MAX_DEPTH) {
+    return text
+  }
+  let out = replaceAllNostrUriInline(text, depth)
+  out = replaceAllBareNostrBech32(out, depth)
+  return out
 }
 
 function isAbortError(e: unknown): boolean {
@@ -719,14 +845,17 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
   } else {
     text = buildReadAloudPlainText(event)
   }
+  text = expandNostrReferencesForReadAloud(text.trim())
   if (!text) {
     return 'empty'
   }
 
   const title = readAloudTitleFromEvent(event)
 
-  const chosenReadAloudLang: string =
-    persistedTranslation?.lang ?? normalizeToSupportedAppLanguage(i18n.language || 'en')
+  /** Persisted translate action carries an explicit target `lang`; otherwise infer from body (Piper + Web Speech). */
+  const chosenReadAloudLang: string = persistedTranslation?.lang?.trim()
+    ? persistedTranslation.lang.trim()
+    : detectReadAloudContentLanguage(text)
   const {
     voice: piperVoice,
     usedEnglishVoiceFallback,
