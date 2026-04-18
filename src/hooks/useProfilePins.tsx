@@ -8,9 +8,10 @@ import {
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
-import { normalizeHexPubkey } from '@/lib/pubkey'
+import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 import client, { eventService, queryService } from '@/services/client.service'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
@@ -75,8 +76,19 @@ function blockedRelaysContentKey(blockedRelays: string[]): string {
 }
 
 export function useProfilePins(pubkey: string | undefined) {
+  const nostr = useNostrOptional()
   const { blockedRelays } = useFavoriteRelays()
   const blockedKey = useMemo(() => blockedRelaysContentKey(blockedRelays), [blockedRelays])
+  const includeAuthorLocalRelays = useMemo(() => {
+    const me = nostr?.pubkey?.trim()
+    const pk = pubkey?.trim()
+    if (!me || !pk) return false
+    try {
+      return hexPubkeysEqual(normalizeHexPubkey(me), normalizeHexPubkey(pk))
+    } catch {
+      return false
+    }
+  }, [nostr?.pubkey, pubkey])
   const [pinEvents, setPinEvents] = useState<Event[]>([])
   const [loadingPins, setLoadingPins] = useState(false)
 
@@ -132,7 +144,7 @@ export function useProfilePins(pubkey: string | undefined) {
           })),
           client.fetchPinListEvent(pk).catch(() => undefined)
         ])
-        const authorRelays = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays)
+        const authorRelays = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays)
         const pinsResolveRelays = buildProfileAugmentedReadRelayUrls(authorRelays, blockedRelays)
         if (!pinsResolveRelays.length) {
           setPinEvents([])
@@ -237,7 +249,7 @@ export function useProfilePins(pubkey: string | undefined) {
         setLoadingPins(false)
       }
     },
-    [pubkey, blockedKey, blockedRelays]
+    [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays]
   )
 
   useEffect(() => {

@@ -12,8 +12,9 @@ import { simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
 import { BlossomClient } from 'blossom-client-sdk'
 import { z } from 'zod'
-import client from './client.service'
+/** Must run before `./client.service` — that graph can synchronously re-enter this module; `storage` must be bound first (constructor reads it at module bottom). */
 import storage from './local-storage.service'
+import client from './client.service'
 
 type UploadOptions = {
   onProgress?: (progressPercent: number) => void

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dedupeNormalizeRelayUrlsOrdered, filterContextAuthorReadRelaysForPublish } from '@/lib/relay-url-priority'
+import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 describe('filterContextAuthorReadRelaysForPublish', () => {
   it('drops loopback, LAN, and .onion; keeps public relays', () => {
@@ -21,5 +22,20 @@ describe('filterContextAuthorReadRelaysForPublish', () => {
       'ws://localhost:4869/'
     ])
     expect(b).toEqual(a)
+  })
+})
+
+describe('stripMailboxLocalUrlsForRemoteViewers', () => {
+  it('removes loopback and LAN from read/write/http fields', () => {
+    const out = stripMailboxLocalUrlsForRemoteViewers({
+      read: ['ws://localhost:4869/', 'wss://relay.example.com/'],
+      write: ['wss://192.168.1.1/', 'wss://author-outbox.example/'],
+      httpRead: ['http://127.0.0.1:8080/'],
+      httpWrite: []
+    })
+    expect(out.read).toEqual(['wss://relay.example.com/'])
+    expect(out.write).toEqual(['wss://author-outbox.example/'])
+    expect(out.httpRead).toEqual([])
+    expect(out.httpWrite).toEqual([])
   })
 })

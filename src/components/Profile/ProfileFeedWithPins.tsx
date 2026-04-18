@@ -221,10 +221,12 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
     return () => observer.disconnect()
   }, [totalVisible, mergedDisplay.length])
 
-  const loading =
-    (loadingPins || loadingTimeline || loadingZapPollVotes) && mergedDisplay.length === 0
+  // Pins and zap-poll votes can take longer than the timeline; do not block the whole tab on them.
+  // Show posts as soon as the timeline has delivered anything (or finished empty).
+  const showFullSkeleton =
+    mergedDisplay.length === 0 && loadingTimeline && timelineEvents.length === 0
 
-  if (loading) {
+  if (showFullSkeleton) {
     return (
       <div className="mt-4 space-y-2 px-1">
         <div className="flex flex-wrap items-center gap-2 px-2">
@@ -299,6 +301,11 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
                 pinned
               />
             ))}
+          </div>
+        )}
+        {mergedDisplay.length === 0 && (loadingPins || loadingZapPollVotes) && (
+          <div className="flex justify-center py-6 text-sm text-muted-foreground" role="status" aria-live="polite">
+            {t('Loading…')}
           </div>
         )}
         {displayedPins.length > 0 && displayedFeed.length > 0 && (

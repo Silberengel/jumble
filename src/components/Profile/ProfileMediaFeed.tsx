@@ -1,12 +1,13 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import { buildAuthorInboxOutboxRelayUrls } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
-import { normalizeHexPubkey } from '@/lib/pubkey'
 import { computeSpellSubRequestsIdentityKey } from '@/lib/spell-feed-request-identity'
 import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
 import { buildProfileMediaSubRequests } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { normalizeUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
+import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import client from '@/services/client.service'
 import { forwardRef, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -19,8 +20,19 @@ const MEDIA_LOG = '[ProfileMedia]'
 
 const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey }, ref) => {
   const { t } = useTranslation()
+  const nostr = useNostrOptional()
   const { blockedRelays } = useFavoriteRelays()
   const blockedKey = useMemo(() => blockedRelaysContentKey(blockedRelays), [blockedRelays])
+  const includeAuthorLocalRelays = useMemo(() => {
+    const me = nostr?.pubkey?.trim()
+    const pk = pubkey?.trim()
+    if (!me || !pk) return false
+    try {
+      return hexPubkeysEqual(normalizeHexPubkey(me), normalizeHexPubkey(pk))
+    } catch {
+      return false
+    }
+  }, [nostr?.pubkey, pubkey])
 
   /**
    * Before NIP-65: empty author tier so REQ still uses read-only + fast-read; refine when
@@ -28,8 +40,8 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
    */
   const provisionalAuthorRelayUrls = useMemo(() => {
     if (!pubkey?.trim()) return [] as string[]
-    return buildAuthorInboxOutboxRelayUrls({ read: [], write: [] }, blockedRelays)
-  }, [pubkey, blockedKey, blockedRelays])
+    return buildAuthorInboxOutboxRelayUrls({ read: [], write: [] }, blockedRelays, includeAuthorLocalRelays)
+  }, [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays])
 
   const [refinedAuthorRelayUrls, setRefinedAuthorRelayUrls] = useState<string[] | null>(null)
 
@@ -48,7 +60,7 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
         write: [] as string[]
       }))
       if (cancelled) return
-      const authorStack = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays)
+      const authorStack = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays)
       const hexPk = normalizeHexPubkey(pk)
       logger.debug(`${MEDIA_LOG} NIP-65 author relays resolved for media tab`, {
         pubkey: hexPk.slice(0, 8),
@@ -63,7 +75,7 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     return () => {
       cancelled = true
     }
-  }, [pubkey, blockedKey, blockedRelays])
+  }, [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays])
 
   const authorRelayUrls = refinedAuthorRelayUrls ?? provisionalAuthorRelayUrls
 

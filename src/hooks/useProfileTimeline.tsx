@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event } from 'nostr-tools'
 import { CALENDAR_EVENT_KINDS, ExtendedKind, isSocialKindBlockedKind } from '@/constants'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 
 type ProfileTimelineMemoryEntry = {
   events: Event[]
@@ -124,7 +126,17 @@ export function useProfileTimeline({
   limit = 200,
   filterPredicate
 }: UseProfileTimelineOptions): UseProfileTimelineResult {
+  const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const includeAuthorLocalRelays = useMemo(() => {
+    const me = nostr?.pubkey?.trim()
+    if (!me) return false
+    try {
+      return hexPubkeysEqual(normalizeHexPubkey(me), normalizeHexPubkey(pubkey))
+    } catch {
+      return false
+    }
+  }, [nostr?.pubkey, pubkey])
   const relayListsKey = useMemo(
     () => relayListsContentKey(favoriteRelays, blockedRelays),
     [favoriteRelays, blockedRelays]
@@ -208,7 +220,8 @@ export function useProfileTimeline({
         favoriteRelays,
         blockedRelays,
         emptyAuthor,
-        socialKinds
+        socialKinds,
+        includeAuthorLocalRelays
       )
 
       const startWave = async (subRequests: ReturnType<typeof buildSubRequests>) => {
@@ -259,7 +272,8 @@ export function useProfileTimeline({
           favoriteRelays,
           blockedRelays,
           authorRl,
-          socialKinds
+          socialKinds,
+          includeAuthorLocalRelays
         )
         const deltaUrls = subtractNormalizedRelayUrls(fullFeedUrls, provisionalFeedUrls)
         if (cancelled || deltaUrls.length === 0) return
@@ -274,7 +288,7 @@ export function useProfileTimeline({
       subscriptionRef.current()
       subscriptionRef.current = () => {}
     }
-  }, [pubkey, cacheKey, JSON.stringify(kinds), limit, refreshToken, relayListsKey])
+  }, [pubkey, cacheKey, JSON.stringify(kinds), limit, refreshToken, relayListsKey, includeAuthorLocalRelays])
 
   const refresh = useCallback(() => {
     subscriptionRef.current()

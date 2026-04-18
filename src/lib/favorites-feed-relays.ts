@@ -14,6 +14,7 @@ import {
   mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
+import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 const blockedSet = (blockedRelays: string[]) =>
   new Set(blockedRelays.map((b) => normalizeAnyRelayUrl(b) || b))
@@ -77,19 +78,19 @@ export function mergeRelayUrlLayers(layers: string[][], blockedRelays: string[])
 /**
  * Viewed author’s NIP-65 read list (inboxes), then write list (outboxes), each with LAN/local URLs first; blocked
  * stripped. Used for profile pins + Medien before {@link buildProfileAugmentedReadRelayUrls}.
+ *
+ * @param includeAuthorLocalRelays When true (viewing your own profile), keep LAN hints so local cache/outbox works.
  */
 export function buildAuthorInboxOutboxRelayUrls(
   authorRelayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] },
-  blockedRelays: string[]
+  blockedRelays: string[],
+  includeAuthorLocalRelays = false
 ): string[] {
-  const inboxLayer = relayUrlsLocalsFirst([
-    ...(authorRelayList.httpRead ?? []),
-    ...(authorRelayList.read ?? [])
-  ])
-  const outboxLayer = relayUrlsLocalsFirst([
-    ...(authorRelayList.httpWrite ?? []),
-    ...(authorRelayList.write ?? [])
-  ])
+  const list = includeAuthorLocalRelays
+    ? authorRelayList
+    : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
+  const inboxLayer = relayUrlsLocalsFirst([...(list.httpRead ?? []), ...(list.read ?? [])])
+  const outboxLayer = relayUrlsLocalsFirst([...(list.httpWrite ?? []), ...(list.write ?? [])])
   return mergeRelayUrlLayers([inboxLayer, outboxLayer], blockedRelays)
 }
 
@@ -159,7 +160,8 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
  * Profile page pins + feed: viewed author's NIP-65 read + write (REQ tier 1), then logged-in user's favorites,
  * then fast-read defaults from constants, deduped and blocked-stripped, capped at this count.
  */
-const PROFILE_PAGE_FEED_MAX_RELAYS = 6
+/** Profile REQ cap: too small waits on a few bad relays; larger spreads load across fast-read / favorites. */
+const PROFILE_PAGE_FEED_MAX_RELAYS = 14
 
 export const PROFILE_PAGE_PINS_RESOLVE_LIMIT = 10
 
@@ -167,14 +169,18 @@ export function buildProfilePageReadRelayUrls(
   favoriteRelays: string[],
   blockedRelays: string[],
   authorRelayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] },
-  kindsIncludeSocialBlockedKind: boolean
+  kindsIncludeSocialBlockedKind: boolean,
+  includeAuthorLocalRelays = false
 ): string[] {
+  const list = includeAuthorLocalRelays
+    ? authorRelayList
+    : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
   return getRelayUrlsWithFavoritesFastReadAndInbox(
     favoriteRelays,
     blockedRelays,
-    [...(authorRelayList.httpRead ?? []), ...(authorRelayList.read ?? [])],
+    [...(list.httpRead ?? []), ...(list.read ?? [])],
     {
-      userWriteRelays: [...(authorRelayList.httpWrite ?? []), ...(authorRelayList.write ?? [])],
+      userWriteRelays: [...(list.httpWrite ?? []), ...(list.write ?? [])],
       authorWriteRelays: [],
       maxRelays: PROFILE_PAGE_FEED_MAX_RELAYS,
       applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind
