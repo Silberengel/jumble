@@ -49,8 +49,9 @@ services:
     ports:
       - '5000:5000'
     tty: true
+    env_file:
+      - ./scripts/libretranslate-lt.default.env
     environment:
-      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}
       LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:
       - ./.local-libretranslate:/home/libretranslate/.local

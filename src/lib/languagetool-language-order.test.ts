@@ -11,6 +11,8 @@ describe('translateTargetToLanguageToolCode', () => {
     expect(translateTargetToLanguageToolCode('ja')).toBe('ja-JP')
     expect(translateTargetToLanguageToolCode('de')).toBe('de-DE')
     expect(translateTargetToLanguageToolCode('zh-Hans')).toBe('zh-CN')
+    expect(translateTargetToLanguageToolCode('en')).toBe('en-US')
+    expect(translateTargetToLanguageToolCode('en-gb')).toBe('en-GB')
   })
 })
 
@@ -18,6 +20,7 @@ describe('translateCodeHasLanguageToolPairing', () => {
   it('is true for mapped translate codes', () => {
     expect(translateCodeHasLanguageToolPairing('tr')).toBe(true)
     expect(translateCodeHasLanguageToolPairing('ja')).toBe(true)
+    expect(translateCodeHasLanguageToolPairing('en-gb')).toBe(true)
   })
   it('is false for unknown codes', () => {
     expect(translateCodeHasLanguageToolPairing('zz')).toBe(false)
@@ -52,5 +55,15 @@ describe('buildLabLanguageToolPreferenceList', () => {
     expect(list[0]).toBe('de-DE')
     expect(list[1]).toBe('en-US')
     expect(list).toEqual(['de-DE', 'en-US', 'fr-FR'])
+  })
+
+  it('includes en-GB in the lab LT list when British English is a translate target', () => {
+    const list = buildLabLanguageToolPreferenceList('en', [
+      { code: 'en', name: 'English (US)' },
+      { code: 'en-gb', name: 'English (UK)' },
+      { code: 'de', name: 'German' }
+    ])
+    expect(list).toContain('en-US')
+    expect(list).toContain('en-GB')
   })
 })

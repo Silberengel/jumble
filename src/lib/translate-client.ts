@@ -46,7 +46,41 @@ export function normalizeTranslateLangCode(code: string): string {
   return (LANG_ALIASES[t] ?? code.trim()) || 'en'
 }
 
+/**
+ * LibreTranslate/Argos only registers `en` — regional English codes are for grammar (LanguageTool)
+ * and read-aloud; the translate API still expects `en`.
+ */
+export function translateApiLanguageCode(code: string): string {
+  const n = normalizeTranslateLangCode(code).toLowerCase().replace(/_/gu, '-')
+  if (n === 'en-gb' || n === 'en-us') return 'en'
+  return normalizeTranslateLangCode(code)
+}
+
 export type TranslateLanguageOption = { code: string; name: string }
+
+function advertisedApiCodeKey(code: string): string {
+  return translateApiLanguageCode(code).trim().toLowerCase().replace(/_/gu, '-')
+}
+
+/** Codes last returned by GET `/languages` (API form, e.g. `en` for `en-gb`). Empty fetch clears this. */
+let advertisedTranslateApiCodes: Set<string> | null = null
+
+function recordAdvertisedTranslateCodesFromServer(list: readonly TranslateLanguageOption[]): void {
+  if (list.length === 0) {
+    advertisedTranslateApiCodes = null
+    return
+  }
+  advertisedTranslateApiCodes = new Set(list.map((o) => advertisedApiCodeKey(o.code)))
+}
+
+/**
+ * True if we have not yet seen a successful `/languages` response, or the server advertises the
+ * Libre `target` we would send for this logical menu code.
+ */
+export function translateServerSupportsLogicalTarget(targetCode: string): boolean {
+  if (!advertisedTranslateApiCodes) return true
+  return advertisedTranslateApiCodes.has(advertisedApiCodeKey(targetCode))
+}
 
 let languagesCache: { list: TranslateLanguageOption[]; at: number } | null = null
 const LANGUAGES_CACHE_TTL_MS = 60_000
@@ -80,6 +114,7 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
   if (!base) return []
   const now = Date.now()
   if (languagesCache && now - languagesCache.at < LANGUAGES_CACHE_TTL_MS) {
+    recordAdvertisedTranslateCodesFromServer(languagesCache.list)
     return languagesCache.list
   }
   const url = `${base}/languages`
@@ -87,22 +122,26 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
   if (!res.ok) {
     logger.warn('[Translate] /languages failed', { status: res.status })
     languagesCache = null
+    advertisedTranslateApiCodes = null
     return []
   }
   try {
     const data = (await res.json()) as unknown
     const list = parseLanguagesResponse(data)
     languagesCache = { list, at: now }
+    recordAdvertisedTranslateCodesFromServer(list)
     return list
   } catch (e) {
     logger.warn('[Translate] /languages parse error', { e })
     languagesCache = null
+    advertisedTranslateApiCodes = null
     return []
   }
 }
 
 export function clearTranslateLanguagesCache(): void {
   languagesCache = null
+  advertisedTranslateApiCodes = null
 }
 
 export async function translatePlainText(
@@ -114,9 +153,24 @@ export async function translatePlainText(
   if (!base) {
     throw new Error('Translation URL not configured')
   }
-  const resolvedTarget = normalizeTranslateLangCode(targetLang)
+  const resolvedTarget = translateApiLanguageCode(targetLang)
   const resolvedSource =
-    sourceLang === 'auto' ? 'auto' : normalizeTranslateLangCode(sourceLang)
+    sourceLang === 'auto' ? 'auto' : translateApiLanguageCode(sourceLang)
+
+  if (!translateServerSupportsLogicalTarget(targetLang)) {
+    const want = advertisedApiCodeKey(targetLang)
+    throw new Error(
+      `This translate server does not offer machine translation for “${want}” (that code is not in GET /languages). ` +
+        'You can still use grammar check and read-aloud on text that is already in that language.'
+    )
+  }
+  if (resolvedSource !== 'auto' && !translateServerSupportsLogicalTarget(sourceLang)) {
+    const want = advertisedApiCodeKey(sourceLang)
+    throw new Error(
+      `This translate server does not offer “${want}” as a source language (not in /languages). Pick another source or use “Detect automatically”.`
+    )
+  }
+
   const key = cacheKey(text, resolvedSource, resolvedTarget)
   const hit = memoryCache.get(key)
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {

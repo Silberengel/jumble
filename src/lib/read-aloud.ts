@@ -16,6 +16,7 @@ import indexedDb from '@/services/indexed-db.service'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { normalizeTranslateLangCode } from '@/lib/translate-client'
 import { Event, kinds } from 'nostr-tools'
 
 /** Keep each Piper request small: long JSON bodies and WAV responses can OOM or time out the server. */
@@ -599,7 +600,7 @@ async function speakViaPiperTtsChunks(chunks: string[], piperVoice: string): Pro
 async function speakViaWebSpeech(
   text: string,
   title: string,
-  options?: { fromPiperFallback?: boolean; browserOnlyNoPiper?: boolean }
+  options?: { fromPiperFallback?: boolean; browserOnlyNoPiper?: boolean; utteranceLang?: string }
 ): Promise<ReadAloudResult> {
   stopReadAloudPlayback()
   readAloudUserPaused = false
@@ -673,6 +674,10 @@ async function speakViaWebSpeech(
   }
 
   const u = new SpeechSynthesisUtterance(text)
+  const ul = options?.utteranceLang?.trim()
+  if (ul) {
+    u.lang = ul.replace(/_/gu, '-')
+  }
   u.onstart = (): void => {
     patchSnapshot({
       phase: 'playing',
@@ -741,6 +746,8 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
       ? piperReadAloudProfileLabel(piperProfileCode)
       : ''
 
+  const utteranceLang = normalizeTranslateLangCode(chosenReadAloudLang).trim()
+
   if (READ_ALOUD_TTS_URL) {
     stopReadAloudPlayback()
     readAloudUserPaused = false
@@ -798,8 +805,8 @@ export async function speakNoteReadAloud(event: Event): Promise<ReadAloudResult>
       chunkPlaybackRatio: 0
     })
 
-    return await speakViaWebSpeech(text, title, { fromPiperFallback: true })
+    return await speakViaWebSpeech(text, title, { fromPiperFallback: true, utteranceLang })
   }
 
-  return await speakViaWebSpeech(text, title, { browserOnlyNoPiper: true })
+  return await speakViaWebSpeech(text, title, { browserOnlyNoPiper: true, utteranceLang })
 }

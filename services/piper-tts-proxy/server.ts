@@ -986,8 +986,10 @@ function detectLanguage(text: string): string {
   const italianChars = (sample.match(/[àèéìòùÀÈÉÌÒÙ]/g) || []).length;
   // Russian/Cyrillic
   const cyrillicChars = (sample.match(/[а-яёА-ЯЁ]/g) || []).length;
-  // Chinese/Japanese/Korean (CJK)
-  const cjkChars = (sample.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []).length;
+  // CJK scripts: Hangul / kana → English Piper (no ko/ja models); Han → Chinese when dominant.
+  const hangulChars = (sample.match(/[\uac00-\ud7af]/g) || []).length;
+  const kanaChars = (sample.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+  const hanChars = (sample.match(/[\u4e00-\u9fff]/g) || []).length;
   // Arabic
   const arabicChars = (sample.match(/[\u0600-\u06ff]/g) || []).length;
   
@@ -998,12 +1000,15 @@ function detectLanguage(text: string): string {
   const spanishRatio = spanishChars / total;
   const italianRatio = italianChars / total;
   const cyrillicRatio = cyrillicChars / total;
-  const cjkRatio = cjkChars / total;
+  const hangulRatio = hangulChars / total;
+  const kanaRatio = kanaChars / total;
+  const hanRatio = hanChars / total;
   const arabicRatio = arabicChars / total;
   
   // Detect based on highest ratio
   if (cyrillicRatio > 0.1) return 'ru';
-  if (cjkRatio > 0.1) return 'zh'; // Default to Chinese for CJK
+  if (hangulRatio > 0.06 || kanaRatio > 0.02) return 'en';
+  if (hanRatio > 0.1) return 'zh';
   if (arabicRatio > 0.1) return 'ar';
   if (germanRatio > 0.02) return 'de';
   if (frenchRatio > 0.02) return 'fr';
@@ -1027,6 +1032,7 @@ function getVoiceForLanguage(lang: string): string {
   // Voice map keys / ids: keep in sync with `src/lib/trinity-languages.ts` (`TRINITY_PIPER_VOICE`, `EXTRA_READ_ALOUD_PIPER_VOICE`).
   const voiceMap: Record<string, string> = {
     'en': 'en_US-lessac-medium', // Default English voice
+    'en-gb': 'en_GB-alan-medium', // British English (rhasspy/piper-voices; install via scripts/download-piper-extra-voices.sh)
     'de': 'de_DE-thorsten-medium', // German
     'fr': 'fr_FR-siwis-medium', // French
     'es': 'es_ES-davefx-medium', // Spanish
@@ -1039,8 +1045,6 @@ function getVoiceForLanguage(lang: string): string {
     'nl': 'nl_NL-mls-medium', // Dutch
     'cs': 'cs_CZ-jirka-medium', // Czech
     'tr': 'tr_TR-dfki-medium', // Turkish
-    // 'ja': 'ja_JP-nanami-medium', // Japanese - not available
-    // 'ko': 'ko_KR-kyungha-medium', // Korean - not available
   };
   
   return voiceMap[lang] || voiceMap['en']; // Fall back to English

@@ -55,7 +55,7 @@ const DropdownMenuSubContent = React.forwardRef<
     DropdownMenuSubContentPositionProps & {
       showScrollButtons?: boolean
     }
->(({ className, showScrollButtons = true, side: sideProp, align: alignProp, ...props }, ref) => {
+>(({ className, showScrollButtons = false, side: sideProp, align: alignProp, ...props }, ref) => {
   const [canScrollUp, setCanScrollUp] = React.useState(false)
   const [canScrollDown, setCanScrollDown] = React.useState(false)
   const contentRef = React.useRef<HTMLDivElement>(null)
@@ -143,7 +143,7 @@ const DropdownMenuSubContent = React.forwardRef<
 
         <div
           ref={scrollAreaRef}
-          className={cn('p-1 overflow-y-auto', className)}
+          className={cn('p-1 popover-scroll-y', className)}
           onScroll={checkScrollability}
         >
           {props.children}
@@ -245,7 +245,7 @@ const DropdownMenuContent = React.forwardRef<
 
         <div
           ref={scrollAreaRef}
-          className={cn('p-1 overflow-y-auto', className)}
+          className={cn('p-1 popover-scroll-y', className)}
           onScroll={checkScrollability}
         >
           {props.children}

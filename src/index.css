@@ -70,6 +70,52 @@
     display: none; /* Safari and Chrome */
   }
 
+  /* Popover / select lists: keep a visible vertical scrollbar (not overlay-only). */
+  .popover-scroll-y {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+  .popover-scroll-y::-webkit-scrollbar {
+    width: 10px;
+  }
+  .popover-scroll-y::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: hsl(var(--muted-foreground) / 0.35);
+  }
+  .popover-scroll-y::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+  .popover-scroll-y::-webkit-scrollbar-track {
+    border-radius: 9999px;
+    background-color: hsl(var(--muted) / 0.45);
+  }
+
+  /*
+   * Radix Select injects a sibling <style> that hides scrollbars on the viewport.
+   * That sheet loads after app CSS, so undo it with !important (see VIEWPORT_NAME in @radix-ui/react-select).
+   */
+  [data-radix-select-viewport] {
+    scrollbar-gutter: stable !important;
+    scrollbar-width: thin !important;
+    -ms-overflow-style: auto !important;
+  }
+  [data-radix-select-viewport]::-webkit-scrollbar {
+    display: block !important;
+    width: 10px !important;
+  }
+  [data-radix-select-viewport]::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: hsl(var(--muted-foreground) / 0.35);
+  }
+  [data-radix-select-viewport]::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+  [data-radix-select-viewport]::-webkit-scrollbar-track {
+    border-radius: 9999px;
+    background-color: hsl(var(--muted) / 0.45);
+  }
+
   @media (hover: hover) and (pointer: fine) {
     .clickable:hover {
       background-color: hsl(var(--muted) / 0.3);

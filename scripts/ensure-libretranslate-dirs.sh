@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # One-shot host prep for editor stack sidecars:
 #   1) LibreTranslate bind mount — dirs + ownership UID 1032 (official image user).
-#   2) Piper ONNX voices — trinity + read-aloud extras (rhasspy/piper-voices) into:
-#        - ./.local-piper-data (dev compose bind mount), and
-#        - Docker volume <project>_piper-stack-data when it exists (docker-compose.prod.yml Wyoming /data).
+#   2) Recommended Argos / LT_LOAD_ONLY list — written beside the volume (see below).
+#   3) Piper ONNX voices — same set as src/lib/trinity-languages.ts + piper-tts-proxy voiceMap
+#        into ./.local-piper-data and optionally Docker volume <project>_piper-stack-data.
+#
+# Argos translation models are pulled by the LibreTranslate **container** from LT_LOAD_ONLY on first
+# start (bind mount .local-libretranslate). Default list: scripts/libretranslate-lt.default.env (same file
+# as docker-compose `env_file` for libretranslate).
 #
 # Piper download logic lives in this file so you can copy **only** this script to a server and run it
 # from the repo root (still need curl, docker; full clone is easier: bash scripts/ensure-libretranslate-dirs.sh).
 #
 # Internal entry: bash ensure-libretranslate-dirs.sh --download-piper-only [DEST]
-#   (used by scripts/download-piper-extra-voices.sh — keep voice list in sync with trinity-languages.ts)
+#   (used by scripts/download-piper-extra-voices.sh — keep Piper relpaths in sync with trinity-languages.ts)
 #
 # Optional env:
 #   COMPOSE_PROJECT_NAME — Docker Compose project name (default: basename of repo dir), for volume *_piper-stack-data.
-#   SKIP_PIPER_VOICES=1 — only fix LibreTranslate permissions, do not download Piper.
+#   SKIP_PIPER_VOICES=1 — only fix LibreTranslate permissions (+ LT_LOAD_ONLY hint file), do not download Piper.
 #   HF_BASE — Hugging Face resolve base for Piper ONNX (default rhasspy/piper-voices/main).
 set -euo pipefail
 
@@ -26,7 +30,21 @@ _resolve_root() {
   fi
 }
 
-# Keep in sync with src/lib/trinity-languages.ts (TRINITY_PIPER_VOICE + EXTRA_READ_ALOUD_PIPER_VOICE) and server voiceMap.
+load_stack_lt_load_only() {
+  local f="${ROOT}/scripts/libretranslate-lt.default.env"
+  [[ -f "$f" ]] || {
+    echo "[ensure] Missing ${f}" >&2
+    exit 1
+  }
+  STACK_LT_LOAD_ONLY="$(grep -E '^[[:space:]]*LT_LOAD_ONLY=' "$f" | head -1 | sed 's/^[[:space:]]*LT_LOAD_ONLY=//')"
+  [[ -n "$STACK_LT_LOAD_ONLY" ]] || {
+    echo "[ensure] LT_LOAD_ONLY empty in ${f}" >&2
+    exit 1
+  }
+}
+
+# Keep in sync with src/lib/trinity-languages.ts (TRINITY_PIPER_VOICE + EXTRA_READ_ALOUD_PIPER_VOICE)
+# and services/piper-tts-proxy/server.ts getVoiceForLanguage voiceMap.
 download_piper_voices_to() {
   local dest="${1:?destination directory}"
   local hf="${HF_BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/main}"
@@ -34,6 +52,7 @@ download_piper_voices_to() {
   local relpath base_name onnx json
   for relpath in \
     "en/en_US/lessac/medium/en_US-lessac-medium" \
+    "en/en_GB/alan/medium/en_GB-alan-medium" \
     "de/de_DE/thorsten/medium/de_DE-thorsten-medium" \
     "fr/fr_FR/siwis/medium/fr_FR-siwis-medium" \
     "es/es_ES/davefx/medium/es_ES-davefx-medium" \
@@ -61,6 +80,18 @@ download_piper_voices_to() {
   echo "Piper ONNX done → ${dest}"
 }
 
+write_lt_load_only_hint() {
+  local lt_dir="${1:?libretranslate data dir}"
+  local hint="${lt_dir}/.recommended-lt-load-only.txt"
+  docker run --rm \
+    -e STACK_LT_LOAD_ONLY="$STACK_LT_LOAD_ONLY" \
+    -v "$lt_dir:/d" \
+    alpine:3.20 \
+    sh -c 'printf "%s\n" "$STACK_LT_LOAD_ONLY" > /d/.recommended-lt-load-only.txt && chown 1032:1032 /d/.recommended-lt-load-only.txt'
+  echo "[ensure] Recommended LibreTranslate LT_LOAD_ONLY (Argos) → ${hint}"
+  echo "         Keep in sync with scripts/libretranslate-lt.default.env (compose env_file). Recreate libretranslate once (LT_UPDATE_MODELS=true) after changing the list."
+}
+
 if [[ "${1:-}" == "--download-piper-only" ]]; then
   shift
   _resolve_root
@@ -69,17 +100,28 @@ if [[ "${1:-}" == "--download-piper-only" ]]; then
 fi
 
 _resolve_root
+load_stack_lt_load_only
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT")}"
 PIPER_VOL="${PROJECT}_piper-stack-data"
 
 echo "[ensure] LibreTranslate data dir (UID 1032) …"
+if [[ -e "$ROOT/.local-libretranslate" ]] && [[ ! -w "$ROOT/.local-libretranslate" ]]; then
+  echo "[ensure] Resetting bind-mount ownership so the host can create dirs (final step sets UID 1032) …"
+  docker run --rm \
+    -v "$ROOT/.local-libretranslate:/d" \
+    alpine:3.20 chown -R "$(id -u):$(id -g)" /d
+fi
 mkdir -p "$ROOT/.local-libretranslate/share" "$ROOT/.local-libretranslate/cache"
+
+write_lt_load_only_hint "$ROOT/.local-libretranslate"
+
 docker run --rm \
   -v "$ROOT/.local-libretranslate:/d" \
   alpine:3.20 chown -R 1032:1032 /d
 
 if [[ "${SKIP_PIPER_VOICES:-}" == "1" ]]; then
   echo "[ensure] SKIP_PIPER_VOICES=1 — skipping Piper voice download."
+  echo "[ensure] Stack languages: translate=${STACK_LT_LOAD_ONLY} (LibreTranslate); grammar=LanguageTool; read-aloud=Piper in .local-piper-data (run again without SKIP to fetch)."
   exit 0
 fi
 
@@ -98,3 +140,4 @@ else
 fi
 
 echo "[ensure] Done."
+echo "[ensure] Summary — translate: LT_LOAD_ONLY=${STACK_LT_LOAD_ONLY} in Compose; grammar: LanguageTool; read-aloud: Piper ONNX above (+ Wyoming)."

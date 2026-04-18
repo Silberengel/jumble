@@ -6,6 +6,8 @@ import { normalizeTranslateLangCode } from '@/lib/translate-client'
  */
 const LT_ALIASES: Record<string, string> = {
   en: 'en-US',
+  'en-us': 'en-US',
+  'en-gb': 'en-GB',
   de: 'de-DE',
   fr: 'fr-FR',
   es: 'es',

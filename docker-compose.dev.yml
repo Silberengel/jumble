@@ -67,8 +67,9 @@ services:
       - '5000:5000'
     # Without LT_LOAD_ONLY the image downloads many GB of models before binding :5000 — Vite then gets ECONNRESET on /translate.
     tty: true
+    env_file:
+      - ./scripts/libretranslate-lt.default.env
     environment:
-      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}
       # Install missing packs when `LT_LOAD_ONLY` grows (persisted volume otherwise keeps old en/de-only index).
       LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:

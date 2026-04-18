@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildResolvedTranslateMenuLanguageOptions,
+  expandTranslateOptionsWithEnglishDialects,
   filterTranslateLanguagesWithGrammarCatalog,
   getLanguageDisplayParts,
   languageSelectSingleLine,
@@ -32,6 +34,12 @@ describe('ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES', () => {
     expect(ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES).toContain('tr')
     expect(ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES.length).toBeGreaterThan(40)
   })
+
+  it('omits Japanese, Korean, and Swahili from default translate-target ordering', () => {
+    expect(ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES).not.toContain('ja')
+    expect(ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES).not.toContain('ko')
+    expect(ORDERED_TRANSLATE_GRAMMAR_LANGUAGE_CODES).not.toContain('sw')
+  })
 })
 
 describe('filterTranslateLanguagesWithGrammarCatalog', () => {
@@ -42,6 +50,42 @@ describe('filterTranslateLanguagesWithGrammarCatalog', () => {
       { code: 'de', name: 'German' }
     ])
     expect(out.map((l) => l.code)).toEqual(['de', 'tr'])
+  })
+
+  it('drops Swahili even when the translate API advertises it', () => {
+    const out = filterTranslateLanguagesWithGrammarCatalog([{ code: 'sw', name: 'Swahili' }])
+    expect(out.map((l) => l.code)).toEqual([])
+  })
+})
+
+describe('buildResolvedTranslateMenuLanguageOptions', () => {
+  it('adds en-gb when API has en (no Swahili injection)', () => {
+    const out = buildResolvedTranslateMenuLanguageOptions([
+      { code: 'en', name: 'English' },
+      { code: 'de', name: 'German' }
+    ])
+    expect(out.map((l) => l.code)).not.toContain('sw')
+    expect(out.map((l) => l.code)).toContain('en-gb')
+  })
+})
+
+describe('expandTranslateOptionsWithEnglishDialects', () => {
+  it('inserts en-gb after plain en and relabels en as US English', () => {
+    const out = expandTranslateOptionsWithEnglishDialects([
+      { code: 'de', name: 'German' },
+      { code: 'en', name: 'English' }
+    ])
+    expect(out.map((l) => l.code)).toEqual(['de', 'en', 'en-gb'])
+    expect(out[1]!.name).toContain('United States')
+    expect(out[2]!.name).toContain('United Kingdom')
+  })
+
+  it('is a no-op when en-gb is already present', () => {
+    const base = [
+      { code: 'en', name: 'English' },
+      { code: 'en-gb', name: 'British' }
+    ]
+    expect(expandTranslateOptionsWithEnglishDialects(base)).toEqual(base)
   })
 })
 

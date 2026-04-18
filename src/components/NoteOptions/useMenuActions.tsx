@@ -68,9 +68,8 @@ import {
   type TranslateLanguageOption
 } from '@/lib/translate-client'
 import {
-  filterTranslateLanguagesWithGrammarCatalog,
+  buildResolvedTranslateMenuLanguageOptions,
   languageSelectSingleLine,
-  TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS,
   TRANSLATE_LANGUAGE_MENU_ITEM_CLASS
 } from '@/lib/language-display-meta'
 
@@ -191,14 +190,10 @@ export function useMenuActions({
     void fetchTranslateLanguages()
       .then((list) => {
         if (cancelled) return
-        const base = list.length > 0 ? list : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
-        const filtered = filterTranslateLanguagesWithGrammarCatalog(base)
-        setTranslateMenuOptions(
-          filtered.length > 0 ? filtered : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
-        )
+        setTranslateMenuOptions(buildResolvedTranslateMenuLanguageOptions(list))
       })
       .catch(() => {
-        if (!cancelled) setTranslateMenuOptions(TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS)
+        if (!cancelled) setTranslateMenuOptions(buildResolvedTranslateMenuLanguageOptions([]))
       })
     return () => {
       cancelled = true

@@ -83,8 +83,9 @@ services:
     ports:
       - '127.0.0.1:5000:5000'
     tty: true
+    env_file:
+      - ./scripts/libretranslate-lt.default.env
     environment:
-      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}
       LT_UPDATE_MODELS: ${LT_UPDATE_MODELS:-true}
     volumes:
       # One tree under .local (same as upstream run.sh -v …/lt-local:/home/libretranslate/.local); avoids split-mount permission edge cases.

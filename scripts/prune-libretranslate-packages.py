@@ -4,9 +4,23 @@ import os
 import re
 import shutil
 import sys
+from pathlib import Path
 
-DEFAULT = "en,de,es,fr,it,pt,ru,zh,ja,ar"
-allowed = set(os.environ.get("LT_LOAD_ONLY", DEFAULT).replace(" ", "").split(","))
+
+def default_lt_load_only() -> str:
+    env_path = Path(__file__).resolve().parent / "libretranslate-lt.default.env"
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("LT_LOAD_ONLY="):
+            return line.split("=", 1)[1].strip()
+    raise RuntimeError(f"LT_LOAD_ONLY not set in {env_path}")
+
+
+allowed = set(
+    os.environ.get("LT_LOAD_ONLY", default_lt_load_only()).replace(" ", "").split(",")
+)
 if not allowed or allowed == {""}:
     print("LT_LOAD_ONLY empty", file=sys.stderr)
     sys.exit(1)

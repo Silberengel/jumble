@@ -14,14 +14,17 @@ describe('getPiperVoiceForChosenLanguage', () => {
     expect(r.piperProfileCode).toBe('de')
   })
 
-  it('routes Japanese and Korean to Chinese Piper', () => {
+  it('uses English Piper for Japanese and Korean (no native ja/ko voices)', () => {
     const ja = getPiperVoiceForChosenLanguage('ja')
-    expect(ja.voice).toBe(TRINITY_PIPER_VOICE.zh)
-    expect(ja.usedRelatedVoiceFallback).toBe(true)
-    expect(ja.piperProfileCode).toBe('zh')
+    expect(ja.voice).toBe(TRINITY_PIPER_VOICE.en)
+    expect(ja.usedEnglishVoiceFallback).toBe(true)
+    expect(ja.usedRelatedVoiceFallback).toBe(false)
+    expect(ja.piperProfileCode).toBe('en')
 
     const ko = getPiperVoiceForChosenLanguage('ko')
-    expect(ko.piperProfileCode).toBe('zh')
+    expect(ko.voice).toBe(TRINITY_PIPER_VOICE.en)
+    expect(ko.usedEnglishVoiceFallback).toBe(true)
+    expect(ko.piperProfileCode).toBe('en')
   })
 
   it('routes Ukrainian to Russian Piper', () => {
@@ -58,6 +61,13 @@ describe('getPiperVoiceForChosenLanguage', () => {
     expect(r.usedEnglishVoiceFallback).toBe(false)
     expect(r.usedRelatedVoiceFallback).toBe(false)
     expect(r.piperProfileCode).toBe('ar')
+  })
+
+  it('uses British Piper for en-gb before base en would pick US', () => {
+    const r = getPiperVoiceForChosenLanguage('en-gb')
+    expect(r.voice).toBe(EXTRA_READ_ALOUD_PIPER_VOICE['en-gb'])
+    expect(r.piperProfileCode).toBe('en-gb')
+    expect(r.usedEnglishVoiceFallback).toBe(false)
   })
 
   it('uses Arabic Piper for regional Arabic tags', () => {

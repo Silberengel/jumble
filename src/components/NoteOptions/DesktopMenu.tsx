@@ -53,10 +53,7 @@ const SubMenuPanel = memo(
           <Icon />
           {action.label}
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent
-          className="w-[min(28rem,calc(100vw-2rem))] max-w-[28rem] min-w-[18rem] p-0"
-          showScrollButtons
-        >
+        <DropdownMenuSubContent className="w-[min(28rem,calc(100vw-2rem))] max-w-[28rem] min-w-[18rem] p-0">
           {action.subMenuSearchable ? (
             <div
               className="border-b border-border bg-popover p-2"

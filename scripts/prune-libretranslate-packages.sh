@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Drop Argos packages / MiniSBD files not in LT_LOAD_ONLY (default matches docker-compose libretranslate).
+# Drop Argos packages / MiniSBD files not in LT_LOAD_ONLY (default: scripts/libretranslate-lt.default.env).
 # Stops LibreTranslate briefly so files are not in use; uses Docker+Alpine to delete UID-1032-owned trees.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARGOS="$ROOT/.local-libretranslate/share/argos-translate"
-LT_LOAD_ONLY="${LT_LOAD_ONLY:-en,de,es,fr,it,pt,ru,zh,ja,ar}"
+LT_DEFAULT_ENV="$ROOT/scripts/libretranslate-lt.default.env"
+if [[ -z "${LT_LOAD_ONLY:-}" ]]; then
+  LT_LOAD_ONLY="$(grep -E '^[[:space:]]*LT_LOAD_ONLY=' "$LT_DEFAULT_ENV" | head -1 | sed 's/^[[:space:]]*LT_LOAD_ONLY=//')"
+fi
 
 if [[ ! -d "$ARGOS/packages" ]]; then
   echo "Nothing to prune (missing $ARGOS/packages)." >&2

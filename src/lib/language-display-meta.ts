@@ -2,9 +2,12 @@
  * Canonical ISO-639-style language labels (English + endonym) for selection UI.
  * {@link getLanguageDisplayParts} falls back to `Intl.DisplayNames` when a code is missing here.
  *
- * {@link TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS} lists every map key that LanguageTool also pairs with
- * (deduped per grammar language). Translate menus use {@link filterTranslateLanguagesWithGrammarCatalog}
- * on Libre `/languages` so only installed targets are offered.
+ * {@link TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS} lists map keys that LanguageTool pairs with, minus a small
+ * exclude list for locales not in the default editor Argos stack. Translate menus use
+ * {@link filterTranslateLanguagesWithGrammarCatalog} on Libre `/languages`, then
+ * {@link expandTranslateOptionsWithEnglishDialects} adds British English (`en-gb`) when plain `en`
+ * is installed (Libre still uses API code `en`). {@link buildResolvedTranslateMenuLanguageOptions}
+ * runs that pipeline for **note menus and Advanced Event Lab** so both stay identical.
  *
  * JSX: {@link LanguageSelectOptionLines} in `language-select-option-lines.tsx` (this file stays `.ts`
  * so extensionless imports resolve cleanly under Vite).
@@ -15,6 +18,15 @@ import {
   translateCodeHasLanguageToolPairing,
   translateTargetToLanguageToolCode
 } from '@/lib/languagetool-language-order'
+
+/** Bases omitted from translate-target menus (keep aligned with `scripts/libretranslate-lt.default.env`). */
+const TRANSLATE_MENU_EXCLUDED_BASE_CODES = new Set(['ja', 'ko', 'sw'])
+
+function isExcludedTranslateMenuLanguageCode(code: string): boolean {
+  const n = normalizeTranslateLangCode(code).toLowerCase().replace(/_/gu, '-')
+  const base = (n.split(/-/u)[0] ?? n).toLowerCase()
+  return TRANSLATE_MENU_EXCLUDED_BASE_CODES.has(base)
+}
 
 /** Lowercase keys: ISO 639-1 base, or BCP47 tag for regional overrides. */
 export const LANGUAGE_TRIPLE_BY_LOWER_KEY: Record<string, { english: string; native: string }> =
@@ -299,8 +311,9 @@ export function languageSelectSingleLine(tag: string): string {
  * deduped by LT target (shortest tag wins), sorted by English name.
  */
 export function getOrderedTranslateGrammarLanguageCodes(): readonly string[] {
-  const candidates = Object.keys(LANGUAGE_TRIPLE_BY_LOWER_KEY).filter((k) =>
-    translateCodeHasLanguageToolPairing(k)
+  const candidates = Object.keys(LANGUAGE_TRIPLE_BY_LOWER_KEY).filter(
+    (k) =>
+      translateCodeHasLanguageToolPairing(k) && !isExcludedTranslateMenuLanguageCode(k)
   )
   const byLt = new Map<string, string>()
   for (const c of candidates) {
@@ -351,7 +364,10 @@ export function translateLanguageOptionMatchesQuery(code: string, query: string)
 export function filterTranslateLanguagesWithGrammarCatalog(
   apiList: readonly TranslateLanguageOption[]
 ): TranslateLanguageOption[] {
-  const withPairing = apiList.filter((l) => translateCodeHasLanguageToolPairing(l.code))
+  const withPairing = apiList.filter(
+    (l) =>
+      translateCodeHasLanguageToolPairing(l.code) && !isExcludedTranslateMenuLanguageCode(l.code)
+  )
   const byLt = new Map<string, TranslateLanguageOption>()
   for (const l of withPairing) {
     const lt = translateTargetToLanguageToolCode(l.code)
@@ -377,6 +393,51 @@ export function filterTranslateLanguagesWithGrammarCatalog(
       { sensitivity: 'base' }
     )
   })
+}
+
+/**
+ * When LibreTranslate advertises `en` only, still offer US vs British as separate targets: both
+ * call the API with `en` ({@link translateApiLanguageCode}); grammar and Piper use `en-US` vs `en-GB`.
+ */
+export function expandTranslateOptionsWithEnglishDialects(
+  opts: readonly TranslateLanguageOption[]
+): TranslateLanguageOption[] {
+  const normalized = opts.map((o) => normalizeTranslateLangCode(o.code).toLowerCase().replace(/_/gu, '-'))
+  if (!normalized.includes('en') || normalized.includes('en-gb')) {
+    return [...opts]
+  }
+  const enIdx = opts.findIndex(
+    (o) => normalizeTranslateLangCode(o.code).toLowerCase().replace(/_/gu, '-') === 'en'
+  )
+  if (enIdx === -1) return [...opts]
+  const relabeled = opts.map((o, i) =>
+    i === enIdx ? { ...o, name: languageSelectSingleLine('en-us') } : o
+  )
+  const withGb: TranslateLanguageOption[] = [
+    ...relabeled.slice(0, enIdx + 1),
+    { code: 'en-gb', name: languageSelectSingleLine('en-gb') },
+    ...relabeled.slice(enIdx + 1)
+  ]
+  return withGb
+}
+
+/**
+ * Resolved translate/grammar target list: Libre `/languages` (or static fallback when empty),
+ * filter ∩ LanguageTool (with excluded bases removed), then UK/US English expansion.
+ * Used by note translate submenus and the Advanced Event Lab dialog so menus never diverge.
+ */
+export function buildResolvedTranslateMenuLanguageOptions(
+  apiFetchResult: readonly TranslateLanguageOption[]
+): TranslateLanguageOption[] {
+  const base: readonly TranslateLanguageOption[] =
+    apiFetchResult.length > 0 ? apiFetchResult : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+  const pipeline = (opts: readonly TranslateLanguageOption[]) =>
+    expandTranslateOptionsWithEnglishDialects(filterTranslateLanguagesWithGrammarCatalog([...opts]))
+  let out = pipeline(base)
+  if (out.length === 0) {
+    out = pipeline(TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS)
+  }
+  return out
 }
 
 /** Submenu / dropdown row: align label block; content is horizontal (see `LanguageSelectOptionLines`). */

@@ -20,8 +20,7 @@ import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
 import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
 import {
-  filterTranslateLanguagesWithGrammarCatalog,
-  TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS,
+  buildResolvedTranslateMenuLanguageOptions,
   translateLanguageOptionMatchesQuery
 } from '@/lib/language-display-meta'
 import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
@@ -31,6 +30,7 @@ import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
   fetchTranslateLanguages,
   isTranslateConfigured,
+  translateApiLanguageCode,
   type TranslateLanguageOption
 } from '@/lib/translate-client'
 import { setReadAloudTranslationForEvent } from '@/lib/read-aloud-translation-override'
@@ -537,9 +537,7 @@ export default function AdvancedEventLabDialog({
     void fetchTranslateLanguages()
       .then((list) => {
         if (cancelled) return
-        const base = list.length > 0 ? list : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
-        const filtered = filterTranslateLanguagesWithGrammarCatalog(base)
-        const resolved = filtered.length > 0 ? filtered : TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        const resolved = buildResolvedTranslateMenuLanguageOptions(list)
         if (!resolved.length) {
           setTranslateLangs([])
           setTranslateLoad('empty')
@@ -547,17 +545,17 @@ export default function AdvancedEventLabDialog({
         }
         setTranslateLangs([...resolved])
         setTranslateSource('auto')
-        const codes = resolved.map((l) => l.code)
+        const codes = resolved.map((l: TranslateLanguageOption) => l.code)
         const tgt = codes.includes('en') ? 'en' : codes[0]!
         setTranslateTarget(tgt)
         setTranslateLoad('ready')
       })
       .catch(() => {
         if (cancelled) return
-        const resolved = TRANSLATE_GRAMMAR_LANGUAGE_OPTIONS
+        const resolved = buildResolvedTranslateMenuLanguageOptions([])
         setTranslateLangs([...resolved])
         setTranslateSource('auto')
-        const codes = resolved.map((l) => l.code)
+        const codes = resolved.map((l: TranslateLanguageOption) => l.code)
         setTranslateTarget(codes.includes('en') ? 'en' : codes[0]!)
         setTranslateLoad('ready')
       })
@@ -769,7 +767,10 @@ export default function AdvancedEventLabDialog({
     const text = markupView.current?.state.doc.toString() ?? sliceRef.current?.content ?? ''
     if (!text.trim()) return
     if (translateLoad !== 'ready' || translateLangs.length === 0) return
-    if (translateSource !== 'auto' && translateSource === translateTarget) {
+    if (
+      translateSource !== 'auto' &&
+      translateApiLanguageCode(translateSource) === translateApiLanguageCode(translateTarget)
+    ) {
       toast.message(t('Advanced lab translation same source target'))
       return
     }
@@ -851,7 +852,7 @@ export default function AdvancedEventLabDialog({
                         aria-label={t('Language list filter placeholder')}
                       />
                     </div>
-                    <div className="max-h-52 overflow-y-auto py-1">
+                    <div className="py-1">
                       {ltListFiltered.map((code) => (
                         <SelectItem
                           key={code}
@@ -906,7 +907,7 @@ export default function AdvancedEventLabDialog({
                               aria-label={t('Language list filter placeholder')}
                             />
                           </div>
-                          <div className="max-h-52 overflow-y-auto py-1">
+                          <div className="py-1">
                             {showTranslateSourceAuto ? (
                               <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
                             ) : null}
@@ -955,7 +956,7 @@ export default function AdvancedEventLabDialog({
                               aria-label={t('Language list filter placeholder')}
                             />
                           </div>
-                          <div className="max-h-52 overflow-y-auto py-1">
+                          <div className="py-1">
                             {translateLangsFilteredTgt.map((l) => (
                               <SelectItem
                                 key={l.code}
