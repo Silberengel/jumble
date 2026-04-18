@@ -60,6 +60,7 @@ export default function PostEditor({
   const content = useMemo(() => {
     return (
       <PostContent
+        open={open}
         defaultContent={effectiveDefaultContent}
         parentEvent={parentEvent}
         close={() => setOpen(false)}
@@ -71,6 +72,7 @@ export default function PostEditor({
       />
     )
   }, [
+    open,
     effectiveDefaultContent,
     parentEvent,
     openFrom,

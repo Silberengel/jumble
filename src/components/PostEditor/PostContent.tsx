@@ -156,6 +156,7 @@ function formatMarkupImageAtCursor(url: string, asciidoc: boolean): string {
 }
 
 export default function PostContent({
+  open,
   defaultContent = '',
   parentEvent,
   close,
@@ -165,6 +166,8 @@ export default function PostContent({
   onPublishSuccess,
   discussionDynamicTopics
 }: {
+  /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
+  open: boolean
   defaultContent?: string
   parentEvent?: Event
   close: () => void
@@ -716,6 +719,15 @@ export default function PostContent({
       }
     )
   }, [getDeterminedKind, defaultContent, parentEvent, isNsfw, isPoll, pollCreateData, addClientTag])
+
+  const prevComposerShellOpenRef = useRef(open)
+  useEffect(() => {
+    const wasOpen = prevComposerShellOpenRef.current
+    prevComposerShellOpenRef.current = open
+    if (!wasOpen && open && !advancedLabOpenRef.current) {
+      textareaRef.current?.syncFromPostCache()
+    }
+  }, [open, getDeterminedKind, defaultContent, parentEvent])
 
   const rssReplyExtraPreviewTags = useMemo((): string[][] | undefined => {
     if (!parentEvent || parentEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) return undefined

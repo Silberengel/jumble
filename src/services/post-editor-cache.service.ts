@@ -184,7 +184,20 @@ class PostEditorCacheService {
     this.restoreFromStorageIfNeeded()
     const cacheKey = this.generateCacheKey({ kind, defaultContent, parentEvent })
     const cached = this.postContentCache.get(cacheKey)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) {
+      const cachedText = (
+        typeof cached === 'string' ? cached : parseEditorJsonToText(cached ?? undefined)
+      ).trim()
+      // Seeded composers (e.g. Quote): an empty cached doc must not hide `defaultContent` on reopen.
+      if (
+        cachedText === '' &&
+        defaultContent !== undefined &&
+        defaultContent.trim() !== ''
+      ) {
+        return this.escapeAmpersandsForHtml(defaultContent)
+      }
+      return cached
+    }
     if (defaultContent !== undefined && defaultContent !== '') {
       return this.escapeAmpersandsForHtml(defaultContent)
     }
@@ -206,6 +219,13 @@ class PostEditorCacheService {
       existingText !== '' &&
       this.keysRestoredThisSession.has(cacheKey)
     ) {
+      return
+    }
+    if (incomingText === '' && defaultContent !== undefined && defaultContent.trim() !== '') {
+      this.keysRestoredThisSession.delete(cacheKey)
+      if (this.postContentCache.delete(cacheKey)) {
+        this.schedulePersist()
+      }
       return
     }
     this.keysRestoredThisSession.delete(cacheKey)

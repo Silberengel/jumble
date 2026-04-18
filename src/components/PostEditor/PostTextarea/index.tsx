@@ -43,6 +43,8 @@ export type TPostTextareaHandle = {
   insertText: (text: string) => void
   insertEmoji: (emoji: string | TEmoji) => void
   clear: () => void
+  /** Re-read `postEditorCache` / `defaultContent` into TipTap (dialog reopened; initial `content` only runs once). */
+  syncFromPostCache: () => void
   getText: () => string
   /** Replace editor from plain `content` (e.g. advanced lab). Syncs TipTap JSON cache and parent `text`. */
   setDocumentFromPlainText: (plain: string) => void
@@ -307,6 +309,16 @@ const PostTextarea = forwardRef<
           postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
           setText('')
         }
+      },
+      syncFromPostCache: () => {
+        const editor = editorRef.current
+        if (!editor) return
+        const next = postEditorCache.getPostContentCache({ kind, defaultContent, parentEvent })
+        if (next === undefined) return
+        editor.chain().setContent(next).run()
+        const json = editor.getJSON()
+        setText(parseEditorJsonToText(json))
+        postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, json)
       },
       getText: () => {
         const editor = editorRef.current
