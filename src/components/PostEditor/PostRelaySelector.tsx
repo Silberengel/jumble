@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import logger from '@/lib/logger'
 import { computePrePublishRelayCapPreview, type TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
+import client from '@/services/client.service'
 
 /** Stable default when `mentions` is omitted — inline `= []` is a new array every render and retriggers effects. */
 const NO_MENTIONS: string[] = []
@@ -264,6 +265,22 @@ export default function PostRelaySelector({
       setDescription(describeRelaySelection(selectedRelayUrls))
     }
   }, [selectedRelayUrls, hasManualSelection, isLoading, describeRelaySelection])
+
+  /** Picker lists exclude global read-only relays; session-strike skips are cleared when a relay is newly chosen so publishes honor the list. */
+  const prevSelectedNormalizedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const norm = (u: string) => normalizeAnyRelayUrl(u) || u
+    const prev = prevSelectedNormalizedRef.current
+    const newlyAdded: string[] = []
+    for (const url of selectedRelayUrls) {
+      const n = norm(url)
+      if (!prev.has(n)) newlyAdded.push(url)
+    }
+    prevSelectedNormalizedRef.current = new Set(selectedRelayUrls.map(norm))
+    if (newlyAdded.length > 0) {
+      client.clearSessionRelayStrikesForUrls(newlyAdded)
+    }
+  }, [selectedRelayUrls])
 
   // Update parent component with selected relays
   useEffect(() => {

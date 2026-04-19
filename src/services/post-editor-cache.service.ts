@@ -263,11 +263,10 @@ class PostEditorCacheService {
   clearAdvancedLabDraft(key: string) {
     this.restoreFromStorageIfNeeded()
     if (!this.advancedLabDrafts.delete(key)) return
-    if (this.persistTimeoutId) {
-      clearTimeout(this.persistTimeoutId)
-      this.persistTimeoutId = null
-    }
-    this.persistNow()
+    // Avoid synchronous JSON.stringify(localStorage) of the full draft blob here — that blocks
+    // the main thread when TipTap caches are large. Debounced persist is enough; tab close still
+    // uses {@link flushPersist} via beforeunload.
+    this.schedulePersist()
   }
 
   clearPostCache({ kind, defaultContent, parentEvent }: TCacheKeyParams) {
@@ -276,11 +275,7 @@ class PostEditorCacheService {
     this.postContentCache.delete(cacheKey)
     this.postSettingsCache.delete(cacheKey)
     this.advancedLabDrafts.delete(cacheKey)
-    if (this.persistTimeoutId) {
-      clearTimeout(this.persistTimeoutId)
-      this.persistTimeoutId = null
-    }
-    this.persistNow()
+    this.schedulePersist()
   }
 
   /** Clear all post and settings drafts. Use when user explicitly clears caches. */
@@ -289,11 +284,7 @@ class PostEditorCacheService {
     this.postContentCache.clear()
     this.postSettingsCache.clear()
     this.advancedLabDrafts.clear()
-    if (this.persistTimeoutId) {
-      clearTimeout(this.persistTimeoutId)
-      this.persistTimeoutId = null
-    }
-    this.persistNow()
+    this.schedulePersist()
   }
 
   generateCacheKey({ kind, parentEvent }: TCacheKeyParams): string {
@@ -315,11 +306,7 @@ class PostEditorCacheService {
 
   clearThreadDraft(): void {
     this.threadDraftCache = null
-    if (this.persistTimeoutId) {
-      clearTimeout(this.persistTimeoutId)
-      this.persistTimeoutId = null
-    }
-    this.persistNow()
+    this.schedulePersist()
   }
 }
 

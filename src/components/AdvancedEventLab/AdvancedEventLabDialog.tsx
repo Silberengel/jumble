@@ -297,7 +297,8 @@ export default function AdvancedEventLabDialog({
     setUndoUiTick((n) => n + 1)
   }, [])
 
-  const flushLabDraftNow = useCallback((key: string) => {
+  /** Writes the live CodeMirror doc into the draft cache. `urgent` flushes localStorage synchronously (tab hide / unload only). */
+  const flushLabDraftNow = useCallback((key: string, urgent = false) => {
     const v = markupView.current
     const s = sliceRef.current
     if (!v || !s) return
@@ -310,14 +311,14 @@ export default function AdvancedEventLabDialog({
       content: v.state.doc.toString(),
       tags: s.tags.map((row) => [...row])
     })
-    postEditorCache.flushPersist()
+    if (urgent) postEditorCache.flushPersist()
   }, [])
 
   useEffect(() => {
     if (!open || !draftPersistenceKey) return
     const key = draftPersistenceKey
     const onPageLeave = () => {
-      flushLabDraftNow(key)
+      flushLabDraftNow(key, true)
     }
     window.addEventListener('pagehide', onPageLeave)
     window.addEventListener('beforeunload', onPageLeave)

@@ -120,6 +120,14 @@ import {
 import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 
+/** Let the UI paint before heavy work. `requestAnimationFrame` alone can stall indefinitely in hidden or throttled documents. */
+function yieldForPaintBeforeHeavyWork(): Promise<void> {
+  return Promise.race([
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    new Promise<void>((resolve) => setTimeout(resolve, 50))
+  ])
+}
+
 function stripUrlForImageExtensionCheck(url: string): string {
   return url.trim().split(/[#?]/)[0].toLowerCase()
 }
@@ -1217,6 +1225,8 @@ export default function PostContent({
         return
       }
       try {
+        // Let the browser paint any loading/disabled UI before draft build + CodeMirror mount (can be heavy).
+        await yieldForPaintBeforeHeavyWork()
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
         let d = await createDraftEvent(cleanedText)
@@ -1307,7 +1317,10 @@ export default function PostContent({
       setPosting(true)
       let newEvent: any = null
       let draftEvent: any = null
-      
+
+      // Allow "Publishing…" (and other posting UI) to paint before draft build + network work.
+      await yieldForPaintBeforeHeavyWork()
+
       try {
         // Clean tracking parameters from URLs in the post content
         const cleanedText = rewritePlainTextHttpUrls(text)

@@ -1165,6 +1165,26 @@ class ClientService extends EventTarget {
   }
 
   /**
+   * Clear session strikes for several URLs at once (e.g. publish relay picker). One UI notification.
+   */
+  clearSessionRelayStrikesForUrls(urls: string[]): number {
+    let cleared = 0
+    for (const url of urls) {
+      const n = normalizeAnyRelayUrl(url) || url
+      if (!n) continue
+      if (this.publishStrikeCount.delete(n)) cleared += 1
+    }
+    if (cleared > 0) {
+      logger.info('[Relay] Session strikes cleared for relays (added to publish selection)', {
+        cleared,
+        urlCount: urls.length
+      })
+      this.notifySessionRelayStrikesChanged()
+    }
+    return cleared
+  }
+
+  /**
    * Apply strike filter; if that removes all candidates while some were provided, clear strikes **for those URLs
    * only** and retry once. (A global clear here caused storms: e.g. NIP-65 outbox retry with 2 relays wiped strikes
    * for every relay in the tab session.)
