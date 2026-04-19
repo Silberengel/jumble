@@ -227,7 +227,7 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
    * Fixes race where pulse data arrives before NostrProvider has hydrated follow list from cache. */
   useEffect(() => {
     if (!viewerPubkey || followings.length > 0) {
-      setFallbackFollowings([])
+      setFallbackFollowings((prev) => (prev.length ? [] : prev))
       return
     }
     let cancelled = false

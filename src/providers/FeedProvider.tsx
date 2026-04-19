@@ -226,7 +226,22 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     const baseRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
     const finalRelays = mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
     logger.debug('Updating relay URLs for all-favorites:', finalRelays)
-    setRelayUrls(finalRelays)
+    // Same logical list can be merged into a new array each run; keep the previous reference so
+    // feed consumers (RelaysFeed → NoteList relay subscription) do not re-enter effects in a tight loop.
+    const nextKey = finalRelays
+      .map((u) => normalizeAnyRelayUrl(u) || u)
+      .filter(Boolean)
+      .sort()
+      .join('\n')
+    setRelayUrls((prev) => {
+      const prevKey = prev
+        .map((u) => normalizeAnyRelayUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('\n')
+      if (prevKey === nextKey) return prev
+      return finalRelays
+    })
   }, [feedInfo.feedType, favoriteRelays, blockedRelays, extraFeedRelayUrls])
 
   return (
