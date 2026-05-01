@@ -163,18 +163,30 @@ function useDeferRemoteProfileAvatar(
       setAllowRemote(true)
       return
     }
-    const el = containerRef.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setAllowRemote(true)
-        }
-      },
-      { root: null, rootMargin: `${AVATAR_VIEWPORT_MARGIN_PX}px`, threshold: 0.01 }
-    )
-    io.observe(el)
-    return () => io.disconnect()
+    let io: IntersectionObserver | null = null
+    let raf = 0
+    const attach = () => {
+      const el = containerRef.current
+      if (!el || io) return
+      io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            setAllowRemote(true)
+          }
+        },
+        { root: null, rootMargin: `${AVATAR_VIEWPORT_MARGIN_PX}px`, threshold: 0.01 }
+      )
+      io.observe(el)
+    }
+    attach()
+    // Ref can still be null on the first effect tick (layout ordering); retry once after paint.
+    if (!containerRef.current) {
+      raf = window.requestAnimationFrame(() => attach())
+    }
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      io?.disconnect()
+    }
   }, [remoteHttp, allowRemote, containerRef, deferRemote])
 
   if (sizeBlocked) return fallbackSrc

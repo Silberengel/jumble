@@ -89,9 +89,23 @@ export function useFetchProfile(id?: string, skipCache = false) {
       return null
     }
     
-    // CRITICAL: Check cooldown period first to prevent cascade of duplicate fetches after timeout
+    // CRITICAL: Check cooldown period first to prevent cascade of duplicate fetches after timeout.
+    // Still hydrate from session/IndexedDB — otherwise new rows remount after a timeout and stay on
+    // identicons until cooldown ends with no effect re-run (deps unchanged).
     const cooldownExpiry = globalFetchCooldowns.get(pubkey)
     if (cooldownExpiry && Date.now() < cooldownExpiry) {
+      const cachedDuringCooldown = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+      if (!cancelled.current && cachedDuringCooldown) {
+        setProfile(cachedDuringCooldown)
+        setIsFetching(false)
+        initializedPubkeysRef.current.add(pubkey)
+        if (checkIntervalRef.current) {
+          clearInterval(checkIntervalRef.current)
+          checkIntervalRef.current = null
+        }
+        effectRunCountRef.current.delete(pubkey)
+        return cachedDuringCooldown
+      }
       logger.debug('[useFetchProfile] In cooldown period after timeout, skipping fetch', {
         pubkey: pubkey.substring(0, 8),
         remainingMs: cooldownExpiry - Date.now()
