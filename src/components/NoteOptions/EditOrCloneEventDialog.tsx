@@ -419,9 +419,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
             </TabsList>
 
             <TabsContent value="edit" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-              <ScrollArea className="h-[min(50vh,420px)] pr-3">
-                <div className="space-y-4 pb-2">
-                  <div className="space-y-1">
+              <ScrollArea className="h-[min(58vh,520px)] min-h-[300px] pr-3">
+                <div className="space-y-5 pb-4">
+                  <div className="space-y-1.5">
                     <label className="text-sm font-medium">{t('Event kind')}</label>
                     {isCreate ? (
                       <>
@@ -475,65 +475,80 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
                       />
                     )}
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="text-sm font-medium">{t('Note content')}</label>
                     <Textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
-                      rows={10}
-                      className="font-mono text-sm min-h-[160px]"
+                      rows={5}
+                      className="font-mono text-sm min-h-[120px] resize-y max-h-[40vh]"
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3 sm:p-4">
                     <div className="text-sm font-medium">{t('Tags')}</div>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {tagRows.map((row, i) => (
                         <div
                           key={i}
-                          className="flex flex-wrap items-start gap-1 border rounded-md p-2 bg-muted/30"
+                          className="rounded-md border border-border/60 bg-background/80 p-3 shadow-sm"
                         >
-                          {row.map((cell, j) => (
-                            <div key={j} className="flex items-center gap-0.5 shrink-0">
-                              <Input
-                                value={cell}
-                                onChange={(e) => updateRow(i, j, e.target.value)}
-                                placeholder={j === 0 ? t('Tag name') : t('Value')}
-                                className="h-8 w-[7rem] sm:w-32 font-mono text-xs"
-                              />
-                              {row.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  onClick={() => removeCell(i, j)}
-                                  aria-label={t('Remove value')}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8"
-                            onClick={() => addCell(i)}
-                          >
-                            <Plus className="h-3.5 w-3.5 mr-1" />
-                            {t('Add field')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 ml-auto"
-                            onClick={() => removeRow(i)}
-                            aria-label={t('Remove tag')}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="space-y-2.5">
+                            <Input
+                              value={row[0] ?? ''}
+                              onChange={(e) => updateRow(i, 0, e.target.value)}
+                              placeholder={t('Tag name')}
+                              className="h-9 font-mono text-sm"
+                              autoComplete="off"
+                            />
+                            {row.length > 1 ? (
+                              <div className="space-y-2 border-l-2 border-muted pl-3">
+                                {row.slice(1).map((cell, j) => (
+                                  <div key={j + 1} className="flex gap-2 items-center min-w-0">
+                                    <Input
+                                      value={cell}
+                                      onChange={(e) => updateRow(i, j + 1, e.target.value)}
+                                      placeholder={t('Value')}
+                                      className="h-9 min-w-0 flex-1 font-mono text-sm"
+                                      autoComplete="off"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-9 w-9 shrink-0"
+                                      onClick={() => removeCell(i, j + 1)}
+                                      aria-label={t('Remove value')}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => addCell(i)}
+                            >
+                              <Plus className="h-3.5 w-3.5 mr-1.5" />
+                              {t('Add field')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeRow(i)}
+                              aria-label={t('Remove tag')}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1.5" />
+                              {t('Remove tag')}
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -547,7 +562,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
             </TabsContent>
 
             <TabsContent value="preview" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-              <ScrollArea className="h-[min(50vh,420px)] pr-3">
+              <ScrollArea className="h-[min(58vh,520px)] min-h-[300px] pr-3">
                 <div className="space-y-1.5">
                   {previewEvent ? (
                     <>
@@ -575,7 +590,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
             </TabsContent>
 
             <TabsContent value="json" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-              <ScrollArea className="h-[min(50vh,420px)] pr-3">
+              <ScrollArea className="h-[min(58vh,520px)] min-h-[300px] pr-3">
                 <pre className="text-xs font-mono whitespace-pre-wrap break-words border rounded-md p-3 bg-muted/40 select-text">
                   {draftJson}
                 </pre>

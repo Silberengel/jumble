@@ -5,6 +5,10 @@ const fs = require('fs')
 const http = require('http')
 const path = require('path')
 
+// Linux WM_CLASS / Wayland app_id: must differ from the Qt Imwald desktop client (`imwald-desktop`)
+// and from generic `imwald` (package.json name) or GNOME groups windows as one application.
+app.setName('imwald-jumble')
+
 /** True when running from source (`electron .`); false when packaged. */
 const isDev = !app.isPackaged
 
