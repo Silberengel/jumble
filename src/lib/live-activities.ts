@@ -36,7 +36,10 @@ export type LiveActivitiesFetchEventsFn = (
 /** NIP-53 live streaming (30311), meeting space (30312), meeting (30313). */
 export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
-/** True when the home kind picker (or “see all events”) allows NIP-53 live activity rows and inline embeds. */
+/**
+ * @deprecated Home embeds no longer consult the kind picker. Kept for callers that still want
+ * “is live activity in the user’s selected kinds?” (e.g. optional UI); prefer inlining that check.
+ */
 export function liveActivityKindsEnabledInPicker(
   showKinds: readonly number[],
   feedKindFilterBypass: boolean

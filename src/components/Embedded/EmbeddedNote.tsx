@@ -2,7 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import ExternalLink from '@/components/ExternalLink'
 import { FAST_READ_RELAY_URLS, SEARCHABLE_RELAY_URLS, ExtendedKind } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { LIVE_ACTIVITY_KINDS, liveActivityKindsEnabledInPicker } from '@/lib/live-activities'
+import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import { useFetchEvent } from '@/hooks'
 import { normalizeUrl } from '@/lib/url'
@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
-import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState } from 'react'
 import { Event, nip19 } from 'nostr-tools'
@@ -327,24 +326,8 @@ function EmbeddedNoteContent({
   containingEvent?: Event
   showFull?: boolean
 }) {
-  const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
-  const allowLiveEmbeds = liveActivityKindsEnabledInPicker(showKinds, feedKindFilterBypass)
-
-  const naddrTargetsLiveActivityOnly = useMemo(() => {
-    try {
-      const dec = nip19.decode(noteId.trim())
-      if (dec.type !== 'naddr') return false
-      return LIVE_ACTIVITY_KINDS.includes(dec.data.kind as (typeof LIVE_ACTIVITY_KINDS)[number])
-    } catch {
-      return false
-    }
-  }, [noteId])
-
-  const skipLiveActivityFetch = naddrTargetsLiveActivityOnly && !allowLiveEmbeds
-
-  if (skipLiveActivityFetch) {
-    return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
-  }
+  /** Embeds are contextual to the parent note; home kind picker must not hide NIP-53 live cards here. */
+  const allowLiveEmbeds = true
 
   return (
     <EmbeddedNoteFetched

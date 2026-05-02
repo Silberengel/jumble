@@ -26,7 +26,7 @@ type TKindFilterContext = {
   showKind1OPs: boolean
   showKind1Replies: boolean
   showKind1111: boolean
-  /** When true, main feed omits REQ `kinds` and skips client-side kind filtering (testing). */
+  /** When true, main feed uses wider REQ / merge paths ("see all events"); visible rows still follow the kind picker. */
   feedKindFilterBypass: boolean
   updateShowKinds: (
     kinds: number[],

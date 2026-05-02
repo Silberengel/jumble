@@ -174,10 +174,14 @@ const NormalFeed = forwardRef<TNoteListRef, {
     [showFeedClientFilterProp, isMainFeed, allowKindlessRelayExplore, useFilterAsIs]
   )
 
-  const listShowAllKinds = showAllKindsProp ?? feedKindFilterBypass
+  /**
+   * Relay explorer passes {@link showAllKinds} explicitly. Home feeds must not tie this to
+   * {@link feedKindFilterBypass}: bypass widens REQ only; the kind picker still narrows visible rows.
+   */
+  const listShowAllKinds = showAllKindsProp ?? false
 
   /** Include kind picker deps for single-relay chips (kindless REQ + client-side kinds). */
-  const subHeaderFilterDepsKey = `${allowKindlessRelayExplore ? 'kle' : 'std'}|${showKindsKey}|${feedKindFilterBypass}|${listShowAllKinds ? 'all' : 'k'}`
+  const subHeaderFilterDepsKey = `${allowKindlessRelayExplore ? 'kle' : 'std'}|${showKindsKey}|${feedKindFilterBypass}|${showAllKindsProp ? 'allProp' : 'k'}`
 
   const tabsElement = useMemo(
     () => (
