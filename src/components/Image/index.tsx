@@ -1,6 +1,11 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { isRenderableMediaUrl, isSafeMediaUrl, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
+import {
+  isRenderableMediaUrl,
+  isSafeMediaUrl,
+  primalR2aMirrorForBlossomPrimalUrl,
+  resolvePrimalBlossomPlayableUrl
+} from '@/lib/url'
 import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
@@ -105,6 +110,8 @@ export default function Image({
   const [imageUrl, setImageUrl] = useState(() => resolvePrimalBlossomPlayableUrl(url ?? ''))
   const [fallbackIndex, setFallbackIndex] = useState(0)
   const loadWatchRef = useRef<number | null>(null)
+  /** After r2a + imeta fallbacks fail, try `url` on blossom.primal.net once (see handleError). */
+  const triedPrimaryBlossomDirectRef = useRef(false)
   // Kept in sync in the reset effect; load-timeout runs only while tap-to-load is actually active.
   const wasInitiallyHeldRef = useRef(effectiveHoldUntilClick)
   const imgRef = useRef<HTMLImageElement | null>(null)
@@ -157,6 +164,7 @@ export default function Image({
     setHasError(false)
     setDisplaySkeleton(true)
     setFallbackIndex(0)
+    triedPrimaryBlossomDirectRef.current = false
     clearLoadWatch()
     if (!url?.trim()) {
       setIsLoading(false)
@@ -221,6 +229,19 @@ export default function Image({
       setFallbackIndex((prev) => prev + 1)
       loadSettledRef.current = false
       setImageUrl(resolvePrimalBlossomPlayableUrl(next))
+      return
+    }
+    // r2a mirror sometimes 404s while blossom.primal.net still serves (redirect chain). Retry canonical URL once.
+    const primary = (url ?? '').trim()
+    const mirrorOfPrimary = primary ? primalR2aMirrorForBlossomPrimalUrl(primary) : null
+    if (
+      mirrorOfPrimary &&
+      primary !== mirrorOfPrimary &&
+      !triedPrimaryBlossomDirectRef.current
+    ) {
+      triedPrimaryBlossomDirectRef.current = true
+      loadSettledRef.current = false
+      setImageUrl(primary)
       return
     }
     setIsLoading(false)

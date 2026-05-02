@@ -54,12 +54,15 @@ class MediaManagerService {
     }
 
     play(this.currentMedia).catch((error) => {
-      // Don't log expected AbortError when media is interrupted
-      if (error instanceof Error && error.name === 'AbortError') {
-        // This is expected when media is interrupted by pause() or other media
-        return
-      }
-      // Log other unexpected errors
+      const name = error instanceof Error ? error.name : ''
+      const msg = error instanceof Error ? error.message : ''
+      // Abort: pause / navigation / another element taking over.
+      if (name === 'AbortError') return
+      // Autoplay policy (user can still press play); muted autoplay usually avoids this.
+      if (name === 'NotAllowedError') return
+      // Codec / empty resource — surface elsewhere (video onerror); play() adds noise only.
+      if (name === 'NotSupportedError') return
+      if (/play\(\) request was interrupted|The operation was aborted/i.test(msg)) return
       logger.error('Error playing media', { error })
       this.currentMedia = null
     })

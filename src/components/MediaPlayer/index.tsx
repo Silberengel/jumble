@@ -1,4 +1,10 @@
-import { isHlsPlaylistUrl, isImage, isZapStreamWatchPageUrl, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
+import {
+  isHlsPlaylistUrl,
+  isImage,
+  isZapStreamWatchPageUrl,
+  primalR2aMirrorForBlossomPrimalUrl,
+  resolvePrimalBlossomPlayableUrl
+} from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -61,9 +67,15 @@ export default function MediaPlayer({
   const [mediaType, setMediaType] = useState<MediaSurface>(null)
   const [probeFailed, setProbeFailed] = useState(false)
   const [embedPainted, setEmbedPainted] = useState(false)
+  /** After r2a mirror fails, retry metadata probe with canonical blossom.primal.net URL once. */
+  const [preferCanonicalBlossomUrl, setPreferCanonicalBlossomUrl] = useState(false)
   const readyOnceRef = useRef(false)
 
-  const playableSrc = useMemo(() => resolvePrimalBlossomPlayableUrl(src), [src])
+  const playableSrc = useMemo(() => {
+    const raw = src.trim()
+    if (preferCanonicalBlossomUrl) return raw
+    return resolvePrimalBlossomPlayableUrl(src)
+  }, [src, preferCanonicalBlossomUrl])
 
   // imeta `thumb` / `image` are sometimes the same .mp4 as `url` — <img> cannot use that, and it
   // would hide the blurhash placeholder in LazyMediaTapPlaceholder.
@@ -88,7 +100,8 @@ export default function MediaPlayer({
     setEmbedPainted(false)
     setMediaType(null)
     setProbeFailed(false)
-  }, [playableSrc])
+    setPreferCanonicalBlossomUrl(false)
+  }, [src])
 
   useEffect(() => {
     if (!showEmbed) {
@@ -147,6 +160,12 @@ export default function MediaPlayer({
 
       video.onerror = () => {
         if (cancelled) return
+        const raw = src.trim()
+        const mirror = raw ? primalR2aMirrorForBlossomPrimalUrl(raw) : null
+        if (mirror && playableSrc === mirror && raw !== mirror && !preferCanonicalBlossomUrl) {
+          setPreferCanonicalBlossomUrl(true)
+          return
+        }
         setProbeFailed(true)
         setMediaType(null)
       }
@@ -158,7 +177,7 @@ export default function MediaPlayer({
     } catch {
       setProbeFailed(true)
     }
-  }, [playableSrc, showEmbed])
+  }, [playableSrc, showEmbed, src, preferCanonicalBlossomUrl])
 
   const onEmbedReady = useCallback(() => {
     if (readyOnceRef.current) return
