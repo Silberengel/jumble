@@ -325,13 +325,27 @@ class LocalStorageService {
           showKinds.push(ExtendedKind.WIKI_ARTICLE_MARKDOWN)
         }
       }
+      if (showKindsVersion < 13) {
+        // NIP-71 addressable video (34235 / 34236): add when user already had regular video kinds enabled.
+        if (
+          showKinds.includes(ExtendedKind.VIDEO) ||
+          showKinds.includes(ExtendedKind.SHORT_VIDEO)
+        ) {
+          if (!showKinds.includes(ExtendedKind.VIDEO_ADDRESSABLE)) {
+            showKinds.push(ExtendedKind.VIDEO_ADDRESSABLE)
+          }
+          if (!showKinds.includes(ExtendedKind.SHORT_VIDEO_ADDRESSABLE)) {
+            showKinds.push(ExtendedKind.SHORT_VIDEO_ADDRESSABLE)
+          }
+        }
+      }
       // v9: boosts are optional in the same filter list as other kinds; do not auto-enable (leave absent).
       this.showKinds = showKinds
       // Only persist when we read from localStorage. If SHOW_KINDS is missing here (migrated to IDB and
       // keys cleared), persisting would write DEFAULT_FEED_SHOW_KINDS to IndexedDB and wipe the user's
       // saved filter before initAsync/applySettings runs.
       this.persistSetting(StorageKey.SHOW_KINDS, JSON.stringify(this.showKinds))
-      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '12')
+      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '13')
     }
 
     // Feed filter: kind 1 OPs, kind 1 replies, kind 1111 (migrate from legacy showRepliesAndComments if set)

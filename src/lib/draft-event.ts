@@ -1951,7 +1951,7 @@ export async function createVideoDraftEvent(
   content: string,
   imetaTags: string[][],
   mentions: string[],
-  videoKind: number, // 21 or 22
+  videoKind: number, // 21, 22, 34235, or 34236 (NIP-71)
   options: {
     title?: string
     addClientTag?: boolean

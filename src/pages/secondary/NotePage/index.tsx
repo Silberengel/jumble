@@ -52,8 +52,10 @@ function getEventTypeName(kind: number): string {
     case ExtendedKind.PICTURE:
       return 'Picture'
     case ExtendedKind.VIDEO:
+    case ExtendedKind.VIDEO_ADDRESSABLE:
       return 'Video'
     case ExtendedKind.SHORT_VIDEO:
+    case ExtendedKind.SHORT_VIDEO_ADDRESSABLE:
       return 'Short Video'
     case ExtendedKind.POLL:
       return 'Poll'
@@ -205,8 +207,10 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       case 20: // ExtendedKind.PICTURE
         return 'Note: Picture'
       case 21: // ExtendedKind.VIDEO
+      case 34235: // ExtendedKind.VIDEO_ADDRESSABLE (NIP-71)
         return 'Note: Video'
       case 22: // ExtendedKind.SHORT_VIDEO
+      case 34236: // ExtendedKind.SHORT_VIDEO_ADDRESSABLE (NIP-71)
         return 'Note: Short Video'
       case 11: // ExtendedKind.DISCUSSION
         return 'Discussions'

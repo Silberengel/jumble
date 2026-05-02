@@ -1,5 +1,5 @@
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
 import {
   notificationReactionSummaryKey,
   useNotificationReactionDisplay
@@ -184,7 +184,7 @@ export default function ContentPreview({
     return withKindRow(<LongFormArticlePreview event={previewEvent} />)
   }
 
-  if (event.kind === ExtendedKind.VIDEO || event.kind === ExtendedKind.SHORT_VIDEO) {
+  if (isNip71StyleVideoKind(event.kind)) {
     return withKindRow(<VideoNotePreview event={previewEvent} />)
   }
 

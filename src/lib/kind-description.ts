@@ -36,6 +36,10 @@ export function getKindDescription(
       return { number: 21, description: 'Video Note' }
     case ExtendedKind.SHORT_VIDEO:
       return { number: 22, description: 'Short Video Note' }
+    case ExtendedKind.VIDEO_ADDRESSABLE:
+      return { number: 34235, description: 'Video Note (addressable)' }
+    case ExtendedKind.SHORT_VIDEO_ADDRESSABLE:
+      return { number: 34236, description: 'Short Video Note (addressable)' }
     case kinds.LongFormArticle:
       return { number: 30023, description: 'Long-form Article' }
     case ExtendedKind.WIKI_ARTICLE:

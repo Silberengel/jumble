@@ -4,7 +4,7 @@ import { Switch } from '@/components/ui/switch'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ExtendedKind, PROFILE_FEED_KINDS } from '@/constants'
+import { ExtendedKind, NIP71_VIDEO_KINDS, PROFILE_FEED_KINDS } from '@/constants'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
 import { useKindFilter } from '@/providers/KindFilterProvider'
@@ -24,7 +24,7 @@ const KIND_FILTER_OPTIONS = [
   { kindGroup: [ExtendedKind.ZAP_POLL], label: 'Zap polls' },
   { kindGroup: [ExtendedKind.VOICE, ExtendedKind.VOICE_COMMENT], label: 'Voice Posts' },
   { kindGroup: [ExtendedKind.PICTURE], label: 'Photo Posts' },
-  { kindGroup: [ExtendedKind.VIDEO, ExtendedKind.SHORT_VIDEO], label: 'Video Posts' },
+  { kindGroup: [...NIP71_VIDEO_KINDS], label: 'Video Posts' },
   { kindGroup: [ExtendedKind.DISCUSSION], label: 'Discussions' },
   { kindGroup: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME], label: 'Calendar Events' },
   { kindGroup: [...LIVE_ACTIVITY_KINDS], label: 'Live streams' },

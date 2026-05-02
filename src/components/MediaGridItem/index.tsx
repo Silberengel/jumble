@@ -1,3 +1,4 @@
+import { isNip71StyleVideoKind } from '@/constants'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import client from '@/services/client.service'
@@ -13,8 +14,7 @@ export default function MediaGridItem({ event }: { event: Event }) {
   const media = useMemo(() => extractAllMediaFromEvent(event), [event])
   const first = media.all[0]
 
-  const isVideo =
-    first?.m?.startsWith('video/') || event.kind === 21 || event.kind === 22
+  const isVideo = first?.m?.startsWith('video/') || isNip71StyleVideoKind(event.kind)
   const isAudio = first?.m?.startsWith('audio/') || event.kind === 1222
   const hasMultiple = media.all.length > 1
 

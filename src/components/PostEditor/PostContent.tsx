@@ -37,7 +37,12 @@ import {
   collectUploadImetaTagsForContentUrls,
   mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
-import { ExtendedKind, MAX_PUBLISH_RELAYS } from '@/constants'
+import {
+  ExtendedKind,
+  isNip71ShortVideoKind,
+  isNip71StyleVideoKind,
+  MAX_PUBLISH_RELAYS
+} from '@/constants'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFeed } from '@/providers/FeedProvider'
@@ -878,7 +883,7 @@ export default function PostContent({
             mediaImetaTags: uploadImetaTagsOpt
           }
         )
-      } else if (mediaNoteKind === ExtendedKind.VIDEO || mediaNoteKind === ExtendedKind.SHORT_VIDEO) {
+      } else if (isNip71StyleVideoKind(mediaNoteKind)) {
         return await createVideoDraftEvent(
           cleanedText,
           mediaImetaTags,
@@ -1927,7 +1932,7 @@ export default function PostContent({
           } else if (/\.mp4$/i.test(fileName)) {
             mimeType = 'audio/mp4'
           }
-        } else if (kindHint === ExtendedKind.VIDEO || kindHint === ExtendedKind.SHORT_VIDEO) {
+        } else if (isNip71StyleVideoKind(kindHint)) {
           const fileName = uploadingFile.name.toLowerCase()
           if (/\.webm$/i.test(fileName)) {
             mimeType = 'video/webm'
@@ -2321,10 +2326,8 @@ export default function PostContent({
             return t('Voice Note')
           } else if (determinedKind === ExtendedKind.PICTURE) {
             return t('Picture Note')
-          } else if (determinedKind === ExtendedKind.VIDEO) {
-            return t('Video Note')
-          } else if (determinedKind === ExtendedKind.SHORT_VIDEO) {
-            return t('Short Video Note')
+          } else if (isNip71StyleVideoKind(determinedKind)) {
+            return isNip71ShortVideoKind(determinedKind) ? t('Short Video Note') : t('Video Note')
           } else if (determinedKind === ExtendedKind.POLL) {
             return t('New Poll')
           } else if (determinedKind === ExtendedKind.PUBLIC_MESSAGE) {

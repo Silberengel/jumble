@@ -4,6 +4,7 @@ import Tabs, { TabDefinition } from '@/components/Tabs'
 import { useKindFilter } from '@/providers/KindFilterProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import storage from '@/services/local-storage.service'
+import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
 import type { TPrimaryPageName } from '@/PageManager'
 import { TFeedSubRequest, TNoteListMode } from '@/types'
 import { cn } from '@/lib/utils'
@@ -116,10 +117,10 @@ const NormalFeed = forwardRef<TNoteListRef, {
   const noteListRef = ref || internalNoteListRef
   const [feedFilterTabRowHost, setFeedFilterTabRowHost] = useState<HTMLDivElement | null>(null)
   const onFeedFilterTabRowSlotRef = useCallback((node: HTMLDivElement | null) => {
-    setFeedFilterTabRowHost(node)
+    setFeedFilterTabRowHost((prev) => (Object.is(prev, node) ? prev : node))
   }, [])
 
-  const MEDIA_KINDS = useMemo(() => [20, 21, 22, 1222], [])
+  const MEDIA_KINDS = useMemo(() => [...PROFILE_MEDIA_TAB_KINDS], [])
 
   const tabs = useMemo(
     (): TabDefinition[] => {
@@ -224,6 +225,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
       setSubHeader(tabsElement)
     }
     return () => setSubHeader(null)
+    // Intentionally omit `tabsElement`: same semantics are covered by listMode + subHeaderFilterDepsKey.
+    // Listing tabsElement here can retrigger the effect every render if its useMemo input references churn,
+    // which calls setSubHeader repeatedly → parent state → maximum update depth (#185).
   }, [
     isMainFeed,
     setSubHeader,
@@ -232,7 +236,6 @@ const NormalFeed = forwardRef<TNoteListRef, {
     onSubHeaderRefresh,
     allowKindlessRelayExplore,
     mergeFilterWithTabsRow,
-    tabsElement,
     onFeedFilterTabRowSlotRef
   ])
 

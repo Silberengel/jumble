@@ -1,5 +1,5 @@
 import logger from '@/lib/logger'
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, NIP71_VIDEO_KINDS } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import {
   readRelayPulseActiveNpubsCache,
@@ -34,8 +34,7 @@ const ACTIVE_PULSE_KINDS = [
   kinds.Highlights,
   ExtendedKind.DISCUSSION,
   ExtendedKind.PICTURE,
-  ExtendedKind.VIDEO,
-  ExtendedKind.SHORT_VIDEO,
+  ...NIP71_VIDEO_KINDS,
   ExtendedKind.COMMENT,
   ExtendedKind.GENERIC_REPOST
 ] as number[]

@@ -73,12 +73,13 @@ const RelaysFeed = forwardRef<
     }
   }, [relayUrlsKey, relayUrls.length])
 
-  const defaultKinds =
-    kindsOverride && kindsOverride.length > 0
-      ? kindsOverride
-      : showKinds.length > 0
-        ? showKinds
-        : [kinds.ShortTextNote]
+  /** Stable identity when kind filter is empty so `subRequests` does not invalidate every render. */
+  const fallbackNoteKinds = useMemo(() => [kinds.ShortTextNote], [])
+  const defaultKinds = useMemo(() => {
+    if (kindsOverride && kindsOverride.length > 0) return kindsOverride
+    if (showKinds.length > 0) return showKinds
+    return fallbackNoteKinds
+  }, [kindsOverride, showKinds, fallbackNoteKinds])
 
   const canRenderFeed =
     (feedInfo.feedType === 'relay' ||

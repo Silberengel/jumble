@@ -219,6 +219,8 @@ class Nip89Service {
         ExtendedKind.PICTURE,
         ExtendedKind.VIDEO,
         ExtendedKind.SHORT_VIDEO,
+        ExtendedKind.VIDEO_ADDRESSABLE,
+        ExtendedKind.SHORT_VIDEO_ADDRESSABLE,
         ExtendedKind.POLL,
         ExtendedKind.COMMENT,
         ExtendedKind.VOICE,

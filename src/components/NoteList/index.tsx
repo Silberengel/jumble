@@ -1786,7 +1786,7 @@ const NoteList = forwardRef(
                   ...(rawTotal === 0
                     ? {
                         emptyHint:
-                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (this tab uses kinds 20/21/22/1222 only).'
+                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (this tab uses native media kinds only: picture, NIP-71 video regular/addressable, voice).'
                       }
                     : {})
                 })

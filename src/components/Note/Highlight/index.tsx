@@ -279,8 +279,10 @@ export default function Highlight({
         kinds.LongFormArticle, // 30023 — long-form preview card
         ExtendedKind.POLL, // Has PollPreview
         ExtendedKind.DISCUSSION, // Has DiscussionNote
-        ExtendedKind.VIDEO, // Has VideoNotePreview
-        ExtendedKind.SHORT_VIDEO, // Has VideoNotePreview
+        ExtendedKind.VIDEO,
+        ExtendedKind.SHORT_VIDEO,
+        ExtendedKind.VIDEO_ADDRESSABLE,
+        ExtendedKind.SHORT_VIDEO_ADDRESSABLE, // NIP-71 addressable; same VideoNotePreview path as 21/22
         ExtendedKind.PICTURE, // Has PictureNotePreview
         ExtendedKind.PUBLICATION, // Has PublicationCard
         ExtendedKind.WIKI_ARTICLE, // Has special card

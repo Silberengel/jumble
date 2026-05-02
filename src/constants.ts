@@ -447,6 +447,10 @@ export const ExtendedKind = {
   PICTURE: 20,
   VIDEO: 21,
   SHORT_VIDEO: 22,
+  /** NIP-71: addressable normal video (same rendering as {@link ExtendedKind.VIDEO}). */
+  VIDEO_ADDRESSABLE: 34235,
+  /** NIP-71: addressable short video (same rendering as {@link ExtendedKind.SHORT_VIDEO}). */
+  SHORT_VIDEO_ADDRESSABLE: 34236,
   POLL: 1068,
   /** NIP-B9 zap poll (paid votes via zaps). */
   ZAP_POLL: 6969,
@@ -536,6 +540,26 @@ export const UNSIGNED_EXPERIMENTAL_RELAY_URLS = [
 
 export function isUnsignedExperimentalKind(kind: number): boolean {
   return kind >= UNSIGNED_EXPERIMENTAL_KIND_MIN && kind <= UNSIGNED_EXPERIMENTAL_KIND_MAX
+}
+
+/** NIP-71 regular + addressable video kinds (21, 22, 34235, 34236). */
+export const NIP71_VIDEO_KINDS: readonly number[] = [
+  ExtendedKind.VIDEO,
+  ExtendedKind.SHORT_VIDEO,
+  ExtendedKind.VIDEO_ADDRESSABLE,
+  ExtendedKind.SHORT_VIDEO_ADDRESSABLE
+]
+
+const NIP71_VIDEO_KIND_SET = new Set<number>(NIP71_VIDEO_KINDS)
+
+/** True for NIP-71 normal/short video events (regular or addressable). */
+export function isNip71StyleVideoKind(kind: number): boolean {
+  return NIP71_VIDEO_KIND_SET.has(kind)
+}
+
+/** Short-form portrait-style bucket (kind 22 or 34236). */
+export function isNip71ShortVideoKind(kind: number): boolean {
+  return kind === ExtendedKind.SHORT_VIDEO || kind === ExtendedKind.SHORT_VIDEO_ADDRESSABLE
 }
 
 /** Max kind for signed “custom event” notes in the generic composer (below the unsigned experimental range). */
@@ -695,6 +719,8 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.PICTURE,
   ExtendedKind.VIDEO,
   ExtendedKind.SHORT_VIDEO,
+  ExtendedKind.VIDEO_ADDRESSABLE,
+  ExtendedKind.SHORT_VIDEO_ADDRESSABLE,
   ExtendedKind.POLL,
   ExtendedKind.ZAP_POLL,
   ExtendedKind.COMMENT,
@@ -748,8 +774,7 @@ const PROFILE_PUBLICATIONS_TAB_KIND_SET = new Set<number>(PROFILE_PUBLICATIONS_T
 /** NIP native media kinds for the profile Media tab (and Spells → media faux spell). */
 export const PROFILE_MEDIA_TAB_KINDS: readonly number[] = [
   ExtendedKind.PICTURE,
-  ExtendedKind.VIDEO,
-  ExtendedKind.SHORT_VIDEO,
+  ...NIP71_VIDEO_KINDS,
   ExtendedKind.VOICE
 ]
 

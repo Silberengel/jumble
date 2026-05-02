@@ -8,7 +8,7 @@ import {
   citationPickerMatchesQuery,
   tryParseCitationEventIdFromQuery
 } from '@/lib/citation-picker-search'
-import { ExtendedKind, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { ExtendedKind, NIP71_VIDEO_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { kinds, type Event as NEvent } from 'nostr-tools'
 import client, { eventService, queryService } from './client.service'
 import indexedDb from './indexed-db.service'
@@ -22,8 +22,7 @@ export const MENTION_NPUB_DROPDOWN_LIMIT = 50
 export const NEVENT_KINDS = [
   kinds.ShortTextNote,
   ExtendedKind.PICTURE,
-  ExtendedKind.VIDEO,
-  ExtendedKind.SHORT_VIDEO,
+  ...NIP71_VIDEO_KINDS,
   ExtendedKind.POLL,
   ExtendedKind.ZAP_POLL,
   ExtendedKind.COMMENT,
@@ -139,7 +138,7 @@ async function searchCitationEventsForPickerInternal(
 
 /**
  * Search for events: session cache → IndexedDB → relays. Merges and dedupes by event id, up to limit.
- * @param mode - 'nevent' uses NEVENT_KINDS (1,11,20,21,22,9802), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
+ * @param mode - 'nevent' uses NEVENT_KINDS (incl. NIP-71 video 21/22/34235/34236), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
  * @param kindFilter - When set, only these kinds are searched (overrides `mode` for the kinds list).
  */
 export async function searchEventsForPicker(

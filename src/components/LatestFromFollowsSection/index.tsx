@@ -1,7 +1,7 @@
 import NoteCard from '@/components/NoteCard'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, NIP71_VIDEO_KINDS } from '@/constants'
 import { buildFollowOutboxAggregateReadUrls } from '@/lib/follow-outbox-aggregate-relays'
 import {
   buildSearchFollowsFeedScopeKey,
@@ -52,8 +52,7 @@ const FEED_KINDS = [
   kinds.LongFormArticle,
   kinds.Highlights,
   ExtendedKind.PICTURE,
-  ExtendedKind.VIDEO,
-  ExtendedKind.SHORT_VIDEO,
+  ...NIP71_VIDEO_KINDS,
   ExtendedKind.COMMENT,
   kinds.Repost,
   ExtendedKind.GENERIC_REPOST

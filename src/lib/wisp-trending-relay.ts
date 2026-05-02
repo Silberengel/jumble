@@ -1,3 +1,4 @@
+import { ExtendedKind } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
 
 /**
@@ -17,7 +18,18 @@ export function buildWispTrendingNotesRelayUrl(
 }
 
 /** Wisp `FeedSubscriptionManager` FEED_KINDS when subscribing to trending notes. */
-export const WISP_TRENDING_FEED_KINDS: readonly number[] = [1, 6, 1068, 6969, 30023, 20, 21, 22]
+export const WISP_TRENDING_FEED_KINDS: readonly number[] = [
+  1,
+  6,
+  1068,
+  6969,
+  30023,
+  ExtendedKind.PICTURE,
+  ExtendedKind.VIDEO,
+  ExtendedKind.SHORT_VIDEO,
+  ExtendedKind.VIDEO_ADDRESSABLE,
+  ExtendedKind.SHORT_VIDEO_ADDRESSABLE
+]
 
 /** True when `url` is any nostrarchives notes trending WebSocket feed (path `/notes/trending/...`). */
 export function isWispTrendingNotesRelayUrl(url: string): boolean {

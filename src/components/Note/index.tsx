@@ -1,5 +1,5 @@
 import { useSmartNoteNavigationOptional } from '@/PageManager'
-import { ExtendedKind, publicAssetUrl } from '@/constants'
+import { ExtendedKind, isNip71StyleVideoKind, publicAssetUrl } from '@/constants'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import {
   getHttpUrlFromITags,
@@ -358,7 +358,7 @@ export default function Note({
     )
   } else if (event.kind === ExtendedKind.PICTURE) {
     content = <PictureNote className="mt-2" event={event} />
-  } else if (event.kind === ExtendedKind.VIDEO || event.kind === ExtendedKind.SHORT_VIDEO) {
+  } else if (isNip71StyleVideoKind(event.kind)) {
     content = <VideoNote className="mt-2" event={event} />
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {
     content = <RelayReview className="mt-2" event={displayEvent} />

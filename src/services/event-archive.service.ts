@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, NIP71_VIDEO_KINDS } from '@/constants'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getEventArchiveConfig } from '@/lib/event-archive-config'
 import { isNip18RepostKind, isNip25ReactionKind, isReplaceableEvent } from '@/lib/event'
@@ -12,9 +12,8 @@ const CORE_FEED_KINDS = new Set<number>([
   kinds.ShortTextNote,
   11,
   ExtendedKind.COMMENT,
-  20,
-  21,
-  22,
+  ExtendedKind.PICTURE,
+  ...NIP71_VIDEO_KINDS,
   9802 // highlights
 ])
 
