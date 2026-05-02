@@ -143,14 +143,17 @@ const DropdownMenuSubContent = React.forwardRef<
 
         <div
           ref={scrollAreaRef}
-          className={cn('p-1 popover-scroll-y', className)}
+          className={cn(
+            'p-1 popover-scroll-y max-h-[min(85dvh,calc(100dvh-3rem))] min-h-0 overflow-x-hidden',
+            className
+          )}
           onScroll={checkScrollability}
         >
           {props.children}
         </div>
 
         {showScrollButtons && canScrollDown && (
-          <div className="absolute bottom-0 inset-x-0 flex items-center justify-center bg-popover">
+          <div className="absolute bottom-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
             <button
               onClick={scrollDown}
               onMouseEnter={scrollDown}
@@ -227,7 +230,7 @@ const DropdownMenuContent = React.forwardRef<
             checkScrollability()
           }
         }}
-        collisionPadding={10}
+        collisionPadding={16}
         {...props}
       >
         {showScrollButtons && canScrollUp && (
@@ -245,14 +248,17 @@ const DropdownMenuContent = React.forwardRef<
 
         <div
           ref={scrollAreaRef}
-          className={cn('p-1 popover-scroll-y', className)}
+          className={cn(
+            'p-1 popover-scroll-y max-h-[min(85dvh,calc(100dvh-3rem))] min-h-0 overflow-x-hidden',
+            className
+          )}
           onScroll={checkScrollability}
         >
           {props.children}
         </div>
 
         {showScrollButtons && canScrollDown && (
-          <div className="absolute bottom-0 inset-x-0 flex items-center justify-center bg-popover">
+          <div className="absolute bottom-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
             <button
               onClick={scrollDown}
               onMouseEnter={scrollDown}

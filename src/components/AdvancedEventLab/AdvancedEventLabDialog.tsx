@@ -8,6 +8,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -245,6 +246,7 @@ export default function AdvancedEventLabDialog({
   const LAB_DRAFT_DEBOUNCE_MS = 500
 
   const [previewDoc, setPreviewDoc] = useState('')
+  const [labBodyTab, setLabBodyTab] = useState<'edit' | 'preview'>('edit')
 
   /** Stable while payload matches; avoids remounting the editor when the parent passes a new `initial` object reference. */
   const labEditorMountFingerprint =
@@ -274,6 +276,15 @@ export default function AdvancedEventLabDialog({
       previewDebounceTimerRef.current = null
       setPreviewDoc(text)
     }, PREVIEW_DEBOUNCE_MS)
+  }, [])
+
+  const flushPreviewDocNow = useCallback(() => {
+    if (previewDebounceTimerRef.current) {
+      clearTimeout(previewDebounceTimerRef.current)
+      previewDebounceTimerRef.current = null
+    }
+    const doc = markupView.current?.state.doc.toString() ?? sliceRef.current?.content ?? ''
+    setPreviewDoc(doc)
   }, [])
 
   useEffect(() => {
@@ -340,6 +351,8 @@ export default function AdvancedEventLabDialog({
         previewDebounceTimerRef.current = null
       }
       setPreviewDoc('')
+    } else {
+      setLabBodyTab('edit')
     }
   }, [open])
 
@@ -1019,28 +1032,46 @@ export default function AdvancedEventLabDialog({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
-          <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
-
-          <div className="flex min-h-0 flex-1 flex-col gap-0 px-4 py-2 max-lg:grid max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:flex lg:flex-row lg:py-2">
-            <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden max-lg:min-h-0 lg:flex-1 lg:pr-3">
-              <h3 className="shrink-0 text-left text-sm font-semibold leading-none text-foreground">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-y-contain px-4 py-2">
+          <Tabs
+            value={labBodyTab}
+            onValueChange={(v) => {
+              const next = v as 'edit' | 'preview'
+              if (next === 'preview') flushPreviewDocNow()
+              setLabBodyTab(next)
+            }}
+            className="flex min-h-0 flex-1 flex-col gap-2"
+          >
+            <TabsList className="h-auto w-auto shrink-0 flex-wrap justify-start gap-1 p-1">
+              <TabsTrigger value="edit" className="shrink-0">
                 {t(
                   markupMode === 'asciidoc'
                     ? 'Advanced lab markup label asciidoc'
                     : 'Advanced lab markup label markdown'
                 )}
-              </h3>
+              </TabsTrigger>
+              <TabsTrigger value="preview" className="shrink-0">
+                {t('Advanced lab preview')}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent
+              value="edit"
+              forceMount
+              className="mt-0 flex min-h-0 flex-1 flex-col gap-2 overflow-hidden data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
               <div
                 ref={markupHost}
-                className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-muted/20 lg:min-h-[min(42dvh,24rem)]"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-muted/20 min-h-[min(58dvh,32rem)]"
               />
-            </div>
-            <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden -mx-4 border-t-2 border-border bg-muted/40 px-4 pb-3 pt-4 max-lg:min-h-0 max-lg:rounded-b-lg lg:mx-0 lg:mt-0 lg:flex-[0_1_42%] lg:max-w-[min(50%,40rem)] lg:rounded-none lg:border-t-0 lg:border-l lg:border-border lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:pl-3">
-              <h3 className="shrink-0 text-left text-sm font-semibold leading-none text-foreground">
-                {t('Advanced lab preview')}
-              </h3>
-              <div className="flex min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background py-2 pl-0 pr-0 text-left lg:bg-muted/10 lg:px-2">
+            </TabsContent>
+
+            <TabsContent
+              value="preview"
+              className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <div className="flex min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
                 <AdvancedEventLabPreviewPane
                   markupMode={markupMode}
                   source={previewDoc}
@@ -1048,8 +1079,8 @@ export default function AdvancedEventLabDialog({
                   previewEmojiTags={mergedLabPreviewEmojiTags}
                 />
               </div>
-            </div>
-          </div>
+            </TabsContent>
+          </Tabs>
         </div>
 
         {formatToolbar ? (
