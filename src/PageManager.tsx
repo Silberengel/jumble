@@ -37,6 +37,7 @@ import {
   useRef,
   useState
 } from 'react'
+import { useEventCallback } from '@/hooks/use-event-callback'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { KeyboardShortcutsHelpProvider } from '@/components/KeyboardShortcutsHelp'
@@ -231,6 +232,27 @@ function mergePrimaryPageEntry(
     return [...prev]
   }
   return [...prev, { name: entry.name, element, props: entry.props }]
+}
+
+function renderActivePrimaryPageContent(
+  primaryPages: TPrimaryPageStateEntry[],
+  currentPrimaryPage: TPrimaryPageName
+): ReactNode {
+  const entry =
+    primaryPages.find((p) => p.name === currentPrimaryPage) ??
+    (primaryPages.length > 0 ? primaryPages[0] : undefined)
+  if (!entry) return null
+  try {
+    logger.debug(`Rendering active primary page: ${entry.name}`)
+    return entry.props ? applyPrimaryPageProps(entry.element, entry.props) : entry.element
+  } catch (error) {
+    logger.error(`Error rendering ${entry.name} component:`, error)
+    return (
+      <div>
+        Error rendering {entry.name}: {error instanceof Error ? error.message : String(error)}
+      </div>
+    )
+  }
 }
 
 export { PrimaryPageContext, usePrimaryPage }
@@ -987,30 +1009,9 @@ function MainContentArea({
             </div>
           </div>
         ) : (
-          // Show normal primary pages
-          primaryPages.map(({ name, element, props }) => {
-            const isCurrentPage = currentPrimaryPage === name
-            logger.debug(`Primary page ${name}:`, { isCurrentPage, currentPrimaryPage })
-            return (
-              <div
-                key={name}
-                className={cn(
-                  'flex h-full min-h-0 w-full min-w-0 flex-col',
-                  isCurrentPage ? 'flex' : 'hidden'
-                )}
-              >
-                {(() => {
-                  try {
-                    logger.debug(`Rendering ${name} component`)
-                    return props ? applyPrimaryPageProps(element, props) : element
-                  } catch (error) {
-                    logger.error(`Error rendering ${name} component:`, error)
-                    return <div>Error rendering {name}: {error instanceof Error ? error.message : String(error)}</div>
-                  }
-                })()}
-              </div>
-            )
-          })
+          <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+            {renderActivePrimaryPageContent(primaryPages, currentPrimaryPage)}
+          </div>
         )}
       </div>
       {/* DEPRECATED: Secondary panel removed - double-panel functionality disabled */}
@@ -1820,6 +1821,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     // NEVER scroll to top - feed should maintain scroll position at all times
   }
 
+  const navigatePrimaryPageStable = useEventCallback(navigatePrimaryPage)
+
   const goBack = () => {
     if (primaryViewType === 'settings-sub') {
       navigatePrimaryPage('settings')
@@ -2031,12 +2034,21 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     setSinglePaneSheetOpen(shouldBeOpen)
   }, [panelMode, isSmallScreen, secondaryStack.length, drawerOpen])
 
-  const primaryPageContextValue: PrimaryPageContextValue = {
-    navigate: navigatePrimaryPage,
-    current: currentPrimaryPage,
-    currentPageProps,
-    display: isSmallScreen ? secondaryStack.length === 0 : true
-  }
+  const primaryPageContextValue = useMemo(
+    (): PrimaryPageContextValue => ({
+      navigate: navigatePrimaryPageStable,
+      current: currentPrimaryPage,
+      currentPageProps,
+      display: isSmallScreen ? secondaryStack.length === 0 : true
+    }),
+    [
+      navigatePrimaryPageStable,
+      currentPrimaryPage,
+      currentPageProps,
+      isSmallScreen,
+      secondaryStack.length
+    ]
+  )
 
   return (
     <PrimaryPageContext.Provider value={primaryPageContextValue}>
@@ -2049,7 +2061,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             currentIndex: secondaryStack.length
               ? secondaryStack[secondaryStack.length - 1].index
               : 0,
-            navigateToPrimaryPage: navigatePrimaryPage
+            navigateToPrimaryPage: navigatePrimaryPageStable
           }}
         >
         <CurrentRelaysProvider>
@@ -2119,17 +2131,11 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                       </div>
                     )
                   })}
-                {primaryPages.map(({ name, element, props }) => (
-                  <div
-                    key={name}
-                    style={{
-                      display:
-                        secondaryStack.length === 0 && currentPrimaryPage === name ? 'block' : 'none'
-                    }}
-                  >
-                    {props ? applyPrimaryPageProps(element, props) : element}
+                {secondaryStack.length === 0 ? (
+                  <div className="block h-full min-h-0 min-w-0">
+                    {renderActivePrimaryPageContent(primaryPages, currentPrimaryPage)}
                   </div>
-                ))}
+                ) : null}
               </>
             )}
             </div>
@@ -2165,7 +2171,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           push: pushSecondaryPage,
           pop: popSecondaryPage,
           currentIndex: secondaryStack.length ? secondaryStack[secondaryStack.length - 1].index : 0,
-          navigateToPrimaryPage: navigatePrimaryPage
+          navigateToPrimaryPage: navigatePrimaryPageStable
         }}
       >
         <CurrentRelaysProvider>

@@ -49,8 +49,9 @@ import dayjs from 'dayjs'
 import { Event, kinds, VerifiedEvent, getEventHash, validateEvent } from 'nostr-tools'
 import * as nip19 from 'nostr-tools/nip19'
 import * as nip49 from 'nostr-tools/nip49'
-import { NostrContext } from '@/providers/nostr-context'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { NostrContext, type TNostrContext } from '@/providers/nostr-context'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEventCallback } from '@/hooks/use-event-callback'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { BunkerSigner } from './bunker.signer'
@@ -1573,60 +1574,142 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     })
   }, [account])
 
+  const startLogin = useCallback(() => setOpenLoginDialog(true), [])
+
+  const removeAccountStable = useEventCallback(removeAccount)
+  const switchAccountStable = useEventCallback(switchAccount)
+  const nsecLoginStable = useEventCallback(nsecLogin)
+  const ncryptsecLoginStable = useEventCallback(ncryptsecLogin)
+  const npubLoginStable = useEventCallback(npubLogin)
+  const nip07LoginStable = useEventCallback(nip07Login)
+  const bunkerLoginStable = useEventCallback(bunkerLogin)
+  const nostrConnectionLoginStable = useEventCallback(nostrConnectionLogin)
+  const publishStable = useEventCallback(publish)
+  const attemptDeleteStable = useEventCallback(attemptDelete)
+  const signHttpAuthStable = useEventCallback(signHttpAuth)
+  const nip04EncryptStable = useEventCallback(nip04Encrypt)
+  const nip04DecryptStable = useEventCallback(nip04Decrypt)
+  const checkLoginStable = useEventCallback(checkLogin)
+  const signEventStable = useEventCallback(signEvent)
+  const updateRelayListEventStable = useEventCallback(updateRelayListEvent)
+  const updateCacheRelayListEventStable = useEventCallback(updateCacheRelayListEvent)
+  const updateHttpRelayListEventStable = useEventCallback(updateHttpRelayListEvent)
+  const updateProfileEventStable = useEventCallback(updateProfileEvent)
+  const updateFollowListEventStable = useEventCallback(updateFollowListEvent)
+  const updateMuteListEventStable = useEventCallback(updateMuteListEvent)
+  const updateBookmarkListEventStable = useEventCallback(updateBookmarkListEvent)
+  const updateInterestListEventStable = useEventCallback(updateInterestListEvent)
+  const updateUserEmojiListEventStable = useEventCallback(updateUserEmojiListEvent)
+  const updateFavoriteRelaysEventStable = useEventCallback(updateFavoriteRelaysEvent)
+  const updateBlockedRelaysEventStable = useEventCallback(updateBlockedRelaysEvent)
+  const updateRssFeedListEventStable = useEventCallback(updateRssFeedListEvent)
+
+  const nostrContextValue = useMemo(
+    (): TNostrContext => ({
+      isInitialized,
+      isAccountSessionHydrating,
+      pubkey: account?.pubkey ?? null,
+      profile,
+      profileEvent,
+      relayList,
+      cacheRelayListEvent,
+      httpRelayListEvent,
+      followListEvent,
+      muteListEvent,
+      bookmarkListEvent,
+      interestListEvent,
+      favoriteRelaysEvent,
+      blockedRelaysEvent,
+      userEmojiListEvent,
+      rssFeedListEvent,
+      account,
+      accounts,
+      nsec,
+      ncryptsec,
+      switchAccount: switchAccountStable,
+      nsecLogin: nsecLoginStable,
+      ncryptsecLogin: ncryptsecLoginStable,
+      nip07Login: nip07LoginStable,
+      bunkerLogin: bunkerLoginStable,
+      nostrConnectionLogin: nostrConnectionLoginStable,
+      npubLogin: npubLoginStable,
+      removeAccount: removeAccountStable,
+      publish: publishStable,
+      attemptDelete: attemptDeleteStable,
+      signHttpAuth: signHttpAuthStable,
+      nip04Encrypt: nip04EncryptStable,
+      nip04Decrypt: nip04DecryptStable,
+      startLogin,
+      checkLogin: checkLoginStable,
+      signEvent: signEventStable,
+      updateRelayListEvent: updateRelayListEventStable,
+      updateCacheRelayListEvent: updateCacheRelayListEventStable,
+      updateHttpRelayListEvent: updateHttpRelayListEventStable,
+      updateProfileEvent: updateProfileEventStable,
+      updateFollowListEvent: updateFollowListEventStable,
+      updateMuteListEvent: updateMuteListEventStable,
+      updateBookmarkListEvent: updateBookmarkListEventStable,
+      updateInterestListEvent: updateInterestListEventStable,
+      updateUserEmojiListEvent: updateUserEmojiListEventStable,
+      updateFavoriteRelaysEvent: updateFavoriteRelaysEventStable,
+      updateBlockedRelaysEvent: updateBlockedRelaysEventStable,
+      updateRssFeedListEvent: updateRssFeedListEventStable,
+      requestAccountNetworkHydrate
+    }),
+    [
+      isInitialized,
+      isAccountSessionHydrating,
+      account,
+      accounts,
+      attemptDeleteStable,
+      blockedRelaysEvent,
+      bookmarkListEvent,
+      bunkerLoginStable,
+      cacheRelayListEvent,
+      checkLoginStable,
+      favoriteRelaysEvent,
+      followListEvent,
+      httpRelayListEvent,
+      interestListEvent,
+      muteListEvent,
+      ncryptsec,
+      ncryptsecLoginStable,
+      nip04DecryptStable,
+      nip04EncryptStable,
+      nip07LoginStable,
+      nostrConnectionLoginStable,
+      npubLoginStable,
+      nsec,
+      nsecLoginStable,
+      profile,
+      profileEvent,
+      publishStable,
+      relayList,
+      removeAccountStable,
+      requestAccountNetworkHydrate,
+      rssFeedListEvent,
+      signEventStable,
+      signHttpAuthStable,
+      startLogin,
+      switchAccountStable,
+      updateBlockedRelaysEventStable,
+      updateBookmarkListEventStable,
+      updateCacheRelayListEventStable,
+      updateFavoriteRelaysEventStable,
+      updateFollowListEventStable,
+      updateHttpRelayListEventStable,
+      updateInterestListEventStable,
+      updateMuteListEventStable,
+      updateProfileEventStable,
+      updateRelayListEventStable,
+      updateRssFeedListEventStable,
+      updateUserEmojiListEventStable,
+      userEmojiListEvent
+    ]
+  )
+
   return (
-    <NostrContext.Provider
-      value={{
-        isInitialized,
-        isAccountSessionHydrating,
-        pubkey: account?.pubkey ?? null,
-        profile,
-        profileEvent,
-        relayList,
-        cacheRelayListEvent,
-        httpRelayListEvent,
-        followListEvent,
-        muteListEvent,
-        bookmarkListEvent,
-        interestListEvent,
-        favoriteRelaysEvent,
-        blockedRelaysEvent,
-        userEmojiListEvent,
-        rssFeedListEvent,
-        account,
-        accounts,
-        nsec,
-        ncryptsec,
-        switchAccount,
-        nsecLogin,
-        ncryptsecLogin,
-        nip07Login,
-        bunkerLogin,
-        nostrConnectionLogin,
-        npubLogin,
-        removeAccount,
-        publish,
-        attemptDelete,
-        signHttpAuth,
-        nip04Encrypt,
-        nip04Decrypt,
-        startLogin: () => setOpenLoginDialog(true),
-        checkLogin,
-        signEvent,
-        updateRelayListEvent,
-        updateCacheRelayListEvent,
-        updateHttpRelayListEvent,
-        updateProfileEvent,
-        updateFollowListEvent,
-        updateMuteListEvent,
-        updateBookmarkListEvent,
-        updateInterestListEvent,
-        updateUserEmojiListEvent,
-        updateFavoriteRelaysEvent,
-        updateBlockedRelaysEvent,
-        updateRssFeedListEvent,
-        requestAccountNetworkHydrate
-      }}
-    >
+    <NostrContext.Provider value={nostrContextValue}>
       {children}
       <LoginDialog open={openLoginDialog} setOpen={setOpenLoginDialog} />
       <NcryptsecPasswordPrompt open={ncryptsecPasswordOpen} onResult={finishNcryptsecPasswordPrompt} />

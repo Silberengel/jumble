@@ -2798,27 +2798,31 @@ class IndexedDbService {
     if (uniq.length === 0) return []
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
-    const out: Event[] = []
-    await Promise.all(
-      uniq.map(
-        (id) =>
-          new Promise<void>((resolve, reject) => {
-            const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
-            const get = tx.objectStore(StoreNames.EVENT_ARCHIVE).get(id)
-            get.onsuccess = () => {
-              const row = get.result as TArchivedEventRow | undefined
-              if (row?.value) out.push(row.value)
-              tx.commit()
-              resolve()
-            }
-            get.onerror = (e) => {
-              tx.commit()
-              reject(idbEventToError(e))
-            }
-          })
-      )
-    )
-    return out
+    return new Promise((resolve, reject) => {
+      const out: Event[] = []
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      let pending = uniq.length
+      const doneOne = () => {
+        pending -= 1
+        if (pending === 0) {
+          tx.commit()
+          resolve(out)
+        }
+      }
+      for (const id of uniq) {
+        const get = store.get(id)
+        get.onsuccess = () => {
+          const row = get.result as TArchivedEventRow | undefined
+          if (row?.value) out.push(row.value)
+          doneOne()
+        }
+        get.onerror = (e) => {
+          tx.commit()
+          reject(idbEventToError(e))
+        }
+      }
+    })
   }
 
   async deleteArchivedEvent(eventId: string): Promise<void> {

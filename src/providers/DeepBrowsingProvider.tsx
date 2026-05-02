@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 type TDeepBrowsingContext = {
   deepBrowsing: boolean
@@ -69,9 +69,10 @@ export function DeepBrowsingProvider({
     }
   }, [active, scrollAreaRef])
 
-  return (
-    <DeepBrowsingContext.Provider value={{ deepBrowsing, lastScrollTop }}>
-      {children}
-    </DeepBrowsingContext.Provider>
+  const value = useMemo(
+    () => ({ deepBrowsing, lastScrollTop }),
+    [deepBrowsing, lastScrollTop]
   )
+
+  return <DeepBrowsingContext.Provider value={value}>{children}</DeepBrowsingContext.Provider>
 }

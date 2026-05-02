@@ -77,8 +77,8 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
-import MediaGridItem from '../MediaGridItem'
+import { NoteCardLoadingSkeleton } from '../NoteCard'
+import VirtualizedFeedRows from './VirtualizedFeedRows'
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
@@ -846,6 +846,7 @@ const NoteList = forwardRef(
     }, [hostPrimaryPageName, primaryPageCurrent, resetFeedClientFilterState])
 
     const timelineSubscriptionKey = feedSubscriptionKey ?? subRequestsKey
+
     const prevSubRequestsKeyForTimelineRef = useRef<string | null>(null)
     const feedTimelineScopePrevRef = useRef<string | undefined>(undefined)
     /** Detect pull-to-refresh so preserve-mode feeds still clear; unrelated dep changes must not clear. */
@@ -1257,6 +1258,19 @@ const NoteList = forwardRef(
         showFeedClientFilter ? applyClientFeedFilter(filteredEvents) : filteredEvents,
       [showFeedClientFilter, applyClientFeedFilter, filteredEvents]
     )
+
+    const [feedVirtualScrollParent, setFeedVirtualScrollParent] = useState<HTMLElement | null>(null)
+    const [feedVirtualScrollMarginTop, setFeedVirtualScrollMarginTop] = useState(0)
+    useLayoutEffect(() => {
+      const root = feedRootRef.current
+      if (!root) {
+        setFeedVirtualScrollParent(null)
+        setFeedVirtualScrollMarginTop(0)
+        return
+      }
+      setFeedVirtualScrollParent(getNearestScrollableAncestor(root))
+      setFeedVirtualScrollMarginTop(root.offsetTop)
+    }, [timelineSubscriptionKey, refreshCount, clientFilteredEvents.length])
 
     const clientFilteredNewEvents = useMemo(
       () =>
@@ -3371,23 +3385,17 @@ const NoteList = forwardRef(
             {t('Feed full search empty')}
           </div>
         ) : null}
-        {gridLayout ? (
-          <div className="grid grid-cols-3 gap-0.5 pr-4">
-            {clientFilteredEvents.map((event) => (
-              <MediaGridItem key={event.id} event={event} />
-            ))}
-          </div>
-        ) : (
-          clientFilteredEvents.map((event) => (
-            <NoteCard
-              key={event.id}
-              className="w-full"
-              event={event}
-              filterMutedNotes={filterMutedNotes}
-              bottomNoteLabel={eventReasonLabelMap.get(event.id)}
-            />
-          ))
-        )}
+        {clientFilteredEvents.length > 0 ? (
+          <VirtualizedFeedRows
+            events={clientFilteredEvents}
+            gridLayout={gridLayout}
+            filterMutedNotes={filterMutedNotes}
+            eventReasonLabelMap={eventReasonLabelMap}
+            useWindowScroll={feedVirtualScrollParent === null}
+            scrollElement={feedVirtualScrollParent}
+            scrollMarginTop={feedVirtualScrollMarginTop}
+          />
+        ) : null}
         {listSourceEvents.length === 0 &&
         !feedFullSearchActive &&
         (loading || (subRequests.length > 0 && !feedTimelineEmptyUiReady)) ? (

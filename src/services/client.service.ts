@@ -2470,12 +2470,13 @@ class ClientService extends EventTarget {
     /**
      * Stream matching events to the UI immediately. Initial completion is either aggregate `oneose` from all
      * relays, or {@link firstRelayResultGraceMs} after the first event (whichever comes first).
+     * While still before EOSE, coalesce bursts onto one rAF so we do not sort the full buffer on every microtask.
      */
-    let streamFlushMicrotask = false
+    let streamFlushRafId: number | null = null
     const flushStreamingSnapshot = () => {
       if (eosedAt) return
       const emit = () => {
-        streamFlushMicrotask = false
+        streamFlushRafId = null
         if (eosedAt) return
         if (needSort) {
           const sorted = [...events].sort((a, b) => b.created_at - a.created_at).slice(0, filter.limit)
@@ -2485,13 +2486,15 @@ class ClientService extends EventTarget {
         }
       }
       if (events.length <= 1) {
-        streamFlushMicrotask = false
+        if (streamFlushRafId != null) {
+          cancelAnimationFrame(streamFlushRafId)
+          streamFlushRafId = null
+        }
         emit()
         return
       }
-      if (!streamFlushMicrotask) {
-        streamFlushMicrotask = true
-        queueMicrotask(emit)
+      if (streamFlushRafId == null) {
+        streamFlushRafId = requestAnimationFrame(emit)
       }
     }
 
@@ -2627,6 +2630,10 @@ class ClientService extends EventTarget {
       if (eosedAt != null) return
 
       clearFirstResultGraceTimer()
+      if (streamFlushRafId != null) {
+        cancelAnimationFrame(streamFlushRafId)
+        streamFlushRafId = null
+      }
 
       eosedAt = dayjs().unix()
 
@@ -2713,6 +2720,10 @@ class ClientService extends EventTarget {
       timelineKey: key,
       closer: () => {
         clearFirstResultGraceTimer()
+        if (streamFlushRafId != null) {
+          cancelAnimationFrame(streamFlushRafId)
+          streamFlushRafId = null
+        }
         clearHttpTimelinePoll()
         onEvents = () => {}
         onNew = () => {}
