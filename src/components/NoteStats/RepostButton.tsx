@@ -57,7 +57,7 @@ export default function RepostButton({ event, hideCount = false }: { event: Even
         const hasReposted = noteStats?.repostPubkeySet?.has(pubkey)
         if (hasReposted) return
         if (!noteStats?.updatedAt) {
-          await noteStatsService.fetchNoteStats(event, pubkey, statsRelays)
+          await noteStatsService.fetchNoteStats(event, pubkey, statsRelays, { foreground: true })
           // Note: fetchNoteStats doesn't return the stats, it updates them asynchronously
           // The updated stats will be available through the useNoteStatsById hook
         }

@@ -299,7 +299,13 @@ const RssArticlePage = forwardRef(
             ) : null}
             {showNostrThread && syntheticRoot ? (
               <div className="px-0 w-full">
-                <NoteStats className="mt-2" event={syntheticRoot} fetchIfNotExisting displayTopZapsAndLikes />
+                <NoteStats
+                  className="mt-2"
+                  event={syntheticRoot}
+                  fetchIfNotExisting
+                  displayTopZapsAndLikes
+                  foregroundStats
+                />
               </div>
             ) : null}
             {showNostrThread ? <Separator /> : null}
@@ -310,6 +316,7 @@ const RssArticlePage = forwardRef(
                   pageIndex={index}
                   event={syntheticRoot}
                   showQuotes={false}
+                  statsForeground
                 />
               ) : null}
             </div>
@@ -388,7 +395,13 @@ const RssArticlePage = forwardRef(
           </div>
           {showNostrThread && syntheticRoot ? (
             <div className="px-4 w-full">
-              <NoteStats className="mt-3" event={syntheticRoot} fetchIfNotExisting displayTopZapsAndLikes />
+              <NoteStats
+                className="mt-3"
+                event={syntheticRoot}
+                fetchIfNotExisting
+                displayTopZapsAndLikes
+                foregroundStats
+              />
             </div>
           ) : null}
           {showNostrThread ? <Separator className="mt-4" /> : null}
@@ -399,6 +412,7 @@ const RssArticlePage = forwardRef(
                 pageIndex={index}
                 event={syntheticRoot}
                 showQuotes={false}
+                statsForeground
               />
             ) : null}
           </div>

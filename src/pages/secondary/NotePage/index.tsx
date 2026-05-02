@@ -515,11 +515,22 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
           }
         />
         <NoteBoostBadges event={finalEvent} className="mt-2" />
-        <NoteStats className="mt-3" event={finalEvent} fetchIfNotExisting displayTopZapsAndLikes />
+        <NoteStats
+          className="mt-3"
+          event={finalEvent}
+          fetchIfNotExisting
+          displayTopZapsAndLikes
+          foregroundStats
+        />
       </div>
       <Separator className="mt-4" />
       <div className="px-4 pb-4 w-full">
-        <NoteInteractions key={`note-interactions-${finalEvent.id}`} pageIndex={index} event={finalEvent} />
+        <NoteInteractions
+          key={`note-interactions-${finalEvent.id}`}
+          pageIndex={index}
+          event={finalEvent}
+          statsForeground
+        />
       </div>
     </SecondaryPageLayout>
   )

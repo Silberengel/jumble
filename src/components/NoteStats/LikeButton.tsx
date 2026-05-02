@@ -81,6 +81,9 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
     return { myLastEmoji: myLike?.emoji, likeCount: likes?.length, upVoteCount, downVoteCount }
   }, [noteStats, pubkey, hideUntrustedInteractions, showDiscussionVotes])
 
+  /** Same idea as {@link ReplyButton}: merged likes (thread fetch / publish) can exist before snapshot sets `updatedAt`. */
+  const showLikeCount = !hideCount && (statsLoaded || (likeCount ?? 0) > 0)
+
   const like = async (emoji: string | TEmoji) => {
     checkLogin(async () => {
       if (liking || !pubkey) return
@@ -90,7 +93,7 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
 
       try {
         if (!noteStats?.updatedAt) {
-          await noteStatsService.fetchNoteStats(event, pubkey, statsRelays)
+          await noteStatsService.fetchNoteStats(event, pubkey, statsRelays, { foreground: true })
         }
 
         const emojiString = typeof emoji === 'string' ? emoji : emoji.shortcode
@@ -235,7 +238,7 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
       ) : myLastEmoji ? (
         <>
           <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
-          {!hideCount && statsLoaded && (
+          {showLikeCount && (
             <div className="text-sm tabular-nums">
               {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
             </div>
@@ -244,7 +247,7 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
       ) : (
         <>
           <SmilePlus />
-          {!hideCount && statsLoaded && (
+          {showLikeCount && (
             <div className="text-sm tabular-nums">
               {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
             </div>
@@ -282,7 +285,7 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
                   <span className="text-base leading-none" aria-hidden>
                     {arrow}
                   </span>
-                  {!hideCount && noteStats?.updatedAt != null && (
+                  {!hideCount && (noteStats?.updatedAt != null || count > 0) && (
                     <div className="text-sm tabular-nums">
                       {count >= 100 ? '99+' : count}
                     </div>

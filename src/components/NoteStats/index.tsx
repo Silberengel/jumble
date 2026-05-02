@@ -23,7 +23,8 @@ export default function NoteStats({
   className,
   classNames,
   fetchIfNotExisting = false,
-  displayTopZapsAndLikes = false
+  displayTopZapsAndLikes = false,
+  foregroundStats = false
 }: {
   event: Event
   className?: string
@@ -32,6 +33,8 @@ export default function NoteStats({
   }
   fetchIfNotExisting?: boolean
   displayTopZapsAndLikes?: boolean
+  /** Jump ahead of spell-feed backlog so counts resolve on the open note / article. */
+  foregroundStats?: boolean
 }) {
   const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
@@ -64,10 +67,12 @@ export default function NoteStats({
       hintRelayCount: statsRelays.length
     })
     setLoading(true)
-    noteStatsService.fetchNoteStats(event, pubkey, statsRelays).finally(() => setLoading(false))
+    noteStatsService
+      .fetchNoteStats(event, pubkey, statsRelays, { foreground: foregroundStats })
+      .finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
     // id/sig/kind/created_at identify the note for refetch boundaries.
-  }, [event.id, event.kind, event.created_at, event.sig, fetchIfNotExisting, pubkey, statsRelaysKey])
+  }, [event.id, event.kind, event.created_at, event.sig, fetchIfNotExisting, foregroundStats, pubkey, statsRelaysKey])
 
   if (isSmallScreen) {
     return (

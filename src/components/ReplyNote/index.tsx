@@ -44,7 +44,8 @@ export default function ReplyNote({
   onClickParent = () => {},
   onClickReply,
   highlight = false,
-  duplicateWebPreviewCleanedUrlHints
+  duplicateWebPreviewCleanedUrlHints,
+  foregroundStats = false
 }: {
   event: Event
   parentEventId?: string
@@ -52,6 +53,7 @@ export default function ReplyNote({
   onClickReply?: (event: Event) => void
   highlight?: boolean
   duplicateWebPreviewCleanedUrlHints?: string[]
+  foregroundStats?: boolean
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -208,6 +210,7 @@ export default function ReplyNote({
           event={event}
           displayTopZapsAndLikes={event.kind !== kinds.Zap}
           fetchIfNotExisting
+          foregroundStats={foregroundStats}
         />
       )}
     </div>

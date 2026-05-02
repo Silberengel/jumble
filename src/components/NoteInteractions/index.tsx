@@ -11,12 +11,15 @@ import ReplySort, { ReplySortOption } from './ReplySort'
 export default function NoteInteractions({
   pageIndex,
   event,
-  showQuotes: showQuotesProp
+  showQuotes: showQuotesProp,
+  statsForeground = false
 }: {
   pageIndex?: number
   event: Event
   /** When set, overrides the default (quotes hidden for discussions only). */
   showQuotes?: boolean
+  /** Reply row stats use the same priority lane as the open note (`foregroundStats` on `NoteStats`). */
+  statsForeground?: boolean
 }) {
   const { t } = useTranslation()
   const [replySort, setReplySort] = useState<ReplySortOption>('oldest')
@@ -53,6 +56,7 @@ export default function NoteInteractions({
         event={event}
         sort={replySort}
         showQuotes={showQuotes}
+        statsForeground={statsForeground}
       />
     </>
   )

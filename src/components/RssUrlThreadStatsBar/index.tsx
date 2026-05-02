@@ -25,7 +25,9 @@ export default function RssUrlThreadStatsBar({
 
   useEffect(() => {
     setLoading(true)
-    noteStatsService.fetchNoteStats(event, pubkey, statsRelays).finally(() => setLoading(false))
+    noteStatsService
+      .fetchNoteStats(event, pubkey, statsRelays, { foreground: true })
+      .finally(() => setLoading(false))
   }, [event.id, event.kind, event.created_at, event.sig, pubkey, statsRelaysKey])
 
   const fmt = (n: number) => (n >= 100 ? '99+' : String(n))

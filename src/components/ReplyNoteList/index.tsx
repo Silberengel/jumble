@@ -232,6 +232,38 @@ function replyIdPresentInRepliesMap(
   return false
 }
 
+/** NIP-25 reaction: any `e` / `E` tag value equals this hex id (lowercased). */
+function noteReactionEtagEqualsHex(ev: NEvent, hexLower: string): boolean {
+  const h = hexLower.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/i.test(h)) return false
+  for (const t of ev.tags) {
+    if ((t[0] === 'e' || t[0] === 'E') && typeof t[1] === 'string' && t[1].toLowerCase() === h) return true
+  }
+  return false
+}
+
+/**
+ * Thread REQ historically omitted kind 7; {@link replyMatchesThreadForList} also drops reactions from the reply list.
+ * Reactions still need to merge into {@link noteStatsService} for the root so the note header matches notifications.
+ */
+function mergeFetchedKind7ReactionsIntoRootNoteStats(all: NEvent[], rootInfo: TRootInfo) {
+  if (rootInfo.type === 'E') {
+    const rootHex = rootInfo.id.trim().toLowerCase()
+    const hits = all.filter((ev) => ev.kind === kinds.Reaction && noteReactionEtagEqualsHex(ev, rootHex))
+    if (hits.length > 0) {
+      noteStatsService.updateNoteStatsByEvents(hits, undefined, { interactionTargetNoteId: rootInfo.id })
+    }
+  } else if (rootInfo.type === 'A') {
+    const idHex = rootInfo.eventId?.trim().toLowerCase()
+    if (idHex && /^[0-9a-f]{64}$/i.test(idHex)) {
+      const hits = all.filter((ev) => ev.kind === kinds.Reaction && noteReactionEtagEqualsHex(ev, idHex))
+      if (hits.length > 0) {
+        noteStatsService.updateNoteStatsByEvents(hits, undefined, { interactionTargetNoteId: rootInfo.eventId })
+      }
+    }
+  }
+}
+
 function replyMatchesThreadForList(
   evt: NEvent,
   opEvent: NEvent,
@@ -292,7 +324,8 @@ function ReplyNoteList({
   event,
   sort = 'oldest',
   showQuotes = true,
-  duplicateWebPreviewCleanedUrlHints
+  duplicateWebPreviewCleanedUrlHints,
+  statsForeground = false
 }: {
   index?: number
   event: NEvent
@@ -301,6 +334,8 @@ function ReplyNoteList({
   showQuotes?: boolean
   /** Suppress WebPreview for these URLs in replies (e.g. article URL already shown as OP). */
   duplicateWebPreviewCleanedUrlHints?: string[]
+  /** Passed through to reply row `NoteStats` on note & article pages. */
+  statsForeground?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -1042,7 +1077,8 @@ function ReplyNoteList({
 
           const filters: Filter[] = []
           if (rootInfo.type === 'E') {
-            // Fetch all reply types for event-based replies
+            // Fetch all reply types for event-based replies (keep ≤4 kinds per filter — some relays
+            // NOTICE "too many kinds N" and drop the whole REQ if kind 7 is bundled with four others).
             filters.push({
               '#e': [rootInfo.id],
               kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
@@ -1052,6 +1088,11 @@ function ReplyNoteList({
             filters.push({
               '#E': [rootInfo.id],
               kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+              limit: LIMIT
+            })
+            filters.push({
+              '#e': [rootInfo.id],
+              kinds: [kinds.Reaction],
               limit: LIMIT
             })
             // Kind-1 notes that quote via #q without e-tags (still part of this thread)
@@ -1082,6 +1123,13 @@ function ReplyNoteList({
                 limit: LIMIT
               }
             )
+            if (/^[0-9a-f]{64}$/i.test(rootInfo.eventId)) {
+              filters.push({
+                '#e': [rootInfo.eventId],
+                kinds: [kinds.Reaction],
+                limit: LIMIT
+              })
+            }
             const qVals = Array.from(
               new Set(
                 [rootInfo.eventId, rootInfo.id]
@@ -1125,6 +1173,8 @@ function ReplyNoteList({
           )
 
           if (fetchGeneration !== replyFetchGenRef.current) return
+
+          mergeFetchedKind7ReactionsIntoRootNoteStats(allReplies, rootInfo)
 
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
@@ -1441,6 +1491,7 @@ function ReplyNoteList({
                   event={reply}
                   parentEventId={event.id !== parentEventHexId ? parentEventId : undefined}
                   duplicateWebPreviewCleanedUrlHints={replyDuplicateWebPreviewHints}
+                  foregroundStats={statsForeground}
                   onClickParent={() => {
                     if (!parentEventHexId) return
                     if (replies.every((r) => r.id !== parentEventHexId)) {
