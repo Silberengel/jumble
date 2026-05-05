@@ -145,6 +145,13 @@ export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
  */
 export const RELAY_FILTER_MAX_KINDS_PER_OBJECT = 10
 
+/**
+ * Maximum NIP-01 filters per REQ (`["REQ", subId, …filters]`). Primal, damus.io, and others return
+ * NOTICE `bad req: arr too big` when the filter list is long (e.g. replaceable threads with #a + #e
+ * snapshot + many kind-chunked op-reference filters).
+ */
+export const RELAY_REQ_MAX_FILTERS_PER_MESSAGE = 10
+
 /** `SimplePool.ensureRelay` WebSocket handshake timeout (parallel multi-relay + slow TLS). */
 export const RELAY_POOL_CONNECTION_TIMEOUT_MS = 20_000
 

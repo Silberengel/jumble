@@ -8,6 +8,7 @@ import {
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_CONCURRENT_SUBS_PER_RELAY,
   RELAY_FILTER_MAX_KINDS_PER_OBJECT,
+  RELAY_REQ_MAX_FILTERS_PER_MESSAGE,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
@@ -293,6 +294,23 @@ export class QueryService {
   ): Promise<NEvent[]> {
     const sanitizedFilters = sanitizeFiltersBeforeReq(filter)
     if (sanitizedFilters.length === 0) return []
+
+    const maxFilters = RELAY_REQ_MAX_FILTERS_PER_MESSAGE
+    if (sanitizedFilters.length > maxFilters) {
+      const merged: NEvent[] = []
+      const seen = new Set<string>()
+      for (let i = 0; i < sanitizedFilters.length; i += maxFilters) {
+        const slice = sanitizedFilters.slice(i, i + maxFilters)
+        const part = await this.query(urls, slice, onevent, options)
+        for (const e of part) {
+          if (seen.has(e.id)) continue
+          seen.add(e.id)
+          merged.push(e)
+        }
+      }
+      return merged
+    }
+
     /** One chunk → pass a single Filter (compat); several (e.g. kinds split) → full array for WS + HTTP. */
     const effectiveFilter: Filter | Filter[] =
       sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters

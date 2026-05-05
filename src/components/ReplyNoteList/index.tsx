@@ -78,6 +78,8 @@ type TRootInfo =
 const LIMIT = 200
 const SHOW_COUNT = 10
 const MAX_KINDS_PER_THREAD_REQ_FILTER = 4
+/** Some relays cap `#e` array length; chunk parent-id batches for nested-thread REQs. */
+const MAX_PARENT_IDS_PER_NESTED_REQ = 64
 
 function chunkKindsForThreadReq(list: readonly number[], size = MAX_KINDS_PER_THREAD_REQ_FILTER): number[][] {
   const out: number[][] = []
@@ -1294,19 +1296,24 @@ function ReplyNoteList({
               .filter((evt) => commentKinds.includes(evt.kind))
               .map((evt) => evt.id)
             if (parentIds.length > 0) {
-              const nestedFilters: Filter[] = [
-                { '#e': parentIds, kinds: commentKinds, limit: LIMIT }
-              ]
-              const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
-                onevent: (evt: NEvent) => {
-                  if (fetchGeneration !== replyFetchGenRef.current) return
-                  if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
-                    return
-                  addReplies([evt])
-                }
-              })
-              if (fetchGeneration !== replyFetchGenRef.current) return
-              const validNested = nestedReplies.filter(
+              const nestedAccum: NEvent[] = []
+              for (let off = 0; off < parentIds.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
+                const idChunk = parentIds.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
+                const nestedFilters: Filter[] = [
+                  { '#e': idChunk, kinds: commentKinds, limit: LIMIT }
+                ]
+                const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
+                  onevent: (evt: NEvent) => {
+                    if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+                      return
+                    addReplies([evt])
+                  }
+                })
+                if (fetchGeneration !== replyFetchGenRef.current) return
+                nestedAccum.push(...nestedReplies)
+              }
+              const validNested = nestedAccum.filter(
                 (evt) =>
                   !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
               )
@@ -1318,41 +1325,48 @@ function ReplyNoteList({
             }
           }
 
-          // Second pass for kind-11 discussions: nested 1111/1 chains are keyed under parent ids in
-          // ReplyProvider; fetching #e:[comment-id] fills gaps the root-scoped REQ can miss.
+          // Second pass for discussions, plain kind-1 threads, and replaceable (longform/wiki) roots:
+          // nested 1 / 1111 / 1244 often tag only the parent's #e; root-scoped REQ misses them (same
+          // idea as URL-thread #I follow-up above).
           if (
-            event.kind === ExtendedKind.DISCUSSION &&
-            rootInfo.type === 'E' &&
-            regularReplies.length > 0
+            regularReplies.length > 0 &&
+            ((rootInfo.type === 'E' &&
+              (event.kind === ExtendedKind.DISCUSSION || event.kind === kinds.ShortTextNote)) ||
+              rootInfo.type === 'A')
           ) {
-            const commentKinds = [
+            const commentKindsNested = [
               ExtendedKind.COMMENT,
               ExtendedKind.VOICE_COMMENT,
               kinds.ShortTextNote
             ]
-            const parentIds = regularReplies
-              .filter((evt) => commentKinds.includes(evt.kind))
+            const parentIdsNested = regularReplies
+              .filter((evt) => commentKindsNested.includes(evt.kind))
               .map((evt) => evt.id)
-            if (parentIds.length > 0) {
-              const nestedFilters: Filter[] = [
-                { '#e': parentIds, kinds: commentKinds, limit: LIMIT },
-                {
-                  '#E': parentIds,
-                  kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
-                  limit: LIMIT
-                }
-              ]
-              const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
-                onevent: (evt: NEvent) => {
-                  if (fetchGeneration !== replyFetchGenRef.current) return
-                  if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
-                    return
-                  if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
-                  addReplies([evt])
-                }
-              })
-              if (fetchGeneration !== replyFetchGenRef.current) return
-              const validNested = nestedReplies.filter(
+            if (parentIdsNested.length > 0) {
+              const nestedAccum: NEvent[] = []
+              for (let off = 0; off < parentIdsNested.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
+                const idChunk = parentIdsNested.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
+                const nestedFilters: Filter[] = [
+                  { '#e': idChunk, kinds: commentKindsNested, limit: LIMIT },
+                  {
+                    '#E': idChunk,
+                    kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
+                    limit: LIMIT
+                  }
+                ]
+                const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
+                  onevent: (evt: NEvent) => {
+                    if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+                      return
+                    if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
+                    addReplies([evt])
+                  }
+                })
+                if (fetchGeneration !== replyFetchGenRef.current) return
+                nestedAccum.push(...nestedReplies)
+              }
+              const validNested = nestedAccum.filter(
                 (evt) =>
                   !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers) &&
                   replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
