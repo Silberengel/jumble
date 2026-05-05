@@ -8,6 +8,8 @@ import {
   isNip25ReactionKind,
   isNsfwEvent
 } from '@/lib/event'
+import { shouldHideInteractions } from '@/lib/event-filtering'
+import { mergeNip84MarkedIntervals, renderPlaintextWithNip84MergedMarks } from '@/lib/nip84-op-body-marks'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -106,7 +108,8 @@ export default function Note({
   showFull = false,
   disableClick = false,
   fullCalendarInvite,
-  zapPollVoteHighlightOption
+  zapPollVoteHighlightOption,
+  nip84HighlightEvents
 }: {
   event: Event
   originalNoteId?: string
@@ -119,6 +122,8 @@ export default function Note({
   fullCalendarInvite?: { event: Event; naddr: string }
   /** Profile: highlight option when this row is from a zap vote receipt. */
   zapPollVoteHighlightOption?: number
+  /** Kind-9802 events that cite this note; when spans match {@link displayEvent.content}, render green marks (note page OP). */
+  nip84HighlightEvents?: Event[]
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -213,6 +218,29 @@ export default function Note({
           />
         )
       }
+      if (
+        nip84HighlightEvents?.length &&
+        displayEvent.kind === kinds.ShortTextNote &&
+        !shouldHideInteractions(displayEvent)
+      ) {
+        const merged = mergeNip84MarkedIntervals(
+          displayEvent.content ?? '',
+          nip84HighlightEvents,
+          displayEvent.id
+        )
+        if (merged.length > 0) {
+          return (
+            <div
+              className={cn(
+                'note-content text-base font-normal whitespace-pre-wrap break-words',
+                className
+              )}
+            >
+              {renderPlaintextWithNip84MergedMarks(displayEvent.content ?? '', merged)}
+            </div>
+          )
+        }
+      }
       return (
         <MarkdownArticle
           className={className}
@@ -223,7 +251,7 @@ export default function Note({
         />
       )
     },
-    [displayEvent, fullCalendarInvite, autoLoadMedia]
+    [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents]
   )
 
   let content: React.ReactNode

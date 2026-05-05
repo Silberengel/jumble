@@ -82,8 +82,13 @@ export function translateServerSupportsLogicalTarget(targetCode: string): boolea
   return advertisedTranslateApiCodes.has(advertisedApiCodeKey(targetCode))
 }
 
-let languagesCache: { list: TranslateLanguageOption[]; at: number } | null = null
+let languagesCache: { list: TranslateLanguageOption[]; at: number; fromFailure?: boolean } | null = null
 const LANGUAGES_CACHE_TTL_MS = 60_000
+/** After HTTP/parse failure, cache empty so each {@link useMenuActions} mount does not re-request. */
+const LANGUAGES_FAILURE_CACHE_TTL_MS = 120_000
+
+let languagesFetchInFlight: Promise<TranslateLanguageOption[]> | null = null
+let lastLanguagesFailureLogAt = 0
 
 function parseLanguagesResponse(data: unknown): TranslateLanguageOption[] {
   if (!Array.isArray(data)) return []
@@ -113,30 +118,51 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
   const base = TRANSLATE_URL.trim().replace(/\/$/u, '')
   if (!base) return []
   const now = Date.now()
-  if (languagesCache && now - languagesCache.at < LANGUAGES_CACHE_TTL_MS) {
-    recordAdvertisedTranslateCodesFromServer(languagesCache.list)
-    return languagesCache.list
+  if (languagesCache) {
+    const ttl = languagesCache.fromFailure ? LANGUAGES_FAILURE_CACHE_TTL_MS : LANGUAGES_CACHE_TTL_MS
+    if (now - languagesCache.at < ttl) {
+      recordAdvertisedTranslateCodesFromServer(languagesCache.list)
+      return languagesCache.list
+    }
   }
+  if (languagesFetchInFlight) {
+    return languagesFetchInFlight
+  }
+
   const url = `${base}/languages`
-  const res = await electronAwareFetch(url)
-  if (!res.ok) {
-    logger.warn('[Translate] /languages failed', { status: res.status })
-    languagesCache = null
-    advertisedTranslateApiCodes = null
-    return []
-  }
-  try {
-    const data = (await res.json()) as unknown
-    const list = parseLanguagesResponse(data)
-    languagesCache = { list, at: now }
-    recordAdvertisedTranslateCodesFromServer(list)
-    return list
-  } catch (e) {
-    logger.warn('[Translate] /languages parse error', { e })
-    languagesCache = null
-    advertisedTranslateApiCodes = null
-    return []
-  }
+  languagesFetchInFlight = (async (): Promise<TranslateLanguageOption[]> => {
+    const res = await electronAwareFetch(url)
+    if (!res.ok) {
+      const t = Date.now()
+      if (t - lastLanguagesFailureLogAt > 10_000) {
+        lastLanguagesFailureLogAt = t
+        logger.warn('[Translate] /languages failed', { status: res.status })
+      }
+      languagesCache = { list: [], at: t, fromFailure: true }
+      recordAdvertisedTranslateCodesFromServer([])
+      return []
+    }
+    try {
+      const data = (await res.json()) as unknown
+      const list = parseLanguagesResponse(data)
+      languagesCache = { list, at: Date.now() }
+      recordAdvertisedTranslateCodesFromServer(list)
+      return list
+    } catch (e) {
+      const t = Date.now()
+      if (t - lastLanguagesFailureLogAt > 10_000) {
+        lastLanguagesFailureLogAt = t
+        logger.warn('[Translate] /languages parse error', { e })
+      }
+      languagesCache = { list: [], at: t, fromFailure: true }
+      recordAdvertisedTranslateCodesFromServer([])
+      return []
+    }
+  })().finally(() => {
+    languagesFetchInFlight = null
+  })
+
+  return languagesFetchInFlight
 }
 
 export function clearTranslateLanguagesCache(): void {

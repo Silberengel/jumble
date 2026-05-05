@@ -30,6 +30,7 @@ import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import Nip05 from '../Nip05'
 import NoteOptions from '../NoteOptions'
+import NoteBoostBadges from '../NoteBoostBadges'
 import NoteStats from '../NoteStats'
 import ParentNotePreview from '../ParentNotePreview'
 import WebPreview from '../WebPreview'
@@ -205,13 +206,16 @@ export default function ReplyNote({
         </div>
       </Collapsible>
       {show && !isNip25ReactionKind(event.kind) && (
-        <NoteStats
-          className="ml-14 pl-1 mr-4 mt-2"
-          event={event}
-          displayTopZapsAndLikes={event.kind !== kinds.Zap}
-          fetchIfNotExisting
-          foregroundStats={foregroundStats}
-        />
+        <>
+          <NoteBoostBadges event={event} className="ml-14 pl-1 mr-4 mt-2" />
+          <NoteStats
+            className="ml-14 pl-1 mr-4 mt-2"
+            event={event}
+            displayTopZapsAndLikes={event.kind !== kinds.Zap}
+            fetchIfNotExisting
+            foregroundStats={foregroundStats}
+          />
+        </>
       )}
     </div>
   )

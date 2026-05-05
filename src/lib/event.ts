@@ -26,6 +26,36 @@ export function isNip18RepostKind(kind: number): boolean {
   return kind === kinds.Repost || kind === ExtendedKind.GENERIC_REPOST
 }
 
+/**
+ * Target id for NIP-18 repost rows (stats + feed dedupe): `e` first, then embedded JSON `id`, then `a` on generic repost.
+ * Mirrors {@link NoteStatsService} repost classification so boost strips and “skip duplicate row” agree with stats.
+ */
+export function getNip18RepostTargetId(evt: Event): string | undefined {
+  if (!isNip18RepostKind(evt.kind)) return undefined
+
+  const hex = getFirstHexEventIdFromETags(evt.tags)
+  if (hex) return hex.toLowerCase()
+
+  const raw = evt.content?.trim()
+  if (raw) {
+    try {
+      const embedded = JSON.parse(raw) as { id?: string }
+      if (embedded.id && /^[0-9a-f]{64}$/i.test(embedded.id)) {
+        return embedded.id.toLowerCase()
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (evt.kind === ExtendedKind.GENERIC_REPOST) {
+    const aTag = evt.tags.find(tagNameEquals('a')) ?? evt.tags.find(tagNameEquals('A'))
+    const coord = aTag?.[1]?.trim()
+    if (coord) return coord
+  }
+  return undefined
+}
+
 /** NIP-56: kind 1984 report / flag (`kinds.Report` and {@link ExtendedKind.REPORT} are the same kind). */
 export function isNip56ReportEvent(event: Pick<Event, 'kind'>): boolean {
   return event.kind === kinds.Report || event.kind === ExtendedKind.REPORT
@@ -370,7 +400,7 @@ export function replaceableEventDedupeKey(event: Event): string {
 }
 
 /** Normalize `kind:pubkey:d` for comparisons (lowercase pubkey; preserve d). */
-function normalizeReplaceableCoordinateString(coord: string): string {
+export function normalizeReplaceableCoordinateString(coord: string): string {
   const m = /^(\d+):([0-9a-f]{64}):(.*)$/i.exec(coord.trim())
   if (!m) return coord.trim().toLowerCase()
   return getReplaceableCoordinate(Number(m[1]), m[2].toLowerCase(), m[3])

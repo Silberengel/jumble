@@ -2,10 +2,13 @@ import NewNotesButton from '@/components/NewNotesButton'
 import { ExtendedKind, FIRST_RELAY_RESULT_GRACE_MS, SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS, SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import {
   collectEmbeddedEventPrefetchTargets,
+  getNip18RepostTargetId,
   getReplaceableCoordinateFromEvent,
   isMentioningMutedUsers,
+  isNip18RepostKind,
   isReplaceableEvent,
-  isReplyNoteEvent
+  isReplyNoteEvent,
+  normalizeReplaceableCoordinateString
 } from '@/lib/event'
 import { shouldFilterEvent } from '@/lib/event-filtering'
 import {
@@ -25,6 +28,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { useZap } from '@/providers/ZapProvider'
 import client from '@/services/client.service'
+import noteStatsService from '@/services/note-stats.service'
 import indexedDb from '@/services/indexed-db.service'
 import {
   getSessionFeedSnapshot,
@@ -189,6 +193,29 @@ const FEED_FILTER_KIND_MAX = 40_000
 const FEED_PROFILE_BATCH_DEBOUNCE_MS = 50
 /** Larger chunks + parallel fetches below — sequential 36-pubkey rounds made notification avatars lag. */
 const FEED_PROFILE_CHUNK = 80
+
+function normalizeFeedRepostTargetKey(id: string): string {
+  const t = id.trim()
+  if (/^[0-9a-f]{64}$/i.test(t)) return t.toLowerCase()
+  return normalizeReplaceableCoordinateString(t)
+}
+
+function feedTimelineAlreadyRepresentsNip18Target(targetId: string | undefined, rows: Event[]): boolean {
+  if (!targetId) return false
+  const want = normalizeFeedRepostTargetKey(targetId)
+  for (const e of rows) {
+    if (normalizeFeedRepostTargetKey(e.id) === want) return true
+    if (isNip18RepostKind(e.kind)) {
+      const rt = getNip18RepostTargetId(e)
+      if (rt && normalizeFeedRepostTargetKey(rt) === want) return true
+    }
+    if (isReplaceableEvent(e.kind)) {
+      const c = getReplaceableCoordinateFromEvent(e)
+      if (normalizeFeedRepostTargetKey(c) === want) return true
+    }
+  }
+  return false
+}
 
 function mergeEventBatchesById(
   prev: Event[],
@@ -2169,15 +2196,29 @@ const NoteList = forwardRef(
               }
               if (shouldHideEventRef.current(event)) return
               if (pubkey && event.pubkey === pubkey) {
-                // If the new event is from the current user, insert it directly into the feed
-                setEvents((oldEvents) =>
-                  oldEvents.some((e) => e.id === event.id) ? oldEvents : [event, ...oldEvents]
-                )
+                setEvents((oldEvents) => {
+                  if (oldEvents.some((e) => e.id === event.id)) return oldEvents
+                  if (
+                    isNip18RepostKind(event.kind) &&
+                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
+                  ) {
+                    noteStatsService.updateNoteStatsByEvents([event], undefined)
+                    return oldEvents
+                  }
+                  return [event, ...oldEvents]
+                })
               } else {
-                // Otherwise, buffer it and show the New Notes button
-                setNewEvents((oldEvents) =>
-                  [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
-                )
+                setNewEvents((oldEvents) => {
+                  const pool = [...eventsRef.current, ...oldEvents]
+                  if (
+                    isNip18RepostKind(event.kind) &&
+                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), pool)
+                  ) {
+                    noteStatsService.updateNoteStatsByEvents([event], undefined)
+                    return oldEvents
+                  }
+                  return [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
+                })
               }
             },
           },
@@ -2445,13 +2486,29 @@ const NoteList = forwardRef(
                 }
                 if (shouldHideEventRef.current(event)) return
                 if (pubkey && event.pubkey === pubkey) {
-                  setEvents((oldEvents) =>
-                    oldEvents.some((e) => e.id === event.id) ? oldEvents : [event, ...oldEvents]
-                  )
+                  setEvents((oldEvents) => {
+                    if (oldEvents.some((e) => e.id === event.id)) return oldEvents
+                    if (
+                      isNip18RepostKind(event.kind) &&
+                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
+                    ) {
+                      noteStatsService.updateNoteStatsByEvents([event], undefined)
+                      return oldEvents
+                    }
+                    return [event, ...oldEvents]
+                  })
                 } else {
-                  setNewEvents((oldEvents) =>
-                    [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
-                  )
+                  setNewEvents((oldEvents) => {
+                    const pool = [...eventsRef.current, ...oldEvents]
+                    if (
+                      isNip18RepostKind(event.kind) &&
+                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), pool)
+                    ) {
+                      noteStatsService.updateNoteStatsByEvents([event], undefined)
+                      return oldEvents
+                    }
+                    return [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
+                  })
                 }
               }
             },
@@ -3120,7 +3177,26 @@ const NoteList = forwardRef(
     }, [events.length, showCount, loading, hasMore, mergePrefetchTargetsFromEvents])
 
     const showNewEvents = () => {
-      setEvents((oldEvents) => [...newEvents, ...oldEvents])
+      setEvents((oldEvents) => {
+        const pool: Event[] = [...oldEvents]
+        const statsOnly: Event[] = []
+        const kept: Event[] = []
+        for (const ev of newEvents) {
+          if (
+            isNip18RepostKind(ev.kind) &&
+            feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(ev), pool)
+          ) {
+            statsOnly.push(ev)
+            continue
+          }
+          kept.push(ev)
+          pool.push(ev)
+        }
+        if (statsOnly.length > 0) {
+          noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
+        }
+        return [...kept, ...oldEvents]
+      })
       setNewEvents([])
       setTimeout(() => {
         scrollToTop('smooth')

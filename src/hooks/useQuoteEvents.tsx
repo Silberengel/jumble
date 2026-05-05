@@ -1,8 +1,9 @@
 import {
   E_TAG_FILTER_BLOCKED_RELAY_URLS,
+  ExtendedKind,
   FAST_READ_RELAY_URLS,
-  SEARCHABLE_RELAY_URLS,
-  THREAD_BACKLINK_STREAM_KINDS_WITHOUT_HIGHLIGHT
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
+  SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { buildNormalizedBlockedRelaySet } from '@/lib/thread-response-filter'
@@ -17,6 +18,15 @@ import { Event, kinds } from 'nostr-tools'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const LIMIT = 100
+const MAX_KINDS_PER_RELAY_FILTER = 4
+
+function chunkKinds(list: readonly number[], size = MAX_KINDS_PER_RELAY_FILTER): number[][] {
+  const out: number[][] = []
+  for (let i = 0; i < list.length; i += size) {
+    out.push([...list.slice(i, i + size)])
+  }
+  return out
+}
 const INITIAL_QUOTE_LOAD_TIMEOUT_MS = 12_000
 
 /** Fetches events that quote or reference the given event (#q, #e, #a tags). */
@@ -98,12 +108,31 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
         : `${ev.kind}:${ev.pubkey}:${ev.id}`
 
       const highlightKinds = [kinds.Highlights] as const
-      const otherBacklinkKinds = [...THREAD_BACKLINK_STREAM_KINDS_WITHOUT_HIGHLIGHT]
+      const opRefKindChunks = chunkKinds(NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT)
+      const qKindsBroad = Array.from(
+        new Set<number>([
+          kinds.ShortTextNote,
+          ExtendedKind.COMMENT,
+          ExtendedKind.VOICE_COMMENT,
+          ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+        ])
+      ).sort((a, b) => a - b)
+      const qValsReplaceable = Array.from(
+        new Set(
+          [ev.id, eventCoordinate]
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .filter(Boolean)
+        )
+      )
 
       const subRequests: { urls: string[]; filter: TSubRequestFilter }[] = [
         {
           urls: finalRelayUrls,
-          filter: { '#q': [qeIdForTagFilter], kinds: [kinds.ShortTextNote], limit: LIMIT }
+          filter: {
+            '#q': isReplaceableEvent(ev.kind) ? qValsReplaceable : [qeIdForTagFilter],
+            kinds: qKindsBroad,
+            limit: LIMIT
+          }
         },
         {
           urls: finalRelayUrls,
@@ -117,15 +146,26 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
             limit: LIMIT
           }
         },
-        {
-          urls: finalRelayUrls,
-          filter: {
-            '#a': [eventCoordinate],
-            kinds: otherBacklinkKinds,
-            limit: LIMIT
-          }
-        }
+        ...opRefKindChunks.map(
+          (kindsChunk) =>
+            ({
+              urls: finalRelayUrls,
+              filter: {
+                '#a': [eventCoordinate],
+                kinds: kindsChunk,
+                limit: LIMIT
+              }
+            }) as { urls: string[]; filter: TSubRequestFilter }
+        )
       ]
+      if (isReplaceableEvent(ev.kind)) {
+        for (const kindsChunk of opRefKindChunks) {
+          subRequests.push({
+            urls: finalRelayUrls,
+            filter: { '#A': [eventCoordinate], kinds: kindsChunk, limit: LIMIT }
+          })
+        }
+      }
       // `#e` tag filters must use 64-hex event ids. For replaceable roots we use `#a`/`#q` only.
       if (qeIdIsHexEventId) {
         subRequests.push(
@@ -137,14 +177,30 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
               limit: LIMIT
             }
           },
-          {
+          ...opRefKindChunks.map((kindsChunk) => ({
             urls: finalRelayUrls,
             filter: {
               '#e': [qeIdForTagFilter],
-              kinds: otherBacklinkKinds,
+              kinds: kindsChunk,
               limit: LIMIT
             }
-          }
+          })),
+          {
+            urls: finalRelayUrls,
+            filter: {
+              '#E': [qeIdForTagFilter],
+              kinds: [...highlightKinds],
+              limit: LIMIT
+            }
+          },
+          ...opRefKindChunks.map((kindsChunk) => ({
+            urls: finalRelayUrls,
+            filter: {
+              '#E': [qeIdForTagFilter],
+              kinds: kindsChunk,
+              limit: LIMIT
+            }
+          }))
         )
       }
 

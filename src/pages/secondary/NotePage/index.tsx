@@ -12,7 +12,7 @@ import UserAvatar from '@/components/UserAvatar'
 import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useFetchEvent, useFetchProfile } from '@/hooks'
+import { useFetchEvent, useFetchProfile, useNip84HighlightTargetEvents } from '@/hooks'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import {
   getParentBech32Id,
@@ -116,6 +116,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   const { event, isFetching, refetch: refetchMain } = useFetchEvent(id, initialEvent)
   const [externalEvent, setExternalEvent] = useState<Event | undefined>(undefined)
   const finalEvent = event || externalEvent
+  const nip84HighlightEvents = useNip84HighlightTargetEvents(finalEvent)
   
   const parentEventId = useMemo(() => {
     if (!finalEvent) return undefined
@@ -508,6 +509,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
           hideParentNotePreview
           originalNoteId={id}
           showFull
+          nip84HighlightEvents={nip84HighlightEvents}
           fullCalendarInvite={
             calendarInviteEvent && calendarInviteNaddr
               ? { event: calendarInviteEvent, naddr: calendarInviteNaddr }

@@ -594,6 +594,19 @@ export const THREAD_BACKLINK_STREAM_KINDS_WITHOUT_HIGHLIGHT: readonly number[] =
   THREAD_BACKLINK_STREAM_KINDS.filter((k) => k !== kinds.Highlights)
 
 /**
+ * Kinds that reference an OP via `#e` / `#E` / `#a` / `#A` / `#q` in note-stats and thread REQ filters.
+ * Extends {@link THREAD_BACKLINK_STREAM_KINDS} with publication headers (30040) that may tag notes without using 30041.
+ * REQ tag keys: `e`, `E`, `a`, `A`, `q` only (no `#Q`).
+ */
+export const NOTE_STATS_OP_REFERENCE_KINDS: readonly number[] = Array.from(
+  new Set<number>([...THREAD_BACKLINK_STREAM_KINDS, ExtendedKind.PUBLICATION])
+).sort((a, b) => a - b)
+
+/** {@link NOTE_STATS_OP_REFERENCE_KINDS} without kind 9802 — pair with a small highlights-only filter on relays that cap `kinds`. */
+export const NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT: readonly number[] =
+  NOTE_STATS_OP_REFERENCE_KINDS.filter((k) => k !== kinds.Highlights)
+
+/**
  * When a filter touches these kinds (or omits `kinds`), omit {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} from the relay
  * stack — those relays do not carry this note/comment surface (kinds **1** / **1111** / **11** per relay policy).
  * @see {@link relayFilterIncludesSocialKindBlockedKind}

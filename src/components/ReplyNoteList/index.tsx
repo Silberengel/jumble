@@ -1,4 +1,10 @@
-import { E_TAG_FILTER_BLOCKED_RELAY_URLS, ExtendedKind, THREAD_BACKLINK_STREAM_KINDS } from '@/constants'
+import {
+  E_TAG_FILTER_BLOCKED_RELAY_URLS,
+  ExtendedKind,
+  NOTE_STATS_OP_REFERENCE_KINDS,
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
+  THREAD_BACKLINK_STREAM_KINDS
+} from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
   canonicalizeRssArticleUrl,
@@ -43,6 +49,7 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import {
   buildRssArticleUrlThreadInteractionFilters,
@@ -70,6 +77,15 @@ type TRootInfo =
 
 const LIMIT = 200
 const SHOW_COUNT = 10
+const MAX_KINDS_PER_THREAD_REQ_FILTER = 4
+
+function chunkKindsForThreadReq(list: readonly number[], size = MAX_KINDS_PER_THREAD_REQ_FILTER): number[][] {
+  const out: number[][] = []
+  for (let i = 0; i < list.length; i += size) {
+    out.push([...list.slice(i, i + size)])
+  }
+  return out
+}
 const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 50
 const THREAD_PROFILE_CHUNK = 80
 
@@ -280,7 +296,16 @@ function replyMatchesThreadForList(
   ) {
     return true
   }
-  return replyBelongsToNoteThread(evt, opEvent, rootInfo)
+  if (replyBelongsToNoteThread(evt, opEvent, rootInfo)) return true
+  if (
+    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
+    evt.kind !== kinds.ShortTextNote &&
+    NOTE_STATS_OP_REFERENCE_KINDS.includes(evt.kind) &&
+    eventReferencesThreadTarget(evt, rootInfo)
+  ) {
+    return true
+  }
+  return false
 }
 
 function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
@@ -350,10 +375,7 @@ function ReplyNoteList({
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const [rootInfo, setRootInfo] = useState<TRootInfo | undefined>(undefined)
   const { repliesMap, addReplies } = useReply()
-  const { quoteEvents, quoteLoading } = useQuoteEvents(
-    event,
-    showQuotes ?? false
-  )
+  const { quoteEvents, quoteLoading } = useQuoteEvents(event, true)
   const filteredQuoteEvents = useMemo(
     () =>
       quoteEvents.filter(
@@ -633,6 +655,14 @@ function ReplyNoteList({
     }
     return zapsThenTimeSorted(merged, 'desc')
   }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo])
+
+  useEffect(() => {
+    if (!rootInfo) return
+    const toAdd = filteredQuoteEvents.filter((evt) =>
+      replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
+    )
+    if (toAdd.length > 0) addReplies(toAdd)
+  }, [filteredQuoteEvents, rootInfo, event, isDiscussionRoot, addReplies])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -1076,6 +1106,16 @@ function ReplyNoteList({
           }
 
           const filters: Filter[] = []
+          const qKindsHex = Array.from(
+            new Set<number>([
+              kinds.ShortTextNote,
+              ExtendedKind.COMMENT,
+              ExtendedKind.VOICE_COMMENT,
+              ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+            ])
+          ).sort((a, b) => a - b)
+          const opRefChunks = chunkKindsForThreadReq(NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT)
+
           if (rootInfo.type === 'E') {
             // Fetch all reply types for event-based replies (keep ≤4 kinds per filter — some relays
             // NOTICE "too many kinds N" and drop the whole REQ if kind 7 is bundled with four others).
@@ -1095,10 +1135,9 @@ function ReplyNoteList({
               kinds: [kinds.Reaction],
               limit: LIMIT
             })
-            // Kind-1 notes that quote via #q without e-tags (still part of this thread)
             filters.push({
               '#q': [rootInfo.id],
-              kinds: [kinds.ShortTextNote],
+              kinds: qKindsHex,
               limit: LIMIT
             })
             // For public messages (kind 24), also look for replies using 'q' tags
@@ -1108,6 +1147,10 @@ function ReplyNoteList({
                 kinds: [ExtendedKind.PUBLIC_MESSAGE],
                 limit: LIMIT
               })
+            }
+            for (const chunk of opRefChunks) {
+              filters.push({ '#e': [rootInfo.id], kinds: chunk, limit: LIMIT })
+              filters.push({ '#E': [rootInfo.id], kinds: chunk, limit: LIMIT })
             }
           } else if (rootInfo.type === 'A') {
             // Fetch all reply types for replaceable event-based replies
@@ -1140,12 +1183,16 @@ function ReplyNoteList({
             if (qVals.length > 0) {
               filters.push({
                 '#q': qVals,
-                kinds: [kinds.ShortTextNote],
+                kinds: qKindsHex,
                 limit: LIMIT
               })
             }
             if (rootInfo.relay) {
               finalRelayUrls.push(rootInfo.relay)
+            }
+            for (const chunk of opRefChunks) {
+              filters.push({ '#a': [rootInfo.id], kinds: chunk, limit: LIMIT })
+              filters.push({ '#A': [rootInfo.id], kinds: chunk, limit: LIMIT })
             }
           } else if (rootInfo.type === 'I') {
             filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
@@ -1204,7 +1251,14 @@ function ReplyNoteList({
             logger.warn('[ReplyNoteList] Cache returned null after store, using fetched replies only')
             addReplies(regularReplies)
           }
-          
+
+          const statsBatch = mergedCachedReplies?.length ? mergedCachedReplies : regularReplies
+          if (statsBatch.length > 0) {
+            noteStatsService.updateNoteStatsByEvents(statsBatch, event.pubkey, {
+              statsRootEvent: event
+            })
+          }
+
           if (!hasCache) {
             // No cache: stop loading after adding replies
             setLoading(false)

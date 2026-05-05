@@ -2,15 +2,19 @@ import {
   E_TAG_FILTER_BLOCKED_RELAY_URLS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import {
+  getNip18RepostTargetId,
   getParentEventHexId,
   getReplaceableCoordinateFromEvent,
   isNip18RepostKind,
   isReplaceableEvent
 } from '@/lib/event'
+import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
+import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import {
@@ -353,7 +357,9 @@ class NoteStatsService {
 
       const { queryService } = await import('@/services/client.service')
       const onStatsEvent = (evt: Event) => {
-        this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey)
+        this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey, {
+          statsRootEvent: resolvedEvent!
+        })
         events.push(evt)
       }
       if (nonSocial.length > 0) {
@@ -511,6 +517,15 @@ class NoteStatsService {
       { '#e': [rootId], kinds: [kinds.Zap], limit: 100 }
     ]
 
+    const qKindsHex = Array.from(
+      new Set<number>([
+        kinds.ShortTextNote,
+        ExtendedKind.COMMENT,
+        ExtendedKind.VOICE_COMMENT,
+        ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+      ])
+    ).sort((a, b) => a - b)
+
     const social: Filter[] = [
       {
         '#e': [rootId],
@@ -524,13 +539,30 @@ class NoteStatsService {
         limit: interactionLimit
       },
       {
+        '#e': [rootId],
+        kinds: [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT],
+        limit: interactionLimit
+      },
+      {
+        '#E': [rootId],
+        kinds: [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT],
+        limit: interactionLimit
+      },
+      {
         '#q': [rootId],
-        kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
+        kinds: qKindsHex,
         limit: 50
       }
     ]
 
     if (replaceableCoordinate) {
+      const qValsReplaceable = Array.from(
+        new Set(
+          [event.id, replaceableCoordinate]
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .filter(Boolean)
+        )
+      )
       nonSocial.push(
         { '#a': [replaceableCoordinate], kinds: [kinds.Reaction], limit: reactionLimit },
         { '#a': [replaceableCoordinate], kinds: [kinds.Zap], limit: 100 }
@@ -548,8 +580,18 @@ class NoteStatsService {
           limit: interactionLimit
         },
         {
-          '#q': [replaceableCoordinate],
-          kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
+          '#a': [replaceableCoordinate],
+          kinds: [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT],
+          limit: interactionLimit
+        },
+        {
+          '#A': [replaceableCoordinate],
+          kinds: [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT],
+          limit: interactionLimit
+        },
+        {
+          '#q': qValsReplaceable,
+          kinds: qKindsHex,
           limit: 50
         }
       )
@@ -618,22 +660,23 @@ class NoteStatsService {
     mergeOpts?: {
       interactionTargetNoteId?: string
       replyParentNoteId?: string
+      /** Stats root from {@link fetchNoteStats} / relay batch — enables OP-reference kinds to count toward replies. */
+      statsRootEvent?: Event
     }
   ) {
     const updatedEventIdSet = new Set<string>()
-    
+
     // Process events in batches for better performance
     const batchSize = 50
     for (let i = 0; i < events.length; i += batchSize) {
       const batch = events.slice(i, i + batchSize)
       batch.forEach((evt) => {
-        const updatedEventId = this.processEvent(evt, originalEventAuthor, mergeOpts)
-        if (updatedEventId) {
-          updatedEventIdSet.add(updatedEventId)
+        for (const id of this.processEvent(evt, originalEventAuthor, mergeOpts)) {
+          updatedEventIdSet.add(this.statsKey(id))
         }
       })
     }
-    
+
     updatedEventIdSet.forEach((eventId) => {
       this.notifyNoteStats(this.statsKey(eventId))
     })
@@ -642,40 +685,60 @@ class NoteStatsService {
   private processEvent(
     evt: Event,
     originalEventAuthor?: string,
-    mergeOpts?: { interactionTargetNoteId?: string; replyParentNoteId?: string }
-  ): string | undefined {
-    let updatedEventId: string | undefined
-    
+    mergeOpts?: {
+      interactionTargetNoteId?: string
+      replyParentNoteId?: string
+      statsRootEvent?: Event
+    }
+  ): string[] {
+    const out: string[] = []
+    const push = (k: string | undefined) => {
+      if (!k) return
+      const s = this.statsKey(k)
+      if (!out.includes(s)) out.push(s)
+    }
+    const pushMany = (ks: string[]) => {
+      for (const k of ks) push(k)
+    }
+
     if (evt.kind === kinds.Reaction) {
-      updatedEventId = this.addLikeByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId)
+      push(this.addLikeByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId))
     } else if (evt.kind === ExtendedKind.EXTERNAL_REACTION) {
-      updatedEventId = this.addLikeByExternalWebReactionEvent(
-        evt,
-        originalEventAuthor,
-        mergeOpts?.interactionTargetNoteId
+      push(
+        this.addLikeByExternalWebReactionEvent(
+          evt,
+          originalEventAuthor,
+          mergeOpts?.interactionTargetNoteId
+        )
       )
     } else if (isNip18RepostKind(evt.kind)) {
-      updatedEventId = this.addRepostByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId)
+      push(this.addRepostByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId))
     } else if (evt.kind === kinds.Zap) {
-      updatedEventId = this.addZapByEvent(evt, originalEventAuthor)
+      push(this.addZapByEvent(evt, originalEventAuthor))
     } else if (evt.kind === kinds.ShortTextNote || evt.kind === ExtendedKind.COMMENT || evt.kind === ExtendedKind.VOICE_COMMENT) {
       const isQuote = this.isQuoteByEvent(evt)
       if (isQuote) {
-        updatedEventId = this.addQuoteByEvent(evt, originalEventAuthor)
+        push(this.addQuoteByEvent(evt, originalEventAuthor))
       } else if (mergeOpts?.replyParentNoteId) {
-        updatedEventId = this.addReplyByEvent(evt, originalEventAuthor, mergeOpts.replyParentNoteId)
+        pushMany(this.addReplyByEvent(evt, originalEventAuthor, mergeOpts.replyParentNoteId))
       } else {
-        updatedEventId = this.addReplyByEvent(evt, originalEventAuthor)
+        pushMany(this.addReplyByEvent(evt, originalEventAuthor))
       }
+    } else if (
+      mergeOpts?.statsRootEvent &&
+      evt.kind !== kinds.Highlights &&
+      NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT.includes(evt.kind)
+    ) {
+      pushMany(this.addOpReferenceAsThreadResponse(evt, originalEventAuthor, mergeOpts.statsRootEvent))
     } else if (evt.kind === kinds.Highlights) {
-      updatedEventId = this.addHighlightByEvent(evt, originalEventAuthor)
+      push(this.addHighlightByEvent(evt, originalEventAuthor))
     } else if (evt.kind === ExtendedKind.WEB_BOOKMARK) {
-      updatedEventId = this.addWebBookmarkByArticleUrlEvent(evt)
+      push(this.addWebBookmarkByArticleUrlEvent(evt))
     } else if (evt.kind === kinds.BookmarkList) {
       this.addBookmarkListRefsByEvent(evt)
     }
-    
-    return updatedEventId
+
+    return out
   }
 
   private reactionEmojiFromEvent(evt: Event): TEmoji | string {
@@ -785,29 +848,7 @@ class NoteStatsService {
   private repostStatsTargetId(evt: Event, forcedTargetEventId?: string): string | undefined {
     const forced = forcedTargetEventId?.trim()
     if (forced) return forced
-    if (!isNip18RepostKind(evt.kind)) return undefined
-
-    const hex = getFirstHexEventIdFromETags(evt.tags)
-    if (hex) return hex.toLowerCase()
-
-    const raw = evt.content?.trim()
-    if (raw) {
-      try {
-        const embedded = JSON.parse(raw) as { id?: string }
-        if (embedded.id && /^[0-9a-f]{64}$/i.test(embedded.id)) {
-          return embedded.id.toLowerCase()
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (evt.kind === ExtendedKind.GENERIC_REPOST) {
-      const aTag = evt.tags.find(tagNameEquals('a')) ?? evt.tags.find(tagNameEquals('A'))
-      const coord = aTag?.[1]?.trim()
-      if (coord) return coord
-    }
-    return undefined
+    return getNip18RepostTargetId(evt)
   }
 
   private addRepostByEvent(evt: Event, originalEventAuthor?: string, forcedTargetEventId?: string) {
@@ -852,7 +893,80 @@ class NoteStatsService {
     )
   }
 
-  private addReplyByEvent(evt: Event, originalEventAuthor?: string, forcedOriginalEventId?: string) {
+  /** Walk parent notes (session cache) so subtree reply counts include all ancestors up the chain. */
+  private replyAncestorChainStartingAt(immediateParentId: string): string[] {
+    const chain: string[] = []
+    const seen = new Set<string>()
+    let cur: string | undefined = this.statsKey(immediateParentId)
+    for (let hop = 0; hop < 14; hop++) {
+      if (!cur) break
+      if (seen.has(cur)) break
+      seen.add(cur)
+      chain.push(cur)
+      if (!/^[0-9a-f]{64}$/i.test(cur)) break
+      const parentEv = client.peekSessionCachedEvent(cur)
+      if (!parentEv) break
+      const p = getParentEventHexId(parentEv)
+      if (!p || !/^[0-9a-f]{64}$/i.test(p)) break
+      cur = this.statsKey(p)
+    }
+    return chain
+  }
+
+  /** Append `evt` to `replies` for each note id in `chain` (dedupe per note). */
+  private appendReplyAtAncestorChain(evt: Event, chain: string[]): string[] {
+    const affected: string[] = []
+    for (const rawKey of chain) {
+      const replyKey = this.statsKey(rawKey)
+      const old = this.noteStatsMap.get(replyKey) || {}
+      const replyIdSet = old.replyIdSet || new Set()
+      const replies = old.replies || []
+      if (replyIdSet.has(evt.id)) continue
+      replyIdSet.add(evt.id)
+      replies.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
+      this.noteStatsMap.set(replyKey, { ...old, replyIdSet, replies })
+      affected.push(replyKey)
+    }
+    return affected
+  }
+
+  private addOpReferenceAsThreadResponse(
+    evt: Event,
+    originalEventAuthor: string | undefined,
+    statsRoot: Event
+  ): string[] {
+    if (originalEventAuthor && originalEventAuthor === evt.pubkey) {
+      return []
+    }
+    const rootRef = threadRootRefFromStatsRootEvent(statsRoot)
+    if (!rootRef || !eventReferencesThreadTarget(evt, rootRef)) {
+      return []
+    }
+    const anchor = this.anchorNoteIdForOpReferenceStats(evt, rootRef)
+    if (!anchor) return []
+    const chain = /^[0-9a-f]{64}$/i.test(this.statsKey(anchor))
+      ? this.replyAncestorChainStartingAt(anchor)
+      : [this.statsKey(anchor)]
+    return this.appendReplyAtAncestorChain(evt, chain)
+  }
+
+  private anchorNoteIdForOpReferenceStats(evt: Event, root: TThreadRootRef): string | undefined {
+    const p = getParentEventHexId(evt)
+    if (p && /^[0-9a-f]{64}$/i.test(p)) {
+      return p.toLowerCase()
+    }
+    if (root.type === 'E') return root.id
+    if (root.type === 'A') {
+      const h = root.eventId.trim().toLowerCase()
+      return /^[0-9a-f]{64}$/i.test(h) ? h : root.id
+    }
+    if (root.type === 'I') {
+      return rssArticleStableEventId(canonicalizeRssArticleUrl(root.id))
+    }
+    return undefined
+  }
+
+  private addReplyByEvent(evt: Event, originalEventAuthor?: string, forcedOriginalEventId?: string): string[] {
     let originalEventId: string | undefined = forcedOriginalEventId
 
     if (!originalEventId) {
@@ -880,23 +994,16 @@ class NoteStatsService {
       }
     }
 
-    if (!originalEventId) return
-    const replyKey = this.statsKey(originalEventId)
-
-    const old = this.noteStatsMap.get(replyKey) || {}
-    const replyIdSet = old.replyIdSet || new Set()
-    const replies = old.replies || []
-
-    if (replyIdSet.has(evt.id)) return
-
+    if (!originalEventId) return []
     if (originalEventAuthor && originalEventAuthor === evt.pubkey) {
-      return
+      return []
     }
 
-    replyIdSet.add(evt.id)
-    replies.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
-    this.noteStatsMap.set(replyKey, { ...old, replyIdSet, replies })
-    return replyKey
+    const replyKey = this.statsKey(originalEventId)
+    const chain = /^[0-9a-f]{64}$/i.test(replyKey)
+      ? this.replyAncestorChainStartingAt(originalEventId)
+      : [replyKey]
+    return this.appendReplyAtAncestorChain(evt, chain)
   }
 
   private isQuoteByEvent(evt: Event): boolean {
