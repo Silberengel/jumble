@@ -3,6 +3,7 @@ import ScrollToTopButton from '@/components/ScrollToTopButton'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { Titlebar } from '@/components/Titlebar'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
+import { PrimaryPageScrollAreaRefProvider } from '@/contexts/primary-page-scroll-area-context'
 import type { TPrimaryPageName } from '@/PageManager'
 import { DeepBrowsingProvider } from '@/providers/DeepBrowsingProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -157,8 +158,10 @@ const PrimaryPageLayout = forwardRef(
                   : 'absolute bottom-0 left-0 right-0 top-0 min-w-0 overflow-y-auto overflow-x-auto'
             }
           >
-            {children}
-            <div className="h-4" />
+            <PrimaryPageScrollAreaRefProvider scrollAreaRef={scrollAreaRef}>
+              {children}
+              <div className="h-4" />
+            </PrimaryPageScrollAreaRefProvider>
           </div>
         </div>
         {displayScrollToTopButton && <ScrollToTopButton scrollAreaRef={scrollAreaRef} />}

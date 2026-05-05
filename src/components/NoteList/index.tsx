@@ -65,6 +65,7 @@ import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { formatPubkey, inviteInputToHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { usePrimaryPageOptional } from '@/contexts/primary-page-context'
+import { usePrimaryPageScrollAreaRefOptional } from '@/contexts/primary-page-scroll-area-context'
 import type { TPrimaryPageName } from '@/PageManager'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -154,6 +155,23 @@ function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | n
     el = el.parentElement
   }
   return null
+}
+
+/** Scrollport used by {@link VirtualizedFeedRows} — must sit on the same DOM chain as the list rows. */
+function resolveFeedVirtualScrollAnchor(root: HTMLElement | null, listAnchor: HTMLElement | null): HTMLElement | null {
+  return listAnchor ?? root
+}
+
+/** Prefer the layout’s primary scroll div when the feed is inside it; otherwise walk ancestors. */
+function resolvePrimaryFeedScrollPort(
+  layoutScrollEl: HTMLElement | null,
+  anchor: HTMLElement | null
+): HTMLElement | null {
+  if (!anchor) return null
+  if (layoutScrollEl && layoutScrollEl.contains(anchor)) {
+    return layoutScrollEl
+  }
+  return getNearestScrollableAncestor(anchor)
 }
 
 function distanceFromScrollBottom(scrollRoot: HTMLElement | Window): number {
@@ -709,6 +727,7 @@ const NoteList = forwardRef(
     const [feedClientTimeAmount, setFeedClientTimeAmount] = useState('')
     const [feedClientTimeUnit, setFeedClientTimeUnit] = useState<TFeedClientTimeUnit>('day')
     const supportTouch = useMemo(() => isTouchDevice(), [])
+    const primaryScrollAreaRef = usePrimaryPageScrollAreaRefOptional()
 
     const timelineEventsForFilter = feedFullSearchEvents ?? events
 
@@ -720,8 +739,14 @@ const NoteList = forwardRef(
       displayTimelineSourceRef.current = timelineEventsForFilter
     }, [timelineEventsForFilter])
     const bottomRef = useRef<HTMLDivElement | null>(null)
-    /** List root for resolving the feed’s scroll container (desktop primary layout scrolls a div, not `window`). */
+    /** List root for intersection / load-more wiring (outer NoteList shell). */
     const feedRootRef = useRef<HTMLDivElement | null>(null)
+    /**
+     * Wrapper around the virtualized list block — closer to rows than {@link feedRootRef}, so
+     * {@link getNearestScrollableAncestor} picks the same scrollport the user actually scrolls (e.g.
+     * `react-simple-pull-to-refresh`’s inner panel on touch, or the primary page div on desktop).
+     */
+    const feedListScrollAnchorRef = useRef<HTMLDivElement | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
     const spellFeedFirstPaintLoggedKeyRef = useRef('')
     const consecutiveEmptyRef = useRef(0) // Track consecutive empty results to prevent infinite retries
@@ -1353,15 +1378,53 @@ const NoteList = forwardRef(
      * were still settling (absolute rows could paint past the list bounds).
      */
     useLayoutEffect(() => {
-      const root = feedRootRef.current
-      if (!root) {
-        setFeedVirtualScrollParent(null)
-        setFeedVirtualScrollMarginTop(0)
-        return
+      let alive = true
+      const applyFeedScrollPort = () => {
+        if (!alive) return
+        const anchor = resolveFeedVirtualScrollAnchor(feedRootRef.current, feedListScrollAnchorRef.current)
+        if (!anchor) {
+          setFeedVirtualScrollParent(null)
+          setFeedVirtualScrollMarginTop(0)
+          return
+        }
+        const layoutEl = primaryScrollAreaRef?.current ?? null
+        setFeedVirtualScrollParent(resolvePrimaryFeedScrollPort(layoutEl, anchor))
+        setFeedVirtualScrollMarginTop(anchor.offsetTop)
       }
-      setFeedVirtualScrollParent(getNearestScrollableAncestor(root))
-      setFeedVirtualScrollMarginTop(root.offsetTop)
-    }, [timelineSubscriptionKey, refreshCount])
+
+      applyFeedScrollPort()
+      let innerRaf = 0
+      const outerRaf = requestAnimationFrame(() => {
+        if (!alive) return
+        applyFeedScrollPort()
+        innerRaf = requestAnimationFrame(() => {
+          if (!alive) return
+          applyFeedScrollPort()
+        })
+      })
+      const deferTimer = window.setTimeout(() => {
+        if (!alive) return
+        applyFeedScrollPort()
+      }, 0)
+
+      let ro: ResizeObserver | null = null
+      const root = feedRootRef.current
+      if (root && typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => {
+          if (!alive) return
+          applyFeedScrollPort()
+        })
+        ro.observe(root)
+      }
+
+      return () => {
+        alive = false
+        cancelAnimationFrame(outerRaf)
+        cancelAnimationFrame(innerRaf)
+        window.clearTimeout(deferTimer)
+        ro?.disconnect()
+      }
+    }, [timelineSubscriptionKey, refreshCount, primaryScrollAreaRef])
 
     const clientFilteredNewEvents = useMemo(
       () =>
@@ -3049,8 +3112,9 @@ const NoteList = forwardRef(
       }
 
       const wireScrollPrefetch = () => {
-        const anchor = feedRootRef.current
-        const parent = getNearestScrollableAncestor(anchor)
+        const anchor = resolveFeedVirtualScrollAnchor(feedRootRef.current, feedListScrollAnchorRef.current)
+        const layoutEl = primaryScrollAreaRef?.current ?? null
+        const parent = resolvePrimaryFeedScrollPort(layoutEl, anchor)
         const next: HTMLElement | Window = parent ?? window
         if (scrollPrefetchTarget && scrollPrefetchTarget !== next) {
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
@@ -3099,7 +3163,7 @@ const NoteList = forwardRef(
           loadMoreTimeoutRef.current = null
         }
       }
-    }, [timelineSubscriptionKey])
+    }, [timelineSubscriptionKey, primaryScrollAreaRef])
 
     // CRITICAL: Prefetch embedded events (referenced in e tags, a tags, and content)
     // This ensures embedded events are ready before user scrolls to them
@@ -3623,7 +3687,9 @@ const NoteList = forwardRef(
                   </div>
                 ) : null}
                 {showFeedClientFilter ? feedClientFilterBar : null}
-                {list}
+                <div ref={feedListScrollAnchorRef} className="min-w-0 w-full">
+                  {list}
+                </div>
               </div>
             </PullToRefresh>
           ) : (
@@ -3637,7 +3703,9 @@ const NoteList = forwardRef(
                 </div>
               ) : null}
               {showFeedClientFilter ? feedClientFilterBar : null}
-              {list}
+              <div ref={feedListScrollAnchorRef} className="min-w-0 w-full">
+                {list}
+              </div>
             </div>
           )}
         </NoteFeedProfileContext.Provider>

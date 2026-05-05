@@ -6,7 +6,8 @@ import { memo } from 'react'
 
 const ESTIMATE_NOTE_ROW_PX = 280
 const ESTIMATE_GRID_ROW_PX = 120
-const VIRTUAL_OVERSCAN = 10
+/** Smaller overscan reduces stacked off-screen rows when scroll sync is briefly wrong (Firefox paint glitches). */
+const VIRTUAL_OVERSCAN = 4
 
 export type VirtualizedFeedRowsProps = {
   events: Event[]
@@ -33,12 +34,13 @@ const WindowRows = memo(function WindowRows({
     estimateSize: () => (gridLayout ? ESTIMATE_GRID_ROW_PX : ESTIMATE_NOTE_ROW_PX),
     overscan: VIRTUAL_OVERSCAN,
     scrollMargin: scrollMarginTop,
-    getItemKey: (index) => (gridLayout ? `grid-${index}` : (events[index]?.id ?? `i-${index}`))
+    getItemKey: (index) =>
+      gridLayout ? `grid-${index}` : `${events[index]?.id ?? 'row'}@${index}`
   })
 
   return (
     <div
-      className="relative w-full overflow-hidden"
+      className="relative isolate min-h-0 w-full overflow-x-hidden"
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualizer.getVirtualItems().map((vi) => (
@@ -46,8 +48,8 @@ const WindowRows = memo(function WindowRows({
           key={vi.key}
           data-index={vi.index}
           ref={virtualizer.measureElement}
-          className="absolute left-0 top-0 w-full"
-          style={{ transform: `translateY(${vi.start}px)` }}
+          className="absolute left-0 w-full"
+          style={{ top: vi.start }}
         >
           {gridLayout ? (
             <div className="grid grid-cols-3 gap-0.5 pr-4">
@@ -84,12 +86,13 @@ const ElementRows = memo(function ElementRows({
     getScrollElement: () => scrollElement,
     estimateSize: () => (gridLayout ? ESTIMATE_GRID_ROW_PX : ESTIMATE_NOTE_ROW_PX),
     overscan: VIRTUAL_OVERSCAN,
-    getItemKey: (index) => (gridLayout ? `grid-${index}` : (events[index]?.id ?? `i-${index}`))
+    getItemKey: (index) =>
+      gridLayout ? `grid-${index}` : `${events[index]?.id ?? 'row'}@${index}`
   })
 
   return (
     <div
-      className="relative w-full overflow-hidden"
+      className="relative isolate min-h-0 w-full overflow-x-hidden"
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualizer.getVirtualItems().map((vi) => (
@@ -97,8 +100,8 @@ const ElementRows = memo(function ElementRows({
           key={vi.key}
           data-index={vi.index}
           ref={virtualizer.measureElement}
-          className="absolute left-0 top-0 w-full"
-          style={{ transform: `translateY(${vi.start}px)` }}
+          className="absolute left-0 w-full"
+          style={{ top: vi.start }}
         >
           {gridLayout ? (
             <div className="grid grid-cols-3 gap-0.5 pr-4">
