@@ -103,7 +103,7 @@ function CommentBadge({ event }: { event: Event }) {
     <button
       type="button"
       className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/80 border cursor-pointer text-left min-w-0 w-full"
-      onClick={() => push(toNote(event.id))}
+      onClick={() => push(toNote(event))}
     >
       <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" />
       <MessageCircle className="size-3 shrink-0 text-primary" aria-hidden />
@@ -125,7 +125,7 @@ function ReportBadge({ event }: { event: Event }) {
     <button
       type="button"
       className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/80 border border-destructive/25 hover:bg-muted cursor-pointer text-left min-w-0 w-full"
-      onClick={() => push(toNote(event.id))}
+      onClick={() => push(toNote(event))}
       title={summary}
     >
       <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" />
@@ -143,7 +143,7 @@ function FollowPackBadge({ pack }: { pack: TProfileFollowPack }) {
     <button
       type="button"
       className="flex flex-col gap-1 px-2 py-1.5 rounded-md bg-muted/80 border hover:bg-muted cursor-pointer text-left min-w-0 w-full"
-      onClick={() => push(toNote(pack.event.id))}
+      onClick={() => push(toNote(pack.event))}
       title={pack.title}
     >
       <div className="flex min-w-0 items-center gap-1.5">

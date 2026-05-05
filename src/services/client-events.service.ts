@@ -159,7 +159,10 @@ export class EventService {
   private notifySessionEventWaiters(hexId: string): void {
     const waiters = this.sessionEventWaiters.get(hexId)
     if (!waiters?.size) return
-    for (const cb of [...waiters]) {
+    /** Snapshot + remove before invoking: callbacks often call {@link addEventToCache} again (e.g. embed → addReplies), which would re-enter and stack-overflow otherwise. */
+    const snapshot = [...waiters]
+    this.sessionEventWaiters.delete(hexId)
+    for (const cb of snapshot) {
       try {
         cb()
       } catch (e) {
@@ -174,7 +177,9 @@ export class EventService {
     const key = `${ev.kind}:${ev.pubkey.toLowerCase()}:${dTag}`
     const waiters = this.sessionReplaceableWaiters.get(key)
     if (!waiters?.size) return
-    for (const cb of [...waiters]) {
+    const snapshot = [...waiters]
+    this.sessionReplaceableWaiters.delete(key)
+    for (const cb of snapshot) {
       try {
         cb()
       } catch (e) {
@@ -217,6 +222,8 @@ export class EventService {
     if (hex) {
       if (this.getSessionEventIfAllowed(hex)) {
         queueMicrotask(() => callback())
+        /** Already in cache: do not register a waiter — the next {@link addEventToCache} would notify again and double-fire embeds / useFetchEvent. */
+        return () => {}
       }
 
       let set = this.sessionEventWaiters.get(hex)
@@ -245,6 +252,7 @@ export class EventService {
           })
         ) {
           queueMicrotask(() => callback())
+          return () => {}
         }
         const key = `${data.kind}:${data.pubkey.toLowerCase()}:${identifier}`
         let rset = this.sessionReplaceableWaiters.get(key)
@@ -519,11 +527,22 @@ export class EventService {
       cleanEvent.kind === ExtendedKind.PUBLICATION_CONTENT
     ) {
       // Keep publication replaceables durable for profile/publication builder cache hits.
-      void indexedDb.putReplaceableEvent(cleanEvent as NEvent).catch((error) => {
+      void indexedDb.putReplaceableEvent(cleanEvent as NEvent).catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        const q = err.name === 'QuotaExceededError' || /quota|storage/i.test(err.message)
+        if (q) {
+          logger.debug('[EventService] Skipped publication IndexedDB persist (storage quota)', {
+            kind: cleanEvent.kind,
+            eventId: id
+          })
+          return
+        }
         logger.warn('[EventService] Failed to persist publication event to IndexedDB', {
           kind: cleanEvent.kind,
           eventId: id,
-          error
+          errorMessage: err.message,
+          errorName: err.name,
+          error: err
         })
       })
     }

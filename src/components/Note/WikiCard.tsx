@@ -27,7 +27,7 @@ export default function WikiCard({
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    push(toNote(event.id))
+    push(toNote(event))
   }
 
   const titleComponent = <div className="text-xl font-semibold break-words min-w-0 sm:line-clamp-2">{metadata.title}</div>

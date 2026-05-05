@@ -410,8 +410,12 @@ class IndexedDbService {
       : event.id
     const isTombstoned = await this.isTombstoned(tombstoneKey)
     if (isTombstoned) {
-      logger.debug('[IndexedDB] Skipping tombstoned event', { tombstoneKey, eventId: event.id })
-      return Promise.reject(new Error('Event is tombstoned'))
+      logger.debug('[IndexedDB] Skipping tombstoned replaceable (not persisted)', {
+        tombstoneKey,
+        eventId: event.id
+      })
+      // Optional cache: absence is expected — do not reject (callers would log false-positive failures).
+      return event
     }
     
     // Remove relayStatuses before storing (it's metadata for logging, not part of the event)
@@ -525,24 +529,29 @@ class IndexedDbService {
           resolve(cleanEvent)
         }
 
-        putRequest.onerror = (event) => {
-          logger.error('[IndexedDB] Error putting event!', { 
-            storeName, 
-            key, 
-            error: event, 
-            target: (event.target as any)?.error,
-            errorMessage: (event.target as any)?.error?.message 
+        putRequest.onerror = (ev) => {
+          const err = idbEventToError(ev)
+          logger.error('[IndexedDB] Error putting event!', {
+            storeName,
+            key,
+            errorMessage: err.message,
+            errorName: err.name
           })
-          logger.error('[IndexedDB] Error putting event', { storeName, key, error: event })
           transaction.commit()
-          reject(event)
+          reject(err)
         }
       }
 
-      getRequest.onerror = (event) => {
-        logger.error('[IndexedDB] Error getting existing event', { storeName, key, error: event })
+      getRequest.onerror = (ev) => {
+        const err = idbEventToError(ev)
+        logger.error('[IndexedDB] Error getting existing event', {
+          storeName,
+          key,
+          errorMessage: err.message,
+          errorName: err.name
+        })
         transaction.commit()
-        reject(event)
+        reject(err)
       }
     })
   }
@@ -1196,15 +1205,15 @@ class IndexedDbService {
           resolve(cleanEvent)
         }
 
-        putRequest.onerror = (event) => {
+        putRequest.onerror = (ev) => {
           transaction.commit()
-          reject(event)
+          reject(idbEventToError(ev))
         }
       }
 
-      getRequest.onerror = (event) => {
+      getRequest.onerror = (ev) => {
         transaction.commit()
-        reject(event)
+        reject(idbEventToError(ev))
       }
     })
   }

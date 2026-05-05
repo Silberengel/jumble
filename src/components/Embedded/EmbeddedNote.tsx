@@ -1,26 +1,33 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import ExternalLink from '@/components/ExternalLink'
-import { FAST_READ_RELAY_URLS, SEARCHABLE_RELAY_URLS, ExtendedKind } from '@/constants'
+import {
+  FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
+  PROFILE_RELAY_URLS,
+  SEARCHABLE_RELAY_URLS,
+  ExtendedKind
+} from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
-import { useFetchEvent } from '@/hooks'
+import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { normalizeUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import client from '@/services/client.service'
+import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import nip66Service from '@/services/nip66.service'
+import { navigationEventStore } from '@/services/navigation-event-store'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
+import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useReply } from '@/providers/ReplyProvider'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { relayHintWssUrlsFromEvent } from '@/lib/event'
 import { Event, nip19 } from 'nostr-tools'
 import ClientSelect from '../ClientSelect'
 import MainNoteCard from '../NoteCard/MainNoteCard'
 import UnknownNote from '../Note/UnknownNote'
-import { Button } from '../ui/button'
 import { EmbeddedCalendarEvent } from './EmbeddedCalendarEvent'
-import { Search } from 'lucide-react'
 import logger from '@/lib/logger'
 import { extractBookMetadata } from '@/lib/bookstr-parser'
 import { contentParserService } from '@/services/content-parser.service'
@@ -186,8 +193,8 @@ function SuppressedLiveStreamEmbed({ noteId, className }: { noteId: string; clas
 }
 
 /**
- * Fetches and renders an embedded note. Split out so we never call {@link useFetchEvent} with `undefined`
- * (skipping fetch for suppressed live naddrs is handled in the parent without that hook).
+ * Fetches and renders an embedded note: wide-relay REQ immediately in parallel with the normal
+ * fetch path (no “try external” gate — embeds are always worth the index-relay fan-out).
  */
 function EmbeddedNoteFetched({
   noteId,
@@ -202,19 +209,167 @@ function EmbeddedNoteFetched({
   showFull: boolean
   allowLiveEmbeds: boolean
 }) {
-  const relayHints = useMemo(
+  const { isEventDeleted } = useDeletedEvent()
+  const { addReplies } = useReply()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const [event, setEvent] = useState<Event | undefined>(undefined)
+  const [isFetching, setIsFetching] = useState(true)
+  const eventRef = useRef<Event | undefined>(undefined)
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  eventRef.current = event
+
+  const relayHintsFromParent = useMemo(
     () => relayHintWssUrlsFromEvent(containingEvent),
     [containingEvent?.id]
   )
-  const fetchRelayOpts = useMemo(
-    () => (relayHints.length > 0 ? { relayHints } : undefined),
-    [relayHints]
+  const menuRelayUrls = useMemo(
+    () =>
+      getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+        .map((url) => normalizeUrl(url))
+        .filter((url): url is string => Boolean(url)),
+    [favoriteRelays, blockedRelays]
   )
-  const { event, isFetching } = useFetchEvent(noteId, undefined, fetchRelayOpts)
-  /** Filled when “Try external relays” / IndexedDB recovery finds the event after the hook missed. */
-  const [resolvedEvent, setResolvedEvent] = useState<Event | undefined>(undefined)
+  const wideRelaysStatic = useMemo(
+    () => buildEmbedWideRelayUrlsStatic(menuRelayUrls, relayHintsFromParent),
+    [menuRelayUrls, relayHintsFromParent]
+  )
+  const fetchRelayOpts = useMemo(
+    () => (relayHintsFromParent.length > 0 ? { relayHints: relayHintsFromParent } : undefined),
+    [relayHintsFromParent]
+  )
 
-  const finalEvent = event || resolvedEvent
+  const resolveAndSet = useCallback(
+    (ev: Event | undefined) => {
+      if (!ev || isEventDeleted(ev) || shouldDropEventOnIngest(ev)) return false
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current)
+        retryIntervalRef.current = null
+      }
+      client.addEventToCache(ev)
+      setEvent(ev)
+      addReplies([ev])
+      return true
+    },
+    [addReplies, isEventDeleted]
+  )
+
+  /** Latest relay lists without listing them as effect deps (favorites context churn would re-run the effect and `setEvent(undefined)` wiped loaded embeds → loop / “crash”). */
+  const embedFetchCtxRef = useRef({
+    fetchRelayOpts: undefined as { relayHints?: string[] } | undefined,
+    wideRelaysStatic: [] as string[]
+  })
+  embedFetchCtxRef.current = { fetchRelayOpts, wideRelaysStatic }
+
+  const resolveAndSetRef = useRef(resolveAndSet)
+  resolveAndSetRef.current = resolveAndSet
+
+  const isEventDeletedRef = useRef(isEventDeleted)
+  isEventDeletedRef.current = isEventDeleted
+
+  const containingEventRef = useRef(containingEvent)
+  containingEventRef.current = containingEvent
+
+  useEffect(() => {
+    let cancelled = false
+    const noteKey = noteId.trim()
+    eventRef.current = undefined
+    setEvent(undefined)
+    setIsFetching(true)
+
+    const resolve = (ev: Event | undefined) => resolveAndSetRef.current(ev)
+
+    const tryShortcuts = (): boolean => {
+      const nav = navigationEventStore.getEvent(noteKey)
+      if (nav && resolve(nav)) return true
+      const peek = client.peekSessionCachedEvent(noteKey)
+      if (peek && resolve(peek)) return true
+      return false
+    }
+
+    const runWidePass = async (relayUrls: string[]) => {
+      if (!canSearchOnExternalRelays(noteKey) || relayUrls.length === 0) return undefined
+      const ev = await client.fetchEventWithExternalRelays(noteKey, relayUrls)
+      return ev
+    }
+
+    const runParallelFetch = async () => {
+      const { fetchRelayOpts: opts, wideRelaysStatic: wide0 } = embedFetchCtxRef.current
+      const hex = hexEventIdFromNoteId(noteKey)
+      const primary = client.fetchEvent(noteKey, opts)
+      const wide = runWidePass(wide0)
+      const idb =
+        hex && /^[0-9a-f]{64}$/i.test(hex)
+          ? indexedDb.getEventFromPublicationStore(hex.toLowerCase()).catch(() => undefined)
+          : Promise.resolve(undefined)
+      const [p, w, db] = await Promise.all([primary, wide, idb])
+      if (cancelled) return
+      const chosen = pickUsableEvent([p, w, db], isEventDeletedRef.current)
+      if (chosen) {
+        resolve(chosen)
+        setIsFetching(false)
+        return
+      }
+      setIsFetching(false)
+    }
+
+    if (tryShortcuts()) {
+      setIsFetching(false)
+    } else {
+      void runParallelFetch()
+    }
+
+    void (async () => {
+      if (tryShortcuts() || eventRef.current) return
+      const extra = await loadAsyncEmbedRelayHints(noteKey, containingEventRef.current)
+      if (cancelled || eventRef.current) return
+      const wide0 = embedFetchCtxRef.current.wideRelaysStatic
+      const wideMerged = preferPublicIndexRelaysFirst(dedupeRelayUrls([...wide0, ...extra]))
+      const ev = await runWidePass(wideMerged)
+      if (cancelled || !ev) return
+      resolve(ev)
+    })()
+
+    if (eventRef.current) {
+      return () => {
+        cancelled = true
+        if (retryIntervalRef.current) {
+          clearInterval(retryIntervalRef.current)
+          retryIntervalRef.current = null
+        }
+        setIsFetching(false)
+      }
+    }
+
+    retryIntervalRef.current = setInterval(() => {
+      if (cancelled || eventRef.current) return
+      void (async () => {
+        const opts = embedFetchCtxRef.current.fetchRelayOpts
+        const ev = await client.fetchEventForceRetry(noteKey, opts)
+        if (!cancelled && ev) resolve(ev)
+      })()
+    }, 8000)
+
+    return () => {
+      cancelled = true
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current)
+        retryIntervalRef.current = null
+      }
+      setIsFetching(false)
+    }
+    /** Only the embed pointer and parent note identity — not relay arrays / callbacks (avoids wipe+refetch loops). */
+  }, [noteId, containingEvent?.id])
+
+  useEffect(() => {
+    if (!noteId.trim() || event !== undefined) return undefined
+    const id = noteId.trim()
+    return eventService.subscribeWhenSessionHasEvent(id, () => {
+      const peek = client.peekSessionCachedEvent(id)
+      if (peek) resolveAndSetRef.current(peek)
+    })
+  }, [noteId, event])
+
+  const finalEvent = event
 
   if (isFetching && !finalEvent) {
     return <EmbeddedNoteSkeleton className={className} />
@@ -222,12 +377,14 @@ function EmbeddedNoteFetched({
 
   if (!finalEvent) {
     return (
-      <EmbeddedNoteNotFound
-        className={className}
-        noteId={noteId}
-        onEventFound={setResolvedEvent}
-        containingEvent={containingEvent}
-      />
+      <div
+        className={cn('not-prose max-w-full text-left p-3 border rounded-lg border-dashed', className)}
+        onClick={(e) => e.stopPropagation()}
+        data-embedded-note-loading
+      >
+        <EmbeddedNoteSkeleton className="border-0 p-0 shadow-none" />
+        <ClientSelect className="w-full mt-3" originalNoteId={noteId.trim() || undefined} />
+      </div>
     )
   }
 
@@ -347,6 +504,95 @@ function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
   return [...urls].sort((a, b) => score(a) - score(b) || a.localeCompare(b))
 }
 
+/** Static + menu favorites: REQ immediately on embed mount (no NIP-65 round-trip first). */
+function buildEmbedWideRelayUrlsStatic(menuRelayUrls: string[], relayHintsFromParent: string[]): string[] {
+  return preferPublicIndexRelaysFirst(
+    dedupeRelayUrls([
+      ...relayHintsFromParent,
+      ...nip66Service.getSearchableRelayUrls(),
+      ...SEARCHABLE_RELAY_URLS,
+      ...FAST_READ_RELAY_URLS,
+      ...FAST_WRITE_RELAY_URLS,
+      ...PROFILE_RELAY_URLS,
+      ...menuRelayUrls,
+    ])
+  )
+}
+
+/** NIP-65 / nevent relays / seen-on — merged into a second wide REQ if the first pass missed. */
+async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event): Promise<string[]> {
+  const hintRelays: string[] = []
+  const resolvedHexId = (() => {
+    const h = hexEventIdFromNoteId(noteId)
+    if (h) return h
+    try {
+      const { type, data } = nip19.decode(noteId.trim())
+      if (type === 'nevent') return data.id
+      if (type === 'note') return data
+    } catch {
+      return null
+    }
+    return null
+  })()
+
+  if (containingEvent) {
+    try {
+      const containingAuthorRelayList = await client
+        .fetchRelayList(containingEvent.pubkey)
+        .catch(() => ({ read: [] as string[], write: [] as string[] }))
+      hintRelays.push(
+        ...(containingAuthorRelayList.read ?? []).slice(0, 12),
+        ...(containingAuthorRelayList.write ?? []).slice(0, 12)
+      )
+    } catch (err) {
+      logger.debug('[EmbeddedNote] containing author relays failed', { error: err })
+    }
+  }
+
+  try {
+    const { type, data } = nip19.decode(noteId.trim())
+    if (type === 'nevent') {
+      if (data.relays) hintRelays.push(...data.relays)
+      if (data.author) {
+        const authorRelayList = await client
+          .fetchRelayList(data.author)
+          .catch(() => ({ read: [] as string[], write: [] as string[] }))
+        hintRelays.push(
+          ...(authorRelayList.read ?? []).slice(0, 12),
+          ...(authorRelayList.write ?? []).slice(0, 12)
+        )
+      }
+    } else if (type === 'naddr') {
+      if (data.relays) hintRelays.push(...data.relays)
+      const authorRelayList = await client
+        .fetchRelayList(data.pubkey)
+        .catch(() => ({ read: [] as string[], write: [] as string[] }))
+      hintRelays.push(
+        ...(authorRelayList.read ?? []).slice(0, 12),
+        ...(authorRelayList.write ?? []).slice(0, 12)
+      )
+    }
+  } catch {
+    /* invalid */
+  }
+
+  if (resolvedHexId) {
+    hintRelays.push(...client.getSeenEventRelayUrls(resolvedHexId))
+  }
+  return dedupeRelayUrls(hintRelays)
+}
+
+function pickUsableEvent(
+  candidates: (Event | undefined)[],
+  isEventDeleted: (e: Event) => boolean
+): Event | undefined {
+  for (const e of candidates) {
+    if (!e || isEventDeleted(e) || shouldDropEventOnIngest(e)) continue
+    return e
+  }
+  return undefined
+}
+
 function EmbeddedNoteSkeleton({ className }: { className?: string }) {
   return (
     <div
@@ -362,297 +608,6 @@ function EmbeddedNoteSkeleton({ className }: { className?: string }) {
       </div>
       <Skeleton className="w-full h-4 my-1 mt-2" />
       <Skeleton className="w-2/3 h-4 my-1" />
-    </div>
-  )
-}
-
-function EmbeddedNoteNotFound({ 
-  noteId, 
-  className,
-  onEventFound,
-  containingEvent
-}: { 
-  noteId: string
-  className?: string
-  onEventFound?: (event: Event) => void
-  containingEvent?: Event // Event that contains this embedded note - use its author's relays and relay hints
-}) {
-  const { t } = useTranslation()
-  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const menuRelayUrls = useMemo(
-    () =>
-      getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-        .map((url) => normalizeUrl(url))
-        .filter((url): url is string => Boolean(url)),
-    [favoriteRelays, blockedRelays]
-  )
-  const [isSearchingExternal, setIsSearchingExternal] = useState(false)
-  const [triedExternal, setTriedExternal] = useState(false)
-  const [asyncHintRelays, setAsyncHintRelays] = useState<string[]>([])
-  const [externalSearchDetail, setExternalSearchDetail] = useState<
-    null | 'unparseable' | 'no_relays' | 'searched'
-  >(null)
-
-  const resolvedHexId = useMemo(() => {
-    const h = hexEventIdFromNoteId(noteId)
-    if (h) return h
-    try {
-      const { type, data } = nip19.decode(noteId.trim())
-      if (type === 'nevent') return data.id
-      if (type === 'note') return data
-    } catch {
-      /* plain hex handled above */
-    }
-    return null
-  }, [noteId])
-
-  /** Always available immediately: static searchable + fast-read + favorites + NIP-66 search-capable relays. */
-  const coreExternalRelays = useMemo(
-    () =>
-      preferPublicIndexRelaysFirst(
-        dedupeRelayUrls([
-          ...nip66Service.getSearchableRelayUrls(),
-          ...SEARCHABLE_RELAY_URLS,
-          ...FAST_READ_RELAY_URLS,
-          ...menuRelayUrls,
-        ])
-      ),
-    [menuRelayUrls]
-  )
-
-  const externalRelays = useMemo(
-    () => preferPublicIndexRelaysFirst(dedupeRelayUrls([...asyncHintRelays, ...coreExternalRelays])),
-    [asyncHintRelays, coreExternalRelays]
-  )
-
-  // Extra hints (parent tags, NIP-65, nevent/naddr relay lists, “seen on”) — merged on top of {@link coreExternalRelays}.
-  useEffect(() => {
-    let cancelled = false
-    const loadHints = async () => {
-      const hintRelays: string[] = []
-
-      if (containingEvent) {
-        for (const tag of containingEvent.tags) {
-          if (['e', 'a', 'q'].includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
-            const hint = tag[2]
-            if (hint.startsWith('wss://') || hint.startsWith('ws://')) hintRelays.push(hint)
-          }
-        }
-        try {
-          const containingAuthorRelayList = await client
-            .fetchRelayList(containingEvent.pubkey)
-            .catch(() => ({ read: [] as string[], write: [] as string[] }))
-          hintRelays.push(
-            ...(containingAuthorRelayList.read ?? []).slice(0, 10),
-            ...(containingAuthorRelayList.write ?? []).slice(0, 10)
-          )
-        } catch (err) {
-          logger.debug('Failed to fetch containing event author relays', { error: err })
-        }
-      }
-
-      try {
-        const { type, data } = nip19.decode(noteId.trim())
-        if (type === 'nevent') {
-          if (data.relays) hintRelays.push(...data.relays)
-          if (data.author) {
-            const authorRelayList = await client
-              .fetchRelayList(data.author)
-              .catch(() => ({ read: [] as string[], write: [] as string[] }))
-            hintRelays.push(
-              ...(authorRelayList.read ?? []).slice(0, 10),
-              ...(authorRelayList.write ?? []).slice(0, 10)
-            )
-          }
-        } else if (type === 'naddr') {
-          if (data.relays) hintRelays.push(...data.relays)
-          const authorRelayList = await client
-            .fetchRelayList(data.pubkey)
-            .catch(() => ({ read: [] as string[], write: [] as string[] }))
-          hintRelays.push(
-            ...(authorRelayList.read ?? []).slice(0, 10),
-            ...(authorRelayList.write ?? []).slice(0, 10)
-          )
-        }
-      } catch {
-        /* invalid bech32 */
-      }
-
-      const seenOn = resolvedHexId ? client.getSeenEventRelayUrls(resolvedHexId) : []
-      hintRelays.push(...seenOn)
-
-      if (!cancelled) {
-        setAsyncHintRelays(dedupeRelayUrls(hintRelays))
-        logger.debug('External relay hints merged', {
-          noteId,
-          hintCount: hintRelays.length,
-          totalRelays: dedupeRelayUrls([...hintRelays, ...coreExternalRelays]).length
-        })
-      }
-    }
-
-    void loadHints()
-    return () => {
-      cancelled = true
-    }
-  }, [noteId, containingEvent?.id, resolvedHexId, coreExternalRelays])
-
-  const handleTryExternalRelays = async () => {
-    if (isSearchingExternal) return
-
-    if (!canSearchOnExternalRelays(noteId)) {
-      logger.warn('External relay search skipped: unsupported note id', { noteId })
-      setExternalSearchDetail('unparseable')
-      setTriedExternal(true)
-      return
-    }
-
-    if (externalRelays.length === 0) {
-      logger.warn('No external relays to search', { noteId })
-      setExternalSearchDetail('no_relays')
-      setTriedExternal(true)
-      return
-    }
-
-    setIsSearchingExternal(true)
-    setExternalSearchDetail(null)
-    let found: Event | undefined
-    try {
-      const idHex = resolvedHexId ?? hexEventIdFromNoteId(noteId)
-      if (idHex) {
-        const fromDb = await indexedDb.getEventFromPublicationStore(idHex)
-        if (fromDb) {
-          client.addEventToCache(fromDb)
-          found = fromDb
-          onEventFound?.(fromDb)
-          logger.info('Event found in IndexedDB (try-harder)', { noteId })
-        }
-      }
-
-      if (!found) {
-        const retried = await client.fetchEventForceRetry(noteId)
-        if (retried) {
-          found = retried
-          onEventFound?.(retried)
-          logger.info('Event found after fetchEventForceRetry', { noteId })
-        }
-      }
-
-      if (!found) {
-        const idLog = idHex ?? noteId.slice(0, 16)
-        logger.info('Searching external relays', {
-          noteId,
-          hexOrHint: idLog,
-          relayCount: externalRelays.length,
-          relays: externalRelays.slice(0, 5)
-        })
-
-        const event = await client.fetchEventWithExternalRelays(noteId, externalRelays)
-        if (event) {
-          logger.info('Event found on external relay', { noteId })
-          found = event
-          client.addEventToCache(event)
-          onEventFound?.(event)
-        }
-      }
-
-      if (!found) {
-        logger.info('Event not found on external relays', {
-          noteId,
-          relayCount: externalRelays.length
-        })
-        setExternalSearchDetail('searched')
-      }
-    } catch (error) {
-      logger.error('External relay fetch failed', { error, noteId, externalRelays })
-      setExternalSearchDetail('searched')
-    } finally {
-      setIsSearchingExternal(false)
-      if (!found) {
-        setTriedExternal(true)
-      }
-    }
-  }
-
-  const hasExternalRelays = externalRelays.length > 0
-  const showExternalTryButton =
-    !triedExternal && hasExternalRelays && canSearchOnExternalRelays(noteId)
-
-  return (
-    <div className={cn('not-prose max-w-full text-left p-3 border rounded-lg', className)}>
-      <div className="flex flex-col items-center text-muted-foreground gap-3">
-        <div className="text-sm font-medium">{t('Note not found')}</div>
-        
-        {showExternalTryButton && (
-          <div className="flex flex-col items-center gap-2 w-full">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                void handleTryExternalRelays()
-              }}
-              disabled={isSearchingExternal}
-              className="gap-2 w-full"
-            >
-              {isSearchingExternal ? (
-                <>
-                  <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />
-                  {t('Searching...')}
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4" />
-                  {t('Try external relays')} ({externalRelays.length})
-                </>
-              )}
-            </Button>
-            <details className="text-xs text-muted-foreground w-full">
-              <summary className="cursor-pointer hover:text-foreground text-center list-none">
-                {t('Show relays')}
-              </summary>
-              <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
-                {externalRelays.map((relay, i) => (
-                  <div key={i} className="font-mono text-[10px] truncate px-2 py-0.5 bg-muted/50 rounded">
-                    {relay}
-                  </div>
-                ))}
-              </div>
-            </details>
-          </div>
-        )}
-        
-        {!triedExternal && !hasExternalRelays && (
-          <div className="text-xs text-center">{t('No external relay hints available')}</div>
-        )}
-
-        {!triedExternal && hasExternalRelays && !canSearchOnExternalRelays(noteId) && (
-          <div className="text-xs text-center text-muted-foreground">
-            {t('External relay search is not available for this link type')}
-          </div>
-        )}
-
-        {triedExternal && externalSearchDetail === 'unparseable' && (
-          <div className="text-xs text-center">{t('External relay search is not available for this link type')}</div>
-        )}
-
-        {triedExternal && externalSearchDetail === 'no_relays' && (
-          <div className="text-xs text-center">{t('No external relay hints available')}</div>
-        )}
-
-        {triedExternal && externalSearchDetail === 'searched' && (
-          <div className="text-xs text-center">
-            {t('Searched external relays not found', { count: externalRelays.length })}
-          </div>
-        )}
-
-        {triedExternal && !externalSearchDetail && (
-          <div className="text-xs text-center">{t('Note could not be found anywhere')}</div>
-        )}
-        
-        <ClientSelect className="w-full" originalNoteId={noteId} />
-      </div>
     </div>
   )
 }
@@ -703,7 +658,12 @@ function EmbeddedBookstrEvent({ event, originalNoteId, className }: { event: Eve
           return
         }
         e.stopPropagation()
-        const noteUrl = toNote(originalNoteId ?? event)
+        const noteUrl = toNote(
+          originalNoteId ?? event,
+          typeof originalNoteId === 'string' && /^[0-9a-f]{64}$/i.test(originalNoteId.trim())
+            ? event
+            : undefined
+        )
         navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
       }}
     >

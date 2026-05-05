@@ -42,7 +42,7 @@ export default function LongFormCard({
   const handleCardClick = (e: React.MouseEvent) => {
     if (!interactive) return
     e.stopPropagation()
-    push(toNote(event.id))
+    push(toNote(event))
   }
 
   const titleComponent = (

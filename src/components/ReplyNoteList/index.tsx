@@ -1166,12 +1166,29 @@ function ReplyNoteList({
                 limit: LIMIT
               }
             )
+            // Many clients tag only `#e` with the published snapshot id (not `#a`). Mirror the E-root
+            // filters so kind-1 threads and op-reference kinds are not missed on longform/wiki URLs.
             if (/^[0-9a-f]{64}$/i.test(rootInfo.eventId)) {
+              const eSnap = rootInfo.eventId.trim().toLowerCase()
               filters.push({
-                '#e': [rootInfo.eventId],
+                '#e': [eSnap],
+                kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                limit: LIMIT
+              })
+              filters.push({
+                '#E': [eSnap],
+                kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                limit: LIMIT
+              })
+              filters.push({
+                '#e': [eSnap],
                 kinds: [kinds.Reaction],
                 limit: LIMIT
               })
+              for (const chunk of opRefChunks) {
+                filters.push({ '#e': [eSnap], kinds: chunk, limit: LIMIT })
+                filters.push({ '#E': [eSnap], kinds: chunk, limit: LIMIT })
+              }
             }
             const qVals = Array.from(
               new Set(
@@ -1564,7 +1581,7 @@ function ReplyNoteList({
                     highlightReply(parentEventHexId)
                   }}
                   onClickReply={belongsToSameThread ? (replyEvent) => {
-                    const replyNoteUrl = toNote(replyEvent.id)
+                    const replyNoteUrl = toNote(replyEvent)
                     window.history.pushState(null, '', replyNoteUrl)
                     const replyIndex = mergedFeed.findIndex((r) => r.id === replyEvent.id)
                     if (replyIndex >= 0 && replyIndex >= showCount) {

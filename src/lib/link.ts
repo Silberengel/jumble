@@ -1,9 +1,22 @@
 import { Event, nip19 } from 'nostr-tools'
-import { getNoteBech32Id } from './event'
+import { getNoteBech32Id, isReplaceableEvent } from './event'
 import { TSearchParams } from '@/types'
 
-export const toNote = (eventOrId: Event | string) => {
-  if (typeof eventOrId === 'string') return `/notes/${eventOrId}`
+/**
+ * Note URL path segment. When `eventOrId` is a 64-char hex id and `hexResolutionEvent` is a loaded
+ * replaceable/addressable event for that note, use its naddr/nevent so links stay canonical.
+ */
+export const toNote = (eventOrId: Event | string, hexResolutionEvent?: Event) => {
+  if (typeof eventOrId === 'string') {
+    if (
+      hexResolutionEvent &&
+      /^[0-9a-f]{64}$/i.test(eventOrId.trim()) &&
+      isReplaceableEvent(hexResolutionEvent.kind)
+    ) {
+      return `/notes/${getNoteBech32Id(hexResolutionEvent)}`
+    }
+    return `/notes/${eventOrId}`
+  }
   const nevent = getNoteBech32Id(eventOrId)
   return `/notes/${nevent}`
 }

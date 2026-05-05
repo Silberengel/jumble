@@ -80,7 +80,7 @@ export default function Zap({
     e.stopPropagation()
     if (isEventZap) {
       if (targetEvent) {
-        navigateToNote(toNote(targetEvent.id), targetEvent)
+        navigateToNote(toNote(targetEvent), targetEvent)
       } else if (zapInfo.eventId) {
         navigateToNote(toNote(zapInfo.eventId))
       }

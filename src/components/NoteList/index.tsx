@@ -235,6 +235,56 @@ function feedTimelineAlreadyRepresentsNip18Target(targetId: string | undefined, 
   return false
 }
 
+/**
+ * `mergeEventBatchesById` only dedupes by event id; multiple kind-6/16 reposts of the same target stay
+ * separate. Collapse to one timeline row per target (first row in array order wins — live merges are
+ * newest-first). Dropped rows still update `noteStatsService` for “boosted by” aggregation, same as
+ * `onNew` / `showNewEvents`.
+ */
+function collapseDuplicateNip18RepostTimelineRows(sortedNewestFirst: Event[]): Event[] {
+  const kept: Event[] = []
+  const statsOnly: Event[] = []
+  for (const e of sortedNewestFirst) {
+    if (isNip18RepostKind(e.kind)) {
+      const t = getNip18RepostTargetId(e)
+      if (t && feedTimelineAlreadyRepresentsNip18Target(t, kept)) {
+        statsOnly.push(e)
+        continue
+      }
+      kept.push(e)
+      continue
+    }
+    const idKey = normalizeFeedRepostTargetKey(e.id)
+    const coveredByRepost = kept.some((k) => {
+      if (!isNip18RepostKind(k.kind)) return false
+      const rt = getNip18RepostTargetId(k)
+      return Boolean(rt && normalizeFeedRepostTargetKey(rt) === idKey)
+    })
+    if (coveredByRepost) {
+      statsOnly.push(e)
+      continue
+    }
+    if (isReplaceableEvent(e.kind)) {
+      const coord = getReplaceableCoordinateFromEvent(e)
+      const coordNorm = normalizeFeedRepostTargetKey(coord)
+      const coveredByCoordRepost = kept.some((k) => {
+        if (!isNip18RepostKind(k.kind)) return false
+        const rt = getNip18RepostTargetId(k)
+        return Boolean(rt && normalizeFeedRepostTargetKey(rt) === coordNorm)
+      })
+      if (coveredByCoordRepost) {
+        statsOnly.push(e)
+        continue
+      }
+    }
+    kept.push(e)
+  }
+  if (statsOnly.length > 0) {
+    noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
+  }
+  return kept
+}
+
 const FEED_PROFILE_PREFETCH_MAX_P_TAGS = 64
 const FEED_STATS_PROFILE_REPOSTS_CAP = 48
 const FEED_STATS_PROFILE_LIKES_PER_NOTE = 8
@@ -1801,8 +1851,9 @@ const NoteList = forwardRef(
         if (!keepExistingTimelineEvents) {
           if (restoredFromSession && sessionSnap) {
             feedPaintSessionPendingRef.current = true
-            setEvents(sessionSnap)
-            lastEventsForTimelinePrefetchRef.current = sessionSnap
+            const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
+            setEvents(restored)
+            lastEventsForTimelinePrefetchRef.current = restored
             setNewEvents([])
             setShowCount(revealBatchSize ?? SHOW_COUNT)
             setLoading(!!oneShotFetch)
@@ -1949,6 +2000,7 @@ const NoteList = forwardRef(
                 if (mergeCmp) {
                   next = [...next].sort(mergeCmp)
                 }
+                next = collapseDuplicateNip18RepostTimelineRows(next)
                 lastEventsForTimelinePrefetchRef.current = next
                 return next
               })
@@ -1979,8 +2031,9 @@ const NoteList = forwardRef(
                     : {})
                 })
               }
-              setEvents(merged)
-              lastEventsForTimelinePrefetchRef.current = merged
+              const collapsed = collapseDuplicateNip18RepostTimelineRows(merged)
+              setEvents(collapsed)
+              lastEventsForTimelinePrefetchRef.current = collapsed
             }
             if (oneShotDebugLabel && isProgressiveLayers) {
               const f0 = mappedSubRequests[0]?.filter
@@ -2170,7 +2223,9 @@ const NoteList = forwardRef(
                             narrowed,
                             oneShotAfterMergeComparatorRef.current
                           )
-                        : mergeEventBatchesById(prev, narrowed, eventCap, areAlgoRelays)
+                        : collapseDuplicateNip18RepostTimelineRows(
+                            mergeEventBatchesById(prev, narrowed, eventCap, areAlgoRelays)
+                          )
                       lastEventsForTimelinePrefetchRef.current = next
                       return next
                     })
@@ -2535,7 +2590,9 @@ const NoteList = forwardRef(
                 if (batch.length > 0) {
                   if (narrowed.length > 0) {
                     setEvents((prev) => {
-                      const next = mergeEventBatchesById(prev, narrowed, eventCapDelta, areAlgoRelays)
+                      const next = collapseDuplicateNip18RepostTimelineRows(
+                        mergeEventBatchesById(prev, narrowed, eventCapDelta, areAlgoRelays)
+                      )
                       lastEventsForTimelinePrefetchRef.current = next
                       return next
                     })
@@ -3009,7 +3066,9 @@ const NoteList = forwardRef(
 
             consecutiveEmptyRef.current = 0
 
-            setEvents((oldEvents) => [...oldEvents, ...toAppend])
+            setEvents((oldEvents) =>
+              collapseDuplicateNip18RepostTimelineRows([...oldEvents, ...toAppend])
+            )
             
             // After appending, the bottom sentinel may have moved below the fold. Re-check after
             // paint: if it's still in/near view, trigger loadMore again so user doesn't have to scroll.

@@ -72,7 +72,12 @@ export default function MainNoteCard({
         }
         e.stopPropagation()
         client.addEventToCache(event)
-        const noteUrl = toNote(originalNoteId ?? event)
+        const noteUrl = toNote(
+          originalNoteId ?? event,
+          typeof originalNoteId === 'string' && /^[0-9a-f]{64}$/i.test(originalNoteId.trim())
+            ? event
+            : undefined
+        )
         navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
       }}
     >
