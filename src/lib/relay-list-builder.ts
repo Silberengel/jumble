@@ -64,6 +64,13 @@ export interface RelayListBuilderOptions {
   includeLocalRelays?: boolean
   /** Whether to include user's favorite relays (kind 10012) */
   includeFavoriteRelays?: boolean
+  /**
+   * When true with fast-read / searchable includes: insert `FAST_READ_RELAY_URLS` and
+   * `SEARCHABLE_RELAY_URLS` immediately after hints/seen/containing and **before** author + user
+   * NIP-65 lists. Used for single-event / embed fetches so public mirrors (e.g. nos.lol) are not
+   * queued behind dozens of personal relays under the global connection cap.
+   */
+  preferPublicReadRelaysEarly?: boolean
 }
 
 /**
@@ -83,7 +90,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     includeSearchableRelays = false,
     blockedRelays = [],
     includeLocalRelays = true,
-    includeFavoriteRelays = false
+    includeFavoriteRelays = false,
+    preferPublicReadRelaysEarly = false
   } = options
 
   const relayUrls = new Set<string>()
@@ -113,6 +121,16 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
 
   // 3. Relays where containing event was found (for embedded events)
   containingEventRelays.forEach(addRelay)
+
+  // 3b. Public read / index relays before author + user NIP-65 expansion (embed + fetchEvent).
+  if (preferPublicReadRelaysEarly) {
+    if (includeFastReadRelays) {
+      FAST_READ_RELAY_URLS.forEach(addRelay)
+    }
+    if (includeSearchableRelays) {
+      SEARCHABLE_RELAY_URLS.forEach(addRelay)
+    }
+  }
 
   // 4. Author's outboxes (write relays) - where they publish
   if (authorPubkey) {
@@ -257,7 +275,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   // 7. Fast read relays (fallback)
-  if (includeFastReadRelays) {
+  if (includeFastReadRelays && !preferPublicReadRelaysEarly) {
     FAST_READ_RELAY_URLS.forEach(addRelay)
   }
 
@@ -267,7 +285,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   // 9. Searchable relays (for search)
-  if (includeSearchableRelays) {
+  if (includeSearchableRelays && !preferPublicReadRelaysEarly) {
     SEARCHABLE_RELAY_URLS.forEach(addRelay)
   }
 

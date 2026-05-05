@@ -112,6 +112,24 @@ function sanitizeFiltersBeforeReq(filter: Filter | Filter[]): Filter[] {
   return splitFiltersByMaxKindCount(sanitized)
 }
 
+/** True for single-replaceable REQ (`#a` coordinate or legacy `authors` + `#d`). */
+function filterHasReplaceableCoordinate(f: Filter): boolean {
+  if ((f.limit ?? 0) !== 1 || !f.kinds?.length) return false
+  const a = (f as Record<string, unknown>)['#a']
+  if (Array.isArray(a) && a.length > 0 && typeof a[0] === 'string' && String(a[0]).includes(':')) {
+    return true
+  }
+  if (f.authors?.length === 1) {
+    const d = (f as Record<string, unknown>)['#d']
+    return Array.isArray(d) && d.length > 0
+  }
+  return false
+}
+
+function someFilterHasReplaceableCoordinate(filters: Filter[]): boolean {
+  return filters.some(filterHasReplaceableCoordinate)
+}
+
 export interface QueryOptions {
   eoseTimeout?: number
   globalTimeout?: number
@@ -439,12 +457,18 @@ export class QueryService {
           const filters = sanitizedFilters
           const maxLimit = Math.max(...filters.map((f) => (f.limit ?? 0) as number), 0)
           const isSingleEventFetch = maxLimit === 1
-          const hasIdFilter = filters.some(f => f.ids && f.ids.length > 0)
+          const hasIdFilter = filters.some((f) => f.ids && f.ids.length > 0)
+          const hasReplaceableCoordFilter = someFilterHasReplaceableCoordinate(filters)
 
           // For immediateReturn: return as soon as we find the event
           // This is critical for non-replaceable events (not in 10000-19999 or 30000-39999 ranges)
           // which should be rendered ASAP
-          if (immediateReturn && hasIdFilter && isSingleEventFetch && events.length > 0) {
+          if (
+            immediateReturn &&
+            (hasIdFilter || hasReplaceableCoordFilter) &&
+            isSingleEventFetch &&
+            events.length > 0
+          ) {
             resolveWithEvents()
             return
           }

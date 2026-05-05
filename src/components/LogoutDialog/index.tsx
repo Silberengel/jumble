@@ -18,7 +18,7 @@ import {
   DrawerTitle
 } from '@/components/ui/drawer'
 import { useNostr } from '@/providers/NostrProvider'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
+import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { useTranslation } from 'react-i18next'
 
 export default function LogoutDialog({
@@ -29,7 +29,7 @@ export default function LogoutDialog({
   setOpen: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const { isSmallScreen } = useScreenSize()
+  const { isSmallScreen = false } = useScreenSizeOptional() ?? {}
   const { account, switchAccount } = useNostr()
 
   const handleLogout = () => {

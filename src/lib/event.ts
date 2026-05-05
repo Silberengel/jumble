@@ -1,7 +1,7 @@
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
-import { cleanUrl } from '@/lib/url'
+import { cleanUrl, normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { TImetaInfo } from '@/types'
 import { LRUCache } from 'lru-cache'
@@ -614,6 +614,37 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
     hexIds: Array.from(hexSet),
     nip19Pointers: Array.from(nip19Set)
   }
+}
+
+/**
+ * `wss://` / `ws://` hints from `e`/`a`/`q` third field, `relays` tags, and relays that delivered the parent event.
+ * Used to resolve embedded notes from the same context (e.g. long-form body) before the generic relay fan-out.
+ */
+export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
+  if (!event) return []
+  const hints: string[] = []
+  for (const tag of event.tags) {
+    if (['e', 'a', 'q'].includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
+      const hint = tag[2]
+      if (hint.startsWith('wss://') || hint.startsWith('ws://')) hints.push(hint)
+    }
+  }
+  const relaysTag = event.tags.find((t) => t[0] === 'relays')
+  if (relaysTag) {
+    for (let i = 1; i < relaysTag.length; i++) {
+      const u = relaysTag[i]
+      if (typeof u === 'string' && (u.startsWith('wss://') || u.startsWith('ws://'))) hints.push(u)
+    }
+  }
+  try {
+    hints.push(...client.getSeenEventRelayUrls(event.id))
+  } catch {
+    /* ignore */
+  }
+  const normalized = hints
+    .map((u) => normalizeUrl(u))
+    .filter((u): u is string => Boolean(u))
+  return [...new Set(normalized)]
 }
 
 function getEmbeddedPubkeys(event: Event) {

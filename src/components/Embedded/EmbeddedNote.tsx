@@ -9,9 +9,11 @@ import { normalizeUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import nip66Service from '@/services/nip66.service'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState } from 'react'
+import { relayHintWssUrlsFromEvent } from '@/lib/event'
 import { Event, nip19 } from 'nostr-tools'
 import ClientSelect from '../ClientSelect'
 import MainNoteCard from '../NoteCard/MainNoteCard'
@@ -80,6 +82,7 @@ export function EmbeddedNote({
   noteId: string
   className?: string
   containingEvent?: Event
+  /** True = full long-form/publication body; false = compact card (use inside articles). */
   showFull?: boolean
 }) {
   const suppress = useSuppressEmbeddedNoteId()
@@ -199,47 +202,33 @@ function EmbeddedNoteFetched({
   showFull: boolean
   allowLiveEmbeds: boolean
 }) {
-  const { event, isFetching } = useFetchEvent(noteId)
-  const [retryEvent, setRetryEvent] = useState<Event | undefined>(undefined)
-  const [isRetrying, setIsRetrying] = useState(false)
-  const [retryCount, setRetryCount] = useState(0)
-  const maxRetries = 3
+  const relayHints = useMemo(
+    () => relayHintWssUrlsFromEvent(containingEvent),
+    [containingEvent?.id]
+  )
+  const fetchRelayOpts = useMemo(
+    () => (relayHints.length > 0 ? { relayHints } : undefined),
+    [relayHints]
+  )
+  const { event, isFetching } = useFetchEvent(noteId, undefined, fetchRelayOpts)
+  /** Filled when “Try external relays” / IndexedDB recovery finds the event after the hook missed. */
+  const [resolvedEvent, setResolvedEvent] = useState<Event | undefined>(undefined)
 
-  // If the first fetch fails, try a force retry (max 3 attempts)
-  useEffect(() => {
-    if (!isFetching && !event && !isRetrying && retryCount < maxRetries) {
-      setIsRetrying(true)
-      setRetryCount(prev => prev + 1)
-      
-      client.fetchEventForceRetry(noteId)
-        .then((retryResult: any) => {
-          if (retryResult) {
-            setRetryEvent(retryResult)
-          }
-        })
-        .catch((error: any) => {
-          logger.warn('EmbeddedNote retry failed', {
-            attempt: retryCount + 1,
-            maxRetries,
-            noteId,
-            error
-          })
-        })
-        .finally(() => {
-          setIsRetrying(false)
-        })
-    }
-  }, [isFetching, event, noteId, isRetrying, retryCount])
+  const finalEvent = event || resolvedEvent
 
-  const finalEvent = event || retryEvent
-  const finalIsFetching = isFetching || (isRetrying && retryCount <= maxRetries)
-
-  if (finalIsFetching) {
+  if (isFetching && !finalEvent) {
     return <EmbeddedNoteSkeleton className={className} />
   }
 
   if (!finalEvent) {
-    return <EmbeddedNoteNotFound className={className} noteId={noteId} onEventFound={setRetryEvent} containingEvent={containingEvent} />
+    return (
+      <EmbeddedNoteNotFound
+        className={className}
+        noteId={noteId}
+        onEventFound={setResolvedEvent}
+        containingEvent={containingEvent}
+      />
+    )
   }
 
   if (
@@ -340,6 +329,24 @@ function EmbeddedNoteContent({
   )
 }
 
+function dedupeRelayUrls(urls: readonly string[]): string[] {
+  return [...new Set(urls.map((u) => (normalizeUrl(u?.trim()) || '') as string).filter(Boolean))]
+}
+
+/** Prefer relays that usually hold / index replaceables so REQ opens useful targets first. */
+function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
+  const score = (u: string) => {
+    const x = u.toLowerCase()
+    if (x.includes('nos.lol')) return 0
+    if (x.includes('nostr.land')) return 1
+    if (x.includes('relay.damus.io')) return 2
+    if (x.includes('relay.primal.net')) return 3
+    if (x.includes('nostr.wine')) return 4
+    return 30
+  }
+  return [...urls].sort((a, b) => score(a) - score(b) || a.localeCompare(b))
+}
+
 function EmbeddedNoteSkeleton({ className }: { className?: string }) {
   return (
     <div
@@ -381,108 +388,114 @@ function EmbeddedNoteNotFound({
   )
   const [isSearchingExternal, setIsSearchingExternal] = useState(false)
   const [triedExternal, setTriedExternal] = useState(false)
-  const [externalRelays, setExternalRelays] = useState<string[]>([])
-  const [hexEventId, setHexEventId] = useState<string | null>(null)
+  const [asyncHintRelays, setAsyncHintRelays] = useState<string[]>([])
   const [externalSearchDetail, setExternalSearchDetail] = useState<
     null | 'unparseable' | 'no_relays' | 'searched'
   >(null)
 
-  // Relays for "Try external relays": hints + searchable + FAST_READ.
-  // Initial embed fetch uses short per-relay timeouts; this pass uses longer timeouts (see fetchEventWithExternalRelays).
-  // We intentionally include FAST_READ again so slow/default relays get a second chance.
-  useEffect(() => {
-    const getExternalRelays = async () => {
-      let hintRelays: string[] = []
-      let extractedHexEventId: string | null = null
+  const resolvedHexId = useMemo(() => {
+    const h = hexEventIdFromNoteId(noteId)
+    if (h) return h
+    try {
+      const { type, data } = nip19.decode(noteId.trim())
+      if (type === 'nevent') return data.id
+      if (type === 'note') return data
+    } catch {
+      /* plain hex handled above */
+    }
+    return null
+  }, [noteId])
 
-      // 1. Extract relay hints from containing event (e, a, q tags - 3rd position)
+  /** Always available immediately: static searchable + fast-read + favorites + NIP-66 search-capable relays. */
+  const coreExternalRelays = useMemo(
+    () =>
+      preferPublicIndexRelaysFirst(
+        dedupeRelayUrls([
+          ...nip66Service.getSearchableRelayUrls(),
+          ...SEARCHABLE_RELAY_URLS,
+          ...FAST_READ_RELAY_URLS,
+          ...menuRelayUrls,
+        ])
+      ),
+    [menuRelayUrls]
+  )
+
+  const externalRelays = useMemo(
+    () => preferPublicIndexRelaysFirst(dedupeRelayUrls([...asyncHintRelays, ...coreExternalRelays])),
+    [asyncHintRelays, coreExternalRelays]
+  )
+
+  // Extra hints (parent tags, NIP-65, nevent/naddr relay lists, “seen on”) — merged on top of {@link coreExternalRelays}.
+  useEffect(() => {
+    let cancelled = false
+    const loadHints = async () => {
+      const hintRelays: string[] = []
+
       if (containingEvent) {
         for (const tag of containingEvent.tags) {
           if (['e', 'a', 'q'].includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
             const hint = tag[2]
-            if (hint.startsWith('wss://') || hint.startsWith('ws://')) {
-              hintRelays.push(hint)
-            }
+            if (hint.startsWith('wss://') || hint.startsWith('ws://')) hintRelays.push(hint)
           }
         }
-        
-        // Also get containing event author's relays
         try {
-          const containingAuthorRelayList = await client.fetchRelayList(containingEvent.pubkey).catch(() => ({ read: [] as string[], write: [] as string[] }))
-          hintRelays.push(...(containingAuthorRelayList.read ?? []).slice(0, 10), ...(containingAuthorRelayList.write ?? []).slice(0, 10))
+          const containingAuthorRelayList = await client
+            .fetchRelayList(containingEvent.pubkey)
+            .catch(() => ({ read: [] as string[], write: [] as string[] }))
+          hintRelays.push(
+            ...(containingAuthorRelayList.read ?? []).slice(0, 10),
+            ...(containingAuthorRelayList.write ?? []).slice(0, 10)
+          )
         } catch (err) {
           logger.debug('Failed to fetch containing event author relays', { error: err })
         }
       }
 
-      // 2. Hex id (any case) or bech32; hints from nevent/naddr for extra relays
-      const quickHex = hexEventIdFromNoteId(noteId)
-      if (quickHex) {
-        extractedHexEventId = quickHex
-      }
       try {
-        const { type, data } = nip19.decode(noteId)
+        const { type, data } = nip19.decode(noteId.trim())
         if (type === 'nevent') {
-          extractedHexEventId = data.id
           if (data.relays) hintRelays.push(...data.relays)
           if (data.author) {
-            const authorRelayList = await client.fetchRelayList(data.author).catch(() => ({ read: [] as string[], write: [] as string[] }))
-            hintRelays.push(...(authorRelayList.read ?? []).slice(0, 10), ...(authorRelayList.write ?? []).slice(0, 10))
+            const authorRelayList = await client
+              .fetchRelayList(data.author)
+              .catch(() => ({ read: [] as string[], write: [] as string[] }))
+            hintRelays.push(
+              ...(authorRelayList.read ?? []).slice(0, 10),
+              ...(authorRelayList.write ?? []).slice(0, 10)
+            )
           }
         } else if (type === 'naddr') {
           if (data.relays) hintRelays.push(...data.relays)
-          const authorRelayList = await client.fetchRelayList(data.pubkey).catch(() => ({ read: [] as string[], write: [] as string[] }))
-          hintRelays.push(...(authorRelayList.read ?? []).slice(0, 10), ...(authorRelayList.write ?? []).slice(0, 10))
-        } else if (type === 'note') {
-          extractedHexEventId = data
+          const authorRelayList = await client
+            .fetchRelayList(data.pubkey)
+            .catch(() => ({ read: [] as string[], write: [] as string[] }))
+          hintRelays.push(
+            ...(authorRelayList.read ?? []).slice(0, 10),
+            ...(authorRelayList.write ?? []).slice(0, 10)
+          )
         }
       } catch {
-        // Plain hex ids are not valid bech32 — already handled via quickHex
+        /* invalid bech32 */
       }
-      
-      setHexEventId(extractedHexEventId)
-      
-      // 3. Get relays where this embedded event was seen
-      const seenOn = extractedHexEventId ? client.getSeenEventRelayUrls(extractedHexEventId) : []
+
+      const seenOn = resolvedHexId ? client.getSeenEventRelayUrls(resolvedHexId) : []
       hintRelays.push(...seenOn)
-      
-      // Normalize all hint relays
-      const normalizedHints = hintRelays
-        .map(url => normalizeUrl(url))
-        .filter((url): url is string => Boolean(url))
-      
-      const normalizedSearchableRelays = SEARCHABLE_RELAY_URLS
-        .map(url => normalizeUrl(url))
-        .filter((url): url is string => Boolean(url))
 
-      const normalizedFastRead = FAST_READ_RELAY_URLS
-        .map(url => normalizeUrl(url))
-        .filter((url): url is string => Boolean(url))
-
-      const externalRelays = Array.from(
-        new Set([
-          ...normalizedHints,
-          ...menuRelayUrls,
-          ...normalizedSearchableRelays,
-          ...normalizedFastRead
-        ])
-      )
-
-      setExternalRelays(externalRelays)
-
-      logger.debug('External relays calculated', {
-        noteId,
-        hintRelaysCount: normalizedHints.length,
-        searchableRelaysCount: normalizedSearchableRelays.length,
-        fastReadRelaysCount: normalizedFastRead.length,
-        externalRelaysCount: externalRelays.length,
-        externalRelays: externalRelays.slice(0, 10)
-      })
+      if (!cancelled) {
+        setAsyncHintRelays(dedupeRelayUrls(hintRelays))
+        logger.debug('External relay hints merged', {
+          noteId,
+          hintCount: hintRelays.length,
+          totalRelays: dedupeRelayUrls([...hintRelays, ...coreExternalRelays]).length
+        })
+      }
     }
 
-    getExternalRelays()
-    // containingEvent supplies e/a/q relay hints + author NIP-65 list — must rerun when parent loads
-  }, [noteId, containingEvent?.id, menuRelayUrls])
+    void loadHints()
+    return () => {
+      cancelled = true
+    }
+  }, [noteId, containingEvent?.id, resolvedHexId, coreExternalRelays])
 
   const handleTryExternalRelays = async () => {
     if (isSearchingExternal) return
@@ -505,7 +518,7 @@ function EmbeddedNoteNotFound({
     setExternalSearchDetail(null)
     let found: Event | undefined
     try {
-      const idHex = hexEventId ?? hexEventIdFromNoteId(noteId)
+      const idHex = resolvedHexId ?? hexEventIdFromNoteId(noteId)
       if (idHex) {
         const fromDb = await indexedDb.getEventFromPublicationStore(idHex)
         if (fromDb) {

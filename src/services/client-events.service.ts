@@ -31,6 +31,26 @@ import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 
+/** NIP-33 / NIP-01 `a` coordinate: `<kind>:<hex pubkey>:<d identifier>`. */
+function parseReplaceableAtagCoordinate(atag: string): {
+  kind: number
+  pubkey: string
+  identifier: string
+} | null {
+  const s = atag.trim()
+  const i0 = s.indexOf(':')
+  if (i0 < 0) return null
+  const kind = Number.parseInt(s.slice(0, i0), 10)
+  if (!Number.isFinite(kind)) return null
+  const rest = s.slice(i0 + 1)
+  const i1 = rest.indexOf(':')
+  if (i1 < 0) return null
+  const pubkey = rest.slice(0, i1).toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(pubkey)) return null
+  const identifier = rest.slice(i1 + 1)
+  return { kind, pubkey, identifier }
+}
+
 /**
  * Build comprehensive relay list for event-by-id fetch: user's inboxes (+ cache), **favorite relays
  * (kind 10012, same as sidebar menu)**, relay hints, author outboxes/inboxes when known,
@@ -51,7 +71,8 @@ async function buildComprehensiveRelayListForEvents(
     includeFastReadRelays: true,
     includeSearchableRelays: true,
     includeLocalRelays: true,
-    includeFavoriteRelays: Boolean(client.pubkey)
+    includeFavoriteRelays: Boolean(client.pubkey),
+    preferPublicReadRelaysEarly: true
   })
 }
 
@@ -70,6 +91,8 @@ export class EventService {
   private sessionMetadataByPubkey = new Map<string, NEvent>()
   /** Callbacks waiting for an event id to appear in {@link sessionEventCache} (e.g. embed loads before timeline caches the note). */
   private sessionEventWaiters = new Map<string, Set<() => void>>()
+  /** Waiters keyed like {@link replaceableWaiterKey} — naddr embeds have no hex id until a REQ returns. */
+  private sessionReplaceableWaiters = new Map<string, Set<() => void>>()
   private eventDataLoader: DataLoader<string, NEvent | undefined>
   private fetchEventFromBigRelaysDataloader: DataLoader<string, NEvent | undefined>
 
@@ -128,7 +151,7 @@ export class EventService {
       if (!isReplaceableEvent(ev.kind)) continue
       if (ev.kind !== kind || ev.pubkey.toLowerCase() !== pk) continue
       const d = ev.tags.find((t) => t[0] === 'd')?.[1] ?? ''
-      if (d === identifier) return ev
+      if (d === (identifier ?? '')) return ev
     }
     return undefined
   }
@@ -141,6 +164,21 @@ export class EventService {
         cb()
       } catch (e) {
         logger.warn('[EventService] sessionEventWaiter failed', { hexId: hexId.slice(0, 8), e })
+      }
+    }
+  }
+
+  private notifyReplaceableCoordinateWaiters(ev: NEvent): void {
+    if (!isReplaceableEvent(ev.kind)) return
+    const dTag = ev.tags.find((t) => t[0] === 'd')?.[1] ?? ''
+    const key = `${ev.kind}:${ev.pubkey.toLowerCase()}:${dTag}`
+    const waiters = this.sessionReplaceableWaiters.get(key)
+    if (!waiters?.size) return
+    for (const cb of [...waiters]) {
+      try {
+        cb()
+      } catch (e) {
+        logger.warn('[EventService] replaceable session waiter failed', { key, e })
       }
     }
   }
@@ -161,7 +199,7 @@ export class EventService {
         return this.getSessionEventIfMatchingNaddr({
           pubkey: data.pubkey,
           kind: data.kind,
-          identifier: data.identifier
+          identifier: data.identifier ?? ''
         })
       }
     } catch {
@@ -171,35 +209,69 @@ export class EventService {
   }
 
   /**
-   * When an event with this id is added to the session cache, invoke `callback` (and when already cached).
-   * Only supports hex, note1, and nevent1 (not naddr).
+   * When a matching event is added to the session cache, invoke `callback` (and when already cached).
+   * Supports hex / note1 / nevent1 and **naddr1** (replaceable coordinate: kind + pubkey + `d`).
    */
   subscribeWhenSessionHasEvent(eventId: string, callback: () => void): () => void {
     const hex = this.resolveHexWaiterKey(eventId)
-    if (!hex) return () => {}
+    if (hex) {
+      if (this.getSessionEventIfAllowed(hex)) {
+        queueMicrotask(() => callback())
+      }
 
-    if (this.getSessionEventIfAllowed(hex)) {
-      queueMicrotask(() => callback())
-    }
-
-    let set = this.sessionEventWaiters.get(hex)
-    if (!set) {
-      set = new Set()
-      this.sessionEventWaiters.set(hex, set)
-    }
-    set.add(callback)
-    return () => {
-      set!.delete(callback)
-      if (set!.size === 0) {
-        this.sessionEventWaiters.delete(hex)
+      let set = this.sessionEventWaiters.get(hex)
+      if (!set) {
+        set = new Set()
+        this.sessionEventWaiters.set(hex, set)
+      }
+      set.add(callback)
+      return () => {
+        set!.delete(callback)
+        if (set!.size === 0) {
+          this.sessionEventWaiters.delete(hex)
+        }
       }
     }
+
+    try {
+      const { type, data } = nip19.decode(eventId.trim())
+      if (type === 'naddr') {
+        const identifier = data.identifier ?? ''
+        if (
+          this.getSessionEventIfMatchingNaddr({
+            pubkey: data.pubkey,
+            kind: data.kind,
+            identifier
+          })
+        ) {
+          queueMicrotask(() => callback())
+        }
+        const key = `${data.kind}:${data.pubkey.toLowerCase()}:${identifier}`
+        let rset = this.sessionReplaceableWaiters.get(key)
+        if (!rset) {
+          rset = new Set()
+          this.sessionReplaceableWaiters.set(key, rset)
+        }
+        rset.add(callback)
+        return () => {
+          rset!.delete(callback)
+          if (rset!.size === 0) {
+            this.sessionReplaceableWaiters.delete(key)
+          }
+        }
+      }
+    } catch {
+      /* invalid bech32 */
+    }
+
+    return () => {}
   }
 
   /**
-   * Fetch single event by ID (hex, note1, nevent1, naddr1)
+   * Fetch single event by ID (hex, note1, nevent1, naddr1).
+   * Optional `relayHints` (e.g. from the parent article’s tags) are merged first so REQ targets the same relays that likely hold the embed.
    */
-  async fetchEvent(id: string): Promise<NEvent | undefined> {
+  async fetchEvent(id: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
     const trimmed = id.trim()
     let hexId: string | undefined
     if (/^[0-9a-f]{64}$/i.test(trimmed)) {
@@ -218,7 +290,7 @@ export class EventService {
             const fromSession = this.getSessionEventIfMatchingNaddr({
               pubkey: data.pubkey,
               kind: data.kind,
-              identifier: data.identifier
+              identifier: data.identifier ?? ''
             })
             if (fromSession) return fromSession
             break
@@ -245,6 +317,10 @@ export class EventService {
         // Prior load() finished with undefined but left the promise in cacheMap — never retrying.
         this.eventDataLoader.clear(hexId)
       }
+    }
+    if (opts?.relayHints?.length) {
+      const hinted = await this._fetchEvent(trimmed, opts.relayHints)
+      if (hinted && !shouldDropEventOnIngest(hinted)) return hinted
     }
     const loaded = await this.eventDataLoader.load(hexId ?? trimmed)
     if (hexId) {
@@ -284,9 +360,9 @@ export class EventService {
   /**
    * Force retry fetch event
    */
-  async fetchEventForceRetry(eventId: string): Promise<NEvent | undefined> {
+  async fetchEventForceRetry(eventId: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
     this.clearDataloaderCacheForFetchId(eventId)
-    return this.fetchEvent(eventId)
+    return this.fetchEvent(eventId, opts)
   }
 
   /**
@@ -345,10 +421,13 @@ export class EventService {
       if (type === 'note') return { ids: [data], limit: 1 }
       if (type === 'nevent') return { ids: [data.id], limit: 1 }
       if (type === 'naddr') {
+        const pk = data.pubkey.toLowerCase()
+        const ident = data.identifier ?? ''
+        /** NIP-33 coordinate query; `#a` alone often misses — many relays index `authors` + `#d`. */
         return {
           kinds: [data.kind],
-          authors: [data.pubkey],
-          '#d': [data.identifier],
+          authors: [pk],
+          '#d': [ident],
           limit: 1
         }
       }
@@ -378,7 +457,9 @@ export class EventService {
     const logKey =
       'ids' in filter && filter.ids?.[0]
         ? filter.ids[0].slice(0, 8)
-        : `${filter.kinds?.[0]}:${(filter.authors?.[0] ?? '').slice(0, 8)}`
+        : Array.isArray(filter['#a']) && filter['#a'][0]
+          ? String(filter['#a'][0]).slice(0, 40)
+          : `${filter.kinds?.[0]}:${(filter.authors?.[0] ?? '').slice(0, 8)}`
 
     logger.debug('fetchEventWithExternalRelays: Starting search', {
       noteIdKey: logKey,
@@ -387,10 +468,11 @@ export class EventService {
     })
 
     const startTime = Date.now()
+    /** User-driven “try everywhere”: wait for EOSE-ish completion so slower relays (e.g. nos.lol) can answer. */
     const events = await this.queryService.query(externalRelays, filter, undefined, {
-      eoseTimeout: 10000,
-      globalTimeout: 20000,
-      immediateReturn: true
+      eoseTimeout: 12_000,
+      globalTimeout: 35_000,
+      immediateReturn: false
     })
     const duration = Date.now() - startTime
 
@@ -401,7 +483,10 @@ export class EventService {
       durationMs: duration
     })
 
-    return events[0]
+    const usable = events
+      .filter((e) => !shouldDropEventOnIngest(e))
+      .sort((a, b) => b.created_at - a.created_at)
+    return usable[0]
   }
 
   /**
@@ -427,6 +512,7 @@ export class EventService {
       }
     }
     this.notifySessionEventWaiters(id)
+    this.notifyReplaceableCoordinateWaiters(cleanEvent as NEvent)
     queuePersistSeenEvent(cleanEvent as NEvent)
     if (
       cleanEvent.kind === ExtendedKind.PUBLICATION ||
@@ -722,6 +808,7 @@ export class EventService {
     this.sessionMetadataByPubkey.clear()
     this.eventCacheMap.clear()
     this.sessionEventWaiters.clear()
+    this.sessionReplaceableWaiters.clear()
     this.fetchEventFromBigRelaysDataloader.clearAll()
     invalidateArchiveFootprintCache()
     logger.info('[EventService] In-memory caches cleared')
@@ -730,10 +817,19 @@ export class EventService {
   /**
    * Private: Fetch event by ID (internal implementation)
    */
-  private async _fetchEvent(id: string): Promise<NEvent | undefined> {
+  private async _fetchEvent(id: string, extraRelayHints?: string[]): Promise<NEvent | undefined> {
     let filter: Filter | undefined
     let relays: string[] = []
-    
+    if (extraRelayHints?.length) {
+      relays = [
+        ...new Set(
+          extraRelayHints
+            .map((u) => normalizeUrl(u))
+            .filter((u): u is string => Boolean(u))
+        )
+      ]
+    }
+
     if (/^[0-9a-f]{64}$/i.test(id)) {
       filter = { ids: [id.toLowerCase()], limit: 1 }
     } else {
@@ -744,19 +840,20 @@ export class EventService {
           break
         case 'nevent':
           filter = { ids: [data.id], limit: 1 }
-          if (data.relays) relays = [...data.relays]
+          if (data.relays) relays = [...new Set([...relays, ...data.relays])]
           break
-        case 'naddr':
+        case 'naddr': {
+          const pk = data.pubkey.toLowerCase()
+          const ident = data.identifier ?? ''
           filter = {
-            authors: [data.pubkey],
             kinds: [data.kind],
+            authors: [pk],
+            '#d': [ident],
             limit: 1
           }
-          if (data.identifier) {
-            filter['#d'] = [data.identifier]
-          }
-          if (data.relays) relays = [...data.relays]
+          if (data.relays) relays = [...new Set([...relays, ...data.relays])]
           break
+        }
       }
     }
 
@@ -816,6 +913,28 @@ export class EventService {
       if (sess) return sess
     }
 
+    if (filter.authors?.length === 1 && filter.kinds?.length === 1 && Array.isArray(filter['#d'])) {
+      const ident = filter['#d'][0] ?? ''
+      const sessAddr = this.getSessionEventIfMatchingNaddr({
+        pubkey: filter.authors[0]!,
+        kind: filter.kinds[0]!,
+        identifier: ident
+      })
+      if (sessAddr) return sessAddr
+    }
+
+    if (Array.isArray(filter['#a']) && filter['#a'][0]) {
+      const parsed = parseReplaceableAtagCoordinate(String(filter['#a'][0]))
+      if (parsed) {
+        const sessA = this.getSessionEventIfMatchingNaddr({
+          pubkey: parsed.pubkey,
+          kind: parsed.kind,
+          identifier: parsed.identifier
+        })
+        if (sessA) return sessA
+      }
+    }
+
     return undefined
   }
 
@@ -831,9 +950,13 @@ export class EventService {
     // Get seen relays if we have an event ID
     const seenRelays = filter.ids?.length ? client.getSeenEventRelayUrls(filter.ids[0]) : []
     
-    // Get author pubkey
-    const authorPubkey = filter.authors?.length === 1 ? filter.authors[0] : undefined
-    
+    const parsedAtag =
+      Array.isArray(filter['#a']) && typeof filter['#a'][0] === 'string'
+        ? parseReplaceableAtagCoordinate(filter['#a'][0] as string)
+        : null
+    const authorPubkey =
+      filter.authors?.length === 1 ? filter.authors[0] : parsedAtag?.pubkey
+
     // Build comprehensive relay list
     const relayUrls = await buildComprehensiveRelayListForEvents(authorPubkey, relayHints, seenRelays, [])
     
@@ -852,22 +975,25 @@ export class EventService {
       hasSeen: seenRelays.length > 0
     })
 
-    const isSingleEventById = filter.ids && filter.ids.length === 1 && filter.limit === 1
-    
-    // For single-event fetches, always use immediateReturn to return ASAP
-    // This is especially important for non-replaceable events (not in 10000-19999 or 30000-39999 ranges)
+    const isSingleEventById = Boolean(filter.ids && filter.ids.length === 1 && filter.limit === 1)
+    /** Replaceable coordinate: `#a` (preferred) or legacy `authors` + `#d`. */
+    const isReplaceableCoordinateFetch =
+      filter.limit === 1 &&
+      filter.kinds?.length === 1 &&
+      ((Array.isArray(filter['#a']) && filter['#a'].length >= 1) ||
+        (filter.authors?.length === 1 && Array.isArray(filter['#d']) && filter['#d'].length >= 1))
+    const useFastSingleHitQuery = isSingleEventById || isReplaceableCoordinateFetch
+
     const events = await this.queryService.query(relayUrls, filter, undefined, {
-      immediateReturn: isSingleEventById, // Return immediately when found
-      eoseTimeout: isSingleEventById ? 1500 : 500,
-      globalTimeout: isSingleEventById ? 12000 : 10000
+      immediateReturn: useFastSingleHitQuery,
+      eoseTimeout: useFastSingleHitQuery ? 2500 : 500,
+      globalTimeout: useFastSingleHitQuery ? 20_000 : 10000
     })
-    
+
     const event = events
       .filter((e) => !shouldDropEventOnIngest(e))
       .sort((a, b) => b.created_at - a.created_at)[0]
-    
-    // For non-replaceable events, we've already returned immediately via immediateReturn
-    // But log it for debugging
+
     if (event && isSingleEventById && !isReplaceableEvent(event.kind)) {
       logger.debug('[EventService] Non-replaceable event returned immediately', {
         eventId: event.id.substring(0, 8),
@@ -910,8 +1036,8 @@ export class EventService {
       undefined,
       {
         immediateReturn: isSingleEventFetch,
-        eoseTimeout: isSingleEventFetch ? 1500 : 500,
-        globalTimeout: isSingleEventFetch ? 12000 : 10000
+        eoseTimeout: isSingleEventFetch ? 2500 : 500,
+        globalTimeout: isSingleEventFetch ? 20_000 : 10000
       }
     )
 

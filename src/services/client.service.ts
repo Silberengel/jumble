@@ -3068,14 +3068,14 @@ class ClientService extends EventTarget {
    * (4) if still missing and filter has authors: author's read+write again in tryHarderToFetchEvent
    * (5) SEARCHABLE_RELAY_URLS as final fallback. Author relays are used so embedded notes load from the author's relays.
    */
-  async fetchEvent(id: string): Promise<NEvent | undefined> {
-    return this.eventService.fetchEvent(id)
+  async fetchEvent(id: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
+    return this.eventService.fetchEvent(id, opts)
   }
 
   // Legacy fetchEvent implementation removed - now delegated to EventService
 
-  async fetchEventForceRetry(eventId: string): Promise<NEvent | undefined> {
-    return this.eventService.fetchEventForceRetry(eventId)
+  async fetchEventForceRetry(eventId: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
+    return this.eventService.fetchEventForceRetry(eventId, opts)
   }
 
   /** Batch-prefetch by hex id into session cache (feed embeds). */

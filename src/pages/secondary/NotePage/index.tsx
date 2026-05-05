@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchEvent, useFetchProfile, useNip84HighlightTargetEvents } from '@/hooks'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import {
+  collectEmbeddedEventPrefetchTargets,
   getParentBech32Id,
   getParentETag,
   getParentEventHexId,
@@ -190,6 +191,16 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     if (!pk || !/^[0-9a-f]{64}$/.test(pk)) return
     void client.fetchProfilesForPubkeys([pk])
   }, [finalEvent?.id, finalEvent?.pubkey])
+
+  /** Warm session cache so markdown/embed cards resolve before each {@link EmbeddedNote} mounts. */
+  useEffect(() => {
+    if (!finalEvent) return
+    const { hexIds, nip19Pointers } = collectEmbeddedEventPrefetchTargets(finalEvent)
+    if (hexIds.length > 0) void client.prefetchHexEventIds(hexIds)
+    for (const pointer of nip19Pointers) {
+      void client.fetchEvent(pointer)
+    }
+  }, [finalEvent?.id])
 
   const getNoteTypeTitle = (kind: number): string => {
     switch (kind) {

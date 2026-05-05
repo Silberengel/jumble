@@ -6,7 +6,11 @@ import { navigationEventStore } from '@/services/navigation-event-store'
 import { Event } from 'nostr-tools'
 import { useCallback, useEffect, useState } from 'react'
 
-export function useFetchEvent(eventId?: string, initialEvent?: Event) {
+export function useFetchEvent(
+  eventId?: string,
+  initialEvent?: Event,
+  fetchOpts?: { relayHints?: string[] }
+) {
   const { isEventDeleted } = useDeletedEvent()
   const { addReplies } = useReply()
   const [error, setError] = useState<Error | null>(null)
@@ -17,6 +21,9 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
   const refetch = useCallback(() => {
     setRefetchToken((n) => n + 1)
   }, [])
+
+  /** Content-based key so a new `relayHints` array with the same URLs does not restart the fetch. */
+  const relayHintsSerialized = fetchOpts?.relayHints?.join('\0') ?? ''
 
   useEffect(() => {
     let cancelled = false
@@ -75,10 +82,10 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
       try {
         // First load: DataLoader dedupes. Refetches (incl. session-waiter) clear a prior undefined so
         // timeline-cached events resolve after the embed mounted first.
-        const fetchedEvent =
-          skipShortcuts
-            ? await eventService.fetchEventForceRetry(eventId)
-            : await eventService.fetchEvent(eventId)
+        const opts = fetchOpts?.relayHints?.length ? fetchOpts : undefined
+        const fetchedEvent = skipShortcuts
+          ? await eventService.fetchEventForceRetry(eventId, opts)
+          : await eventService.fetchEvent(eventId, opts)
         if (cancelled) return
         if (fetchedEvent && !isEventDeleted(fetchedEvent)) {
           setEvent(fetchedEvent)
@@ -99,8 +106,12 @@ export function useFetchEvent(eventId?: string, initialEvent?: Event) {
 
     return () => {
       cancelled = true
+      // If deps change (e.g. embed relay hints) or Strict Mode re-runs the effect while a fetch is
+      // still in flight, `finally` skips `setIsFetching(false)` when `cancelled` — without this,
+      // loading can stay true forever and embeds show an endless skeleton.
+      setIsFetching(false)
     }
-  }, [eventId, initialEvent, isEventDeleted, addReplies, refetchToken])
+  }, [eventId, initialEvent, isEventDeleted, addReplies, refetchToken, relayHintsSerialized])
 
   useEffect(() => {
     if (event && isEventDeleted(event)) {
