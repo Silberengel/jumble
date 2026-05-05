@@ -22,7 +22,7 @@ import CommunityDefinitionPreview from './CommunityDefinitionPreview'
 import GroupMetadataPreview from './GroupMetadataPreview'
 import HighlightPreview from './HighlightPreview'
 import LiveEventPreview from './LiveEventPreview'
-import LongFormArticlePreview from './LongFormArticlePreview'
+import LongFormCard from '../Note/LongFormCard'
 import NormalContentPreview from './NormalContentPreview'
 import PictureNotePreview from './PictureNotePreview'
 import PollPreview from './PollPreview'
@@ -181,7 +181,7 @@ export default function ContentPreview({
   }
 
   if (event.kind === kinds.LongFormArticle) {
-    return withKindRow(<LongFormArticlePreview event={previewEvent} />)
+    return withKindRow(<LongFormCard event={previewEvent} interactive={false} />)
   }
 
   if (isNip71StyleVideoKind(event.kind)) {

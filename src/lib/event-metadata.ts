@@ -518,14 +518,15 @@ export function getLongFormArticleMetadataFromEvent(event: Event) {
   const tags = new Set<string>()
 
   event.tags.forEach(([tagName, tagValue]) => {
-    if (tagName === 'title') {
-      title = tagValue
-    } else if (tagName === 'summary') {
-      summary = tagValue
-    } else if (tagName === 'image') {
-      image = tagValue
-    } else if (tagName === 't' && tagValue && tags.size < 6) {
-      tags.add(tagValue.toLowerCase())
+    const n = tagName?.toLowerCase()
+    if (n === 'title' && tagValue?.trim()) {
+      title = tagValue.trim()
+    } else if (n === 'summary' && tagValue?.trim()) {
+      summary = tagValue.trim()
+    } else if (n === 'image' && tagValue?.trim()) {
+      image = tagValue.trim()
+    } else if (n === 't' && tagValue?.trim() && tags.size < 6) {
+      tags.add(tagValue.trim().replace(/^#/, '').toLowerCase())
     }
   })
 

@@ -1,3 +1,4 @@
+import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -24,6 +25,8 @@ export default function PublicationCard({
   const contentPolicy = useContentPolicyOptional()
   const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
+  const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
+  const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
   const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
   const isBookstrEvent = (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) && !!bookMetadata.book
 
@@ -69,11 +72,11 @@ export default function PublicationCard({
     </div>
   )
 
-  const summaryComponent = metadata.summary && (
+  const summaryComponent = summaryText ? (
     <div className="min-w-0 max-w-full text-base text-muted-foreground line-clamp-4 break-words">
-      {metadata.summary}
+      {summaryText}
     </div>
-  )
+  ) : null
 
   if (isSmallScreen) {
     return (
@@ -111,6 +114,7 @@ export default function PublicationCard({
           {metadata.image && autoLoadMedia && (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
+              classNames={{ wrapper: 'w-auto max-w-[min(400px,42%)] shrink-0 xl:max-w-[400px]' }}
               className="aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg bg-foreground object-cover xl:aspect-video xl:max-w-[400px]"
               hideIfError
             />

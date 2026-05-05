@@ -60,6 +60,7 @@ import AsciidocArticle from './AsciidocArticle/AsciidocArticle'
 import PublicationCard from './PublicationCard'
 import PublicationIndex from './PublicationIndex/PublicationIndex'
 import WikiCard from './WikiCard'
+import LongFormCard from './LongFormCard'
 import MutedNote from './MutedNote'
 import NsfwNote from './NsfwNote'
 import PictureNote from './PictureNote'
@@ -329,7 +330,11 @@ export default function Note({
       <PublicationCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === kinds.LongFormArticle) {
-    content = renderEventContent({ hideMetadata: true })
+    content = showFull ? (
+      renderEventContent({ hideMetadata: true })
+    ) : (
+      <LongFormCard className="mt-2" event={displayEvent} />
+    )
   } else if (event.kind === kinds.LiveEvent || event.kind === 30312 || event.kind === 30313) {
     content = <LiveEvent className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.GROUP_METADATA) {
