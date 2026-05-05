@@ -1486,10 +1486,11 @@ class ClientService extends EventTarget {
       logger.debug('[PublishEvent] Starting Promise.allSettled for all relays')
       const relayPublishAllSettled = Promise.allSettled(
         uniqueRelayUrls.map(async (url, index) => {
-          const startMs = Date.now()
-          logger.debug(`[PublishEvent] Starting relay ${index + 1}/${uniqueRelayUrls.length}`, { url })
           // eslint-disable-next-line @typescript-eslint/no-this-alias
           const that = this
+          await that.queryService.acquireGlobalRelayConnectionSlot()
+          const startMs = Date.now()
+          logger.debug(`[PublishEvent] Starting relay ${index + 1}/${uniqueRelayUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
           const connectionTimeout = isLocal ? 5_000 : 8_000 // 5s for local, 8s for remote
           const publishTimeout = isLocal ? 5_000 : 8_000 // 5s for local, 8s for remote
@@ -1623,6 +1624,7 @@ class ClientService extends EventTarget {
             })
             that.recordSessionRelayFailure(url)
           } finally {
+            that.queryService.releaseGlobalRelayConnectionSlot()
             clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount
             logger.debug(`[PublishEvent] Relay finished`, { 

@@ -92,6 +92,13 @@ function resolveImetaForMarkdownImageUrl(
   return { url: cleaned, pubkey: eventPubkey }
 }
 
+/**
+ * Host for marked paragraph bodies that may include block-level nodes from {@link renderInlineTokens}
+ * (e.g. `![](https://…mp4)` → {@link MediaPlayer}). `<p>` cannot wrap `<div>`; use flow
+ * `<div role="paragraph">` so the DOM stays valid and React stops `validateDOMNesting` warnings.
+ */
+const MD_PARAGRAPH_FLOW_CLASS = 'mb-1 last:mb-0'
+
 /** Author custom emoji image URL → slide index in the note lightbox ({@link lightboxSlideFromImeta}). */
 type TInlineEmojiLightbox = {
   imageIndexMap: Map<string, number>
@@ -1925,9 +1932,13 @@ function parseMarkdownContentLegacy(
                     if (normalizedText) {
                       const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                       parts.push(
-                        <p key={`text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`} className="mb-1 last:mb-0">
+                        <div
+                          key={`text-${patternIdx}-para-${paraIdx}-img-${imgIdx}`}
+                          role="paragraph"
+                          className={MD_PARAGRAPH_FLOW_CLASS}
+                        >
                           {textContent}
-                        </p>
+                        </div>
                       )
                     }
                   }
@@ -1988,9 +1999,13 @@ function parseMarkdownContentLegacy(
                 if (normalizedText) {
                   const textContent = parseInlineMarkdown(normalizedText, `text-${patternIdx}-para-${paraIdx}-final`, footnotes, emojiInfos, undefined, emojiLightbox)
                   parts.push(
-                    <p key={`text-${patternIdx}-para-${paraIdx}-final`} className="mb-1 last:mb-0">
+                    <div
+                      key={`text-${patternIdx}-para-${paraIdx}-final`}
+                      role="paragraph"
+                      className={MD_PARAGRAPH_FLOW_CLASS}
+                    >
                       {textContent}
-                    </p>
+                    </div>
                   )
                 }
               }
@@ -2009,9 +2024,13 @@ function parseMarkdownContentLegacy(
                 const paraContent = parseInlineMarkdown(normalizedPara, `text-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 // Wrap in paragraph tag (no whitespace-pre-wrap, let normal text wrapping handle it)
                 parts.push(
-                  <p key={`text-${patternIdx}-para-${paraIdx}`} className="mb-1 last:mb-0">
+                  <div
+                    key={`text-${patternIdx}-para-${paraIdx}`}
+                    role="paragraph"
+                    className={MD_PARAGRAPH_FLOW_CLASS}
+                  >
                     {paraContent}
-                  </p>
+                  </div>
                 )
               } else if (paraIdx > 0) {
                 // Empty paragraph between non-empty paragraphs - add spacing
@@ -2446,9 +2465,13 @@ function parseMarkdownContentLegacy(
         const paragraphContent = parseInlineMarkdown(paragraphText, `blockquote-${patternIdx}-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
         
         return (
-          <p key={`blockquote-${patternIdx}-para-${paraIdx}`} className="mb-1 last:mb-0 whitespace-pre-line">
+          <div
+            key={`blockquote-${patternIdx}-para-${paraIdx}`}
+            role="paragraph"
+            className={cn(MD_PARAGRAPH_FLOW_CLASS, 'whitespace-pre-line')}
+          >
             {paragraphContent}
-          </p>
+          </div>
         )
       })
       
@@ -2476,12 +2499,12 @@ function parseMarkdownContentLegacy(
       })
       
       parts.push(
-        <span
+        <div
           key={`greentext-${patternIdx}`}
           className="not-prose greentext my-1 block text-[#4a7c3a] dark:text-[#8fbc8f]"
         >
           {greentextContent}
-        </span>
+        </div>
       )
     } else if (pattern.type === 'fenced-code-block') {
       const { code, language } = pattern.data
@@ -2735,9 +2758,13 @@ function parseMarkdownContentLegacy(
                   if (normalizedPara) {
                     const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${imgIdx}-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                     parts.push(
-                      <p key={`text-end-para-${imgIdx}-${paraIdx}`} className="mb-1 last:mb-0">
+                      <div
+                        key={`text-end-para-${imgIdx}-${paraIdx}`}
+                        role="paragraph"
+                        className={MD_PARAGRAPH_FLOW_CLASS}
+                      >
                         {paraContent}
-                      </p>
+                      </div>
                     )
                   }
                 })
@@ -2791,9 +2818,13 @@ function parseMarkdownContentLegacy(
               if (normalizedPara) {
                 const paraContent = parseInlineMarkdown(normalizedPara, `text-end-final-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 parts.push(
-                  <p key={`text-end-final-para-${paraIdx}`} className="mb-1 last:mb-0">
+                  <div
+                    key={`text-end-final-para-${paraIdx}`}
+                    role="paragraph"
+                    className={MD_PARAGRAPH_FLOW_CLASS}
+                  >
                     {paraContent}
-                  </p>
+                  </div>
                 )
               }
             })
@@ -2810,9 +2841,13 @@ function parseMarkdownContentLegacy(
             if (normalizedPara) {
               const paraContent = parseInlineMarkdown(normalizedPara, `text-end-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
               parts.push(
-                <p key={`text-end-para-${paraIdx}`} className="mb-1 last:mb-0">
+                <div
+                  key={`text-end-para-${paraIdx}`}
+                  role="paragraph"
+                  className={MD_PARAGRAPH_FLOW_CLASS}
+                >
                   {paraContent}
-                </p>
+                </div>
               )
             }
           })
@@ -2833,9 +2868,9 @@ function parseMarkdownContentLegacy(
       if (!normalizedPara) return null
       const paraContent = parseInlineMarkdown(normalizedPara, `text-only-para-${paraIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
       return (
-        <p key={`text-only-para-${paraIdx}`} className="mb-1 last:mb-0">
+        <div key={`text-only-para-${paraIdx}`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
           {paraContent}
-        </p>
+        </div>
       )
     }).filter(Boolean)
     return { nodes: formattedParagraphs, hashtagsInContent, footnotes, citations }
@@ -2953,9 +2988,9 @@ function parseMarkdownContentLegacy(
                 // Render the original line with inline markdown processing
                 const lineContent = parseInlineMarkdown(originalLine, `single-list-item-${partIdx}`, footnotes, emojiInfos, undefined, emojiLightbox)
                 wrappedParts.push(
-                  <span key={`list-item-content-${partIdx}`}>
+                  <div key={`list-item-content-${partIdx}`} className="inline">
                     {lineContent}
-                  </span>
+                  </div>
                 )
               } else {
                 // Fallback: render the list item content
@@ -3451,12 +3486,12 @@ function parseMarkdownContentMarked(
                 displayMode
               />
             ) : (
-              <p key={`${key}-dmt-${idx}`} className="mb-1 last:mb-0">
+              <div key={`${key}-dmt-${idx}`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
                 {renderInlineTokens(
                   lexInlineProtected(seg.text.trim()),
                   `${key}-dmt-${idx}`
                 )}
-              </p>
+              </div>
             )
           )}
         </div>
@@ -3673,9 +3708,9 @@ function parseMarkdownContentMarked(
             }
 
             return (
-              <p key={`${key}-line-${lineIdx}`} className="mb-1 last:mb-0">
+              <div key={`${key}-line-${lineIdx}`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
                 {renderInlineTokens(lexInlineProtected(line) as any[], `${key}-line-inline-${lineIdx}`)}
-              </p>
+              </div>
             )
           }
 
@@ -3704,9 +3739,9 @@ function parseMarkdownContentMarked(
           }
 
           return (
-            <p key={`${key}-line-fallback-${lineIdx}`} className="mb-1 last:mb-0">
+            <div key={`${key}-line-fallback-${lineIdx}`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
               {renderInlineTokens(lexInlineProtected(line) as any[], `${key}-line-fallback-inline-${lineIdx}`)}
-            </p>
+            </div>
           )
         })
 
@@ -3729,9 +3764,13 @@ function parseMarkdownContentMarked(
         const before = rawParagraphText.slice(cursor, start)
         if (before.trim().length > 0) {
           nodes.push(
-            <p key={`${key}-nostr-raw-segment-${segmentIdx++}`} className="mb-1 last:mb-0">
+            <div
+              key={`${key}-nostr-raw-segment-${segmentIdx++}`}
+              role="paragraph"
+              className={MD_PARAGRAPH_FLOW_CLASS}
+            >
               {parseInlineMarkdown(before, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}
-            </p>
+            </div>
           )
         }
         if (bech32Id.startsWith('naddr') && fullCalendarInvite && bech32Id === fullCalendarInvite.naddr) {
@@ -3752,9 +3791,13 @@ function parseMarkdownContentMarked(
       const after = rawParagraphText.slice(cursor)
       if (after.trim().length > 0) {
         nodes.push(
-          <p key={`${key}-nostr-raw-segment-${segmentIdx++}`} className="mb-1 last:mb-0">
+          <div
+            key={`${key}-nostr-raw-segment-${segmentIdx++}`}
+            role="paragraph"
+            className={MD_PARAGRAPH_FLOW_CLASS}
+          >
             {parseInlineMarkdown(after, `${key}-nostr-raw-segment-${segmentIdx}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}
-          </p>
+          </div>
         )
       }
       if (nodes.length > 0) {
@@ -3907,9 +3950,13 @@ function parseMarkdownContentMarked(
         const flushInlineSegment = (segmentIdx: number) => {
           if (inlineSegment.length === 0) return
           nodes.push(
-            <p key={`${key}-media-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+            <div
+              key={`${key}-media-inline-segment-${segmentIdx}`}
+              role="paragraph"
+              className={MD_PARAGRAPH_FLOW_CLASS}
+            >
               {renderInlineTokens(inlineSegment, `${key}-media-inline-segment-${segmentIdx}`)}
-            </p>
+            </div>
           )
           inlineSegment = []
         }
@@ -4015,9 +4062,13 @@ function parseMarkdownContentMarked(
         const flushInlineSegment = (segmentIdx: number) => {
           if (inlineSegment.length === 0) return
           nodes.push(
-            <p key={`${key}-nostr-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+            <div
+              key={`${key}-nostr-inline-segment-${segmentIdx}`}
+              role="paragraph"
+              className={MD_PARAGRAPH_FLOW_CLASS}
+            >
               {renderInlineTokens(inlineSegment, `${key}-nostr-inline-segment-${segmentIdx}`)}
-            </p>
+            </div>
           )
           inlineSegment = []
         }
@@ -4070,9 +4121,13 @@ function parseMarkdownContentMarked(
         const flushInlineSegment = (segmentIdx: number) => {
           if (inlineSegment.length === 0) return
           nodes.push(
-            <p key={`${key}-yt-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+            <div
+              key={`${key}-yt-inline-segment-${segmentIdx}`}
+              role="paragraph"
+              className={MD_PARAGRAPH_FLOW_CLASS}
+            >
               {renderInlineTokens(inlineSegment, `${key}-yt-inline-segment-${segmentIdx}`)}
-            </p>
+            </div>
           )
           inlineSegment = []
         }
@@ -4118,9 +4173,13 @@ function parseMarkdownContentMarked(
         const flushInlineSegment = (segmentIdx: number) => {
           if (inlineSegment.length === 0) return
           nodes.push(
-            <p key={`${key}-direct-media-inline-segment-${segmentIdx}`} className="mb-1 last:mb-0">
+            <div
+              key={`${key}-direct-media-inline-segment-${segmentIdx}`}
+              role="paragraph"
+              className={MD_PARAGRAPH_FLOW_CLASS}
+            >
               {renderInlineTokens(inlineSegment, `${key}-direct-media-inline-segment-${segmentIdx}`)}
-            </p>
+            </div>
           )
           inlineSegment = []
         }
@@ -4182,9 +4241,9 @@ function parseMarkdownContentMarked(
         }
         if (!isImage(cleaned) || !isSafeMediaUrl(cleaned)) {
           return (
-            <p key={`${key}-img-inline-fallback`} className="mb-1 last:mb-0">
+            <div key={`${key}-img-inline-fallback`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
               {renderInlineTokens(paragraphTokens, `${key}-img-inline-fallback`)}
-            </p>
+            </div>
           )
         }
         const imageIdx = imageIndexMap.get(cleaned)
@@ -4208,7 +4267,11 @@ function parseMarkdownContentMarked(
     }
 
     const inlineNodes = renderInlineTokens(paragraphTokens, `${key}-inline`)
-    return <p key={`${key}-p`} className="mb-1 last:mb-0">{inlineNodes}</p>
+    return (
+      <div key={`${key}-p`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
+        {inlineNodes}
+      </div>
+    )
   }
 
   const renderBlockTokens = (tokens: any[], keyPrefix: string): React.ReactNode[] => {
@@ -4448,9 +4511,9 @@ function parseMarkdownContentMarked(
             nodes.push(...renderBlockTokens(token.tokens, `${key}-nested`))
           } else if (typeof token.text === 'string' && token.text.trim()) {
             nodes.push(
-              <p key={`${key}-fallback`} className="mb-1 last:mb-0">
+              <div key={`${key}-fallback`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
                 {renderInlineTokens(lexInlineProtected(String(token.text ?? token.raw ?? '')) as any[], `${key}-fallback-inline`)}
-              </p>
+              </div>
             )
           }
         }

@@ -3,6 +3,7 @@ import {
   FAST_READ_RELAY_URLS,
   FAST_WRITE_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
+  METADATA_BATCH_AUTHORS_CHUNK,
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
   PROFILE_FETCH_RELAY_URLS,
@@ -323,18 +324,31 @@ export class ReplaceableEventService {
       needsIndexedDb.push({ pubkey, index })
     }
 
-    await Promise.allSettled(
-      needsIndexedDb.map(async ({ pubkey, index }) => {
-        try {
-          const event = await indexedDb.getReplaceableEvent(pubkey, kind)
-          if (event) {
-            results[index] = event
+    if (needsIndexedDb.length > 0) {
+      try {
+        const orderedPubkeys = needsIndexedDb.map((n) => n.pubkey)
+        const fromIdb = await indexedDb.getManyReplaceableEvents(orderedPubkeys, kind)
+        fromIdb.forEach((event, i) => {
+          if (event && !shouldDropEventOnIngest(event)) {
+            const slot = needsIndexedDb[i]
+            if (slot) results[slot.index] = event
           }
-        } catch {
-          /* ignore */
-        }
-      })
-    )
+        })
+      } catch {
+        await Promise.allSettled(
+          needsIndexedDb.map(async ({ pubkey, index }) => {
+            try {
+              const event = await indexedDb.getReplaceableEvent(pubkey, kind)
+              if (event && !shouldDropEventOnIngest(event)) {
+                results[index] = event
+              }
+            } catch {
+              /* ignore */
+            }
+          })
+        )
+      }
+    }
 
     const stillMissing = needsIndexedDb.filter(({ index }) => results[index] === undefined)
     if (stillMissing.length > 0) {
@@ -521,7 +535,8 @@ export class ReplaceableEventService {
                 includeFastReadRelays: true,
                 includeFavoriteRelays: true,
                 includeLocalRelays: true,
-                includeFastWriteRelays: false,
+                /** Many users publish kind 0 to NIP-65 write relays; batch path skipped these before. */
+                includeFastWriteRelays: true,
                 includeSearchableRelays: false
               })
             } catch {
@@ -575,19 +590,40 @@ export class ReplaceableEventService {
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
         const useReplaceableRace =
           !isSlowReplaceableBatch || !multiAuthorBatch
-        const events = await this.queryService.query(
-          relayUrls,
-          {
-            authors: pubkeys,
-            kinds: [kind]
-          },
-          undefined,
-          {
-            replaceableRace: useReplaceableRace,
-            eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
-            globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000
+        const queryOpts = {
+          replaceableRace: useReplaceableRace,
+          eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
+          globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000
+        }
+
+        let events: NEvent[]
+        if (kind === kinds.Metadata && pubkeys.length > METADATA_BATCH_AUTHORS_CHUNK) {
+          const merged: NEvent[] = []
+          for (let off = 0; off < missingItems.length; off += METADATA_BATCH_AUTHORS_CHUNK) {
+            const slice = missingItems.slice(off, off + METADATA_BATCH_AUTHORS_CHUNK)
+            const chunkPubkeys = slice.map((m) => m.pubkey)
+            const chunkMulti = chunkPubkeys.length > 1
+            const chunkRace = !isSlowReplaceableBatch || !chunkMulti
+            const evts = await this.queryService.query(
+              relayUrls,
+              { authors: chunkPubkeys, kinds: [kind] },
+              undefined,
+              { ...queryOpts, replaceableRace: chunkRace }
+            )
+            merged.push(...evts)
           }
-        )
+          events = merged
+        } else {
+          events = await this.queryService.query(
+            relayUrls,
+            {
+              authors: pubkeys,
+              kinds: [kind]
+            },
+            undefined,
+            queryOpts
+          )
+        }
         // Only log at info level for large batches or if many events found
         if (pubkeys.length > 50 || events.length > 100) {
           logger.debug('[ReplaceableEventService] Query completed for batch', {
@@ -654,6 +690,23 @@ export class ReplaceableEventService {
                 results[paramIndex] = event
               }
             }
+          }
+        }
+
+        const idbFill = missingItems.filter(({ index }) => results[index] == null)
+        if (idbFill.length > 0) {
+          try {
+            const order = idbFill.map((m) => m.pubkey)
+            const late = await indexedDb.getManyReplaceableEvents(order, kind)
+            late.forEach((ev, j) => {
+              if (!ev || shouldDropEventOnIngest(ev)) return
+              const slot = idbFill[j]
+              if (!slot) return
+              results[slot.index] = ev
+              eventsMap.set(`${slot.pubkey}:${kind}`, ev)
+            })
+          } catch {
+            /* ignore */
           }
         }
         
@@ -1043,7 +1096,27 @@ export class ReplaceableEventService {
   async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
     const deduped = Array.from(new Set(pubkeys.filter((p) => p && p.length === 64)))
     if (deduped.length === 0) return []
-    const events = await this.fetchReplaceableEventsFromProfileFetchRelays(deduped, kinds.Metadata)
+    let events = await this.fetchReplaceableEventsFromProfileFetchRelays(deduped, kinds.Metadata)
+    const gapIdx: number[] = []
+    for (let i = 0; i < deduped.length; i++) {
+      if (!events[i]) gapIdx.push(i)
+    }
+    if (gapIdx.length > 0) {
+      try {
+        const order = gapIdx.map((i) => deduped[i]!)
+        const late = await indexedDb.getManyReplaceableEvents(order, kinds.Metadata)
+        const patched = [...events]
+        gapIdx.forEach((origIdx, j) => {
+          const ev = late[j]
+          if (ev && !shouldDropEventOnIngest(ev)) {
+            patched[origIdx] = ev
+          }
+        })
+        events = patched
+      } catch {
+        /* ignore */
+      }
+    }
     const profiles: TProfile[] = []
     for (let i = 0; i < deduped.length; i++) {
       const ev = events[i]

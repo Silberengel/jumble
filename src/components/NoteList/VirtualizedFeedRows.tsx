@@ -37,7 +37,10 @@ const WindowRows = memo(function WindowRows({
   })
 
   return (
-    <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+    <div
+      className="relative w-full overflow-hidden"
+      style={{ height: virtualizer.getTotalSize() }}
+    >
       {virtualizer.getVirtualItems().map((vi) => (
         <div
           key={vi.key}
@@ -85,7 +88,10 @@ const ElementRows = memo(function ElementRows({
   })
 
   return (
-    <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+    <div
+      className="relative w-full overflow-hidden"
+      style={{ height: virtualizer.getTotalSize() }}
+    >
       {virtualizer.getVirtualItems().map((vi) => (
         <div
           key={vi.key}

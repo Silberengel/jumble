@@ -217,6 +217,63 @@ function feedTimelineAlreadyRepresentsNip18Target(targetId: string | undefined, 
   return false
 }
 
+const FEED_PROFILE_PREFETCH_MAX_P_TAGS = 64
+const FEED_STATS_PROFILE_REPOSTS_CAP = 48
+const FEED_STATS_PROFILE_LIKES_PER_NOTE = 8
+
+function addLowerHexPubkeyCandidate(candidates: Set<string>, raw: string | undefined) {
+  if (!raw) return
+  const t = raw.trim()
+  if (t.length === 64 && /^[0-9a-f]{64}$/i.test(t)) {
+    candidates.add(t.toLowerCase())
+  }
+}
+
+/** Kind-0 prefetch targets for feed rows: author, mentions, `e`/`E` pubkey hints, NIP-18 embedded author. */
+function collectProfilePrefetchPubkeysFromEvent(e: Event, candidates: Set<string>) {
+  addLowerHexPubkeyCandidate(candidates, e.pubkey)
+
+  let pCount = 0
+  for (const tag of e.tags) {
+    if (tag[0] === 'p' && tag[1]) {
+      addLowerHexPubkeyCandidate(candidates, tag[1])
+      pCount++
+      if (pCount >= FEED_PROFILE_PREFETCH_MAX_P_TAGS) break
+    }
+    if ((tag[0] === 'e' || tag[0] === 'E') && tag[4]) {
+      addLowerHexPubkeyCandidate(candidates, tag[4])
+    }
+  }
+
+  if (!isNip18RepostKind(e.kind)) return
+  const raw = e.content?.trim()
+  if (!raw) return
+  try {
+    const emb = JSON.parse(raw) as { pubkey?: string; pubKey?: string }
+    const pk = emb.pubkey ?? emb.pubKey
+    if (pk) addLowerHexPubkeyCandidate(candidates, pk)
+  } catch {
+    /* ignore */
+  }
+}
+
+function collectProfilePrefetchPubkeysFromNoteStats(
+  st: { reposts?: { pubkey: string }[]; likes?: { pubkey: string }[] } | undefined,
+  candidates: Set<string>
+) {
+  if (!st) return
+  if (st.reposts?.length) {
+    for (const r of st.reposts.slice(0, FEED_STATS_PROFILE_REPOSTS_CAP)) {
+      addLowerHexPubkeyCandidate(candidates, r.pubkey)
+    }
+  }
+  if (st.likes?.length) {
+    for (const l of st.likes.slice(0, FEED_STATS_PROFILE_LIKES_PER_NOTE)) {
+      addLowerHexPubkeyCandidate(candidates, l.pubkey)
+    }
+  }
+}
+
 function mergeEventBatchesById(
   prev: Event[],
   incoming: Event[],
@@ -894,30 +951,11 @@ const NoteList = forwardRef(
     /** Pending pubkeys sync with rows so useFetchProfile skips per-note fetches before the debounced batch. */
     useLayoutEffect(() => {
       const candidates = new Set<string>()
-      const addPk = (p: string | undefined) => {
-        if (!p) return
-        const t = p.trim()
-        if (t.length === 64 && /^[0-9a-f]{64}$/i.test(t)) {
-          candidates.add(t.toLowerCase())
-        }
-      }
-      const addPkFromEventTags = (e: Event) => {
-        let n = 0
-        for (const tag of e.tags) {
-          if (tag[0] === 'p' && tag[1]) {
-            addPk(tag[1])
-            n++
-            if (n >= 4) break
-          }
-        }
-      }
       for (const e of timelineEventsForFilter) {
-        addPk(e.pubkey)
-        addPkFromEventTags(e)
+        collectProfilePrefetchPubkeysFromEvent(e, candidates)
       }
       for (const e of newEvents) {
-        addPk(e.pubkey)
-        addPkFromEventTags(e)
+        collectProfilePrefetchPubkeysFromEvent(e, candidates)
       }
 
       setFeedProfileBatch((prev) => {
@@ -1286,8 +1324,34 @@ const NoteList = forwardRef(
       [showFeedClientFilter, applyClientFeedFilter, filteredEvents]
     )
 
+    /** Bumps when {@link noteStatsService} updates any visible row so profile batch can include boosters/likers. */
+    const [feedStatsProfileBump, setFeedStatsProfileBump] = useState(0)
+    const visibleNoteIdsForStatsPrefetchKey = useMemo(
+      () =>
+        clientFilteredEvents
+          .slice(0, Math.min(120, Math.max(showCount + 64, 64)))
+          .map((e) => e.id)
+          .join('\n'),
+      [clientFilteredEvents, showCount]
+    )
+
+    useEffect(() => {
+      if (!visibleNoteIdsForStatsPrefetchKey) return
+      const ids = visibleNoteIdsForStatsPrefetchKey.split('\n').filter(Boolean)
+      const bump = () => setFeedStatsProfileBump((n) => n + 1)
+      const unsubs = ids.map((id) => noteStatsService.subscribeNoteStats(id, bump))
+      return () => {
+        unsubs.forEach((u) => u())
+      }
+    }, [visibleNoteIdsForStatsPrefetchKey])
+
     const [feedVirtualScrollParent, setFeedVirtualScrollParent] = useState<HTMLElement | null>(null)
     const [feedVirtualScrollMarginTop, setFeedVirtualScrollMarginTop] = useState(0)
+    /**
+     * Resolve the scroll container once per feed / refresh — not on every {@link clientFilteredEvents} length tick.
+     * Re-running this on each timeline merge re-set scroll state and interacted badly with the virtualizer while rows
+     * were still settling (absolute rows could paint past the list bounds).
+     */
     useLayoutEffect(() => {
       const root = feedRootRef.current
       if (!root) {
@@ -1297,7 +1361,7 @@ const NoteList = forwardRef(
       }
       setFeedVirtualScrollParent(getNearestScrollableAncestor(root))
       setFeedVirtualScrollMarginTop(root.offsetTop)
-    }, [timelineSubscriptionKey, refreshCount, clientFilteredEvents.length])
+    }, [timelineSubscriptionKey, refreshCount])
 
     const clientFilteredNewEvents = useMemo(
       () =>
@@ -1350,28 +1414,14 @@ const NoteList = forwardRef(
       const handle = window.setTimeout(() => {
         const gen = feedProfileBatchGenRef.current
         const candidates = new Set<string>()
-        const addPk = (p: string | undefined) => {
-          if (p && p.length === 64 && /^[0-9a-f]{64}$/.test(p)) {
-            candidates.add(p.toLowerCase())
-          }
-        }
-        const addPkFromEventTags = (e: Event) => {
-          let n = 0
-          for (const tag of e.tags) {
-            if (tag[0] === 'p' && tag[1]) {
-              addPk(tag[1])
-              n++
-              if (n >= 4) break
-            }
-          }
-        }
         for (const e of timelineEventsForFilter) {
-          addPk(e.pubkey)
-          addPkFromEventTags(e)
+          collectProfilePrefetchPubkeysFromEvent(e, candidates)
         }
         for (const e of newEvents) {
-          addPk(e.pubkey)
-          addPkFromEventTags(e)
+          collectProfilePrefetchPubkeysFromEvent(e, candidates)
+        }
+        for (const e of clientFilteredEvents.slice(0, Math.min(120, Math.max(showCount + 64, 64)))) {
+          collectProfilePrefetchPubkeysFromNoteStats(noteStatsService.getNoteStats(e.id), candidates)
         }
 
         const need = [...candidates].filter((pk) => !feedProfileLoadedRef.current.has(pk))
@@ -1437,7 +1487,7 @@ const NoteList = forwardRef(
         })()
       }, FEED_PROFILE_BATCH_DEBOUNCE_MS)
       return () => window.clearTimeout(handle)
-    }, [timelineEventsForFilter, newEvents])
+    }, [timelineEventsForFilter, newEvents, clientFilteredEvents, showCount, feedStatsProfileBump])
 
     const scrollToTop = useCallback((behavior: ScrollBehavior = 'instant') => {
       setTimeout(() => {
@@ -3463,6 +3513,7 @@ const NoteList = forwardRef(
         ) : null}
         {clientFilteredEvents.length > 0 ? (
           <VirtualizedFeedRows
+            key={`${timelineSubscriptionKey}@@${refreshCount}`}
             events={clientFilteredEvents}
             gridLayout={gridLayout}
             filterMutedNotes={filterMutedNotes}
@@ -3502,7 +3553,13 @@ const NoteList = forwardRef(
                   : 'min-h-4'
             }
           >
-            {loading ? <NoteCardLoadingSkeleton /> : null}
+            {loading ? (
+              clientFilteredEvents.length > 0 ? (
+                <div className="mx-2 h-2 max-w-md rounded-full bg-muted/60 animate-pulse" aria-hidden />
+              ) : (
+                <NoteCardLoadingSkeleton />
+              )
+            ) : null}
           </div>
         ) : listSourceEvents.length > 0 ? (
           <div className="text-center text-sm text-muted-foreground mt-2">{t('no more notes')}</div>

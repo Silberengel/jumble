@@ -1287,16 +1287,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
-    const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey)
-    const relays = await client.determineTargetRelays(event, {
-      ...options,
-      favoriteRelayUrls,
-      blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent)
-    })
-    logger.debug('[Publish] Target relays determined', { relayCount: relays.length, relays: relays.slice(0, 5) })
-
+    noteStatsService.beginPublishPriority()
     try {
+      logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
+      const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey)
+      const relays = await client.determineTargetRelays(event, {
+        ...options,
+        favoriteRelayUrls,
+        blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent)
+      })
+      logger.debug('[Publish] Target relays determined', { relayCount: relays.length, relays: relays.slice(0, 5) })
+
       logger.debug('[Publish] Calling client.publishEvent()...', { relayCount: relays.length, eventId: event.id?.substring(0, 8) })
       const publishResult = await client.publishEvent(relays, event, { favoriteRelayUrls })
       logger.debug('[Publish] publishEvent completed', {
@@ -1383,6 +1384,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       
       // Re-throw the error so the UI can handle it appropriately
       throw error
+    } finally {
+      noteStatsService.endPublishPriority()
     }
   }
 

@@ -377,6 +377,13 @@ export function useFetchProfile(id?: string, skipCache = false) {
         effectRunCountRef.current.delete(extractedPubkey)
         return
       }
+      if (fromBatch?.batchPlaceholder) {
+        initializedPubkeysRef.current.delete(extractedPubkey)
+        setProfile(fromBatch)
+        setPubkey(extractedPubkey)
+        setIsFetching(false)
+        setError(null)
+      }
       if (noteFeed.pendingPubkeys.has(extractedPubkey)) {
         const pkLower = extractedPubkey.toLowerCase()
         const sessionEv = eventService.getSessionMetadataForPubkey(pkLower)
@@ -450,7 +457,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
     
     // CRITICAL: Early exit if we already have a profile for this pubkey
     // This prevents re-fetching when we already have the profile
-    if (extractedPubkey && profile && profile.pubkey === extractedPubkey) {
+    if (extractedPubkey && profile && profile.pubkey === extractedPubkey && !profile.batchPlaceholder) {
       // Ensure processingPubkeyRef is set to prevent re-fetch
       if (processingPubkeyRef.current !== extractedPubkey) {
         processingPubkeyRef.current = extractedPubkey
@@ -561,7 +568,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
       processingPubkeyRef.current = extractedPubkey
     }
     
-    if (profile && profile.pubkey === extractedPubkey) {
+    if (profile && profile.pubkey === extractedPubkey && !profile.batchPlaceholder) {
       logger.debug('[useFetchProfile] Already have profile for this pubkey (safety check)', {
         extractedPubkey
       })

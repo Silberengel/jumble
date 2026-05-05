@@ -78,6 +78,8 @@ class NoteStatsService {
   private batchTimeout: NodeJS.Timeout | null = null
   /** Prevents overlapping processBatch runs (reentrant calls corrupted pendingEvents). */
   private processBatchRunning = false
+  /** While greater than zero, {@link processBatch} defers so user publishes are not starved for WebSocket pool / bandwidth. */
+  private publishPriorityDepth = 0
   private readonly BATCH_DELAY = 200
   /** Small slices so a slow batch does not block newer cards (e.g. spell feed swaps placeholder rows → discussions). */
   private readonly MAX_BATCH_SIZE = 8
@@ -236,7 +238,26 @@ class NoteStatsService {
     })
   }
 
+  /** Call around user-initiated {@link client.publishEvent} so stats REQ waves defer briefly. */
+  beginPublishPriority(): void {
+    this.publishPriorityDepth++
+  }
+
+  endPublishPriority(): void {
+    this.publishPriorityDepth = Math.max(0, this.publishPriorityDepth - 1)
+  }
+
   private async processBatch() {
+    if (this.publishPriorityDepth > 0) {
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout)
+      }
+      this.batchTimeout = setTimeout(() => {
+        this.batchTimeout = null
+        void this.processBatch()
+      }, 450)
+      return
+    }
     if (this.processBatchRunning) {
       logger.debug('[NoteStats] processBatch: skipped (already running)', {
         pendingForeground: this.pendingForeground.size,

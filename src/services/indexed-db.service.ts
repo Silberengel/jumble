@@ -1068,7 +1068,9 @@ class IndexedDbService {
   }
 
   private getReplaceableEventKey(pubkey: string, d?: string): string {
-    return d === undefined ? pubkey : `${pubkey}:${d}`
+    const trimmed = pubkey.trim()
+    const canonPk = /^[0-9a-f]{64}$/i.test(trimmed) ? trimmed.toLowerCase() : trimmed
+    return d === undefined ? canonPk : `${canonPk}:${d}`
   }
 
   private getStoreNameByKind(kind: number): string | undefined {

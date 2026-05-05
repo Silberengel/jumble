@@ -2,7 +2,6 @@ import { ExtendedKind } from '@/constants'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { shouldHideInteractions } from '@/lib/event-filtering'
 import { cn } from '@/lib/utils'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,15 +14,12 @@ const MAX_VISIBLE = 28
  */
 export default function NoteBoostBadges({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const noteStats = useNoteStatsById(event.id)
 
   const boosters = useMemo(() => {
     if (event.kind === ExtendedKind.DISCUSSION) return []
-    return (noteStats?.reposts ?? [])
-      .filter((r) => !hideUntrustedInteractions || isUserTrusted(r.pubkey))
-      .sort((a, b) => b.created_at - a.created_at)
-  }, [noteStats, event.kind, hideUntrustedInteractions, isUserTrusted])
+    return [...(noteStats?.reposts ?? [])].sort((a, b) => b.created_at - a.created_at)
+  }, [noteStats, event.kind])
 
   if (shouldHideInteractions(event) || boosters.length === 0) {
     return null

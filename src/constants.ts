@@ -196,7 +196,12 @@ export const ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS = 24 * 60 * 60 * 10
  * Too low causes empty profiles and NIP-05 gaps when relays are slow or many URLs are queried.
  */
 export const METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS = 16000
-export const METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS = 500
+/** After all relays EOSE, wait this long before closing so slow EVENTs still land (slot queue + TLS). */
+export const METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS = 2800
+/**
+ * Max `authors` per REQ for batched kind-0; large arrays are split so relays return more complete rows.
+ */
+export const METADATA_BATCH_AUTHORS_CHUNK = 22
 
 /**
  * useFetchProfile: outer Promise.race on fetchProfileEvent and wait-for-shared-promise timeouts.

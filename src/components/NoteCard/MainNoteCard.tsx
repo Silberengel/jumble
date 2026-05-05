@@ -1,4 +1,3 @@
-import { useNip84HighlightTargetEvents } from '@/hooks'
 import { ExtendedKind } from '@/constants'
 import { Separator } from '@/components/ui/separator'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
@@ -6,7 +5,7 @@ import { toNote } from '@/lib/link'
 import { useSmartNoteNavigationOptional } from '@/PageManager'
 import client from '@/services/client.service'
 import { Pin } from 'lucide-react'
-import { Event, kinds } from 'nostr-tools'
+import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import Collapsible from '../Collapsible'
 import NoteBoostBadges from '../NoteBoostBadges'
@@ -41,9 +40,6 @@ export default function MainNoteCard({
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
-  const nip84HighlightEvents = useNip84HighlightTargetEvents(
-    event.kind === kinds.ShortTextNote ? event : null
-  )
   const isZapFeedCard =
     event.kind === ExtendedKind.ZAP_RECEIPT || event.kind === ExtendedKind.ZAP_REQUEST
   const showNoteStatsRow = !embedded || isZapFeedCard
@@ -104,7 +100,6 @@ export default function MainNoteCard({
             hideParentNotePreview={hideParentNotePreview}
             zapPollVoteHighlightOption={zapPollVoteHighlightOption}
             showFull={showFull}
-            nip84HighlightEvents={nip84HighlightEvents}
           />
         </Collapsible>
         {!embedded ? <NoteBoostBadges event={event} className="mt-2 px-4" /> : null}
