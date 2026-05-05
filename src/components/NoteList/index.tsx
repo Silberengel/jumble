@@ -3453,6 +3453,9 @@ const NoteList = forwardRef(
     const listSourceEvents = timelineEventsForFilter
     const feedFullSearchActive = feedFullSearchEvents !== null
     const progressiveWarmupTrimmed = progressiveWarmupQuery?.trim()
+    // Relay-op rows arrive only after every relay in the wave reports terminal state. A slow or
+    // wedged connection (e.g. NIP-42 re-auth) can delay that indefinitely while events already stream
+    // in — without this guard the "Looking for more events…" banner never clears.
     const showRelaySubscribeWavePendingBanner =
       !oneShotFetch &&
       !feedFullSearchActive &&
@@ -3460,7 +3463,8 @@ const NoteList = forwardRef(
       relayCapabilityReady &&
       timelineKey != null &&
       feedSubscribeRelayOutcomes.length === 0 &&
-      feedTimelineEmptyUiReady
+      feedTimelineEmptyUiReady &&
+      timelineEventsForFilter.length === 0
     const showProgressiveLayersPendingBanner =
       Boolean(progressiveWarmupTrimmed) && progressiveLayersSearching && !feedFullSearchActive
     const showLookingForMoreEventsBanner =

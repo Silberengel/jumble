@@ -644,7 +644,9 @@ export class QueryService {
           await this.acquireSubSlot(relayKey)
           let relay: AbstractRelay
           try {
-            relay = await this.pool.ensureRelay(url, { connectionTimeout: 5000 })
+            relay = await this.pool.ensureRelay(url, {
+              connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
+            })
             patchRelayNoticeForFetchFailures(relay, relayKey, this.onRelayNoticeStrike)
           } catch (err) {
             this.onRelayConnectionFailure?.(relayKey)

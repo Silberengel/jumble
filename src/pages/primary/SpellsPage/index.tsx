@@ -27,7 +27,7 @@ import { showPublishingError } from '@/lib/publishing-feedback'
 import { cn } from '@/lib/utils'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
-import { useKindFilter } from '@/providers/KindFilterProvider'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useBookmarks } from '@/providers/bookmarks-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -334,7 +334,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     showKind1OPs,
     showKind1Replies,
     showKind1111
-  } = useKindFilter()
+  } = useKindFilterOrDefaults()
   const hideRepliesFollowing = useNoteListHideReplies()
   const [spells, setSpells] = useState<Event[]>([])
   /** Ordered spell event ids (newest star first). Drives picker order + bookmark list sync when logged in. */

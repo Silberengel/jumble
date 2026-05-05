@@ -50,11 +50,55 @@ export function devProxyLoopbackHttpRelayBase(normalizedBase: string): string {
 }
 
 /**
+ * Hosts whose HTTPS index API breaks in the browser (CORS preflight rejects `Content-Type`, etc.).
+ * In dev, `index-relay-http` rewrites the base to same-origin `/dev-cors-index-relay` (see `vite.config.ts`).
+ * Keep this list tiny — each entry needs a matching Vite `proxy` target.
+ */
+const DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS = new Set(['nos.lol'])
+
+/**
+ * Rewrite `https://nos.lol/...` index relay bases to the Vite dev proxy so POST /api/events/filter works.
+ * Chain after `devProxyLoopbackHttpRelayBase`: `devProxyCorsProblematicHttpsIndexRelayBase(devProxyLoopbackHttpRelayBase(url))`.
+ */
+export function devProxyCorsProblematicHttpsIndexRelayBase(normalizedBase: string): string {
+  if (import.meta.env.PROD || typeof window === 'undefined') return normalizedBase
+  let u: URL
+  try {
+    u = new URL(normalizedBase)
+  } catch {
+    return normalizedBase
+  }
+  if (u.protocol !== 'https:') return normalizedBase
+  if (!DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS.has(u.hostname.toLowerCase())) return normalizedBase
+  return `${window.location.origin}/dev-cors-index-relay`
+}
+
+/**
  * Normalize relay URL for deduplication: WebSocket URLs via {@link normalizeUrl}, HTTPS index relays via {@link normalizeHttpRelayUrl}.
  */
 export function normalizeAnyRelayUrl(url: string): string {
   if (isHttpRelayUrl(url)) return normalizeHttpRelayUrl(url) || ''
   return normalizeUrl(url) || ''
+}
+
+/**
+ * Stable key for per-relay session counters (strikes, publish stats): HTTP NIP-86 bases map to the same host’s
+ * `wss://…` URL so `https://nos.lol` and `wss://nos.lol` share one bucket (fixes preset vs “all striked” mismatch).
+ */
+export function canonicalRelayStrikeKey(url: string): string {
+  const stepped = (normalizeAnyRelayUrl(url) || url.trim()).trim()
+  if (!stepped) return ''
+  if (isHttpRelayUrl(stepped)) {
+    const base = normalizeHttpRelayUrl(stepped) || stepped
+    try {
+      const u = new URL(base)
+      const host = u.hostname + (u.port ? `:${u.port}` : '')
+      return normalizeUrl(`wss://${host}`) || normalizeAnyRelayUrl(stepped) || base
+    } catch {
+      return normalizeAnyRelayUrl(stepped) || stepped
+    }
+  }
+  return stepped
 }
 
 // copy from nostr-tools/utils

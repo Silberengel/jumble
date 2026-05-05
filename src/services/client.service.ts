@@ -12,12 +12,16 @@ import {
   relayFilterIncludesSocialKindBlockedKind,
   relaysAfterSocialKindBlockedStrip,
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
+  MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_PUBLISH_RELAYS,
+  PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
+  RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS,
   TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY,
   OUTBOX_PUBLISH_RETRY_DELAY_MS,
+  DEFAULT_FAVORITE_RELAYS,
   NIP66_DISCOVERY_RELAY_URLS,
   PROFILE_FETCH_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
@@ -115,7 +119,15 @@ import {
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
-import { isHttpRelayUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl, simplifyUrl } from '@/lib/url'
+import {
+  canonicalRelayStrikeKey,
+  isHttpRelayUrl,
+  isLocalNetworkUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  normalizeUrl,
+  simplifyUrl
+} from '@/lib/url'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
@@ -270,7 +282,10 @@ class ClientService extends EventTarget {
    * {@link ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD} strikes we skip that relay for reads and publishes until reload.
    */
   private publishStrikeCount = new Map<string, number>()
-  public static readonly SESSION_RELAY_FAILURE_STRIKE_THRESHOLD = 2
+  /** Many shards / parallel REQs used to hit the strike threshold instantly on one dead relay; only one increment per window. */
+  private sessionRelayFailureLastIncrementAt = new Map<string, number>()
+  public static readonly SESSION_RELAY_FAILURE_STRIKE_THRESHOLD = 4
+  private static readonly SESSION_RELAY_FAILURE_INCREMENT_DEBOUNCE_MS = 12_000
 
   /** Session-only: relay URL -> { successCount, sumLatencyMs } for preferring faster, proven relays when picking "random" relays. */
   private sessionRelayPublishStats = new Map<string, { successCount: number; sumLatencyMs: number }>()
@@ -313,7 +328,8 @@ class ClientService extends EventTarget {
     // Initialize sub-services
     this.queryService = new QueryService(this.pool, {
       shouldSkipRelayForSession: (url) => {
-        const key = normalizeAnyRelayUrl(url) || url
+        const key = canonicalRelayStrikeKey(url)
+        if (!key) return false
         return (
           (this.publishStrikeCount.get(key) ?? 0) >=
           ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD
@@ -602,33 +618,39 @@ class ClientService extends EventTarget {
     event: NEvent,
     favoriteRelayUrls: string[] = []
   ): Promise<string[]> {
-    let userWriteSet = new Set<string>()
+    const ctx = this.collectReplyAndMentionPubkeys(event)
+    /** One `fetchRelayLists` round-trip (author first) — avoids two back-to-back relay-list budgets that always lost the outer race. */
+    const pubkeyOrder = Array.from(new Set([event.pubkey, ...ctx]))
+    let lists: TRelayList[] = []
     try {
-      const rl = await this.fetchRelayList(event.pubkey)
-      userWriteSet = new Set([
-        ...(rl?.write ?? []).map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u),
-        ...(rl?.httpWrite ?? []).map((u) => normalizeHttpRelayUrl(u) || u).filter((u): u is string => !!u)
-      ])
+      lists = await this.fetchRelayLists(pubkeyOrder)
     } catch {
-      // ignore
+      lists = []
     }
 
-    const ctx = this.collectReplyAndMentionPubkeys(event)
-    let authorReadSet = new Set<string>()
-    if (ctx.length > 0) {
-      const lists = await this.fetchRelayLists(ctx)
-      for (const list of lists) {
-        for (const u of list?.read ?? []) {
-          const n = normalizeUrl(u) || u
-          if (n) authorReadSet.add(n)
-        }
-        for (const u of list?.httpRead ?? []) {
-          const n = normalizeHttpRelayUrl(u) || u
-          if (n) authorReadSet.add(n)
-        }
-      }
-      authorReadSet = new Set(filterContextAuthorReadRelaysForPublish([...authorReadSet]))
+    let userWriteSet = new Set<string>()
+    const authorRl = lists[0]
+    if (authorRl) {
+      userWriteSet = new Set([
+        ...(authorRl.write ?? []).map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u),
+        ...(authorRl.httpWrite ?? []).map((u) => normalizeHttpRelayUrl(u) || u).filter((u): u is string => !!u)
+      ])
     }
+
+    let authorReadSet = new Set<string>()
+    for (let i = 1; i < lists.length; i++) {
+      const list = lists[i]
+      if (!list) continue
+      for (const u of list.read ?? []) {
+        const n = normalizeUrl(u) || u
+        if (n) authorReadSet.add(n)
+      }
+      for (const u of list.httpRead ?? []) {
+        const n = normalizeHttpRelayUrl(u) || u
+        if (n) authorReadSet.add(n)
+      }
+    }
+    authorReadSet = new Set(filterContextAuthorReadRelaysForPublish([...authorReadSet]))
 
     const favSet = new Set(
       favoriteRelayUrls.map((f) => normalizeUrl(f) || f).filter((u): u is string => !!u)
@@ -691,7 +713,7 @@ class ClientService extends EventTarget {
             relayCount: relayUrls.length
           })
           resolve(fallbackOrder())
-        }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
+        }, PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS)
       )
     ])
   }
@@ -1087,7 +1109,8 @@ class ClientService extends EventTarget {
 
   /** Strikes accumulated this session for this relay (connection / NOTICE failures). */
   getSessionRelayStrikeCountForUrl(url: string): number {
-    const n = normalizeAnyRelayUrl(url) || url
+    const n = canonicalRelayStrikeKey(url)
+    if (!n) return 0
     return this.publishStrikeCount.get(n) ?? 0
   }
 
@@ -1101,7 +1124,7 @@ class ClientService extends EventTarget {
   }
 
   private recordRelayNoticeFetchFailure(url: string, noticeMessage: string) {
-    const n = normalizeAnyRelayUrl(url) || url
+    const n = canonicalRelayStrikeKey(url)
     if (!n) return
     const prev = this.publishStrikeCount.get(n) ?? 0
     if (prev >= ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD) {
@@ -1115,12 +1138,21 @@ class ClientService extends EventTarget {
   }
 
   private recordSessionRelayFailure(url: string) {
-    const n = normalizeAnyRelayUrl(url) || url
+    const n = canonicalRelayStrikeKey(url)
     if (!n) return
+    if (isLocalNetworkUrl(n)) {
+      return
+    }
     const prev = this.publishStrikeCount.get(n) ?? 0
     if (prev >= ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD) {
       return
     }
+    const now = Date.now()
+    const lastInc = this.sessionRelayFailureLastIncrementAt.get(n) ?? 0
+    if (now - lastInc < ClientService.SESSION_RELAY_FAILURE_INCREMENT_DEBOUNCE_MS) {
+      return
+    }
+    this.sessionRelayFailureLastIncrementAt.set(n, now)
     const count = prev + 1
     this.publishStrikeCount.set(n, count)
     if (count === ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD) {
@@ -1134,7 +1166,8 @@ class ClientService extends EventTarget {
 
   private filterSessionStrikedRelays(urls: string[]): string[] {
     return urls.filter((u) => {
-      const n = normalizeAnyRelayUrl(u) || u
+      const n = canonicalRelayStrikeKey(u)
+      if (!n) return true
       return (this.publishStrikeCount.get(n) ?? 0) < ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD
     })
   }
@@ -1143,9 +1176,10 @@ class ClientService extends EventTarget {
    * If every URL was session-striked, clear strikes once so reads/publishes can retry (mobile WebSocket churn).
    */
   clearSessionRelayStrikes(): void {
-    if (this.publishStrikeCount.size === 0) return
+    if (this.publishStrikeCount.size === 0 && this.sessionRelayFailureLastIncrementAt.size === 0) return
     logger.info('[Relay] Session relay strikes cleared', { relayCount: this.publishStrikeCount.size })
     this.publishStrikeCount.clear()
+    this.sessionRelayFailureLastIncrementAt.clear()
     this.notifySessionRelayStrikesChanged()
   }
 
@@ -1154,9 +1188,10 @@ class ClientService extends EventTarget {
    * until new failures accrue (same counter as {@link clearSessionRelayStrikes}).
    */
   clearSessionRelayStrikeForUrl(url: string): boolean {
-    const n = normalizeAnyRelayUrl(url) || url
+    const n = canonicalRelayStrikeKey(url)
     if (!n) return false
     const had = this.publishStrikeCount.delete(n)
+    this.sessionRelayFailureLastIncrementAt.delete(n)
     if (had) {
       logger.info('[Relay] Session strikes cleared for relay (manual)', { url: n })
       this.notifySessionRelayStrikesChanged(n)
@@ -1170,9 +1205,12 @@ class ClientService extends EventTarget {
   clearSessionRelayStrikesForUrls(urls: string[]): number {
     let cleared = 0
     for (const url of urls) {
-      const n = normalizeAnyRelayUrl(url) || url
+      const n = canonicalRelayStrikeKey(url)
       if (!n) continue
-      if (this.publishStrikeCount.delete(n)) cleared += 1
+      if (this.publishStrikeCount.delete(n)) {
+        cleared += 1
+        this.sessionRelayFailureLastIncrementAt.delete(n)
+      }
     }
     if (cleared > 0) {
       logger.info('[Relay] Session strikes cleared for relays (added to publish selection)', {
@@ -1195,11 +1233,11 @@ class ClientService extends EventTarget {
     if (filtered.length === 0 && unique.length > 0) {
       let cleared = 0
       for (const u of unique) {
-        // HTTP index relays (CORS down, wrong origin) do not recover like WebSockets; clearing their strikes
-        // here caused retry storms with many parallel fetchEvents hitting the same dead endpoint.
-        if (isHttpRelayUrl(u)) continue
-        const n = normalizeAnyRelayUrl(u) || u
-        if (n && this.publishStrikeCount.delete(n)) cleared += 1
+        const n = canonicalRelayStrikeKey(u)
+        if (n && this.publishStrikeCount.delete(n)) {
+          cleared += 1
+          this.sessionRelayFailureLastIncrementAt.delete(n)
+        }
       }
       if (cleared === 0) return filtered
       logger.info('[Relay] Batch was all session-striked — cleared strikes for this batch only', {
@@ -1214,7 +1252,8 @@ class ClientService extends EventTarget {
 
   /** Record a successful publish and its latency for session-based preference when selecting random relays. */
   recordPublishSuccess(url: string, latencyMs: number) {
-    const n = normalizeAnyRelayUrl(url) || url
+    const n = canonicalRelayStrikeKey(url)
+    if (!n) return
     const cur = this.sessionRelayPublishStats.get(n)
     if (cur) {
       cur.successCount += 1
@@ -1233,7 +1272,7 @@ class ClientService extends EventTarget {
     const out: string[] = []
     for (const [url, stats] of this.sessionRelayPublishStats.entries()) {
       if (stats.successCount < 1) continue
-      const n = normalizeAnyRelayUrl(url) || url
+      const n = canonicalRelayStrikeKey(url)
       if (!n || readOnlySet.has(n)) continue
       if ((this.publishStrikeCount.get(n) ?? 0) >= ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD) continue
       out.push(n)
@@ -1258,9 +1297,14 @@ class ClientService extends EventTarget {
     presetStriked: string[]
   } {
     const presetSet = new Set<string>()
-    for (const u of [...FAST_WRITE_RELAY_URLS, ...FAST_READ_RELAY_URLS]) {
+    for (const u of [
+      ...FAST_WRITE_RELAY_URLS,
+      ...FAST_READ_RELAY_URLS,
+      ...DEFAULT_FAVORITE_RELAYS,
+      ...SEARCHABLE_RELAY_URLS
+    ]) {
       const n = normalizeUrl(u) || u
-      if (n) presetSet.add(n)
+      if (n) presetSet.add(canonicalRelayStrikeKey(n))
     }
     const preset = Array.from(presetSet)
     const strikedUrls = Array.from(this.publishStrikeCount.entries())
@@ -1291,19 +1335,23 @@ class ClientService extends EventTarget {
       .map((u) => normalizeAnyRelayUrl(u) || u)
       .filter((n) => n && !readOnlySet.has(n))
     const unique = Array.from(new Set(normalizedCandidates))
-    const notStruckOut = unique.filter(
-      (n) => (this.publishStrikeCount.get(n) ?? 0) < ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD
-    )
+    const notStruckOut = unique.filter((u) => {
+      const n = canonicalRelayStrikeKey(u)
+      if (!n) return false
+      return (this.publishStrikeCount.get(n) ?? 0) < ClientService.SESSION_RELAY_FAILURE_STRIKE_THRESHOLD
+    })
     const preferred: string[] = []
     const rest: string[] = []
     for (const url of notStruckOut) {
-      const stats = this.sessionRelayPublishStats.get(url)
+      const sk = canonicalRelayStrikeKey(url)
+      const stats = sk ? this.sessionRelayPublishStats.get(sk) : undefined
       if (stats && stats.successCount >= 1) preferred.push(url)
       else rest.push(url)
     }
     preferred.sort((a, b) => {
-      const sa = this.sessionRelayPublishStats.get(a)!
-      const sb = this.sessionRelayPublishStats.get(b)!
+      const sa = this.sessionRelayPublishStats.get(canonicalRelayStrikeKey(a))
+      const sb = this.sessionRelayPublishStats.get(canonicalRelayStrikeKey(b))
+      if (!sa || !sb) return 0
       if (sb.successCount !== sa.successCount) return sb.successCount - sa.successCount
       const avgA = sa.sumLatencyMs / sa.successCount
       const avgB = sb.sumLatencyMs / sb.successCount
@@ -1436,10 +1484,31 @@ class ClientService extends EventTarget {
         publishOpBatch.logEnd(status)
       }
 
-      logger.debug('[PublishEvent] Setting up global timeout (30 seconds)')
+      /**
+       * Publish intentionally does **not** use {@link QueryService.acquireGlobalRelayConnectionSlot}: feed
+       * REQ setup can hold every slot for hung `ensureRelay` handshakes, which left `finishedCount === 0`
+       * until the global timeout (user saw “Request timed out” on every relay). Publish is already bounded
+       * by {@link MAX_PUBLISH_RELAYS}. Budget still scales with relay count as a rough upper bound.
+       */
+      const slotCap = Math.max(1, MAX_CONCURRENT_RELAY_CONNECTIONS)
+      const publishWaves = Math.max(1, Math.ceil(uniqueRelayUrls.length / slotCap))
+      const perWaveBudgetMs =
+        RELAY_POOL_CONNECTION_TIMEOUT_MS + RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS + 10_000
+      const publishGlobalDeadlineMs = Math.min(
+        600_000,
+        Math.max(
+          RELAY_POOL_CONNECTION_TIMEOUT_MS + RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS + 30_000,
+          publishWaves * perWaveBudgetMs + 25_000
+        )
+      )
+      logger.debug('[PublishEvent] Setting up global timeout', {
+        publishGlobalDeadlineMs,
+        publishWaves,
+        relayCount: uniqueRelayUrls.length,
+        slotCap
+      })
       let hasResolved = false
 
-      // Add a global timeout to prevent hanging - use 30 seconds for faster feedback
       const globalTimeout = setTimeout(() => {
         if (hasResolved) {
           logger.debug('[PublishEvent] Already resolved, ignoring timeout')
@@ -1481,25 +1550,29 @@ class ClientService extends EventTarget {
             totalCount: uniqueRelayUrls.length
           })
         }
-      }, 30_000) // 30 seconds global timeout (reduced from 2 minutes)
+      }, publishGlobalDeadlineMs)
 
       logger.debug('[PublishEvent] Starting Promise.allSettled for all relays')
       const relayPublishAllSettled = Promise.allSettled(
         uniqueRelayUrls.map(async (url, index) => {
           // eslint-disable-next-line @typescript-eslint/no-this-alias
           const that = this
-          await that.queryService.acquireGlobalRelayConnectionSlot()
           const startMs = Date.now()
           logger.debug(`[PublishEvent] Starting relay ${index + 1}/${uniqueRelayUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
-          const connectionTimeout = isLocal ? 5_000 : 8_000 // 5s for local, 8s for remote
-          const publishTimeout = isLocal ? 5_000 : 8_000 // 5s for local, 8s for remote
-          
+          /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
+          const connectionTimeout = isLocal ? 5_000 : RELAY_POOL_CONNECTION_TIMEOUT_MS
+          /** ACK wait: {@link applyRelayNip42AckTimeout} already sets relay.publishTimeout; do not override with a few seconds (extension signers + slow relays). */
+          const publishAckBudgetMs = isLocal ? 5_000 : RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS
+          const httpPublishBudgetMs = isLocal ? 5_000 : 8_000
+
           // Set up a per-relay timeout to ensure we always reach the finally block
           const relayTimeout = setTimeout(() => {
-            logger.warn(`[PublishEvent] Per-relay timeout for ${url}`, { connectionTimeout, publishTimeout })
-            // This will be caught in the catch block if the promise is still pending
-          }, connectionTimeout + publishTimeout + 2_000) // Add 2s buffer
+            logger.warn(`[PublishEvent] Per-relay watchdog fired for ${url}`, {
+              connectionTimeout,
+              publishAckBudgetMs
+            })
+          }, connectionTimeout + publishAckBudgetMs + 2_000)
           
           try {
             if (isHttpRelayUrl(url)) {
@@ -1508,7 +1581,10 @@ class ClientService extends EventTarget {
               await Promise.race([
                 publishEventToHttpRelay(base, event),
                 new Promise<never>((_, reject) =>
-                  setTimeout(() => reject(new Error(`HTTP publish timeout after ${publishTimeout}ms`)), publishTimeout)
+                  setTimeout(
+                    () => reject(new Error(`HTTP publish timeout after ${httpPublishBudgetMs}ms`)),
+                    httpPublishBudgetMs
+                  )
                 )
               ])
               that.recordPublishSuccess(url, Date.now() - startMs)
@@ -1518,89 +1594,120 @@ class ClientService extends EventTarget {
               return
             }
 
-            // For local relays, add a connection timeout
             let relay: Relay
-            logger.debug(`[PublishEvent] Ensuring relay connection`, { url, isLocal, connectionTimeout })
+            for (let wsAttempt = 0; wsAttempt < 2; wsAttempt++) {
+              try {
+                logger.debug(`[PublishEvent] Ensuring relay connection`, {
+                  url,
+                  isLocal,
+                  connectionTimeout,
+                  wsAttempt
+                })
 
-            const connectionPromise = isLocal
-              ? Promise.race([
-                  this.pool.ensureRelay(url),
-                  new Promise<Relay>((_, reject) =>
-                    setTimeout(() => reject(new Error('Local relay connection timeout')), connectionTimeout)
-                  )
-                ])
-              : Promise.race([
-                  this.pool.ensureRelay(url),
-                  new Promise<Relay>((_, reject) =>
-                    setTimeout(() => reject(new Error('Remote relay connection timeout')), connectionTimeout)
-                  )
-                ])
+                const ensureOpts = { connectionTimeout }
+                const connectionPromise = isLocal
+                  ? Promise.race([
+                      this.pool.ensureRelay(url, ensureOpts),
+                      new Promise<Relay>((_, reject) =>
+                        setTimeout(() => reject(new Error('Local relay connection timeout')), connectionTimeout)
+                      )
+                    ])
+                  : Promise.race([
+                      this.pool.ensureRelay(url, ensureOpts),
+                      new Promise<Relay>((_, reject) =>
+                        setTimeout(() => reject(new Error('Remote relay connection timeout')), connectionTimeout)
+                      )
+                    ])
 
-            relay = await connectionPromise
-            logger.debug(`[PublishEvent] Relay connected`, { url })
-            const relayKeyPub = normalizeUrl(url) || url
-            patchRelayNoticeForFetchFailures(relay as unknown as AbstractRelay, relayKeyPub, (u, m) =>
-              that.recordRelayNoticeFetchFailure(u, m)
-            )
+                relay = await connectionPromise
+                logger.debug(`[PublishEvent] Relay connected`, { url })
+                const relayKeyPub = normalizeUrl(url) || url
+                patchRelayNoticeForFetchFailures(relay as unknown as AbstractRelay, relayKeyPub, (u, m) =>
+                  that.recordRelayNoticeFetchFailure(u, m)
+                )
 
-            relay.publishTimeout = publishTimeout
-            
-            logger.debug(`[PublishEvent] Publishing to relay`, { url })
-            
-            // Wrap publish in a timeout promise
-            const publishPromise = relay
-              .publish(event)
-              .then(() => {
-                logger.debug(`[PublishEvent] Successfully published to relay`, { url })
-                that.recordPublishSuccess(url, Date.now() - startMs)
-                this.trackEventSeenOn(event.id, relay)
-                successCount++
-                relayStatuses.push({ url, success: true })
-              })
-              .catch((error) => {
-                logger.warn(`[PublishEvent] Publish failed, checking if auth required`, { url, error: error.message })
-                if (
-                  error instanceof Error &&
-                  isRelayAuthRequiredErrorMessage(error.message) &&
-                  that.canSignerAuthenticateRelay()
-                ) {
-                  logger.debug(`[PublishEvent] Auth required, attempting authentication`, { url })
-                  applyRelayNip42AckTimeout(relay)
-                  return authenticateNip42Relay(relay, (authEvt: EventTemplate) =>
-                    queueRelayAuthSign(() => that.signer!.signEvent(authEvt))
-                  )
-                    .then(() => {
-                      logger.debug(`[PublishEvent] Auth successful, retrying publish`, { url })
-                      return relay.publish(event)
+                applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
+
+                logger.debug(`[PublishEvent] Publishing to relay`, { url })
+
+                const publishPromise = relay
+                  .publish(event)
+                  .then(() => {
+                    logger.debug(`[PublishEvent] Successfully published to relay`, { url })
+                    that.recordPublishSuccess(url, Date.now() - startMs)
+                    this.trackEventSeenOn(event.id, relay)
+                    successCount++
+                    relayStatuses.push({ url, success: true })
+                  })
+                  .catch((error) => {
+                    logger.warn(`[PublishEvent] Publish failed, checking if auth required`, {
+                      url,
+                      error: error.message
                     })
-                    .then(() => {
-                      logger.debug(`[PublishEvent] Successfully published after auth`, { url })
-                      that.recordPublishSuccess(url, Date.now() - startMs)
-                      this.trackEventSeenOn(event.id, relay)
-                      successCount++
-                      relayStatuses.push({ url, success: true })
-                    })
-                    .catch((authError) => {
-                      logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authError.message })
-                      errors.push({ url, error: authError })
-                      relayStatuses.push({ url, success: false, error: authError.message })
+                    if (
+                      error instanceof Error &&
+                      isRelayAuthRequiredErrorMessage(error.message) &&
+                      that.canSignerAuthenticateRelay()
+                    ) {
+                      logger.debug(`[PublishEvent] Auth required, attempting authentication`, { url })
+                      applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
+                      return authenticateNip42Relay(relay, (authEvt: EventTemplate) =>
+                        queueRelayAuthSign(() => that.signer!.signEvent(authEvt))
+                      )
+                        .then(() => {
+                          logger.debug(`[PublishEvent] Auth successful, retrying publish`, { url })
+                          return relay.publish(event)
+                        })
+                        .then(() => {
+                          logger.debug(`[PublishEvent] Successfully published after auth`, { url })
+                          that.recordPublishSuccess(url, Date.now() - startMs)
+                          this.trackEventSeenOn(event.id, relay)
+                          successCount++
+                          relayStatuses.push({ url, success: true })
+                        })
+                        .catch((authError) => {
+                          logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authError.message })
+                          errors.push({ url, error: authError })
+                          relayStatuses.push({ url, success: false, error: authError.message })
+                          that.recordSessionRelayFailure(url)
+                        })
+                    } else {
+                      logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
+                      errors.push({ url, error })
+                      relayStatuses.push({ url, success: false, error: error.message })
                       that.recordSessionRelayFailure(url)
-                    })
-                } else {
-                  logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
-                  errors.push({ url, error })
-                  relayStatuses.push({ url, success: false, error: error.message })
-                  that.recordSessionRelayFailure(url)
+                    }
+                  })
+
+                await Promise.race([
+                  publishPromise,
+                  new Promise<void>((_, reject) =>
+                    setTimeout(
+                      () => reject(new Error(`Publish timeout after ${publishAckBudgetMs}ms`)),
+                      publishAckBudgetMs
+                    )
+                  )
+                ])
+                break
+              } catch (wsErr) {
+                const msg = wsErr instanceof Error ? wsErr.message : String(wsErr)
+                const retriable =
+                  wsAttempt === 0 &&
+                  /Remote relay connection timeout|Local relay connection timeout|Publish timeout after|publish timed out|websocket closed|connection failed|relay connection closed|SendingOnClosedConnection/i.test(
+                    msg
+                  )
+                if (!retriable) {
+                  throw wsErr
                 }
-              })
-            
-            // Add a timeout wrapper for the entire publish operation
-            await Promise.race([
-              publishPromise,
-              new Promise<void>((_, reject) =>
-                setTimeout(() => reject(new Error(`Publish timeout after ${publishTimeout}ms`)), publishTimeout)
-              )
-            ])
+                logger.info('[PublishEvent] Closing pooled relay and retrying publish once', { url, msg })
+                try {
+                  this.pool.close([url])
+                } catch {
+                  /* ignore */
+                }
+                await new Promise((r) => setTimeout(r, 400))
+              }
+            }
           } catch (error) {
             const softHttpDown =
               isHttpRelayUrl(url) &&
@@ -1624,7 +1731,6 @@ class ClientService extends EventTarget {
             })
             that.recordSessionRelayFailure(url)
           } finally {
-            that.queryService.releaseGlobalRelayConnectionSlot()
             clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount
             logger.debug(`[PublishEvent] Relay finished`, { 
@@ -3650,21 +3756,74 @@ class ClientService extends EventTarget {
     )
 
     const budgetMs = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+    /** True only when *every* pubkey in this batch already has kind 10002 in IDB (not just you). */
     const allHaveKind10002 = pubkeys.every((_, i) => storedRelayEvents[i] != null)
 
-    const networkBundle = async (): Promise<{
+    /**
+     * Fill gaps from the network: start from IDB rows, then fetch kind 10002 + 10243 **only for pubkeys
+     * missing 10002** (and 10243-only where 10002 exists but HTTP list does not). Avoids re-downloading
+     * your relay list on every reply just because the parent author’s 10002 was never cached.
+     */
+    const hydrateRelayListsFromNetwork = async (): Promise<{
       relayEvents: (NEvent | null | undefined)[]
       httpRelayEvents: (NEvent | null | undefined)[]
       cacheRelayEvents: (NEvent | null | undefined)[]
     }> => {
-      const relayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-        pubkeys,
-        kinds.RelayList
+      const relayEvents: (NEvent | null | undefined)[] = pubkeys.map((_, i) =>
+        storedRelayEvents[i] != null ? (storedRelayEvents[i] as NEvent) : undefined
       )
-      const httpRelayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-        pubkeys,
-        ExtendedKind.HTTP_RELAY_LIST
+      const httpRelayEvents: (NEvent | null | undefined)[] = pubkeys.map((_, i) =>
+        storedHttpRelayEvents[i] != null ? (storedHttpRelayEvents[i] as NEvent) : undefined
       )
+
+      const missing10002Pubkeys = pubkeys.filter((_pk, i) => storedRelayEvents[i] == null)
+      if (missing10002Pubkeys.length > 0) {
+        logger.debug(
+          '[FetchRelayLists] Kind 10002 missing in IndexedDB for some pubkeys; fetching only those over the network',
+          {
+            batchSize: pubkeys.length,
+            missingCount: missing10002Pubkeys.length,
+            missingPubkeyPrefixes: missing10002Pubkeys.map((p) => p.slice(0, 12))
+          }
+        )
+        const [relFetched, httpFetched] = await Promise.all([
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+            missing10002Pubkeys,
+            kinds.RelayList
+          ),
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+            missing10002Pubkeys,
+            ExtendedKind.HTTP_RELAY_LIST
+          )
+        ])
+        let j = 0
+        for (let i = 0; i < pubkeys.length; i++) {
+          if (storedRelayEvents[i] == null) {
+            relayEvents[i] = relFetched[j] ?? undefined
+            httpRelayEvents[i] = httpFetched[j] ?? undefined
+            j++
+          }
+        }
+      }
+
+      const missingHttpOnlyPubkeys = pubkeys.filter(
+        (_pk, i) => storedRelayEvents[i] != null && storedHttpRelayEvents[i] == null
+      )
+      if (missingHttpOnlyPubkeys.length > 0) {
+        const httpOnlyFetched =
+          await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
+            missingHttpOnlyPubkeys,
+            ExtendedKind.HTTP_RELAY_LIST
+          )
+        let j = 0
+        for (let i = 0; i < pubkeys.length; i++) {
+          if (storedRelayEvents[i] != null && storedHttpRelayEvents[i] == null) {
+            httpRelayEvents[i] = httpOnlyFetched[j] ?? undefined
+            j++
+          }
+        }
+      }
+
       const cacheRelayEvents = await this.fetchCacheRelayEventsFromMultipleSources(
         pubkeys,
         relayEvents,
@@ -3697,10 +3856,11 @@ class ClientService extends EventTarget {
     }
 
     const raced = await Promise.race([
-      networkBundle(),
+      hydrateRelayListsFromNetwork(),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs))
     ])
     if (raced != null) {
+      this.refreshRelayListsFromNetwork(pubkeys, storedRelayEvents)
       return this.mergeRelayListsBundle(
         pubkeys,
         raced.relayEvents,

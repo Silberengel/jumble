@@ -29,7 +29,7 @@ import { buildLabLanguageToolPreferenceList } from '@/lib/trinity-languages'
 import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
-  fetchTranslateLanguages,
+  warmTranslateLanguagesOnce,
   isTranslateConfigured,
   translateApiLanguageCode,
   type TranslateLanguageOption
@@ -555,7 +555,7 @@ export default function AdvancedEventLabDialog({
     }
     let cancelled = false
     setTranslateLoad('loading')
-    void fetchTranslateLanguages()
+    void warmTranslateLanguagesOnce()
       .then((list) => {
         if (cancelled) return
         const resolved = buildResolvedTranslateMenuLanguageOptions(list)

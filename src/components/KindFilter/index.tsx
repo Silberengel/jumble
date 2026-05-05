@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ExtendedKind, NIP71_VIDEO_KINDS, PROFILE_FEED_KINDS } from '@/constants'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
-import { useKindFilter } from '@/providers/KindFilterProvider'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { ListFilter } from 'lucide-react'
 import { kinds } from 'nostr-tools'
@@ -65,7 +65,7 @@ export default function KindFilter({
     feedKindFilterBypass,
     updateShowKinds,
     updateFeedKindFilterBypass
-  } = useKindFilter()
+  } = useKindFilterOrDefaults()
   const [open, setOpen] = useState(false)
   const [temporaryShowKinds, setTemporaryShowKinds] = useState(showKinds)
   const [temporaryShowKind1OPs, setTemporaryShowKind1OPs] = useState(savedShowKind1OPs)
@@ -224,7 +224,8 @@ export default function KindFilter({
           <p className="text-muted-foreground text-xs">kind {KIND_1111}</p>
         </div>
         {KIND_FILTER_OPTIONS.map(({ kindGroup, label }) => {
-          const checked = kindGroup.every((k) => temporaryShowKinds.includes(k))
+          /** `some` not `every`: saved kinds may include e.g. only 30311 while the row lists 30311–30313; `every` made the box look off while 30311 still matched the feed. */
+          const checked = kindGroup.some((k) => temporaryShowKinds.includes(k))
           return (
             <div
               key={kindGroup.join('-')}

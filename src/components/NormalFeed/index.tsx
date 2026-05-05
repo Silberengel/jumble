@@ -1,7 +1,7 @@
 import NoteList, { TNoteListRef } from '@/components/NoteList'
 import { RefreshButton } from '@/components/RefreshButton'
 import Tabs, { TabDefinition } from '@/components/Tabs'
-import { useKindFilter } from '@/providers/KindFilterProvider'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import storage from '@/services/local-storage.service'
 import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
@@ -45,7 +45,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
   withKindFilter?: boolean
   /**
    * When true (relay explorer page), list shows the full relay batch. When omitted, uses KindFilter "All Events"
-   * ({@link useKindFilter} / persisted bypass) on home feeds.
+   * ({@link useKindFilterOrDefaults} / persisted bypass) on home feeds.
    */
   showAllKinds?: boolean
   /**
@@ -102,7 +102,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
 ) {
   const { hideUntrustedNotes } = useUserTrust()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
-    useKindFilter()
+    useKindFilterOrDefaults()
   const [listMode, setListMode] = useState<TNoteListMode>(() => {
     const storedMode = storage.getNoteListMode()
     if (isMainFeed) {

@@ -4,11 +4,16 @@
  *
  * **Local dev:** loopback bases (`http://localhost:*` / `http://127.0.0.1:*`) are automatically fetched via
  * the Vite same-origin proxy `/dev-index-relay` → `VITE_DEV_INDEX_RELAY_TARGET` (default in `vite.config.ts`).
- * Production and remote HTTPS relays are unchanged; those need CORS on the relay or a real reverse proxy.
+ * Known broken CORS HTTPS hosts (e.g. nos.lol) use `/dev-cors-index-relay` (see `vite.config.ts` + `url.ts`).
+ * Production and other remote HTTPS relays still need CORS or your own reverse proxy.
  */
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
-import { devProxyLoopbackHttpRelayBase, normalizeHttpRelayUrl } from '@/lib/url'
+import {
+  devProxyCorsProblematicHttpsIndexRelayBase,
+  devProxyLoopbackHttpRelayBase,
+  normalizeHttpRelayUrl
+} from '@/lib/url'
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { verifyEvent } from 'nostr-tools'
 
@@ -55,7 +60,7 @@ function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
   return body
 }
 
-const INDEX_RELAY_HTTP_WARN_COOLDOWN_MS = 5000
+const INDEX_RELAY_HTTP_WARN_COOLDOWN_MS = 25_000
 const lastIndexRelayHttpWarnAtByEndpoint = new Map<string, number>()
 
 const DEV_INDEX_RELAY_TRANSPORT_HINT_MS = 60_000
@@ -96,7 +101,10 @@ export class IndexRelayTransportError extends Error {
 }
 
 function isDevViteIndexRelayProxyPath(endpoint: string): boolean {
-  return import.meta.env.DEV && endpoint.includes('/dev-index-relay')
+  return (
+    import.meta.env.DEV &&
+    (endpoint.includes('/dev-index-relay') || endpoint.includes('/dev-cors-index-relay'))
+  )
 }
 
 function maybeLogDevIndexRelayUnreachableHint(): void {
@@ -167,20 +175,27 @@ function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
 
 /**
  * Query one HTTP index relay. Runs one POST per filter when given an array.
- * When every filter attempt fails (HTTP error or network) and no events are returned,
- * {@link options.onHardFailure} runs once (used for session strike parity with WebSocket relays).
+ * When every filter attempt fails with an HTTP response or a non-transport error and no events are returned,
+ * {@link options.onHardFailure} runs once (session strike parity with WebSocket relays). Pure browser transport
+ * failures (e.g. CORS on direct `https://` index POST) do not call it.
  */
+function devHttpIndexRelayBaseForFetch(baseUrl: string): string {
+  const n = normalizeHttpRelayUrl(baseUrl) || baseUrl
+  return devProxyCorsProblematicHttpsIndexRelayBase(devProxyLoopbackHttpRelayBase(n))
+}
+
 export async function queryIndexRelay(
   baseUrl: string,
   filter: Filter | Filter[],
   options?: { signal?: AbortSignal; onHardFailure?: () => void }
 ): Promise<NEvent[]> {
-  const base = devProxyLoopbackHttpRelayBase(normalizeHttpRelayUrl(baseUrl) || baseUrl)
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
   const endpoint = indexRelayFilterUrl(base)
   const filters = Array.isArray(filter) ? filter : [filter]
   const out: NEvent[] = []
   const seen = new Set<string>()
-  let sawHardFailure = false
+  /** Only set when the server returned HTTP (!ok) or a non-transport exception — not browser-only CORS / “failed to fetch”. */
+  let strikeWorthyHttpFailure = false
   for (const f of filters) {
     const body = nostrFilterToIndexRelayBody(filterForIndexRelay(f))
     try {
@@ -195,7 +210,7 @@ export async function queryIndexRelay(
         timeoutMs: 25_000
       })
       if (!res.ok) {
-        sawHardFailure = true
+        strikeWorthyHttpFailure = true
         if (isDevViteIndexRelayProxyPath(endpoint)) {
           let detail = ''
           try {
@@ -233,15 +248,15 @@ export async function queryIndexRelay(
       }
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e
-      sawHardFailure = true
       if (isIndexRelayTransportFailure(e)) {
         handleFilterTransportFailure(endpoint, e)
       } else {
+        strikeWorthyHttpFailure = true
         warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] filter request error', { endpoint, error: e })
       }
     }
   }
-  if (sawHardFailure && out.length === 0 && filters.length > 0) {
+  if (strikeWorthyHttpFailure && out.length === 0 && filters.length > 0) {
     // In dev, transport failures on the Vite loopback proxy (relay unreachable / proxy not yet ready)
     // should not record session strikes — the relay may be temporarily down or the dev server
     // needs a restart. Only real application errors (4xx/5xx from a live relay) trigger strikes in dev.
@@ -263,7 +278,7 @@ export async function publishEventToHttpRelay(
   event: NEvent,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
-  const base = devProxyLoopbackHttpRelayBase(normalizeHttpRelayUrl(baseUrl) || baseUrl)
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
   const endpoint = indexRelayPublishUrl(base)
   try {
     const res = await fetchWithTimeout(endpoint, {

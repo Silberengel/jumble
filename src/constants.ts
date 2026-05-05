@@ -122,7 +122,18 @@ export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
  * Without this, a stuck `fetchReplaceableEventsFromProfileFetchRelays` can block the UI even when kind
  * 10002 is already in IndexedDB (the 30s publish timeout only runs after targets are resolved).
  */
-export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 12_000
+/**
+ * Cold `fetchRelayLists` runs NIP-65 (10002) + HTTP list (10243) fetches and often a 10432 pass; those used
+ * to run strictly in series under one race, so 32s was routinely shorter than real wall time → prioritize
+ * publish timed out and the UI looked stuck.
+ */
+export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 60_000
+
+/**
+ * {@link ClientService.prioritizePublishUrlListWithTimeout}: must exceed {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS}
+ * so one full `fetchRelayLists` can finish before we fall back to “deduped order without inbox fetch”.
+ */
+export const PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS + 25_000
 
 /** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
 export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
@@ -409,7 +420,6 @@ export const GIF_RELAY_URLS = [
 ]
 
 export const SEARCHABLE_RELAY_URLS = [
-  'wss://freelay.sovbit.host',
   'wss://search.nos.today',
   'wss://nostr.wine', 
   'wss://orly-relay.imwald.eu',
@@ -417,18 +427,12 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
   'wss://relay.primal.net',
   'wss://relay.damus.io',
-  'wss://relay.snort.social',
   'wss://nos.lol',
   'wss://nostr.mom',
   'wss://relay.noswhere.com',
   'wss://relay.wikifreedia.xyz',
   'wss://nostr.einundzwanzig.space',
-  'wss://nostrelites.org',
-  'wss://spatia-arcana.com',
-  'wss://nostr-pub.wellorder.net',
-  'wss://pyramid.fiatjaf.com/',
-  'wss://nostr.lopp.social/',
-  'wss://relay.dergigi.com/'
+  'wss://nostr-pub.wellorder.net'
   ]
 
 export const PROFILE_RELAY_URLS = [

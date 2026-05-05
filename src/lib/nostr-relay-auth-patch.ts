@@ -65,7 +65,7 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
     const r = asRelayInternals(this)
     if (!r.connectionPromise && typeof message === 'string' && message.startsWith('["AUTH"')) {
       abortPendingAuthForDeadSocket(r, message)
-      logger.warn('[RelayOp] Dropped AUTH (socket already closed; connect timeout vs signing race)', {
+      logger.debug('[RelayOp] Dropped AUTH (socket already closed; connect timeout vs signing race)', {
         url: r.url
       })
       return Promise.resolve()
@@ -91,7 +91,7 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
           msg.includes('relay connection closed before AUTH') ||
           /relay connection closed/i.test(msg)
         if (benignRace) {
-          logger.warn('[RelayOp] Relay AUTH aborted (benign race)', { url: r.url, detail: msg })
+          logger.debug('[RelayOp] Relay AUTH aborted (benign race)', { url: r.url, detail: msg })
           r.authPromise = undefined
           return ''
         }

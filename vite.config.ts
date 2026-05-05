@@ -157,6 +157,17 @@ export default defineConfig(({ mode }) => {
           target: devIndexRelayTarget,
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/dev-index-relay/, '') || '/'
+        },
+        /**
+         * Some public index relays (e.g. nos.lol) omit `Content-Type` from CORS preflight
+         * `Access-Control-Allow-Headers`, so browser POST /api/events/filter fails from localhost.
+         * Same-origin proxy only — allowlisted hosts in {@link devProxyCorsProblematicHttpsIndexRelayBase}.
+         */
+        '/dev-cors-index-relay': {
+          target: 'https://nos.lol',
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p) => p.replace(/^\/dev-cors-index-relay/, '') || '/'
         }
       }
     },

@@ -84,11 +84,29 @@ export function translateServerSupportsLogicalTarget(targetCode: string): boolea
 
 let languagesCache: { list: TranslateLanguageOption[]; at: number; fromFailure?: boolean } | null = null
 const LANGUAGES_CACHE_TTL_MS = 60_000
-/** After HTTP/parse failure, cache empty so each {@link useMenuActions} mount does not re-request. */
-const LANGUAGES_FAILURE_CACHE_TTL_MS = 120_000
+/** After HTTP/parse failure, avoid hammering a broken `/api/translate` proxy (dev 500s); 2m was still noisy with many remounts. */
+const LANGUAGES_FAILURE_CACHE_TTL_MS = 86_400_000
 
 let languagesFetchInFlight: Promise<TranslateLanguageOption[]> | null = null
 let lastLanguagesFailureLogAt = 0
+
+/**
+ * Dedupes `/languages` across the whole app while a fetch is in flight. Cleared in `finally` so later
+ * mounts hit {@link fetchTranslateLanguages} again and get the memory cache without holding a stale Promise.
+ */
+let warmTranslateLanguagesPromise: Promise<TranslateLanguageOption[]> | null = null
+
+/** One shared `/languages` request per flight; safe to call from every note’s menu hook. */
+export function warmTranslateLanguagesOnce(): Promise<TranslateLanguageOption[]> {
+  if (!TRANSLATE_URL.trim()) return Promise.resolve([])
+  if (warmTranslateLanguagesPromise) return warmTranslateLanguagesPromise
+  const p = fetchTranslateLanguages()
+  warmTranslateLanguagesPromise = p
+  void p.finally(() => {
+    warmTranslateLanguagesPromise = null
+  })
+  return p
+}
 
 function parseLanguagesResponse(data: unknown): TranslateLanguageOption[] {
   if (!Array.isArray(data)) return []
@@ -168,6 +186,7 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
 export function clearTranslateLanguagesCache(): void {
   languagesCache = null
   advertisedTranslateApiCodes = null
+  warmTranslateLanguagesPromise = null
 }
 
 /**

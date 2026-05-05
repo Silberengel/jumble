@@ -8,7 +8,7 @@ import { useProfilePins } from '@/hooks/useProfilePins'
 import { useProfileTimeline } from '@/hooks/useProfileTimeline'
 import { useProfileZapPollParticipation } from '@/hooks/useProfileZapPollParticipation'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
-import { useKindFilter } from '@/providers/KindFilterProvider'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useZap } from '@/providers/ZapProvider'
 import client from '@/services/client.service'
 import storage from '@/services/local-storage.service'
@@ -42,7 +42,7 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
   const { t } = useTranslation()
   const { isEventDeleted } = useDeletedEvent()
   const { zapReplyThreshold } = useZap()
-  const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilter()
+  const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
   /** Profile timelines always show reposts; global kind filter still applies to other kinds. */
   const profileTimelineShowKinds = useMemo(() => {
     if (showKinds.includes(kinds.Repost) && showKinds.includes(ExtendedKind.GENERIC_REPOST)) {

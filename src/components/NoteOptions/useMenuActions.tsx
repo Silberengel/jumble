@@ -62,8 +62,8 @@ import {
   translateNoteAndRelatedForDisplay
 } from '@/lib/translate-note-for-menu'
 import {
-  fetchTranslateLanguages,
   isTranslateConfigured,
+  warmTranslateLanguagesOnce,
   type TranslateLanguageOption
 } from '@/lib/translate-client'
 import {
@@ -186,7 +186,7 @@ export function useMenuActions({
       return
     }
     let cancelled = false
-    void fetchTranslateLanguages()
+    void warmTranslateLanguagesOnce()
       .then((list) => {
         if (cancelled) return
         setTranslateMenuOptions(buildResolvedTranslateMenuLanguageOptions(list))
