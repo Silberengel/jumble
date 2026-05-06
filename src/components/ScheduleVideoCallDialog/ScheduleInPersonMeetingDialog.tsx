@@ -67,7 +67,8 @@ export function ScheduleInPersonMeetingDialog({
     if (inviteePubkeys.length === 0 || inviteePubkeys.length > MAX_CALENDAR_INVITEES) return false
     if (eventType === 'date') {
       if (!startDateStr.trim()) return false
-      if (endDateStr.trim() && endDateStr <= startDateStr) return false
+      // Same as calendar-event getCalendarOccurrenceWindowMs: end === start is one day; invalid is end strictly before start.
+      if (endDateStr.trim() && endDateStr < startDateStr) return false
       return true
     }
     if (!startDatetime.trim()) return false
@@ -84,7 +85,7 @@ export function ScheduleInPersonMeetingDialog({
     const d = 'preview'
     if (eventType === 'date') {
       if (!startDateStr.trim()) return null
-      if (endDateStr.trim() && endDateStr <= startDateStr) return null
+      if (endDateStr.trim() && endDateStr < startDateStr) return null
       return createInPersonDateBasedCalendarEventDraftEvent({
         d,
         title: title.trim() || t('In-person meeting'),
@@ -147,7 +148,7 @@ export function ScheduleInPersonMeetingDialog({
         toast.error(t('Please set a start date'))
         return
       }
-      if (endDateStr.trim() && endDateStr <= startDateStr) {
+      if (endDateStr.trim() && endDateStr < startDateStr) {
         toast.error(t('End date must be after start date'))
         return
       }
@@ -323,6 +324,17 @@ export function ScheduleInPersonMeetingDialog({
             </>
           )}
           <div>
+            <Label htmlFor="own-inperson-invitees">{t('Invitees')} *</Label>
+            <InviteePicker
+              labelId="own-inperson-invitees"
+              value={inviteePubkeys}
+              onChange={setInviteePubkeys}
+              placeholder={t('Search by name or npub…')}
+              className="mt-1"
+              max={MAX_CALENDAR_INVITEES}
+            />
+          </div>
+          <div>
             <Label htmlFor="own-inperson-location">
               {t('Location')} <span className="text-muted-foreground font-normal">({t('optional')})</span>
             </Label>
@@ -369,17 +381,6 @@ export function ScheduleInPersonMeetingDialog({
               onChange={(e) => setImage(e.target.value)}
               placeholder={t('Optional image for the event')}
               className="mt-1"
-            />
-          </div>
-          <div>
-            <Label htmlFor="own-inperson-invitees">{t('Invitees')} *</Label>
-            <InviteePicker
-              labelId="own-inperson-invitees"
-              value={inviteePubkeys}
-              onChange={setInviteePubkeys}
-              placeholder={t('Search by name or npub…')}
-              className="mt-1"
-              max={MAX_CALENDAR_INVITEES}
             />
           </div>
           {formValid && previewDraft && (
