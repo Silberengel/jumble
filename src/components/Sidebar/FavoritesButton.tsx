@@ -1,10 +1,12 @@
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useNostr } from '@/providers/NostrProvider'
-import { Star } from 'lucide-react'
+import { Flame } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import SidebarItem from './SidebarItem'
 
 export default function FavoritesButton() {
+  const { t } = useTranslation()
   const { navigate, current, currentPageProps, display } = usePrimaryPage()
   const { primaryViewType } = usePrimaryNoteView()
   const { pubkey } = useNostr()
@@ -14,16 +16,16 @@ export default function FavoritesButton() {
 
   return (
     <SidebarItem
-      title="Favorites"
-      onClick={() => navigate('spells', { spell: 'favorites' })}
+      title={t('Heat map')}
+      onClick={() => navigate('spells', { spell: 'heatMap' })}
       active={
         display &&
         current === 'spells' &&
         primaryViewType === null &&
-        spell === 'favorites'
+        spell === 'heatMap'
       }
     >
-      <Star strokeWidth={3} />
+      <Flame strokeWidth={3} />
     </SidebarItem>
   )
 }

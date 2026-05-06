@@ -781,6 +781,20 @@ export default {
     "articles and publications": "Artikel und Veröffentlichungen",
     Interests: "Interessen",
     Favorites: "Favorites",
+    "Heat map": "Thread-Heatmap",
+    heatMapDescription:
+      "Es erscheinen nur Threads mit mindestens fünf feed‑gefilterten Notes (ca. letzte 3 Tage), zusammengeführt aus Sitzungs‑Cache, lokalem Archiv und Relay‑Stack. Größe und Leuchten spiegeln Aktivität wider. Linien verbinden Threads, wenn Notes andere per e‑/E‑/q referenzieren oder dieselbe adressierbare Koordinate (a/A, NIP‑33) nutzen.",
+    heatMapLocalOnlyBanner:
+      "Keine Lese‑Relay‑Liste — es werden nur Sitzungs‑Cache und lokales Archiv gemischt (Relays in den Einstellungen ergänzen für Live‑Daten).",
+    heatMapLoading: "Sitzungs‑Cache, Archiv und Relays werden zusammengeführt…",
+    heatMapEmpty:
+      "Noch nichts passend. Threads brauchen mindestens fünf Notes, die deinen Feed‑Kind‑Filter passieren (ca. letzte 72 Stunden). Feeds lesen oder nach dem Sync erneut scannen.",
+    heatMapFetchError: "Thread-Snapshot von den Relays konnte nicht geladen werden.",
+    heatMapNoRelays: "Bitte Lese-Relays (oder Favoriten) in den Einstellungen hinzufügen.",
+    heatMapRescan: "Erneut scannen",
+    heatMapOpenThread: "Thread öffnen",
+    heatMapBubbleStats: "{{posts}} Notes · {{people}} Personen · {{follows}} Folge-Accounts im Thread",
+    "Please login to view thread heat map": "Bitte anmelden, um die Thread-Heatmap zu öffnen.",
     Calendar: "Kalender",
     "No subscribed interests yet.": "Noch keine Interessen abonniert. Themen in den Einstellungen hinzufügen, um sie hier zu sehen.",
     "No bookmarked notes with id tags yet.": "Noch keine Lesezeichen mit Ereignis-IDs. Nur klassische (e-Tag-) Lesezeichen erscheinen in diesem Feed.",

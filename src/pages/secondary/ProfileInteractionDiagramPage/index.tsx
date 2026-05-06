@@ -250,31 +250,28 @@ const ProfileInteractionDiagramPage = forwardRef<
               return (
                 <div
                   key={p.pubkey}
-                  className="relative rounded-lg border border-border min-w-0 transition hover:opacity-95"
+                  className="relative isolate rounded-lg border border-border min-w-0 transition hover:opacity-95"
                   style={{
                     backgroundColor: `hsl(var(--primary) / ${bgAlpha})`,
                     borderColor: `hsl(var(--primary) / ${borderAlpha})`
                   }}
                 >
-                  {showFollowControls && !selfCard ? (
-                    <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 rounded bg-background/80 px-1 py-0.5 border border-border/60 shadow-sm">
-                      <Checkbox
-                        id={`interaction-follow-${p.pubkey}`}
-                        checked={following}
-                        disabled={followBusyPubkey === p.pubkey}
-                        aria-label={t('interactionMapFollowingCheckbox')}
-                        onCheckedChange={(v) => {
-                          if (v === 'indeterminate') return
-                          handleFollowToggle(p.pubkey, Boolean(v))
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={`w-full min-w-0 flex flex-col items-center gap-1 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring p-2 ${showFollowControls && !selfCard ? 'pt-7' : ''}`}
+                  {/*
+                    Avoid a native <button> filling the card: it can steal hit-testing over the follow
+                    checkbox (Radix also uses a button), which shows the global disabled cursor and blocks toggles.
+                  */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`w-full min-w-0 flex flex-col items-center gap-1 text-left rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring p-2 ${showFollowControls && !selfCard ? 'pt-7' : ''}`}
                     title={cellTitle}
                     onClick={() => push(toProfile(p.pubkey))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        push(toProfile(p.pubkey))
+                      }
+                    }}
                   >
                     <UserAvatar userId={p.pubkey} className="h-10 w-10 shrink-0" />
                     <div className="w-full min-w-0 text-center">
@@ -289,7 +286,25 @@ const ProfileInteractionDiagramPage = forwardRef<
                     <div className="text-[10px] text-muted-foreground truncate w-full text-center">
                       {p.lastReferencedAt > 0 ? dayjs.unix(p.lastReferencedAt).fromNow() : t('interactionMapRecencyUnknown')}
                     </div>
-                  </button>
+                  </div>
+                  {showFollowControls && !selfCard ? (
+                    <label
+                      className="absolute top-1.5 right-1.5 z-30 flex cursor-pointer items-center gap-1 rounded border border-border/60 bg-background/95 px-1 py-0.5 shadow-sm backdrop-blur-[2px]"
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        id={`interaction-follow-${p.pubkey}`}
+                        checked={following}
+                        disabled={followBusyPubkey === p.pubkey}
+                        aria-label={t('interactionMapFollowingCheckbox')}
+                        onCheckedChange={(v) => {
+                          if (v === 'indeterminate') return
+                          handleFollowToggle(p.pubkey, Boolean(v))
+                        }}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               )
             })}

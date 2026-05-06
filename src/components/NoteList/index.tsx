@@ -18,6 +18,7 @@ import {
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
@@ -124,24 +125,6 @@ const LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX = 3200
  */
 const LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT = 2.35
 
-/** Same rules as visible-row filtering when the home kind picker applies (not {@link shouldHideEvent}). */
-function eventPassesNoteListKindPicker(
-  event: Event,
-  effectiveShowKinds: readonly number[],
-  showKind1OPs: boolean,
-  showKind1Replies: boolean,
-  showKind1111: boolean
-): boolean {
-  if (!effectiveShowKinds.includes(event.kind)) return false
-  if (event.kind === kinds.ShortTextNote) {
-    const isReply = isReplyNoteEvent(event)
-    if (isReply && !showKind1Replies) return false
-    if (!isReply && !showKind1OPs) return false
-  }
-  if (event.kind === ExtendedKind.COMMENT && !showKind1111) return false
-  if (event.kind === ExtendedKind.GIT_RELEASE && !showKind1OPs) return false
-  return true
-}
 const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
 /** Min ms between scroll-driven load-more attempts (loadMore also throttles internally). */
 const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180

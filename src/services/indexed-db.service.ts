@@ -2986,6 +2986,57 @@ class IndexedDbService {
     })
   }
 
+  /**
+   * Scan {@link StoreNames.EVENT_ARCHIVE} for events whose kind is in `kinds`.
+   * Cursor order follows the store key (not time), so `since` is applied **after** the scan: collect kind
+   * matches up to `maxRowsScanned`, then keep `created_at >= since` (when set), sort newest-first, cap.
+   */
+  async scanEventArchiveByKinds(options: {
+    kinds: readonly number[]
+    since?: number
+    maxRowsScanned: number
+    maxMatches: number
+  }): Promise<Event[]> {
+    const kindSet = new Set(options.kinds)
+    const since = options.since
+    const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 50_000)
+    const maxMatches = Math.min(Math.max(options.maxMatches, 1), 3000)
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
+
+    return new Promise((resolve, reject) => {
+      const buf: Event[] = []
+      let scanned = 0
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      const req = store.openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || scanned >= maxRows) {
+          tx.commit()
+          let picked = buf
+          if (since !== undefined) {
+            picked = buf.filter((e) => e.created_at >= since)
+          }
+          picked.sort((a, b) => b.created_at - a.created_at)
+          resolve(picked.slice(0, maxMatches))
+          return
+        }
+        scanned += 1
+        const row = cursor.value as TArchivedEventRow
+        const ev = row?.value
+        if (ev && isLikelyCachedNostrEvent(ev) && kindSet.has(ev.kind)) {
+          buf.push(ev)
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
   async deleteArchivedEvent(eventId: string): Promise<void> {
     const id = eventId.toLowerCase()
     await this.initPromise

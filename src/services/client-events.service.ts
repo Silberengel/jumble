@@ -680,6 +680,25 @@ export class EventService {
   }
 
   /**
+   * Session LRU: events of the given `kinds` from this tab session, optionally `created_at >= since`, newest first.
+   * Used with IndexedDB + relays for aggregates (e.g. thread heat map) without depending on relay order alone.
+   */
+  listSessionEventsByKinds(kinds: readonly number[], opts?: { since?: number; limit?: number }): NEvent[] {
+    const kindSet = new Set(kinds)
+    const since = opts?.since
+    const limit = Math.min(Math.max(opts?.limit ?? 2000, 1), 8000)
+    const buf: NEvent[] = []
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (shouldDropEventOnIngest(event)) continue
+      if (!kindSet.has(event.kind)) continue
+      if (since !== undefined && event.created_at < since) continue
+      buf.push(event)
+    }
+    buf.sort((a, b) => b.created_at - a.created_at)
+    return buf.slice(0, limit)
+  }
+
+  /**
    * Session cache: NIP-32 citation kinds (30–33) matched on title/summary/content and related tags
    * (not NIP-50 relay semantics).
    */

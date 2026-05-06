@@ -761,6 +761,20 @@ export default {
     "articles and publications": "articles and publications",
     Interests: "Interests",
     Favorites: "Favorites",
+    "Heat map": "Thread heat map",
+    heatMapDescription:
+      "Only threads with at least five feed-filtered notes (last ~3 days) appear. Data merges this tab’s session cache, your on-device archive, and your relay stack. Bubble size and glow reflect activity. Lines connect threads when notes reference another thread's events (`e` / `E` / `q`) or when threads share a replaceable coordinate (`a` / `A`).",
+    heatMapLocalOnlyBanner:
+      "No read relay stack — only this session’s cache and your on-device archive are merged (add relays in settings for a live relay mix).",
+    heatMapLoading: "Merging session cache, archive, and relays…",
+    heatMapEmpty:
+      "Nothing meets the bar yet. Threads need at least five notes that pass your feed kind filter from about the last 72 hours. Browse feeds or Rescan after syncing.",
+    heatMapFetchError: "Could not load a thread snapshot from relays.",
+    heatMapNoRelays: "Add read relays (or favorites) in settings to query threads.",
+    heatMapRescan: "Rescan",
+    heatMapOpenThread: "Open thread",
+    heatMapBubbleStats: "{{posts}} notes · {{people}} authors · {{follows}} from follows",
+    "Please login to view thread heat map": "Please log in to open the thread heat map.",
     Calendar: "Calendar",
     "No subscribed interests yet.": "No subscribed interests yet. Add topics in settings to see them here.",
     "No bookmarked notes with id tags yet.": "No bookmarked notes with id tags yet. Only classic (e-tag) bookmarks load in this feed.",

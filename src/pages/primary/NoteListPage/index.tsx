@@ -8,7 +8,7 @@ import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import type { TNoteListRef } from '@/components/NoteList'
 import { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import { TPageRef } from '@/types'
-import { Calendar, Compass, Star, UsersRound } from 'lucide-react'
+import { Calendar, Compass, Flame, UsersRound } from 'lucide-react'
 import React, {
   forwardRef,
   useCallback,
@@ -173,8 +173,8 @@ function NoteListPageTitlebar({
   const spell = (currentPageProps as { spell?: string } | undefined)?.spell
   const exploreActive = display && current === 'explore' && primaryViewType === null
   const followsLatestActive = display && current === 'follows-latest' && primaryViewType === null
-  const favoritesActive =
-    display && current === 'spells' && spell === 'favorites' && primaryViewType === null
+  const heatMapActive =
+    display && current === 'spells' && spell === 'heatMap' && primaryViewType === null
   const calendarActive = display && current === 'calendar' && primaryViewType === null
 
   if (!isSmallScreen) {
@@ -230,18 +230,18 @@ function NoteListPageTitlebar({
             <Button
               variant="ghost"
               size="titlebar-icon"
-              title={t('Favorites')}
-              aria-label={t('Favorites')}
-              className={`shrink-0 ${favoritesActive ? 'bg-accent/50' : ''}`}
+              title={t('Heat map')}
+              aria-label={t('Heat map')}
+              className={`shrink-0 ${heatMapActive ? 'bg-accent/50' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 if (primaryViewType !== null) {
                   setPrimaryNoteView(null)
                 }
-                navigate('spells', { spell: 'favorites' })
+                navigate('spells', { spell: 'heatMap' })
               }}
             >
-              <Star />
+              <Flame />
             </Button>
           </>
         ) : null}

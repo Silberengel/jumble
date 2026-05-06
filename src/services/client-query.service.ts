@@ -437,7 +437,12 @@ export class QueryService {
       const resolveWithEvents = () => {
         if (resolved || queryFinalizing) return
         queryFinalizing = true
-        void httpInflight.finally(() => {
+        /**
+         * Never block resolution on {@link httpInflight}: a hung HTTP index `fetch` can keep
+         * `Promise.allSettled` pending forever, so `globalTimeout` would fire but this callback
+         * would never run and the query promise would never resolve.
+         */
+        const finalizeOnce = () => {
           if (resolved) return
           resolved = true
           if (resolveTimeout) clearTimeout(resolveTimeout)
@@ -451,6 +456,14 @@ export class QueryService {
           const resolvedList =
             replaceableRace && events.length > 0 ? resolveReplaceableRaceEvents() : events
           resolve(resolvedList)
+        }
+
+        const httpCapMs = Math.min(globalTimeout + 5000, 60_000)
+        void Promise.race([
+          httpInflight.catch(() => undefined),
+          new Promise<void>((r) => setTimeout(r, httpCapMs))
+        ]).finally(() => {
+          finalizeOnce()
         })
       }
 

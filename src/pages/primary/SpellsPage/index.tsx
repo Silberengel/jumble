@@ -85,6 +85,7 @@ import {
   ChevronLeft,
   Copy,
   FileText,
+  Flame,
   Gift,
   Hash,
   Image as ImageIcon,
@@ -102,6 +103,7 @@ import { kinds as nostrKinds, verifyEvent } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CreateSpellDialog from './CreateSpellDialog'
+import RelayThreadHeatMap from './RelayThreadHeatMap'
 import {
   applyFauxSpellCapsToSubRequests,
   buildBookmarksSubRequests,
@@ -281,8 +283,8 @@ function fauxSpellLabelKey(name: FauxSpellName): string {
       return 'Discussions'
     case 'following':
       return 'Following'
-    case 'favorites':
-      return 'Favorites'
+    case 'heatMap':
+      return 'Heat map'
     case 'followPacks':
       return 'Follow Packs'
     case 'media':
@@ -302,7 +304,7 @@ const FAUX_SPELL_ICON: Record<FauxSpellName, typeof Bell> = {
   notifications: Bell,
   discussions: MessageSquare,
   following: Users,
-  favorites: Star,
+  heatMap: Flame,
   followPacks: Gift,
   media: ImageIcon,
   interests: Hash,
@@ -356,6 +358,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   /** Last processed {@link spellCatalogManualRefreshKey} so we only treat real bumps as “force sync”. */
   const spellCatalogLastManualKeyRef = useRef(0)
   const spellFeedListRef = useRef<TNoteListRef>(null)
+  const selectedFauxSpellRefreshRef = useRef<string | null>(null)
+  selectedFauxSpellRefreshRef.current = selectedFauxSpell
+  const [heatMapRefreshKey, setHeatMapRefreshKey] = useState(0)
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [spellPickerOpen, setSpellPickerOpen] = useState(false)
 
@@ -388,6 +393,10 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   /** Set when picker calls `navigatePrimary(..., { spell })` so URL effect does not log/bump token again. */
   const fauxSpellUrlSyncFromPickerRef = useRef<string | null>(null)
   useEffect(() => {
+    if (spellProp === 'favorites') {
+      navigatePrimary('spells', { spell: 'heatMap' })
+      return
+    }
     if (spellProp && isSpellsPageFauxSpellParam(spellProp)) {
       if (fauxSpellUrlSyncFromPickerRef.current === spellProp) {
         fauxSpellUrlSyncFromPickerRef.current = null
@@ -406,10 +415,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       // URL / props no longer name a faux spell (e.g. bottom bar “Spells” → `/spells`) — leave the feed.
       setSelectedFauxSpell(null)
     }
-  }, [spellProp, logSpellFeedPickerSelection])
+  }, [spellProp, logSpellFeedPickerSelection, navigatePrimary])
 
   const [followingSubRequests, setFollowingSubRequests] = useState<TFeedSubRequest[]>([])
-  const [favoritesSubRequests, setFavoritesSubRequests] = useState<TFeedSubRequest[]>([])
 
   const loadSpells = useCallback(async () => {
     const [events, ids] = await Promise.all([
@@ -425,6 +433,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     if (pubkey) {
       setSpellCatalogManualRefreshKey((k) => k + 1)
       setFollowSetManualRefreshKey((k) => k + 1)
+    }
+    if (selectedFauxSpellRefreshRef.current === 'heatMap') {
+      setHeatMapRefreshKey((k) => k + 1)
     }
     spellFeedListRef.current?.refresh()
   }, [loadSpells, pubkey])
@@ -822,137 +833,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     followListEvent?.id
   ])
 
-  const favoritesShowKinds = useMemo(() => {
-    const out = [...kindFilterShowKinds]
-    if (!out.includes(nostrKinds.Repost)) out.push(nostrKinds.Repost)
-    if (!out.includes(ExtendedKind.GENERIC_REPOST)) out.push(ExtendedKind.GENERIC_REPOST)
-    if (!out.includes(ExtendedKind.WEB_BOOKMARK)) out.push(ExtendedKind.WEB_BOOKMARK)
-    return out.sort((a, b) => a - b)
-  }, [kindFilterShowKinds])
-
-  const favoritesShowKindsKey = useMemo(() => JSON.stringify(favoritesShowKinds), [favoritesShowKinds])
-
-  useEffect(() => {
-    if (selectedFauxSpell !== 'favorites' || !pubkey) {
-      setFavoritesSubRequests([])
-      return
-    }
-
-    let cancelled = false
-    void (async () => {
-      try {
-        const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
-          favoriteRelays,
-          blockedRelays,
-          userReadRelaysWithHttp(relayList),
-          {
-            userWriteRelays: relayList?.write ?? [],
-            applySocialKindBlockedFilter: false
-          }
-        )
-        const topics = interestListEvent?.tags.filter((tag) => tag[0] === 't' && tag[1]).map((tag) => tag[1]!) ?? []
-        const interestReqs = buildInterestsSubRequests(feedUrls, topics, favoritesShowKinds).map((r) => ({
-          ...r,
-          reasonLabel: t('Added from interests')
-        }))
-        const idReqs = buildBookmarksSubRequests(bookmarkListEvent, feedUrls).map((r) => ({
-          ...r,
-          reasonLabel: t('Added from bookmarks list')
-        }))
-        const ownWebReqs = buildWebBookmarksSpellSubRequests(pubkey, feedUrls).map((r) => ({
-          ...r,
-          reasonLabel: t('Added from your web bookmarks')
-        }))
-
-        const augmentFollow = (raw: TFeedSubRequest[]) =>
-          augmentSubRequestsWithFavoritesFastReadAndInbox(
-            raw,
-            favoriteRelays,
-            blockedRelays,
-            userReadRelaysWithHttp(relayList),
-            { userWriteRelays: relayList?.write ?? [] }
-          ).map((r) => ({ ...r, reasonLabel: t('Added from follows and contact lists') }))
-
-        const quickFollowRaw = await client.generateSubRequestsForPubkeys([pubkey], pubkey)
-        const quickFollowAug = augmentFollow(quickFollowRaw)
-        const followsWebQuick: TFeedSubRequest[] = [
-          {
-            urls: feedUrls,
-            filter: {
-              authors: [pubkey],
-              kinds: [ExtendedKind.WEB_BOOKMARK],
-              limit: FAUX_SPELL_EVENT_LIMIT
-            },
-            reasonLabel: t('Added from follows web bookmarks')
-          }
-        ]
-
-        if (!cancelled) {
-          setFavoritesSubRequests([
-            ...interestReqs,
-            ...idReqs,
-            ...ownWebReqs,
-            ...followsWebQuick,
-            ...quickFollowAug
-          ])
-        }
-
-        const authorSet = new Set<string>([pubkey, ...contacts])
-        for (const ev of followSetListEvents) {
-          if (ev.pubkey !== pubkey) continue
-          for (const author of pubkeysFromFollowSetEvent(ev)) authorSet.add(author)
-        }
-
-        const authorPubkeys = [...authorSet]
-        const followAndContactReqs = authorPubkeys.length
-          ? await client.generateSubRequestsForPubkeys(authorPubkeys, pubkey)
-          : []
-        const followAndContactAugmented = augmentFollow(followAndContactReqs)
-
-        const followsWebBookmarkReqs: TFeedSubRequest[] = authorPubkeys.length
-          ? [
-              {
-                urls: feedUrls,
-                filter: {
-                  authors: authorPubkeys,
-                  kinds: [ExtendedKind.WEB_BOOKMARK],
-                  limit: FAUX_SPELL_EVENT_LIMIT
-                },
-                reasonLabel: t('Added from follows web bookmarks')
-              }
-            ]
-          : []
-
-        if (!cancelled) {
-          setFavoritesSubRequests([
-            ...interestReqs,
-            ...idReqs,
-            ...ownWebReqs,
-            ...followsWebBookmarkReqs,
-            ...followAndContactAugmented
-          ])
-        }
-      } catch {
-        if (!cancelled) setFavoritesSubRequests([])
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    selectedFauxSpell,
-    pubkey,
-    contactsSyncKey,
-    followSetListStableKey,
-    sortedFavoriteRelaysKey,
-    sortedBlockedRelaysKey,
-    relayMailboxStableKey,
-    interestListEvent?.id,
-    bookmarkListEvent?.id,
-    favoritesShowKindsKey
-  ])
-
   const interestTagsStableKey = interestListEvent
     ? JSON.stringify(
         [...interestListEvent.tags].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
@@ -977,7 +857,12 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   ].join('\0')
 
   const syncFauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
-    if (!selectedFauxSpell || isFollowFeedFauxSpellId(selectedFauxSpell) || selectedFauxSpell === 'favorites') return []
+    if (
+      !selectedFauxSpell ||
+      isFollowFeedFauxSpellId(selectedFauxSpell) ||
+      selectedFauxSpell === 'heatMap'
+    )
+      return []
     /** Widen relay pool: these faux spells do not target social kinds (1 / 11 / 1111); skipping strip keeps fast-read mirrors in the stack. */
     const fauxSpellSkipSocialKindBlocked =
       selectedFauxSpell === 'calendar' ||
@@ -1035,14 +920,11 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   }, [selectedFauxSpell, pubkey, notificationsFeedPubkey, fauxFeedRelaysDepsKey, relayMailboxStableKey])
 
   const fauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
-    const base =
-      selectedFauxSpell === 'favorites'
-        ? favoritesSubRequests
-        : isFollowFeedFauxSpellId(selectedFauxSpell ?? '')
-          ? followingSubRequests
-          : syncFauxSubRequests
+    const base = isFollowFeedFauxSpellId(selectedFauxSpell ?? '')
+      ? followingSubRequests
+      : syncFauxSubRequests
     return applyFauxSpellCapsToSubRequests(base)
-  }, [selectedFauxSpell, favoritesSubRequests, followingSubRequests, syncFauxSubRequests])
+  }, [selectedFauxSpell, followingSubRequests, syncFauxSubRequests])
 
   const spellSubRequests = useMemo<TFeedSubRequest[]>(() => {
     if (!selectedSpell) return []
@@ -1248,9 +1130,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     if (selectedFauxSpell === 'interests') {
       return [...DEFAULT_FEED_SHOW_KINDS]
     }
-    if (selectedFauxSpell === 'favorites') {
-      return favoritesShowKinds
-    }
     if (selectedFauxSpell === 'bookmarks') {
       const out = [...DEFAULT_FEED_SHOW_KINDS]
       if (!out.includes(ExtendedKind.WEB_BOOKMARK)) out.push(ExtendedKind.WEB_BOOKMARK)
@@ -1262,7 +1141,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       .map((tag) => parseInt(tag[1], 10))
       .filter((n) => !Number.isNaN(n))
     return kinds.length ? kinds : [1]
-  }, [selectedFauxSpell, selectedSpell?.id, showKindsTagKey, followingShowKindsKey, favoritesShowKindsKey])
+  }, [selectedFauxSpell, selectedSpell?.id, showKindsTagKey, followingShowKindsKey])
 
   const spellMenuLabel = useCallback(
     (spell: Event) =>
@@ -1379,16 +1258,13 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     if (selectedFauxSpell === 'interests') return t('No subscribed interests yet.')
     if (selectedFauxSpell === 'bookmarks')
       return t('No NIP-51 bookmarks or web bookmarks yet.')
-    if (selectedFauxSpell === 'favorites') return t('No favorites yet.')
     if (selectedFauxSpell === 'following') return t('No follows or relays to load yet.')
     if (isFollowSetSpellId(selectedFauxSpell)) return t('Follow set feed empty')
     return t('Nothing to load for this feed.')
   }, [selectedFauxSpell, fauxSubRequests.length, t])
 
   const spellFauxMergeTimeline = useMemo(
-    () =>
-      selectedFauxSpell === 'favorites' ||
-      (!!selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)),
+    () => !!selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell),
     [selectedFauxSpell]
   )
 
@@ -1423,7 +1299,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
         if (
           (name === 'notifications' ||
             name === 'following' ||
-            name === 'favorites' ||
+            name === 'heatMap' ||
             name === 'bookmarks' ||
             name === 'interests') &&
           !pubkey
@@ -1830,9 +1706,13 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
             <div className="py-8 text-center text-muted-foreground">
               {t('Please login to view bookmarks')}
             </div>
-          ) : selectedFauxSpell === 'favorites' && !pubkey ? (
+          ) : selectedFauxSpell === 'heatMap' && !pubkey ? (
             <div className="py-8 text-center text-muted-foreground">
-              {t('Please login to view favorites')}
+              {t('Please login to view thread heat map')}
+            </div>
+          ) : selectedFauxSpell === 'heatMap' && pubkey ? (
+            <div className="min-h-0 min-w-0 flex-1">
+              <RelayThreadHeatMap followPubkeys={contacts} refreshKey={heatMapRefreshKey} />
             </div>
           ) : selectedFauxSpell && fauxSubRequests.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{fauxFeedEmptyMessage}</div>
@@ -1865,9 +1745,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                       : undefined
                   }
                   clientSideKindFilter={
-                    selectedFauxSpell === 'notifications' ||
-                    selectedFauxSpell === 'bookmarks' ||
-                    selectedFauxSpell === 'favorites'
+                    selectedFauxSpell === 'notifications' || selectedFauxSpell === 'bookmarks'
                   }
                   useFilterAsIs={fauxNoteListUseFilterAsIs}
                   oneShotFetch={false}
