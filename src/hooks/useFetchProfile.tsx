@@ -442,19 +442,23 @@ export function useFetchProfile(id?: string, skipCache = false) {
       }
     }
     
-    // CRITICAL: Early exit if already processing this exact pubkey - prevents infinite loops
-    // This check must happen FIRST, before any other logic
-    // Set processingPubkeyRef IMMEDIATELY after extraction to prevent race conditions
+    // Skip only when this pubkey already has an in-flight fetch (global dedupe + local flag).
+    // Do **not** return merely because processingPubkeyRef matches: after a failed or timed-out
+    // fetch, deps can change (e.g. noteFeed.version) while ref is still set — returning here
+    // left the hook stuck forever (blank profile / 404 until hard reload).
     if (extractedPubkey) {
       if (processingPubkeyRef.current === extractedPubkey) {
-        // Silently exit - no logging to reduce noise
-        return
+        const sharedPromise = globalFetchPromises.get(extractedPubkey)
+        const busy =
+          Boolean(sharedPromise) ||
+          globalFetchingPubkeys.has(extractedPubkey) ||
+          isFetching
+        if (busy) return
+        if (profile?.pubkey === extractedPubkey && !profile.batchPlaceholder) return
       }
-      // Mark that we're processing this pubkey IMMEDIATELY to prevent concurrent runs
-      // We'll clear it later if we early exit for other reasons
       processingPubkeyRef.current = extractedPubkey
     }
-    
+
     // CRITICAL: Early exit if we already have a profile for this pubkey
     // This prevents re-fetching when we already have the profile
     if (extractedPubkey && profile && profile.pubkey === extractedPubkey && !profile.batchPlaceholder) {
@@ -505,6 +509,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
         setTimeout(() => {
           effectRunCountRef.current.delete(extractedPubkey)
         }, 30000) // Clear after 30 seconds
+        processingPubkeyRef.current = null
+        if (isFetching) setIsFetching(false)
         return
       }
       // Only increment if we're actually going to process
@@ -727,28 +733,28 @@ export function useFetchProfile(id?: string, skipCache = false) {
   }, [id, skipCache, noteFeed?.version]) // checkProfile is memoized; noteFeed.version hydrates batch profiles
 
   useEffect(() => {
-    // CRITICAL: Only use currentAccountProfile if it matches the pubkey we're looking for
-    // Use pubkey from the profile object to avoid reference equality issues
-    // Only update if we don't have a profile yet AND we're not currently processing
-    // CRITICAL FIX: Don't include profile in dependencies to prevent infinite loops
-    // We only read profile to check if it exists, we don't need to re-run when it changes
-    if (currentAccountProfile?.pubkey && pubkey && pubkey === currentAccountProfile.pubkey) {
-      // Only update if we don't have a profile yet (avoid unnecessary updates)
-      // Also check that we're processing this pubkey to prevent race conditions
-      if (!profile && processingPubkeyRef.current === pubkey) {
-        setProfile(currentAccountProfile)
-        setIsFetching(false)
-        // Clear interval if we got the profile from current account
-        if (checkIntervalRef.current) {
-          clearInterval(checkIntervalRef.current)
-          checkIntervalRef.current = null
-        }
-        // Clear run count since we have the profile
-        effectRunCountRef.current.delete(pubkey)
-      }
+    const acc = currentAccountProfile
+    const accPk = acc?.pubkey
+    if (!accPk || !id) return
+    const targetPk = userIdToPubkey(id)
+    if (targetPk.length !== 64 || !/^[0-9a-f]{64}$/i.test(targetPk)) return
+    if (targetPk !== accPk.toLowerCase()) return
+
+    const haveFullLocal =
+      profile?.pubkey === targetPk && !profile.batchPlaceholder
+    if (haveFullLocal) return
+
+    setProfile(acc)
+    setIsFetching(false)
+    setError(null)
+    processingPubkeyRef.current = targetPk
+    initializedPubkeysRef.current.add(targetPk)
+    if (checkIntervalRef.current) {
+      clearInterval(checkIntervalRef.current)
+      checkIntervalRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentAccountProfile?.pubkey, pubkey]) // Removed profile from dependencies to prevent infinite loops
+    effectRunCountRef.current.delete(targetPk)
+  }, [currentAccountProfile, id, profile])
 
   return { isFetching, error, profile }
 }
