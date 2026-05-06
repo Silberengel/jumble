@@ -19,11 +19,12 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import storage from '@/services/local-storage.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { TPageRef } from '@/types'
 import { RefreshButton } from '@/components/RefreshButton'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
-import { type Event } from 'nostr-tools'
+import { type Event as NostrEvent } from 'nostr-tools'
 import {
   forwardRef,
   useCallback,
@@ -50,8 +51,8 @@ export type CalendarPrimaryPageProps = {
   weekOffset?: number
 }
 
-function dedupeCalendarEvents(events: Event[]): Event[] {
-  const map = new Map<string, Event>()
+function dedupeCalendarEvents(events: NostrEvent[]): NostrEvent[] {
+  const map = new Map<string, NostrEvent>()
   for (const e of events) {
     const k = replaceableEventDedupeKey(e)
     const prev = map.get(k)
@@ -85,8 +86,21 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
   const { navigateToNote } = useSmartNoteNavigation()
   const { push } = useSecondaryPage()
   const { isSmallScreen } = useScreenSize()
+  const [panelMode, setPanelMode] = useState<'single' | 'double'>(() => storage.getPanelMode())
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const onPanelMode = (ev: Event) => {
+      const d = (ev as CustomEvent<{ mode: 'single' | 'double' }>).detail?.mode
+      if (d === 'single' || d === 'double') setPanelMode(d)
+    }
+    window.addEventListener('panelModeChanged', onPanelMode)
+    return () => window.removeEventListener('panelModeChanged', onPanelMode)
+  }, [])
+
+  /** Month grid is unreadable in the narrow primary column of double-pane; use the same vertical layout as mobile. */
+  const useVerticalMonthCalendar = isSmallScreen || panelMode === 'double'
 
   const [activeWeekOffset, setActiveWeekOffset] = useState(weekOffsetProp)
   useEffect(() => {
@@ -108,7 +122,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
     setViewMonth(d.getMonth())
   }, [highlightBounds.weekStartMs])
 
-  const [rawEvents, setRawEvents] = useState<Event[]>([])
+  const [rawEvents, setRawEvents] = useState<NostrEvent[]>([])
   const [loading, setLoading] = useState(false)
 
   const relayUrls = useMemo(() => {
@@ -193,7 +207,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
         )
         if (cancelled) return
 
-        const fromFollowing: Event[] = []
+        const fromFollowing: NostrEvent[] = []
         if (followAuthorsKey) {
           const authorList = followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
           for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
@@ -369,7 +383,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           <p className="text-center text-sm text-muted-foreground">{t('sidebarCalendarLoading')}</p>
         ) : null}
 
-        {isSmallScreen ? (
+        {useVerticalMonthCalendar ? (
           <div className="flex min-w-0 flex-col gap-2" aria-label={t('calendarPageGridLabel')}>
             {Array.from({ length: daysInMonth(viewYear, viewMonth) }, (_, idx) => {
               const day = idx + 1
@@ -401,17 +415,27 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     {list.slice(0, 4).map((ev) => {
                       const meta = getCalendarEventMeta(ev)
                       const title = meta.title?.trim() || t('calendarPageUntitledEvent')
+                      const cover = meta.image?.trim()
                       return (
                         <li key={replaceableEventDedupeKey(ev)} className="min-w-0">
                           <button
                             type="button"
                             onClick={() => navigateToNote(toNote(ev), ev)}
                             className={cn(
-                              'w-full truncate rounded-md px-2 py-1.5 text-left text-xs font-medium leading-snug text-primary',
+                              'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium leading-snug text-primary',
                               'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                             )}
                           >
-                            {title}
+                            {cover ? (
+                              <img
+                                src={cover}
+                                alt=""
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                className="size-8 shrink-0 rounded-md object-cover ring-1 ring-border/50"
+                              />
+                            ) : null}
+                            <span className="min-w-0 truncate">{title}</span>
                           </button>
                         </li>
                       )
@@ -471,18 +495,28 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     {list.slice(0, 4).map((ev) => {
                       const meta = getCalendarEventMeta(ev)
                       const title = meta.title?.trim() || t('calendarPageUntitledEvent')
+                      const cover = meta.image?.trim()
                       return (
                         <li key={replaceableEventDedupeKey(ev)} className="min-w-0">
                           <button
                             type="button"
                             onClick={() => navigateToNote(toNote(ev), ev)}
                             className={cn(
-                              'w-full truncate rounded px-0.5 py-px text-left text-[9px] font-medium leading-tight text-primary underline-offset-2',
+                              'flex w-full min-w-0 items-center gap-0.5 rounded px-0.5 py-px text-left text-[9px] font-medium leading-tight text-primary underline-offset-2',
                               'hover:bg-muted/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]'
                             )}
                             title={title}
                           >
-                            {title}
+                            {cover ? (
+                              <img
+                                src={cover}
+                                alt=""
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                className="size-3.5 shrink-0 rounded-sm object-cover ring-1 ring-border/40 md:size-4"
+                              />
+                            ) : null}
+                            <span className="min-w-0 flex-1 truncate">{title}</span>
                           </button>
                         </li>
                       )

@@ -9,7 +9,7 @@ import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import Collapsible from '../Collapsible'
 import { Button } from '../ui/button'
-import { Calendar, Clock, Video } from 'lucide-react'
+import { Calendar, Clock, ExternalLink, MapPin } from 'lucide-react'
 
 export function EmbeddedCalendarEvent({
   event,
@@ -20,7 +20,7 @@ export function EmbeddedCalendarEvent({
 }) {
   const { t } = useTranslation()
   if (!isCalendarEventKind(event.kind)) return null
-  const { title, summary, image, start, end, startDate, endDate, isDateBased, joinUrl, topics } =
+  const { title, summary, image, start, end, startDate, endDate, isDateBased, rUrls, topics, location } =
     getCalendarEventMeta(event)
   const description = summary || event.content?.trim() || ''
 
@@ -44,17 +44,31 @@ export function EmbeddedCalendarEvent({
           <img
             src={image}
             alt=""
-            className="size-14 shrink-0 rounded-lg object-cover ring-1 ring-border/40"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="size-10 shrink-0 rounded-md object-cover ring-1 ring-border/40"
           />
         ) : (
-          <div className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-border/40">
-            <Calendar className="size-6 text-primary/80" aria-hidden />
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 ring-1 ring-border/40">
+            <Calendar className="size-5 text-primary/80" aria-hidden />
           </div>
         )}
         <div className="min-w-0 flex-1 space-y-1.5">
-          <span className="block truncate font-semibold leading-snug text-foreground">
+          <span className="block line-clamp-2 font-semibold leading-snug text-foreground">
             {title || t('Scheduled video call')}
           </span>
+          {scheduleLine ? (
+            <p className="flex items-start gap-1.5 text-[11px] font-medium leading-snug text-foreground">
+              <Clock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">{scheduleLine}</span>
+            </p>
+          ) : null}
+          {location ? (
+            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+              <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 line-clamp-3">{location}</span>
+            </p>
+          ) : null}
           {topics.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {topics.map((topic) => (
@@ -69,12 +83,6 @@ export function EmbeddedCalendarEvent({
           )}
         </div>
       </div>
-      {scheduleLine ? (
-        <div className="flex gap-2 rounded-md border border-border/60 bg-background/60 px-2.5 py-2">
-          <Clock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          <p className="min-w-0 text-xs font-medium leading-snug text-foreground">{scheduleLine}</p>
-        </div>
-      ) : null}
       {description ? (
         <>
           {/* NIP-52 31922/31923 embedded preview: long description only. */}
@@ -85,19 +93,14 @@ export function EmbeddedCalendarEvent({
           </Collapsible>
         </>
       ) : null}
-      {joinUrl && (
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full gap-2 mt-1"
-          asChild
-        >
-          <a href={joinUrl} target="_blank" rel="noopener noreferrer">
-            <Video className="size-4" />
-            {t('Join video call')}
+      {rUrls.map((url) => (
+        <Button key={url} variant="secondary" size="sm" className="w-full gap-2 mt-1" asChild>
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-4 shrink-0" />
+            {t('Open link')}
           </a>
         </Button>
-      )}
+      ))}
     </div>
   )
 }

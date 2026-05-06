@@ -396,7 +396,9 @@ export default function Note({
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {
     content = <RelayReview className="mt-2" event={displayEvent} />
   } else if (isCalendarEventKind(event.kind)) {
-    content = <CalendarEventContent event={displayEvent} className="mt-2" showRsvp />
+    content = (
+      <CalendarEventContent event={displayEvent} className="mt-2" showRsvp showFull={showFull} />
+    )
   } else if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {

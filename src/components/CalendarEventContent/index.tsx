@@ -10,12 +10,13 @@ import { useFetchCalendarRsvps } from '@/hooks/useFetchCalendarRsvps'
 import { useNostr } from '@/providers/NostrProvider'
 import { toProfile } from '@/lib/link'
 import { useSecondaryPage } from '@/PageManager'
+import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 import Collapsible from '../Collapsible'
 import { Button } from '../ui/button'
-import { Calendar, Clock, Video, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
+import { Calendar, Clock, ExternalLink, MapPin, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -32,22 +33,44 @@ type RsvpStatus = 'accepted' | 'tentative' | 'declined'
 export default function CalendarEventContent({
   event,
   className,
-  showRsvp = true
+  showRsvp = true,
+  showFull = false
 }: {
   event: Event
   className?: string
   showRsvp?: boolean
+  /** Note page / full detail: markdown body + complete tag list. */
+  showFull?: boolean
 }) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
   const { pubkey: myPubkey, publish } = useNostr()
   const { rsvps, isFetching, getRsvpStatus: getStatus } = useFetchCalendarRsvps(event)
 
-  if (!isCalendarEventKind(event.kind)) return null
+  const meta = useMemo(() => {
+    if (!isCalendarEventKind(event.kind)) return null
+    return getCalendarEventMeta(event)
+  }, [event])
 
-  const { title, summary, image, start, end, startDate, endDate, isDateBased, joinUrl, topics } =
-    getCalendarEventMeta(event)
-  const description = summary || event.content?.trim() || ''
+  const markdownBody = useMemo(() => {
+    if (!meta) return ''
+    const s = meta.summary.trim()
+    const c = event.content?.trim() ?? ''
+    if (s && c) return `${s}\n\n${c}`
+    return s || c || ''
+  }, [meta, event.content])
+
+  const eventForMarkdown = useMemo((): Event => {
+    if (!markdownBody) return event
+    return { ...event, content: markdownBody }
+  }, [event, markdownBody])
+
+  const duplicateWebPreviewHints = useMemo(
+    () =>
+      !meta ? [] : [...meta.rUrls, ...(meta.image?.trim() ? [meta.image.trim()] : [])],
+    [meta]
+  )
+
   const myRsvp = myPubkey ? rsvps.find((r) => r.pubkey === myPubkey) : undefined
   const myStatus = myRsvp ? getStatus(myRsvp) : undefined
 
@@ -70,6 +93,23 @@ export default function CalendarEventContent({
       }
     })
   }, [event.pubkey, event.tags, rsvps])
+
+  if (!meta) return null
+
+  const {
+    title,
+    image,
+    start,
+    end,
+    startDate,
+    endDate,
+    isDateBased,
+    rUrls,
+    location,
+    startTzid,
+    endTzid,
+    topics
+  } = meta
 
   const handleRsvp = async (status: RsvpStatus) => {
     if (!myPubkey) {
@@ -105,17 +145,47 @@ export default function CalendarEventContent({
           <img
             src={image}
             alt=""
-            className="size-[4.5rem] shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-border/40"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className={cn(
+              'shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-border/40',
+              showFull ? 'size-[4.5rem]' : 'size-10'
+            )}
           />
         ) : (
-          <div className="flex size-[4.5rem] shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-border/40">
-            <Calendar className="size-7 text-primary/80" aria-hidden />
+          <div
+            className={cn(
+              'flex shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-border/40',
+              showFull ? 'size-[4.5rem]' : 'size-10'
+            )}
+          >
+            <Calendar
+              className={cn('text-primary/80', showFull ? 'size-7' : 'size-5')}
+              aria-hidden
+            />
           </div>
         )}
         <div className="min-w-0 flex-1 space-y-2">
-          <h3 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
+          <h3
+            className={cn(
+              'font-semibold leading-snug tracking-tight text-foreground',
+              showFull ? 'text-lg' : 'line-clamp-2 text-base'
+            )}
+          >
             {title || t('Scheduled video call')}
           </h3>
+          {!showFull && scheduleLine ? (
+            <p className="flex items-start gap-1.5 text-xs font-medium leading-snug text-foreground">
+              <Clock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">{scheduleLine}</span>
+            </p>
+          ) : null}
+          {!showFull && location ? (
+            <p className="flex items-start gap-1.5 text-xs leading-snug text-muted-foreground">
+              <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 line-clamp-3">{location}</span>
+            </p>
+          ) : null}
           {topics.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {topics.map((topic) => (
@@ -130,31 +200,66 @@ export default function CalendarEventContent({
           )}
         </div>
       </div>
-      {scheduleLine ? (
+      {showFull && scheduleLine ? (
         <div className="flex gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
           <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <p className="min-w-0 text-sm font-medium leading-snug text-foreground">{scheduleLine}</p>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-sm font-medium leading-snug text-foreground">{scheduleLine}</p>
+            {(startTzid || endTzid) && (
+              <p className="text-xs leading-snug text-muted-foreground">
+                {startTzid ? (
+                  <>
+                    <span className="font-medium text-foreground/80">start_tzid</span>: {startTzid}
+                  </>
+                ) : null}
+                {startTzid && endTzid && endTzid !== startTzid ? ' · ' : ''}
+                {endTzid && endTzid !== startTzid ? (
+                  <>
+                    <span className="font-medium text-foreground/80">end_tzid</span>: {endTzid}
+                  </>
+                ) : null}
+              </p>
+            )}
+          </div>
         </div>
       ) : null}
-      {description ? (
-        <>
-          {/* NIP-52 31922/31923: collapse long summary+body only; card chrome stays outside MainNoteCard Collapsible. */}
-          <Collapsible threshold={200} collapsedHeight={160} className="min-w-0">
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-              {description}
-            </p>
-          </Collapsible>
-        </>
+      {showFull && location ? (
+        <div className="flex gap-2 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5">
+          <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <p className="min-w-0 text-sm leading-snug text-foreground">{location}</p>
+        </div>
+      ) : null}
+      {markdownBody ? (
+        showFull ? (
+          <div className="not-prose min-w-0 border-t border-border/50 pt-3" data-calendar-event-markdown>
+            <MarkdownArticle
+              event={eventForMarkdown}
+              className="prose-sm"
+              hideMetadata
+              lazyMedia={false}
+              duplicateWebPreviewCleanedUrlHints={duplicateWebPreviewHints}
+            />
+          </div>
+        ) : (
+          <>
+            {/* NIP-52 31922/31923: collapse long summary+body only; card chrome stays outside MainNoteCard Collapsible. */}
+            <Collapsible threshold={200} collapsedHeight={160} className="min-w-0">
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+                {markdownBody}
+              </p>
+            </Collapsible>
+          </>
+        )
       ) : null}
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-        {joinUrl && (
-          <Button variant="secondary" size="sm" className="gap-2" asChild>
-            <a href={joinUrl} target="_blank" rel="noopener noreferrer">
-              <Video className="size-4" />
-              {t('Join video call')}
+        {rUrls.map((url) => (
+          <Button key={url} variant="secondary" size="sm" className="gap-2" asChild>
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="size-4 shrink-0" />
+              {t('Open link')}
             </a>
           </Button>
-        )}
+        ))}
         {showRsvp && myPubkey && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -245,6 +350,25 @@ export default function CalendarEventContent({
           </ul>
         </div>
       )}
+      {showFull && event.tags.length > 0 ? (
+        <div className="border-t border-border/50 pt-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('All tags')}
+          </div>
+          <dl className="min-w-0 space-y-2">
+            {event.tags.map((tag, idx) => (
+              <div key={`${tag[0]}-${idx}`} className="grid gap-1 sm:grid-cols-[minmax(0,7rem)_1fr] sm:gap-3">
+                <dt className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {tag[0] || '—'}
+                </dt>
+                <dd className="min-w-0 break-all text-xs text-foreground">
+                  {tag.length > 1 ? tag.slice(1).join(' · ') : '—'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -75,17 +75,29 @@ const CalendarDayEventsPage = forwardRef<TPageRef, { ymd: string; index?: number
             {sorted.map((ev) => {
               const meta = getCalendarEventMeta(ev)
               const label = meta.title?.trim() || t('calendarPageUntitledEvent')
+              const cover = meta.image?.trim()
               return (
                 <li key={replaceableEventDedupeKey(ev)}>
                   <Button
                     type="button"
                     variant="ghost"
                     className={cn(
-                      'h-auto min-h-10 w-full justify-start whitespace-normal px-3 py-2 text-left text-sm font-medium'
+                      'flex h-auto min-h-10 w-full items-center justify-start gap-3 whitespace-normal px-3 py-2 text-left text-sm font-medium'
                     )}
                     onClick={() => navigateToNote(toNote(ev), ev)}
                   >
-                    {label}
+                    {cover ? (
+                      <img
+                        src={cover}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="size-9 shrink-0 rounded-md object-cover ring-1 ring-border/50"
+                      />
+                    ) : (
+                      <div className="size-9 shrink-0 rounded-md bg-muted/60 ring-1 ring-border/40" aria-hidden />
+                    )}
+                    <span className="min-w-0 flex-1 leading-snug">{label}</span>
                   </Button>
                 </li>
               )

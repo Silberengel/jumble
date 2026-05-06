@@ -228,6 +228,8 @@ export default {
     "Add at least one invitee (paste nostr:npub or nostr:nprofile links)": "Mindestens eine Person hinzufügen (nostr:npub- oder nostr:nprofile-Links einfügen)",
     "Scheduled call created and {{count}} invite(s) sent": "Geplanter Anruf erstellt und {{count}} Einladung(en) gesendet",
     "Join video call": "Videoanruf beitreten",
+    "Open link": "Link öffnen",
+    "All tags": "Alle Tags",
     "Scheduled video call": "Geplanter Videoanruf",
     "Video call": "Videoanruf",
     "Schedule and send invite": "Planen und Einladung senden",

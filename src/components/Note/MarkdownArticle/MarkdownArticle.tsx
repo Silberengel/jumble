@@ -28,6 +28,7 @@ import { Event, kinds } from 'nostr-tools'
 import Emoji, { EMOJI_IMG_INLINE_CLASS } from '@/components/Emoji'
 import {
   ExtendedKind,
+  isNip52CalendarCardKind,
   SPOTIFY_OPEN_URL_REGEX,
   WS_URL_REGEX,
   YOUTUBE_URL_REGEX,
@@ -5898,7 +5899,10 @@ export default function MarkdownArticle({
                     <p className="break-words">{metadata.summary}</p>
                   </blockquote>
                 )}
-                {hideMetadata && metadata.title && event.kind !== ExtendedKind.DISCUSSION && (
+                {hideMetadata &&
+                  metadata.title &&
+                  event.kind !== ExtendedKind.DISCUSSION &&
+                  !isNip52CalendarCardKind(event.kind) && (
                   <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
                 )}
         

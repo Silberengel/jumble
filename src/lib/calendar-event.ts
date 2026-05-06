@@ -15,7 +15,21 @@ export interface CalendarEventMeta {
   /** Date-based: YYYY-MM-DD (exclusive end). Time-based: undefined. */
   endDate: string
   isDateBased: boolean
+  /** First `r` tag with an http(s) URL (join / registration link). */
   joinUrl: string
+  /** Same as {@link joinUrl}; every http(s) `r` value. */
+  rUrl: string
+  rUrls: string[]
+  /** `location` tag (venue / address text). */
+  location: string
+  /** `d` tag (replaceable identifier). */
+  d: string
+  /** `g` tag (geohash). */
+  geo: string
+  /** `start_tzid` (IANA zone). */
+  startTzid: string
+  /** `end_tzid` (IANA zone). */
+  endTzid: string
   topics: string[]
 }
 
@@ -25,9 +39,17 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
   const image = event.tags.find(tagNameEquals('image'))?.[1] ?? ''
   const startStr = event.tags.find(tagNameEquals('start'))?.[1]
   const endStr = event.tags.find(tagNameEquals('end'))?.[1]
-  const location = event.tags.find(tagNameEquals('location'))?.[1]
-  const rTag = event.tags.find(tagNameEquals('r'))?.[1]
-  const joinUrl = rTag || location || ''
+  const location = event.tags.find(tagNameEquals('location'))?.[1] ?? ''
+  const d = event.tags.find(tagNameEquals('d'))?.[1] ?? ''
+  const geo = event.tags.find(tagNameEquals('g'))?.[1] ?? ''
+  const startTzid = event.tags.find(tagNameEquals('start_tzid'))?.[1] ?? ''
+  const endTzid = event.tags.find(tagNameEquals('end_tzid'))?.[1] ?? ''
+  const rUrls = event.tags
+    .filter(tagNameEquals('r'))
+    .map((t) => t[1]?.trim())
+    .filter((u): u is string => !!u && (u.startsWith('http://') || u.startsWith('https://')))
+  const rUrl = rUrls[0] ?? ''
+  const joinUrl = rUrl
   const topics = event.tags.filter(tagNameEquals('t')).map((t) => t[1]?.trim()).filter(Boolean)
   const isDateBased = event.kind === ExtendedKind.CALENDAR_EVENT_DATE
   if (isDateBased) {
@@ -41,6 +63,13 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
       endDate: endStr ?? '',
       isDateBased: true,
       joinUrl,
+      rUrl,
+      rUrls,
+      location,
+      d,
+      geo,
+      startTzid,
+      endTzid,
       topics
     }
   }
@@ -56,6 +85,13 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
     endDate: '',
     isDateBased: false,
     joinUrl,
+    rUrl,
+    rUrls,
+    location,
+    d,
+    geo,
+    startTzid,
+    endTzid,
     topics
   }
 }

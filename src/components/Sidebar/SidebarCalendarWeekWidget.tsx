@@ -2,6 +2,7 @@ import {
   calendarOccurrenceOverlapsRange,
   formatCalendarSidebarRow,
   formatSidebarWeekLabel,
+  getCalendarEventMeta,
   getCalendarOccurrenceWindowMs,
   getLocalMondayWeekBounds
 } from '@/lib/calendar-event'
@@ -262,7 +263,9 @@ export default function SidebarCalendarWeekWidget() {
       ) : (
         <ul className="min-w-0 space-y-1 overflow-y-auto pr-0.5" style={{ maxHeight: LIST_MAX_HEIGHT_PX }}>
           {sortedForWeek.map((ev) => {
-            const title = ev.tags.find((t) => t[0] === 'title')?.[1]?.trim() || t('Scheduled video call')
+            const meta = getCalendarEventMeta(ev)
+            const title = meta.title?.trim() || t('Scheduled video call')
+            const cover = meta.image?.trim()
             const sub = formatCalendarSidebarRow(ev)
             return (
               <li key={replaceableEventDedupeKey(ev)}>
@@ -270,16 +273,29 @@ export default function SidebarCalendarWeekWidget() {
                   type="button"
                   onClick={() => openEvent(ev)}
                   className={cn(
-                    'w-full rounded-md border border-transparent px-1.5 py-1.5 text-left transition-colors',
+                    'flex w-full gap-2 rounded-md border border-transparent px-1.5 py-1.5 text-left transition-colors',
                     'hover:border-border/80 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                   )}
                 >
-                  <span className="line-clamp-2 text-[11px] font-medium leading-snug text-foreground">{title}</span>
-                  {sub ? (
-                    <span className="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                      {sub}
-                    </span>
-                  ) : null}
+                  {cover ? (
+                    <img
+                      src={cover}
+                      alt=""
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      className="size-8 shrink-0 rounded-md object-cover ring-1 ring-border/40"
+                    />
+                  ) : (
+                    <div className="size-8 shrink-0 rounded-md bg-muted/50 ring-1 ring-border/30" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-2 text-[11px] font-medium leading-snug text-foreground">{title}</span>
+                    {sub ? (
+                      <span className="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-muted-foreground">
+                        {sub}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
               </li>
             )
