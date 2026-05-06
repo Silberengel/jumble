@@ -1,3 +1,4 @@
+import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { getCalendarEventMeta, getCalendarOccurrenceWindowMs } from '@/lib/calendar-event'
 import { readCalendarDayPanelEvents } from '@/lib/calendar-day-panel-cache'
 import { replaceableEventDedupeKey } from '@/lib/event'
@@ -75,7 +76,6 @@ const CalendarDayEventsPage = forwardRef<TPageRef, { ymd: string; index?: number
             {sorted.map((ev) => {
               const meta = getCalendarEventMeta(ev)
               const label = meta.title?.trim() || t('calendarPageUntitledEvent')
-              const cover = meta.image?.trim()
               return (
                 <li key={replaceableEventDedupeKey(ev)}>
                   <Button
@@ -86,17 +86,12 @@ const CalendarDayEventsPage = forwardRef<TPageRef, { ymd: string; index?: number
                     )}
                     onClick={() => navigateToNote(toNote(ev), ev)}
                   >
-                    {cover ? (
-                      <img
-                        src={cover}
-                        alt=""
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        className="size-9 shrink-0 rounded-md object-cover ring-1 ring-border/50"
-                      />
-                    ) : (
-                      <div className="size-9 shrink-0 rounded-md bg-muted/60 ring-1 ring-border/40" aria-hidden />
-                    )}
+                    <CalendarEventCoverImage
+                      coverUrl={meta.image}
+                      pubkey={ev.pubkey}
+                      className="size-9 shrink-0 rounded-md ring-1 ring-border/50"
+                      iconClassName="size-4"
+                    />
                     <span className="min-w-0 flex-1 leading-snug">{label}</span>
                   </Button>
                 </li>

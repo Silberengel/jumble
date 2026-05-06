@@ -1,6 +1,7 @@
 import { createCalendarRsvpDraftEvent } from '@/lib/draft-event'
 import {
   getCalendarEventMeta,
+  getNip52CalendarEventTagExtras,
   formatCalendarTimeRange,
   formatCalendarDateRange,
   isCalendarEventKind
@@ -10,13 +11,15 @@ import { useFetchCalendarRsvps } from '@/hooks/useFetchCalendarRsvps'
 import { useNostr } from '@/providers/NostrProvider'
 import { toProfile } from '@/lib/link'
 import { useSecondaryPage } from '@/PageManager'
+import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
+import { CalendarEventNip52StructuredMeta } from '@/components/CalendarEventNip52StructuredMeta'
 import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 import Collapsible from '../Collapsible'
 import { Button } from '../ui/button'
-import { Calendar, Clock, ExternalLink, MapPin, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
+import { Clock, ExternalLink, MapPin, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -56,20 +59,26 @@ export default function CalendarEventContent({
     if (!meta) return ''
     const s = meta.summary.trim()
     const c = event.content?.trim() ?? ''
+    if (showFull) {
+      if (s && c) return c
+      return s || c || ''
+    }
     if (s && c) return `${s}\n\n${c}`
     return s || c || ''
-  }, [meta, event.content])
+  }, [meta, event.content, showFull])
 
   const eventForMarkdown = useMemo((): Event => {
     if (!markdownBody) return event
     return { ...event, content: markdownBody }
   }, [event, markdownBody])
 
-  const duplicateWebPreviewHints = useMemo(
-    () =>
-      !meta ? [] : [...meta.rUrls, ...(meta.image?.trim() ? [meta.image.trim()] : [])],
-    [meta]
-  )
+  const duplicateWebPreviewHints = useMemo(() => {
+    if (!meta) return []
+    const httpRs = getNip52CalendarEventTagExtras(event)
+      .rTags.filter((r) => r.isHttpUrl)
+      .map((r) => r.value)
+    return [...httpRs, ...(meta.image?.trim() ? [meta.image.trim()] : [])]
+  }, [meta, event])
 
   const myRsvp = myPubkey ? rsvps.find((r) => r.pubkey === myPubkey) : undefined
   const myStatus = myRsvp ? getStatus(myRsvp) : undefined
@@ -77,6 +86,12 @@ export default function CalendarEventContent({
   // Organizer + invitees (event p tags) + anyone who sent an RSVP. Each shows response: accepted/tentative/declined or no response.
   const attendeesList = useMemo(() => {
     const organizerPubkey = event.pubkey
+    const roleByPubkey = new Map<string, string>()
+    for (const t of event.tags.filter(tagNameEquals('p'))) {
+      const pk = t[1]?.trim()
+      const role = t[3]?.trim()
+      if (pk && role && !roleByPubkey.has(pk)) roleByPubkey.set(pk, role)
+    }
     const participantPubkeys = event.tags
       .filter(tagNameEquals('p'))
       .map((t) => t[1]?.trim())
@@ -88,6 +103,7 @@ export default function CalendarEventContent({
       const rsvp = rsvps.find((r) => r.pubkey === pubkey)
       return {
         pubkey,
+        role: roleByPubkey.get(pubkey),
         status: (rsvp ? getStatus(rsvp) : null) as RsvpStatus | null,
         isOrganizer: pubkey === organizerPubkey
       }
@@ -141,30 +157,15 @@ export default function CalendarEventContent({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start gap-3">
-        {image ? (
-          <img
-            src={image}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            className={cn(
-              'shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-border/40',
-              showFull ? 'size-[4.5rem]' : 'size-10'
-            )}
-          />
-        ) : (
-          <div
-            className={cn(
-              'flex shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-border/40',
-              showFull ? 'size-[4.5rem]' : 'size-10'
-            )}
-          >
-            <Calendar
-              className={cn('text-primary/80', showFull ? 'size-7' : 'size-5')}
-              aria-hidden
-            />
-          </div>
-        )}
+        <CalendarEventCoverImage
+          coverUrl={image}
+          pubkey={event.pubkey}
+          className={cn(
+            'shrink-0 rounded-lg',
+            showFull ? 'size-[4.5rem]' : 'size-10'
+          )}
+          iconClassName={showFull ? 'size-7' : 'size-5'}
+        />
         <div className="min-w-0 flex-1 space-y-2">
           <h3
             className={cn(
@@ -209,13 +210,13 @@ export default function CalendarEventContent({
               <p className="text-xs leading-snug text-muted-foreground">
                 {startTzid ? (
                   <>
-                    <span className="font-medium text-foreground/80">start_tzid</span>: {startTzid}
+                    <span className="font-medium text-foreground/80">{t('Start time-zone id')}</span>: {startTzid}
                   </>
                 ) : null}
                 {startTzid && endTzid && endTzid !== startTzid ? ' · ' : ''}
                 {endTzid && endTzid !== startTzid ? (
                   <>
-                    <span className="font-medium text-foreground/80">end_tzid</span>: {endTzid}
+                    <span className="font-medium text-foreground/80">{t('End time-zone id')}</span>: {endTzid}
                   </>
                 ) : null}
               </p>
@@ -223,11 +224,13 @@ export default function CalendarEventContent({
           </div>
         </div>
       ) : null}
-      {showFull && location ? (
-        <div className="flex gap-2 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5">
-          <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <p className="min-w-0 text-sm leading-snug text-foreground">{location}</p>
-        </div>
+      {showFull ? (
+        <CalendarEventNip52StructuredMeta
+          placement="beforeDescription"
+          event={event}
+          meta={meta}
+          isDateBased={isDateBased}
+        />
       ) : null}
       {markdownBody ? (
         showFull ? (
@@ -251,15 +254,24 @@ export default function CalendarEventContent({
           </>
         )
       ) : null}
+      {showFull ? (
+        <CalendarEventNip52StructuredMeta
+          placement="afterDescription"
+          event={event}
+          meta={meta}
+          isDateBased={isDateBased}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-        {rUrls.map((url) => (
-          <Button key={url} variant="secondary" size="sm" className="gap-2" asChild>
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4 shrink-0" />
-              {t('Open link')}
-            </a>
-          </Button>
-        ))}
+        {!showFull &&
+          rUrls.map((url) => (
+            <Button key={url} variant="secondary" size="sm" className="gap-2" asChild>
+              <a href={url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4 shrink-0" />
+                {t('Open link')}
+              </a>
+            </Button>
+          ))}
         {showRsvp && myPubkey && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -300,7 +312,7 @@ export default function CalendarEventContent({
             {t('Attendees')}
           </div>
           <ul className="space-y-1">
-            {attendeesList.map(({ pubkey, status, isOrganizer }) => (
+            {attendeesList.map(({ pubkey, status, isOrganizer, role }) => (
               <li key={pubkey}>
                 <button
                   type="button"
@@ -311,8 +323,11 @@ export default function CalendarEventContent({
                   )}
                 >
                   <UserAvatar userId={pubkey} size="xSmall" className="shrink-0" />
-                  <span className="min-w-0 truncate flex-1">
+                  <span className="min-w-0 flex-1 truncate">
                     <Username userId={pubkey} className="text-foreground" skeletonClassName="h-3" />
+                    {role ? (
+                      <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{role}</span>
+                    ) : null}
                   </span>
                   <span className="shrink-0 flex items-center gap-1.5 text-muted-foreground">
                     {isOrganizer && (
@@ -350,25 +365,6 @@ export default function CalendarEventContent({
           </ul>
         </div>
       )}
-      {showFull && event.tags.length > 0 ? (
-        <div className="border-t border-border/50 pt-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('All tags')}
-          </div>
-          <dl className="min-w-0 space-y-2">
-            {event.tags.map((tag, idx) => (
-              <div key={`${tag[0]}-${idx}`} className="grid gap-1 sm:grid-cols-[minmax(0,7rem)_1fr] sm:gap-3">
-                <dt className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {tag[0] || '—'}
-                </dt>
-                <dd className="min-w-0 break-all text-xs text-foreground">
-                  {tag.length > 1 ? tag.slice(1).join(' · ') : '—'}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ) : null}
     </div>
   )
 }

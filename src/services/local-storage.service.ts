@@ -468,20 +468,53 @@ class LocalStorageService {
   /**
    * Async init: hydrate from IndexedDB when available, otherwise migrate localStorage into IndexedDB.
    * Call this before app render so settings are read from IndexedDB.
+   *
+   * Merges any {@link SETTINGS_KEYS} still present only in localStorage into the IDB-backed map, applies
+   * them to memory, then writes changed keys back to IndexedDB **before** stripping localStorage.
+   * Otherwise values like pane mode were applied from LS then lost on the next refresh (LS cleared, IDB never had the row).
    */
   async initAsync(): Promise<void> {
     if (this.initPromise) return this.initPromise
     this.initPromise = (async () => {
       await indexedDb.init()
-      const all = await indexedDb.getAllSettings()
-      if (Object.keys(all).length > 0) {
-        this.applySettings(all)
-      } else {
+      let idbBefore = await indexedDb.getAllSettings()
+      if (Object.keys(idbBefore).length === 0) {
         await this.migrateToIdb()
+        idbBefore = await indexedDb.getAllSettings()
       }
+      const merged = this.mergeSettingsRecordWithLocalStorage(idbBefore)
+      this.applySettings(merged)
+      await this.persistSettingsKeysDiffToIdb(idbBefore, merged)
       this.clearSettingsFromLocalStorage()
     })()
     return this.initPromise
+  }
+
+  /** Fill gaps from localStorage (used when IDB predates a key or a write only landed in LS). */
+  private mergeSettingsRecordWithLocalStorage(idb: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = { ...idb }
+    for (const key of SETTINGS_KEYS) {
+      if (out[key] != null) continue
+      const fromLs = window.localStorage.getItem(key)
+      if (fromLs != null) {
+        out[key] = fromLs
+      }
+    }
+    return out
+  }
+
+  /** Persist keys that differ from the pre-merge IDB snapshot so the next cold load reads from IDB only. */
+  private async persistSettingsKeysDiffToIdb(
+    idbBefore: Record<string, string>,
+    merged: Record<string, string>
+  ): Promise<void> {
+    for (const key of SETTINGS_KEYS) {
+      const v = merged[key]
+      if (v == null) continue
+      if (idbBefore[key] !== v) {
+        await indexedDb.setSetting(key, v).catch(() => {})
+      }
+    }
   }
 
   /** Remove SETTINGS_KEYS from localStorage so we don't duplicate; source of truth is IndexedDB. */
@@ -597,7 +630,7 @@ class LocalStorageService {
     const showRssStr = get(StorageKey.SHOW_RSS_FEED)
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const paneStr = get(StorageKey.PANE_MODE)
-    if (paneStr != null && (paneStr === 'single' || paneStr === 'double')) this.panelMode = paneStr
+    if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
   }
 
   getRelaySets() {

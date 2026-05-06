@@ -1,3 +1,4 @@
+import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import {
   getCalendarEventMeta,
   formatCalendarTimeRange,
@@ -9,7 +10,7 @@ import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import Collapsible from '../Collapsible'
 import { Button } from '../ui/button'
-import { Calendar, Clock, ExternalLink, MapPin } from 'lucide-react'
+import { Clock, ExternalLink, MapPin } from 'lucide-react'
 
 export function EmbeddedCalendarEvent({
   event,
@@ -40,19 +41,12 @@ export function EmbeddedCalendarEvent({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start gap-2.5">
-        {image ? (
-          <img
-            src={image}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            className="size-10 shrink-0 rounded-md object-cover ring-1 ring-border/40"
-          />
-        ) : (
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 ring-1 ring-border/40">
-            <Calendar className="size-5 text-primary/80" aria-hidden />
-          </div>
-        )}
+        <CalendarEventCoverImage
+          coverUrl={image}
+          pubkey={event.pubkey}
+          className="size-10 shrink-0 rounded-md"
+          iconClassName="size-5"
+        />
         <div className="min-w-0 flex-1 space-y-1.5">
           <span className="block line-clamp-2 font-semibold leading-snug text-foreground">
             {title || t('Scheduled video call')}

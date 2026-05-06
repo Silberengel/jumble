@@ -23,6 +23,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { Button } from '@/components/ui/button'
 
 /** Global calendar REQ: relays often cap; larger limit reduces “missing” older-published rows for this week. */
@@ -265,7 +266,6 @@ export default function SidebarCalendarWeekWidget() {
           {sortedForWeek.map((ev) => {
             const meta = getCalendarEventMeta(ev)
             const title = meta.title?.trim() || t('Scheduled video call')
-            const cover = meta.image?.trim()
             const sub = formatCalendarSidebarRow(ev)
             return (
               <li key={replaceableEventDedupeKey(ev)}>
@@ -277,17 +277,12 @@ export default function SidebarCalendarWeekWidget() {
                     'hover:border-border/80 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                   )}
                 >
-                  {cover ? (
-                    <img
-                      src={cover}
-                      alt=""
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      className="size-8 shrink-0 rounded-md object-cover ring-1 ring-border/40"
-                    />
-                  ) : (
-                    <div className="size-8 shrink-0 rounded-md bg-muted/50 ring-1 ring-border/30" aria-hidden />
-                  )}
+                  <CalendarEventCoverImage
+                    coverUrl={meta.image}
+                    pubkey={ev.pubkey}
+                    className="size-8 shrink-0 rounded-md ring-1 ring-border/40"
+                    iconClassName="size-4"
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="line-clamp-2 text-[11px] font-medium leading-snug text-foreground">{title}</span>
                     {sub ? (

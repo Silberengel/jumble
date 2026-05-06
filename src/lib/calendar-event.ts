@@ -1,6 +1,76 @@
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
-import { tagNameEquals } from '@/lib/tag'
+import { generateBech32IdFromATag, tagNameEquals } from '@/lib/tag'
 import { Event } from 'nostr-tools'
+
+/** NIP-52 collaborative calendar (addressable kind). */
+export const NIP52_CALENDAR_KIND = 31924
+
+export type Nip52CalendarRTag = { value: string; isHttpUrl: boolean }
+
+export type Nip52CalendarInclusionRow = { coordinate: string; naddr: string }
+
+export type Nip52CalendarTagExtras = {
+  locations: string[]
+  rTags: Nip52CalendarRTag[]
+  dayGranularities: string[]
+  calendarInclusions: Nip52CalendarInclusionRow[]
+  unknownTags: string[][]
+}
+
+const NIP52_CALENDAR_EVENT_KNOWN_TAG_NAMES = new Set([
+  'd',
+  'D',
+  'title',
+  'summary',
+  'image',
+  'location',
+  'g',
+  'p',
+  't',
+  'r',
+  'a',
+  'start',
+  'end',
+  'start_tzid',
+  'end_tzid',
+  'name'
+])
+
+/** Parsed NIP-52 calendar event tags not fully covered by {@link getCalendarEventMeta}. */
+export function getNip52CalendarEventTagExtras(event: Event): Nip52CalendarTagExtras {
+  const locations = event.tags
+    .filter(tagNameEquals('location'))
+    .map((t) => t[1]?.trim())
+    .filter((x): x is string => !!x)
+  const rTags: Nip52CalendarRTag[] = event.tags
+    .filter(tagNameEquals('r'))
+    .map((t) => {
+      const v = t[1]?.trim() ?? ''
+      return { value: v, isHttpUrl: /^https?:\/\//i.test(v) }
+    })
+    .filter((e) => e.value.length > 0)
+  const dayGranularities = event.tags
+    .filter((t) => t[0] === 'D')
+    .map((t) => t[1]?.trim())
+    .filter((x): x is string => !!x)
+  const calendarInclusions: Nip52CalendarInclusionRow[] = []
+  for (const t of event.tags.filter(tagNameEquals('a'))) {
+    const coord = t[1]?.trim()
+    if (!coord) continue
+    const kindStr = coord.split(':')[0] ?? ''
+    const kind = parseInt(kindStr, 10)
+    if (!Number.isFinite(kind) || kind !== NIP52_CALENDAR_KIND) continue
+    const naddr = generateBech32IdFromATag(t)
+    if (!naddr) continue
+    calendarInclusions.push({ coordinate: coord, naddr })
+  }
+  const unknownTags = event.tags.filter((tag) => {
+    const n = tag[0]
+    if (n == null || n === '') return false
+    return !NIP52_CALENDAR_EVENT_KNOWN_TAG_NAMES.has(n)
+  })
+  return { locations, rTags, dayGranularities, calendarInclusions, unknownTags }
+}
 
 export interface CalendarEventMeta {
   title: string
@@ -20,7 +90,9 @@ export interface CalendarEventMeta {
   /** Same as {@link joinUrl}; every http(s) `r` value. */
   rUrl: string
   rUrls: string[]
-  /** `location` tag (venue / address text). */
+  /** All `location` tag values (NIP-52 allows repeated). */
+  locations: string[]
+  /** First location, for compact UI. */
   location: string
   /** `d` tag (replaceable identifier). */
   d: string
@@ -34,12 +106,18 @@ export interface CalendarEventMeta {
 }
 
 export function getCalendarEventMeta(event: Event): CalendarEventMeta {
-  const title = event.tags.find(tagNameEquals('title'))?.[1] ?? ''
+  const rawTitle = event.tags.find(tagNameEquals('title'))?.[1]?.trim() ?? ''
+  const nameFallback = event.tags.find(tagNameEquals('name'))?.[1]?.trim() ?? ''
+  const title = rawTitle || nameFallback
   const summary = event.tags.find(tagNameEquals('summary'))?.[1] ?? ''
   const image = event.tags.find(tagNameEquals('image'))?.[1] ?? ''
   const startStr = event.tags.find(tagNameEquals('start'))?.[1]
   const endStr = event.tags.find(tagNameEquals('end'))?.[1]
-  const location = event.tags.find(tagNameEquals('location'))?.[1] ?? ''
+  const locations = event.tags
+    .filter(tagNameEquals('location'))
+    .map((t) => t[1]?.trim())
+    .filter((x): x is string => !!x)
+  const location = locations[0] ?? ''
   const d = event.tags.find(tagNameEquals('d'))?.[1] ?? ''
   const geo = event.tags.find(tagNameEquals('g'))?.[1] ?? ''
   const startTzid = event.tags.find(tagNameEquals('start_tzid'))?.[1] ?? ''
@@ -65,6 +143,7 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
       joinUrl,
       rUrl,
       rUrls,
+      locations,
       location,
       d,
       geo,
@@ -87,6 +166,7 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
     joinUrl,
     rUrl,
     rUrls,
+    locations,
     location,
     d,
     geo,

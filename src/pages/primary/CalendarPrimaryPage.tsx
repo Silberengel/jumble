@@ -22,6 +22,7 @@ import indexedDb from '@/services/indexed-db.service'
 import storage from '@/services/local-storage.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { TPageRef } from '@/types'
+import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { RefreshButton } from '@/components/RefreshButton'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event as NostrEvent } from 'nostr-tools'
@@ -415,7 +416,6 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     {list.slice(0, 4).map((ev) => {
                       const meta = getCalendarEventMeta(ev)
                       const title = meta.title?.trim() || t('calendarPageUntitledEvent')
-                      const cover = meta.image?.trim()
                       return (
                         <li key={replaceableEventDedupeKey(ev)} className="min-w-0">
                           <button
@@ -426,15 +426,12 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                               'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                             )}
                           >
-                            {cover ? (
-                              <img
-                                src={cover}
-                                alt=""
-                                loading="lazy"
-                                referrerPolicy="no-referrer"
-                                className="size-8 shrink-0 rounded-md object-cover ring-1 ring-border/50"
-                              />
-                            ) : null}
+                            <CalendarEventCoverImage
+                              coverUrl={meta.image}
+                              pubkey={ev.pubkey}
+                              className="size-8 shrink-0 rounded-md ring-1 ring-border/50"
+                              iconClassName="size-4"
+                            />
                             <span className="min-w-0 truncate">{title}</span>
                           </button>
                         </li>
@@ -495,7 +492,6 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     {list.slice(0, 4).map((ev) => {
                       const meta = getCalendarEventMeta(ev)
                       const title = meta.title?.trim() || t('calendarPageUntitledEvent')
-                      const cover = meta.image?.trim()
                       return (
                         <li key={replaceableEventDedupeKey(ev)} className="min-w-0">
                           <button
@@ -507,15 +503,12 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                             )}
                             title={title}
                           >
-                            {cover ? (
-                              <img
-                                src={cover}
-                                alt=""
-                                loading="lazy"
-                                referrerPolicy="no-referrer"
-                                className="size-3.5 shrink-0 rounded-sm object-cover ring-1 ring-border/40 md:size-4"
-                              />
-                            ) : null}
+                            <CalendarEventCoverImage
+                              coverUrl={meta.image}
+                              pubkey={ev.pubkey}
+                              className="size-3.5 shrink-0 rounded-sm ring-1 ring-border/40 md:size-4"
+                              iconClassName="size-2.5 md:size-3"
+                            />
                             <span className="min-w-0 flex-1 truncate">{title}</span>
                           </button>
                         </li>
