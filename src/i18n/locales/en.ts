@@ -33,6 +33,16 @@ export default {
     Profile: "Profile",
     Logout: "Logout",
     Following: "Following",
+    interactionMapMenu: "Interaction map",
+    interactionMapTitle: "Interaction map",
+    interactionMapSubtitle:
+      "People this user tags in notes and replies we already have locally (in-memory session + IndexedDB archive). Stronger color ≈ more mentions; brighter border ≈ more recent. Not exhaustive.",
+    interactionMapSessionNotes: "Session cache: {{count}} of their notes",
+    interactionMapArchiveNotes: "Archive scan: {{count}} of their notes (capped)",
+    interactionMapEmpty:
+      "No tagged people found in cached notes yet. Open their timeline or browse feeds so notes land in the archive.",
+    interactionMapRefresh: "Rescan cache",
+    interactionMapCellTitle: "{{count}} mentions · last {{when}}",
     followings: "followings",
     boosted: "boosted",
     "Boosted by:": "Boosted by:",

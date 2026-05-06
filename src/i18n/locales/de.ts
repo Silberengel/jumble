@@ -35,6 +35,16 @@ export default {
     Profile: "Profil",
     Logout: "Abmelden",
     Following: "Folgende",
+    interactionMapMenu: "Interaktionskarte",
+    interactionMapTitle: "Interaktionskarte",
+    interactionMapSubtitle:
+      "Personen, die dieser Nutzer in Notizen markiert, die lokal schon vorliegen (Sitzungs‑LRU + IndexedDB‑Archiv). Kräftigere Farbe ≈ häufiger erwähnt; hellerer Rand ≈ zuletzt. Nicht vollständig.",
+    interactionMapSessionNotes: "Sitzungscache: {{count}} ihrer Notizen",
+    interactionMapArchiveNotes: "Archiv‑Scan: {{count}} ihrer Notizen (begrenzt)",
+    interactionMapEmpty:
+      "In gecachten Notizen noch keine markierten Personen. Timeline öffnen oder Feeds lesen, damit das Archiv füllt.",
+    interactionMapRefresh: "Cache erneut scannen",
+    interactionMapCellTitle: "{{count}} Erwähnungen · zuletzt {{when}}",
     followings: "Folgekonten",
     boosted: "geboostet",
     "Boosted by:": "Geboostet von:",

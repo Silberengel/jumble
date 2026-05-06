@@ -19,12 +19,26 @@ import client from '@/services/client.service'
 import { replaceableEventService } from '@/services/client.service'
 import { nip66Service } from '@/services/nip66.service'
 import RawEventDialog from '@/components/NoteOptions/RawEventDialog'
-import { Bell, BellOff, Copy, Ellipsis, ThumbsUp, MessageCircle, Send, Video, SatelliteDish, Code } from 'lucide-react'
+import {
+  Bell,
+  BellOff,
+  Copy,
+  Ellipsis,
+  ThumbsUp,
+  MessageCircle,
+  Send,
+  Video,
+  SatelliteDish,
+  Code,
+  LayoutGrid
+} from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import { createReactionDraftEvent } from '@/lib/draft-event'
 import PostEditor from '@/components/PostEditor'
 import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-feedback'
 import { useTranslation } from 'react-i18next'
+import { useSmartProfileInteractionsNavigation } from '@/PageManager'
+import { toProfileInteractionMap } from '@/lib/link'
 import { toast } from 'sonner'
 import { Event } from 'nostr-tools'
 
@@ -43,6 +57,7 @@ export default function ProfileOptions({
   onSendCallInvite?: (url: string) => void
 }) {
   const { t } = useTranslation()
+  const { navigateToProfileInteractions } = useSmartProfileInteractionsNavigation()
   const { pubkey: accountPubkey, profile, publish, checkLogin } = useNostr()
   const { mutePubkeySet, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } = useMuteList()
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
@@ -231,6 +246,12 @@ export default function ProfileOptions({
             <DropdownMenuSeparator />
           </>
         )}
+        <DropdownMenuItem
+          onClick={() => navigateToProfileInteractions(toProfileInteractionMap(pubkey))}
+        >
+          <LayoutGrid />
+          {t('interactionMapMenu')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => navigator.clipboard.writeText('nostr:' + pubkeyToNpub(pubkey))}
         >

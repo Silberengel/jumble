@@ -64,6 +64,11 @@ export const toOthersRelaySettings = (pubkey: string) => {
   const npub = nip19.npubEncode(pubkey)
   return `/users/${npub}/relays`
 }
+/** Cached note mentions / tags — session + IndexedDB archive scan (see profile interaction map page). */
+export const toProfileInteractionMap = (pubkeyHex: string) => {
+  const npub = nip19.npubEncode(pubkeyHex)
+  return `/users/${npub}/interactions`
+}
 export const toSearch = (params?: TSearchParams) => {
   if (!params) return '/search'
   const query = new URLSearchParams()

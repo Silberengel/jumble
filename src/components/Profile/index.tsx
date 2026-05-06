@@ -16,11 +16,11 @@ import { kinds, type NostrEvent } from 'nostr-tools'
 import { createReactionDraftEvent } from '@/lib/draft-event'
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
 import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-feedback'
-import { toProfileEditor } from '@/lib/link'
+import { toProfileEditor, toProfileInteractionMap } from '@/lib/link'
 import { generateImageByPubkey } from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
-import { useSecondaryPage } from '@/PageManager'
+import { useSecondaryPage, useSmartProfileInteractionsNavigation } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
 import { replaceableEventService } from '@/services/client.service'
@@ -31,7 +31,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Copy, Ellipsis, Calendar, MapPin, Pencil, SatelliteDish, Code, Gift, Link, MessageCircle, ThumbsUp } from 'lucide-react'
+import {
+  Copy,
+  Ellipsis,
+  Calendar,
+  MapPin,
+  Pencil,
+  SatelliteDish,
+  Code,
+  Gift,
+  Link,
+  MessageCircle,
+  ThumbsUp,
+  LayoutGrid
+} from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
@@ -180,6 +193,7 @@ export default function Profile({
 }) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
+  const { navigateToProfileInteractions } = useSmartProfileInteractionsNavigation()
   const { navigate: navigatePrimary } = usePrimaryPage()
   const internalFeedRef = useRef<{ refresh: () => void }>(null)
   const profileFeedRef = feedRef ?? internalFeedRef
@@ -500,6 +514,12 @@ export default function Profile({
                   <DropdownMenuItem onClick={() => navigatePrimary('spells', { spell: 'followPacks' })}>
                     <Gift />
                     {t('Follow Packs')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigateToProfileInteractions(toProfileInteractionMap(pubkey))}
+                  >
+                    <LayoutGrid />
+                    {t('interactionMapMenu')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => push(toProfileEditor())}>
                     <Pencil />

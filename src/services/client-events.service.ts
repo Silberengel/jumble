@@ -657,6 +657,29 @@ export class EventService {
   }
 
   /**
+   * Session LRU: events authored by `authorPubkey` (e.g. notes, reposts, reactions) for local aggregates.
+   */
+  listSessionEventsAuthoredBy(
+    authorPubkey: string,
+    opts?: { kinds?: readonly number[]; limit?: number }
+  ): NEvent[] {
+    const pk = authorPubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return []
+    const kindSet = opts?.kinds?.length ? new Set(opts.kinds) : null
+    const limit = Math.min(Math.max(opts?.limit ?? 800, 1), 4000)
+    const out: NEvent[] = []
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (shouldDropEventOnIngest(event)) continue
+      if (event.pubkey.toLowerCase() !== pk) continue
+      if (kindSet && !kindSet.has(event.kind)) continue
+      out.push(event)
+      if (out.length >= limit) break
+    }
+    out.sort((a, b) => b.created_at - a.created_at)
+    return out
+  }
+
+  /**
    * Session cache: NIP-32 citation kinds (30–33) matched on title/summary/content and related tags
    * (not NIP-50 relay semantics).
    */

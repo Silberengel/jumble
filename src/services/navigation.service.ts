@@ -41,6 +41,7 @@ export type ViewType =
   | 'hashtag'
   | 'relay'
   | 'following'
+  | 'profile-interactions'
   | 'mute'
   | 'bookmarks'
   | 'pins'
@@ -276,8 +277,10 @@ export class NavigationService {
     if (viewType === 'profile') {
       if (pathname.includes('/following')) return 'Following'
       if (pathname.includes('/relays')) return 'Relays and Storage Settings'
+      if (pathname.includes('/interactions')) return 'Interaction map'
       return 'Profile'
     }
+    if (viewType === 'profile-interactions') return 'Interaction map'
     if (viewType === 'hashtag') return 'Hashtag'
     if (viewType === 'relay') return 'Relay'
     if (viewType === 'note') {

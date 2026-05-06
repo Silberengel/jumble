@@ -2937,6 +2937,55 @@ class IndexedDbService {
     })
   }
 
+  /**
+   * Scan {@link StoreNames.EVENT_ARCHIVE} for events authored by `pubkey` (bounded scan).
+   * Used for client-side aggregates (e.g. interaction map) from disk cache without a new relay REQ.
+   */
+  async scanEventArchiveByAuthorPubkey(
+    authorPubkey: string,
+    options: { kinds?: readonly number[]; maxRowsScanned: number; maxMatches: number }
+  ): Promise<Event[]> {
+    const pk = authorPubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return []
+    const kindSet = options.kinds?.length ? new Set(options.kinds) : null
+    const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 50_000)
+    const maxMatches = Math.min(Math.max(options.maxMatches, 1), 2000)
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
+
+    return new Promise((resolve, reject) => {
+      const out: Event[] = []
+      let scanned = 0
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      const req = store.openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || scanned >= maxRows || out.length >= maxMatches) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        scanned += 1
+        const row = cursor.value as TArchivedEventRow
+        const ev = row?.value
+        if (
+          ev &&
+          isLikelyCachedNostrEvent(ev) &&
+          ev.pubkey?.toLowerCase() === pk &&
+          (!kindSet || kindSet.has(ev.kind))
+        ) {
+          out.push(ev)
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
   async deleteArchivedEvent(eventId: string): Promise<void> {
     const id = eventId.toLowerCase()
     await this.initPromise
