@@ -127,6 +127,12 @@ export const PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP = 10
 export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
 
 /**
+ * After the first relay accepts a publish, resolve {@link ClientService.publishEvent} after this many ms
+ * so the UI does not wait for every slow or dead relay (callers typically only need ≥1 success).
+ */
+export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 1200
+
+/**
  * Cap how long we wait on NIP-65 / inbox relay-list resolution (including `fetchRelayLists` network phase
  * and kind-10432 fetch) before publishing or falling back to IndexedDB-only merge.
  * Without this, a stuck `fetchReplaceableEventsFromProfileFetchRelays` can block the UI even when kind

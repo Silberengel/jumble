@@ -23,6 +23,7 @@ import {
   RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS,
   TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY,
   OUTBOX_PUBLISH_RETRY_DELAY_MS,
+  EARLY_PUBLISH_SUCCESS_GRACE_MS,
   DEFAULT_FAVORITE_RELAYS,
   NIP66_DISCOVERY_RELAY_URLS,
   PROFILE_FETCH_RELAY_URLS,
@@ -569,6 +570,19 @@ class ClientService extends EventTarget {
     }
     const failedOutboxes = userOutboxUrls.filter((u) => !hadSuccess.has(norm(u)))
     if (failedOutboxes.length === 0) return
+
+    const anyRelaySucceeded = relayStatuses.some((r) => r.success)
+    if (
+      anyRelaySucceeded &&
+      failedOutboxes.length > 0 &&
+      failedOutboxes.every((u) => isLocalNetworkUrl(u))
+    ) {
+      logger.info(
+        '[Publish] Skipping NIP-65 outbox retry: unreachable local write relay(s) only; note already reached at least one relay.',
+        { failedOutboxes }
+      )
+      return
+    }
 
     const statusHint = (url: string): string => {
       const n = norm(url)
@@ -1521,6 +1535,7 @@ class ClientService extends EventTarget {
         slotCap
       })
       let hasResolved = false
+      let earlyGraceTimer: ReturnType<typeof setTimeout> | null = null
 
       const globalTimeout = setTimeout(() => {
         if (hasResolved) {
@@ -1548,6 +1563,10 @@ class ClientService extends EventTarget {
         
         // Ensure we resolve even if not all relays finished
         if (!hasResolved) {
+          if (earlyGraceTimer != null) {
+            clearTimeout(earlyGraceTimer)
+            earlyGraceTimer = null
+          }
           hasResolved = true
           logger.debug('[PublishEvent] Resolving due to timeout', {
             success: successCount >= uniqueRelayUrls.length / 3,
@@ -1704,7 +1723,11 @@ class ClientService extends EventTarget {
                 break
               } catch (wsErr) {
                 const msg = wsErr instanceof Error ? wsErr.message : String(wsErr)
+                const localConnDead =
+                  isLocal &&
+                  /Local relay connection timeout|connection timed out/i.test(msg)
                 const retriable =
+                  !localConnDead &&
                   wsAttempt === 0 &&
                   /Remote relay connection timeout|Local relay connection timeout|Publish timeout after|publish timed out|websocket closed|connection failed|relay connection closed|SendingOnClosedConnection/i.test(
                     msg
@@ -1759,6 +1782,10 @@ class ClientService extends EventTarget {
               this.emitNewEvent(event)
             }
             if (currentFinished >= uniqueRelayUrls.length && !hasResolved) {
+              if (earlyGraceTimer != null) {
+                clearTimeout(earlyGraceTimer)
+                earlyGraceTimer = null
+              }
               hasResolved = true
               logger.debug('[PublishEvent] All relays finished, resolving', {
                 success: successCount >= uniqueRelayUrls.length / 3,
@@ -1774,32 +1801,27 @@ class ClientService extends EventTarget {
                 successCount,
                 totalCount: uniqueRelayUrls.length
               })
-            }
-            
-            // Also resolve early if we have enough successes (1/3 of relays)
-            // This prevents waiting for slow/failing relays
-            if (!hasResolved && successCount >= Math.max(1, Math.ceil(uniqueRelayUrls.length / 3)) && currentFinished >= Math.max(1, Math.ceil(uniqueRelayUrls.length / 3))) {
-              // Wait a bit more to see if more relays succeed quickly
-              setTimeout(() => {
-                if (!hasResolved) {
-                  hasResolved = true
-                  logger.debug('[PublishEvent] Resolving early with enough successes', {
-                    success: true,
-                    successCount,
-                    totalCount: uniqueRelayUrls.length,
-                    finishedCount: currentFinished,
-                    relayStatusesCount: relayStatuses.length
-                  })
-                  clearTimeout(globalTimeout)
-                  flushPublishOpBatch('early_success_threshold')
-                  resolve({
-                    success: true,
-                    relayStatuses,
-                    successCount,
-                    totalCount: uniqueRelayUrls.length
-                  })
-                }
-              }, 2000) // Wait 2 more seconds for quick responses
+            } else if (!hasResolved && successCount >= 1 && earlyGraceTimer == null) {
+              earlyGraceTimer = setTimeout(() => {
+                earlyGraceTimer = null
+                if (hasResolved) return
+                hasResolved = true
+                clearTimeout(globalTimeout)
+                flushPublishOpBatch('early_any_success_grace')
+                logger.debug('[PublishEvent] Resolving after first success grace', {
+                  success: successCount >= uniqueRelayUrls.length / 3,
+                  successCount,
+                  totalCount: uniqueRelayUrls.length,
+                  finishedRelays: currentFinished,
+                  graceMs: EARLY_PUBLISH_SUCCESS_GRACE_MS
+                })
+                resolve({
+                  success: successCount >= uniqueRelayUrls.length / 3,
+                  relayStatuses,
+                  successCount,
+                  totalCount: uniqueRelayUrls.length
+                })
+              }, EARLY_PUBLISH_SUCCESS_GRACE_MS)
             }
           }
         })
