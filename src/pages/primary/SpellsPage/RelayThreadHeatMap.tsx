@@ -36,7 +36,7 @@ import { useTranslation } from 'react-i18next'
 const HEAT_WINDOW_SEC = 72 * 3600
 /** REQ without `since`: many relays return nothing for kind 1+`since`; we clip by `created_at` client-side. */
 const HEAT_REQ_LIMIT = 1500
-const MAX_BUBBLES = 48
+const MAX_BUBBLES = 10
 const SESSION_HEAT_LIMIT = 2500
 /** Cap rows scanned so the heat map stays responsive on large archives. */
 const ARCHIVE_HEAT_MAX_SCAN = 30_000
