@@ -238,7 +238,9 @@ export default {
     calendarNip52Geohash: "Geohash",
     calendarNip52ViewGeohash: "Geohash-kaart",
     calendarNip52GoogleMaps: "Google Maps",
-    calendarNip52DayIndices: "Day indices (NIP-52)",
+    calendarNip52DayIndices: "Indexed days (UTC)",
+    calendarNip52DayIndicesHint:
+      "NIP-52 D tags list whole UTC calendar days (Unix day index) so relays and clients can match timed events to a day; several values mean a multi-day span.",
     calendarNip52CalendarInclusion: "Calendar inclusion",
     calendarNip52CalendarInclusionHint:
       "This event requests inclusion in the referenced collaborative calendar (kind 31924).",

@@ -3,7 +3,8 @@ import {
   getCalendarEventMeta,
   formatCalendarTimeRange,
   formatCalendarDateRange,
-  isCalendarEventKind
+  isCalendarEventKind,
+  stripCalendarEventRedundantTopicHashtagLines
 } from '@/lib/calendar-event'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
@@ -23,7 +24,8 @@ export function EmbeddedCalendarEvent({
   if (!isCalendarEventKind(event.kind)) return null
   const { title, summary, image, start, end, startDate, endDate, isDateBased, rUrls, topics, location } =
     getCalendarEventMeta(event)
-  const description = summary || event.content?.trim() || ''
+  const descriptionRaw = summary || event.content?.trim() || ''
+  const description = stripCalendarEventRedundantTopicHashtagLines(descriptionRaw, topics)
 
   const scheduleLine = isDateBased
     ? (startDate || endDate) && formatCalendarDateRange(startDate, endDate)

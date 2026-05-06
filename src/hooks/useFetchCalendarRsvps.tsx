@@ -64,7 +64,10 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
         fromIdb = []
       }
       if (cancelled) return
-      if (fromIdb.length) setRsvps(fromIdb)
+
+      const fromSession = client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
+      const mergedLocal = mergeRsvpList([...fromIdb, ...fromSession])
+      if (mergedLocal.length) setRsvps(mergedLocal)
 
       const baseUrls = new Set<string>([
         ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
@@ -93,17 +96,31 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
         }
         if (cancelled) return
         const urls = relayUrls?.length ? relayUrls : Array.from(baseUrls)
+        const calendarHexId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
+          ? calendarEvent.id.toLowerCase()
+          : calendarEvent.id
         const events = await queryService.fetchEvents(
           urls,
+          [
+            {
+              kinds: [ExtendedKind.CALENDAR_EVENT_RSVP],
+              '#a': [coordinate],
+              limit: 200
+            },
+            {
+              kinds: [ExtendedKind.CALENDAR_EVENT_RSVP],
+              '#e': [calendarHexId],
+              limit: 200
+            }
+          ],
           {
-            kinds: [ExtendedKind.CALENDAR_EVENT_RSVP],
-            '#a': [coordinate],
-            limit: 200
-          },
-          { firstRelayResultGraceMs: false }
+            firstRelayResultGraceMs: false,
+            eoseTimeout: 4500,
+            globalTimeout: 24_000
+          }
         )
         if (cancelled) return
-        setRsvps(mergeRsvpList([...fromIdb, ...(events ?? [])]))
+        setRsvps(mergeRsvpList([...fromIdb, ...fromSession, ...(events ?? [])]))
       } finally {
         if (!cancelled) setIsFetching(false)
       }
@@ -121,18 +138,24 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
     const coordinate = normalizeReplaceableCoordinateString(
       getReplaceableCoordinateFromEvent(calendarEvent)
     )
+    const calId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
+      ? calendarEvent.id.toLowerCase()
+      : calendarEvent.id
     const handler = (e: CustomEvent<Event>) => {
       const evt = e.detail
       if (evt.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) return
       const aTag = evt.tags.find(tagNameEquals('a'))
       const aCoord = aTag?.[1] ? normalizeReplaceableCoordinateString(aTag[1]) : ''
-      if (aCoord !== coordinate) return
+      const eTag = evt.tags.find(tagNameEquals('e'))?.[1]?.trim().toLowerCase()
+      const matchesA = aCoord !== '' && aCoord === coordinate
+      const matchesE = eTag && /^[0-9a-f]{64}$/.test(eTag) && eTag === calId
+      if (!matchesA && !matchesE) return
       setRsvps((prev) => mergeRsvp(prev, evt))
     }
 
     client.addEventListener('newEvent', handler as EventListener)
     return () => client.removeEventListener('newEvent', handler as EventListener)
-  }, [calendarEvent?.id, calendarEvent?.kind])
+  }, [calendarEvent?.id, calendarEvent?.kind, calendarEvent?.pubkey])
 
   return {
     rsvps,

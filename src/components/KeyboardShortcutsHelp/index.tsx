@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -14,13 +13,9 @@ import {
 } from '@/lib/keyboard-shortcuts'
 import { cn } from '@/lib/utils'
 import postEditorService from '@/services/post-editor.service'
-import { CircleHelp } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { marked } from 'marked'
-import {
-  KeyboardShortcutsHelpContext,
-  useKeyboardShortcutsHelp
-} from '@/contexts/keyboard-shortcuts-help-context'
+import { KeyboardShortcutsHelpContext } from '@/contexts/keyboard-shortcuts-help-context'
 import { useTranslation } from 'react-i18next'
 import readmeMarkdown from '../../../README.md?raw'
 
@@ -51,16 +46,7 @@ function ShortcutsPanel() {
           {t('shortcuts.sectionApp')}
         </h3>
         <div className="space-y-3">
-          <KbdRow
-            label={t('shortcuts.openHelp')}
-            keys={
-              <>
-                <Kbd>?</Kbd>
-                <span className="px-0.5 text-muted-foreground">{t('shortcuts.or')}</span>
-                <Kbd>F1</Kbd>
-              </>
-            }
-          />
+          <KbdRow label={t('shortcuts.openHelp')} keys={<Kbd>F1</Kbd>} />
           <KbdRow
             label={t('shortcuts.focusPrimary')}
             keys={
@@ -212,15 +198,6 @@ export function KeyboardShortcutsHelpProvider({ children }: { children: ReactNod
       if (shouldIgnoreKeyboardShortcutEvent(e.target)) return
       if (isRadixDialogOpen()) return
 
-      const isQuestionMark =
-        e.key === '?' || (e.shiftKey && e.code === 'Slash' && !e.ctrlKey && !e.metaKey && !e.altKey)
-
-      if (isQuestionMark && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault()
-        setOpen(true)
-        return
-      }
-
       if (e.key === 'F1' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         setOpen(true)
@@ -275,23 +252,5 @@ export function KeyboardShortcutsHelpProvider({ children }: { children: ReactNod
         </DialogContent>
       </Dialog>
     </KeyboardShortcutsHelpContext.Provider>
-  )
-}
-
-/** Titlebar-sized help control (e.g. home feed, next to profile). */
-export function KeyboardShortcutsHelpButton() {
-  const { openHelp } = useKeyboardShortcutsHelp()
-  const { t } = useTranslation()
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="titlebar-icon"
-      onClick={() => openHelp()}
-      title={t('help.title')}
-      aria-label={t('help.title')}
-    >
-      <CircleHelp />
-    </Button>
   )
 }

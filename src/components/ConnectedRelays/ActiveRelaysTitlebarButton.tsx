@@ -46,20 +46,28 @@ export function ActiveRelaysTitlebarButton() {
   const { rows, connectedCount } = useRelayConnectionRows()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
+  const countSummary =
+    rows.length > 0 ? `${connectedCount}/${rows.length}` : ''
+
   const trigger = (
     <Button
       variant="ghost"
       size="titlebar-icon"
-      className="shrink-0 gap-0.5 text-muted-foreground hover:text-primary disabled:opacity-40"
-      title={t('Active relays')}
-      aria-label={t('Active relays')}
+      className={cn(
+        'shrink-0 text-muted-foreground hover:text-primary disabled:opacity-40',
+        !isSmallScreen && rows.length > 0 && 'gap-0.5'
+      )}
+      title={countSummary ? `${t('Active relays')} (${countSummary})` : t('Active relays')}
+      aria-label={
+        countSummary ? `${t('Active relays')} (${countSummary})` : t('Active relays')
+      }
       disabled={rows.length === 0}
       onClick={() => {
         if (isSmallScreen) setDrawerOpen(true)
       }}
     >
       <Server className="size-5 shrink-0" />
-      {rows.length > 0 ? (
+      {!isSmallScreen && rows.length > 0 ? (
         <span className="text-xs tabular-nums leading-none">
           <span className="text-foreground">{connectedCount}</span>
           <span className="text-muted-foreground">/{rows.length}</span>
@@ -82,8 +90,15 @@ export function ActiveRelaysTitlebarButton() {
             dragHandle="vaul"
             className="flex max-h-[min(85dvh,32rem)] flex-col gap-0"
           >
-            <DrawerHeader className="sr-only">
-              <DrawerTitle>{t('Active relays')}</DrawerTitle>
+            <DrawerHeader className="border-b border-border/60 px-4 pb-3 pt-1 text-left">
+              <DrawerTitle className="text-base">{t('Active relays')}</DrawerTitle>
+              {rows.length > 0 ? (
+                <p className="mt-1.5 text-sm tabular-nums text-muted-foreground">
+                  <span className="font-semibold text-foreground">{connectedCount}</span>
+                  <span>/</span>
+                  <span>{rows.length}</span>
+                </p>
+              ) : null}
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-2 pb-4">
               {rows.map(({ url, connected, sessionStriked }) => (

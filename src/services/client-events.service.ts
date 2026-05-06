@@ -4,14 +4,16 @@ import {
   getParentATag,
   getParentETag,
   getQuotedReferenceFromQTags,
+  getReplaceableCoordinateFromEvent,
   getRootATag,
   getRootETag,
   isNip25ReactionKind,
   isReplyNoteEvent,
   isReplaceableEvent,
-  kind1QuotesThreadRoot
+  kind1QuotesThreadRoot,
+  normalizeReplaceableCoordinateString
 } from '@/lib/event'
-import { getFirstHexEventIdFromETags } from '@/lib/tag'
+import { getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
 import DataLoader from 'dataloader'
@@ -698,6 +700,36 @@ export class EventService {
       if (matches) out.push(event)
     }
     return out
+  }
+
+  /**
+   * Kind 31925 in session LRU for this calendar replaceable: `a` coordinate match, or `e` pointing at this
+   * revision’s id (some clients tag the instance id only). Used so RSVP lists populate from feeds before
+   * IndexedDB / relay REQ complete.
+   */
+  getSessionCalendarRsvpsForCalendarEvent(calendarEvent: NEvent): NEvent[] {
+    if (!isCalendarEventKind(calendarEvent.kind)) return []
+    const coordNorm = normalizeReplaceableCoordinateString(
+      getReplaceableCoordinateFromEvent(calendarEvent)
+    )
+    const calId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
+      ? calendarEvent.id.toLowerCase()
+      : calendarEvent.id
+    const out: NEvent[] = []
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (event.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) continue
+      if (shouldDropEventOnIngest(event)) continue
+      const rawA = event.tags.find(tagNameEquals('a'))?.[1]?.trim()
+      if (rawA && normalizeReplaceableCoordinateString(rawA) === coordNorm) {
+        out.push(event)
+        continue
+      }
+      const eTag = event.tags.find(tagNameEquals('e'))?.[1]?.trim().toLowerCase()
+      if (eTag && /^[0-9a-f]{64}$/.test(eTag) && eTag === calId) {
+        out.push(event)
+      }
+    }
+    return out.sort((a, b) => b.created_at - a.created_at)
   }
 
   /**

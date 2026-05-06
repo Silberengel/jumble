@@ -3103,6 +3103,10 @@ class ClientService extends EventTarget {
     return this.eventService.getSessionEventsMatchingSearch(query, limit, allowedKinds)
   }
 
+  /** Session LRU: RSVPs for this calendar event (by `a` coordinate or `e` parent id). */
+  getSessionCalendarRsvpsForCalendarEvent(event: NEvent): NEvent[] {
+    return this.eventService.getSessionCalendarRsvpsForCalendarEvent(event)
+  }
 
   async fetchFavoriteRelays(pubkey: string): Promise<string[]> {
     try {

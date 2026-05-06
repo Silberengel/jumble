@@ -33,7 +33,9 @@ const NIP52_CALENDAR_EVENT_KNOWN_TAG_NAMES = new Set([
   'end',
   'start_tzid',
   'end_tzid',
-  'name'
+  'name',
+  /** App attribution; rendered under the title in calendar UI, not in “other tags”. */
+  'client'
 ])
 
 /** Parsed NIP-52 calendar event tags not fully covered by {@link getCalendarEventMeta}. */
@@ -176,6 +178,65 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
   }
 }
 
+/**
+ * Drop leading/trailing lines that are only `#word` tokens when every word matches a NIP-52
+ * `t` tag (already shown as topic chips). Typical duplicate: body ends with `#run #walk` mirroring `t` tags.
+ */
+export function stripCalendarEventRedundantTopicHashtagLines(
+  content: string,
+  topics: readonly string[]
+): string {
+  const topicSet = new Set(
+    topics.map((x) => x.trim().toLowerCase()).filter((x): x is string => x.length > 0)
+  )
+  if (topicSet.size === 0) return content
+
+  const lines = content.split('\n')
+
+  const isHashtagOnlyLine = (line: string): boolean => {
+    const t = line.trim()
+    if (!t) return false
+    const parts = t.split(/\s+/).filter(Boolean)
+    return parts.every((p) => /^#[a-zA-Z0-9_]+$/.test(p))
+  }
+
+  const tagsFromHashtagOnlyLine = (line: string): string[] =>
+    line
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => p.slice(1).toLowerCase())
+
+  let start = 0
+  let end = lines.length
+
+  while (start < end) {
+    const line = lines[start]
+    if (line.trim() === '') {
+      start++
+      continue
+    }
+    if (!isHashtagOnlyLine(line)) break
+    const tags = tagsFromHashtagOnlyLine(line)
+    if (!tags.every((tag) => topicSet.has(tag))) break
+    start++
+  }
+
+  while (end > start) {
+    const line = lines[end - 1]
+    if (line.trim() === '') {
+      end--
+      continue
+    }
+    if (!isHashtagOnlyLine(line)) break
+    const tags = tagsFromHashtagOnlyLine(line)
+    if (!tags.every((tag) => topicSet.has(tag))) break
+    end--
+  }
+
+  return lines.slice(start, end).join('\n').trimEnd()
+}
+
 const CALENDAR_DISPLAY_LOCALE = 'en-US'
 
 function readFormatParts(
@@ -262,6 +323,72 @@ export function formatCalendarDateRange(startDate: string, endDate: string): str
   const a = formatCalendarDate(startDate)
   if (!endDate?.trim() || endDate === startDate) return a
   return `${a} – ${formatCalendarDate(endDate)}`
+}
+
+/** Seconds per day for NIP-52 `D` tags: `floor(unix_seconds / 86400)`. */
+const NIP52_SECONDS_PER_DAY = 86400
+
+function nip52DayIndexToUtcCalendarParts(dayIndex: number): { month: string; day: string; year: string } {
+  const ms = dayIndex * NIP52_SECONDS_PER_DAY * 1000
+  const d = new Date(ms)
+  const parts = new Intl.DateTimeFormat(CALENDAR_DISPLAY_LOCALE, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).formatToParts(d)
+  const m: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {}
+  for (const p of parts) {
+    if (p.type !== 'literal') m[p.type] = p.value
+  }
+  return {
+    month: m.month ?? '',
+    day: m.day ?? '',
+    year: m.year ?? ''
+  }
+}
+
+/**
+ * Human-readable summary of NIP-52 `D` (day-granularity) tags: each value is a UTC calendar day index
+ * from the Unix epoch; publishers repeat `D` for every day a timed event touches so relays can index
+ * and filter by day. Ranges of consecutive indices are collapsed (e.g. “May 23–25, 2026”).
+ */
+export function summarizeNip52DayGranularityTags(dayStrings: readonly string[]): string {
+  const indices = Array.from(
+    new Set(
+      dayStrings
+        .map((s) => String(s).trim())
+        .filter((s) => /^-?\d+$/.test(s))
+        .map((s) => parseInt(s, 10))
+        .filter((n) => Number.isFinite(n))
+    )
+  ).sort((a, b) => a - b)
+  if (indices.length === 0) return ''
+
+  const ranges: Array<{ start: number; end: number }> = []
+  for (const n of indices) {
+    const last = ranges[ranges.length - 1]
+    if (last && n === last.end + 1) last.end = n
+    else ranges.push({ start: n, end: n })
+  }
+
+  return ranges
+    .map(({ start, end }) => {
+      if (start === end) {
+        const p = nip52DayIndexToUtcCalendarParts(start)
+        return `${p.month} ${p.day}, ${p.year}`
+      }
+      const a = nip52DayIndexToUtcCalendarParts(start)
+      const b = nip52DayIndexToUtcCalendarParts(end)
+      if (a.month === b.month && a.year === b.year) {
+        return `${a.month} ${a.day}–${b.day}, ${a.year}`
+      }
+      if (a.year === b.year) {
+        return `${a.month} ${a.day} – ${b.month} ${b.day}, ${a.year}`
+      }
+      return `${a.month} ${a.day}, ${a.year} – ${b.month} ${b.day}, ${b.year}`
+    })
+    .join(' · ')
 }
 
 /** True for NIP-52 calendar note kinds **31922** / **31923** only (via {@link isNip52CalendarCardKind}). */

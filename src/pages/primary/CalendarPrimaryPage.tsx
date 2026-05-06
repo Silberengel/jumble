@@ -164,6 +164,19 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
     let lateMergeTimer: number | null = null
     setLoading(true)
     void (async () => {
+      const scheduleLateSessionMerge = (mergeWithIdb: NostrEvent[]) => {
+        lateMergeTimer = window.setTimeout(() => {
+          lateMergeTimer = null
+          if (cancelled) return
+          const later = client.getSessionEventsMatchingSearch(
+            '',
+            SESSION_CALENDAR_MERGE_CAP,
+            [...CALENDAR_EVENT_KINDS]
+          )
+          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...mergeWithIdb]))
+        }, 2500)
+      }
+
       try {
         const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
         const fromIdb = await indexedDb.getCalendarEventsForOccurrenceWindow(
@@ -171,66 +184,74 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           rangeEndExclusiveMs,
           MONTH_IDB_MAX_SCAN
         )
+        if (cancelled) return
+
+        const fromSessionNow = client.getSessionEventsMatchingSearch(
+          '',
+          SESSION_CALENDAR_MERGE_CAP,
+          [...CALENDAR_EVENT_KINDS]
+        )
+        setRawEvents(dedupeCalendarEvents([...fromIdb, ...fromSessionNow]))
+        setLoading(false)
 
         if (!relayUrls.length) {
-          if (cancelled) return
-          const fromSession = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          setRawEvents(dedupeCalendarEvents([...fromIdb, ...fromSession]))
-          lateMergeTimer = window.setTimeout(() => {
-            lateMergeTimer = null
-            if (cancelled) return
-            const later = client.getSessionEventsMatchingSearch(
-              '',
-              SESSION_CALENDAR_MERGE_CAP,
-              [...CALENDAR_EVENT_KINDS]
-            )
-            setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...fromIdb]))
-          }, 2500)
+          scheduleLateSessionMerge(fromIdb)
           return
         }
 
-        const batch = await client.fetchEvents(
+        const mainFetchOpts = {
+          cache: true as const,
+          globalTimeout: 22_000,
+          eoseTimeout: 3500,
+          firstRelayResultGraceMs: false as const
+        }
+        const chunkFetchOpts = {
+          cache: true as const,
+          globalTimeout: 12_000,
+          eoseTimeout: 2200,
+          firstRelayResultGraceMs: false as const
+        }
+
+        const authorList = followAuthorsKey
+          ? followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
+          : []
+        const authorChunks: string[][] = []
+        for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
+          authorChunks.push(authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK))
+        }
+
+        const mainReq = client.fetchEvents(
           relayUrls,
           {
             kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
             limit: FETCH_LIMIT
           },
-          {
-            cache: true,
-            globalTimeout: 22_000,
-            eoseTimeout: 3500,
-            firstRelayResultGraceMs: false
-          }
+          mainFetchOpts
         )
-        if (cancelled) return
+        const chunkReqs = authorChunks.map((authors) =>
+          client.fetchEvents(
+            relayUrls,
+            {
+              kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
+              authors,
+              limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
+            },
+            chunkFetchOpts
+          )
+        )
 
+        let batch: NostrEvent[] = []
         const fromFollowing: NostrEvent[] = []
-        if (followAuthorsKey) {
-          const authorList = followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
-          for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
-            const authors = authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK)
-            const chunk = await client.fetchEvents(
-              relayUrls,
-              {
-                kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-                authors,
-                limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
-              },
-              {
-                cache: true,
-                globalTimeout: 16_000,
-                eoseTimeout: 2800,
-                firstRelayResultGraceMs: false
-              }
-            )
-            if (cancelled) return
-            fromFollowing.push(...chunk)
+        try {
+          const merged = await Promise.all([mainReq, ...chunkReqs])
+          batch = merged[0] ?? []
+          for (let i = 1; i < merged.length; i++) {
+            fromFollowing.push(...(merged[i] ?? []))
           }
+        } catch {
+          /* keep IndexedDB + session view; relays may be unreachable */
         }
+        if (cancelled) return
 
         const fromSession = client.getSessionEventsMatchingSearch(
           '',
@@ -249,9 +270,10 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later]))
         }, 2500)
       } catch {
-        if (!cancelled) setRawEvents([])
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setRawEvents([])
+          setLoading(false)
+        }
       }
     })()
     return () => {
@@ -364,7 +386,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
       titlebar={<CalendarPageTitlebar onRefresh={() => setRefreshKey((k) => k + 1)} />}
       displayScrollToTopButton
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-3 md:p-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2 md:p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <Button type="button" variant="outline" size="icon" className="size-9" onClick={goPrevMonth} aria-label={t('calendarPagePrevMonth')}>
@@ -385,7 +407,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
         ) : null}
 
         {useVerticalMonthCalendar ? (
-          <div className="flex min-w-0 flex-col gap-2" aria-label={t('calendarPageGridLabel')}>
+          <div className="flex min-w-0 flex-col gap-1.5" aria-label={t('calendarPageGridLabel')}>
             {Array.from({ length: daysInMonth(viewYear, viewMonth) }, (_, idx) => {
               const day = idx + 1
               const list = eventsForDay(day)
@@ -398,12 +420,12 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                 <div
                   key={`m-${viewYear}-${viewMonth}-${day}`}
                   className={cn(
-                    'flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card p-3',
+                    'flex min-w-0 flex-col gap-0.5 rounded-lg border border-border bg-card p-2',
                     inWeek && 'bg-primary/10 ring-1 ring-inset ring-primary/35'
                   )}
                 >
-                  <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-1">
-                    <span className="text-sm font-semibold text-foreground">
+                  <div className="flex items-baseline justify-between gap-2 border-b border-border/40 pb-0.5">
+                    <span className="text-[13px] font-semibold leading-tight text-foreground">
                       {weekdayShort} · {day}
                     </span>
                     {list.length > 0 ? (
@@ -412,7 +434,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                       </span>
                     ) : null}
                   </div>
-                  <ul className="min-w-0 space-y-0.5">
+                  <ul className="min-w-0 space-y-0">
                     {list.slice(0, 4).map((ev) => {
                       const meta = getCalendarEventMeta(ev)
                       const title = meta.title?.trim() || t('calendarPageUntitledEvent')
@@ -422,15 +444,15 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                             type="button"
                             onClick={() => navigateToNote(toNote(ev), ev)}
                             className={cn(
-                              'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium leading-snug text-primary',
+                              'flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] font-medium leading-snug text-primary',
                               'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                             )}
                           >
                             <CalendarEventCoverImage
                               coverUrl={meta.image}
                               pubkey={ev.pubkey}
-                              className="size-8 shrink-0 rounded-md ring-1 ring-border/50"
-                              iconClassName="size-4"
+                              className="size-7 shrink-0 rounded-md ring-1 ring-border/50"
+                              iconClassName="size-3.5"
                             />
                             <span className="min-w-0 truncate">{title}</span>
                           </button>
@@ -439,16 +461,14 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     })}
                   </ul>
                   {excess > 0 ? (
-                    <Button
+                    <button
                       type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-9 w-full shrink-0 text-xs font-semibold"
+                      className="mt-0.5 w-full shrink-0 rounded-md py-1 text-center text-[11px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label={t('calendarPageMoreEventsAria', { count: excess })}
                       onClick={() => openDayEventsPanel(day)}
                     >
                       +{excess}
-                    </Button>
+                    </button>
                   ) : null}
                 </div>
               )
@@ -516,16 +536,14 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                     })}
                   </ul>
                   {excess > 0 ? (
-                    <Button
+                    <button
                       type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="mt-0.5 h-7 w-full shrink-0 px-1 text-[10px] font-semibold md:h-8 md:text-[11px]"
+                      className="mt-0.5 w-full shrink-0 rounded py-0.5 text-center text-[9px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]"
                       aria-label={t('calendarPageMoreEventsAria', { count: excess })}
                       onClick={() => openDayEventsPanel(day)}
                     >
                       +{excess}
-                    </Button>
+                    </button>
                   ) : null}
                 </div>
               )

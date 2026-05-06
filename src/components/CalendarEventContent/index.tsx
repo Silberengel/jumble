@@ -1,10 +1,12 @@
 import { createCalendarRsvpDraftEvent } from '@/lib/draft-event'
+import { getUsingClient } from '@/lib/event'
 import {
   getCalendarEventMeta,
   getNip52CalendarEventTagExtras,
   formatCalendarTimeRange,
   formatCalendarDateRange,
-  isCalendarEventKind
+  isCalendarEventKind,
+  stripCalendarEventRedundantTopicHashtagLines
 } from '@/lib/calendar-event'
 import { tagNameEquals } from '@/lib/tag'
 import { useFetchCalendarRsvps } from '@/hooks/useFetchCalendarRsvps'
@@ -13,6 +15,7 @@ import { toProfile } from '@/lib/link'
 import { useSecondaryPage } from '@/PageManager'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { CalendarEventNip52StructuredMeta } from '@/components/CalendarEventNip52StructuredMeta'
+import ClientTag from '@/components/ClientTag'
 import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
@@ -67,10 +70,15 @@ export default function CalendarEventContent({
     return s || c || ''
   }, [meta, event.content, showFull])
 
+  const markdownBodyDeduped = useMemo(() => {
+    const topicList = meta?.topics ?? []
+    return stripCalendarEventRedundantTopicHashtagLines(markdownBody, topicList)
+  }, [markdownBody, meta])
+
   const eventForMarkdown = useMemo((): Event => {
-    if (!markdownBody) return event
-    return { ...event, content: markdownBody }
-  }, [event, markdownBody])
+    if (!markdownBodyDeduped) return event
+    return { ...event, content: markdownBodyDeduped }
+  }, [event, markdownBodyDeduped])
 
   const duplicateWebPreviewHints = useMemo(() => {
     if (!meta) return []
@@ -150,22 +158,22 @@ export default function CalendarEventContent({
   return (
     <div
       className={cn(
-        'min-w-0 space-y-3 rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/25 p-4 text-sm shadow-sm',
+        'min-w-0 rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/25 text-sm shadow-sm',
+        showFull ? 'space-y-2.5 p-3' : 'space-y-3 p-4',
         className
       )}
       data-calendar-event-content
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start gap-3">
-        <CalendarEventCoverImage
-          coverUrl={image}
-          pubkey={event.pubkey}
-          className={cn(
-            'shrink-0 rounded-lg',
-            showFull ? 'size-[4.5rem]' : 'size-10'
-          )}
-          iconClassName={showFull ? 'size-7' : 'size-5'}
-        />
+        {!showFull ? (
+          <CalendarEventCoverImage
+            coverUrl={image}
+            pubkey={event.pubkey}
+            className="size-10 shrink-0 rounded-lg"
+            iconClassName="size-5"
+          />
+        ) : null}
         <div className="min-w-0 flex-1 space-y-2">
           <h3
             className={cn(
@@ -175,6 +183,11 @@ export default function CalendarEventContent({
           >
             {title || t('Scheduled video call')}
           </h3>
+          {getUsingClient(event) ? (
+            <div className="min-w-0">
+              <ClientTag event={event} />
+            </div>
+          ) : null}
           {!showFull && scheduleLine ? (
             <p className="flex items-start gap-1.5 text-xs font-medium leading-snug text-foreground">
               <Clock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -202,8 +215,8 @@ export default function CalendarEventContent({
         </div>
       </div>
       {showFull && scheduleLine ? (
-        <div className="flex gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
-          <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="flex gap-2 rounded-md border border-border/60 bg-background/60 px-2.5 py-2">
+          <Clock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <div className="min-w-0 flex-1 space-y-1">
             <p className="text-sm font-medium leading-snug text-foreground">{scheduleLine}</p>
             {(startTzid || endTzid) && (
@@ -232,9 +245,9 @@ export default function CalendarEventContent({
           isDateBased={isDateBased}
         />
       ) : null}
-      {markdownBody ? (
+      {markdownBodyDeduped ? (
         showFull ? (
-          <div className="not-prose min-w-0 border-t border-border/50 pt-3" data-calendar-event-markdown>
+          <div className="not-prose min-w-0 border-t border-border/50 pt-2" data-calendar-event-markdown>
             <MarkdownArticle
               event={eventForMarkdown}
               className="prose-sm"
@@ -248,7 +261,7 @@ export default function CalendarEventContent({
             {/* NIP-52 31922/31923: collapse long summary+body only; card chrome stays outside MainNoteCard Collapsible. */}
             <Collapsible threshold={200} collapsedHeight={160} className="min-w-0">
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-                {markdownBody}
+                {markdownBodyDeduped}
               </p>
             </Collapsible>
           </>
@@ -262,31 +275,42 @@ export default function CalendarEventContent({
           isDateBased={isDateBased}
         />
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 pt-2">
         {!showFull &&
           rUrls.map((url) => (
-            <Button key={url} variant="secondary" size="sm" className="gap-2" asChild>
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-4 shrink-0" />
-                {t('Open link')}
-              </a>
-            </Button>
+            <a
+              key={url}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+            >
+              <ExternalLink className="size-3 shrink-0 opacity-80" aria-hidden />
+              {t('Open link')}
+            </a>
           ))}
         {showRsvp && myPubkey && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
+                variant="default"
+                size={showFull ? 'lg' : 'default'}
+                className={cn(
+                  'font-semibold shadow-md',
+                  showFull && 'w-full min-w-0 sm:w-auto sm:min-w-[11rem]'
+                )}
                 disabled={isFetching}
               >
-                {myStatus === 'accepted' && <CheckCircle className="size-4 text-green-600" />}
-                {myStatus === 'tentative' && <HelpCircle className="size-4 text-amber-600" />}
-                {myStatus === 'declined' && <XCircle className="size-4 text-muted-foreground" />}
-                {myStatus
-                  ? t('RSVP: {{status}}', { status: myStatus })
-                  : t('RSVP')}
+                {myStatus === 'accepted' && (
+                  <CheckCircle className="size-4 shrink-0 text-primary-foreground opacity-95" aria-hidden />
+                )}
+                {myStatus === 'tentative' && (
+                  <HelpCircle className="size-4 shrink-0 text-primary-foreground opacity-95" aria-hidden />
+                )}
+                {myStatus === 'declined' && (
+                  <XCircle className="size-4 shrink-0 text-primary-foreground opacity-90" aria-hidden />
+                )}
+                {myStatus ? t('RSVP: {{status}}', { status: myStatus }) : t('RSVP')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">

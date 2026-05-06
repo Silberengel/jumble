@@ -238,7 +238,9 @@ export default {
     calendarNip52Geohash: "Geohash",
     calendarNip52ViewGeohash: "Carte Geohash",
     calendarNip52GoogleMaps: "Google Maps",
-    calendarNip52DayIndices: "Day indices (NIP-52)",
+    calendarNip52DayIndices: "Jours référencés (UTC)",
+    calendarNip52DayIndicesHint:
+      "Les balises D (NIP-52) indiquent des jours civils UTC entiers (indice de jour Unix) pour indexer les événements horodatés ; plusieurs valeurs couvrent une plage de plusieurs jours.",
     calendarNip52CalendarInclusion: "Calendar inclusion",
     calendarNip52CalendarInclusionHint:
       "This event requests inclusion in the referenced collaborative calendar (kind 31924).",
