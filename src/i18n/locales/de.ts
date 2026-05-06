@@ -783,7 +783,7 @@ export default {
     Favorites: "Favorites",
     "Heat map": "Thread-Heatmap",
     heatMapDescription:
-      "Es erscheinen nur Threads mit mindestens fünf feed‑gefilterten Notes (ca. letzte 3 Tage), zusammengeführt aus Sitzungs‑Cache, lokalem Archiv und Relay‑Stack. Größe und Leuchten spiegeln Aktivität wider. Linien verbinden Threads, wenn Notes andere per e‑/E‑/q referenzieren oder dieselbe adressierbare Koordinate (a/A, NIP‑33) nutzen.",
+      "Es erscheinen nur Threads mit mindestens fünf feed‑gefilterten Notes (ca. letzte 3 Tage), zusammengeführt aus Sitzungs‑Cache, lokalem Archiv und Relay‑Stack. Größe und Leuchten spiegeln Aktivität wider. Linien verbinden Threads, wenn Notes andere per e‑/E‑/q referenzieren oder dieselbe adressierbare Koordinate (a/A, NIP‑33) nutzen. Threads mit gemeinsamen markanten Wörtern in der Vorschau (oder Beginn der Root‑Note) werden nach Möglichkeit nebeneinander angeordnet.",
     heatMapLocalOnlyBanner:
       "Keine Lese‑Relay‑Liste — es werden nur Sitzungs‑Cache und lokales Archiv gemischt (Relays in den Einstellungen ergänzen für Live‑Daten).",
     heatMapLoading: "Sitzungs‑Cache, Archiv und Relays werden zusammengeführt…",

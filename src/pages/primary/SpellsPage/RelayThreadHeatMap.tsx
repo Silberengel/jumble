@@ -12,6 +12,7 @@ import {
   relayThreadHeatMapSettingKey,
   serializeRelayThreadHeatMapCache
 } from '@/lib/relay-thread-heat-cache'
+import { orderHeatBubblesByKeywordProximity } from '@/lib/relay-thread-heat-keywords'
 import {
   buildRelayThreadHeatBubbles,
   buildRelayThreadHeatEdges,
@@ -273,7 +274,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
     }
   }, [pubkey, cacheSettingKey, mergeHeatMapData, refreshKey, rescanTick, t])
 
-  const maxHeat = useMemo(() => rows.reduce((m, r) => Math.max(m, r.heat), 0) || 1, [rows])
+  /** Pack threads that share a keyword next to each other in the flex grid (see {@link orderHeatBubblesByKeywordProximity}). */
+  const layoutRows = useMemo(() => orderHeatBubblesByKeywordProximity(rows), [rows])
+
+  const maxHeat = useMemo(() => layoutRows.reduce((m, r) => Math.max(m, r.heat), 0) || 1, [layoutRows])
 
   const graphAreaRef = useRef<HTMLDivElement>(null)
   const bubbleRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
@@ -288,7 +292,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
   const recomputeConnectorLines = useCallback(() => {
     const host = graphAreaRef.current
-    if (!host || rows.length === 0) {
+    if (!host || layoutRows.length === 0) {
       setLineSegs([])
       return
     }
@@ -306,7 +310,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       if (ca && cb) segs.push({ x1: ca.x, y1: ca.y, x2: cb.x, y2: cb.y })
     }
     setLineSegs(segs)
-  }, [rows, edges])
+  }, [layoutRows, edges])
 
   useLayoutEffect(() => {
     recomputeConnectorLines()
@@ -319,12 +323,12 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       requestAnimationFrame(() => recomputeConnectorLines())
     })
     ro.observe(host)
-    for (const row of rows) {
+    for (const row of layoutRows) {
       const el = bubbleRefs.current.get(row.rootId)
       if (el) ro.observe(el)
     }
     return () => ro.disconnect()
-  }, [rows, edges, recomputeConnectorLines])
+  }, [layoutRows, edges, recomputeConnectorLines])
 
   if (!pubkey) {
     return null
@@ -401,7 +405,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
               ))}
             </svg>
             <div className="relative z-10 flex flex-wrap content-start items-start justify-center gap-4">
-              {rows.map((row) => {
+              {layoutRows.map((row) => {
                 const intensity = Math.min(1, row.heat / maxHeat)
                 const size = Math.min(200, Math.max(76, 52 + Math.sqrt(row.heat) * 9))
                 const statsLine = t('heatMapBubbleStats', {

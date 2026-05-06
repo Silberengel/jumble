@@ -99,11 +99,18 @@ export function buildRelayThreadHeatBubbles(
         e.id.toLowerCase() === rootId &&
         (e.kind === kinds.ShortTextNote || e.kind === ExtendedKind.DISCUSSION)
     )
-    const sortedByTime = [...posts].sort((a, b) => a.created_at - b.created_at)
-    const snippetSource =
-      rootEvent?.content?.trim() ||
-      sortedByTime.find((e) => e.kind === kinds.ShortTextNote || e.kind === ExtendedKind.DISCUSSION)?.content ||
-      ''
+    /** Text for preview / hover: always prefer the OP, never an early reply. */
+    const opForSnippet = (() => {
+      if (rootEvent) return rootEvent
+      const kind1Or11 = posts.filter(
+        (e) => e.kind === kinds.ShortTextNote || e.kind === ExtendedKind.DISCUSSION
+      )
+      const kind1TopLevel = kind1Or11.find((e) => e.kind === kinds.ShortTextNote && !isReplyNoteEvent(e))
+      if (kind1TopLevel) return kind1TopLevel
+      const sorted = [...kind1Or11].sort((a, b) => a.created_at - b.created_at)
+      return sorted[0]
+    })()
+    const snippetSource = opForSnippet?.content?.trim() ?? ''
 
     rows.push({
       rootId,

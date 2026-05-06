@@ -134,7 +134,15 @@ export default function SidebarCalendarWeekWidget() {
           return
         }
 
-        const batch = await client.fetchEvents(
+        const authorList = followAuthorsKey
+          ? followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
+          : []
+        const authorChunks: string[][] = []
+        for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
+          authorChunks.push(authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK))
+        }
+
+        const mainReq = client.fetchEvents(
           relayUrls,
           {
             kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
@@ -147,31 +155,35 @@ export default function SidebarCalendarWeekWidget() {
             firstRelayResultGraceMs: false
           }
         )
-        if (cancelled) return
+        const chunkReqs = authorChunks.map((authors) =>
+          client.fetchEvents(
+            relayUrls,
+            {
+              kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
+              authors,
+              limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
+            },
+            {
+              cache: true,
+              globalTimeout: 16_000,
+              eoseTimeout: 2800,
+              firstRelayResultGraceMs: false
+            }
+          )
+        )
 
+        let batch: Event[] = []
         const fromFollowing: Event[] = []
-        if (followAuthorsKey) {
-          const authorList = followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
-          for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
-            const authors = authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK)
-            const chunk = await client.fetchEvents(
-              relayUrls,
-              {
-                kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-                authors,
-                limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
-              },
-              {
-                cache: true,
-                globalTimeout: 16_000,
-                eoseTimeout: 2800,
-                firstRelayResultGraceMs: false
-              }
-            )
-            if (cancelled) return
-            fromFollowing.push(...chunk)
+        try {
+          const merged = await Promise.all([mainReq, ...chunkReqs])
+          batch = merged[0] ?? []
+          for (let i = 1; i < merged.length; i++) {
+            fromFollowing.push(...(merged[i] ?? []))
           }
+        } catch {
+          /* keep IndexedDB + session; relays may be slow or unreachable */
         }
+        if (cancelled) return
 
         const fromSession = client.getSessionEventsMatchingSearch(
           '',
