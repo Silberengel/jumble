@@ -76,7 +76,8 @@ const PRIMARY_PAGE_LABEL: Record<string, string> = {
   'follows-latest': 'Latest follows',
   rss: 'RSS',
   settings: 'Settings',
-  spells: 'Spells'
+  spells: 'Spells',
+  calendar: 'Calendar'
 }
 
 function relayHostnameFromPath(pathname: string): string | null {
@@ -104,7 +105,7 @@ export function isNoteDetailPathname(pathname: string): boolean {
   const path = pathname.split('?')[0].split('#')[0]
   return (
     /\/notes\/[^/?#]+/.test(path) ||
-    /\/(?:discussions|search|profile|home|feed|spells|explore|rss|follows-latest)\/notes\/[^/?#]+/.test(
+    /\/(?:discussions|search|profile|home|feed|spells|explore|rss|follows-latest|calendar)\/notes\/[^/?#]+/.test(
       path
     )
   )

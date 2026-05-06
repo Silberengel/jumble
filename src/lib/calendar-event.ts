@@ -201,6 +201,16 @@ export function calendarOccurrenceOverlapsRange(
 }
 
 /** Monday 00:00 local through the following Monday 00:00 (exclusive), shifted by `weekOffset` weeks from the anchor week. */
+/** Local midnight on the 1st through midnight on the 1st of the following month (exclusive). */
+export function getLocalMonthRangeMs(
+  year: number,
+  monthIndex: number
+): { startMs: number; endExclusiveMs: number } {
+  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0)
+  const end = new Date(year, monthIndex + 1, 1, 0, 0, 0, 0)
+  return { startMs: start.getTime(), endExclusiveMs: end.getTime() }
+}
+
 export function getLocalMondayWeekBounds(
   weekOffset: number,
   anchor: Date = new Date()

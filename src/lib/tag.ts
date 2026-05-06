@@ -313,7 +313,7 @@ export function getPubkeysFromPTags(tags: string[][]) {
     new Set(
       tags
         .filter(tagNameEquals('p'))
-        .map(([, pubkey]) => pubkey)
+        .map(([, pubkey]) => (pubkey ? pubkey.trim().toLowerCase() : ''))
         .filter((pubkey) => !!pubkey && isValidPubkey(pubkey))
         .reverse()
     )

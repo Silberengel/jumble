@@ -842,6 +842,12 @@ export class QueryService {
       const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
       const stripped = relays.filter((url) => !socialKindBlockedSet.has(normalizeUrl(url) || url))
       relays = relaysAfterSocialKindBlockedStrip(originalDedupedRelays, stripped)
+      if (relays.length === 0) {
+        const fallback = [...FAST_READ_RELAY_URLS].filter(
+          (url) => !socialKindBlockedSet.has(normalizeUrl(url) || url)
+        )
+        relays = fallback.length > 0 ? fallback : [...FAST_READ_RELAY_URLS]
+      }
     }
     if (relayFiltersUseCapitalLetterTagKeys(filters)) {
       relays = relayUrlsStripExtendedTagReqBlocked(relays)

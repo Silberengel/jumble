@@ -36,6 +36,7 @@ const SettingsPageLazy = lazy(() => import('./pages/secondary/SettingsPage'))
 const WalletPageLazy = lazy(() => import('./pages/secondary/WalletPage'))
 const FollowPacksRedirectLazy = lazy(() => import('./pages/secondary/FollowPacksRedirect'))
 const RssArticlePageLazy = lazy(() => import('./pages/secondary/RssArticlePage'))
+const CalendarDayEventsPageLazy = lazy(() => import('./pages/secondary/CalendarDayEventsPage'))
 
 const routeSuspenseFallback = null
 
@@ -59,6 +60,8 @@ const ROUTES = [
   { path: '/feed/notes/:id', element: SR(NotePageLazy) },
   { path: '/spells/notes/:id', element: SR(NotePageLazy) },
   { path: '/rss/notes/:id', element: SR(NotePageLazy) },
+  { path: '/calendar/notes/:id', element: SR(NotePageLazy) },
+  { path: '/calendar/day/:ymd', element: SR(CalendarDayEventsPageLazy) },
   { path: '/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
   { path: '/rss/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
   { path: '/feed/rss-item/:articleKey', element: SR(RssArticlePageLazy) },

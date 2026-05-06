@@ -9,6 +9,7 @@ import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } fro
 import { replaceableEventDedupeKey } from '@/lib/event'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
+import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartNoteNavigation } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useFollowListOptional } from '@/providers/follow-list-context'
@@ -17,7 +18,7 @@ import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -51,6 +52,7 @@ export default function SidebarCalendarWeekWidget() {
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const followList = useFollowListOptional()
   const { navigateToNote } = useSmartNoteNavigation()
+  const { navigate: navigatePrimary } = usePrimaryPage()
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [rawEvents, setRawEvents] = useState<Event[]>([])
@@ -206,7 +208,7 @@ export default function SidebarCalendarWeekWidget() {
 
   return (
     <div className="max-xl:hidden w-full min-w-0 rounded-lg border border-border/60 bg-card/40 px-2 py-2 shadow-sm">
-      <div className="mb-1.5 flex items-center justify-between gap-1">
+      <div className="mb-1.5 flex items-center justify-between gap-0.5">
         <Button
           type="button"
           variant="ghost"
@@ -223,6 +225,17 @@ export default function SidebarCalendarWeekWidget() {
         >
           {weekLabel}
         </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0"
+          aria-label={t('sidebarCalendarOpenMonthView')}
+          title={t('sidebarCalendarOpenMonthView')}
+          onClick={() => navigatePrimary('calendar', { weekOffset })}
+        >
+          <CalendarDays className="size-4" />
+        </Button>
         <Button
           type="button"
           variant="ghost"
