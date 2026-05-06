@@ -1,5 +1,6 @@
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import { createFollowListDraftEvent } from '@/lib/draft-event'
+import { publishFollowListPreimageToHistory } from '@/lib/follow-list-history'
 import {
   dedupePTagsAppendPubkey,
   fetchLatestReplaceableListEvent,
@@ -51,6 +52,7 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
     if (!accountPubkey) return
     const base = await mergeLatestFollowTags()
     if (base === null) return
+    await publishFollowListPreimageToHistory(publish, base.tags, base.content)
     const mergedTags = dedupePTagsAppendPubkey(base.tags, pubkey)
     const newFollowListDraftEvent = createFollowListDraftEvent(mergedTags, base.content)
     const newFollowListEvent = await publish(newFollowListDraftEvent)
@@ -63,6 +65,7 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
     if (unique.length === 0) return
     const base = await mergeLatestFollowTags()
     if (base === null) return
+    await publishFollowListPreimageToHistory(publish, base.tags, base.content)
     let mergedTags = base.tags
     for (const pk of unique) {
       mergedTags = dedupePTagsAppendPubkey(mergedTags, pk)
@@ -83,6 +86,7 @@ export function FollowListProvider({ children }: { children: React.ReactNode }) 
     }
     if (!latest) return
 
+    await publishFollowListPreimageToHistory(publish, latest.tags, latest.content)
     const newFollowListDraftEvent = createFollowListDraftEvent(
       removePubkeyFromPTags(latest.tags, pubkey),
       latest.content

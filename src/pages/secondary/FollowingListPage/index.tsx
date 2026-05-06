@@ -22,8 +22,8 @@ import { useFetchFollowings, useFetchProfile } from '@/hooks'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
-import { FOLLOWS_HISTORY_RELAY_URLS } from '@/constants'
 import { createFollowListDraftEvent } from '@/lib/draft-event'
+import { publishFollowListPreimageToHistory } from '@/lib/follow-list-history'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import dayjs from 'dayjs'
@@ -81,8 +81,11 @@ const FollowingListPage = forwardRef(({ id, index, hideTitlebar = false }: { id?
       })
 
       if (followListEvent) {
-        const historyDraft = createFollowListDraftEvent(followListEvent.tags ?? [], followListEvent.content ?? '')
-        await publish(historyDraft, { specifiedRelayUrls: FOLLOWS_HISTORY_RELAY_URLS })
+        await publishFollowListPreimageToHistory(
+          publish,
+          followListEvent.tags ?? [],
+          followListEvent.content ?? undefined
+        )
       }
 
       const draft = createFollowListDraftEvent([], '')

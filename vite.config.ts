@@ -127,7 +127,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src')
-      }
+      },
+      /** Avoid invalid hook call / `dispatcher is null` when lazy chunks resolve a second `react` copy. */
+      dedupe: ['react', 'react-dom']
     },
     server: {
       // OG/link preview uses `/sites/?url=…`. Without this, Vite serves `index.html` and WebService parses the app shell.

@@ -43,6 +43,16 @@ export default {
       "No tagged people found in cached notes yet. Open their timeline or browse feeds so notes land in the archive.",
     interactionMapRefresh: "Rescan cache",
     interactionMapCellTitle: "{{count}} mentions · last {{when}}",
+    interactionMapIncludeFollows: "Include everyone I follow",
+    interactionMapIncludeFollowsHint:
+      "Shows your full follow list merged with people from their cached tags. Scroll when the list is long.",
+    interactionMapIncludeFollowsBreakdown:
+      "{{total}} shown — {{fromTags}} from their cached tags, {{fromFollowsOnly}} from your follows only",
+    interactionMapCellTitleFollowOnly: "Not in their cached tags — your follow list only",
+    interactionMapFollowingCheckbox: "Following",
+    interactionMapMentionsShort: "×{{count}}",
+    interactionMapRecencyUnknown: "—",
+    interactionMapScore: "Score {{score}}",
     followings: "followings",
     boosted: "boosted",
     "Boosted by:": "Boosted by:",

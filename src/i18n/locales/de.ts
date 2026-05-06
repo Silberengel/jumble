@@ -45,6 +45,16 @@ export default {
       "In gecachten Notizen noch keine markierten Personen. Timeline öffnen oder Feeds lesen, damit das Archiv füllt.",
     interactionMapRefresh: "Cache erneut scannen",
     interactionMapCellTitle: "{{count}} Erwähnungen · zuletzt {{when}}",
+    interactionMapIncludeFollows: "Alle meine Follows einblenden",
+    interactionMapIncludeFollowsHint:
+      "Zeigt deine komplette Follow-Liste zusammen mit Personen aus ihren gecachten Tags. Bei langen Listen scrollen.",
+    interactionMapIncludeFollowsBreakdown:
+      "{{total}} angezeigt — {{fromTags}} aus ihren gecachten Tags, {{fromFollowsOnly}} nur aus deiner Follow-Liste",
+    interactionMapCellTitleFollowOnly: "Nicht in ihren lokalen Tags — nur deine Follow-Liste",
+    interactionMapFollowingCheckbox: "Folge ich",
+    interactionMapMentionsShort: "×{{count}}",
+    interactionMapRecencyUnknown: "—",
+    interactionMapScore: "Score {{score}}",
     followings: "Folgekonten",
     boosted: "geboostet",
     "Boosted by:": "Geboostet von:",
