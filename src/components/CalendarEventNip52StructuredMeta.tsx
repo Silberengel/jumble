@@ -1,6 +1,5 @@
 import { getNip52CalendarEventTagExtras, type CalendarEventMeta } from '@/lib/calendar-event'
 import { useSmartNoteNavigation } from '@/PageManager'
-import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,6 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Calendar, ExternalLink, Link2, MapPin } from 'lucide-react'
 
 type Placement = 'beforeDescription' | 'afterDescription'
+
+/** [Geohash Explorer](https://geohash.softeng.co/) style URL for a geohash string. */
+function nip52GeohashSoftengUrl(geohash: string): string {
+  const h = geohash.trim()
+  return `https://geohash.softeng.co/${encodeURIComponent(h)}`
+}
+
+/** Google Maps “place” style URL from a free-text address or place name. */
+function googleMapsPlaceUrl(placeQuery: string): string {
+  const q = placeQuery.trim()
+  if (!q) return '#'
+  return `https://www.google.com/maps/place/${encodeURIComponent(q).replace(/%20/g, '+')}`
+}
 
 export function CalendarEventNip52StructuredMeta({
   placement,
@@ -38,16 +50,34 @@ export function CalendarEventNip52StructuredMeta({
               {meta.locations.length > 1 ? t('calendarNip52Locations') : t('calendarNip52Location')}
             </div>
             {meta.locations.length === 1 ? (
-              <p className="flex gap-2 text-sm leading-snug text-foreground">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="min-w-0">{meta.locations[0]}</span>
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <p className="flex min-w-0 flex-1 gap-2 text-sm leading-snug text-foreground">
+                  <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="min-w-0">{meta.locations[0]}</span>
+                </p>
+                <Button variant="outline" size="sm" className="h-8 w-full shrink-0 sm:w-auto" asChild>
+                  <a href={googleMapsPlaceUrl(meta.locations[0])} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="size-3.5" />
+                    {t('calendarNip52GoogleMaps')}
+                  </a>
+                </Button>
+              </div>
             ) : (
-              <ul className="min-w-0 space-y-2">
+              <ul className="min-w-0 space-y-3">
                 {meta.locations.map((loc, i) => (
-                  <li key={`${i}-${loc.slice(0, 24)}`} className="flex gap-2 text-sm leading-snug text-foreground">
-                    <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <span className="min-w-0">{loc}</span>
+                  <li key={`${i}-${loc.slice(0, 24)}`}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <p className="flex min-w-0 flex-1 gap-2 text-sm leading-snug text-foreground">
+                        <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0">{loc}</span>
+                      </p>
+                      <Button variant="outline" size="sm" className="h-8 w-full shrink-0 sm:w-auto" asChild>
+                        <a href={googleMapsPlaceUrl(loc)} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="size-3.5" />
+                          {t('calendarNip52GoogleMaps')}
+                        </a>
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -72,11 +102,7 @@ export function CalendarEventNip52StructuredMeta({
             <p className="flex flex-wrap items-center gap-2 text-sm font-mono text-foreground">
               <span className="break-all">{meta.geo.trim()}</span>
               <Button variant="outline" size="sm" className="h-8 shrink-0" asChild>
-                <a
-                  href={`https://geohash.org/${encodeURIComponent(meta.geo.trim())}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href={nip52GeohashSoftengUrl(meta.geo)} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="size-3.5" />
                   {t('calendarNip52ViewGeohash')}
                 </a>

@@ -1,4 +1,3 @@
-import RelayInfo from '@/components/RelayInfo'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import PrimaryPageLayout from '@/layouts/PrimaryPageLayout'
@@ -9,11 +8,9 @@ import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import type { TNoteListRef } from '@/components/NoteList'
 import { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import { TPageRef } from '@/types'
-import { Compass, Info, Star, UsersRound } from 'lucide-react'
+import { Calendar, Compass, Star, UsersRound } from 'lucide-react'
 import React, {
-  Dispatch,
   forwardRef,
-  SetStateAction,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -37,7 +34,6 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   const feedRef = useRef<TNoteListRef>(null)
   const { feedInfo, relayUrls, isReady } = useFeed()
   const { isSmallScreen } = useScreenSize()
-  const [showRelayDetails, setShowRelayDetails] = useState(false)
   const [homeSubHeader, setHomeSubHeader] = useState<React.ReactNode>(null)
 
   const usesSubHeader =
@@ -100,9 +96,6 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   } else {
     content = (
       <>
-        {showRelayDetails && feedInfo.feedType === 'relay' && !!feedInfo.id && (
-          <RelayInfo url={feedInfo.id!} className="mb-2 pt-3" />
-        )}
         <RelaysFeed
           ref={feedRef}
           setSubHeader={setHomeSubHeaderStable}
@@ -150,15 +143,7 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
       suppressMobileDefaultActiveRelaysButton
       titlebar={
         showNoteListTitlebar ? (
-          <NoteListPageTitlebar
-            layoutRef={layoutRef}
-            onFeedRefresh={runFeedRefresh}
-            showTitlebarRefresh={!usesSubHeader}
-            showRelayDetails={showRelayDetails}
-            setShowRelayDetails={
-              feedInfo.feedType === 'relay' && !!feedInfo.id ? setShowRelayDetails : undefined
-            }
-          />
+          <NoteListPageTitlebar onFeedRefresh={runFeedRefresh} showTitlebarRefresh={!usesSubHeader} />
         ) : null
       }
       subHeader={subHeader}
@@ -174,17 +159,11 @@ NoteListPage.displayName = 'NoteListPage'
 export default NoteListPage
 
 function NoteListPageTitlebar({
-  layoutRef,
   onFeedRefresh,
-  showTitlebarRefresh,
-  showRelayDetails,
-  setShowRelayDetails
+  showTitlebarRefresh
 }: {
-  layoutRef?: React.RefObject<TPageRef>
   onFeedRefresh: () => void
   showTitlebarRefresh: boolean
-  showRelayDetails?: boolean
-  setShowRelayDetails?: Dispatch<SetStateAction<boolean>>
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -196,109 +175,112 @@ function NoteListPageTitlebar({
   const followsLatestActive = display && current === 'follows-latest' && primaryViewType === null
   const favoritesActive =
     display && current === 'spells' && spell === 'favorites' && primaryViewType === null
+  const calendarActive = display && current === 'calendar' && primaryViewType === null
 
+  if (!isSmallScreen) {
+    return (
+      <div className="flex h-full w-full min-w-0 items-center justify-end gap-1 pr-1">
+        {showTitlebarRefresh ? <RefreshButton onClick={onFeedRefresh} /> : null}
+      </div>
+    )
+  }
+
+  /**
+   * Mobile: avoid absolutely centered logo (overlaps side controls on narrow widths). Three columns —
+   * left/right hug content; center flexes so the banner shrinks. Overflow columns scroll if needed.
+   */
   return (
-    <div className="relative flex gap-1 items-center h-full justify-between">
-      <div className="flex min-w-0 flex-1 items-center gap-1 h-full pl-1 sm:pl-3">
-        {isSmallScreen && (
+    <div className="grid h-full w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-0.5 sm:gap-x-1">
+      <div className="flex min-h-0 min-w-0 items-center justify-start gap-0.5 overflow-x-auto overflow-y-hidden scrollbar-hide sm:gap-1">
+        <Button
+          variant="ghost"
+          size="titlebar-icon"
+          title={t('Explore')}
+          aria-label={t('Explore')}
+          className={`shrink-0 ${exploreActive ? 'bg-accent/50' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (primaryViewType !== null) {
+              setPrimaryNoteView(null)
+            } else {
+              navigate('explore')
+            }
+          }}
+        >
+          <Compass />
+        </Button>
+        {pubkey ? (
           <>
             <Button
               variant="ghost"
               size="titlebar-icon"
-              title={t('Explore')}
-              aria-label={t('Explore')}
-              className={exploreActive ? 'bg-accent/50' : ''}
+              title={t('Follows latest nav label')}
+              aria-label={t('Follows latest nav label')}
+              className={`shrink-0 ${followsLatestActive ? 'bg-accent/50' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 if (primaryViewType !== null) {
                   setPrimaryNoteView(null)
-                } else {
-                  navigate('explore')
                 }
+                navigate('follows-latest')
               }}
             >
-              <Compass />
+              <UsersRound />
             </Button>
-            {pubkey ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="titlebar-icon"
-                  title={t('Follows latest nav label')}
-                  aria-label={t('Follows latest nav label')}
-                  className={followsLatestActive ? 'bg-accent/50' : ''}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (primaryViewType !== null) {
-                      setPrimaryNoteView(null)
-                    }
-                    navigate('follows-latest')
-                  }}
-                >
-                  <UsersRound />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="titlebar-icon"
-                  title={t('Favorites')}
-                  aria-label={t('Favorites')}
-                  className={favoritesActive ? 'bg-accent/50' : ''}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (primaryViewType !== null) {
-                      setPrimaryNoteView(null)
-                    }
-                    navigate('spells', { spell: 'favorites' })
-                  }}
-                >
-                  <Star />
-                </Button>
-              </>
-            ) : null}
-          </>
-        )}
-      </div>
-      {isSmallScreen && (
-        <div className="absolute left-1/2 z-10 -translate-x-1/2 transform">
-          <button
-            type="button"
-            className="flex max-h-10 max-w-[min(72vw,14rem)] cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-card px-1.5 ring-1 ring-border/50"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setPrimaryNoteView(null)
-            }}
-            aria-label="Imwald"
-          >
-            <Logo className="max-h-8 w-full object-contain object-center" />
-          </button>
-        </div>
-      )}
-      <div className="shrink-0 flex gap-1 items-center">
-        {showTitlebarRefresh && <RefreshButton onClick={onFeedRefresh} />}
-        {setShowRelayDetails && (
-          <Button
-            variant="ghost"
-            size="titlebar-icon"
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowRelayDetails((show) => !show)
-
-              if (!showRelayDetails) {
-                layoutRef?.current?.scrollToTop('smooth')
-              }
-            }}
-            className={showRelayDetails ? 'bg-accent/50' : ''}
-          >
-            <Info />
-          </Button>
-        )}
-        {isSmallScreen ? (
-          <>
-            <ActiveRelaysTitlebarButton />
-            <HelpAndAccountMenu variant="titlebar" />
+            <Button
+              variant="ghost"
+              size="titlebar-icon"
+              title={t('Favorites')}
+              aria-label={t('Favorites')}
+              className={`shrink-0 ${favoritesActive ? 'bg-accent/50' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (primaryViewType !== null) {
+                  setPrimaryNoteView(null)
+                }
+                navigate('spells', { spell: 'favorites' })
+              }}
+            >
+              <Star />
+            </Button>
           </>
         ) : null}
+      </div>
+      <div className="flex min-h-0 min-w-0 items-center justify-center gap-0.5 px-0.5">
+        <button
+          type="button"
+          className="flex min-h-8 min-w-0 max-w-full flex-1 cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-card px-1 py-0.5 ring-1 ring-border/50 sm:px-1.5"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setPrimaryNoteView(null)
+          }}
+          aria-label="Imwald"
+        >
+          <Logo className="max-h-7 w-full min-w-0 object-contain object-center sm:max-h-8" />
+        </button>
+        <Button
+          variant="ghost"
+          size="titlebar-icon"
+          className={`shrink-0 ${calendarActive ? 'bg-accent/50' : ''}`}
+          title={t('Calendar')}
+          aria-label={t('Calendar')}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (primaryViewType !== null) {
+              setPrimaryNoteView(null)
+            }
+            navigate('calendar')
+          }}
+        >
+          <Calendar />
+        </Button>
+      </div>
+      <div className="flex min-h-0 min-w-0 items-center justify-end gap-0.5 overflow-x-auto overflow-y-hidden scrollbar-hide sm:gap-1">
+        {showTitlebarRefresh ? <RefreshButton onClick={onFeedRefresh} /> : null}
+        <ActiveRelaysTitlebarButton />
+        <HelpAndAccountMenu variant="titlebar" />
       </div>
     </div>
   )

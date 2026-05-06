@@ -236,7 +236,8 @@ export default {
     calendarNip52Locations: "Locations",
     calendarNip52Summary: "Summary",
     calendarNip52Geohash: "Geohash",
-    calendarNip52ViewGeohash: "View on map",
+    calendarNip52ViewGeohash: "Geohash haritası",
+    calendarNip52GoogleMaps: "Google Maps",
     calendarNip52DayIndices: "Day indices (NIP-52)",
     calendarNip52CalendarInclusion: "Calendar inclusion",
     calendarNip52CalendarInclusionHint:
