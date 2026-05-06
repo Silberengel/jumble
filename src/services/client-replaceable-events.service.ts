@@ -566,6 +566,19 @@ export class ReplaceableEventService {
               )
             )
           ).filter(Boolean)
+        } else if (kind === ExtendedKind.PAYMENT_INFO) {
+          // NIP-A3 kind 10133: often published to the user's write relays only; FAST_READ alone misses many copies.
+          // Mirror contacts + pin-list coverage (writes + profile mirrors + aggregators + fast read).
+          relayUrls = Array.from(
+            new Set(
+              [
+                ...FAST_WRITE_RELAY_URLS,
+                ...READ_ONLY_RELAY_URLS,
+                ...PROFILE_FETCH_RELAY_URLS,
+                ...FAST_READ_RELAY_URLS
+              ].map((u) => normalizeUrl(u) || u)
+            )
+          ).filter(Boolean)
         } else {
           relayUrls = [...FAST_READ_RELAY_URLS]
         }
@@ -584,7 +597,8 @@ export class ReplaceableEventService {
             relayCount: relayUrls.length
           })
         }
-        const isSlowReplaceableBatch = kind === kinds.Metadata || kind === 10001
+        const isSlowReplaceableBatch =
+          kind === kinds.Metadata || kind === 10001 || kind === ExtendedKind.PAYMENT_INFO
         const multiAuthorBatch = pubkeys.length > 1
         // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
