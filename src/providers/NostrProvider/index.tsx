@@ -130,6 +130,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const accountHydrationGenerationRef = useRef(0)
   /** When true, next hydrate run performs a full network merge without clearing UI state from IndexedDB first. */
   const forceNextAccountNetworkHydrateRef = useRef(false)
+  /** Last account pubkey for which we cleared session UI; avoids nulling relay/profile on same-account rehydrate. */
+  const lastNetworkHydrateAccountPubkeyRef = useRef<string | null>(null)
   const manualNetworkHydrateResolveRef = useRef<(() => void) | null>(null)
   const [accountNetworkHydrateBump, setAccountNetworkHydrateBump] = useState(0)
   /**
@@ -186,6 +188,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     const init = async () => {
       if (!account) {
         accountHydrationGenerationRef.current += 1
+        lastNetworkHydrateAccountPubkeyRef.current = null
         setIsAccountSessionHydrating(false)
         forceNextAccountNetworkHydrateRef.current = false
         setRelayList(null)
@@ -207,7 +210,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         forceNextAccountNetworkHydrateRef.current = false
       }
 
-      if (!userForcedAccountNetworkHydrate) {
+      const prevHydratedPk = lastNetworkHydrateAccountPubkeyRef.current
+      const switchedToDifferentAccount =
+        prevHydratedPk != null && prevHydratedPk !== account.pubkey
+      if (switchedToDifferentAccount) {
         setRelayList(null)
         setProfile(null)
         setProfileEvent(null)
@@ -457,16 +463,20 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const httpRelayListEventFetched = getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null
       if (relayListEvent) {
         client.updateRelayListCache(relayListEvent)
-        await indexedDb.putReplaceableEvent(relayListEvent)
       }
+      await Promise.all([
+        relayListEvent ? indexedDb.putReplaceableEvent(relayListEvent).catch(() => {}) : Promise.resolve(),
+        cacheRelayListEvent ? indexedDb.putReplaceableEvent(cacheRelayListEvent).catch(() => {}) : Promise.resolve(),
+        httpRelayListEventFetched
+          ? indexedDb.putReplaceableEvent(httpRelayListEventFetched).catch(() => {})
+          : Promise.resolve()
+      ])
       if (cacheRelayListEvent) {
-        await indexedDb.putReplaceableEvent(cacheRelayListEvent)
         setCacheRelayListEvent(cacheRelayListEvent)
       } else {
         setCacheRelayListEvent(null)
       }
       if (httpRelayListEventFetched) {
-        await indexedDb.putReplaceableEvent(httpRelayListEventFetched)
         setHttpRelayListEvent(httpRelayListEventFetched)
       } else {
         setHttpRelayListEvent(null)
@@ -510,16 +520,45 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         (e) => e.kind === ExtendedKind.BLOSSOM_SERVER_LIST
       )
       const userEmojiListEvent = sortedEvents.find((e) => e.kind === kinds.UserEmojiList)
-      if (profileEvent) {
-        let resolvedProfileEvent = profileEvent
+
+      const safePutReplaceable = async (evt: Event | undefined): Promise<Event | undefined> => {
+        if (!evt) return undefined
         try {
-          const updatedProfileEvent = await indexedDb.putReplaceableEvent(profileEvent)
-          resolvedProfileEvent = updatedProfileEvent
+          return await indexedDb.putReplaceableEvent(evt)
+        } catch {
+          return evt
+        }
+      }
+
+      const [
+        resolvedProfilePut,
+        resolvedFollowPut,
+        resolvedMutePut,
+        resolvedBookmarkPut,
+        resolvedInterestPut,
+        resolvedFavoritePut,
+        resolvedBlockedPut,
+        resolvedUserEmojiPut
+      ] = await Promise.all([
+        safePutReplaceable(profileEvent),
+        safePutReplaceable(followListEvent),
+        safePutReplaceable(muteListEvent),
+        safePutReplaceable(bookmarkListEvent),
+        safePutReplaceable(interestListEvent),
+        safePutReplaceable(favoriteRelaysEvent),
+        safePutReplaceable(blockedRelaysEvent),
+        safePutReplaceable(userEmojiListEvent)
+      ])
+
+      if (profileEvent) {
+        const resolvedProfileEvent = resolvedProfilePut ?? profileEvent
+        try {
           await replaceableEventService.updateReplaceableEventCache(resolvedProfileEvent)
         } catch (e) {
-          // IDB write failed (e.g. tombstone or store error) — still apply the fetched event in memory
-          logger.warn('[NostrProvider] putReplaceableEvent failed for profile; using fetched event in memory', { error: e })
-          try { await replaceableEventService.updateReplaceableEventCache(profileEvent) } catch {}
+          logger.warn('[NostrProvider] replaceableEventService cache update failed for profile', { error: e })
+          try {
+            await replaceableEventService.updateReplaceableEventCache(profileEvent)
+          } catch {}
         }
         setProfileEvent(resolvedProfileEvent)
         setProfile(getProfileFromEvent(resolvedProfileEvent))
@@ -531,8 +570,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         })
       }
       if (followListEvent) {
-        const updatedFollowListEvent = await indexedDb.putReplaceableEvent(followListEvent)
-        if (updatedFollowListEvent.id === followListEvent.id) {
+        if (resolvedFollowPut && resolvedFollowPut.id === followListEvent.id) {
           setFollowListEvent(followListEvent)
         }
       } else {
@@ -582,37 +620,32 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           })
       }
       if (muteListEvent) {
-        const updatedMuteListEvent = await indexedDb.putReplaceableEvent(muteListEvent)
-        if (updatedMuteListEvent.id === muteListEvent.id) {
+        if (resolvedMutePut && resolvedMutePut.id === muteListEvent.id) {
           setMuteListEvent(muteListEvent)
         }
       }
       if (bookmarkListEvent) {
-        const updateBookmarkListEvent = await indexedDb.putReplaceableEvent(bookmarkListEvent)
-        if (updateBookmarkListEvent.id === bookmarkListEvent.id) {
+        if (resolvedBookmarkPut && resolvedBookmarkPut.id === bookmarkListEvent.id) {
           setBookmarkListEvent(bookmarkListEvent)
         }
       }
       if (interestListEvent) {
-        const updatedInterestListEvent = await indexedDb.putReplaceableEvent(interestListEvent)
-        if (updatedInterestListEvent.id === interestListEvent.id) {
+        if (resolvedInterestPut && resolvedInterestPut.id === interestListEvent.id) {
           setInterestListEvent(interestListEvent)
         }
       }
       if (favoriteRelaysEvent) {
-        const updatedFavoriteRelaysEvent = await indexedDb.putReplaceableEvent(favoriteRelaysEvent)
-        if (updatedFavoriteRelaysEvent.id === favoriteRelaysEvent.id) {
-          setFavoriteRelaysEvent(updatedFavoriteRelaysEvent)
+        if (resolvedFavoritePut && resolvedFavoritePut.id === favoriteRelaysEvent.id) {
+          setFavoriteRelaysEvent(favoriteRelaysEvent)
         }
       }
       if (blockedRelaysEvent) {
-        const updatedBlockedRelaysEvent = await indexedDb.putReplaceableEvent(blockedRelaysEvent)
-        if (updatedBlockedRelaysEvent.id === blockedRelaysEvent.id) {
-          setBlockedRelaysEvent(updatedBlockedRelaysEvent)
-          
+        if (resolvedBlockedPut && resolvedBlockedPut.id === blockedRelaysEvent.id) {
+          setBlockedRelaysEvent(resolvedBlockedPut)
+
           // Update blockedRelays array and re-filter relay list
           const newBlockedRelays: string[] = []
-          updatedBlockedRelaysEvent.tags.forEach(([tagName, tagValue]) => {
+          resolvedBlockedPut.tags.forEach(([tagName, tagValue]) => {
             if (tagName === 'relay' && tagValue) {
               const normalizedUrl = normalizeUrl(tagValue)
               if (normalizedUrl && !newBlockedRelays.includes(normalizedUrl)) {
@@ -620,7 +653,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
               }
             }
           })
-          
+
           // Re-filter relay list with updated blocked relays
           if (relayListEvent) {
             const updatedRelayList = getRelayListFromEvent(relayListEvent, newBlockedRelays)
@@ -629,12 +662,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (blossomServerListEvent) {
-        await client.updateBlossomServerListEventCache(blossomServerListEvent)
+        void client.updateBlossomServerListEventCache(blossomServerListEvent)
       }
       if (userEmojiListEvent) {
-        const updatedUserEmojiListEvent = await indexedDb.putReplaceableEvent(userEmojiListEvent)
-        if (updatedUserEmojiListEvent.id === userEmojiListEvent.id) {
-          setUserEmojiListEvent(updatedUserEmojiListEvent)
+        if (resolvedUserEmojiPut && resolvedUserEmojiPut.id === userEmojiListEvent.id) {
+          setUserEmojiListEvent(userEmojiListEvent)
         }
       }
 
@@ -683,6 +715,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           )
         }
       }
+      lastNetworkHydrateAccountPubkeyRef.current = account.pubkey
       return controller
     }
     const promise = init()

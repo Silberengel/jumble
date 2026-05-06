@@ -9,6 +9,7 @@ import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import indexedDb from '@/services/indexed-db.service'
+import type { TSubRequestFilter } from '@/types'
 
 type ProfileTimelineMemoryEntry = {
   events: Event[]
@@ -278,9 +279,23 @@ export function useProfileTimeline({
         return
       }
 
-      void startWave(
-        buildSubRequests([provisionalFeedUrls], pubkey, kinds, limit, hasCalendarKinds)
-      )
+      const provisionalSubs = buildSubRequests([provisionalFeedUrls], pubkey, kinds, limit, hasCalendarKinds)
+      void (async () => {
+        try {
+          const disk = await client.getTimelineDiskSnapshotEvents(
+            provisionalSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
+          )
+          if (!cancelled && disk.length > 0) {
+            for (const e of disk) {
+              pool.set(e.id, e)
+            }
+            flushPool()
+          }
+        } catch {
+          /* disk snapshot is best-effort */
+        }
+        await startWave(provisionalSubs)
+      })()
 
       void (async () => {
         const authorRl = await client.fetchRelayList(pubkey).catch(() => ({
@@ -300,7 +315,21 @@ export function useProfileTimeline({
         )
         const deltaUrls = subtractNormalizedRelayUrls(fullFeedUrls, provisionalFeedUrls)
         if (cancelled || deltaUrls.length === 0) return
-        await startWave(buildSubRequests([deltaUrls], pubkey, kinds, limit, hasCalendarKinds))
+        const deltaSubs = buildSubRequests([deltaUrls], pubkey, kinds, limit, hasCalendarKinds)
+        try {
+          const diskDelta = await client.getTimelineDiskSnapshotEvents(
+            deltaSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
+          )
+          if (!cancelled && diskDelta.length > 0) {
+            for (const e of diskDelta) {
+              pool.set(e.id, e)
+            }
+            flushPool()
+          }
+        } catch {
+          /* optional */
+        }
+        await startWave(deltaSubs)
       })()
     }
 

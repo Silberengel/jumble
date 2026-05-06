@@ -1900,6 +1900,61 @@ class ClientService extends EventTarget {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
+  /**
+   * Load the last persisted timeline rows from IndexedDB for each shard (same keys as live subscribe),
+   * without opening relay subscriptions. Used for stale-while-revalidate first paint on feeds.
+   */
+  async getTimelineDiskSnapshotEvents(
+    subRequests: { urls: string[]; filter: TSubRequestFilter }[]
+  ): Promise<NEvent[]> {
+    if (!subRequests.length) return []
+    const mergedTimelineLimit = Math.max(
+      500,
+      ...subRequests.map(({ filter }) =>
+        typeof filter.limit === 'number' && filter.limit > 0 ? filter.limit : 0
+      )
+    )
+    const merged: NEvent[] = []
+    const eventIdSet = new Set<string>()
+    for (const { urls, filter } of subRequests) {
+      let relays = Array.from(new Set(urls))
+      if (!navigator.onLine) {
+        relays = relays.filter((url) => isLocalNetworkUrl(url))
+      }
+      if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
+        relays = relayUrlsStripExtendedTagReqBlocked(relays)
+        if (relays.length === 0 && navigator.onLine) {
+          relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+        }
+      }
+      const key = this.generateTimelineKey(relays, filter as Filter)
+      try {
+        const st = await indexedDb.getTimelinePersistedState(key)
+        if (!st?.refs?.length) continue
+        const hexIds = st.refs.map((r) => r[0])
+        const list = await indexedDb.getArchivedEventsByIds(hexIds)
+        for (const ev of list) {
+          if (shouldDropEventOnIngest(ev)) continue
+          if (eventIdSet.has(ev.id)) continue
+          eventIdSet.add(ev.id)
+          merged.push(ev)
+        }
+        for (const refId of hexIds) {
+          if (eventIdSet.has(refId)) continue
+          const sess = this.eventService.peekSessionCachedEvent(refId)
+          if (sess && !shouldDropEventOnIngest(sess)) {
+            eventIdSet.add(refId)
+            merged.push(sess)
+          }
+        }
+      } catch (err) {
+        logger.debug('[ClientService] Timeline disk snapshot shard read failed', { err })
+      }
+    }
+    merged.sort((a, b) => b.created_at - a.created_at)
+    return merged.slice(0, mergedTimelineLimit)
+  }
+
   async subscribeTimeline(
     subRequests: { urls: string[]; filter: TSubRequestFilter }[],
     {

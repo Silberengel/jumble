@@ -1795,7 +1795,36 @@ const NoteList = forwardRef(
 
       if (!relayCapabilityReady && !oneShotFetch) {
         setLoading(true)
-        return () => {}
+        let diskPrimeCancelled = false
+        const primeDiskWhileAwaitingRelayProbe = async () => {
+          try {
+            const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
+              .map((req) =>
+                isOfflineRef.current
+                  ? { ...req, urls: req.urls.filter((u) => isLocalNetworkUrl(u)) }
+                  : req
+              )
+              .filter((req) => req.urls.length > 0)
+            if (mapped.length === 0) return
+            const disk = await client.getTimelineDiskSnapshotEvents(
+              mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
+            )
+            if (diskPrimeCancelled || timelineEffectStale() || !disk.length) return
+            const cap = areAlgoRelays ? ALGO_LIMIT : LIMIT
+            const merged = collapseDuplicateNip18RepostTimelineRows(mergeEventBatchesById([], disk, cap, areAlgoRelays))
+            if (merged.length > 0) {
+              setEvents(merged)
+              lastEventsForTimelinePrefetchRef.current = merged
+              setLoading(false)
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
+        void primeDiskWhileAwaitingRelayProbe()
+        return () => {
+          diskPrimeCancelled = true
+        }
       }
 
       const prevSubKey = prevSubRequestsKeyForTimelineRef.current
@@ -1847,27 +1876,6 @@ const NoteList = forwardRef(
         const sessionSnap =
           !userPulledRefresh ? getSessionFeedSnapshot(sessionSnapshotIdentityKey) : undefined
         const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
-
-        if (!keepExistingTimelineEvents) {
-          if (restoredFromSession && sessionSnap) {
-            feedPaintSessionPendingRef.current = true
-            const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
-            setEvents(restored)
-            lastEventsForTimelinePrefetchRef.current = restored
-            setNewEvents([])
-            setShowCount(revealBatchSize ?? SHOW_COUNT)
-            setLoading(!!oneShotFetch)
-          } else {
-            if (!keepRowsVisible) setLoading(true)
-            setEvents([])
-            setNewEvents([])
-            setShowCount(revealBatchSize ?? SHOW_COUNT)
-          }
-        } else if (!keepRowsVisible) {
-          setLoading(true)
-        }
-        setHasMore(true)
-        consecutiveEmptyRef.current = 0 // Reset counter on refresh
 
         const seeAllNoSpell = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
 
@@ -1927,6 +1935,64 @@ const NoteList = forwardRef(
           return evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
         }
 
+        const eventCapEarly = allowKindlessRelayExplore
+          ? RELAY_EXPLORE_LIMIT
+          : areAlgoRelays
+            ? ALGO_LIMIT
+            : LIMIT
+
+        if (!keepExistingTimelineEvents) {
+          if (restoredFromSession && sessionSnap) {
+            feedPaintSessionPendingRef.current = true
+            const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
+            setEvents(restored)
+            lastEventsForTimelinePrefetchRef.current = restored
+            setNewEvents([])
+            setShowCount(revealBatchSize ?? SHOW_COUNT)
+            setLoading(!!oneShotFetch)
+          } else {
+            let primedFromDisk = false
+            if (!oneShotFetch && mappedSubRequests.length > 0) {
+              try {
+                const diskRaw = await client.getTimelineDiskSnapshotEvents(
+                  mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                )
+                if (!timelineEffectStale() && diskRaw.length > 0) {
+                  const diskNarrowed = narrowLiveBatch(diskRaw)
+                  if (diskNarrowed.length > 0) {
+                    const merged = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById([], diskNarrowed, eventCapEarly, areAlgoRelays)
+                    )
+                    setEvents(merged)
+                    lastEventsForTimelinePrefetchRef.current = merged
+                    setNewEvents([])
+                    setShowCount(revealBatchSize ?? SHOW_COUNT)
+                    setLoading(false)
+                    feedPaintRelayPendingRef.current = true
+                    feedPaintRelayMetaRef.current = {
+                      variant: 'disk_snapshot',
+                      mergedCount: merged.length
+                    }
+                    primedFromDisk = true
+                  }
+                }
+              } catch {
+                /* disk snapshot is best-effort */
+              }
+            }
+            if (!primedFromDisk) {
+              if (!keepRowsVisible) setLoading(true)
+              setEvents([])
+              setNewEvents([])
+              setShowCount(revealBatchSize ?? SHOW_COUNT)
+            }
+          }
+        } else if (!keepRowsVisible) {
+          setLoading(true)
+        }
+        setHasMore(true)
+        consecutiveEmptyRef.current = 0 // Reset counter on refresh
+
         if (oneShotFetch) {
           setHasMore(false)
           try {
@@ -1950,6 +2016,35 @@ const NoteList = forwardRef(
             if (timelineEffectStale()) {
               if (warmQOneShot) setProgressiveLayersSearching(false)
               return undefined
+            }
+            if (!warmQOneShot && mappedSubRequests.length > 0) {
+              try {
+                const diskRaw = await client.getTimelineDiskSnapshotEvents(
+                  mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                )
+                if (!timelineEffectStale() && diskRaw.length > 0) {
+                  const capDisk = oneShotMergedCap ?? ONE_SHOT_MERGED_CAP
+                  const narrowed = narrowLiveBatch(diskRaw)
+                  if (narrowed.length > 0) {
+                    const merged = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById([], narrowed, capDisk, areAlgoRelays)
+                    )
+                    if (merged.length > 0) {
+                      setEvents(merged)
+                      lastEventsForTimelinePrefetchRef.current = merged
+                      setLoading(false)
+                      feedRelayReturnedAnyEventRef.current = true
+                      feedPaintRelayPendingRef.current = true
+                      feedPaintRelayMetaRef.current = {
+                        variant: 'disk_snapshot_one_shot',
+                        mergedCount: merged.length
+                      }
+                    }
+                  }
+                }
+              } catch {
+                /* best-effort */
+              }
             }
             const firstRelayGraceResolved =
               oneShotFirstRelayGraceMs === undefined
