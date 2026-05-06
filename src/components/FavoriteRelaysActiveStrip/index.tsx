@@ -33,70 +33,12 @@ function useRelativePastPhrase(timestampMs: number | null, t: TFunction): string
   }, [timestampMs, t, tick])
 }
 
-function ActiveCountGroups({
-  followCount,
-  otherCount,
-  labelClassName,
-  stackClassName,
-  variant = 'default',
-  onOpenFollowsNotes
-}: {
-  followCount: number
-  otherCount: number
-  labelClassName: string
-  stackClassName?: string
-  variant?: 'default' | 'mobileBar'
-  onOpenFollowsNotes?: () => void
-}) {
-  const { t } = useTranslation()
-  const mobileBar = variant === 'mobileBar'
-  const groupRowClass = mobileBar
-    ? 'flex w-full min-w-0 items-center gap-1.5'
-    : 'flex min-w-0 items-center gap-1.5'
-
-  return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5', stackClassName)}>
-      {followCount > 0 ? (
-        <div className={groupRowClass}>
-          <span className={cn('tabular-nums', labelClassName)}>
-            {t('Relay pulse follows', { count: followCount })}
-          </span>
-          {onOpenFollowsNotes ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn('shrink-0', mobileBar ? 'size-6' : 'size-5')}
-              aria-label={t('See the newest notes from your follows')}
-              title={t('See the newest notes from your follows')}
-              onClick={onOpenFollowsNotes}
-            >
-              <FileText className={mobileBar ? 'size-3.5' : 'size-3'} />
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {otherCount > 0 ? (
-        <span className={cn('min-w-0 tabular-nums', labelClassName)}>
-          {t('Relay pulse others', { count: otherCount })}
-        </span>
-      ) : null}
-    </div>
-  )
-}
-
 /** Home feed / mobile: full label above the page title */
 export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: string }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
   const { pubkey } = useNostr()
-  const {
-    followCount,
-    otherCount,
-    totalCount,
-    loading,
-    relayActivityReady,
-    lastFetchedAtMs
-  } = useFavoriteRelaysActivity()
+  const { followCount, totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
 
   const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
 
@@ -147,6 +89,18 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
           <div className="flex min-w-0 shrink items-center gap-2">
             <p className="text-xs font-medium leading-tight text-foreground">{t('Relay pulse')}</p>
             <RelayPulseActiveNpubsOpenButton size="sm" variant="outline" className="h-7 shrink-0" />
+            {pubkey && followCount > 0 ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                aria-label={t('See the newest notes from your follows')}
+                title={t('See the newest notes from your follows')}
+                onClick={() => navigate('follows-latest')}
+              >
+                <FileText className="size-3.5" />
+              </Button>
+            ) : null}
           </div>
           {lastFetchedAtMs != null && relativeLabel ? (
             <p className="shrink-0 text-[0.65rem] text-muted-foreground tabular-nums">
@@ -154,14 +108,6 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
             </p>
           ) : null}
         </div>
-        <ActiveCountGroups
-          variant="mobileBar"
-          followCount={followCount}
-          otherCount={otherCount}
-          labelClassName="text-[0.7rem] font-medium text-muted-foreground"
-          stackClassName="w-full min-w-0 max-w-full"
-          onOpenFollowsNotes={pubkey ? () => navigate('follows-latest') : undefined}
-        />
       </div>
     </div>
   )
@@ -172,14 +118,7 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
   const { pubkey } = useNostr()
-  const {
-    followCount,
-    otherCount,
-    totalCount,
-    loading,
-    relayActivityReady,
-    lastFetchedAtMs
-  } = useFavoriteRelaysActivity()
+  const { followCount, totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
 
   const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
 
@@ -265,15 +204,6 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
             <FileText className="size-4" />
           </Button>
         ) : null}
-      </div>
-      <div className="max-xl:flex max-xl:justify-center">
-        <ActiveCountGroups
-          followCount={followCount}
-          otherCount={otherCount}
-          labelClassName="text-[0.6rem] font-medium text-muted-foreground xl:px-1"
-          stackClassName="w-full max-xl:items-center"
-          onOpenFollowsNotes={pubkey ? () => navigate('follows-latest') : undefined}
-        />
       </div>
     </div>
   )

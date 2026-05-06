@@ -10,6 +10,10 @@ import {
   DISCUSSION_UPVOTE_DISPLAY
 } from '@/lib/discussion-votes'
 import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
+import {
+  getParentReplyBlurbDisplayText,
+  parentReplyPollQuestionBlurb
+} from '@/lib/parent-reply-blurb'
 import { cn } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useMuteListOptional } from '@/contexts/mute-list-context'
@@ -47,14 +51,6 @@ const CONTENT_PREVIEW_HOOK_PLACEHOLDER = {
   created_at: 0,
   sig: ''
 } as Event
-
-const PARENT_REPLY_POLL_BLURB_MAX = 150
-
-function parentReplyPollQuestionBlurb(content: string): string {
-  const normalized = content.trim().replace(/\s+/g, ' ')
-  if (normalized.length <= PARENT_REPLY_POLL_BLURB_MAX) return normalized
-  return `${normalized.slice(0, PARENT_REPLY_POLL_BLURB_MAX)}…`
-}
 
 /** Keep spacing/margins on the outer wrapper; put line-clamp on the preview body so it still clamps text. */
 function splitPreviewLayoutClasses(className?: string) {
@@ -143,10 +139,30 @@ export default function ContentPreview({
       ExtendedKind.PUBLIC_MESSAGE
     ].includes(event.kind)
   ) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>
+            {line || `[${t('Note')}]`}
+          </div>
+        </div>
+      )
+    }
     return withKindRow(<NormalContentPreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.DISCUSSION) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>
+            {line || `[${t('Discussion')}]`}
+          </div>
+        </div>
+      )
+    }
     return (
       <div className={cn('flex min-w-0 flex-col gap-1', previewOuter)}>
         <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
@@ -158,6 +174,14 @@ export default function ContentPreview({
   }
 
   if (event.kind === kinds.Highlights) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Highlight')}</div>
+        </div>
+      )
+    }
     return withKindRow(<HighlightPreview event={previewEvent} />)
   }
 
@@ -165,6 +189,13 @@ export default function ContentPreview({
     const href = getWebBookmarkArticleUrl(previewEvent)
     const title = previewEvent.tags.find((t) => t[0] === 'title')?.[1]?.trim()
     const line = title?.trim() || href?.trim() || t('Web bookmark')
+    if (forParentReplyBlurb) {
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line}</div>
+        </div>
+      )
+    }
     return withKindRow(<div className={cn('min-w-0 truncate text-sm', previewBody)}>{line}</div>)
   }
 
@@ -181,34 +212,100 @@ export default function ContentPreview({
   }
 
   if (event.kind === kinds.LongFormArticle) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>
+            {line || `[${t('Long-form Article')}]`}
+          </div>
+        </div>
+      )
+    }
     return withKindRow(<LongFormCard event={previewEvent} interactive={false} />)
   }
 
   if (isNip71StyleVideoKind(event.kind)) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Video')}</div>
+        </div>
+      )
+    }
     return withKindRow(<VideoNotePreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.PICTURE) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Image')}</div>
+        </div>
+      )
+    }
     return withKindRow(<PictureNotePreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.GROUP_METADATA) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Group')}</div>
+        </div>
+      )
+    }
     return withKindRow(<GroupMetadataPreview event={previewEvent} />)
   }
 
   if (event.kind === kinds.CommunityDefinition) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Community')}</div>
+        </div>
+      )
+    }
     return withKindRow(<CommunityDefinitionPreview event={previewEvent} />)
   }
 
   if (event.kind === kinds.LiveEvent) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Live event')}</div>
+        </div>
+      )
+    }
     return withKindRow(<LiveEventPreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.ZAP_REQUEST) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Zap')}</div>
+        </div>
+      )
+    }
     return withKindRow(<ZapPreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.ZAP_RECEIPT || event.kind === kinds.Zap) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Zap')}</div>
+        </div>
+      )
+    }
     if (previewDensity === 'compact') {
       return (
         <div className={cn('min-w-0', previewOuter)}>
@@ -220,14 +317,38 @@ export default function ContentPreview({
   }
 
   if (event.kind === ExtendedKind.APPLICATION_HANDLER_INFO) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Note')}</div>
+        </div>
+      )
+    }
     return withKindRow(<ApplicationHandlerInfo event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.APPLICATION_HANDLER_RECOMMENDATION) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Note')}</div>
+        </div>
+      )
+    }
     return withKindRow(<ApplicationHandlerRecommendation event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.FOLLOW_PACK) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Follow Pack')}</div>
+        </div>
+      )
+    }
     return withKindRow(<FollowPackPreview event={previewEvent} />)
   }
 
@@ -236,6 +357,14 @@ export default function ContentPreview({
     event.kind === ExtendedKind.GIT_ISSUE ||
     event.kind === ExtendedKind.GIT_RELEASE
   ) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Note')}</div>
+        </div>
+      )
+    }
     return withKindRow(<GitRepublicEventCard variant="compact" event={previewEvent} />)
   }
 

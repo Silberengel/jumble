@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { Separator } from '@/components/ui/separator'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
@@ -42,6 +42,8 @@ export default function MainNoteCard({
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const isZapFeedCard =
     event.kind === ExtendedKind.ZAP_RECEIPT || event.kind === ExtendedKind.ZAP_REQUEST
+  /** NIP-52 kinds 31922 / 31923: card-level {@link Collapsible} clips the stats row; description collapses inside the card. */
+  const isCalendarNoteKind = isNip52CalendarCardKind(event.kind)
   const showNoteStatsRow = !embedded || isZapFeedCard
 
   return (
@@ -94,7 +96,7 @@ export default function MainNoteCard({
             <Pin className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
           </div>
         )}
-        <Collapsible alwaysExpand={embedded}>
+        <Collapsible alwaysExpand={embedded || isCalendarNoteKind}>
           <RepostDescription className={embedded ? '' : 'px-4'} reposter={reposter} />
           <Note
             className={embedded ? '' : 'px-4'}

@@ -17,6 +17,7 @@ import { FavoriteRelaysActiveStripSidebar } from '@/components/FavoriteRelaysAct
 import PaneModeToggle from './PaneModeToggle'
 import DownloadDesktopSidebarButton from './DownloadDesktopSidebarButton'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
+import SidebarCalendarWeekWidget from './SidebarCalendarWeekWidget'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 
 export default function PrimaryPageSidebar() {
@@ -36,9 +37,6 @@ export default function PrimaryPageSidebar() {
             </div>
           </div>
           <ReadOnlySessionIndicator variant="sidebar" />
-          <div className="max-xl:hidden w-full min-w-0 px-1">
-            <LiveActivitiesStrip placement="sidebar" />
-          </div>
           <HomeButton />
           <FeedButton />
           <DiscussionsButton />
@@ -51,6 +49,10 @@ export default function PrimaryPageSidebar() {
           <FavoriteRelaysActiveStripSidebar />
           <ConnectedRelaysSidebarStrip />
           <PostButton />
+          <div className="max-xl:hidden w-full min-w-0 space-y-2 px-1">
+            <LiveActivitiesStrip placement="sidebar" />
+            <SidebarCalendarWeekWidget />
+          </div>
         </div>
         <div className="space-y-2">
           <HelpAndAccountMenu variant="sidebar" />

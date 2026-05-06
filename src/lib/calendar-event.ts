@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { tagNameEquals } from '@/lib/tag'
 import { Event } from 'nostr-tools'
 
@@ -60,21 +60,225 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
   }
 }
 
+const CALENDAR_DISPLAY_LOCALE = 'en-US'
+
+function readFormatParts(
+  d: Date,
+  opts: Intl.DateTimeFormatOptions
+): Record<Intl.DateTimeFormatPartTypes, string> {
+  const out: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {}
+  for (const p of new Intl.DateTimeFormat(CALENDAR_DISPLAY_LOCALE, opts).formatToParts(d)) {
+    if (p.type !== 'literal') out[p.type] = p.value
+  }
+  return out as Record<Intl.DateTimeFormatPartTypes, string>
+}
+
+/**
+ * Single instant: explicit English month + day + year + 12-hour clock + short timezone
+ * (e.g. `May 13, 2025 10:30 am EST`) in the viewer's local zone — avoids DD/MM vs MM/DD ambiguity.
+ */
 export function formatCalendarTime(ts: number): string {
   const d = new Date(ts * 1000)
-  return d.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
+  const p = readFormatParts(d, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
   })
+  const ap = (p.dayPeriod ?? '').toLowerCase()
+  const tz = p.timeZoneName ?? ''
+  return `${p.month} ${p.day}, ${p.year} ${p.hour}:${p.minute} ${ap} ${tz}`.trim()
 }
 
-/** Format a YYYY-MM-DD date string for display. */
+/** `start` / `end` Unix seconds; omits end time if invalid or not after start. Same calendar day → one date line. */
+export function formatCalendarTimeRange(start: number, end: number | undefined): string {
+  const startLine = formatCalendarTime(start)
+  if (end == null || Number.isNaN(end) || end <= start) return startLine
+
+  const a = new Date(start * 1000)
+  const b = new Date(end * 1000)
+  const sameLocalDay =
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+
+  if (!sameLocalDay) {
+    return `${formatCalendarTime(start)} – ${formatCalendarTime(end)}`
+  }
+
+  const dateOnly = readFormatParts(a, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  })
+  const dateStr = `${dateOnly.month} ${dateOnly.day}, ${dateOnly.year}`
+
+  const pStart = readFormatParts(a, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
+  })
+  const pEnd = readFormatParts(b, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })
+  const apS = (pStart.dayPeriod ?? '').toLowerCase()
+  const apE = (pEnd.dayPeriod ?? '').toLowerCase()
+  const tz = pStart.timeZoneName ?? ''
+  return `${dateStr} · ${pStart.hour}:${pStart.minute} ${apS} – ${pEnd.hour}:${pEnd.minute} ${apE} ${tz}`.trim()
+}
+
+/** Format a YYYY-MM-DD date string for display (English long month, unambiguous). */
 export function formatCalendarDate(dateStr: string): string {
   if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString(undefined, { dateStyle: 'long' })
+  const d = new Date(dateStr + 'T12:00:00')
+  const p = readFormatParts(d, { month: 'long', day: 'numeric', year: 'numeric' })
+  return `${p.month} ${p.day}, ${p.year}`
 }
 
+/** Inclusive start and exclusive end (NIP-52); omits end when same as start. */
+export function formatCalendarDateRange(startDate: string, endDate: string): string {
+  if (!startDate?.trim() && !endDate?.trim()) return ''
+  if (!startDate?.trim()) return formatCalendarDate(endDate)
+  const a = formatCalendarDate(startDate)
+  if (!endDate?.trim() || endDate === startDate) return a
+  return `${a} – ${formatCalendarDate(endDate)}`
+}
+
+/** True for NIP-52 calendar note kinds **31922** / **31923** only (via {@link isNip52CalendarCardKind}). */
 export function isCalendarEventKind(kind: number): boolean {
-  return kind === ExtendedKind.CALENDAR_EVENT_DATE || kind === ExtendedKind.CALENDAR_EVENT_TIME
+  return isNip52CalendarCardKind(kind)
+}
+
+/** Local midnight at start of `YYYY-MM-DD`; invalid pattern → null. */
+export function parseCalendarYmdToLocalStartMs(ymd: string): number | null {
+  const t = ymd?.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null
+  const [y, mo, d] = t.split('-').map(Number)
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  const ms = new Date(y, mo - 1, d, 0, 0, 0, 0).getTime()
+  return Number.isNaN(ms) ? null : ms
+}
+
+/**
+ * Half-open window [startMs, endExclusiveMs) for overlap with a week
+ * [weekStartMs, weekEndExclusiveMs). Date-based uses NIP-52 exclusive `end` date.
+ */
+export function getCalendarOccurrenceWindowMs(
+  event: Event
+): { startMs: number; endExclusiveMs: number } | null {
+  const m = getCalendarEventMeta(event)
+  if (m.isDateBased) {
+    const s = m.startDate ? parseCalendarYmdToLocalStartMs(m.startDate) : null
+    if (s == null) return null
+    if (m.endDate?.trim()) {
+      if (m.endDate === m.startDate) {
+        return { startMs: s, endExclusiveMs: s + 86400000 }
+      }
+      const e = parseCalendarYmdToLocalStartMs(m.endDate)
+      return { startMs: s, endExclusiveMs: e != null ? e : s + 86400000 }
+    }
+    return { startMs: s, endExclusiveMs: s + 86400000 }
+  }
+  if (m.start == null || Number.isNaN(m.start)) return null
+  const startMs = m.start * 1000
+  const endExclusiveMs =
+    m.end != null && !Number.isNaN(m.end) && m.end > m.start ? m.end * 1000 : startMs + 3600000
+  return { startMs, endExclusiveMs }
+}
+
+export function calendarOccurrenceOverlapsRange(
+  event: Event,
+  rangeStartMs: number,
+  rangeEndExclusiveMs: number
+): boolean {
+  const w = getCalendarOccurrenceWindowMs(event)
+  if (!w) return false
+  return w.startMs < rangeEndExclusiveMs && w.endExclusiveMs > rangeStartMs
+}
+
+/** Monday 00:00 local through the following Monday 00:00 (exclusive), shifted by `weekOffset` weeks from the anchor week. */
+export function getLocalMondayWeekBounds(
+  weekOffset: number,
+  anchor: Date = new Date()
+): { weekStartMs: number; weekEndExclusiveMs: number } {
+  const d = new Date(anchor)
+  d.setHours(0, 0, 0, 0)
+  const day = d.getDay()
+  const diffFromMonday = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diffFromMonday + weekOffset * 7)
+  monday.setHours(0, 0, 0, 0)
+  const end = new Date(monday)
+  end.setDate(monday.getDate() + 7)
+  return { weekStartMs: monday.getTime(), weekEndExclusiveMs: end.getTime() }
+}
+
+function toYmdLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Compact week banner for sidebar (en-US month names). */
+export function formatSidebarWeekLabel(weekStartMs: number, weekEndExclusiveMs: number): string {
+  const start = new Date(weekStartMs)
+  const last = new Date(weekEndExclusiveMs)
+  last.setDate(last.getDate() - 1)
+  const y1 = start.getFullYear()
+  const y2 = last.getFullYear()
+  const m1 = start.getMonth()
+  const m2 = last.getMonth()
+  const d1 = start.getDate()
+  const d2 = last.getDate()
+  if (y1 === y2 && m1 === m2 && d1 === d2) {
+    return formatCalendarDate(toYmdLocal(start))
+  }
+  const p1 = readFormatParts(start, { month: 'short', day: 'numeric', year: y1 !== y2 ? 'numeric' : undefined })
+  const p2 = readFormatParts(last, { month: 'short', day: 'numeric', year: 'numeric' })
+  const left =
+    y1 !== y2
+      ? `${p1.month} ${p1.day}, ${p1.year}`
+      : m1 === m2
+        ? `${p1.month} ${p1.day}`
+        : `${p1.month} ${p1.day}`
+  const right = `${p2.month} ${p2.day}, ${p2.year}`
+  return `${left} – ${right}`
+}
+
+/** One-line schedule hint for narrow sidebar rows (en-US, includes TZ for timed events). */
+export function formatCalendarSidebarRow(event: Event): string {
+  const m = getCalendarEventMeta(event)
+  if (m.isDateBased) {
+    if (!m.startDate) return ''
+    const a = formatCalendarDate(m.startDate)
+    if (m.endDate?.trim() && m.endDate !== m.startDate) {
+      return `${a} – ${formatCalendarDate(m.endDate)}`
+    }
+    return a
+  }
+  if (m.start == null || Number.isNaN(m.start)) return ''
+  const d = new Date(m.start * 1000)
+  const p = readFormatParts(d, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
+  })
+  const ap = (p.dayPeriod ?? '').toLowerCase()
+  const base = `${p.month} ${p.day} · ${p.hour}:${p.minute} ${ap} ${p.timeZoneName ?? ''}`.trim()
+  if (m.end != null && !Number.isNaN(m.end) && m.end > m.start) {
+    const d2 = new Date(m.end * 1000)
+    const p2 = readFormatParts(d2, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
+    const ap2 = (p2.dayPeriod ?? '').toLowerCase()
+    return `${base} – ${p2.hour}:${p2.minute} ${ap2}`
+  }
+  return base
 }

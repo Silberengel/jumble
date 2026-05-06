@@ -52,7 +52,7 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       relayListRead: relayRead,
       relayListWrite: relayWrite
     })
-    if (loggedIn && urls.length === 0) {
+    if (urls.length === 0) {
       rawItemsRef.current = []
       setItems([])
       return

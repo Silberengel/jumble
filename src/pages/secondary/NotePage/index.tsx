@@ -24,6 +24,7 @@ import {
 } from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
+import { stripMarkupForPreview } from '@/lib/parent-reply-blurb'
 import { tagNameEquals } from '@/lib/tag'
 import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
@@ -84,31 +85,6 @@ function getEventTypeName(kind: number): string {
     default:
       return `Event (kind ${kind})`
   }
-}
-
-// Helper function to extract and strip markdown/asciidoc for preview (matching WebPreview)
-function stripMarkdown(content: string): string {
-  let text = content
-  // Remove markdown headers
-  text = text.replace(/^#{1,6}\s+/gm, '')
-  // Remove markdown bold/italic
-  text = text.replace(/\*\*([^*]+)\*\*/g, '$1')
-  text = text.replace(/\*([^*]+)\*/g, '$1')
-  // Remove markdown links
-  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-  // Remove asciidoc headers
-  text = text.replace(/^=+\s+/gm, '')
-  // Remove asciidoc bold/italic
-  text = text.replace(/\*\*([^*]+)\*\*/g, '$1')
-  text = text.replace(/_([^_]+)_/g, '$1')
-  // Remove code blocks
-  text = text.replace(/```[\s\S]*?```/g, '')
-  text = text.replace(/`([^`]+)`/g, '$1')
-  // Remove HTML tags
-  text = text.replace(/<[^>]+>/g, '')
-  // Clean up whitespace
-  text = text.replace(/\n{3,}/g, '\n\n')
-  return text.trim()
 }
 
 const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: { id?: string; index?: number; hideTitlebar?: boolean; initialEvent?: Event }, ref) => {
@@ -301,7 +277,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     // Generate content preview (matching fallback card)
     let contentPreview = ''
     if (finalEvent.content) {
-      const stripped = stripMarkdown(finalEvent.content)
+      const stripped = stripMarkupForPreview(finalEvent.content)
       contentPreview = stripped.length > 500 ? stripped.substring(0, 500) + '...' : stripped
     }
     

@@ -9,6 +9,7 @@ import {
 } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
+import { isCalendarEventKind } from '@/lib/calendar-event'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { normalizeUrl } from '@/lib/url'
@@ -413,8 +414,8 @@ function EmbeddedNoteFetched({
     )
   }
 
-  // NIP-52 calendar event (scheduled video call) – render as calendar card
-  if (finalEvent.kind === ExtendedKind.CALENDAR_EVENT_TIME || finalEvent.kind === ExtendedKind.CALENDAR_EVENT_DATE) {
+  // NIP-52 calendar notes (kinds 31922 / 31923) – render as calendar card
+  if (isCalendarEventKind(finalEvent.kind)) {
     return (
       <div
         data-embedded-note

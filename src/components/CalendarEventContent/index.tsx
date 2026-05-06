@@ -1,8 +1,8 @@
 import { createCalendarRsvpDraftEvent } from '@/lib/draft-event'
 import {
   getCalendarEventMeta,
-  formatCalendarTime,
-  formatCalendarDate,
+  formatCalendarTimeRange,
+  formatCalendarDateRange,
   isCalendarEventKind
 } from '@/lib/calendar-event'
 import { tagNameEquals } from '@/lib/tag'
@@ -13,8 +13,9 @@ import { useSecondaryPage } from '@/PageManager'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
+import Collapsible from '../Collapsible'
 import { Button } from '../ui/button'
-import { Calendar, Video, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
+import { Calendar, Clock, Video, CheckCircle, HelpCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -84,32 +85,43 @@ export default function CalendarEventContent({
     }
   }
 
+  const scheduleLine = isDateBased
+    ? (startDate || endDate) && formatCalendarDateRange(startDate, endDate)
+    : start != null && !isNaN(start)
+      ? formatCalendarTimeRange(start, end != null && !isNaN(end) ? end : undefined)
+      : null
+
   return (
     <div
-      className={cn('rounded-lg border bg-muted/40 p-3 text-sm min-w-0', className)}
+      className={cn(
+        'min-w-0 space-y-3 rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/25 p-4 text-sm shadow-sm',
+        className
+      )}
       data-calendar-event-content
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-start gap-2 mb-2">
+      <div className="flex items-start gap-3">
         {image ? (
           <img
             src={image}
             alt=""
-            className="size-12 shrink-0 rounded object-cover"
+            className="size-[4.5rem] shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-border/40"
           />
         ) : (
-          <Calendar className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+          <div className="flex size-[4.5rem] shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-border/40">
+            <Calendar className="size-7 text-primary/80" aria-hidden />
+          </div>
         )}
-        <div className="min-w-0 flex-1">
-          <span className="font-medium text-foreground truncate block">
+        <div className="min-w-0 flex-1 space-y-2">
+          <h3 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
             {title || t('Scheduled video call')}
-          </span>
+          </h3>
           {topics.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
+            <div className="flex flex-wrap gap-1.5">
               {topics.map((topic) => (
                 <span
                   key={topic}
-                  className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                  className="inline-flex items-center rounded-full bg-muted/80 px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border/50"
                 >
                   #{topic}
                 </span>
@@ -118,32 +130,23 @@ export default function CalendarEventContent({
           )}
         </div>
       </div>
-      {isDateBased ? (
-        (startDate || endDate) && (
-          <div className="text-muted-foreground text-xs mb-2">
-            {startDate ? formatCalendarDate(startDate) : ''}
-            {endDate && endDate !== startDate && (
-              <> – {formatCalendarDate(endDate)}</>
-            )}
-          </div>
-        )
-      ) : (
-        start != null &&
-        !isNaN(start) && (
-          <div className="text-muted-foreground text-xs mb-2">
-            {formatCalendarTime(start)}
-            {end != null && !isNaN(end) && end > start && (
-              <> – {formatCalendarTime(end)}</>
-            )}
-          </div>
-        )
-      )}
-      {description && (
-        <p className="text-muted-foreground text-xs mb-2 whitespace-pre-wrap break-words">
-          {description}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2 mt-2">
+      {scheduleLine ? (
+        <div className="flex gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
+          <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <p className="min-w-0 text-sm font-medium leading-snug text-foreground">{scheduleLine}</p>
+        </div>
+      ) : null}
+      {description ? (
+        <>
+          {/* NIP-52 31922/31923: collapse long summary+body only; card chrome stays outside MainNoteCard Collapsible. */}
+          <Collapsible threshold={200} collapsedHeight={160} className="min-w-0">
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          </Collapsible>
+        </>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
         {joinUrl && (
           <Button variant="secondary" size="sm" className="gap-2" asChild>
             <a href={joinUrl} target="_blank" rel="noopener noreferrer">
@@ -187,17 +190,19 @@ export default function CalendarEventContent({
         )}
       </div>
       {attendeesList.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-border/60">
-          <div className="text-xs font-medium text-muted-foreground mb-2">{t('Attendees')}</div>
-          <ul className="space-y-1.5">
+        <div className="border-t border-border/50 pt-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('Attendees')}
+          </div>
+          <ul className="space-y-1">
             {attendeesList.map(({ pubkey, status, isOrganizer }) => (
               <li key={pubkey}>
                 <button
                   type="button"
                   onClick={() => push(toProfile(pubkey))}
                   className={cn(
-                    'w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
-                    'hover:bg-muted/60 transition-colors min-w-0'
+                    'flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-2 text-left text-xs transition-colors',
+                    'hover:bg-muted/50'
                   )}
                 >
                   <UserAvatar userId={pubkey} size="xSmall" className="shrink-0" />

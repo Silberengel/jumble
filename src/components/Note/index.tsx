@@ -29,6 +29,7 @@ import { muteSetHas } from '@/lib/mute-set'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
+import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -186,8 +187,7 @@ export default function Note({
     event.kind === ExtendedKind.PUBLICATION ||
     event.kind === ExtendedKind.PUBLICATION_CONTENT ||
     event.kind === ExtendedKind.DISCUSSION ||
-    event.kind === ExtendedKind.CALENDAR_EVENT_TIME ||
-    event.kind === ExtendedKind.CALENDAR_EVENT_DATE ||
+    isCalendarEventKind(event.kind) ||
     event.kind === ExtendedKind.COMMENT
 
   const renderEventContent = useCallback(
@@ -395,7 +395,7 @@ export default function Note({
     content = <VideoNote className="mt-2" event={event} />
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {
     content = <RelayReview className="mt-2" event={displayEvent} />
-  } else if (event.kind === ExtendedKind.CALENDAR_EVENT_TIME || event.kind === ExtendedKind.CALENDAR_EVENT_DATE) {
+  } else if (isCalendarEventKind(event.kind)) {
     content = <CalendarEventContent event={displayEvent} className="mt-2" showRsvp />
   } else if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
     content = renderEventContent({ hideMetadata: true })

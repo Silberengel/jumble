@@ -680,7 +680,10 @@ export function buildLiveActivitiesRelayUrls(options: {
     const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays))
     const read = relayUrlsLocalsFirst(relayListRead)
     const write = relayUrlsLocalsFirst(relayListWrite)
-    return mergeRelayPriorityLayers([fav, read, write], blockedRelays, MAX_REQ_RELAY_URLS, {
+    const fast = dedupeNormalizeRelayUrlsOrdered(
+      FAST_READ_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
+    )
+    return mergeRelayPriorityLayers([fav, read, write, fast], blockedRelays, MAX_REQ_RELAY_URLS, {
       applySocialKindBlockedFilter: true
     })
   }

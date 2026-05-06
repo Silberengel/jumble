@@ -1,4 +1,4 @@
-import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
+import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
 import { cleanUrl, normalizeUrl } from '@/lib/url'
@@ -154,7 +154,7 @@ export function isReplaceableEvent(kind: number) {
   return (
     kinds.isReplaceableKind(kind) ||
     kinds.isAddressableKind(kind) ||
-    CALENDAR_EVENT_KINDS.includes(kind)
+    isNip52CalendarCardKind(kind)
   )
 }
 

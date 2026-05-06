@@ -26,6 +26,7 @@ import {
   queuePersistSeenEvent
 } from './event-archive.service'
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
+import { isCalendarEventKind } from '@/lib/calendar-event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
@@ -543,6 +544,26 @@ export class EventService {
           errorMessage: err.message,
           errorName: err.name,
           error: err
+        })
+      })
+    }
+    if (isCalendarEventKind(cleanEvent.kind)) {
+      void indexedDb.putCalendarEventRow(cleanEvent as NEvent).catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logger.debug('[EventService] Calendar event IndexedDB persist failed', {
+          kind: cleanEvent.kind,
+          eventId: id,
+          errorMessage: err.message
+        })
+      })
+    }
+    if (cleanEvent.kind === ExtendedKind.CALENDAR_EVENT_RSVP) {
+      void indexedDb.putCalendarRsvpEventRow(cleanEvent as NEvent).catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logger.debug('[EventService] Calendar RSVP IndexedDB persist failed', {
+          kind: cleanEvent.kind,
+          eventId: id,
+          errorMessage: err.message
         })
       })
     }

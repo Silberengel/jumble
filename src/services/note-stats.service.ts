@@ -57,6 +57,13 @@ class NoteStatsService {
   static instance: NoteStatsService
   private noteStatsMap: Map<string, Partial<TNoteStats>> = new Map()
   private noteStatsSubscribers = new Map<string, Set<() => void>>()
+  /**
+   * Batched, microtask-deferred subscriber wakes. Without this, {@link updateNoteStatsByEvents} called from
+   * a React state updater (e.g. NoteList `setEvents`) synchronously notifies {@link useSyncExternalStore} listeners
+   * and triggers "Cannot update NoteBoostBadges while rendering NoteList".
+   */
+  private subscriberNotifyKeys = new Set<string>()
+  private subscriberNotifyMicrotaskQueued = false
   private processingCache = new Set<string>()
   private readonly hexNoteStatsIdRe = /^[0-9a-f]{64}$/i
 
@@ -636,11 +643,31 @@ class NoteStatsService {
     }
   }
 
-  private notifyNoteStats(noteId: string) {
-    const set = this.noteStatsSubscribers.get(this.statsKey(noteId))
-    if (set) {
-      set.forEach((cb) => cb())
+  private flushNoteStatsSubscribers(): void {
+    this.subscriberNotifyMicrotaskQueued = false
+    const keys = [...this.subscriberNotifyKeys]
+    this.subscriberNotifyKeys.clear()
+    for (const key of keys) {
+      const set = this.noteStatsSubscribers.get(key)
+      if (!set?.size) continue
+      for (const cb of [...set]) {
+        try {
+          cb()
+        } catch (e) {
+          logger.warn('[NoteStatsService] subscriber callback failed', { err: e })
+        }
+      }
     }
+  }
+
+  private notifyNoteStats(noteId: string) {
+    const key = this.statsKey(noteId)
+    this.subscriberNotifyKeys.add(key)
+    if (this.subscriberNotifyMicrotaskQueued) return
+    this.subscriberNotifyMicrotaskQueued = true
+    queueMicrotask(() => {
+      this.flushNoteStatsSubscribers()
+    })
   }
 
   getNoteStats(id: string): Partial<TNoteStats> | undefined {

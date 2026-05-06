@@ -738,7 +738,15 @@ export const READ_ALOUD_KINDS: readonly number[] = [
 export const CALENDAR_EVENT_KINDS = [
   ExtendedKind.CALENDAR_EVENT_DATE,
   ExtendedKind.CALENDAR_EVENT_TIME
-]
+] as const
+
+/**
+ * NIP-52 calendar **note** kinds only: **31922** (date-based) and **31923** (time-based).
+ * Excludes RSVP kind 31925. Prefer this or {@link CALENDAR_EVENT_KINDS} so UI stays aligned with NIP-52.
+ */
+export function isNip52CalendarCardKind(kind: number): boolean {
+  return (CALENDAR_EVENT_KINDS as readonly number[]).includes(kind)
+}
 
 /** Maximum invitees for calendar event group invites (one kind 24 with all as p-tags). */
 export const MAX_CALENDAR_INVITEES = 10

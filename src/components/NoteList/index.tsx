@@ -2778,6 +2778,19 @@ const NoteList = forwardRef(
         if (eventsRef.current.length === 0) {
           setHasMore(false)
         }
+        // Main feed skeleton also requires `feedTimelineEmptyUiReady` (first onEvents or EOSE). If
+        // subscribe never wires that path (wedged setup, relay pool churn), `loading` alone going
+        // false still leaves an infinite skeleton — hard-refresh “fixes” by resetting connections.
+        let unblockedPaint = false
+        setFeedTimelineEmptyUiReady((ready) => {
+          if (ready) return ready
+          unblockedPaint = true
+          return true
+        })
+        if (unblockedPaint) {
+          feedPaintLiveRelayDoneRef.current = true
+          setFeedEmptyToastGateTick((n) => n + 1)
+        }
       }, loadingSafetyMs)
       return () => {
         cancelled = true

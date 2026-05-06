@@ -46,35 +46,39 @@ export default function Collapsible({
     }
   }, [alwaysExpand, shouldCollapse])
 
+  const collapsed = shouldCollapse && !expanded
+
   return (
-    <div
-      className={cn('relative text-left', className)}
-      ref={containerRef}
-      {...props}
-      style={{
-        maxHeight: !shouldCollapse || expanded ? 'none' : `${collapsedHeight}px`,
-        overflow: !shouldCollapse || expanded ? 'visible' : 'hidden'
-      }}
-    >
-      {children}
-      {shouldCollapse && !expanded && (
-        <div
-          className="pointer-events-none absolute bottom-0 z-20 flex h-40 w-full items-end justify-center bg-gradient-to-b from-transparent to-background/90 pb-4"
-          data-collapsible-show-more
-        >
-          <div className="pointer-events-auto rounded-md">
+    <div className={cn('text-left', className)} {...props}>
+      <div
+        ref={containerRef}
+        style={{
+          maxHeight: !shouldCollapse || expanded ? 'none' : `${collapsedHeight}px`,
+          overflow: !shouldCollapse || expanded ? 'visible' : 'hidden'
+        }}
+      >
+        {children}
+      </div>
+      {collapsed ? (
+        <div className="bg-background" data-collapsible-show-more>
+          <div
+            aria-hidden
+            className="pointer-events-none h-7 w-full bg-gradient-to-b from-transparent to-background"
+          />
+          <div className="flex justify-center px-2 pb-2 pt-1">
             <Button
+              type="button"
               className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
               onClick={(e) => {
                 e.stopPropagation()
-                setExpanded(!expanded)
+                setExpanded(true)
               }}
             >
               {t('Show more')}
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -7,7 +7,18 @@ import { tagNameEquals } from '@/lib/tag'
 import { TNip66RelayDiscovery, TRelayInfo } from '@/types'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
-import { isReplaceableEvent, getReplaceableCoordinateFromEvent } from '@/lib/event'
+import {
+  calendarOccurrenceOverlapsRange,
+  getCalendarOccurrenceWindowMs,
+  isCalendarEventKind
+} from '@/lib/calendar-event'
+import {
+  getReplaceableCoordinate,
+  getReplaceableCoordinateFromEvent,
+  isReplaceableEvent,
+  normalizeReplaceableCoordinateString,
+  replaceableEventDedupeKey
+} from '@/lib/event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 
@@ -151,7 +162,28 @@ export const StoreNames = {
   /** Persisted timeline refs + filter for cold-start hydration. Key: {@link ClientService.generateTimelineKey} hash. */
   TIMELINE_STATE: 'timelineState',
   /** Piper / read-aloud WAV blobs keyed by SHA-256 of endpoint + text + speed. */
-  PIPER_TTS_CACHE: 'piperTtsCache'
+  PIPER_TTS_CACHE: 'piperTtsCache',
+  /** NIP-52 calendar notes (31922/31923). Key: {@link replaceableEventDedupeKey}. Index: `occurrenceStartMs`. */
+  CALENDAR_EVENTS: 'calendarEvents',
+  /** NIP-52 calendar RSVPs (31925). Key: event id. Index: `parentCoordinate` (`a` tag). */
+  CALENDAR_RSVP_EVENTS: 'calendarRsvpEvents'
+}
+
+/** Row shape for {@link StoreNames.CALENDAR_EVENTS}. */
+export type TCalendarEventCacheRow = {
+  key: string
+  value: Event
+  addedAt: number
+  occurrenceStartMs: number
+  occurrenceEndExclusiveMs: number
+}
+
+/** Row shape for {@link StoreNames.CALENDAR_RSVP_EVENTS}. */
+export type TCalendarRsvpCacheRow = {
+  key: string
+  value: Event
+  addedAt: number
+  parentCoordinate: string
 }
 
 /** Object stores skipped by full-text cache search (blobs, settings, relay metadata, etc.). */
@@ -167,11 +199,13 @@ const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set(
   StoreNames.FOLLOWING_FAVORITE_RELAYS,
   StoreNames.RELAY_SETS,
   StoreNames.MUTE_DECRYPTED_TAGS,
-  StoreNames.FAVORITE_RELAYS
+  StoreNames.FAVORITE_RELAYS,
+  StoreNames.CALENDAR_EVENTS,
+  StoreNames.CALENDAR_RSVP_EVENTS
 ])
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 34
+const DB_VERSION = 35
 
 /** Max age for profile and payment info cache before we refetch (5 min). */
 const PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -195,6 +229,12 @@ function ensureMissingObjectStores(db: IDBDatabase): void {
     } else if (storeName === StoreNames.EVENT_ARCHIVE) {
       const store = db.createObjectStore(storeName, { keyPath: 'key' })
       store.createIndex('eviction', ['archiveTier', 'lastAccessAt'], { unique: false })
+    } else if (storeName === StoreNames.CALENDAR_EVENTS) {
+      const cal = db.createObjectStore(storeName, { keyPath: 'key' })
+      cal.createIndex('occurrenceStartMs', 'occurrenceStartMs', { unique: false })
+    } else if (storeName === StoreNames.CALENDAR_RSVP_EVENTS) {
+      const rsvp = db.createObjectStore(storeName, { keyPath: 'key' })
+      rsvp.createIndex('parentCoordinate', 'parentCoordinate', { unique: false })
     } else {
       db.createObjectStore(storeName, { keyPath: 'key' })
     }
@@ -391,6 +431,16 @@ class IndexedDbService {
           }
           if (event.oldVersion < 34) {
             // v34: app-side changes (fetch timeouts, timeline hydrate order, discussion list cap)
+          }
+          if (event.oldVersion < 35) {
+            if (!db.objectStoreNames.contains(StoreNames.CALENDAR_EVENTS)) {
+              const cal = db.createObjectStore(StoreNames.CALENDAR_EVENTS, { keyPath: 'key' })
+              cal.createIndex('occurrenceStartMs', 'occurrenceStartMs', { unique: false })
+            }
+            if (!db.objectStoreNames.contains(StoreNames.CALENDAR_RSVP_EVENTS)) {
+              const rsvp = db.createObjectStore(StoreNames.CALENDAR_RSVP_EVENTS, { keyPath: 'key' })
+              rsvp.createIndex('parentCoordinate', 'parentCoordinate', { unique: false })
+            }
           }
           ensureMissingObjectStores(db)
         }
@@ -3109,10 +3159,14 @@ class IndexedDbService {
       // Or just event ID for non-replaceable events
       const parts = key.split(':')
       if (parts.length === 1) {
-        // Event ID - remove from publication store + hot archive
+        // Event ID - remove from publication store + hot archive (+ calendar RSVP by id)
+        const idLower = /^[0-9a-f]{64}$/i.test(key) ? key.toLowerCase() : key
         await Promise.allSettled([
           this.deleteStoreItem(StoreNames.PUBLICATION_EVENTS, key),
-          this.deleteArchivedEvent(key)
+          this.deleteArchivedEvent(key),
+          ...(this.db?.objectStoreNames.contains(StoreNames.CALENDAR_RSVP_EVENTS)
+            ? [this.deleteStoreItem(StoreNames.CALENDAR_RSVP_EVENTS, idLower)]
+            : [])
         ])
         removed++
       } else if (parts.length >= 2) {
@@ -3127,6 +3181,18 @@ class IndexedDbService {
               await this.deleteStoreItem(storeName, this.getReplaceableEventKey(pubkey.toLowerCase(), d))
               removed++
             }
+            if (
+              isCalendarEventKind(kind) &&
+              d != null &&
+              d !== '' &&
+              this.db?.objectStoreNames.contains(StoreNames.CALENDAR_EVENTS)
+            ) {
+              const calKey = normalizeReplaceableCoordinateString(
+                getReplaceableCoordinate(kind, pubkey.toLowerCase(), d)
+              )
+              await this.deleteStoreItem(StoreNames.CALENDAR_EVENTS, calKey)
+              removed++
+            }
           } catch {
             // Ignore errors
           }
@@ -3135,6 +3201,159 @@ class IndexedDbService {
     }
 
     return removed
+  }
+
+  /**
+   * Persist a NIP-52 calendar note (31922/31923). Keyed by {@link replaceableEventDedupeKey}; keeps newest
+   * `created_at` per coordinate.
+   */
+  async putCalendarEventRow(ev: Event): Promise<void> {
+    if (!isCalendarEventKind(ev.kind)) return
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.CALENDAR_EVENTS)) return
+
+    const key = replaceableEventDedupeKey(ev)
+    const win = getCalendarOccurrenceWindowMs(ev)
+    const occurrenceStartMs = win?.startMs ?? ev.created_at * 1000
+    const occurrenceEndExclusiveMs = win?.endExclusiveMs ?? occurrenceStartMs + 3_600_000
+
+    const clean = { ...ev } as Event
+    delete (clean as { relayStatuses?: unknown }).relayStatuses
+    if (/^[0-9a-f]{64}$/i.test(clean.id)) {
+      clean.id = clean.id.toLowerCase()
+    }
+
+    const row: TCalendarEventCacheRow = {
+      key,
+      value: clean,
+      addedAt: Date.now(),
+      occurrenceStartMs,
+      occurrenceEndExclusiveMs
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.CALENDAR_EVENTS, 'readwrite')
+      const store = tx.objectStore(StoreNames.CALENDAR_EVENTS)
+      const getReq = store.get(key)
+      getReq.onerror = (e) => reject(idbEventToError(e))
+      getReq.onsuccess = () => {
+        const prev = getReq.result as TCalendarEventCacheRow | undefined
+        if (prev?.value?.created_at != null && prev.value.created_at > ev.created_at) {
+          resolve()
+          return
+        }
+        const putReq = store.put(row)
+        putReq.onerror = (e) => reject(idbEventToError(e))
+        putReq.onsuccess = () => resolve()
+      }
+    })
+  }
+
+  /** Persist a NIP-52 RSVP (31925). Indexed by normalized `a` parent coordinate. */
+  async putCalendarRsvpEventRow(ev: Event): Promise<void> {
+    if (ev.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) return
+    const rawA = ev.tags.find(tagNameEquals('a'))?.[1]?.trim()
+    if (!rawA) return
+    const parentCoordinate = normalizeReplaceableCoordinateString(rawA)
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.CALENDAR_RSVP_EVENTS)) return
+
+    const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
+    const clean = { ...ev } as Event
+    delete (clean as { relayStatuses?: unknown }).relayStatuses
+    clean.id = id
+
+    const row: TCalendarRsvpCacheRow = {
+      key: id,
+      value: clean,
+      addedAt: Date.now(),
+      parentCoordinate
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.CALENDAR_RSVP_EVENTS, 'readwrite')
+      const putReq = tx.objectStore(StoreNames.CALENDAR_RSVP_EVENTS).put(row)
+      putReq.onerror = (e) => reject(idbEventToError(e))
+      putReq.onsuccess = () => resolve()
+    })
+  }
+
+  /**
+   * Calendar events whose occurrence overlaps `[rangeStartMs, rangeEndExclusiveMs)` (local week bounds).
+   * Uses `occurrenceStartMs` index with a wide lower bound so long-lived date ranges are not missed.
+   */
+  async getCalendarEventsForOccurrenceWindow(
+    rangeStartMs: number,
+    rangeEndExclusiveMs: number,
+    maxScan = 5000
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.CALENDAR_EVENTS)) return []
+
+    const lower = rangeStartMs - 550 * 86_400_000
+    const upper = rangeEndExclusiveMs + 86_400_000
+
+    return new Promise((resolve, reject) => {
+      const out: Event[] = []
+      const tx = this.db!.transaction(StoreNames.CALENDAR_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.CALENDAR_EVENTS)
+      let index: IDBIndex
+      try {
+        index = store.index('occurrenceStartMs')
+      } catch {
+        resolve([])
+        return
+      }
+      const range = IDBKeyRange.bound(lower, upper, false, false)
+      const req = index.openCursor(range)
+      req.onerror = (e) => reject(idbEventToError(e))
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || out.length >= maxScan) {
+          resolve(out)
+          return
+        }
+        const row = cursor.value as TCalendarEventCacheRow
+        if (
+          row?.value &&
+          calendarOccurrenceOverlapsRange(row.value, rangeStartMs, rangeEndExclusiveMs)
+        ) {
+          out.push(row.value)
+        }
+        cursor.continue()
+      }
+    })
+  }
+
+  /** Cached RSVPs for a calendar replaceable coordinate (`kind:pubkey:d`). */
+  async getCalendarRsvpEventsByParentCoordinate(
+    parentCoordinate: string,
+    limit = 400
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.CALENDAR_RSVP_EVENTS)) return []
+    const norm = normalizeReplaceableCoordinateString(parentCoordinate.trim())
+    if (!norm) return []
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.CALENDAR_RSVP_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.CALENDAR_RSVP_EVENTS)
+      let index: IDBIndex
+      try {
+        index = store.index('parentCoordinate')
+      } catch {
+        resolve([])
+        return
+      }
+      const req = index.getAll(IDBKeyRange.only(norm))
+      req.onerror = (e) => reject(idbEventToError(e))
+      req.onsuccess = () => {
+        const rows = (req.result as TCalendarRsvpCacheRow[]) ?? []
+        const events = rows.map((r) => r.value).filter(Boolean)
+        events.sort((a, b) => b.created_at - a.created_at)
+        resolve(events.slice(0, limit))
+      }
+    })
   }
 }
 
