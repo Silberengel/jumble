@@ -1314,6 +1314,14 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       // If at least one relay accepted, cache and emit immediately so UI shows the event without waiting
       if (publishResult.successCount >= 1) {
         client.addEventToCache(event)
+        // Calendar RSVPs: durable store before `newEvent` so hooks that re-read IDB see this row first.
+        if (event.kind === ExtendedKind.CALENDAR_EVENT_RSVP) {
+          try {
+            await indexedDb.putCalendarRsvpEventRow(event)
+          } catch (err) {
+            logger.warn('[Publish] Calendar RSVP IndexedDB persist failed', { err })
+          }
+        }
         client.emitNewEvent(event)
         // Replaceable list events (pins, cache relays, …) must hit IndexedDB + DataLoader, not only RAM
         void replaceableEventService.updateReplaceableEventCache(event).catch(() => {})

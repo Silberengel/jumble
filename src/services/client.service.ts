@@ -14,6 +14,8 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_PUBLISH_RELAYS,
+  PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP,
+  PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS,
   PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
   RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS,
@@ -895,10 +897,21 @@ class ClientService extends EventTarget {
         ...(rl?.read ?? []).map((url) => normalizeUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u))
       ])
       recipientRead = dedupeNormalizeRelayUrlsOrdered(recipientRead)
+      const authorWriteOrdered = relayUrlsLocalsFirst(authorWrite)
+      /** Without this, tier‑1 author outboxes can consume all of {@link MAX_PUBLISH_RELAYS} and organizer inboxes never receive RSVPs. */
+      const recipientReadDeduped = recipientRead
+      const authorTier1Cap =
+        recipientReadDeduped.length > 0
+          ? Math.min(PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP, authorWriteOrdered.length)
+          : authorWriteOrdered.length
+      const authorPrimary = authorWriteOrdered.slice(0, authorTier1Cap)
+      const authorOverflow = authorWriteOrdered.slice(authorTier1Cap)
+      const publishCap =
+        recipientReadDeduped.length > 0 ? PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS : MAX_PUBLISH_RELAYS
       let pubRelays = mergeRelayPriorityLayers(
-        [relayUrlsLocalsFirst(authorWrite), dedupeNormalizeRelayUrlsOrdered(recipientRead)],
+        [authorPrimary, recipientReadDeduped, authorOverflow],
         blockedRelayUrls,
-        MAX_PUBLISH_RELAYS,
+        publishCap,
         { applySocialKindBlockedFilter: false }
       )
       pubRelays = this.filterPublishingRelays(pubRelays, event)

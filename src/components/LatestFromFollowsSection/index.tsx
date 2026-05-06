@@ -60,17 +60,21 @@ const FEED_KINDS = [
 
 const feedKindSet = new Set(FEED_KINDS)
 
+const LOG = '[LatestFromFollows]'
+
 function mergeBatchPosts(
   prev: Map<string, NostrEvent[]>,
   incoming: NostrEvent[],
   batchAuthors: string[]
 ): Map<string, NostrEvent[]> {
   const next = new Map(prev)
-  const authorSet = new Set(batchAuthors)
-  const filtered = incoming.filter((e) => authorSet.has(e.pubkey))
+  /** Follow list pubkeys are lowercased in `getPubkeysFromPTags`; relay `pubkey` may be mixed-case hex. */
+  const authorSet = new Set(batchAuthors.map((a) => a.toLowerCase()))
+  const filtered = incoming.filter((e) => authorSet.has(e.pubkey.toLowerCase()))
   for (const pk of batchAuthors) {
+    const pkNorm = pk.toLowerCase()
     const prevList = next.get(pk) ?? []
-    const newForPk = filtered.filter((e) => e.pubkey === pk)
+    const newForPk = filtered.filter((e) => e.pubkey.toLowerCase() === pkNorm)
     const byId = new Map<string, NostrEvent>()
     for (const e of prevList) byId.set(e.id, e)
     for (const e of newForPk) {
@@ -188,11 +192,13 @@ export default function LatestFromFollowsSection({
     setGuestFollowPubkeys([])
 
     ;(async () => {
+      logger.info(`${LOG} guest: loading recommended follow list`)
       const hex = recommendedCuratorHexPubkey()
       if (!hex) {
         if (!cancelled) {
           setGuestFollowPubkeys([])
           setGuestListReady(true)
+          logger.info(`${LOG} guest: no curator npub; follow list empty`)
         }
         return
       }
@@ -201,6 +207,7 @@ export default function LatestFromFollowsSection({
         if (cancelled) return
         const list = evt ? getPubkeysFromPTags(evt.tags).slice(0, MAX_FOLLOWS) : []
         setGuestFollowPubkeys(list)
+        logger.info(`${LOG} guest: follow list loaded`, { count: list.length })
       } catch (err) {
         logger.warn('[LatestFromFollows] Failed to load recommended follow list', err)
         if (!cancelled) setGuestFollowPubkeys([])
@@ -217,9 +224,16 @@ export default function LatestFromFollowsSection({
   // Load each follow's NIP-65 list (IndexedDB + network), then aggregate first outboxes + READ_ONLY relays.
   useEffect(() => {
     if (!isInitialized || loadingFollowList) {
+      logger.info(`${LOG} relays: waiting`, {
+        isInitialized,
+        loadingFollowList,
+        variant,
+        followsLabel
+      })
       return
     }
     if (followPubkeys.length === 0) {
+      logger.info(`${LOG} relays: no follows; skipping aggregate`)
       setAggregateRelayUrls([])
       setAggregateRelaysReady(true)
       return
@@ -230,6 +244,11 @@ export default function LatestFromFollowsSection({
     setAggregateRelayUrls([])
 
     ;(async () => {
+      logger.info(`${LOG} relays: fetch NIP-65 lists start`, {
+        authorCount: followPubkeys.length,
+        variant,
+        followsLabel
+      })
       try {
         // Dynamic import avoids a static cycle: client.service → replaceable-events → client.service
         // (would break React context / HMR when this module loads early).
@@ -248,28 +267,53 @@ export default function LatestFromFollowsSection({
           favoriteRelays
         )
         setAggregateRelayUrls(urls)
+        logger.info(`${LOG} relays: aggregate URLs computed → setState`, {
+          nip65ListsLoaded: allLists.length,
+          aggregateUrlCount: urls.length,
+          relaySample: urls.slice(0, 6)
+        })
       } catch (err) {
         logger.warn('[LatestFromFollows] Failed to build follow outbox aggregate relays', err)
         if (!cancelled) {
-          setAggregateRelayUrls(
-            buildFollowOutboxAggregateReadUrls([], blockedRelays, favoriteRelays)
-          )
+          const fallback = buildFollowOutboxAggregateReadUrls([], blockedRelays, favoriteRelays)
+          setAggregateRelayUrls(fallback)
+          logger.info(`${LOG} relays: using fallback aggregate URLs after error`, {
+            aggregateUrlCount: fallback.length
+          })
         }
       } finally {
-        if (!cancelled) setAggregateRelaysReady(true)
+        if (!cancelled) {
+          setAggregateRelaysReady(true)
+          logger.info(`${LOG} relays: aggregateRelaysReady → true`)
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [followPubkeys, favoriteRelays, blockedRelays, isInitialized, loadingFollowList])
+  }, [followPubkeys, favoriteRelays, blockedRelays, isInitialized, loadingFollowList, variant, followsLabel])
 
   // Batch-fetch posts per slice of authors against the aggregate relay set.
   useEffect(() => {
-    if (!isInitialized || loadingFollowList) return
-    if (followPubkeys.length === 0) return
-    if (!aggregateRelaysReady) return
+    if (!isInitialized || loadingFollowList) {
+      logger.info(`${LOG} posts: waiting`, {
+        isInitialized,
+        loadingFollowList,
+        aggregateRelaysReady,
+        followCount: followPubkeys.length,
+        variant
+      })
+      return
+    }
+    if (followPubkeys.length === 0) {
+      logger.info(`${LOG} posts: no follows; skipping batch fetch`)
+      return
+    }
+    if (!aggregateRelaysReady) {
+      logger.info(`${LOG} posts: waiting for aggregate relays`)
+      return
+    }
 
     abortedRef.current = false
     let cancelled = false
@@ -280,6 +324,24 @@ export default function LatestFromFollowsSection({
       let working = seed ? postsRecordToMap(seed.posts) : new Map<string, NostrEvent[]>()
       setPostsByPubkey(new Map(working))
 
+      const summarizePosts = (m: Map<string, NostrEvent[]>) => {
+        let authorsWithPosts = 0
+        let totalNotes = 0
+        for (const arr of m.values()) {
+          if (arr.length > 0) authorsWithPosts++
+          totalNotes += arr.length
+        }
+        return { authorsWithPosts, totalNotes, mapKeyCount: m.size }
+      }
+
+      logger.info(`${LOG} posts: batch run start`, {
+        followCount: followPubkeys.length,
+        relayUrlCount: aggregateRelayUrls.length,
+        hideUntrustedNotes,
+        usedCacheSeed: Boolean(seed),
+        ...summarizePosts(working)
+      })
+
       const persist = () => {
         writeSearchFollowsFeedCache({
           v: 1,
@@ -289,10 +351,18 @@ export default function LatestFromFollowsSection({
         })
       }
 
+      const batchCount = Math.ceil(followPubkeys.length / AUTHORS_PER_BATCH)
       for (let i = 0; i < followPubkeys.length; i += AUTHORS_PER_BATCH) {
         if (cancelled || abortedRef.current) break
         const batch = followPubkeys.slice(i, i + AUTHORS_PER_BATCH)
+        const batchIndex = Math.floor(i / AUTHORS_PER_BATCH) + 1
         try {
+          logger.info(`${LOG} posts: REQ batch ${batchIndex}/${batchCount}`, {
+            authorBatchSize: batch.length,
+            kinds: FEED_KINDS.length,
+            limit: BATCH_EVENT_LIMIT
+          })
+          const t0 = performance.now()
           const raw = await queryService.fetchEvents(
             aggregateRelayUrls,
             {
@@ -302,11 +372,19 @@ export default function LatestFromFollowsSection({
             },
             { eoseTimeout: 2800, globalTimeout: 9000 }
           )
+          const ms = Math.round(performance.now() - t0)
           if (cancelled || abortedRef.current) break
           const filtered = raw.filter((e) => acceptEvent(e))
           working = mergeBatchPosts(working, filtered, batch)
           setPostsByPubkey(new Map(working))
           persist()
+          logger.info(`${LOG} posts: batch ${batchIndex}/${batchCount} done + UI setPostsByPubkey`, {
+            ms,
+            rawFromRelays: raw.length,
+            afterAcceptFilter: filtered.length,
+            droppedByAccept: raw.length - filtered.length,
+            ...summarizePosts(working)
+          })
         } catch (err) {
           logger.warn('[LatestFromFollows] Batch fetch failed', { err, batchSize: batch.length })
         }
@@ -314,6 +392,10 @@ export default function LatestFromFollowsSection({
       if (!cancelled) {
         persist()
         setBatchBusy(false)
+        logger.info(`${LOG} posts: batch run finished`, {
+          cancelled: false,
+          ...summarizePosts(working)
+        })
       }
     }
 
@@ -322,6 +404,7 @@ export default function LatestFromFollowsSection({
       cancelled = true
       abortedRef.current = true
       setBatchBusy(false)
+      logger.info(`${LOG} posts: batch effect cleanup (cancelled / deps changed)`)
     }
   }, [
     followPubkeys,

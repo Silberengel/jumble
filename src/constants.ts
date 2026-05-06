@@ -113,6 +113,16 @@ export const TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY = 3
 /** Max relays to publish each event to (outboxes first, then targets' inboxes, then extras). */
 export const MAX_PUBLISH_RELAYS = 20
 
+/**
+ * Kind 24 / 31925: {@link mergeRelayPriorityLayers} used the full {@link MAX_PUBLISH_RELAYS} budget on the author’s
+ * outbox list first, so recipient **read** inboxes were often never reached. This higher cap plus an author slice
+ * (see client.service) reserves space for organizer/recipient relays.
+ */
+export const PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS = 28
+
+/** When publishing kind 24 / 31925 to recipients, only the first N author outbox URLs fill tier‑1 before inboxes. */
+export const PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP = 10
+
 /** After a publish wave, failed NIP-65 write (outbox) relays are retried once after this delay. */
 export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
 

@@ -15,6 +15,20 @@ import { FAST_READ_RELAY_URLS } from '@/constants'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { tagNameEquals } from '@/lib/tag'
 
+/** NIP-65 inboxes only — calendar RSVPs are published to the author’s outboxes, so REQ must include those too. */
+function userWriteRelaysForQuery(
+  relayList: { write?: string[]; httpWrite?: string[] } | null | undefined
+): string[] {
+  if (!relayList) return []
+  const ws = (relayList.write ?? [])
+    .map((url) => normalizeAnyRelayUrl(url) || url)
+    .filter(Boolean) as string[]
+  const http = (relayList.httpWrite ?? [])
+    .map((url) => normalizeAnyRelayUrl(url) || url)
+    .filter(Boolean) as string[]
+  return [...http, ...ws]
+}
+
 function getRsvpStatus(rsvp: Event): 'accepted' | 'tentative' | 'declined' | undefined {
   const status = rsvp.tags.find(tagNameEquals('status'))?.[1]
   if (status === 'accepted' || status === 'tentative' || status === 'declined') return status
@@ -23,9 +37,10 @@ function getRsvpStatus(rsvp: Event): 'accepted' | 'tentative' | 'declined' | und
 
 function mergeRsvp(prev: Event[], evt: Event): Event[] {
   const next = prev.filter((e) => e.id !== evt.id)
-  const samePubkey = next.find((e) => e.pubkey === evt.pubkey)
+  const pk = evt.pubkey.toLowerCase()
+  const samePubkey = next.find((e) => e.pubkey.toLowerCase() === pk)
   if (samePubkey && samePubkey.created_at >= evt.created_at) return next
-  const withoutSamePubkey = samePubkey ? next.filter((e) => e.pubkey !== evt.pubkey) : next
+  const withoutSamePubkey = samePubkey ? next.filter((e) => e.pubkey.toLowerCase() !== pk) : next
   return [...withoutSamePubkey, evt].sort((a, b) => b.created_at - a.created_at)
 }
 
@@ -55,8 +70,10 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
       getReplaceableCoordinateFromEvent(calendarEvent)
     )
     const userRead = userReadRelaysWithHttp(relayList)
+    const userWrite = userWriteRelaysForQuery(relayList)
 
     void (async () => {
+      // Read order: IndexedDB first (offline + last session), then in-memory session, then relays.
       let fromIdb: Event[] = []
       try {
         fromIdb = await indexedDb.getCalendarRsvpEventsByParentCoordinate(coordinate)
@@ -67,11 +84,12 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
 
       const fromSession = client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
       const mergedLocal = mergeRsvpList([...fromIdb, ...fromSession])
-      if (mergedLocal.length) setRsvps(mergedLocal)
+      setRsvps(mergedLocal)
 
       const baseUrls = new Set<string>([
         ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
-        ...userRead.map((url) => normalizeAnyRelayUrl(url) || url)
+        ...userRead.map((url) => normalizeAnyRelayUrl(url) || url),
+        ...userWrite.map((url) => normalizeAnyRelayUrl(url) || url)
       ].filter(Boolean) as string[])
 
       const organizerPubkey = calendarEvent.pubkey
@@ -120,7 +138,11 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
           }
         )
         if (cancelled) return
-        setRsvps(mergeRsvpList([...fromIdb, ...fromSession, ...(events ?? [])]))
+        const fromRelay = events ?? []
+        await Promise.allSettled(
+          fromRelay.map((ev) => indexedDb.putCalendarRsvpEventRow(ev).catch(() => undefined))
+        )
+        setRsvps(mergeRsvpList([...fromIdb, ...fromSession, ...fromRelay]))
       } finally {
         if (!cancelled) setIsFetching(false)
       }
@@ -150,6 +172,7 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
       const matchesA = aCoord !== '' && aCoord === coordinate
       const matchesE = eTag && /^[0-9a-f]{64}$/.test(eTag) && eTag === calId
       if (!matchesA && !matchesE) return
+      void indexedDb.putCalendarRsvpEventRow(evt).catch(() => undefined)
       setRsvps((prev) => mergeRsvp(prev, evt))
     }
 

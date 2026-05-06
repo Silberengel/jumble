@@ -1173,6 +1173,7 @@ class IndexedDbService {
       case ExtendedKind.PUBLICATION:
       case ExtendedKind.PUBLICATION_CONTENT:
       case ExtendedKind.WIKI_ARTICLE:
+      case ExtendedKind.WIKI_ARTICLE_MARKDOWN:
       case kinds.LongFormArticle:
         return StoreNames.PUBLICATION_EVENTS
       case ExtendedKind.BADGE_DEFINITION:
@@ -1341,6 +1342,56 @@ class IndexedDbService {
         transaction.commit()
         const result = request.result as TValue<Event> | undefined
         resolve(result?.value || undefined)
+      }
+
+      request.onerror = (event) => {
+        transaction.commit()
+        reject(event)
+      }
+    })
+  }
+
+  /**
+   * Cached long-form / wiki / publication rows for a profile author (same store as {@link putReplaceableEvent} for
+   * those kinds). Used to hydrate the profile “Articles and publications” tab before relay SUB results arrive.
+   */
+  async getCachedPublicationStoreEventsForProfileAuthor(
+    pubkeyHex: string,
+    allowedKinds: number[],
+    limit: number
+  ): Promise<Event[]> {
+    const pk = pubkeyHex.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk) || allowedKinds.length === 0 || limit <= 0) {
+      return []
+    }
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+      return []
+    }
+    const kindSet = new Set(allowedKinds)
+    const max = Math.min(Math.max(limit, 1), 500)
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const request = store.openCursor()
+      const results: Event[] = []
+
+      request.onsuccess = () => {
+        const cursor = (request as IDBRequest<IDBCursorWithValue>).result
+        if (!cursor || results.length >= max) {
+          transaction.commit()
+          resolve(results)
+          return
+        }
+        const item = cursor.value as TValue<Event> | undefined
+        if (item?.value) {
+          const event = item.value as Event
+          if (kindSet.has(event.kind) && event.pubkey?.toLowerCase() === pk) {
+            results.push(event)
+          }
+        }
+        cursor.continue()
       }
 
       request.onerror = (event) => {

@@ -1,7 +1,9 @@
 import {
   DEFAULT_FAVORITE_RELAYS,
+  DOCUMENT_RELAY_URLS,
   FAST_READ_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
+  isDocumentRelayKind,
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
 import type { TFeedSubRequest } from '@/types'
@@ -163,6 +165,9 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
 /** Profile REQ cap: too small waits on a few bad relays; larger spreads load across fast-read / favorites. */
 const PROFILE_PAGE_FEED_MAX_RELAYS = 14
 
+/** Long-form / publication profile tab: slightly larger cap + {@link DOCUMENT_RELAY_URLS} merge. */
+const PROFILE_PAGE_DOCUMENT_FEED_MAX_RELAYS = 24
+
 export const PROFILE_PAGE_PINS_RESOLVE_LIMIT = 10
 
 export function buildProfilePageReadRelayUrls(
@@ -170,22 +175,31 @@ export function buildProfilePageReadRelayUrls(
   blockedRelays: string[],
   authorRelayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] },
   kindsIncludeSocialBlockedKind: boolean,
-  includeAuthorLocalRelays = false
+  includeAuthorLocalRelays = false,
+  /** When the timeline includes document kinds (30023, 30040, …), add document index relays and raise the cap. */
+  profileKindsHint?: readonly number[]
 ): string[] {
+  const wantsDocumentLayer = profileKindsHint?.some((k) => isDocumentRelayKind(k)) ?? false
+  const maxRelays = wantsDocumentLayer ? PROFILE_PAGE_DOCUMENT_FEED_MAX_RELAYS : PROFILE_PAGE_FEED_MAX_RELAYS
   const list = includeAuthorLocalRelays
     ? authorRelayList
     : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
-  return getRelayUrlsWithFavoritesFastReadAndInbox(
+  let urls = getRelayUrlsWithFavoritesFastReadAndInbox(
     favoriteRelays,
     blockedRelays,
     [...(list.httpRead ?? []), ...(list.read ?? [])],
     {
       userWriteRelays: [...(list.httpWrite ?? []), ...(list.write ?? [])],
       authorWriteRelays: [],
-      maxRelays: PROFILE_PAGE_FEED_MAX_RELAYS,
+      maxRelays,
       applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind
     }
   )
+  if (wantsDocumentLayer) {
+    const docLayer = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+    urls = mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, maxRelays + 6)
+  }
+  return urls
 }
 
 /**

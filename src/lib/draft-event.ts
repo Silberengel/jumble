@@ -20,6 +20,7 @@ import { Event, kinds, nip19 } from 'nostr-tools'
 import {
   getReplaceableCoordinate,
   getReplaceableCoordinateFromEvent,
+  normalizeReplaceableCoordinateString,
   getRootETag,
   isProtectedEvent,
   isReplaceableEvent,
@@ -680,11 +681,14 @@ export function createCalendarRsvpDraftEvent(
   status: 'accepted' | 'tentative' | 'declined',
   options: { content?: string; fb?: 'free' | 'busy' } = {}
 ): TDraftEvent {
-  const coordinate = getReplaceableCoordinateFromEvent(calendarEvent)
+  const coordinate = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(calendarEvent))
   const hint = client.getEventHint(calendarEvent.id)
+  const calendarHexId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
+    ? calendarEvent.id.toLowerCase()
+    : calendarEvent.id
   const tags: string[][] = [
     ['a', coordinate, hint ?? ''],
-    ['e', calendarEvent.id, hint ?? ''],
+    ['e', calendarHexId, hint ?? ''],
     ['d', randomString(12)],
     ['status', status],
     ['p', calendarEvent.pubkey]

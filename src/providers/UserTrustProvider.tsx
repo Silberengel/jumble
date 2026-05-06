@@ -34,7 +34,7 @@ export function UserTrustProvider({ children }: { children: ReactNode }) {
     const initWoT = async () => {
       const followListEvent = await replaceableEventService.fetchReplaceableEvent(currentPubkey, kinds.Contacts)
       const followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-      followings.forEach((pubkey) => wotSet.add(pubkey))
+      followings.forEach((pubkey) => wotSet.add(pubkey.toLowerCase()))
 
       const batchSize = 20
       for (let i = 0; i < followings.length; i += batchSize) {
@@ -44,7 +44,7 @@ export function UserTrustProvider({ children }: { children: ReactNode }) {
             const followListEvent = await replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Contacts)
             const _followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
             _followings.forEach((following) => {
-              wotSet.add(following)
+              wotSet.add(following.toLowerCase())
             })
           })
         )
@@ -56,8 +56,8 @@ export function UserTrustProvider({ children }: { children: ReactNode }) {
 
   const isUserTrusted = useCallback(
     (pubkey: string) => {
-      if (!currentPubkey || pubkey === currentPubkey) return true
-      return wotSet.has(pubkey)
+      if (!currentPubkey || pubkey.toLowerCase() === currentPubkey.toLowerCase()) return true
+      return wotSet.has(pubkey.toLowerCase())
     },
     [currentPubkey]
   )

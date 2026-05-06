@@ -2,12 +2,13 @@ import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event } from 'nostr-tools'
-import { CALENDAR_EVENT_KINDS, ExtendedKind, isSocialKindBlockedKind } from '@/constants'
+import { CALENDAR_EVENT_KINDS, ExtendedKind, isDocumentRelayKind, isSocialKindBlockedKind } from '@/constants'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
+import indexedDb from '@/services/indexed-db.service'
 
 type ProfileTimelineMemoryEntry = {
   events: Event[]
@@ -221,8 +222,29 @@ export function useProfileTimeline({
         blockedRelays,
         emptyAuthor,
         socialKinds,
-        includeAuthorLocalRelays
+        includeAuthorLocalRelays,
+        kinds
       )
+
+      const idbDocKinds = kinds.filter((k) => isDocumentRelayKind(k))
+      if (idbDocKinds.length > 0) {
+        try {
+          const pkNorm = normalizeHexPubkey(pubkey)
+          const fromIdb = await indexedDb.getCachedPublicationStoreEventsForProfileAuthor(
+            pkNorm,
+            idbDocKinds,
+            limit
+          )
+          if (!cancelled) {
+            for (const e of fromIdb) {
+              pool.set(e.id, e)
+            }
+            if (fromIdb.length) flushPool()
+          }
+        } catch {
+          /* IDB optional */
+        }
+      }
 
       const startWave = async (subRequests: ReturnType<typeof buildSubRequests>) => {
         if (cancelled || subRequests.length === 0) return
@@ -273,7 +295,8 @@ export function useProfileTimeline({
           blockedRelays,
           authorRl,
           socialKinds,
-          includeAuthorLocalRelays
+          includeAuthorLocalRelays,
+          kinds
         )
         const deltaUrls = subtractNormalizedRelayUrls(fullFeedUrls, provisionalFeedUrls)
         if (cancelled || deltaUrls.length === 0) return
