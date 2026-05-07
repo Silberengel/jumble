@@ -343,6 +343,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         } else {
           setRelayList(baseRelayList)
         }
+      } else if (!userForcedAccountNetworkHydrate) {
+        /** No NIP-65 / 10432 / 10243 in IDB — still set merged defaults immediately (never wait on network). */
+        const quick = await client.peekRelayListFromStorage(account.pubkey)
+        setRelayList(quick)
       }
       if (!userForcedAccountNetworkHydrate) {
         if (storedProfileEvent) {

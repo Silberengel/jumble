@@ -55,6 +55,16 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     let cancelled = false
     setRefinedAuthorRelayUrls(null)
     void (async () => {
+      try {
+        const peeked = await client.peekRelayListFromStorage(pk)
+        if (!cancelled) {
+          setRefinedAuthorRelayUrls(
+            buildAuthorInboxOutboxRelayUrls(peeked, blockedRelays, includeAuthorLocalRelays)
+          )
+        }
+      } catch {
+        /* keep provisionalAuthorRelayUrls */
+      }
       const authorRl = await client.fetchRelayList(pk).catch(() => ({
         read: [] as string[],
         write: [] as string[]

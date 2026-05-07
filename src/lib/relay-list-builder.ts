@@ -132,69 +132,33 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     }
   }
 
-  // 4. Author's outboxes (write relays) - where they publish
+  // 4. Author's outboxes (write relays) - where they publish (IndexedDB + defaults; no network gate)
   if (authorPubkey) {
     try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(authorPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => {
-          logger.debug('[RelayListBuilder] fetchRelayList timeout for author', {
-            author: authorPubkey.substring(0, 8)
-          })
-          resolve(null)
-        }, 2000)
+      const authorRelayList = await client.peekRelayListFromStorage(authorPubkey)
+      const authorOutboxes = [...(authorRelayList.write || []).slice(0, 10)]
+      authorOutboxes.forEach(addRelay)
+      const authorInboxes = [...(authorRelayList.read || []).slice(0, 10)]
+      authorInboxes.forEach(addRelay)
+      logger.debug('[RelayListBuilder] Added author relays', {
+        author: authorPubkey.substring(0, 8),
+        outboxes: authorOutboxes.length,
+        inboxes: authorInboxes.length
       })
-      const authorRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (authorRelayList) {
-        const authorOutboxes = [
-          ...(authorRelayList.write || []).slice(0, 10)
-        ]
-        authorOutboxes.forEach(addRelay)
-
-        const authorInboxes = [
-          ...(authorRelayList.read || []).slice(0, 10)
-        ]
-        authorInboxes.forEach(addRelay)
-        
-        logger.debug('[RelayListBuilder] Added author relays', {
-          author: authorPubkey.substring(0, 8),
-          outboxes: authorOutboxes.length,
-          inboxes: authorInboxes.length
-        })
-      }
     } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch author relay list', { error })
+      logger.debug('[RelayListBuilder] Failed to read author relay list from storage', { error })
     }
   }
 
   // 5. User's own relays (for profiles/metadata)
   if (includeUserOwnRelays && userPubkey) {
     try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(userPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => {
-          logger.debug('[RelayListBuilder] fetchRelayList timeout for user', {
-            user: userPubkey.substring(0, 8)
-          })
-          resolve(null)
-        }, 2000)
-      })
-      const userRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (userRelayList) {
-        const userRead = [
-          ...(userRelayList.read || []).slice(0, 10)
-        ]
-        const userWrite = [
-          ...(userRelayList.write || []).slice(0, 10)
-        ]
-        userRead.forEach(addRelay)
-        userWrite.forEach(addRelay)
-      }
-      
+      const userRelayList = await client.peekRelayListFromStorage(userPubkey)
+      const userRead = [...(userRelayList.read || []).slice(0, 10)]
+      const userWrite = [...(userRelayList.write || []).slice(0, 10)]
+      userRead.forEach(addRelay)
+      userWrite.forEach(addRelay)
+
       // Include local relays from kind 10432
       if (includeLocalRelays) {
         const localRelays = await getCacheRelayUrls(userPubkey)
@@ -217,8 +181,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       }
       
       logger.debug('[RelayListBuilder] Added user own relays', {
-        read: userRelayList ? (userRelayList.read || []).length : 0,
-        write: userRelayList ? (userRelayList.write || []).length : 0,
+        read: (userRelayList.read || []).length,
+        write: (userRelayList.write || []).length,
         local: includeLocalRelays ? (await getCacheRelayUrls(userPubkey)).length : 0,
         favorite: favoriteRelaysCount
       })
@@ -228,25 +192,9 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   } else if (userPubkey) {
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
-      // Add timeout to prevent hanging - 2 seconds max
-      const relayListPromise = client.fetchRelayList(userPubkey)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => {
-          logger.debug('[RelayListBuilder] fetchRelayList timeout for user inboxes', {
-            user: userPubkey.substring(0, 8)
-          })
-          resolve(null)
-        }, 2000)
-      })
-      const userRelayList = await Promise.race([relayListPromise, timeoutPromise])
-      
-      if (userRelayList) {
-        const userInboxes = [
-          ...(userRelayList.read || []).slice(0, 10)
-        ]
-        userInboxes.forEach(addRelay)
-      }
-      
+      const userRelayList = await client.peekRelayListFromStorage(userPubkey)
+      ;[...(userRelayList.read || []).slice(0, 10)].forEach(addRelay)
+
       // Include local relays from kind 10432 if enabled
       if (includeLocalRelays) {
         const localRelays = await getCacheRelayUrls(userPubkey)
@@ -333,7 +281,6 @@ export function relayHintsFromEventTags(event: { tags: string[][] }): string[] {
   return [...out]
 }
 
-const POLL_RESULTS_RELAY_TIMEOUT_MS = 2000
 const POLL_RESULTS_MAX_RELAYS = 40
 const POLL_RESULTS_NIP65_READ_SLICE = 16
 
@@ -383,20 +330,12 @@ export async function buildPollResultsReadRelayUrls(options: {
   pushLayer(relayHintsFromEventTags(pollEvent))
   pushLayer(pollRelayUrls)
 
-  const raceRelayList = (pubkey: string) => {
-    const p = client.fetchRelayList(pubkey)
-    const t = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), POLL_RESULTS_RELAY_TIMEOUT_MS)
-    )
-    return Promise.race([p, t])
-  }
-
   let authorReadSlice: string[] = []
   let viewerReadSlice: string[] = []
   try {
     const [authorRl, viewerRl] = await Promise.all([
-      pollEvent.pubkey ? raceRelayList(pollEvent.pubkey) : Promise.resolve(null),
-      viewerPubkey ? raceRelayList(viewerPubkey) : Promise.resolve(null)
+      pollEvent.pubkey ? client.peekRelayListFromStorage(pollEvent.pubkey) : Promise.resolve(null),
+      viewerPubkey ? client.peekRelayListFromStorage(viewerPubkey) : Promise.resolve(null)
     ])
     if (authorRl?.read?.length) {
       authorReadSlice = authorRl.read.slice(0, POLL_RESULTS_NIP65_READ_SLICE)

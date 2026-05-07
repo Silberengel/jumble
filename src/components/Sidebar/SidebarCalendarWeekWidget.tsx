@@ -58,7 +58,8 @@ export default function SidebarCalendarWeekWidget() {
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [rawEvents, setRawEvents] = useState<Event[]>([])
-  const [loading, setLoading] = useState(false)
+  /** True only until the first IndexedDB (+ session) snapshot for this week is applied — never while relay REQ runs. */
+  const [loading, setLoading] = useState(true)
 
   const relayUrls = useMemo(() => {
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
@@ -115,16 +116,19 @@ export default function SidebarCalendarWeekWidget() {
           indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs),
           indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
         ])
+        if (cancelled) return
+
         const localBaseline = dedupeCalendarEvents([...fromIdb, ...fromArchive])
+        const sessionSnap = client.getSessionEventsMatchingSearch(
+          '',
+          SESSION_CALENDAR_MERGE_CAP,
+          [...CALENDAR_EVENT_KINDS]
+        )
+        const mergedLocal = dedupeCalendarEvents([...localBaseline, ...sessionSnap])
+        setRawEvents(mergedLocal)
+        setLoading(false)
 
         if (!relayUrls.length) {
-          if (cancelled) return
-          const fromSession = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          setRawEvents(dedupeCalendarEvents([...localBaseline, ...fromSession]))
           lateMergeTimer = window.setTimeout(() => {
             lateMergeTimer = null
             if (cancelled) return
@@ -189,12 +193,14 @@ export default function SidebarCalendarWeekWidget() {
         }
         if (cancelled) return
 
-        const fromSession = client.getSessionEventsMatchingSearch(
+        const fromSessionAfterNet = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSession, ...localBaseline]))
+        setRawEvents(
+          dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSessionAfterNet, ...localBaseline])
+        )
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
@@ -223,6 +229,7 @@ export default function SidebarCalendarWeekWidget() {
           } catch {
             setRawEvents([])
           }
+          setLoading(false)
         }
       } finally {
         if (!cancelled) setLoading(false)

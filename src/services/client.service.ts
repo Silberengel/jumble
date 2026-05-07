@@ -18,6 +18,7 @@ import {
   PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS,
   PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
+  FETCH_RELAY_LIST_UI_TIMEOUT_MS,
   MULTI_RELAY_PUBLISH_ACK_CAP_MS,
   RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
@@ -3719,11 +3720,23 @@ class ClientService extends EventTarget {
         })
         return relayList
       } catch (error) {
-        logger.error('[FetchRelayList] Fetch failed', {
+        logger.warn('[FetchRelayList] Fetch failed; using IndexedDB / defaults', {
           pubkey,
           error: error instanceof Error ? error.message : String(error)
         })
-        throw error
+        try {
+          const [fallback] = await this.mergeRelayListsFromStoredOnly([pubkey])
+          return fallback!
+        } catch {
+          return {
+            write: PROFILE_FETCH_RELAY_URLS,
+            read: PROFILE_FETCH_RELAY_URLS,
+            originalRelays: [],
+            httpRead: [],
+            httpWrite: [],
+            httpOriginalRelays: []
+          }
+        }
       } finally {
         this.relayListRequestCache.delete(cacheKey)
       }
@@ -3731,6 +3744,36 @@ class ClientService extends EventTarget {
     
     this.relayListRequestCache.set(cacheKey, requestPromise)
     return requestPromise
+  }
+
+  /**
+   * Merge relay list from IndexedDB only (no network). Same rules as a timed-out {@link fetchRelayLists}:
+   * defaults to {@link PROFILE_FETCH_RELAY_URLS} when kind 10002 is missing.
+   */
+  async peekRelayListFromStorage(pubkey: string): Promise<TRelayList> {
+    const [rl] = await this.mergeRelayListsFromStoredOnly([pubkey])
+    return rl!
+  }
+
+  private async mergeRelayListsFromStoredOnly(pubkeys: string[]): Promise<TRelayList[]> {
+    const storedRelayEvents = await Promise.all(
+      pubkeys.map((pk) => indexedDb.getReplaceableEvent(pk, kinds.RelayList))
+    )
+    const storedCacheRelayEvents = await Promise.all(
+      pubkeys.map((pk) => indexedDb.getReplaceableEvent(pk, ExtendedKind.CACHE_RELAYS))
+    )
+    const storedHttpRelayEvents = await Promise.all(
+      pubkeys.map((pk) => indexedDb.getReplaceableEvent(pk, ExtendedKind.HTTP_RELAY_LIST))
+    )
+    return this.mergeRelayListsBundle(
+      pubkeys,
+      pubkeys.map(() => undefined),
+      pubkeys.map(() => undefined),
+      storedCacheRelayEvents.map((e) => e ?? undefined),
+      storedRelayEvents,
+      storedHttpRelayEvents,
+      storedCacheRelayEvents
+    )
   }
 
   /**
@@ -3853,6 +3896,7 @@ class ClientService extends EventTarget {
   async fetchRelayLists(pubkeys: string[]): Promise<TRelayList[]> {
     if (pubkeys.length === 0) return []
 
+    try {
     const storedRelayEvents = await Promise.all(
       pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, kinds.RelayList))
     )
@@ -3863,7 +3907,7 @@ class ClientService extends EventTarget {
       pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.HTTP_RELAY_LIST))
     )
 
-    const budgetMs = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+    const budgetMs = FETCH_RELAY_LIST_UI_TIMEOUT_MS
     /** True only when *every* pubkey in this batch already has kind 10002 in IDB (not just you). */
     const allHaveKind10002 = pubkeys.every((_, i) => storedRelayEvents[i] != null)
 
@@ -3964,7 +4008,13 @@ class ClientService extends EventTarget {
     }
 
     const raced = await Promise.race([
-      hydrateRelayListsFromNetwork(),
+      hydrateRelayListsFromNetwork().catch((err: unknown) => {
+        logger.warn('[FetchRelayLists] hydrateRelayListsFromNetwork failed', {
+          pubkeyCount: pubkeys.length,
+          error: err instanceof Error ? err.message : String(err)
+        })
+        return null
+      }),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs))
     ])
     if (raced != null) {
@@ -3980,6 +4030,7 @@ class ClientService extends EventTarget {
       )
     }
 
+    this.refreshRelayListsFromNetwork(pubkeys, storedRelayEvents)
     const now = Date.now()
     if (now - fetchRelayListBudgetWarnLastMs >= FETCH_RELAY_LIST_BUDGET_WARN_MIN_INTERVAL_MS) {
       fetchRelayListBudgetWarnLastMs = now
@@ -3998,6 +4049,24 @@ class ClientService extends EventTarget {
       storedHttpRelayEvents,
       storedCacheRelayEvents
     )
+    } catch (err: unknown) {
+      logger.warn('[FetchRelayLists] Unexpected failure; using IndexedDB / defaults', {
+        pubkeyCount: pubkeys.length,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      try {
+        return await this.mergeRelayListsFromStoredOnly(pubkeys)
+      } catch {
+        return pubkeys.map(() => ({
+          write: PROFILE_FETCH_RELAY_URLS,
+          read: PROFILE_FETCH_RELAY_URLS,
+          originalRelays: [] as TMailboxRelay[],
+          httpRead: [] as string[],
+          httpWrite: [] as string[],
+          httpOriginalRelays: [] as TMailboxRelay[]
+        }))
+      }
+    }
   }
 
   async forceUpdateRelayListEvent(pubkey: string) {

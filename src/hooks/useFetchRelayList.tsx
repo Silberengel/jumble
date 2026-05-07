@@ -22,11 +22,17 @@ export function useFetchRelayList(pubkey?: string | null) {
         return
       }
       try {
-        // Use client.fetchRelayList which handles merging cache relays
+        const fromStorage = await client.peekRelayListFromStorage(pubkey)
+        setRelayList(fromStorage)
         const relayList = await client.fetchRelayList(pubkey)
         setRelayList(relayList)
       } catch (err) {
         logger.error('Failed to fetch relay list', { error: err, pubkey })
+        try {
+          setRelayList(await client.peekRelayListFromStorage(pubkey))
+        } catch {
+          /* keep last good state */
+        }
       } finally {
         setIsFetching(false)
       }

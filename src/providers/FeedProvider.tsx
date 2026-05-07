@@ -38,14 +38,16 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     }
     return extra
   }, [cacheRelayListEvent, httpRelayListEvent])
-  const [relayUrls, setRelayUrls] = useState<string[]>([])
-  const [isReady, setIsReady] = useState(false)
+  /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
+  const [relayUrls, setRelayUrls] = useState<string[]>(() =>
+    mergeRelayUrlLayers([getFavoritesFeedRelayUrls([], []), [buildWispTrendingNotesRelayUrl()]], [])
+  )
+  const [isReady, setIsReady] = useState(true)
   const [feedInfo, setFeedInfo] = useState<TFeedInfo>({
     feedType: 'relay',
     id: DEFAULT_FAVORITE_RELAYS[0]
   })
   const feedInfoRef = useRef<TFeedInfo>(feedInfo)
-  const loggedWaitingForNostrInitRef = useRef(false)
 
   const switchFeed = useCallback(async (
     feedType: TFeedType,
@@ -56,7 +58,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     } = {}
   ) => {
     logger.debug('switchFeed called:', { feedType, options })
-    setIsReady(false)
     if (feedType === 'relay') {
       const normalizedUrl = normalizeAnyRelayUrl(options.relay ?? '')
       const isRelayFeedUrl =
@@ -142,16 +143,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       logger.debug('FeedProvider init:', { isInitialized, pubkey, favoriteRelays: favoriteRelays.length, blockedRelays: blockedRelays.length })
-      if (!isInitialized) {
-        if (!loggedWaitingForNostrInitRef.current) {
-          loggedWaitingForNostrInitRef.current = true
-          logger.info(
-            '[FeedProvider] Waiting for Nostr session restore before attaching feeds (home may show a loading state)'
-          )
-        }
-        return
-      }
-      loggedWaitingForNostrInitRef.current = false
 
       // Wait for favoriteRelays to be initialized (should have at least default relays)
       // If favoriteRelays is empty, it might not be initialized yet, so wait

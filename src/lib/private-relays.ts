@@ -8,8 +8,8 @@ import { ExtendedKind } from '@/constants'
  * @returns Promise<boolean> - true if user has at least one private relay available
  */
 export async function hasPrivateRelays(pubkey: string): Promise<boolean> {
-  // Check for outbox relays (kind 10002)
-  const relayList = await client.fetchRelayList(pubkey)
+  // Check for outbox relays (kind 10002) — IndexedDB merge only; no network wait.
+  const relayList = await client.peekRelayListFromStorage(pubkey)
   if (relayList.write && relayList.write.length > 0) {
     return true
   }
@@ -35,8 +35,8 @@ export async function hasPrivateRelays(pubkey: string): Promise<boolean> {
 export async function getPrivateRelayUrls(pubkey: string): Promise<string[]> {
   const relayUrls: string[] = []
   
-  // Get outbox relays (kind 10002)
-  const relayList = await client.fetchRelayList(pubkey)
+  // Get outbox relays (kind 10002) — storage-first; cache rows below still augment.
+  const relayList = await client.peekRelayListFromStorage(pubkey)
   if (relayList.write) {
     relayUrls.push(...relayList.write)
   }

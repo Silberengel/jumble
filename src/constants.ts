@@ -145,6 +145,13 @@ export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 1200
 export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 20_000
 
 /**
+ * How long {@link ClientService.fetchRelayLists} waits on the network before returning an IndexedDB + default
+ * merge. Kept short so users without NIP-65 (or slow relays) get {@link PROFILE_FETCH_RELAY_URLS} immediately;
+ * {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS} stays longer for publish / prioritize paths that wrap their own races.
+ */
+export const FETCH_RELAY_LIST_UI_TIMEOUT_MS = 2_500
+
+/**
  * {@link ClientService.prioritizePublishUrlListWithTimeout}: must exceed {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS}
  * so one full `fetchRelayLists` budget can elapse before we fall back to “deduped order without inbox fetch”.
  */
