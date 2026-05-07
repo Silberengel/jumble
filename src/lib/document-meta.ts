@@ -73,7 +73,6 @@ const PRIMARY_PAGE_LABEL: Record<string, string> = {
   profile: 'Profile',
   relay: 'Relay',
   search: 'Search',
-  'follows-latest': 'Latest follows',
   rss: 'RSS',
   settings: 'Settings',
   spells: 'Spells',
@@ -105,7 +104,7 @@ export function isNoteDetailPathname(pathname: string): boolean {
   const path = pathname.split('?')[0].split('#')[0]
   return (
     /\/notes\/[^/?#]+/.test(path) ||
-    /\/(?:discussions|search|profile|home|feed|spells|explore|rss|follows-latest|calendar)\/notes\/[^/?#]+/.test(
+    /\/(?:discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/[^/?#]+/.test(
       path
     )
   )

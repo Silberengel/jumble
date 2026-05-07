@@ -990,9 +990,7 @@ export function useMenuActions({
               ? `/spells/notes/${noteId}`
               : currentPrimaryPage === 'rss'
                 ? `/rss/notes/${noteId}`
-                : currentPrimaryPage === 'follows-latest'
-                  ? `/follows-latest/notes/${noteId}`
-                  : `/notes/${noteId}`
+                : `/notes/${noteId}`
           const appShareUrl = `https://jumble.imwald.eu${path}`
           navigator.clipboard.writeText(appShareUrl)
           closeDrawer()

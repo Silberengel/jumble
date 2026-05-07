@@ -1,11 +1,7 @@
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useNostr } from '@/providers/NostrProvider'
-import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useFavoriteRelaysActivity } from '@/providers/favorite-relays-activity-context'
 import { RelayPulseActiveNpubsOpenButton } from './RelayPulseActiveNpubsSheet'
 import type { TFunction } from 'i18next'
-import { FileText } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -36,9 +32,7 @@ function useRelativePastPhrase(timestampMs: number | null, t: TFunction): string
 /** Home feed / mobile: full label above the page title */
 export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { navigate } = usePrimaryPage()
-  const { pubkey } = useNostr()
-  const { followCount, totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
+  const { totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
 
   const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
 
@@ -89,18 +83,6 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
           <div className="flex min-w-0 shrink items-center gap-2">
             <p className="text-xs font-medium leading-tight text-foreground">{t('Relay pulse')}</p>
             <RelayPulseActiveNpubsOpenButton size="sm" variant="outline" className="h-7 shrink-0" />
-            {pubkey && followCount > 0 ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 shrink-0"
-                aria-label={t('See the newest notes from your follows')}
-                title={t('See the newest notes from your follows')}
-                onClick={() => navigate('follows-latest')}
-              >
-                <FileText className="size-3.5" />
-              </Button>
-            ) : null}
           </div>
           {lastFetchedAtMs != null && relativeLabel ? (
             <p className="shrink-0 text-[0.65rem] text-muted-foreground tabular-nums">
@@ -116,9 +98,7 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
 /** Desktop sidebar: compact row under nav */
 export function FavoriteRelaysActiveStripSidebar({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { navigate } = usePrimaryPage()
-  const { pubkey } = useNostr()
-  const { followCount, totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
+  const { totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
 
   const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
 
@@ -171,18 +151,6 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
         </p>
         <div className="flex shrink-0 items-center gap-0.5">
           <RelayPulseActiveNpubsOpenButton size="icon" variant="ghost" className="size-7 shrink-0" />
-          {pubkey && followCount > 0 ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 shrink-0"
-              aria-label={t('See the newest notes from your follows')}
-              title={t('See the newest notes from your follows')}
-              onClick={() => navigate('follows-latest')}
-            >
-              <FileText className="size-3.5" />
-            </Button>
-          ) : null}
         </div>
       </div>
       {lastFetchedAtMs != null && relativeLabel ? (
@@ -192,18 +160,6 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
       ) : null}
       <div className="mb-1 flex justify-center gap-0.5 xl:hidden">
         <RelayPulseActiveNpubsOpenButton size="icon" variant="ghost" className="size-8 shrink-0" />
-        {pubkey && followCount > 0 ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 shrink-0"
-            aria-label={t('See the newest notes from your follows')}
-            title={t('See the newest notes from your follows')}
-            onClick={() => navigate('follows-latest')}
-          >
-            <FileText className="size-4" />
-          </Button>
-        ) : null}
       </div>
     </div>
   )

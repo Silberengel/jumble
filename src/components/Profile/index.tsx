@@ -1,4 +1,3 @@
-import Collapsible from '@/components/Collapsible'
 import FollowButton from '@/components/FollowButton'
 import Nip05 from '@/components/Nip05'
 import Nip05List from '@/components/Nip05List'
@@ -64,7 +63,6 @@ import ProfileMediaFeed from './ProfileMediaFeed'
 import ProfilePublicationsFeed from './ProfilePublicationsFeed'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { TNoteListRef } from '@/components/NoteList'
-import ProfileInteractionsAccordion from './ProfileInteractionsAccordion'
 import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
@@ -303,7 +301,6 @@ export default function Profile({
     [profile]
   )
   const isSelf = accountPubkey === profile?.pubkey
-  const [profileInteractionsExpanded, setProfileInteractionsExpanded] = useState(false)
 
   /** All available relays: current feed, favorites, relay sets, defaults (FAST_READ, FAST_WRITE). */
   const allAvailableRelayUrls = useMemo(() => {
@@ -598,12 +595,10 @@ export default function Profile({
               <PubkeyCopy pubkey={pubkey} showFull />
               <NpubQrCode pubkey={pubkey} />
             </div>
-            <Collapsible>
-              <ProfileAbout
-                about={about}
-                className="text-wrap break-words whitespace-pre-wrap mt-2 select-text"
-              />
-            </Collapsible>
+            <ProfileAbout
+              about={about}
+              className="text-wrap break-words whitespace-pre-wrap mt-2 select-text"
+            />
             {/* Display websites - show first one prominently, others below */}
             {website && (
               <div className="flex gap-1 items-center text-primary mt-2 truncate select-text">
@@ -703,13 +698,6 @@ export default function Profile({
                 {isSelf && <SmartMuteLink />}
               </div>
               {!isSelf && <FollowedBy pubkey={pubkey} />}
-            </div>
-            <div className="mt-4 pt-2">
-              <ProfileInteractionsAccordion
-                pubkey={pubkey}
-                isExpanded={profileInteractionsExpanded}
-                onExpandedChange={setProfileInteractionsExpanded}
-              />
             </div>
           </div>
         </div>
