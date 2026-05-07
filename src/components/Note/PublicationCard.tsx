@@ -2,7 +2,7 @@ import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
-import { useSecondaryPageOptional } from '@/PageManager'
+import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
@@ -20,6 +20,7 @@ export default function PublicationCard({
 }) {
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
+  const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const contentPolicy = useContentPolicyOptional()
@@ -32,7 +33,7 @@ export default function PublicationCard({
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    push(toNote(event))
+    navigateToNote(toNote(event), event)
   }
 
   const titleComponent = metadata.title ? <div className="text-xl font-semibold break-words min-w-0 sm:line-clamp-2">{metadata.title}</div> : null

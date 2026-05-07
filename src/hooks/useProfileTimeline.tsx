@@ -155,6 +155,9 @@ export function useProfileTimeline({
   const cachedEntry = useMemo(() => memoryTimelineByKey.get(cacheKey), [cacheKey])
   const [events, setEvents] = useState<Event[]>(cachedEntry?.events ?? [])
   const [isLoading, setIsLoading] = useState(!cachedEntry)
+  /** Last painted rows — re-seed merge pool after `refresh()` clears memory so relay hiccups do not wipe the list. */
+  const latestEventsRef = useRef<Event[]>(events)
+  latestEventsRef.current = events
   const [refreshToken, setRefreshToken] = useState(0)
   const subscriptionRef = useRef<() => void>(() => {})
 
@@ -212,7 +215,25 @@ export function useProfileTimeline({
         setIsLoading(false)
         mem.events.forEach((e) => pool.set(e.id, e))
       } else {
-        setIsLoading(!mem)
+        /**
+         * Stale memory: keep showing last rows while revalidating (SWR). Previously we set `isLoading` false
+         * whenever `mem` existed (`!mem` is false), which hid the refresh banner and skipped priming the pool —
+         * relay failures then left the UI “frozen” on an empty pool with no new merge.
+         */
+        if (mem?.events?.length) {
+          mem.events.forEach((e) => pool.set(e.id, e))
+          setEvents(mem.events)
+        } else {
+          try {
+            const pk = normalizeHexPubkey(pubkey)
+            for (const e of latestEventsRef.current) {
+              if (normalizeHexPubkey(e.pubkey) === pk) pool.set(e.id, e)
+            }
+          } catch {
+            /* ignore malformed pubkeys */
+          }
+        }
+        setIsLoading(true)
       }
 
       const hasCalendarKinds = kinds.some((k) => CALENDAR_EVENT_KINDS.includes(k))
@@ -231,16 +252,22 @@ export function useProfileTimeline({
       if (idbDocKinds.length > 0) {
         try {
           const pkNorm = normalizeHexPubkey(pubkey)
-          const fromIdb = await indexedDb.getCachedPublicationStoreEventsForProfileAuthor(
-            pkNorm,
-            idbDocKinds,
-            limit
-          )
+          const [fromPubStore, fromArchive] = await Promise.all([
+            indexedDb.getCachedPublicationStoreEventsForProfileAuthor(pkNorm, idbDocKinds, limit),
+            indexedDb.scanEventArchiveByAuthorPubkey(pkNorm, {
+              kinds: idbDocKinds,
+              maxRowsScanned: 18_000,
+              maxMatches: limit
+            })
+          ])
           if (!cancelled) {
-            for (const e of fromIdb) {
+            for (const e of fromPubStore) {
               pool.set(e.id, e)
             }
-            if (fromIdb.length) flushPool()
+            for (const e of fromArchive) {
+              pool.set(e.id, e)
+            }
+            if (fromPubStore.length || fromArchive.length) flushPool()
           }
         } catch {
           /* IDB optional */

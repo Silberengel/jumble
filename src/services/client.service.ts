@@ -180,6 +180,8 @@ export const JUMBLE_SESSION_RELAY_STRIKES_CHANGED = 'jumble:session-relay-strike
 
 /** Live timeline REQ: EOSE caps “connected but silent” relays. */
 const SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS = 4800
+/** Coalesce pre-EOSE timeline snapshots; `setTimeout` so updates still run when rAF is throttled (background tab). */
+const TIMELINE_STREAMING_COALESCE_MS = 24
 
 /**
  * After initial timeline EOSE (incl. grace), events with `created_at` older than this many seconds
@@ -1542,6 +1544,17 @@ class ClientService extends EventTarget {
       })
       let hasResolved = false
       let earlyGraceTimer: ReturnType<typeof setTimeout> | null = null
+      /**
+       * Live timelines listen for {@link emitNewEvent} on the first relay ACK — not after N/3 successes.
+       * Waiting for a third of many relays meant the profile/home feed stayed stale until a subscription
+       * picked the note up from the network (minutes later if few relays accepted the publish).
+       */
+      let newEventLiveFanoutEmitted = false
+      const maybeEmitNewEventForLiveFeeds = () => {
+        if (newEventLiveFanoutEmitted || successCount < 1) return
+        newEventLiveFanoutEmitted = true
+        client.emitNewEvent(event)
+      }
 
       const globalTimeout = setTimeout(() => {
         if (hasResolved) {
@@ -1574,6 +1587,7 @@ class ClientService extends EventTarget {
             earlyGraceTimer = null
           }
           hasResolved = true
+          maybeEmitNewEventForLiveFeeds()
           logger.debug('[PublishEvent] Resolving due to timeout', {
             success: successCount >= uniqueRelayUrls.length / 3,
             successCount,
@@ -1782,11 +1796,7 @@ class ClientService extends EventTarget {
               successCount 
             })
             
-            // If one third of the relays have accepted the event, consider it a success
-            const isSuccess = successCount >= uniqueRelayUrls.length / 3
-            if (isSuccess) {
-              this.emitNewEvent(event)
-            }
+            maybeEmitNewEventForLiveFeeds()
             if (currentFinished >= uniqueRelayUrls.length && !hasResolved) {
               if (earlyGraceTimer != null) {
                 clearTimeout(earlyGraceTimer)
@@ -2674,13 +2684,20 @@ class ClientService extends EventTarget {
     /**
      * Stream matching events to the UI immediately. Initial completion is either aggregate `oneose` from all
      * relays, or {@link firstRelayResultGraceMs} after the first event (whichever comes first).
-     * While still before EOSE, coalesce bursts onto one rAF so we do not sort the full buffer on every microtask.
+     * While still before EOSE, coalesce bursts with a short timeout (not rAF) so feeds still advance when the
+     * tab is in the background — browsers throttle rAF heavily there, which looked like a frozen timeline.
      */
-    let streamFlushRafId: number | null = null
+    let streamFlushDelayId: ReturnType<typeof setTimeout> | null = null
+    const clearStreamFlushDelay = () => {
+      if (streamFlushDelayId != null) {
+        clearTimeout(streamFlushDelayId)
+        streamFlushDelayId = null
+      }
+    }
     const flushStreamingSnapshot = () => {
       if (eosedAt) return
       const emit = () => {
-        streamFlushRafId = null
+        streamFlushDelayId = null
         if (eosedAt) return
         if (needSort) {
           const sorted = [...events].sort((a, b) => b.created_at - a.created_at).slice(0, filter.limit)
@@ -2690,15 +2707,12 @@ class ClientService extends EventTarget {
         }
       }
       if (events.length <= 1) {
-        if (streamFlushRafId != null) {
-          cancelAnimationFrame(streamFlushRafId)
-          streamFlushRafId = null
-        }
+        clearStreamFlushDelay()
         emit()
         return
       }
-      if (streamFlushRafId == null) {
-        streamFlushRafId = requestAnimationFrame(emit)
+      if (streamFlushDelayId == null) {
+        streamFlushDelayId = setTimeout(emit, TIMELINE_STREAMING_COALESCE_MS)
       }
     }
 
@@ -2786,8 +2800,7 @@ class ClientService extends EventTarget {
         }
         idx++
       }
-      if (idx >= timeline.refs.length) return
-
+      // idx === refs.length → strictly older than tail; splice appends (previous early-return dropped these).
       timeline.refs.splice(idx, 0, [evt.id, evt.created_at])
       that.scheduleTimelinePersist(key)
     }
@@ -2834,10 +2847,7 @@ class ClientService extends EventTarget {
       if (eosedAt != null) return
 
       clearFirstResultGraceTimer()
-      if (streamFlushRafId != null) {
-        cancelAnimationFrame(streamFlushRafId)
-        streamFlushRafId = null
-      }
+      clearStreamFlushDelay()
 
       eosedAt = dayjs().unix()
 
@@ -2924,10 +2934,7 @@ class ClientService extends EventTarget {
       timelineKey: key,
       closer: () => {
         clearFirstResultGraceTimer()
-        if (streamFlushRafId != null) {
-          cancelAnimationFrame(streamFlushRafId)
-          streamFlushRafId = null
-        }
+        clearStreamFlushDelay()
         clearHttpTimelinePoll()
         onEvents = () => {}
         onNew = () => {}

@@ -200,6 +200,7 @@ export default function Profile({
   const postsFeedRef = useRef<{ refresh: () => void }>(null)
   const mediaFeedRef = useRef<TNoteListRef>(null)
   const publicationsFeedRef = useRef<{ refresh: () => void }>(null)
+  const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications'>('posts')
 
   const { profile, isFetching } = useFetchProfile(id)
   const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
@@ -387,6 +388,24 @@ export default function Profile({
     }
     forceUpdateCache()
   }, [profile?.pubkey])
+
+  useEffect(() => {
+    if (!profile?.pubkey) return
+    setProfileFeedTab('posts')
+  }, [profile?.pubkey])
+
+  /**
+   * Radix {@link TabsContent} unmounts inactive panels, so media / publications feeds can miss the same
+   * warm-up window as Posts or show a frozen first paint. Re-run their refresh path when the tab becomes active
+   * (after refs attach — {@link useLayoutEffect}).
+   */
+  useLayoutEffect(() => {
+    if (profileFeedTab === 'media') {
+      mediaFeedRef.current?.refresh()
+    } else if (profileFeedTab === 'publications') {
+      publicationsFeedRef.current?.refresh()
+    }
+  }, [profileFeedTab])
 
   if (!profile && isFetching) {
     return (
@@ -695,7 +714,15 @@ export default function Profile({
           </div>
         </div>
       </div>
-      <Tabs defaultValue="posts" className="min-w-0 pt-4">
+      <Tabs
+        value={profileFeedTab}
+        onValueChange={(v) => {
+          if (v === 'posts' || v === 'media' || v === 'publications') {
+            setProfileFeedTab(v)
+          }
+        }}
+        className="min-w-0 pt-4"
+      >
         <TabsList className="mb-2 ml-1 w-auto justify-start md:ml-4">
           <TabsTrigger value="posts">{t('Posts')}</TabsTrigger>
           <TabsTrigger value="media">{t('Media')}</TabsTrigger>

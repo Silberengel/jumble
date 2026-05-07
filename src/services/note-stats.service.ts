@@ -56,6 +56,13 @@ export type TNoteStats = {
 class NoteStatsService {
   static instance: NoteStatsService
   private noteStatsMap: Map<string, Partial<TNoteStats>> = new Map()
+  /** Bumped whenever {@link notifyNoteStats} runs so {@link useNoteStatsById} can rely on `Object.is` (map entries alone are not always a new reference). */
+  private noteStatsUiEpochByKey = new Map<string, number>()
+  /** Last `{ stats, epoch }` object per note for {@link getNoteStatsExternalSnapshot} — must be stable across renders. */
+  private noteStatsExternalSnapCache = new Map<
+    string,
+    { stats: Partial<TNoteStats> | undefined; epoch: number; out: { stats: Partial<TNoteStats> | undefined; epoch: number } }
+  >()
   private noteStatsSubscribers = new Map<string, Set<() => void>>()
   /**
    * Batched, microtask-deferred subscriber wakes. Without this, {@link updateNoteStatsByEvents} called from
@@ -276,7 +283,7 @@ class NoteStatsService {
       return
     }
 
-    logger.info('[NoteStats] processBatch: running', {
+    logger.debug('[NoteStats] processBatch: running', {
       pendingForeground: this.pendingForeground.size,
       pendingBackground: this.pendingEvents.size
     })
@@ -288,7 +295,7 @@ class NoteStatsService {
 
     try {
       const eventsToProcess = this.takeNextStatsSlice()
-      logger.info('[NoteStats] processBatch slice', {
+      logger.debug('[NoteStats] processBatch slice', {
         count: eventsToProcess.length,
         ids: eventsToProcess.map((id) => `${id.slice(0, 12)}…`),
         remainingForeground: this.pendingForeground.size,
@@ -330,7 +337,7 @@ class NoteStatsService {
         updatedAt: dayjs().unix()
       })
       const subscriberCount = this.noteStatsSubscribers.get(statsKey)?.size ?? 0
-      logger.info('[NoteStats] processSingleEvent: snapshot published', {
+      logger.debug('[NoteStats] processSingleEvent: snapshot published', {
         statsKey: `${statsKey.slice(0, 12)}…`,
         reason,
         subscriberCount
@@ -637,6 +644,16 @@ class NoteStatsService {
       this.noteStatsSubscribers.set(key, set)
     }
     set.add(callback)
+    // Stats may have been merged while this note was off-screen (subscriberCount was 0 on publish).
+    // One microtask ping lets `useSyncExternalStore` re-read after mount so counts are not stuck blank.
+    queueMicrotask(() => {
+      if (!set?.has(callback)) return
+      try {
+        callback()
+      } catch (e) {
+        logger.warn('[NoteStatsService] subscribeNoteStats ping failed', { err: e })
+      }
+    })
     return () => {
       set?.delete(callback)
       if (set?.size === 0) this.noteStatsSubscribers.delete(key)
@@ -662,6 +679,7 @@ class NoteStatsService {
 
   private notifyNoteStats(noteId: string) {
     const key = this.statsKey(noteId)
+    this.noteStatsUiEpochByKey.set(key, (this.noteStatsUiEpochByKey.get(key) ?? 0) + 1)
     this.subscriberNotifyKeys.add(key)
     if (this.subscriberNotifyMicrotaskQueued) return
     this.subscriberNotifyMicrotaskQueued = true
@@ -672,6 +690,26 @@ class NoteStatsService {
 
   getNoteStats(id: string): Partial<TNoteStats> | undefined {
     return this.noteStatsMap.get(this.statsKey(id))
+  }
+
+  /**
+   * Snapshot for {@link useNoteStatsById} / `useSyncExternalStore`: `epoch` changes on every stats notify so React
+   * always re-renders when counts update (avoids stale UI when the map entry reference is reused or updates race mount).
+   */
+  getNoteStatsExternalSnapshot(noteId: string): {
+    stats: Partial<TNoteStats> | undefined
+    epoch: number
+  } {
+    const key = this.statsKey(noteId)
+    const stats = this.noteStatsMap.get(key)
+    const epoch = this.noteStatsUiEpochByKey.get(key) ?? 0
+    const prev = this.noteStatsExternalSnapCache.get(key)
+    if (prev && prev.stats === stats && prev.epoch === epoch) {
+      return prev.out
+    }
+    const out = { stats, epoch }
+    this.noteStatsExternalSnapCache.set(key, { stats, epoch, out })
+    return out
   }
 
   addZap(

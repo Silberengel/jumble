@@ -106,9 +106,9 @@ export const MAX_CONCURRENT_SUBS_PER_RELAY = 7
  * How many timeline shards may open relay subscriptions at once. Each shard sends one REQ per relay
  * in its list; with 6 shards in parallel a popular relay can see 6+ SUBs from this app alone, and a
  * second feed wave (remount / strict mode) pushes past strict relay caps (e.g. nostr.sovbit.host ≤10).
- * 3 is a modest bump for faster multi-shard home loads; lower to 2 if a relay complains about SUB count.
+ * 5 balances faster multi-shard home loads against per-relay SUB caps (see {@link MAX_CONCURRENT_SUBS_PER_RELAY}).
  */
-export const TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY = 3
+export const TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY = 5
 
 /** Max relays to publish each event to (outboxes first, then targets' inboxes, then extras). */
 export const MAX_PUBLISH_RELAYS = 20
@@ -666,8 +666,10 @@ export function isSocialKindBlockedKind(kind: number): boolean {
 /**
  * True when a filter should avoid relays that do not carry social-note surface.
  *
- * Important: kindless lookup filters (e.g. `ids`, `authors + #d`) are often used for
- * publication / replaceable resolution and must keep relays like thecitadel in scope.
+ * Important: kindless lookup filters (e.g. `ids`, `authors + #d`, **`#p` mentions**, `#e` threads)
+ * are scoped and must keep aggregators / read mirrors in scope. The notifications faux spell uses
+ * `#p` only (kinds applied client-side); misclassifying it as a broad social firehose stripped every
+ * relay and skipped real REQ batches (`groupedRequests.length === 0`).
  */
 export function relayFilterIncludesSocialKindBlockedKind(filter: Filter): boolean {
   const k = filter.kinds
@@ -676,8 +678,38 @@ export function relayFilterIncludesSocialKindBlockedKind(filter: Filter): boolea
     const dTags = Array.isArray((filter as Record<string, unknown>)['#d'])
       ? ((filter as Record<string, unknown>)['#d'] as unknown[]).length
       : 0
+    const pTags = Array.isArray((filter as Record<string, unknown>)['#p'])
+      ? ((filter as Record<string, unknown>)['#p'] as unknown[]).length
+      : 0
+    const eTags = Array.isArray((filter as Record<string, unknown>)['#e'])
+      ? ((filter as Record<string, unknown>)['#e'] as unknown[]).length
+      : 0
+    const eUpperTags = Array.isArray((filter as Record<string, unknown>)['#E'])
+      ? ((filter as Record<string, unknown>)['#E'] as unknown[]).length
+      : 0
+    const aTags = Array.isArray((filter as Record<string, unknown>)['#a'])
+      ? ((filter as Record<string, unknown>)['#a'] as unknown[]).length
+      : 0
+    const tTags = Array.isArray((filter as Record<string, unknown>)['#t'])
+      ? ((filter as Record<string, unknown>)['#t'] as unknown[]).length
+      : 0
+    const authors = Array.isArray(filter.authors) ? filter.authors.length : 0
+    const search = filter.search
+    const hasSearch = typeof search === 'string' && search.trim().length > 0
     // Scoped lookups are not "broad social feed" queries.
-    if (ids > 0 || dTags > 0) return false
+    if (
+      ids > 0 ||
+      dTags > 0 ||
+      pTags > 0 ||
+      eTags > 0 ||
+      eUpperTags > 0 ||
+      aTags > 0 ||
+      tTags > 0 ||
+      authors > 0 ||
+      hasSearch
+    ) {
+      return false
+    }
     return true
   }
   const arr = Array.isArray(k) ? k : [k]

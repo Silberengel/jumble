@@ -44,7 +44,6 @@ export function useFetchEvent(
     const initialMatches =
       initialEvent &&
       (initialEvent.id === eventId ||
-        eventId.includes(initialEvent.id) ||
         (() => {
           try {
             return getNoteBech32Id(initialEvent) === eventId
@@ -76,6 +75,11 @@ export function useFetchEvent(
       }
     }
 
+    // New target without a synchronous hit: drop the previous note immediately so the panel does not
+    // keep showing the last-opened article (or fail to show a skeleton) while the new fetch runs or
+    // after it returns empty.
+    setEvent(undefined)
+    setError(null)
     setIsFetching(true)
 
     const fetchEvent = async () => {
@@ -90,10 +94,13 @@ export function useFetchEvent(
         if (fetchedEvent && !isEventDeleted(fetchedEvent)) {
           setEvent(fetchedEvent)
           addReplies([fetchedEvent])
+        } else {
+          setEvent(undefined)
         }
       } catch (error) {
         if (!cancelled) {
           setError(error as Error)
+          setEvent(undefined)
         }
       } finally {
         if (!cancelled) {

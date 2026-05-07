@@ -774,6 +774,7 @@ export default {
     heatMapRescan: "Rescan",
     heatMapOpenThread: "Open thread",
     heatMapBubbleStats: "{{posts}} notes · {{people}} authors · {{follows}} from follows",
+    heatMapConnectorHint: "Linked threads — «{{left}}» ↔ «{{right}}»",
     "Please login to view thread heat map": "Please log in to open the thread heat map.",
     Calendar: "Calendar",
     "No subscribed interests yet.": "No subscribed interests yet. Add topics in settings to see them here.",

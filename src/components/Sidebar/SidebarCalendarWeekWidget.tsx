@@ -111,7 +111,11 @@ export default function SidebarCalendarWeekWidget() {
     void (async () => {
       try {
         const { weekStartMs, weekEndExclusiveMs } = getLocalMondayWeekBounds(weekOffset)
-        const fromIdb = await indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs)
+        const [fromIdb, fromArchive] = await Promise.all([
+          indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs),
+          indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
+        ])
+        const localBaseline = dedupeCalendarEvents([...fromIdb, ...fromArchive])
 
         if (!relayUrls.length) {
           if (cancelled) return
@@ -120,7 +124,7 @@ export default function SidebarCalendarWeekWidget() {
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents(dedupeCalendarEvents([...fromIdb, ...fromSession]))
+          setRawEvents(dedupeCalendarEvents([...localBaseline, ...fromSession]))
           lateMergeTimer = window.setTimeout(() => {
             lateMergeTimer = null
             if (cancelled) return
@@ -129,7 +133,7 @@ export default function SidebarCalendarWeekWidget() {
               SESSION_CALENDAR_MERGE_CAP,
               [...CALENDAR_EVENT_KINDS]
             )
-            setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...fromIdb]))
+            setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...localBaseline]))
           }, 2500)
           return
         }
@@ -190,7 +194,7 @@ export default function SidebarCalendarWeekWidget() {
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSession, ...fromIdb]))
+        setRawEvents(dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSession, ...localBaseline]))
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
@@ -199,10 +203,27 @@ export default function SidebarCalendarWeekWidget() {
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later]))
+          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...localBaseline]))
         }, 2500)
       } catch {
-        if (!cancelled) setRawEvents([])
+        if (!cancelled) {
+          try {
+            const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+            const [idb, arc] = await Promise.all([
+              indexedDb.getCalendarEventsForOccurrenceWindow(ws, we),
+              indexedDb.getArchivedCalendarEventsOverlappingWindow(ws, we, 25_000, 400)
+            ])
+            const salvage = dedupeCalendarEvents([...idb, ...arc])
+            const fromSession = client.getSessionEventsMatchingSearch(
+              '',
+              SESSION_CALENDAR_MERGE_CAP,
+              [...CALENDAR_EVENT_KINDS]
+            )
+            setRawEvents(dedupeCalendarEvents([...salvage, ...fromSession]))
+          } catch {
+            setRawEvents([])
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -269,11 +290,7 @@ export default function SidebarCalendarWeekWidget() {
           <Loader2 className="size-4 animate-spin" aria-hidden />
           <span className="text-[11px]">{t('sidebarCalendarLoading')}</span>
         </div>
-      ) : !relayUrls.length ? (
-        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">{t('sidebarCalendarNoRelays')}</p>
-      ) : sortedForWeek.length === 0 ? (
-        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">{t('sidebarCalendarEmptyWeek')}</p>
-      ) : (
+      ) : sortedForWeek.length > 0 ? (
         <ul className="min-w-0 space-y-1 overflow-y-auto pr-0.5" style={{ maxHeight: LIST_MAX_HEIGHT_PX }}>
           {sortedForWeek.map((ev) => {
             const meta = getCalendarEventMeta(ev)
@@ -308,6 +325,10 @@ export default function SidebarCalendarWeekWidget() {
             )
           })}
         </ul>
+      ) : !relayUrls.length ? (
+        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">{t('sidebarCalendarNoRelays')}</p>
+      ) : (
+        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">{t('sidebarCalendarEmptyWeek')}</p>
       )}
     </div>
   )

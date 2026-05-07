@@ -794,6 +794,7 @@ export default {
     heatMapRescan: "Erneut scannen",
     heatMapOpenThread: "Thread öffnen",
     heatMapBubbleStats: "{{posts}} Notes · {{people}} Personen · {{follows}} Folge-Accounts im Thread",
+    heatMapConnectorHint: "Verknüpfte Threads — «{{left}}» ↔ «{{right}}»",
     "Please login to view thread heat map": "Bitte anmelden, um die Thread-Heatmap zu öffnen.",
     Calendar: "Kalender",
     "No subscribed interests yet.": "Noch keine Interessen abonniert. Themen in den Einstellungen hinzufügen, um sie hier zu sehen.",

@@ -333,14 +333,36 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
   const graphAreaRef = useRef<HTMLDivElement>(null)
   const bubbleRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
-  const [lineSegs, setLineSegs] = useState<
-    Array<{ x1: number; y1: number; x2: number; y2: number }>
-  >([])
+  type ConnectorSeg = {
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    threadA: string
+    threadB: string
+  }
+  const [lineSegs, setLineSegs] = useState<ConnectorSeg[]>([])
+  const [hoveredConnector, setHoveredConnector] = useState<{ a: string; b: string } | null>(null)
+
+  const rowByRoot = useMemo(() => new Map(layoutRows.map((r) => [r.rootId, r])), [layoutRows])
 
   const bindBubbleRef = useCallback((rootId: string) => (el: HTMLButtonElement | null) => {
     if (el) bubbleRefs.current.set(rootId, el)
     else bubbleRefs.current.delete(rootId)
   }, [])
+
+  const connectorTitle = useCallback(
+    (threadA: string, threadB: string) => {
+      const clip = (s: string, max: number) => {
+        const x = s.replace(/\s+/g, ' ').trim()
+        return x.length <= max ? x : `${x.slice(0, max - 1)}…`
+      }
+      const left = clip(rowByRoot.get(threadA)?.snippet ?? threadA, 96)
+      const right = clip(rowByRoot.get(threadB)?.snippet ?? threadB, 96)
+      return t('heatMapConnectorHint', { left, right })
+    },
+    [rowByRoot, t]
+  )
 
   const recomputeConnectorLines = useCallback(() => {
     const host = graphAreaRef.current
@@ -355,11 +377,13 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       const r = el.getBoundingClientRect()
       return { x: r.left - br.left + r.width / 2, y: r.top - br.top + r.height / 2 }
     }
-    const segs: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
+    const segs: ConnectorSeg[] = []
     for (const { a, b } of edges) {
       const ca = centerOf(a)
       const cb = centerOf(b)
-      if (ca && cb) segs.push({ x1: ca.x, y1: ca.y, x2: cb.x, y2: cb.y })
+      if (ca && cb) {
+        segs.push({ x1: ca.x, y1: ca.y, x2: cb.x, y2: cb.y, threadA: a, threadB: b })
+      }
     }
     setLineSegs(segs)
   }, [layoutRows, edges])
@@ -439,24 +463,56 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4">
           <div ref={graphAreaRef} className="relative w-full min-h-[min(40vh,420px)] pt-2">
             <svg
-              className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-visible text-primary"
-              aria-hidden
+              className="absolute inset-0 z-[1] h-full w-full overflow-visible text-primary"
+              role="presentation"
             >
-              {lineSegs.map((s, i) => (
-                <line
-                  key={`${s.x1}-${s.y1}-${s.x2}-${s.y2}-${i}`}
-                  x1={s.x1}
-                  y1={s.y1}
-                  x2={s.x2}
-                  y2={s.y2}
-                  stroke="currentColor"
-                  strokeOpacity={0.38}
-                  strokeWidth={1.75}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
+              <g className="pointer-events-none">
+                {lineSegs.map((s, i) => {
+                  const hi =
+                    hoveredConnector != null &&
+                    ((hoveredConnector.a === s.threadA && hoveredConnector.b === s.threadB) ||
+                      (hoveredConnector.a === s.threadB && hoveredConnector.b === s.threadA))
+                  return (
+                    <line
+                      key={`vis-${s.threadA}-${s.threadB}-${i}`}
+                      x1={s.x1}
+                      y1={s.y1}
+                      x2={s.x2}
+                      y2={s.y2}
+                      stroke="currentColor"
+                      strokeOpacity={hi ? 0.82 : 0.38}
+                      strokeWidth={hi ? 2.35 : 1.75}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )
+                })}
+              </g>
+              <g>
+                {lineSegs.map((s, i) => {
+                  const title = connectorTitle(s.threadA, s.threadB)
+                  return (
+                    <g key={`hit-${s.threadA}-${s.threadB}-${i}`}>
+                      <title>{title}</title>
+                      <line
+                        x1={s.x1}
+                        y1={s.y1}
+                        x2={s.x2}
+                        y2={s.y2}
+                        stroke="transparent"
+                        strokeWidth={14}
+                        strokeLinecap="round"
+                        vectorEffect="non-scaling-stroke"
+                        className="cursor-help"
+                        style={{ pointerEvents: 'stroke' }}
+                        onMouseEnter={() => setHoveredConnector({ a: s.threadA, b: s.threadB })}
+                        onMouseLeave={() => setHoveredConnector(null)}
+                      />
+                    </g>
+                  )
+                })}
+              </g>
             </svg>
-            <div className="relative z-10 flex flex-wrap content-start items-start justify-center gap-4">
+            <div className="pointer-events-none relative z-10 flex flex-wrap content-start items-start justify-center gap-4">
               {layoutRows.map((row) => {
                 const intensity = Math.min(1, row.heat / maxHeat)
                 const size = Math.min(200, Math.max(76, 52 + Math.sqrt(row.heat) * 9))
@@ -466,6 +522,9 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
                   follows: row.followAuthorsInThread
                 })
                 const ariaLabel = [row.snippet, statsLine, t('heatMapOpenThread')].filter(Boolean).join('. ')
+                const connectorHit =
+                  hoveredConnector != null &&
+                  (row.rootId === hoveredConnector.a || row.rootId === hoveredConnector.b)
                 return (
                   <HoverCard key={row.rootId} openDelay={180} closeDelay={80}>
                     <HoverCardTrigger asChild>
@@ -473,10 +532,11 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
                         ref={bindBubbleRef(row.rootId)}
                         type="button"
                         className={cn(
-                          'group relative shrink-0 rounded-full border shadow-sm transition-transform',
+                          'pointer-events-auto group relative shrink-0 rounded-full border shadow-sm transition-transform',
                           'flex items-center justify-center',
                           'hover:z-10 hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          'border-border/70 bg-card/90 backdrop-blur-sm'
+                          'border-border/70 bg-card/90 backdrop-blur-sm',
+                          connectorHit && 'z-[9] scale-[1.03] ring-2 ring-primary/70 ring-offset-2 ring-offset-background'
                         )}
                         style={{
                           width: size,

@@ -77,7 +77,11 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     }
   }, [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays])
 
-  const authorRelayUrls = refinedAuthorRelayUrls ?? provisionalAuthorRelayUrls
+  /** Empty NIP-65 stack is not “unknown” — fall back to provisional tier so augmented read relays still apply. */
+  const authorRelayUrls =
+    refinedAuthorRelayUrls != null && refinedAuthorRelayUrls.length > 0
+      ? refinedAuthorRelayUrls
+      : provisionalAuthorRelayUrls
 
   const subRequests = useMemo(() => {
     const pk = pubkey?.trim()

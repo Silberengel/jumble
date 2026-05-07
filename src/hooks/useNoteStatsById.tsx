@@ -3,7 +3,8 @@ import { useSyncExternalStore } from 'react'
 
 export function useNoteStatsById(noteId: string) {
   return useSyncExternalStore(
-    (cb) => noteStats.subscribeNoteStats(noteId, cb),
-    () => noteStats.getNoteStats(noteId)
-  )
+    (onStoreChange) => noteStats.subscribeNoteStats(noteId, onStoreChange),
+    () => noteStats.getNoteStatsExternalSnapshot(noteId),
+    () => noteStats.getNoteStatsExternalSnapshot(noteId)
+  ).stats
 }

@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import {
   publicationCoordinateLookupKeys,
   splitPublicationCoordinate
@@ -21,6 +21,7 @@ import {
 } from '@/lib/event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
+import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 
 /** Hot archive row in {@link StoreNames.EVENT_ARCHIVE}. */
 export type TArchivedEventRow = {
@@ -3027,6 +3028,57 @@ class IndexedDbService {
         const ev = row?.value
         if (ev && isLikelyCachedNostrEvent(ev) && kindSet.has(ev.kind)) {
           buf.push(ev)
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  /**
+   * Hot {@link StoreNames.EVENT_ARCHIVE} rows for NIP-52 calendar notes whose occurrence overlaps the range.
+   * Calendar kinds are no longer archived on ingest, but older builds could still have 31922/31923 in the archive.
+   */
+  async getArchivedCalendarEventsOverlappingWindow(
+    rangeStartMs: number,
+    rangeEndExclusiveMs: number,
+    maxRowsScanned = 30_000,
+    maxMatches = 800
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
+
+    const kindSet = new Set<number>(CALENDAR_EVENT_KINDS as readonly number[])
+    const maxRows = Math.min(Math.max(maxRowsScanned, 1), 50_000)
+    const maxOut = Math.min(Math.max(maxMatches, 1), 3000)
+
+    return new Promise((resolve, reject) => {
+      const out: Event[] = []
+      let scanned = 0
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      const req = store.openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || scanned >= maxRows || out.length >= maxOut) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        scanned += 1
+        const row = cursor.value as TArchivedEventRow
+        const ev = row?.value
+        if (
+          ev &&
+          isLikelyCachedNostrEvent(ev) &&
+          kindSet.has(ev.kind) &&
+          !shouldDropEventOnIngest(ev) &&
+          calendarOccurrenceOverlapsRange(ev, rangeStartMs, rangeEndExclusiveMs)
+        ) {
+          out.push(ev)
         }
         cursor.continue()
       }

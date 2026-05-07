@@ -140,7 +140,7 @@ const ProfileTimeline = forwardRef<
       return () => {
         observer.disconnect()
       }
-    }, [displayedEvents.length, filteredEvents.length])
+    }, [displayedEvents.length, filteredEvents.length, isLoading])
 
     if (!pubkey) {
       return (
