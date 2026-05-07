@@ -551,6 +551,39 @@ function eventMatchesSubRequestFilter(event: Event, filter: Filter): boolean {
   return true
 }
 
+/** Same as {@link eventMatchesSubRequestFilter} plus `since` / `until` / substring `search` (local warm-up only). */
+function eventMatchesSubRequestFilterWithWindow(event: Event, filter: Filter): boolean {
+  if (typeof filter.since === 'number' && event.created_at < filter.since) return false
+  if (typeof filter.until === 'number' && event.created_at > filter.until) return false
+  const searchRaw = typeof filter.search === 'string' ? filter.search.trim() : ''
+  if (searchRaw.length > 0) {
+    const needle = searchRaw.toLowerCase()
+    const hay = `${event.content ?? ''} ${(event.tags ?? []).flat().join(' ')}`.toLowerCase()
+    if (!hay.includes(needle)) return false
+  }
+  return eventMatchesSubRequestFilter(event, filter)
+}
+
+function unionKindsForSpellLocalWarmup(
+  shardFilters: Filter[],
+  fallbackKinds: readonly number[]
+): number[] {
+  const kindUnion = new Set<number>()
+  for (const f of shardFilters) {
+    const kk = Array.isArray(f.kinds) ? f.kinds : []
+    for (const k of kk) kindUnion.add(k as number)
+  }
+  if (kindUnion.size > 0) return Array.from(kindUnion).sort((a, b) => a - b)
+  return fallbackKinds.length > 0 ? [...fallbackKinds] : [kinds.ShortTextNote]
+}
+
+function tightestSinceFromSpellFilters(shardFilters: Filter[]): number | undefined {
+  const sinceCandidates = shardFilters
+    .map((f) => (typeof f.since === 'number' ? f.since : undefined))
+    .filter((n): n is number => n !== undefined)
+  return sinceCandidates.length > 0 ? Math.max(...sinceCandidates) : undefined
+}
+
 const NoteList = forwardRef(
   (
     {
@@ -1935,7 +1968,114 @@ const NoteList = forwardRef(
             setLoading(!!oneShotFetch)
           } else {
             let primedFromDisk = false
-            if (!oneShotFetch && mappedSubRequests.length > 0) {
+            let spellLocalMergeBase: Event[] = []
+            const isSpellPageLocalWarmup =
+              hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
+
+            if (isSpellPageLocalWarmup) {
+              const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
+              const matchesSpellLocal = (ev: Event) =>
+                shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
+              const kindsForScan = unionKindsForSpellLocalWarmup(
+                shardFilters,
+                effectiveShowKindsRef.current
+              )
+              const sinceTightest = tightestSinceFromSpellFilters(shardFilters)
+              const localLayerCap = Math.min(
+                FEED_FULL_SEARCH_MERGE_CAP,
+                Math.max(eventCapEarly, 200)
+              )
+              const sessionScanCap = Math.min(800, localLayerCap * 4)
+
+              const sessionHits = client
+                .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
+                .filter(matchesSpellLocal)
+                .sort((a, b) => b.created_at - a.created_at)
+
+              if (!timelineEffectStale() && sessionHits.length > 0) {
+                const narrowedS = narrowLiveBatch(sessionHits)
+                if (narrowedS.length > 0) {
+                  const mergedS = collapseDuplicateNip18RepostTimelineRows(
+                    mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
+                  )
+                  if (mergedS.length > 0) {
+                    spellLocalMergeBase = mergedS
+                    setEvents(mergedS)
+                    lastEventsForTimelinePrefetchRef.current = mergedS
+                    setNewEvents([])
+                    setShowCount(revealBatchSize ?? SHOW_COUNT)
+                    setLoading(false)
+                    feedPaintRelayPendingRef.current = true
+                    feedPaintRelayMetaRef.current = {
+                      variant: 'spell_local_session',
+                      mergedCount: mergedS.length
+                    }
+                    primedFromDisk = true
+                  }
+                }
+              }
+
+              try {
+                const [diskRaw, fromPub, fromArch] = await Promise.all([
+                  client.getTimelineDiskSnapshotEvents(
+                    mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                  ),
+                  indexedDb.getCachedPublicationEventsByKinds(localLayerCap * 2, kindsForScan),
+                  indexedDb.scanEventArchiveByKinds({
+                    kinds: kindsForScan,
+                    since: sinceTightest,
+                    maxRowsScanned: 10_000,
+                    maxMatches: localLayerCap * 2
+                  })
+                ])
+                if (!timelineEffectStale()) {
+                  const seen = new Set<string>()
+                  const combinedRaw: Event[] = []
+                  for (const ev of diskRaw) {
+                    if (seen.has(ev.id)) continue
+                    seen.add(ev.id)
+                    combinedRaw.push(ev)
+                  }
+                  for (const ev of fromPub) {
+                    if (seen.has(ev.id)) continue
+                    if (!matchesSpellLocal(ev)) continue
+                    seen.add(ev.id)
+                    combinedRaw.push(ev)
+                  }
+                  for (const ev of fromArch) {
+                    if (seen.has(ev.id)) continue
+                    if (!matchesSpellLocal(ev)) continue
+                    seen.add(ev.id)
+                    combinedRaw.push(ev)
+                  }
+                  combinedRaw.sort((a, b) => b.created_at - a.created_at)
+                  if (combinedRaw.length > 0) {
+                    const diskNarrowed = narrowLiveBatch(combinedRaw)
+                    if (diskNarrowed.length > 0) {
+                      const merged = collapseDuplicateNip18RepostTimelineRows(
+                        mergeEventBatchesById(spellLocalMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
+                      )
+                      if (merged.length > 0) {
+                        setEvents(merged)
+                        lastEventsForTimelinePrefetchRef.current = merged
+                        setNewEvents([])
+                        setShowCount(revealBatchSize ?? SHOW_COUNT)
+                        setLoading(false)
+                        feedPaintRelayPendingRef.current = true
+                        feedPaintRelayMetaRef.current = {
+                          variant:
+                            spellLocalMergeBase.length > 0 ? 'spell_local_merged' : 'disk_snapshot',
+                          mergedCount: merged.length
+                        }
+                        primedFromDisk = true
+                      }
+                    }
+                  }
+                }
+              } catch {
+                /* spell local + disk snapshot is best-effort */
+              }
+            } else if (!oneShotFetch && mappedSubRequests.length > 0) {
               try {
                 const diskRaw = await client.getTimelineDiskSnapshotEvents(
                   mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
@@ -2569,7 +2709,8 @@ const NoteList = forwardRef(
       withKindFilter,
       onSingleRelayKindlessEmpty,
       mapLiveSubRequestsForTimeline,
-      progressiveWarmupQuery
+      progressiveWarmupQuery,
+      hostPrimaryPageName
     ])
 
     useEffect(() => {
@@ -2882,6 +3023,8 @@ const NoteList = forwardRef(
     const hasMoreRef = useRef(hasMore)
     const timelineKeyRef = useRef(timelineKey)
     const blankFeedHiddenAtRef = useRef<number | null>(null)
+    /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
+    const blankFeedVisibilityResumeRetryAtRef = useRef(0)
 
     useEffect(() => {
       showCountRef.current = showCount
@@ -2981,6 +3124,9 @@ const NoteList = forwardRef(
         if (loadingRef.current) return
         if (eventsRef.current.length > 0) return
         if (!subRequestsRef.current.length) return
+        const now = Date.now()
+        if (now - blankFeedVisibilityResumeRetryAtRef.current < 45_000) return
+        blankFeedVisibilityResumeRetryAtRef.current = now
         logger.info('[NoteList] Blank feed — auto-retry after tab resume', { hiddenMs })
         refresh()
       }

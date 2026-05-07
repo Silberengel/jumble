@@ -33,7 +33,8 @@ import {
   FAUX_SPELL_EVENT_LIMIT,
   MEDIA_SPELL_KINDS,
   NOTIFICATION_SPELL_KINDS,
-  applyFauxSpellCapsToSubRequests
+  applyFauxSpellCapsToSubRequests,
+  ensureFauxSpellRelayStackTouchesFastRead
 } from './fauxSpellFeeds'
 import { getRelaysForSpell, spellEventToFilter } from '@/services/spell.service'
 import type { TFeedSubRequest } from '@/types'
@@ -348,14 +349,16 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       selectedFauxSpell === 'media' ||
       selectedFauxSpell === 'bookmarks' ||
       selectedFauxSpell === 'interests'
-    const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
-      favoriteRelays,
-      blockedRelays,
-      userReadRelaysWithHttp(relayList),
-      {
-        userWriteRelays: relayList?.write ?? [],
-        applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
-      }
+    const feedUrls = ensureFauxSpellRelayStackTouchesFastRead(
+      getRelayUrlsWithFavoritesFastReadAndInbox(
+        favoriteRelays,
+        blockedRelays,
+        userReadRelaysWithHttp(relayList),
+        {
+          userWriteRelays: relayList?.write ?? [],
+          applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
+        }
+      )
     )
 
     if (selectedFauxSpell === 'notifications') {

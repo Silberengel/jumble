@@ -12,14 +12,16 @@
 import {
   DEFAULT_FEED_SHOW_KINDS,
   ExtendedKind,
+  FAST_READ_RELAY_URLS,
   PROFILE_MEDIA_TAB_KINDS,
   READ_ONLY_RELAY_URLS
 } from '@/constants'
 import { RENDERABLE_NOTE_KINDS_SORTED } from '@/lib/note-renderable-kinds'
 import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeTopic } from '@/lib/discussion-topics'
 import { userIdToPubkey } from '@/lib/pubkey'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
 import { type Event, type Filter } from 'nostr-tools'
 
@@ -77,6 +79,55 @@ const INTERESTS_MAX_TOPIC_TAG_VALUES = INTERESTS_MAX_TOPICS * 4
  * ({@link FAUX_SPELL_MAX_RELAYS}); appending read-only at the end dropped mirrors whenever inbox+favorites
  * filled the cap.
  */
+/**
+ * {@link buildPrioritizedReadRelayUrls} merges inbox → favorites → FAST_READ under {@link FAUX_SPELL_MAX_RELAYS}.
+ * Long NIP-65 read lists can fill the cap before FAST_READ is reached, so every REQ shard was only dead/private
+ * relays — live faux feeds (media, etc.) stayed empty while the console showed only connection refused.
+ */
+export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string[] {
+  const fast = dedupeNormalizeRelayUrlsOrdered(
+    FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+  )
+  const fastNormSet = new Set<string>()
+  for (const u of fast) {
+    const n = normalizeAnyRelayUrl(u) || u.trim()
+    if (n) fastNormSet.add(n)
+  }
+  let out = dedupeNormalizeRelayUrlsOrdered(urls)
+  if (!out.length) return fast.slice(0, FAUX_SPELL_MAX_RELAYS)
+
+  const fastCount = () =>
+    out.reduce((n, u) => {
+      const k = normalizeAnyRelayUrl(u) || u.trim()
+      return n + (k && fastNormSet.has(k) ? 1 : 0)
+    }, 0)
+
+  while (fastCount() < 2) {
+    let addedOne = false
+    for (const fr of fast) {
+      const fn = normalizeAnyRelayUrl(fr) || fr.trim()
+      if (!fn || out.some((u) => (normalizeAnyRelayUrl(u) || u.trim()) === fn)) continue
+      while (out.length >= FAUX_SPELL_MAX_RELAYS) {
+        let dropped = false
+        for (let i = out.length - 1; i >= 0; i--) {
+          const kn = normalizeAnyRelayUrl(out[i]!) || out[i]!.trim()
+          if (kn && !fastNormSet.has(kn)) {
+            out.splice(i, 1)
+            dropped = true
+            break
+          }
+        }
+        if (!dropped) break
+      }
+      out.push(fr)
+      addedOne = true
+      break
+    }
+    if (!addedOne) break
+  }
+  return dedupeNormalizeRelayUrlsOrdered(out).slice(0, FAUX_SPELL_MAX_RELAYS)
+}
+
 export function appendCuratedReadOnlyRelays(curated: string[], blockedRelays: string[]): string[] {
   const blocked = new Set(blockedRelays.map((b) => normalizeAnyRelayUrl(b) || b))
   const seen = new Set<string>()

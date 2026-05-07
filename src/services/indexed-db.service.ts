@@ -1457,6 +1457,61 @@ class IndexedDbService {
   }
 
   /**
+   * Iterate {@link StoreNames.PUBLICATION_EVENTS} and return up to `limit` events whose kind is in `allowedKinds`,
+   * newest {@link Event.created_at} first. Used for spell feeds and similar: show cached rows before relay REQ.
+   */
+  async getCachedPublicationEventsByKinds(
+    limit: number,
+    allowedKinds: number[],
+    options?: { scanBudget?: number }
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (
+      !this.db ||
+      !this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS) ||
+      allowedKinds.length === 0 ||
+      limit <= 0
+    ) {
+      return []
+    }
+    const kindSet = new Set(allowedKinds)
+    const scanBudget = Math.min(Math.max(options?.scanBudget ?? 12_000, 200), 50_000)
+    const collectCap = Math.min(4000, Math.max(limit * 4, limit + 80))
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const request = store.openCursor()
+      const results: Event[] = []
+      let scanned = 0
+
+      request.onsuccess = () => {
+        const cursor = (request as IDBRequest<IDBCursorWithValue>).result
+        if (!cursor || scanned >= scanBudget || results.length >= collectCap) {
+          transaction.commit()
+          results.sort((a, b) => b.created_at - a.created_at)
+          resolve(results.slice(0, limit))
+          return
+        }
+        scanned += 1
+        const item = cursor.value as TValue<Event> | undefined
+        if (item?.value) {
+          const event = item.value as Event
+          if (kindSet.has(event.kind)) {
+            results.push(event)
+          }
+        }
+        cursor.continue()
+      }
+
+      request.onerror = (event) => {
+        transaction.commit()
+        reject(event)
+      }
+    })
+  }
+
+  /**
    * Publication store + hot {@link StoreNames.EVENT_ARCHIVE}: events whose kind is allowed and content or any tag
    * value matches the query (case-insensitive). Used to show local hits before NIP-50 relay results.
    */
