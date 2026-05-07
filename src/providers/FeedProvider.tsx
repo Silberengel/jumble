@@ -16,6 +16,14 @@ import { useNostr } from './NostrProvider'
 export { useFeed } from './feed-context'
 export type { TFeedContext } from './feed-context'
 
+function relayUrlListIdentity(urls: string[]): string {
+  return urls
+    .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+    .filter(Boolean)
+    .sort()
+    .join('\n')
+}
+
 export function FeedProvider({ children }: { children: React.ReactNode }) {
   const { pubkey, isInitialized, cacheRelayListEvent, httpRelayListEvent } = useNostr()
   const { relaySets, favoriteRelays, blockedRelays } = useFavoriteRelays()
@@ -48,6 +56,13 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     id: DEFAULT_FAVORITE_RELAYS[0]
   })
   const feedInfoRef = useRef<TFeedInfo>(feedInfo)
+  /** Same logical list as {@link mergeRelayUrlLayers} result — reuse array ref so NoteList does not re-subscribe. */
+  const setRelayUrlsIfChanged = useCallback((next: string[]) => {
+    setRelayUrls((prev) => {
+      if (relayUrlListIdentity(prev) === relayUrlListIdentity(next)) return prev
+      return next
+    })
+  }, [])
 
   const switchFeed = useCallback(async (
     feedType: TFeedType,
@@ -81,7 +96,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       logger.component('FeedProvider', 'Setting relay feed info', newFeedInfo)
       setFeedInfo(newFeedInfo)
       feedInfoRef.current = newFeedInfo
-      setRelayUrls([normalizedUrl])
+      setRelayUrlsIfChanged([normalizedUrl])
       logger.component('FeedProvider', 'Set relayUrls', { relayUrls: [normalizedUrl] })
       storage.setFeedInfo(newFeedInfo, pubkey)
       // Reset note list mode to 'posts' when switching to relay feed to ensure main content is shown
@@ -114,7 +129,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         const newFeedInfo = { feedType, id: relaySet.id }
         setFeedInfo(newFeedInfo)
         feedInfoRef.current = newFeedInfo
-        setRelayUrls(relaySet.relayUrls)
+        setRelayUrlsIfChanged(relaySet.relayUrls)
         storage.setFeedInfo(newFeedInfo, pubkey)
         // Reset note list mode to 'posts' when switching to relay set to ensure main content is shown
         storage.setNoteListMode('posts')
@@ -130,7 +145,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       const newFeedInfo = { feedType }
       setFeedInfo(newFeedInfo)
       feedInfoRef.current = newFeedInfo
-      setRelayUrls(finalRelays)
+      setRelayUrlsIfChanged(finalRelays)
       storage.setFeedInfo(newFeedInfo, pubkey)
       // Reset note list mode to 'posts' when switching to all-favorites to ensure main content is shown
       storage.setNoteListMode('posts')
@@ -138,7 +153,44 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       return
     }
     setIsReady(true)
-  }, [pubkey, favoriteRelays, blockedRelays, relaySets, extraFeedRelayUrls])
+  }, [pubkey, favoriteRelays, blockedRelays, relaySets, extraFeedRelayUrls, setRelayUrlsIfChanged])
+
+  const switchFeedRef = useRef(switchFeed)
+  switchFeedRef.current = switchFeed
+
+  const favoriteRelaysIdentity = useMemo(
+    () =>
+      [...favoriteRelays]
+        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+        .filter(Boolean)
+        .sort()
+        .join('|'),
+    [favoriteRelays]
+  )
+  const blockedRelaysIdentity = useMemo(
+    () =>
+      [...blockedRelays]
+        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+        .filter(Boolean)
+        .sort()
+        .join('|'),
+    [blockedRelays]
+  )
+  const relaySetsIdentity = useMemo(
+    () =>
+      relaySets
+        .map((s) => {
+          const urls = [...s.relayUrls]
+            .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+            .filter(Boolean)
+            .sort()
+            .join(',')
+          return `${s.id}:${urls}`
+        })
+        .sort()
+        .join('\n'),
+    [relaySets]
+  )
 
   useEffect(() => {
     const init = async () => {
@@ -185,11 +237,11 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         logger.info('[FeedProvider] Migrated deprecated feed type to all-favorites', {
           previous: previousMainFeed
         })
-        return await switchFeed('all-favorites')
+        return await switchFeedRef.current('all-favorites')
       }
 
       if (feedInfo.feedType === 'relays') {
-        return await switchFeed('relays', { activeRelaySetId: feedInfo.id })
+        return await switchFeedRef.current('relays', { activeRelaySetId: feedInfo.id })
       }
 
       if (feedInfo.feedType === 'relay') {
@@ -199,17 +251,17 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
           feedInfo.id = favoritesFeedRelays[0] ?? DEFAULT_FAVORITE_RELAYS[0]
         }
         logger.component('FeedProvider', 'Initial relay setup, calling switchFeed', { relayId: feedInfo.id })
-        return await switchFeed('relay', { relay: feedInfo.id })
+        return await switchFeedRef.current('relay', { relay: feedInfo.id })
       }
 
       if (feedInfo.feedType === 'all-favorites') {
         logger.debug('Initializing all-favorites feed')
-        return await switchFeed('all-favorites')
+        return await switchFeedRef.current('all-favorites')
       }
     }
 
-    init()
-  }, [pubkey, isInitialized, favoriteRelays, blockedRelays, switchFeed])
+    void init()
+  }, [pubkey, isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, relaySetsIdentity])
 
   // Update relay URLs when favoriteRelays, blocked, or extra relay lists change while in all-favorites mode
   useEffect(() => {
@@ -219,21 +271,8 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     logger.debug('Updating relay URLs for all-favorites:', finalRelays)
     // Same logical list can be merged into a new array each run; keep the previous reference so
     // feed consumers (RelaysFeed → NoteList relay subscription) do not re-enter effects in a tight loop.
-    const nextKey = finalRelays
-      .map((u) => normalizeAnyRelayUrl(u) || u)
-      .filter(Boolean)
-      .sort()
-      .join('\n')
-    setRelayUrls((prev) => {
-      const prevKey = prev
-        .map((u) => normalizeAnyRelayUrl(u) || u)
-        .filter(Boolean)
-        .sort()
-        .join('\n')
-      if (prevKey === nextKey) return prev
-      return finalRelays
-    })
-  }, [feedInfo.feedType, favoriteRelays, blockedRelays, extraFeedRelayUrls])
+    setRelayUrlsIfChanged(finalRelays)
+  }, [feedInfo.feedType, favoriteRelays, blockedRelays, extraFeedRelayUrls, setRelayUrlsIfChanged])
 
   return (
     <FeedContext.Provider

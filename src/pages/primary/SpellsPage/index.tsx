@@ -16,15 +16,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Separator } from '@/components/ui/separator'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
-import UserAvatar from '@/components/UserAvatar'
-import Username from '@/components/Username'
 import PrimaryPageLayout, { type TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import logger from '@/lib/logger'
 import { showPublishingError } from '@/lib/publishing-feedback'
-import { cn } from '@/lib/utils'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -32,285 +28,43 @@ import { useBookmarks } from '@/providers/bookmarks-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
-import {
-  decodeFollowSetSpellId,
-  dedupeFollowSetEventsByD,
-  encodeFollowSetSpellId,
-  getFollowSetDTag,
-  isFollowSetSpellId,
-  labelFollowSetEvent,
-  pubkeysFromFollowSetEvent
-} from '@/lib/follow-set-spell'
+import { dedupeFollowSetEventsByD } from '@/lib/follow-set-spell'
 import client, { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import storage from '@/services/local-storage.service'
-import {
-  ExtendedKind,
-  DEFAULT_FEED_SHOW_KINDS,
-  FAUX_SPELL_ORDER,
-  FIRST_RELAY_RESULT_GRACE_MS,
-} from '@/constants'
-import { filterEventsExcludingTombstones, isUserInEventMentions } from '@/lib/event'
-import { getPubkeysFromPTags } from '@/lib/tag'
-import { formatPubkey, normalizeHexPubkey } from '@/lib/pubkey'
-import {
-  augmentSubRequestsWithFavoritesFastReadAndInbox,
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
-import {
-  computeKind777SpellFeedSubscriptionKey,
-  computeSpellSubRequestsIdentityKey
-} from '@/lib/spell-feed-request-identity'
+import { ExtendedKind, FIRST_RELAY_RESULT_GRACE_MS } from '@/constants'
+import { filterEventsExcludingTombstones } from '@/lib/event'
+import { normalizeHexPubkey } from '@/lib/pubkey'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { TOMBSTONES_UPDATED_EVENT } from '@/lib/tombstone-events'
-import { normalizeUrl } from '@/lib/url'
 import {
   buildSpellCatalogAuthors,
-  getRelaysForSpell,
   getRelaysForSpellCatalogSync,
   getSpellName,
   isSpellEvent,
   SPELL_CATALOG_SYNC_LIMIT,
   SPELL_CATALOG_SYNC_LIMIT_WITH_FOLLOWS,
-  SPELL_CATALOG_SYNC_TIMEOUT_MS,
-  spellEventToFilter
+  SPELL_CATALOG_SYNC_TIMEOUT_MS
 } from '@/services/spell.service'
-import { TFeedSubRequest } from '@/types'
-import {
-  Bell,
-  Bookmark,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  Copy,
-  FileText,
-  Flame,
-  Gift,
-  Hash,
-  Image as ImageIcon,
-  MessageSquare,
-  MoreVertical,
-  Pencil,
-  Plus,
-  Star,
-  Trash2,
-  Users,
-  Wand2
-} from 'lucide-react'
+import { ChevronDown, ChevronLeft, Copy, FileText, MoreVertical, Pencil, Plus, Star, Trash2, Wand2 } from 'lucide-react'
 import type { Event } from 'nostr-tools'
-import { kinds as nostrKinds, verifyEvent } from 'nostr-tools'
+import { verifyEvent } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CreateSpellDialog from './CreateSpellDialog'
 import RelayThreadHeatMap from './RelayThreadHeatMap'
-import {
-  applyFauxSpellCapsToSubRequests,
-  buildBookmarksSubRequests,
-  buildWebBookmarksSpellSubRequests,
-  buildCalendarSpellFilter,
-  buildDiscussionFilter,
-  buildInterestsSubRequests,
-  buildMediaSpellFilter,
-  buildNotificationsSpellSubRequests,
-  NOTIFICATION_SPELL_LOADING_SAFETY_MS,
-  FAUX_SPELL_EVENT_LIMIT,
-  MEDIA_SPELL_KINDS,
-  NOTIFICATION_SPELL_KINDS
-} from './fauxSpellFeeds'
 import type { TPageRef } from '@/types'
-
-/** Primary + optional subtitle (npub and/or short id). When grouped under an author header, omit npub. */
-function spellPickerPrimaryAndSecondary(
-  spell: Event,
-  accountPubkey: string | undefined,
-  labelFor: (e: Event) => string,
-  options?: { omitAuthorNpub?: boolean }
-) {
-  const primary = labelFor(spell)
-  const isOwn = !!(accountPubkey && spell.pubkey === accountPubkey)
-  const shortTitle = primary.trim().length < 4
-  const secondaryParts: string[] = []
-  if (!isOwn && !options?.omitAuthorNpub) secondaryParts.push(formatPubkey(spell.pubkey))
-  if (shortTitle) secondaryParts.push(`${spell.id.slice(0, 8)}…`)
-  return {
-    primary,
-    secondary: secondaryParts.length > 0 ? secondaryParts.join(' · ') : null
-  }
-}
-
-function groupSpellsByPubkeySorted(spells: Event[]): { pubkey: string; spells: Event[] }[] {
-  const map = new Map<string, Event[]>()
-  for (const s of spells) {
-    const list = map.get(s.pubkey)
-    if (list) list.push(s)
-    else map.set(s.pubkey, [s])
-  }
-  for (const list of map.values()) {
-    list.sort((a, b) =>
-      getSpellName(a).localeCompare(getSpellName(b), undefined, { sensitivity: 'base' })
-    )
-  }
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([pubkey, list]) => ({ pubkey, spells: list }))
-}
-
-function SpellSheetAuthorHeader({ userId }: { userId: string }) {
-  return (
-    <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
-      <UserAvatar userId={userId} size="small" className="shrink-0" />
-      <Username
-        userId={userId}
-        className="min-w-0 text-sm font-semibold"
-        skeletonClassName="h-4 w-28"
-      />
-    </div>
-  )
-}
-
-function SpellSheetOptionRow({
-  spell,
-  selected,
-  accountPubkey,
-  labelFor,
-  onPick,
-  groupedUnderAuthor = false,
-  starred = false,
-  onToggleStar,
-  starTitleAdd,
-  starTitleRemove
-}: {
-  spell: Event
-  selected: boolean
-  accountPubkey: string | undefined
-  labelFor: (e: Event) => string
-  onPick: (e: Event) => void
-  /** Author shown in a header above this block — hide npub under each row */
-  groupedUnderAuthor?: boolean
-  starred?: boolean
-  onToggleStar?: (spell: Event) => void
-  starTitleAdd?: string
-  starTitleRemove?: string
-}) {
-  const { t } = useTranslation()
-  const { primary, secondary } = spellPickerPrimaryAndSecondary(spell, accountPubkey, labelFor, {
-    omitAuthorNpub: groupedUnderAuthor
-  })
-  return (
-    <div
-      className={cn(
-        'flex w-full items-stretch gap-0.5 rounded-lg transition-colors',
-        selected && 'bg-accent/50'
-      )}
-    >
-      <button
-        type="button"
-        role="option"
-        aria-selected={selected}
-        className={cn(
-          'flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
-          'hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          'rounded-lg'
-        )}
-        onClick={() => onPick(spell)}
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          {selected ? <Check className="size-4" aria-hidden /> : null}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col items-stretch gap-0.5">
-          <span className="truncate text-left font-medium leading-tight">{primary}</span>
-          {secondary ? (
-            <span className="truncate text-left text-xs text-muted-foreground">{secondary}</span>
-          ) : null}
-        </div>
-      </button>
-      {onToggleStar ? (
-        <button
-          type="button"
-          className="flex shrink-0 items-center justify-center rounded-lg px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={starred ? starTitleRemove ?? t('Remove from favorites') : starTitleAdd ?? t('Add to favorites')}
-          aria-label={starred ? starTitleRemove ?? t('Remove from favorites') : starTitleAdd ?? t('Add to favorites')}
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onToggleStar(spell)
-          }}
-        >
-          <Star
-            className={cn('size-4', starred && 'fill-amber-400 text-amber-500')}
-            aria-hidden
-          />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-type FauxSpellName = (typeof FAUX_SPELL_ORDER)[number]
-
-function isSpellsPageBuiltinFauxSpell(s: string): s is FauxSpellName {
-  return (FAUX_SPELL_ORDER as readonly string[]).includes(s)
-}
-
-function isSpellsPageFauxSpellParam(s: string): boolean {
-  if (isSpellsPageBuiltinFauxSpell(s)) return true
-  if (!isFollowSetSpellId(s)) return false
-  return decodeFollowSetSpellId(s) != null
-}
-
-function isFollowFeedFauxSpellId(s: string | null): boolean {
-  return s === 'following' || (!!s && isFollowSetSpellId(s))
-}
-
-function useNoteListHideReplies() {
-  const [hideReplies, setHideReplies] = useState(() => storage.getNoteListMode() === 'posts')
-
-  useEffect(() => {
-    const sync = () => setHideReplies(storage.getNoteListMode() === 'posts')
-    window.addEventListener('noteListModeChanged', sync)
-    return () => window.removeEventListener('noteListModeChanged', sync)
-  }, [])
-
-  return hideReplies
-}
-
-function fauxSpellLabelKey(name: FauxSpellName): string {
-  switch (name) {
-    case 'notifications':
-      return 'Notifications'
-    case 'discussions':
-      return 'Discussions'
-    case 'following':
-      return 'Following'
-    case 'heatMap':
-      return 'Heat map'
-    case 'followPacks':
-      return 'Follow Packs'
-    case 'media':
-      return 'Media'
-    case 'interests':
-      return 'Interests'
-    case 'bookmarks':
-      return 'Bookmarks'
-    case 'calendar':
-      return 'Calendar'
-    default:
-      return 'Spells'
-  }
-}
-
-const FAUX_SPELL_ICON: Record<FauxSpellName, typeof Bell> = {
-  notifications: Bell,
-  discussions: MessageSquare,
-  following: Users,
-  heatMap: Flame,
-  followPacks: Gift,
-  media: ImageIcon,
-  interests: Hash,
-  bookmarks: Bookmark,
-  calendar: CalendarDays
-}
+import {
+  decodeFollowSetSpellId,
+  fauxSpellLabelKey,
+  getFollowSetDTag,
+  isBuiltinFauxSpell,
+  isFollowFeedFauxSpellId,
+  isFollowSetSpellId,
+  isFauxSpellPageParam,
+  labelFollowSetEvent
+} from './fauxSpellConfig'
+import { SpellPickerContent } from './SpellPickerContent'
+import { useSpellsPageFeed } from './useSpellsPageFeed'
 
 const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   { spell: spellProp }: { spell?: string },
@@ -337,7 +91,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     showKind1Replies,
     showKind1111
   } = useKindFilterOrDefaults()
-  const hideRepliesFollowing = useNoteListHideReplies()
   const [spells, setSpells] = useState<Event[]>([])
   /** Ordered spell event ids (newest star first). Drives picker order + bookmark list sync when logged in. */
   const [favoriteSpellIds, setFavoriteSpellIds] = useState<string[]>([])
@@ -350,6 +103,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   const [spellToClone, setSpellToClone] = useState<Event | null>(null)
   const [definitionSpell, setDefinitionSpell] = useState<Event | null>(null)
   const [contacts, setContacts] = useState<string[]>([])
+  const contactsSyncKey = useMemo(() => [...contacts].sort().join(','), [contacts])
   /** True while fetching kind 777 authored by the user from write relays into IndexedDB */
   const [spellsCatalogSyncing, setSpellsCatalogSyncing] = useState(false)
   const spellCatalogCloserRef = useRef<(() => void) | null>(null)
@@ -397,7 +151,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       navigatePrimary('spells', { spell: 'heatMap' })
       return
     }
-    if (spellProp && isSpellsPageFauxSpellParam(spellProp)) {
+    if (spellProp && isFauxSpellPageParam(spellProp)) {
       if (fauxSpellUrlSyncFromPickerRef.current === spellProp) {
         fauxSpellUrlSyncFromPickerRef.current = null
         urlFauxSpellInstrumentedRef.current = spellProp
@@ -416,8 +170,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       setSelectedFauxSpell(null)
     }
   }, [spellProp, logSpellFeedPickerSelection, navigatePrimary])
-
-  const [followingSubRequests, setFollowingSubRequests] = useState<TFeedSubRequest[]>([])
 
   const loadSpells = useCallback(async () => {
     const [events, ids] = await Promise.all([
@@ -449,45 +201,38 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     [refreshSpellsFeedAndCatalog]
   )
 
-  /**
-   * Fingerprint by value — `relayList` from NostrProvider often gets a new object ref each render.
-   * Using `[relayList]` in useMemo deps was invalidating every tick → new subRequests → browse-relay
-   * effect → CurrentRelays churn → mass useFetchProfile cancellation (e.g. Discussions spell).
-   */
-  const normalizedReadSorted = relayList
-    ? [...relayList.read].map((u) => normalizeUrl(u) || u).filter(Boolean).sort()
-    : []
-  const normalizedWriteSorted = relayList
-    ? [...relayList.write].map((u) => normalizeUrl(u) || u).filter(Boolean).sort()
-    : []
-
-  /** Read+write only, order-stable. `originalRelays` churns during NIP-66 / discovery but faux spell REQ lists ignore it. */
-  const relayMailboxStableKey =
-    relayList == null
-      ? ''
-      : JSON.stringify({ r: normalizedReadSorted, w: normalizedWriteSorted })
-
-  /** Write URLs only; mailbox key excludes discovery merges on `originalRelays`. */
-  const relayListWriteKey = useMemo(() => {
-    if (!relayList) return '[]'
-    return JSON.stringify(normalizedWriteSorted)
-  }, [relayMailboxStableKey])
-
-  /** Order-independent favorites/blocked — array order from providers must not rebuild subs. */
-  const sortedFavoriteRelaysKey = useMemo(
-    () =>
-      JSON.stringify(
-        [...favoriteRelays].map((u) => normalizeUrl(u) || u).filter(Boolean).sort((a, b) => a.localeCompare(b))
-      ),
-    [favoriteRelays]
-  )
-  const sortedBlockedRelaysKey = useMemo(
-    () =>
-      JSON.stringify(
-        [...blockedRelays].map((u) => normalizeUrl(u) || u).filter(Boolean).sort((a, b) => a.localeCompare(b))
-      ),
-    [blockedRelays]
-  )
+  const {
+    relayMailboxStableKey,
+    sortedFavoriteRelaysKey,
+    sortedBlockedRelaysKey,
+    subRequests,
+    spellFeedSubscriptionKey,
+    spellBrowseRelayUrlsKey,
+    showKinds,
+    fauxNoteListUseFilterAsIs,
+    spellFauxMergeTimeline,
+    notificationsMentionExtraHide,
+    hideRepliesFollowing,
+    fauxSubRequests,
+    NOTIFICATION_SPELL_LOADING_SAFETY_MS,
+    NOTIFICATION_SPELL_KINDS
+  } = useSpellsPageFeed({
+    selectedFauxSpell,
+    selectedSpell,
+    pubkey,
+    relayList,
+    favoriteRelays,
+    blockedRelays,
+    notificationsFeedPubkey,
+    interestListEvent,
+    bookmarkListEvent,
+    followListEvent,
+    contacts,
+    contactsSyncKey,
+    followSetListEvents,
+    followSetCatalogLoading,
+    kindFilterShowKinds
+  })
 
   useEffect(() => {
     if (!pubkey) {
@@ -527,7 +272,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     return () => {
       cancelled = true
     }
-  }, [pubkey, sortedFavoriteRelaysKey, sortedBlockedRelaysKey, relayMailboxStableKey, followSetManualRefreshKey])
+  }, [pubkey, sortedFavoriteRelaysKey, sortedBlockedRelaysKey, relayMailboxStableKey, followSetManualRefreshKey, favoriteRelays, blockedRelays, relayList])
 
   useEffect(() => {
     const onTombstones = () => setFollowSetManualRefreshKey((k) => k + 1)
@@ -563,9 +308,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
   }, [loadSpells, spellProp])
-
-  /** Stable key so we re-sync when the follow list changes (not only on array identity). */
-  const contactsSyncKey = useMemo(() => [...contacts].sort().join(','), [contacts])
 
   /**
    * Pull kind 777 from relays only when IndexedDB has no spells yet, or when the user requests refresh.
@@ -737,231 +479,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     client.fetchFollowings(pubkey).then(setContacts).catch(() => setContacts([]))
   }, [pubkey])
 
-  const followSetListStableKey = useMemo(
-    () =>
-      followSetListEvents
-        .map((e) => {
-          const d = getFollowSetDTag(e) ?? ''
-          return `${d}:${e.id}:${e.created_at}`
-        })
-        .sort()
-        .join('|'),
-    [followSetListEvents]
-  )
-
-  useEffect(() => {
-    if (!pubkey || !isFollowFeedFauxSpellId(selectedFauxSpell)) {
-      setFollowingSubRequests([])
-      return
-    }
-
-    const followSetD =
-      selectedFauxSpell && isFollowSetSpellId(selectedFauxSpell)
-        ? decodeFollowSetSpellId(selectedFauxSpell)
-        : null
-
-    if (followSetD && followSetCatalogLoading) {
-      setFollowingSubRequests([])
-      return
-    }
-
-    let cancelled = false
-    void (async () => {
-      const augment = (raw: TFeedSubRequest[]) =>
-        augmentSubRequestsWithFavoritesFastReadAndInbox(
-          raw,
-          favoriteRelays,
-          blockedRelays,
-          userReadRelaysWithHttp(relayList),
-          { userWriteRelays: relayList?.write ?? [] }
-        )
-      try {
-        if (selectedFauxSpell === 'following') {
-          const fromTags = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-          const provisionalAuthors = [...new Set([pubkey, ...fromTags])]
-          try {
-            const rawProv = await client.generateSubRequestsForPubkeys(provisionalAuthors, pubkey)
-            if (!cancelled) setFollowingSubRequests(augment(rawProv))
-          } catch {
-            /* refined wave may still succeed */
-          }
-
-          let followings = fromTags
-          try {
-            followings = await client.fetchFollowings(pubkey)
-          } catch {
-            followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-          }
-          const fullAuthors = [...new Set([pubkey, ...followings])]
-          const sameSet =
-            fullAuthors.length === provisionalAuthors.length &&
-            fullAuthors.every((p) => provisionalAuthors.includes(p)) &&
-            provisionalAuthors.every((p) => fullAuthors.includes(p))
-          if (sameSet) {
-            return
-          }
-          const req = await client.generateSubRequestsForPubkeys(fullAuthors, pubkey)
-          if (!cancelled) setFollowingSubRequests(augment(req))
-        } else if (followSetD) {
-          const ev = followSetListEvents.find((e) => getFollowSetDTag(e) === followSetD)
-          if (!ev) {
-            if (!cancelled) setFollowingSubRequests([])
-            return
-          }
-          const listed = pubkeysFromFollowSetEvent(ev)
-          const authorPubkeys = [pubkey, ...listed]
-          const req = await client.generateSubRequestsForPubkeys(authorPubkeys, pubkey)
-          if (!cancelled) setFollowingSubRequests(augment(req))
-        } else {
-          if (!cancelled) setFollowingSubRequests([])
-        }
-      } catch {
-        if (!cancelled) setFollowingSubRequests([])
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [
-    selectedFauxSpell,
-    pubkey,
-    sortedFavoriteRelaysKey,
-    sortedBlockedRelaysKey,
-    relayMailboxStableKey,
-    followSetCatalogLoading,
-    followSetListStableKey,
-    followListEvent?.id
-  ])
-
-  const interestTagsStableKey = interestListEvent
-    ? JSON.stringify(
-        [...interestListEvent.tags].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      )
-    : ''
-  const bookmarkTagsStableKey = bookmarkListEvent
-    ? JSON.stringify(
-        [...bookmarkListEvent.tags].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      )
-    : ''
-
-  /** Content-based key so event ref churn does not rebuild faux subs every render. */
-  const fauxFeedRelaysDepsKey = [
-    sortedFavoriteRelaysKey,
-    sortedBlockedRelaysKey,
-    interestListEvent?.id ?? '',
-    String(interestListEvent?.created_at ?? ''),
-    interestTagsStableKey,
-    bookmarkListEvent?.id ?? '',
-    String(bookmarkListEvent?.created_at ?? ''),
-    bookmarkTagsStableKey
-  ].join('\0')
-
-  const syncFauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
-    if (
-      !selectedFauxSpell ||
-      isFollowFeedFauxSpellId(selectedFauxSpell) ||
-      selectedFauxSpell === 'heatMap'
-    )
-      return []
-    /** Widen relay pool: these faux spells do not target social kinds (1 / 11 / 1111); skipping strip keeps fast-read mirrors in the stack. */
-    const fauxSpellSkipSocialKindBlocked =
-      selectedFauxSpell === 'calendar' ||
-      selectedFauxSpell === 'followPacks' ||
-      selectedFauxSpell === 'media' ||
-      selectedFauxSpell === 'bookmarks' ||
-      selectedFauxSpell === 'interests'
-    const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
-      favoriteRelays,
-      blockedRelays,
-      userReadRelaysWithHttp(relayList),
-      {
-        userWriteRelays: relayList?.write ?? [],
-        applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
-      }
-    )
-
-    if (selectedFauxSpell === 'notifications') {
-      if (!notificationsFeedPubkey || !feedUrls.length) return []
-      return buildNotificationsSpellSubRequests(feedUrls, notificationsFeedPubkey)
-    }
-    if (selectedFauxSpell === 'discussions') {
-      if (!feedUrls.length) return []
-      return [{ urls: feedUrls, filter: buildDiscussionFilter() }]
-    }
-    if (selectedFauxSpell === 'media') {
-      if (!feedUrls.length) return []
-      return [{ urls: feedUrls, filter: buildMediaSpellFilter() }]
-    }
-    if (selectedFauxSpell === 'calendar') {
-      if (!feedUrls.length) return []
-      return [{ urls: feedUrls, filter: buildCalendarSpellFilter() }]
-    }
-    if (selectedFauxSpell === 'interests') {
-      if (!pubkey || !interestListEvent) return []
-      const topics = interestListEvent.tags.filter((tag) => tag[0] === 't' && tag[1]).map((tag) => tag[1]!)
-      return buildInterestsSubRequests(feedUrls, topics, DEFAULT_FEED_SHOW_KINDS)
-    }
-    if (selectedFauxSpell === 'bookmarks') {
-      if (!pubkey) return []
-      const idReqs = buildBookmarksSubRequests(bookmarkListEvent, feedUrls)
-      const webReqs = buildWebBookmarksSpellSubRequests(pubkey, feedUrls)
-      return [...idReqs, ...webReqs]
-    }
-    if (selectedFauxSpell === 'followPacks') {
-      if (!feedUrls.length) return []
-      return [
-        {
-          urls: feedUrls,
-          filter: { kinds: [ExtendedKind.FOLLOW_PACK], limit: FAUX_SPELL_EVENT_LIMIT }
-        }
-      ]
-    }
-    return []
-  }, [selectedFauxSpell, pubkey, notificationsFeedPubkey, fauxFeedRelaysDepsKey, relayMailboxStableKey])
-
-  const fauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
-    const base = isFollowFeedFauxSpellId(selectedFauxSpell ?? '')
-      ? followingSubRequests
-      : syncFauxSubRequests
-    return applyFauxSpellCapsToSubRequests(base)
-  }, [selectedFauxSpell, followingSubRequests, syncFauxSubRequests])
-
-  const spellSubRequests = useMemo<TFeedSubRequest[]>(() => {
-    if (!selectedSpell) return []
-    const relayListWrite = relayList?.write ?? []
-    const ctx = { pubkey, contacts }
-    const filter = spellEventToFilter(selectedSpell, ctx)
-    if (!filter) return []
-    const relays = getRelaysForSpell(selectedSpell, { relayListWrite })
-    if (!relays.length) return []
-    return [{ urls: relays, filter }]
-    // relayListWriteKey + contactsSyncKey: avoid recomputing when relayList/contacts are new refs with same contents (spell filters use Date.now via resolveRelativeTime)
-  }, [selectedSpell, pubkey, contactsSyncKey, relayListWriteKey])
-
-  const subRequests = useMemo<TFeedSubRequest[]>(() => {
-    if (selectedFauxSpell) return fauxSubRequests
-    return spellSubRequests
-  }, [selectedFauxSpell, fauxSubRequests, spellSubRequests])
-
-  const spellFeedSubscriptionKey = useMemo(() => {
-    if (selectedFauxSpell) return computeSpellSubRequestsIdentityKey(subRequests)
-    if (selectedSpell) return computeKind777SpellFeedSubscriptionKey(selectedSpell, subRequests)
-    return ''
-  }, [selectedFauxSpell, selectedSpell, subRequests])
-
-  const spellBrowseRelayUrls = useMemo(() => {
-    const set = new Set<string>()
-    for (const req of subRequests) {
-      for (const u of req.urls) {
-        const n = normalizeUrl(u) || u
-        if (n) set.add(n)
-      }
-    }
-    return [...set].sort()
-  }, [subRequests])
-
-  const spellBrowseRelayUrlsKey = spellBrowseRelayUrls.join('|')
-
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   useEffect(() => {
     if (!spellBrowseRelayUrlsKey) return
@@ -1083,66 +600,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     }
   }, [spells, pubkey, contacts, favoriteSpellSet])
 
-  const followSpellGroups = useMemo(() => groupSpellsByPubkeySorted(followSpells), [followSpells])
-  const otherSpellGroups = useMemo(() => groupSpellsByPubkeySorted(otherSpells), [otherSpells])
-
-  // Memoize showKinds to prevent NoteList from re-subscribing when array reference changes
-  // Create stable key from 'k' tags for dependency
-  const showKindsTagKey = useMemo(() => {
-    if (!selectedSpell) return ''
-    return selectedSpell.tags
-      .filter((tag) => tag[0] === 'k')
-      .map((tag) => tag[1])
-      .sort()
-      .join(',')
-  }, [selectedSpell?.id])
-
-  /** Avoid depending on `kindFilterShowKinds` ref for faux spells that don’t use it (e.g. Discussions). */
-  const followingShowKindsKey =
-    selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)
-      ? JSON.stringify(kindFilterShowKinds)
-      : ''
-
-  const showKinds = useMemo(() => {
-    if (selectedFauxSpell === 'notifications') {
-      return [...NOTIFICATION_SPELL_KINDS]
-    }
-    if (selectedFauxSpell === 'discussions') {
-      return [ExtendedKind.DISCUSSION]
-    }
-    if (selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)) {
-      // Profile feed kinds omit boosts; show reposts as cards in this faux spell only.
-      const k = kindFilterShowKinds
-      const out = [...k]
-      if (!out.includes(nostrKinds.Repost)) out.push(nostrKinds.Repost)
-      if (!out.includes(ExtendedKind.GENERIC_REPOST)) out.push(ExtendedKind.GENERIC_REPOST)
-      return out.sort((a, b) => a - b)
-    }
-    if (selectedFauxSpell === 'followPacks') {
-      return [ExtendedKind.FOLLOW_PACK]
-    }
-    if (selectedFauxSpell === 'media') {
-      return [...MEDIA_SPELL_KINDS]
-    }
-    if (selectedFauxSpell === 'calendar') {
-      return [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME]
-    }
-    if (selectedFauxSpell === 'interests') {
-      return [...DEFAULT_FEED_SHOW_KINDS]
-    }
-    if (selectedFauxSpell === 'bookmarks') {
-      const out = [...DEFAULT_FEED_SHOW_KINDS]
-      if (!out.includes(ExtendedKind.WEB_BOOKMARK)) out.push(ExtendedKind.WEB_BOOKMARK)
-      return out.sort((a, b) => a - b)
-    }
-    if (!selectedSpell) return [1]
-    const kinds = selectedSpell.tags
-      .filter((tag) => tag[0] === 'k')
-      .map((tag) => parseInt(tag[1], 10))
-      .filter((n) => !Number.isNaN(n))
-    return kinds.length ? kinds : [1]
-  }, [selectedFauxSpell, selectedSpell?.id, showKindsTagKey, followingShowKindsKey])
-
   const spellMenuLabel = useCallback(
     (spell: Event) =>
       favoriteSpellSet.has(spell.id.toLowerCase()) ? `★ ${getSpellName(spell)}` : getSpellName(spell),
@@ -1157,7 +614,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       const ev = followSetListEvents.find((e) => getFollowSetDTag(e) === d)
       return ev ? labelFollowSetEvent(ev) : d
     }
-    if (isSpellsPageBuiltinFauxSpell(selectedFauxSpell)) {
+    if (isBuiltinFauxSpell(selectedFauxSpell)) {
       return t(fauxSpellLabelKey(selectedFauxSpell))
     }
     return selectedFauxSpell
@@ -1201,7 +658,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     (name: string | null) => {
       setSpellPickerOpen(false)
       if (name) {
-        if (!isSpellsPageFauxSpellParam(name)) return
+        if (!isFauxSpellPageParam(name)) return
         // Re-selecting the same built-in feed from the picker should not clear + resubscribe (toggle used to call
         // pickFauxSpell(null) and wipe the timeline when the row was already selected).
         if (selectedFauxSpell === name && selectedSpell === null) {
@@ -1241,18 +698,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     []
   )
 
-  const fauxNoteListUseFilterAsIs = useMemo(() => {
-    if (!selectedFauxSpell) return true
-    if (selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)) return false
-    return true
-  }, [selectedFauxSpell])
-
-  const notificationsMentionExtraHide = useCallback(
-    (evt: Event) =>
-      notificationsFeedPubkey ? !isUserInEventMentions(evt, notificationsFeedPubkey) : false,
-    [notificationsFeedPubkey]
-  )
-
   const fauxFeedEmptyMessage = useMemo(() => {
     if (!selectedFauxSpell || fauxSubRequests.length > 0) return null
     if (selectedFauxSpell === 'interests') return t('No subscribed interests yet.')
@@ -1263,210 +708,50 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     return t('Nothing to load for this feed.')
   }, [selectedFauxSpell, fauxSubRequests.length, t])
 
-  const spellFauxMergeTimeline = useMemo(
-    () => !!selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell),
-    [selectedFauxSpell]
-  )
-
   const spellStarAddTitle = t('Spell star add title')
   const spellStarRemoveTitle = t('Spell star remove title')
 
-  const spellPickerList = (
-    <>
-      {starredSpellsForPicker.length > 0 ? (
-        <>
-          <p className="px-3 pb-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t('Starred spells')}
-          </p>
-          {starredSpellsForPicker.map((spell) => (
-            <SpellSheetOptionRow
-              key={spell.id}
-              spell={spell}
-              selected={selectedSpell?.id === spell.id}
-              accountPubkey={pubkey ?? undefined}
-              labelFor={(e) => getSpellName(e)}
-              onPick={pickSpell}
-              starred
-              onToggleStar={(s) => void toggleFavoriteSpell(s)}
-              starTitleAdd={spellStarAddTitle}
-              starTitleRemove={spellStarRemoveTitle}
-            />
-          ))}
-          <Separator className="my-2" />
-        </>
-      ) : null}
-      {FAUX_SPELL_ORDER.flatMap((name) => {
-        if (
-          (name === 'notifications' ||
-            name === 'following' ||
-            name === 'heatMap' ||
-            name === 'bookmarks' ||
-            name === 'interests') &&
-          !pubkey
-        ) {
-          return []
-        }
-        const Icon = FAUX_SPELL_ICON[name]
-        const selected = selectedFauxSpell === name
-        const builtinRow = (
-          <button
-            key={name}
-            type="button"
-            role="option"
-            aria-selected={selected}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
-              'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              selected && 'bg-accent/50'
-            )}
-            onClick={() => pickFauxSpell(name)}
-          >
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              {selected ? <Check className="size-4" aria-hidden /> : null}
-            </span>
-            <Icon className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-left font-medium">
-              {t(fauxSpellLabelKey(name))}
-            </span>
-          </button>
-        )
-        if (name !== 'following' || !pubkey || followSetListEvents.length === 0) {
-          return [builtinRow]
-        }
-        const setRows = followSetListEvents.flatMap((ev) => {
-          const d = getFollowSetDTag(ev)
-          if (!d) return []
-          const spellId = encodeFollowSetSpellId(d)
-          const setSelected = selectedFauxSpell === spellId
-          return [
-            <button
-              key={spellId}
-              type="button"
-              role="option"
-              aria-selected={setSelected}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 pl-8 text-left text-sm transition-colors',
-                'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                setSelected && 'bg-accent/50'
-              )}
-              onClick={() => pickFauxSpell(spellId)}
-            >
-              <span className="flex size-4 shrink-0 items-center justify-center">
-                {setSelected ? <Check className="size-4" aria-hidden /> : null}
-              </span>
-              <Users className="size-4 shrink-0 opacity-80" />
-              <span className="min-w-0 flex-1 truncate text-left font-medium">
-                {labelFollowSetEvent(ev)}
-              </span>
-            </button>
-          ]
-        })
-        return [builtinRow, ...setRows]
-      })}
-      <button
-        type="button"
-        role="option"
-        aria-selected={!selectedSpell && !selectedFauxSpell}
-        className={cn(
-          'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
-          'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          !selectedSpell && !selectedFauxSpell && 'bg-accent/50'
-        )}
-        onClick={clearSpellSelection}
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          {!selectedSpell && !selectedFauxSpell ? <Check className="size-4" aria-hidden /> : null}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left font-normal text-muted-foreground">
-          {t('Select a spell…')}
-        </span>
-      </button>
-
-      {ownSpells.length > 0 ? (
-        <>
-          <Separator className="my-2" />
-          <p className="px-3 pb-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t('spellPickerSectionYours')}
-          </p>
-          {ownSpells.map((spell) => (
-            <SpellSheetOptionRow
-              key={spell.id}
-              spell={spell}
-              selected={selectedSpell?.id === spell.id}
-              accountPubkey={pubkey ?? undefined}
-              labelFor={spellMenuLabel}
-              onPick={pickSpell}
-              starred={favoriteSpellSet.has(spell.id.toLowerCase())}
-              onToggleStar={(s) => void toggleFavoriteSpell(s)}
-              starTitleAdd={spellStarAddTitle}
-              starTitleRemove={spellStarRemoveTitle}
-            />
-          ))}
-        </>
-      ) : null}
-
-      {followSpells.length > 0 ? (
-        <>
-          <Separator className="my-2" />
-          <p className="px-3 pb-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t('Spells from follows', { count: followSpells.length })}
-          </p>
-          {followSpellGroups.map(({ pubkey: authorPk, spells: groupSpells }) => (
-            <div key={authorPk} className="mt-2 overflow-hidden rounded-lg border border-border/60">
-              <SpellSheetAuthorHeader userId={authorPk} />
-              <div className="px-0.5 py-0.5">
-                {groupSpells.map((spell) => (
-                  <SpellSheetOptionRow
-                    key={spell.id}
-                    spell={spell}
-                    selected={selectedSpell?.id === spell.id}
-                    accountPubkey={pubkey ?? undefined}
-                    labelFor={spellMenuLabel}
-                    onPick={pickSpell}
-                    groupedUnderAuthor
-                    starred={favoriteSpellSet.has(spell.id.toLowerCase())}
-                    onToggleStar={(s) => void toggleFavoriteSpell(s)}
-                    starTitleAdd={spellStarAddTitle}
-                    starTitleRemove={spellStarRemoveTitle}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </>
-      ) : null}
-
-      {otherSpells.length > 0 ? (
-        <>
-          <Separator className="my-2" />
-          <p className="px-3 pb-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t('Other spells', { count: otherSpells.length })}
-          </p>
-          {otherSpellGroups.map(({ pubkey: authorPk, spells: groupSpells }) => (
-            <div key={authorPk} className="mt-2 overflow-hidden rounded-lg border border-border/60">
-              <SpellSheetAuthorHeader userId={authorPk} />
-              <div className="px-0.5 py-0.5">
-                {groupSpells.map((spell) => (
-                  <SpellSheetOptionRow
-                    key={spell.id}
-                    spell={spell}
-                    selected={selectedSpell?.id === spell.id}
-                    accountPubkey={pubkey ?? undefined}
-                    labelFor={spellMenuLabel}
-                    onPick={pickSpell}
-                    groupedUnderAuthor
-                    starred={favoriteSpellSet.has(spell.id.toLowerCase())}
-                    onToggleStar={(s) => void toggleFavoriteSpell(s)}
-                    starTitleAdd={spellStarAddTitle}
-                    starTitleRemove={spellStarRemoveTitle}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </>
-      ) : null}
-    </>
+  const spellPickerPanel = useMemo(
+    () => (
+      <SpellPickerContent
+        t={t}
+        pubkey={pubkey}
+        selectedSpell={selectedSpell}
+        selectedFauxSpell={selectedFauxSpell}
+        favoriteSpellSet={favoriteSpellSet}
+        starredSpellsForPicker={starredSpellsForPicker}
+        ownSpells={ownSpells}
+        followSpells={followSpells}
+        otherSpells={otherSpells}
+        followSetListEvents={followSetListEvents}
+        spellMenuLabel={spellMenuLabel}
+        spellStarAddTitle={spellStarAddTitle}
+        spellStarRemoveTitle={spellStarRemoveTitle}
+        pickSpell={pickSpell}
+        pickFauxSpell={pickFauxSpell}
+        clearSpellSelection={clearSpellSelection}
+        toggleFavoriteSpell={toggleFavoriteSpell}
+      />
+    ),
+    [
+      t,
+      pubkey,
+      selectedSpell,
+      selectedFauxSpell,
+      favoriteSpellSet,
+      starredSpellsForPicker,
+      ownSpells,
+      followSpells,
+      otherSpells,
+      followSetListEvents,
+      spellMenuLabel,
+      spellStarAddTitle,
+      spellStarRemoveTitle,
+      pickSpell,
+      pickFauxSpell,
+      clearSpellSelection,
+      toggleFavoriteSpell
+    ]
   )
 
   const spellPickerTriggerButton = (
@@ -1570,7 +855,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                           role="listbox"
                           aria-label={t('Select a spell…')}
                         >
-                          {spellPickerList}
+                          {spellPickerPanel}
                         </div>
                       </DrawerContent>
                     </Drawer>
@@ -1590,7 +875,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                         {t('Select a spell…')}
                       </div>
                       <div className="px-1 py-2" role="listbox" aria-label={t('Select a spell…')}>
-                        {spellPickerList}
+                        {spellPickerPanel}
                       </div>
                     </DropdownMenuContent>
                   </DropdownMenu>

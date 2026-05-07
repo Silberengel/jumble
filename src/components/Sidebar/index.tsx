@@ -2,7 +2,6 @@ import Icon from '@/assets/Icon'
 import Logo from '@/assets/Logo'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
-import DiscussionsButton from './DiscussionsButton'
 import FeedButton from './FeedButton'
 import HomeButton from './HomeButton'
 import NotificationButton from './NotificationButton'
@@ -38,7 +37,6 @@ export default function PrimaryPageSidebar() {
           <ReadOnlySessionIndicator variant="sidebar" />
           <HomeButton />
           <FeedButton />
-          <DiscussionsButton />
           <NotificationButton />
           <SearchButton />
           <FavoritesButton />

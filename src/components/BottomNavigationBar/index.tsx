@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import RssButton from './RssButton'
 import HomeButton from './HomeButton'
-import DiscussionsButton from './DiscussionsButton'
 import NotificationsButton from './NotificationsButton'
 import SearchButton from './SearchButton'
 import SpellsButton from './SpellsButton'
@@ -19,7 +18,6 @@ export default function BottomNavigationBar() {
       }}
     >
       <WriteButton />
-      <DiscussionsButton />
       <RssButton />
       <HomeButton />
       <SpellsButton />

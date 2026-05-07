@@ -229,7 +229,10 @@ function mergePrimaryPageEntry(
   const element = map[entry.name]
   const exists = prev.find((p) => p.name === entry.name)
   if (exists) {
-    if (entry.props) {
+    /** Popstate sync passes `{ props: undefined }` when the URL has no `?spell=` — must clear stale props. */
+    if (Object.prototype.hasOwnProperty.call(entry, 'props')) {
+      exists.props = entry.props
+    } else if (entry.props) {
       exists.props = { ...(exists.props || {}), ...entry.props }
     }
     return [...prev]

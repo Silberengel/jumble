@@ -116,7 +116,6 @@ export default function SidebarCalendarWeekWidget() {
           indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs),
           indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
         ])
-        if (cancelled) return
 
         const localBaseline = dedupeCalendarEvents([...fromIdb, ...fromArchive])
         const sessionSnap = client.getSessionEventsMatchingSearch(
@@ -125,8 +124,13 @@ export default function SidebarCalendarWeekWidget() {
           [...CALENDAR_EVENT_KINDS]
         )
         const mergedLocal = dedupeCalendarEvents([...localBaseline, ...sessionSnap])
-        setRawEvents(mergedLocal)
-        setLoading(false)
+        /** Always paint IDB + session first; a superseded effect must not skip this (relayKey churn would leave the list blank). */
+        if (!cancelled) {
+          setRawEvents(mergedLocal)
+          setLoading(false)
+        }
+
+        if (cancelled) return
 
         if (!relayUrls.length) {
           lateMergeTimer = window.setTimeout(() => {
@@ -189,7 +193,10 @@ export default function SidebarCalendarWeekWidget() {
             fromFollowing.push(...(merged[i] ?? []))
           }
         } catch {
-          /* keep IndexedDB + session; relays may be slow or unreachable */
+          /** Relay REQ failed or timed out — keep the snapshot we already painted (re-apply in case of races). */
+          if (!cancelled) {
+            setRawEvents(mergedLocal)
+          }
         }
         if (cancelled) return
 
@@ -198,9 +205,11 @@ export default function SidebarCalendarWeekWidget() {
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(
-          dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSessionAfterNet, ...localBaseline])
-        )
+        if (!cancelled) {
+          setRawEvents(
+            dedupeCalendarEvents([...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing])
+          )
+        }
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
