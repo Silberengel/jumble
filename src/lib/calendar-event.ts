@@ -1,4 +1,5 @@
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
+import { replaceableEventDedupeKey } from '@/lib/event'
 import { generateBech32IdFromATag, tagNameEquals } from '@/lib/tag'
 import { Event } from 'nostr-tools'
 
@@ -441,6 +442,36 @@ export function calendarOccurrenceOverlapsRange(
   const w = getCalendarOccurrenceWindowMs(event)
   if (!w) return false
   return w.startMs < rangeEndExclusiveMs && w.endExclusiveMs > rangeStartMs
+}
+
+/**
+ * Deduplicate by replaceable coordinate; when several revisions exist, prefer one whose occurrence **overlaps**
+ * `[rangeStartMs, rangeEndExclusiveMs)` with a parseable window, then newest `created_at`. Avoids global calendar
+ * REQs replacing a good local row with a newer revision that does not apply to the visible range.
+ */
+export function dedupeCalendarEventsPreferringOccurrenceRange(
+  events: Event[],
+  rangeStartMs: number,
+  rangeEndExclusiveMs: number
+): Event[] {
+  const byKey = new Map<string, Event[]>()
+  for (const e of events) {
+    const k = replaceableEventDedupeKey(e)
+    const list = byKey.get(k)
+    if (list) list.push(e)
+    else byKey.set(k, [e])
+  }
+  const out: Event[] = []
+  for (const variants of byKey.values()) {
+    const inRange = variants.filter(
+      (e) =>
+        getCalendarOccurrenceWindowMs(e) != null &&
+        calendarOccurrenceOverlapsRange(e, rangeStartMs, rangeEndExclusiveMs)
+    )
+    const pool = inRange.length > 0 ? inRange : variants
+    out.push(pool.reduce((best, e) => (e.created_at > best.created_at ? e : best)))
+  }
+  return out
 }
 
 /** Monday 00:00 local through the following Monday 00:00 (exclusive), shifted by `weekOffset` weeks from the anchor week. */

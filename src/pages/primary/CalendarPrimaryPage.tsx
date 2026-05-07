@@ -1,6 +1,7 @@
 import PrimaryPageLayout, { type TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import {
   calendarOccurrenceOverlapsRange,
+  dedupeCalendarEventsPreferringOccurrenceRange,
   getCalendarEventMeta,
   getLocalMondayWeekBounds,
   getLocalMonthRangeMs
@@ -50,16 +51,6 @@ const PAD_DAYS = 7
 export type CalendarPrimaryPageProps = {
   /** Week offset from the current local week (same as sidebar widget). */
   weekOffset?: number
-}
-
-function dedupeCalendarEvents(events: NostrEvent[]): NostrEvent[] {
-  const map = new Map<string, NostrEvent>()
-  for (const e of events) {
-    const k = replaceableEventDedupeKey(e)
-    const prev = map.get(k)
-    if (!prev || e.created_at > prev.created_at) map.set(k, e)
-  }
-  return [...map.values()]
 }
 
 function mondayFirstOffsetFromMonthStart(year: number, monthIndex: number): number {
@@ -173,7 +164,13 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...mergeWithIdb]))
+          setRawEvents((prev) =>
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...prev, ...later, ...mergeWithIdb],
+              paddedMonthRange.rangeStartMs,
+              paddedMonthRange.rangeEndExclusiveMs
+            )
+          )
         }, 2500)
       }
 
@@ -194,14 +191,24 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
         ])
         if (cancelled) return
 
-        const localBaseline = dedupeCalendarEvents([...fromIdb, ...fromArchive])
+        const localBaseline = dedupeCalendarEventsPreferringOccurrenceRange(
+          [...fromIdb, ...fromArchive],
+          rangeStartMs,
+          rangeEndExclusiveMs
+        )
 
         const fromSessionNow = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(dedupeCalendarEvents([...localBaseline, ...fromSessionNow]))
+        setRawEvents(
+          dedupeCalendarEventsPreferringOccurrenceRange(
+            [...localBaseline, ...fromSessionNow],
+            rangeStartMs,
+            rangeEndExclusiveMs
+          )
+        )
         setLoading(false)
 
         if (!relayUrls.length) {
@@ -268,7 +275,13 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(dedupeCalendarEvents([...batch, ...fromFollowing, ...fromSession, ...localBaseline]))
+        setRawEvents(
+          dedupeCalendarEventsPreferringOccurrenceRange(
+            [...batch, ...fromFollowing, ...fromSession, ...localBaseline],
+            rangeStartMs,
+            rangeEndExclusiveMs
+          )
+        )
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
@@ -277,7 +290,13 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...localBaseline]))
+          setRawEvents((prev) =>
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...prev, ...later, ...localBaseline],
+              rangeStartMs,
+              rangeEndExclusiveMs
+            )
+          )
         }, 2500)
       } catch {
         if (!cancelled) {
@@ -287,13 +306,13 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
               indexedDb.getCalendarEventsForOccurrenceWindow(rs, re, MONTH_IDB_MAX_SCAN),
               indexedDb.getArchivedCalendarEventsOverlappingWindow(rs, re, 55_000, 2500)
             ])
-            const salvage = dedupeCalendarEvents([...idb, ...arc])
+            const salvage = dedupeCalendarEventsPreferringOccurrenceRange([...idb, ...arc], rs, re)
             const fromSession = client.getSessionEventsMatchingSearch(
               '',
               SESSION_CALENDAR_MERGE_CAP,
               [...CALENDAR_EVENT_KINDS]
             )
-            setRawEvents(dedupeCalendarEvents([...salvage, ...fromSession]))
+            setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange([...salvage, ...fromSession], rs, re))
           } catch {
             setRawEvents([])
           }

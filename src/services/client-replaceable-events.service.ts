@@ -13,8 +13,8 @@ import {
 import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
-import { normalizeHttpUrl, normalizeUrl } from '@/lib/url'
-import { getProfileFromEvent } from '@/lib/event-metadata'
+import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
+import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { formatPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
 import { TProfile } from '@/types'
@@ -1167,6 +1167,9 @@ export class ReplaceableEventService {
    * When relayUrls are provided (e.g. user write + search relays), queries those directly.
    * Otherwise uses the default relay set (FAST_WRITE + PROFILE_FETCH + FAST_READ).
    */
+  /** Hard cap: {@link fetchReplaceableEvent} can otherwise wedge the DataLoader chain when relays never answer. */
+  private static readonly FETCH_FOLLOW_LIST_REPLACEABLE_TIMEOUT_MS = 14_000
+
   async fetchFollowListEvent(pubkey: string, relayUrls?: string[]): Promise<NEvent | undefined> {
     if (relayUrls && relayUrls.length > 0) {
       const normalized = Array.from(
@@ -1181,7 +1184,19 @@ export class ReplaceableEventService {
       const latest = events.sort((a, b) => b.created_at - a.created_at)[0]
       return latest
     }
-    return await this.fetchReplaceableEvent(pubkey, kinds.Contacts)
+    const fromNetwork = await Promise.race([
+      this.fetchReplaceableEvent(pubkey, kinds.Contacts),
+      new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), ReplaceableEventService.FETCH_FOLLOW_LIST_REPLACEABLE_TIMEOUT_MS)
+      )
+    ])
+    if (fromNetwork) return fromNetwork
+    try {
+      const fromIdb = await indexedDb.getReplaceableEvent(pubkey, kinds.Contacts)
+      return fromIdb ?? undefined
+    } catch {
+      return undefined
+    }
   }
 
   /**
@@ -1278,10 +1293,16 @@ export class ReplaceableEventService {
     if (!skipCache) {
       const cached = this.followingFavoriteRelaysCache.get(pubkey)
       if (cached) {
-        return cached
+        return cached.catch((err: unknown) => {
+          this.followingFavoriteRelaysCache.delete(pubkey)
+          throw err
+        })
       }
     }
-    const promise = this._fetchFollowingFavoriteRelays(pubkey)
+    const promise = this._fetchFollowingFavoriteRelays(pubkey).catch((err: unknown) => {
+      this.followingFavoriteRelaysCache.delete(pubkey)
+      throw err
+    })
     this.followingFavoriteRelaysCache.set(pubkey, promise)
     return promise
   }
@@ -1289,46 +1310,63 @@ export class ReplaceableEventService {
   private async _fetchFollowingFavoriteRelays(pubkey: string): Promise<[string, string[]][]> {
     const followings = await this.fetchFollowings(pubkey)
     const followingsToProcess = followings.slice(0, 100)
-    const favoriteRelaysEvents = await this.fetchReplaceableEventsFromProfileFetchRelays(
-      followingsToProcess,
-      ExtendedKind.FAVORITE_RELAYS
-    )
+    const [favoriteRelaysEvents, relayListEvents] = await Promise.all([
+      this.fetchReplaceableEventsFromProfileFetchRelays(
+        followingsToProcess,
+        ExtendedKind.FAVORITE_RELAYS
+      ),
+      this.fetchReplaceableEventsFromProfileFetchRelays(followingsToProcess, kinds.RelayList)
+    ])
     // Group by relay URL: Map<relayUrl, Set<pubkey>>
     const relayToUsers = new Map<string, Set<string>>()
-    
-    // favoriteRelaysEvents[i] corresponds to followingsToProcess[i]
-    for (let i = 0; i < followingsToProcess.length && i < favoriteRelaysEvents.length; i++) {
-      const event = favoriteRelaysEvents[i]
+
+    const addFollowingRelay = (followingPk: string, rawUrl: string) => {
+      const normalizedUrl =
+        (normalizeUrl(rawUrl) || normalizeAnyRelayUrl(rawUrl) || '').trim() || null
+      if (!normalizedUrl || !isWebsocketUrl(normalizedUrl)) return
+      if (!relayToUsers.has(normalizedUrl)) relayToUsers.set(normalizedUrl, new Set())
+      relayToUsers.get(normalizedUrl)!.add(followingPk)
+    }
+
+    for (let i = 0; i < followingsToProcess.length; i++) {
       const followingPubkey = followingsToProcess[i]
-      if (event && followingPubkey) {
-        event.tags.forEach(([tagName, tagValue]) => {
-          if (tagName === 'relay' && tagValue) {
-            const normalizedUrl = normalizeUrl(tagValue)
-            if (normalizedUrl) {
-              if (!relayToUsers.has(normalizedUrl)) {
-                relayToUsers.set(normalizedUrl, new Set())
-              }
-              relayToUsers.get(normalizedUrl)!.add(followingPubkey)
-            }
+      if (!followingPubkey) continue
+
+      const favEv = favoriteRelaysEvents[i]
+      if (favEv) {
+        favEv.tags.forEach(([tagName, tagValue]) => {
+          if (!tagValue) return
+          if (tagName === 'relay' || tagName === 'r') {
+            addFollowingRelay(followingPubkey, tagValue)
           }
         })
       }
+
+      /** NIP-65 kind 10002 — most clients only publish this, not kind 10012 “favorite relays”. */
+      const nip65 = relayListEvents[i]
+      if (nip65) {
+        const rl = getRelayListFromEvent(nip65)
+        for (const { url } of rl.originalRelays) {
+          addFollowingRelay(followingPubkey, url)
+        }
+      }
     }
-    
+
     // Convert to array format: [relayUrl, pubkeys[]]
     const result: [string, string[]][] = []
     for (const [relayUrl, pubkeys] of relayToUsers.entries()) {
       result.push([relayUrl, Array.from(pubkeys)])
     }
-    
+
     logger.debug('[ReplaceableEventService] fetchFollowingFavoriteRelays completed', {
       followingsCount: followings.length,
       processedCount: followingsToProcess.length,
-      eventsFound: favoriteRelaysEvents.filter(e => e !== undefined).length,
+      favoriteRelaysEventsFound: favoriteRelaysEvents.filter((e) => e !== undefined).length,
+      relayListEventsFound: relayListEvents.filter((e) => e !== undefined).length,
       uniqueRelays: result.length,
       totalUsers: result.reduce((sum, [, users]) => sum + users.length, 0)
     })
-    
+
     return result
   }
 }

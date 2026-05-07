@@ -21,11 +21,14 @@ import {
 } from './favorite-relays-activity-context'
 
 const ACTIVE_WINDOW_SEC = 3600
+/** Recent slice (seconds): newest notes dominate global REQ limits; a shorter window improves author diversity. */
+const PULSE_RECENT_TAIL_SEC = 1200
+/** Per-REQ event cap; two time slices run in parallel and merge (see {@link fetchRelayPulseNoteEvents}). */
+const PULSE_REQ_LIMIT_RECENT = 900
+const PULSE_REQ_LIMIT_EARLIER = 1400
 const FETCH_RETRY_DELAY_MS = 2500
 /** Wall-clock cadence while the tab is visible */
 const POLL_INTERVAL_MS = 60 * 60 * 1000
-/** Event cap for relay pulse query. This is event-count (not author-count): keep high enough for >120 active npubs. */
-const REQ_LIMIT = 500
 /** Keep relay pulse focused on note-like activity to avoid expensive all-kind signature verification bursts. */
 const ACTIVE_PULSE_KINDS = [
   kinds.ShortTextNote,
@@ -38,6 +41,59 @@ const ACTIVE_PULSE_KINDS = [
   ExtendedKind.COMMENT,
   ExtendedKind.GENERIC_REPOST
 ] as number[]
+
+const PULSE_QUERY_OPTS = {
+  firstRelayResultGraceMs: false as const,
+  eoseTimeout: 1800,
+  globalTimeout: 14_000
+}
+
+function mergeRelayPulseEventsById(events: { id: string; pubkey: string; created_at: number }[]) {
+  const byId = new Map<string, (typeof events)[0]>()
+  for (const e of events) {
+    const id = e.id?.trim().toLowerCase()
+    if (!id || !/^[0-9a-f]{64}$/i.test(id)) continue
+    const prev = byId.get(id)
+    if (!prev || e.created_at > prev.created_at) byId.set(id, e)
+  }
+  return [...byId.values()]
+}
+
+/**
+ * One REQ with a high `limit` over a full hour mostly returns the newest notes, so a few threads can
+ * exhaust the cap and hide many active npubs. Two slices (recent tail + earlier in the same hour)
+ * merge by id, then we dedupe by pubkey for the widget.
+ */
+async function fetchRelayPulseNoteEvents(
+  urls: string[],
+  anchorSec: number
+): Promise<{ pubkey: string; created_at: number; id: string }[]> {
+  const sinceFull = anchorSec - ACTIVE_WINDOW_SEC
+  const recentSince = anchorSec - PULSE_RECENT_TAIL_SEC
+  const kinds = [...ACTIVE_PULSE_KINDS]
+  const settled = await Promise.allSettled([
+    queryService.fetchEvents(
+      urls,
+      { since: recentSince, limit: PULSE_REQ_LIMIT_RECENT, kinds },
+      PULSE_QUERY_OPTS
+    ),
+    queryService.fetchEvents(
+      urls,
+      {
+        since: sinceFull,
+        until: recentSince,
+        limit: PULSE_REQ_LIMIT_EARLIER,
+        kinds
+      },
+      PULSE_QUERY_OPTS
+    )
+  ])
+  const merged: { id: string; pubkey: string; created_at: number }[] = []
+  for (const r of settled) {
+    if (r.status === 'fulfilled') merged.push(...r.value)
+  }
+  return mergeRelayPulseEventsById(merged)
+}
 
 function aggregatePubkeysByRecency(events: { pubkey: string; created_at: number }[]): string[] {
   const lastByPk = new Map<string, number>()
@@ -129,17 +185,9 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
         return
       }
       setLoading(true)
-      const since = Math.floor(Date.now() / 1000) - ACTIVE_WINDOW_SEC
+      const anchorSec = Math.floor(Date.now() / 1000)
       try {
-        const events = await queryService.fetchEvents(
-          urls,
-          { since, limit: REQ_LIMIT, kinds: [...ACTIVE_PULSE_KINDS] },
-          {
-            firstRelayResultGraceMs: false,
-            eoseTimeout: 1800,
-            globalTimeout: 14_000
-          }
-        )
+        const events = await fetchRelayPulseNoteEvents(urls, anchorSec)
         const now = Date.now()
         const nextPubkeys = aggregatePubkeysByRecency(events)
         const prev = orderedPubkeysRef.current

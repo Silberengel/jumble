@@ -40,6 +40,55 @@ import type { TFeedSubRequest } from '@/types'
 import { isFollowFeedFauxSpellId } from './fauxSpellConfig'
 import storage from '@/services/local-storage.service'
 
+/** `fetchReplaceableEvent(kind 3)` / relay-list hydration can hang; never block the Following spell on it. */
+const FOLLOWING_FETCH_FOLLOWINGS_TIMEOUT_MS = 10_000
+/** Per-shard relay-list batch has a UI budget; still cap so a wedged promise cannot blank the feed forever. */
+const FOLLOWING_GENERATE_SUBREQ_TIMEOUT_MS = 16_000
+const FOLLOWING_INBOX_SHARD_AUTHOR_CAP = 512
+
+function racePromiseWithTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = window.setTimeout(() => resolve(onTimeout()), ms)
+    promise
+      .then((v) => {
+        window.clearTimeout(t)
+        resolve(v)
+      })
+      .catch(() => {
+        window.clearTimeout(t)
+        resolve(onTimeout())
+      })
+  })
+}
+
+function buildInboxShardFollowingSubRequests(args: {
+  authors: string[]
+  favoriteRelays: string[]
+  blockedRelays: string[]
+  relayList: { read: string[]; write: string[] } | null | undefined
+  augment: (raw: TFeedSubRequest[]) => TFeedSubRequest[]
+}): TFeedSubRequest[] {
+  const { authors, favoriteRelays, blockedRelays, relayList, augment } = args
+  const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
+    favoriteRelays,
+    blockedRelays,
+    userReadRelaysWithHttp(relayList),
+    { userWriteRelays: relayList?.write ?? [] }
+  )
+  if (!feedUrls.length) return []
+  const capped = authors.slice(0, FOLLOWING_INBOX_SHARD_AUTHOR_CAP)
+  return augment([
+    {
+      urls: feedUrls,
+      filter: {
+        authors: capped,
+        kinds: [...DEFAULT_FEED_SHOW_KINDS],
+        limit: FAUX_SPELL_EVENT_LIMIT
+      }
+    }
+  ])
+}
+
 function useNoteListHideReplies() {
   const [hideReplies, setHideReplies] = useState(() => storage.getNoteListMode() === 'posts')
 
@@ -166,41 +215,55 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
         if (selectedFauxSpell === 'following') {
           const fromTags = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
           const provisionalAuthors = [...new Set([pubkey, ...fromTags])]
-          let provisionalOk = false
-          try {
-            const rawProv = await client.generateSubRequestsForPubkeys(provisionalAuthors, pubkey)
-            if (!cancelled) {
-              setFollowingSubRequests(augment(rawProv))
-              provisionalOk = true
-            }
-          } catch {
-            /* refined wave may still succeed */
+
+          const inboxFallbackArgs = {
+            favoriteRelays,
+            blockedRelays,
+            relayList,
+            augment
           }
 
-          let followings = fromTags
-          try {
-            followings = await client.fetchFollowings(pubkey)
-          } catch {
-            followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-          }
+          const [rawProv, followings] = await Promise.all([
+            racePromiseWithTimeout<TFeedSubRequest[]>(
+              client.generateSubRequestsForPubkeys(provisionalAuthors, pubkey) as Promise<TFeedSubRequest[]>,
+              FOLLOWING_GENERATE_SUBREQ_TIMEOUT_MS,
+              () => []
+            ),
+            racePromiseWithTimeout(
+              client.fetchFollowings(pubkey).catch(() => fromTags),
+              FOLLOWING_FETCH_FOLLOWINGS_TIMEOUT_MS,
+              () => fromTags
+            )
+          ])
+
+          const provisionalNext =
+            rawProv.length > 0
+              ? augment(rawProv)
+              : buildInboxShardFollowingSubRequests({
+                  authors: provisionalAuthors,
+                  ...inboxFallbackArgs
+                })
+          if (!cancelled) setFollowingSubRequests(provisionalNext)
+
           const fullAuthors = [...new Set([pubkey, ...followings])]
           const sameSet =
             fullAuthors.length === provisionalAuthors.length &&
             fullAuthors.every((p) => provisionalAuthors.includes(p)) &&
             provisionalAuthors.every((p) => fullAuthors.includes(p))
           if (sameSet) {
-            if (!provisionalOk && !cancelled) {
-              try {
-                const req = await client.generateSubRequestsForPubkeys(fullAuthors, pubkey)
-                if (!cancelled) setFollowingSubRequests(augment(req))
-              } catch {
-                if (!cancelled) setFollowingSubRequests([])
-              }
-            }
             return
           }
-          const req = await client.generateSubRequestsForPubkeys(fullAuthors, pubkey)
-          if (!cancelled) setFollowingSubRequests(augment(req))
+
+          const rawFull = await racePromiseWithTimeout<TFeedSubRequest[]>(
+            client.generateSubRequestsForPubkeys(fullAuthors, pubkey) as Promise<TFeedSubRequest[]>,
+            FOLLOWING_GENERATE_SUBREQ_TIMEOUT_MS,
+            () => []
+          )
+          const fullNext =
+            rawFull.length > 0
+              ? augment(rawFull)
+              : buildInboxShardFollowingSubRequests({ authors: fullAuthors, ...inboxFallbackArgs })
+          if (!cancelled) setFollowingSubRequests(fullNext)
         } else if (followSetD) {
           const ev = followSetListEvents.find((e) => getFollowSetDTag(e) === followSetD)
           if (!ev) {
@@ -209,8 +272,22 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
           }
           const listed = pubkeysFromFollowSetEvent(ev)
           const authorPubkeys = [pubkey, ...listed]
-          const req = await client.generateSubRequestsForPubkeys(authorPubkeys, pubkey)
-          if (!cancelled) setFollowingSubRequests(augment(req))
+          const rawFs = await racePromiseWithTimeout<TFeedSubRequest[]>(
+            client.generateSubRequestsForPubkeys(authorPubkeys, pubkey) as Promise<TFeedSubRequest[]>,
+            FOLLOWING_GENERATE_SUBREQ_TIMEOUT_MS,
+            () => []
+          )
+          const req =
+            rawFs.length > 0
+              ? augment(rawFs)
+              : buildInboxShardFollowingSubRequests({
+                  authors: authorPubkeys,
+                  favoriteRelays,
+                  blockedRelays,
+                  relayList,
+                  augment
+                })
+          if (!cancelled) setFollowingSubRequests(req)
         } else {
           if (!cancelled) setFollowingSubRequests([])
         }

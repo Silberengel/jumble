@@ -152,7 +152,17 @@ export default defineConfig(({ mode }) => {
         },
         '/sites': {
           target: 'http://127.0.0.1:8090',
-          changeOrigin: true
+          changeOrigin: true,
+          /** Without OG proxy on :8090, Node was returning 500 HTML; return JSON so callers fail softly in dev. */
+          configure(proxy) {
+            proxy.on('error', (_err, _req, res) => {
+              const r = res as { writeHead?: (c: number, h: Record<string, string>) => void; end?: (b: string) => void }
+              if (typeof r?.writeHead === 'function' && typeof r?.end === 'function') {
+                r.writeHead(502, { 'Content-Type': 'application/json' })
+                r.end(JSON.stringify({ ok: false, error: 'og_proxy_unreachable', hint: 'Start OG scraper on :8090 (see PROXY_SETUP.md)' }))
+              }
+            })
+          }
         },
         // Loopback HTTP index relay: `import.meta.env.DEV` rewrites kind 10243 URLs through this path.
         '/dev-index-relay': {

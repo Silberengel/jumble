@@ -1,5 +1,6 @@
 import {
   calendarOccurrenceOverlapsRange,
+  dedupeCalendarEventsPreferringOccurrenceRange,
   formatCalendarSidebarRow,
   formatSidebarWeekLabel,
   getCalendarEventMeta,
@@ -37,16 +38,6 @@ const LIST_MAX_HEIGHT_PX = 240
 const SIDEBAR_CALENDAR_MAX_RELAYS = 24
 /** Merge session cache so events already loaded in feeds (but missed by this REQ) still appear. */
 const SESSION_CALENDAR_MERGE_CAP = 5000
-
-function dedupeCalendarEvents(events: Event[]): Event[] {
-  const map = new Map<string, Event>()
-  for (const e of events) {
-    const k = replaceableEventDedupeKey(e)
-    const prev = map.get(k)
-    if (!prev || e.created_at > prev.created_at) map.set(k, e)
-  }
-  return [...map.values()]
-}
 
 export default function SidebarCalendarWeekWidget() {
   const { t } = useTranslation()
@@ -117,13 +108,21 @@ export default function SidebarCalendarWeekWidget() {
           indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
         ])
 
-        const localBaseline = dedupeCalendarEvents([...fromIdb, ...fromArchive])
+        const localBaseline = dedupeCalendarEventsPreferringOccurrenceRange(
+          [...fromIdb, ...fromArchive],
+          weekStartMs,
+          weekEndExclusiveMs
+        )
         const sessionSnap = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        const mergedLocal = dedupeCalendarEvents([...localBaseline, ...sessionSnap])
+        const mergedLocal = dedupeCalendarEventsPreferringOccurrenceRange(
+          [...localBaseline, ...sessionSnap],
+          weekStartMs,
+          weekEndExclusiveMs
+        )
         /** Always paint IDB + session first; a superseded effect must not skip this (relayKey churn would leave the list blank). */
         if (!cancelled) {
           setRawEvents(mergedLocal)
@@ -136,12 +135,15 @@ export default function SidebarCalendarWeekWidget() {
           lateMergeTimer = window.setTimeout(() => {
             lateMergeTimer = null
             if (cancelled) return
+            const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
             const later = client.getSessionEventsMatchingSearch(
               '',
               SESSION_CALENDAR_MERGE_CAP,
               [...CALENDAR_EVENT_KINDS]
             )
-            setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...localBaseline]))
+            setRawEvents((prev) =>
+              dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], ws, we)
+            )
           }, 2500)
           return
         }
@@ -207,18 +209,25 @@ export default function SidebarCalendarWeekWidget() {
         )
         if (!cancelled) {
           setRawEvents(
-            dedupeCalendarEvents([...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing])
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing],
+              weekStartMs,
+              weekEndExclusiveMs
+            )
           )
         }
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
+          const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
           const later = client.getSessionEventsMatchingSearch(
             '',
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents((prev) => dedupeCalendarEvents([...prev, ...later, ...localBaseline]))
+          setRawEvents((prev) =>
+            dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], ws, we)
+          )
         }, 2500)
       } catch {
         if (!cancelled) {
@@ -228,13 +237,13 @@ export default function SidebarCalendarWeekWidget() {
               indexedDb.getCalendarEventsForOccurrenceWindow(ws, we),
               indexedDb.getArchivedCalendarEventsOverlappingWindow(ws, we, 25_000, 400)
             ])
-            const salvage = dedupeCalendarEvents([...idb, ...arc])
+            const salvage = dedupeCalendarEventsPreferringOccurrenceRange([...idb, ...arc], ws, we)
             const fromSession = client.getSessionEventsMatchingSearch(
               '',
               SESSION_CALENDAR_MERGE_CAP,
               [...CALENDAR_EVENT_KINDS]
             )
-            setRawEvents(dedupeCalendarEvents([...salvage, ...fromSession]))
+            setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange([...salvage, ...fromSession], ws, we))
           } catch {
             setRawEvents([])
           }

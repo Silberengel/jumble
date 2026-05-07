@@ -3102,7 +3102,11 @@ class ClientService extends EventTarget {
       relays = relaysAfterSocialKindBlockedStrip(wsOriginal, stripped)
     }
     relays = this.relayUrlsAfterStrikesOrRecover(relays)
-    const queryRelays = dedupeNormalizeRelayUrlsOrdered([...relays, ...httpRelayBases])
+    let queryRelays = dedupeNormalizeRelayUrlsOrdered([...relays, ...httpRelayBases])
+    /** If every candidate was session-striked / filtered away, still hit public read mirrors so REQ does not no-op. */
+    if (queryRelays.length === 0) {
+      queryRelays = dedupeNormalizeRelayUrlsOrdered([...FAST_READ_RELAY_URLS])
+    }
     const events = await this.queryService.query(queryRelays, filter, onevent, {
       eoseTimeout,
       globalTimeout,
