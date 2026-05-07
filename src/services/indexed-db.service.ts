@@ -1371,24 +1371,30 @@ class IndexedDbService {
     }
     const kindSet = new Set(allowedKinds)
     const max = Math.min(Math.max(limit, 1), 500)
+    /** Cursor order is not chronological; scan enough rows then sort newest-first for the tab. */
+    const scanBudget = Math.min(12_000, Math.max(800, max * 40))
+    const collectCap = Math.min(2000, Math.max(max * 4, max + 50))
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
       const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
       const request = store.openCursor()
       const results: Event[] = []
+      let scanned = 0
 
       request.onsuccess = () => {
         const cursor = (request as IDBRequest<IDBCursorWithValue>).result
-        if (!cursor || results.length >= max) {
+        if (!cursor || scanned >= scanBudget) {
           transaction.commit()
-          resolve(results)
+          results.sort((a, b) => b.created_at - a.created_at)
+          resolve(results.slice(0, max))
           return
         }
+        scanned += 1
         const item = cursor.value as TValue<Event> | undefined
         if (item?.value) {
           const event = item.value as Event
-          if (kindSet.has(event.kind) && event.pubkey?.toLowerCase() === pk) {
+          if (kindSet.has(event.kind) && event.pubkey?.toLowerCase() === pk && results.length < collectCap) {
             results.push(event)
           }
         }
@@ -2906,33 +2912,58 @@ class IndexedDbService {
     })
   }
 
+  /**
+   * Batch-read archive rows by event id. Best-effort: never rejects (avoids hung timelines when one `get`
+   * fails or the transaction aborts mid-batch); logs the first error only.
+   */
   async getArchivedEventsByIds(ids: string[]): Promise<Event[]> {
     const uniq = [...new Set(ids.map((x) => x.toLowerCase()))].filter((x) => /^[0-9a-f]{64}$/.test(x))
     if (uniq.length === 0) return []
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
-    return new Promise((resolve, reject) => {
-      const out: Event[] = []
+    return new Promise((resolve) => {
+      const byId = new Map<string, Event>()
       const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
       const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
-      let pending = uniq.length
-      const doneOne = () => {
-        pending -= 1
-        if (pending === 0) {
+      let remaining = uniq.length
+      let loggedErr = false
+
+      const finishOne = () => {
+        remaining -= 1
+        if (remaining !== 0) return
+        try {
           tx.commit()
-          resolve(out)
+        } catch {
+          /* commit() unsupported or invalid state — transaction may auto-finish */
         }
+        const ordered: Event[] = []
+        for (const id of uniq) {
+          const ev = byId.get(id)
+          if (ev) ordered.push(ev)
+        }
+        resolve(ordered)
       }
+
       for (const id of uniq) {
-        const get = store.get(id)
-        get.onsuccess = () => {
-          const row = get.result as TArchivedEventRow | undefined
-          if (row?.value) out.push(row.value)
-          doneOne()
+        const req = store.get(id)
+        req.onsuccess = () => {
+          try {
+            const row = req.result as TArchivedEventRow | undefined
+            if (row?.value) byId.set(id, row.value)
+          } catch (e) {
+            if (!loggedErr) {
+              loggedErr = true
+              logger.warn('[IndexedDB] getArchivedEventsByIds row read failed', { e })
+            }
+          }
+          finishOne()
         }
-        get.onerror = (e) => {
-          tx.commit()
-          reject(idbEventToError(e))
+        req.onerror = (ev) => {
+          if (!loggedErr) {
+            loggedErr = true
+            logger.warn('[IndexedDB] getArchivedEventsByIds request failed', { err: idbEventToError(ev) })
+          }
+          finishOne()
         }
       }
     })
@@ -2941,6 +2972,10 @@ class IndexedDbService {
   /**
    * Scan {@link StoreNames.EVENT_ARCHIVE} for events authored by `pubkey` (bounded scan).
    * Used for client-side aggregates (e.g. interaction map) from disk cache without a new relay REQ.
+   *
+   * Cursor order is **event id**, not `created_at`. Never stop at `maxMatches` while scanning — that would
+   * keep the first N random-key hits (often old) and drop brand-new notes. Instead keep a working buffer of
+   * the newest rows seen so far, trim periodically, then return the top `maxMatches` by time.
    */
   async scanEventArchiveByAuthorPubkey(
     authorPubkey: string,
@@ -2951,20 +2986,24 @@ class IndexedDbService {
     const kindSet = options.kinds?.length ? new Set(options.kinds) : null
     const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 50_000)
     const maxMatches = Math.min(Math.max(options.maxMatches, 1), 2000)
+    /** When buffer grows this large, sort by time and shrink so we keep the best candidates while scanning. */
+    const workingCap = Math.min(4000, Math.max(maxMatches * 10, 240))
+    const keepAfterTrim = Math.min(workingCap, Math.max(maxMatches * 3, maxMatches + 40))
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
 
     return new Promise((resolve, reject) => {
-      const out: Event[] = []
+      const buf: Event[] = []
       let scanned = 0
       const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
       const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
       const req = store.openCursor()
       req.onsuccess = () => {
         const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor || scanned >= maxRows || out.length >= maxMatches) {
+        if (!cursor || scanned >= maxRows) {
           tx.commit()
-          resolve(out)
+          buf.sort((a, b) => b.created_at - a.created_at)
+          resolve(buf.slice(0, maxMatches))
           return
         }
         scanned += 1
@@ -2976,7 +3015,11 @@ class IndexedDbService {
           ev.pubkey?.toLowerCase() === pk &&
           (!kindSet || kindSet.has(ev.kind))
         ) {
-          out.push(ev)
+          buf.push(ev)
+          if (buf.length >= workingCap) {
+            buf.sort((a, b) => b.created_at - a.created_at)
+            buf.length = keepAfterTrim
+          }
         }
         cursor.continue()
       }

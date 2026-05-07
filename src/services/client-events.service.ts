@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, isDocumentRelayKind } from '@/constants'
 import logger from '@/lib/logger'
 import {
   getParentATag,
@@ -525,22 +525,19 @@ export class EventService {
     this.notifySessionEventWaiters(id)
     this.notifyReplaceableCoordinateWaiters(cleanEvent as NEvent)
     queuePersistSeenEvent(cleanEvent as NEvent)
-    if (
-      cleanEvent.kind === ExtendedKind.PUBLICATION ||
-      cleanEvent.kind === ExtendedKind.PUBLICATION_CONTENT
-    ) {
-      // Keep publication replaceables durable for profile/publication builder cache hits.
+    if (isReplaceableEvent(cleanEvent.kind) && isDocumentRelayKind(cleanEvent.kind)) {
+      // Long-form (30023), wiki, and publication replaceables — same store as profile “Articles” tab.
       void indexedDb.putReplaceableEvent(cleanEvent as NEvent).catch((error: unknown) => {
         const err = error instanceof Error ? error : new Error(String(error))
         const q = err.name === 'QuotaExceededError' || /quota|storage/i.test(err.message)
         if (q) {
-          logger.debug('[EventService] Skipped publication IndexedDB persist (storage quota)', {
+          logger.debug('[EventService] Skipped document replaceable IndexedDB persist (storage quota)', {
             kind: cleanEvent.kind,
             eventId: id
           })
           return
         }
-        logger.warn('[EventService] Failed to persist publication event to IndexedDB', {
+        logger.warn('[EventService] Failed to persist document replaceable to IndexedDB', {
           kind: cleanEvent.kind,
           eventId: id,
           errorMessage: err.message,

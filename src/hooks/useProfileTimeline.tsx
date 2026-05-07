@@ -1,7 +1,7 @@
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
-import client from '@/services/client.service'
+import client, { eventService } from '@/services/client.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Event } from 'nostr-tools'
+import { Event, kinds as nostrKinds, type Filter } from 'nostr-tools'
 import { CALENDAR_EVENT_KINDS, ExtendedKind, isDocumentRelayKind, isSocialKindBlockedKind } from '@/constants'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
@@ -223,36 +223,52 @@ export function useProfileTimeline({
         if (mem?.events?.length) {
           mem.events.forEach((e) => pool.set(e.id, e))
           setEvents(mem.events)
+          setIsLoading(true)
         } else {
           try {
             const pk = normalizeHexPubkey(pubkey)
+            const primeKinds = new Set(kinds)
             for (const e of latestEventsRef.current) {
+              if (!primeKinds.has(e.kind)) continue
               if (normalizeHexPubkey(e.pubkey) === pk) pool.set(e.id, e)
             }
+            if (!cancelled && pool.size > 0) flushPool()
           } catch {
             /* ignore malformed pubkeys */
           }
         }
-        setIsLoading(true)
       }
 
       const hasCalendarKinds = kinds.some((k) => CALENDAR_EVENT_KINDS.includes(k))
       const socialKinds = kinds.some(isSocialKindBlockedKind)
-      const emptyAuthor = { read: [] as string[], write: [] as string[] }
-      const provisionalFeedUrls = buildProfilePageReadRelayUrls(
-        favoriteRelays,
-        blockedRelays,
-        emptyAuthor,
-        socialKinds,
-        includeAuthorLocalRelays,
-        kinds
-      )
-
+      const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
       const idbDocKinds = kinds.filter((k) => isDocumentRelayKind(k))
+      /**
+       * Author NIP-65 read/write relays must feed the **first** REQ for every profile tab. Favorites-only
+       * misses most people’s kind-1 notes; we previously only prefetched relays for document tabs.
+       */
+      let prefetchedAuthorRelays: typeof emptyAuthor = emptyAuthor
+
       if (idbDocKinds.length > 0) {
         try {
           const pkNorm = normalizeHexPubkey(pubkey)
-          const [fromPubStore, fromArchive] = await Promise.all([
+          const fromSession = eventService.listSessionEventsAuthoredBy(pkNorm, {
+            kinds: idbDocKinds,
+            limit
+          })
+          if (!cancelled) {
+            for (const e of fromSession) {
+              pool.set(e.id, e as Event)
+            }
+            if (fromSession.length) flushPool()
+          }
+          const [authorRl, fromPubStore, fromArchive] = await Promise.all([
+            client.fetchRelayList(pubkey).catch(() => ({
+              read: [] as string[],
+              write: [] as string[],
+              httpRead: [] as string[],
+              httpWrite: [] as string[]
+            })),
             indexedDb.getCachedPublicationStoreEventsForProfileAuthor(pkNorm, idbDocKinds, limit),
             indexedDb.scanEventArchiveByAuthorPubkey(pkNorm, {
               kinds: idbDocKinds,
@@ -261,18 +277,73 @@ export function useProfileTimeline({
             })
           ])
           if (!cancelled) {
+            prefetchedAuthorRelays = authorRl
             for (const e of fromPubStore) {
               pool.set(e.id, e)
             }
             for (const e of fromArchive) {
               pool.set(e.id, e)
             }
-            if (fromPubStore.length || fromArchive.length) flushPool()
+            const hadDisk = fromPubStore.length > 0 || fromArchive.length > 0
+            if (hadDisk) flushPool()
+            else if (!isCacheFresh && !mem?.events?.length && fromSession.length === 0) {
+              setIsLoading(true)
+            }
           }
         } catch {
-          /* IDB optional */
+          if (!cancelled) {
+            prefetchedAuthorRelays = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
+          }
+          if (!cancelled && !isCacheFresh && !mem?.events?.length) {
+            setIsLoading(true)
+          }
+        }
+      } else {
+        try {
+          const pkNorm = normalizeHexPubkey(pubkey)
+          const fromSession = eventService.listSessionEventsAuthoredBy(pkNorm, { kinds, limit })
+          if (!cancelled) {
+            for (const e of fromSession) {
+              pool.set(e.id, e as Event)
+            }
+            if (fromSession.length) flushPool()
+          }
+          const [authorRl, fromArchiveSocial] = await Promise.all([
+            client.fetchRelayList(pubkey).catch(() => emptyAuthor),
+            indexedDb.scanEventArchiveByAuthorPubkey(pkNorm, {
+              kinds,
+              maxRowsScanned: 16_000,
+              maxMatches: limit
+            })
+          ])
+          if (!cancelled) {
+            prefetchedAuthorRelays = authorRl
+            for (const e of fromArchiveSocial) {
+              pool.set(e.id, e)
+            }
+            if (fromArchiveSocial.length) flushPool()
+            else if (!isCacheFresh && !mem?.events?.length && fromSession.length === 0) {
+              setIsLoading(true)
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            prefetchedAuthorRelays = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
+          }
+          if (!cancelled && !isCacheFresh && !mem?.events?.length) {
+            setIsLoading(true)
+          }
         }
       }
+
+      const provisionalFeedUrls = buildProfilePageReadRelayUrls(
+        favoriteRelays,
+        blockedRelays,
+        prefetchedAuthorRelays,
+        socialKinds,
+        includeAuthorLocalRelays,
+        kinds
+      )
 
       const startWave = async (subRequests: ReturnType<typeof buildSubRequests>) => {
         if (cancelled || subRequests.length === 0) return
@@ -308,12 +379,40 @@ export function useProfileTimeline({
 
       const provisionalSubs = buildSubRequests([provisionalFeedUrls], pubkey, kinds, limit, hasCalendarKinds)
       void (async () => {
+        let pkForReq = pubkey
         try {
-          const disk = await client.getTimelineDiskSnapshotEvents(
-            provisionalSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
-          )
+          pkForReq = normalizeHexPubkey(pubkey)
+        } catch {
+          /* use raw pubkey */
+        }
+        const longFormPrefetch =
+          idbDocKinds.includes(nostrKinds.LongFormArticle) && provisionalFeedUrls.length > 0
+            ? client.fetchEvents(
+                provisionalFeedUrls,
+                {
+                  authors: [pkForReq],
+                  kinds: [nostrKinds.LongFormArticle],
+                  limit
+                } as Filter,
+                { cache: true, eoseTimeout: 4500, globalTimeout: 14_000, replaceableRace: true }
+              ).catch(() => [] as Event[])
+            : Promise.resolve([] as Event[])
+
+        try {
+          const [disk, longFormRows] = await Promise.all([
+            client.getTimelineDiskSnapshotEvents(
+              provisionalSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
+            ),
+            longFormPrefetch
+          ])
           if (!cancelled && disk.length > 0) {
             for (const e of disk) {
+              pool.set(e.id, e)
+            }
+            flushPool()
+          }
+          if (!cancelled && longFormRows.length > 0) {
+            for (const e of longFormRows) {
               pool.set(e.id, e)
             }
             flushPool()
@@ -321,16 +420,16 @@ export function useProfileTimeline({
         } catch {
           /* disk snapshot is best-effort */
         }
-        await startWave(provisionalSubs)
+        try {
+          await startWave(provisionalSubs)
+        } finally {
+          /** Subscriptions are live; sync UI even if the merged layer was slow to emit (empty feed is valid). */
+          if (!cancelled) flushPool()
+        }
       })()
 
       void (async () => {
-        const authorRl = await client.fetchRelayList(pubkey).catch(() => ({
-          read: [] as string[],
-          write: [] as string[],
-          httpRead: [] as string[],
-          httpWrite: [] as string[]
-        }))
+        const authorRl = prefetchedAuthorRelays
         if (cancelled) return
         const fullFeedUrls = buildProfilePageReadRelayUrls(
           favoriteRelays,
@@ -356,7 +455,11 @@ export function useProfileTimeline({
         } catch {
           /* optional */
         }
-        await startWave(deltaSubs)
+        try {
+          await startWave(deltaSubs)
+        } finally {
+          if (!cancelled) flushPool()
+        }
       })()
     }
 

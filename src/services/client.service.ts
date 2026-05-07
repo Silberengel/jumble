@@ -1954,7 +1954,7 @@ class ClientService extends EventTarget {
     )
     const merged: NEvent[] = []
     const eventIdSet = new Set<string>()
-    for (const { urls, filter } of subRequests) {
+    const shardReads = subRequests.map(async ({ urls, filter }) => {
       let relays = Array.from(new Set(urls))
       if (!navigator.onLine) {
         relays = relays.filter((url) => isLocalNetworkUrl(url))
@@ -1968,7 +1968,7 @@ class ClientService extends EventTarget {
       const key = this.generateTimelineKey(relays, filter as Filter)
       try {
         const st = await indexedDb.getTimelinePersistedState(key)
-        if (!st?.refs?.length) continue
+        if (!st?.refs?.length) return
         const hexIds = st.refs.map((r) => r[0])
         const list = await indexedDb.getArchivedEventsByIds(hexIds)
         for (const ev of list) {
@@ -1988,7 +1988,8 @@ class ClientService extends EventTarget {
       } catch (err) {
         logger.debug('[ClientService] Timeline disk snapshot shard read failed', { err })
       }
-    }
+    })
+    await Promise.all(shardReads)
     merged.sort((a, b) => b.created_at - a.created_at)
     return merged.slice(0, mergedTimelineLimit)
   }
