@@ -16,6 +16,7 @@ import { orderHeatBubblesByKeywordProximity } from '@/lib/relay-thread-heat-keyw
 import {
   buildRelayThreadHeatBubbles,
   buildRelayThreadHeatEdges,
+  collapseRelayThreadHeatSnippet,
   RELAY_THREAD_HEAT_MIN_INTERACTIONS,
   type TRelayThreadHeatBubble,
   type TRelayThreadHeatEdge
@@ -46,6 +47,8 @@ const HEAT_KINDS = [kinds.ShortTextNote, ExtendedKind.DISCUSSION] as const
 
 const ARCHIVE_SCAN_TIMEOUT_MS = 22_000
 const RELAY_FETCH_TIMEOUT_MS = 28_000
+/** Load thread roots that sit outside the heat time window so hover text is the OP, not a reply. */
+const ROOT_SNIPPET_FETCH_TIMEOUT_MS = 12_000
 const TOMBSTONES_TIMEOUT_MS = 8_000
 
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, fallback: T, label: string): Promise<T> {
@@ -192,9 +195,58 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       eventPassesNoteListKindPicker(e, showKinds, showKind1OPs, showKind1Replies, showKind1111)
     )
     const ranked = buildRelayThreadHeatBubbles(feedNotes, followSet, windowStart)
-    const bubbles = ranked
+    let bubbles = ranked
       .filter((b) => b.postCount >= RELAY_THREAD_HEAT_MIN_INTERACTIONS)
       .slice(0, MAX_BUBBLES)
+
+    const missingRootIds = [
+      ...new Set(
+        bubbles
+          .filter((b) => !b.rootEvent)
+          .map((b) => b.rootId.trim().toLowerCase())
+          .filter((id) => /^[0-9a-f]{64}$/.test(id))
+      )
+    ]
+    if (missingRootIds.length > 0) {
+      const rootById = new Map<string, Event>()
+      const archived = await indexedDb.getArchivedEventsByIds(missingRootIds)
+      for (const ev of archived) {
+        if (!verifyEvent(ev)) continue
+        if (ev.kind !== kinds.ShortTextNote && ev.kind !== ExtendedKind.DISCUSSION) continue
+        rootById.set(ev.id.toLowerCase(), ev)
+      }
+      const stillMissing = missingRootIds.filter((id) => !rootById.has(id))
+      if (stillMissing.length > 0 && relayUrls.length > 0) {
+        const fetched = await raceWithTimeout(
+          client.fetchEvents(
+            relayUrls,
+            { ids: stillMissing, kinds: [...HEAT_KINDS] },
+            { eoseTimeout: 6000, globalTimeout: ROOT_SNIPPET_FETCH_TIMEOUT_MS }
+          ),
+          ROOT_SNIPPET_FETCH_TIMEOUT_MS,
+          [] as Event[],
+          'heat-map-root-snippet'
+        )
+        for (const ev of fetched) {
+          if (!verifyEvent(ev)) continue
+          if (ev.kind !== kinds.ShortTextNote && ev.kind !== ExtendedKind.DISCUSSION) continue
+          rootById.set(ev.id.toLowerCase(), ev)
+        }
+      }
+      if (rootById.size > 0) {
+        bubbles = bubbles.map((b) => {
+          if (b.rootEvent) return b
+          const ev = rootById.get(b.rootId.toLowerCase())
+          if (!ev) return b
+          return {
+            ...b,
+            rootEvent: ev,
+            snippet: collapseRelayThreadHeatSnippet(ev.content?.trim() ?? '')
+          }
+        })
+      }
+    }
+
     const roots = new Set(bubbles.map((b) => b.rootId))
     const edges = buildRelayThreadHeatEdges(feedNotes, roots)
     logger.info('[RelayThreadHeatMap] merge finished', {

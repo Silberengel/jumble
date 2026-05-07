@@ -26,7 +26,7 @@ export type TRelayThreadHeatEdge = { a: string; b: string }
 /** Minimum feed-filtered notes in a thread to appear as a bubble. */
 export const RELAY_THREAD_HEAT_MIN_INTERACTIONS = 5
 
-function collapseSnippet(content: string, maxLen = 160): string {
+export function collapseRelayThreadHeatSnippet(content: string, maxLen = 160): string {
   const t = content.replace(/\s+/g, ' ').trim().slice(0, maxLen)
   return t || '…'
 }
@@ -107,8 +107,8 @@ export function buildRelayThreadHeatBubbles(
       )
       const kind1TopLevel = kind1Or11.find((e) => e.kind === kinds.ShortTextNote && !isReplyNoteEvent(e))
       if (kind1TopLevel) return kind1TopLevel
-      const sorted = [...kind1Or11].sort((a, b) => a.created_at - b.created_at)
-      return sorted[0]
+      // OP may be outside the heat window or not in this merge; never use an early reply as OP text.
+      return undefined
     })()
     const snippetSource = opForSnippet?.content?.trim() ?? ''
 
@@ -118,7 +118,7 @@ export function buildRelayThreadHeatBubbles(
       postCount,
       uniqueAuthors,
       followAuthorsInThread,
-      snippet: collapseSnippet(snippetSource),
+      snippet: collapseRelayThreadHeatSnippet(snippetSource),
       lastActivity,
       rootEvent
     })
