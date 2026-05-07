@@ -3,7 +3,12 @@ import type { TNoteListRef } from '@/components/NoteList'
 import NormalFeed from '@/components/NormalFeed'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
-import { isSocialKindBlockedKind, NIP_SEARCH_DOCUMENT_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import {
+  isSocialKindBlockedKind,
+  NIP_SEARCH_DOCUMENT_KINDS,
+  NIP_SEARCH_PAGE_KINDS,
+  SEARCHABLE_RELAY_URLS
+} from '@/constants'
 import {
   augmentSubRequestsWithFavoritesFastReadAndInbox,
   getRelayUrlsWithFavoritesFastReadAndInbox,
@@ -44,7 +49,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   const [controls, setControls] = useState<React.ReactNode>(null)
   const [data, setData] = useState<
     | {
-        type: 'hashtag' | 'search' | 'externalContent' | 'dtag'
+        type: 'hashtag' | 'hashtagSearch' | 'search' | 'externalContent' | 'dtag'
         kinds?: number[]
         dtag?: string
       }
@@ -59,7 +64,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   // Get hashtag from URL if this is a hashtag page
   const hashtag = useMemo(() => {
-    if (data?.type === 'hashtag') {
+    if (data?.type === 'hashtag' || data?.type === 'hashtagSearch') {
       const searchParams = new URLSearchParams(window.location.search)
       return searchParams.get('t')
     }
@@ -92,6 +97,46 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       applySocialKindBlockedFilter: kinds.length === 0 || kinds.some(isSocialKindBlockedKind)
     }
     const hashtag = searchParams.get('t')
+    const searchFromUrl = searchParams.get('s')
+    if (hashtag && searchFromUrl) {
+      setData({ type: 'hashtagSearch' })
+      setTitle(`${t('Search')}: #${hashtag} · ${searchFromUrl}`)
+      const relayUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
+        favoriteRelays,
+        blockedRelays,
+        userReadRelaysWithHttp(relayList),
+        readUrlOpts
+      )
+      const mergedSearchKinds = Array.from(
+        new Set<number>([...NIP_SEARCH_PAGE_KINDS, ...(kinds.length > 0 ? kinds : [])])
+      ).sort((a, b) => a - b)
+      setSubRequests([
+        {
+          filter: { '#t': [hashtag], ...(kinds.length > 0 ? { kinds } : {}) },
+          urls: relayUrls
+        },
+        {
+          filter: { search: searchFromUrl, kinds: mergedSearchKinds },
+          urls: [...new Set([...relayUrls, ...SEARCHABLE_RELAY_URLS])]
+        }
+      ])
+      const isSubscribedToHashtag = isSubscribed(hashtag)
+      if (pubkey) {
+        setControls(
+          <Button
+            variant="ghost"
+            className="h-10 [&_svg]:size-3"
+            onClick={handleSubscribeHashtag}
+            disabled={isSubscribedToHashtag}
+          >
+            {isSubscribedToHashtag ? t('Subscribed') : t('Subscribe')} <Plus />
+          </Button>
+        )
+      } else {
+        setControls(null)
+      }
+      return
+    }
     if (hashtag) {
       setData({ type: 'hashtag' })
       setTitle(`# ${hashtag}`)
@@ -267,7 +312,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   // Update controls when subscription status changes
   useEffect(() => {
-    if (data?.type === 'hashtag' && pubkey) {
+    if ((data?.type === 'hashtag' || data?.type === 'hashtagSearch') && pubkey) {
       setControls(
         <Button
           variant="ghost"
@@ -283,7 +328,8 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   useEffect(() => {
     const inlineHeader =
-      hideTitlebar && (data?.type === 'hashtag' || data?.type === 'dtag')
+      hideTitlebar &&
+      (data?.type === 'hashtag' || data?.type === 'hashtagSearch' || data?.type === 'dtag')
     if (!hideTitlebar || inlineHeader) {
       registerPrimaryPanelRefresh(null)
       return
@@ -337,7 +383,8 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       }
       displayScrollToTopButton
     >
-      {hideTitlebar && (data?.type === 'hashtag' || data?.type === 'dtag') ? (
+      {hideTitlebar &&
+      (data?.type === 'hashtag' || data?.type === 'hashtagSearch' || data?.type === 'dtag') ? (
         <>
           <div className="px-4 py-2 border-b">
             <div className="flex items-center justify-between gap-2">

@@ -800,6 +800,18 @@ export default {
     heatMapBubbleStats: "{{posts}} notes · {{people}} people · {{follows}} follows in thread",
     heatMapConnectorHint: "Linked threads — «{{left}}» ↔ «{{right}}»",
     "Please login to view thread heat map": "Please log in to open the thread heat map.",
+    "Topic map": "Topic map",
+    topicMapDescription:
+      "The ten largest bubbles combine how often a normalized string appears as a topic tag (·t·) and as a #hashtag in note text (last ~30 days). Data merges this tab’s session cache, your on-device archive, and your relay stack. Tap a bubble to open one feed that merges #t matches and NIP-50 full-text search.",
+    topicMapLocalOnlyBanner:
+      "No read relay stack — only this session’s cache and your on-device archive are merged (add relays in settings for a live relay mix).",
+    topicMapLoading: "Merging session cache, archive, and relays…",
+    topicMapEmpty: "No topic or hashtag signals yet in the scanned window. Browse feeds or rescan after syncing.",
+    topicMapFetchError: "Could not build the topic map from your sources.",
+    topicMapRescan: "Rescan",
+    topicMapBubbleCounts: "{{topic}} notes with ·t· tag · {{kw}} with #hashtag in text",
+    topicMapOpenMergedFeed: "Open merged topic and keyword feed",
+    topicMapClickHint: "Opens a merged feed: same label as a ·t· filter plus NIP-50 search for the words.",
     Calendar: "Calendar",
     "No subscribed interests yet.": "No subscribed interests yet. Add topics in settings to see them here.",
     "No bookmarked notes with id tags yet.": "No bookmarked notes with id tags yet. Only classic (e-tag) bookmarks load in this feed.",

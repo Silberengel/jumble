@@ -11,6 +11,7 @@ import {
   Bookmark,
   CalendarDays,
   Flame,
+  Map as MapIcon,
   Gift,
   Hash,
   Image as ImageIcon,
@@ -46,6 +47,8 @@ export function fauxSpellLabelKey(name: FauxSpellName): string {
       return 'Following'
     case 'heatMap':
       return 'Heat map'
+    case 'topicMap':
+      return 'Topic map'
     case 'followPacks':
       return 'Follow Packs'
     case 'media':
@@ -66,6 +69,7 @@ export const FAUX_SPELL_ICON: Record<FauxSpellName, LucideIcon> = {
   discussions: MessageSquare,
   following: Users,
   heatMap: Flame,
+  topicMap: MapIcon,
   followPacks: Gift,
   media: ImageIcon,
   interests: Hash,

@@ -52,6 +52,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { useTranslation } from 'react-i18next'
 import CreateSpellDialog from './CreateSpellDialog'
 import RelayThreadHeatMap from './RelayThreadHeatMap'
+import TopicKeywordHeatMap from './TopicKeywordHeatMap'
 import type { TPageRef } from '@/types'
 import {
   decodeFollowSetSpellId,
@@ -115,6 +116,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   const selectedFauxSpellRefreshRef = useRef<string | null>(null)
   selectedFauxSpellRefreshRef.current = selectedFauxSpell
   const [heatMapRefreshKey, setHeatMapRefreshKey] = useState(0)
+  const [topicMapRefreshKey, setTopicMapRefreshKey] = useState(0)
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [spellPickerOpen, setSpellPickerOpen] = useState(false)
 
@@ -188,6 +190,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     }
     if (selectedFauxSpellRefreshRef.current === 'heatMap') {
       setHeatMapRefreshKey((k) => k + 1)
+    }
+    if (selectedFauxSpellRefreshRef.current === 'topicMap') {
+      setTopicMapRefreshKey((k) => k + 1)
     }
     spellFeedListRef.current?.refresh()
   }, [loadSpells, pubkey])
@@ -998,6 +1003,10 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           ) : selectedFauxSpell === 'heatMap' && pubkey ? (
             <div className="min-h-0 min-w-0 flex-1">
               <RelayThreadHeatMap followPubkeys={contacts} refreshKey={heatMapRefreshKey} />
+            </div>
+          ) : selectedFauxSpell === 'topicMap' ? (
+            <div className="min-h-0 min-w-0 flex-1">
+              <TopicKeywordHeatMap refreshKey={topicMapRefreshKey} />
             </div>
           ) : selectedFauxSpell && fauxSubRequests.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{fauxFeedEmptyMessage}</div>

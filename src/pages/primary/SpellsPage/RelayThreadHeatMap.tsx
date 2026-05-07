@@ -21,6 +21,7 @@ import {
   type TRelayThreadHeatBubble,
   type TRelayThreadHeatEdge
 } from '@/lib/relay-thread-heat'
+import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartNoteNavigation, useSmartProfileInteractionsNavigation } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -84,6 +85,7 @@ type Props = {
 
 export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props) {
   const { t } = useTranslation()
+  const { navigate: navigatePrimary } = usePrimaryPage()
   const { navigateToNote } = useSmartNoteNavigation()
   const { navigateToProfileInteractions } = useSmartProfileInteractionsNavigation()
   const { pubkey, relayList } = useNostr()
@@ -444,6 +446,15 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
           >
             <LayoutGrid className="size-4 shrink-0" aria-hidden />
             {t('interactionMapMenu')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => navigatePrimary('spells', { spell: 'topicMap' })}
+          >
+            {t('Topic map')}
           </Button>
         </div>
       </div>
