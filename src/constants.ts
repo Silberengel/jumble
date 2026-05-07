@@ -139,17 +139,23 @@ export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 1200
  * 10002 is already in IndexedDB (the 30s publish timeout only runs after targets are resolved).
  */
 /**
- * Cold `fetchRelayLists` runs NIP-65 (10002) + HTTP list (10243) fetches and often a 10432 pass; those used
- * to run strictly in series under one race, so 32s was routinely shorter than real wall time → prioritize
- * publish timed out and the UI looked stuck.
+ * Budget for `fetchRelayLists` / NIP-65 resolution on the publish path. Longer waits block the reply button
+ * while relays stall; shorter values fall back to IndexedDB + deduped picker order sooner (still correct).
  */
-export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 60_000
+export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 20_000
 
 /**
  * {@link ClientService.prioritizePublishUrlListWithTimeout}: must exceed {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS}
- * so one full `fetchRelayLists` can finish before we fall back to “deduped order without inbox fetch”.
+ * so one full `fetchRelayLists` budget can elapse before we fall back to “deduped order without inbox fetch”.
  */
-export const PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS + 25_000
+export const PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS + 14_000
+
+/**
+ * When {@link ClientService.publishEvent} targets more than one relay, cap per-relay publish ACK wait so one
+ * hung relay (e.g. 90s timeout) does not delay returning until every parallel publish settles. Single-relay
+ * publishes keep {@link RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS} for extension signers on slow paths.
+ */
+export const MULTI_RELAY_PUBLISH_ACK_CAP_MS = 24_000
 
 /** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
 export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS

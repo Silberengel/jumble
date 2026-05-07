@@ -18,6 +18,7 @@ import {
   PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS,
   PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
+  MULTI_RELAY_PUBLISH_ACK_CAP_MS,
   RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS,
@@ -1429,6 +1430,11 @@ class ClientService extends EventTarget {
     )
 
     const uniqueRelayUrls = filtered
+    /** Single-relay: full NIP-42 ACK budget; multi-relay: avoid waiting on the slowest peer for “all settled”. */
+    const publishAckBudgetCapMs =
+      uniqueRelayUrls.length <= 1
+        ? RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS
+        : Math.min(RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS, MULTI_RELAY_PUBLISH_ACK_CAP_MS)
 
     if (relayUrls.length !== uniqueRelayUrls.length || mergedRelayUrls.length !== uniqueRelayUrls.length) {
       logger.info('[PublishEvent] Publish target relays (UI selection vs actually contacted)', {
@@ -1520,11 +1526,11 @@ class ClientService extends EventTarget {
       const slotCap = Math.max(1, MAX_CONCURRENT_RELAY_CONNECTIONS)
       const publishWaves = Math.max(1, Math.ceil(uniqueRelayUrls.length / slotCap))
       const perWaveBudgetMs =
-        RELAY_POOL_CONNECTION_TIMEOUT_MS + RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS + 10_000
+        RELAY_POOL_CONNECTION_TIMEOUT_MS + publishAckBudgetCapMs + 10_000
       const publishGlobalDeadlineMs = Math.min(
         600_000,
         Math.max(
-          RELAY_POOL_CONNECTION_TIMEOUT_MS + RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS + 30_000,
+          RELAY_POOL_CONNECTION_TIMEOUT_MS + publishAckBudgetCapMs + 30_000,
           publishWaves * perWaveBudgetMs + 25_000
         )
       )
@@ -1594,8 +1600,8 @@ class ClientService extends EventTarget {
           const isLocal = isLocalNetworkUrl(url)
           /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
           const connectionTimeout = isLocal ? 5_000 : RELAY_POOL_CONNECTION_TIMEOUT_MS
-          /** ACK wait: {@link applyRelayNip42AckTimeout} already sets relay.publishTimeout; do not override with a few seconds (extension signers + slow relays). */
-          const publishAckBudgetMs = isLocal ? 5_000 : RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS
+          /** ACK wait: pool sets {@link RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS}; outer race uses {@link publishAckBudgetCapMs} for multi-relay. */
+          const publishAckBudgetMs = isLocal ? 5_000 : publishAckBudgetCapMs
           const httpPublishBudgetMs = isLocal ? 5_000 : 8_000
 
           // Set up a per-relay timeout to ensure we always reach the finally block
