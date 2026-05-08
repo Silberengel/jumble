@@ -1438,6 +1438,8 @@ const NoteList = forwardRef(
 
     const [feedVirtualScrollParent, setFeedVirtualScrollParent] = useState<HTMLElement | null>(null)
     const [feedVirtualScrollMarginTop, setFeedVirtualScrollMarginTop] = useState(0)
+    /** Last applied scroll port — skip redundant setState when RO fires on every row/media resize (fixes feed “shake”). */
+    const lastFeedScrollPortRef = useRef<{ parent: HTMLElement | null; marginTop: number } | null>(null)
     /**
      * Resolve the scroll container once per feed / refresh — not on every {@link clientFilteredEvents} length tick.
      * Re-running this on each timeline merge re-set scroll state and interacted badly with the virtualizer while rows
@@ -1445,19 +1447,33 @@ const NoteList = forwardRef(
      */
     useLayoutEffect(() => {
       let alive = true
+      let resizeCoalesceRaf = 0
+
       const applyFeedScrollPort = () => {
         if (!alive) return
         const anchor = resolveFeedVirtualScrollAnchor(feedRootRef.current, feedListScrollAnchorRef.current)
         if (!anchor) {
-          setFeedVirtualScrollParent(null)
-          setFeedVirtualScrollMarginTop(0)
+          const last = lastFeedScrollPortRef.current
+          if (!last || last.parent !== null || last.marginTop !== 0) {
+            lastFeedScrollPortRef.current = { parent: null, marginTop: 0 }
+            setFeedVirtualScrollParent(null)
+            setFeedVirtualScrollMarginTop(0)
+          }
           return
         }
         const layoutEl = primaryScrollAreaRef?.current ?? null
-        setFeedVirtualScrollParent(resolvePrimaryFeedScrollPort(layoutEl, anchor))
-        setFeedVirtualScrollMarginTop(anchor.offsetTop)
+        const nextParent = resolvePrimaryFeedScrollPort(layoutEl, anchor)
+        const nextMargin = Math.round(anchor.offsetTop)
+        const last = lastFeedScrollPortRef.current
+        if (last && last.parent === nextParent && last.marginTop === nextMargin) {
+          return
+        }
+        lastFeedScrollPortRef.current = { parent: nextParent, marginTop: nextMargin }
+        setFeedVirtualScrollParent(nextParent)
+        setFeedVirtualScrollMarginTop(nextMargin)
       }
 
+      lastFeedScrollPortRef.current = null
       applyFeedScrollPort()
       let innerRaf = 0
       const outerRaf = requestAnimationFrame(() => {
@@ -1473,18 +1489,28 @@ const NoteList = forwardRef(
         applyFeedScrollPort()
       }, 0)
 
+      const scheduleApplyFromResize = () => {
+        if (!alive) return
+        if (resizeCoalesceRaf) cancelAnimationFrame(resizeCoalesceRaf)
+        resizeCoalesceRaf = requestAnimationFrame(() => {
+          resizeCoalesceRaf = 0
+          if (!alive) return
+          applyFeedScrollPort()
+        })
+      }
+
       let ro: ResizeObserver | null = null
       const root = feedRootRef.current
       if (root && typeof ResizeObserver !== 'undefined') {
         ro = new ResizeObserver(() => {
-          if (!alive) return
-          applyFeedScrollPort()
+          scheduleApplyFromResize()
         })
         ro.observe(root)
       }
 
       return () => {
         alive = false
+        if (resizeCoalesceRaf) cancelAnimationFrame(resizeCoalesceRaf)
         cancelAnimationFrame(outerRaf)
         cancelAnimationFrame(innerRaf)
         window.clearTimeout(deferTimer)
@@ -3863,7 +3889,7 @@ const NoteList = forwardRef(
     }, [clientFilteredEvents, subRequestsKey, feedReasonLabelsTick])
 
     const list = (
-      <div className="min-h-screen">
+      <div className="min-h-0 w-full">
         {relayWavePendingBannerEl}
         {feedClientFilterActive && filteredEvents.length > 0 && clientFilteredEvents.length === 0 ? (
           <div className="px-2 py-8 text-center text-sm text-muted-foreground">

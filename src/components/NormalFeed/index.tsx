@@ -5,11 +5,21 @@ import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import storage from '@/services/local-storage.service'
 import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
+import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import type { TPrimaryPageName } from '@/PageManager'
 import { TFeedSubRequest, TNoteListMode } from '@/types'
 import { cn } from '@/lib/utils'
 import type { Event } from 'nostr-tools'
-import { forwardRef, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import KindFilter from '../KindFilter'
 
 const NormalFeed = forwardRef<TNoteListRef, {
@@ -122,17 +132,32 @@ const NormalFeed = forwardRef<TNoteListRef, {
 
   const MEDIA_KINDS = useMemo(() => [...PROFILE_MEDIA_TAB_KINDS], [])
 
-  const tabs = useMemo(
-    (): TabDefinition[] => {
-      const base: TabDefinition[] = [
-        { value: 'posts', label: 'Notes' },
-        { value: 'postsAndReplies', label: 'Replies' }
-      ]
-      if (isMainFeed) base.push({ value: 'media', label: 'Gallery' })
-      return base
-    },
-    [isMainFeed]
+  /** Every shard URL is a nostrarchives Wisp “trending notes” stream — replies/gallery tabs are not applicable. */
+  const isWispTrendingOnlyFeed = useMemo(
+    () =>
+      subRequests.length > 0 &&
+      subRequests.every(
+        (req) => req.urls.length > 0 && req.urls.every((u) => isWispTrendingNotesRelayUrl(u))
+      ),
+    [subRequests]
   )
+
+  useEffect(() => {
+    if (!isWispTrendingOnlyFeed) return
+    setListMode((m) => (m === 'posts' ? m : 'posts'))
+  }, [isWispTrendingOnlyFeed])
+
+  const tabs = useMemo((): TabDefinition[] => {
+    if (isMainFeed && isWispTrendingOnlyFeed) {
+      return [{ value: 'posts', label: 'Notes' }]
+    }
+    const base: TabDefinition[] = [
+      { value: 'posts', label: 'Notes' },
+      { value: 'postsAndReplies', label: 'Replies' }
+    ]
+    if (isMainFeed) base.push({ value: 'media', label: 'Gallery' })
+    return base
+  }, [isMainFeed, isWispTrendingOnlyFeed])
 
   /** When in media mode, replace each shard's kinds with the media set. */
   const effectiveSubRequests = useMemo(() => {
@@ -183,29 +208,37 @@ const NormalFeed = forwardRef<TNoteListRef, {
   /** Include kind picker deps for single-relay chips (kindless REQ + client-side kinds). */
   const subHeaderFilterDepsKey = `${allowKindlessRelayExplore ? 'kle' : 'std'}|${showKindsKey}|${feedKindFilterBypass}|${showAllKindsProp ? 'allProp' : 'k'}`
 
-  const tabsElement = useMemo(
-    () => (
+  /** Notes / Replies / Gallery switch, plus refresh + kind filter — on Wisp trending only the tool row (no mode tabs). */
+  const tabsElement = useMemo(() => {
+    const kindRowOptions = (
+      <div className="flex items-center gap-1">
+        {onSubHeaderRefresh != null && <RefreshButton onClick={onSubHeaderRefresh} />}
+        <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
+      </div>
+    )
+    if (isMainFeed && isWispTrendingOnlyFeed) {
+      return (
+        <div className="flex w-full min-w-0 items-center justify-end gap-1 py-1">{kindRowOptions}</div>
+      )
+    }
+    return (
       <Tabs
         value={listMode}
         tabs={tabs}
         onTabChange={handleListModeChange}
-        options={
-          <div className="flex items-center gap-1">
-            {onSubHeaderRefresh != null && <RefreshButton onClick={onSubHeaderRefresh} />}
-            <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
-          </div>
-        }
+        options={kindRowOptions}
       />
-    ),
-    [
-      listMode,
-      tabs,
-      handleListModeChange,
-      showKinds,
-      onSubHeaderRefresh,
-      handleShowKindsChange
-    ]
-  )
+    )
+  }, [
+    isMainFeed,
+    isWispTrendingOnlyFeed,
+    listMode,
+    tabs,
+    handleListModeChange,
+    showKinds,
+    onSubHeaderRefresh,
+    handleShowKindsChange
+  ])
 
   const renderTabsInFeed = !(isMainFeed && setSubHeader) && !allowKindlessRelayExplore
 
@@ -236,6 +269,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     isMainFeed,
     setSubHeader,
     listMode,
+    isWispTrendingOnlyFeed,
     subHeaderFilterDepsKey,
     onSubHeaderRefresh,
     allowKindlessRelayExplore,

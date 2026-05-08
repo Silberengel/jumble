@@ -1,10 +1,10 @@
-import { isNip71StyleVideoKind } from '@/constants'
+import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import client from '@/services/client.service'
 import { extractAllMediaFromEvent } from '@/services/media-extraction.service'
 import { useSmartNoteNavigationOptional } from '@/PageManager'
-import { Images, Music, Play } from 'lucide-react'
+import { Image as ImageIcon, Images, Music, Play } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useMemo } from 'react'
 
@@ -14,8 +14,12 @@ export default function MediaGridItem({ event }: { event: Event }) {
   const media = useMemo(() => extractAllMediaFromEvent(event), [event])
   const first = media.all[0]
 
-  const isVideo = first?.m?.startsWith('video/') || isNip71StyleVideoKind(event.kind)
-  const isAudio = first?.m?.startsWith('audio/') || event.kind === 1222
+  /** Kind 20 is always treated as image unless imeta explicitly says video (rare mis-tag). */
+  const isPictureKind = event.kind === ExtendedKind.PICTURE
+  const isVideo =
+    (!isPictureKind && first?.m?.startsWith('video/')) ||
+    (!isPictureKind && isNip71StyleVideoKind(event.kind))
+  const isAudio = first?.m?.startsWith('audio/') || event.kind === ExtendedKind.VOICE
   const hasMultiple = media.all.length > 1
 
   // For videos prefer the poster image; fall back to video URL (browser extracts frame)
@@ -51,7 +55,13 @@ export default function MediaGridItem({ event }: { event: Event }) {
         )
       ) : (
         <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-          {isAudio ? <Music className="size-8" /> : <Play className="size-8" />}
+          {isAudio ? (
+            <Music className="size-8" />
+          ) : isVideo ? (
+            <Play className="size-8" />
+          ) : (
+            <ImageIcon className="size-8" />
+          )}
         </div>
       )}
 

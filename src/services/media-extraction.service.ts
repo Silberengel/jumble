@@ -25,6 +25,7 @@ export function extractAllMediaFromEvent(
   event: Event,
   content?: string
 ): ExtractedMedia {
+  const textBody = content ?? event.content ?? ''
   const seenUrls = new Set<string>()
   const allMedia: TImetaInfo[] = []
 
@@ -124,13 +125,13 @@ export function extractAllMediaFromEvent(
     }
   })
 
-  // 4. Extract from content (if provided)
-  if (content) {
+  // 4. Extract from note content (plain URLs, markdown images) — callers may omit `content`; default to `event.content`.
+  if (textBody) {
     // First, extract from markdown image syntax: ![alt](url) or [![](url)](link)
     // This handles images inside links
     const markdownImageRegex = /!\[[^\]]*\]\(([^)]+)\)/g
     let imgMatch
-    while ((imgMatch = markdownImageRegex.exec(content)) !== null) {
+    while ((imgMatch = markdownImageRegex.exec(textBody)) !== null) {
       if (imgMatch[1]) {
         const url = imgMatch[1]
         if (isEmbeddableMediaUrl(cleanUrl(url) || url)) {
@@ -141,7 +142,7 @@ export function extractAllMediaFromEvent(
     
     // Then extract directly from raw content (catch any URLs that weren't parsed)
     const urlRegex = /https?:\/\/[^\s<>"']+/g
-    const urlMatches = content.matchAll(urlRegex)
+    const urlMatches = textBody.matchAll(urlRegex)
     for (const match of urlMatches) {
       const url = match[0]
       const c = cleanUrl(url) || url

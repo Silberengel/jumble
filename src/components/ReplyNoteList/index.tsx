@@ -88,7 +88,8 @@ function chunkKindsForThreadReq(list: readonly number[], size = MAX_KINDS_PER_TH
   }
   return out
 }
-const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 50
+/** Short debounce so thread / detail headers populate avatars quickly after events arrive. */
+const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 16
 const THREAD_PROFILE_CHUNK = 80
 
 function partitionZapReceipts(items: NEvent[]) {

@@ -26,6 +26,7 @@ import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { stripMarkupForPreview } from '@/lib/parent-reply-blurb'
 import { tagNameEquals } from '@/lib/tag'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
 import type { Event } from 'nostr-tools'
@@ -111,10 +112,18 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     () => (finalEvent?.kind === ExtendedKind.COMMENT ? finalEvent.tags.find(tagNameEquals('I')) : undefined),
     [finalEvent]
   )
+  const threadRelayHints = useMemo(
+    () => (finalEvent ? relayHintsFromEventTags(finalEvent) : []),
+    [finalEvent]
+  )
+  const parentRootFetchOpts = useMemo(
+    () => (threadRelayHints.length ? { relayHints: threadRelayHints } : undefined),
+    [threadRelayHints]
+  )
   const { isFetching: isFetchingRootEvent, event: rootEvent, refetch: refetchRoot } =
-    useFetchEvent(rootEventId)
+    useFetchEvent(rootEventId, undefined, parentRootFetchOpts)
   const { isFetching: isFetchingParentEvent, event: parentEvent, refetch: refetchParent } =
-    useFetchEvent(parentEventId)
+    useFetchEvent(parentEventId, undefined, parentRootFetchOpts)
 
   const selfHex = finalEvent?.id?.toLowerCase()
   const rootEventForStrip =

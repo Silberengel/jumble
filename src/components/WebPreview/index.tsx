@@ -138,7 +138,10 @@ export default function WebPreview({ url, className }: { url: string; className?
   const { isSmallScreen } = useScreenSize()
 
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])
-  const { title, description, image, ogLoading } = useFetchWebMetadata(cleanedUrl)
+  /** Link cards and URLs in highlights stay visible on cellular; OG fetch is gated by the same policy as heavy media. */
+  const { title, description, image, ogLoading } = useFetchWebMetadata(cleanedUrl, {
+    fetchEnabled: autoLoadMedia
+  })
 
   const hostname = useMemo(() => {
     try {
@@ -458,11 +461,6 @@ export default function WebPreview({ url, className }: { url: string; className?
     }
     img.src = image
   }, [image])
-
-  // Early return after ALL hooks are called
-  if (!autoLoadMedia) {
-    return null
-  }
 
   // Prefer the page's own Open Graph / meta when the fetch returns anything useful.
   const hasOpengraphData = !isInternalAppLink && (title || description || image)

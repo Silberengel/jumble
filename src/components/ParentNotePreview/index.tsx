@@ -4,7 +4,7 @@ import { useFetchEvent } from '@/hooks'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import { useTranslation } from 'react-i18next'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event } from 'nostr-tools'
 import ContentPreview from '../ContentPreview'
 import UserAvatar from '../UserAvatar'
@@ -14,16 +14,23 @@ export default function ParentNotePreview({
   eventId,
   className,
   onClick,
+  /** NIP-10 `e` relay hints from the child note — speeds up parent fetch in notifications and feeds. */
+  relayHints,
   /** Inline hint without pill background (e.g. reply thread rows). */
   appearance = 'default'
 }: {
   eventId: string
   className?: string
   onClick?: React.MouseEventHandler<HTMLDivElement> | undefined
+  relayHints?: string[]
   appearance?: 'default' | 'subtle'
 }) {
   const { t } = useTranslation()
-  const { event, isFetching } = useFetchEvent(eventId)
+  const fetchOpts = useMemo(
+    () => (relayHints?.length ? { relayHints } : undefined),
+    [relayHints]
+  )
+  const { event, isFetching } = useFetchEvent(eventId, undefined, fetchOpts)
   const [fallbackEvent, setFallbackEvent] = useState<Event | undefined>(undefined)
   const [isFetchingFallback, setIsFetchingFallback] = useState(false)
   /** One automatic searchable-relay attempt per eventId; without this, the effect re-fires forever after each 20s timeout. */

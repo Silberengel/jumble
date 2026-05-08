@@ -3224,7 +3224,7 @@ function parseMarkdownContentMarked(
   } = options
   const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
 
-  /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview returns null when autoLoadMedia is off. */
+  /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview skips OG fetch when autoLoadMedia is off but still shows a link card. */
   const imetaInfoForStandaloneImageUrl = (cleaned: string): TImetaInfo =>
     resolveImetaForMarkdownImageUrl(cleaned, eventPubkey, {
       resolveFromExtractedMedia: resolveImetaForImageUrl,

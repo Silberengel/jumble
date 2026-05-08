@@ -4,12 +4,18 @@ import webService from '@/services/web.service'
 import logger from '@/lib/logger'
 import { isLikelyWebPageUrl } from '@/lib/url'
 
-export function useFetchWebMetadata(url: string) {
+export function useFetchWebMetadata(
+  url: string,
+  options?: { /** When false, skip OG fetch (e.g. cellular + “Wi‑Fi only” media policy); caller still renders a link card. */ fetchEnabled?: boolean }
+) {
+  const fetchEnabled = options?.fetchEnabled !== false
   const [metadata, setMetadata] = useState<TWebMetadata>({})
-  const [ogLoading, setOgLoading] = useState(() => Boolean(url && isLikelyWebPageUrl(url)))
+  const [ogLoading, setOgLoading] = useState(() =>
+    Boolean(fetchEnabled && url && isLikelyWebPageUrl(url))
+  )
 
   useEffect(() => {
-    if (!url || !isLikelyWebPageUrl(url)) {
+    if (!fetchEnabled || !url || !isLikelyWebPageUrl(url)) {
       setMetadata({})
       setOgLoading(false)
       return
@@ -31,7 +37,7 @@ export function useFetchWebMetadata(url: string) {
       .finally(() => {
         setOgLoading(false)
       })
-  }, [url])
+  }, [url, fetchEnabled])
 
   return { ...metadata, ogLoading }
 }

@@ -14,6 +14,7 @@ import {
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { isMentioningMutedUsers, isNip25ReactionKind } from '@/lib/event'
 import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
@@ -68,6 +69,7 @@ export default function ReplyNote({
       event.kind === ExtendedKind.EXTERNAL_REACTION ? getWebExternalReactionTargetUrl(event) : undefined,
     [event]
   )
+  const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const headerUserId = useMemo(() => {
     if (event.kind !== kinds.Zap) return event.pubkey
     const info = getZapInfoFromEvent(event)
@@ -155,6 +157,7 @@ export default function ReplyNote({
                 appearance="subtle"
                 className="mt-1.5"
                 eventId={parentEventId}
+                relayHints={parentFetchRelayHints}
                 onClick={(e) => {
                   e.stopPropagation()
                   onClickParent()

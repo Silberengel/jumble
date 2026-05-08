@@ -34,13 +34,14 @@ const WindowRows = memo(function WindowRows({
     estimateSize: () => (gridLayout ? ESTIMATE_GRID_ROW_PX : ESTIMATE_NOTE_ROW_PX),
     overscan: VIRTUAL_OVERSCAN,
     scrollMargin: scrollMarginTop,
+    // Stable keys by event id so prepending new feed rows does not remount existing rows (e.g. reply editor state).
     getItemKey: (index) =>
-      gridLayout ? `grid-${index}` : `${events[index]?.id ?? 'row'}@${index}`
+      gridLayout ? `grid-${index}` : (events[index]?.id ?? `row-${index}`)
   })
 
   return (
     <div
-      className="relative isolate min-h-0 w-full overflow-x-hidden"
+      className="relative isolate min-h-0 w-full overflow-x-hidden [contain:layout]"
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualizer.getVirtualItems().map((vi) => (
@@ -86,13 +87,14 @@ const ElementRows = memo(function ElementRows({
     getScrollElement: () => scrollElement,
     estimateSize: () => (gridLayout ? ESTIMATE_GRID_ROW_PX : ESTIMATE_NOTE_ROW_PX),
     overscan: VIRTUAL_OVERSCAN,
+    // Stable keys by event id so prepending new feed rows does not remount existing rows (e.g. reply editor state).
     getItemKey: (index) =>
-      gridLayout ? `grid-${index}` : `${events[index]?.id ?? 'row'}@${index}`
+      gridLayout ? `grid-${index}` : (events[index]?.id ?? `row-${index}`)
   })
 
   return (
     <div
-      className="relative isolate min-h-0 w-full overflow-x-hidden"
+      className="relative isolate min-h-0 w-full overflow-x-hidden [contain:layout]"
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualizer.getVirtualItems().map((vi) => (

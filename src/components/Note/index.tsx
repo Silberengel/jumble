@@ -11,6 +11,7 @@ import {
 import { shouldHideInteractions } from '@/lib/event-filtering'
 import { mergeNip84MarkedIntervals, renderPlaintextWithNip84MergedMarks } from '@/lib/nip84-op-body-marks'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import {
@@ -135,6 +136,7 @@ export default function Note({
     () => (hideParentNotePreview ? undefined : getParentBech32Id(event)),
     [event, hideParentNotePreview]
   )
+  const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const contentPolicy = useContentPolicyOptional()
   const defaultShowNsfw = contentPolicy?.defaultShowNsfw ?? true
   const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
@@ -600,6 +602,7 @@ export default function Note({
         ) : parentEventId ? (
           <ParentNotePreview
             eventId={parentEventId}
+            relayHints={parentFetchRelayHints}
             className="mt-2"
             onClick={(e) => {
               e.stopPropagation()

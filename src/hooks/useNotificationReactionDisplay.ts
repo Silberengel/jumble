@@ -4,6 +4,7 @@ import {
   isDiscussionUpvoteEmoji
 } from '@/lib/discussion-votes'
 import { getRootEventHexId } from '@/lib/event'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import { eventService } from '@/services/client.service'
 import { Event, kinds } from 'nostr-tools'
@@ -26,6 +27,8 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
     return getFirstHexEventIdFromETags(event.tags)
   }, [event.kind, event.tags])
 
+  const reactionRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
+
   const [state, setState] = useState<NotificationReactionDisplay>(() =>
     event.kind === kinds.Reaction ? { status: 'pending' } : { status: 'default' }
   )
@@ -47,8 +50,10 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
     let cancelled = false
     setState({ status: 'pending' })
 
+    const fetchOpts = reactionRelayHints.length ? { relayHints: reactionRelayHints } : undefined
+
     ;(async () => {
-      const target = await eventService.fetchEvent(targetId)
+      const target = await eventService.fetchEvent(targetId, fetchOpts)
       if (cancelled) return
       if (!target) {
         setState({ status: 'default' })
@@ -59,7 +64,9 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
       if (!inDiscussion && target.kind === ExtendedKind.COMMENT) {
         const rootId = getRootEventHexId(target)
         if (rootId) {
-          const root = await eventService.fetchEvent(rootId)
+          const rootHints = relayHintsFromEventTags(target)
+          const rootOpts = rootHints.length ? { relayHints: rootHints } : fetchOpts
+          const root = await eventService.fetchEvent(rootId, rootOpts)
           if (cancelled) return
           inDiscussion = root?.kind === ExtendedKind.DISCUSSION
         }
@@ -83,7 +90,7 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
     return () => {
       cancelled = true
     }
-  }, [event.id, event.kind, event.content, targetId])
+  }, [event.id, event.kind, event.content, targetId, reactionRelayHints])
 
   return state
 }
