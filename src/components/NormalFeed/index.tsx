@@ -78,6 +78,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
   extraShouldHideEvent?: (ev: Event) => boolean
   /** Override default cap for merged one-shot batches (wide d-tag / search merges). */
   oneShotMergedCap?: number
+  /** When every relay in the subscribe wave fails before EOSE, merge a one-shot fetch from default read relays (home multi-relay feeds). */
+  timelinePublicReadFallback?: boolean
 }>(function NormalFeed(
   {
     subRequests,
@@ -106,7 +108,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     progressiveDocumentKinds,
     oneShotAfterMergeComparator,
     extraShouldHideEvent,
-    oneShotMergedCap
+    oneShotMergedCap,
+    timelinePublicReadFallback = false
   },
   ref
 ) {
@@ -331,6 +334,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           oneShotAfterMergeComparator={oneShotAfterMergeComparator}
           extraShouldHideEvent={extraShouldHideEvent}
           oneShotMergedCap={oneShotMergedCap}
+          timelinePublicReadFallback={timelinePublicReadFallback}
         />
       </div>
     </>

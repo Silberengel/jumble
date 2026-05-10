@@ -94,11 +94,11 @@ class NoteStatsService {
   private processBatchRunning = false
   /** While greater than zero, {@link processBatch} defers so user publishes are not starved for WebSocket pool / bandwidth. */
   private publishPriorityDepth = 0
-  private readonly BATCH_DELAY = 200
-  /** Small slices so a slow batch does not block newer cards (e.g. spell feed swaps placeholder rows → discussions). */
-  private readonly MAX_BATCH_SIZE = 8
-  /** Avoid 20+ simultaneous stats REQs (relay strikes / hangs); each slice runs in waves. */
-  private readonly STATS_SLICE_CONCURRENCY = 4
+  private readonly BATCH_DELAY = 120
+  /** Larger slices: feed cards each trigger a stats fetch; tiny slices left the tail of the feed starved. */
+  private readonly MAX_BATCH_SIZE = 20
+  /** Parallel stats REQs per slice (bounded by relay pool pressure). */
+  private readonly STATS_SLICE_CONCURRENCY = 6
   /** Client-only RSS/Web thread roots are not on relays; use the event passed into {@link fetchNoteStats}. */
   private pendingSyntheticRootById = new Map<string, Event>()
   /** Root event from {@link fetchNoteStats} (feed/card already has it; avoids fetchEvent miss → no stats UI). */
@@ -161,7 +161,8 @@ class NoteStatsService {
     if (this.processBatchRunning) {
       return
     }
-    const backlogLarge = this.pendingEvents.size >= this.MAX_BATCH_SIZE
+    const backlogLarge =
+      this.pendingForeground.size + this.pendingEvents.size >= this.MAX_BATCH_SIZE
     if (backlogLarge || foreground) {
       if (this.batchTimeout) {
         clearTimeout(this.batchTimeout)
@@ -262,7 +263,8 @@ class NoteStatsService {
   }
 
   private async processBatch() {
-    if (this.publishPriorityDepth > 0) {
+    /** Defer only background fetches while the user is publishing; open note / `foreground` must not starve. */
+    if (this.publishPriorityDepth > 0 && this.pendingForeground.size === 0) {
       if (this.batchTimeout) {
         clearTimeout(this.batchTimeout)
       }
@@ -514,8 +516,8 @@ class NoteStatsService {
     event: Event,
     replaceableCoordinate?: string
   ): { nonSocial: Filter[]; social: Filter[] } {
-    const reactionLimit = 300
-    const interactionLimit = 80
+    const reactionLimit = 500
+    const interactionLimit = 120
     const nip18RepostKinds = [kinds.Repost, ExtendedKind.GENERIC_REPOST]
 
     /** Synthetic RSS/Web parents are not on relays; `#e` on the fake id returns nothing. Use only URL-scoped filters. */
@@ -857,25 +859,31 @@ class NoteStatsService {
     return emoji
   }
 
-  private addLikeByEvent(evt: Event, originalEventAuthor?: string, forcedTargetEventId?: string) {
-    let targetEventId = forcedTargetEventId ?? getFirstHexEventIdFromETags(evt.tags)
-    if (!targetEventId && evt.kind === kinds.Reaction) {
+  private reactionTargetHexForLike(evt: Event, forcedTargetEventId?: string): string | undefined {
+    const forced = forcedTargetEventId?.trim()
+    if (forced) return forced
+    const parentHex = getParentEventHexId(evt)
+    if (parentHex && /^[0-9a-f]{64}$/i.test(parentHex)) return parentHex
+    const firstE = getFirstHexEventIdFromETags(evt.tags)
+    if (firstE) return firstE
+    if (evt.kind === kinds.Reaction) {
       const pageUrl = getReactionPageUrlFromRTags(evt)
       if (pageUrl) {
-        targetEventId = rssArticleStableEventId(canonicalizeRssArticleUrl(pageUrl))
+        return rssArticleStableEventId(canonicalizeRssArticleUrl(pageUrl))
       }
     }
-    if (!targetEventId) return
-    targetEventId = this.statsKey(targetEventId)
+    return undefined
+  }
+
+  private addLikeByEvent(evt: Event, _originalEventAuthor?: string, forcedTargetEventId?: string) {
+    const targetEventIdRaw = this.reactionTargetHexForLike(evt, forcedTargetEventId)
+    if (!targetEventIdRaw) return
+    const targetEventId = this.statsKey(targetEventIdRaw)
 
     const old = this.noteStatsMap.get(targetEventId) || {}
     const likeIdSet = old.likeIdSet || new Set()
     const likes = old.likes || []
     if (likeIdSet.has(evt.id)) return
-
-    if (originalEventAuthor && originalEventAuthor === evt.pubkey) {
-      return
-    }
 
     const emoji = this.reactionEmojiFromEvent(evt)
 
@@ -888,7 +896,7 @@ class NoteStatsService {
   /** NIP-25 kind 17 reactions to http(s) URLs; stats key matches synthetic RSS thread root id. */
   private addLikeByExternalWebReactionEvent(
     evt: Event,
-    originalEventAuthor?: string,
+    _originalEventAuthor?: string,
     forcedTargetEventId?: string
   ) {
     const url = getWebExternalReactionTargetUrl(evt)
@@ -902,10 +910,6 @@ class NoteStatsService {
     const likeIdSet = old.likeIdSet || new Set()
     const likes = old.likes || []
     if (likeIdSet.has(evt.id)) return
-
-    if (originalEventAuthor && originalEventAuthor === evt.pubkey) {
-      return
-    }
 
     const emoji = this.reactionEmojiFromEvent(evt)
 

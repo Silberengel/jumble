@@ -478,7 +478,7 @@ export default function Note({
                   userId={event.pubkey}
                   size={size === 'small' ? 'medium' : 'normal'}
                   maxFileSizeKb={showFull ? 2048 : 500}
-                  deferRemoteAvatar={!showFull}
+                  deferRemoteAvatar={false}
                 />
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-hidden">
                   <Username
@@ -530,7 +530,7 @@ export default function Note({
                   userId={event.pubkey}
                   size={size === 'small' ? 'medium' : 'normal'}
                   maxFileSizeKb={showFull ? 2048 : 500}
-                  deferRemoteAvatar={!showFull}
+                  deferRemoteAvatar={false}
                 />
                 <div className="flex-1 w-0">
                   <div className="flex gap-2 items-center">

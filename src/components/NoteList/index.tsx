@@ -1,5 +1,11 @@
 import NewNotesButton from '@/components/NewNotesButton'
-import { ExtendedKind, FIRST_RELAY_RESULT_GRACE_MS, SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS, SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
+import {
+  ExtendedKind,
+  FAST_READ_RELAY_URLS,
+  FIRST_RELAY_RESULT_GRACE_MS,
+  SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
+  SINGLE_RELAY_KINDLESS_REQ_LIMIT
+} from '@/constants'
 import {
   collectEmbeddedEventPrefetchTargets,
   getNip18RepostTargetId,
@@ -66,7 +72,6 @@ import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { formatPubkey, inviteInputToHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { usePrimaryPageOptional } from '@/contexts/primary-page-context'
-import { usePrimaryPageScrollAreaRefOptional } from '@/contexts/primary-page-scroll-area-context'
 import type { TPrimaryPageName } from '@/PageManager'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -83,8 +88,8 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { NoteCardLoadingSkeleton } from '../NoteCard'
-import VirtualizedFeedRows from './VirtualizedFeedRows'
+import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
+import MediaGridItem from '../MediaGridItem'
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
@@ -128,6 +133,8 @@ const LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT = 2.35
 const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
 /** Min ms between scroll-driven load-more attempts (loadMore also throttles internally). */
 const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180
+/** When the scroll container is within this many px of the top, auto-merge pending live notes (see {@link NewNotesButton}). */
+const AUTO_MERGE_NEW_EVENTS_TOP_PX = 120
 
 function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | null {
   if (!node) return null
@@ -138,23 +145,6 @@ function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | n
     el = el.parentElement
   }
   return null
-}
-
-/** Scrollport used by {@link VirtualizedFeedRows} — must sit on the same DOM chain as the list rows. */
-function resolveFeedVirtualScrollAnchor(root: HTMLElement | null, listAnchor: HTMLElement | null): HTMLElement | null {
-  return listAnchor ?? root
-}
-
-/** Prefer the layout’s primary scroll div when the feed is inside it; otherwise walk ancestors. */
-function resolvePrimaryFeedScrollPort(
-  layoutScrollEl: HTMLElement | null,
-  anchor: HTMLElement | null
-): HTMLElement | null {
-  if (!anchor) return null
-  if (layoutScrollEl && layoutScrollEl.contains(anchor)) {
-    return layoutScrollEl
-  }
-  return getNearestScrollableAncestor(anchor)
 }
 
 function distanceFromScrollBottom(scrollRoot: HTMLElement | Window): number {
@@ -705,7 +695,12 @@ const NoteList = forwardRef(
       feedClientFilterTabRowHost,
       onSingleRelayKindlessEmpty,
       feedTopNotice,
-      gridLayout = false
+      gridLayout = false,
+      /**
+       * When true (multi-relay home feeds): if every relay in the subscribe wave fails before EOSE, run one
+       * {@link client.fetchEvents} against {@link FAST_READ_RELAY_URLS} so the feed is not stuck on stale cache only.
+       */
+      timelinePublicReadFallback = false
     }: {
       subRequests: TFeedSubRequest[]
       showKinds: number[]
@@ -760,6 +755,7 @@ const NoteList = forwardRef(
       feedTopNotice?: ReactNode
       /** When true, render events as an Instagram-style 3-column square media grid. */
       gridLayout?: boolean
+      timelinePublicReadFallback?: boolean
     },
     ref
   ) => {
@@ -778,6 +774,7 @@ const NoteList = forwardRef(
     const feedFullSearchEventsRef = useRef<Event[] | null>(null)
     const displayTimelineSourceRef = useRef<Event[]>([])
     const [newEvents, setNewEvents] = useState<Event[]>([])
+    const newEventsRef = useRef<Event[]>([])
     const [hasMore, setHasMore] = useState<boolean>(true)
     const [loading, setLoading] = useState(true)
     /** Session/IDB/relay layers still running for {@link progressiveWarmupQuery} feeds (drives “Looking for more…”). */
@@ -793,7 +790,6 @@ const NoteList = forwardRef(
     const [feedClientTimeAmount, setFeedClientTimeAmount] = useState('')
     const [feedClientTimeUnit, setFeedClientTimeUnit] = useState<TFeedClientTimeUnit>('day')
     const supportTouch = useMemo(() => isTouchDevice(), [])
-    const primaryScrollAreaRef = usePrimaryPageScrollAreaRefOptional()
 
     const timelineEventsForFilter = feedFullSearchEvents ?? events
 
@@ -807,12 +803,6 @@ const NoteList = forwardRef(
     const bottomRef = useRef<HTMLDivElement | null>(null)
     /** List root for intersection / load-more wiring (outer NoteList shell). */
     const feedRootRef = useRef<HTMLDivElement | null>(null)
-    /**
-     * Wrapper around the virtualized list block — closer to rows than {@link feedRootRef}, so
-     * {@link getNearestScrollableAncestor} picks the same scrollport the user actually scrolls (e.g.
-     * `react-simple-pull-to-refresh`’s inner panel on touch, or the primary page div on desktop).
-     */
-    const feedListScrollAnchorRef = useRef<HTMLDivElement | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
     const spellFeedFirstPaintLoggedKeyRef = useRef('')
     const consecutiveEmptyRef = useRef(0) // Track consecutive empty results to prevent infinite retries
@@ -853,6 +843,8 @@ const NoteList = forwardRef(
     const emptyRelayNoHitsToastKeyRef = useRef('')
     /** Per-relay outcomes for the current subscribe wave (merged shards); drives empty-feed toast detail. */
     const [feedSubscribeRelayOutcomes, setFeedSubscribeRelayOutcomes] = useState<RelayOpTerminalRow[]>([])
+    /** One-shot per timeline init: after an all-failed relay wave, try {@link FAST_READ_RELAY_URLS}. */
+    const publicReadFallbackAttemptedRef = useRef(false)
     /**
      * Bumped when {@link feedPaintLiveRelayDoneRef} becomes true so the empty-feed toast effect re-runs.
      * (Loading clears when subscribe wires; merged EOSE arrives later.)
@@ -1029,6 +1021,7 @@ const NoteList = forwardRef(
     const followingFeedDeltaCloserRef = useRef<(() => void) | null>(null)
 
     useLayoutEffect(() => {
+      publicReadFallbackAttemptedRef.current = false
       setFeedTimelineEmptyUiReady(false)
       setFeedSubscribeRelayOutcomes([])
     }, [timelineSubscriptionKey, refreshCount])
@@ -1139,6 +1132,24 @@ const NoteList = forwardRef(
     showAllKindsRef.current = showAllKinds
     const withKindFilterRef = useRef(withKindFilter)
     withKindFilterRef.current = withKindFilter
+
+    const narrowLiveBatchUsingRefs = (evs: Event[]): Event[] => {
+      if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
+      if (withKindFilterRef.current && !showAllKindsRef.current) {
+        return evs.filter((e) =>
+          eventPassesNoteListKindPicker(
+            e,
+            effectiveShowKindsRef.current,
+            showKind1OPsRef.current,
+            showKind1RepliesRef.current,
+            showKind1111Ref.current
+          )
+        )
+      }
+      if (!useFilterAsIsRef.current || !clientSideKindFilterRef.current) return evs
+      if (!withKindFilterRef.current) return evs
+      return evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
+    }
 
     /**
      * When to apply kind picker + kind-1 OP|reply / 1111 / GitRelease splits to visible rows.
@@ -1436,88 +1447,6 @@ const NoteList = forwardRef(
       }
     }, [visibleNoteIdsForStatsPrefetchKey])
 
-    const [feedVirtualScrollParent, setFeedVirtualScrollParent] = useState<HTMLElement | null>(null)
-    const [feedVirtualScrollMarginTop, setFeedVirtualScrollMarginTop] = useState(0)
-    /** Last applied scroll port — skip redundant setState when RO fires on every row/media resize (fixes feed “shake”). */
-    const lastFeedScrollPortRef = useRef<{ parent: HTMLElement | null; marginTop: number } | null>(null)
-    /**
-     * Resolve the scroll container once per feed / refresh — not on every {@link clientFilteredEvents} length tick.
-     * Re-running this on each timeline merge re-set scroll state and interacted badly with the virtualizer while rows
-     * were still settling (absolute rows could paint past the list bounds).
-     */
-    useLayoutEffect(() => {
-      let alive = true
-      let resizeCoalesceRaf = 0
-
-      const applyFeedScrollPort = () => {
-        if (!alive) return
-        const anchor = resolveFeedVirtualScrollAnchor(feedRootRef.current, feedListScrollAnchorRef.current)
-        if (!anchor) {
-          const last = lastFeedScrollPortRef.current
-          if (!last || last.parent !== null || last.marginTop !== 0) {
-            lastFeedScrollPortRef.current = { parent: null, marginTop: 0 }
-            setFeedVirtualScrollParent(null)
-            setFeedVirtualScrollMarginTop(0)
-          }
-          return
-        }
-        const layoutEl = primaryScrollAreaRef?.current ?? null
-        const nextParent = resolvePrimaryFeedScrollPort(layoutEl, anchor)
-        const nextMargin = Math.round(anchor.offsetTop)
-        const last = lastFeedScrollPortRef.current
-        if (last && last.parent === nextParent && last.marginTop === nextMargin) {
-          return
-        }
-        lastFeedScrollPortRef.current = { parent: nextParent, marginTop: nextMargin }
-        setFeedVirtualScrollParent(nextParent)
-        setFeedVirtualScrollMarginTop(nextMargin)
-      }
-
-      lastFeedScrollPortRef.current = null
-      applyFeedScrollPort()
-      let innerRaf = 0
-      const outerRaf = requestAnimationFrame(() => {
-        if (!alive) return
-        applyFeedScrollPort()
-        innerRaf = requestAnimationFrame(() => {
-          if (!alive) return
-          applyFeedScrollPort()
-        })
-      })
-      const deferTimer = window.setTimeout(() => {
-        if (!alive) return
-        applyFeedScrollPort()
-      }, 0)
-
-      const scheduleApplyFromResize = () => {
-        if (!alive) return
-        if (resizeCoalesceRaf) cancelAnimationFrame(resizeCoalesceRaf)
-        resizeCoalesceRaf = requestAnimationFrame(() => {
-          resizeCoalesceRaf = 0
-          if (!alive) return
-          applyFeedScrollPort()
-        })
-      }
-
-      let ro: ResizeObserver | null = null
-      const root = feedRootRef.current
-      if (root && typeof ResizeObserver !== 'undefined') {
-        ro = new ResizeObserver(() => {
-          scheduleApplyFromResize()
-        })
-        ro.observe(root)
-      }
-
-      return () => {
-        alive = false
-        if (resizeCoalesceRaf) cancelAnimationFrame(resizeCoalesceRaf)
-        cancelAnimationFrame(outerRaf)
-        cancelAnimationFrame(innerRaf)
-        window.clearTimeout(deferTimer)
-        ro?.disconnect()
-      }
-    }, [timelineSubscriptionKey, refreshCount, primaryScrollAreaRef])
-
     const clientFilteredNewEvents = useMemo(
       () =>
         showFeedClientFilter ? applyClientFeedFilter(filteredNewEvents) : filteredNewEvents,
@@ -1657,10 +1586,52 @@ const NoteList = forwardRef(
       }, 500)
     }, [scrollToTop])
 
+    const flushPendingNewEventsIntoTimeline = useCallback(() => {
+      const pending = newEventsRef.current
+      if (pending.length === 0) return
+      setEvents((oldEvents) => {
+        const pool: Event[] = [...oldEvents]
+        const statsOnly: Event[] = []
+        const kept: Event[] = []
+        for (const ev of pending) {
+          if (
+            isNip18RepostKind(ev.kind) &&
+            feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(ev), pool)
+          ) {
+            statsOnly.push(ev)
+            continue
+          }
+          kept.push(ev)
+          pool.push(ev)
+        }
+        if (statsOnly.length > 0) {
+          noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
+        }
+        return [...kept, ...oldEvents]
+      })
+      setNewEvents([])
+    }, [])
+
+    const flushPendingNewEventsIntoTimelineRef = useRef(flushPendingNewEventsIntoTimeline)
+    flushPendingNewEventsIntoTimelineRef.current = flushPendingNewEventsIntoTimeline
+
+    useEffect(() => {
+      if (oneShotFetchRef.current) return
+      if (newEvents.length === 0) return
+      const anchor = feedRootRef.current
+      const parent = getNearestScrollableAncestor(anchor)
+      const root: HTMLElement | Window = parent ?? window
+      const top = root === window ? window.scrollY : (root as HTMLElement).scrollTop
+      if (top > AUTO_MERGE_NEW_EVENTS_TOP_PX) return
+      flushPendingNewEventsIntoTimeline()
+    }, [newEvents.length, flushPendingNewEventsIntoTimeline])
+
     // Re-subscribe whenever connectivity flips so we immediately switch between
     // local-only (offline) and normal (online) relay sets without waiting for
     // the next user-triggered refresh.
     const isOfflineRef = useRef(isOffline)
+    const oneShotFetchRef = useRef(oneShotFetch)
+    oneShotFetchRef.current = oneShotFetch
     useEffect(() => {
       const prev = isOfflineRef.current
       isOfflineRef.current = isOffline
@@ -3010,6 +2981,10 @@ const NoteList = forwardRef(
       eventsRef.current = events
     }, [events])
 
+    useEffect(() => {
+      newEventsRef.current = newEvents
+    }, [newEvents])
+
     const loadingSafetyMs = timelineLoadingSafetyTimeoutMs ?? 15_000
 
     useEffect(() => {
@@ -3051,6 +3026,7 @@ const NoteList = forwardRef(
     const blankFeedHiddenAtRef = useRef<number | null>(null)
     /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
     const blankFeedVisibilityResumeRetryAtRef = useRef(0)
+    const lastNewNotesAutoFlushMsRef = useRef(0)
 
     useEffect(() => {
       showCountRef.current = showCount
@@ -3127,6 +3103,86 @@ const NoteList = forwardRef(
       feedSubscribeRelayOutcomes,
       oneShotFetch,
       t
+    ])
+
+    useEffect(() => {
+      if (!timelinePublicReadFallback) return
+      if (oneShotFetch || areAlgoRelays) return
+      if (!navigator.onLine) return
+      const warm = progressiveWarmupQuery?.trim()
+      if (warm) return
+      if (feedFullSearchEvents !== null) return
+      if (feedSubscribeRelayOutcomes.length === 0) return
+      if (publicReadFallbackAttemptedRef.current) return
+
+      const uiStatuses = relayOpTerminalRowsToTimelineRelayUiStatuses(feedSubscribeRelayOutcomes)
+      if (uiStatuses.some((s) => s.success)) return
+
+      publicReadFallbackAttemptedRef.current = true
+
+      const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
+      if (!mapped.length) return
+
+      const filter: Filter = { ...(mapped[0]!.filter as Filter) }
+      if (!filter.kinds?.length) {
+        filter.kinds = effectiveShowKinds.length > 0 ? [...effectiveShowKinds] : [kinds.ShortTextNote]
+      }
+      filter.limit = filter.limit ?? (areAlgoRelays ? ALGO_LIMIT : LIMIT)
+
+      const eventCap = allowKindlessRelayExplore
+        ? RELAY_EXPLORE_LIMIT
+        : areAlgoRelays
+          ? ALGO_LIMIT
+          : LIMIT
+
+      void (async () => {
+        try {
+          const raw = await client.fetchEvents(FAST_READ_RELAY_URLS, filter, {
+            cache: true,
+            globalTimeout: 22_000,
+            eoseTimeout: 3500,
+            firstRelayResultGraceMs: false
+          })
+          if (raw.length === 0) return
+
+          const narrowed = narrowLiveBatchUsingRefs(raw)
+          if (narrowed.length === 0) return
+
+          logger.info('[NoteList] Public read fallback merged after all relays failed', {
+            timelineSubscriptionKey,
+            fetched: raw.length,
+            mergedVisible: narrowed.length
+          })
+
+          setEvents((prev) => {
+            const next = progressiveWarmupQueryRef.current?.trim()
+              ? mergeProgressiveSearchEvents(
+                  prev,
+                  narrowed,
+                  oneShotAfterMergeComparatorRef.current
+                )
+              : collapseDuplicateNip18RepostTimelineRows(
+                  mergeEventBatchesById(prev, narrowed, eventCap, areAlgoRelays)
+                )
+            lastEventsForTimelinePrefetchRef.current = next
+            return next
+          })
+          feedRelayReturnedAnyEventRef.current = true
+        } catch (e) {
+          logger.warn('[NoteList] timeline public read fallback failed', { error: e })
+        }
+      })()
+    }, [
+      timelinePublicReadFallback,
+      oneShotFetch,
+      areAlgoRelays,
+      progressiveWarmupQuery,
+      feedFullSearchEvents,
+      feedSubscribeRelayOutcomes,
+      mapLiveSubRequestsForTimeline,
+      effectiveShowKinds,
+      allowKindlessRelayExplore,
+      timelineSubscriptionKey
     ])
     
     useEffect(() => {
@@ -3400,6 +3456,20 @@ const NoteList = forwardRef(
       let lastScrollTopForPrefetchDir = 0
       let lastScrollPrefetchInvokeMs = 0
 
+      const onScrollFlushNewNotesAtTop = () => {
+        if (oneShotFetchRef.current) return
+        if (feedFullSearchEventsRef.current !== null) return
+        const t = scrollPrefetchTarget
+        if (!t) return
+        const top = t === window ? window.scrollY : (t as HTMLElement).scrollTop
+        if (top > AUTO_MERGE_NEW_EVENTS_TOP_PX) return
+        if (newEventsRef.current.length === 0) return
+        const now = Date.now()
+        if (now - lastNewNotesAutoFlushMsRef.current < 350) return
+        lastNewNotesAutoFlushMsRef.current = now
+        flushPendingNewEventsIntoTimelineRef.current()
+      }
+
       const onScrollPrefetch = () => {
         if (scrollPrefetchRafId) return
         scrollPrefetchRafId = requestAnimationFrame(() => {
@@ -3434,17 +3504,18 @@ const NoteList = forwardRef(
       }
 
       const wireScrollPrefetch = () => {
-        const anchor = resolveFeedVirtualScrollAnchor(feedRootRef.current, feedListScrollAnchorRef.current)
-        const layoutEl = primaryScrollAreaRef?.current ?? null
-        const parent = resolvePrimaryFeedScrollPort(layoutEl, anchor)
+        const anchor = feedRootRef.current
+        const parent = getNearestScrollableAncestor(anchor)
         const next: HTMLElement | Window = parent ?? window
         if (scrollPrefetchTarget && scrollPrefetchTarget !== next) {
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
+          scrollPrefetchTarget.removeEventListener('scroll', onScrollFlushNewNotesAtTop)
         }
         scrollPrefetchTarget = next
         lastScrollTopForPrefetchDir =
           next === window ? window.scrollY : (next as HTMLElement).scrollTop
         next.addEventListener('scroll', onScrollPrefetch, { passive: true })
+        next.addEventListener('scroll', onScrollFlushNewNotesAtTop, { passive: true })
       }
 
       const wireScrollPrefetchSoonId = window.setTimeout(() => {
@@ -3474,6 +3545,7 @@ const NoteList = forwardRef(
         window.clearTimeout(wireScrollPrefetchSoonId)
         if (scrollPrefetchTarget) {
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
+          scrollPrefetchTarget.removeEventListener('scroll', onScrollFlushNewNotesAtTop)
           scrollPrefetchTarget = null
         }
         if (observerInstance && currentBottomRef) {
@@ -3485,7 +3557,7 @@ const NoteList = forwardRef(
           loadMoreTimeoutRef.current = null
         }
       }
-    }, [timelineSubscriptionKey, primaryScrollAreaRef])
+    }, [timelineSubscriptionKey])
 
     // CRITICAL: Prefetch embedded events (referenced in e tags, a tags, and content)
     // This ensures embedded events are ready before user scrolls to them
@@ -3613,27 +3685,7 @@ const NoteList = forwardRef(
     }, [events.length, showCount, loading, hasMore, mergePrefetchTargetsFromEvents])
 
     const showNewEvents = () => {
-      setEvents((oldEvents) => {
-        const pool: Event[] = [...oldEvents]
-        const statsOnly: Event[] = []
-        const kept: Event[] = []
-        for (const ev of newEvents) {
-          if (
-            isNip18RepostKind(ev.kind) &&
-            feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(ev), pool)
-          ) {
-            statsOnly.push(ev)
-            continue
-          }
-          kept.push(ev)
-          pool.push(ev)
-        }
-        if (statsOnly.length > 0) {
-          noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
-        }
-        return [...kept, ...oldEvents]
-      })
-      setNewEvents([])
+      flushPendingNewEventsIntoTimeline()
       setTimeout(() => {
         scrollToTop('smooth')
       }, 0)
@@ -3901,18 +3953,23 @@ const NoteList = forwardRef(
             {t('Feed full search empty')}
           </div>
         ) : null}
-        {clientFilteredEvents.length > 0 ? (
-          <VirtualizedFeedRows
-            key={`${timelineSubscriptionKey}@@${refreshCount}`}
-            events={clientFilteredEvents}
-            gridLayout={gridLayout}
-            filterMutedNotes={filterMutedNotes}
-            eventReasonLabelMap={eventReasonLabelMap}
-            useWindowScroll={feedVirtualScrollParent === null}
-            scrollElement={feedVirtualScrollParent}
-            scrollMarginTop={feedVirtualScrollMarginTop}
-          />
-        ) : null}
+        {gridLayout ? (
+          <div className="grid grid-cols-3 gap-0.5 pr-4">
+            {clientFilteredEvents.map((event) => (
+              <MediaGridItem key={event.id} event={event} />
+            ))}
+          </div>
+        ) : (
+          clientFilteredEvents.map((event) => (
+            <NoteCard
+              key={event.id}
+              className="w-full"
+              event={event}
+              filterMutedNotes={filterMutedNotes}
+              bottomNoteLabel={eventReasonLabelMap.get(event.id)}
+            />
+          ))
+        )}
         {listSourceEvents.length === 0 &&
         !feedFullSearchActive &&
         (loading || (subRequests.length > 0 && !feedTimelineEmptyUiReady)) ? (
@@ -4009,9 +4066,7 @@ const NoteList = forwardRef(
                   </div>
                 ) : null}
                 {showFeedClientFilter ? feedClientFilterBar : null}
-                <div ref={feedListScrollAnchorRef} className="min-w-0 w-full">
-                  {list}
-                </div>
+                {list}
               </div>
             </PullToRefresh>
           ) : (
@@ -4025,9 +4080,7 @@ const NoteList = forwardRef(
                 </div>
               ) : null}
               {showFeedClientFilter ? feedClientFilterBar : null}
-              <div ref={feedListScrollAnchorRef} className="min-w-0 w-full">
-                {list}
-              </div>
+              {list}
             </div>
           )}
         </NoteFeedProfileContext.Provider>

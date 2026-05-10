@@ -65,10 +65,10 @@ export interface RelayListBuilderOptions {
   /** Whether to include user's favorite relays (kind 10012) */
   includeFavoriteRelays?: boolean
   /**
-   * When true with fast-read / searchable includes: insert `FAST_READ_RELAY_URLS` and
-   * `SEARCHABLE_RELAY_URLS` immediately after hints/seen/containing and **before** author + user
-   * NIP-65 lists. Used for single-event / embed fetches so public mirrors (e.g. nos.lol) are not
-   * queued behind dozens of personal relays under the global connection cap.
+   * When true with fast-read / searchable / profile-fetch includes: insert `PROFILE_FETCH_RELAY_URLS`,
+   * `FAST_READ_RELAY_URLS`, and `SEARCHABLE_RELAY_URLS` immediately after hints/seen/containing and **before**
+   * author + user NIP-65 lists. Used for batched metadata and embed fetches so public mirrors are not queued
+   * behind broken personal relays under the global connection cap.
    */
   preferPublicReadRelaysEarly?: boolean
 }
@@ -122,8 +122,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   // 3. Relays where containing event was found (for embedded events)
   containingEventRelays.forEach(addRelay)
 
-  // 3b. Public read / index relays before author + user NIP-65 expansion (embed + fetchEvent).
+  // 3b. Public profile / read relays before user favorites & NIP-65 (batched kind-0 — avoids burning
+  // connection slots on broken personal relays before PROFILE_FETCH + FAST_READ answer).
   if (preferPublicReadRelaysEarly) {
+    if (includeProfileFetchRelays) {
+      PROFILE_FETCH_RELAY_URLS.forEach(addRelay)
+    }
     if (includeFastReadRelays) {
       FAST_READ_RELAY_URLS.forEach(addRelay)
     }

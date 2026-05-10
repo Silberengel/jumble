@@ -32,7 +32,7 @@ export default function NewNotesButton({
       {newEvents.length > 0 && (
         <div
           className={cn(
-            'w-full flex justify-center z-40 pointer-events-none',
+            'w-full flex justify-center z-[100] pointer-events-none',
             isSmallScreen ? 'fixed' : 'absolute bottom-6'
           )}
           style={isSmallScreen ? { bottom: 'calc(4rem + env(safe-area-inset-bottom))' } : undefined}

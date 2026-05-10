@@ -537,7 +537,8 @@ export class ReplaceableEventService {
                 includeLocalRelays: true,
                 /** Many users publish kind 0 to NIP-65 write relays; batch path skipped these before. */
                 includeFastWriteRelays: true,
-                includeSearchableRelays: false
+                includeSearchableRelays: false,
+                preferPublicReadRelaysEarly: true
               })
             } catch {
               relayUrls = Array.from(new Set([...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS]))

@@ -187,6 +187,10 @@ const RelaysFeed = forwardRef<
           : undefined
       }
       feedTopNotice={feedTopNotice}
+      timelinePublicReadFallback={
+        feedInfo.feedType === 'all-favorites' ||
+        (feedInfo.feedType === 'relays' && relayUrls.length > 1)
+      }
     />
   )
 })
