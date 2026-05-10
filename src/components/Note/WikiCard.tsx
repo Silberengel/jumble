@@ -6,7 +6,7 @@ import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
-import Image from '../Image'
+import ArticleCardCoverImage from './ArticleCardCoverImage'
 
 export default function WikiCard({
   event,
@@ -60,13 +60,13 @@ export default function WikiCard({
           className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
           onClick={handleCardClick}
         >
-          {metadata.image && autoLoadMedia && (
-            <Image
-              image={{ url: metadata.image, pubkey: event.pubkey }}
-              className="w-full max-w-[400px] aspect-video mb-3"
-              hideIfError
-            />
-          )}
+          <ArticleCardCoverImage
+            event={event}
+            imageUrl={metadata.image}
+            autoLoadMedia={autoLoadMedia}
+            layout="stacked"
+            hideImageIfError
+          />
           <div className="space-y-2">
             {titleComponent}
             {summaryComponent}
@@ -84,14 +84,13 @@ export default function WikiCard({
         onClick={handleCardClick}
       >
         <div className="flex gap-4">
-          {metadata.image && autoLoadMedia && (
-            <Image
-              image={{ url: metadata.image, pubkey: event.pubkey }}
-              classNames={{ wrapper: 'w-auto max-w-[400px] shrink-0' }}
-              className="rounded-lg aspect-[4/3] xl:aspect-video object-cover bg-foreground h-44 max-w-[400px]"
-              hideIfError
-            />
-          )}
+          <ArticleCardCoverImage
+            event={event}
+            imageUrl={metadata.image}
+            autoLoadMedia={autoLoadMedia}
+            layout="row"
+            hideImageIfError
+          />
           <div className="flex-1 w-0 space-y-2">
             {titleComponent}
             {summaryComponent}

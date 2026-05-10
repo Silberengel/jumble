@@ -1143,7 +1143,9 @@ export class ReplaceableEventService {
         profiles.push({
           pubkey,
           npub: pubkeyToNpub(pubkey) ?? '',
-          username: formatPubkey(pubkey)
+          username: formatPubkey(pubkey),
+          /** Lets {@link useFetchProfile} retry per-pubkey when batch REQ missed kind 0. */
+          batchPlaceholder: true
         })
       }
     }

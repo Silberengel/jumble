@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import Image from '../Image'
+import ArticleCardCoverImage from './ArticleCardCoverImage'
 
 /**
  * Feed / embed / preview surface for NIP-23 long-form (kind 30023): title, summary, image, tags — no “Show more” body.
@@ -93,13 +93,12 @@ export default function LongFormCard({
     return (
       <div className={shellClass}>
         <div className={cardClass} onClick={interactive ? handleCardClick : undefined}>
-          {metadata.image && autoLoadMedia && (
-            <Image
-              image={{ url: metadata.image, pubkey: event.pubkey }}
-              className="mb-3 aspect-video w-full max-w-[400px]"
-              hideIfError
-            />
-          )}
+          <ArticleCardCoverImage
+            event={event}
+            imageUrl={metadata.image}
+            autoLoadMedia={autoLoadMedia}
+            layout="stacked"
+          />
           <div className="space-y-2">
             {titleComponent}
             {summaryComponent}
@@ -115,14 +114,12 @@ export default function LongFormCard({
     <div className={cn('w-full min-w-0', shellClass)}>
       <div className={cn(cardClass, 'min-w-0')} onClick={interactive ? handleCardClick : undefined}>
         <div className="flex min-w-0 gap-4">
-          {metadata.image && autoLoadMedia && (
-            <Image
-              image={{ url: metadata.image, pubkey: event.pubkey }}
-              classNames={{ wrapper: 'w-auto max-w-[400px] shrink-0' }}
-              className="h-44 max-w-[400px] shrink rounded-lg bg-foreground object-cover aspect-[4/3] xl:aspect-video"
-              hideIfError
-            />
-          )}
+          <ArticleCardCoverImage
+            event={event}
+            imageUrl={metadata.image}
+            autoLoadMedia={autoLoadMedia}
+            layout="row"
+          />
           <div className="min-w-0 flex-1 basis-0 space-y-2 overflow-hidden">
             {titleComponent}
             {summaryComponent}

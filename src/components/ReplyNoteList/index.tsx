@@ -775,7 +775,8 @@ function ReplyNoteList({
                 next.set(pkNorm, {
                   pubkey: pkNorm,
                   npub: pubkeyToNpub(pkNorm) ?? '',
-                  username: formatPubkey(pkNorm)
+                  username: formatPubkey(pkNorm),
+                  batchPlaceholder: true
                 })
               }
             }

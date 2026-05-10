@@ -386,6 +386,10 @@ export async function buildReplyReadRelayList(
     includeFastReadRelays: true,
     includeSearchableRelays: true,
     includeLocalRelays: true,
+    /** Same menu list as timelines — threads often opened from favorites. */
+    includeFavoriteRelays: Boolean(userPubkey),
+    /** FAST_READ + SEARCHABLE before author/user NIP-65 slices so broken personal relays do not starve thread REQ under the global connection cap. */
+    preferPublicReadRelaysEarly: true,
     blockedRelays
   })
 }

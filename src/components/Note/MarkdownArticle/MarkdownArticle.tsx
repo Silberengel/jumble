@@ -1,5 +1,6 @@
 import { useSecondaryPageOptional, useSmartHashtagNavigationOptional, useSmartRelayNavigationOptional } from '@/PageManager'
 import Image from '@/components/Image'
+import UserAvatar from '@/components/UserAvatar'
 import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
 import { BookstrContent } from '@/components/Bookstr'
@@ -5899,12 +5900,39 @@ export default function MarkdownArticle({
                     <p className="break-words">{metadata.summary}</p>
                   </blockquote>
                 )}
+                {!hideMetadata &&
+                  event.kind === kinds.LongFormArticle &&
+                  !metadata.image?.trim() && (
+                    <div className="not-prose my-4 flex max-w-[400px] justify-center rounded-lg bg-muted p-6">
+                      <UserAvatar
+                        userId={event.pubkey}
+                        size="large"
+                        deferRemoteAvatar={false}
+                        className="!h-36 !w-36 rounded-xl"
+                      />
+                    </div>
+                  )}
                 {hideMetadata &&
                   metadata.title &&
                   event.kind !== ExtendedKind.DISCUSSION &&
                   !isNip52CalendarCardKind(event.kind) && (
                   <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
                 )}
+                {hideMetadata &&
+                  metadata.title &&
+                  event.kind === kinds.LongFormArticle &&
+                  !metadata.image?.trim() &&
+                  event.kind !== ExtendedKind.DISCUSSION &&
+                  !isNip52CalendarCardKind(event.kind) && (
+                    <div className="not-prose mb-4 flex max-w-[400px] justify-center rounded-lg bg-muted p-6">
+                      <UserAvatar
+                        userId={event.pubkey}
+                        size="large"
+                        deferRemoteAvatar={false}
+                        className="!h-36 !w-36 rounded-xl"
+                      />
+                    </div>
+                  )}
         
         {/* Metadata image */}
                 {!hideMetadata && metadata.image && (() => {
