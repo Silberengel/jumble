@@ -20,7 +20,7 @@ import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -49,8 +49,6 @@ export default function SidebarCalendarWeekWidget() {
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [rawEvents, setRawEvents] = useState<Event[]>([])
-  /** True only until the first IndexedDB (+ session) snapshot for this week is applied — never while relay REQ runs. */
-  const [loading, setLoading] = useState(true)
 
   const relayUrls = useMemo(() => {
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
@@ -99,52 +97,70 @@ export default function SidebarCalendarWeekWidget() {
   useEffect(() => {
     let cancelled = false
     let lateMergeTimer: number | null = null
-    setLoading(true)
-    void (async () => {
-      try {
-        const { weekStartMs, weekEndExclusiveMs } = getLocalMondayWeekBounds(weekOffset)
-        const [fromIdb, fromArchive] = await Promise.all([
-          indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs),
-          indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
-        ])
+    const { weekStartMs, weekEndExclusiveMs } = getLocalMondayWeekBounds(weekOffset)
 
-        const localBaseline = dedupeCalendarEventsPreferringOccurrenceRange(
-          [...fromIdb, ...fromArchive],
-          weekStartMs,
-          weekEndExclusiveMs
-        )
-        const sessionSnap = client.getSessionEventsMatchingSearch(
+    const fromSessionSync = client.getSessionEventsMatchingSearch(
+      '',
+      SESSION_CALENDAR_MERGE_CAP,
+      [...CALENDAR_EVENT_KINDS]
+    )
+    const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
+      fromSessionSync,
+      weekStartMs,
+      weekEndExclusiveMs
+    )
+    setRawEvents(sessionOnly)
+
+    const scheduleLateSessionMerge = (mergeWithIdb: Event[]) => {
+      lateMergeTimer = window.setTimeout(() => {
+        lateMergeTimer = null
+        if (cancelled) return
+        const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+        const later = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        const mergedLocal = dedupeCalendarEventsPreferringOccurrenceRange(
-          [...localBaseline, ...sessionSnap],
-          weekStartMs,
-          weekEndExclusiveMs
+        setRawEvents((prev) =>
+          dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...mergeWithIdb], ws, we)
         )
-        /** Always paint IDB + session first; a superseded effect must not skip this (relayKey churn would leave the list blank). */
-        if (!cancelled) {
-          setRawEvents(mergedLocal)
-          setLoading(false)
-        }
+      }, 2500)
+    }
+
+    void (async () => {
+      try {
+        const idbP = Promise.all([
+          indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs, 8000),
+          indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
+        ])
+          .then(([fromIdb, fromArchive]) =>
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...fromIdb, ...fromArchive],
+              weekStartMs,
+              weekEndExclusiveMs
+            )
+          )
+          .catch((): Event[] => [])
+
+        void idbP.then((localBaseline) => {
+          if (cancelled) return
+          const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+          const s2 = client.getSessionEventsMatchingSearch(
+            '',
+            SESSION_CALENDAR_MERGE_CAP,
+            [...CALENDAR_EVENT_KINDS]
+          )
+          setRawEvents(
+            dedupeCalendarEventsPreferringOccurrenceRange([...localBaseline, ...s2], ws, we)
+          )
+        })
 
         if (cancelled) return
 
         if (!relayUrls.length) {
-          lateMergeTimer = window.setTimeout(() => {
-            lateMergeTimer = null
-            if (cancelled) return
-            const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
-            const later = client.getSessionEventsMatchingSearch(
-              '',
-              SESSION_CALENDAR_MERGE_CAP,
-              [...CALENDAR_EVENT_KINDS]
-            )
-            setRawEvents((prev) =>
-              dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], ws, we)
-            )
-          }, 2500)
+          void idbP.then((lb) => {
+            if (!cancelled) scheduleLateSessionMerge(lb)
+          })
           return
         }
 
@@ -186,22 +202,21 @@ export default function SidebarCalendarWeekWidget() {
           )
         )
 
-        let batch: Event[] = []
-        const fromFollowing: Event[] = []
-        try {
-          const merged = await Promise.all([mainReq, ...chunkReqs])
-          batch = merged[0] ?? []
-          for (let i = 1; i < merged.length; i++) {
-            fromFollowing.push(...(merged[i] ?? []))
-          }
-        } catch {
-          /** Relay REQ failed or timed out — keep the snapshot we already painted (re-apply in case of races). */
-          if (!cancelled) {
-            setRawEvents(mergedLocal)
-          }
-        }
+        const relayMergedP = Promise.all([mainReq, ...chunkReqs])
+          .then((merged) => {
+            const batch = merged[0] ?? []
+            const fromFollowing: Event[] = []
+            for (let i = 1; i < merged.length; i++) {
+              fromFollowing.push(...(merged[i] ?? []))
+            }
+            return { batch, fromFollowing }
+          })
+          .catch(() => ({ batch: [] as Event[], fromFollowing: [] as Event[] }))
+
+        const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
         if (cancelled) return
 
+        const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
         const fromSessionAfterNet = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
@@ -211,22 +226,22 @@ export default function SidebarCalendarWeekWidget() {
           setRawEvents(
             dedupeCalendarEventsPreferringOccurrenceRange(
               [...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing],
-              weekStartMs,
-              weekEndExclusiveMs
+              ws,
+              we
             )
           )
         }
         lateMergeTimer = window.setTimeout(() => {
           lateMergeTimer = null
           if (cancelled) return
-          const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+          const { weekStartMs: w2, weekEndExclusiveMs: w2e } = getLocalMondayWeekBounds(weekOffset)
           const later = client.getSessionEventsMatchingSearch(
             '',
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
           setRawEvents((prev) =>
-            dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], ws, we)
+            dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], w2, w2e)
           )
         }, 2500)
       } catch {
@@ -247,10 +262,7 @@ export default function SidebarCalendarWeekWidget() {
           } catch {
             setRawEvents([])
           }
-          setLoading(false)
         }
-      } finally {
-        if (!cancelled) setLoading(false)
       }
     })()
     return () => {
@@ -310,12 +322,7 @@ export default function SidebarCalendarWeekWidget() {
       <p className="mb-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {t('sidebarCalendarHeading')}
       </p>
-      {loading && sortedForWeek.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-          <span className="text-[11px]">{t('sidebarCalendarLoading')}</span>
-        </div>
-      ) : sortedForWeek.length > 0 ? (
+      {sortedForWeek.length > 0 ? (
         <ul className="min-w-0 space-y-1 overflow-y-auto pr-0.5" style={{ maxHeight: LIST_MAX_HEIGHT_PX }}>
           {sortedForWeek.map((ev) => {
             const meta = getCalendarEventMeta(ev)

@@ -25,18 +25,6 @@ function candidateKeysForNoteUrlId(eventId: string): string[] {
 class NavigationEventStore {
   private eventMap = new Map<string, Event>()
 
-  private removeEventFromAllKeys(event: Event): void {
-    this.eventMap.delete(event.id)
-    try {
-      const urlId = getNoteBech32Id(event)
-      if (urlId !== event.id) {
-        this.eventMap.delete(urlId)
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
   /**
    * Store an event for navigation (hex id + same bech32 form as {@link toNote} / the URL).
    */
@@ -53,15 +41,13 @@ class NavigationEventStore {
   }
 
   /**
-   * Get an event by ID (removes it after retrieval to prevent memory leaks)
+   * Read an event by ID without removing it (safe for React Strict Mode / effect re-runs).
+   * Cleared on the next {@link clear} (e.g. when navigating to another note).
    */
-  getEvent(eventId: string): Event | undefined {
+  peekEvent(eventId: string): Event | undefined {
     for (const key of candidateKeysForNoteUrlId(eventId)) {
       const event = this.eventMap.get(key)
-      if (event) {
-        this.removeEventFromAllKeys(event)
-        return event
-      }
+      if (event) return event
     }
     return undefined
   }

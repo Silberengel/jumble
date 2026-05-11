@@ -1,6 +1,7 @@
 import logger from '@/lib/logger'
 import { ExtendedKind, NIP71_VIDEO_KINDS } from '@/constants'
-import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
+import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { buildLiveActivitiesRelayUrls } from '@/lib/live-activities'
 import {
   readRelayPulseActiveNpubsCache,
   writeRelayPulseActiveNpubsCache
@@ -138,7 +139,7 @@ function partitionByFollows(orderedPubkeys: string[], followings: string[]) {
 
 export function FavoriteRelaysActivityProvider({ children }: { children: React.ReactNode }) {
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { pubkey: viewerPubkey, followListEvent } = useNostr()
+  const { pubkey: viewerPubkey, followListEvent, relayList } = useNostr()
   const followings = useMemo(
     () => (followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []),
     [followListEvent]
@@ -158,17 +159,32 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
   orderedPubkeysRef.current = orderedPubkeys
   /** After restoring from disk, ignore the first empty network result (timeouts / slow relays), then behave normally. */
   const skipFirstEmptyNetworkOverwriteRef = useRef(false)
-  const relayKey = useMemo(
-    () => getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays).join('\n'),
-    [favoriteRelays, blockedRelays]
+  const pulseQueryUrls = useMemo(
+    () =>
+      buildLiveActivitiesRelayUrls({
+        loggedIn: !!viewerPubkey,
+        favoriteRelays,
+        blockedRelays,
+        relayListRead: userReadRelaysWithHttp(relayList),
+        relayListWrite: relayList?.write ?? []
+      }),
+    [viewerPubkey, favoriteRelays, blockedRelays, relayList]
   )
+
+  const relayKey = useMemo(() => pulseQueryUrls.join('\n'), [pulseQueryUrls])
 
   const fetchActive = useCallback(
     async (useDefaultRelays = false) => {
       const cacheViewer = viewerPubkey ?? storage.getCurrentAccount()?.pubkey ?? null
       const urls = useDefaultRelays
-        ? getFavoritesFeedRelayUrls([], blockedRelays)
-        : getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+        ? buildLiveActivitiesRelayUrls({
+            loggedIn: false,
+            favoriteRelays: [],
+            blockedRelays,
+            relayListRead: [],
+            relayListWrite: []
+          })
+        : pulseQueryUrls
       if (urls.length === 0) {
         setLoading(false)
         setRelayActivityReady(true)
@@ -220,7 +236,7 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
         setRelayActivityReady(true)
       }
     },
-    [favoriteRelays, blockedRelays, relayKey, viewerPubkey]
+    [favoriteRelays, blockedRelays, relayKey, viewerPubkey, pulseQueryUrls]
   )
 
   const fetchRef = useRef(fetchActive)

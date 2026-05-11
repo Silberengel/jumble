@@ -153,30 +153,43 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
   useEffect(() => {
     let cancelled = false
     let lateMergeTimer: number | null = null
-    setLoading(true)
+    const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
+
+    /** Same-tick paint from in-memory session (no await) — IDB + relays merge in the async block below. */
+    const fromSessionSync = client.getSessionEventsMatchingSearch(
+      '',
+      SESSION_CALENDAR_MERGE_CAP,
+      [...CALENDAR_EVENT_KINDS]
+    )
+    const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
+      fromSessionSync,
+      rangeStartMs,
+      rangeEndExclusiveMs
+    )
+    setRawEvents(sessionOnly)
+    setLoading(false)
+
+    const scheduleLateSessionMerge = (mergeWithIdb: NostrEvent[]) => {
+      lateMergeTimer = window.setTimeout(() => {
+        lateMergeTimer = null
+        if (cancelled) return
+        const later = client.getSessionEventsMatchingSearch(
+          '',
+          SESSION_CALENDAR_MERGE_CAP,
+          [...CALENDAR_EVENT_KINDS]
+        )
+        setRawEvents((prev) =>
+          dedupeCalendarEventsPreferringOccurrenceRange(
+            [...prev, ...later, ...mergeWithIdb],
+            rangeStartMs,
+            rangeEndExclusiveMs
+          )
+        )
+      }, 2500)
+    }
+
     void (async () => {
-      const scheduleLateSessionMerge = (mergeWithIdb: NostrEvent[]) => {
-        lateMergeTimer = window.setTimeout(() => {
-          lateMergeTimer = null
-          if (cancelled) return
-          const later = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          setRawEvents((prev) =>
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...prev, ...later, ...mergeWithIdb],
-              paddedMonthRange.rangeStartMs,
-              paddedMonthRange.rangeEndExclusiveMs
-            )
-          )
-        }, 2500)
-      }
-
       try {
-        const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
-
         const idbP = Promise.all([
           indexedDb.getCalendarEventsForOccurrenceWindow(
             rangeStartMs,
@@ -198,21 +211,6 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
             )
           )
           .catch((): NostrEvent[] => [])
-
-        const fromSessionNow = client.getSessionEventsMatchingSearch(
-          '',
-          SESSION_CALENDAR_MERGE_CAP,
-          [...CALENDAR_EVENT_KINDS]
-        )
-        const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
-          fromSessionNow,
-          rangeStartMs,
-          rangeEndExclusiveMs
-        )
-        if (!cancelled) {
-          setRawEvents(sessionOnly)
-          setLoading(false)
-        }
 
         void idbP.then((localBaseline) => {
           if (cancelled) return
@@ -323,7 +321,8 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
       } catch {
         if (!cancelled) {
           try {
-            const { rangeStartMs: rs, rangeEndExclusiveMs: re } = paddedMonthRange
+            const rs = rangeStartMs
+            const re = rangeEndExclusiveMs
             const [idb, arc] = await Promise.all([
               indexedDb.getCalendarEventsForOccurrenceWindow(rs, re, MONTH_IDB_MAX_SCAN),
               indexedDb.getArchivedCalendarEventsOverlappingWindow(rs, re, 55_000, 2500)

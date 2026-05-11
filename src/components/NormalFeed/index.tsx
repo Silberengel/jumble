@@ -124,7 +124,11 @@ const NormalFeed = forwardRef<TNoteListRef, {
       }
       return 'posts'
     }
-    return storedMode || 'posts'
+    // Non-main feeds only expose Notes / Replies tabs — ignore stored "media" from the home gallery tab.
+    if (storedMode === 'posts' || storedMode === 'postsAndReplies') {
+      return storedMode
+    }
+    return 'posts'
   })
   const internalNoteListRef = useRef<TNoteListRef>(null)
   const noteListRef = ref || internalNoteListRef

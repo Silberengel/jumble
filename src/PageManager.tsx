@@ -449,17 +449,19 @@ export function useSmartNoteNavigation() {
       return
     }
     const { noteId } = parsed
-    
-    // If event is provided, store it in navigation event store to avoid re-fetching
+
+    navigationEventStore.clear()
     if (event) {
-      navigationEventStore.clear()
       navigationEventStore.setEvent(event)
       client.addEventToCache(event)
     }
     // Pre-cache related events (parent, root, embedded) so NotePage avoids re-fetching
     if (relatedEvents?.length) {
       for (const ev of relatedEvents) {
-        if (ev && ev !== event) client.addEventToCache(ev)
+        if (ev && ev !== event) {
+          client.addEventToCache(ev)
+          navigationEventStore.setEvent(ev)
+        }
       }
     }
     
@@ -516,14 +518,17 @@ export function useSmartNoteNavigationOptional() {
       return
     }
     const { noteId } = parsed
+    navigationEventStore.clear()
     if (event) {
-      navigationEventStore.clear()
       navigationEventStore.setEvent(event)
       client.addEventToCache(event)
     }
     if (relatedEvents?.length) {
       for (const ev of relatedEvents) {
-        if (ev && ev !== event) client.addEventToCache(ev)
+        if (ev && ev !== event) {
+          client.addEventToCache(ev)
+          navigationEventStore.setEvent(ev)
+        }
       }
     }
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)

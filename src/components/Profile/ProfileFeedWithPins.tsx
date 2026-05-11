@@ -1,24 +1,18 @@
+import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import NoteCard from '@/components/NoteCard'
-import ProfileSearchBar from '@/components/ui/ProfileSearchBar'
+import KindFilter from '@/components/KindFilter'
+import { RefreshButton } from '@/components/RefreshButton'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind, PROFILE_POSTS_TAB_KINDS } from '@/constants'
-import { isReplyNoteEvent } from '@/lib/event'
-import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
+import { useProfileAuthorFeedSubRequests } from '@/hooks/useProfileAuthorFeedSubRequests'
 import { useProfilePins } from '@/hooks/useProfilePins'
-import { useProfileTimeline } from '@/hooks/useProfileTimeline'
-import { useProfileZapPollParticipation } from '@/hooks/useProfileZapPollParticipation'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
-import { useZap } from '@/providers/ZapProvider'
+import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
 import storage from '@/services/local-storage.service'
-import { RefreshCw } from 'lucide-react'
-import { Event, kinds } from 'nostr-tools'
+import { nip19, kinds } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-const INITIAL_SHOW_COUNT = 25
-const LOAD_MORE_COUNT = 25
 
 function useHideRepliesLikeMainFeed() {
   const [hideReplies, setHideReplies] = useState(() => {
@@ -41,9 +35,8 @@ function useHideRepliesLikeMainFeed() {
 const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ pubkey }, ref) => {
   const { t } = useTranslation()
   const { isEventDeleted } = useDeletedEvent()
-  const { zapReplyThreshold } = useZap()
-  const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
-  /** Profile timelines always show reposts; global kind filter still applies to other kinds. */
+  const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
+    useKindFilterOrDefaults()
   const profileTimelineShowKinds = useMemo(() => {
     if (showKinds.includes(kinds.Repost) && showKinds.includes(ExtendedKind.GENERIC_REPOST)) {
       return showKinds
@@ -54,188 +47,53 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
     return next.sort((a, b) => a - b)
   }, [showKinds])
   const hideReplies = useHideRepliesLikeMainFeed()
-  const [searchQuery, setSearchQuery] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [showCount, setShowCount] = useState(INITIAL_SHOW_COUNT)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const noteListRef = useRef<TNoteListRef>(null)
 
   const { pinEvents, loadingPins, refreshPins } = useProfilePins(pubkey)
 
-  const filterPredicate = useCallback(
-    (event: Event) => {
-      if (event.kind === ExtendedKind.ZAP_RECEIPT) {
-        return shouldIncludeZapReceiptAtReplyThreshold(event, zapReplyThreshold)
-      }
-      return true
-    },
-    [zapReplyThreshold]
-  )
-
-  /** Bump when posts-tab `kinds` change so in-memory timeline cache is not reused across incompatible filters. */
-  const cacheKey = useMemo(
-    () => `${pubkey}-profile-posts-tab-v2-${zapReplyThreshold}`,
-    [pubkey, zapReplyThreshold]
-  )
-
   const postsTabKinds = useMemo(() => [...PROFILE_POSTS_TAB_KINDS], [])
 
-  const { events: timelineEvents, isLoading: loadingTimeline, refresh: refreshTimeline } = useProfileTimeline({
-    pubkey,
-    cacheKey,
-    kinds: postsTabKinds,
-    limit: 200,
-    filterPredicate
-  })
+  const { subRequests, followingFeedDeltaSubRequests, feedSubscriptionKey, refresh: refreshAuthorRelayLayers } =
+    useProfileAuthorFeedSubRequests({
+      pubkey,
+      kinds: postsTabKinds,
+      limit: 200
+    })
 
-  const { rows: zapPollVoteRows, loading: loadingZapPollVotes, reload: reloadZapPollVotes } =
-    useProfileZapPollParticipation(pubkey)
-
-  const pinIds = useMemo(() => new Set(pinEvents.map((e) => e.id)), [pinEvents])
-
-  const passesMainFeedTimelineRules = useCallback(
-    (event: Event) => {
-      if (!profileTimelineShowKinds.includes(event.kind)) return false
-      if (event.kind === kinds.ShortTextNote) {
-        const isReply = isReplyNoteEvent(event)
-        if (hideReplies && isReply) return false
-        if (isReply && !showKind1Replies) return false
-        if (!isReply && !showKind1OPs) return false
-      }
-      if (event.kind === ExtendedKind.COMMENT && !showKind1111) return false
-      if (event.kind === ExtendedKind.GIT_RELEASE && !showKind1OPs) return false
-      return true
-    },
-    [profileTimelineShowKinds, showKind1OPs, showKind1Replies, showKind1111, hideReplies]
-  )
-
-  const restTimeline = useMemo(
-    () => timelineEvents.filter((e) => !pinIds.has(e.id)).filter(passesMainFeedTimelineRules),
-    [timelineEvents, pinIds, passesMainFeedTimelineRules]
-  )
-
-  type ProfileMergedRow = {
-    key: string
-    event: Event
-    sortAt: number
-    zapPollVoteHighlight?: number
-  }
-
-  const mergedRestRows = useMemo((): ProfileMergedRow[] => {
-    const showZapPollVotes = profileTimelineShowKinds.includes(ExtendedKind.ZAP_POLL)
-    const timelinePollIds = new Set(
-      restTimeline.filter((e) => e.kind === ExtendedKind.ZAP_POLL).map((e) => e.id)
-    )
-    const noteRows: ProfileMergedRow[] = restTimeline.map((e) => ({
-      key: e.id,
-      event: e,
-      sortAt: e.created_at
-    }))
-    const voteRows: ProfileMergedRow[] = showZapPollVotes
-      ? zapPollVoteRows
-          .filter((r) => !timelinePollIds.has(r.poll.id))
-          .map((r) => ({
-            key: `zap-poll-vote:${r.voteReceipt.id}`,
-            event: r.poll,
-            sortAt: r.voteReceipt.created_at,
-            zapPollVoteHighlight: r.optionIndex
-          }))
-      : []
-    return [...noteRows, ...voteRows].sort((a, b) => b.sortAt - a.sortAt)
-  }, [restTimeline, zapPollVoteRows, profileTimelineShowKinds])
-
-  const rowMatchesSearch = useCallback(
-    (event: Event) => {
-      const q = searchQuery.trim().toLowerCase()
-      if (!q) return true
-      if (event.content.toLowerCase().includes(q)) return true
-      return event.tags.some((tag) => tag.length > 1 && tag[1]?.toLowerCase().includes(q))
-    },
-    [searchQuery]
-  )
-
-  const applySearch = useCallback(
-    (events: Event[]) => {
-      const q = searchQuery.trim().toLowerCase()
-      if (!q) return events
-      return events.filter((event) => rowMatchesSearch(event))
-    },
-    [rowMatchesSearch]
-  )
-
-  const filteredPins = useMemo(
-    () => applySearch(pinEvents).filter((e) => !isEventDeleted(e)),
-    [pinEvents, applySearch, isEventDeleted]
-  )
-  const filteredRest = useMemo(
+  const pinnedEventIds = useMemo(
     () =>
-      mergedRestRows.filter((row) => rowMatchesSearch(row.event) && !isEventDeleted(row.event)),
-    [mergedRestRows, rowMatchesSearch, isEventDeleted]
+      pinEvents.map((e) =>
+        nip19.neventEncode({ id: e.id, author: e.pubkey, kind: e.kind })
+      ),
+    [pinEvents]
   )
-
-  const mergedDisplay = useMemo(() => [...filteredPins, ...filteredRest], [filteredPins, filteredRest])
-
-  /** Pins always occupy the top of the profile; `showCount` caps total visible rows (pins + posts). */
-  const displayedPins = useMemo(() => {
-    if (filteredPins.length <= showCount) return filteredPins
-    return filteredPins.slice(0, showCount)
-  }, [filteredPins, showCount])
-
-  const displayedFeed = useMemo(
-    () => filteredRest.slice(0, Math.max(0, showCount - displayedPins.length)),
-    [filteredRest, showCount, displayedPins.length]
-  )
-
-  const totalVisible = displayedPins.length + displayedFeed.length
-
-  useEffect(() => {
-    setShowCount(INITIAL_SHOW_COUNT)
-  }, [searchQuery, pubkey])
-
-  useEffect(() => {
-    if (!loadingPins && !loadingTimeline && !loadingZapPollVotes) {
-      setIsRefreshing(false)
-    }
-  }, [loadingPins, loadingTimeline, loadingZapPollVotes])
 
   const refreshAll = useCallback(() => {
     setIsRefreshing(true)
     refreshPins()
-    refreshTimeline()
-    reloadZapPollVotes()
+    refreshAuthorRelayLayers()
+    noteListRef.current?.refresh()
     void client.fetchDeletionEventsForPubkey(pubkey)
-  }, [refreshPins, refreshTimeline, reloadZapPollVotes, pubkey])
+  }, [refreshPins, refreshAuthorRelayLayers, pubkey])
 
   useImperativeHandle(ref, () => ({ refresh: refreshAll }), [refreshAll])
 
   useEffect(() => {
-    if (!bottomRef.current || totalVisible >= mergedDisplay.length) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && totalVisible < mergedDisplay.length) {
-          setShowCount((prev) => Math.min(prev + LOAD_MORE_COUNT, mergedDisplay.length))
-        }
-      },
-      { threshold: 0.1 }
-    )
-    observer.observe(bottomRef.current)
-    return () => observer.disconnect()
-  }, [totalVisible, mergedDisplay.length])
+    if (!isRefreshing) return
+    const id = window.setTimeout(() => setIsRefreshing(false), 600)
+    return () => clearTimeout(id)
+  }, [isRefreshing])
 
-  // Pins and zap-poll votes can take longer than the timeline; do not block the whole tab on them.
-  // Show posts as soon as the timeline has delivered anything (or finished empty).
-  const showFullSkeleton =
-    mergedDisplay.length === 0 && loadingTimeline && timelineEvents.length === 0
+  const handleShowKindsChange = useCallback(() => {
+    noteListRef.current?.scrollToTop()
+  }, [])
 
-  if (showFullSkeleton) {
+  const showPinsOnlySkeleton = pinEvents.length === 0 && loadingPins && subRequests.length === 0
+
+  if (showPinsOnlySkeleton) {
     return (
       <div className="mt-4 space-y-2 px-1">
-        <div className="flex flex-wrap items-center gap-2 px-2">
-          <ProfileSearchBar
-            onSearch={setSearchQuery}
-            placeholder={t('Search posts...')}
-            className="w-64 max-w-full"
-          />
-        </div>
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-32 w-full" />
@@ -245,94 +103,65 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
     )
   }
 
-  if (!mergedDisplay.length && !loadingPins && !loadingTimeline && !loadingZapPollVotes) {
+  if (!subRequests.length) {
     return (
       <div className="mt-4 px-2">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <ProfileSearchBar
-            onSearch={setSearchQuery}
-            placeholder={t('Search posts...')}
-            className="w-64 max-w-full"
-          />
-        </div>
-        <div className="flex justify-center py-8 text-sm text-muted-foreground">
-          {searchQuery.trim() ? t('No posts match your search') : t('No posts found')}
-        </div>
+        <p className="py-8 text-center text-sm text-muted-foreground">{t('Nothing to load for this feed.')}</p>
       </div>
     )
   }
 
   return (
-    <div className="mt-4">
-      <div className="flex flex-wrap items-center gap-2 px-2 mb-2">
-        <ProfileSearchBar
-          onSearch={setSearchQuery}
-          placeholder={t('Search posts...')}
-          className="w-64 max-w-full"
-        />
-      </div>
+    <div className="mt-4 min-w-0">
       {isRefreshing && (
         <div
-          className="flex items-center justify-center gap-2 px-4 py-2 text-center text-sm text-green-500"
+          className="mb-2 flex items-center justify-center gap-2 px-4 py-2 text-center text-sm text-green-500"
           role="status"
           aria-live="polite"
         >
-          <RefreshCw className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
           {t('Refreshing posts...')}
         </div>
       )}
-      {searchQuery.trim() && (
-        <div className="px-4 py-2 text-sm text-muted-foreground">
-          {t('Showing {{filtered}} of {{total}} items', {
-            filtered: totalVisible,
-            total: mergedDisplay.length
-          })}
-        </div>
-      )}
-      <div className="space-y-2">
-        {displayedPins.length > 0 && (
-          <div className="space-y-2" aria-label={t('Pinned posts')}>
-            {displayedPins.map((event) => (
-              <NoteCard
-                key={event.id}
-                className="w-full"
-                event={event}
-                filterMutedNotes={false}
-                pinned
-              />
-            ))}
-          </div>
-        )}
-        {mergedDisplay.length === 0 && (loadingPins || loadingZapPollVotes) && (
-          <div className="flex justify-center py-6 text-sm text-muted-foreground" role="status" aria-live="polite">
-            {t('Loading…')}
-          </div>
-        )}
-        {displayedPins.length > 0 && displayedFeed.length > 0 && (
-          <div className="text-xs text-muted-foreground px-2 py-1 border-t border-border/60 mt-2 pt-2">
-            {t('Feed')}
-          </div>
-        )}
-        {displayedFeed.length > 0 && (
-          <div className="space-y-2" aria-label={t('Posts')}>
-            {displayedFeed.map((row) => (
-              <NoteCard
-                key={row.key}
-                className="w-full"
-                event={row.event}
-                filterMutedNotes={false}
-                pinned={false}
-                zapPollVoteHighlightOption={row.zapPollVoteHighlight}
-              />
-            ))}
-          </div>
-        )}
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-2 px-2">
+        <RefreshButton onClick={refreshAll} />
+        <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
       </div>
-      {totalVisible < mergedDisplay.length && (
-        <div ref={bottomRef} className="flex h-10 items-center justify-center">
-          <div className="text-sm text-muted-foreground">{t('Loading more...')}</div>
+      {pinEvents.filter((e) => !isEventDeleted(e)).length > 0 && (
+        <div className="mb-3 space-y-2 px-1" aria-label={t('Pinned posts')}>
+          {pinEvents
+            .filter((e) => !isEventDeleted(e))
+            .map((event) => (
+              <NoteCard key={event.id} className="w-full" event={event} filterMutedNotes={false} pinned />
+            ))}
+          <div className="border-t border-border/60 px-2 py-1 text-xs text-muted-foreground">{t('Feed')}</div>
         </div>
       )}
+      <div className="min-h-[min(40vh,320px)] min-w-0">
+        <NoteList
+          ref={noteListRef}
+          subRequests={subRequests}
+          followingFeedDeltaSubRequests={followingFeedDeltaSubRequests}
+          feedSubscriptionKey={feedSubscriptionKey}
+          hostPrimaryPageName="profile"
+          showKinds={profileTimelineShowKinds}
+          seeAllFeedEvents={feedKindFilterBypass}
+          withKindFilter
+          useFilterAsIs
+          clientSideKindFilter
+          preserveTimelineOnSubRequestsChange
+          mergeTimelineWhenSubRequestFiltersMatch
+          pinnedEventIds={pinnedEventIds}
+          hideReplies={hideReplies}
+          hideUntrustedNotes={false}
+          filterMutedNotes={false}
+          showKind1OPs={showKind1OPs}
+          showKind1Replies={showKind1Replies}
+          showKind1111={showKind1111}
+          showFeedClientFilter
+          timelinePublicReadFallback={false}
+          revealBatchSize={48}
+        />
+      </div>
     </div>
   )
 })

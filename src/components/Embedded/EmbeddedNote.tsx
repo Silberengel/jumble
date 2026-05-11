@@ -280,7 +280,7 @@ function EmbeddedNoteFetched({
     const resolve = (ev: Event | undefined) => resolveAndSetRef.current(ev)
 
     const tryShortcuts = (): boolean => {
-      const nav = navigationEventStore.getEvent(noteKey)
+      const nav = navigationEventStore.peekEvent(noteKey)
       if (nav && resolve(nav)) return true
       const peek = client.peekSessionCachedEvent(noteKey)
       if (peek && resolve(peek)) return true

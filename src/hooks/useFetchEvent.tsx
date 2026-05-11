@@ -62,9 +62,9 @@ export function useFetchEvent(
       }
     }
 
-    // Check navigation event store first (events passed through navigation)
+    // Check navigation event store first (events passed through navigation) — peek so remounts still see it.
     if (!skipShortcuts) {
-      const navigationEvent = navigationEventStore.getEvent(eventId)
+      const navigationEvent = navigationEventStore.peekEvent(eventId)
       if (navigationEvent && !isEventDeleted(navigationEvent)) {
         setEvent(navigationEvent)
         addReplies([navigationEvent])
