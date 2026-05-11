@@ -173,10 +173,11 @@ export async function searchEventsForPicker(
   if (out.length >= limit) return out.slice(0, limit)
 
   const need = limit - out.length
+  const userCentricRelayUrls = await buildCitationPickerSearchRelayUrls()
   const [fromIdb, fromRelays] = await Promise.all([
     indexedDb.getCachedEventsForSearch(q, need, kindsList),
     queryService.fetchEvents(
-      SEARCHABLE_RELAY_URLS,
+      userCentricRelayUrls,
       { kinds: kindsList, search: q, limit: need },
       { eoseTimeout: 5000, globalTimeout: 8000 }
     )

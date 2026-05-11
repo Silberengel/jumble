@@ -49,6 +49,7 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import {
@@ -1219,6 +1220,21 @@ function ReplyNoteList({
             filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
           }
 
+          const vp = userPubkey?.trim()
+          let relayUrlsForThreadReq = finalRelayUrls
+          if (vp) {
+            const [favsForAggr, peekForAggr] = await Promise.all([
+              client.fetchFavoriteRelays(vp).catch(() => [] as string[]),
+              client.peekRelayListFromStorage(vp).catch(() => null)
+            ])
+            relayUrlsForThreadReq = applyNostrLandAggrRelayPolicy(
+              relayUrlsForThreadReq,
+              viewerMayUseNostrLandAggr(favsForAggr, peekForAggr ?? undefined)
+            )
+          } else {
+            relayUrlsForThreadReq = applyNostrLandAggrRelayPolicy(relayUrlsForThreadReq, false)
+          }
+
           // For URL threads: stream events as they arrive from each relay so replies appear
           // immediately, rather than waiting up to 10 s for all relays to EOSE.
           const urlThreadRootInfo = rootInfo.type === 'I' ? rootInfo : null
@@ -1235,7 +1251,7 @@ function ReplyNoteList({
 
           // Use fetchEvents instead of subscribeTimeline for one-time fetching
           const allReplies = await queryService.fetchEvents(
-            finalRelayUrls,
+            relayUrlsForThreadReq,
             filters,
             urlThreadOnevent ? { onevent: urlThreadOnevent } : undefined
           )
@@ -1304,7 +1320,7 @@ function ReplyNoteList({
                 const nestedFilters: Filter[] = [
                   { '#e': idChunk, kinds: commentKinds, limit: LIMIT }
                 ]
-                const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
+                const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
                     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
@@ -1356,7 +1372,7 @@ function ReplyNoteList({
                     limit: LIMIT
                   }
                 ]
-                const nestedReplies = await queryService.fetchEvents(finalRelayUrls, nestedFilters, {
+                const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
                     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))

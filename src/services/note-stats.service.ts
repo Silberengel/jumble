@@ -28,10 +28,11 @@ import {
   rssArticleStableEventId
 } from '@/lib/rss-article'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
 import { getEmojiInfosFromEmojiTags, getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
-import { TEmoji } from '@/types'
+import { TEmoji, type TRelayList } from '@/types'
 import dayjs from 'dayjs'
 import { Event, Filter, kinds } from 'nostr-tools'
 
@@ -503,7 +504,28 @@ class NoteStatsService {
       // ignore
     }
 
-    return Array.from(seen)
+    // 8. Logged-in viewer's inboxes (NIP-65 read + kind 10243 http read) — same events often land on personal relays.
+    let viewerNip65ForAggr: TRelayList | undefined
+    try {
+      const me = client.pubkey?.trim()
+      if (me) {
+        const mine = await Promise.race([
+          client.fetchRelayList(me),
+          new Promise<{ read?: string[]; write?: string[]; httpRead?: string[]; httpWrite?: string[] }>((r) =>
+            setTimeout(() => r({ read: [], write: [], httpRead: [], httpWrite: [] }), 2000)
+          )
+        ])
+        viewerNip65ForAggr = mine
+        userReadRelaysWithHttp(mine).slice(0, 12).forEach(add)
+      }
+    } catch {
+      // ignore
+    }
+
+    const allowAggr = client.pubkey
+      ? viewerMayUseNostrLandAggr(favoriteRelays ?? [], viewerNip65ForAggr)
+      : false
+    return applyNostrLandAggrRelayPolicy(Array.from(seen), allowAggr)
   }
 
   /**

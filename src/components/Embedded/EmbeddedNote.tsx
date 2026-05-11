@@ -18,6 +18,8 @@ import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
+import { useViewerInboxRelayUrlsAndAggrEligibility } from '@/hooks/useViewerInboxRelayUrlsAndAggr'
+import { applyNostrLandAggrRelayPolicy } from '@/lib/nostr-land-aggr'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -213,6 +215,7 @@ function EmbeddedNoteFetched({
   const { isEventDeleted } = useDeletedEvent()
   const { addReplies } = useReply()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const { inboxRelayUrls, allowNostrLandAggr } = useViewerInboxRelayUrlsAndAggrEligibility()
   const [event, setEvent] = useState<Event | undefined>(undefined)
   const [isFetching, setIsFetching] = useState(true)
   const eventRef = useRef<Event | undefined>(undefined)
@@ -231,8 +234,14 @@ function EmbeddedNoteFetched({
     [favoriteRelays, blockedRelays]
   )
   const wideRelaysStatic = useMemo(
-    () => buildEmbedWideRelayUrlsStatic(menuRelayUrls, relayHintsFromParent),
-    [menuRelayUrls, relayHintsFromParent]
+    () =>
+      buildEmbedWideRelayUrlsStatic(
+        menuRelayUrls,
+        relayHintsFromParent,
+        inboxRelayUrls,
+        allowNostrLandAggr
+      ),
+    [menuRelayUrls, relayHintsFromParent, inboxRelayUrls, allowNostrLandAggr]
   )
   const fetchRelayOpts = useMemo(
     () => (relayHintsFromParent.length > 0 ? { relayHints: relayHintsFromParent } : undefined),
@@ -260,6 +269,9 @@ function EmbeddedNoteFetched({
     wideRelaysStatic: [] as string[]
   })
   embedFetchCtxRef.current = { fetchRelayOpts, wideRelaysStatic }
+
+  const allowNostrLandAggrRef = useRef(allowNostrLandAggr)
+  allowNostrLandAggrRef.current = allowNostrLandAggr
 
   const resolveAndSetRef = useRef(resolveAndSet)
   resolveAndSetRef.current = resolveAndSet
@@ -325,7 +337,7 @@ function EmbeddedNoteFetched({
       if (cancelled || eventRef.current) return
       const wide0 = embedFetchCtxRef.current.wideRelaysStatic
       const wideMerged = preferPublicIndexRelaysFirst(dedupeRelayUrls([...wide0, ...extra]))
-      const ev = await runWidePass(wideMerged)
+      const ev = await runWidePass(applyNostrLandAggrRelayPolicy(wideMerged, allowNostrLandAggrRef.current))
       if (cancelled || !ev) return
       resolve(ev)
     })()
@@ -505,18 +517,27 @@ function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
   return [...urls].sort((a, b) => score(a) - score(b) || a.localeCompare(b))
 }
 
-/** Static + menu favorites: REQ immediately on embed mount (no NIP-65 round-trip first). */
-function buildEmbedWideRelayUrlsStatic(menuRelayUrls: string[], relayHintsFromParent: string[]): string[] {
-  return preferPublicIndexRelaysFirst(
-    dedupeRelayUrls([
-      ...relayHintsFromParent,
-      ...nip66Service.getSearchableRelayUrls(),
-      ...SEARCHABLE_RELAY_URLS,
-      ...FAST_READ_RELAY_URLS,
-      ...FAST_WRITE_RELAY_URLS,
-      ...PROFILE_RELAY_URLS,
-      ...menuRelayUrls,
-    ])
+/** Static + menu favorites + viewer inboxes: REQ on embed mount; nostr.land aggregator only for subscribers. */
+function buildEmbedWideRelayUrlsStatic(
+  menuRelayUrls: string[],
+  relayHintsFromParent: string[],
+  viewerInboxRelayUrls: string[],
+  allowNostrLandAggr: boolean
+): string[] {
+  return applyNostrLandAggrRelayPolicy(
+    preferPublicIndexRelaysFirst(
+      dedupeRelayUrls([
+        ...relayHintsFromParent,
+        ...viewerInboxRelayUrls,
+        ...nip66Service.getSearchableRelayUrls(),
+        ...SEARCHABLE_RELAY_URLS,
+        ...FAST_READ_RELAY_URLS,
+        ...FAST_WRITE_RELAY_URLS,
+        ...PROFILE_RELAY_URLS,
+        ...menuRelayUrls
+      ])
+    ),
+    allowNostrLandAggr
   )
 }
 

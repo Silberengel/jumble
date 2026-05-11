@@ -9,28 +9,9 @@ import { useProfilePins } from '@/hooks/useProfilePins'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
-import storage from '@/services/local-storage.service'
 import { nip19, kinds } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-function useHideRepliesLikeMainFeed() {
-  const [hideReplies, setHideReplies] = useState(() => {
-    const m = storage.getNoteListMode()
-    return m !== 'postsAndReplies'
-  })
-
-  useEffect(() => {
-    const sync = () => {
-      const m = storage.getNoteListMode()
-      setHideReplies(m !== 'postsAndReplies')
-    }
-    window.addEventListener('noteListModeChanged', sync)
-    return () => window.removeEventListener('noteListModeChanged', sync)
-  }, [])
-
-  return hideReplies
-}
 
 const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ pubkey }, ref) => {
   const { t } = useTranslation()
@@ -46,7 +27,6 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
     if (!next.includes(ExtendedKind.GENERIC_REPOST)) next.push(ExtendedKind.GENERIC_REPOST)
     return next.sort((a, b) => a - b)
   }, [showKinds])
-  const hideReplies = useHideRepliesLikeMainFeed()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const noteListRef = useRef<TNoteListRef>(null)
 
@@ -151,7 +131,7 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
           preserveTimelineOnSubRequestsChange
           mergeTimelineWhenSubRequestFiltersMatch
           pinnedEventIds={pinnedEventIds}
-          hideReplies={hideReplies}
+          hideReplies={false}
           hideUntrustedNotes={false}
           filterMutedNotes={false}
           showKind1OPs={showKind1OPs}

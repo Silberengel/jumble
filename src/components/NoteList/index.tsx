@@ -70,7 +70,7 @@ import { useTranslation } from 'react-i18next'
 import PullToRefresh from 'react-simple-pull-to-refresh'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
-import { formatPubkey, inviteInputToHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import { formatPubkey, inviteInputToHexPubkey, normalizeHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { usePrimaryPageOptional } from '@/contexts/primary-page-context'
 import type { TPrimaryPageName } from '@/PageManager'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
@@ -572,6 +572,36 @@ function tightestSinceFromSpellFilters(shardFilters: Filter[]): number | undefin
     .map((f) => (typeof f.since === 'number' ? f.since : undefined))
     .filter((n): n is number => n !== undefined)
   return sinceCandidates.length > 0 ? Math.max(...sinceCandidates) : undefined
+}
+
+/**
+ * Profile Posts / Media feeds shard by relay but share one author + kinds REQ. Session + IDB author scans are keyed
+ * only on that author/kinds pair — unlike {@link ClientService.getTimelineDiskSnapshotEvents}, which misses rows
+ * until each relay-shard timeline has been persisted under its own key.
+ */
+function getProfileSingleAuthorWarmupSpec(
+  mapped: Array<{ urls: string[]; filter: TSubRequestFilter }>
+): { author: string; kinds: number[] } | null {
+  if (mapped.length === 0) return null
+  let normAuthor: string | null = null
+  const kindUnion = new Set<number>()
+  for (const { filter: f } of mapped) {
+    const authors = Array.isArray(f.authors) ? f.authors : undefined
+    if (!authors || authors.length !== 1) return null
+    let pk: string
+    try {
+      pk = normalizeHexPubkey(authors[0])
+    } catch {
+      return null
+    }
+    if (normAuthor === null) normAuthor = pk
+    else if (normAuthor !== pk) return null
+    const ks = Array.isArray(f.kinds) ? f.kinds : undefined
+    if (!ks || ks.length === 0) return null
+    for (const k of ks) kindUnion.add(k)
+  }
+  if (normAuthor === null) return null
+  return { author: normAuthor, kinds: Array.from(kindUnion).sort((a, b) => a - b) }
 }
 
 const NoteList = forwardRef(
@@ -2132,6 +2162,84 @@ const NoteList = forwardRef(
                   /* spell local + disk snapshot is best-effort */
                 }
               })()
+            } else {
+              const profileAuthorWarmSpec = getProfileSingleAuthorWarmupSpec(
+                mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+              )
+              if (
+                hostPrimaryPageName === 'profile' &&
+                profileAuthorWarmSpec &&
+                !timelineEffectStale()
+              ) {
+                const sessionScanLimit = Math.min(4000, Math.max(eventCapEarly * 4, 800))
+                const sessionHits = client.eventService.listSessionEventsAuthoredBy(
+                  profileAuthorWarmSpec.author,
+                  { kinds: profileAuthorWarmSpec.kinds, limit: sessionScanLimit }
+                )
+                if (sessionHits.length > 0) {
+                  const narrowedS = narrowLiveBatch(sessionHits as Event[])
+                  if (narrowedS.length > 0) {
+                    const mergedS = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
+                    )
+                    if (mergedS.length > 0) {
+                      timelineMergeBootstrapRef.current = mergedS.slice()
+                      setEvents(mergedS)
+                      lastEventsForTimelinePrefetchRef.current = mergedS
+                      setNewEvents([])
+                      setShowCount(revealBatchSize ?? SHOW_COUNT)
+                      setLoading(false)
+                      feedPaintRelayPendingRef.current = true
+                      feedPaintRelayMetaRef.current = {
+                        variant: 'profile_local_session',
+                        mergedCount: mergedS.length
+                      }
+                      primedFromDisk = true
+                    }
+                  }
+                }
+
+                void (async () => {
+                  try {
+                    const fromArchive = await indexedDb.scanEventArchiveByAuthorPubkey(
+                      profileAuthorWarmSpec.author,
+                      {
+                        kinds: profileAuthorWarmSpec.kinds,
+                        maxRowsScanned: 16_000,
+                        maxMatches: Math.min(2000, Math.max(eventCapEarly, 150))
+                      }
+                    )
+                    if (!effectActive || timelineEffectStale()) return
+                    if (fromArchive.length === 0) return
+                    const narrowed = narrowLiveBatch(fromArchive as Event[])
+                    if (narrowed.length === 0) return
+                    setEvents((prev) => {
+                      const merged = collapseDuplicateNip18RepostTimelineRows(
+                        mergeEventBatchesById(prev, narrowed, eventCapEarly, areAlgoRelays)
+                      )
+                      if (merged.length > 0) {
+                        timelineMergeBootstrapRef.current = merged.slice()
+                      }
+                      lastEventsForTimelinePrefetchRef.current = merged
+                      return merged
+                    })
+                    setNewEvents([])
+                    setShowCount(revealBatchSize ?? SHOW_COUNT)
+                    if (!feedPaintLiveRelayDoneRef.current) {
+                      setLoading(false)
+                      feedPaintRelayPendingRef.current = true
+                      feedPaintRelayMetaRef.current = {
+                        variant: 'profile_local_archive',
+                        mergedCount: narrowed.length
+                      }
+                      setFeedEmptyToastGateTick((n) => n + 1)
+                      setFeedTimelineEmptyUiReady(true)
+                    }
+                  } catch {
+                    /* profile local archive is best-effort */
+                  }
+                })()
+              }
             }
             if (!primedFromDisk) {
               if (!keepRowsVisible) setLoading(true)

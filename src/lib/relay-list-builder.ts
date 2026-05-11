@@ -10,10 +10,13 @@
  */
 
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { getCacheRelayUrls } from './private-relays'
 import client from '@/services/client.service'
 import logger from '@/lib/logger'
+import type { TRelayList } from '@/types'
 import type { Event } from 'nostr-tools'
 
 function dedupeNormalizedRelayUrls(urls: string[]): string[] {
@@ -142,7 +145,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       const authorRelayList = await client.peekRelayListFromStorage(authorPubkey)
       const authorOutboxes = [...(authorRelayList.write || []).slice(0, 10)]
       authorOutboxes.forEach(addRelay)
-      const authorInboxes = [...(authorRelayList.read || []).slice(0, 10)]
+      const authorInboxes = userReadRelaysWithHttp(authorRelayList).slice(0, 10)
       authorInboxes.forEach(addRelay)
       logger.debug('[RelayListBuilder] Added author relays', {
         author: authorPubkey.substring(0, 8),
@@ -158,7 +161,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   if (includeUserOwnRelays && userPubkey) {
     try {
       const userRelayList = await client.peekRelayListFromStorage(userPubkey)
-      const userRead = [...(userRelayList.read || []).slice(0, 10)]
+      const userRead = userReadRelaysWithHttp(userRelayList).slice(0, 10)
       const userWrite = [...(userRelayList.write || []).slice(0, 10)]
       userRead.forEach(addRelay)
       userWrite.forEach(addRelay)
@@ -197,7 +200,9 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
       const userRelayList = await client.peekRelayListFromStorage(userPubkey)
-      ;[...(userRelayList.read || []).slice(0, 10)].forEach(addRelay)
+      userReadRelaysWithHttp(userRelayList)
+        .slice(0, 10)
+        .forEach(addRelay)
 
       // Include local relays from kind 10432 if enabled
       if (includeLocalRelays) {
@@ -241,7 +246,25 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     SEARCHABLE_RELAY_URLS.forEach(addRelay)
   }
 
-  return Array.from(relayUrls)
+  const merged = Array.from(relayUrls)
+  const viewer = userPubkey ?? client.pubkey ?? undefined
+  if (!viewer) {
+    return applyNostrLandAggrRelayPolicy(merged, false)
+  }
+  let favsForAggr: string[] = []
+  try {
+    favsForAggr = await client.fetchFavoriteRelays(viewer)
+  } catch {
+    /* ignore */
+  }
+  let nip65ForAggr: TRelayList | null = null
+  try {
+    nip65ForAggr = await client.peekRelayListFromStorage(viewer)
+  } catch {
+    /* ignore */
+  }
+  const allowAggr = viewerMayUseNostrLandAggr(favsForAggr, nip65ForAggr)
+  return applyNostrLandAggrRelayPolicy(merged, allowAggr)
 }
 
 /**
@@ -336,16 +359,18 @@ export async function buildPollResultsReadRelayUrls(options: {
 
   let authorReadSlice: string[] = []
   let viewerReadSlice: string[] = []
+  let viewerRlForAggr: TRelayList | null = null
   try {
     const [authorRl, viewerRl] = await Promise.all([
       pollEvent.pubkey ? client.peekRelayListFromStorage(pollEvent.pubkey) : Promise.resolve(null),
       viewerPubkey ? client.peekRelayListFromStorage(viewerPubkey) : Promise.resolve(null)
     ])
-    if (authorRl?.read?.length) {
-      authorReadSlice = authorRl.read.slice(0, POLL_RESULTS_NIP65_READ_SLICE)
+    viewerRlForAggr = viewerRl
+    if (authorRl) {
+      authorReadSlice = userReadRelaysWithHttp(authorRl).slice(0, POLL_RESULTS_NIP65_READ_SLICE)
     }
-    if (viewerRl?.read?.length) {
-      viewerReadSlice = viewerRl.read.slice(0, POLL_RESULTS_NIP65_READ_SLICE)
+    if (viewerRl) {
+      viewerReadSlice = userReadRelaysWithHttp(viewerRl).slice(0, POLL_RESULTS_NIP65_READ_SLICE)
     }
   } catch {
     logger.debug('[RelayListBuilder] poll results: NIP-65 relay list race failed')
@@ -366,7 +391,10 @@ export async function buildPollResultsReadRelayUrls(options: {
   pushLayer([...FAST_READ_RELAY_URLS])
   pushLayer(authorReadSlice)
 
-  return ordered.slice(0, POLL_RESULTS_MAX_RELAYS)
+  const allowAggr = viewerPubkey
+    ? viewerMayUseNostrLandAggr(viewerFavoriteRelayUrls, viewerRlForAggr ?? undefined)
+    : false
+  return applyNostrLandAggrRelayPolicy(ordered.slice(0, POLL_RESULTS_MAX_RELAYS), allowAggr)
 }
 
 /**
