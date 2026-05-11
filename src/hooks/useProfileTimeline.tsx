@@ -369,7 +369,7 @@ export function useProfileTimeline({
 
         try {
           const [disk, longFormRows] = await Promise.all([
-            client.getTimelineDiskSnapshotEvents(
+            client.getLocalFeedEvents(
               provisionalSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
             ),
             longFormPrefetch
@@ -412,7 +412,7 @@ export function useProfileTimeline({
         if (cancelled || deltaUrls.length === 0) return
         const deltaSubs = buildSubRequests([deltaUrls], pubkey, kinds, limit, hasCalendarKinds)
         try {
-          const diskDelta = await client.getTimelineDiskSnapshotEvents(
+          const diskDelta = await client.getLocalFeedEvents(
             deltaSubs as Array<{ urls: string[]; filter: TSubRequestFilter }>
           )
           if (!cancelled && diskDelta.length > 0) {

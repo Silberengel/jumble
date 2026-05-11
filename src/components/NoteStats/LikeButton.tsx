@@ -25,6 +25,7 @@ import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { eventService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
+import type { TNoteStats } from '@/services/note-stats.service'
 import storage from '@/services/local-storage.service'
 import { TEmoji } from '@/types'
 import { SmilePlus } from 'lucide-react'
@@ -43,7 +44,19 @@ import {
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { WEB_EXTERNAL_REACTION_PUBLISHED_EVENT } from '@/lib/rss-web-feed'
 
-export default function LikeButton({ event, hideCount = false }: { event: Event; hideCount?: boolean }) {
+type LikeButtonProps = {
+  event: Event
+  hideCount?: boolean
+  noteStats?: Partial<TNoteStats>
+  isReplyToDiscussion?: boolean
+}
+
+export function LikeButtonWithStats({
+  event,
+  hideCount = false,
+  noteStats,
+  isReplyToDiscussion: isReplyToDiscussionProp
+}: LikeButtonProps) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { pubkey, publish, checkLogin } = useNostr()
@@ -51,10 +64,9 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
   const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const [liking, setLiking] = useState(false)
   const [isEmojiReactionsOpen, setIsEmojiReactionsOpen] = useState(false)
-  const noteStats = useNoteStatsById(event.id)
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
   const inQuietMode = shouldHideInteractions(event)
-  const isReplyToDiscussion = useReplyUnderDiscussionRoot(event)
+  const isReplyToDiscussion = isReplyToDiscussionProp ?? false
   const showDiscussionVotes = isDiscussion || isReplyToDiscussion
 
   const statsLoaded = noteStats?.updatedAt != null
@@ -342,5 +354,18 @@ export default function LikeButton({ event, hideCount = false }: { event: Event;
         {likeEmojiPicker}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+export default function LikeButton({ event, hideCount = false }: LikeButtonProps) {
+  const noteStats = useNoteStatsById(event.id)
+  const isReplyToDiscussion = useReplyUnderDiscussionRoot(event)
+  return (
+    <LikeButtonWithStats
+      event={event}
+      hideCount={hideCount}
+      noteStats={noteStats}
+      isReplyToDiscussion={isReplyToDiscussion}
+    />
   )
 }

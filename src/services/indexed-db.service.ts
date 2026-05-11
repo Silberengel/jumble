@@ -22,6 +22,8 @@ import {
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
+import type { Filter } from 'nostr-tools'
 
 /** Hot archive row in {@link StoreNames.EVENT_ARCHIVE}. */
 export type TArchivedEventRow = {
@@ -1499,6 +1501,58 @@ class IndexedDbService {
           const event = item.value as Event
           if (kindSet.has(event.kind)) {
             results.push(event)
+          }
+        }
+        cursor.continue()
+      }
+
+      request.onerror = (event) => {
+        transaction.commit()
+        reject(event)
+      }
+    })
+  }
+
+  async scanPublicationEventsByFilters(
+    filters: readonly Filter[],
+    options: { maxRowsScanned: number; maxMatches: number }
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (
+      !this.db ||
+      !this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS) ||
+      filters.length === 0 ||
+      options.maxMatches <= 0
+    ) {
+      return []
+    }
+    const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 50_000)
+    const maxMatches = Math.min(Math.max(options.maxMatches, 1), 3000)
+    const workingCap = Math.min(4000, Math.max(maxMatches * 8, maxMatches + 80))
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const request = store.openCursor()
+      const results: Event[] = []
+      let scanned = 0
+
+      request.onsuccess = () => {
+        const cursor = (request as IDBRequest<IDBCursorWithValue>).result
+        if (!cursor || scanned >= maxRows) {
+          transaction.commit()
+          results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+          resolve(results.slice(0, maxMatches))
+          return
+        }
+        scanned += 1
+        const item = cursor.value as TValue<Event> | undefined
+        const event = item?.value
+        if (event && !shouldDropEventOnIngest(event) && eventMatchesAnyLocalFeedFilter(event, filters)) {
+          results.push(event)
+          if (results.length > workingCap) {
+            results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+            results.length = Math.min(results.length, Math.max(maxMatches * 3, maxMatches + 40))
           }
         }
         cursor.continue()
@@ -3074,6 +3128,50 @@ class IndexedDbService {
           if (buf.length >= workingCap) {
             buf.sort((a, b) => b.created_at - a.created_at)
             buf.length = keepAfterTrim
+          }
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async scanEventArchiveByFilters(
+    filters: readonly Filter[],
+    options: { maxRowsScanned: number; maxMatches: number }
+  ): Promise<Event[]> {
+    if (filters.length === 0 || options.maxMatches <= 0) return []
+    const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 50_000)
+    const maxMatches = Math.min(Math.max(options.maxMatches, 1), 3000)
+    const workingCap = Math.min(4000, Math.max(maxMatches * 8, maxMatches + 80))
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return []
+
+    return new Promise((resolve, reject) => {
+      const buf: Event[] = []
+      let scanned = 0
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readonly')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      const req = store.openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || scanned >= maxRows) {
+          tx.commit()
+          buf.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+          resolve(buf.slice(0, maxMatches))
+          return
+        }
+        scanned++
+        const row = cursor.value as TArchivedEventRow | undefined
+        const ev = row?.value
+        if (ev && !shouldDropEventOnIngest(ev) && eventMatchesAnyLocalFeedFilter(ev, filters)) {
+          buf.push(ev)
+          if (buf.length > workingCap) {
+            buf.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+            buf.length = Math.min(buf.length, Math.max(maxMatches * 3, maxMatches + 40))
           }
         }
         cursor.continue()

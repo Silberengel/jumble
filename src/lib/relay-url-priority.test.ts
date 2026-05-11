@@ -4,7 +4,7 @@ import {
   dedupeNormalizeRelayUrlsOrdered,
   filterContextAuthorReadRelaysForPublish
 } from '@/lib/relay-url-priority'
-import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 describe('filterContextAuthorReadRelaysForPublish', () => {
@@ -69,5 +69,36 @@ describe('nostr.land aggregator feed relay policy', () => {
     )
 
     expect(out).toEqual(['wss://relay.example.com/'])
+  })
+})
+
+describe('buildProfilePageReadRelayUrls', () => {
+  it('includes viewed author write relays for remote profile timelines', () => {
+    const out = buildProfilePageReadRelayUrls(
+      [],
+      [],
+      {
+        read: [],
+        write: ['wss://author-outbox.example/']
+      },
+      false
+    )
+
+    expect(out).toContain('wss://author-outbox.example/')
+  })
+
+  it('prioritizes viewed author write relays ahead of long read lists', () => {
+    const out = buildProfilePageReadRelayUrls(
+      [],
+      [],
+      {
+        read: Array.from({ length: 20 }, (_, i) => `wss://author-inbox-${i}.example/`),
+        write: ['wss://author-outbox.example/']
+      },
+      false
+    )
+
+    expect(out[0]).toBe('wss://aggr.nostr.land/')
+    expect(out[1]).toBe('wss://author-outbox.example/')
   })
 })

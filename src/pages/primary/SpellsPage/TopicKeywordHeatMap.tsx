@@ -139,7 +139,7 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [rescanTick, setRescanTick] = useState(0)
 
-  const mergeData = useCallback(async (): Promise<TTopicKeywordBubble[]> => {
+  const mergeData = useCallback(async (includeRelay = true): Promise<TTopicKeywordBubble[]> => {
     const windowStart = Math.floor(Date.now() / 1000) - HEAT_WINDOW_SEC
     const sessionEv = eventService.listSessionEventsByKinds(MAP_KINDS, { limit: SESSION_LIMIT })
 
@@ -150,7 +150,7 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
       maxMatches: ARCHIVE_MAX_MATCHES
     })
     const relayFetch =
-      relayUrls.length > 0
+      includeRelay && relayUrls.length > 0
         ? client.fetchEvents(
             relayUrls,
             { kinds: [...MAP_KINDS], limit: HEAT_REQ_LIMIT },
@@ -196,10 +196,13 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
     setIsMerging(true)
     void (async () => {
       try {
-        const bubbles = await mergeData()
-        if (!cancelled) {
-          setRows(bubbles)
-        }
+        const localBubbles = await mergeData(false)
+        if (cancelled) return
+        setRows(localBubbles)
+        setLoading(false)
+
+        const bubbles = await mergeData(true)
+        if (!cancelled) setRows(bubbles)
       } catch (e) {
         if (!cancelled) {
           logger.warn('[TopicKeywordHeatMap] merge failed', { err: e })

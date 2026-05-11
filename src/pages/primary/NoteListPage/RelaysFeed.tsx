@@ -2,7 +2,7 @@ import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import { checkAlgoRelay } from '@/lib/relay'
 import { normalizeUrl } from '@/lib/url'
-import { useFeed } from '@/providers/FeedProvider'
+import { useFeed } from '@/providers/feed-context'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import relayInfoService from '@/services/relay-info.service'
 import { kinds } from 'nostr-tools'
@@ -114,6 +114,7 @@ const RelaysFeed = forwardRef<
       preserveTimelineOnSubRequestsChange
       repliesSubRequests={repliesSubRequests}
       widenMainGalleryRelays={false}
+      feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"
       showFeedClientFilter
       hostPrimaryPageName="feed"

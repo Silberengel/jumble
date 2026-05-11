@@ -36,6 +36,7 @@ import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 
@@ -672,6 +673,20 @@ export class EventService {
       }
     }
 
+    return results
+  }
+
+  getSessionEventsMatchingFilters(filters: readonly Filter[], limit: number): NEvent[] {
+    if (filters.length === 0 || limit <= 0) return []
+    const cappedLimit = Math.min(Math.max(limit, 1), 8000)
+    const results: NEvent[] = []
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (shouldDropEventOnIngest(event)) continue
+      if (!eventMatchesAnyLocalFeedFilter(event, filters)) continue
+      results.push(event)
+      if (results.length >= cappedLimit) break
+    }
+    results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
     return results
   }
 

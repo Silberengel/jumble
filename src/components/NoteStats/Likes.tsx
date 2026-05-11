@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import noteStatsService from '@/services/note-stats.service'
+import type { TNoteStats } from '@/services/note-stats.service'
 import storage from '@/services/local-storage.service'
 import { TEmoji } from '@/types'
 import { Event } from 'nostr-tools'
@@ -16,11 +17,15 @@ import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
 import Username from '../Username'
 import logger from '@/lib/logger'
 
-export default function Likes({ event }: { event: Event }) {
+type LikesProps = {
+  event: Event
+  noteStats?: Partial<TNoteStats>
+}
+
+export function LikesWithStats({ event, noteStats }: LikesProps) {
   const inQuietMode = shouldHideInteractions(event)
   const { pubkey, checkLogin, publish } = useNostr()
   const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
-  const noteStats = useNoteStatsById(event.id)
   const [liking, setLiking] = useState<string | null>(null)
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [isLongPressing, setIsLongPressing] = useState<string | null>(null)
@@ -212,4 +217,9 @@ export default function Likes({ event }: { event: Event }) {
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
   )
+}
+
+export default function Likes({ event }: LikesProps) {
+  const noteStats = useNoteStatsById(event.id)
+  return <LikesWithStats event={event} noteStats={noteStats} />
 }

@@ -1,8 +1,7 @@
 import { buildProfileAuthorSubRequestsFromUrlGroups } from '@/lib/profile-author-subrequests'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
-import { computeSpellSubRequestsIdentityKey } from '@/lib/spell-feed-request-identity'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
-import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
@@ -109,22 +108,18 @@ export function useProfileAuthorFeedSubRequests({
     }
   }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, favoriteRelays, blockedRelays, includeAuthorLocalRelays])
 
-  const subRequests = useMemo(() => {
-    if (!provisionalUrls.length) return [] as TFeedSubRequest[]
-    return buildProfileAuthorSubRequestsFromUrlGroups([provisionalUrls], authorHex, [...kinds], limit)
-  }, [provisionalUrls, authorHex, kinds, limit])
+  const activeUrls = fullUrls?.length ? fullUrls : provisionalUrls
 
-  const followingFeedDeltaSubRequests = useMemo(() => {
-    if (!fullUrls?.length || !provisionalUrls.length) return [] as TFeedSubRequest[]
-    const delta = subtractNormalizedRelayUrls(fullUrls, provisionalUrls)
-    if (!delta.length) return [] as TFeedSubRequest[]
-    return buildProfileAuthorSubRequestsFromUrlGroups([delta], authorHex, [...kinds], limit)
-  }, [fullUrls, provisionalUrls, authorHex, kinds, limit])
+  const subRequests = useMemo(() => {
+    if (!activeUrls.length) return [] as TFeedSubRequest[]
+    return buildProfileAuthorSubRequestsFromUrlGroups([activeUrls], authorHex, [...kinds], limit)
+  }, [activeUrls, authorHex, kinds, limit])
+
+  const followingFeedDeltaSubRequests = useMemo(() => [] as TFeedSubRequest[], [])
 
   const feedSubscriptionKey = useMemo(() => {
-    const base = computeSpellSubRequestsIdentityKey(subRequests)
-    return `profile-posts-${authorHex}-${relayListsKey}-${base}`
-  }, [authorHex, relayListsKey, subRequests])
+    return `profile-posts-${authorHex}-${kindsKey}-${limit}`
+  }, [authorHex, kindsKey, limit])
 
   const refresh = useCallback(() => {
     setRefreshToken((n) => n + 1)

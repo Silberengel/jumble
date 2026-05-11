@@ -16,6 +16,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import noteStatsService from '@/services/note-stats.service'
+import type { TNoteStats } from '@/services/note-stats.service'
 import storage from '@/services/local-storage.service'
 import { PencilLine, Repeat } from 'lucide-react'
 import { Event } from 'nostr-tools'
@@ -26,13 +27,18 @@ import PostEditor from '../PostEditor'
 import { formatCount } from './utils'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
 
-export default function RepostButton({ event, hideCount = false }: { event: Event; hideCount?: boolean }) {
+type RepostButtonProps = {
+  event: Event
+  hideCount?: boolean
+  noteStats?: Partial<TNoteStats>
+}
+
+export function RepostButtonWithStats({ event, hideCount = false, noteStats }: RepostButtonProps) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const { publish, checkLogin, pubkey } = useNostr()
   const { relays: statsRelays } = useNoteStatsRelayHints()
-  const noteStats = useNoteStatsById(event.id) as import('@/services/note-stats.service').TNoteStats | undefined
   const [reposting, setReposting] = useState(false)
   const [isPostDialogOpen, setIsPostDialogOpen] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -191,4 +197,9 @@ export default function RepostButton({ event, hideCount = false }: { event: Even
       {postEditor}
     </>
   )
+}
+
+export default function RepostButton({ event, hideCount = false }: RepostButtonProps) {
+  const noteStats = useNoteStatsById(event.id)
+  return <RepostButtonWithStats event={event} hideCount={hideCount} noteStats={noteStats} />
 }

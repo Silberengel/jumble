@@ -2,6 +2,7 @@ import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
+import type { TNoteStats } from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
@@ -9,10 +10,15 @@ import { useTranslation } from 'react-i18next'
 import PostEditor from '../PostEditor'
 import { formatCount } from './utils'
 
-export default function ReplyButton({ event, hideCount = false }: { event: Event; hideCount?: boolean }) {
+type ReplyButtonProps = {
+  event: Event
+  hideCount?: boolean
+  noteStats?: Partial<TNoteStats>
+}
+
+export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: ReplyButtonProps) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
-  const noteStats = useNoteStatsById(event.id)
   const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const { replyCount, hasReplied } = useMemo(() => {
     const hasReplied = pubkey
@@ -57,4 +63,9 @@ export default function ReplyButton({ event, hideCount = false }: { event: Event
       <PostEditor parentEvent={event} open={open} setOpen={setOpen} />
     </>
   )
+}
+
+export default function ReplyButton({ event, hideCount = false }: ReplyButtonProps) {
+  const noteStats = useNoteStatsById(event.id)
+  return <ReplyButtonWithStats event={event} hideCount={hideCount} noteStats={noteStats} />
 }

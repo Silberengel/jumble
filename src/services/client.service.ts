@@ -1824,6 +1824,54 @@ class ClientService extends EventTarget {
     return merged.slice(0, mergedTimelineLimit)
   }
 
+  async getLocalFeedEvents(
+    subRequests: { urls: string[]; filter: TSubRequestFilter }[],
+    options?: { maxRowsScanned?: number; maxMatches?: number }
+  ): Promise<NEvent[]> {
+    if (!subRequests.length) return []
+    const filters = subRequests.map(({ filter }) => filter as Filter)
+    const maxMatches = Math.min(
+      Math.max(
+        options?.maxMatches ??
+          Math.max(
+            500,
+            ...subRequests.map(({ filter }) =>
+              typeof filter.limit === 'number' && filter.limit > 0 ? filter.limit : 0
+            )
+          ),
+        1
+      ),
+      3000
+    )
+    const maxRowsScanned = Math.min(Math.max(options?.maxRowsScanned ?? 18_000, 200), 50_000)
+    const byId = new Map<string, NEvent>()
+    const add = (rows: NEvent[]) => {
+      for (const event of rows) {
+        if (shouldDropEventOnIngest(event)) continue
+        if (!byId.has(event.id)) byId.set(event.id, event)
+      }
+    }
+
+    add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
+
+    const [timelineRows, archiveRows, publicationRows] = await Promise.all([
+      this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[]),
+      indexedDb
+        .scanEventArchiveByFilters(filters, { maxRowsScanned, maxMatches })
+        .catch(() => [] as NEvent[]),
+      indexedDb
+        .scanPublicationEventsByFilters(filters, { maxRowsScanned: Math.min(maxRowsScanned, 16_000), maxMatches })
+        .catch(() => [] as NEvent[])
+    ])
+    add(timelineRows)
+    add(archiveRows)
+    add(publicationRows)
+
+    return [...byId.values()]
+      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .slice(0, maxMatches)
+  }
+
   async subscribeTimeline(
     subRequests: { urls: string[]; filter: TSubRequestFilter }[],
     {

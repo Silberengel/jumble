@@ -95,11 +95,11 @@ class NoteStatsService {
   private processBatchRunning = false
   /** While greater than zero, {@link processBatch} defers so user publishes are not starved for WebSocket pool / bandwidth. */
   private publishPriorityDepth = 0
-  private readonly BATCH_DELAY = 120
+  private readonly BATCH_DELAY = 40
   /** Larger slices: feed cards each trigger a stats fetch; tiny slices left the tail of the feed starved. */
-  private readonly MAX_BATCH_SIZE = 20
+  private readonly MAX_BATCH_SIZE = 32
   /** Parallel stats REQs per slice (bounded by relay pool pressure). */
-  private readonly STATS_SLICE_CONCURRENCY = 6
+  private readonly STATS_SLICE_CONCURRENCY = 8
   /** Client-only RSS/Web thread roots are not on relays; use the event passed into {@link fetchNoteStats}. */
   private pendingSyntheticRootById = new Map<string, Event>()
   /** Root event from {@link fetchNoteStats} (feed/card already has it; avoids fetchEvent miss → no stats UI). */
@@ -415,18 +415,20 @@ class NoteStatsService {
         })
         events.push(evt)
       }
-      if (nonSocial.length > 0) {
-        await queryService.fetchEvents(finalRelayUrls, nonSocial, {
-          ...fetchOpts,
-          onevent: onStatsEvent
-        })
-      }
-      if (social.length > 0) {
-        await queryService.fetchEvents(finalRelayUrls, social, {
-          ...fetchOpts,
-          onevent: onStatsEvent
-        })
-      }
+      await Promise.all([
+        nonSocial.length > 0
+          ? queryService.fetchEvents(finalRelayUrls, nonSocial, {
+              ...fetchOpts,
+              onevent: onStatsEvent
+            })
+          : Promise.resolve([] as Event[]),
+        social.length > 0
+          ? queryService.fetchEvents(finalRelayUrls, social, {
+              ...fetchOpts,
+              onevent: onStatsEvent
+            })
+          : Promise.resolve([] as Event[])
+      ])
 
       logger.debug('[NoteStats] processSingleEvent: relay fetch finished', {
         eventId: `${resolvedEvent.id.slice(0, 12)}…`,
@@ -508,37 +510,34 @@ class NoteStatsService {
     // 6. Session cache (e.g. notifications): events that reference this id with a relay hint
     client.eventService.getSessionRelayHintsForHexTarget(event.id).forEach(add)
 
-    // 7. Author's inboxes (read relays from kind 10002)
-    try {
-      const relayList = await Promise.race([
-        client.fetchRelayList(event.pubkey),
-        new Promise<{ read?: string[] }>((r) => setTimeout(() => r({}), 2000))
-      ])
-      userReadRelaysWithHttp(relayList).slice(0, 10).forEach(add)
-    } catch {
-      // ignore
+    const emptyViewerRl: TRelayList = {
+      write: [],
+      read: [],
+      originalRelays: [],
+      httpRead: [],
+      httpWrite: [],
+      httpOriginalRelays: []
     }
-
+    const me = client.pubkey?.trim()
+    const [authorRelayList, viewerRelayList] = await Promise.all([
+      Promise.race([
+        client.fetchRelayList(event.pubkey),
+        new Promise<{ read?: string[] }>((r) => setTimeout(() => r({}), 1500))
+      ]).catch(() => undefined),
+      me
+        ? Promise.race([
+            client.fetchRelayList(me),
+            new Promise<TRelayList>((r) => setTimeout(() => r(emptyViewerRl), 1500))
+          ]).catch(() => undefined)
+        : Promise.resolve(undefined)
+    ])
+    // 7. Author's inboxes (read relays from kind 10002)
+    if (authorRelayList) {
+      userReadRelaysWithHttp(authorRelayList).slice(0, 10).forEach(add)
+    }
     // 8. Logged-in viewer's inboxes (NIP-65 read + kind 10243 http read) — same events often land on personal relays.
-    try {
-      const me = client.pubkey?.trim()
-      if (me) {
-        const emptyViewerRl: TRelayList = {
-          write: [],
-          read: [],
-          originalRelays: [],
-          httpRead: [],
-          httpWrite: [],
-          httpOriginalRelays: []
-        }
-        const mine = await Promise.race([
-          client.fetchRelayList(me),
-          new Promise<TRelayList>((r) => setTimeout(() => r(emptyViewerRl), 2000))
-        ])
-        userReadRelaysWithHttp(mine).slice(0, 12).forEach(add)
-      }
-    } catch {
-      // ignore
+    if (viewerRelayList) {
+      userReadRelaysWithHttp(viewerRelayList).slice(0, 12).forEach(add)
     }
 
     return feedRelayPolicyUrls([{ source: 'fallback', urls: Array.from(seen) }], {

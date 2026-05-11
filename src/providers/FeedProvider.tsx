@@ -1,7 +1,7 @@
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
+import { buildAllFavoritesFeedRelayUrls } from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -12,7 +12,6 @@ import { FeedContext } from './feed-context'
 import { useFavoriteRelays } from './FavoriteRelaysProvider'
 import { useNostr } from './NostrProvider'
 
-export { useFeed } from './feed-context'
 export type { TFeedContext } from './feed-context'
 
 function relayUrlListIdentity(urls: string[]): string {
@@ -21,23 +20,6 @@ function relayUrlListIdentity(urls: string[]): string {
     .filter(Boolean)
     .sort()
     .join('\n')
-}
-
-function buildAllFavoritesFeedRelayUrls(
-  favoriteRelays: string[],
-  blockedRelays: string[],
-  extraFeedRelayUrls: string[]
-): string[] {
-  return feedRelayPolicyUrls([
-    { source: 'favorites', urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays) },
-    { source: 'fallback', urls: extraFeedRelayUrls }
-  ], {
-    operation: 'favorites-feed',
-    blockedRelays,
-    nostrLandAggr: 'never',
-    applySocialKindBlockedFilter: false,
-    allowThirdPartyLocalRelays: true
-  })
 }
 
 function relayListMentionsNostrLand(urls: readonly string[]): boolean {

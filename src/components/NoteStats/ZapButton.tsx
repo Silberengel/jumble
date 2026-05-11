@@ -9,6 +9,7 @@ import { getProfileFromEvent } from '@/lib/event-metadata'
 import { kinds } from 'nostr-tools'
 import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
+import type { TNoteStats } from '@/services/note-stats.service'
 import { Zap } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { MouseEvent, TouchEvent, useEffect, useMemo, useRef, useState } from 'react'
@@ -16,10 +17,15 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
 
-export default function ZapButton({ event, hideCount = false }: { event: Event; hideCount?: boolean }) {
+type ZapButtonProps = {
+  event: Event
+  hideCount?: boolean
+  noteStats?: Partial<TNoteStats>
+}
+
+export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapButtonProps) {
   const { t } = useTranslation()
   const { checkLogin, pubkey } = useNostr()
-  const noteStats = useNoteStatsById(event.id)
   const { defaultZapSats, defaultZapComment, quickZap } = useZap()
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null)
   const [openZapDialog, setOpenZapDialog] = useState(false)
@@ -35,14 +41,20 @@ export default function ZapButton({ event, hideCount = false }: { event: Event; 
   const isLongPressRef = useRef(false)
 
   useEffect(() => {
+    setDisable(true)
+    let cancelled = false
     replaceableEventService.fetchReplaceableEvent(event.pubkey, kinds.Metadata).then((profileEvent) => {
+      if (cancelled) return
       const profile = profileEvent ? getProfileFromEvent(profileEvent) : undefined
       if (!profile) return
       if (pubkey === profile.pubkey) return
       const lightningAddress = getLightningAddressFromProfile(profile)
       if (lightningAddress) setDisable(false)
     })
-  }, [event])
+    return () => {
+      cancelled = true
+    }
+  }, [event.pubkey, pubkey])
 
   const handleZap = async () => {
     try {
@@ -164,6 +176,11 @@ export default function ZapButton({ event, hideCount = false }: { event: Event; 
       />
     </>
   )
+}
+
+export default function ZapButton({ event, hideCount = false }: ZapButtonProps) {
+  const noteStats = useNoteStatsById(event.id)
+  return <ZapButtonWithStats event={event} hideCount={hideCount} noteStats={noteStats} />
 }
 
 function formatAmount(amount: number) {

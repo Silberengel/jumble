@@ -9,10 +9,7 @@ import {
   getRelayUrlsWithFavoritesFastReadAndInbox,
   userReadRelaysWithHttp
 } from '@/lib/favorites-feed-relays'
-import {
-  computeKind777SpellFeedSubscriptionKey,
-  computeSpellSubRequestsIdentityKey
-} from '@/lib/spell-feed-request-identity'
+import { stableSpellFeedFilterKey } from '@/lib/spell-feed-request-identity'
 import { isUserInEventMentions } from '@/lib/event'
 import {
   decodeFollowSetSpellId,
@@ -223,6 +220,11 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
             relayList,
             augment
           }
+          const syncProvisional = buildInboxShardFollowingSubRequests({
+            authors: provisionalAuthors,
+            ...inboxFallbackArgs
+          })
+          if (!cancelled && syncProvisional.length > 0) setFollowingSubRequests(syncProvisional)
 
           const [rawProv, followings] = await Promise.all([
             racePromiseWithTimeout<TFeedSubRequest[]>(
@@ -273,6 +275,14 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
           }
           const listed = pubkeysFromFollowSetEvent(ev)
           const authorPubkeys = [pubkey, ...listed]
+          const syncReq = buildInboxShardFollowingSubRequests({
+            authors: authorPubkeys,
+            favoriteRelays,
+            blockedRelays,
+            relayList,
+            augment
+          })
+          if (!cancelled && syncReq.length > 0) setFollowingSubRequests(syncReq)
           const rawFs = await racePromiseWithTimeout<TFeedSubRequest[]>(
             client.generateSubRequestsForPubkeys(authorPubkeys, pubkey) as Promise<TFeedSubRequest[]>,
             FOLLOWING_GENERATE_SUBREQ_TIMEOUT_MS,
@@ -425,10 +435,16 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
   }, [selectedFauxSpell, fauxSubRequests, spellSubRequests])
 
   const spellFeedSubscriptionKey = useMemo(() => {
-    if (selectedFauxSpell) return computeSpellSubRequestsIdentityKey(subRequests)
-    if (selectedSpell) return computeKind777SpellFeedSubscriptionKey(selectedSpell, subRequests)
+    if (selectedFauxSpell) {
+      const filters = subRequests.map((req) => stableSpellFeedFilterKey(req.filter)).join('|')
+      return `faux-spell:${selectedFauxSpell}:${pubkey ?? ''}:${filters}`
+    }
+    if (selectedSpell) {
+      const filters = subRequests.map((req) => stableSpellFeedFilterKey(req.filter)).join('|')
+      return `spell:${selectedSpell.id}:${filters}`
+    }
     return ''
-  }, [selectedFauxSpell, selectedSpell, subRequests])
+  }, [selectedFauxSpell, selectedSpell, subRequests, pubkey])
 
   const spellBrowseRelayUrls = useMemo(() => {
     const set = new Set<string>()

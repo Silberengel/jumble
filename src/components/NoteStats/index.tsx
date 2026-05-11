@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
+import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
 import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
@@ -11,12 +12,12 @@ import logger from '@/lib/logger'
 import { Event } from 'nostr-tools'
 import { useEffect, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
-import LikeButton from './LikeButton'
-import Likes from './Likes'
-import ReplyButton from './ReplyButton'
-import RepostButton from './RepostButton'
+import { LikeButtonWithStats } from './LikeButton'
+import { LikesWithStats } from './Likes'
+import { ReplyButtonWithStats } from './ReplyButton'
+import { RepostButtonWithStats } from './RepostButton'
 import SeenOnButton from './SeenOnButton'
-import ZapButton from './ZapButton'
+import { ZapButtonWithStats } from './ZapButton'
 
 export default function NoteStats({
   event,
@@ -38,6 +39,7 @@ export default function NoteStats({
 }) {
   const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
+  const noteStats = useNoteStatsById(event.id)
   const { relays: hintRelays, key: hintRelaysKey } = useNoteStatsRelayHints()
   const { relayUrls: rssUrlThreadRelays, key: rssUrlThreadRelaysKey } = useRssUrlThreadQueryRelays()
   const [loading, setLoading] = useState(false)
@@ -79,7 +81,7 @@ export default function NoteStats({
       <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
         {displayTopZapsAndLikes && (
           <>
-            {showLikesPills && <Likes event={event} />}
+            {showLikesPills && <LikesWithStats event={event} noteStats={noteStats} />}
           </>
         )}
         <div
@@ -89,13 +91,18 @@ export default function NoteStats({
             classNames?.buttonBar
           )}
         >
-          <ReplyButton event={event} hideCount={hideInteractions} />
+          <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
-            <RepostButton event={event} hideCount={hideInteractions} />
+            <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           )}
-          <LikeButton event={event} hideCount={hideInteractions} />
+          <LikeButtonWithStats
+            event={event}
+            hideCount={hideInteractions}
+            noteStats={noteStats}
+            isReplyToDiscussion={isReplyToDiscussion}
+          />
           {!isRssArticleRoot && !isZapPoll && (
-            <ZapButton event={event} hideCount={hideInteractions} />
+            <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           )}
           {!isRssArticleRoot && <BookmarkButton event={event} />}
           <SeenOnButton event={event} />
@@ -108,20 +115,25 @@ export default function NoteStats({
     <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
       {displayTopZapsAndLikes && (
         <>
-          {showLikesPills && <Likes event={event} />}
+          {showLikesPills && <LikesWithStats event={event} noteStats={noteStats} />}
         </>
       )}
       <div className="flex justify-between h-5 [&_svg]:size-4">
         <div
           className={cn('flex items-center', loading ? 'animate-pulse' : '')}
         >
-          <ReplyButton event={event} hideCount={hideInteractions} />
+          <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
-            <RepostButton event={event} hideCount={hideInteractions} />
+            <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           )}
-          <LikeButton event={event} hideCount={hideInteractions} />
+          <LikeButtonWithStats
+            event={event}
+            hideCount={hideInteractions}
+            noteStats={noteStats}
+            isReplyToDiscussion={isReplyToDiscussion}
+          />
           {!isRssArticleRoot && !isZapPoll && (
-            <ZapButton event={event} hideCount={hideInteractions} />
+            <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           )}
         </div>
         <div className="flex items-center">

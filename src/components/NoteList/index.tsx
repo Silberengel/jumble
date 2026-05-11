@@ -491,7 +491,8 @@ function buildNoteListMappedFilterForFullSearch(
       f = finalFilter
     }
   } else if (seeAllNoSpell) {
-    const { kinds: _omitKinds, ...rest } = filter
+    const rest = { ...filter }
+    delete rest.kinds
     f = {
       ...rest,
       limit: options.areAlgoRelays ? ALGO_LIMIT : LIMIT
@@ -2026,6 +2027,12 @@ const NoteList = forwardRef(
           return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
         }
 
+        const eventMatchesProfileTimelineRequest = (event: Event) =>
+          hostPrimaryPageNameRef.current === 'profile' &&
+          mappedSubRequests.some(({ filter }) =>
+            eventMatchesSubRequestFilterWithWindow(event, filter as Filter)
+          )
+
         const eventCapEarly = allowKindlessRelayExplore
           ? RELAY_EXPLORE_LIMIT
           : areAlgoRelays
@@ -2036,15 +2043,15 @@ const NoteList = forwardRef(
           hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
 
         /**
-         * IndexedDB + session peek (inside {@link ClientService.getTimelineDiskSnapshotEvents}) without blocking
-         * relay REQ/subscribe. Merges the same way as live {@link onEvents} so rows appear as soon as disk resolves.
+         * Session + IndexedDB hydration without blocking relay REQ/subscribe. Merges the same way as live
+         * {@link onEvents} so rows appear as soon as local sources resolve.
          */
         const startNonBlockingTimelineDiskPrime = () => {
           if (oneShotFetch || mappedSubRequests.length === 0) return
           if (isSpellPageLocalWarmup) return
           const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
           void client
-            .getTimelineDiskSnapshotEvents(diskReq)
+            .getLocalFeedEvents(diskReq)
             .then((diskRaw) => {
               if (!effectActive || timelineEffectStale()) return
               const diskNarrowed = narrowLiveBatch(diskRaw)
@@ -2406,7 +2413,7 @@ const NoteList = forwardRef(
                 filter: TSubRequestFilter
               }>
               void client
-                .getTimelineDiskSnapshotEvents(diskReqOneShot)
+                .getLocalFeedEvents(diskReqOneShot)
                 .then((diskRaw) => {
                   if (!effectActive || timelineEffectStale()) return
                   if (diskRaw.length === 0) return
@@ -2498,10 +2505,7 @@ const NoteList = forwardRef(
                 return next
               })
             } else {
-              let merged = relayOnly
-              if (sessionSnap?.length && !userPulledRefresh) {
-                merged = mergeEventBatchesById(sessionSnap, merged, oneShotMergedCap ?? ONE_SHOT_MERGED_CAP)
-              }
+              const capForOneShot = oneShotMergedCap ?? ONE_SHOT_MERGED_CAP
               if (oneShotDebugLabel) {
                 const f0 = mappedSubRequests[0]?.filter
                 logger.info(`[${oneShotDebugLabel}] one-shot fetch merged`, {
@@ -2510,7 +2514,7 @@ const NoteList = forwardRef(
                   dedupedCount: runtimeSnapshot.rawCount,
                   hiddenByRuntime: runtimeSnapshot.hiddenCount,
                   emptyReason: runtimeSnapshot.emptyReason,
-                  afterCap: merged.length,
+                  afterCap: relayOnly.length,
                   cap,
                   filterAuthors: f0?.authors,
                   filterKinds: f0?.kinds,
@@ -2523,9 +2527,17 @@ const NoteList = forwardRef(
                     : {})
                 })
               }
-              const collapsed = collapseDuplicateNip18RepostTimelineRows(merged)
-              setEvents(collapsed)
-              lastEventsForTimelinePrefetchRef.current = collapsed
+              setEvents((prev) => {
+                const base =
+                  sessionSnap?.length && !userPulledRefresh
+                    ? mergeEventBatchesById(sessionSnap, prev, capForOneShot)
+                    : prev
+                const merged = collapseDuplicateNip18RepostTimelineRows(
+                  mergeEventBatchesById(base, relayOnly, capForOneShot, areAlgoRelays)
+                )
+                lastEventsForTimelinePrefetchRef.current = merged
+                return merged
+              })
             }
             if (oneShotDebugLabel && isProgressiveLayers) {
               const f0 = mappedSubRequests[0]?.filter
@@ -2863,7 +2875,7 @@ const NoteList = forwardRef(
                 }
               }
               if (shouldHideEventRef.current(event)) return
-              if (pubkey && event.pubkey === pubkey) {
+              if ((pubkey && event.pubkey === pubkey) || eventMatchesProfileTimelineRequest(event)) {
                 setEvents((oldEvents) => {
                   const boot = timelineMergeBootstrapRef.current
                   const base = boot !== null ? boot : oldEvents
@@ -2955,7 +2967,7 @@ const NoteList = forwardRef(
           // skeleton until the first onEvents(..., eosed) — that can freeze the feed indefinitely.
           setLoading(false)
           return closer
-      } catch (_error) {
+      } catch {
         setLoading(false)
         if (progressiveWarmupQueryRef.current?.trim()) {
           setProgressiveLayersSearching(false)
@@ -3088,6 +3100,12 @@ const NoteList = forwardRef(
         return evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
       }
 
+      const eventMatchesProfileDeltaRequest = (event: Event) =>
+        hostPrimaryPageNameRef.current === 'profile' &&
+        mappedDelta.some(({ filter }) =>
+          eventMatchesSubRequestFilterWithWindow(event, filter as Filter)
+        )
+
       void (async () => {
         try {
           const { closer, timelineKey: deltaTk } = await client.subscribeTimeline(
@@ -3194,7 +3212,7 @@ const NoteList = forwardRef(
                   }
                 }
                 if (shouldHideEventRef.current(event)) return
-                if (pubkey && event.pubkey === pubkey) {
+                if ((pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)) {
                   setEvents((oldEvents) => {
                     if (oldEvents.some((e) => e.id === event.id)) return oldEvents
                     if (
@@ -3811,7 +3829,7 @@ const NoteList = forwardRef(
                 void run()
               })
             }
-          } catch (_error) {
+          } catch {
             // On error, don't set hasMore to false - might be temporary network issue
             consecutiveEmptyRef.current += 1
             // Only stop after MANY consecutive errors - be very patient with network issues

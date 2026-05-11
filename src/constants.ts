@@ -617,13 +617,6 @@ export const THREAD_BACKLINK_STREAM_KINDS: readonly number[] = [
 ]
 
 /**
- * {@link THREAD_BACKLINK_STREAM_KINDS} without kind 9802. Highlights use separate low-`kinds` REQs so
- * relays that reject large `kinds` arrays still return NIP-84 backlinks.
- */
-export const THREAD_BACKLINK_STREAM_KINDS_WITHOUT_HIGHLIGHT: readonly number[] =
-  THREAD_BACKLINK_STREAM_KINDS.filter((k) => k !== kinds.Highlights)
-
-/**
  * Kinds that reference an OP via `#e` / `#E` / `#a` / `#A` / `#q` in note-stats and thread REQ filters.
  * Extends {@link THREAD_BACKLINK_STREAM_KINDS} with publication headers (30040) that may tag notes without using 30041.
  * REQ tag keys: `e`, `E`, `a`, `A`, `q` only (no `#Q`).
@@ -909,9 +902,7 @@ export const WS_URL_REGEX =
   /wss?:\/\/[\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*]+[^\s.,;:'")\]}!?，。；："'！？】）](?=\.(?:\s|$)|,\s|,(?=\/|\s|$)|$|[^\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*,])/giu
 /** @see {@link '@/lib/content-patterns'} — single source for emoji + nostr regexes */
 export {
-  EMOJI_SHORT_CODE_REGEX,
-  EMBEDDED_EVENT_REGEX,
-  EMBEDDED_MENTION_REGEX
+  EMBEDDED_EVENT_REGEX
 } from '@/lib/content-patterns'
 export const HASHTAG_REGEX = /#[a-zA-Z0-9_\-\u00C0-\u017F\u0100-\u017F\u0180-\u024F\u1E00-\u1EFF]+/g
 export const LN_INVOICE_REGEX = /(ln(?:bc|tb|bcrt))([0-9]+[munp]?)?1([02-9ac-hj-np-z]+)/g

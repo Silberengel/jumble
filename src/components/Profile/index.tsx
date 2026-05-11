@@ -58,6 +58,7 @@ import logger from '@/lib/logger'
 import NotFound from '../NotFound'
 import FollowedBy from './FollowedBy'
 import ProfileFeedWithPins from './ProfileFeedWithPins'
+import ProfileLikedFeed from './ProfileLikedFeed'
 import ProfileMediaFeed from './ProfileMediaFeed'
 import ProfilePublicationsFeed from './ProfilePublicationsFeed'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -196,7 +197,8 @@ export default function Profile({
   const postsFeedRef = useRef<{ refresh: () => void }>(null)
   const mediaFeedRef = useRef<TNoteListRef>(null)
   const publicationsFeedRef = useRef<{ refresh: () => void }>(null)
-  const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications'>('posts')
+  const likedFeedRef = useRef<{ refresh: () => void }>(null)
+  const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications' | 'liked'>('posts')
 
   const { profile, isFetching } = useFetchProfile(id)
   const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
@@ -370,6 +372,7 @@ export default function Profile({
         postsFeedRef.current?.refresh()
         mediaFeedRef.current?.refresh()
         publicationsFeedRef.current?.refresh()
+        likedFeedRef.current?.refresh()
       }
     }
     return () => {
@@ -394,8 +397,14 @@ export default function Profile({
     setProfileFeedTab('posts')
   }, [profile?.pubkey])
 
+  useEffect(() => {
+    if (!isSelf && profileFeedTab === 'liked') {
+      setProfileFeedTab('posts')
+    }
+  }, [isSelf, profileFeedTab])
+
   /**
-   * Radix {@link TabsContent} unmounts inactive panels, so media / publications feeds can miss the same
+   * Radix {@link TabsContent} unmounts inactive panels, so media / publications / liked feeds can miss the same
    * warm-up window as Posts or show a frozen first paint. Re-run their refresh path when the tab becomes active
    * (after refs attach — {@link useLayoutEffect}).
    */
@@ -404,6 +413,8 @@ export default function Profile({
       mediaFeedRef.current?.refresh()
     } else if (profileFeedTab === 'publications') {
       publicationsFeedRef.current?.refresh()
+    } else if (profileFeedTab === 'liked') {
+      likedFeedRef.current?.refresh()
     }
   }, [profileFeedTab])
 
@@ -702,7 +713,7 @@ export default function Profile({
       <Tabs
         value={profileFeedTab}
         onValueChange={(v) => {
-          if (v === 'posts' || v === 'media' || v === 'publications') {
+          if (v === 'posts' || v === 'media' || v === 'publications' || (isSelf && v === 'liked')) {
             setProfileFeedTab(v)
           }
         }}
@@ -712,6 +723,7 @@ export default function Profile({
           <TabsTrigger value="posts">{t('Posts')}</TabsTrigger>
           <TabsTrigger value="media">{t('Media')}</TabsTrigger>
           <TabsTrigger value="publications">{t('Articles and Publications')}</TabsTrigger>
+          {isSelf && <TabsTrigger value="liked">{t('Liked')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="posts" className="min-w-0 focus-visible:outline-none">
           <ProfileFeedWithPins ref={postsFeedRef} pubkey={pubkey} />
@@ -722,6 +734,11 @@ export default function Profile({
         <TabsContent value="publications" className="min-w-0 focus-visible:outline-none">
           <ProfilePublicationsFeed ref={publicationsFeedRef} pubkey={pubkey} />
         </TabsContent>
+        {isSelf && (
+          <TabsContent value="liked" className="min-w-0 focus-visible:outline-none">
+            <ProfileLikedFeed ref={likedFeedRef} pubkey={pubkey} />
+          </TabsContent>
+        )}
       </Tabs>
       {openPublicMessageTo && (
         <PostEditor

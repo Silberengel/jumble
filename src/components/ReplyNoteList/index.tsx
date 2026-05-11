@@ -403,53 +403,6 @@ function ReplyNoteList({
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
 
-  // Helper function to get vote score for a reply
-  const getReplyVoteScore = (reply: NEvent) => {
-    const stats = noteStatsService.getNoteStats(reply.id)
-    if (!stats?.likes) {
-      return 0
-    }
-
-    const upvoteReactions = stats.likes.filter((r) =>
-      isDiscussionRoot ? isDiscussionUpvoteEmoji(r.emoji) : r.emoji === '⬆️'
-    )
-    const downvoteReactions = stats.likes.filter((r) =>
-      isDiscussionRoot ? isDiscussionDownvoteEmoji(r.emoji) : r.emoji === '⬇️'
-    )
-    const score = upvoteReactions.length - downvoteReactions.length
-
-    return score
-  }
-
-  // Helper function to get controversy score for a reply
-  const getReplyControversyScore = (reply: NEvent) => {
-    const stats = noteStatsService.getNoteStats(reply.id)
-    if (!stats?.likes) {
-      return 0
-    }
-
-    const upvoteReactions = stats.likes.filter((r) =>
-      isDiscussionRoot ? isDiscussionUpvoteEmoji(r.emoji) : r.emoji === '⬆️'
-    )
-    const downvoteReactions = stats.likes.filter((r) =>
-      isDiscussionRoot ? isDiscussionDownvoteEmoji(r.emoji) : r.emoji === '⬇️'
-    )
-    
-    // Controversy = minimum of upvotes and downvotes (both need to be high)
-    const controversy = Math.min(upvoteReactions.length, downvoteReactions.length)
-    return controversy
-  }
-
-  // Helper function to get total zap amount for a reply
-  const getReplyZapAmount = (reply: NEvent) => {
-    const stats = noteStatsService.getNoteStats(reply.id)
-    if (!stats?.zaps) {
-      return 0
-    }
-    
-    const totalAmount = stats.zaps.reduce((sum, zap) => sum + zap.amount, 0)
-    return totalAmount
-  }
   const replies = useMemo(() => {
     const replyIdSet = new Set<string>()
     const replyEvents: NEvent[] = []
@@ -517,6 +470,33 @@ function ReplyNoteList({
 
     const { zaps: zapsPartitioned, nonZaps } = partitionZapReceipts(replyEvents)
     const zaps = filterZapReceiptsByReplyThreshold(zapsPartitioned, zapReplyThreshold)
+    const replyScoreById =
+      sort === 'top' || sort === 'controversial' || sort === 'most-zapped'
+        ? new Map(
+            nonZaps.map((reply) => {
+              const stats = noteStatsService.getNoteStats(reply.id)
+              let upvotes = 0
+              let downvotes = 0
+              for (const reaction of stats?.likes ?? []) {
+                if (isDiscussionRoot ? isDiscussionUpvoteEmoji(reaction.emoji) : reaction.emoji === '⬆️') {
+                  upvotes++
+                } else if (
+                  isDiscussionRoot ? isDiscussionDownvoteEmoji(reaction.emoji) : reaction.emoji === '⬇️'
+                ) {
+                  downvotes++
+                }
+              }
+              return [
+                reply.id,
+                {
+                  vote: upvotes - downvotes,
+                  controversy: Math.min(upvotes, downvotes),
+                  zapAmount: (stats?.zaps ?? []).reduce((sum, zap) => sum + zap.amount, 0)
+                }
+              ] as const
+            })
+          )
+        : new Map<string, { vote: number; controversy: number; zapAmount: number }>()
 
     // Sort notes/comments; zap receipts (9735) are always listed first, largest sats → smallest
     switch (sort) {
@@ -533,8 +513,8 @@ function ReplyNoteList({
       case 'top':
         return replyFeedZapsFirst(
           [...nonZaps].sort((a, b) => {
-            const scoreA = getReplyVoteScore(a)
-            const scoreB = getReplyVoteScore(b)
+            const scoreA = replyScoreById.get(a.id)?.vote ?? 0
+            const scoreB = replyScoreById.get(b.id)?.vote ?? 0
             if (scoreA !== scoreB) {
               return scoreB - scoreA
             }
@@ -545,8 +525,8 @@ function ReplyNoteList({
       case 'controversial':
         return replyFeedZapsFirst(
           [...nonZaps].sort((a, b) => {
-            const controversyA = getReplyControversyScore(a)
-            const controversyB = getReplyControversyScore(b)
+            const controversyA = replyScoreById.get(a.id)?.controversy ?? 0
+            const controversyB = replyScoreById.get(b.id)?.controversy ?? 0
             if (controversyA !== controversyB) {
               return controversyB - controversyA
             }
@@ -557,8 +537,8 @@ function ReplyNoteList({
       case 'most-zapped':
         return replyFeedZapsFirst(
           [...nonZaps].sort((a, b) => {
-            const zapAmountA = getReplyZapAmount(a)
-            const zapAmountB = getReplyZapAmount(b)
+            const zapAmountA = replyScoreById.get(a.id)?.zapAmount ?? 0
+            const zapAmountB = replyScoreById.get(b.id)?.zapAmount ?? 0
             if (zapAmountA !== zapAmountB) {
               return zapAmountB - zapAmountA
             }

@@ -1,7 +1,6 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import { buildAuthorInboxOutboxRelayUrls } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
-import { computeSpellSubRequestsIdentityKey } from '@/lib/spell-feed-request-identity'
 import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
 import { buildProfileMediaSubRequests } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { normalizeUrl } from '@/lib/url'
@@ -99,10 +98,11 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     return buildProfileMediaSubRequests(authorRelayUrls, blockedRelays, pk)
   }, [pubkey, authorRelayUrls, blockedRelays])
 
-  const feedSubscriptionKey = useMemo(
-    () => computeSpellSubRequestsIdentityKey(subRequests),
-    [subRequests]
-  )
+  const feedSubscriptionKey = useMemo(() => {
+    const pk = pubkey?.trim()
+    if (!pk) return 'profile-media-empty'
+    return `profile-media-${normalizeHexPubkey(pk)}`
+  }, [pubkey])
 
   useEffect(() => {
     const pk = pubkey?.trim()

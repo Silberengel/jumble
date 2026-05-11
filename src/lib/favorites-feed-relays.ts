@@ -180,25 +180,34 @@ export function buildProfilePageReadRelayUrls(
   const authorWrite = [...(list.httpWrite ?? []), ...(list.write ?? [])]
   const authorHasNoNip65 = authorRead.length === 0 && authorWrite.length === 0
 
-  let urls = getRelayUrlsWithFavoritesFastReadAndInbox(
-    favoriteRelays,
-    blockedRelays,
-    authorRead,
+  const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+  const fastReadLayer = FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+  const authorWriteLayer = relayUrlsLocalsFirst(authorWrite)
+  const authorReadLayer = relayUrlsLocalsFirst(authorRead)
+  const urls = feedRelayPolicyUrls(
+    [
+      { source: 'author-write', urls: authorWriteLayer },
+      { source: 'author-read', urls: authorReadLayer },
+      { source: 'favorites', urls: favorites },
+      { source: 'fast-read', urls: fastReadLayer }
+    ],
     {
-      userWriteRelays: authorWrite,
-      authorWriteRelays: [],
+      operation: 'read',
+      blockedRelays,
       maxRelays,
-      applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind
+      applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind,
+      socialKindBlockedExemptRelays: [...authorWriteLayer, ...authorReadLayer],
+      allowThirdPartyLocalRelays: true
     }
   )
   /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
   if (authorHasNoNip65) {
     const profileFetchLayer = PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
-    urls = mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
+    return mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
   }
   if (wantsDocumentLayer) {
     const docLayer = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
-    urls = mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, maxRelays + 6)
+    return mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, maxRelays + 6)
   }
   return urls
 }

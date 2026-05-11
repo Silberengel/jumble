@@ -13,6 +13,7 @@ import { normalizeUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client, { eventService, queryService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
 const CACHE_DURATION = 5 * 60 * 1000
@@ -137,6 +138,39 @@ export function useProfilePins(pubkey: string | undefined) {
       setLoadingPins(true)
       try {
         const pk = normalizeHexPubkey(pubkey)
+        let paintedLocalPins = false
+        const localPinLists = eventService.listSessionEventsAuthoredBy(pk, { kinds: [10001], limit: 8 })
+        const diskPinList = await indexedDb.getReplaceableEvent(pk, 10001).catch(() => undefined)
+        if (diskPinList) localPinLists.push(diskPinList)
+        const localPinList =
+          localPinLists.length > 0
+            ? localPinLists.reduce((best, event) =>
+                event.created_at > best.created_at ? event : best
+              )
+            : null
+        if (localPinList?.tags?.length) {
+          const localIds = localPinList.tags
+            .filter((tag) => tag[0] === 'e' && tag[1])
+            .slice(0, PROFILE_PAGE_PINS_RESOLVE_LIMIT)
+            .map((tag) => tag[1]!.toLowerCase())
+          const [archiveHits, publicationHits] = await Promise.all([
+            indexedDb.getArchivedEventsByIds(localIds),
+            Promise.all(localIds.map((id) => indexedDb.getEventFromPublicationStore(id)))
+          ])
+          const localById = new Map<string, Event>()
+          for (const event of archiveHits) localById.set(event.id.toLowerCase(), event)
+          for (const event of publicationHits) {
+            if (event) localById.set(event.id.toLowerCase(), event)
+          }
+          const orderedLocal = orderPinEvents(localPinList, localById).slice(0, PROFILE_PAGE_PINS_RESOLVE_LIMIT)
+          if (orderedLocal.length > 0) {
+            setPinEvents(orderedLocal)
+            paintedLocalPins = true
+            pinsCache.set(cacheKey, { events: orderedLocal, lastUpdated: Date.now() })
+            orderedLocal.forEach((event) => client.addEventToCache(event))
+          }
+        }
+
         const [authorRl, pinListEarly] = await Promise.all([
           client.fetchRelayList(pk).catch(() => ({
             read: [] as string[],
@@ -147,7 +181,7 @@ export function useProfilePins(pubkey: string | undefined) {
         const authorRelays = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays)
         const pinsResolveRelays = buildProfileAugmentedReadRelayUrls(authorRelays, blockedRelays)
         if (!pinsResolveRelays.length) {
-          setPinEvents([])
+          if (!paintedLocalPins) setPinEvents([])
           return
         }
 
@@ -174,12 +208,12 @@ export function useProfilePins(pubkey: string | undefined) {
         }
 
         if (!pinList) {
-          setPinEvents([])
+          if (!paintedLocalPins) setPinEvents([])
           return
         }
 
         if (!pinList.tags?.length) {
-          setPinEvents([])
+          if (!paintedLocalPins) setPinEvents([])
           return
         }
 

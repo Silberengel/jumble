@@ -145,7 +145,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
     [pubkey, relayUrls, followPubkeys, feedFilterKey]
   )
 
-  const mergeHeatMapData = useCallback(async (): Promise<{
+  const mergeHeatMapData = useCallback(async (includeRelay = true): Promise<{
     bubbles: TRelayThreadHeatBubble[]
     edges: TRelayThreadHeatEdge[]
   }> => {
@@ -164,7 +164,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       maxMatches: ARCHIVE_HEAT_MAX_MATCHES
     })
     const relayFetch =
-      relayUrls.length > 0
+      includeRelay && relayUrls.length > 0
         ? client.fetchEvents(
             relayUrls,
             { kinds: [...HEAT_KINDS], limit: HEAT_REQ_LIMIT },
@@ -228,7 +228,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         rootById.set(ev.id.toLowerCase(), ev)
       }
       const stillMissing = missingRootIds.filter((id) => !rootById.has(id))
-      if (stillMissing.length > 0 && relayUrls.length > 0) {
+      if (includeRelay && stillMissing.length > 0 && relayUrls.length > 0) {
         const fetched = await raceWithTimeout(
           client.fetchEvents(
             relayUrls,
@@ -299,7 +299,15 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
       setIsMerging(true)
       try {
-        const { bubbles, edges: nextEdges } = await mergeHeatMapData()
+        const local = await mergeHeatMapData(false)
+        if (cancelled) return
+        if (!hadEnvelope || local.bubbles.length > 0) {
+          setRows(local.bubbles)
+          setEdges(local.edges)
+          setLoading(false)
+        }
+
+        const { bubbles, edges: nextEdges } = await mergeHeatMapData(true)
         if (cancelled) return
         setRows(bubbles)
         setEdges(nextEdges)
