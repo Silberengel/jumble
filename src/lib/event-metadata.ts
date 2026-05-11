@@ -1,4 +1,4 @@
-import { ExtendedKind, FAST_READ_RELAY_URLS, POLL_TYPE } from '@/constants'
+import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, POLL_TYPE } from '@/constants'
 import { TEmoji, TMailboxRelay, TPollType, TRelayList, TRelaySet, TPaymentInfo, TProfile } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { buildATag } from './draft-event'
@@ -19,7 +19,7 @@ const emptyHttpRelayListFields = {
 export function getRelayListFromEvent(event?: Event | null, blockedRelays?: string[]) {
   if (!event) {
     return {
-      write: FAST_READ_RELAY_URLS,
+      write: FAST_WRITE_RELAY_URLS,
       read: FAST_READ_RELAY_URLS,
       originalRelays: [],
       ...emptyHttpRelayListFields
@@ -59,11 +59,11 @@ export function getRelayListFromEvent(event?: Event | null, blockedRelays?: stri
     }
   })
 
-  // If there are too many relays, use the default FAST_READ_RELAY_URLS
+  // If there are too many relays, use the default inbox/outbox relays.
   // Because they don't know anything about relays, their settings cannot be trusted
   return {
-    write: relayList.write.length && relayList.write.length <= 8 ? relayList.write : FAST_READ_RELAY_URLS,
-    read: relayList.read.length && relayList.write.length <= 8 ? relayList.read : FAST_READ_RELAY_URLS,
+    write: relayList.write.length && relayList.write.length <= 8 ? relayList.write : FAST_WRITE_RELAY_URLS,
+    read: relayList.read.length && relayList.read.length <= 8 ? relayList.read : FAST_READ_RELAY_URLS,
     originalRelays: relayList.originalRelays,
     ...emptyHttpRelayListFields
   }

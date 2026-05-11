@@ -17,7 +17,7 @@ const RelaysFeed = forwardRef<
     kindsOverride?: number[]
   }
 >(function RelaysFeed({ setSubHeader, onSubHeaderRefresh, kindsOverride }, ref) {
-  const { relayUrls } = useFeed()
+  const { relayUrls, replyRelayUrls } = useFeed()
   const { showKinds } = useKindFilterOrDefaults()
   const [areAlgoRelays, setAreAlgoRelays] = useState(false)
 
@@ -86,6 +86,17 @@ const RelaysFeed = forwardRef<
       }
     ]
   }, [canRenderFeed, relayUrls, defaultKinds])
+  const repliesSubRequests = useMemo(() => {
+    if (!canRenderFeed) return []
+    return [
+      {
+        urls: replyRelayUrls.length > 0 ? replyRelayUrls : relayUrls,
+        filter: {
+          kinds: defaultKinds
+        }
+      }
+    ]
+  }, [canRenderFeed, replyRelayUrls, relayUrls, defaultKinds])
 
   if (!canRenderFeed) {
     return null
@@ -101,6 +112,8 @@ const RelaysFeed = forwardRef<
       setSubHeader={setSubHeader}
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
+      repliesSubRequests={repliesSubRequests}
+      widenMainGalleryRelays={false}
       feedTimelineScopeKey="all-favorites"
       showFeedClientFilter
       hostPrimaryPageName="feed"

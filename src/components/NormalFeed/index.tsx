@@ -59,6 +59,10 @@ const NormalFeed = forwardRef<TNoteListRef, {
    */
   preserveTimelineOnSubRequestsChange?: boolean
   mergeTimelineWhenSubRequestFiltersMatch?: boolean
+  /** Home Replies can widen relays without changing Notes/Gallery. */
+  repliesSubRequests?: TFeedSubRequest[]
+  /** Main Gallery historically widened with fast read relays; home can opt out to stay favorites+trending only. */
+  widenMainGalleryRelays?: boolean
   /** Home following: second subscribe wave (delta relays / new authors); see {@link NoteList}. */
   followingFeedDeltaSubRequests?: TFeedSubRequest[]
   /** Stable subscription identity; see {@link NoteList} `feedSubscriptionKey`. */
@@ -111,6 +115,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     onSubHeaderRefresh,
     preserveTimelineOnSubRequestsChange = false,
     mergeTimelineWhenSubRequestFiltersMatch = false,
+    repliesSubRequests,
+    widenMainGalleryRelays = true,
     followingFeedDeltaSubRequests,
     feedSubscriptionKey,
     feedTimelineScopeKey,
@@ -187,15 +193,18 @@ const NormalFeed = forwardRef<TNoteListRef, {
     return base
   }, [isMainFeed, isWispTrendingOnlyFeed])
 
-  /** When in media mode, replace each shard's kinds with the media set; on the main home feed, widen relay set. */
+  /** Replies may widen relays; Gallery only swaps kinds and widens relays when the caller opts in. */
   const effectiveSubRequests = useMemo(() => {
+    if (listMode === 'postsAndReplies' && repliesSubRequests) {
+      return repliesSubRequests
+    }
     if (listMode !== 'media') return subRequests
     return subRequests.map((req) => ({
       ...req,
-      urls: isMainFeed ? galleryRelayUrlsMergedWithReadLayer(req.urls) : req.urls,
+      urls: isMainFeed && widenMainGalleryRelays ? galleryRelayUrlsMergedWithReadLayer(req.urls) : req.urls,
       filter: { ...req.filter, kinds: MEDIA_KINDS }
     }))
-  }, [listMode, subRequests, MEDIA_KINDS, isMainFeed])
+  }, [listMode, subRequests, repliesSubRequests, MEDIA_KINDS, isMainFeed, widenMainGalleryRelays])
 
   const handleListModeChange = useCallback(
     (mode: TNoteListMode | string) => {

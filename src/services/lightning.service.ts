@@ -1,4 +1,4 @@
-import { FAST_READ_RELAY_URLS, CODY_PUBKEY, IMWALD_MAINTAINER_PUBKEY } from '@/constants'
+import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, CODY_PUBKEY, IMWALD_MAINTAINER_PUBKEY } from '@/constants'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import {
   buildZapPollVoteRequestTemplate,
@@ -65,7 +65,7 @@ class LightningService {
       })(),
       sender
         ? client.fetchRelayList(sender) // Keep using client for relay list merging
-        : Promise.resolve({ read: FAST_READ_RELAY_URLS, write: FAST_READ_RELAY_URLS })
+        : Promise.resolve({ read: FAST_READ_RELAY_URLS, write: FAST_WRITE_RELAY_URLS })
     ])
     if (!profile) {
       throw new Error('Recipient not found')

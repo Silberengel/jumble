@@ -1,13 +1,5 @@
 import { kinds, type Filter } from 'nostr-tools'
 
-/**
- * API base URL. Prefer `VITE_IMWALD_API_BASE_URL`; `VITE_JUMBLE_API_BASE_URL` is still read for existing deploys.
- */
-export const IMWALD_API_BASE_URL =
-  (import.meta.env.VITE_IMWALD_API_BASE_URL as string | undefined)?.trim() ||
-  (import.meta.env.VITE_JUMBLE_API_BASE_URL as string | undefined)?.trim() ||
-  'https://api.jumble.imwald.eu'
-
 /** Git Republic web UI for repository links; override with VITE_GITREPUBLIC_WEB_BASE_URL for self-hosted. */
 export const GITREPUBLIC_WEB_BASE_URL = (
   (import.meta.env.VITE_GITREPUBLIC_WEB_BASE_URL as string | undefined) ?? 'https://gitrepublic.imwald.eu'
@@ -129,12 +121,6 @@ export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
 export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 1200
 
 /**
- * Cap how long we wait on NIP-65 / inbox relay-list resolution (including `fetchRelayLists` network phase
- * and kind-10432 fetch) before publishing or falling back to IndexedDB-only merge.
- * Without this, a stuck `fetchReplaceableEventsFromProfileFetchRelays` can block the UI even when kind
- * 10002 is already in IndexedDB (the 30s publish timeout only runs after targets are resolved).
- */
-/**
  * Budget for `fetchRelayLists` / NIP-65 resolution on the publish path. Longer waits block the reply button
  * while relays stall; shorter values fall back to IndexedDB + deduped picker order sooner (still correct).
  */
@@ -254,8 +240,6 @@ export const METADATA_BATCH_AUTHORS_CHUNK = 22
  */
 export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 20000
 
-export const RECOMMENDED_RELAYS = DEFAULT_FAVORITE_RELAYS.concat([])
-
 export const RECOMMENDED_BLOSSOM_SERVERS = [
   'https://blossom.band',
   'https://blossom.primal.net',
@@ -367,12 +351,6 @@ export const DOCUMENT_RELAY_URLS = [
 ] as const
 
 /**
- * Block-list order (applied in sequence when building relay lists):
- * 1. READ_ONLY — never publish (search mirrors, index relays, NIP-42 read-only aggregators)
- * 2. SOCIAL_KIND_BLOCKED — skip for REQ/publish that touch {@link SOCIAL_KIND_BLOCKED_KINDS} (see list below)
- * 3. E_TAG_FILTER_BLOCKED — skip for reply/quote/stats fetches (#e, #a, #q filters)
- */
-/**
  * Relays that must never receive publishes: search engines, index mirrors, and similar endpoints that only ingest
  * or aggregate for read. Distinct from {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} (kind-coverage limits, not write policy).
  */
@@ -454,7 +432,7 @@ export const GIF_RELAY_URLS = [
 
 export const SEARCHABLE_RELAY_URLS = [
   'wss://search.nos.today',
-  'wss://nostr.wine', 
+  'wss://nostr.wine',
   'wss://orly-relay.imwald.eu',
   'wss://aggr.nostr.land',
   'wss://thecitadel.nostr1.com',
@@ -468,24 +446,22 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr-pub.wellorder.net',
   'wss://pyramid.fiatjaf.com/',
   'wss://nostrelites.org'
-  ]
+]
 
 export const PROFILE_RELAY_URLS = [
-    'wss://nos.lol',
-    'wss://relay.damus.io',
-    'wss://profiles.nostr1.com',
-    'wss://purplepag.es',
-    'wss://thecitadel.nostr1.com'
-  ]
+  'wss://nos.lol',
+  'wss://relay.damus.io',
+  'wss://profiles.nostr1.com',
+  'wss://purplepag.es',
+  'wss://thecitadel.nostr1.com'
+]
 
-  export const FOLLOWS_HISTORY_RELAY_URLS = [
-    'wss://hist.nostr.land'
-  ]
+export const FOLLOWS_HISTORY_RELAY_URLS = [
+  'wss://hist.nostr.land'
+]
 
-// Combined relay URLs for profile fetching - includes both FAST_READ_RELAY_URLS and SEARCHABLE_RELAY_URLS
+// Combined relay URLs for profile fetching: search/index relays, fallback inboxes, and profile-specific relays.
 export const PROFILE_FETCH_RELAY_URLS = [...SEARCHABLE_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
-
-export const GROUP_METADATA_EVENT_KIND = 39000
 
 export const ExtendedKind = {
   PICTURE: 20,
@@ -577,11 +553,6 @@ export const ExtendedKind = {
 export const UNSIGNED_EXPERIMENTAL_KIND_MIN = 69999
 export const UNSIGNED_EXPERIMENTAL_KIND_MAX = 130000
 
-export const UNSIGNED_EXPERIMENTAL_RELAY_URLS = [
-  'wss://nostr.land',
-  'wss://theforest.gitcitadel.eu',
-]
-
 export function isUnsignedExperimentalKind(kind: number): boolean {
   return kind >= UNSIGNED_EXPERIMENTAL_KIND_MIN && kind <= UNSIGNED_EXPERIMENTAL_KIND_MAX
 }
@@ -670,7 +641,7 @@ export const NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT: readonly number[] 
  * stack — those relays do not carry this note/comment surface (kinds **1** / **1111** / **11** per relay policy).
  * @see {@link relayFilterIncludesSocialKindBlockedKind}
  */
-export const SOCIAL_KIND_BLOCKED_KINDS: readonly number[] = [
+const SOCIAL_KIND_BLOCKED_KINDS: readonly number[] = [
   kinds.ShortTextNote,
   ExtendedKind.DISCUSSION,
   ExtendedKind.COMMENT
@@ -738,7 +709,7 @@ export function relayFilterIncludesSocialKindBlockedKind(filter: Filter): boolea
 /**
  * Document/event kinds that should always include {@link DOCUMENT_RELAY_URLS} in read/publish relay candidates.
  */
-export const DOCUMENT_RELAY_KINDS: readonly number[] = [
+const DOCUMENT_RELAY_KINDS: readonly number[] = [
   kinds.LongFormArticle, // 30023
   ExtendedKind.WIKI_ARTICLE, // 30818
   ExtendedKind.WIKI_ARTICLE_MARKDOWN, // 30817
@@ -936,18 +907,14 @@ export const URL_REGEX =
   /https?:\/\/[\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*]+(?:,[^\s.][\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*,]*)*[^\s.,;:'")\]}!?，。；："'！？】）](?=\.(?:\s|$)|,\s|,(?=\/|\s|$)|$|[^\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*,])/giu
 export const WS_URL_REGEX =
   /wss?:\/\/[\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*]+[^\s.,;:'")\]}!?，。；："'！？】）](?=\.(?:\s|$)|,\s|,(?=\/|\s|$)|$|[^\w\p{L}\p{N}\p{M}&.\-/?=#@%+_:!~*,])/giu
-export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 /** @see {@link '@/lib/content-patterns'} — single source for emoji + nostr regexes */
 export {
-  EMOJI_SHORT_CODE_MAX_INNER_LENGTH,
   EMOJI_SHORT_CODE_REGEX,
   EMBEDDED_EVENT_REGEX,
   EMBEDDED_MENTION_REGEX
 } from '@/lib/content-patterns'
 export const HASHTAG_REGEX = /#[a-zA-Z0-9_\-\u00C0-\u017F\u0100-\u017F\u0180-\u024F\u1E00-\u1EFF]+/g
 export const LN_INVOICE_REGEX = /(ln(?:bc|tb|bcrt))([0-9]+[munp]?)?1([02-9ac-hj-np-z]+)/g
-export const EMOJI_REGEX =
-  /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA70}-\u{1FAFF}]|[\u{1F004}]|[\u{1F0CF}]|[\u{1F18E}]|[\u{3030}]|[\u{2B50}]|[\u{2B55}]|[\u{2934}-\u{2935}]|[\u{2B05}-\u{2B07}]|[\u{2B1B}-\u{2B1C}]|[\u{3297}]|[\u{3299}]|[\u{303D}]|[\u{00A9}]|[\u{00AE}]|[\u{2122}]|[\u{23E9}-\u{23EF}]|[\u{23F0}]|[\u{23F3}]|[\u{FE00}-\u{FE0F}]|[\u{200D}]/gu
 export const YOUTUBE_URL_REGEX =
   /https?:\/\/(?:(?:(?:www|m|music)\.)?youtube\.com\/(?:watch\?[^#\s]*|embed\/[\w-]+|shorts\/[\w-]+|live\/[\w-]+)|(?:www\.)?youtube-nocookie\.com\/(?:watch\?[^#\s]*|embed\/[\w-]+|shorts\/[\w-]+|live\/[\w-]+)|youtu\.be\/[\w-]+)(?:\?[^#\s]*)?(?:#[^\s]*)?/gi
 

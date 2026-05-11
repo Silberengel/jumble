@@ -5,7 +5,10 @@
 import { createContext, useContext } from 'react'
 
 export type TFeedContext = {
+  /** Home Notes/Gallery: favorites plus mixed trending discovery. */
   relayUrls: string[]
+  /** Home Replies: primary feed relays plus viewer inbox, HTTP, cache, and eligible aggregator relays. */
+  replyRelayUrls: string[]
 }
 
 export const FeedContext = createContext<TFeedContext | undefined>(undefined)

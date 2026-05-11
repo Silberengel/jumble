@@ -3771,7 +3771,7 @@ class ClientService extends EventTarget {
             stripped.write.length > 0 ? stripped.write : write.filter(urlIsNonLocalForRemoteViewer)
           if (read.length === 0 && write.length === 0) {
             read = [...FAST_READ_RELAY_URLS]
-            write = [...FAST_READ_RELAY_URLS]
+            write = [...FAST_WRITE_RELAY_URLS]
           }
         }
         return mergeKind10243({
