@@ -2481,6 +2481,14 @@ class ClientService extends EventTarget {
         urls: relays
       }
       timeline = this.timelines[key]
+    } else {
+      // New subscription wave for this leaf key: the prior closer does not delete `timelines[key]`.
+      // Reusing stale `refs` made `handleTimelineEose` merge against an old head timestamp — e.g. when the
+      // relay sent a full `limit` batch whose newest row was still older than that head, `newRefs` became
+      // empty and `tl.refs` was replaced with [] or failed to adopt fresh rows (feed looked permanently stale).
+      timeline.filter = filter
+      timeline.urls = relays
+      timeline.refs = []
     }
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias

@@ -1132,6 +1132,61 @@ export class ReplaceableEventService {
         /* ignore */
       }
     }
+
+    /**
+     * Batched kind-0 REQ / DataLoader can miss rows that already exist in session or IndexedDB (ordering,
+     * timing, or chunk boundaries). Hydrate gaps from local caches first; only then hit the network.
+     */
+    const gapIndices: number[] = []
+    for (let i = 0; i < deduped.length; i++) {
+      if (!events[i]) gapIndices.push(i)
+    }
+    const LOCAL_GAP_CHUNK = 16
+    for (let off = 0; off < gapIndices.length; off += LOCAL_GAP_CHUNK) {
+      const slice = gapIndices.slice(off, off + LOCAL_GAP_CHUNK)
+      await Promise.allSettled(
+        slice.map(async (idx) => {
+          const pubkey = deduped[idx]!
+          const pkLower = pubkey.toLowerCase()
+          let ev: NEvent | undefined = client.eventService.getSessionMetadataForPubkey(pkLower)
+          if (ev && shouldDropEventOnIngest(ev)) ev = undefined
+          if (!ev) {
+            try {
+              const row = await indexedDb.getReplaceableEvent(pkLower, kinds.Metadata)
+              if (row && !shouldDropEventOnIngest(row)) ev = row as NEvent
+            } catch {
+              /* ignore */
+            }
+          }
+          if (ev) events[idx] = ev
+        })
+      )
+    }
+
+    const MAX_METADATA_GAP_FILL_NETWORK = 48
+    const GAP_FILL_NETWORK_PARALLEL = 4
+    const stillGap: number[] = []
+    for (let i = 0; i < deduped.length; i++) {
+      if (!events[i]) stillGap.push(i)
+    }
+    const cappedNetwork = stillGap.slice(0, MAX_METADATA_GAP_FILL_NETWORK)
+    for (let off = 0; off < cappedNetwork.length; off += GAP_FILL_NETWORK_PARALLEL) {
+      const slice = cappedNetwork.slice(off, off + GAP_FILL_NETWORK_PARALLEL)
+      await Promise.allSettled(
+        slice.map(async (idx) => {
+          const pubkey = deduped[idx]!
+          try {
+            const ev = await this.fetchProfileEvent(pubkey, false)
+            if (ev && !shouldDropEventOnIngest(ev)) {
+              events[idx] = ev
+            }
+          } catch {
+            /* ignore */
+          }
+        })
+      )
+    }
+
     const profiles: TProfile[] = []
     for (let i = 0; i < deduped.length; i++) {
       const ev = events[i]

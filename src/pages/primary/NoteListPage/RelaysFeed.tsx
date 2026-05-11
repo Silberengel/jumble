@@ -1,18 +1,16 @@
 import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
-import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import { checkAlgoRelay } from '@/lib/relay'
 import {
   isWispTrendingNotesRelayUrl,
   WISP_TRENDING_FEED_KINDS
 } from '@/lib/wisp-trending-relay'
-import { normalizeUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { useFeed } from '@/providers/FeedProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import relayInfoService from '@/services/relay-info.service'
 import { kinds } from 'nostr-tools'
-import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import React, { forwardRef, useEffect, useMemo, useState } from 'react'
 
 const RelaysFeed = forwardRef<
   TNoteListRef,
@@ -23,12 +21,9 @@ const RelaysFeed = forwardRef<
     kindsOverride?: number[]
   }
 >(function RelaysFeed({ setSubHeader, onSubHeaderRefresh, kindsOverride }, ref) {
-  const { t } = useTranslation()
   const { feedInfo, relayUrls } = useFeed()
   const { showKinds } = useKindFilterOrDefaults()
   const [areAlgoRelays, setAreAlgoRelays] = useState(false)
-  /** After kindless single-relay REQ EOSEs with no events, re-subscribe with the normal kind list. */
-  const [singleRelayKindFallback, setSingleRelayKindFallback] = useState(false)
 
   const relayUrlsKey = useMemo(
     () =>
@@ -92,41 +87,24 @@ const RelaysFeed = forwardRef<
     if (feedInfo.feedType === 'all-favorites') return 'all-favorites'
     if (feedInfo.feedType === 'relays') return `relays:${feedInfo.id ?? ''}`
     if (feedInfo.feedType === 'relay') {
-      const id = feedInfo.id ? normalizeUrl(feedInfo.id) || feedInfo.id : ''
+      /** Same canonical URL identity as {@link NoteList} `subRequestsKey` (not `normalizeUrl` alone — HTTP index relays differ). */
+      const urlsKey = [...relayUrls]
+        .map((u) => normalizeAnyRelayUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('|')
+      if (urlsKey) return `relay:${urlsKey}`
+      const id = feedInfo.id ? normalizeAnyRelayUrl(feedInfo.id) || feedInfo.id : ''
       return `relay:${id}`
     }
     return undefined
-  }, [feedInfo.feedType, feedInfo.id])
+  }, [feedInfo.feedType, feedInfo.id, relayUrls])
 
   const wispTrendingSingleRelay =
     feedInfo.feedType === 'relay' &&
     relayUrls.length === 1 &&
     !!relayUrls[0] &&
     isWispTrendingNotesRelayUrl(relayUrls[0])
-
-  /** New relay chip / set: try kindless first again. */
-  useEffect(() => {
-    setSingleRelayKindFallback(false)
-  }, [feedTimelineScopeKey])
-
-  const onSingleRelayKindlessEmpty = useCallback(() => {
-    setSingleRelayKindFallback(true)
-  }, [])
-
-  /**
-   * One relay + user kind filter: kindless `{ limit }` REQ first (many relays error on huge `kinds` arrays).
-   * If that EOSEs with no events, `onSingleRelayKindlessEmpty` switches to explicit `kinds`.
-   */
-  const singleRelayKindlessExplore =
-    feedInfo.feedType === 'relay' &&
-    relayUrls.length === 1 &&
-    !kindsOverride?.length &&
-    !singleRelayKindFallback &&
-    !wispTrendingSingleRelay
-
-  const feedTopNotice = singleRelayKindFallback ? (
-    <p className="leading-snug">{t('singleRelayKindFallbackNotice')}</p>
-  ) : null
 
   // Hooks must run every render — never place useMemo after conditional returns.
   const subRequests = useMemo(() => {
@@ -139,9 +117,6 @@ const RelaysFeed = forwardRef<
         }
       ]
     }
-    if (singleRelayKindlessExplore) {
-      return [{ urls: relayUrls, filter: { limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT } }]
-    }
     return [
       {
         urls: relayUrls,
@@ -150,14 +125,7 @@ const RelaysFeed = forwardRef<
         }
       }
     ]
-  }, [
-    canRenderFeed,
-    relayUrls,
-    defaultKinds,
-    kindsOverride,
-    singleRelayKindlessExplore,
-    wispTrendingSingleRelay
-  ])
+  }, [canRenderFeed, relayUrls, defaultKinds, wispTrendingSingleRelay])
 
   if (!canRenderFeed) {
     return null
@@ -176,17 +144,14 @@ const RelaysFeed = forwardRef<
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
       feedTimelineScopeKey={feedTimelineScopeKey}
-      useFilterAsIs={singleRelayKindlessExplore}
-      allowKindlessRelayExplore={singleRelayKindlessExplore}
-      clientSideKindFilter={singleRelayKindlessExplore}
       showFeedClientFilter
       hostPrimaryPageName="feed"
-      onSingleRelayKindlessEmpty={
-        feedInfo.feedType === 'relay' && relayUrls.length === 1 && !kindsOverride?.length
-          ? onSingleRelayKindlessEmpty
-          : undefined
-      }
-      feedTopNotice={feedTopNotice}
+      /**
+       * {@link timelinePublicReadFallback} uses {@link FAST_READ_RELAY_URLS} with the shard filter’s kinds only —
+       * there is no “this relay URL” scope. For a **single chip**, that made every relay show the same global batch.
+       * Keep fallback for multi-relay surfaces where a broad read matches user intent; single-chip feeds rely on
+       * that relay + disk/session hydrate only.
+       */
       timelinePublicReadFallback={
         feedInfo.feedType === 'all-favorites' ||
         (feedInfo.feedType === 'relays' && relayUrls.length > 1)

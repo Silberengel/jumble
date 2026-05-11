@@ -154,7 +154,14 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
       const t = Date.now()
       if (t - lastLanguagesFailureLogAt > 10_000) {
         lastLanguagesFailureLogAt = t
-        logger.warn('[Translate] /languages failed', { status: res.status })
+        if (import.meta.env.DEV && (res.status === 503 || res.status === 502)) {
+          logger.debug(
+            '[Translate] /languages skipped — dev translate proxy has no backend (:5000). See PROXY_SETUP.md.',
+            { status: res.status }
+          )
+        } else {
+          logger.warn('[Translate] /languages failed', { status: res.status })
+        }
       }
       languagesCache = { list: [], at: t, fromFailure: true }
       recordAdvertisedTranslateCodesFromServer([])

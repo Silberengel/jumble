@@ -14,13 +14,11 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FavoriteRelaysActiveStripMobileBar } from '@/components/FavoriteRelaysActiveStrip'
-import FavoriteRelaysFeedPicker from '@/components/FavoriteRelaysFeedPicker'
 import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
 import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
 import Logo from '@/assets/Logo'
@@ -37,9 +35,9 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   const [homeSubHeader, setHomeSubHeader] = useState<React.ReactNode>(null)
 
   const usesSubHeader =
+    feedInfo.feedType === 'all-favorites' ||
     feedInfo.feedType === 'relay' ||
-    feedInfo.feedType === 'relays' ||
-    feedInfo.feedType === 'all-favorites'
+    feedInfo.feedType === 'relays'
 
   const runFeedRefresh = useCallback(() => {
     feedRef.current?.refresh()
@@ -105,19 +103,7 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
     )
   }
 
-  const showFavoriteRelaysPicker =
-    isReady &&
-    (feedInfo.feedType === 'all-favorites' ||
-      feedInfo.feedType === 'relay' ||
-      feedInfo.feedType === 'relays')
-
-  const feedPageTitle = useMemo(
-    () =>
-      feedInfo.feedType === 'relays'
-        ? t('relayType_relay_set')
-        : t('Favorite Relays'),
-    [feedInfo.feedType, t]
-  )
+  const feedPageTitle = t('Favorite Relays')
 
   const subHeader = (
     <>
@@ -125,16 +111,12 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
       <div className="w-full min-w-0 border-b border-border/80 bg-background px-3 py-2 sm:px-4">
         <h1 className="app-chrome-title leading-tight tracking-tight">{feedPageTitle}</h1>
       </div>
-      {showFavoriteRelaysPicker ? <FavoriteRelaysFeedPicker /> : null}
       {homeSubHeader}
     </>
   )
 
   /** Desktop: nav/logo/account live in titlebar only on small screens; refresh moves to subheader when present. Omit empty h-12 strip. */
-  const showNoteListTitlebar =
-    isSmallScreen ||
-    !usesSubHeader ||
-    (feedInfo.feedType === 'relay' && !!feedInfo.id)
+  const showNoteListTitlebar = isSmallScreen || !usesSubHeader
 
   return (
     <PrimaryPageLayout

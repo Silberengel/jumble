@@ -46,33 +46,72 @@ function fullReloadOnProvidersAndPages(): Plugin {
 }
 
 /**
- * Default proxy logs one multiline error + stack per failed request when the index relay is down.
- * Throttle to one hint: match `/api/events` paths (dev-index-relay), not other proxies like `/sites`.
+ * `http-proxy` logs `Error: connect ECONNREFUSED …` via `console.error`, bypassing Vite's `logger.error`.
  */
-function quietDevIndexRelayProxyErrors(devIndexRelayTarget: string): Plugin {
-  let lastSuppressedLog = 0
+function isOptionalDevProxyConnRefusedNoise(args: unknown[]): boolean {
+  const blob = args
+    .map((a) => {
+      if (typeof a === 'string') return a
+      if (a instanceof Error) return `${a.message}\n${a.stack ?? ''}`
+      return ''
+    })
+    .join('\n')
+  if (!blob.includes('ECONNREFUSED')) return false
+  return (
+    blob.includes('127.0.0.1:5000') ||
+    blob.includes('127.0.0.1:8090') ||
+    /\b:5000\b/.test(blob) ||
+    /\b:8090\b/.test(blob)
+  )
+}
+
+/**
+ * When optional localhost backends are down, `http-proxy` otherwise logs a multiline stack per request.
+ * Throttle to one hint per category (cooldown), matching paths only — real misconfigurations still log.
+ */
+function quietOptionalDevProxyErrors(devIndexRelayTarget: string): Plugin {
+  let lastIndexRelaySuppressed = 0
+  let lastTranslateSitesSuppressed = 0
   const COOLDOWN_MS = 60_000
 
   return {
-    name: 'quiet-dev-index-relay-proxy-errors',
+    name: 'quiet-optional-dev-proxy-errors',
     apply: 'serve',
+    configureServer(server) {
+      const prevConsoleError = console.error.bind(console)
+      console.error = (...args: unknown[]) => {
+        if (isOptionalDevProxyConnRefusedNoise(args)) return
+        prevConsoleError(...args)
+      }
+      server.httpServer?.on('close', () => {
+        console.error = prevConsoleError
+      })
+    },
     configResolved(config) {
       const prevError = config.logger.error.bind(config.logger)
       config.logger.error = (msg, options) => {
         const text = typeof msg === 'string' ? msg : ''
-        if (
-          text.includes('http proxy error') &&
-          text.includes('ECONNREFUSED') &&
-          text.includes('/api/events')
-        ) {
-          const now = Date.now()
-          if (now - lastSuppressedLog >= COOLDOWN_MS) {
-            lastSuppressedLog = now
-            config.logger.warn(
-              `[vite] Dev index relay not reachable (${devIndexRelayTarget}). Start it or set VITE_DEV_INDEX_RELAY_TARGET. Suppressing duplicate proxy errors for ${COOLDOWN_MS / 1000}s.`
-            )
+        if (text.includes('http proxy error') && text.includes('ECONNREFUSED')) {
+          if (text.includes('/api/events') || text.includes('/dev-index-relay')) {
+            const now = Date.now()
+            if (now - lastIndexRelaySuppressed >= COOLDOWN_MS) {
+              lastIndexRelaySuppressed = now
+              config.logger.warn(
+                `[vite] Dev index relay not reachable (${devIndexRelayTarget}). Start it or set VITE_DEV_INDEX_RELAY_TARGET. Suppressing duplicate proxy errors for ${COOLDOWN_MS / 1000}s.`
+              )
+            }
+            return
           }
-          return
+          if (text.includes('/api/translate') || text.includes('/sites')) {
+            const now = Date.now()
+            if (now - lastTranslateSitesSuppressed >= COOLDOWN_MS) {
+              lastTranslateSitesSuppressed = now
+              config.logger.warn(
+                `[vite] Optional dev proxies unreachable (LibreTranslate /api/translate → :5000, OG /sites → :8090). Start them or ignore — see PROXY_SETUP.md. Suppressing duplicate proxy errors for ${COOLDOWN_MS / 1000}s.`
+              )
+            }
+            return
+          }
         }
         prevError(msg, options)
       }
@@ -148,7 +187,28 @@ export default defineConfig(({ mode }) => {
         '/api/translate': {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/translate/u, '') || '/'
+          rewrite: (p) => p.replace(/^\/api\/translate/u, '') || '/',
+          /** Match `/sites`: when LibreTranslate is not running, return JSON instead of a broken proxy response. */
+          configure(proxy) {
+            proxy.on('error', (_err, _req, res) => {
+              const r = res as {
+                headersSent?: boolean
+                writeHead?: (c: number, h: Record<string, string>) => void
+                end?: (b: string) => void
+              }
+              if (r.headersSent) return
+              if (typeof r?.writeHead === 'function' && typeof r?.end === 'function') {
+                r.writeHead(503, { 'Content-Type': 'application/json' })
+                r.end(
+                  JSON.stringify({
+                    ok: false,
+                    error: 'translate_proxy_unreachable',
+                    hint: 'Start LibreTranslate (or compatible API) on :5000 — see PROXY_SETUP.md'
+                  })
+                )
+              }
+            })
+          }
         },
         '/sites': {
           target: 'http://127.0.0.1:8090',
@@ -352,7 +412,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     fullReloadOnProvidersAndPages(),
-    quietDevIndexRelayProxyErrors(devIndexRelayTarget),
+    quietOptionalDevProxyErrors(devIndexRelayTarget),
     VitePWA({
       registerType: 'autoUpdate',
       // Use public/manifest.webmanifest and index.html <link> only; avoid duplicate manifest link in build

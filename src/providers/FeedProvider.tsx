@@ -1,4 +1,3 @@
-import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { getFavoritesFeedRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
 import { getRelaySetFromEvent, getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
@@ -52,8 +51,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   )
   const [isReady, setIsReady] = useState(true)
   const [feedInfo, setFeedInfo] = useState<TFeedInfo>({
-    feedType: 'relay',
-    id: DEFAULT_FAVORITE_RELAYS[0]
+    feedType: 'all-favorites'
   })
   const feedInfoRef = useRef<TFeedInfo>(feedInfo)
   /** Same logical list as {@link mergeRelayUrlLayers} result — reuse array ref so NoteList does not re-subscribe. */
@@ -204,60 +202,29 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         logger.debug('FeedProvider: favoriteRelays is empty, using defaults')
       }
 
-      const favoritesFeedRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-      let feedInfo: TFeedInfo = {
-        feedType: 'relay',
-        id: favoritesFeedRelays[0] ?? DEFAULT_FAVORITE_RELAYS[0]
-      }
-
-      // Ensure we always have a valid relay ID
-      if (!feedInfo.id) {
-        feedInfo.id = DEFAULT_FAVORITE_RELAYS[0]
-      }
-      logger.debug('Initial feedInfo setup:', { favoritesFeedRelays, favoriteRelays, blockedRelays, feedInfo })
-      
+      let stored: TFeedInfo | null = null
       if (pubkey) {
-        const storedFeedInfo = storage.getFeedInfo(pubkey)
-        logger.debug('Stored feed info:', storedFeedInfo)
-        if (storedFeedInfo) {
-          feedInfo = storedFeedInfo
-        }
+        const fromStorage = storage.getFeedInfo(pubkey)
+        logger.debug('Stored feed info:', fromStorage)
+        if (fromStorage) stored = fromStorage
       }
 
-      // Pre-rewrite main feeds (`following`, `bookmarks`) are no longer supported; migrate persisted state.
-      const storedFeedType = (feedInfo as { feedType?: string }).feedType
-      const deprecatedMainFeed = storedFeedType === 'following' || storedFeedType === 'bookmarks'
-      if (deprecatedMainFeed) {
-        const previousMainFeed = storedFeedType
+      const storedFeedType = (stored as { feedType?: string } | null)?.feedType
+      const migrateHomeToCombo =
+        storedFeedType === 'following' ||
+        storedFeedType === 'bookmarks' ||
+        storedFeedType === 'relay' ||
+        storedFeedType === 'relays'
+
+      if (migrateHomeToCombo && pubkey) {
         const migrated: TFeedInfo = { feedType: 'all-favorites' }
-        feedInfo = migrated
-        if (pubkey) {
-          storage.setFeedInfo(migrated, pubkey)
-        }
-        logger.info('[FeedProvider] Migrated deprecated feed type to all-favorites', {
-          previous: previousMainFeed
+        storage.setFeedInfo(migrated, pubkey)
+        logger.info('[FeedProvider] Home feed uses combo (all-favorites); migrated stored selection', {
+          previous: storedFeedType
         })
-        return await switchFeedRef.current('all-favorites')
       }
 
-      if (feedInfo.feedType === 'relays') {
-        return await switchFeedRef.current('relays', { activeRelaySetId: feedInfo.id })
-      }
-
-      if (feedInfo.feedType === 'relay') {
-        // Check if the stored relay is blocked, if so use first visible relay instead
-        if (feedInfo.id && blockedRelays.includes(feedInfo.id)) {
-          logger.component('FeedProvider', 'Stored relay is blocked, using first visible relay instead')
-          feedInfo.id = favoritesFeedRelays[0] ?? DEFAULT_FAVORITE_RELAYS[0]
-        }
-        logger.component('FeedProvider', 'Initial relay setup, calling switchFeed', { relayId: feedInfo.id })
-        return await switchFeedRef.current('relay', { relay: feedInfo.id })
-      }
-
-      if (feedInfo.feedType === 'all-favorites') {
-        logger.debug('Initializing all-favorites feed')
-        return await switchFeedRef.current('all-favorites')
-      }
+      return await switchFeedRef.current('all-favorites')
     }
 
     void init()

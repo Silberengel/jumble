@@ -496,11 +496,16 @@ export function useFetchProfile(id?: string, skipCache = false) {
       }
     }
     
-    // CRITICAL: Guard against infinite loops - limit effect runs per pubkey (reduced from 10 to 3)
-    // Only increment if we're actually going to process (not early exiting)
+    // CRITICAL: Guard against infinite loops — limit effect runs per pubkey. Feed batch often leaves
+    // {@link batchPlaceholder} rows that need several retries across noteFeed.version bumps; use a higher cap.
     if (extractedPubkey) {
       const runCount = effectRunCountRef.current.get(extractedPubkey) || 0
-      if (runCount >= 3) {
+      const pkLower = extractedPubkey.toLowerCase()
+      const feedBatchPlaceholder =
+        noteFeed?.profiles.get(pkLower)?.batchPlaceholder === true ||
+        noteFeed?.profiles.get(extractedPubkey)?.batchPlaceholder === true
+      const maxRunsBeforeCircuitBreak = feedBatchPlaceholder ? 12 : 3
+      if (runCount >= maxRunsBeforeCircuitBreak) {
         logger.warn('[useFetchProfile] Too many effect runs for this pubkey, preventing infinite loop', {
           extractedPubkey,
           runCount

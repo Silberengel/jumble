@@ -134,7 +134,7 @@ const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
 /** Min ms between scroll-driven load-more attempts (loadMore also throttles internally). */
 const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180
 /** When the scroll container is within this many px of the top, auto-merge pending live notes (see {@link NewNotesButton}). */
-const AUTO_MERGE_NEW_EVENTS_TOP_PX = 120
+const AUTO_MERGE_NEW_EVENTS_TOP_PX = 280
 
 function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | null {
   if (!node) return null
@@ -1019,6 +1019,11 @@ const NoteList = forwardRef(
     /** Detect pull-to-refresh so preserve-mode feeds still clear; unrelated dep changes must not clear. */
     const timelineEffectLastRefreshCountRef = useRef(refreshCount)
     const followingFeedDeltaCloserRef = useRef<(() => void) | null>(null)
+    /**
+     * After `setEvents([])` / session restore / disk prime, React may not have flushed before the relay emits.
+     * Without this, `mergeEventBatchesById(prev, …)` can merge the new relay into the previous feed's rows.
+     */
+    const timelineMergeBootstrapRef = useRef<Event[] | null>(null)
 
     useLayoutEffect(() => {
       publicReadFallbackAttemptedRef.current = false
@@ -1132,6 +1137,8 @@ const NoteList = forwardRef(
     showAllKindsRef.current = showAllKinds
     const withKindFilterRef = useRef(withKindFilter)
     withKindFilterRef.current = withKindFilter
+    const hostPrimaryPageNameRef = useRef(hostPrimaryPageName)
+    hostPrimaryPageNameRef.current = hostPrimaryPageName
 
     const narrowLiveBatchUsingRefs = (evs: Event[]): Event[] => {
       if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
@@ -1873,6 +1880,7 @@ const NoteList = forwardRef(
 
       async function init() {
         if (timelineEffectStale()) return undefined
+        timelineMergeBootstrapRef.current = null
         feedPaintSessionPendingRef.current = false
         feedPaintRelayPendingRef.current = false
         feedPaintRelayMetaRef.current = null
@@ -1954,10 +1962,65 @@ const NoteList = forwardRef(
             ? ALGO_LIMIT
             : LIMIT
 
+        const isSpellPageLocalWarmup =
+          hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
+
+        /**
+         * IndexedDB + session peek (inside {@link ClientService.getTimelineDiskSnapshotEvents}) without blocking
+         * relay REQ/subscribe. Merges the same way as live {@link onEvents} so rows appear as soon as disk resolves.
+         */
+        const startNonBlockingTimelineDiskPrime = () => {
+          if (oneShotFetch || mappedSubRequests.length === 0) return
+          if (isSpellPageLocalWarmup) return
+          const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+          void client
+            .getTimelineDiskSnapshotEvents(diskReq)
+            .then((diskRaw) => {
+              if (!effectActive || timelineEffectStale()) return
+              const diskNarrowed = narrowLiveBatch(diskRaw)
+              if (diskNarrowed.length === 0) return
+
+              setEvents((prev) => {
+                const boot = timelineMergeBootstrapRef.current
+                const base = boot !== null ? boot : prev
+                const next = progressiveWarmupQueryRef.current?.trim()
+                  ? mergeProgressiveSearchEvents(
+                      base,
+                      diskNarrowed,
+                      oneShotAfterMergeComparatorRef.current
+                    )
+                  : collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById(base, diskNarrowed, eventCapEarly, areAlgoRelays)
+                    )
+                if (next.length > 0) {
+                  timelineMergeBootstrapRef.current = next.slice()
+                }
+                lastEventsForTimelinePrefetchRef.current = next
+                return next
+              })
+              setNewEvents([])
+              setShowCount(revealBatchSize ?? SHOW_COUNT)
+              if (!feedPaintLiveRelayDoneRef.current) {
+                setLoading(false)
+                feedPaintRelayPendingRef.current = true
+                feedPaintRelayMetaRef.current = {
+                  variant: 'disk_snapshot_async',
+                  mergedCount: diskNarrowed.length
+                }
+                setFeedEmptyToastGateTick((n) => n + 1)
+                setFeedTimelineEmptyUiReady(true)
+              }
+            })
+            .catch(() => {
+              /* best-effort */
+            })
+        }
+
         if (!keepExistingTimelineEvents) {
           if (restoredFromSession && sessionSnap) {
             feedPaintSessionPendingRef.current = true
             const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
+            timelineMergeBootstrapRef.current = restored.slice()
             setEvents(restored)
             lastEventsForTimelinePrefetchRef.current = restored
             setNewEvents([])
@@ -1966,8 +2029,6 @@ const NoteList = forwardRef(
           } else {
             let primedFromDisk = false
             let spellLocalMergeBase: Event[] = []
-            const isSpellPageLocalWarmup =
-              hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
 
             if (isSpellPageLocalWarmup) {
               const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
@@ -1997,6 +2058,7 @@ const NoteList = forwardRef(
                   )
                   if (mergedS.length > 0) {
                     spellLocalMergeBase = mergedS
+                    timelineMergeBootstrapRef.current = mergedS.slice()
                     setEvents(mergedS)
                     lastEventsForTimelinePrefetchRef.current = mergedS
                     setNewEvents([])
@@ -2012,20 +2074,21 @@ const NoteList = forwardRef(
                 }
               }
 
-              try {
-                const [diskRaw, fromPub, fromArch] = await Promise.all([
-                  client.getTimelineDiskSnapshotEvents(
-                    mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-                  ),
-                  indexedDb.getCachedPublicationEventsByKinds(localLayerCap * 2, kindsForScan),
-                  indexedDb.scanEventArchiveByKinds({
-                    kinds: kindsForScan,
-                    since: sinceTightest,
-                    maxRowsScanned: 10_000,
-                    maxMatches: localLayerCap * 2
-                  })
-                ])
-                if (!timelineEffectStale()) {
+              void (async () => {
+                try {
+                  const [diskRaw, fromPub, fromArch] = await Promise.all([
+                    client.getTimelineDiskSnapshotEvents(
+                      mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                    ),
+                    indexedDb.getCachedPublicationEventsByKinds(localLayerCap * 2, kindsForScan),
+                    indexedDb.scanEventArchiveByKinds({
+                      kinds: kindsForScan,
+                      since: sinceTightest,
+                      maxRowsScanned: 10_000,
+                      maxMatches: localLayerCap * 2
+                    })
+                  ])
+                  if (!effectActive || timelineEffectStale()) return
                   const seen = new Set<string>()
                   const combinedRaw: Event[] = []
                   for (const ev of diskRaw) {
@@ -2046,62 +2109,33 @@ const NoteList = forwardRef(
                     combinedRaw.push(ev)
                   }
                   combinedRaw.sort((a, b) => b.created_at - a.created_at)
-                  if (combinedRaw.length > 0) {
-                    const diskNarrowed = narrowLiveBatch(combinedRaw)
-                    if (diskNarrowed.length > 0) {
-                      const merged = collapseDuplicateNip18RepostTimelineRows(
-                        mergeEventBatchesById(spellLocalMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
-                      )
-                      if (merged.length > 0) {
-                        setEvents(merged)
-                        lastEventsForTimelinePrefetchRef.current = merged
-                        setNewEvents([])
-                        setShowCount(revealBatchSize ?? SHOW_COUNT)
-                        setLoading(false)
-                        feedPaintRelayPendingRef.current = true
-                        feedPaintRelayMetaRef.current = {
-                          variant:
-                            spellLocalMergeBase.length > 0 ? 'spell_local_merged' : 'disk_snapshot',
-                          mergedCount: merged.length
-                        }
-                        primedFromDisk = true
-                      }
-                    }
+                  if (combinedRaw.length === 0) return
+                  const diskNarrowed = narrowLiveBatch(combinedRaw)
+                  if (diskNarrowed.length === 0) return
+                  const merged = collapseDuplicateNip18RepostTimelineRows(
+                    mergeEventBatchesById(spellLocalMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
+                  )
+                  if (merged.length === 0) return
+                  timelineMergeBootstrapRef.current = merged.slice()
+                  setEvents(merged)
+                  lastEventsForTimelinePrefetchRef.current = merged
+                  setNewEvents([])
+                  setShowCount(revealBatchSize ?? SHOW_COUNT)
+                  setLoading(false)
+                  feedPaintRelayPendingRef.current = true
+                  feedPaintRelayMetaRef.current = {
+                    variant:
+                      spellLocalMergeBase.length > 0 ? 'spell_local_merged' : 'disk_snapshot',
+                    mergedCount: merged.length
                   }
+                } catch {
+                  /* spell local + disk snapshot is best-effort */
                 }
-              } catch {
-                /* spell local + disk snapshot is best-effort */
-              }
-            } else if (!oneShotFetch && mappedSubRequests.length > 0) {
-              try {
-                const diskRaw = await client.getTimelineDiskSnapshotEvents(
-                  mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-                )
-                if (!timelineEffectStale() && diskRaw.length > 0) {
-                  const diskNarrowed = narrowLiveBatch(diskRaw)
-                  if (diskNarrowed.length > 0) {
-                    const merged = collapseDuplicateNip18RepostTimelineRows(
-                      mergeEventBatchesById([], diskNarrowed, eventCapEarly, areAlgoRelays)
-                    )
-                    setEvents(merged)
-                    lastEventsForTimelinePrefetchRef.current = merged
-                    setNewEvents([])
-                    setShowCount(revealBatchSize ?? SHOW_COUNT)
-                    setLoading(false)
-                    feedPaintRelayPendingRef.current = true
-                    feedPaintRelayMetaRef.current = {
-                      variant: 'disk_snapshot',
-                      mergedCount: merged.length
-                    }
-                    primedFromDisk = true
-                  }
-                }
-              } catch {
-                /* disk snapshot is best-effort */
-              }
+              })()
             }
             if (!primedFromDisk) {
               if (!keepRowsVisible) setLoading(true)
+              timelineMergeBootstrapRef.current = []
               setEvents([])
               setNewEvents([])
               setShowCount(revealBatchSize ?? SHOW_COUNT)
@@ -2110,6 +2144,11 @@ const NoteList = forwardRef(
         } else if (!keepRowsVisible) {
           setLoading(true)
         }
+
+        if (!oneShotFetch && mappedSubRequests.length > 0) {
+          startNonBlockingTimelineDiskPrime()
+        }
+
         setHasMore(true)
         consecutiveEmptyRef.current = 0 // Reset counter on refresh
 
@@ -2138,33 +2177,35 @@ const NoteList = forwardRef(
               return undefined
             }
             if (!warmQOneShot && mappedSubRequests.length > 0) {
-              try {
-                const diskRaw = await client.getTimelineDiskSnapshotEvents(
-                  mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-                )
-                if (!timelineEffectStale() && diskRaw.length > 0) {
-                  const capDisk = oneShotMergedCap ?? ONE_SHOT_MERGED_CAP
+              const capDisk = oneShotMergedCap ?? ONE_SHOT_MERGED_CAP
+              const diskReqOneShot = mappedSubRequests as Array<{
+                urls: string[]
+                filter: TSubRequestFilter
+              }>
+              void client
+                .getTimelineDiskSnapshotEvents(diskReqOneShot)
+                .then((diskRaw) => {
+                  if (!effectActive || timelineEffectStale()) return
+                  if (diskRaw.length === 0) return
                   const narrowed = narrowLiveBatch(diskRaw)
-                  if (narrowed.length > 0) {
-                    const merged = collapseDuplicateNip18RepostTimelineRows(
-                      mergeEventBatchesById([], narrowed, capDisk, areAlgoRelays)
-                    )
-                    if (merged.length > 0) {
-                      setEvents(merged)
-                      lastEventsForTimelinePrefetchRef.current = merged
-                      setLoading(false)
-                      feedRelayReturnedAnyEventRef.current = true
-                      feedPaintRelayPendingRef.current = true
-                      feedPaintRelayMetaRef.current = {
-                        variant: 'disk_snapshot_one_shot',
-                        mergedCount: merged.length
-                      }
-                    }
+                  if (narrowed.length === 0) return
+                  const merged = collapseDuplicateNip18RepostTimelineRows(
+                    mergeEventBatchesById([], narrowed, capDisk, areAlgoRelays)
+                  )
+                  if (merged.length === 0) return
+                  setEvents(merged)
+                  lastEventsForTimelinePrefetchRef.current = merged
+                  setLoading(false)
+                  feedRelayReturnedAnyEventRef.current = true
+                  feedPaintRelayPendingRef.current = true
+                  feedPaintRelayMetaRef.current = {
+                    variant: 'disk_snapshot_one_shot',
+                    mergedCount: merged.length
                   }
-                }
-              } catch {
-                /* best-effort */
-              }
+                })
+                .catch(() => {
+                  /* best-effort */
+                })
             }
             const firstRelayGraceResolved =
               oneShotFirstRelayGraceMs === undefined
@@ -2432,15 +2473,20 @@ const NoteList = forwardRef(
                 if (batch.length > 0) {
                   if (narrowed.length > 0) {
                     setEvents((prev) => {
+                      const boot = timelineMergeBootstrapRef.current
+                      const base = boot !== null ? boot : prev
                       const next = progressiveWarmupQueryRef.current?.trim()
                         ? mergeProgressiveSearchEvents(
-                            prev,
+                            base,
                             narrowed,
                             oneShotAfterMergeComparatorRef.current
                           )
                         : collapseDuplicateNip18RepostTimelineRows(
-                            mergeEventBatchesById(prev, narrowed, eventCap, areAlgoRelays)
+                            mergeEventBatchesById(base, narrowed, eventCap, areAlgoRelays)
                           )
+                      if (boot !== null && narrowed.length > 0) {
+                        timelineMergeBootstrapRef.current = null
+                      }
                       lastEventsForTimelinePrefetchRef.current = next
                       return next
                     })
@@ -2538,6 +2584,10 @@ const NoteList = forwardRef(
                 ) {
                   setFeedReasonLabelsTick((n) => n + 1)
                 }
+
+                if (eosed && timelineMergeBootstrapRef.current !== null) {
+                  timelineMergeBootstrapRef.current = null
+                }
               },
             onNew: (event: Event) => {
               if (!effectActive) return
@@ -2580,15 +2630,52 @@ const NoteList = forwardRef(
               if (shouldHideEventRef.current(event)) return
               if (pubkey && event.pubkey === pubkey) {
                 setEvents((oldEvents) => {
-                  if (oldEvents.some((e) => e.id === event.id)) return oldEvents
+                  const boot = timelineMergeBootstrapRef.current
+                  const base = boot !== null ? boot : oldEvents
+                  if (base.some((e) => e.id === event.id)) {
+                    return boot !== null ? base : oldEvents
+                  }
                   if (
                     isNip18RepostKind(event.kind) &&
-                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
+                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
                   ) {
                     noteStatsService.updateNoteStatsByEvents([event], undefined)
-                    return oldEvents
+                    return boot !== null ? base : oldEvents
                   }
-                  return [event, ...oldEvents]
+                  if (boot !== null) {
+                    timelineMergeBootstrapRef.current = null
+                  }
+                  return [event, ...base]
+                })
+              } else if (hostPrimaryPageNameRef.current === 'feed') {
+                // Primary home relay feeds: merge live EVENTs into the timeline immediately. The generic path
+                // buffered everyone else's notes in `newEvents` until scroll-to-top — that felt like no streaming.
+                setEvents((oldEvents) => {
+                  const boot = timelineMergeBootstrapRef.current
+                  const base = boot !== null ? boot : oldEvents
+                  if (base.some((e) => e.id === event.id)) {
+                    return boot !== null ? base : oldEvents
+                  }
+                  if (
+                    isNip18RepostKind(event.kind) &&
+                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
+                  ) {
+                    noteStatsService.updateNoteStatsByEvents([event], undefined)
+                    return boot !== null ? base : oldEvents
+                  }
+                  if (boot !== null) {
+                    timelineMergeBootstrapRef.current = null
+                  }
+                  const cap = allowKindlessRelayExploreRef.current
+                    ? RELAY_EXPLORE_LIMIT
+                    : areAlgoRelays
+                      ? ALGO_LIMIT
+                      : LIMIT
+                  const next = collapseDuplicateNip18RepostTimelineRows(
+                    mergeEventBatchesById(base, [event], cap, areAlgoRelays)
+                  )
+                  lastEventsForTimelinePrefetchRef.current = next
+                  return next
                 })
               } else {
                 setNewEvents((oldEvents) => {
@@ -2659,6 +2746,7 @@ const NoteList = forwardRef(
       const snapshotKeyForCleanup = sessionSnapshotIdentityKey
       return () => {
         effectActive = false
+        timelineMergeBootstrapRef.current = null
         setProgressiveLayersSearching(false)
         followingFeedDeltaCloserRef.current?.()
         followingFeedDeltaCloserRef.current = null
@@ -2882,6 +2970,22 @@ const NoteList = forwardRef(
                       return oldEvents
                     }
                     return [event, ...oldEvents]
+                  })
+                } else if (hostPrimaryPageNameRef.current === 'feed') {
+                  setEvents((oldEvents) => {
+                    if (oldEvents.some((e) => e.id === event.id)) return oldEvents
+                    if (
+                      isNip18RepostKind(event.kind) &&
+                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
+                    ) {
+                      noteStatsService.updateNoteStatsByEvents([event], undefined)
+                      return oldEvents
+                    }
+                    const next = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById(oldEvents, [event], eventCapDelta, areAlgoRelays)
+                    )
+                    lastEventsForTimelinePrefetchRef.current = next
+                    return next
                   })
                 } else {
                   setNewEvents((oldEvents) => {
@@ -3198,6 +3302,13 @@ const NoteList = forwardRef(
         if (document.visibilityState === 'hidden') {
           blankFeedHiddenAtRef.current = Date.now()
           return
+        }
+        if (
+          !oneShotFetchRef.current &&
+          feedFullSearchEventsRef.current === null &&
+          newEventsRef.current.length > 0
+        ) {
+          flushPendingNewEventsIntoTimelineRef.current()
         }
         const hidAt = blankFeedHiddenAtRef.current
         blankFeedHiddenAtRef.current = null
@@ -4045,7 +4156,7 @@ const NoteList = forwardRef(
     )
 
     return (
-      <div ref={feedRootRef}>
+      <div ref={feedRootRef} className="relative">
         <div ref={topRef} className="scroll-mt-[calc(6rem+1px)]" />
         <NoteFeedProfileContext.Provider value={noteFeedProfileContextValue}>
           {supportTouch ? (
