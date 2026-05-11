@@ -6,6 +6,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { buildHiveTalkJoinUrl, roomIdForPubkeys } from '@/lib/hivetalk'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { useMuteList } from '@/contexts/mute-list-context'
@@ -15,6 +16,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
+import { encodeProfileInteractionsSpellId } from '@/pages/primary/SpellsPage/fauxSpellConfig'
 import client, { replaceableEventService } from '@/services/client.service'
 import { nip66Service } from '@/services/nip66.service'
 import RawEventDialog from '@/components/NoteOptions/RawEventDialog'
@@ -26,6 +28,7 @@ import {
   Ellipsis,
   ThumbsUp,
   MessageCircle,
+  Network,
   Send,
   SatelliteDish,
   Video
@@ -53,6 +56,7 @@ export default function ProfileOptions({
   onSendCallInvite?: (url: string) => void
 }) {
   const { t } = useTranslation()
+  const { navigate } = usePrimaryPage()
   const { pubkey: accountPubkey, profile, publish, checkLogin } = useNostr()
   const { mutePubkeySet, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } = useMuteList()
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
@@ -249,6 +253,10 @@ export default function ProfileOptions({
         >
           <Copy />
           {t('Copy user ID')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate('spells', { spell: encodeProfileInteractionsSpellId(pubkey) })}>
+          <Network />
+          {t('Interactions map')}
         </DropdownMenuItem>
         {kind0ForRelay && (
           <>

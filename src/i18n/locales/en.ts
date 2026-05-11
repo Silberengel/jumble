@@ -774,6 +774,14 @@ export default {
     heatMapBubbleStats: "{{posts}} notes · {{people}} people · {{follows}} follows in thread",
     heatMapConnectorHint: "Linked threads — «{{left}}» ↔ «{{right}}»",
     "Please login to view thread heat map": "Please log in to open the thread heat map.",
+    "Interactions map": "Interactions map",
+    "Profile interactions map description":
+      "Profiles ranked by direct interaction count with this profile. Data paints from local cache first, then refreshes from relays.",
+    "Profile interactions map empty": "No profile interactions found yet. Browse this profile or rescan after syncing.",
+    "Profile interactions map failed": "Could not build the interactions map",
+    "n interactions": "{{formattedCount}} interactions",
+    "outgoing interactions": "{{count}} by this profile",
+    "incoming interactions": "{{count}} toward this profile",
     "Topic map": "Topic map",
     topicMapDescription:
       "The ten largest bubbles combine how often a normalized string appears as a topic tag (·t·) and as a #hashtag in note text (last ~30 days). Data merges this tab’s session cache, your on-device archive, and your relay stack. Tap a bubble to open one feed that merges #t matches and NIP-50 full-text search.",

@@ -16,6 +16,7 @@ import { createReactionDraftEvent } from '@/lib/draft-event'
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
 import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-feedback'
 import { toProfileEditor } from '@/lib/link'
+import { encodeProfileInteractionsSpellId } from '@/pages/primary/SpellsPage/fauxSpellConfig'
 import { generateImageByPubkey } from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
@@ -41,7 +42,8 @@ import {
   Gift,
   Link,
   MessageCircle,
-  ThumbsUp,
+  Network,
+  ThumbsUp
 } from 'lucide-react'
 import {
   useEffect,
@@ -544,6 +546,12 @@ export default function Profile({
                   <DropdownMenuItem onClick={() => navigatePrimary('spells', { spell: 'followPacks' })}>
                     <Gift />
                     {t('Follow Packs')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigatePrimary('spells', { spell: encodeProfileInteractionsSpellId(pubkey) })}
+                  >
+                    <Network />
+                    {t('Interactions map')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => push(toProfileEditor())}>
                     <Pencil />

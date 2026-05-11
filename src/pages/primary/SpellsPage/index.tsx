@@ -51,17 +51,20 @@ import { verifyEvent } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CreateSpellDialog from './CreateSpellDialog'
+import ProfileInteractionsMap from './ProfileInteractionsMap'
 import RelayThreadHeatMap from './RelayThreadHeatMap'
 import TopicKeywordHeatMap from './TopicKeywordHeatMap'
 import type { TPageRef } from '@/types'
 import {
   decodeFollowSetSpellId,
+  decodeProfileInteractionsSpellId,
   fauxSpellLabelKey,
   getFollowSetDTag,
   isBuiltinFauxSpell,
   isFollowFeedFauxSpellId,
   isFollowSetSpellId,
   isFauxSpellPageParam,
+  isProfileInteractionsSpellId,
   labelFollowSetEvent
 } from './fauxSpellConfig'
 import { SpellPickerContent } from './SpellPickerContent'
@@ -117,6 +120,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   selectedFauxSpellRefreshRef.current = selectedFauxSpell
   const [heatMapRefreshKey, setHeatMapRefreshKey] = useState(0)
   const [topicMapRefreshKey, setTopicMapRefreshKey] = useState(0)
+  const [profileInteractionsRefreshKey, setProfileInteractionsRefreshKey] = useState(0)
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [spellPickerOpen, setSpellPickerOpen] = useState(false)
 
@@ -193,6 +197,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     }
     if (selectedFauxSpellRefreshRef.current === 'topicMap') {
       setTopicMapRefreshKey((k) => k + 1)
+    }
+    if (isProfileInteractionsSpellId(selectedFauxSpellRefreshRef.current)) {
+      setProfileInteractionsRefreshKey((k) => k + 1)
     }
     spellFeedListRef.current?.refresh()
   }, [loadSpells, pubkey])
@@ -617,6 +624,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
 
   const selectedFauxSpellDisplayLabel = useMemo(() => {
     if (!selectedFauxSpell) return ''
+    if (isProfileInteractionsSpellId(selectedFauxSpell)) {
+      return t('Interactions map')
+    }
     if (isFollowSetSpellId(selectedFauxSpell)) {
       const d = decodeFollowSetSpellId(selectedFauxSpell)
       if (!d) return t('Follow set')
@@ -1011,6 +1021,13 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           ) : selectedFauxSpell === 'topicMap' ? (
             <div className="min-h-0 min-w-0 flex-1">
               <TopicKeywordHeatMap refreshKey={topicMapRefreshKey} />
+            </div>
+          ) : isProfileInteractionsSpellId(selectedFauxSpell) ? (
+            <div className="min-h-0 min-w-0 flex-1">
+              <ProfileInteractionsMap
+                pubkey={decodeProfileInteractionsSpellId(selectedFauxSpell)!}
+                refreshKey={profileInteractionsRefreshKey}
+              />
             </div>
           ) : selectedFauxSpell && fauxSubRequests.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{fauxFeedEmptyMessage}</div>

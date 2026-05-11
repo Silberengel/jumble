@@ -101,6 +101,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
   progressiveDocumentKinds?: readonly number[]
   oneShotAfterMergeComparator?: (a: Event, b: Event) => number
   extraShouldHideEvent?: (ev: Event) => boolean
+  extraShouldHideRepliesEvent?: (ev: Event) => boolean
   /** Override default cap for merged one-shot batches (wide d-tag / search merges). */
   oneShotMergedCap?: number
   /** When every relay in the subscribe wave fails before EOSE, merge a one-shot fetch from default read relays (home multi-relay feeds). */
@@ -135,6 +136,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     progressiveDocumentKinds,
     oneShotAfterMergeComparator,
     extraShouldHideEvent,
+    extraShouldHideRepliesEvent,
     oneShotMergedCap,
     timelinePublicReadFallback = false
   },
@@ -369,9 +371,13 @@ const NormalFeed = forwardRef<TNoteListRef, {
           progressiveWarmupMatch={progressiveWarmupMatch}
           progressiveDocumentKinds={progressiveDocumentKinds}
           oneShotAfterMergeComparator={oneShotAfterMergeComparator}
-          extraShouldHideEvent={extraShouldHideEvent}
+          extraShouldHideEvent={
+            listMode === 'postsAndReplies'
+              ? extraShouldHideRepliesEvent
+              : extraShouldHideEvent
+          }
           oneShotMergedCap={oneShotMergedCap}
-          timelinePublicReadFallback={timelinePublicReadFallback}
+          timelinePublicReadFallback={timelinePublicReadFallback && listMode === 'postsAndReplies'}
         />
       </div>
     </>

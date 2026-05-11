@@ -22,6 +22,23 @@ import {
 
 export type FauxSpellName = (typeof FAUX_SPELL_ORDER)[number]
 
+const PROFILE_INTERACTIONS_SPELL_PREFIX = 'profileInteractions:'
+
+export function encodeProfileInteractionsSpellId(pubkey: string): string {
+  return `${PROFILE_INTERACTIONS_SPELL_PREFIX}${pubkey.trim().toLowerCase()}`
+}
+
+export function decodeProfileInteractionsSpellId(spellId: string | null | undefined): string | null {
+  const raw = spellId?.trim()
+  if (!raw?.startsWith(PROFILE_INTERACTIONS_SPELL_PREFIX)) return null
+  const pubkey = raw.slice(PROFILE_INTERACTIONS_SPELL_PREFIX.length).trim().toLowerCase()
+  return /^[0-9a-f]{64}$/.test(pubkey) ? pubkey : null
+}
+
+export function isProfileInteractionsSpellId(spellId: string | null | undefined): boolean {
+  return decodeProfileInteractionsSpellId(spellId) != null
+}
+
 export function isBuiltinFauxSpell(s: string): s is FauxSpellName {
   return (FAUX_SPELL_ORDER as readonly string[]).includes(s)
 }
@@ -29,6 +46,7 @@ export function isBuiltinFauxSpell(s: string): s is FauxSpellName {
 /** URL / picker param: built-in faux name or encoded follow-set spell id. */
 export function isFauxSpellPageParam(s: string): boolean {
   if (isBuiltinFauxSpell(s)) return true
+  if (isProfileInteractionsSpellId(s)) return true
   if (!isFollowSetSpellId(s)) return false
   return decodeFollowSetSpellId(s) != null
 }

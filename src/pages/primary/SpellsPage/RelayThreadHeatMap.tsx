@@ -22,6 +22,7 @@ import {
 } from '@/lib/relay-thread-heat'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartNoteNavigation } from '@/PageManager'
+import { encodeProfileInteractionsSpellId } from './fauxSpellConfig'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -464,6 +465,17 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
           >
             {t('Topic map')}
           </Button>
+          {pubkey ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => navigatePrimary('spells', { spell: encodeProfileInteractionsSpellId(pubkey) })}
+            >
+              {t('Interactions map')}
+            </Button>
+          ) : null}
         </div>
       </div>
 
