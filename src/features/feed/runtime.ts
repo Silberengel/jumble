@@ -52,6 +52,7 @@ export type FeedRuntimeState = FeedRuntimeSnapshot & {
 
 export type FeedRuntimeAction =
   | { type: 'start'; descriptorKey: string; generation: number; refresh: boolean; keepRowsStale?: boolean }
+  | { type: 'seed'; events: Event[]; stale?: boolean; hasMore?: boolean; nextCursor?: number }
   | { type: 'cache'; events: Event[]; stale: boolean }
   | { type: 'relayBatch'; events: Event[]; relayOutcomes?: FeedRelayOutcome[]; fresh?: boolean }
   | { type: 'relayDone'; relayOutcomes?: FeedRelayOutcome[]; hasMore?: boolean; nextCursor?: number }
@@ -79,6 +80,12 @@ export type FeedRuntimeLoadResult = {
   cacheStale?: boolean
   relayEvents?: Event[]
   relayOutcomes?: FeedRelayOutcome[]
+  hasMore?: boolean
+  nextCursor?: number
+}
+
+export type FeedRuntimeSeedOptions = {
+  stale?: boolean
   hasMore?: boolean
   nextCursor?: number
 }
@@ -181,6 +188,19 @@ export function feedRuntimeReducer(
   switch (action.type) {
     case 'reset':
       return createInitialFeedRuntimeState(action.descriptorKey)
+    case 'seed':
+      return derive(
+        {
+          ...state,
+          rawRows: action.events,
+          stale: action.stale ?? false,
+          hasMore: action.hasMore ?? state.hasMore,
+          nextCursor: action.nextCursor ?? state.nextCursor,
+          paginationStatus: action.hasMore === false ? 'exhausted' : state.paginationStatus,
+          pageError: undefined
+        },
+        options
+      )
     case 'start': {
       const keepRows = action.keepRowsStale ? state.rawRows : []
       return derive(
@@ -290,6 +310,21 @@ export class FeedRuntime {
   snapshot(): FeedRuntimeSnapshot {
     const { descriptorKey: _descriptorKey, rawRows: _rawRows, ...snapshot } = this.state
     return snapshot
+  }
+
+  seed(events: Event[], options: FeedRuntimeSeedOptions = {}): FeedRuntimeSnapshot {
+    this.state = feedRuntimeReducer(
+      this.state,
+      {
+        type: 'seed',
+        events,
+        stale: options.stale,
+        hasMore: options.hasMore,
+        nextCursor: options.nextCursor
+      },
+      this.options
+    )
+    return this.snapshot()
   }
 
   async load(loader: FeedRuntimeLoader, refresh = false): Promise<FeedRuntimeSnapshot> {

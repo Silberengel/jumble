@@ -96,4 +96,20 @@ describe('FeedRuntime', () => {
     expect(next.paginationStatus).toBe('exhausted')
     expect(next.hasMore).toBe(false)
   })
+
+  it('can seed existing rows before loading an older page', async () => {
+    const runtime = new FeedRuntime({ descriptorKey: 'feed-a' })
+    runtime.seed([evt('new', 20)], { hasMore: true, nextCursor: 19 })
+
+    const next = await runtime.loadMore(async ({ cursor }) => {
+      expect(cursor).toBe(19)
+      return {
+        relayEvents: [evt('old', 10)],
+        hasMore: true
+      }
+    })
+
+    expect(next.rows.map((row) => row.id)).toEqual(['new', 'old'])
+    expect(next.paginationStatus).toBe('idle')
+  })
 })

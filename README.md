@@ -1,9 +1,5 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./resources/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="./resources/logo-light.svg">
-    <img src="./resources/logo-light.svg" alt="Imwald logo" width="400" />
-  </picture>
+  <img src="./resources/banner.png" alt="Imwald" width="650" />
   <p>logo designed by <a href="http://wolfertdan.com/">Daniel David</a></p>
 </div>
 
@@ -11,17 +7,15 @@
 
 **Maintainer: [Silberengel](https://github.com/Silberengel)** · Evolved from [Cody Tseng’s Jumble](https://github.com/CodyTseng/jumble)
 
-A Nostr web client focused on relay feeds, discovery, and spells. **Imwald** keeps the same core ideas as upstream, with a substantial navigation and information-architecture rewrite (see below). The public instance lives at [jumble.imwald.eu](https://jumble.imwald.eu).
+A Nostr web client focused on relay feeds, discovery, and spells. The public instance lives at [jumble.imwald.eu](https://jumble.imwald.eu).
 
 ---
 
-## Major rewrite (this line)
-
-High-level changes versus a “stock” Jumble-style layout:
+## Product Shape
 
 ### Home vs feed
 
-- **Home** is the **Explore** experience: relay directory, **Following’s Favorites**, and related discovery — not a duplicate of your main timeline.
+- **Home** is the **Explore** experience: relay directory, Following’s Favorites, and related discovery.
 - **Feed** is a dedicated primary area for **favorite relays**, displaying their diverse social content as a feed: short text notes (microblogging), longform articles, wiki pages, media notes, calendar entries, etc.
 
 ### RSS

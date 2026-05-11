@@ -129,7 +129,7 @@ import {
   urlIsNonLocalForRemoteViewer
 } from '@/lib/relay-list-sanitize'
 import {
-  canonicalRelayStrikeKey,
+  canonicalRelaySessionKey,
   isHttpRelayUrl,
   isLocalNetworkUrl,
   normalizeAnyRelayUrl,
@@ -170,7 +170,7 @@ import indexedDb from './indexed-db.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
 import { notifyLiveActivitiesPrewarmComplete } from './live-activities-prewarm-bridge'
 import nip66Service from './nip66.service'
-import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-strike'
+import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import {
   compactFilterForRelayLog,
   RelayOpTerminalRow,
@@ -181,9 +181,6 @@ import { QueryService } from './client-query.service'
 import { EventService } from './client-events.service'
 import { ReplaceableEventService } from './client-replaceable-events.service'
 import { MacroService, createBookstrService } from './client-macro.service'
-
-/** Fired on `window` when session relay strike counts change (subscribe in single-relay UI). */
-export const JUMBLE_SESSION_RELAY_STRIKES_CHANGED = 'jumble:session-relay-strikes-changed' as const
 
 /** Live timeline REQ: EOSE caps “connected but silent” relays. */
 const SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS = 4800
@@ -334,7 +331,7 @@ class ClientService extends EventTarget {
 
     // Initialize sub-services
     this.queryService = new QueryService(this.pool, {
-      onRelayNoticeStrike: (normalizedUrl, noticeMessage) =>
+      onRelayNoticeFetchFailure: (normalizedUrl, noticeMessage) =>
         this.logRelayNoticeFetchFailure(normalizedUrl, noticeMessage)
     })
     this.eventService = new EventService(this.queryService)
@@ -1138,45 +1135,16 @@ class ClientService extends EventTarget {
 
   /** NOTICE "failed to fetch events" — logged only (no session relay blocking). */
   private logRelayNoticeFetchFailure(url: string, noticeMessage: string) {
-    const n = canonicalRelayStrikeKey(url)
+    const n = canonicalRelaySessionKey(url)
     logger.debug('[Relay] NOTICE failed-fetch', {
       url: n ?? url,
       noticeSnippet: noticeMessage.slice(0, 220)
     })
   }
 
-  /** Legacy API: session strikes removed; always zero. */
-  getSessionRelayStrikeCountForUrl(_url: string): number {
-    return 0
-  }
-
-  getSessionRelayFailureStrikeThreshold(): number {
-    return 4
-  }
-
-  /** Legacy API: session strikes removed; relays are never skipped for reads for flaky connections. */
-  isSessionRelayStrikedForReads(_url: string): boolean {
-    return false
-  }
-
-  /** No-op: use relay block list in settings instead of automatic session strikes. */
-  clearSessionRelayStrikes(): void {}
-
-  clearSessionRelayStrikeForUrl(_url: string): boolean {
-    return false
-  }
-
-  clearSessionRelayStrikesForUrls(_urls: string[]): number {
-    return 0
-  }
-
-  private relayUrlsAfterStrikesOrRecover(urls: string[]): string[] {
-    return Array.from(new Set(urls))
-  }
-
   /** Record a successful publish and its latency for session-based preference when selecting random relays. */
   recordPublishSuccess(url: string, latencyMs: number) {
-    const n = canonicalRelayStrikeKey(url)
+    const n = canonicalRelaySessionKey(url)
     if (!n) return
     const cur = this.sessionRelayPublishStats.get(n)
     if (cur) {
@@ -1196,7 +1164,7 @@ class ClientService extends EventTarget {
     const out: string[] = []
     for (const [url, stats] of this.sessionRelayPublishStats.entries()) {
       if (stats.successCount < 1) continue
-      const n = canonicalRelayStrikeKey(url)
+      const n = canonicalRelaySessionKey(url)
       if (!n || readOnlySet.has(n)) continue
       out.push(n)
     }
@@ -1209,14 +1177,10 @@ class ClientService extends EventTarget {
     return out
   }
 
-  /**
-   * Session-only debug for Settings: scored publish relays (no automatic session strikes).
-   */
+  /** Session-only debug for Settings: scored publish relays. */
   getSessionRelayDebug(): {
-    strikedUrls: string[]
     scoredRelays: { url: string; successCount: number; avgLatencyMs: number }[]
     presetWorking: string[]
-    presetStriked: string[]
   } {
     const presetSet = new Set<string>()
     for (const u of [
@@ -1226,7 +1190,7 @@ class ClientService extends EventTarget {
       ...SEARCHABLE_RELAY_URLS
     ]) {
       const n = normalizeUrl(u) || u
-      if (n) presetSet.add(canonicalRelayStrikeKey(n))
+      if (n) presetSet.add(canonicalRelaySessionKey(n))
     }
     const preset = Array.from(presetSet)
     const scoredRelays = Array.from(this.sessionRelayPublishStats.entries()).map(([url, s]) => ({
@@ -1235,7 +1199,7 @@ class ClientService extends EventTarget {
       avgLatencyMs: Math.round(s.sumLatencyMs / s.successCount)
     }))
     scoredRelays.sort((a, b) => a.avgLatencyMs - b.avgLatencyMs)
-    return { strikedUrls: [], scoredRelays, presetWorking: preset, presetStriked: [] }
+    return { scoredRelays, presetWorking: preset }
   }
 
   /**
@@ -1251,14 +1215,14 @@ class ClientService extends EventTarget {
     const preferred: string[] = []
     const rest: string[] = []
     for (const url of unique) {
-      const sk = canonicalRelayStrikeKey(url)
+      const sk = canonicalRelaySessionKey(url)
       const stats = sk ? this.sessionRelayPublishStats.get(sk) : undefined
       if (stats && stats.successCount >= 1) preferred.push(url)
       else rest.push(url)
     }
     preferred.sort((a, b) => {
-      const sa = this.sessionRelayPublishStats.get(canonicalRelayStrikeKey(a))
-      const sb = this.sessionRelayPublishStats.get(canonicalRelayStrikeKey(b))
+      const sa = this.sessionRelayPublishStats.get(canonicalRelaySessionKey(a))
+      const sb = this.sessionRelayPublishStats.get(canonicalRelaySessionKey(b))
       if (!sa || !sb) return 0
       if (sb.successCount !== sa.successCount) return sb.successCount - sa.successCount
       const avgA = sa.sumLatencyMs / sa.successCount
@@ -1301,7 +1265,7 @@ class ClientService extends EventTarget {
       return true
     })
     filtered = Array.from(new Set(filtered))
-    filtered = this.relayUrlsAfterStrikesOrRecover(filtered)
+    filtered = Array.from(new Set(filtered))
     const countAfterFiltersBeforeCap = filtered.length
     filtered = await this.capPublishRelayUrlsForPublish(
       filtered,
@@ -1323,7 +1287,7 @@ class ClientService extends EventTarget {
         maxPublishRelays: MAX_PUBLISH_RELAYS,
         fromPickerOrDetermineCount: relayUrls.length,
         afterMergeWithYourOutboxes: mergedRelayUrls.length,
-        afterReadonlySocialAndStrikeFilter: countAfterFiltersBeforeCap,
+        afterReadonlySocialFilter: countAfterFiltersBeforeCap,
         finalContactedRelayCount: uniqueRelayUrls.length,
         finalRelays: uniqueRelayUrls,
         explain:
@@ -2120,8 +2084,7 @@ class ClientService extends EventTarget {
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
     let relays = originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
-    // While offline, silently drop every non-local relay so nothing is added to
-    // groupedRequests and no session strike is recorded for a connectivity-induced failure.
+    // While offline, silently drop every non-local relay so nothing is added to groupedRequests.
     if (!navigator.onLine) {
       relays = relays.filter((url) => isLocalNetworkUrl(url))
     }
@@ -2156,7 +2119,7 @@ class ClientService extends EventTarget {
         relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
       }
     }
-    relays = this.relayUrlsAfterStrikesOrRecover(relays)
+    relays = Array.from(new Set(relays))
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const that = this
@@ -2971,9 +2934,9 @@ class ClientService extends EventTarget {
       const stripped = relays.filter((url) => !socialKindBlockedSet.has(normalizeUrl(url) || url))
       relays = relaysAfterSocialKindBlockedStrip(wsOriginal, stripped)
     }
-    relays = this.relayUrlsAfterStrikesOrRecover(relays)
+    relays = Array.from(new Set(relays))
     let queryRelays = dedupeNormalizeRelayUrlsOrdered([...relays, ...httpRelayBases])
-    /** If every candidate was session-striked / filtered away, still hit public read mirrors so REQ does not no-op. */
+    /** If every candidate was filtered away, still hit public read mirrors so REQ does not no-op. */
     if (queryRelays.length === 0) {
       queryRelays = dedupeNormalizeRelayUrlsOrdered([...FAST_READ_RELAY_URLS])
     }

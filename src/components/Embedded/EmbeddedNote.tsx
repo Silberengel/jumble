@@ -18,7 +18,7 @@ import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
-import { useViewerInboxRelayUrlsAndAggrEligibility } from '@/hooks/useViewerInboxRelayUrlsAndAggr'
+import { useViewerInboxRelayUrls } from '@/hooks/useViewerInboxRelayUrls'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
@@ -215,7 +215,7 @@ function EmbeddedNoteFetched({
   const { isEventDeleted } = useDeletedEvent()
   const { addReplies } = useReply()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { inboxRelayUrls } = useViewerInboxRelayUrlsAndAggrEligibility()
+  const { inboxRelayUrls } = useViewerInboxRelayUrls()
   const [event, setEvent] = useState<Event | undefined>(undefined)
   const [isFetching, setIsFetching] = useState(true)
   const eventRef = useRef<Event | undefined>(undefined)

@@ -82,10 +82,10 @@ export function normalizeAnyRelayUrl(url: string): string {
 }
 
 /**
- * Stable key for per-relay session counters (strikes, publish stats): HTTP NIP-86 bases map to the same host’s
- * `wss://…` URL so `https://nos.lol` and `wss://nos.lol` share one bucket (fixes preset vs “all striked” mismatch).
+ * Stable key for per-relay session stats: HTTP NIP-86 bases map to the same host’s
+ * `wss://…` URL so `https://nos.lol` and `wss://nos.lol` share one bucket.
  */
-export function canonicalRelayStrikeKey(url: string): string {
+export function canonicalRelaySessionKey(url: string): string {
   const stepped = (normalizeAnyRelayUrl(url) || url.trim()).trim()
   if (!stepped) return ''
   if (isHttpRelayUrl(stepped)) {

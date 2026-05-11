@@ -144,14 +144,6 @@ export function expandArticleUrlThreadQueryValues(canonicalUrl: string): string[
   return [...out]
 }
 
-/**
- * Values for a REQ `#r` filter on kind 9802 / kind 7 when the thread key is a canonical article URL.
- * @deprecated Prefer {@link expandArticleUrlThreadQueryValues} — same values.
- */
-export function computeRTagFilterValuesForArticleThread(canonicalUrl: string): string[] {
-  return expandArticleUrlThreadQueryValues(canonicalUrl)
-}
-
 /** True if `urlFromEvent` refers to the same article as `canonicalThreadKey` (after normalization + variant match). */
 export function articleUrlMatchesThreadScope(urlFromEvent: string, canonicalThreadKey: string): boolean {
   const key = canonicalizeRssArticleUrl(canonicalThreadKey)

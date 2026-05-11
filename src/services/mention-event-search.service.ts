@@ -196,16 +196,6 @@ export async function searchCitationEventsForPicker(
 }
 
 /**
- * @deprecated Use searchEventsForPicker(query, limit, 'nevent') instead.
- */
-export async function searchNotesForPicker(
-  query: string,
-  limit: number = DEFAULT_NOTES_LIMIT
-): Promise<NEvent[]> {
-  return searchEventsForPicker(query, limit, 'nevent')
-}
-
-/**
  * Search for npubs for @-mentions. Uses same pattern as note search: cache (follow + local index) then relays.
  * Delegates to client which already does follow-list → local index → relay search.
  * Supports incremental updates via onUpdate callback for faster UI updates.

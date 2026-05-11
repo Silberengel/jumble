@@ -37,18 +37,6 @@ export type LiveActivitiesFetchEventsFn = (
 export const LIVE_ACTIVITY_KINDS = [30311, 30312, 30313] as const
 
 /**
- * @deprecated Home embeds no longer consult the kind picker. Kept for callers that still want
- * “is live activity in the user’s selected kinds?” (e.g. optional UI); prefer inlining that check.
- */
-export function liveActivityKindsEnabledInPicker(
-  showKinds: readonly number[],
-  feedKindFilterBypass: boolean
-): boolean {
-  if (feedKindFilterBypass) return true
-  return LIVE_ACTIVITY_KINDS.some((k) => showKinds.includes(k))
-}
-
-/**
  * Stable NIP-33 address `kind:pubkey:d` for a live-activity replaceable event (carousel dedupe / user hide list).
  * Must match {@link parseLiveActivityEvent} `address` and {@link dedupeLatestForLiveTicker} keys exactly
  * (raw `d` tag value from the event, same as {@link firstTagValue}).

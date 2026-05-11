@@ -63,7 +63,7 @@ That starts the **full** stack in `docker-compose.prod.yml` (app, NIP-66 monitor
 
 Apache (or nginx) must still proxy `/api/languagetool` → `127.0.0.1:8010` and `/api/translate` → `127.0.0.1:5000`.
 
-**Shared host:** if you already run another `og-proxy` on `127.0.0.0.1:8090` or another Wyoming Piper on the same ports, `docker compose up -d` can fail with a port or name conflict. Either stop the duplicates or start only the pieces you need, e.g. `docker compose up -d jumble jumble-nip66-monitor languagetool libretranslate` (and point `PIPER_TTS_HOST` / Apache at your existing Piper stack if applicable).
+**Shared host:** if you already run another `og-proxy` on `127.0.0.1:8090` or another Wyoming Piper on the same ports, `docker compose up -d` can fail with a port or name conflict. Either stop the duplicates or start only the pieces you need, e.g. `docker compose up -d jumble jumble-nip66-monitor languagetool libretranslate` (and point `PIPER_TTS_HOST` / Apache at your existing Piper stack if applicable).
 
 Equivalent one-liner: `npm run stack:remote`
 

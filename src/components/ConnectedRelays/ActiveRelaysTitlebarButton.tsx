@@ -19,25 +19,19 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
 
-function rowMuted(connected: boolean, sessionStriked: boolean) {
-  return !connected || sessionStriked
+function rowMuted(connected: boolean) {
+  return !connected
 }
 
-function rowTitle(
-  url: string,
-  connected: boolean,
-  sessionStriked: boolean,
-  t: (k: string) => string
-) {
+function rowTitle(url: string, connected: boolean, t: (k: string) => string) {
   const base = simplifyUrl(url)
-  if (sessionStriked) return `${base} — ${t('Relay session striked')}`
   if (!connected) return `${base} — ${t('Not connected')}`
   return base
 }
 
 /**
  * Same interaction pattern as {@link SeenOnButton}: Server + counts, menu lists relays with {@link RelayIcon}.
- * Shows favorites + default/inbox relays; disconnected or session-striked relays are muted.
+ * Shows favorites + default/inbox relays; disconnected relays are muted.
  */
 export function ActiveRelaysTitlebarButton() {
   const { t } = useTranslation()
@@ -76,8 +70,8 @@ export function ActiveRelaysTitlebarButton() {
     </Button>
   )
 
-  const rowClass = (connected: boolean, sessionStriked: boolean) =>
-    cn(rowMuted(connected, sessionStriked) && 'opacity-45 text-muted-foreground')
+  const rowClass = (connected: boolean) =>
+    cn(rowMuted(connected) && 'opacity-45 text-muted-foreground')
 
   if (isSmallScreen) {
     return (
@@ -101,12 +95,12 @@ export function ActiveRelaysTitlebarButton() {
               ) : null}
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-2 pb-4">
-              {rows.map(({ url, connected, sessionStriked }) => (
+              {rows.map(({ url, connected }) => (
                 <Button
-                  className={cn('h-auto w-full justify-start gap-3 p-4 text-base', rowClass(connected, sessionStriked))}
+                  className={cn('h-auto w-full justify-start gap-3 p-4 text-base', rowClass(connected))}
                   variant="ghost"
                   key={url}
-                  title={rowTitle(url, connected, sessionStriked, t)}
+                  title={rowTitle(url, connected, t)}
                   onClick={() => {
                     setDrawerOpen(false)
                     setTimeout(() => navigateToRelay(toRelay(url)), 50)
@@ -129,12 +123,12 @@ export function ActiveRelaysTitlebarButton() {
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>{t('Active relays')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {rows.map(({ url, connected, sessionStriked }) => (
+        {rows.map(({ url, connected }) => (
           <DropdownMenuItem
             key={url}
-            title={rowTitle(url, connected, sessionStriked, t)}
+            title={rowTitle(url, connected, t)}
             onClick={() => navigateToRelay(toRelay(url))}
-            className={cn('min-w-52 gap-2', rowClass(connected, sessionStriked))}
+            className={cn('min-w-52 gap-2', rowClass(connected))}
           >
             <RelayIcon url={url} />
             {simplifyUrl(url)}

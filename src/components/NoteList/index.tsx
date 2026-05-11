@@ -92,10 +92,14 @@ import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
 import MediaGridItem from '../MediaGridItem'
 import {
   buildFeedSessionSnapshotKey,
+  createFeedDescriptor,
   legacyFeedSubscriptionKey,
   stableFeedKindKey
 } from '@/features/feed/descriptor'
 import { mapNoteListSubRequestsForTimeline } from '@/features/feed/note-list-requests'
+import { createFetchEventsFeedRuntimeLoader } from '@/features/feed/client-loader'
+import { FeedRuntime } from '@/features/feed/runtime'
+import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/feed/diagnostics'
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
@@ -1756,13 +1760,35 @@ const NoteList = forwardRef(
           toast.error(t('Feed full search invalid feed'))
           return
         }
-        const raw = await client.fetchEvents(relayUrls, finalFilter, {
-          cache: true,
-          globalTimeout: 22_000,
-          eoseTimeout: 3500,
-          firstRelayResultGraceMs: false
+        const runtime = new FeedRuntime({
+          descriptorKey: `feed-full-search:${timelineSubscriptionKey}`,
+          sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id),
+          cap: FEED_FULL_SEARCH_MERGE_CAP
         })
-        const merged = mergeEventBatchesById([], raw, FEED_FULL_SEARCH_MERGE_CAP)
+        const runtimeSnapshot = await runtime.load(
+          createFetchEventsFeedRuntimeLoader(client, {
+            subRequests: [{ urls: relayUrls, filter: finalFilter }],
+            cache: true,
+            globalTimeout: 22_000,
+            eoseTimeout: 3500,
+            firstRelayResultGraceMs: false
+          })
+        )
+        logFeedDiagnostics(
+          'feed-full-search',
+          buildFeedDiagnosticsSnapshot({
+            descriptor: createFeedDescriptor({
+              surface: 'search',
+              id: timelineSubscriptionKey,
+              mode: 'one-shot',
+              requests: [{ urls: relayUrls, filter: finalFilter }],
+              pagination: { enabled: false }
+            }),
+            relayPolicy: { urls: relayUrls, dropped: [] },
+            runtime: runtimeSnapshot
+          })
+        )
+        const merged = mergeEventBatchesById([], runtimeSnapshot.rows, FEED_FULL_SEARCH_MERGE_CAP)
         setFeedFullSearchEvents(merged)
         setShowCount(revealBatchSize ?? SHOW_COUNT)
         scrollToTop()
@@ -1790,6 +1816,7 @@ const NoteList = forwardRef(
       seeAllFeedEvents,
       areAlgoRelays,
       revealBatchSize,
+      timelineSubscriptionKey,
       scrollToTop,
       t
     ])
@@ -2407,30 +2434,44 @@ const NoteList = forwardRef(
               oneShotFirstRelayGraceMs === undefined
                 ? FIRST_RELAY_RESULT_GRACE_MS
                 : oneShotFirstRelayGraceMs
-            const batches = await Promise.all(
-              mappedSubRequests.map(({ urls, filter }) =>
-                client.fetchEvents(urls, filter, {
-                  firstRelayResultGraceMs: firstRelayGraceResolved,
-                  globalTimeout: oneShotGlobalTimeoutMs,
-                  eoseTimeout: oneShotEoseTimeoutMs,
-                  cache: true
-                })
-              )
+            const runtime = new FeedRuntime({
+              descriptorKey: timelineSubscriptionKey,
+              sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+            })
+            const runtimeSnapshot = await runtime.load(
+              createFetchEventsFeedRuntimeLoader(client, {
+                subRequests: mappedSubRequests,
+                cache: true,
+                globalTimeout: oneShotGlobalTimeoutMs,
+                eoseTimeout: oneShotEoseTimeoutMs,
+                firstRelayResultGraceMs: firstRelayGraceResolved
+              }),
+              userPulledRefresh
             )
             if (!effectActive || timelineEffectStale()) return undefined
-            if (batches.some((b) => b.length > 0)) {
+            logFeedDiagnostics(
+              oneShotDebugLabel ?? 'note-list-one-shot',
+              buildFeedDiagnosticsSnapshot({
+                descriptor: createFeedDescriptor({
+                  surface: 'custom',
+                  id: timelineSubscriptionKey,
+                  mode: 'one-shot',
+                  requests: mappedSubRequests,
+                  pagination: { enabled: false }
+                }),
+                relayPolicy: {
+                  urls: Array.from(new Set(mappedSubRequests.flatMap((request) => request.urls))),
+                  dropped: []
+                },
+                runtime: runtimeSnapshot
+              })
+            )
+            if (runtimeSnapshot.rawCount > 0) {
               feedRelayReturnedAnyEventRef.current = true
-            }
-            const byId = new Map<string, Event>()
-            for (const ev of batches.flat()) {
-              const prev = byId.get(ev.id)
-              if (!prev || ev.created_at > prev.created_at) {
-                byId.set(ev.id, ev)
-              }
             }
             const cap = oneShotMergedCap ?? ONE_SHOT_MERGED_CAP
             const isProgressiveLayers = !!progressiveWarmupQueryRef.current?.trim()
-            let relayOnly = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
+            let relayOnly = [...runtimeSnapshot.rows]
             if (!isProgressiveLayers) {
               relayOnly = relayOnly.slice(0, cap)
             }
@@ -2463,19 +2504,18 @@ const NoteList = forwardRef(
               }
               if (oneShotDebugLabel) {
                 const f0 = mappedSubRequests[0]?.filter
-                const batchEventCounts = batches.map((b) => b.length)
-                const rawTotal = batchEventCounts.reduce((s, n) => s + n, 0)
                 logger.info(`[${oneShotDebugLabel}] one-shot fetch merged`, {
                   relayUrlsPerSub: mappedSubRequests.map((r) => r.urls.length),
-                  batchEventCounts,
-                  rawTotal,
-                  dedupedCount: byId.size,
+                  rawTotal: runtimeSnapshot.rawCount,
+                  dedupedCount: runtimeSnapshot.rawCount,
+                  hiddenByRuntime: runtimeSnapshot.hiddenCount,
+                  emptyReason: runtimeSnapshot.emptyReason,
                   afterCap: merged.length,
                   cap,
                   filterAuthors: f0?.authors,
                   filterKinds: f0?.kinds,
                   filterLimit: f0?.limit,
-                  ...(rawTotal === 0
+                  ...(runtimeSnapshot.rawCount === 0
                     ? {
                         emptyHint:
                           'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (this tab uses native media kinds only: picture, NIP-71 video regular/addressable, voice).'
@@ -2489,13 +2529,12 @@ const NoteList = forwardRef(
             }
             if (oneShotDebugLabel && isProgressiveLayers) {
               const f0 = mappedSubRequests[0]?.filter
-              const batchEventCounts = batches.map((b) => b.length)
-              const rawTotal = batchEventCounts.reduce((s, n) => s + n, 0)
               logger.info(`[${oneShotDebugLabel}] one-shot progressive relay merge`, {
                 relayUrlsPerSub: mappedSubRequests.map((r) => r.urls.length),
-                batchEventCounts,
-                rawTotal,
-                dedupedCount: byId.size,
+                rawTotal: runtimeSnapshot.rawCount,
+                dedupedCount: runtimeSnapshot.rawCount,
+                hiddenByRuntime: runtimeSnapshot.hiddenCount,
+                emptyReason: runtimeSnapshot.emptyReason,
                 filterAuthors: f0?.authors,
                 filterKinds: f0?.kinds,
                 filterLimit: f0?.limit
@@ -3584,10 +3623,39 @@ const NoteList = forwardRef(
           let newEvents: Event[] = []
           try {
             const until = latestEvents.length ? latestEvents[latestEvents.length - 1].created_at - 1 : dayjs().unix()
-            newEvents = await client.loadMoreTimeline(
-              latestTimelineKey,
-              until,
-              LIMIT
+            const pageRuntime = new FeedRuntime({
+              descriptorKey: `timeline:${latestTimelineKey}`,
+              sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+            })
+            pageRuntime.seed(latestEvents, { hasMore: latestHasMore, nextCursor: until })
+            const pageSnapshot = await pageRuntime.loadMore(
+              async ({ cursor }) => {
+                newEvents = await client.loadMoreTimeline(latestTimelineKey, cursor ?? until, LIMIT)
+                return {
+                  relayEvents: newEvents,
+                  hasMore: newEvents.length > 0,
+                  nextCursor: newEvents.length
+                    ? Math.min(...newEvents.map((event) => event.created_at)) - 1
+                    : cursor
+                }
+              }
+            )
+            logFeedDiagnostics(
+              'note-list-load-more',
+              buildFeedDiagnosticsSnapshot({
+                descriptor: createFeedDescriptor({
+                  surface: 'custom',
+                  id: latestTimelineKey,
+                  mode: 'live',
+                  requests: subRequestsRef.current,
+                  pagination: { enabled: true }
+                }),
+                relayPolicy: {
+                  urls: Array.from(new Set(subRequestsRef.current.flatMap((request) => request.urls))),
+                  dropped: []
+                },
+                runtime: pageSnapshot
+              })
             )
             
             // CRITICAL FIX: Be extremely conservative about stopping the feed

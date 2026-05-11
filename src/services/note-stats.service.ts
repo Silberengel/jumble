@@ -480,7 +480,7 @@ class NoteStatsService {
     const add = (url: string | undefined) => {
       if (!url) return
       // Must use normalizeAnyRelayUrl, not normalizeUrl: the latter converts http(s)://
-      // index relay URLs into ws(s):// which then hit the WebSocket pool and get session strikes.
+      // index relay URLs into ws(s):// which then hit the WebSocket pool.
       const n = normalizeAnyRelayUrl(url)
       if (!n || blocked.has(n.toLowerCase()) || seen.has(n)) return
       seen.add(n)

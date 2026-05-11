@@ -17,22 +17,16 @@ import RelayIcon from '../RelayIcon'
 
 const MAX_ICONS = 14
 
-function rowMuted(connected: boolean, sessionStriked: boolean) {
-  return !connected || sessionStriked
+function rowMuted(connected: boolean) {
+  return !connected
 }
 
-function rowMenuClass(connected: boolean, sessionStriked: boolean) {
-  return cn(rowMuted(connected, sessionStriked) && 'opacity-50 text-muted-foreground')
+function rowMenuClass(connected: boolean) {
+  return cn(rowMuted(connected) && 'opacity-50 text-muted-foreground')
 }
 
-function rowTitle(
-  url: string,
-  connected: boolean,
-  sessionStriked: boolean,
-  t: (k: string) => string
-) {
+function rowTitle(url: string, connected: boolean, t: (k: string) => string) {
   const base = simplifyUrl(url)
-  if (sessionStriked) return `${base} — ${t('Relay session striked')}`
   if (!connected) return `${base} — ${t('Not connected')}`
   return base
 }
@@ -63,7 +57,7 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
         {t('Active relays')}
       </p>
       <div className="flex flex-wrap justify-center gap-1 xl:justify-start">
-        {shown.map(({ url, connected, sessionStriked }) => (
+        {shown.map(({ url, connected }) => (
           <Button
             key={url}
             type="button"
@@ -71,10 +65,10 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
             size="sm"
             className={cn(
               'h-5 w-5 min-h-5 min-w-5 shrink-0 rounded-full p-0 hover:bg-muted/80',
-              rowMuted(connected, sessionStriked) && 'opacity-40 grayscale'
+              rowMuted(connected) && 'opacity-40 grayscale'
             )}
-            title={rowTitle(url, connected, sessionStriked, t)}
-            aria-label={rowTitle(url, connected, sessionStriked, t)}
+            title={rowTitle(url, connected, t)}
+            aria-label={rowTitle(url, connected, t)}
             onClick={() => navigateToRelay(toRelay(url))}
           >
             <RelayIcon url={url} className="h-5 w-5" iconSize={11} />
@@ -99,11 +93,11 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
                 {t('More relays', { count: overflow })}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {overflowRows.map(({ url, connected, sessionStriked }) => (
+              {overflowRows.map(({ url, connected }) => (
                 <DropdownMenuItem
                   key={url}
-                  className={cn('min-w-0 gap-2', rowMenuClass(connected, sessionStriked))}
-                  title={rowTitle(url, connected, sessionStriked, t)}
+                  className={cn('min-w-0 gap-2', rowMenuClass(connected))}
+                  title={rowTitle(url, connected, t)}
                   onClick={() => navigateToRelay(toRelay(url))}
                 >
                   <RelayIcon url={url} className="h-5 w-5 shrink-0" iconSize={11} />

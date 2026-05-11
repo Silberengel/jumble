@@ -1,39 +1,29 @@
-# Logging System
+# Logging
 
-This document describes the logging system implemented to reduce console noise and improve performance.
+Imwald uses `src/lib/logger.ts` for application logs. Prefer it over direct `console.*` calls in shared code.
 
 ## Overview
 
-The application now uses a centralized logging system that:
-- Reduces console noise in production
-- Provides conditional debug logging
-- Improves performance by removing debug logs in production builds
-- Allows developers to enable debug logging when needed
+Current behavior:
+- Development without debug mode: `info`, `warn`, and `error` are logged with formatted prefixes.
+- Development with debug mode: `debug`, `info`, `warn`, `error`, component logs, and performance logs are available.
+- Production: only `warn` and `error` are emitted, without formatted timestamp/caller strings.
 
 ## Usage
 
-### For Developers
+### Browser Console
 
 In development mode, you can control logging from the browser console:
 
 ```javascript
-// Enable debug logging
-imwaldDebug.enable()
+imwaldLogger.setDebugMode(true)
 
-// Disable debug logging
-imwaldDebug.disable()
+imwaldLogger.setDebugMode(false)
 
-// Check current status
-imwaldDebug.status()
-
-// Use debug logging directly
-imwaldDebug.log('Debug message', data)
-imwaldDebug.warn('Warning message', data)
-imwaldDebug.error('Error message', data)
-imwaldDebug.perf('Performance message', data)
+imwaldLogger.isDebugEnabled()
 ```
 
-(`jumbleDebug` is still exposed as an alias for compatibility.)
+`jumbleLogger` is still exposed as a legacy alias in development.
 
 ### For Code
 
@@ -45,23 +35,23 @@ import logger from '@/lib/logger'
 // Debug logging (only shows in dev mode with debug enabled)
 logger.debug('Debug information', data)
 
-// Info logging (always shows)
+// Info logging (development only by default)
 logger.info('Important information', data)
 
-// Warning logging (always shows)
+// Warning logging
 logger.warn('Warning message', data)
 
-// Error logging (always shows)
+// Error logging
 logger.error('Error message', data)
 
-// Performance logging (only in dev mode)
+// Performance logging (development only)
 logger.perf('Performance metric', data)
 ```
 
 ## Log Levels
 
 - **debug**: Development debugging information (disabled in production)
-- **info**: Important application information (always enabled)
+- **info**: Development application information
 - **warn**: Warning messages (always enabled)
 - **error**: Error messages (always enabled)
 - **perf**: Performance metrics (development only)
@@ -74,38 +64,13 @@ The logger automatically configures itself based on:
 2. **Local Storage**: `imwald-debug=true` enables debug mode (legacy: `jumble-debug=true`)
 3. **Environment Variable**: `VITE_DEBUG=true` enables debug mode
 
-## Performance Impact
-
-- **Production**: Debug logs are completely removed, improving performance
-- **Development**: Debug logs are conditionally enabled, reducing noise
-- **Console Operations**: Reduced console.log calls improve browser performance
-
-## Migration
-
-The following files have been updated to use the new logging system:
-
-- `src/providers/FeedProvider.tsx` - Feed initialization and switching
-- `src/pages/primary/DiscussionsPage/index.tsx` - Vote counting and event fetching
-- `src/services/client.service.ts` - Relay operations and circuit breaker
-- `src/providers/NostrProvider/index.tsx` - Event signing and validation
-- `src/components/Note/index.tsx` - Component rendering
-- `src/PageManager.tsx` - Page rendering
-
-## Benefits
-
-1. **Reduced Console Noise**: Debug logs are hidden by default
-2. **Better Performance**: Fewer console operations in production
-3. **Developer Control**: Easy to enable debug logging when needed
-4. **Consistent Logging**: Centralized logging with consistent format
-5. **Production Ready**: Debug logs are completely removed in production builds
-
 ## Debug Mode
 
 To enable debug mode:
 
 1. **In Browser Console** (development only):
    ```javascript
-   imwaldDebug.enable()
+   imwaldLogger.setDebugMode(true)
    ```
 
 2. **Via Local Storage**:
@@ -118,4 +83,4 @@ To enable debug mode:
    VITE_DEBUG=true npm run dev
    ```
 
-Debug mode will show all debug-level logs with timestamps and log levels.
+Debug mode shows debug-level logs with timestamps, levels, and caller hints.

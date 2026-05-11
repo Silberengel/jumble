@@ -8,9 +8,6 @@ export const IMWALD_API_BASE_URL =
   (import.meta.env.VITE_JUMBLE_API_BASE_URL as string | undefined)?.trim() ||
   'https://api.jumble.imwald.eu'
 
-/** @deprecated Use {@link IMWALD_API_BASE_URL} */
-export const JUMBLE_API_BASE_URL = IMWALD_API_BASE_URL
-
 /** Git Republic web UI for repository links; override with VITE_GITREPUBLIC_WEB_BASE_URL for self-hosted. */
 export const GITREPUBLIC_WEB_BASE_URL = (
   (import.meta.env.VITE_GITREPUBLIC_WEB_BASE_URL as string | undefined) ?? 'https://gitrepublic.imwald.eu'
@@ -214,12 +211,6 @@ export const HTTP_TIMELINE_POLL_INTERVAL_MS = 45_000
 
 /** Subtracted from the polling `since` cursor so borderline events are not missed between polls. */
 export const HTTP_TIMELINE_POLL_SINCE_OVERLAP_SEC = 120
-
-/** Legacy name: was used to cap spell NoteList skeleton time; loading now ends on EOSE / first events / safety timeouts. Kept for forks. */
-export const SPELL_FEED_LOADING_MAX_MS = 1000
-
-/** @deprecated Alias of {@link SPELL_FEED_LOADING_MAX_MS}. */
-export const SPELL_FEED_FIRST_RELAY_GRACE_MS = SPELL_FEED_LOADING_MAX_MS
 
 /**
  * Implicit query feed grace ({@link FIRST_RELAY_RESULT_GRACE_MS}) applies only when the largest `limit` among
@@ -973,8 +964,6 @@ export const ZAP_STREAM_WATCH_URL_REGEX =
 export const IMWALD_MAINTAINER_PUBKEY =
   'f4eb8e62add1340b9cadcd9861e669b2e907cea534e0f7f3ac974c11c758a51a'
 
-/** @deprecated Use {@link IMWALD_MAINTAINER_PUBKEY} */
-export const JUMBLE_PUBKEY = IMWALD_MAINTAINER_PUBKEY
 export const CODY_PUBKEY = '8125b911ed0e94dbe3008a0be48cfe5cd0c0b05923cfff917ae7e87da8400883'
 export const SILBERENGEL_PUBKEY = 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1'
 

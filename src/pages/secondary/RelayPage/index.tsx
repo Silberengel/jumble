@@ -4,7 +4,6 @@ import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
-import client from '@/services/client.service'
 import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
 import NotFoundPage from '../NotFoundPage'
 
@@ -15,9 +14,8 @@ const RelayPage = forwardRef(({ url, index, hideTitlebar = false }: { url?: stri
   const title = useMemo(() => (url ? simplifyUrl(url) : undefined), [url])
 
   const bumpFeed = useCallback(() => {
-    if (normalizedUrl) client.clearSessionRelayStrikeForUrl(normalizedUrl)
     feedRef.current?.refresh()
-  }, [normalizedUrl])
+  }, [])
 
   useEffect(() => {
     if (!hideTitlebar) {

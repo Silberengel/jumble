@@ -17,7 +17,6 @@ import {
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
-import { stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 const blockedSet = (blockedRelays: string[]) =>
@@ -51,7 +50,7 @@ export function getFavoritesFeedRelayUrls(
   })
   const base = visible.length > 0 ? visible : DEFAULT_FAVORITE_RELAYS
   return feedRelayPolicyUrls(
-    [{ source: 'favorites', urls: stripNostrLandAggrRelay(base) }],
+    [{ source: 'favorites', urls: base }],
     {
       operation: 'favorites-feed',
       blockedRelays,
@@ -128,16 +127,6 @@ export type ReadRelayPriorityOptions = {
    * relays in `SOCIAL_KIND_BLOCKED_RELAY_URLS` before capping.
    */
   applySocialKindBlockedFilter?: boolean
-  /**
-   * When false, ignore each subrequest’s `urls` and use only the shared prioritized stack (rare).
-   * Default true.
-   */
-  mergeSubrequestRelayUrls?: boolean
-  /**
-   * When true, fold `r.urls` into the author-outbox tier only (no extra first layer). Use for GIF / explicit spell relays
-   * that should rank with author outboxes, not ahead of user inboxes. Default false: prepend `r.urls` before user tiers.
-   */
-  mergeSubrequestRelaysIntoAuthorTier?: boolean
 }
 
 /**
@@ -216,9 +205,7 @@ export function buildProfilePageReadRelayUrls(
 
 /**
  * Per subrequest: shared inbox → author/favorites → fast read stack, normalized, user-blocked and (when applicable)
- * social-kind-blocked stripped, deduped, capped. Subrequest `urls` are prepended first by default (following shards);
- * set {@link ReadRelayPriorityOptions.mergeSubrequestRelaysIntoAuthorTier} to fold them into the author tier only
- * (e.g. curated GIF / spell relay lists).
+ * social-kind-blocked stripped, deduped, capped. Subrequest `urls` are prepended first so explicit shard hints win.
  */
 export function augmentSubRequestsWithFavoritesFastReadAndInbox(
   requests: TFeedSubRequest[],
@@ -234,8 +221,6 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
     if (n) userReadSocialExempt.add(n)
   }
   return requests.map((r) => {
-    const useSubUrls = options?.mergeSubrequestRelayUrls !== false
-    const foldIntoAuthor = options?.mergeSubrequestRelaysIntoAuthorTier === true
     const applySocial =
       options?.applySocialKindBlockedFilter !== undefined
         ? options.applySocialKindBlockedFilter
@@ -243,37 +228,19 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
 
     const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
 
-    if (!useSubUrls) {
-      return {
-        ...r,
-        urls: buildPrioritizedReadRelayUrls({
-          userReadRelays: userInboxReadRelays,
-          userWriteRelays: options?.userWriteRelays ?? [],
-          authorWriteRelays: options?.authorWriteRelays ?? [],
-          favoriteRelays: favorites,
-          blockedRelays,
-          maxRelays: max,
-          applySocialKindBlockedFilter: applySocial
-        })
-      }
-    }
-
     const authorOnly = dedupeNormalizeRelayUrlsOrdered(options?.authorWriteRelays ?? [])
-    const authorTier = foldIntoAuthor
-      ? dedupeNormalizeRelayUrlsOrdered([...authorOnly, ...r.urls])
-      : authorOnly
 
     const coreLayers = buildReadRelayPriorityLayers({
       userReadRelays: userInboxReadRelays,
       userWriteRelays: options?.userWriteRelays ?? [],
-      authorWriteRelays: authorTier,
+      authorWriteRelays: authorOnly,
       favoriteRelays: favorites
     })
 
-    const layers = foldIntoAuthor ? coreLayers : [relayUrlsLocalsFirst(r.urls), ...coreLayers]
+    const layers = [relayUrlsLocalsFirst(r.urls), ...coreLayers]
 
     const policyLayers: FeedRelayLayer[] = layers.map((urls, index) => ({
-      source: index === 0 && !foldIntoAuthor ? 'explicit' : index === 0 ? 'viewer-read' : 'fallback',
+      source: index === 0 ? 'explicit' : index === 1 ? 'viewer-read' : 'fallback',
       urls
     }))
     return {

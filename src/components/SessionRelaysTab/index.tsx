@@ -3,16 +3,14 @@ import relayInfoService from '@/services/relay-info.service'
 import { isHttpRelayUrl } from '@/lib/url'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Zap, RotateCcw } from 'lucide-react'
+import { RefreshCw, CheckCircle2, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TRelayInfo } from '@/types'
 import { useNostr } from '@/providers/NostrProvider'
 
 type SessionDebug = {
-  strikedUrls: string[]
   scoredRelays: { url: string; successCount: number; avgLatencyMs: number }[]
   presetWorking: string[]
-  presetStriked: string[]
 }
 
 function loadDebug(): SessionDebug {
@@ -38,8 +36,6 @@ export default function SessionRelaysTab() {
     const urls = Array.from(
       new Set([
         ...debug.presetWorking,
-        ...debug.presetStriked,
-        ...debug.strikedUrls,
         ...debug.scoredRelays.map((r) => r.url)
       ])
     )
@@ -57,11 +53,6 @@ export default function SessionRelaysTab() {
       cancelled = true
     }
   }, [debug])
-
-  const clearStrikeForUrl = (url: string) => {
-    client.clearSessionRelayStrikeForUrl(url)
-    refresh()
-  }
 
   const formatRelayAddress = (url: string) => {
     try {
@@ -147,38 +138,6 @@ export default function SessionRelaysTab() {
 
       <section className="space-y-2">
         <h3 className="text-sm font-medium flex items-center gap-2">
-          <XCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-          {t('Session relays preset striked')}
-        </h3>
-        <p className="text-muted-foreground text-xs">
-          {t('Session relays preset striked hint')}
-        </p>
-        <ul className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
-          {debug.presetStriked.length === 0 ? (
-            <li className="text-muted-foreground">{t('None')}</li>
-          ) : (
-            debug.presetStriked.map((url) => (
-              <li key={url} className="flex items-center justify-between gap-2">
-                <RelayNameWithTransport url={url} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1 px-2 text-xs"
-                  title={t('Session relays clear strike hint')}
-                  onClick={() => clearStrikeForUrl(url)}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                  {t('Session relays clear strike')}
-                </Button>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium flex items-center gap-2">
           <Zap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           {t('Session relays scored random')}
         </h3>
@@ -201,31 +160,6 @@ export default function SessionRelaysTab() {
         </ul>
       </section>
 
-      {debug.strikedUrls.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            {t('Session relays all striked')}
-          </h3>
-          <ul className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
-            {debug.strikedUrls.map((url) => (
-              <li key={url} className="flex items-center justify-between gap-2 text-muted-foreground">
-                <RelayNameWithTransport url={url} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1 px-2 text-xs text-foreground"
-                  title={t('Session relays clear strike hint')}
-                  onClick={() => clearStrikeForUrl(url)}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                  {t('Session relays clear strike')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </div>
   )
 }

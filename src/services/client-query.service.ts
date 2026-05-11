@@ -28,7 +28,7 @@ import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay
 import logger from '@/lib/logger'
 import { isHttpRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
 import { RelaySubscribeOpBatch } from '@/services/relay-operation-log.service'
-import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-strike'
+import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
@@ -160,23 +160,17 @@ export interface SubscribeCallbacks {
 }
 
 export type QueryServiceRelaySessionOptions = {
-  /** Skip opening REQ/publish paths to this normalized URL for the rest of the page session. */
-  shouldSkipRelayForSession?: (normalizedUrl: string) => boolean
-  /** After failed `ensureRelay` (timeout / connection error), increment client session strike counter. */
-  onRelayConnectionFailure?: (normalizedUrl: string) => void
-  /** NOTICE "failed to fetch events" (and similar) → same strike treatment as connection failure. */
-  onRelayNoticeStrike?: (normalizedUrl: string, noticeMessage: string) => void
+  /** NOTICE "failed to fetch events" and similar backend failures. */
+  onRelayNoticeFetchFailure?: (normalizedUrl: string, noticeMessage: string) => void
 }
 
 export class QueryService {
   private pool: SimplePool
   private signer?: ISigner
   private signerType?: TSignerType
-  private shouldSkipRelayForSession?: (normalizedUrl: string) => boolean
-  private onRelayConnectionFailure?: (normalizedUrl: string) => void
   /** Optional: ingest every resolved `query()` result (e.g. session event LRU). */
   private onQueryResultIngest?: (events: NEvent[]) => void
-  private onRelayNoticeStrike?: (normalizedUrl: string, noticeMessage: string) => void
+  private onRelayNoticeFetchFailure?: (normalizedUrl: string, noticeMessage: string) => void
 
   /** Max concurrent REQ subscriptions per relay URL (see {@link MAX_CONCURRENT_SUBS_PER_RELAY}). */
   private static readonly SUB_SLOT_CAP_PER_RELAY = MAX_CONCURRENT_SUBS_PER_RELAY
@@ -209,9 +203,7 @@ export class QueryService {
 
   constructor(pool: SimplePool, relaySession?: QueryServiceRelaySessionOptions) {
     this.pool = pool
-    this.shouldSkipRelayForSession = relaySession?.shouldSkipRelayForSession
-    this.onRelayConnectionFailure = relaySession?.onRelayConnectionFailure
-    this.onRelayNoticeStrike = relaySession?.onRelayNoticeStrike
+    this.onRelayNoticeFetchFailure = relaySession?.onRelayNoticeFetchFailure
   }
 
   /** Wire after {@link EventService} exists: each `query()` / `fetchEvents` event is ingested from `onevent` (session LRU). */
@@ -354,7 +346,7 @@ export class QueryService {
           .map((u) => normalizeHttpRelayUrl(u) || u)
           .filter(Boolean)
       )
-    ).filter((base) => !this.shouldSkipRelayForSession?.(base))
+    )
     const wsQueryUrls = urls.filter((u) => !isHttpRelayUrl(u))
 
     return await new Promise<NEvent[]>((resolve) => {
@@ -377,10 +369,7 @@ export class QueryService {
           : Promise.allSettled(
               httpRelayBases.map(async (base) => {
                 try {
-                  const evts = await queryIndexRelay(base, effectiveFilter, {
-                    signal: abortHttp.signal,
-                    onHardFailure: () => this.onRelayConnectionFailure?.(base)
-                  })
+                  const evts = await queryIndexRelay(base, effectiveFilter, { signal: abortHttp.signal })
                   for (const evt of evts) {
                     if (resolved) return
                     eventCount++
@@ -611,13 +600,6 @@ export class QueryService {
         relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
       }
     }
-    if (this.shouldSkipRelayForSession) {
-      relays = relays.filter((url) => {
-        const n = normalizeUrl(url) || url
-        return !this.shouldSkipRelayForSession!(n)
-      })
-    }
-
     relays = relays.filter((url) => !isHttpRelayUrl(url))
 
     if (relays.length === 0) {
@@ -702,9 +684,8 @@ export class QueryService {
             relay = await this.pool.ensureRelay(url, {
               connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
             })
-            patchRelayNoticeForFetchFailures(relay, relayKey, this.onRelayNoticeStrike)
+            patchRelayNoticeForFetchFailures(relay, relayKey, this.onRelayNoticeFetchFailure)
           } catch (err) {
-            this.onRelayConnectionFailure?.(relayKey)
             this.releaseSubSlot(relayKey)
             handleClose(i, (err as Error)?.message ?? String(err))
             return
@@ -749,10 +730,9 @@ export class QueryService {
                         liveRelay = await this.pool.ensureRelay(url, {
                           connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
                         })
-                        patchRelayNoticeForFetchFailures(liveRelay, relayKey, this.onRelayNoticeStrike)
+                        patchRelayNoticeForFetchFailures(liveRelay, relayKey, this.onRelayNoticeFetchFailure)
                       } catch (err) {
                         nip42ResubscribePending.delete(i)
-                        this.onRelayConnectionFailure?.(relayKey)
                         this.releaseSubSlot(relayKey)
                         handleClose(i, (err as Error)?.message ?? String(err))
                         return
