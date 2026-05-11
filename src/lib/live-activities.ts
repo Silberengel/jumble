@@ -1,10 +1,10 @@
 import { FAST_READ_RELAY_URLS } from '@/constants'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { isAudio, isHlsPlaylistUrl, isVideo } from '@/lib/url'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import {
   dedupeNormalizeRelayUrlsOrdered,
   MAX_REQ_RELAY_URLS,
-  mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -683,16 +683,32 @@ export function buildLiveActivitiesRelayUrls(options: {
     const fast = dedupeNormalizeRelayUrlsOrdered(
       FAST_READ_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
     )
-    return mergeRelayPriorityLayers([fav, read, write, fast], blockedRelays, MAX_REQ_RELAY_URLS, {
-      applySocialKindBlockedFilter: true
+    return feedRelayPolicyUrls([
+      { source: 'favorites', urls: fav },
+      { source: 'viewer-read', urls: read },
+      { source: 'viewer-write', urls: write },
+      { source: 'fast-read', urls: fast }
+    ], {
+      operation: 'read',
+      blockedRelays,
+      maxRelays: MAX_REQ_RELAY_URLS,
+      applySocialKindBlockedFilter: true,
+      allowThirdPartyLocalRelays: true
     })
   }
   const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays))
   const fast = dedupeNormalizeRelayUrlsOrdered(
     FAST_READ_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
   )
-  return mergeRelayPriorityLayers([fav, fast], blockedRelays, MAX_REQ_RELAY_URLS, {
-    applySocialKindBlockedFilter: true
+  return feedRelayPolicyUrls([
+    { source: 'favorites', urls: fav },
+    { source: 'fast-read', urls: fast }
+  ], {
+    operation: 'read',
+    blockedRelays,
+    maxRelays: MAX_REQ_RELAY_URLS,
+    applySocialKindBlockedFilter: true,
+    allowThirdPartyLocalRelays: true
   })
 }
 

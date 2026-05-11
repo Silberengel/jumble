@@ -10,8 +10,8 @@
  */
 
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { getCacheRelayUrls } from './private-relays'
 import client from '@/services/client.service'
@@ -246,7 +246,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   const merged = Array.from(relayUrls)
-  return ensureNostrLandAggrRelay(merged, { blockedRelays })
+  return feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
+    operation: 'read',
+    blockedRelays,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
+  })
 }
 
 /**
@@ -371,9 +376,12 @@ export async function buildPollResultsReadRelayUrls(options: {
   pushLayer([...FAST_READ_RELAY_URLS])
   pushLayer(authorReadSlice)
 
-  return ensureNostrLandAggrRelay(ordered.slice(0, POLL_RESULTS_MAX_RELAYS), {
+  return feedRelayPolicyUrls([{ source: 'fallback', urls: ordered }], {
+    operation: 'read',
     blockedRelays,
-    maxRelays: POLL_RESULTS_MAX_RELAYS
+    maxRelays: POLL_RESULTS_MAX_RELAYS,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
   })
 }
 

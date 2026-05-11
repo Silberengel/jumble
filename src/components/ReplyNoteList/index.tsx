@@ -48,7 +48,7 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import {
@@ -1224,8 +1224,11 @@ function ReplyNoteList({
             filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
           }
 
-          const relayUrlsForThreadReq = ensureNostrLandAggrRelay(finalRelayUrls, {
-            blockedRelays: replyBlockedRelays
+          const relayUrlsForThreadReq = feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
+            operation: 'read',
+            blockedRelays: replyBlockedRelays,
+            applySocialKindBlockedFilter: false,
+            allowThirdPartyLocalRelays: true
           })
 
           // For URL threads: stream events as they arrive from each relay so replies appear

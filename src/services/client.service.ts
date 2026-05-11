@@ -111,7 +111,6 @@ import {
   buildPrioritizedWriteRelayUrls,
   dedupeNormalizeRelayUrlsOrdered,
   filterContextAuthorReadRelaysForPublish,
-  mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
 import {
@@ -138,6 +137,8 @@ import {
   normalizeUrl,
   simplifyUrl
 } from '@/lib/url'
+import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
@@ -926,12 +927,18 @@ class ClientService extends EventTarget {
       const authorOverflow = authorWriteOrdered.slice(authorTier1Cap)
       const publishCap =
         recipientReadDeduped.length > 0 ? PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS : MAX_PUBLISH_RELAYS
-      let pubRelays = mergeRelayPriorityLayers(
-        [authorPrimary, recipientReadDeduped, authorOverflow],
-        blockedRelayUrls,
-        publishCap,
-        { applySocialKindBlockedFilter: false }
-      )
+      let pubRelays = feedRelayPolicyUrls([
+        { source: 'viewer-write', urls: authorPrimary },
+        { source: 'author-read', urls: recipientReadDeduped },
+        { source: 'viewer-write', urls: authorOverflow }
+      ], {
+        operation: 'write',
+        blockedRelays: blockedRelayUrls,
+        maxRelays: publishCap,
+        nostrLandAggr: 'never',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
+      })
       pubRelays = this.filterPublishingRelays(pubRelays, event)
       logger.debug('[DetermineTargetRelays] Public message / calendar RSVP: author outbox + recipient inboxes only', {
         kind: event.kind,
@@ -941,12 +948,14 @@ class ClientService extends EventTarget {
       })
       if (pubRelays.length > 0) return pubRelays
       return this.filterPublishingRelays(
-        mergeRelayPriorityLayers(
-          [relayUrlsLocalsFirst([...FAST_WRITE_RELAY_URLS])],
-          blockedRelayUrls,
-          MAX_PUBLISH_RELAYS,
-          { applySocialKindBlockedFilter: false }
-        ),
+        feedRelayPolicyUrls([{ source: 'fast-write', urls: relayUrlsLocalsFirst([...FAST_WRITE_RELAY_URLS]) }], {
+          operation: 'write',
+          blockedRelays: blockedRelayUrls,
+          maxRelays: MAX_PUBLISH_RELAYS,
+          nostrLandAggr: 'never',
+          applySocialKindBlockedFilter: false,
+          allowThirdPartyLocalRelays: true
+        }),
         event
       )
     }
@@ -1774,18 +1783,9 @@ class ClientService extends EventTarget {
   }
 
   private generateTimelineKey(urls: string[], filter: Filter) {
-    const stableFilter: any = {}
-    Object.entries(filter)
-      .sort()
-      .forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          stableFilter[key] = [...value].sort()
-        }
-        stableFilter[key] = value
-      })
     const paramsStr = JSON.stringify({
-      urls: [...urls].sort(),
-      filter: stableFilter
+      urls: canonicalRelayUrls(urls),
+      filter: canonicalFeedFilter(filter)
     })
     const encoder = new TextEncoder()
     const data = encoder.encode(paramsStr)

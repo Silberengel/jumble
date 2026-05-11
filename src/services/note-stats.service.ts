@@ -27,8 +27,8 @@ import {
   getWebExternalReactionTargetUrl,
   rssArticleStableEventId
 } from '@/lib/rss-article'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { getEmojiInfosFromEmojiTags, getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
@@ -541,8 +541,11 @@ class NoteStatsService {
       // ignore
     }
 
-    return ensureNostrLandAggrRelay(Array.from(seen), {
-      blockedRelays: E_TAG_FILTER_BLOCKED_RELAY_URLS
+    return feedRelayPolicyUrls([{ source: 'fallback', urls: Array.from(seen) }], {
+      operation: 'read',
+      blockedRelays: E_TAG_FILTER_BLOCKED_RELAY_URLS,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
     })
   }
 

@@ -3,8 +3,9 @@
  * relays — no profile outboxes or global read mirrors, to limit abusive report spam.
  */
 
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { mergeRelayPriorityLayers, relayUrlsLocalsFirst } from '@/lib/relay-url-priority'
+import { relayUrlsLocalsFirst } from '@/lib/relay-url-priority'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 
@@ -21,7 +22,14 @@ export async function buildProfileReportRelayUrls(options: {
     .map((u) => normalizeUrl(u) || u)
     .filter(Boolean) as string[]
   const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-  return mergeRelayPriorityLayers([favorites, inbox], blockedRelays, MAX_PROFILE_REPORT_RELAYS, {
-    applySocialKindBlockedFilter: false
+  return feedRelayPolicyUrls([
+    { source: 'favorites', urls: favorites },
+    { source: 'viewer-read', urls: inbox }
+  ], {
+    operation: 'read',
+    blockedRelays,
+    maxRelays: MAX_PROFILE_REPORT_RELAYS,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
   })
 }

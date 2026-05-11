@@ -14,10 +14,10 @@ import {
   buildReadRelayPriorityLayers,
   dedupeNormalizeRelayUrlsOrdered,
   MAX_REQ_RELAY_URLS,
-  mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
-import { ensureNostrLandAggrRelay, stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
+import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
+import { stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 const blockedSet = (blockedRelays: string[]) =>
@@ -50,15 +50,16 @@ export function getFavoritesFeedRelayUrls(
     return k && !blocked.has(k)
   })
   const base = visible.length > 0 ? visible : DEFAULT_FAVORITE_RELAYS
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const u of base) {
-    const k = normalizeAnyRelayUrl(u) || u
-    if (!k || seen.has(k)) continue
-    seen.add(k)
-    out.push(k)
-  }
-  return stripNostrLandAggrRelay(out)
+  return feedRelayPolicyUrls(
+    [{ source: 'favorites', urls: stripNostrLandAggrRelay(base) }],
+    {
+      operation: 'favorites-feed',
+      blockedRelays,
+      nostrLandAggr: 'never',
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }
+  )
 }
 
 /**
@@ -271,15 +272,20 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
 
     const layers = foldIntoAuthor ? coreLayers : [relayUrlsLocalsFirst(r.urls), ...coreLayers]
 
+    const policyLayers: FeedRelayLayer[] = layers.map((urls, index) => ({
+      source: index === 0 && !foldIntoAuthor ? 'explicit' : index === 0 ? 'viewer-read' : 'fallback',
+      urls
+    }))
     return {
       ...r,
-      urls: ensureNostrLandAggrRelay(
-        mergeRelayPriorityLayers(layers, blockedRelays, max, {
-          applySocialKindBlockedFilter: applySocial,
-          exemptNormUrlsFromSocialKindBlock: userReadSocialExempt
-        }),
-        { blockedRelays, maxRelays: max }
-      )
+      urls: feedRelayPolicyUrls(policyLayers, {
+        operation: 'read',
+        blockedRelays,
+        maxRelays: max,
+        applySocialKindBlockedFilter: applySocial,
+        socialKindBlockedExemptRelays: [...userReadSocialExempt],
+        allowThirdPartyLocalRelays: true
+      })
     }
   })
 }

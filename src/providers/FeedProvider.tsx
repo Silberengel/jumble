@@ -1,6 +1,6 @@
-import { getFavoritesFeedRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { getRelaySetFromEvent, getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
-import { stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import logger from '@/lib/logger'
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
@@ -22,6 +22,23 @@ function relayUrlListIdentity(urls: string[]): string {
     .filter(Boolean)
     .sort()
     .join('\n')
+}
+
+function buildAllFavoritesFeedRelayUrls(
+  favoriteRelays: string[],
+  blockedRelays: string[],
+  extraFeedRelayUrls: string[]
+): string[] {
+  return feedRelayPolicyUrls([
+    { source: 'favorites', urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays) },
+    { source: 'fallback', urls: extraFeedRelayUrls }
+  ], {
+    operation: 'favorites-feed',
+    blockedRelays,
+    nostrLandAggr: 'never',
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
+  })
 }
 
 export function FeedProvider({ children }: { children: React.ReactNode }) {
@@ -48,16 +65,14 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   }, [cacheRelayListEvent, httpRelayListEvent])
   /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
   const [relayUrls, setRelayUrls] = useState<string[]>(() =>
-    stripNostrLandAggrRelay(
-      mergeRelayUrlLayers([getFavoritesFeedRelayUrls([], []), [buildWispTrendingNotesRelayUrl()]], [])
-    )
+    buildAllFavoritesFeedRelayUrls([], [], [buildWispTrendingNotesRelayUrl()])
   )
   const [isReady, setIsReady] = useState(true)
   const [feedInfo, setFeedInfo] = useState<TFeedInfo>({
     feedType: 'all-favorites'
   })
   const feedInfoRef = useRef<TFeedInfo>(feedInfo)
-  /** Same logical list as {@link mergeRelayUrlLayers} result — reuse array ref so NoteList does not re-subscribe. */
+  /** Same logical relay policy result — reuse array ref so NoteList does not re-subscribe. */
   const setRelayUrlsIfChanged = useCallback((next: string[]) => {
     setRelayUrls((prev) => {
       if (relayUrlListIdentity(prev) === relayUrlListIdentity(next)) return prev
@@ -140,10 +155,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       return
     }
     if (feedType === 'all-favorites') {
-      const baseRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-      const finalRelays = stripNostrLandAggrRelay(
-        mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
-      )
+      const finalRelays = buildAllFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, extraFeedRelayUrls)
       logger.debug('Switching to all-favorites, finalRelays:', finalRelays)
       const newFeedInfo = { feedType }
       setFeedInfo(newFeedInfo)
@@ -238,10 +250,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   // Update relay URLs when favoriteRelays, blocked, or extra relay lists change while in all-favorites mode
   useEffect(() => {
     if (feedInfo.feedType !== 'all-favorites') return
-    const baseRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-    const finalRelays = stripNostrLandAggrRelay(
-      mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
-    )
+    const finalRelays = buildAllFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, extraFeedRelayUrls)
     logger.debug('Updating relay URLs for all-favorites:', finalRelays)
     // Same logical list can be merged into a new array each run; keep the previous reference so
     // feed consumers (RelaysFeed → NoteList relay subscription) do not re-enter effects in a tight loop.

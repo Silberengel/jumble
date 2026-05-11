@@ -20,11 +20,10 @@ import {
 import { shouldFilterEvent } from '@/lib/event-filtering'
 import {
   isRelayUrlStrictSupersetIdentityKey,
-  isSpellSubRequestsSameFiltersDifferentRelays,
-  stableSpellFeedFilterKey
+  isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
 import { isTouchDevice } from '@/lib/utils'
@@ -91,6 +90,12 @@ import {
 } from '@/components/ui/select'
 import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
 import MediaGridItem from '../MediaGridItem'
+import {
+  buildFeedSessionSnapshotKey,
+  legacyFeedSubscriptionKey,
+  stableFeedKindKey
+} from '@/features/feed/descriptor'
+import { mapNoteListSubRequestsForTimeline } from '@/features/feed/note-list-requests'
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
@@ -934,23 +939,11 @@ const NoteList = forwardRef(
     )
     
     // Memoize subRequests serialization to avoid expensive JSON.stringify on every render
-    const subRequestsKey = useMemo(() => {
-      return JSON.stringify(
-        subRequests.map((req) => ({
-          urls: [...req.urls].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort(),
-          filter: stableSpellFeedFilterKey(req.filter)
-        }))
-      )
-    }, [subRequests])
+    const subRequestsKey = useMemo(() => legacyFeedSubscriptionKey(subRequests), [subRequests])
 
     const followingFeedDeltaSubRequestsKey = useMemo(
       () =>
-        JSON.stringify(
-          (followingFeedDeltaSubRequests ?? []).map((req) => ({
-            urls: [...req.urls].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort(),
-            filter: stableSpellFeedFilterKey(req.filter)
-          }))
-        ),
+        legacyFeedSubscriptionKey(followingFeedDeltaSubRequests ?? []),
       [followingFeedDeltaSubRequests]
     )
 
@@ -962,51 +955,16 @@ const NoteList = forwardRef(
     const mapLiveSubRequestsForTimeline = useCallback(
       (requests: TFeedSubRequest[]) => {
         const defaultKinds = effectiveShowKinds.length > 0 ? effectiveShowKinds : [kinds.ShortTextNote]
-        const seeAllNoSpell = seeAllFeedEvents && !useFilterAsIs
-        return requests.map(({ urls, filter }) => {
-          const baseLimit = filter.limit ?? (areAlgoRelays ? ALGO_LIMIT : LIMIT)
-          if (useFilterAsIs) {
-            const hasKindsInRequest = Array.isArray(filter.kinds) && filter.kinds.length > 0
-            if (allowKindlessRelayExplore && urls.length === 1 && !hasKindsInRequest) {
-              const finalFilter: Filter = {
-                ...filter,
-                limit: filter.limit ?? RELAY_EXPLORE_LIMIT
-              }
-              delete finalFilter.kinds
-              return { urls, filter: finalFilter }
-            }
-            const finalFilter: Filter = { ...filter, limit: baseLimit }
-            if (clientSideKindFilter) {
-              if (hasKindsInRequest) {
-                finalFilter.kinds = filter.kinds
-              } else {
-                delete finalFilter.kinds
-              }
-            } else if (hasKindsInRequest) {
-              finalFilter.kinds = filter.kinds
-            } else {
-              finalFilter.kinds = defaultKinds
-            }
-            return { urls, filter: finalFilter }
-          }
-          if (seeAllNoSpell) {
-            const { kinds: _omitKinds, ...rest } = filter
-            return {
-              urls,
-              filter: {
-                ...rest,
-                limit: areAlgoRelays ? ALGO_LIMIT : LIMIT
-              }
-            }
-          }
-          return {
-            urls,
-            filter: {
-              ...filter,
-              kinds: defaultKinds,
-              limit: areAlgoRelays ? ALGO_LIMIT : LIMIT
-            }
-          }
+        return mapNoteListSubRequestsForTimeline(requests, {
+          defaultKinds,
+          seeAllFeedEvents,
+          useFilterAsIs,
+          areAlgoRelays,
+          allowKindlessRelayExplore,
+          clientSideKindFilter,
+          limit: LIMIT,
+          algoLimit: ALGO_LIMIT,
+          relayExploreLimit: RELAY_EXPLORE_LIMIT
         })
       },
       [
@@ -1118,12 +1076,7 @@ const NoteList = forwardRef(
     const subRequestsRef = useRef(subRequests)
     subRequestsRef.current = subRequests
 
-    // Stable key for kind filter so subscription effect doesn't re-run on parent re-renders with same kinds
-    // Use sorted array and JSON.stringify to create a stable key that only changes when content changes
-    const showKindsKey = useMemo(() => {
-      if (!effectiveShowKinds || effectiveShowKinds.length === 0) return ''
-      return JSON.stringify([...effectiveShowKinds].sort((a, b) => a - b))
-    }, [effectiveShowKinds])
+    const showKindsKey = useMemo(() => stableFeedKindKey(effectiveShowKinds), [effectiveShowKinds])
 
     /**
      * Session snapshot identity: feed + kind UI toggles that affect **REQ** / merged rows.
@@ -1132,18 +1085,16 @@ const NoteList = forwardRef(
      */
     const sessionSnapshotIdentityKey = useMemo(
       () =>
-        JSON.stringify({
-          feed: timelineSubscriptionKey,
-          ...(homeFeedListMode ? { homeSurface: homeFeedListMode } : {}),
-          ...(allowKindlessRelayExplore
-            ? { relayKindless: true, showAllKinds }
-            : {
-                kinds: showKindsKey,
-                op: showKind1OPs,
-                rep: showKind1Replies,
-                c1111: showKind1111,
-                seeAll: seeAllFeedEvents
-              })
+        buildFeedSessionSnapshotKey({
+          feedKey: timelineSubscriptionKey,
+          homeSurface: homeFeedListMode,
+          allowKindlessRelayExplore,
+          showAllKinds,
+          kindsKey: showKindsKey,
+          showKind1OPs,
+          showKind1Replies,
+          showKind1111,
+          seeAllFeedEvents
         }),
       [
         timelineSubscriptionKey,

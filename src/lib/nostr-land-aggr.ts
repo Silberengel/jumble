@@ -91,27 +91,3 @@ export function stripNostrLandAggrRelay(urls: readonly string[]): string[] {
   }
   return out
 }
-
-/**
- * Feed/read surfaces should always hit the nostr.land aggregator. Prepend it before relay caps
- * can drop it, unless the user explicitly blocked it for that surface.
- */
-export function ensureNostrLandAggrRelay(
-  urls: readonly string[],
-  options: { blockedRelays?: readonly string[]; maxRelays?: number } = {}
-): string[] {
-  const blocked = new Set((options.blockedRelays ?? []).map(canonWs))
-  const out: string[] = []
-  const seen = new Set<string>()
-  const push = (u: string) => {
-    const c = canonWs(u)
-    if (!c || blocked.has(c) || seen.has(c)) return
-    seen.add(c)
-    out.push(normalizeAnyRelayUrl(u) || u.trim())
-  }
-  push(AGGR_NOSTR_LAND_WSS)
-  for (const u of urls) {
-    push(u)
-  }
-  return typeof options.maxRelays === 'number' ? out.slice(0, options.maxRelays) : out
-}

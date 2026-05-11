@@ -1,11 +1,10 @@
 import {
   FAST_READ_RELAY_URLS,
   FAST_WRITE_RELAY_URLS,
-  SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_PUBLISH_RELAYS,
   MAX_REQ_RELAY_URLS
 } from '@/constants'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
+import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 
 export { MAX_REQ_RELAY_URLS }
@@ -52,68 +51,6 @@ export function relayUrlsLocalsFirst(urls: string[]): string[] {
     else remote.push(n)
   }
   return dedupeNormalizeRelayUrlsOrdered([...local, ...remote])
-}
-
-function blockedNormSet(blockedRelays: string[] | undefined): Set<string> {
-  return new Set(
-    (blockedRelays ?? []).map((b) => normalizeAnyRelayUrl(b) || b.trim()).filter(Boolean)
-  )
-}
-
-let socialKindBlockedNormCache: Set<string> | undefined
-function socialKindBlockedNormSet(): Set<string> {
-  if (!socialKindBlockedNormCache) {
-    socialKindBlockedNormCache = new Set(
-      SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    )
-  }
-  return socialKindBlockedNormCache
-}
-
-export type MergeRelayPriorityLayersOptions = {
-  /** When true, drop {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} before applying the max cap. */
-  applySocialKindBlockedFilter?: boolean
-  /**
-   * Normalized relay URLs that stay in the stack even when {@link applySocialKindBlockedFilter} is on — e.g. the
-   * user’s NIP-65 read list — so an explicit inbox still appears under “Seen on”. ({@link READ_ONLY_RELAY_URLS} such as
-   * aggr are a separate concern: no publishes, but they are not in {@link SOCIAL_KIND_BLOCKED_RELAY_URLS}.)
-   */
-  exemptNormUrlsFromSocialKindBlock?: Set<string>
-}
-
-/**
- * Merge priority layers in order; first occurrence wins; skip blocked (and optional social-kind block list); stop at `max`.
- */
-export function mergeRelayPriorityLayers(
-  layers: string[][],
-  blockedRelays: string[] | undefined,
-  max: number,
-  mergeOpts?: MergeRelayPriorityLayersOptions
-): string[] {
-  const blocked = blockedNormSet(blockedRelays)
-  const socialBlocked = mergeOpts?.applySocialKindBlockedFilter
-    ? socialKindBlockedNormSet()
-    : new Set<string>()
-  const socialExempt = mergeOpts?.exemptNormUrlsFromSocialKindBlock
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const layer of layers) {
-    for (const u of layer) {
-      // Must not use {@link normalizeUrl}: it turns http(s) index relays into ws(s), which then hit the WS pool.
-      const n = normalizeAnyRelayUrl(u) || u.trim()
-      if (!n || blocked.has(n) || seen.has(n)) continue
-      if (
-        socialBlocked.has(n) &&
-        !(socialExempt?.has(n) ?? false)
-      ) {
-        continue
-      }
-      seen.add(n)
-      out.push(n)
-      if (out.length >= max) return out
-    }
-  }
-  return out
 }
 
 const normFastRead = (): string[] =>
@@ -175,13 +112,20 @@ export function buildPrioritizedReadRelayUrls(opts: {
     authorWriteRelays: opts.authorWriteRelays,
     favoriteRelays: opts.favoriteRelays
   })
-  return ensureNostrLandAggrRelay(
-    mergeRelayPriorityLayers(layers, opts.blockedRelays, max, {
-      applySocialKindBlockedFilter: applySocial,
-      exemptNormUrlsFromSocialKindBlock: exemptFromSocial
-    }),
-    { blockedRelays: opts.blockedRelays, maxRelays: max }
-  )
+  const policyLayers: FeedRelayLayer[] = [
+    { source: 'viewer-read', urls: layers[0] ?? [] },
+    { source: 'author-write', urls: layers[1] ?? [] },
+    { source: 'favorites', urls: layers[2] ?? [] },
+    { source: 'fast-read', urls: layers[3] ?? [] }
+  ]
+  return feedRelayPolicyUrls(policyLayers, {
+    operation: 'read',
+    blockedRelays: opts.blockedRelays,
+    maxRelays: max,
+    applySocialKindBlockedFilter: applySocial,
+    socialKindBlockedExemptRelays: [...exemptFromSocial],
+    allowThirdPartyLocalRelays: true
+  })
 }
 
 /**
@@ -222,7 +166,19 @@ export function buildPrioritizedWriteRelayUrls(opts: {
     favoriteRelays: opts.favoriteRelays,
     extraRelays: opts.extraRelays
   })
-  return mergeRelayPriorityLayers(layers, opts.blockedRelays, max, {
-    applySocialKindBlockedFilter: opts.applySocialKindBlockedFilter === true
+  return feedRelayPolicyUrls([
+    { source: 'viewer-write', urls: layers[0] ?? [] },
+    { source: 'author-read', urls: layers[1] ?? [] },
+    { source: 'favorites', urls: layers[2] ?? [] },
+    { source: 'explicit', urls: layers[3] ?? [] },
+    { source: 'fast-write', urls: layers[4] ?? [] },
+    { source: 'fast-read', urls: layers[5] ?? [] }
+  ], {
+    operation: 'write',
+    blockedRelays: opts.blockedRelays,
+    maxRelays: max,
+    nostrLandAggr: 'never',
+    applySocialKindBlockedFilter: opts.applySocialKindBlockedFilter === true,
+    allowThirdPartyLocalRelays: true
   })
 }

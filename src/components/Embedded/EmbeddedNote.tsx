@@ -19,7 +19,7 @@ import indexedDb from '@/services/indexed-db.service'
 import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import { useViewerInboxRelayUrlsAndAggrEligibility } from '@/hooks/useViewerInboxRelayUrlsAndAggr'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -333,7 +333,14 @@ function EmbeddedNoteFetched({
       if (cancelled || eventRef.current) return
       const wide0 = embedFetchCtxRef.current.wideRelaysStatic
       const wideMerged = preferPublicIndexRelaysFirst(dedupeRelayUrls([...wide0, ...extra]))
-      const ev = await runWidePass(ensureNostrLandAggrRelay(wideMerged, { blockedRelays }))
+      const ev = await runWidePass(
+        feedRelayPolicyUrls([{ source: 'fallback', urls: wideMerged }], {
+          operation: 'read',
+          blockedRelays,
+          applySocialKindBlockedFilter: false,
+          allowThirdPartyLocalRelays: true
+        })
+      )
       if (cancelled || !ev) return
       resolve(ev)
     })()
@@ -519,19 +526,29 @@ function buildEmbedWideRelayUrlsStatic(
   relayHintsFromParent: string[],
   viewerInboxRelayUrls: string[]
 ): string[] {
-  return ensureNostrLandAggrRelay(
-    preferPublicIndexRelaysFirst(
-      dedupeRelayUrls([
-        ...relayHintsFromParent,
-        ...viewerInboxRelayUrls,
-        ...nip66Service.getSearchableRelayUrls(),
-        ...SEARCHABLE_RELAY_URLS,
-        ...FAST_READ_RELAY_URLS,
-        ...FAST_WRITE_RELAY_URLS,
-        ...PROFILE_RELAY_URLS,
-        ...menuRelayUrls
-      ])
-    )
+  return feedRelayPolicyUrls(
+    [
+      {
+        source: 'fallback',
+        urls: preferPublicIndexRelaysFirst(
+          dedupeRelayUrls([
+            ...relayHintsFromParent,
+            ...viewerInboxRelayUrls,
+            ...nip66Service.getSearchableRelayUrls(),
+            ...SEARCHABLE_RELAY_URLS,
+            ...FAST_READ_RELAY_URLS,
+            ...FAST_WRITE_RELAY_URLS,
+            ...PROFILE_RELAY_URLS,
+            ...menuRelayUrls
+          ])
+        )
+      }
+    ],
+    {
+      operation: 'read',
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }
   )
 }
 

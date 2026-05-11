@@ -114,9 +114,8 @@ export const TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY = 5
 export const MAX_PUBLISH_RELAYS = 20
 
 /**
- * Kind 24 / 31925: {@link mergeRelayPriorityLayers} used the full {@link MAX_PUBLISH_RELAYS} budget on the author’s
- * outbox list first, so recipient **read** inboxes were often never reached. This higher cap plus an author slice
- * (see client.service) reserves space for organizer/recipient relays.
+ * Kind 24 / 31925: reserve space for organizer/recipient inboxes instead of letting the author's outboxes consume
+ * the entire {@link MAX_PUBLISH_RELAYS} budget first.
  */
 export const PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS = 28
 

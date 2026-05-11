@@ -18,7 +18,7 @@ import {
 } from '@/constants'
 import { RENDERABLE_NOTE_KINDS_SORTED } from '@/lib/note-renderable-kinds'
 import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
-import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
+import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeTopic } from '@/lib/discussion-topics'
 import { userIdToPubkey } from '@/lib/pubkey'
@@ -94,8 +94,11 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     const n = normalizeAnyRelayUrl(u) || u.trim()
     if (n) fastNormSet.add(n)
   }
-  const out = ensureNostrLandAggrRelay(dedupeNormalizeRelayUrlsOrdered(urls), {
-    maxRelays: FAUX_SPELL_MAX_RELAYS
+  const out = feedRelayPolicyUrls([{ source: 'fallback', urls: dedupeNormalizeRelayUrlsOrdered(urls) }], {
+    operation: 'read',
+    maxRelays: FAUX_SPELL_MAX_RELAYS,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
   })
   if (!out.length) return fast.slice(0, FAUX_SPELL_MAX_RELAYS)
 
@@ -128,8 +131,11 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     }
     if (!addedOne) break
   }
-  return ensureNostrLandAggrRelay(dedupeNormalizeRelayUrlsOrdered(out), {
-    maxRelays: FAUX_SPELL_MAX_RELAYS
+  return feedRelayPolicyUrls([{ source: 'fallback', urls: dedupeNormalizeRelayUrlsOrdered(out) }], {
+    operation: 'read',
+    maxRelays: FAUX_SPELL_MAX_RELAYS,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
   })
 }
 
