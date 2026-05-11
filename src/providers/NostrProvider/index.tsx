@@ -462,6 +462,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           limit: 1
         })
       ])
+      if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
+        return controller
+      }
       const relayListEvent = getLatestEvent(relayListEvents) ?? storedRelayListEvent
       const cacheRelayListEvent = getLatestEvent(cacheRelayListEvents) ?? storedCacheRelayListEvent
       const httpRelayListEventFetched = getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null
@@ -487,6 +490,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
       // Fetch updated relay list (merges 10002, 10432, 10243)
       const mergedRelayList = await client.fetchRelayList(account.pubkey) // Keep using client for relay list merging
+      if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
+        return controller
+      }
       setRelayList(mergedRelayList)
 
       const normalizedRelays = [
@@ -512,6 +518,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           authors: [account.pubkey]
         }
       ])
+      if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
+        return controller
+      }
       const sortedEvents = events.sort((a, b) => b.created_at - a.created_at)
       const profileEvent = sortedEvents.find((e) => e.kind === kinds.Metadata)
       const followListEvent = sortedEvents.find((e) => e.kind === kinds.Contacts)
@@ -553,6 +562,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         safePutReplaceable(blockedRelaysEvent),
         safePutReplaceable(userEmojiListEvent)
       ])
+
+      if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
+        return controller
+      }
 
       if (profileEvent) {
         const resolvedProfileEvent = resolvedProfilePut ?? profileEvent
@@ -639,7 +652,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (favoriteRelaysEvent) {
-        if (resolvedFavoritePut && resolvedFavoritePut.id === favoriteRelaysEvent.id) {
+        if (
+          hydrationGenForThisRun === accountHydrationGenerationRef.current &&
+          resolvedFavoritePut &&
+          resolvedFavoritePut.id === favoriteRelaysEvent.id
+        ) {
           setFavoriteRelaysEvent(favoriteRelaysEvent)
         }
       }

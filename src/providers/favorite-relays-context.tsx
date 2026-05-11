@@ -8,6 +8,8 @@ import { Event } from 'nostr-tools'
 import { createContext, useContext } from 'react'
 
 export type TFavoriteRelaysContext = {
+  /** True when rows come from a published kind 10012 (favorite relays) event, not app defaults. */
+  favoriteRelaysFromPublishedList: boolean
   favoriteRelays: string[]
   addFavoriteRelays: (relayUrls: string[]) => Promise<void>
   deleteFavoriteRelays: (relayUrls: string[]) => Promise<void>

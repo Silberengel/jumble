@@ -29,6 +29,13 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
   const { account, relayList } = useNostr()
   const [contentKey, setContentKey] = useState(0)
   const bump = useCallback(() => setContentKey((k) => k + 1), [])
+
+  useEffect(() => {
+    if (account?.pubkey) {
+      setContentKey((k) => k + 1)
+    }
+  }, [account?.pubkey])
+
   const [tabValue, setTabValue] = useState('favorite-relays')
   const [jsonOpen, setJsonOpen] = useState(false)
   const [jsonPayload, setJsonPayload] = useState<unknown>(null)
@@ -75,7 +82,7 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
         setTabValue('cache-relays')
         break
     }
-  }, [])
+  }, [account?.pubkey])
 
   useEffect(() => {
     if (!hideTitlebar) {

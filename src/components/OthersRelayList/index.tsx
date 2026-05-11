@@ -11,7 +11,7 @@ import RelaySimpleInfo from '../RelaySimpleInfo'
 export default function OthersRelayList({ userId }: { userId: string }) {
   const { t } = useTranslation()
   const pubkey = useMemo(() => userIdToPubkey(userId), [userId])
-  const { relayList, isFetching } = useFetchRelayList(pubkey)
+  const { relayList, isFetching, showingRelayListFallback } = useFetchRelayList(pubkey)
 
   if (isFetching) {
     return <div className="text-center text-sm text-muted-foreground">{t('loading...')}</div>
@@ -19,6 +19,17 @@ export default function OthersRelayList({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-4">
+      {showingRelayListFallback && (
+        <p
+          className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+          role="status"
+        >
+          {t('othersRelayListKind10002Fallback', {
+            defaultValue:
+              'No NIP-65 relay list (kind 10002) was found for this user in local storage yet. The addresses below are default discovery relays, not this user’s published read/write list.'
+          })}
+        </p>
+      )}
       {relayList.originalRelays.map((relay, index) => (
         <RelayItem key={`read-${relay.url}-${index}`} relay={relay} />
       ))}

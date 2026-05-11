@@ -310,6 +310,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
 
   const contextValue = useMemo(
     () => ({
+      favoriteRelaysFromPublishedList: !!favoriteRelaysEvent,
       favoriteRelays,
       addFavoriteRelays,
       deleteFavoriteRelays,
@@ -325,6 +326,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
       reorderRelaySets
     }),
     [
+      favoriteRelaysEvent,
       favoriteRelays,
       blockedRelays,
       relaySets,

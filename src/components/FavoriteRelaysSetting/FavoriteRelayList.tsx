@@ -1,4 +1,5 @@
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostr } from '@/providers/NostrProvider'
 import {
   closestCenter,
   DndContext,
@@ -20,7 +21,9 @@ import RelayItem from './RelayItem'
 
 export default function FavoriteRelayList() {
   const { t } = useTranslation()
-  const { favoriteRelays, blockedRelays, reorderFavoriteRelays } = useFavoriteRelays()
+  const { pubkey } = useNostr()
+  const { favoriteRelays, blockedRelays, reorderFavoriteRelays, favoriteRelaysFromPublishedList } =
+    useFavoriteRelays()
   
   // Show all relays including blocked ones (they'll be marked visually)
 
@@ -46,6 +49,17 @@ export default function FavoriteRelayList() {
   return (
     <div className="space-y-2">
       <div className="text-muted-foreground font-semibold select-none">{t('Relays')}</div>
+      {!!pubkey && !favoriteRelaysFromPublishedList && (
+        <p
+          className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+          role="status"
+        >
+          {t('favoriteRelaysDefaultsBanner', {
+            defaultValue:
+              'No favorite-relays list (kind 10012) is loaded for this account yet. The relays below are app defaults and local relay sets, not a published list from your relays.'
+          })}
+        </p>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}

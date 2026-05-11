@@ -8,28 +8,27 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { buildHiveTalkJoinUrl, roomIdForPubkeys } from '@/lib/hivetalk'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
-import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useNostr } from '@/providers/NostrProvider'
-import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
-import client from '@/services/client.service'
-import { replaceableEventService } from '@/services/client.service'
+import client, { replaceableEventService } from '@/services/client.service'
 import { nip66Service } from '@/services/nip66.service'
 import RawEventDialog from '@/components/NoteOptions/RawEventDialog'
 import {
   Bell,
   BellOff,
+  Code,
   Copy,
   Ellipsis,
   ThumbsUp,
   MessageCircle,
   Send,
-  Video,
   SatelliteDish,
-  Code,
+  Video,
   LayoutGrid
 } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
@@ -40,7 +39,7 @@ import { useTranslation } from 'react-i18next'
 import { useSmartProfileInteractionsNavigation } from '@/PageManager'
 import { toProfileInteractionMap } from '@/lib/link'
 import { toast } from 'sonner'
-import { Event } from 'nostr-tools'
+import { Event, kinds } from 'nostr-tools'
 
 export default function ProfileOptions({
   pubkey,
@@ -49,7 +48,7 @@ export default function ProfileOptions({
   onSendCallInvite
 }: {
   pubkey: string
-  /** Optional profile event (kind 0) for republishing and viewing JSON */
+  /** Optional profile event (kind 0): reply / like, republish to relays, view JSON */
   profileEvent?: Event
   /** Opens the post editor in public message mode with this profile's pubkey in the mention list. */
   onSendPublicMessage?: () => void
@@ -84,7 +83,7 @@ export default function ProfileOptions({
           setLocalProfileEvent(event)
         }
       } catch (error) {
-        // Silently fail - menu items just won't show
+        // Silently fail: reply/like stay hidden until the event loads
       }
     }
     
@@ -97,28 +96,32 @@ export default function ProfileOptions({
   /** All available relays: current feed, favorites, relay sets, defaults (FAST_READ, FAST_WRITE). */
   const allAvailableRelayUrls = useMemo(() => {
     const urls = [
-      ...currentBrowsingRelayUrls.map(url => normalizeAnyRelayUrl(url) || url),
-      ...favoriteRelays.map(url => normalizeAnyRelayUrl(url) || url),
-      ...relaySets.flatMap(set => set.relayUrls.map(url => normalizeAnyRelayUrl(url) || url)),
-      ...FAST_READ_RELAY_URLS.map(url => normalizeAnyRelayUrl(url) || url),
-      ...FAST_WRITE_RELAY_URLS.map(url => normalizeAnyRelayUrl(url) || url)
+      ...currentBrowsingRelayUrls.map((url) => normalizeAnyRelayUrl(url) || url),
+      ...favoriteRelays.map((url) => normalizeAnyRelayUrl(url) || url),
+      ...relaySets.flatMap((set) => set.relayUrls.map((url) => normalizeAnyRelayUrl(url) || url)),
+      ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
+      ...FAST_WRITE_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url)
     ].filter(Boolean) as string[]
     return Array.from(new Set(urls))
   }, [currentBrowsingRelayUrls, favoriteRelays, relaySets])
 
   useEffect(() => {
-    nip66Service.getPublicLivelyRelayUrls().then((urls) => {
+    void nip66Service.getPublicLivelyRelayUrls().then((urls) => {
       setMonitoringListRelayCount(urls?.length ?? 0)
     })
   }, [])
 
+  const eventToUse = localProfileEvent || profileEvent
+  /** Kind 0 only; coerce `kind` in case deserialization yields a string. */
+  const kind0ForRelay =
+    eventToUse != null && Number(eventToUse.kind) === kinds.Metadata ? eventToUse : undefined
+
   const handleRepublishToAllAvailable = async () => {
-    const eventToPublish = localProfileEvent || profileEvent
-    if (!eventToPublish) {
+    if (!kind0ForRelay) {
       toast.error(t('Profile event not available'))
       return
     }
-    const promise = client.publishEvent(allAvailableRelayUrls, eventToPublish).then((result) => {
+    const promise = client.publishEvent(allAvailableRelayUrls, kind0ForRelay).then((result) => {
       if (result.successCount < 1) {
         throw new Error(t('No relay accepted the event'))
       }
@@ -132,8 +135,7 @@ export default function ProfileOptions({
   }
 
   const handleRepublishToAllActive = async () => {
-    const eventToPublish = localProfileEvent || profileEvent
-    if (!eventToPublish) {
+    if (!kind0ForRelay) {
       toast.error(t('Profile event not available'))
       return
     }
@@ -146,12 +148,14 @@ export default function ProfileOptions({
       if (!relays?.length) {
         throw new Error(t('No relays available'))
       }
-      const result = await client.publishEvent(relays, eventToPublish)
+      const result = await client.publishEvent(relays, kind0ForRelay)
       const minRequired = usedMonitoringList ? 5 : 1
       if (result.successCount < minRequired) {
         throw new Error(
           usedMonitoringList
-            ? t('Only {{count}} relay(s) accepted the event; at least 5 required for "all active relays".', { count: result.successCount })
+            ? t('Only {{count}} relay(s) accepted the event; at least 5 required for "all active relays".', {
+                count: result.successCount
+              })
             : t('No relay accepted the event')
         )
       }
@@ -163,8 +167,6 @@ export default function ProfileOptions({
       error: (err) => t('Failed to republish to all active relays: {{error}}', { error: err.message })
     })
   }
-
-  const eventToUse = localProfileEvent || profileEvent
 
   const handleLike = () => {
     if (!eventToUse) return
@@ -258,7 +260,7 @@ export default function ProfileOptions({
           <Copy />
           {t('Copy user ID')}
         </DropdownMenuItem>
-        {(localProfileEvent || profileEvent) && (
+        {kind0ForRelay && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleRepublishToAllAvailable}>
@@ -268,7 +270,8 @@ export default function ProfileOptions({
             <DropdownMenuItem onClick={handleRepublishToAllActive}>
               <SatelliteDish />
               {t('Republish to all active relays')}
-              {monitoringListRelayCount !== null && ` (${monitoringListRelayCount > 0 ? monitoringListRelayCount : allAvailableRelayUrls.length})`}
+              {monitoringListRelayCount !== null &&
+                ` (${monitoringListRelayCount > 0 ? monitoringListRelayCount : allAvailableRelayUrls.length})`}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setIsRawEventDialogOpen(true)}>
               <Code />
@@ -310,13 +313,13 @@ export default function ProfileOptions({
             setOpen={setOpenReply}
           />
         )}
-        {(localProfileEvent || profileEvent) && (
+        {kind0ForRelay && (
           <RawEventDialog
-          event={(localProfileEvent || profileEvent)!}
-          isOpen={isRawEventDialogOpen}
-          onClose={() => setIsRawEventDialogOpen(false)}
-        />
-      )}
+            event={kind0ForRelay}
+            isOpen={isRawEventDialogOpen}
+            onClose={() => setIsRawEventDialogOpen(false)}
+          />
+        )}
     </DropdownMenu>
   )
 }
