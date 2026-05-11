@@ -37,7 +37,8 @@ import {
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
 function filterForRelay(f: Filter, relaySupportsSearch: boolean): Filter {
   if (relaySupportsSearch) return f
-  const { search: _search, ...rest } = f
+  const rest = { ...f }
+  delete rest.search
   return rest as Filter
 }
 
@@ -1004,7 +1005,7 @@ class ClientService extends EventTarget {
       }
 
       const bootstrapExtras: string[] = [...(additionalRelayUrls ?? [])]
-      let authorInboxFromContext: string[] = []
+      const authorInboxFromContext: string[] = []
       const shouldMergeContextInboxes =
         !specifiedRelayUrls?.length &&
         ![kinds.Contacts, kinds.Mutelist, ExtendedKind.FOLLOW_SET].includes(event.kind)
@@ -3140,7 +3141,7 @@ class ClientService extends EventTarget {
         return
       }
       const chunk = followings.slice(i * chunkSize, (i + 1) * chunkSize)
-      const [relayListEvents, contactsEvents, _profiles] = await Promise.all([
+      const [relayListEvents, contactsEvents] = await Promise.all([
         this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.RelayList),
         this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.Contacts),
         Promise.all(chunk.map((pk) => this.fetchProfileEvent(pk)))

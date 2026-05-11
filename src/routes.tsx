@@ -22,7 +22,6 @@ const PostSettingsPageLazy = lazy(() => import('./pages/secondary/PostSettingsPa
 const ProfileEditorPageLazy = lazy(() => import('./pages/secondary/ProfileEditorPage'))
 const ProfileListPageLazy = lazy(() => import('./pages/secondary/ProfileListPage'))
 const ProfilePageLazy = lazy(() => import('./pages/secondary/ProfilePage'))
-const ProfileInteractionDiagramPageLazy = lazy(() => import('./pages/secondary/ProfileInteractionDiagramPage'))
 const RelayPageLazy = lazy(() => import('./pages/secondary/RelayPage'))
 const RelayReviewsPageLazy = lazy(() => import('./pages/secondary/RelayReviewsPage'))
 const RelaySettingsPageLazy = lazy(() => import('./pages/secondary/RelaySettingsPage'))
@@ -73,7 +72,6 @@ const ROUTES = [
   { path: '/users', element: SR(ProfileListPageLazy) },
   { path: '/users/:id/following', element: SR(FollowingListPageLazy) },
   { path: '/users/:id/relays', element: SR(OthersRelaySettingsPageLazy) },
-  { path: '/users/:id/interactions', element: SR(ProfileInteractionDiagramPageLazy) },
   { path: '/users/:id', element: SR(ProfilePageLazy) },
   { path: '/relays/:url/reviews', element: SR(RelayReviewsPageLazy) },
   { path: '/relays/:url', element: SR(RelayPageLazy) },

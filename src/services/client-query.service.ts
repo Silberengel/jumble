@@ -38,7 +38,8 @@ import type { ISigner, TSignerType } from '@/types'
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
 function filterForRelay(f: Filter, relaySupportsSearch: boolean): Filter {
   if (relaySupportsSearch) return f
-  const { search: _search, ...rest } = f
+  const rest = { ...f }
+  delete rest.search
   return rest as Filter
 }
 
@@ -357,7 +358,6 @@ export class QueryService {
       let feedFirstResultGraceTimeoutId: ReturnType<typeof setTimeout> | null = null
       let replaceableRaceTimeoutId: ReturnType<typeof setTimeout> | null = null
       let allEosed = false
-      let eventCount = 0
       let resolved = false
       let firstResultTime: number | null = null
       let globalTimeoutId: ReturnType<typeof setTimeout> | null = null
@@ -372,7 +372,6 @@ export class QueryService {
                   const evts = await queryIndexRelay(base, effectiveFilter, { signal: abortHttp.signal })
                   for (const evt of evts) {
                     if (resolved) return
-                    eventCount++
                     onevent?.(evt)
                     events.push(evt)
                     this.trackEventSeenOnByUrl(evt.id, base)
@@ -461,7 +460,6 @@ export class QueryService {
         effectiveFilter,
         {
         onevent: (evt) => {
-          eventCount++
           onevent?.(evt)
           events.push(evt)
           // Session cache: ingest as events arrive (reactions/replies/zaps from note-stats, etc.),

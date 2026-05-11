@@ -12,7 +12,6 @@ import { randomString } from '@/lib/random'
 import {
   TAccount,
   TAccountPointer,
-  TFeedInfo,
   TFontSize,
   TMediaAutoLoadPolicy,
   TMediaUploadServiceConfig,
@@ -38,7 +37,6 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_ZAP_COMMENT,
   StorageKey.QUICK_ZAP,
   StorageKey.ZAP_REPLY_THRESHOLD,
-  StorageKey.ACCOUNT_FEED_INFO_MAP,
   StorageKey.AUTOPLAY,
   StorageKey.HIDE_UNTRUSTED_INTERACTIONS,
   StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS,
@@ -85,7 +83,6 @@ class LocalStorageService {
   private defaultZapComment: string = 'Zap!'
   private quickZap: boolean = false
   private zapReplyThreshold: number = 1
-  private accountFeedInfoMap: Record<string, TFeedInfo | undefined> = {}
   private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
   private autoplay: boolean = true
   private hideUntrustedInteractions: boolean = false
@@ -190,10 +187,6 @@ class LocalStorageService {
         this.zapReplyThreshold = num
       }
     }
-
-    const accountFeedInfoMapStr =
-      window.localStorage.getItem(StorageKey.ACCOUNT_FEED_INFO_MAP) ?? '{}'
-    this.accountFeedInfoMap = JSON.parse(accountFeedInfoMapStr)
 
     // deprecated
     this.mediaUploadService =
@@ -574,8 +567,6 @@ class LocalStorageService {
       const num = parseInt(zapReplyStr)
       if (!isNaN(num)) this.zapReplyThreshold = num
     }
-    const accountFeedInfoStr = get(StorageKey.ACCOUNT_FEED_INFO_MAP)
-    if (accountFeedInfoStr != null) this.accountFeedInfoMap = JSON.parse(accountFeedInfoStr) as Record<string, TFeedInfo | undefined>
     this.autoplay = get(StorageKey.AUTOPLAY) !== 'false'
     const hideInteractions = get(StorageKey.HIDE_UNTRUSTED_INTERACTIONS)
     if (hideInteractions != null) this.hideUntrustedInteractions = hideInteractions === 'true'
@@ -790,18 +781,6 @@ class LocalStorageService {
   setZapReplyThreshold(sats: number) {
     this.zapReplyThreshold = sats
     this.persistSetting(StorageKey.ZAP_REPLY_THRESHOLD, sats.toString())
-  }
-
-  getFeedInfo(pubkey: string) {
-    return this.accountFeedInfoMap[pubkey]
-  }
-
-  setFeedInfo(info: TFeedInfo, pubkey?: string | null) {
-    this.accountFeedInfoMap[pubkey ?? 'default'] = info
-    this.persistSetting(
-      StorageKey.ACCOUNT_FEED_INFO_MAP,
-      JSON.stringify(this.accountFeedInfoMap)
-    )
   }
 
   getAutoplay() {

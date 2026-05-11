@@ -45,10 +45,9 @@ import {
 } from '@/constants'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { useFeed } from '@/providers/FeedProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
-import { cleanUrl, normalizeUrl, rewritePlainTextHttpUrls } from '@/lib/url'
+import { cleanUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import postEditorCache from '@/services/post-editor-cache.service'
@@ -196,7 +195,6 @@ export default function PostContent({
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
   const { userGroups } = useGroupList()
-  const { feedInfo } = useFeed()
   const { addReplies } = useReply()
 
   const mergePublishedReplyIntoThread = useCallback(
@@ -1363,21 +1361,6 @@ export default function PostContent({
         })
         // console.log('Published event:', newEvent)
         
-        // Check if we need to refresh the current relay view
-        if (feedInfo.feedType === 'relay' && feedInfo.id) {
-          const currentRelayUrl = normalizeUrl(feedInfo.id)
-          const publishedRelays = additionalRelayUrls
-          
-          // If we published to the current relay being viewed, trigger a refresh after a short delay
-          if (publishedRelays.some(url => normalizeUrl(url) === currentRelayUrl)) {
-            setTimeout(() => {
-              // Trigger a page refresh by dispatching a custom event that the relay view can listen to
-              window.dispatchEvent(new CustomEvent('relay-refresh-needed', { 
-                detail: { relayUrl: currentRelayUrl } 
-              }))
-            }, 1000) // 1 second delay to allow the event to propagate
-          }
-        }
         
         // Show publishing feedback
         if ((newEvent as any).relayStatuses) {

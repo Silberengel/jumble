@@ -106,9 +106,6 @@ const PrimaryPinListPageLazy = lazy(() => import('@/pages/secondary/PinListPage'
 const PrimaryInterestListPageLazy = lazy(() => import('@/pages/secondary/InterestListPage'))
 const PrimaryUserEmojiListPageLazy = lazy(() => import('@/pages/secondary/UserEmojiListPage'))
 const PrimaryOthersRelaySettingsPageLazy = lazy(() => import('@/pages/secondary/OthersRelaySettingsPage'))
-const PrimaryProfileInteractionDiagramPageLazy = lazy(
-  () => import('@/pages/secondary/ProfileInteractionDiagramPage')
-)
 const SecondaryRelayPageLazy = lazy(() => import('@/pages/secondary/RelayPage'))
 
 function suspensePrimaryPage(page: ReactElement) {
@@ -922,29 +919,6 @@ export function useSmartOthersRelaySettingsNavigation() {
   }
   
   return { navigateToOthersRelaySettings }
-}
-
-export function useSmartProfileInteractionsNavigation() {
-  const { setPrimaryNoteView } = usePrimaryNoteView()
-  const { push: pushSecondaryPage } = useSecondaryPage()
-  const { isSmallScreen } = useScreenSize()
-
-  const navigateToProfileInteractions = (url: string) => {
-    if (isSmallScreen) {
-      const profileId = url.replace('/users/', '').replace('/interactions', '')
-      window.history.pushState(null, '', url)
-      setPrimaryNoteView(
-        suspensePrimaryPage(
-          <PrimaryProfileInteractionDiagramPageLazy id={profileId} index={0} hideTitlebar={true} />
-        ),
-        'profile-interactions'
-      )
-    } else {
-      pushSecondaryPage(url)
-    }
-  }
-
-  return { navigateToProfileInteractions }
 }
 
 /** Settings index is a normal primary page; sub-routes open on the secondary stack (panel / drawer). */
@@ -1887,8 +1861,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     if (
       primaryViewType === 'following' ||
-      primaryViewType === 'others-relay-settings' ||
-      primaryViewType === 'profile-interactions'
+      primaryViewType === 'others-relay-settings'
     ) {
       const currentPath = window.location.pathname.split('?')[0].split('#')[0]
       const segs = currentPath.split('/').filter(Boolean)

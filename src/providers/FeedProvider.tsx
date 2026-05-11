@@ -1,14 +1,10 @@
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { getRelaySetFromEvent, getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
+import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
-import indexedDb from '@/services/indexed-db.service'
-import storage from '@/services/local-storage.service'
-import { TFeedInfo, TFeedType } from '@/types'
-import { kinds } from 'nostr-tools'
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { FeedContext } from './feed-context'
 import { useFavoriteRelays } from './FavoriteRelaysProvider'
 import { useNostr } from './NostrProvider'
@@ -42,8 +38,8 @@ function buildAllFavoritesFeedRelayUrls(
 }
 
 export function FeedProvider({ children }: { children: React.ReactNode }) {
-  const { pubkey, isInitialized, cacheRelayListEvent, httpRelayListEvent } = useNostr()
-  const { relaySets, favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const { isInitialized, cacheRelayListEvent, httpRelayListEvent } = useNostr()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
   /**
    * Extra relay URLs always merged into the all-favorites feed:
@@ -67,11 +63,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   const [relayUrls, setRelayUrls] = useState<string[]>(() =>
     buildAllFavoritesFeedRelayUrls([], [], [buildWispTrendingNotesRelayUrl()])
   )
-  const [isReady, setIsReady] = useState(true)
-  const [feedInfo, setFeedInfo] = useState<TFeedInfo>({
-    feedType: 'all-favorites'
-  })
-  const feedInfoRef = useRef<TFeedInfo>(feedInfo)
   /** Same logical relay policy result — reuse array ref so NoteList does not re-subscribe. */
   const setRelayUrlsIfChanged = useCallback((next: string[]) => {
     setRelayUrls((prev) => {
@@ -80,98 +71,11 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  const switchFeed = useCallback(async (
-    feedType: TFeedType,
-    options: {
-      activeRelaySetId?: string | null
-      pubkey?: string | null
-      relay?: string | null
-    } = {}
-  ) => {
-    logger.debug('switchFeed called:', { feedType, options })
-    if (feedType === 'relay') {
-      const normalizedUrl = normalizeAnyRelayUrl(options.relay ?? '')
-      const isRelayFeedUrl =
-        !!normalizedUrl && (isHttpRelayUrl(normalizedUrl) || isWebsocketUrl(normalizedUrl))
-      logger.debug('Relay switchFeed:', { normalizedUrl, isRelayFeedUrl, blockedRelays })
-
-      if (!isRelayFeedUrl) {
-        logger.debug('Invalid relay URL, setting isReady to true')
-        setIsReady(true)
-        return
-      }
-      
-      // Don't allow selecting a blocked relay as feed
-      if (blockedRelays.includes(normalizedUrl)) {
-        logger.warn('Cannot select blocked relay as feed:', normalizedUrl)
-        setIsReady(true)
-        return
-      }
-
-      const newFeedInfo = { feedType, id: normalizedUrl }
-      logger.component('FeedProvider', 'Setting relay feed info', newFeedInfo)
-      setFeedInfo(newFeedInfo)
-      feedInfoRef.current = newFeedInfo
-      setRelayUrlsIfChanged([normalizedUrl])
-      logger.component('FeedProvider', 'Set relayUrls', { relayUrls: [normalizedUrl] })
-      storage.setFeedInfo(newFeedInfo, pubkey)
-      // Reset note list mode to 'posts' when switching to relay feed to ensure main content is shown
-      storage.setNoteListMode('posts')
-      setIsReady(true)
-      logger.component('FeedProvider', 'Relay feed setup complete, isReady set to true')
-      return
-    }
-    if (feedType === 'relays') {
-      const relaySetId = options.activeRelaySetId ?? (relaySets.length > 0 ? relaySets[0].id : null)
-      if (!relaySetId || !pubkey) {
-        setIsReady(true)
-        return
-      }
-
-      let relaySet =
-        relaySets.find((set) => set.id === relaySetId) ??
-        (relaySets.length > 0 ? relaySets[0] : null)
-      if (!relaySet) {
-        const storedRelaySetEvent = await indexedDb.getReplaceableEvent(
-          pubkey,
-          kinds.Relaysets,
-          relaySetId
-        )
-        if (storedRelaySetEvent) {
-          relaySet = getRelaySetFromEvent(storedRelaySetEvent, blockedRelays)
-        }
-      }
-      if (relaySet) {
-        const newFeedInfo = { feedType, id: relaySet.id }
-        setFeedInfo(newFeedInfo)
-        feedInfoRef.current = newFeedInfo
-        setRelayUrlsIfChanged(relaySet.relayUrls)
-        storage.setFeedInfo(newFeedInfo, pubkey)
-        // Reset note list mode to 'posts' when switching to relay set to ensure main content is shown
-        storage.setNoteListMode('posts')
-        setIsReady(true)
-      }
-      setIsReady(true)
-      return
-    }
-    if (feedType === 'all-favorites') {
-      const finalRelays = buildAllFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, extraFeedRelayUrls)
-      logger.debug('Switching to all-favorites, finalRelays:', finalRelays)
-      const newFeedInfo = { feedType }
-      setFeedInfo(newFeedInfo)
-      feedInfoRef.current = newFeedInfo
-      setRelayUrlsIfChanged(finalRelays)
-      storage.setFeedInfo(newFeedInfo, pubkey)
-      // Reset note list mode to 'posts' when switching to all-favorites to ensure main content is shown
-      storage.setNoteListMode('posts')
-      setIsReady(true)
-      return
-    }
-    setIsReady(true)
-  }, [pubkey, favoriteRelays, blockedRelays, relaySets, extraFeedRelayUrls, setRelayUrlsIfChanged])
-
-  const switchFeedRef = useRef(switchFeed)
-  switchFeedRef.current = switchFeed
+  const updateFeedRelayUrls = useCallback(() => {
+    const finalRelays = buildAllFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, extraFeedRelayUrls)
+    logger.debug('Updating all-favorites relay URLs:', finalRelays)
+    setRelayUrlsIfChanged(finalRelays)
+  }, [favoriteRelays, blockedRelays, extraFeedRelayUrls, setRelayUrlsIfChanged])
 
   const favoriteRelaysIdentity = useMemo(
     () =>
@@ -191,79 +95,24 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         .join('|'),
     [blockedRelays]
   )
-  const relaySetsIdentity = useMemo(
-    () =>
-      relaySets
-        .map((s) => {
-          const urls = [...s.relayUrls]
-            .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-            .filter(Boolean)
-            .sort()
-            .join(',')
-          return `${s.id}:${urls}`
-        })
-        .sort()
-        .join('\n'),
-    [relaySets]
-  )
-
   useEffect(() => {
-    const init = async () => {
-      logger.debug('FeedProvider init:', { isInitialized, pubkey, favoriteRelays: favoriteRelays.length, blockedRelays: blockedRelays.length })
+    logger.debug('FeedProvider relay init:', {
+      isInitialized,
+      favoriteRelays: favoriteRelays.length,
+      blockedRelays: blockedRelays.length
+    })
 
-      // Wait for favoriteRelays to be initialized (should have at least default relays)
-      // If favoriteRelays is empty, it might not be initialized yet, so wait
-      if (favoriteRelays.length === 0 && !pubkey) {
-        // For anonymous users, favoriteRelays should be initialized from FAST_READ_RELAY_URLS
-        // If it's still empty, something is wrong, but we'll use defaults
-        logger.debug('FeedProvider: favoriteRelays is empty, using defaults')
-      }
-
-      let stored: TFeedInfo | null = null
-      if (pubkey) {
-        const fromStorage = storage.getFeedInfo(pubkey)
-        logger.debug('Stored feed info:', fromStorage)
-        if (fromStorage) stored = fromStorage
-      }
-
-      const storedFeedType = (stored as { feedType?: string } | null)?.feedType
-      const migrateHomeToCombo =
-        storedFeedType === 'following' ||
-        storedFeedType === 'bookmarks' ||
-        storedFeedType === 'relay' ||
-        storedFeedType === 'relays'
-
-      if (migrateHomeToCombo && pubkey) {
-        const migrated: TFeedInfo = { feedType: 'all-favorites' }
-        storage.setFeedInfo(migrated, pubkey)
-        logger.info('[FeedProvider] Home feed uses combo (all-favorites); migrated stored selection', {
-          previous: storedFeedType
-        })
-      }
-
-      return await switchFeedRef.current('all-favorites')
+    if (favoriteRelays.length === 0) {
+      logger.debug('FeedProvider: favoriteRelays is empty, using defaults')
     }
 
-    void init()
-  }, [pubkey, isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, relaySetsIdentity])
-
-  // Update relay URLs when favoriteRelays, blocked, or extra relay lists change while in all-favorites mode
-  useEffect(() => {
-    if (feedInfo.feedType !== 'all-favorites') return
-    const finalRelays = buildAllFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, extraFeedRelayUrls)
-    logger.debug('Updating relay URLs for all-favorites:', finalRelays)
-    // Same logical list can be merged into a new array each run; keep the previous reference so
-    // feed consumers (RelaysFeed → NoteList relay subscription) do not re-enter effects in a tight loop.
-    setRelayUrlsIfChanged(finalRelays)
-  }, [feedInfo.feedType, favoriteRelays, blockedRelays, extraFeedRelayUrls, setRelayUrlsIfChanged])
+    updateFeedRelayUrls()
+  }, [isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, updateFeedRelayUrls])
 
   return (
     <FeedContext.Provider
       value={{
-        feedInfo,
-        relayUrls,
-        isReady,
-        switchFeed
+        relayUrls
       }}
     >
       {children}

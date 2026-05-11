@@ -4,9 +4,8 @@ import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { toNote, toProfileInteractionMap } from '@/lib/link'
+import { toNote } from '@/lib/link'
 import logger from '@/lib/logger'
-import { mergeEventsById } from '@/lib/profile-interaction-partners'
 import {
   parseRelayThreadHeatMapCache,
   relayThreadHeatMapSettingKey,
@@ -22,14 +21,14 @@ import {
   type TRelayThreadHeatEdge
 } from '@/lib/relay-thread-heat'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
-import { useSmartNoteNavigation, useSmartProfileInteractionsNavigation } from '@/PageManager'
+import { useSmartNoteNavigation } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { cn } from '@/lib/utils'
-import { LayoutGrid, Loader2, RefreshCw } from 'lucide-react'
+import { Loader2, RefreshCw } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { kinds, verifyEvent } from 'nostr-tools'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -43,6 +42,18 @@ const SESSION_HEAT_LIMIT = 2500
 /** Cap rows scanned so the heat map stays responsive on large archives. */
 const ARCHIVE_HEAT_MAX_SCAN = 30_000
 const ARCHIVE_HEAT_MAX_MATCHES = 2000
+
+function mergeEventsById(events: Event[]): Event[] {
+  const eventsById = new Map<string, Event>()
+  for (const event of events) {
+    if (!event?.id) continue
+    const existing = eventsById.get(event.id)
+    if (!existing || event.created_at > existing.created_at) {
+      eventsById.set(event.id, event)
+    }
+  }
+  return Array.from(eventsById.values())
+}
 
 const HEAT_KINDS = [kinds.ShortTextNote, ExtendedKind.DISCUSSION] as const
 
@@ -87,7 +98,6 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   const { t } = useTranslation()
   const { navigate: navigatePrimary } = usePrimaryPage()
   const { navigateToNote } = useSmartNoteNavigation()
-  const { navigateToProfileInteractions } = useSmartProfileInteractionsNavigation()
   const { pubkey, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
@@ -436,16 +446,6 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
               <RefreshCw className="size-4" aria-hidden />
             )}
             {t('heatMapRescan')}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => navigateToProfileInteractions(toProfileInteractionMap(pubkey))}
-          >
-            <LayoutGrid className="size-4 shrink-0" aria-hidden />
-            {t('interactionMapMenu')}
           </Button>
           <Button
             type="button"

@@ -6,7 +6,6 @@ import { useFeed } from '@/providers/FeedProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import type { TNoteListRef } from '@/components/NoteList'
-import { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import { TPageRef } from '@/types'
 import { Calendar, Compass, Flame } from 'lucide-react'
 import React, {
@@ -30,14 +29,9 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const layoutRef = useRef<TPageRef>(null)
   const feedRef = useRef<TNoteListRef>(null)
-  const { feedInfo, relayUrls, isReady } = useFeed()
+  const { relayUrls } = useFeed()
   const { isSmallScreen } = useScreenSize()
   const [homeSubHeader, setHomeSubHeader] = useState<React.ReactNode>(null)
-
-  const usesSubHeader =
-    feedInfo.feedType === 'all-favorites' ||
-    feedInfo.feedType === 'relay' ||
-    feedInfo.feedType === 'relays'
 
   const runFeedRefresh = useCallback(() => {
     feedRef.current?.refresh()
@@ -56,10 +50,6 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
     setHomeSubHeader(node)
   }, [])
 
-  useEffect(() => {
-    if (!usesSubHeader) setHomeSubHeader(null)
-  }, [usesSubHeader])
-
   // REMOVED: Scroll-to-top logic - feed should NEVER scroll to top when drawer opens/closes
   // The feed stays mounted and maintains scroll position at all times
 
@@ -71,37 +61,6 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
       }
     }
   }, [relayUrls])
-
-  let content: React.ReactNode = null
-  if (!isReady) {
-    content = (
-      <div
-        className="min-h-[40vh] space-y-2 px-1 py-4"
-        role="status"
-        aria-live="polite"
-        aria-busy="true"
-      >
-        <p className="px-3 text-sm text-muted-foreground">
-          {t('feedStarting', {
-            defaultValue: 'Starting feeds and relays… This can take a few seconds after login.'
-          })}
-        </p>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <NoteCardLoadingSkeleton key={i} />
-        ))}
-      </div>
-    )
-  } else {
-    content = (
-      <>
-        <RelaysFeed
-          ref={feedRef}
-          setSubHeader={setHomeSubHeaderStable}
-          onSubHeaderRefresh={runFeedRefresh}
-        />
-      </>
-    )
-  }
 
   const feedPageTitle = t('Favorite Relays')
 
@@ -116,7 +75,7 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   )
 
   /** Desktop: nav/logo/account live in titlebar only on small screens; refresh moves to subheader when present. Omit empty h-12 strip. */
-  const showNoteListTitlebar = isSmallScreen || !usesSubHeader
+  const showNoteListTitlebar = isSmallScreen
 
   return (
     <PrimaryPageLayout
@@ -125,14 +84,18 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
       suppressMobileDefaultActiveRelaysButton
       titlebar={
         showNoteListTitlebar ? (
-          <NoteListPageTitlebar onFeedRefresh={runFeedRefresh} showTitlebarRefresh={!usesSubHeader} />
+          <NoteListPageTitlebar onFeedRefresh={runFeedRefresh} showTitlebarRefresh={false} />
         ) : null
       }
       subHeader={subHeader}
       displayScrollToTopButton
     >
       <div className="min-w-0 pt-2">
-        {content}
+        <RelaysFeed
+          ref={feedRef}
+          setSubHeader={setHomeSubHeaderStable}
+          onSubHeaderRefresh={runFeedRefresh}
+        />
       </div>
     </PrimaryPageLayout>
   )

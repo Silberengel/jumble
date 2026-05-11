@@ -6,7 +6,6 @@ import { toRelay, toRelaySettings } from '@/lib/link'
 import { normalizeUrl, simplifyUrl } from '@/lib/url'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSecondaryPage, useSmartRelayNavigation } from '@/PageManager'
-import { useFeed } from '@/providers/FeedProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { cn } from '@/lib/utils'
 import { Newspaper, Settings } from 'lucide-react'
@@ -61,7 +60,6 @@ export default function ExploreFavoriteRelays() {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
   const { push } = useSecondaryPage()
-  const { switchFeed } = useFeed()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
   const blockedSet = useMemo(
@@ -99,9 +97,7 @@ export default function ExploreFavoriteRelays() {
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 px-2.5 font-medium"
-            onClick={() => {
-              void switchFeed('all-favorites').then(() => navigate('feed'))
-            }}
+            onClick={() => navigate('feed')}
           >
             <Newspaper className="size-4 shrink-0" strokeWidth={2.5} />
             <span>{t('Favorite Relays')}</span>
