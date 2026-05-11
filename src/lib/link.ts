@@ -1,6 +1,48 @@
-import { Event, nip19 } from 'nostr-tools'
+import { Event, kinds, nip19 } from 'nostr-tools'
+import { ExtendedKind } from '@/constants'
 import { getNoteBech32Id, isReplaceableEvent } from './event'
 import { TSearchParams } from '@/types'
+
+/** Same kinds as {@link useMenuActions} `isArticleType` for naddr + Alexandria publication URLs. */
+const ALEXANDRIA_PUBLICATION_NADDR_KINDS = new Set<number>([
+  kinds.LongFormArticle,
+  ExtendedKind.PUBLICATION,
+  ExtendedKind.PUBLICATION_CONTENT,
+  ExtendedKind.WIKI_ARTICLE,
+  ExtendedKind.WIKI_ARTICLE_MARKDOWN
+])
+
+/** NIP-19 `naddr` for article-like replaceable events (`d` tag required). */
+export function encodeArticleLikePublicationNaddr(event: Event): string | null {
+  if (!ALEXANDRIA_PUBLICATION_NADDR_KINDS.has(event.kind)) return null
+  const d = event.tags.find((t) => t[0] === 'd')?.[1]
+  if (!d) return null
+  try {
+    const relays = event.tags
+      .filter((tag) => tag[0] === 'relay')
+      .map((tag) => tag[1])
+      .filter(Boolean) as string[]
+    return nip19.naddrEncode({
+      kind: event.kind,
+      pubkey: event.pubkey,
+      identifier: d,
+      relays: relays.length > 0 ? relays : undefined
+    })
+  } catch {
+    return null
+  }
+}
+
+/** Full Alexandria reader URL for a publication `naddr` (matches NoteOptions “View on Alexandria”). */
+export function getAlexandriaPublicationUrlFromNaddr(naddr: string): string {
+  return `https://next-alexandria.gitcitadel.eu/publication/naddr/${naddr}`
+}
+
+export function openAlexandriaPublicationFromNaddr(naddr: string): void {
+  const trimmed = naddr.trim()
+  if (!trimmed) return
+  window.open(getAlexandriaPublicationUrlFromNaddr(trimmed), '_blank', 'noopener,noreferrer')
+}
 
 /**
  * Note URL path segment. When `eventOrId` is a 64-char hex id and `hexResolutionEvent` is a loaded

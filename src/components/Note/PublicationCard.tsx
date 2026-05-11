@@ -13,10 +13,13 @@ import { ExtendedKind } from '@/constants'
 
 export default function PublicationCard({
   event,
-  className
+  className,
+  disableNavigation = false
 }: {
   event: Event
   className?: string
+  /** When true (e.g. full note view), card is display-only; no navigate-to-note on click. */
+  disableNavigation?: boolean
 }) {
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
@@ -33,6 +36,7 @@ export default function PublicationCard({
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (disableNavigation) return
     navigateToNote(toNote(event), event)
   }
 
@@ -82,9 +86,12 @@ export default function PublicationCard({
   if (isSmallScreen) {
     return (
       <div className={cn('w-full min-w-0', className)}>
-        <div 
-          className="min-w-0 cursor-pointer rounded-lg border p-4 transition-colors hover:bg-muted/50"
-          onClick={handleCardClick}
+        <div
+          className={cn(
+            'min-w-0 rounded-lg border p-4 transition-colors',
+            disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
+          )}
+          onClick={disableNavigation ? undefined : handleCardClick}
         >
           {metadata.image && autoLoadMedia && (
             <Image
@@ -107,9 +114,12 @@ export default function PublicationCard({
 
   return (
     <div className={cn('w-full min-w-0', className)}>
-      <div 
-        className="min-w-0 cursor-pointer overflow-hidden rounded-lg border p-4 transition-colors hover:bg-muted/50"
-        onClick={handleCardClick}
+      <div
+        className={cn(
+          'min-w-0 overflow-hidden rounded-lg border p-4 transition-colors',
+          disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
+        )}
+        onClick={disableNavigation ? undefined : handleCardClick}
       >
         <div className="flex min-w-0 gap-4">
           {metadata.image && autoLoadMedia && (

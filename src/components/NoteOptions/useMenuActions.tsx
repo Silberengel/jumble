@@ -2,7 +2,7 @@ import { ExtendedKind, READ_ALOUD_KINDS } from '@/constants'
 import { getNoteBech32Id, isProtectedEvent, getRootEventHexId } from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { buildHiveTalkJoinUrl } from '@/lib/hivetalk'
-import { toAlexandria } from '@/lib/link'
+import { toAlexandria, encodeArticleLikePublicationNaddr, openAlexandriaPublicationFromNaddr } from '@/lib/link'
 import logger from '@/lib/logger'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import {
@@ -55,7 +55,6 @@ import {
   Languages
 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
-import { nip19 } from 'nostr-tools'
 import {
   articleHasTranslatableTitle,
   eventHasTranslatableTextBody,
@@ -509,26 +508,7 @@ export function useMenuActions({
     [event.pubkey]
   )
 
-  // Generate naddr for Alexandria URL
-  const naddr = useMemo(() => {
-    if (!isArticleType || !dTag) return ''
-    try {
-      const relays = event.tags
-        .filter(tag => tag[0] === 'relay')
-        .map(tag => tag[1])
-        .filter(Boolean)
-      
-      return nip19.naddrEncode({
-        kind: event.kind,
-        pubkey: event.pubkey,
-        identifier: dTag,
-        relays: relays.length > 0 ? relays : undefined
-      })
-    } catch (error) {
-      logger.error('Error generating naddr', { error })
-      return ''
-    }
-  }, [isArticleType, event, dTag])
+  const naddr = useMemo(() => encodeArticleLikePublicationNaddr(event) ?? '', [event])
 
   const menuActions: MenuAction[] = useMemo(() => {
     const rebroadcastEntirePublication = (selectedRelayUrls: string[]) => {
@@ -855,7 +835,7 @@ export function useMenuActions({
     const handleViewOnAlexandria = () => {
       if (!naddr) return
       closeDrawer()
-      window.open(`https://next-alexandria.gitcitadel.eu/publication/naddr/${naddr}`, '_blank', 'noopener,noreferrer')
+      openAlexandriaPublicationFromNaddr(naddr)
     }
 
     const handleViewOnDecentNewsroom = () => {

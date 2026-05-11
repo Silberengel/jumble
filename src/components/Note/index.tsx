@@ -12,7 +12,7 @@ import { shouldHideInteractions } from '@/lib/event-filtering'
 import { mergeNip84MarkedIntervals, renderPlaintextWithNip84MergedMarks } from '@/lib/nip84-op-body-marks'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
-import { toNote } from '@/lib/link'
+import { encodeArticleLikePublicationNaddr, openAlexandriaPublicationFromNaddr, toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import {
   DISCUSSION_DOWNVOTE_DISPLAY,
@@ -60,7 +60,6 @@ import LiveEvent from './LiveEvent'
 import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 import AsciidocArticle from './AsciidocArticle/AsciidocArticle'
 import PublicationCard from './PublicationCard'
-import PublicationIndex from './PublicationIndex/PublicationIndex'
 import WikiCard from './WikiCard'
 import LongFormCard from './LongFormCard'
 import MutedNote from './MutedNote'
@@ -73,6 +72,7 @@ import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
 import NoteKindLabel from './NoteKindLabel'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
 import RelayReview from './RelayReview'
 import Zap from './Zap'
@@ -320,11 +320,29 @@ export default function Note({
       <WikiCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === ExtendedKind.PUBLICATION) {
-    content = showFull ? (
-      <PublicationIndex className="mt-2" event={displayEvent} />
-    ) : (
-      <PublicationCard className="mt-2" event={displayEvent} />
-    )
+    if (showFull) {
+      const naddrFull = encodeArticleLikePublicationNaddr(displayEvent)
+      content = (
+        <div className="mt-2 space-y-3">
+          <PublicationCard event={displayEvent} disableNavigation />
+          {naddrFull ? (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full font-semibold"
+              onClick={(e) => {
+                e.stopPropagation()
+                openAlexandriaPublicationFromNaddr(naddrFull)
+              }}
+            >
+              {t('View on Alexandria')}
+            </Button>
+          ) : null}
+        </div>
+      )
+    } else {
+      content = <PublicationCard className="mt-2" event={displayEvent} />
+    }
   } else if (event.kind === ExtendedKind.PUBLICATION_CONTENT) {
     content = showFull ? (
       renderEventContent()
