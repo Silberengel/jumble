@@ -162,6 +162,30 @@ export class ReplaceableEventService {
         }
       }
 
+      // Kind 3 / NIP-65: IndexedDB + session LRU before DataLoader (newest wins); then background network refresh.
+      if (!d && (kind === kinds.Contacts || kind === kinds.RelayList)) {
+        let idbEv: NEvent | undefined | null
+        try {
+          idbEv = await indexedDb.getReplaceableEvent(pubkey, kind, d)
+        } catch {
+          idbEv = undefined
+        }
+        const idbOk = idbEv && !shouldDropEventOnIngest(idbEv) ? idbEv : undefined
+        const sessionHits = client.eventService.listSessionEventsAuthoredBy(pubkey, {
+          kinds: [kind],
+          limit: 20
+        })
+        const ses = sessionHits[0]
+        const sesOk = ses && !shouldDropEventOnIngest(ses) ? ses : undefined
+        const pick = !idbOk ? sesOk : !sesOk ? idbOk : sesOk.created_at >= idbOk.created_at ? sesOk : idbOk
+        if (pick) {
+          this.replaceableEventFromBigRelaysDataloader.prime({ pubkey, kind }, Promise.resolve(pick))
+          void indexedDb.putReplaceableEvent(pick).catch(() => {})
+          void this.refreshInBackground(pubkey, kind, d).catch(() => {})
+          return pick
+        }
+      }
+
       // If we have containing event relays and this is a profile, we need to use a custom relay list
       // Otherwise, use DataLoader (which batches IndexedDB checks and network fetches)
       let event: NEvent | undefined
@@ -301,8 +325,8 @@ export class ReplaceableEventService {
   }
 
   /**
-   * Batch fetch replaceable events from profile fetch relays
-   * Checks IndexedDB first, then network
+   * Batch fetch replaceable events from profile fetch relays.
+   * Order: IndexedDB, then session LRU for kind 3 / 10002 gaps, then network.
    */
   async fetchReplaceableEventsFromProfileFetchRelays(pubkeys: string[], kind: number): Promise<(NEvent | undefined)[]> {
     const results: (NEvent | undefined)[] = new Array(pubkeys.length)
@@ -347,6 +371,21 @@ export class ReplaceableEventService {
             }
           })
         )
+      }
+    }
+
+    if (needsIndexedDb.length > 0 && (kind === kinds.Contacts || kind === kinds.RelayList)) {
+      for (const { pubkey, index } of needsIndexedDb) {
+        if (results[index] !== undefined) continue
+        const hits = client.eventService.listSessionEventsAuthoredBy(pubkey, {
+          kinds: [kind],
+          limit: 20
+        })
+        const ev = hits[0]
+        if (ev && !shouldDropEventOnIngest(ev)) {
+          results[index] = ev
+          this.replaceableEventFromBigRelaysDataloader.prime({ pubkey, kind }, Promise.resolve(ev))
+        }
       }
     }
 
@@ -464,6 +503,25 @@ export class ReplaceableEventService {
         }
       })
     )
+
+    for (let mi = missingParams.length - 1; mi >= 0; mi--) {
+      const m = missingParams[mi]!
+      if (m.kind !== kinds.Contacts && m.kind !== kinds.RelayList) continue
+      const hits = client.eventService.listSessionEventsAuthoredBy(m.pubkey, {
+        kinds: [m.kind],
+        limit: 20
+      })
+      const sessionEv = hits[0]
+      if (sessionEv && !shouldDropEventOnIngest(sessionEv)) {
+        results[m.index] = sessionEv
+        eventsMap.set(`${m.pubkey}:${m.kind}`, sessionEv)
+        this.replaceableEventFromBigRelaysDataloader.prime(
+          { pubkey: m.pubkey, kind: m.kind },
+          Promise.resolve(sessionEv)
+        )
+        missingParams.splice(mi, 1)
+      }
+    }
     
     // Step 2: Only fetch missing events from network
     if (missingParams.length === 0) {
@@ -559,12 +617,27 @@ export class ReplaceableEventService {
             )
           ).filter(Boolean)
         } else if (kind === kinds.Contacts) {
-          // Contacts (follow list) are published to user's write relays; use write + read + profile relays
+          // Contacts (kind 3): often on write relays; aggregators/profile mirrors also carry copies.
           relayUrls = Array.from(
             new Set(
-              [...FAST_WRITE_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
-                (u) => normalizeUrl(u) || u
-              )
+              [
+                ...FAST_WRITE_RELAY_URLS,
+                ...READ_ONLY_RELAY_URLS,
+                ...PROFILE_FETCH_RELAY_URLS,
+                ...FAST_READ_RELAY_URLS
+              ].map((u) => normalizeUrl(u) || u)
+            )
+          ).filter(Boolean)
+        } else if (kind === kinds.RelayList) {
+          // NIP-65 (10002): almost always on the author's write/outbox relays; FAST_READ-only misses most users.
+          relayUrls = Array.from(
+            new Set(
+              [
+                ...FAST_WRITE_RELAY_URLS,
+                ...READ_ONLY_RELAY_URLS,
+                ...PROFILE_FETCH_RELAY_URLS,
+                ...FAST_READ_RELAY_URLS
+              ].map((u) => normalizeUrl(u) || u)
             )
           ).filter(Boolean)
         } else if (kind === ExtendedKind.PAYMENT_INFO) {
@@ -598,8 +671,14 @@ export class ReplaceableEventService {
             relayCount: relayUrls.length
           })
         }
+        // Contacts + NIP-65 need the same patience as pins/payment: 100ms EOSE loses the race on slow relays
+        // and multi-author batches must not use replaceableRace (first EVENT may not be the latest per author).
         const isSlowReplaceableBatch =
-          kind === kinds.Metadata || kind === 10001 || kind === ExtendedKind.PAYMENT_INFO
+          kind === kinds.Metadata ||
+          kind === 10001 ||
+          kind === ExtendedKind.PAYMENT_INFO ||
+          kind === kinds.Contacts ||
+          kind === kinds.RelayList
         const multiAuthorBatch = pubkeys.length > 1
         // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.

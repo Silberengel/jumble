@@ -10,22 +10,37 @@ export function useFetchFollowings(pubkey?: string | null, refreshNonce = 0) {
   const [isFetching, setIsFetching] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     const init = async () => {
+      setIsFetching(true)
+      setFollowListEvent(null)
+      setFollowings([])
       try {
-        setIsFetching(true)
-        if (!pubkey) return
+        if (!pubkey?.trim()) {
+          return
+        }
 
-        const event = await replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Contacts) ?? null
-        if (!event) return
+        const event = (await replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Contacts)) ?? null
+        if (cancelled) return
+        if (!event) {
+          setFollowListEvent(null)
+          setFollowings([])
+          return
+        }
 
         setFollowListEvent(event)
         setFollowings(getPubkeysFromPTags(event.tags))
       } finally {
-        setIsFetching(false)
+        if (!cancelled) {
+          setIsFetching(false)
+        }
       }
     }
 
-    init()
+    void init()
+    return () => {
+      cancelled = true
+    }
   }, [pubkey, refreshNonce])
 
   return { followings, followListEvent, isFetching }

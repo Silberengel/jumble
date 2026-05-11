@@ -4,11 +4,12 @@ import Tabs, { TabDefinition } from '@/components/Tabs'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import storage from '@/services/local-storage.service'
-import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
+import { PROFILE_MEDIA_TAB_KINDS, FAST_READ_RELAY_URLS } from '@/constants'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import type { TPrimaryPageName } from '@/PageManager'
 import { TFeedSubRequest, TNoteListMode } from '@/types'
 import { cn } from '@/lib/utils'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { Event } from 'nostr-tools'
 import {
   forwardRef,
@@ -21,6 +22,26 @@ import {
   type ReactNode
 } from 'react'
 import KindFilter from '../KindFilter'
+
+/**
+ * Home Gallery: favorites (or chip relays) first, then {@link FAST_READ_RELAY_URLS} so NIP-71 / picture / voice
+ * events are not starved when the user’s relay set is mostly text timelines. Deduped by normalized URL.
+ */
+function galleryRelayUrlsMergedWithReadLayer(favoriteUrls: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const add = (raw: string) => {
+    const n = normalizeAnyRelayUrl(raw.trim()) || raw.trim()
+    if (!n) return
+    const k = n.toLowerCase()
+    if (seen.has(k)) return
+    seen.add(k)
+    out.push(n)
+  }
+  for (const u of favoriteUrls) add(u)
+  for (const u of FAST_READ_RELAY_URLS) add(u)
+  return out
+}
 
 const NormalFeed = forwardRef<TNoteListRef, {
   subRequests: TFeedSubRequest[]
@@ -166,14 +187,15 @@ const NormalFeed = forwardRef<TNoteListRef, {
     return base
   }, [isMainFeed, isWispTrendingOnlyFeed])
 
-  /** When in media mode, replace each shard's kinds with the media set. */
+  /** When in media mode, replace each shard's kinds with the media set; on the main home feed, widen relay set. */
   const effectiveSubRequests = useMemo(() => {
     if (listMode !== 'media') return subRequests
     return subRequests.map((req) => ({
       ...req,
+      urls: isMainFeed ? galleryRelayUrlsMergedWithReadLayer(req.urls) : req.urls,
       filter: { ...req.filter, kinds: MEDIA_KINDS }
     }))
-  }, [listMode, subRequests, MEDIA_KINDS])
+  }, [listMode, subRequests, MEDIA_KINDS, isMainFeed])
 
   const handleListModeChange = useCallback(
     (mode: TNoteListMode | string) => {
@@ -321,7 +343,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
           mergeTimelineWhenSubRequestFiltersMatch={mergeTimelineWhenSubRequestFiltersMatch}
           followingFeedDeltaSubRequests={followingFeedDeltaSubRequests}
           feedTimelineScopeKey={feedTimelineScopeKey}
+          homeFeedListMode={isMainFeed ? listMode : undefined}
           gridLayout={listMode === 'media'}
+          revealBatchSize={listMode === 'media' && isMainFeed ? 96 : undefined}
           useFilterAsIs={listMode === 'media' ? true : useFilterAsIs}
           clientSideKindFilter={listMode === 'media' ? false : clientSideKindFilter}
           allowKindlessRelayExplore={listMode === 'media' ? false : allowKindlessRelayExplore}

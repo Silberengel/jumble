@@ -30,9 +30,17 @@ export default function OthersRelayList({ userId }: { userId: string }) {
           })}
         </p>
       )}
-      {relayList.originalRelays.map((relay, index) => (
-        <RelayItem key={`read-${relay.url}-${index}`} relay={relay} />
-      ))}
+      {relayList.originalRelays.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {t('othersRelayListEmpty', {
+            defaultValue: 'No relay URLs to show. Check your connection or try again later.'
+          })}
+        </p>
+      ) : (
+        relayList.originalRelays.map((relay, index) => (
+          <RelayItem key={`read-${relay.url}-${index}`} relay={relay} />
+        ))
+      )}
     </div>
   )
 }

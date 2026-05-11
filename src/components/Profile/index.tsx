@@ -266,6 +266,11 @@ export default function Profile({
     fetchPaymentInfo()
   }, [profile?.pubkey])
 
+  useEffect(() => {
+    if (!profile?.pubkey) return
+    client.prefetchAuthorCoreReplaceables([profile.pubkey], { force: true })
+  }, [profile?.pubkey])
+
   // Fetch profile event (kind 0) for republishing and viewing JSON
   // Use fetchProfileEvent which does comprehensive search, not fetchReplaceableEvent
   useEffect(() => {

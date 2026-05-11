@@ -1,4 +1,9 @@
-import { ExtendedKind, isDocumentRelayKind } from '@/constants'
+import {
+  AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS,
+  ExtendedKind,
+  isDocumentRelayKind,
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+} from '@/constants'
 import logger from '@/lib/logger'
 import {
   getParentATag,
@@ -80,6 +85,9 @@ async function buildComprehensiveRelayListForEvents(
 }
 
 const PREFETCH_HEX_IDS_CHUNK = 48
+
+/** Cap session LRU scan per note-stats target — cache iterates newest-first; avoids O(session)×batch stalls. */
+const NOTE_STATS_SESSION_PREMERGE_SCAN_MAX = 6000
 
 export class EventService {
   private queryService: QueryService
@@ -522,6 +530,20 @@ export class EventService {
         this.sessionMetadataByPubkey.set(pk, cleanEvent as NEvent)
       }
     }
+    // NIP-65 (10002) and contacts (3) are not “document” replaceables; without this they never hit IndexedDB
+    // from timeline/REQ ingest—only the logged-in account’s list was hydrated in NostrProvider / prewarm.
+    if (
+      (cleanEvent.kind === kinds.RelayList || cleanEvent.kind === kinds.Contacts) &&
+      indexedDb.hasReplaceableEventStoreForKind(cleanEvent.kind)
+    ) {
+      void client.replaceableEventService.updateReplaceableEventCache(cleanEvent as NEvent).catch(() => {})
+    }
+    if (AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS.has(cleanEvent.kind)) {
+      const pk = cleanEvent.pubkey
+      if (pk && /^[0-9a-f]{64}$/i.test(pk)) {
+        void client.prefetchAuthorCoreReplaceables([pk.toLowerCase()])
+      }
+    }
     this.notifySessionEventWaiters(id)
     this.notifyReplaceableCoordinateWaiters(cleanEvent as NEvent)
     queuePersistSeenEvent(cleanEvent as NEvent)
@@ -738,6 +760,80 @@ export class EventService {
       )
       if (matches) out.push(event)
     }
+    return out
+  }
+
+  /**
+   * Session LRU rows that already reference `rootEvent` for {@link NoteStatsService} (reposts, reactions, zaps,
+   * replies, quotes, etc.). Iteration is recency-ordered; only the first {@link NOTE_STATS_SESSION_PREMERGE_SCAN_MAX}
+   * rows are scanned so large session caps do not stall stats batches.
+   */
+  getSessionEventsForNoteStatsTarget(rootEvent: NEvent, options?: { maxScan?: number }): NEvent[] {
+    const maxScan = Math.min(Math.max(options?.maxScan ?? NOTE_STATS_SESSION_PREMERGE_SCAN_MAX, 200), 40_000)
+    const id = rootEvent.id.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(id)) return []
+
+    const coordRaw = isReplaceableEvent(rootEvent.kind)
+      ? getReplaceableCoordinateFromEvent(rootEvent)?.trim()
+      : undefined
+    const coordNorm = coordRaw ? normalizeReplaceableCoordinateString(coordRaw) : undefined
+
+    const kindAllow = new Set<number>([
+      kinds.Reaction,
+      kinds.Repost,
+      ExtendedKind.GENERIC_REPOST,
+      kinds.Zap,
+      kinds.ShortTextNote,
+      ExtendedKind.COMMENT,
+      ExtendedKind.VOICE_COMMENT,
+      kinds.Highlights,
+      ExtendedKind.EXTERNAL_REACTION,
+      ExtendedKind.WEB_BOOKMARK,
+      ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+    ])
+
+    const hexMatchesRoot = (hex: string | undefined) => {
+      if (!hex || !/^[0-9a-f]{64}$/i.test(hex)) return false
+      return hex.toLowerCase() === id
+    }
+
+    const coordMatches = (atag: string | undefined) => {
+      if (!coordNorm || !atag?.trim()) return false
+      return normalizeReplaceableCoordinateString(atag) === coordNorm
+    }
+
+    const out: NEvent[] = []
+    let scanned = 0
+    for (const [, event] of this.sessionEventCache.entries()) {
+      if (++scanned > maxScan) break
+      if (shouldDropEventOnIngest(event)) continue
+      if (!kindAllow.has(event.kind)) continue
+
+      let hit = false
+      for (const t of event.tags) {
+        const name = t[0]
+        const v = t[1]?.trim()
+        if (!v) continue
+        if (name === 'e' || name === 'E') {
+          if (hexMatchesRoot(v)) {
+            hit = true
+            break
+          }
+        } else if (name === 'q') {
+          if (hexMatchesRoot(v)) {
+            hit = true
+            break
+          }
+        } else if (name === 'a' || name === 'A') {
+          if (coordMatches(v)) {
+            hit = true
+            break
+          }
+        }
+      }
+      if (hit) out.push(event)
+    }
+    out.sort((a, b) => b.created_at - a.created_at)
     return out
   }
 

@@ -54,12 +54,6 @@ const RelaySettingsPage = forwardRef(({ id, index, hideTitlebar = false }: { id?
   }, [profile?.pubkey, relayList])
 
   useEffect(() => {
-    if (profile?.pubkey) {
-      setListKey((k) => k + 1)
-    }
-  }, [profile?.pubkey])
-
-  useEffect(() => {
     if (!hideTitlebar) {
       registerPrimaryPanelRefresh(null)
       return

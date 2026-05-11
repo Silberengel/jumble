@@ -2,6 +2,7 @@ import {
   DEFAULT_FAVORITE_RELAYS,
   DOCUMENT_RELAY_URLS,
   FAST_READ_RELAY_URLS,
+  PROFILE_FETCH_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   isDocumentRelayKind,
   relayFilterIncludesSocialKindBlockedKind
@@ -184,17 +185,26 @@ export function buildProfilePageReadRelayUrls(
   const list = includeAuthorLocalRelays
     ? authorRelayList
     : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
+  const authorRead = [...(list.httpRead ?? []), ...(list.read ?? [])]
+  const authorWrite = [...(list.httpWrite ?? []), ...(list.write ?? [])]
+  const authorHasNoNip65 = authorRead.length === 0 && authorWrite.length === 0
+
   let urls = getRelayUrlsWithFavoritesFastReadAndInbox(
     favoriteRelays,
     blockedRelays,
-    [...(list.httpRead ?? []), ...(list.read ?? [])],
+    authorRead,
     {
-      userWriteRelays: [...(list.httpWrite ?? []), ...(list.write ?? [])],
+      userWriteRelays: authorWrite,
       authorWriteRelays: [],
       maxRelays,
       applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind
     }
   )
+  /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
+  if (authorHasNoNip65) {
+    const profileFetchLayer = PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+    urls = mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
+  }
   if (wantsDocumentLayer) {
     const docLayer = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
     urls = mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, maxRelays + 6)

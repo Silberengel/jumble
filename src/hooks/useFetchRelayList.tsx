@@ -1,3 +1,4 @@
+import { FETCH_RELAY_LIST_HOOK_MAX_MS } from '@/constants'
 import logger from '@/lib/logger'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -44,7 +45,22 @@ export function useFetchRelayList(pubkey?: string | null) {
         setHasKind10002InStorage(!!k10002)
         setRelayList(fromStorage)
 
-        const merged = await client.fetchRelayList(targetPk)
+        const merged = await Promise.race([
+          client.fetchRelayList(targetPk),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('relay-list hook max wait')), FETCH_RELAY_LIST_HOOK_MAX_MS)
+          })
+        ]).catch(async (err: unknown) => {
+          const isMaxWait = err instanceof Error && err.message === 'relay-list hook max wait'
+          if (isMaxWait) {
+            logger.warn('[useFetchRelayList] fetchRelayList exceeded max wait; clearing dedupe cache', {
+              pubkeyPrefix: targetPk.slice(0, 12)
+            })
+            client.clearRelayListCache(targetPk)
+            return client.peekRelayListFromStorage(targetPk)
+          }
+          throw err
+        })
         if (cancelled) return
         setRelayList(merged)
         const k10002After = await indexedDb.getReplaceableEvent(targetPk, kinds.RelayList).catch(() => null)
@@ -78,10 +94,8 @@ export function useFetchRelayList(pubkey?: string | null) {
     }
   }, [pubkey])
 
-  const showingRelayListFallback =
-    !isFetching &&
-    !hasKind10002InStorage &&
-    relayList.originalRelays.length === 0
+  /** True when no kind 10002 for this author in IDB — UI may show default discovery relays with a disclaimer. */
+  const showingRelayListFallback = !isFetching && !hasKind10002InStorage
 
   return { relayList, isFetching, hasKind10002InStorage, showingRelayListFallback }
 }

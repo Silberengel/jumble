@@ -371,6 +371,21 @@ class NoteStatsService {
         return
       }
 
+      // Feed/timeline often already has reposts, reactions, zaps in the session LRU — merge before relay list + REQ
+      // so boost strips and counts paint without waiting on fetchRelayList / index relays.
+      if (resolvedEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) {
+        const preFromSession = eventService.getSessionEventsForNoteStatsTarget(resolvedEvent)
+        if (preFromSession.length > 0) {
+          this.updateNoteStatsByEvents(preFromSession, resolvedEvent.pubkey, {
+            statsRootEvent: resolvedEvent
+          })
+          logger.debug('[NoteStats] processSingleEvent: pre-merged session interactions', {
+            eventId: `${resolvedEvent.id.slice(0, 12)}…`,
+            count: preFromSession.length
+          })
+        }
+      }
+
       const finalRelayUrls = await this.buildNoteStatsRelayList(resolvedEvent, favoriteRelays)
 
       const replaceableCoordinate = isReplaceableEvent(resolvedEvent.kind)

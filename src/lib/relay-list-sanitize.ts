@@ -1,5 +1,5 @@
 import { isHttpRelayUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
-import type { TRelayList } from '@/types'
+import type { TMailboxRelay, TMailboxRelayScope, TRelayList } from '@/types'
 
 /** True if this URL is not loopback / LAN (safe to open from another user's browser as a REQ target). */
 export function urlIsNonLocalForRemoteViewer(url: string): boolean {
@@ -48,4 +48,41 @@ export function stripLocalNetworkRelaysFromRelayList(list: TRelayList): TRelayLi
     httpRead: (list.httpRead ?? []).filter(keepUrl),
     httpOriginalRelays: (list.httpOriginalRelays ?? []).filter((r) => keepUrl(r.url))
   }
+}
+
+const normRelayKey = (u: string): string => {
+  const t = typeof u === 'string' ? u.trim() : ''
+  if (!t) return ''
+  return (isHttpRelayUrl(t) ? normalizeAnyRelayUrl(t) : normalizeUrl(t)) || t
+}
+
+/**
+ * When NIP-65 `originalRelays` is empty but `read` / `write` URL lists are filled (e.g. PROFILE_FETCH fallback),
+ * build mailbox rows so UIs that only map `originalRelays` still render.
+ */
+export function syntheticOriginalRelaysFromReadWrite(read: string[], write: string[]): TMailboxRelay[] {
+  const readByKey = new Map<string, string>()
+  const writeByKey = new Map<string, string>()
+  for (const u of read) {
+    const k = normRelayKey(u)
+    if (!k) continue
+    if (!readByKey.has(k)) readByKey.set(k, u.trim())
+  }
+  for (const u of write) {
+    const k = normRelayKey(u)
+    if (!k) continue
+    if (!writeByKey.has(k)) writeByKey.set(k, u.trim())
+  }
+  const keys = new Set([...readByKey.keys(), ...writeByKey.keys()])
+  const rows: TMailboxRelay[] = []
+  for (const k of keys) {
+    const hasR = readByKey.has(k)
+    const hasW = writeByKey.has(k)
+    const url = (hasR ? readByKey.get(k) : writeByKey.get(k))!
+    const scope: TMailboxRelayScope =
+      hasR && hasW ? 'both' : hasR ? 'read' : 'write'
+    rows.push({ url, scope })
+  }
+  rows.sort((a, b) => a.url.localeCompare(b.url))
+  return rows
 }

@@ -3,6 +3,7 @@ import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   FIRST_RELAY_RESULT_GRACE_MS,
+  PROFILE_MEDIA_TAB_KINDS,
   SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
   SINGLE_RELAY_KINDLESS_REQ_LIMIT
 } from '@/constants'
@@ -42,7 +43,7 @@ import {
   hardReloadPreservingFeedSnapshots,
   setSessionFeedSnapshot
 } from '@/services/session-feed-snapshot.service'
-import type { TFeedSubRequest, TSubRequestFilter } from '@/types'
+import type { TFeedSubRequest, TNoteListMode, TSubRequestFilter } from '@/types'
 import dayjs from 'dayjs'
 import { type Event, type Filter, kinds } from 'nostr-tools'
 import { decode } from 'nostr-tools/nip19'
@@ -576,8 +577,8 @@ function tightestSinceFromSpellFilters(shardFilters: Filter[]): number | undefin
 
 /**
  * Profile Posts / Media feeds shard by relay but share one author + kinds REQ. Session + IDB author scans are keyed
- * only on that author/kinds pair — unlike {@link ClientService.getTimelineDiskSnapshotEvents}, which misses rows
- * until each relay-shard timeline has been persisted under its own key.
+ * only on that author/kinds pair. Timeline rows may live under per-shard persist keys; profile async warmup merges
+ * {@link ClientService.getTimelineDiskSnapshotEvents} with the author archive scan so both layers paint together.
  */
 function getProfileSingleAuthorWarmupSpec(
   mapped: Array<{ urls: string[]; filter: TSubRequestFilter }>
@@ -602,6 +603,22 @@ function getProfileSingleAuthorWarmupSpec(
   }
   if (normAuthor === null) return null
   return { author: normAuthor, kinds: Array.from(kindUnion).sort((a, b) => a - b) }
+}
+
+/** Union of `filter.kinds` across mapped REQ shards; empty if any shard omits kinds (caller should not use fallback). */
+function filterEvsToMappedTimelineReqKinds(
+  evs: Event[],
+  mapped: Array<{ urls: string[]; filter: Filter }>
+): Event[] {
+  const kindSet = new Set<number>()
+  for (const { filter } of mapped) {
+    const ks = filter.kinds
+    if (!Array.isArray(ks) || ks.length === 0) {
+      return []
+    }
+    for (const k of ks) kindSet.add(k)
+  }
+  return evs.filter((e) => kindSet.has(e.kind))
 }
 
 const NoteList = forwardRef(
@@ -656,6 +673,12 @@ const NoteList = forwardRef(
        * relay URL set is a strict superset of the old one (which would otherwise keep stale rows).
        */
       feedTimelineScopeKey,
+      /**
+       * Home {@link NormalFeed} surface: Notes / Replies / Gallery. Gallery uses fixed media REQ kinds; without
+       * this, {@link timelineResubscribeKindKey} still tracks the Notes kind picker and tears the live sub on
+       * unrelated picker churn — stale grid + refresh feeling broken.
+       */
+      homeFeedListMode,
       /** Spells page: bumps when user picks a feed; used with {@link onSpellFeedFirstPaint}. */
       spellFeedInstrumentToken,
       /** Spells page: fired once when the filtered list first has rows after a picker change. */
@@ -674,7 +697,7 @@ const NoteList = forwardRef(
       /**
        * When true, load events with parallel {@link client.fetchEvents} per subRequest instead of
        * {@link client.subscribeTimeline}. No live stream or `loadMore` timeline pagination; use for faux spells
-       * Refresh re-fetches.
+       * and similar one-shot feeds. Refresh re-fetches.
        */
       oneShotFetch = false,
       /** Override {@link client.fetchEvents} / query global timeout (default 14s). */
@@ -761,6 +784,7 @@ const NoteList = forwardRef(
       mergeTimelineWhenSubRequestFiltersMatch?: boolean
       followingFeedDeltaSubRequests?: TFeedSubRequest[]
       feedTimelineScopeKey?: string
+      homeFeedListMode?: TNoteListMode
       spellFeedInstrumentToken?: number
       onSpellFeedFirstPaint?: (detail: { eventCount: number; firstEventId: string }) => void
       timelineLoadingSafetyTimeoutMs?: number
@@ -1110,6 +1134,7 @@ const NoteList = forwardRef(
       () =>
         JSON.stringify({
           feed: timelineSubscriptionKey,
+          ...(homeFeedListMode ? { homeSurface: homeFeedListMode } : {}),
           ...(allowKindlessRelayExplore
             ? { relayKindless: true, showAllKinds }
             : {
@@ -1122,6 +1147,7 @@ const NoteList = forwardRef(
         }),
       [
         timelineSubscriptionKey,
+        homeFeedListMode,
         showKindsKey,
         showKind1OPs,
         showKind1Replies,
@@ -1133,9 +1159,18 @@ const NoteList = forwardRef(
     )
 
     /** Kindless relay explore ignores the feed kind picker; avoid re-subscribing when it changes. */
-    const timelineResubscribeKindKey = allowKindlessRelayExplore
-      ? 'kindless-relay-explore'
-      : `${showKindsKey}|${showKind1OPs}|${showKind1Replies}|${showKind1111}`
+    const timelineResubscribeKindKey = useMemo(() => {
+      if (allowKindlessRelayExplore) return 'kindless-relay-explore'
+      if (homeFeedListMode === 'media') return 'home-surface-media'
+      return `${showKindsKey}|${showKind1OPs}|${showKind1Replies}|${showKind1111}`
+    }, [
+      allowKindlessRelayExplore,
+      homeFeedListMode,
+      showKindsKey,
+      showKind1OPs,
+      showKind1Replies,
+      showKind1111
+    ])
 
     const showKindsRef = useRef(showKinds)
     showKindsRef.current = showKinds
@@ -1169,6 +1204,8 @@ const NoteList = forwardRef(
     withKindFilterRef.current = withKindFilter
     const hostPrimaryPageNameRef = useRef(hostPrimaryPageName)
     hostPrimaryPageNameRef.current = hostPrimaryPageName
+    const gridLayoutRef = useRef(gridLayout)
+    gridLayoutRef.current = gridLayout
 
     const narrowLiveBatchUsingRefs = (evs: Event[]): Event[] => {
       if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
@@ -1275,9 +1312,15 @@ const NoteList = forwardRef(
         }
         if (shouldHideEvent(evt)) continue
 
-        const id = isReplaceableEvent(evt.kind) ? getReplaceableCoordinateFromEvent(evt) : evt.id
-        if (idSet.has(id)) continue
-        idSet.add(id)
+        // Mosaic: one tile per event id. Replaceable-coordinate dedup (correct for profile lists) collapses
+        // multiple NIP-71 addressable revisions / instances to a single cell — looks like "extra images flash then vanish".
+        const dedupeKey = gridLayout
+          ? evt.id
+          : isReplaceableEvent(evt.kind)
+            ? getReplaceableCoordinateFromEvent(evt) || evt.id
+            : evt.id
+        if (idSet.has(dedupeKey)) continue
+        idSet.add(dedupeKey)
         out.push(evt)
       }
       const scannedToEndOfBuffer = i >= timelineEventsForFilter.length
@@ -1292,7 +1335,8 @@ const NoteList = forwardRef(
       showKind1OPs,
       showKind1Replies,
       showKind1111,
-      applyKindPickerInUi
+      applyKindPickerInUi,
+      gridLayout
     ])
 
     useEffect(() => {
@@ -1618,9 +1662,11 @@ const NoteList = forwardRef(
 
     const refresh = useCallback(() => {
       scrollToTop()
+      // Short delay so scroll-to-top commits before tearing the timeline (avoids merge races); 500ms made
+      // refresh feel broken on slow tabs (e.g. Gallery) when users clicked again thinking nothing happened.
       setTimeout(() => {
         setRefreshCount((count) => count + 1)
-      }, 500)
+      }, 80)
     }, [scrollToTop])
 
     const flushPendingNewEventsIntoTimeline = useCallback(() => {
@@ -1971,7 +2017,7 @@ const NoteList = forwardRef(
         const narrowLiveBatch = (evs: Event[]) => {
           if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
           if (withKindFilterRef.current && !showAllKindsRef.current) {
-            return evs.filter((e) =>
+            const out = evs.filter((e) =>
               eventPassesNoteListKindPicker(
                 e,
                 effectiveShowKindsRef.current,
@@ -1980,10 +2026,26 @@ const NoteList = forwardRef(
                 showKind1111Ref.current
               )
             )
+            if (
+              out.length > 0 ||
+              hostPrimaryPageNameRef.current !== 'profile' ||
+              mappedSubRequests.length === 0
+            ) {
+              return out
+            }
+            return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
           }
           if (!useFilterAsIsRef.current || !clientSideKindFilterRef.current) return evs
           if (!withKindFilterRef.current) return evs
-          return evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
+          const byPicker = evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
+          if (
+            byPicker.length > 0 ||
+            hostPrimaryPageNameRef.current !== 'profile' ||
+            mappedSubRequests.length === 0
+          ) {
+            return byPicker
+          }
+          return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
         }
 
         const eventCapEarly = allowKindlessRelayExplore
@@ -2044,6 +2106,72 @@ const NoteList = forwardRef(
             .catch(() => {
               /* best-effort */
             })
+        }
+
+        /**
+         * Home Galerie: paint session + IndexedDB media hits immediately so the grid is not blank while relay
+         * waves stall (dead localhost relay, NIP-42, etc.). Merges before/alongside disk timeline prime.
+         */
+        const startHomeGalleryLocalWarmup = () => {
+          if (!gridLayoutRef.current) return
+          if (hostPrimaryPageNameRef.current !== 'feed') return
+          if (oneShotFetch || mappedSubRequests.length === 0) return
+
+          const mergeLayer = (incoming: Event[], variant: string) => {
+            if (!effectActive || timelineEffectStale()) return
+            const narrowed = narrowLiveBatch(incoming)
+            if (!narrowed.length) return
+            setEvents((prev) => {
+              const boot = timelineMergeBootstrapRef.current
+              const base = boot !== null ? boot : prev
+              const next = collapseDuplicateNip18RepostTimelineRows(
+                mergeEventBatchesById(base, narrowed, eventCapEarly, areAlgoRelays)
+              )
+              if (next.length > 0) {
+                timelineMergeBootstrapRef.current = next.slice()
+                lastEventsForTimelinePrefetchRef.current = next
+              }
+              return next
+            })
+            setNewEvents([])
+            setShowCount(revealBatchSize ?? SHOW_COUNT)
+            if (!feedPaintLiveRelayDoneRef.current) {
+              setLoading(false)
+              feedPaintRelayPendingRef.current = true
+              feedPaintRelayMetaRef.current = {
+                variant,
+                mergedCount: narrowed.length
+              }
+              setFeedEmptyToastGateTick((n) => n + 1)
+              setFeedTimelineEmptyUiReady(true)
+            }
+          }
+
+          try {
+            const hits = client.eventService.listSessionEventsByKinds([...PROFILE_MEDIA_TAB_KINDS], {
+              limit: 800
+            })
+            mergeLayer(hits as Event[], 'gallery_session_local')
+          } catch {
+            /* ignore */
+          }
+
+          void (async () => {
+            try {
+              const since = dayjs().subtract(120, 'day').unix()
+              const rows = await indexedDb.scanEventArchiveByKinds({
+                kinds: [...PROFILE_MEDIA_TAB_KINDS],
+                since,
+                maxRowsScanned: 28_000,
+                maxMatches: 220
+              })
+              if (!effectActive || timelineEffectStale()) return
+              if (!gridLayoutRef.current || hostPrimaryPageNameRef.current !== 'feed') return
+              mergeLayer(rows as Event[], 'gallery_archive_local')
+            } catch {
+              /* ignore */
+            }
+          })()
         }
 
         if (!keepExistingTimelineEvents) {
@@ -2201,17 +2329,25 @@ const NoteList = forwardRef(
 
                 void (async () => {
                   try {
-                    const fromArchive = await indexedDb.scanEventArchiveByAuthorPubkey(
-                      profileAuthorWarmSpec.author,
-                      {
+                    const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                    const archiveCap = Math.min(2000, Math.max(eventCapEarly, 150))
+                    const [fromArchive, diskSnap] = await Promise.all([
+                      indexedDb.scanEventArchiveByAuthorPubkey(profileAuthorWarmSpec.author, {
                         kinds: profileAuthorWarmSpec.kinds,
                         maxRowsScanned: 16_000,
-                        maxMatches: Math.min(2000, Math.max(eventCapEarly, 150))
-                      }
-                    )
+                        maxMatches: archiveCap
+                      }),
+                      client.getTimelineDiskSnapshotEvents(diskReq)
+                    ])
                     if (!effectActive || timelineEffectStale()) return
-                    if (fromArchive.length === 0) return
-                    const narrowed = narrowLiveBatch(fromArchive as Event[])
+                    const premerged = mergeEventBatchesById(
+                      [],
+                      [...(fromArchive as Event[]), ...(diskSnap as Event[])],
+                      archiveCap,
+                      areAlgoRelays
+                    )
+                    if (premerged.length === 0) return
+                    const narrowed = narrowLiveBatch(premerged)
                     if (narrowed.length === 0) return
                     setEvents((prev) => {
                       const merged = collapseDuplicateNip18RepostTimelineRows(
@@ -2254,6 +2390,7 @@ const NoteList = forwardRef(
         }
 
         if (!oneShotFetch && mappedSubRequests.length > 0) {
+          startHomeGalleryLocalWarmup()
           startNonBlockingTimelineDiskPrime()
         }
 

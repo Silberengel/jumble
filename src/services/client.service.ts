@@ -123,7 +123,12 @@ import {
   relayFiltersUseCapitalLetterTagKeys,
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
-import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
+import {
+  stripLocalNetworkRelaysFromRelayList,
+  stripMailboxLocalUrlsForRemoteViewers,
+  syntheticOriginalRelaysFromReadWrite,
+  urlIsNonLocalForRemoteViewer
+} from '@/lib/relay-list-sanitize'
 import {
   canonicalRelayStrikeKey,
   isHttpRelayUrl,
@@ -288,10 +293,14 @@ class ClientService extends EventTarget {
   private sessionRelayPublishStats = new Map<string, { successCount: number; sumLatencyMs: number }>()
 
   /**
-   * IndexedDB profile index + NIP-66 relay discovery run once per page session; followings prewarm (metadata + kind 10002) runs when logged in.
+   * IndexedDB profile index + NIP-66 relay discovery run once per page session; when logged in,
+   * {@link initUserIndexFromFollowings} hydrates each follow's kind 0, 3, and 10002 in batches.
    * @see {@link runSessionPrewarm}
    */
   private sessionPrewarmBaseCompleted = false
+  /** Per-pubkey cooldown for {@link prefetchAuthorCoreReplaceables} from feed ingest (avoid REQ storms). */
+  private authorCorePrefetchCooldownUntilMs = new Map<string, number>()
+  private static readonly AUTHOR_CORE_PREFETCH_COOLDOWN_MS = 90_000
 
   constructor() {
     super()
@@ -746,10 +755,10 @@ class ClientService extends EventTarget {
         this.fetchRelayList(pubkey),
         new Promise<TRelayList>((resolve) =>
           setTimeout(() => {
-            logger.warn('[DetermineTargetRelays] fetchRelayList timed out; using empty outbox', {
+            logger.warn('[DetermineTargetRelays] fetchRelayList timed out; using IndexedDB / default merge', {
               pubkeySlice: pubkey.slice(0, 12)
             })
-            resolve(empty)
+            void this.peekRelayListFromStorage(pubkey).then(resolve).catch(() => resolve(empty))
           }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
         )
       ])
@@ -758,7 +767,11 @@ class ClientService extends EventTarget {
         pubkeySlice: pubkey.slice(0, 12),
         error: err instanceof Error ? err.message : String(err)
       })
-      return empty
+      try {
+        return await this.peekRelayListFromStorage(pubkey)
+      } catch {
+        return empty
+      }
     }
   }
 
@@ -769,10 +782,12 @@ class ClientService extends EventTarget {
         this.fetchRelayLists(pubkeys),
         new Promise<TRelayList[]>((resolve) =>
           setTimeout(() => {
-            logger.warn('[DetermineTargetRelays] fetchRelayLists timed out; skipping context inbox merge', {
+            logger.warn('[DetermineTargetRelays] fetchRelayLists timed out; using IndexedDB / default merge', {
               pubkeyCount: pubkeys.length
             })
-            resolve(pubkeys.map(() => this.emptyRelayListForPublish()))
+            void Promise.all(pubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
+              .then(resolve)
+              .catch(() => resolve(pubkeys.map(() => this.emptyRelayListForPublish())))
           }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
         )
       ])
@@ -781,7 +796,11 @@ class ClientService extends EventTarget {
         pubkeyCount: pubkeys.length,
         error: err instanceof Error ? err.message : String(err)
       })
-      return pubkeys.map(() => this.emptyRelayListForPublish())
+      try {
+        return await Promise.all(pubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
+      } catch {
+        return pubkeys.map(() => this.emptyRelayListForPublish())
+      }
     }
   }
 
@@ -3090,6 +3109,52 @@ class ClientService extends EventTarget {
   /** =========== Followings =========== */
   // Moved to ReplaceableEventService
 
+  /**
+   * Best-effort: fetch and persist each author's kind 3 + 10002 (contacts + NIP-65) via the same batched path
+   * as profile relay discovery. Call from profile mounts and opportunistically from feed ingest.
+   */
+  prefetchAuthorCoreReplaceables(
+    pubkeys: string | readonly string[],
+    options?: { force?: boolean; cooldownMs?: number }
+  ): void {
+    const raw = typeof pubkeys === 'string' ? [pubkeys] : [...pubkeys]
+    const cooldown = options?.cooldownMs ?? ClientService.AUTHOR_CORE_PREFETCH_COOLDOWN_MS
+    const now = Date.now()
+    const unique: string[] = []
+    const seen = new Set<string>()
+    for (const p of raw) {
+      const pk = typeof p === 'string' ? p.trim().toLowerCase() : ''
+      if (!/^[0-9a-f]{64}$/.test(pk) || seen.has(pk)) continue
+      seen.add(pk)
+      if (!options?.force) {
+        const until = this.authorCorePrefetchCooldownUntilMs.get(pk) ?? 0
+        if (now < until) continue
+        this.authorCorePrefetchCooldownUntilMs.set(pk, now + cooldown)
+      }
+      unique.push(pk)
+    }
+    if (unique.length === 0) return
+
+    void (async () => {
+      try {
+        await Promise.all([
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.RelayList),
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.Contacts)
+        ])
+      } catch (err) {
+        if (!options?.force) {
+          for (const pk of unique) {
+            this.authorCorePrefetchCooldownUntilMs.delete(pk)
+          }
+        }
+        logger.debug('[client] prefetchAuthorCoreReplaceables failed', {
+          count: unique.length,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
+    })()
+  }
+
   /** Part of {@link runSessionPrewarm}; batches followings to limit relay load. */
   private async initUserIndexFromFollowings(pubkey: string, signal: AbortSignal) {
     const followings = await this.replaceableEventService.fetchFollowings(pubkey)
@@ -3099,11 +3164,12 @@ class ClientService extends EventTarget {
       })
       return
     }
-    logger.info('[client] Prewarm: following profile + NIP-65 relay list fetch started', {
+    logger.info('[client] Prewarm: following profile + contacts + NIP-65 fetch started', {
       pubkeySlice: pubkey.slice(0, 12),
       followingCount: followings.length
     })
     let relayListResolved = 0
+    let contactsResolved = 0
     const chunkSize = 20
     for (let i = 0; i * chunkSize < followings.length; i++) {
       if (signal.aborted) {
@@ -3111,17 +3177,20 @@ class ClientService extends EventTarget {
         return
       }
       const chunk = followings.slice(i * chunkSize, (i + 1) * chunkSize)
-      const [relayListEvents] = await Promise.all([
+      const [relayListEvents, contactsEvents, _profiles] = await Promise.all([
         this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.RelayList),
+        this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.Contacts),
         Promise.all(chunk.map((pk) => this.fetchProfileEvent(pk)))
       ])
       relayListResolved += relayListEvents.filter(Boolean).length
+      contactsResolved += contactsEvents.filter(Boolean).length
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
-    logger.info('[client] Prewarm: following profile + NIP-65 relay list fetch finished', {
+    logger.info('[client] Prewarm: following profile + contacts + NIP-65 fetch finished', {
       pubkeySlice: pubkey.slice(0, 12),
       followingCount: followings.length,
-      relayListEventsResolved: relayListResolved
+      relayListEventsResolved: relayListResolved,
+      contactsEventsResolved: contactsResolved
     })
   }
 
@@ -3577,10 +3646,12 @@ class ClientService extends EventTarget {
           const [fallback] = await this.mergeRelayListsFromStoredOnly([pubkey])
           return fallback!
         } catch {
+          const read = PROFILE_FETCH_RELAY_URLS
+          const write = PROFILE_FETCH_RELAY_URLS
           return {
-            write: PROFILE_FETCH_RELAY_URLS,
-            read: PROFILE_FETCH_RELAY_URLS,
-            originalRelays: [],
+            write,
+            read,
+            originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
             httpRead: [],
             httpWrite: [],
             httpOriginalRelays: []
@@ -3604,10 +3675,28 @@ class ClientService extends EventTarget {
     return rl!
   }
 
+  /** Newest kind 10002 for `pubkey` from IndexedDB and/or session LRU (session may hold a copy not persisted yet). */
+  private async getKind10002FromIdbOrSession(pubkey: string): Promise<NEvent | undefined | null> {
+    let idb: NEvent | undefined | null
+    try {
+      idb = await indexedDb.getReplaceableEvent(pubkey, kinds.RelayList)
+    } catch {
+      idb = undefined
+    }
+    const idbOk = idb && !shouldDropEventOnIngest(idb) ? idb : undefined
+    const sessionHits = this.eventService.listSessionEventsAuthoredBy(pubkey, {
+      kinds: [kinds.RelayList],
+      limit: 20
+    })
+    const ses = sessionHits[0]
+    const sesOk = ses && !shouldDropEventOnIngest(ses) ? ses : undefined
+    if (!idbOk) return sesOk
+    if (!sesOk) return idbOk
+    return sesOk.created_at >= idbOk.created_at ? sesOk : idbOk
+  }
+
   private async mergeRelayListsFromStoredOnly(pubkeys: string[]): Promise<TRelayList[]> {
-    const storedRelayEvents = await Promise.all(
-      pubkeys.map((pk) => indexedDb.getReplaceableEvent(pk, kinds.RelayList))
-    )
+    const storedRelayEvents = await Promise.all(pubkeys.map((pk) => this.getKind10002FromIdbOrSession(pk)))
     const storedCacheRelayEvents = await Promise.all(
       pubkeys.map((pk) => indexedDb.getReplaceableEvent(pk, ExtendedKind.CACHE_RELAYS))
     )
@@ -3708,10 +3797,23 @@ class ClientService extends EventTarget {
             ...emptyHttp
           })
         }
+        let read = PROFILE_FETCH_RELAY_URLS
+        let write = PROFILE_FETCH_RELAY_URLS
+        if (!isOwnRelayList) {
+          const stripped = stripMailboxLocalUrlsForRemoteViewers({ read, write })
+          read =
+            stripped.read.length > 0 ? stripped.read : read.filter(urlIsNonLocalForRemoteViewer)
+          write =
+            stripped.write.length > 0 ? stripped.write : write.filter(urlIsNonLocalForRemoteViewer)
+          if (read.length === 0 && write.length === 0) {
+            read = [...FAST_READ_RELAY_URLS]
+            write = [...FAST_READ_RELAY_URLS]
+          }
+        }
         return mergeKind10243({
-          write: PROFILE_FETCH_RELAY_URLS,
-          read: PROFILE_FETCH_RELAY_URLS,
-          originalRelays: [],
+          write,
+          read,
+          originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
           ...emptyHttp
         })
       }
@@ -3746,9 +3848,7 @@ class ClientService extends EventTarget {
     if (pubkeys.length === 0) return []
 
     try {
-    const storedRelayEvents = await Promise.all(
-      pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, kinds.RelayList))
-    )
+    const storedRelayEvents = await Promise.all(pubkeys.map((pk) => this.getKind10002FromIdbOrSession(pk)))
     const storedCacheRelayEvents = await Promise.all(
       pubkeys.map((pubkey) => indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS))
     )
@@ -3906,10 +4006,12 @@ class ClientService extends EventTarget {
       try {
         return await this.mergeRelayListsFromStoredOnly(pubkeys)
       } catch {
+        const read = PROFILE_FETCH_RELAY_URLS
+        const write = PROFILE_FETCH_RELAY_URLS
         return pubkeys.map(() => ({
-          write: PROFILE_FETCH_RELAY_URLS,
-          read: PROFILE_FETCH_RELAY_URLS,
-          originalRelays: [] as TMailboxRelay[],
+          write,
+          read,
+          originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
           httpRead: [] as string[],
           httpWrite: [] as string[],
           httpOriginalRelays: [] as TMailboxRelay[]

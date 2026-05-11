@@ -146,10 +146,18 @@ export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 20_000
 
 /**
  * How long {@link ClientService.fetchRelayLists} waits on the network before returning an IndexedDB + default
- * merge. Kept short so users without NIP-65 (or slow relays) get {@link PROFILE_FETCH_RELAY_URLS} immediately;
- * {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS} stays longer for publish / prioritize paths that wrap their own races.
+ * merge. Must allow {@link ReplaceableEventService.fetchReplaceableEventsFromProfileFetchRelays} (10002 + 10243)
+ * plus kind-10432 discovery to finish on slow relays; otherwise we never persist others’ NIP-65 and the cache
+ * stays empty except for the account’s own hydration path.
  */
-export const FETCH_RELAY_LIST_UI_TIMEOUT_MS = 2_500
+export const FETCH_RELAY_LIST_UI_TIMEOUT_MS = 10_000
+
+/**
+ * Hard cap for {@link useFetchRelayList}: if {@link ClientService.fetchRelayList} never settles (deduped hang,
+ * IDB edge case), clear the in-flight dedupe entry and fall back to {@link ClientService.peekRelayListFromStorage}
+ * so the UI cannot stay on “loading…” forever.
+ */
+export const FETCH_RELAY_LIST_HOOK_MAX_MS = FETCH_RELAY_LIST_UI_TIMEOUT_MS + 12_000
 
 /**
  * {@link ClientService.prioritizePublishUrlListWithTimeout}: must exceed {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS}
@@ -603,6 +611,21 @@ const NIP71_VIDEO_KIND_SET = new Set<number>(NIP71_VIDEO_KINDS)
 export function isNip71StyleVideoKind(kind: number): boolean {
   return NIP71_VIDEO_KIND_SET.has(kind)
 }
+
+/**
+ * When these kinds are ingested via {@link EventService.addEventToCache}, the client prefetches the event
+ * author's kind 3 + 10002 (contacts + NIP-65) so profile / relay UIs and publish routing stay warm.
+ * Omits reactions/zaps where `pubkey` is not the primary profile identity for the row.
+ */
+export const AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS: ReadonlySet<number> = new Set<number>([
+  kinds.ShortTextNote,
+  kinds.LongFormArticle,
+  kinds.Repost,
+  ExtendedKind.GENERIC_REPOST,
+  ExtendedKind.PICTURE,
+  ExtendedKind.VOICE,
+  ...NIP71_VIDEO_KINDS
+])
 
 /** Short-form portrait-style bucket (kind 22 or 34236). */
 export function isNip71ShortVideoKind(kind: number): boolean {

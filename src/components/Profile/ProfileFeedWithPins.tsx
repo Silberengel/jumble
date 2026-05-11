@@ -138,7 +138,7 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
           showKind1Replies={showKind1Replies}
           showKind1111={showKind1111}
           showFeedClientFilter
-          timelinePublicReadFallback={false}
+          timelinePublicReadFallback
           revealBatchSize={48}
         />
       </div>

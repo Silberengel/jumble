@@ -165,6 +165,7 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
         showKind1Replies
         showKind1111
         hideReplies={false}
+        timelinePublicReadFallback
       />
     </div>
   )
