@@ -1,5 +1,6 @@
 import { getFavoritesFeedRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
 import { getRelaySetFromEvent, getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
+import { stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import logger from '@/lib/logger'
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
@@ -47,7 +48,9 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   }, [cacheRelayListEvent, httpRelayListEvent])
   /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
   const [relayUrls, setRelayUrls] = useState<string[]>(() =>
-    mergeRelayUrlLayers([getFavoritesFeedRelayUrls([], []), [buildWispTrendingNotesRelayUrl()]], [])
+    stripNostrLandAggrRelay(
+      mergeRelayUrlLayers([getFavoritesFeedRelayUrls([], []), [buildWispTrendingNotesRelayUrl()]], [])
+    )
   )
   const [isReady, setIsReady] = useState(true)
   const [feedInfo, setFeedInfo] = useState<TFeedInfo>({
@@ -138,7 +141,9 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     }
     if (feedType === 'all-favorites') {
       const baseRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-      const finalRelays = mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
+      const finalRelays = stripNostrLandAggrRelay(
+        mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
+      )
       logger.debug('Switching to all-favorites, finalRelays:', finalRelays)
       const newFeedInfo = { feedType }
       setFeedInfo(newFeedInfo)
@@ -234,7 +239,9 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (feedInfo.feedType !== 'all-favorites') return
     const baseRelays = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-    const finalRelays = mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
+    const finalRelays = stripNostrLandAggrRelay(
+      mergeRelayUrlLayers([baseRelays, extraFeedRelayUrls], blockedRelays)
+    )
     logger.debug('Updating relay URLs for all-favorites:', finalRelays)
     // Same logical list can be merged into a new array each run; keep the previous reference so
     // feed consumers (RelaysFeed → NoteList relay subscription) do not re-enter effects in a tight loop.

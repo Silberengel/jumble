@@ -18,6 +18,7 @@ import {
 } from '@/constants'
 import { RENDERABLE_NOTE_KINDS_SORTED } from '@/lib/note-renderable-kinds'
 import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeTopic } from '@/lib/discussion-topics'
 import { userIdToPubkey } from '@/lib/pubkey'
@@ -93,7 +94,9 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     const n = normalizeAnyRelayUrl(u) || u.trim()
     if (n) fastNormSet.add(n)
   }
-  let out = dedupeNormalizeRelayUrlsOrdered(urls)
+  const out = ensureNostrLandAggrRelay(dedupeNormalizeRelayUrlsOrdered(urls), {
+    maxRelays: FAUX_SPELL_MAX_RELAYS
+  })
   if (!out.length) return fast.slice(0, FAUX_SPELL_MAX_RELAYS)
 
   const fastCount = () =>
@@ -125,7 +128,9 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     }
     if (!addedOne) break
   }
-  return dedupeNormalizeRelayUrlsOrdered(out).slice(0, FAUX_SPELL_MAX_RELAYS)
+  return ensureNostrLandAggrRelay(dedupeNormalizeRelayUrlsOrdered(out), {
+    maxRelays: FAUX_SPELL_MAX_RELAYS
+  })
 }
 
 export function appendCuratedReadOnlyRelays(curated: string[], blockedRelays: string[]): string[] {

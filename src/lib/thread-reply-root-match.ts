@@ -120,12 +120,23 @@ export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): b
     if (coord === root.id) return true
     const rootHex = getRootEventHexId(evt)
     if (rootHex && (rootHex === root.eventId || rootHex === root.id)) return true
+    const parentHex = getParentEventHexId(evt)?.toLowerCase()
+    const rootEventHex = root.eventId.trim().toLowerCase()
+    if (
+      parentHex &&
+      /^[0-9a-f]{64}$/i.test(rootEventHex) &&
+      hexNoteParticipatesInThread(parentHex, rootEventHex)
+    ) {
+      return true
+    }
     return kind1QuotesThreadRoot(evt, root)
   }
   const rid = root.id.trim().toLowerCase()
   const evtRootHex = getRootEventHexId(evt)?.toLowerCase()
   if (evtRootHex === rid) return true
   if (evtRootHex && resolveDeclaredThreadRootEventHex(evtRootHex) === rid) return true
+  const parentHex = getParentEventHexId(evt)?.toLowerCase()
+  if (parentHex && hexNoteParticipatesInThread(parentHex, rid)) return true
   if (replyParentIsZapToThreadHex(evt, rid)) return true
   if (replyParentIsReactionToThreadHex(evt, rid)) return true
   return kind1QuotesThreadRoot(evt, root)

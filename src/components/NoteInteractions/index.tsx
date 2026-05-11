@@ -12,7 +12,8 @@ export default function NoteInteractions({
   pageIndex,
   event,
   showQuotes: showQuotesProp,
-  statsForeground = false
+  statsForeground = false,
+  refreshToken = 0
 }: {
   pageIndex?: number
   event: Event
@@ -20,6 +21,8 @@ export default function NoteInteractions({
   showQuotes?: boolean
   /** Reply row stats use the same priority lane as the open note (`foregroundStats` on `NoteStats`). */
   statsForeground?: boolean
+  /** Bump to force the reply list to refetch. */
+  refreshToken?: number
 }) {
   const { t } = useTranslation()
   const [replySort, setReplySort] = useState<ReplySortOption>('oldest')
@@ -57,6 +60,7 @@ export default function NoteInteractions({
         sort={replySort}
         showQuotes={showQuotes}
         statsForeground={statsForeground}
+        refreshToken={refreshToken}
       />
     </>
   )

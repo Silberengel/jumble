@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeNormalizeRelayUrlsOrdered, filterContextAuthorReadRelaysForPublish } from '@/lib/relay-url-priority'
+import {
+  buildPrioritizedReadRelayUrls,
+  dedupeNormalizeRelayUrlsOrdered,
+  filterContextAuthorReadRelaysForPublish
+} from '@/lib/relay-url-priority'
+import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 describe('filterContextAuthorReadRelaysForPublish', () => {
@@ -37,5 +42,32 @@ describe('stripMailboxLocalUrlsForRemoteViewers', () => {
     expect(out.write).toEqual(['wss://author-outbox.example/'])
     expect(out.httpRead).toEqual([])
     expect(out.httpWrite).toEqual([])
+  })
+})
+
+describe('nostr.land aggregator feed relay policy', () => {
+  it('keeps aggr.nostr.land in capped read feed relay stacks', () => {
+    const out = buildPrioritizedReadRelayUrls({
+      userReadRelays: [
+        'wss://reader-a.example/',
+        'wss://reader-b.example/',
+        'wss://reader-c.example/'
+      ],
+      favoriteRelays: [],
+      maxRelays: 3,
+      applySocialKindBlockedFilter: false
+    })
+
+    expect(out).toHaveLength(3)
+    expect(out[0]).toBe('wss://aggr.nostr.land/')
+  })
+
+  it('excludes aggr.nostr.land from the favorites feed relay list', () => {
+    const out = getFavoritesFeedRelayUrls(
+      ['wss://relay.example.com/', 'wss://aggr.nostr.land/'],
+      []
+    )
+
+    expect(out).toEqual(['wss://relay.example.com/'])
   })
 })

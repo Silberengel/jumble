@@ -8,8 +8,7 @@ import {
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
   canonicalizeRssArticleUrl,
-  getArticleUrlFromCommentITags,
-  getHighlightSourceHttpUrl
+  getArticleUrlFromCommentITags
 } from '@/lib/rss-article'
 import {
   getParentATag,
@@ -17,11 +16,11 @@ import {
   getReplaceableCoordinateFromEvent,
   getRootATag,
   getRootETag,
-  getRootEventHexId,
   isNip25ReactionKind,
   isNip56ReportEvent,
   isReplaceableEvent,
-  kind1QuotesThreadRoot
+  kind1QuotesThreadRoot,
+  resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import { getZapInfoFromEvent, shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
@@ -49,7 +48,7 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
-import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
+import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import {
@@ -354,7 +353,8 @@ function ReplyNoteList({
   sort = 'oldest',
   showQuotes = true,
   duplicateWebPreviewCleanedUrlHints,
-  statsForeground = false
+  statsForeground = false,
+  refreshToken = 0
 }: {
   index?: number
   event: NEvent
@@ -365,6 +365,8 @@ function ReplyNoteList({
   duplicateWebPreviewCleanedUrlHints?: string[]
   /** Passed through to reply row `NoteStats` on note & article pages. */
   statsForeground?: boolean
+  /** Bump to force the relay reply scan to run again. */
+  refreshToken?: number
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -830,22 +832,24 @@ function ReplyNoteList({
       if (rootETag) {
         const [, rootEventHexId, , , rootEventPubkey] = rootETag
         if (rootEventHexId && rootEventPubkey) {
-          const hid = rootEventHexId
+          const hid = resolveDeclaredThreadRootEventHex(rootEventHexId)
+          const resolvedRootEvent = client.peekSessionCachedEvent(hid)
           root = {
             type: 'E',
             id: /^[0-9a-f]{64}$/i.test(hid) ? hid.toLowerCase() : hid,
-            pubkey: rootEventPubkey
+            pubkey: resolvedRootEvent?.pubkey ?? rootEventPubkey
           }
         } else {
           const rootEventId = generateBech32IdFromETag(rootETag)
           if (rootEventId) {
             const rootEvent = await eventService.fetchEvent(rootEventId)
             if (rootEvent) {
-              const rid = rootEvent.id
+              const rid = resolveDeclaredThreadRootEventHex(rootEvent.id)
+              const resolvedRootEvent = client.peekSessionCachedEvent(rid) ?? rootEvent
               root = {
                 type: 'E',
                 id: /^[0-9a-f]{64}$/i.test(rid) ? rid.toLowerCase() : rid,
-                pubkey: rootEvent.pubkey
+                pubkey: resolvedRootEvent.pubkey
               }
             }
           }
@@ -1220,20 +1224,9 @@ function ReplyNoteList({
             filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
           }
 
-          const vp = userPubkey?.trim()
-          let relayUrlsForThreadReq = finalRelayUrls
-          if (vp) {
-            const [favsForAggr, peekForAggr] = await Promise.all([
-              client.fetchFavoriteRelays(vp).catch(() => [] as string[]),
-              client.peekRelayListFromStorage(vp).catch(() => null)
-            ])
-            relayUrlsForThreadReq = applyNostrLandAggrRelayPolicy(
-              relayUrlsForThreadReq,
-              viewerMayUseNostrLandAggr(favsForAggr, peekForAggr ?? undefined)
-            )
-          } else {
-            relayUrlsForThreadReq = applyNostrLandAggrRelayPolicy(relayUrlsForThreadReq, false)
-          }
+          const relayUrlsForThreadReq = ensureNostrLandAggrRelay(finalRelayUrls, {
+            blockedRelays: replyBlockedRelays
+          })
 
           // For URL threads: stream events as they arrive from each relay so replies appear
           // immediately, rather than waiting up to 10 s for all relays to EOSE.
@@ -1347,19 +1340,34 @@ function ReplyNoteList({
           // nested 1 / 1111 / 1244 often tag only the parent's #e; root-scoped REQ misses them (same
           // idea as URL-thread #I follow-up above).
           if (
-            regularReplies.length > 0 &&
-            ((rootInfo.type === 'E' &&
-              (event.kind === ExtendedKind.DISCUSSION || event.kind === kinds.ShortTextNote)) ||
-              rootInfo.type === 'A')
+            (rootInfo.type === 'E' &&
+              [
+                ExtendedKind.DISCUSSION,
+                ExtendedKind.COMMENT,
+                ExtendedKind.VOICE_COMMENT,
+                kinds.ShortTextNote
+              ].includes(event.kind)) ||
+            rootInfo.type === 'A'
           ) {
             const commentKindsNested = [
               ExtendedKind.COMMENT,
               ExtendedKind.VOICE_COMMENT,
               kinds.ShortTextNote
             ]
-            const parentIdsNested = regularReplies
-              .filter((evt) => commentKindsNested.includes(evt.kind))
-              .map((evt) => evt.id)
+            const focusedParentId =
+              commentKindsNested.includes(event.kind) && /^[0-9a-f]{64}$/i.test(event.id)
+                ? event.id.toLowerCase()
+                : undefined
+            const parentIdsNested = Array.from(
+              new Set(
+                [
+                  focusedParentId,
+                  ...regularReplies
+                    .filter((evt) => commentKindsNested.includes(evt.kind))
+                    .map((evt) => evt.id)
+                ].filter(Boolean) as string[]
+              )
+            )
             if (parentIdsNested.length > 0) {
               const nestedAccum: NEvent[] = []
               for (let off = 0; off < parentIdsNested.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
@@ -1418,6 +1426,7 @@ function ReplyNoteList({
     blockedRelays,
     favoriteRelays,
     browsingRelayUrls,
+    refreshToken,
     addReplies,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
@@ -1569,20 +1578,8 @@ function ReplyNoteList({
             const parentEventHexId = parentETag?.[1]
             const parentEventId = parentETag ? generateBech32IdFromETag(parentETag) : undefined
 
-            const replyRootId = getRootEventHexId(reply)
-            const replyUrlForIThread =
-              rootInfo?.type === 'I'
-                ? reply.kind === kinds.Highlights
-                  ? getHighlightSourceHttpUrl(reply)
-                  : getArticleUrlFromCommentITags(reply)
-                : undefined
-            const belongsToSameThread = rootInfo && (
-              (rootInfo.type === 'E' && replyRootId === rootInfo.id) ||
-              (rootInfo.type === 'A' && getRootATag(reply)?.[1] === rootInfo.id) ||
-              (rootInfo.type === 'I' &&
-                !!replyUrlForIThread &&
-                canonicalizeRssArticleUrl(replyUrlForIThread) === canonicalizeRssArticleUrl(rootInfo.id))
-            )
+            const belongsToSameThread =
+              rootInfo && replyMatchesThreadForList(reply, event, rootInfo, isDiscussionRoot)
 
             return (
               <div

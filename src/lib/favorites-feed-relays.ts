@@ -17,6 +17,7 @@ import {
   mergeRelayPriorityLayers,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
+import { ensureNostrLandAggrRelay, stripNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 
 const blockedSet = (blockedRelays: string[]) =>
@@ -57,7 +58,7 @@ export function getFavoritesFeedRelayUrls(
     seen.add(k)
     out.push(k)
   }
-  return out
+  return stripNostrLandAggrRelay(out)
 }
 
 /**
@@ -272,10 +273,13 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
 
     return {
       ...r,
-      urls: mergeRelayPriorityLayers(layers, blockedRelays, max, {
-        applySocialKindBlockedFilter: applySocial,
-        exemptNormUrlsFromSocialKindBlock: userReadSocialExempt
-      })
+      urls: ensureNostrLandAggrRelay(
+        mergeRelayPriorityLayers(layers, blockedRelays, max, {
+          applySocialKindBlockedFilter: applySocial,
+          exemptNormUrlsFromSocialKindBlock: userReadSocialExempt
+        }),
+        { blockedRelays, maxRelays: max }
+      )
     }
   })
 }

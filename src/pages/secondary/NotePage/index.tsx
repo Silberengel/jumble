@@ -20,10 +20,12 @@ import {
   getParentETag,
   getParentEventHexId,
   getRootBech32Id,
-  getRootEventHexId
+  getRootEventHexId,
+  resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
+import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { stripMarkupForPreview } from '@/lib/parent-reply-blurb'
 import { tagNameEquals } from '@/lib/tag'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -31,7 +33,7 @@ import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NOSTR_URI_NADDR_REGEX } from '@/lib/content-patterns'
 import {
@@ -93,6 +95,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const { event, isFetching, refetch: refetchMain } = useFetchEvent(id, initialEvent)
   const [externalEvent, setExternalEvent] = useState<Event | undefined>(undefined)
+  const [replyRefreshToken, setReplyRefreshToken] = useState(0)
   const finalEvent = event || externalEvent
   const nip84HighlightEvents = useNip84HighlightTargetEvents(finalEvent)
   
@@ -105,7 +108,11 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   const rootEventId = useMemo(() => {
     if (!finalEvent) return undefined
     const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
-    if (rootHex && rootHex === finalEvent.id.toLowerCase()) return undefined
+    if (rootHex && /^[0-9a-f]{64}$/i.test(rootHex)) {
+      const resolvedRootHex = resolveDeclaredThreadRootEventHex(rootHex)
+      if (resolvedRootHex === finalEvent.id.toLowerCase()) return undefined
+      return resolvedRootHex
+    }
     return getRootBech32Id(finalEvent)
   }, [finalEvent])
   const rootITag = useMemo(
@@ -155,6 +162,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     refetchRoot()
     refetchParent()
     refetchCalendarInvite()
+    setReplyRefreshToken((n) => n + 1)
   }, [refetchMain, refetchRoot, refetchParent, refetchCalendarInvite])
 
   useEffect(() => {
@@ -528,6 +536,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
           pageIndex={index}
           event={finalEvent}
           statsForeground
+          refreshToken={replyRefreshToken}
         />
       </div>
     </SecondaryPageLayout>
@@ -567,6 +576,18 @@ function ParentNote({
   isConsecutive?: boolean
 }) {
   const { navigateToNote } = useSmartNoteNavigation()
+  const navigate = useCallback(
+    (e: MouseEvent) => {
+      e.stopPropagation()
+      if (event) client.addEventToCache(event)
+      navigateToNote(
+        toNote(event ?? eventBech32Id),
+        event,
+        event ? getCachedThreadContextEvents(event) : undefined
+      )
+    },
+    [event, eventBech32Id, navigateToNote]
+  )
 
   if (isFetching) {
     return (
@@ -589,22 +610,14 @@ function ParentNote({
           'flex space-x-1 px-[0.4375rem] py-1 items-center rounded-full border clickable text-sm text-muted-foreground',
           event && 'hover:text-foreground'
         )}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (event) client.addEventToCache(event)
-          navigateToNote(toNote(event ?? eventBech32Id))
-        }}
+        onClick={navigate}
       >
         {event && (
           <UserAvatar userId={event.pubkey} size="tiny" className="shrink-0" deferRemoteAvatar={false} />
         )}
         <div 
           className="truncate flex-1"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (event) client.addEventToCache(event)
-            navigateToNote(toNote(event ?? eventBech32Id))
-          }}
+          onClick={navigate}
         >
           <ContentPreview event={event} />
         </div>

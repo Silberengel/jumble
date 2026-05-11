@@ -11,12 +11,11 @@
 
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
+import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { getCacheRelayUrls } from './private-relays'
 import client from '@/services/client.service'
 import logger from '@/lib/logger'
-import type { TRelayList } from '@/types'
 import type { Event } from 'nostr-tools'
 
 function dedupeNormalizedRelayUrls(urls: string[]): string[] {
@@ -247,24 +246,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   const merged = Array.from(relayUrls)
-  const viewer = userPubkey ?? client.pubkey ?? undefined
-  if (!viewer) {
-    return applyNostrLandAggrRelayPolicy(merged, false)
-  }
-  let favsForAggr: string[] = []
-  try {
-    favsForAggr = await client.fetchFavoriteRelays(viewer)
-  } catch {
-    /* ignore */
-  }
-  let nip65ForAggr: TRelayList | null = null
-  try {
-    nip65ForAggr = await client.peekRelayListFromStorage(viewer)
-  } catch {
-    /* ignore */
-  }
-  const allowAggr = viewerMayUseNostrLandAggr(favsForAggr, nip65ForAggr)
-  return applyNostrLandAggrRelayPolicy(merged, allowAggr)
+  return ensureNostrLandAggrRelay(merged, { blockedRelays })
 }
 
 /**
@@ -359,13 +341,11 @@ export async function buildPollResultsReadRelayUrls(options: {
 
   let authorReadSlice: string[] = []
   let viewerReadSlice: string[] = []
-  let viewerRlForAggr: TRelayList | null = null
   try {
     const [authorRl, viewerRl] = await Promise.all([
       pollEvent.pubkey ? client.peekRelayListFromStorage(pollEvent.pubkey) : Promise.resolve(null),
       viewerPubkey ? client.peekRelayListFromStorage(viewerPubkey) : Promise.resolve(null)
     ])
-    viewerRlForAggr = viewerRl
     if (authorRl) {
       authorReadSlice = userReadRelaysWithHttp(authorRl).slice(0, POLL_RESULTS_NIP65_READ_SLICE)
     }
@@ -391,15 +371,15 @@ export async function buildPollResultsReadRelayUrls(options: {
   pushLayer([...FAST_READ_RELAY_URLS])
   pushLayer(authorReadSlice)
 
-  const allowAggr = viewerPubkey
-    ? viewerMayUseNostrLandAggr(viewerFavoriteRelayUrls, viewerRlForAggr ?? undefined)
-    : false
-  return applyNostrLandAggrRelayPolicy(ordered.slice(0, POLL_RESULTS_MAX_RELAYS), allowAggr)
+  return ensureNostrLandAggrRelay(ordered.slice(0, POLL_RESULTS_MAX_RELAYS), {
+    blockedRelays,
+    maxRelays: POLL_RESULTS_MAX_RELAYS
+  })
 }
 
 /**
  * Build relay list for reading replies/comments
- * READ from: FAST_READ_RELAY_URLS + user's inboxes + local relays + OP author's outboxes
+ * READ from: FAST_READ_RELAY_URLS + user's inboxes/outboxes + local relays + OP author's outboxes
  */
 export async function buildReplyReadRelayList(
   opAuthorPubkey: string | undefined,
@@ -411,6 +391,7 @@ export async function buildReplyReadRelayList(
     authorPubkey: opAuthorPubkey,
     userPubkey,
     relayHints: threadRelayHints,
+    includeUserOwnRelays: Boolean(userPubkey),
     includeFastReadRelays: true,
     includeSearchableRelays: true,
     includeLocalRelays: true,

@@ -28,7 +28,7 @@ import {
   rssArticleStableEventId
 } from '@/lib/rss-article'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { applyNostrLandAggrRelayPolicy, viewerMayUseNostrLandAggr } from '@/lib/nostr-land-aggr'
+import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { getEmojiInfosFromEmojiTags, getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
@@ -520,7 +520,6 @@ class NoteStatsService {
     }
 
     // 8. Logged-in viewer's inboxes (NIP-65 read + kind 10243 http read) — same events often land on personal relays.
-    let viewerNip65ForAggr: TRelayList | undefined
     try {
       const me = client.pubkey?.trim()
       if (me) {
@@ -536,17 +535,15 @@ class NoteStatsService {
           client.fetchRelayList(me),
           new Promise<TRelayList>((r) => setTimeout(() => r(emptyViewerRl), 2000))
         ])
-        viewerNip65ForAggr = mine
         userReadRelaysWithHttp(mine).slice(0, 12).forEach(add)
       }
     } catch {
       // ignore
     }
 
-    const allowAggr = client.pubkey
-      ? viewerMayUseNostrLandAggr(favoriteRelays ?? [], viewerNip65ForAggr)
-      : false
-    return applyNostrLandAggrRelayPolicy(Array.from(seen), allowAggr)
+    return ensureNostrLandAggrRelay(Array.from(seen), {
+      blockedRelays: E_TAG_FILTER_BLOCKED_RELAY_URLS
+    })
   }
 
   /**

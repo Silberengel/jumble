@@ -5,6 +5,7 @@ import {
   MAX_PUBLISH_RELAYS,
   MAX_REQ_RELAY_URLS
 } from '@/constants'
+import { ensureNostrLandAggrRelay } from '@/lib/nostr-land-aggr'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 
 export { MAX_REQ_RELAY_URLS }
@@ -174,10 +175,13 @@ export function buildPrioritizedReadRelayUrls(opts: {
     authorWriteRelays: opts.authorWriteRelays,
     favoriteRelays: opts.favoriteRelays
   })
-  return mergeRelayPriorityLayers(layers, opts.blockedRelays, max, {
-    applySocialKindBlockedFilter: applySocial,
-    exemptNormUrlsFromSocialKindBlock: exemptFromSocial
-  })
+  return ensureNostrLandAggrRelay(
+    mergeRelayPriorityLayers(layers, opts.blockedRelays, max, {
+      applySocialKindBlockedFilter: applySocial,
+      exemptNormUrlsFromSocialKindBlock: exemptFromSocial
+    }),
+    { blockedRelays: opts.blockedRelays, maxRelays: max }
+  )
 }
 
 /**

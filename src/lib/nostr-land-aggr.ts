@@ -20,6 +20,12 @@ export function isNostrLandWsUrl(url: string | undefined | null): boolean {
   return canonWs(url) === NOSTR_LAND_CANON
 }
 
+/** True if this URL is the nostr.land aggregator websocket (normalized). */
+export function isAggrNostrLandWsUrl(url: string | undefined | null): boolean {
+  if (!url?.trim()) return false
+  return canonWs(url) === AGGR_CANON
+}
+
 /** True if any normalized URL equals nostr.land. */
 export function relayUrlListMentionsNostrLand(urls: readonly string[] | undefined): boolean {
   if (!urls?.length) return false
@@ -71,4 +77,41 @@ export function applyNostrLandAggrRelayPolicy(urls: readonly string[], allowAggr
     out.unshift(AGGR_NOSTR_LAND_WSS)
   }
   return out
+}
+
+/** Remove the aggregator from relay stacks that must stay strictly user-curated (favorites feed). */
+export function stripNostrLandAggrRelay(urls: readonly string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const u of urls) {
+    const c = canonWs(u)
+    if (!c || c === AGGR_CANON || seen.has(c)) continue
+    seen.add(c)
+    out.push(normalizeAnyRelayUrl(u) || u.trim())
+  }
+  return out
+}
+
+/**
+ * Feed/read surfaces should always hit the nostr.land aggregator. Prepend it before relay caps
+ * can drop it, unless the user explicitly blocked it for that surface.
+ */
+export function ensureNostrLandAggrRelay(
+  urls: readonly string[],
+  options: { blockedRelays?: readonly string[]; maxRelays?: number } = {}
+): string[] {
+  const blocked = new Set((options.blockedRelays ?? []).map(canonWs))
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (u: string) => {
+    const c = canonWs(u)
+    if (!c || blocked.has(c) || seen.has(c)) return
+    seen.add(c)
+    out.push(normalizeAnyRelayUrl(u) || u.trim())
+  }
+  push(AGGR_NOSTR_LAND_WSS)
+  for (const u of urls) {
+    push(u)
+  }
+  return typeof options.maxRelays === 'number' ? out.slice(0, options.maxRelays) : out
 }
