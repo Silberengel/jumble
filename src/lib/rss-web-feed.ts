@@ -14,7 +14,7 @@ import {
 } from '@/lib/rss-article'
 import logger from '@/lib/logger'
 import { isImage, isLocalNetworkUrl, isMedia, isVideo, normalizeUrl } from '@/lib/url'
-import { queryService } from '@/services/client.service'
+import { eventService, queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import type { RssFeedItem } from '@/services/rss-feed.service'
 import { isWebOnlyFauxRssItem } from '@/services/rss-feed.service'
@@ -479,6 +479,72 @@ function extractArticleUrlFromWebActivityEvent(evt: Event): string | undefined {
   return undefined
 }
 
+function touchRssWebDiscoveryUrlFromEvent(
+  evt: Event,
+  excludeClutter: boolean,
+  latestByUrl: Map<string, number>
+): void {
+  const url = extractArticleUrlFromWebActivityEvent(evt)
+  if (!url) return
+  if (excludeClutter && isRssWebUnifiedClutterUrl(url)) return
+  const key = canonicalizeRssArticleUrl(url)
+  const prev = latestByUrl.get(key) ?? 0
+  if (evt.created_at > prev) latestByUrl.set(key, evt.created_at)
+}
+
+/** Merge manual / discovered URL lists; per URL keep the newest `addedAt`. */
+export function mergeManualRssWebUrlEntries(...parts: ManualRssWebUrlEntry[]): ManualRssWebUrlEntry[] {
+  const byUrl = new Map<string, number>()
+  for (const list of parts) {
+    for (const e of list) {
+      const prev = byUrl.get(e.url) ?? 0
+      if (e.addedAt > prev) byUrl.set(e.url, e.addedAt)
+    }
+  }
+  return [...byUrl.entries()].map(([url, addedAt]) => ({ url, addedAt }))
+}
+
+/**
+ * Article URLs from session LRU + event archive (same kinds as relay discovery), so the URL tab is not
+ * empty when relays return nothing but the client already saw reactions / bookmarks / etc.
+ */
+export async function discoverRssWebArticleUrlsFromLocalCaches(options?: {
+  excludeClutterUrls?: boolean
+}): Promise<ManualRssWebUrlEntry[]> {
+  const excludeClutter = options?.excludeClutterUrls !== false
+  const sinceSec = Math.floor(Date.now() / 1000) - RSS_WEB_RELAY_DISCOVERY_SINCE_SEC
+  const latestByUrl = new Map<string, number>()
+
+  const sessionEv = eventService.listSessionEventsByKinds(RSS_WEB_RELAY_DISCOVERY_KINDS, {
+    since: sinceSec,
+    limit: 5000
+  })
+  for (const evt of sessionEv) {
+    touchRssWebDiscoveryUrlFromEvent(evt, excludeClutter, latestByUrl)
+  }
+
+  try {
+    const archived = await indexedDb.scanEventArchiveByKinds({
+      kinds: RSS_WEB_RELAY_DISCOVERY_KINDS,
+      since: sinceSec,
+      maxRowsScanned: 24_000,
+      maxMatches: 4000
+    })
+    for (const evt of archived) {
+      touchRssWebDiscoveryUrlFromEvent(evt, excludeClutter, latestByUrl)
+    }
+  } catch {
+    /* IDB unavailable */
+  }
+
+  const entries = [...latestByUrl.entries()].map(([url, addedAt]) => ({ url, addedAt }))
+  logger.info('[RssWebFeed] Local URL discovery finished', {
+    uniqueUrls: entries.length,
+    sessionHits: sessionEv.length
+  })
+  return entries
+}
+
 /**
  * One REQ per kind, no `authors` filter: latest events from aggregated relays, grouped by canonical URL.
  */
@@ -503,14 +569,7 @@ export async function fetchDiscoveredWebUrlsFromRelays(options: {
   })
 
   const latestByUrl = new Map<string, number>()
-  const onEvent = (evt: Event) => {
-    const url = extractArticleUrlFromWebActivityEvent(evt)
-    if (!url) return
-    if (excludeClutter && isRssWebUnifiedClutterUrl(url)) return
-    const key = canonicalizeRssArticleUrl(url)
-    const prev = latestByUrl.get(key) ?? 0
-    if (evt.created_at > prev) latestByUrl.set(key, evt.created_at)
-  }
+  const onEvent = (evt: Event) => touchRssWebDiscoveryUrlFromEvent(evt, excludeClutter, latestByUrl)
 
   await Promise.all(
     RSS_WEB_RELAY_DISCOVERY_KINDS.map(async (kind) => {

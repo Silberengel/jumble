@@ -55,16 +55,24 @@ function useProfileInteractionPartners(authorPubkey: string | undefined, refresh
       const kindsArr = [...INTERACTION_KINDS]
       const sessionEv = eventService.listSessionEventsAuthoredBy(pk, { kinds: kindsArr, limit: 900 })
       setSessionEventCount(sessionEv.length)
+      setArchiveAuthorEvents(0)
+      const mergedSession = mergeEventsById([...sessionEv])
+      setPartners(buildInteractionPartnerStats(mergedSession, pk))
 
-      const idbEv = await indexedDb.scanEventArchiveByAuthorPubkey(pk, {
-        kinds: kindsArr,
-        maxRowsScanned: 14_000,
-        maxMatches: 450
-      })
-      setArchiveAuthorEvents(idbEv.length)
-
-      const merged = mergeEventsById([...sessionEv, ...idbEv])
-      setPartners(buildInteractionPartnerStats(merged, pk))
+      void (async () => {
+        try {
+          const idbEv = await indexedDb.scanEventArchiveByAuthorPubkey(pk, {
+            kinds: kindsArr,
+            maxRowsScanned: 14_000,
+            maxMatches: 450
+          })
+          setArchiveAuthorEvents(idbEv.length)
+          const merged = mergeEventsById([...sessionEv, ...idbEv])
+          setPartners(buildInteractionPartnerStats(merged, pk))
+        } catch {
+          /* best-effort disk */
+        }
+      })()
     } finally {
       setLoading(false)
     }

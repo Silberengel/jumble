@@ -73,18 +73,17 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
     const userWrite = userWriteRelaysForQuery(relayList)
 
     void (async () => {
-      // Read order: IndexedDB first (offline + last session), then in-memory session, then relays.
-      let fromIdb: Event[] = []
-      try {
-        fromIdb = await indexedDb.getCalendarRsvpEventsByParentCoordinate(coordinate)
-      } catch {
-        fromIdb = []
-      }
-      if (cancelled) return
-
       const fromSession = client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
-      const mergedLocal = mergeRsvpList([...fromIdb, ...fromSession])
-      setRsvps(mergedLocal)
+      setRsvps(mergeRsvpList(fromSession))
+
+      const idbP = indexedDb
+        .getCalendarRsvpEventsByParentCoordinate(coordinate)
+        .catch((): Event[] => [])
+
+      void idbP.then((rows) => {
+        if (cancelled) return
+        setRsvps(mergeRsvpList([...rows, ...fromSession]))
+      })
 
       const baseUrls = new Set<string>([
         ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
@@ -139,6 +138,7 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
         )
         if (cancelled) return
         const fromRelay = events ?? []
+        const fromIdb = await idbP
         await Promise.allSettled(
           fromRelay.map((ev) => indexedDb.putCalendarRsvpEventRow(ev).catch(() => undefined))
         )

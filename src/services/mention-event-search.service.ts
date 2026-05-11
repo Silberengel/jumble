@@ -82,29 +82,31 @@ async function searchCitationEventsForPickerInternal(
   }
 
   const idHex = tryParseCitationEventIdFromQuery(q)
-  if (idHex) {
-    const ev = await client.fetchEvent(idHex)
-    if (ev && kindsList.includes(ev.kind)) push(ev, false)
-    if (out.length >= limit) return out.slice(0, limit)
-  }
 
   for (const ev of eventService.getSessionCitationFieldSearch(q, limit)) {
     push(ev, false)
     if (out.length >= limit) return out.slice(0, limit)
   }
 
-  const fromArch = await indexedDb.getCachedAndArchivedCitationFieldSearch(
-    q,
-    limit - out.length,
-    kindsList,
-    { archiveScanMaxMs: 14_000 }
-  )
+  const needAfterSession = limit - out.length
+  const [idEv, fromArch, relayUrls] = await Promise.all([
+    idHex ? client.fetchEvent(idHex) : Promise.resolve(null),
+    needAfterSession > 0
+      ? indexedDb.getCachedAndArchivedCitationFieldSearch(q, needAfterSession, kindsList, {
+          archiveScanMaxMs: 14_000
+        })
+      : Promise.resolve([] as NEvent[]),
+    buildCitationPickerSearchRelayUrls()
+  ])
+
+  if (idEv && kindsList.includes(idEv.kind)) push(idEv, false)
+  if (out.length >= limit) return out.slice(0, limit)
+
   for (const ev of fromArch) {
     push(ev, false)
     if (out.length >= limit) return out.slice(0, limit)
   }
 
-  const relayUrls = await buildCitationPickerSearchRelayUrls()
   const need = limit - out.length
   if (need <= 0) return out.slice(0, limit)
 
@@ -170,15 +172,16 @@ export async function searchEventsForPicker(
   fromSession.forEach(addUnique)
   if (out.length >= limit) return out.slice(0, limit)
 
-  const fromIdb = await indexedDb.getCachedEventsForSearch(q, limit - out.length, kindsList)
+  const need = limit - out.length
+  const [fromIdb, fromRelays] = await Promise.all([
+    indexedDb.getCachedEventsForSearch(q, need, kindsList),
+    queryService.fetchEvents(
+      SEARCHABLE_RELAY_URLS,
+      { kinds: kindsList, search: q, limit: need },
+      { eoseTimeout: 5000, globalTimeout: 8000 }
+    )
+  ])
   fromIdb.forEach(addUnique)
-  if (out.length >= limit) return out.slice(0, limit)
-
-  const fromRelays = await queryService.fetchEvents(
-    SEARCHABLE_RELAY_URLS,
-    { kinds: kindsList, search: q, limit: limit - out.length },
-    { eoseTimeout: 5000, globalTimeout: 8000 }
-  )
   fromRelays.forEach(addUnique)
   return out.slice(0, limit)
 }

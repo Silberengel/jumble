@@ -176,7 +176,8 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
 
       try {
         const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
-        const [fromIdb, fromArchive] = await Promise.all([
+
+        const idbP = Promise.all([
           indexedDb.getCalendarEventsForOccurrenceWindow(
             rangeStartMs,
             rangeEndExclusiveMs,
@@ -189,30 +190,50 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
             2500
           )
         ])
-        if (cancelled) return
-
-        const localBaseline = dedupeCalendarEventsPreferringOccurrenceRange(
-          [...fromIdb, ...fromArchive],
-          rangeStartMs,
-          rangeEndExclusiveMs
-        )
+          .then(([fromIdb, fromArchive]) =>
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...fromIdb, ...fromArchive],
+              rangeStartMs,
+              rangeEndExclusiveMs
+            )
+          )
+          .catch((): NostrEvent[] => [])
 
         const fromSessionNow = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(
-          dedupeCalendarEventsPreferringOccurrenceRange(
-            [...localBaseline, ...fromSessionNow],
-            rangeStartMs,
-            rangeEndExclusiveMs
-          )
+        const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
+          fromSessionNow,
+          rangeStartMs,
+          rangeEndExclusiveMs
         )
-        setLoading(false)
+        if (!cancelled) {
+          setRawEvents(sessionOnly)
+          setLoading(false)
+        }
+
+        void idbP.then((localBaseline) => {
+          if (cancelled) return
+          const s2 = client.getSessionEventsMatchingSearch(
+            '',
+            SESSION_CALENDAR_MERGE_CAP,
+            [...CALENDAR_EVENT_KINDS]
+          )
+          setRawEvents(
+            dedupeCalendarEventsPreferringOccurrenceRange(
+              [...localBaseline, ...s2],
+              rangeStartMs,
+              rangeEndExclusiveMs
+            )
+          )
+        })
 
         if (!relayUrls.length) {
-          scheduleLateSessionMerge(localBaseline)
+          void idbP.then((lb) => {
+            if (!cancelled) scheduleLateSessionMerge(lb)
+          })
           return
         }
 
@@ -257,17 +278,18 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           )
         )
 
-        let batch: NostrEvent[] = []
-        const fromFollowing: NostrEvent[] = []
-        try {
-          const merged = await Promise.all([mainReq, ...chunkReqs])
-          batch = merged[0] ?? []
-          for (let i = 1; i < merged.length; i++) {
-            fromFollowing.push(...(merged[i] ?? []))
-          }
-        } catch {
-          /* keep IndexedDB + session view; relays may be unreachable */
-        }
+        const relayMergedP = Promise.all([mainReq, ...chunkReqs])
+          .then((merged) => {
+            const batch = merged[0] ?? []
+            const fromFollowing: NostrEvent[] = []
+            for (let i = 1; i < merged.length; i++) {
+              fromFollowing.push(...(merged[i] ?? []))
+            }
+            return { batch, fromFollowing }
+          })
+          .catch(() => ({ batch: [] as NostrEvent[], fromFollowing: [] as NostrEvent[] }))
+
+        const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
         if (cancelled) return
 
         const fromSession = client.getSessionEventsMatchingSearch(

@@ -243,103 +243,72 @@ export function useProfileTimeline({
       const socialKinds = kinds.some(isSocialKindBlockedKind)
       const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
       const idbDocKinds = kinds.filter((k) => isDocumentRelayKind(k))
-      /**
-       * Author NIP-65 read/write relays must feed the **first** REQ for every profile tab. Favorites-only
-       * misses most people’s kind-1 notes; we previously only prefetched relays for document tabs.
-       */
-      let prefetchedAuthorRelays: typeof emptyAuthor = emptyAuthor
 
-      if (idbDocKinds.length > 0) {
+      let pkNorm: string | null = null
+      try {
+        pkNorm = normalizeHexPubkey(pubkey)
+      } catch {
+        pkNorm = null
+      }
+
+      let hadSessionHits = false
+      if (pkNorm) {
+        const pkForDisk = pkNorm
         try {
-          const pkNorm = normalizeHexPubkey(pubkey)
-          const fromSession = eventService.listSessionEventsAuthoredBy(pkNorm, {
-            kinds: idbDocKinds,
+          const sessionKindList = idbDocKinds.length > 0 ? idbDocKinds : kinds
+          const fromSession = eventService.listSessionEventsAuthoredBy(pkForDisk, {
+            kinds: sessionKindList,
             limit
           })
+          hadSessionHits = fromSession.length > 0
           if (!cancelled) {
             for (const e of fromSession) {
               pool.set(e.id, e as Event)
             }
             if (fromSession.length) flushPool()
           }
-          const [authorRl, fromPubStore, fromArchive] = await Promise.all([
-            client.fetchRelayList(pubkey).catch(() => ({
-              read: [] as string[],
-              write: [] as string[],
-              httpRead: [] as string[],
-              httpWrite: [] as string[]
-            })),
-            indexedDb.getCachedPublicationStoreEventsForProfileAuthor(pkNorm, idbDocKinds, limit),
-            indexedDb.scanEventArchiveByAuthorPubkey(pkNorm, {
-              kinds: idbDocKinds,
-              maxRowsScanned: 18_000,
-              maxMatches: limit
-            })
-          ])
-          if (!cancelled) {
-            prefetchedAuthorRelays = authorRl
-            for (const e of fromPubStore) {
-              pool.set(e.id, e)
-            }
-            for (const e of fromArchive) {
-              pool.set(e.id, e)
-            }
-            const hadDisk = fromPubStore.length > 0 || fromArchive.length > 0
+        } catch {
+          /* ignore malformed pubkeys */
+        }
+
+        void (async () => {
+          try {
+            const idbKindsForScan = idbDocKinds.length > 0 ? idbDocKinds : kinds
+            const maxScan = idbDocKinds.length > 0 ? 18_000 : 16_000
+            const pubStorePromise =
+              idbDocKinds.length > 0
+                ? indexedDb.getCachedPublicationStoreEventsForProfileAuthor(pkForDisk, idbDocKinds, limit)
+                : Promise.resolve([] as Event[])
+            const [fromPubStore, fromArchive] = await Promise.all([
+              pubStorePromise,
+              indexedDb.scanEventArchiveByAuthorPubkey(pkForDisk, {
+                kinds: idbKindsForScan,
+                maxRowsScanned: maxScan,
+                maxMatches: limit
+              })
+            ])
+            if (cancelled) return
+            for (const e of fromPubStore) pool.set(e.id, e)
+            for (const e of fromArchive) pool.set(e.id, e)
+            const hadDisk = fromPubStore.length + fromArchive.length > 0
             if (hadDisk) flushPool()
-            else if (!isCacheFresh && !mem?.events?.length && fromSession.length === 0) {
+            else if (!isCacheFresh && !mem?.events?.length && !hadSessionHits) {
               setIsLoading(true)
             }
+          } catch {
+            /* best-effort */
           }
-        } catch {
-          if (!cancelled) {
-            prefetchedAuthorRelays = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
-          }
-          if (!cancelled && !isCacheFresh && !mem?.events?.length) {
-            setIsLoading(true)
-          }
-        }
-      } else {
-        try {
-          const pkNorm = normalizeHexPubkey(pubkey)
-          const fromSession = eventService.listSessionEventsAuthoredBy(pkNorm, { kinds, limit })
-          if (!cancelled) {
-            for (const e of fromSession) {
-              pool.set(e.id, e as Event)
-            }
-            if (fromSession.length) flushPool()
-          }
-          const [authorRl, fromArchiveSocial] = await Promise.all([
-            client.fetchRelayList(pubkey).catch(() => emptyAuthor),
-            indexedDb.scanEventArchiveByAuthorPubkey(pkNorm, {
-              kinds,
-              maxRowsScanned: 16_000,
-              maxMatches: limit
-            })
-          ])
-          if (!cancelled) {
-            prefetchedAuthorRelays = authorRl
-            for (const e of fromArchiveSocial) {
-              pool.set(e.id, e)
-            }
-            if (fromArchiveSocial.length) flushPool()
-            else if (!isCacheFresh && !mem?.events?.length && fromSession.length === 0) {
-              setIsLoading(true)
-            }
-          }
-        } catch {
-          if (!cancelled) {
-            prefetchedAuthorRelays = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
-          }
-          if (!cancelled && !isCacheFresh && !mem?.events?.length) {
-            setIsLoading(true)
-          }
-        }
+        })()
+      } else if (!isCacheFresh && !mem?.events?.length) {
+        setIsLoading(true)
       }
+
+      const authorRelayPromise = client.fetchRelayList(pubkey).catch(() => emptyAuthor)
 
       const provisionalFeedUrls = buildProfilePageReadRelayUrls(
         favoriteRelays,
         blockedRelays,
-        prefetchedAuthorRelays,
+        emptyAuthor,
         socialKinds,
         includeAuthorLocalRelays,
         kinds
@@ -429,7 +398,7 @@ export function useProfileTimeline({
       })()
 
       void (async () => {
-        const authorRl = prefetchedAuthorRelays
+        const authorRl = await authorRelayPromise
         if (cancelled) return
         const fullFeedUrls = buildProfilePageReadRelayUrls(
           favoriteRelays,

@@ -12,6 +12,31 @@ import { kinds } from 'nostr-tools'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import logger from '@/lib/logger'
 
+function tryHydrateProfileFromSessionOnly(pubkey: string, skipCache: boolean): TProfile | null {
+  if (skipCache) return null
+  const pk = pubkey.toLowerCase()
+  const sessionEv = eventService.getSessionMetadataForPubkey(pk)
+  if (sessionEv) {
+    return getProfileFromEvent(sessionEv)
+  }
+  return null
+}
+
+/** Single-flight IndexedDB kind-0 read (never blocks callers until they await the promise). */
+function profileFromIdbPromise(pubkey: string, skipCache: boolean): Promise<TProfile | null> {
+  if (skipCache) return Promise.resolve(null)
+  const pk = pubkey.toLowerCase()
+  return indexedDb
+    .getReplaceableEvent(pk, kinds.Metadata)
+    .then((idbEv) => {
+      if (idbEv && !shouldDropEventOnIngest(idbEv)) {
+        return getProfileFromEvent(idbEv)
+      }
+      return null
+    })
+    .catch(() => null)
+}
+
 /**
  * Session LRU + IndexedDB kind 0 without ReplaceableEventService / batched DataLoader.
  * Used when the hook's fetch race times out or the batch path is slow while disk/session already has metadata.
@@ -20,23 +45,9 @@ async function tryHydrateProfileFromLocalCaches(
   pubkey: string,
   skipCache: boolean
 ): Promise<TProfile | null> {
-  if (skipCache) return null
-  const pk = pubkey.toLowerCase()
-
-  const sessionEv = eventService.getSessionMetadataForPubkey(pk)
-  if (sessionEv) {
-    return getProfileFromEvent(sessionEv)
-  }
-
-  try {
-    const idbEv = await indexedDb.getReplaceableEvent(pk, kinds.Metadata)
-    if (idbEv && !shouldDropEventOnIngest(idbEv)) {
-      return getProfileFromEvent(idbEv)
-    }
-  } catch {
-    /* IDB not ready */
-  }
-  return null
+  const fromSession = tryHydrateProfileFromSessionOnly(pubkey, skipCache)
+  if (fromSession) return fromSession
+  return profileFromIdbPromise(pubkey, skipCache)
 }
 
 // CRITICAL: Global deduplication - shared across ALL hook instances
@@ -199,11 +210,12 @@ export function useFetchProfile(id?: string, skipCache = false) {
     
     // Create a new fetch promise with timeout protection
     const fetchPromise = (async (): Promise<TProfile | null> => {
+      let idbEarlyP: Promise<TProfile | null> | null = null
       try {
         globalFetchingPubkeys.add(pubkey)
         const startTime = Date.now()
 
-        const quick = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+        const quick = tryHydrateProfileFromSessionOnly(pubkey, skipCache)
         if (quick) {
           logger.debug('[useFetchProfile] Profile from session/IndexedDB (fast path)', {
             pubkey: pubkey.substring(0, 8),
@@ -211,6 +223,9 @@ export function useFetchProfile(id?: string, skipCache = false) {
           })
           return quick
         }
+
+        /** Disk read runs in parallel with `fetchProfileEvent` — never block network on IDB. */
+        idbEarlyP = profileFromIdbPromise(pubkey, skipCache)
 
         // CRITICAL: Add timeout to prevent infinite hangs (must exceed batched metadata query globalTimeout)
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -263,7 +278,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
             fetchTime: `${fetchTime}ms`
           })
         }
-        const afterMiss = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+        const afterMiss =
+          (idbEarlyP != null ? await idbEarlyP : null) ?? tryHydrateProfileFromSessionOnly(pubkey, skipCache)
         if (afterMiss) {
           logger.debug('[useFetchProfile] Profile from session/IndexedDB after network miss', {
             pubkey: pubkey.substring(0, 8),
@@ -281,7 +297,9 @@ export function useFetchProfile(id?: string, skipCache = false) {
           })
           // Set cooldown period after timeout to prevent cascade of duplicate fetches
           globalFetchCooldowns.set(pubkey, Date.now() + 10000) // 10 second cooldown
-          const fallback = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+          const fallback =
+            tryHydrateProfileFromSessionOnly(pubkey, skipCache) ??
+            (idbEarlyP != null ? await idbEarlyP : null)
           if (fallback) {
             logger.debug('[useFetchProfile] Profile from session/IndexedDB after fetch timeout', {
               pubkey: pubkey.substring(0, 8),

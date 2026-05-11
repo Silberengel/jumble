@@ -11,6 +11,7 @@ import { RssUnifiedScopeSection } from './RssUnifiedScopeSection'
 import { canonicalizeRssArticleUrl, isClawstrDotComHttpUrl } from '@/lib/rss-article'
 import {
   addManualRssWebUrl,
+  discoverRssWebArticleUrlsFromLocalCaches,
   fetchDiscoveredWebUrlsFromRelays,
   loadManualRssWebUrls,
   loadPromotedRssThreadUrls,
@@ -21,6 +22,7 @@ import {
   isHttpArticleUrl,
   isRssWebUnifiedClutterUrl,
   mergeDiscoveredRssWebUrls,
+  mergeManualRssWebUrlEntries,
   rssWebRowHasRealFeedItems,
   saveRssWebFeedScopePreference,
   saveRssWebHideUnifiedClutterPreference,
@@ -669,14 +671,22 @@ export default function RssFeedList() {
     let cancelled = false
     void (async () => {
       try {
-        const discovered = await fetchDiscoveredWebUrlsFromRelays({
-          accountPubkey: pubkey,
-          favoriteRelays: favoriteRelays ?? [],
-          blockedRelays: blockedRelays ?? [],
+        const local = await discoverRssWebArticleUrlsFromLocalCaches({
           excludeClutterUrls: hideUnifiedClutter
         })
+        let discovered: ManualRssWebUrlEntry[] = []
+        try {
+          discovered = await fetchDiscoveredWebUrlsFromRelays({
+            accountPubkey: pubkey,
+            favoriteRelays: favoriteRelays ?? [],
+            blockedRelays: blockedRelays ?? [],
+            excludeClutterUrls: hideUnifiedClutter
+          })
+        } catch {
+          /* relay discovery is best-effort */
+        }
         if (cancelled) return
-        setRelayDiscoveredUrls(discovered)
+        setRelayDiscoveredUrls(mergeManualRssWebUrlEntries(local, discovered))
         const didMerge = await mergeDiscoveredRssWebUrls(discovered)
         if (didMerge && !cancelled) refreshManualWebUrls()
       } catch {
@@ -1114,6 +1124,15 @@ export default function RssFeedList() {
                   ? t('No URL-only items yet')
                   : t('No RSS feed items available')}
             </p>
+            {feedScope === 'urls' &&
+            !searchQuery.trim() &&
+            selectedFeeds.includes('all') &&
+            timeFilter === 'all' &&
+            rssScopeRows.length > 0 ? (
+              <p className="mt-3 max-w-md text-center text-xs text-muted-foreground">
+                {t('RSS+Web url tab empty hint')}
+              </p>
+            ) : null}
           </div>
         ) : feedScope === 'urls' ? (
           <>

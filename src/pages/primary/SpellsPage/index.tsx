@@ -259,12 +259,14 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           if (!cancelled) setFollowSetListEvents([])
           return
         }
-        const events = await queryService.fetchEvents(
-          feedUrls,
-          { authors: [pubkey], kinds: [ExtendedKind.FOLLOW_SET], limit: 500 },
-          { eoseTimeout: 2000, globalTimeout: 15000, firstRelayResultGraceMs: false }
-        )
-        const tombstones = await indexedDb.getAllTombstones()
+        const [events, tombstones] = await Promise.all([
+          queryService.fetchEvents(
+            feedUrls,
+            { authors: [pubkey], kinds: [ExtendedKind.FOLLOW_SET], limit: 500 },
+            { eoseTimeout: 2000, globalTimeout: 15000, firstRelayResultGraceMs: false }
+          ),
+          indexedDb.getAllTombstones()
+        ])
         if (!cancelled) {
           setFollowSetListEvents(dedupeFollowSetEventsByD(filterEventsExcludingTombstones(events, tombstones)))
         }
@@ -349,12 +351,14 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       if (manualBump) {
         spellCatalogLastManualKeyRef.current = spellCatalogManualRefreshKey
       }
-      const cachedSpells = await indexedDb.getSpellEvents()
-      if (cancelled) return
 
-      const shouldSyncFromRelays = manualBump || cachedSpells.length === 0
-      if (!shouldSyncFromRelays) {
-        return
+      const idbSpellsP = indexedDb.getSpellEvents()
+      if (!manualBump) {
+        const cachedSpells = await idbSpellsP
+        if (cancelled) return
+        if (cachedSpells.length > 0) {
+          return
+        }
       }
 
       const urls = getRelaysForSpellCatalogSync(favoriteRelays, blockedRelays, userReadRelaysWithHttp(relayList), {

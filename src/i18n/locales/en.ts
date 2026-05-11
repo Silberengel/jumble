@@ -1695,6 +1695,8 @@ export default {
     URLs: "URLs",
     RSS: "RSS",
     "No URL-only items yet": "No URL-only items yet",
+    "RSS+Web url tab empty hint":
+      "Links from your RSS subscriptions appear under the RSS tab. This tab lists article URLs from Nostr (reactions, comments, bookmarks on web pages) when they are not only covered by feed items, and links you add manually.",
     "Respond to this RSS entry": "Respond to this RSS entry",
     "RSS read-only thread hint": "Nostr replies, zaps, and highlights are hidden here. Use this to add the article to your URL feed and respond there.",
     "RSS feed item label": "RSS",
