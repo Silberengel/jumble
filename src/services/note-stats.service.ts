@@ -524,11 +524,17 @@ class NoteStatsService {
     try {
       const me = client.pubkey?.trim()
       if (me) {
+        const emptyViewerRl: TRelayList = {
+          write: [],
+          read: [],
+          originalRelays: [],
+          httpRead: [],
+          httpWrite: [],
+          httpOriginalRelays: []
+        }
         const mine = await Promise.race([
           client.fetchRelayList(me),
-          new Promise<{ read?: string[]; write?: string[]; httpRead?: string[]; httpWrite?: string[] }>((r) =>
-            setTimeout(() => r({ read: [], write: [], httpRead: [], httpWrite: [] }), 2000)
-          )
+          new Promise<TRelayList>((r) => setTimeout(() => r(emptyViewerRl), 2000))
         ])
         viewerNip65ForAggr = mine
         userReadRelaysWithHttp(mine).slice(0, 12).forEach(add)

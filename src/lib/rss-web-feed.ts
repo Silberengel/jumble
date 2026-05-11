@@ -493,7 +493,7 @@ function touchRssWebDiscoveryUrlFromEvent(
 }
 
 /** Merge manual / discovered URL lists; per URL keep the newest `addedAt`. */
-export function mergeManualRssWebUrlEntries(...parts: ManualRssWebUrlEntry[]): ManualRssWebUrlEntry[] {
+export function mergeManualRssWebUrlEntries(...parts: ManualRssWebUrlEntry[][]): ManualRssWebUrlEntry[] {
   const byUrl = new Map<string, number>()
   for (const list of parts) {
     for (const e of list) {
