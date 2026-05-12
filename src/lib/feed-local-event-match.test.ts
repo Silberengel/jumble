@@ -35,6 +35,14 @@ describe('eventMatchesLocalFeedFilter', () => {
     ).toBe(true)
   })
 
+  it('matches hex mention tags case-insensitively for local cache warmup', () => {
+    expect(
+      eventMatchesLocalFeedFilter(event({ tags: [['p', 'C'.repeat(64)]] }), {
+        '#p': ['c'.repeat(64)]
+      })
+    ).toBe(true)
+  })
+
   it('rejects events outside any filter constraint', () => {
     expect(eventMatchesLocalFeedFilter(event({ kind: 6 }), { kinds: [1] })).toBe(false)
     expect(eventMatchesLocalFeedFilter(event(), { since: 1001 })).toBe(false)

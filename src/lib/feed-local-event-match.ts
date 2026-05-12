@@ -1,12 +1,16 @@
 import type { Event, Filter } from 'nostr-tools'
 
+function comparableTagValue(tagName: string, value: unknown): string {
+  const text = String(value).trim()
+  const tagKey = tagName.toLowerCase()
+  if (tagKey === 't') return text.toLowerCase()
+  if ((tagKey === 'p' || tagKey === 'e') && /^[0-9a-f]{64}$/i.test(text)) return text.toLowerCase()
+  return text
+}
+
 function valuesMatchTag(tagName: string, eventValues: string[], filterValues: unknown[]): boolean {
-  if (tagName.toLowerCase() === 't') {
-    const allowed = new Set(filterValues.map((v) => String(v).toLowerCase()))
-    return eventValues.some((v) => allowed.has(v.toLowerCase()))
-  }
-  const allowed = new Set(filterValues.map((v) => String(v)))
-  return eventValues.some((v) => allowed.has(v))
+  const allowed = new Set(filterValues.map((v) => comparableTagValue(tagName, v)))
+  return eventValues.some((v) => allowed.has(comparableTagValue(tagName, v)))
 }
 
 export function eventMatchesLocalFeedFilter(event: Event, filter: Filter): boolean {

@@ -1,4 +1,5 @@
 import { useEmojiInfosForEvent } from '@/hooks'
+import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
 import { Event } from 'nostr-tools'
 import Content from './Content'
 
@@ -10,5 +11,6 @@ export default function NormalContentPreview({
   className?: string
 }) {
   const emojiInfos = useEmojiInfosForEvent(event)
-  return <Content content={event.content} className={className} emojiInfos={emojiInfos} />
+  const content = stripTrailingStringifiedNostrEvent(event.content)
+  return <Content content={content} className={className} emojiInfos={emojiInfos} />
 }

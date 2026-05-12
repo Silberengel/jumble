@@ -4,13 +4,14 @@ import {
   getLongFormArticleMetadataFromEvent
 } from '@/lib/event-metadata'
 import { tagNameEquals } from '@/lib/tag'
+import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
 import { Event, kinds } from 'nostr-tools'
 
 export const PARENT_REPLY_BLURB_MAX = 150
 
 /** Strip common markdown / asciidoc / HTML so parent reply strips stay one line (matches NotePage preview). */
 export function stripMarkupForPreview(content: string): string {
-  let text = content
+  let text = stripTrailingStringifiedNostrEvent(content)
   text = text.replace(/^#{1,6}\s+/gm, '')
   text = text.replace(/\*\*([^*]+)\*\*/g, '$1')
   text = text.replace(/\*([^*]+)\*/g, '$1')

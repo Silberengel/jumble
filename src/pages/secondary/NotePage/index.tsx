@@ -90,6 +90,27 @@ function getEventTypeName(kind: number): string {
   }
 }
 
+function eventPointerHexId(pointer: string | undefined): string | undefined {
+  const raw = pointer?.trim()
+  if (!raw) return undefined
+  if (/^[0-9a-f]{64}$/i.test(raw)) return raw.toLowerCase()
+  try {
+    const decoded = nip19.decode(raw)
+    if (decoded.type === 'note') return decoded.data.toLowerCase()
+    if (decoded.type === 'nevent') return decoded.data.id.toLowerCase()
+  } catch {
+    /* invalid pointer */
+  }
+  return undefined
+}
+
+function eventPointersReferenceSameNote(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false
+  const aHex = eventPointerHexId(a)
+  const bHex = eventPointerHexId(b)
+  return aHex != null && bHex != null ? aHex === bHex : a === b
+}
+
 const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: { id?: string; index?: number; hideTitlebar?: boolean; initialEvent?: Event }, ref) => {
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
@@ -108,12 +129,13 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   const rootEventId = useMemo(() => {
     if (!finalEvent) return undefined
     const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
+    const rootBech32Id = getRootBech32Id(finalEvent)
     if (rootHex && /^[0-9a-f]{64}$/i.test(rootHex)) {
       const resolvedRootHex = resolveDeclaredThreadRootEventHex(rootHex)
       if (resolvedRootHex === finalEvent.id.toLowerCase()) return undefined
-      return resolvedRootHex
+      return resolvedRootHex === rootHex ? rootBech32Id ?? resolvedRootHex : resolvedRootHex
     }
-    return getRootBech32Id(finalEvent)
+    return rootBech32Id
   }, [finalEvent])
   const rootITag = useMemo(
     () => (finalEvent?.kind === ExtendedKind.COMMENT ? finalEvent.tags.find(tagNameEquals('I')) : undefined),
@@ -488,7 +510,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       <div className="px-4 pt-3 w-full">
         {rootITag && <ExternalRoot value={rootITag[1]} />}
         {rootEventId &&
-          rootEventId !== parentEventId &&
+          !eventPointersReferenceSameNote(rootEventId, parentEventId) &&
           (isFetchingRootEvent || rootEventForStrip) && (
             <ParentNote
               key={`root-note-${finalEvent.id}`}

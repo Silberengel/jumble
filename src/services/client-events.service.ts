@@ -294,6 +294,7 @@ export class EventService {
   async fetchEvent(id: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
     const trimmed = id.trim()
     let hexId: string | undefined
+    let pointerHasFetchHints = false
     if (/^[0-9a-f]{64}$/i.test(trimmed)) {
       hexId = trimmed.toLowerCase()
     } else {
@@ -305,6 +306,7 @@ export class EventService {
             break
           case 'nevent':
             hexId = data.id
+            pointerHasFetchHints = Boolean(data.author || data.relays?.length)
             break
           case 'naddr': {
             const fromSession = this.getSessionEventIfMatchingNaddr({
@@ -338,8 +340,8 @@ export class EventService {
         this.eventDataLoader.clear(hexId)
       }
     }
-    if (opts?.relayHints?.length) {
-      const hinted = await this._fetchEvent(trimmed, opts.relayHints)
+    if (opts?.relayHints?.length || pointerHasFetchHints) {
+      const hinted = await this._fetchEvent(trimmed, opts?.relayHints)
       if (hinted && !shouldDropEventOnIngest(hinted)) return hinted
     }
     const loaded = await this.eventDataLoader.load(hexId ?? trimmed)
@@ -1042,6 +1044,7 @@ export class EventService {
   private async _fetchEvent(id: string, extraRelayHints?: string[]): Promise<NEvent | undefined> {
     let filter: Filter | undefined
     let relays: string[] = []
+    let authorHintPubkey: string | undefined
     if (extraRelayHints?.length) {
       relays = [
         ...new Set(
@@ -1063,6 +1066,9 @@ export class EventService {
         case 'nevent':
           filter = { ids: [data.id], limit: 1 }
           if (data.relays) relays = [...new Set([...relays, ...data.relays])]
+          if (data.author && /^[0-9a-f]{64}$/i.test(data.author)) {
+            authorHintPubkey = data.author.toLowerCase()
+          }
           break
         case 'naddr': {
           const pk = data.pubkey.toLowerCase()
@@ -1121,7 +1127,7 @@ export class EventService {
     }
 
     // Always try comprehensive relay list (author's outboxes + user's inboxes + hints + seen + defaults)
-    const event = await this.tryHarderToFetchEvent(relays, filter, true)
+    const event = await this.tryHarderToFetchEvent(relays, filter, true, authorHintPubkey)
     if (event && !shouldDropEventOnIngest(event)) {
       this.addEventToCache(event)
       return event
@@ -1167,7 +1173,8 @@ export class EventService {
   private async tryHarderToFetchEvent(
     relayHints: string[],
     filter: Filter,
-    alreadyFetchedFromBigRelays = false
+    alreadyFetchedFromBigRelays = false,
+    authorHintPubkey?: string
   ): Promise<NEvent | undefined> {
     // Get seen relays if we have an event ID
     const seenRelays = filter.ids?.length ? client.getSeenEventRelayUrls(filter.ids[0]) : []
@@ -1177,7 +1184,7 @@ export class EventService {
         ? parseReplaceableAtagCoordinate(filter['#a'][0] as string)
         : null
     const authorPubkey =
-      filter.authors?.length === 1 ? filter.authors[0] : parsedAtag?.pubkey
+      filter.authors?.length === 1 ? filter.authors[0] : parsedAtag?.pubkey ?? authorHintPubkey
 
     // Build comprehensive relay list
     const relayUrls = await buildComprehensiveRelayListForEvents(authorPubkey, relayHints, seenRelays, [])

@@ -586,8 +586,8 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
   }
 
   for (const tag of event.tags) {
-    if (tag[0] === 'e' && tag[1]) addHex(tag[1])
-    if (tag[0] === 'a' && tag[3]) addHex(tag[3])
+    if ((tag[0] === 'e' || tag[0] === 'E') && tag[1]) addHex(tag[1])
+    if ((tag[0] === 'a' || tag[0] === 'A') && tag[3]) addHex(tag[3])
   }
 
   for (const full of event.content.match(EMBEDDED_EVENT_REGEX) ?? []) {

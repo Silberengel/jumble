@@ -520,6 +520,14 @@ function eventTagValues(event: Event, tagName: string): string[] {
     .map((tag) => tag[1] as string)
 }
 
+function comparableLocalTagValue(tagName: string, value: unknown): string {
+  const text = String(value).trim()
+  const tagKey = tagName.toLowerCase()
+  if (tagKey === 't') return text.toLowerCase()
+  if ((tagKey === 'p' || tagKey === 'e') && /^[0-9a-f]{64}$/i.test(text)) return text.toLowerCase()
+  return text
+}
+
 function eventMatchesSubRequestFilter(event: Event, filter: Filter): boolean {
   const ids = Array.isArray(filter.ids) ? filter.ids : undefined
   if (ids && ids.length > 0 && !ids.includes(event.id)) return false
@@ -536,16 +544,8 @@ function eventMatchesSubRequestFilter(event: Event, filter: Filter): boolean {
     const tagName = key.slice(1)
     const eventValues = eventTagValues(event, tagName)
     if (eventValues.length === 0) return false
-    const matched =
-      tagName.toLowerCase() === 't'
-        ? (() => {
-            const allowed = new Set(values.map((v) => String(v).toLowerCase()))
-            return eventValues.some((v) => allowed.has(v.toLowerCase()))
-          })()
-        : (() => {
-            const allowed = new Set(values.map((v) => String(v)))
-            return eventValues.some((v) => allowed.has(v))
-          })()
+    const allowed = new Set(values.map((v) => comparableLocalTagValue(tagName, v)))
+    const matched = eventValues.some((v) => allowed.has(comparableLocalTagValue(tagName, v)))
     if (!matched) return false
   }
 
@@ -2219,15 +2219,23 @@ const NoteList = forwardRef(
 
               void (async () => {
                 try {
-                  const [diskRaw, fromPub, fromArch] = await Promise.all([
-                    client.getTimelineDiskSnapshotEvents(
-                      mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-                    ),
-                    indexedDb.getCachedPublicationEventsByKinds(localLayerCap * 2, kindsForScan),
+                  const filterAwareDiskReq = mappedSubRequests as Array<{
+                    urls: string[]
+                    filter: TSubRequestFilter
+                  }>
+                  const [diskRaw, filterAwareLocalRaw, fromPub, fromArch] = await Promise.all([
+                    client.getTimelineDiskSnapshotEvents(filterAwareDiskReq),
+                    client.getLocalFeedEvents(filterAwareDiskReq, {
+                      maxRowsScanned: 50_000,
+                      maxMatches: localLayerCap * 3
+                    }),
+                    indexedDb.getCachedPublicationEventsByKinds(localLayerCap * 2, kindsForScan, {
+                      scanBudget: 50_000
+                    }),
                     indexedDb.scanEventArchiveByKinds({
                       kinds: kindsForScan,
                       since: sinceTightest,
-                      maxRowsScanned: 10_000,
+                      maxRowsScanned: 50_000,
                       maxMatches: localLayerCap * 2
                     })
                   ])
@@ -2235,6 +2243,11 @@ const NoteList = forwardRef(
                   const seen = new Set<string>()
                   const combinedRaw: Event[] = []
                   for (const ev of diskRaw) {
+                    if (seen.has(ev.id)) continue
+                    seen.add(ev.id)
+                    combinedRaw.push(ev)
+                  }
+                  for (const ev of filterAwareLocalRaw) {
                     if (seen.has(ev.id)) continue
                     seen.add(ev.id)
                     combinedRaw.push(ev)

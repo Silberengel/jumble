@@ -32,13 +32,17 @@ import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   getWebBookmarkArticleUrl,
   getWebExternalReactionTargetUrl,
   isRssThreadSyntheticParentEvent
 } from '@/lib/rss-article'
+import {
+  findTrailingStringifiedNostrEvent,
+  type StringifiedNostrEventMatch
+} from '@/lib/nostr-event-json'
 import { CreateHighlightContext } from './CreateHighlightContext'
 import SelectionHighlightTrigger from './SelectionHighlightTrigger'
 import AudioPlayer from '../AudioPlayer'
@@ -50,10 +54,11 @@ import NoteOptions from '../NoteOptions'
 import ParentNotePreview from '../ParentNotePreview'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Repeat2 } from 'lucide-react'
 import CommunityDefinition from './CommunityDefinition'
 import GroupMetadata from './GroupMetadata'
 import Highlight from './Highlight'
+import ContentPreview from '../ContentPreview'
 
 import IValue from './IValue'
 import LiveEvent from './LiveEvent'
@@ -100,6 +105,105 @@ function isStringifiedJsonContent(content?: string): boolean {
   } catch {
     return false
   }
+}
+
+function cacheEmbeddedRepostTarget(hostEvent: Event, targetEvent: Event) {
+  client.addEventToCache(targetEvent)
+  const targetSeenOn = client.getSeenEventRelays(targetEvent.id)
+  if (targetSeenOn.length > 0) return
+  client.getSeenEventRelays(hostEvent.id).forEach((relay) => {
+    client.trackEventSeenOn(targetEvent.id, relay)
+  })
+}
+
+function StringifiedNostrEventPreviewCard({
+  hostEvent,
+  targetEvent,
+  className
+}: {
+  hostEvent: Event
+  targetEvent: Event
+  className?: string
+}) {
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    cacheEmbeddedRepostTarget(hostEvent, targetEvent)
+  }, [hostEvent.id, targetEvent])
+
+  return (
+    <div
+      data-embedded-note
+      className={cn(
+        'not-prose rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm',
+        className
+      )}
+    >
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Repeat2 className="size-4 shrink-0" aria-hidden />
+        <span>{t('Boost')}</span>
+      </div>
+      <div className="flex min-w-0 gap-2">
+        <UserAvatar
+          userId={targetEvent.pubkey}
+          size="tiny"
+          className="mt-0.5 shrink-0"
+          deferRemoteAvatar={false}
+        />
+        <div className="min-w-0 flex-1">
+          <ContentPreview event={targetEvent} className="line-clamp-4" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StringifiedNostrEventContent({
+  hostEvent,
+  match,
+  className,
+  hideMetadata,
+  autoLoadMedia,
+  fullCalendarInvite
+}: {
+  hostEvent: Event
+  match: StringifiedNostrEventMatch
+  className?: string
+  hideMetadata?: boolean
+  autoLoadMedia: boolean
+  fullCalendarInvite?: { event: Event; naddr: string }
+}) {
+  const textEvent = match.textBefore.trim()
+    ? { ...hostEvent, content: match.textBefore }
+    : undefined
+
+  return (
+    <div className={cn('space-y-2', className)}>
+      {textEvent ? (
+        <MarkdownArticle
+          event={textEvent}
+          hideMetadata={hideMetadata}
+          lazyMedia={!autoLoadMedia}
+          fullCalendarInvite={fullCalendarInvite}
+        />
+      ) : null}
+      <StringifiedNostrEventPreviewCard hostEvent={hostEvent} targetEvent={match.event} />
+    </div>
+  )
+}
+
+function RepostEventContent({ event, className }: { event: Event; className?: string }) {
+  const embeddedEvent = findTrailingStringifiedNostrEvent(event.content)
+  if (embeddedEvent) {
+    return (
+      <StringifiedNostrEventPreviewCard
+        hostEvent={event}
+        targetEvent={embeddedEvent.event}
+        className={className}
+      />
+    )
+  }
+  return <NotificationEventCard className={className} event={event} />
 }
 
 export default function Note({
@@ -200,6 +304,19 @@ export default function Note({
       hideMetadata?: boolean
       className?: string
     } = {}) => {
+      const embeddedEvent = findTrailingStringifiedNostrEvent(displayEvent.content ?? '')
+      if (embeddedEvent) {
+        return (
+          <StringifiedNostrEventContent
+            hostEvent={displayEvent}
+            match={embeddedEvent}
+            className={className}
+            hideMetadata={hideMetadata}
+            autoLoadMedia={autoLoadMedia}
+            fullCalendarInvite={fullCalendarInvite}
+          />
+        )
+      }
       if (isStringifiedJsonContent(displayEvent.content)) {
         return (
           <pre
@@ -268,7 +385,9 @@ export default function Note({
     content = <NsfwNote show={() => setShowNsfw(true)} />
   } else if (isNip25ReactionKind(event.kind)) {
     content = null
-  } else if (isNip18RepostKind(event.kind) || event.kind === ExtendedKind.POLL_RESPONSE) {
+  } else if (isNip18RepostKind(event.kind)) {
+    content = <RepostEventContent className="mt-2" event={displayEvent} />
+  } else if (event.kind === ExtendedKind.POLL_RESPONSE) {
     content = <NotificationEventCard className="mt-2" event={displayEvent} />
   } else if (event.kind === kinds.Highlights) {
     // Try to render the Highlight component with error boundary
