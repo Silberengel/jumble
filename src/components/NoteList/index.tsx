@@ -944,7 +944,7 @@ const NoteList = forwardRef(
         pendingPubkeys: feedProfileBatch.pending,
         version: feedProfileBatch.version
       }),
-      [feedProfileBatch]
+      [feedProfileBatch.profiles, feedProfileBatch.pending, feedProfileBatch.version]
     )
     
     // Memoize subRequests serialization to avoid expensive JSON.stringify on every render
@@ -1078,7 +1078,9 @@ const NoteList = forwardRef(
           }
         }
         if (!changed) return prev
-        return { ...prev, pending, version: prev.version + 1 }
+        // Do not bump `version` here — only the debounced batch + profile merges should notify
+        // `useFetchProfile` (via profiles map / pending membership), not every pending-key sync.
+        return { ...prev, pending }
       })
     }, [timelineEventsForFilter, newEvents])
 
@@ -1564,7 +1566,7 @@ const NoteList = forwardRef(
             }
           }
           if (!pendingChanged) return prev
-          return { ...prev, pending, version: prev.version + 1 }
+          return { ...prev, pending }
         })
 
         void (async () => {

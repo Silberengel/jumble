@@ -6,13 +6,19 @@ import { useMemo } from 'react'
  * Relays to hint for note-stats REQ construction: user favorites plus any “current” relays
  * (e.g. single-relay feed), deduped.
  */
-export function useNoteStatsRelayHints(): { relays: string[]; key: string } {
+export function useNoteStatsRelayHints(): {
+  relays: string[]
+  key: string
+  /** Sorted join of “current” relays only (small); use in effects when favorites tier is stable. */
+  currentRelaysKey: string
+} {
   const { favoriteRelays } = useFavoriteRelays()
   const currentRelayUrls = useCurrentRelayUrlsOptional()
 
   return useMemo(() => {
     const relays = [...new Set([...(favoriteRelays ?? []), ...currentRelayUrls])]
     const key = relays.slice().sort().join('|')
-    return { relays, key }
+    const currentRelaysKey = currentRelayUrls.slice().sort().join('|')
+    return { relays, key, currentRelaysKey }
   }, [favoriteRelays, currentRelayUrls])
 }

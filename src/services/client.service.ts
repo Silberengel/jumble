@@ -155,6 +155,7 @@ import {
 import { sha256 } from '@noble/hashes/sha2'
 import dayjs from 'dayjs'
 import FlexSearch from 'flexsearch'
+import { LRUCache } from 'lru-cache'
 import {
   EventTemplate,
   Filter,
@@ -300,7 +301,14 @@ class ClientService extends EventTarget {
   private sessionPrewarmBaseCompleted = false
   /** Per-pubkey cooldown for {@link prefetchAuthorCoreReplaceables} from feed ingest (avoid REQ storms). */
   private authorCorePrefetchCooldownUntilMs = new Map<string, number>()
-  private static readonly AUTHOR_CORE_PREFETCH_COOLDOWN_MS = 90_000
+  private static readonly AUTHOR_CORE_PREFETCH_COOLDOWN_MS = 6 * 60 * 1000
+  /**
+   * Max kind-0 `created_at` already queued for IndexedDB from {@link QueryService} ingest (same profile
+   * re-emitted across relays/batches should not each open tombstone + get + put).
+   */
+  private ingestProfileIdbMaxCreatedAt = new Map<string, number>()
+  /** Dedupe {@link addUsernameToIndex} for the same kind-0 id (multi-relay / re-REQ spam). */
+  private metadataIngestIndexDedupe = new LRUCache<string, true>({ max: 12_000 })
 
   constructor() {
     super()
@@ -346,8 +354,18 @@ class ClientService extends EventTarget {
         this.eventService.addEventToCache(e)
         // Kind 0 from timelines/REQs was only kept in the session LRU, not in PROFILE_EVENTS or FlexSearch,
         // so @-mention / profile search missed people you already saw on feeds (e.g. notifications).
-        if (e.kind === kinds.Metadata && !shouldDropEventOnIngest(e)) {
+        if (e.kind !== kinds.Metadata || shouldDropEventOnIngest(e)) continue
+        const pk = e.pubkey.toLowerCase()
+        const best = this.eventService.getSessionMetadataForPubkey(pk)
+        if (!best || best.id !== e.id) continue
+        if (!this.metadataIngestIndexDedupe.has(e.id)) {
+          this.metadataIngestIndexDedupe.set(e.id, true)
           void this.addUsernameToIndex(e)
+        }
+        const prev = this.ingestProfileIdbMaxCreatedAt.get(pk) ?? -1
+        if (e.created_at > prev) {
+          this.ingestProfileIdbMaxCreatedAt.set(pk, e.created_at)
+          this.trimIngestProfileIdbMap()
           void indexedDb.putReplaceableEvent(e).catch(() => {})
         }
       }
@@ -3679,6 +3697,15 @@ class ClientService extends EventTarget {
       if (out.length >= limit) break
     }
     return out
+  }
+
+  private trimIngestProfileIdbMap(): void {
+    const MAX = 10_000
+    while (this.ingestProfileIdbMaxCreatedAt.size > MAX) {
+      const k = this.ingestProfileIdbMaxCreatedAt.keys().next().value
+      if (k === undefined) break
+      this.ingestProfileIdbMaxCreatedAt.delete(k)
+    }
   }
 
   private async addUsernameToIndex(profileEvent: NEvent) {

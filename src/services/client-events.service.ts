@@ -104,6 +104,18 @@ export class EventService {
   private sessionEventCache = new LRUCache<string, NEvent>({ max: getDefaultSessionLruMaxSync() })
   /** Latest kind-0 per pubkey from {@link sessionEventCache} for batch profile short-circuit. */
   private sessionMetadataByPubkey = new Map<string, NEvent>()
+  /** Ingest coalescing: max `created_at` already queued for durable replaceable cache (coordinate → ts). */
+  private ingestReplaceablePersistMaxCreatedAt = new Map<string, number>()
+
+  private trimIngestReplaceablePersistMap(): void {
+    const MAX = 12_000
+    while (this.ingestReplaceablePersistMaxCreatedAt.size > MAX) {
+      const k = this.ingestReplaceablePersistMaxCreatedAt.keys().next().value
+      if (k === undefined) break
+      this.ingestReplaceablePersistMaxCreatedAt.delete(k)
+    }
+  }
+
   /** Callbacks waiting for an event id to appear in {@link sessionEventCache} (e.g. embed loads before timeline caches the note). */
   private sessionEventWaiters = new Map<string, Set<() => void>>()
   /** Waiters keyed like {@link replaceableWaiterKey} — naddr embeds have no hex id until a REQ returns. */
@@ -542,7 +554,13 @@ export class EventService {
       (cleanEvent.kind === kinds.RelayList || cleanEvent.kind === kinds.Contacts) &&
       indexedDb.hasReplaceableEventStoreForKind(cleanEvent.kind)
     ) {
-      void client.replaceableEventService.updateReplaceableEventCache(cleanEvent as NEvent).catch(() => {})
+      const coord = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(cleanEvent as NEvent))
+      const prev = this.ingestReplaceablePersistMaxCreatedAt.get(coord) ?? -1
+      if (cleanEvent.created_at > prev) {
+        this.ingestReplaceablePersistMaxCreatedAt.set(coord, cleanEvent.created_at)
+        this.trimIngestReplaceablePersistMap()
+        void client.replaceableEventService.updateReplaceableEventCache(cleanEvent as NEvent).catch(() => {})
+      }
     }
     if (AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS.has(cleanEvent.kind)) {
       const pk = cleanEvent.pubkey
@@ -554,25 +572,30 @@ export class EventService {
     this.notifyReplaceableCoordinateWaiters(cleanEvent as NEvent)
     queuePersistSeenEvent(cleanEvent as NEvent)
     if (isReplaceableEvent(cleanEvent.kind) && isDocumentRelayKind(cleanEvent.kind)) {
-      // Long-form (30023), wiki, and publication replaceables — same store as profile “Articles” tab.
-      void indexedDb.putReplaceableEvent(cleanEvent as NEvent).catch((error: unknown) => {
-        const err = error instanceof Error ? error : new Error(String(error))
-        const q = err.name === 'QuotaExceededError' || /quota|storage/i.test(err.message)
-        if (q) {
-          logger.debug('[EventService] Skipped document replaceable IndexedDB persist (storage quota)', {
+      const docCoord = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(cleanEvent as NEvent))
+      const docPrev = this.ingestReplaceablePersistMaxCreatedAt.get(docCoord) ?? -1
+      if (cleanEvent.created_at > docPrev) {
+        this.ingestReplaceablePersistMaxCreatedAt.set(docCoord, cleanEvent.created_at)
+        this.trimIngestReplaceablePersistMap()
+        void indexedDb.putReplaceableEvent(cleanEvent as NEvent).catch((error: unknown) => {
+          const err = error instanceof Error ? error : new Error(String(error))
+          const q = err.name === 'QuotaExceededError' || /quota|storage/i.test(err.message)
+          if (q) {
+            logger.debug('[EventService] Skipped document replaceable IndexedDB persist (storage quota)', {
+              kind: cleanEvent.kind,
+              eventId: id
+            })
+            return
+          }
+          logger.warn('[EventService] Failed to persist document replaceable to IndexedDB', {
             kind: cleanEvent.kind,
-            eventId: id
+            eventId: id,
+            errorMessage: err.message,
+            errorName: err.name,
+            error: err
           })
-          return
-        }
-        logger.warn('[EventService] Failed to persist document replaceable to IndexedDB', {
-          kind: cleanEvent.kind,
-          eventId: id,
-          errorMessage: err.message,
-          errorName: err.name,
-          error: err
         })
-      })
+      }
     }
     if (isCalendarEventKind(cleanEvent.kind)) {
       void indexedDb.putCalendarEventRow(cleanEvent as NEvent).catch((error: unknown) => {

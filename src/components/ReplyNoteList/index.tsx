@@ -722,7 +722,7 @@ function ReplyNoteList({
           }
         }
         if (!changed) return prev
-        return { ...prev, pending, version: prev.version + 1 }
+        return { ...prev, pending }
       })
 
       void (async () => {
@@ -769,7 +769,7 @@ function ReplyNoteList({
       })()
     }, THREAD_PROFILE_BATCH_DEBOUNCE_MS)
     return () => window.clearTimeout(handle)
-  }, [event, mergedFeed, parentNoteFeed?.version])
+  }, [event, mergedFeed, parentNoteFeed?.profiles, parentNoteFeed?.pendingPubkeys])
 
   const [timelineKey] = useState<string | undefined>(undefined)
   const [until, setUntil] = useState<number | undefined>(undefined)

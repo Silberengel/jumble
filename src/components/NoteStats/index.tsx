@@ -8,9 +8,8 @@ import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
 import { shouldHideInteractions } from '@/lib/event-filtering'
-import logger from '@/lib/logger'
 import { Event } from 'nostr-tools'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
 import { LikeButtonWithStats } from './LikeButton'
 import { LikesWithStats } from './Likes'
@@ -40,8 +39,8 @@ export default function NoteStats({
   const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
   const noteStats = useNoteStatsById(event.id)
-  const { relays: hintRelays, key: hintRelaysKey } = useNoteStatsRelayHints()
-  const { relayUrls: rssUrlThreadRelays, key: rssUrlThreadRelaysKey } = useRssUrlThreadQueryRelays()
+  const { relays: hintRelays, currentRelaysKey } = useNoteStatsRelayHints()
+  const { relayUrls: rssUrlThreadRelays, relayMergeTier } = useRssUrlThreadQueryRelays()
   const [loading, setLoading] = useState(false)
   
   // Hide boost button for discussion events and replies to discussions
@@ -55,7 +54,10 @@ export default function NoteStats({
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
   /** Match {@link RssUrlThreadStatsBar}: inbox/favorites/fast-read merge — plain hints miss many #i indexers. */
   const statsRelays = isRssArticleRoot ? rssUrlThreadRelays : hintRelays
-  const statsRelaysKey = isRssArticleRoot ? rssUrlThreadRelaysKey : hintRelaysKey
+  /** At most two background refetches per card: before vs after inbox/favorite hints hydrate. */
+  const statsRelayFetchTier = isRssArticleRoot ? relayMergeTier : hintRelays.length > 0 ? 1 : 0
+  const statsRelaysRef = useRef(statsRelays)
+  statsRelaysRef.current = statsRelays
   const isZapPoll = event.kind === ExtendedKind.ZAP_POLL
 
   /** Emoji reaction pills (aggregated likes). Shown for RSS/Web URL threads so the side panel matches feed rows. */
@@ -63,18 +65,24 @@ export default function NoteStats({
 
   useEffect(() => {
     if (!fetchIfNotExisting) return
-    logger.debug('[NoteStats] UI: scheduling fetchNoteStats', {
-      eventId: `${event.id.slice(0, 12)}…`,
-      kind: event.kind,
-      hintRelayCount: statsRelays.length
-    })
     setLoading(true)
     noteStatsService
-      .fetchNoteStats(event, pubkey, statsRelays, { foreground: foregroundStats })
+      .fetchNoteStats(event, pubkey, statsRelaysRef.current, { foreground: foregroundStats })
       .finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
     // id/sig/kind/created_at identify the note for refetch boundaries.
-  }, [event.id, event.kind, event.created_at, event.sig, fetchIfNotExisting, foregroundStats, pubkey, statsRelaysKey])
+    // `statsRelayFetchTier` (not full sorted relay key) avoids a REQ storm when favorites/current relays hydrate.
+  }, [
+    event.id,
+    event.kind,
+    event.created_at,
+    event.sig,
+    fetchIfNotExisting,
+    foregroundStats,
+    pubkey,
+    statsRelayFetchTier,
+    currentRelaysKey
+  ])
 
   if (isSmallScreen) {
     return (

@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useFetchRelayInfo } from '@/hooks'
+import { getRelayIconOverrideSrc, relayUrlFingerprintColors } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import { Server } from 'lucide-react'
@@ -45,6 +46,12 @@ export default function RelayIcon({
   const iconUrl = useMemo(() => {
     if (!url) return undefined
 
+    const override = getRelayIconOverrideSrc(url)
+    if (override) {
+      logger.debug('[RelayIcon] using override icon', { url, override })
+      return override
+    }
+
     // Prefer the NIP-11 icon field
     const rawIcon = relayInfo?.icon && typeof relayInfo.icon === 'string' ? relayInfo.icon : undefined
     const nip11Icon = rawIcon ? resolveRelayImageUrl(rawIcon, url) : undefined
@@ -56,11 +63,16 @@ export default function RelayIcon({
     return undefined
   }, [url, relayInfo])
 
+  const fallbackColors = useMemo(() => relayUrlFingerprintColors(url), [url])
+
   return (
     <Avatar className={cn('w-6 h-6', className)}>
       {iconUrl && <AvatarImage src={iconUrl} className="object-cover object-center" />}
-      <AvatarFallback>
-        <Server size={iconSize} />
+      <AvatarFallback
+        className="bg-transparent"
+        style={{ backgroundColor: fallbackColors.background, color: fallbackColors.color }}
+      >
+        <Server size={iconSize} className="opacity-95" aria-hidden />
       </AvatarFallback>
     </Avatar>
   )

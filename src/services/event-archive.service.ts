@@ -20,6 +20,12 @@ const CORE_FEED_KINDS = new Set<number>([
 let footprint: { count: number; bytes: number } | null = null
 const pending = new Map<string, Event>()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
+let archiveFlushInProgress = false
+
+/** Hard cap so a relay flood cannot grow an unbounded RAM queue before the first flush. */
+const MAX_PENDING_ARCHIVE = 4000
+/** IndexedDB + trim work per flush so one timer tick cannot process tens of thousands of rows. */
+const MAX_ARCHIVE_ROWS_PER_FLUSH = 150
 
 export function invalidateArchiveFootprintCache(): void {
   footprint = null
@@ -77,26 +83,46 @@ async function trimArchiveIfNeeded(): Promise<void> {
 }
 
 async function flushArchiveQueue(): Promise<void> {
-  if (pending.size === 0) return
-  const batch = [...pending.values()]
-  pending.clear()
-  for (const ev of batch) {
-    if (shouldSkipArchiving(ev)) continue
-    const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
-    const tier = archiveTierForEvent(ev)
-    const bytes = approxEventBytes(ev)
-    try {
-      await indexedDb.putArchivedEventRow(ev, tier, bytes)
-    } catch (e) {
-      logger.warn('[EventArchive] put failed', { id: id.slice(0, 8), e })
+  if (archiveFlushInProgress) return
+  archiveFlushInProgress = true
+  try {
+    while (pending.size > 0) {
+      const batch: Event[] = []
+      for (const id of pending.keys()) {
+        if (batch.length >= MAX_ARCHIVE_ROWS_PER_FLUSH) break
+        const ev = pending.get(id)
+        if (ev) {
+          pending.delete(id)
+          batch.push(ev)
+        }
+      }
+      if (batch.length === 0) break
+      for (const ev of batch) {
+        if (shouldSkipArchiving(ev)) continue
+        const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
+        const tier = archiveTierForEvent(ev)
+        const bytes = approxEventBytes(ev)
+        try {
+          await indexedDb.putArchivedEventRow(ev, tier, bytes)
+        } catch (e) {
+          logger.warn('[EventArchive] put failed', { id: id.slice(0, 8), e })
+        }
+      }
     }
+    footprint = await indexedDb.getArchiveFootprint()
+    await trimArchiveIfNeeded()
+  } catch (e) {
+    logger.warn('[EventArchive] flush failed', { e })
+  } finally {
+    archiveFlushInProgress = false
   }
-  footprint = await indexedDb.getArchiveFootprint()
-  await trimArchiveIfNeeded()
+  if (pending.size > 0) {
+    void flushArchiveQueue().catch((e) => logger.warn('[EventArchive] flush', e))
+  }
 }
 
 function scheduleFlush(): void {
-  if (flushTimer !== null) return
+  if (flushTimer !== null || archiveFlushInProgress) return
   flushTimer = setTimeout(() => {
     flushTimer = null
     void flushArchiveQueue().catch((e) => logger.warn('[EventArchive] flush', e))
@@ -108,6 +134,11 @@ export function queuePersistSeenEvent(ev: Event): void {
   if (shouldSkipArchiving(ev)) return
   const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
   if (!/^[0-9a-f]{64}$/.test(id)) return
+  while (pending.size >= MAX_PENDING_ARCHIVE) {
+    const first = pending.keys().next().value
+    if (first === undefined) break
+    pending.delete(first)
+  }
   pending.set(id, ev)
   scheduleFlush()
 }

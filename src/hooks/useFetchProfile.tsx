@@ -9,7 +9,7 @@ import { eventService, replaceableEventService } from '@/services/client.service
 import indexedDb from '@/services/indexed-db.service'
 import { TProfile } from '@/types'
 import { kinds } from 'nostr-tools'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '@/lib/logger'
 
 function tryHydrateProfileFromSessionOnly(pubkey: string, skipCache: boolean): TProfile | null {
@@ -58,14 +58,6 @@ const globalFetchingPubkeys = new Set<string>()
 const globalFetchCooldowns = new Map<string, number>() // pubkey -> timestamp when cooldown expires
 
 export function useFetchProfile(id?: string, skipCache = false) {
-  // CRITICAL: Reduce logging to prevent performance issues during infinite loops
-  // Only log if we're actually going to process (not just checking)
-  // logger.info('[useFetchProfile] Hook called', { 
-  //   id: id || 'undefined',
-  //   skipCache,
-  //   stack: new Error().stack?.split('\n').slice(1, 4).join('\n')
-  // })
-  
   const nostr = useNostrOptional()
   const currentAccountProfile = nostr?.profile ?? null
   const noteFeed = useNoteFeedProfileContext()
@@ -83,23 +75,41 @@ export function useFetchProfile(id?: string, skipCache = false) {
   const effectRunCountRef = useRef<Map<string, number>>(new Map()) // Track how many times effect has run for each pubkey (safety guard against infinite loops)
   const initializedPubkeysRef = useRef<Set<string>>(new Set()) // Track pubkeys we've successfully initialized (have profile or failed)
 
+  const pkLowerResolved = useMemo(() => {
+    if (!id) return null as string | null
+    const pk = userIdToPubkey(id)
+    if (pk.length !== 64 || !/^[0-9a-f]{64}$/i.test(pk)) return null
+    return pk.toLowerCase()
+  }, [id])
+
+  const isPendingInFeed = Boolean(
+    pkLowerResolved && noteFeed?.pendingPubkeys.has(pkLowerResolved)
+  )
+
+  /**
+   * Changes when this row's batched profile row appears/updates — **not** on every feed-wide
+   * `version` tick (that remounted thousands of avatars and spammed relay fetches).
+   */
+  const feedProfileSyncKey = useMemo(() => {
+    if (!pkLowerResolved || !noteFeed) return ''
+    const row = noteFeed.profiles.get(pkLowerResolved)
+    if (!row) return isPendingInFeed ? 'p:wait' : 'p:none'
+    return [
+      row.batchPlaceholder ? 'ph' : 'ok',
+      row.username ?? '',
+      row.avatar ?? '',
+      row.npub ?? ''
+    ].join('\x1e')
+  }, [pkLowerResolved, noteFeed?.profiles, isPendingInFeed])
+
   // Function to check for profile updates with GLOBAL deduplication
   // fetchProfileEvent already checks: 1) IndexedDB, 2) network (with author's relays)
   // Memoize to prevent recreation on every render
   const checkProfile = useCallback(async (pubkey: string, cancelled: { current: boolean }): Promise<TProfile | null> => {
-    // CRITICAL: Reduce logging during rapid scrolling to prevent performance issues
-    // Only log at debug level during normal operations
-    logger.debug('[useFetchProfile] checkProfile called', {
-      pubkey: pubkey.substring(0, 8),
-      cancelled: cancelled.current,
-      skipCache
-    })
-    
     if (cancelled.current) {
-      logger.debug('[useFetchProfile] Already cancelled, returning null')
       return null
     }
-    
+
     // CRITICAL: Check cooldown period first to prevent cascade of duplicate fetches after timeout.
     // Still hydrate from session/IndexedDB — otherwise new rows remount after a timeout and stay on
     // identicons until cooldown ends with no effect re-run (deps unchanged).
@@ -117,10 +127,6 @@ export function useFetchProfile(id?: string, skipCache = false) {
         effectRunCountRef.current.delete(pubkey)
         return cachedDuringCooldown
       }
-      logger.debug('[useFetchProfile] In cooldown period after timeout, skipping fetch', {
-        pubkey: pubkey.substring(0, 8),
-        remainingMs: cooldownExpiry - Date.now()
-      })
       return null
     }
     // Clean up expired cooldowns
@@ -133,9 +139,6 @@ export function useFetchProfile(id?: string, skipCache = false) {
     // Add timeout protection to prevent infinite waits
     const existingPromise = globalFetchPromises.get(pubkey)
     if (existingPromise) {
-      logger.debug('[useFetchProfile] Reusing existing fetch promise', {
-        pubkey: pubkey.substring(0, 8)
-      })
       try {
         // Await the shared promise only — it already races fetchProfileEvent with
         // PROFILE_FETCH_PROMISE_TIMEOUT_MS. Per-waiter Promise.race timers caused N identical
@@ -160,10 +163,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
         }
       } catch (err) {
         // If the existing promise failed, we'll try again below
-        logger.debug('[useFetchProfile] Existing promise failed, will retry', {
-          pubkey: pubkey.substring(0, 8),
-          error: err instanceof Error ? err.message : String(err)
-        })
+        void err
         // Clear the failed promise so we can start fresh
         globalFetchPromises.delete(pubkey)
         globalFetchingPubkeys.delete(pubkey)
@@ -196,10 +196,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
             return null
           }
         } catch (err) {
-          logger.debug('[useFetchProfile] Retry promise failed', {
-            pubkey: pubkey.substring(0, 8),
-            error: err instanceof Error ? err.message : String(err)
-          })
+          void err
           // Clear the failed promise
           globalFetchPromises.delete(pubkey)
           globalFetchingPubkeys.delete(pubkey)
@@ -213,14 +210,9 @@ export function useFetchProfile(id?: string, skipCache = false) {
       let idbEarlyP: Promise<TProfile | null> | null = null
       try {
         globalFetchingPubkeys.add(pubkey)
-        const startTime = Date.now()
 
         const quick = tryHydrateProfileFromSessionOnly(pubkey, skipCache)
         if (quick) {
-          logger.debug('[useFetchProfile] Profile from session/IndexedDB (fast path)', {
-            pubkey: pubkey.substring(0, 8),
-            hasAvatar: !!quick.avatar
-          })
           return quick
         }
 
@@ -243,68 +235,30 @@ export function useFetchProfile(id?: string, skipCache = false) {
           replaceableEventService.fetchProfileEvent(pubkey, skipCache),
           timeoutPromise
         ])
-        const fetchTime = Date.now() - startTime
-        
-        if (profileEvent || fetchTime > 1000) {
-          logger.debug('[useFetchProfile] fetchProfileEvent completed', {
-            pubkey: pubkey.substring(0, 8),
-            hasEvent: !!profileEvent,
-            eventId: profileEvent?.id?.substring(0, 8),
-            fetchTime: `${fetchTime}ms`
-          })
-        }
-
         if (profileEvent) {
           // getProfileFromEvent always returns a profile object (with fallback username)
           const newProfile = getProfileFromEvent(profileEvent)
-          // Only log at debug level to reduce noise during rapid scrolling
-          logger.debug('[useFetchProfile] Profile found', {
-            pubkey: pubkey.substring(0, 8),
-            username: newProfile.username,
-            hasAvatar: !!newProfile.avatar,
-            fetchTime: `${fetchTime}ms`,
-            unmounted: cancelled.current
-          })
           // CRITICAL: Always return the profile from this shared promise, even when the
           // originating hook cleaned up (list virtualization, Strict Mode, feed switch).
           // Returning null here made every waiter treat the result like a timeout, applied
           // cooldowns, and left avatars empty (especially busy feeds e.g. all-favorites).
           return newProfile
         }
-        // Only log warnings for missing profiles if skipCache is true (user explicitly requested)
-        if (skipCache) {
-          logger.debug('[useFetchProfile] No profile event found', {
-            pubkey: pubkey.substring(0, 8),
-            fetchTime: `${fetchTime}ms`
-          })
-        }
         const afterMiss =
           (idbEarlyP != null ? await idbEarlyP : null) ?? tryHydrateProfileFromSessionOnly(pubkey, skipCache)
         if (afterMiss) {
-          logger.debug('[useFetchProfile] Profile from session/IndexedDB after network miss', {
-            pubkey: pubkey.substring(0, 8),
-            hasAvatar: !!afterMiss.avatar
-          })
           return afterMiss
         }
         return null
       } catch (err) {
         const isTimeout = err instanceof Error && err.message.includes('timeout')
         if (isTimeout) {
-          logger.debug('[useFetchProfile] Profile fetch timed out', {
-            pubkey: pubkey.substring(0, 8),
-            error: err.message
-          })
           // Set cooldown period after timeout to prevent cascade of duplicate fetches
           globalFetchCooldowns.set(pubkey, Date.now() + 10000) // 10 second cooldown
           const fallback =
             tryHydrateProfileFromSessionOnly(pubkey, skipCache) ??
             (idbEarlyP != null ? await idbEarlyP : null)
           if (fallback) {
-            logger.debug('[useFetchProfile] Profile from session/IndexedDB after fetch timeout', {
-              pubkey: pubkey.substring(0, 8),
-              hasAvatar: !!fallback.avatar
-            })
             return fallback
           }
           // Return null on timeout instead of throwing - allows UI to show fallback
@@ -366,9 +320,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
   }, [skipCache])
 
   useEffect(() => {
-    // Early exit when id is missing (e.g. truncated or undefined) - use debug to avoid console spam
     if (!id) {
-      logger.debug('[useFetchProfile] No id provided')
       setProfile(null)
       setPubkey(null)
       setIsFetching(false)
@@ -377,14 +329,12 @@ export function useFetchProfile(id?: string, skipCache = false) {
       return
     }
 
-    // Extract pubkey early to check if id has changed
     const extractedPubkey = userIdToPubkey(id)
 
     // Note feeds: profiles are batch-fetched in NoteList — skip per-row relay storms while pending.
-    // Batch may only synthesize a pubkey row when kind 0 is missing; those must not skip fetchProfileEvent
-    // or avatars stay on identicons forever.
     if (extractedPubkey && noteFeed && !skipCache) {
-      const fromBatch = noteFeed.profiles.get(extractedPubkey)
+      const pkL = extractedPubkey.toLowerCase()
+      const fromBatch = noteFeed.profiles.get(pkL) ?? noteFeed.profiles.get(extractedPubkey)
       if (fromBatch && !fromBatch.batchPlaceholder) {
         setProfile(fromBatch)
         setPubkey(extractedPubkey)
@@ -402,9 +352,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
         setIsFetching(false)
         setError(null)
       }
-      if (noteFeed.pendingPubkeys.has(extractedPubkey)) {
-        const pkLower = extractedPubkey.toLowerCase()
-        const sessionEv = eventService.getSessionMetadataForPubkey(pkLower)
+      if (noteFeed.pendingPubkeys.has(pkL)) {
+        const sessionEv = eventService.getSessionMetadataForPubkey(pkL)
         if (sessionEv) {
           const quick = getProfileFromEvent(sessionEv)
           setProfile(quick)
@@ -420,7 +369,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
         setIsFetching(false)
         setError(null)
         const pendingCancelled = { current: false }
-        void tryHydrateProfileFromLocalCaches(pkLower, false).then((quick) => {
+        void tryHydrateProfileFromLocalCaches(pkL, false).then((quick) => {
           if (pendingCancelled.current || !quick) return
           setProfile(quick)
           setIsFetching(false)
@@ -459,11 +408,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
         return
       }
     }
-    
+
     // Skip only when this pubkey already has an in-flight fetch (global dedupe + local flag).
-    // Do **not** return merely because processingPubkeyRef matches: after a failed or timed-out
-    // fetch, deps can change (e.g. noteFeed.version) while ref is still set — returning here
-    // left the hook stuck forever (blank profile / 404 until hard reload).
     if (extractedPubkey) {
       if (processingPubkeyRef.current === extractedPubkey) {
         const sharedPromise = globalFetchPromises.get(extractedPubkey)
@@ -477,92 +423,62 @@ export function useFetchProfile(id?: string, skipCache = false) {
       processingPubkeyRef.current = extractedPubkey
     }
 
-    // CRITICAL: Early exit if we already have a profile for this pubkey
-    // This prevents re-fetching when we already have the profile
     if (extractedPubkey && profile && profile.pubkey === extractedPubkey && !profile.batchPlaceholder) {
-      // Ensure processingPubkeyRef is set to prevent re-fetch
       if (processingPubkeyRef.current !== extractedPubkey) {
         processingPubkeyRef.current = extractedPubkey
       }
-      // Mark as initialized
       initializedPubkeysRef.current.add(extractedPubkey)
-      // Ensure fetching is false (but don't call setState if already false to avoid re-renders)
       if (isFetching) {
         setIsFetching(false)
       }
-      // Clear run count since we have the profile
       effectRunCountRef.current.delete(extractedPubkey)
       return
     }
-    
-    // CRITICAL: Early exit if we've already initialized this pubkey (even if profile is null)
-    // This prevents re-fetching when we've already tried and failed
-    // BUT: Allow retry if skipCache is true (user explicitly wants to refresh)
+
     if (extractedPubkey && initializedPubkeysRef.current.has(extractedPubkey) && !profile) {
       if (skipCache) {
-        // User wants to refresh - clear initialized flag to allow fresh fetch
         initializedPubkeysRef.current.delete(extractedPubkey)
-        // Also clear run count to allow fresh attempt
         effectRunCountRef.current.delete(extractedPubkey)
       } else {
-        // Already tried and failed - don't retry unless explicitly requested
-        // Ensure fetching is false
         if (isFetching) {
           setIsFetching(false)
         }
         return
       }
     }
-    
-    // CRITICAL: Guard against infinite loops — limit effect runs per pubkey. Feed batch often leaves
-    // {@link batchPlaceholder} rows that need several retries across noteFeed.version bumps; use a higher cap.
+
     if (extractedPubkey) {
       const runCount = effectRunCountRef.current.get(extractedPubkey) || 0
       const pkLower = extractedPubkey.toLowerCase()
       const feedBatchPlaceholder =
         noteFeed?.profiles.get(pkLower)?.batchPlaceholder === true ||
         noteFeed?.profiles.get(extractedPubkey)?.batchPlaceholder === true
-      const maxRunsBeforeCircuitBreak = feedBatchPlaceholder ? 12 : 3
+      const maxRunsBeforeCircuitBreak = feedBatchPlaceholder ? 6 : 3
       if (runCount >= maxRunsBeforeCircuitBreak) {
         logger.warn('[useFetchProfile] Too many effect runs for this pubkey, preventing infinite loop', {
           extractedPubkey,
           runCount
         })
-        // Clear the run count after a delay to allow retries later
         setTimeout(() => {
           effectRunCountRef.current.delete(extractedPubkey)
-        }, 30000) // Clear after 30 seconds
+        }, 30000)
         processingPubkeyRef.current = null
         if (isFetching) setIsFetching(false)
         return
       }
-      // Only increment if we're actually going to process
       effectRunCountRef.current.set(extractedPubkey, runCount + 1)
     }
-    
-    // If id has changed (extractedPubkey is different from processingPubkeyRef), clear the refs
-    // This allows a new fetch to start for a different pubkey
+
     if (extractedPubkey && processingPubkeyRef.current && processingPubkeyRef.current !== extractedPubkey) {
       const oldPubkey = processingPubkeyRef.current
-      // Clear run count and initialized status for old pubkey before clearing ref
       effectRunCountRef.current.delete(oldPubkey)
       initializedPubkeysRef.current.delete(oldPubkey)
       processingPubkeyRef.current = null
     }
-    
+
     const cancelled = { current: false }
-    // CRITICAL: Reduce logging during rapid scrolling - only log at debug level
-    logger.debug('[useFetchProfile] Extracting pubkey', {
-      idLength: id.length,
-      idStartsWithNpub: id.startsWith('npub1'),
-      idStartsWithNprofile: id.startsWith('nprofile1')
-    })
-    
+
     if (!extractedPubkey) {
-      logger.debug('[useFetchProfile] Invalid id - could not extract pubkey', {
-        idLength: id.length,
-        prefix: id.slice(0, 16)
-      })
       setProfile(null)
       setPubkey(null)
       setIsFetching(false)
@@ -570,14 +486,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
       processingPubkeyRef.current = null
       return
     }
-    
-    // Validate pubkey format
+
     if (extractedPubkey.length !== 64 || !/^[0-9a-f]{64}$/.test(extractedPubkey)) {
-      logger.debug('[useFetchProfile] Invalid pubkey format (non-hex id passed through userIdToPubkey)', {
-        idLength: id.length,
-        extractedLen: extractedPubkey.length,
-        prefix: id.slice(0, 12)
-      })
       setProfile(null)
       setPubkey(null)
       setIsFetching(false)
@@ -585,104 +495,60 @@ export function useFetchProfile(id?: string, skipCache = false) {
       processingPubkeyRef.current = null
       return
     }
-    
-    // These checks are now done earlier in the effect (before incrementing run count)
-    // Keeping this as a safety check, but it should rarely be hit now that we set processingPubkeyRef earlier
+
     if (processingPubkeyRef.current !== extractedPubkey) {
-      // This should never happen now, but keep as safety check
       logger.warn('[useFetchProfile] processingPubkeyRef mismatch (safety check)', {
         extractedPubkey,
         processingPubkey: processingPubkeyRef.current
       })
       processingPubkeyRef.current = extractedPubkey
     }
-    
+
     if (profile && profile.pubkey === extractedPubkey && !profile.batchPlaceholder) {
-      logger.debug('[useFetchProfile] Already have profile for this pubkey (safety check)', {
-        extractedPubkey
-      })
       setIsFetching(false)
       effectRunCountRef.current.delete(extractedPubkey)
       return
     }
-    
-    // processingPubkeyRef is already set earlier (right after extraction)
-    // No need to set it again here
-    
-    // CRITICAL: Only update pubkey state if it's actually different
-    // Avoid state updates that could trigger re-renders and loops
+
     if (pubkey !== extractedPubkey) {
       setPubkey(extractedPubkey)
     }
-    // CRITICAL: Reduce logging during rapid scrolling
-    logger.debug('[useFetchProfile] Starting profile fetch', {
-      pubkey: extractedPubkey?.substring(0, 8) || 'null'
-    })
 
     const run = async () => {
       try {
         setIsFetching(true)
         setError(null)
-        
-        // Initial fetch - fetchReplaceableEvent checks: 1) in-memory, 2) IndexedDB, 3) network
-        // checkProfile now returns the profile directly (or null) and handles global deduplication
+
         const profile = await checkProfile(extractedPubkey, cancelled)
-        
-        // Only log if profile was found or if cancelled (important events)
-        if (profile || cancelled.current) {
-          logger.debug('[useFetchProfile] checkProfile completed', {
-            pubkey: extractedPubkey?.substring(0, 8),
-            found: !!profile,
-            cancelled: cancelled.current
-          })
-        }
-        
+
         if (cancelled.current) {
-          logger.debug('[useFetchProfile] Cancelled after checkProfile, cleaning up')
           setIsFetching(false)
           return
         }
-        
+
         if (profile) {
-          // Profile found (from cache or network), we're done
-          // checkProfile already set the profile state, so we're done
           return
         }
-        
-        logger.debug('[useFetchProfile] No profile found, considering retry')
-        // No profile found yet - set fetching to false so UI can show fallback
-        // The profile will remain null, allowing components to show npub fallback
+
         setIsFetching(false)
-        setError(null) // Clear any previous errors
-        
-        // CRITICAL FIX: Disable retry intervals during rapid scrolling to prevent browser crashes
-        // Only retry if skipCache is true (user explicitly wants to refresh)
-        // For normal feed scrolling, missing profiles are acceptable and will be fetched on-demand
-        // This prevents accumulation of hundreds of intervals during rapid scrolling
+        setError(null)
+
         if (skipCache) {
-          // If no profile was found, periodically re-check (profiles might load asynchronously)
-          // REDUCED: Check every 10 seconds for up to 30 seconds (3 checks) to prevent too many intervals
-          // This reduces memory usage when many profiles are being fetched (e.g., large search results)
           let checkCount = 0
-          const maxChecks = 3 // Reduced from 4 to further reduce load
+          const maxChecks = 3
           const startTime = Date.now()
-          const maxTotalTime = 20000 // 20 seconds total timeout (3 checks * ~5s + buffer)
-          
+          const maxTotalTime = 20000
+
           checkIntervalRef.current = setInterval(async () => {
-            // CRITICAL: Check for timeout to prevent infinite retries
             const elapsed = Date.now() - startTime
             if (elapsed > maxTotalTime) {
-              logger.warn('[useFetchProfile] Retry interval timeout reached, stopping retries', {
-                pubkey: extractedPubkey?.substring(0, 8),
-                elapsed: `${elapsed}ms`
-              })
               if (checkIntervalRef.current) {
                 clearInterval(checkIntervalRef.current)
                 checkIntervalRef.current = null
               }
               return
             }
-            
+
             if (cancelled.current || checkCount >= maxChecks) {
               if (checkIntervalRef.current) {
                 clearInterval(checkIntervalRef.current)
@@ -690,31 +556,23 @@ export function useFetchProfile(id?: string, skipCache = false) {
               }
               return
             }
-            
+
             checkCount++
             const profile = await checkProfile(extractedPubkey, cancelled)
             if (profile || cancelled.current) {
-              // Profile found or cancelled, stop checking
               if (checkIntervalRef.current) {
                 clearInterval(checkIntervalRef.current)
                 checkIntervalRef.current = null
               }
             }
-          }, 10000) // Increased from 5 seconds to 10 seconds to reduce load
-        } else {
-          // For normal feed scrolling, don't set up retry intervals
-          // Profiles will be fetched on-demand when user navigates to profile page
-          // This prevents accumulation of intervals during rapid scrolling
-          logger.debug('[useFetchProfile] Skipping retry intervals for normal feed scrolling', {
-            pubkey: extractedPubkey
-          })
+          }, 10000)
         }
       } catch (err) {
-                 logger.error('[useFetchProfile] run() error', {
-                   pubkey: extractedPubkey,
-                   error: err instanceof Error ? err.message : String(err),
-                   stack: err instanceof Error ? err.stack : undefined
-                 })
+        logger.error('[useFetchProfile] run() error', {
+          pubkey: extractedPubkey,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        })
         if (!cancelled.current) {
           setError(err as Error)
           setIsFetching(false)
@@ -722,9 +580,6 @@ export function useFetchProfile(id?: string, skipCache = false) {
       }
     }
 
-    logger.debug('[useFetchProfile] About to call run()', {
-      pubkey: extractedPubkey?.substring(0, 8)
-    })
     run().catch((err) => {
       logger.error('[useFetchProfile] Unhandled error in run()', {
         pubkey: extractedPubkey,
@@ -734,26 +589,18 @@ export function useFetchProfile(id?: string, skipCache = false) {
     })
     return () => {
       cancelled.current = true
-      // Only clear processingPubkeyRef if it matches the current pubkey
-      // This prevents clearing it if a new fetch has already started
       if (processingPubkeyRef.current === extractedPubkey) {
         processingPubkeyRef.current = null
       }
-      // CRITICAL: Always clear interval on cleanup to prevent memory leaks
-      // This is especially important during rapid scrolling when many components mount/unmount
       if (checkIntervalRef.current) {
         clearInterval(checkIntervalRef.current)
         checkIntervalRef.current = null
       }
-      // Clear run count and initialized status on cleanup to allow fresh fetches if component remounts
       if (extractedPubkey) {
         effectRunCountRef.current.delete(extractedPubkey)
-        // Don't clear initializedPubkeysRef here - keep it to prevent re-fetching on remount
-        // Only clear it if explicitly requested via skipCache
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, skipCache, noteFeed?.version]) // checkProfile is memoized; noteFeed.version hydrates batch profiles
+  }, [id, skipCache, feedProfileSyncKey, checkProfile])
 
   useEffect(() => {
     const acc = currentAccountProfile

@@ -6,7 +6,7 @@ import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
 import { useNostr } from '@/providers/NostrProvider'
 import { Bookmark, Highlighter, MessageCircle, ThumbsUp } from 'lucide-react'
 import type { Event } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 /** Compact reply / reaction / bookmark / highlight counts for RSS + Web URL threads. */
 export default function RssUrlThreadStatsBar({
@@ -18,7 +18,9 @@ export default function RssUrlThreadStatsBar({
 }) {
   const { t } = useTranslation()
   const { pubkey } = useNostr()
-  const { relayUrls: statsRelays, key: statsRelaysKey } = useRssUrlThreadQueryRelays()
+  const { relayUrls: statsRelays, relayMergeTier, currentRelaysKey } = useRssUrlThreadQueryRelays()
+  const statsRelaysRef = useRef(statsRelays)
+  statsRelaysRef.current = statsRelays
   const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const noteStats = useNoteStatsById(event.id)
   const [loading, setLoading] = useState(false)
@@ -26,9 +28,9 @@ export default function RssUrlThreadStatsBar({
   useEffect(() => {
     setLoading(true)
     noteStatsService
-      .fetchNoteStats(event, pubkey, statsRelays, { foreground: true })
+      .fetchNoteStats(event, pubkey, statsRelaysRef.current, { foreground: true })
       .finally(() => setLoading(false))
-  }, [event.id, event.kind, event.created_at, event.sig, pubkey, statsRelaysKey])
+  }, [event.id, event.kind, event.created_at, event.sig, pubkey, relayMergeTier, currentRelaysKey])
 
   const fmt = (n: number) => (n >= 100 ? '99+' : String(n))
 

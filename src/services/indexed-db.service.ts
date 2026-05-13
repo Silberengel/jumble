@@ -258,6 +258,13 @@ class IndexedDbService {
   private initPromise: Promise<void> | null = null
   /** Browser timer id (DOM `setTimeout` returns a number). */
   private cleanupTimer: number | null = null
+  /**
+   * Short-lived negative cache for {@link isTombstoned}: most keys are not tombstoned; ingest can probe
+   * the same coordinate many times. TTL avoids stale reads if another tab tombstones (eventually).
+   */
+  private tombstoneNotUntilMs = new Map<string, number>()
+  private static readonly TOMBSTONE_NOT_CACHE_TTL_MS = 45_000
+  private static readonly TOMBSTONE_NOT_CACHE_MAX = 4096
 
   /** First TTL sweep after DB open (profile / relay list rows). */
   private static readonly CLEANUP_INITIAL_DELAY_MS = 60 * 1000
@@ -2882,11 +2889,33 @@ class IndexedDbService {
     )
   }
 
+  private rememberTombstoneNot(key: string): void {
+    const until = Date.now() + IndexedDbService.TOMBSTONE_NOT_CACHE_TTL_MS
+    this.tombstoneNotUntilMs.set(key, until)
+    while (this.tombstoneNotUntilMs.size > IndexedDbService.TOMBSTONE_NOT_CACHE_MAX) {
+      const first = this.tombstoneNotUntilMs.keys().next().value
+      if (first === undefined) break
+      this.tombstoneNotUntilMs.delete(first)
+    }
+  }
+
+  private invalidateTombstoneNotCache(key: string): void {
+    this.tombstoneNotUntilMs.delete(key)
+  }
+
   /**
    * Check if an event is tombstoned (deleted)
    */
   async isTombstoned(key: string): Promise<boolean> {
     await this.initPromise
+    const now = Date.now()
+    const until = this.tombstoneNotUntilMs.get(key)
+    if (until !== undefined && now < until) {
+      return false
+    }
+    if (until !== undefined && now >= until) {
+      this.tombstoneNotUntilMs.delete(key)
+    }
     return new Promise((resolve) => {
       if (!this.db) {
         return resolve(false)
@@ -2901,7 +2930,13 @@ class IndexedDbService {
       request.onsuccess = () => {
         const row = request.result as TValue | undefined
         transaction.commit()
-        resolve(row !== undefined && row.value !== null)
+        const tombstoned = row !== undefined && row.value !== null
+        if (!tombstoned) {
+          this.rememberTombstoneNot(key)
+        } else {
+          this.invalidateTombstoneNotCache(key)
+        }
+        resolve(tombstoned)
       }
 
       request.onerror = () => {

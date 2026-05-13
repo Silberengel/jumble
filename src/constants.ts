@@ -409,6 +409,7 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr21.com',
   'wss://thecitadel.nostr1.com',
   'wss://aggr.nostr.land',
+  'wss://primus.nostr1.com',
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -436,8 +437,6 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://orly-relay.imwald.eu',
   'wss://aggr.nostr.land',
   'wss://thecitadel.nostr1.com',
-  'wss://relay.primal.net',
-  'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://nostr.mom',
   'wss://relay.noswhere.com',
@@ -449,11 +448,8 @@ export const SEARCHABLE_RELAY_URLS = [
 ]
 
 export const PROFILE_RELAY_URLS = [
-  'wss://nos.lol',
-  'wss://relay.damus.io',
   'wss://profiles.nostr1.com',
-  'wss://purplepag.es',
-  'wss://thecitadel.nostr1.com'
+  'wss://purplepag.es'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [
@@ -461,7 +457,7 @@ export const FOLLOWS_HISTORY_RELAY_URLS = [
 ]
 
 // Combined relay URLs for profile fetching: search/index relays, fallback inboxes, and profile-specific relays.
-export const PROFILE_FETCH_RELAY_URLS = [...SEARCHABLE_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
+export const PROFILE_FETCH_RELAY_URLS = [...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
 
 export const ExtendedKind = {
   PICTURE: 20,
@@ -576,16 +572,12 @@ export function isNip71StyleVideoKind(kind: number): boolean {
  * When these kinds are ingested via {@link EventService.addEventToCache}, the client prefetches the event
  * author's kind 3 + 10002 (contacts + NIP-65) so profile / relay UIs and publish routing stay warm.
  * Omits reactions/zaps where `pubkey` is not the primary profile identity for the row.
+ *
+ * Empty by default: each hit used to schedule batched relay + IndexedDB work (see
+ * {@link ClientService.prefetchAuthorCoreReplaceables}) and could overwhelm the browser on busy feeds.
+ * Author lists still load from profile views, publish flow, and session prewarm.
  */
-export const AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS: ReadonlySet<number> = new Set<number>([
-  kinds.ShortTextNote,
-  kinds.LongFormArticle,
-  kinds.Repost,
-  ExtendedKind.GENERIC_REPOST,
-  ExtendedKind.PICTURE,
-  ExtendedKind.VOICE,
-  ...NIP71_VIDEO_KINDS
-])
+export const AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS: ReadonlySet<number> = new Set<number>()
 
 /** Short-form portrait-style bucket (kind 22 or 34236). */
 export function isNip71ShortVideoKind(kind: number): boolean {

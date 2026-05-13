@@ -2,11 +2,12 @@
  * Centralized logging utility.
  *
  * Level matrix:
- *   dev + debug flag  → debug / info / warn / error  (full formatted output)
- *   dev (no flag)     → info / warn / error           (formatted, no stack)
- *   production        → warn / error only             (bare console — no timestamp string built)
+ *   dev (default)     → debug / info / warn / error  (full formatted output; `logger.debug` on)
+ *   dev + opt-out     → info / warn / error          (set `imwald-debug` or `jumble-debug` to `false`)
+ *   production        → warn / error only            (bare console — no timestamp string built)
  *
- * Enable debug in dev: localStorage.setItem('jumble-debug', 'true') then reload.
+ * Opt out in dev: `localStorage.setItem('imwald-debug', 'false')` then reload.
+ * Force on (e.g. prod build): `VITE_DEBUG=true` or localStorage … `'true'`.
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -19,11 +20,15 @@ class Logger {
   private minLevel: LogLevel
 
   constructor() {
-    this.enableDebug =
-      this.isDev &&
-      (localStorage.getItem('imwald-debug') === 'true' ||
-        localStorage.getItem('jumble-debug') === 'true' ||
-        import.meta.env.VITE_DEBUG === 'true')
+    const explicitOff =
+      localStorage.getItem('imwald-debug') === 'false' ||
+      localStorage.getItem('jumble-debug') === 'false'
+    const explicitOn =
+      localStorage.getItem('imwald-debug') === 'true' ||
+      localStorage.getItem('jumble-debug') === 'true' ||
+      import.meta.env.VITE_DEBUG === 'true'
+    // `npm run dev`: debug on by default so relay/query/cache traces are visible without localStorage.
+    this.enableDebug = this.isDev && (explicitOn || !explicitOff)
 
     // In production only warn/error reach the console — info is noise for end-users.
     this.minLevel = this.enableDebug ? 'debug' : this.isDev ? 'info' : 'warn'

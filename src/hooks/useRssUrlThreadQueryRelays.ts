@@ -9,10 +9,15 @@ import { useNoteStatsRelayHints } from './useNoteStatsRelayHints'
  * Relay set for RSS+Web article URL thread REQs: inbox/favorites/fast-read merge (same as URL discovery)
  * plus {@link useNoteStatsRelayHints} (current relay context).
  */
-export function useRssUrlThreadQueryRelays(): { relayUrls: string[]; key: string } {
+export function useRssUrlThreadQueryRelays(): {
+  relayUrls: string[]
+  key: string
+  relayMergeTier: number
+  currentRelaysKey: string
+} {
   const { pubkey } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { relays: hintRelays, key: hintKey } = useNoteStatsRelayHints()
+  const { relays: hintRelays, key: hintKey, currentRelaysKey } = useNoteStatsRelayHints()
   const [baseUrls, setBaseUrls] = useState<string[]>([])
   const [baseKey, setBaseKey] = useState('')
 
@@ -35,6 +40,8 @@ export function useRssUrlThreadQueryRelays(): { relayUrls: string[]; key: string
   return useMemo(() => {
     const merged = [...new Set([...baseUrls, ...hintRelays])]
     const relayUrls = merged.length > 0 ? merged : [...FAST_READ_RELAY_URLS]
-    return { relayUrls, key: `${baseKey}::${hintKey}::${relayUrls.length}` }
-  }, [baseUrls, baseKey, hintRelays, hintKey])
+    /** Coarse tier for effects: avoids refetching on every relay-url permutation once hints exist. */
+    const relayMergeTier = (baseUrls.length > 0 ? 2 : 0) | (hintRelays.length > 0 ? 1 : 0)
+    return { relayUrls, key: `${baseKey}::${hintKey}::${relayUrls.length}`, relayMergeTier, currentRelaysKey }
+  }, [baseUrls, baseKey, hintRelays, hintKey, currentRelaysKey])
 }

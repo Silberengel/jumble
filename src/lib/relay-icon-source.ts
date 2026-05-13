@@ -1,0 +1,73 @@
+import { normalizeUrl } from '@/lib/url'
+import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
+
+/**
+ * Site favicon for nostr.sovbit (same as the browser tab icon on `/invoices` and the rest of the host).
+ * @see https://nostr.sovbit.host/invoices
+ */
+export const NOSTR_SOVBIT_ICON_SRC = 'https://nostr.sovbit.host/favicon.ico'
+
+/**
+ * Free relay slice — distinct branding from paid nostr.sovbit.
+ * @see https://freelay.sovbit.host/
+ */
+export const FREELAY_SOVBIT_ICON_SRC = 'https://freelay.sovbit.host/favicon.ico'
+
+/**
+ * Nostr Archives front-site favicon for trending shards and related relay hosts.
+ * @see https://nostrarchives.com/
+ */
+export const NOSTRARCHIVES_SITE_ICON_SRC = 'https://nostrarchives.com/favicon.ico'
+
+function parseRelayHostname(url: string): string | undefined {
+  const raw = (normalizeUrl(url) || url).trim()
+  const forParse = raw.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://')
+  try {
+    return new URL(forParse).hostname.toLowerCase()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Static icon URL for relays where NIP-11 is missing or we want a consistent mark (tab favicon).
+ * Checked before NIP-11 `icon` in {@link RelayIcon}.
+ */
+export function getRelayIconOverrideSrc(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  const host = parseRelayHostname(url)
+  if (!host) return undefined
+  if (host === 'nostr.sovbit.host') {
+    return NOSTR_SOVBIT_ICON_SRC
+  }
+  if (host === 'freelay.sovbit.host') {
+    return FREELAY_SOVBIT_ICON_SRC
+  }
+  if (
+    isWispTrendingNotesRelayUrl(url) ||
+    host === 'feeds.nostrarchives.com' ||
+    host === 'nostrarchives.com'
+  ) {
+    return NOSTRARCHIVES_SITE_ICON_SRC
+  }
+  return undefined
+}
+
+/** FNV-1a-ish fingerprint → HSL for a per-relay fallback swatch (no network). */
+export function relayUrlFingerprintColors(url: string | undefined): {
+  background: string
+  color: string
+} {
+  const raw = url ?? ''
+  const s = ((normalizeUrl(raw) || raw || '?').trim().toLowerCase())
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  const hue = h % 360
+  return {
+    background: `hsl(${hue} 50% 36%)`,
+    color: `hsl(${hue} 35% 96%)`
+  }
+}
