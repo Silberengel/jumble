@@ -1490,6 +1490,11 @@ export default {
     "Font size": "Font size",
     "Full Quote/Context": "Full Quote/Context",
     "Full-text search query": "Volltextsuchanfrage",
+    "Full-text search local archive badge": "Dieses Gerät",
+    "Full-text search local archive description":
+      "Treffer im Veröffentlichungs-Cache oder Event-Archiv auf diesem Gerät. Index-Relays haben die Notiz ggf. noch nicht.",
+    "Full-text search empty merged":
+      "Keine Notizen zu dieser Suche in deinem Archiv oder auf den konfigurierten Index-Relays (langsam oder offline).",
     Geohash: "Geohash",
     "Geohash (optional)": "Geohash (optional)",
     "Global quiet mode": "Global quiet mode",

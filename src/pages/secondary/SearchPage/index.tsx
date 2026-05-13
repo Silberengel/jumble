@@ -8,7 +8,7 @@ import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useSecondaryPage } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
-import { BookOpen, X } from 'lucide-react'
+import { BookOpen } from 'lucide-react'
 import { TSearchParams } from '@/types'
 import { Button } from '@/components/ui/button'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -145,15 +145,6 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
     bumpLocationRevision()
   }
 
-  const clearSearch = useCallback(() => {
-    push(toSearch())
-    setInput('')
-    setResultRefreshKey((k) => k + 1)
-    bumpLocationRevision()
-    searchBarRef.current?.blur()
-    void Promise.resolve().then(() => searchBarRef.current?.focus())
-  }, [push, bumpLocationRevision])
-
   return (
     <SecondaryPageLayout
       ref={ref}
@@ -168,21 +159,8 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
           <div className="text-2xl font-bold">Search Nostr</div>
         </div>
         <div className="mb-4 space-y-2 relative z-40">
-          <div className="flex items-stretch gap-2">
-            <div className="min-w-0 flex-1">
-              <SearchBar ref={searchBarRef} input={input} setInput={setInput} onSearch={onSearch} />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto min-h-9 shrink-0 px-3 text-muted-foreground hover:text-foreground"
-              onClick={clearSearch}
-              title={t('Search page clear description')}
-              aria-label={t('Search page clear description')}
-            >
-              <X className="h-4 w-4 sm:mr-1.5" aria-hidden />
-              <span className="hidden sm:inline">{t('Search page clear')}</span>
-            </Button>
+          <div className="min-w-0">
+            <SearchBar ref={searchBarRef} input={input} setInput={setInput} onSearch={onSearch} />
           </div>
           <Button
             variant="ghost"

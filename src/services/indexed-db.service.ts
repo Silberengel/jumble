@@ -23,6 +23,7 @@ import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import type { Filter } from 'nostr-tools'
 
@@ -105,21 +106,6 @@ function profileMetadataMatchesQuery(ev: Event, qRaw: string): boolean {
   } catch {
     return false
   }
-}
-
-function cachedEventMatchesFullTextQuery(ev: Event, qLower: string): boolean {
-  if (!qLower) return false
-  if (ev.id.toLowerCase().includes(qLower)) return true
-  if (ev.pubkey.toLowerCase().includes(qLower)) return true
-  if (String(ev.kind).includes(qLower)) return true
-  if ((ev.content ?? '').toLowerCase().includes(qLower)) return true
-  for (const tag of ev.tags ?? []) {
-    if (!Array.isArray(tag)) continue
-    for (const cell of tag) {
-      if (String(cell).toLowerCase().includes(qLower)) return true
-    }
-  }
-  return false
 }
 
 export const StoreNames = {
@@ -1361,9 +1347,9 @@ class IndexedDbService {
   }
 
   /**
-   * Iterate PUBLICATION_EVENTS and return events whose kind is in allowedKinds and content or tags
-   * match the query (case-insensitive). Scans up to `scanBudget` rows and keeps up to `collectCap` matches,
-   * then returns the newest `limit` by {@link Event.created_at} (cursor order alone is not recency).
+   * Iterate PUBLICATION_EVENTS and return events whose kind is in allowedKinds and that match the query via
+   * {@link eventMatchesNip50LocalFullTextQuery} (id, pubkey, kind, content, tags, kind-0 profile fields). Scans up
+   * to `scanBudget` rows and keeps up to `collectCap` matches, then returns the newest `limit` by {@link Event.created_at}.
    */
   async getCachedEventsForSearch(
     query: string,
@@ -1404,12 +1390,8 @@ class IndexedDbService {
         const item = cursor.value as TValue<Event> | undefined
         if (item?.value) {
           const event = item.value as Event
-          if (kindSet.has(event.kind)) {
-            const content = (event.content ?? '').toLowerCase()
-            const tagsStr = (event.tags ?? []).flat().join(' ').toLowerCase()
-            if (content.includes(q) || tagsStr.includes(q)) {
-              results.push(event)
-            }
+          if (kindSet.has(event.kind) && eventMatchesNip50LocalFullTextQuery(event, query)) {
+            results.push(event)
           }
         }
         cursor.continue()
@@ -1530,8 +1512,8 @@ class IndexedDbService {
   }
 
   /**
-   * Publication store + hot {@link StoreNames.EVENT_ARCHIVE}: events whose kind is allowed and content or any tag
-   * value matches the query (case-insensitive). Used to show local hits before NIP-50 relay results.
+   * Publication store + hot {@link StoreNames.EVENT_ARCHIVE}: events whose kind is allowed and that match the
+   * query via {@link eventMatchesNip50LocalFullTextQuery}. Used for local NIP-50-style hits alongside relay search.
    */
   async getCachedAndArchivedEventsMatchingLocalSearch(
     query: string,
@@ -1584,13 +1566,9 @@ class IndexedDbService {
         }
         const row = cursor.value as TArchivedEventRow
         const ev = row?.value
-        if (ev && kindSet.has(ev.kind) && !seen.has(ev.id)) {
-          const content = (ev.content ?? '').toLowerCase()
-          const tagsStr = (ev.tags ?? []).flat().join(' ').toLowerCase()
-          if (content.includes(q) || tagsStr.includes(q)) {
-            seen.add(ev.id)
-            rest.push(ev)
-          }
+        if (ev && kindSet.has(ev.kind) && !seen.has(ev.id) && eventMatchesNip50LocalFullTextQuery(ev, query)) {
+          seen.add(ev.id)
+          rest.push(ev)
         }
         cursor.continue()
       }
@@ -1982,7 +1960,7 @@ class IndexedDbService {
               const row = raw as TArchivedEventRow
               if (row?.value && isLikelyCachedNostrEvent(row.value)) {
                 const ev = row.value
-                if (cachedEventMatchesFullTextQuery(ev, qLower)) {
+                if (eventMatchesNip50LocalFullTextQuery(ev, query)) {
                   const dedupeKey = `${storeName}:${row.key}`
                   if (!seen.has(dedupeKey)) {
                     seen.add(dedupeKey)
@@ -2003,7 +1981,7 @@ class IndexedDbService {
                 isLikelyCachedNostrEvent(item.value)
               ) {
                 const ev = item.value
-                if (cachedEventMatchesFullTextQuery(ev, qLower)) {
+                if (eventMatchesNip50LocalFullTextQuery(ev, query)) {
                   const dedupeKey = `${storeName}:${item.key}`
                   if (!seen.has(dedupeKey)) {
                     seen.add(dedupeKey)

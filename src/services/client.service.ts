@@ -20,6 +20,7 @@ import {
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
   FETCH_RELAY_LIST_UI_TIMEOUT_MS,
   MULTI_RELAY_PUBLISH_ACK_CAP_MS,
+  PUBLISH_MULTI_RELAY_CONNECTION_CAP_MS,
   RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS,
@@ -1535,6 +1536,18 @@ class ClientService extends EventTarget {
       })
       let hasResolved = false
       let earlyGraceTimer: ReturnType<typeof setTimeout> | null = null
+
+      const finishUnfinishedRelaysWithTimeout = (errorMsg: string) => {
+        publishTargetUrls.forEach((url) => {
+          const alreadyFinished = relayStatuses.some((rs) => rs.url === url)
+          if (!alreadyFinished) {
+            logger.warn('[PublishEvent] Marking relay as timed out', { url })
+            relayStatuses.push({ url, success: false, error: errorMsg })
+            relaySessionStrikes.recordPublishFailure(url)
+            finishedCount++
+          }
+        })
+      }
       /**
        * Live timelines listen for {@link emitNewEvent} on the first relay ACK — not after N/3 successes.
        * Waiting for a third of many relays meant the profile/home feed stayed stale until a subscription
@@ -1552,25 +1565,16 @@ class ClientService extends EventTarget {
           logger.debug('[PublishEvent] Already resolved, ignoring timeout')
           return
         }
-        
+
         logger.warn('[PublishEvent] Global timeout reached!', {
           finishedCount,
           totalRelays: publishTargetUrls.length,
           successCount,
           relayStatusesCount: relayStatuses.length
         })
-        
-        // Mark any unfinished relays as failed
-        publishTargetUrls.forEach(url => {
-          const alreadyFinished = relayStatuses.some(rs => rs.url === url)
-          if (!alreadyFinished) {
-            logger.warn('[PublishEvent] Marking relay as timed out', { url })
-            relayStatuses.push({ url, success: false, error: 'Timeout: Operation took too long' })
-            relaySessionStrikes.recordPublishFailure(url)
-            finishedCount++
-          }
-        })
-        
+
+        finishUnfinishedRelaysWithTimeout('Timeout: Operation took too long')
+
         // Ensure we resolve even if not all relays finished
         if (!hasResolved) {
           if (earlyGraceTimer != null) {
@@ -1604,7 +1608,11 @@ class ClientService extends EventTarget {
           logger.debug(`[PublishEvent] Starting relay ${index + 1}/${publishTargetUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
           /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
-          const connectionTimeout = isLocal ? 5_000 : RELAY_POOL_CONNECTION_TIMEOUT_MS
+          const connectionTimeout = isLocal
+            ? 5_000
+            : publishTargetUrls.length >= 4
+              ? Math.min(RELAY_POOL_CONNECTION_TIMEOUT_MS, PUBLISH_MULTI_RELAY_CONNECTION_CAP_MS)
+              : RELAY_POOL_CONNECTION_TIMEOUT_MS
           /** ACK wait: pool sets {@link RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS}; outer race uses {@link publishAckBudgetCapMs} for multi-relay. */
           const publishAckBudgetMs = isLocal ? 5_000 : publishAckBudgetCapMs
           const httpPublishBudgetMs = isLocal ? 5_000 : 8_000

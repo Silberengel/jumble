@@ -4,11 +4,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toRelay } from '@/lib/link'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
+import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import client from '@/services/client.service'
 import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS } from '@/services/client-query.service'
+import indexedDb from '@/services/indexed-db.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
 import type { TProfile } from '@/types'
 import type { Event, Filter } from 'nostr-tools'
@@ -20,6 +22,8 @@ import { useSmartRelayNavigationOptional } from '@/PageManager'
 type MergedHit = {
   event: Event
   relayUrls: string[]
+  /** Matched publication cache / event archive on this device (not relay NIP-50). */
+  fromLocalArchive?: boolean
 }
 
 /**
@@ -278,9 +282,10 @@ export default function FullTextSearchByRelay({
       return dispose
     }
 
+    const kindsArr = [...kinds]
     const filter: Filter = {
       search: q,
-      kinds: [...kinds],
+      kinds: kindsArr,
       limit: FULL_TEXT_SEARCH_PER_RELAY_LIMIT
     }
 
@@ -348,35 +353,95 @@ export default function FullTextSearchByRelay({
       return normalizedRelays[relayCursor++]!
     }
 
+    const applyMergedUpdate = (
+      mutate: (map: Map<string, { event: Event; relays: Set<string>; local: boolean }>) => void
+    ) => {
+      setMergedHits((prev) => {
+        const urlByKey = new Map<string, string>()
+        for (const u of normalizedRelays) {
+          urlByKey.set(relayKey(u), normalizeUrl(u) || u)
+        }
+        const map = new Map<string, { event: Event; relays: Set<string>; local: boolean }>()
+        for (const hit of prev) {
+          map.set(hit.event.id, {
+            event: hit.event,
+            relays: new Set(hit.relayUrls.map((u) => relayKey(u))),
+            local: hit.fromLocalArchive ?? false
+          })
+        }
+        mutate(map)
+        return [...map.values()]
+          .map(({ event, relays, local }) => {
+            const relayUrls = sortRelaysByHost(
+              [...relays].map((k) => urlByKey.get(k) || k).filter((u) => /^wss?:\/\//i.test(u))
+            )
+            const row: MergedHit = { event, relayUrls }
+            if (local) row.fromLocalArchive = true
+            return row
+          })
+          .filter((h) => h.relayUrls.length > 0 || h.fromLocalArchive)
+          .sort((a, b) => compareEventsForDTagQuery(q, a.event, b.event))
+          .slice(0, FULL_TEXT_SEARCH_MAX_MERGED_EVENTS)
+      })
+    }
+
     const mergeIntoHits = (relayUrl: string, events: Event[]) => {
       const rk = relayKey(relayUrl)
-      setMergedHits((prev) => {
-        const map = new Map<string, { event: Event; relays: Set<string> }>()
-        for (const hit of prev) {
-          map.set(hit.event.id, { event: hit.event, relays: new Set(hit.relayUrls.map((u) => relayKey(u))) })
-        }
+      applyMergedUpdate((map) => {
         for (const ev of events) {
           if (!mergedSearchNoteHasPreviewBody(ev)) continue
           const cur = map.get(ev.id)
           if (cur) {
             cur.relays.add(rk)
           } else {
-            map.set(ev.id, { event: ev, relays: new Set([rk]) })
+            map.set(ev.id, { event: ev, relays: new Set([rk]), local: false })
           }
         }
-        const urlByKey = new Map<string, string>()
-        for (const u of normalizedRelays) {
-          urlByKey.set(relayKey(u), normalizeUrl(u) || u)
-        }
-        return [...map.values()]
-          .map(({ event, relays }) => ({
-            event,
-            relayUrls: sortRelaysByHost([...relays].map((k) => urlByKey.get(k) || k))
-          }))
-          .sort((a, b) => compareEventsForDTagQuery(q, a.event, b.event))
-          .slice(0, FULL_TEXT_SEARCH_MAX_MERGED_EVENTS)
       })
     }
+
+    void (async () => {
+      const fromSession = client.getSessionEventsMatchingSearch(q, 220, kindsArr)
+      let fromIdb: Event[] = []
+      try {
+        fromIdb = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(q, 120, kindsArr, {
+          archiveScanMaxMs: 15_000
+        })
+      } catch {
+        fromIdb = []
+      }
+      if (myRun !== runGeneration.current || abort.signal.aborted) return
+      const seen = new Set<string>()
+      const mergedLocal: Event[] = []
+      for (const e of fromSession) {
+        if (seen.has(e.id)) continue
+        seen.add(e.id)
+        mergedLocal.push(e)
+      }
+      for (const e of fromIdb) {
+        if (seen.has(e.id)) continue
+        seen.add(e.id)
+        mergedLocal.push(e)
+      }
+      const mergedLocalMatching = mergedLocal.filter(
+        (e) =>
+          kindsArr.includes(e.kind) &&
+          eventMatchesNip50LocalFullTextQuery(e, q) &&
+          mergedSearchNoteHasPreviewBody(e)
+      )
+      if (mergedLocalMatching.length === 0) return
+      applyMergedUpdate((map) => {
+        for (const ev of mergedLocalMatching) {
+          const cur = map.get(ev.id)
+          if (cur) {
+            cur.local = true
+          } else {
+            map.set(ev.id, { event: ev, relays: new Set(), local: true })
+          }
+        }
+      })
+      void addSearchEventsToSessionCacheBatched(mergedLocalMatching, runGeneration, myRun)
+    })()
 
     const runOneRelay = async (relayUrl: string) => {
       if (myRun !== runGeneration.current || abort.signal.aborted) return
@@ -502,30 +567,44 @@ export default function FullTextSearchByRelay({
               key={hit.event.id}
               className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card/30 shadow-none transition-[border-color,box-shadow,background-color] duration-150 hover:border-border hover:bg-muted/15 hover:shadow-sm"
             >
-              <div
-                className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2.5 py-1"
-                aria-label={t('Full-text search seen on relays')}
-              >
-                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90 shrink-0">
-                  {t('Full-text search seen on label')}
-                </span>
-                <div className="flex flex-wrap items-center gap-0.5">
-                  {hit.relayUrls.map((url) => (
-                    <button
-                      key={`${hit.event.id}-${relayKey(url)}`}
-                      type="button"
-                      title={relayHostForSubscribeLog(url)}
-                      className="inline-flex shrink-0 rounded-sm opacity-90 ring-offset-background hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        navigateToRelay(toRelay(url))
-                      }}
-                    >
-                      <RelayIcon url={url} className="h-5 w-5 rounded-sm" iconSize={12} />
-                    </button>
-                  ))}
+              {(hit.relayUrls.length > 0 || hit.fromLocalArchive) && (
+                <div
+                  className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2.5 py-1"
+                  aria-label={
+                    hit.relayUrls.length > 0
+                      ? t('Full-text search seen on relays')
+                      : t('Full-text search local archive description')
+                  }
+                >
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90 shrink-0">
+                    {t('Full-text search seen on label')}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-0.5">
+                    {hit.relayUrls.map((url) => (
+                      <button
+                        key={`${hit.event.id}-${relayKey(url)}`}
+                        type="button"
+                        title={relayHostForSubscribeLog(url)}
+                        className="inline-flex shrink-0 rounded-sm opacity-90 ring-offset-background hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigateToRelay(toRelay(url))
+                        }}
+                      >
+                        <RelayIcon url={url} className="h-5 w-5 rounded-sm" iconSize={12} />
+                      </button>
+                    ))}
+                    {hit.fromLocalArchive && (
+                      <span
+                        className="ml-0.5 inline-flex shrink-0 rounded-sm border border-border/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90"
+                        title={t('Full-text search local archive description')}
+                      >
+                        {t('Full-text search local archive badge')}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
               <NoteCard
                 event={hit.event}
                 className="w-full border-0 bg-transparent shadow-none"

@@ -36,6 +36,7 @@ import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
+import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -667,11 +668,11 @@ export class EventService {
 
   /**
    * Get events from session cache matching search (newest {@link Event.created_at} first).
-   * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries so LRU insertion order does not hide recent matches.
+   * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries; only rows where {@link eventMatchesNip50LocalFullTextQuery}
+   * matches the trimmed query are returned (not “recent rows” without a text hit).
    */
   getSessionEventsMatchingSearch(query: string, limit: number, allowedKinds?: number[]): NEvent[] {
     const queryTrim = query.trim()
-    const queryLower = queryTrim.toLowerCase()
     const kindSet = allowedKinds && allowedKinds.length > 0 ? new Set(allowedKinds) : null
     const buf: NEvent[] = []
     let scanned = 0
@@ -686,9 +687,7 @@ export class EventService {
         continue
       }
 
-      const content = (event.content ?? '').toLowerCase()
-      const tagsStr = (event.tags ?? []).flat().join(' ').toLowerCase()
-      if (content.includes(queryLower) || tagsStr.includes(queryLower)) {
+      if (eventMatchesNip50LocalFullTextQuery(event, queryTrim)) {
         buf.push(event)
       }
     }

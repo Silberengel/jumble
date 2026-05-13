@@ -6,7 +6,7 @@ import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { TPageRef, TSearchParams } from '@/types'
-import { BookOpen, Search, X } from 'lucide-react'
+import { BookOpen, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -52,14 +52,6 @@ const SearchPage = forwardRef<TPageRef>((_props, ref) => {
     layoutRef.current?.scrollToTop('instant')
   }
 
-  const clearSearch = useCallback(() => {
-    setInput('')
-    setSearchParams(null)
-    setResultRefreshKey((k) => k + 1)
-    searchBarRef.current?.blur()
-    void Promise.resolve().then(() => searchBarRef.current?.focus())
-  }, [])
-
   return (
     <PrimaryPageLayout
       ref={layoutRef}
@@ -69,21 +61,8 @@ const SearchPage = forwardRef<TPageRef>((_props, ref) => {
     >
       <div className="min-w-0 pt-4 px-4 pb-4">
         <div className="mb-4 space-y-2 relative z-40">
-          <div className="flex items-stretch gap-2">
-            <div className="min-w-0 flex-1">
-              <SearchBar ref={searchBarRef} onSearch={onSearch} input={input} setInput={setInput} />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto min-h-9 shrink-0 px-3 text-muted-foreground hover:text-foreground"
-              onClick={clearSearch}
-              title={t('Search page clear description')}
-              aria-label={t('Search page clear description')}
-            >
-              <X className="h-4 w-4 sm:mr-1.5" aria-hidden />
-              <span className="hidden sm:inline">{t('Search page clear')}</span>
-            </Button>
+          <div className="min-w-0">
+            <SearchBar ref={searchBarRef} onSearch={onSearch} input={input} setInput={setInput} />
           </div>
           <Button
             variant="ghost"

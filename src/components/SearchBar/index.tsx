@@ -45,6 +45,7 @@ const SearchBar = forwardRef<
   const [displayList, setDisplayList] = useState(false)
   const [selectableOptions, setSelectableOptions] = useState<TSearchParams[]>([])
   const [selectedIndex, setSelectedIndex] = useState(-1)
+  const prevSelectableCountRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const barContainerRef = useRef<HTMLDivElement>(null)
   const [suggestPanelTop, setSuggestPanelTop] = useState(0)
@@ -271,8 +272,31 @@ const SearchBar = forwardRef<
   }, [selectableOptions, selectedIndex, isFetchingProfiles, profiles])
 
   useEffect(() => {
-    setDisplayList(searching && !!input)
+    setDisplayList(searching && !!input.trim())
   }, [searching, input])
+
+  /**
+   * Prefilled / parent-controlled `input` (e.g. URL sync) can have suggestions while the field never received
+   * focus, so `searching` stays false and the dropdown never mounts. When options first appear, focus the input
+   * once so `onFocus` runs and the list opens (mousedown on suggestions still prevents premature blur).
+   */
+  useEffect(() => {
+    const trimmed = input.trim()
+    const len = selectableOptions.length
+    if (!trimmed) {
+      prevSelectableCountRef.current = 0
+      return
+    }
+    if (len > 0 && prevSelectableCountRef.current === 0) {
+      const el = searchInputRef.current
+      if (el && document.activeElement !== el) {
+        queueMicrotask(() => {
+          el.focus({ preventScroll: true })
+        })
+      }
+    }
+    prevSelectableCountRef.current = len
+  }, [input, selectableOptions])
 
   useEffect(() => {
     if (displayList && list) {
@@ -389,12 +413,18 @@ const SearchBar = forwardRef<
         ref={searchInputRef}
         className={cn(
           'bg-surface-background shadow-inner h-full border-none',
-          searching && isSmallScreen && 'relative z-[120]',
-          searching && !isSmallScreen && 'z-50'
+          displayList && isSmallScreen && 'relative z-[120]',
+          displayList && !isSmallScreen && 'z-50'
         )}
         placeholder={t('People, keywords, or relays')}
         value={input}
-        onChange={(e) => setInput(e.target.value)}
+        onChange={(e) => {
+          setSearching(true)
+          setInput(e.target.value)
+        }}
+        onPaste={() => {
+          setSearching(true)
+        }}
         onKeyDown={handleKeyDown}
         onFocus={() => setSearching(true)}
         onBlur={() => setSearching(false)}

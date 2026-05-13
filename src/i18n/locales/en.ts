@@ -1860,7 +1860,11 @@ export default {
     "Full-text search progress relays": "{{done}} / {{total}} index relays",
     "Full-text search seen on label": "Seen on",
     "Full-text search seen on relays": "Relays that returned this note",
-    "Full-text search empty merged": "No notes matched this search on any index relay.",
+    "Full-text search local archive badge": "This device",
+    "Full-text search local archive description":
+      "Matched in your publication cache or event archive on this device. Index relays may not have ingested the note yet.",
+    "Full-text search empty merged":
+      "No notes matched this search in your archive or on the configured index relays (they can be slow or offline).",
     "Full-text search relay errors summary": "{{count}} relay(s) could not be queried.",
     "Full-text search relay querying": "Querying relay…",
     "Full-text search relay error": "Query failed",

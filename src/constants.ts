@@ -118,7 +118,7 @@ export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
  * After the first relay accepts a publish, resolve {@link ClientService.publishEvent} after this many ms
  * so the UI does not wait for every slow or dead relay (callers typically only need ≥1 success).
  */
-export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 1200
+export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 900
 
 /**
  * Budget for `fetchRelayLists` / NIP-65 resolution on the publish path. Longer waits block the reply button
@@ -152,7 +152,13 @@ export const PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS = PUBLISH_RELAY_LIST_RESO
  * hung relay (e.g. 90s timeout) does not delay returning until every parallel publish settles. Single-relay
  * publishes keep {@link RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS} for extension signers on slow paths.
  */
-export const MULTI_RELAY_PUBLISH_ACK_CAP_MS = 24_000
+export const MULTI_RELAY_PUBLISH_ACK_CAP_MS = 16_000
+
+/**
+ * When many relays are targeted, cap the `ensureRelay` handshake race so the reply/post dialog does not sit
+ * on “Publishing…” while several slow TLS peers each burn the full pool timeout in parallel.
+ */
+export const PUBLISH_MULTI_RELAY_CONNECTION_CAP_MS = 12_000
 
 /** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
 export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
