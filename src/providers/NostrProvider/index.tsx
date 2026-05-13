@@ -21,6 +21,7 @@ import {
   createRelayListDraftEvent
 } from '@/lib/draft-event'
 import { getLatestEvent, minePow } from '@/lib/event'
+import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getHttpRelayListFromEvent, getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { LoginRequiredError } from '@/lib/nostr-errors'
@@ -28,6 +29,7 @@ import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
 import client from '@/services/client.service'
+import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import { queryService, replaceableEventService } from '@/services/client.service'
 import customEmojiService from '@/services/custom-emoji.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -140,6 +142,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
    * as the user updates their browser extension.
    */
   const [nip07RecoveryBump, setNip07RecoveryBump] = useState(0)
+
+  const accountForReplaceablesSyncRef = useRef<TAccountPointer | null>(null)
+  useEffect(() => {
+    accountForReplaceablesSyncRef.current = account
+  }, [account])
 
   useEffect(() => {
     const init = async () => {
@@ -640,6 +647,53 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         if (resolvedMutePut && resolvedMutePut.id === muteListEvent.id) {
           setMuteListEvent(muteListEvent)
         }
+      } else {
+        const trySetMuteList = (evt: Event) => {
+          if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) return
+          indexedDb
+            .putReplaceableEvent(evt)
+            .then(() => {
+              if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+                setMuteListEvent(evt)
+                logger.info('[NostrProvider] Mute list loaded via fallback fetch')
+              }
+            })
+            .catch(() => {
+              if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+                setMuteListEvent(evt)
+              }
+            })
+        }
+        const muteListRelays = Array.from(
+          new Set([
+            ...mergedRelayList.write.map((u) => normalizeUrl(u) || u),
+            ...mergedRelayList.read.map((u) => normalizeUrl(u) || u),
+            ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
+          ])
+        ).filter(Boolean)
+        queryService
+          .fetchEvents(muteListRelays, {
+            authors: [account.pubkey],
+            kinds: [kinds.Mutelist],
+            limit: 10
+          })
+          .then((evts) => {
+            const evt = getLatestEvent(evts)
+            if (evt && hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+              trySetMuteList(evt)
+              return
+            }
+            client.fetchMuteListEvent(account.pubkey).then((m) => {
+              if (m) trySetMuteList(m)
+            })
+          })
+          .catch(() => {
+            client.fetchMuteListEvent(account.pubkey).then((m) => {
+              if (m) trySetMuteList(m)
+            })
+          })
       }
       if (bookmarkListEvent) {
         if (resolvedBookmarkPut && resolvedBookmarkPut.id === bookmarkListEvent.id) {
@@ -798,6 +852,114 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       cancelled = true
     }
   }, [account, followListEvent, isAccountSessionHydrating])
+
+  /** Recovery: if hydrate finished but mute list is still null, query outboxes + search + profile relays (same gap as follow-list recovery). */
+  useEffect(() => {
+    if (!account || muteListEvent !== null || isAccountSessionHydrating) return
+    let cancelled = false
+    client
+      .fetchRelayList(account.pubkey)
+      .then((rl) => {
+        const relays = Array.from(
+          new Set([
+            ...rl.write.map((u) => normalizeUrl(u) || u),
+            ...rl.read.map((u) => normalizeUrl(u) || u),
+            ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
+          ])
+        ).filter(Boolean)
+        return queryService.fetchEvents(relays, {
+          authors: [account.pubkey],
+          kinds: [kinds.Mutelist],
+          limit: 10
+        })
+      })
+      .then((evts) => {
+        const evt = getLatestEvent(evts)
+        if (!cancelled && evt) {
+          void indexedDb.putReplaceableEvent(evt).catch(() => {})
+          setMuteListEvent(evt)
+          return
+        }
+        if (!cancelled) {
+          return client.fetchMuteListEvent(account.pubkey).then((m) => {
+            if (!cancelled && m) {
+              void indexedDb.putReplaceableEvent(m).catch(() => {})
+              setMuteListEvent(m)
+            }
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          client.fetchMuteListEvent(account.pubkey).then((m) => {
+            if (!cancelled && m) {
+              void indexedDb.putReplaceableEvent(m).catch(() => {})
+              setMuteListEvent(m)
+            }
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account, muteListEvent, isAccountSessionHydrating])
+
+  useEffect(() => {
+    const EVENT = ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT
+    const onRefreshed: EventListener = (domEvt) => {
+      const ce = domEvt as unknown as CustomEvent<{ pubkey?: string }>
+      const pk = ce.detail?.pubkey?.toLowerCase()
+      const acc = accountForReplaceablesSyncRef.current
+      if (!pk || !acc?.pubkey || pk !== acc.pubkey.toLowerCase()) return
+
+      void (async () => {
+        const INTEREST_LIST_KIND = 10015
+        const loadOk = async (kind: number) => {
+          const e = await indexedDb.getReplaceableEvent(acc.pubkey, kind).catch(() => null)
+          return e && !shouldDropEventOnIngest(e) ? e : null
+        }
+        try {
+          const meta = await loadOk(kinds.Metadata)
+          if (meta) {
+            setProfileEvent(meta)
+            setProfile(getProfileFromEvent(meta))
+            void replaceableEventService.updateReplaceableEventCache(meta).catch(() => {})
+          }
+          const contacts = await loadOk(kinds.Contacts)
+          if (contacts) setFollowListEvent(contacts)
+          const mute = await loadOk(kinds.Mutelist)
+          if (mute) setMuteListEvent(mute)
+          const bookmark = await loadOk(kinds.BookmarkList)
+          if (bookmark) setBookmarkListEvent(bookmark)
+          const fav = await loadOk(ExtendedKind.FAVORITE_RELAYS)
+          if (fav) setFavoriteRelaysEvent(fav)
+          const blocked = await loadOk(ExtendedKind.BLOCKED_RELAYS)
+          if (blocked) setBlockedRelaysEvent(blocked)
+          const emoji = await loadOk(kinds.UserEmojiList)
+          if (emoji) setUserEmojiListEvent(emoji)
+          const interest = await loadOk(INTEREST_LIST_KIND)
+          if (interest) setInterestListEvent(interest)
+          const rss = await loadOk(ExtendedKind.RSS_FEED_LIST)
+          if (rss) setRssFeedListEvent(rss)
+          const cacheRel = await loadOk(ExtendedKind.CACHE_RELAYS)
+          if (cacheRel) setCacheRelayListEvent(cacheRel)
+          const httpRel = await loadOk(ExtendedKind.HTTP_RELAY_LIST)
+          if (httpRel) setHttpRelayListEvent(httpRel)
+          const blossom = await loadOk(ExtendedKind.BLOSSOM_SERVER_LIST)
+          if (blossom) void client.updateBlossomServerListEventCache(blossom)
+
+          const merged = await client.fetchRelayList(acc.pubkey)
+          setRelayList(merged)
+        } catch (e) {
+          logger.warn('[NostrProvider] Failed to sync account state after replaceables refresh', { error: e })
+        }
+      })()
+    }
+    window.addEventListener(EVENT, onRefreshed)
+    return () => window.removeEventListener(EVENT, onRefreshed)
+  }, [])
 
   useEffect(() => {
     if (!account) return

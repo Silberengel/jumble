@@ -201,6 +201,8 @@ export default function Profile({
   const publicationsFeedRef = useRef<{ refresh: () => void }>(null)
   const likedFeedRef = useRef<{ refresh: () => void }>(null)
   const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications' | 'liked'>('posts')
+  /** Bumped after profile-view relay sync so payment + kind-0 JSON re-query storage and relays. */
+  const [authorReplaceablesSyncGen, setAuthorReplaceablesSyncGen] = useState(0)
 
   const { profile, isFetching } = useFetchProfile(id)
   const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
@@ -266,11 +268,17 @@ export default function Profile({
     }
 
     fetchPaymentInfo()
-  }, [profile?.pubkey])
+  }, [profile?.pubkey, authorReplaceablesSyncGen])
 
   useEffect(() => {
     if (!profile?.pubkey) return
-    client.prefetchAuthorCoreReplaceables([profile.pubkey], { force: true })
+    let cancelled = false
+    void client.refreshAuthorPublishedReplaceablesOnProfileView(profile.pubkey).finally(() => {
+      if (!cancelled) setAuthorReplaceablesSyncGen((g) => g + 1)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [profile?.pubkey])
 
   // Fetch profile event (kind 0) for republishing and viewing JSON
@@ -297,7 +305,7 @@ export default function Profile({
     }
 
     fetchProfileEventData()
-  }, [profile?.pubkey])
+  }, [profile?.pubkey, authorReplaceablesSyncGen])
 
   const isFollowingYou = useMemo(() => {
     // This will be handled by the FollowedBy component

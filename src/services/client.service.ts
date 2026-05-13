@@ -3151,7 +3151,9 @@ class ClientService extends EventTarget {
       try {
         await Promise.all([
           this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.RelayList),
-          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.Contacts)
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.Contacts),
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, kinds.Mutelist),
+          this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(unique, ExtendedKind.PAYMENT_INFO)
         ])
       } catch (err) {
         if (!options?.force) {
@@ -3165,6 +3167,24 @@ class ClientService extends EventTarget {
         })
       }
     })()
+  }
+
+  /**
+   * When opening a user's profile: show cached rows first (hooks), then pull kind 0/3/10002/10000/10133/etc.
+   * from a comprehensive relay set, persist to IndexedDB, and notify the app (see
+   * `ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT`).
+   */
+  async refreshAuthorPublishedReplaceablesOnProfileView(pubkey: string): Promise<void> {
+    const pk = pubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return
+    try {
+      await this.replaceableEventService.refreshAuthorPublishedReplaceablesFromRelays(pk)
+    } catch (err) {
+      logger.debug('[client] refreshAuthorPublishedReplaceablesOnProfileView failed', {
+        pubkeySlice: pk.slice(0, 12),
+        error: err instanceof Error ? err.message : String(err)
+      })
+    }
   }
 
   /** Part of {@link runSessionPrewarm}; batches followings to limit relay load. */

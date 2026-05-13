@@ -640,6 +640,18 @@ export class ReplaceableEventService {
               ].map((u) => normalizeUrl(u) || u)
             )
           ).filter(Boolean)
+        } else if (kind === kinds.Mutelist || kind === kinds.BookmarkList) {
+          // Mute / bookmark lists: same distribution as contacts (writes + mirrors); FAST_READ-only misses many copies.
+          relayUrls = Array.from(
+            new Set(
+              [
+                ...FAST_WRITE_RELAY_URLS,
+                ...READ_ONLY_RELAY_URLS,
+                ...PROFILE_FETCH_RELAY_URLS,
+                ...FAST_READ_RELAY_URLS
+              ].map((u) => normalizeUrl(u) || u)
+            )
+          ).filter(Boolean)
         } else if (kind === ExtendedKind.PAYMENT_INFO) {
           // NIP-A3 kind 10133: often published to the user's write relays only; FAST_READ alone misses many copies.
           // Mirror contacts + pin-list coverage (writes + profile mirrors + aggregators + fast read).
@@ -678,7 +690,9 @@ export class ReplaceableEventService {
           kind === 10001 ||
           kind === ExtendedKind.PAYMENT_INFO ||
           kind === kinds.Contacts ||
-          kind === kinds.RelayList
+          kind === kinds.RelayList ||
+          kind === kinds.Mutelist ||
+          kind === kinds.BookmarkList
         const multiAuthorBatch = pubkeys.length > 1
         // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
@@ -1417,6 +1431,103 @@ export class ReplaceableEventService {
       this.fetchReplaceableEvent(pubkey, kinds.Metadata),
       this.fetchReplaceableEvent(pubkey, ExtendedKind.PAYMENT_INFO)
     ])
+  }
+
+  /**
+   * Profile view: query a wide relay set for the author's published replaceables (kind 0, contacts,
+   * NIP-65, mute list, bookmarks, pay, etc.), persist winners to IndexedDB, refresh in-memory loaders,
+   * then dispatch `ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT` so the session can re-sync UI.
+   */
+  static readonly AUTHOR_REPLACEABLES_REFRESHED_EVENT = 'jumble:author-replaceables-refreshed' as const
+
+  private static readonly PROFILE_VIEW_AUTHOR_REPLACEABLE_KINDS: readonly number[] = [
+    kinds.Metadata,
+    kinds.Contacts,
+    kinds.RelayList,
+    kinds.Mutelist,
+    kinds.BookmarkList,
+    10001, // pins (NIP-51)
+    10015, // interests
+    ExtendedKind.FAVORITE_RELAYS,
+    ExtendedKind.BLOCKED_RELAYS,
+    ExtendedKind.BLOSSOM_SERVER_LIST,
+    ExtendedKind.PAYMENT_INFO,
+    kinds.UserEmojiList,
+    ExtendedKind.CACHE_RELAYS,
+    ExtendedKind.HTTP_RELAY_LIST,
+    ExtendedKind.RSS_FEED_LIST
+  ]
+
+  async refreshAuthorPublishedReplaceablesFromRelays(pubkey: string): Promise<void> {
+    const pk = pubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return
+
+    await ReplaceableEventService.acquireProfileFallbackNetworkSlot()
+    try {
+      let relayUrls: string[]
+      try {
+        relayUrls = await buildComprehensiveRelayList({
+          authorPubkey: pk,
+          userPubkey: client.pubkey || undefined,
+          includeUserOwnRelays: true,
+          includeFavoriteRelays: true,
+          includeProfileFetchRelays: true,
+          includeFastReadRelays: true,
+          includeFastWriteRelays: true,
+          includeSearchableRelays: true,
+          includeLocalRelays: true
+        })
+      } catch {
+        relayUrls = []
+      }
+      if (relayUrls.length === 0) return
+
+      const events = await this.queryService.query(
+        relayUrls,
+        { authors: [pk], kinds: [...ReplaceableEventService.PROFILE_VIEW_AUTHOR_REPLACEABLE_KINDS] },
+        undefined,
+        {
+          replaceableRace: false,
+          eoseTimeout: 2500,
+          globalTimeout: 14_000
+        }
+      )
+
+      const bestByKind = new Map<number, NEvent>()
+      for (const e of events) {
+        if (shouldDropEventOnIngest(e)) continue
+        const prev = bestByKind.get(e.kind)
+        if (!prev || e.created_at > prev.created_at) {
+          bestByKind.set(e.kind, e)
+        }
+      }
+
+      await Promise.allSettled(
+        Array.from(bestByKind.values()).map(async (ev) => {
+          try {
+            await indexedDb.putReplaceableEvent(ev)
+          } catch {
+            /* tombstone / validation */
+          }
+          try {
+            await this.updateReplaceableEventCache(ev)
+          } catch {
+            /* ignore */
+          }
+          if (ev.kind === kinds.Metadata) {
+            await this.indexProfile(ev)
+          }
+        })
+      )
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent(ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT, { detail: { pubkey: pk } })
+        )
+      }
+    } finally {
+      ReplaceableEventService.releaseProfileFallbackNetworkSlot()
+    }
   }
 
   /**
