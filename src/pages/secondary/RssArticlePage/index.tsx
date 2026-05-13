@@ -303,7 +303,6 @@ const RssArticlePage = forwardRef(
                   className="mt-2"
                   event={syntheticRoot}
                   fetchIfNotExisting
-                  displayTopZapsAndLikes
                   foregroundStats
                 />
               </div>
@@ -399,7 +398,6 @@ const RssArticlePage = forwardRef(
                 className="mt-3"
                 event={syntheticRoot}
                 fetchIfNotExisting
-                displayTopZapsAndLikes
                 foregroundStats
               />
             </div>

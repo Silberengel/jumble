@@ -62,6 +62,24 @@
     pointer-events: none;
   }
 
+  /*
+   * TipTap / ProseMirror composer: without a color-emoji font in the stack (common on Linux + Firefox),
+   * Unicode emoji pick a text-font glyph (thin/outline). Preview and published notes often look “correct”
+   * because markdown/prose or system fonts resolve emoji differently. Append emoji-capable families last.
+   */
+  .tiptap .ProseMirror {
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      sans-serif,
+      'Apple Color Emoji',
+      'Segoe UI Emoji',
+      'Segoe UI Symbol',
+      'Noto Color Emoji',
+      'Noto Emoji',
+      sans-serif;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none; /* Internet Explorer 10+ */
     scrollbar-width: none; /* Firefox */

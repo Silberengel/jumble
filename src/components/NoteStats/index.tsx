@@ -12,7 +12,6 @@ import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
 import { LikeButtonWithStats } from './LikeButton'
-import { LikesWithStats } from './Likes'
 import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
 import SeenOnButton from './SeenOnButton'
@@ -23,8 +22,8 @@ export default function NoteStats({
   className,
   classNames,
   fetchIfNotExisting = false,
-  displayTopZapsAndLikes = false,
-  foregroundStats = false
+  foregroundStats = false,
+  useIconOnlyLikeTrigger = false
 }: {
   event: Event
   className?: string
@@ -32,9 +31,12 @@ export default function NoteStats({
     buttonBar?: string
   }
   fetchIfNotExisting?: boolean
-  displayTopZapsAndLikes?: boolean
   /** Jump ahead of spell-feed backlog so counts resolve on the open note / article. */
   foregroundStats?: boolean
+  /**
+   * Thread rows for kind-7 reactions: like control shows icon + total only (body already shows the reaction glyph).
+   */
+  useIconOnlyLikeTrigger?: boolean
 }) {
   const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
@@ -50,7 +52,7 @@ export default function NoteStats({
   // Hide interaction counts if event is in quiet mode
   const hideInteractions = shouldHideInteractions(event)
 
-  /** Synthetic RSS article root: no boost/quote/zap; still show reaction breakdown (NIP-25 + kind-17 web). */
+  /** Synthetic RSS article root: no boost/quote/zap bar entries that normal notes have. */
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
   /** Match {@link RssUrlThreadStatsBar}: inbox/favorites/fast-read merge — plain hints miss many #i indexers. */
   const statsRelays = isRssArticleRoot ? rssUrlThreadRelays : hintRelays
@@ -59,9 +61,6 @@ export default function NoteStats({
   const statsRelaysRef = useRef(statsRelays)
   statsRelaysRef.current = statsRelays
   const isZapPoll = event.kind === ExtendedKind.ZAP_POLL
-
-  /** Emoji reaction pills (aggregated likes). Shown for RSS/Web URL threads so the side panel matches feed rows. */
-  const showLikesPills = !isDiscussion && !isReplyToDiscussion
 
   useEffect(() => {
     if (!fetchIfNotExisting) return
@@ -87,11 +86,6 @@ export default function NoteStats({
   if (isSmallScreen) {
     return (
       <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
-        {displayTopZapsAndLikes && (
-          <>
-            {showLikesPills && <LikesWithStats event={event} noteStats={noteStats} />}
-          </>
-        )}
         <div
           className={cn(
             'flex justify-between items-center h-5 [&_svg]:size-5',
@@ -108,6 +102,7 @@ export default function NoteStats({
             hideCount={hideInteractions}
             noteStats={noteStats}
             isReplyToDiscussion={isReplyToDiscussion}
+            useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
           />
           {!isRssArticleRoot && !isZapPoll && (
             <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
@@ -121,11 +116,6 @@ export default function NoteStats({
 
   return (
     <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
-      {displayTopZapsAndLikes && (
-        <>
-          {showLikesPills && <LikesWithStats event={event} noteStats={noteStats} />}
-        </>
-      )}
       <div className="flex justify-between h-5 [&_svg]:size-4">
         <div
           className={cn('flex items-center', loading ? 'animate-pulse' : '')}
@@ -139,6 +129,7 @@ export default function NoteStats({
             hideCount={hideInteractions}
             noteStats={noteStats}
             isReplyToDiscussion={isReplyToDiscussion}
+            useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
           />
           {!isRssArticleRoot && !isZapPoll && (
             <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />

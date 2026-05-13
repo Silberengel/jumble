@@ -416,6 +416,7 @@ export const FAST_READ_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
   'wss://aggr.nostr.land',
   'wss://primus.nostr1.com',
+  'wss://wheat.happytavern.co'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -446,7 +447,8 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr.einundzwanzig.space',
   'wss://nostr-pub.wellorder.net',
   'wss://pyramid.fiatjaf.com/',
-  'wss://nostrelites.org'
+  'wss://nostrelites.org',
+  'wss://wheat.happytavern.co'
 ]
 
 export const PROFILE_RELAY_URLS = [

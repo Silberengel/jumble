@@ -14,6 +14,7 @@ import {
   generateBech32IdFromETag,
   getFirstHexEventIdFromETags,
   getImetaInfoFromImetaTag,
+  getNip25ReactionTargetHexFromTags,
   tagNameEquals
 } from './tag'
 
@@ -175,8 +176,22 @@ export function isMentioningMutedUsers(event: Event, mutePubkeySet: Set<string>)
 export function getParentETag(event?: Event) {
   if (!event) return undefined
 
-  // NIP-25 reactions, NIP-18 reposts (6 / 16), poll responses: first hex `e` / `E` references the target note.
-  if (event.kind === kinds.Reaction || isNip18RepostKind(event.kind) || event.kind === ExtendedKind.POLL_RESPONSE) {
+  // NIP-25 reactions: reacted-to id is often the `reply`-marked `e`, not the first `e` (root is commonly first).
+  if (event.kind === kinds.Reaction) {
+    const targetHex = getNip25ReactionTargetHexFromTags(event.tags)
+    if (!targetHex) return undefined
+    return (
+      event.tags.find(
+        (t) => t[0] === 'e' && typeof t[1] === 'string' && t[1].toLowerCase() === targetHex
+      ) ??
+      event.tags.find(
+        (t) => t[0] === 'E' && typeof t[1] === 'string' && t[1].toLowerCase() === targetHex
+      )
+    )
+  }
+
+  // NIP-18 reposts (6 / 16), poll responses: first hex `e` / `E` references the target note.
+  if (isNip18RepostKind(event.kind) || event.kind === ExtendedKind.POLL_RESPONSE) {
     const firstId = getFirstHexEventIdFromETags(event.tags)
     if (!firstId) return undefined
     return (

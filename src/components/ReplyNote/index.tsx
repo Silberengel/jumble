@@ -115,7 +115,12 @@ export default function ReplyNote({
             maxFileSizeKb={2048}
             deferRemoteAvatar={false}
           />
-          <div className="w-full overflow-hidden">
+          <div
+            className={cn(
+              'w-full min-w-0',
+              isNip25ReactionKind(event.kind) ? 'overflow-visible' : 'overflow-x-hidden'
+            )}
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 w-0">
                 <div className="flex gap-1 items-center">
@@ -166,9 +171,19 @@ export default function ReplyNote({
             ) : null}
             {show ? (
               isNip25ReactionKind(event.kind) ? (
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground">
+                <div
+                  className={cn(
+                    'mt-2 flex min-h-0 min-w-0 flex-wrap items-end gap-x-2 gap-y-1 overflow-visible pb-1.5',
+                    reactionDisplay.status === 'default'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground text-sm'
+                  )}
+                >
                   {reactionDisplay.status === 'pending' ? (
-                    <Skeleton className="size-3.5 shrink-0 rounded-sm" aria-hidden />
+                    <Skeleton
+                      className="h-10 w-10 shrink-0 rounded-lg sm:h-11 sm:w-11"
+                      aria-hidden
+                    />
                   ) : reactionDisplay.status === 'vote_up' ? (
                     <span className="text-sm leading-none opacity-90" aria-hidden>
                       {DISCUSSION_UPVOTE_DISPLAY}
@@ -180,7 +195,9 @@ export default function ReplyNote({
                   ) : (
                     <ReactionEmojiDisplay event={event} variant="thread" maxRawLength={64} />
                   )}
-                  <span className="text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
+                  {reactionDisplay.status !== 'default' && (
+                    <span className="text-sm text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
+                  )}
                 </div>
               ) : event.kind === kinds.Zap ? (
                 <Zap className="mt-1.5" event={event} omitSenderHeading variant="compact" />
@@ -208,15 +225,17 @@ export default function ReplyNote({
           </div>
         </div>
       </Collapsible>
-      {show && !isNip25ReactionKind(event.kind) && (
+      {show && (
         <>
-          <NoteBoostBadges event={event} className="ml-14 pl-1 mr-4 mt-2" />
+          {!isNip25ReactionKind(event.kind) && (
+            <NoteBoostBadges event={event} className="ml-14 pl-1 mr-4 mt-2" />
+          )}
           <NoteStats
             className="ml-14 pl-1 mr-4 mt-2"
             event={event}
-            displayTopZapsAndLikes={event.kind !== kinds.Zap}
             fetchIfNotExisting
             foregroundStats={foregroundStats}
+            useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
           />
         </>
       )}

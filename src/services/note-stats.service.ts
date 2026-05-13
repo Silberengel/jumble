@@ -11,6 +11,7 @@ import {
   getParentEventHexId,
   getReplaceableCoordinateFromEvent,
   isNip18RepostKind,
+  isNip25ReactionKind,
   isReplaceableEvent
 } from '@/lib/event'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
@@ -256,7 +257,15 @@ class NoteStatsService {
       }
     }
 
-    const hexIds = [...new Set(hexReplies.map((r) => this.statsKey(r.id)))]
+    const hexIdsSet = new Set(hexReplies.map((r) => this.statsKey(r.id)))
+    for (const r of hexReplies) {
+      if (!isNip25ReactionKind(r.kind)) continue
+      const parentHex = getParentEventHexId(r)
+      if (parentHex && this.hexNoteStatsIdRe.test(parentHex)) {
+        hexIdsSet.add(this.statsKey(parentHex))
+      }
+    }
+    const hexIds = [...hexIdsSet]
 
     const markHexTargetsLoaded = () => {
       for (const id of hexIds) {

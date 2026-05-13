@@ -1,4 +1,4 @@
-import { DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
+import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI, DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
 import { recordEmojiUsed } from '@/lib/recently-used-emojis'
 import { useNostr } from '@/providers/NostrProvider'
 import { useTheme } from '@/providers/ThemeProvider'
@@ -64,7 +64,7 @@ export default function EmojiPicker({
       const handleClick = (e: Event) => {
         const detail = (e as CustomEvent).detail as {
           unicode?: string
-          emoji: {
+          emoji?: {
             custom?: boolean
             unicode?: string
             name?: string
@@ -73,11 +73,22 @@ export default function EmojiPicker({
           }
         }
         let result: string | TEmoji | undefined
-        if (detail.unicode) {
-          result = detail.unicode
+        /**
+         * emoji-picker-element only puts `unicode` on the event detail when `skinTonedUnicode` is truthy
+         * (see getDetailForClickEvent in picker.js). Native picks often expose the sequence on `detail.emoji.unicode`
+         * instead, so we must fall back — otherwise `insertEmoji` receives undefined and “most emojis don’t work”.
+         */
+        const top = typeof detail.unicode === 'string' && detail.unicode.length > 0 ? detail.unicode : undefined
+        const nested =
+          typeof detail.emoji?.unicode === 'string' && detail.emoji.unicode.length > 0
+            ? detail.emoji.unicode
+            : undefined
+        const nativeUnicode = top ?? nested
+        if (nativeUnicode) {
+          result = nativeUnicode
         } else {
           const em = detail.emoji
-          // emoji-picker-element: native emojis have `unicode`; custom entries have `url` (+ name / shortcodes).
+          // Custom entries: `url` (+ shortcodes / name); avoid treating native `unicode` as custom.
           if (em?.url && !em.unicode) {
             const shortcode = em.shortcodes?.[0] ?? em.name
             if (shortcode) {
@@ -136,7 +147,7 @@ export default function EmojiPicker({
               onEmojiClick(emoji, e.nativeEvent)
             }}
           >
-            {emoji}
+            {emoji === DEFAULT_LIKE_REACTION_CONTENT ? DEFAULT_LIKE_REACTION_DISPLAY_EMOJI : emoji}
           </button>
         ))}
         <button

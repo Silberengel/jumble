@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
+import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI } from '@/lib/like-reaction-emojis'
 import { TEmoji } from '@/types'
-import { Heart, ThumbsDown } from 'lucide-react'
+import { ThumbsDown } from 'lucide-react'
 import { HTMLAttributes, useState } from 'react'
 
 /** ~4/3 of legacy `size-5` for custom images when no `classNames.img` override. */
@@ -24,8 +25,12 @@ export default function Emoji({
   const [hasError, setHasError] = useState(false)
 
   if (typeof emoji === 'string') {
-    if (emoji === '+') {
-      return <Heart className={cn(EMOJI_IMG_DEFAULT_CLASS, 'text-red-400 fill-red-400', classNames?.img)} />
+    if (emoji === DEFAULT_LIKE_REACTION_CONTENT) {
+      return (
+        <span className={cn('whitespace-nowrap', classNames?.text, classNames?.img)}>
+          {DEFAULT_LIKE_REACTION_DISPLAY_EMOJI}
+        </span>
+      )
     }
     if (emoji === '-') {
       return (
@@ -36,7 +41,7 @@ export default function Emoji({
         />
       )
     }
-    return <span className={cn('whitespace-nowrap', classNames?.text)}>{emoji}</span>
+    return <span className={cn('whitespace-nowrap', classNames?.text, classNames?.img)}>{emoji}</span>
   }
 
   if (hasError) {

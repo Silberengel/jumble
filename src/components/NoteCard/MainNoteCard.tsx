@@ -129,7 +129,6 @@ export default function MainNoteCard({
             className={embedded ? 'mt-2 px-2 sm:px-3' : `mt-3 ${notePadX}`}
             event={event}
             fetchIfNotExisting={fetchNoteStatsIfMissing}
-            displayTopZapsAndLikes={isZapFeedCard}
           />
         ) : null}
         {!embedded && bottomNoteLabel ? (

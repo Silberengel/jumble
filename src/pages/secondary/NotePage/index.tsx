@@ -546,7 +546,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
           className="mt-3"
           event={finalEvent}
           fetchIfNotExisting
-          displayTopZapsAndLikes
           foregroundStats
         />
       </div>

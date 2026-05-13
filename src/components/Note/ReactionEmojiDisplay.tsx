@@ -20,7 +20,7 @@ export default function ReactionEmojiDisplay({
   className?: string
   /** Truncate long reaction text beyond this length */
   maxRawLength?: number
-  /** Compact row (notification list); `thread` matches reply-list density */
+  /** `compact`: content previews; `thread`: reply-list reaction rows (large glyph). */
   variant?: 'default' | 'compact' | 'thread'
 }) {
   const sync = useMemo(
@@ -58,28 +58,32 @@ export default function ReactionEmojiDisplay({
     return null
   }
 
+  /** Unicode / shortcode strings must not get `img` max-height classes — {@link Emoji} merges both onto one span and clips glyphs. */
+  const emojiClassNames =
+    variant === 'thread'
+      ? typeof value === 'object'
+        ? {
+            img: 'size-[calc(1.85rem*4/3)] max-h-[2.25rem] w-auto rounded-md opacity-95 inline-block align-middle'
+          }
+        : { text: 'text-2xl sm:text-3xl leading-normal tracking-tight' }
+      : {
+          img:
+            variant === 'compact'
+              ? 'size-[calc(1rem*4/3)] max-h-[1em] w-auto rounded-sm'
+              : 'size-[calc(1.75rem*4/3)] max-h-[1.5em] w-auto rounded-sm',
+          text: variant === 'compact' ? 'text-base leading-none' : 'text-2xl leading-none'
+        }
+
   return (
     <span
-      className={cn('inline-flex shrink-0 items-center justify-center leading-none select-none', className)}
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center select-none',
+        variant === 'thread' ? 'overflow-visible leading-normal py-0.5' : 'leading-none',
+        className
+      )}
       aria-hidden
     >
-      <Emoji
-        emoji={value}
-        classNames={{
-          img:
-            variant === 'thread'
-              ? 'size-[calc(0.875rem*4/3)] max-h-[1em] w-auto rounded-sm opacity-90'
-              : variant === 'compact'
-                ? 'size-[calc(1rem*4/3)] max-h-[1em] w-auto rounded-sm'
-                : 'size-[calc(1.75rem*4/3)] max-h-[1.5em] w-auto rounded-sm',
-          text:
-            variant === 'thread'
-              ? 'text-sm leading-none'
-              : variant === 'compact'
-                ? 'text-base leading-none'
-                : 'text-2xl leading-none'
-        }}
-      />
+      <Emoji emoji={value} classNames={emojiClassNames} />
     </span>
   )
 }

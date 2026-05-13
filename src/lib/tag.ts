@@ -50,6 +50,25 @@ export function getFirstHexEventIdFromETags(tags: string[][]): string | undefine
   return undefined
 }
 
+/**
+ * NIP-25 kind-7 target note id: prefer `e`/`E` with marker `reply` (reacted-to note in a thread).
+ * If several `e` tags have no markers, use the last hex id (common order: root, then reply).
+ */
+export function getNip25ReactionTargetHexFromTags(tags: string[][]): string | undefined {
+  const eRows: { id: string; marker?: string }[] = []
+  for (const t of tags) {
+    if (t[0] !== 'e' && t[0] !== 'E') continue
+    const id = t[1]
+    if (!id || !NOTE_HEX_ID_RE.test(id)) continue
+    const marker = typeof t[3] === 'string' ? t[3].toLowerCase() : undefined
+    if (marker === 'reply') return id.toLowerCase()
+    eRows.push({ id: id.toLowerCase(), marker })
+  }
+  if (eRows.length === 1) return eRows[0].id
+  if (eRows.length > 1) return eRows[eRows.length - 1].id
+  return undefined
+}
+
 export function generateBech32IdFromETag(tag: string[]) {
   try {
     const [, id, relay, markerOrPubkey, pubkey] = tag

@@ -16,7 +16,6 @@ import {
   getReplaceableCoordinateFromEvent,
   getRootATag,
   getRootETag,
-  isNip25ReactionKind,
   isNip56ReportEvent,
   isReplaceableEvent,
   kind1QuotesThreadRoot,
@@ -224,8 +223,8 @@ function moveReportsToEndPreserveOrder(events: NEvent[]): NEvent[] {
 /** Shown after thread replies for E/A roots (quote stream + kind 1 #q-only); matches {@link THREAD_BACKLINK_STREAM_KINDS}. */
 const EA_THREAD_TAIL_REFERENCE_KINDS = new Set<number>(THREAD_BACKLINK_STREAM_KINDS)
 
-/** Web (NIP-22) thread: tail = reference-style rows + URL-scoped reactions (same block order as E/A). */
-const WEB_THREAD_EXTRA_TAIL_KINDS = new Set<number>([kinds.Reaction, ExtendedKind.EXTERNAL_REACTION])
+/** Web (NIP-22) thread: tail = reference-style rows + URL-only external reactions (kind-7 stays in the chronological middle with other replies). */
+const WEB_THREAD_EXTRA_TAIL_KINDS = new Set<number>([ExtendedKind.EXTERNAL_REACTION])
 
 function isWebThreadTailKind(kind: number): boolean {
   return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind) || WEB_THREAD_EXTRA_TAIL_KINDS.has(kind)
@@ -262,8 +261,8 @@ function noteReactionEtagEqualsHex(ev: NEvent, hexLower: string): boolean {
 }
 
 /**
- * Thread REQ historically omitted kind 7; {@link replyMatchesThreadForList} also drops reactions from the reply list.
- * Reactions still need to merge into {@link noteStatsService} for the root so the note header matches notifications.
+ * Thread REQ may still omit some kind-7 rows; merge reactions that tag the root hex so OP stats stay warm.
+ * Listed reactions under “Antworten” come from {@link ReplyNoteList} BFS + {@link replyMatchesThreadForList}.
  */
 function mergeFetchedKind7ReactionsIntoRootNoteStats(all: NEvent[], rootInfo: TRootInfo) {
   if (rootInfo.type === 'E') {
@@ -449,7 +448,6 @@ function ReplyNoteList({
       
       events.forEach((evt) => {
         if (replyIdSet.has(evt.id)) return
-        if (isNip25ReactionKind(evt.kind)) return
         if (isPollVoteKind(evt)) return
         if (isZapPollThreadZapReceipt(evt, event)) return
         if (

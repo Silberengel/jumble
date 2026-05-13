@@ -1,3 +1,4 @@
+import { DEFAULT_LIKE_REACTION_CONTENT } from '@/lib/like-reaction-emojis'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { isNip25ReactionKind } from '@/lib/event'
 import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
@@ -22,7 +23,7 @@ export function resolveReactionEmojiSync(event: Event, maxRawLength: number): TR
 
   const raw = event.content?.trim() ?? ''
   if (!raw) {
-    return { mode: 'display', value: '❤️' }
+    return { mode: 'display', value: DEFAULT_LIKE_REACTION_CONTENT }
   }
   if (raw.length > maxRawLength) {
     return { mode: 'display', value: `${raw.slice(0, maxRawLength)}…` }

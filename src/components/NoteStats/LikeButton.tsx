@@ -49,13 +49,16 @@ type LikeButtonProps = {
   hideCount?: boolean
   noteStats?: Partial<TNoteStats>
   isReplyToDiscussion?: boolean
+  /** When true, never show the user's last reaction emoji in the trigger (icon + count only). */
+  useIconOnlyLikeTrigger?: boolean
 }
 
 export function LikeButtonWithStats({
   event,
   hideCount = false,
   noteStats,
-  isReplyToDiscussion: isReplyToDiscussionProp
+  isReplyToDiscussion: isReplyToDiscussionProp,
+  useIconOnlyLikeTrigger = false
 }: LikeButtonProps) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -247,7 +250,7 @@ export function LikeButtonWithStats({
     >
       {liking ? (
         <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
-      ) : myLastEmoji ? (
+      ) : myLastEmoji && !useIconOnlyLikeTrigger ? (
         <>
           <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
           {showLikeCount && (
