@@ -240,7 +240,14 @@ export type TPollCreateData = {
   endsAt?: number
 }
 
-export type TSearchType = 'profile' | 'profiles' | 'notes' | 'note' | 'hashtag' | 'relay' | 'dtag'
+export type TSearchType =
+  | 'profile'
+  | 'profiles'
+  | 'notes'
+  | 'note'
+  | 'hashtag'
+  | 'relay'
+  | 'dtag'
 
 export type TSearchParams = {
   type: TSearchType

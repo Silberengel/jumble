@@ -107,6 +107,7 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
 import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
+import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import {
   buildPrioritizedWriteRelayUrls,
@@ -3352,15 +3353,38 @@ class ClientService extends EventTarget {
   /** =========== Profile =========== */
 
   async searchProfiles(relayUrls: string[], filter: Filter): Promise<TProfile[]> {
-    const events = await this.queryService.query(relayUrls, {
-      ...filter,
-      kinds: [kinds.Metadata]
-    }, undefined, {
-      replaceableRace: true,
-      // Search spans many relays; sub-second EOSE was cutting off almost all index relays.
-      eoseTimeout: 4500,
-      globalTimeout: 9000
-    })
+    const searchStr = typeof filter.search === 'string' ? filter.search.trim() : ''
+    const normalizedAll = dedupeNormalizeRelayUrlsOrdered(
+      relayUrls.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    )
+    let urls = normalizedAll
+    if (searchStr.length > 0) {
+      const searchableSet = new Set([
+        ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+        ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
+      ])
+      const searchCapable = normalizedAll.filter(
+        (u) => searchableSet.has(u) || nip66Service.isRelaySearchable(u)
+      )
+      if (searchCapable.length > 0) {
+        urls = searchCapable
+      }
+    }
+
+    const events = await this.queryService.query(
+      urls,
+      {
+        ...filter,
+        kinds: [kinds.Metadata]
+      },
+      undefined,
+      {
+        replaceableRace: true,
+        // Search spans many relays; sub-second EOSE was cutting off almost all index relays.
+        eoseTimeout: 4500,
+        globalTimeout: 9000
+      }
+    )
 
     const profileEvents = events.sort((a, b) => b.created_at - a.created_at)
     await Promise.allSettled(profileEvents.map((profile) => this.addUsernameToIndex(profile)))
@@ -3393,7 +3417,7 @@ class ClientService extends EventTarget {
 
   /**
    * Npubs for @-mention dropdown: (1) follow-list profiles matching the query,
-   * (2) local index, (3) kind-0 relay search on PROFILE_FETCH_RELAY_URLS (deduped).
+   * (2) local index, (3) kind-0 NIP-50 search on {@link PROFILE_FETCH_RELAY_URLS} (includes search relays + profile mirrors; deduped).
    * Returns cached results immediately, then streams relay results via callback.
    */
   /**
@@ -3518,6 +3542,12 @@ class ClientService extends EventTarget {
 
     const matchProfileText = (p: TProfile) =>
       ((p.username ?? '') + ' ' + (p.original_username ?? '') + ' ' + (p.nip05 ?? '')).toLowerCase()
+
+    const directPk = decodeProfileSearchQueryToPubkeyHex(q)
+    if (directPk) {
+      const np = pubkeyToNpub(directPk)
+      if (np) addNpub(np)
+    }
 
     // Relay query starts immediately so it can run in parallel with local + follow work (slow relays).
     const profileSearchRelayUrls = dedupeNormalizeRelayUrlsOrdered(
@@ -3668,6 +3698,16 @@ class ClientService extends EventTarget {
 
     const seen = new Set<string>()
     const out: TProfile[] = []
+
+    const directPk = decodeProfileSearchQueryToPubkeyHex(q)
+    if (directPk) {
+      const p = await this.replaceableEventService.fetchProfile(directPk)
+      if (p) {
+        seen.add(directPk)
+        out.push(p)
+        if (out.length >= limit) return out
+      }
+    }
 
     const fromIdb = await this.searchProfilesFromIndexedDBCache(q, limit)
     for (const p of fromIdb) {

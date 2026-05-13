@@ -6,8 +6,8 @@
  *   dev + opt-out     → info / warn / error          (set `imwald-debug` or `jumble-debug` to `false`)
  *   production        → warn / error only            (bare console — no timestamp string built)
  *
- * Opt out in dev: `localStorage.setItem('imwald-debug', 'false')` then reload.
- * Force on (e.g. prod build): `VITE_DEBUG=true` or localStorage … `'true'`.
+ * Opt out of debug in dev: `localStorage.setItem('imwald-debug', 'false')` then reload.
+ * Force on: `VITE_DEBUG=true` or localStorage … `'true'` (with dev, enables debug the same as default).
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'

@@ -21,6 +21,7 @@ import {
 } from '@/lib/event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
+import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import type { Filter } from 'nostr-tools'
@@ -76,10 +77,13 @@ function isLikelyCachedNostrEvent(v: unknown): v is Event {
   )
 }
 
-/** Kind 0 JSON fields for profile search (display name, handle, NIP-05). */
-function profileMetadataMatchesQuery(ev: Event, qLower: string): boolean {
+/** Kind 0 JSON fields for profile search (display name, handle, NIP-05, pasted npub/nprofile). */
+function profileMetadataMatchesQuery(ev: Event, qRaw: string): boolean {
+  const qLower = qRaw.trim().toLowerCase()
   if (!qLower || ev.kind !== kinds.Metadata) return false
   if (ev.pubkey.toLowerCase().includes(qLower)) return true
+  const decodedPk = decodeProfileSearchQueryToPubkeyHex(qRaw)
+  if (decodedPk && ev.pubkey.toLowerCase() === decodedPk) return true
   try {
     const profileObj = JSON.parse(ev.content) as Record<string, unknown>
     const nip05Raw = profileObj.nip05
@@ -895,7 +899,7 @@ class IndexedDbService {
         }
         const row = cursor.value as TValue<Event>
         const value = row?.value
-        if (value && profileMetadataMatchesQuery(value, qLower)) {
+        if (value && profileMetadataMatchesQuery(value, query.trim())) {
           const pk = value.pubkey.toLowerCase()
           const prev = byPubkey.get(pk)
           if (!prev || value.created_at > prev.created_at) {

@@ -11,7 +11,7 @@ import { useSmartNoteNavigation, useSmartHashtagNavigation } from '@/PageManager
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import modalManager from '@/services/modal-manager.service'
 import { TSearchParams } from '@/types'
-import { Hash, Notebook, Search, Server, FileText } from 'lucide-react'
+import { Hash, Notebook, Search, Server, FileText, Users } from 'lucide-react'
 import { nip19 } from 'nostr-tools'
 import {
   forwardRef,
@@ -118,10 +118,13 @@ const SearchBar = forwardRef<
     const search = input.trim()
     if (!search) return
 
-    if (/^[0-9a-f]{64}$/.test(search)) {
+    const hex64 = /^[0-9a-f]{64}$/i
+    if (hex64.test(search)) {
+      const normalized = search.toLowerCase()
       setSelectableOptions([
-        { type: 'note', search },
-        { type: 'profile', search }
+        { type: 'note', search: normalized },
+        { type: 'profile', search: normalized },
+        { type: 'profiles', search: normalized }
       ])
       return
     }
@@ -133,7 +136,10 @@ const SearchBar = forwardRef<
       }
       const { type } = nip19.decode(id)
       if (['nprofile', 'npub'].includes(type)) {
-        setSelectableOptions([{ type: 'profile', search: id }])
+        setSelectableOptions([
+          { type: 'profile', search: id },
+          { type: 'profiles', search: id }
+        ])
         return
       }
       if (['nevent', 'naddr', 'note'].includes(type)) {
@@ -149,6 +155,7 @@ const SearchBar = forwardRef<
 
     setSelectableOptions([
       { type: 'notes', search },
+      { type: 'profiles', search },
       { type: 'hashtag', search: hashtag, input: `#${hashtag}` },
       ...(normalizedDTag && normalizedDTag.length > 0 ? [{ type: 'dtag', search: normalizedDTag, input: search }] : []),
       ...(normalizedUrl ? [{ type: 'relay', search: normalizedUrl, input: normalizedUrl }] : []),
@@ -157,8 +164,7 @@ const SearchBar = forwardRef<
         search: profile.npub,
         input: profile.username,
         profile
-      })),
-      ...(profiles.length >= 5 ? [{ type: 'profiles', search }] : [])
+      }))
     ] as TSearchParams[])
   }, [input, debouncedInput, profiles])
 
@@ -201,6 +207,16 @@ const SearchBar = forwardRef<
               />
             )
           }
+          if (option.type === 'profiles') {
+            return (
+              <ProfilesSearchItem
+                key={`profiles-${option.search}`}
+                search={option.search}
+                selected={selectedIndex === index}
+                onClick={() => updateSearch(option)}
+              />
+            )
+          }
           if (option.type === 'hashtag') {
             return (
               <HashtagItem
@@ -229,17 +245,6 @@ const SearchBar = forwardRef<
                 url={option.search}
                 onClick={() => updateSearch(option)}
               />
-            )
-          }
-          if (option.type === 'profiles') {
-            return (
-              <Item
-                key={index}
-                selected={selectedIndex === index}
-                onClick={() => updateSearch(option)}
-              >
-                <div className="font-semibold">{t('Show more...')}</div>
-              </Item>
             )
           }
           return null
@@ -407,6 +412,29 @@ function NormalItem({
       <div className="flex flex-col items-center gap-0.5">
         <Search className="text-muted-foreground" />
         <span className="text-[10px] text-muted-foreground/70 uppercase leading-none">FULL TEXT</span>
+      </div>
+      <div className="font-semibold truncate">{search}</div>
+    </Item>
+  )
+}
+
+function ProfilesSearchItem({
+  search,
+  onClick,
+  selected
+}: {
+  search: string
+  onClick?: () => void
+  selected?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <Item onClick={onClick} selected={selected}>
+      <div className="flex flex-col items-center gap-0.5">
+        <Users className="text-muted-foreground" />
+        <span className="text-[10px] text-muted-foreground/70 uppercase leading-none">
+          {t('Search dropdown profile search')}
+        </span>
       </div>
       <div className="font-semibold truncate">{search}</div>
     </Item>

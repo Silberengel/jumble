@@ -1,11 +1,13 @@
 import { useSecondaryPage } from '@/PageManager'
 import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
-import { normalizeUrl } from '@/lib/url'
+import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { toProfile } from '@/lib/link'
+import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { cn } from '@/lib/utils'
 import dayjs from 'dayjs'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import UserItem, { UserItemSkeleton } from '../UserItem'
 
 const LIMIT = 50
@@ -15,86 +17,168 @@ const PROFILE_SEARCH_RELAY_URLS = Array.from(
 )
 
 export function ProfileListBySearch({ search }: { search: string }) {
+  const { t } = useTranslation()
   const { push } = useSecondaryPage()
-  const [until, setUntil] = useState<number>(() => dayjs().unix())
-  const [hasMore, setHasMore] = useState<boolean>(true)
-  const [pubkeySet, setPubkeySet] = useState(new Set<string>())
+  const [pubkeys, setPubkeys] = useState<string[]>([])
+  const [until, setUntil] = useState(() => dayjs().unix())
+  const [hasMore, setHasMore] = useState(true)
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [empty, setEmpty] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const loadMoreInFlight = useRef(false)
+  const untilRef = useRef(until)
+  untilRef.current = until
 
+  /** Initial page: must not read `pubkeySet` from state — it is still the previous search until the next paint. */
   useEffect(() => {
-    setUntil(dayjs().unix())
+    let cancelled = false
+    const untilStart = dayjs().unix()
+
+    setPhase('loading')
+    setEmpty(false)
+    setPubkeys([])
     setHasMore(true)
-    setPubkeySet(new Set<string>())
-    loadMore()
-  }, [search])
+    setUntil(untilStart)
 
-  useEffect(() => {
-    if (!hasMore) return
-    const options = {
-      root: null,
-      rootMargin: '10px',
-      threshold: 1
-    }
+    void (async () => {
+      try {
+        const seen = new Set<string>()
+        const batch: string[] = []
 
-    const observerInstance = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasMore) {
-        loadMore()
-      }
-    }, options)
+        const cached = await client.searchProfilesFromIndexedDBCache(search, LIMIT)
+        if (cancelled) return
+        for (const p of cached) {
+          const pk = p.pubkey.toLowerCase()
+          if (seen.has(pk)) continue
+          seen.add(pk)
+          batch.push(p.pubkey)
+        }
 
-    const currentBottomRef = bottomRef.current
+        const directPk = decodeProfileSearchQueryToPubkeyHex(search)
+        if (directPk && !seen.has(directPk)) {
+          seen.add(directPk)
+          batch.push(directPk)
+          void client.fetchProfileEvent(directPk).catch(() => {})
+        }
 
-    if (currentBottomRef) {
-      observerInstance.observe(currentBottomRef)
-    }
+        const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
+          search,
+          until: untilStart,
+          limit: LIMIT
+        })
+        if (cancelled) return
 
-    return () => {
-      if (observerInstance && currentBottomRef) {
-        observerInstance.unobserve(currentBottomRef)
-      }
-    }
-  }, [hasMore, search, until])
+        for (const profile of relayProfiles) {
+          const pk = profile.pubkey.toLowerCase()
+          if (seen.has(pk)) continue
+          seen.add(pk)
+          batch.push(profile.pubkey)
+        }
 
-  const loadMore = async () => {
-    const nextSeen = new Set(pubkeySet)
-    const batchPubkeys: string[] = []
+        let nextUntil = untilStart
+        if (relayProfiles.length > 0) {
+          const last = relayProfiles[relayProfiles.length - 1]!
+          const ca = last.created_at
+          if (typeof ca === 'number' && ca > 0) {
+            nextUntil = ca - 1
+          }
+        }
 
-    if (pubkeySet.size === 0) {
-      const cached = await client.searchProfilesFromIndexedDBCache(search, LIMIT)
-      for (const p of cached) {
-        if (!nextSeen.has(p.pubkey)) {
-          nextSeen.add(p.pubkey)
-          batchPubkeys.push(p.pubkey)
+        setPubkeys(batch)
+        setUntil(nextUntil)
+        setHasMore(relayProfiles.length >= LIMIT)
+        setEmpty(batch.length === 0)
+        setPhase('ready')
+      } catch {
+        if (!cancelled) {
+          setPhase('error')
+          setEmpty(true)
+          setHasMore(false)
         }
       }
-    }
+    })()
 
-    const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
-      search,
-      until,
-      limit: LIMIT
-    })
-    for (const profile of relayProfiles) {
-      if (!nextSeen.has(profile.pubkey)) {
-        nextSeen.add(profile.pubkey)
-        batchPubkeys.push(profile.pubkey)
+    return () => {
+      cancelled = true
+    }
+  }, [search])
+
+  const loadMore = useCallback(async () => {
+    if (loadMoreInFlight.current || !hasMore) return
+    loadMoreInFlight.current = true
+    try {
+      const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
+        search,
+        until: untilRef.current,
+        limit: LIMIT
+      })
+
+      if (relayProfiles.length === 0) {
+        setHasMore(false)
+        return
       }
-    }
 
-    if (batchPubkeys.length === 0) {
+      let added = 0
+      setPubkeys((prev) => {
+        const seen = new Set(prev.map((p) => p.toLowerCase()))
+        const next = [...prev]
+        for (const profile of relayProfiles) {
+          const pk = profile.pubkey.toLowerCase()
+          if (seen.has(pk)) continue
+          seen.add(pk)
+          next.push(profile.pubkey)
+        }
+        added = next.length - prev.length
+        return next
+      })
+
+      if (added === 0) {
+        setHasMore(false)
+        return
+      }
+
+      const last = relayProfiles[relayProfiles.length - 1]!
+      const ca = last.created_at
+      if (typeof ca === 'number' && ca > 0) {
+        setUntil(ca - 1)
+      }
+      setHasMore(relayProfiles.length >= LIMIT)
+    } catch {
       setHasMore(false)
-      return
+    } finally {
+      loadMoreInFlight.current = false
     }
+  }, [search, hasMore])
 
-    setPubkeySet((prev) => new Set([...prev, ...batchPubkeys]))
-    setHasMore(relayProfiles.length >= LIMIT)
-    const last = relayProfiles[relayProfiles.length - 1]
-    setUntil(last?.created_at ? last.created_at - 1 : 0)
-  }
+  useEffect(() => {
+    if (!hasMore || phase !== 'ready') return
+    const options = { root: null, rootMargin: '10px', threshold: 1 }
+    const el = bottomRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) {
+        void loadMore()
+      }
+    }, options)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, phase, loadMore, pubkeys.length])
 
   return (
     <div className="px-4">
-      {Array.from(pubkeySet).map((pubkey, index) => (
+      {phase === 'loading' && (
+        <div className="px-2 py-4">
+          <UserItemSkeleton hideFollowButton />
+        </div>
+      )}
+      {phase === 'error' && (
+        <p className="py-6 text-center text-sm text-muted-foreground">{t('Profile search failed')}</p>
+      )}
+      {phase === 'ready' && empty && (
+        <p className="py-6 text-center text-sm text-muted-foreground">{t('Profile search no results')}</p>
+      )}
+      {pubkeys.map((pubkey, index) => (
         <div
           key={`${index}-${pubkey}`}
           role="button"
@@ -115,8 +199,12 @@ export function ProfileListBySearch({ search }: { search: string }) {
           <UserItem pubkey={pubkey} />
         </div>
       ))}
-      {hasMore && <UserItemSkeleton />}
-      {hasMore && <div ref={bottomRef} />}
+      {phase === 'ready' && hasMore && pubkeys.length > 0 && (
+        <>
+          <UserItemSkeleton hideFollowButton />
+          <div ref={bottomRef} />
+        </>
+      )}
     </div>
   )
 }

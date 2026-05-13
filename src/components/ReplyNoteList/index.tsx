@@ -316,6 +316,11 @@ function isPollVoteKind(evt: Pick<NEvent, 'kind'>): boolean {
   return evt.kind === ExtendedKind.POLL_RESPONSE
 }
 
+/** Zap-poll (6969): kind 9735 receipts are paid votes — hide from “Antworten” so amounts/options are not tied to identities here. */
+function isZapPollThreadZapReceipt(evt: Pick<NEvent, 'kind'>, op: Pick<NEvent, 'kind'>): boolean {
+  return op.kind === ExtendedKind.ZAP_POLL && evt.kind === kinds.Zap
+}
+
 function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   if (item.kind === kinds.Highlights) return t('highlighted this note')
   if (item.kind === kinds.ShortTextNote) return t('quoted this note')
@@ -444,6 +449,7 @@ function ReplyNoteList({
         if (replyIdSet.has(evt.id)) return
         if (isNip25ReactionKind(evt.kind)) return
         if (isPollVoteKind(evt)) return
+        if (isZapPollThreadZapReceipt(evt, event)) return
         if (
           shouldHideThreadResponseEvent(
             evt,
@@ -475,7 +481,10 @@ function ReplyNoteList({
 
 
     const { zaps: zapsPartitioned, nonZaps } = partitionZapReceipts(replyEvents)
-    const zaps = filterZapReceiptsByReplyThreshold(zapsPartitioned, zapReplyThreshold)
+    const zaps =
+      event.kind === ExtendedKind.ZAP_POLL
+        ? []
+        : filterZapReceiptsByReplyThreshold(zapsPartitioned, zapReplyThreshold)
     const replyScoreById =
       sort === 'top' || sort === 'controversial' || sort === 'most-zapped'
         ? new Map(
@@ -566,7 +575,8 @@ function ReplyNoteList({
     hideContentMentioningMutedUsers,
     sort,
     zapReplyThreshold,
-    isDiscussionRoot
+    isDiscussionRoot,
+    event.kind
   ])
 
   const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
@@ -589,10 +599,11 @@ function ReplyNoteList({
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
       const { zaps, nonZaps } = partitionZapReceipts(merged)
+      const zapsShown = event.kind === ExtendedKind.ZAP_POLL ? [] : zaps
       const sortedNon = [...nonZaps].sort((a, b) =>
         direction === 'asc' ? a.created_at - b.created_at : b.created_at - a.created_at
       )
-      return moveReportsToEndPreserveOrder(replyFeedZapsFirst(sortedNon, zaps))
+      return moveReportsToEndPreserveOrder(replyFeedZapsFirst(sortedNon, zapsShown))
     }
 
     if (!showQuotes) return replies
@@ -602,6 +613,7 @@ function ReplyNoteList({
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
       const { zaps, nonZaps } = partitionZapReceipts(replies)
+      const zapsShown = event.kind === ExtendedKind.ZAP_POLL ? [] : zaps
       const middle = nonZaps.filter((e) => !isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailFromReplies = nonZaps.filter((e) => isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailSeen = new Set<string>()
@@ -614,12 +626,13 @@ function ReplyNoteList({
       for (const e of tailFromReplies) pushTail(e)
       for (const e of quoteOnly) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedZapsFirst(middle, zaps), ...tailSorted]
+      return [...replyFeedZapsFirst(middle, zapsShown), ...tailSorted]
     }
 
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
     if (rootInfo?.type === 'I') {
       const { zaps, nonZaps } = partitionZapReceipts(replies)
+      const zapsShownI = event.kind === ExtendedKind.ZAP_POLL ? [] : zaps
       const middle = nonZaps.filter((e) => !isWebThreadTailKind(e.kind))
       const tailFromReplies = nonZaps.filter((e) => isWebThreadTailKind(e.kind))
       const tailSeen = new Set<string>()
@@ -632,7 +645,7 @@ function ReplyNoteList({
       for (const e of tailFromReplies) pushTail(e)
       for (const e of quoteOnly) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedZapsFirst(middle, zaps), ...tailSorted]
+      return [...replyFeedZapsFirst(middle, zapsShownI), ...tailSorted]
     }
 
     const merged = [...replies, ...quoteOnly]
@@ -646,7 +659,7 @@ function ReplyNoteList({
       return [...sortedReplies, ...sortedQuotes]
     }
     return zapsThenTimeSorted(merged, 'desc')
-  }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo])
+  }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo, event.kind])
 
   useEffect(() => {
     if (!rootInfo) return
@@ -950,7 +963,7 @@ function ReplyNoteList({
         try {
           const ev = await eventService.fetchEvent(id)
           if (cancelled) return
-          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true) && !isPollVoteKind(ev)) {
+          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true) && !isPollVoteKind(ev) && !isZapPollThreadZapReceipt(ev, event)) {
             batch.push(ev)
           } else {
             discussionStatsHydratedReplyIdsRef.current.delete(id)
@@ -991,6 +1004,7 @@ function ReplyNoteList({
   const onNewReply = useCallback(
     (evt: NEvent) => {
       if (isPollVoteKind(evt)) return
+      if (isZapPollThreadZapReceipt(evt, event)) return
       if (
         shouldHideThreadResponseEvent(
           evt,
@@ -1007,7 +1021,7 @@ function ReplyNoteList({
         discussionFeedCache.setCachedReplies(rootInfo, [...without, evt])
       }
     },
-    [addReplies, rootInfo, mutePubkeySet, hideContentMentioningMutedUsers]
+    [addReplies, rootInfo, mutePubkeySet, hideContentMentioningMutedUsers, event]
   )
 
   useEffect(() => {
@@ -1039,8 +1053,12 @@ function ReplyNoteList({
       // Session LRU (timeline / note-stats / prior panels): thread replies before relay round-trip
       if (rootInfo.type === 'E' || rootInfo.type === 'A') {
         const fromSession = eventService.getSessionThreadInteractionEvents(rootInfo)
-        if (fromSession.length > 0) {
-          addReplies(fromSession)
+        const fromSessionForUi =
+          event.kind === ExtendedKind.ZAP_POLL
+            ? fromSession.filter((e) => !isZapPollThreadZapReceipt(e, event))
+            : fromSession
+        if (fromSessionForUi.length > 0) {
+          addReplies(fromSessionForUi)
         }
       }
 
@@ -1048,8 +1066,12 @@ function ReplyNoteList({
       const cachedData = discussionFeedCache.getCachedReplies(rootInfo)
       const hasCache = cachedData !== null
 
-      if (hasCache) {
-        addReplies(cachedData)
+      if (hasCache && cachedData) {
+        const cachedForUi =
+          event.kind === ExtendedKind.ZAP_POLL
+            ? cachedData.filter((e) => !isZapPollThreadZapReceipt(e, event))
+            : cachedData
+        addReplies(cachedForUi)
         setLoading(false)
       } else {
         setLoading(true)
@@ -1111,19 +1133,36 @@ function ReplyNoteList({
             ])
           ).sort((a, b) => a - b)
           const opRefChunks = chunkKindsForThreadReq(NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT)
+          const kindsNoteCommentVoiceZap: number[] = [
+            kinds.ShortTextNote,
+            ExtendedKind.COMMENT,
+            ExtendedKind.VOICE_COMMENT,
+            kinds.Zap
+          ]
+          const kindsNoteCommentVoice: number[] = [
+            kinds.ShortTextNote,
+            ExtendedKind.COMMENT,
+            ExtendedKind.VOICE_COMMENT
+          ]
+          const kindsPrimaryThread =
+            event.kind === ExtendedKind.ZAP_POLL ? kindsNoteCommentVoice : kindsNoteCommentVoiceZap
+          const kindsUpperEThread: number[] =
+            event.kind === ExtendedKind.ZAP_POLL
+              ? [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT]
+              : [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap]
 
           if (rootInfo.type === 'E') {
             // Fetch all reply types for event-based replies (keep ≤4 kinds per filter — some relays
             // NOTICE "too many kinds N" and drop the whole REQ if kind 7 is bundled with four others).
             filters.push({
               '#e': [rootInfo.id],
-              kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+              kinds: kindsPrimaryThread,
               limit: LIMIT
             })
             // Also fetch with uppercase E tag for replaceable events
             filters.push({
               '#E': [rootInfo.id],
-              kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+              kinds: kindsUpperEThread,
               limit: LIMIT
             })
             filters.push({
@@ -1153,12 +1192,12 @@ function ReplyNoteList({
             filters.push(
               {
                 '#a': [rootInfo.id],
-                kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                kinds: kindsPrimaryThread,
                 limit: LIMIT
               },
               {
                 '#A': [rootInfo.id],
-                kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                kinds: kindsUpperEThread,
                 limit: LIMIT
               }
             )
@@ -1168,12 +1207,12 @@ function ReplyNoteList({
               const eSnap = rootInfo.eventId.trim().toLowerCase()
               filters.push({
                 '#e': [eSnap],
-                kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                kinds: kindsPrimaryThread,
                 limit: LIMIT
               })
               filters.push({
                 '#E': [eSnap],
-                kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap],
+                kinds: kindsUpperEThread,
                 limit: LIMIT
               })
               filters.push({
@@ -1225,6 +1264,7 @@ function ReplyNoteList({
             ? (evt: NEvent) => {
                 if (fetchGeneration !== replyFetchGenRef.current) return
                 if (isPollVoteKind(evt)) return
+                if (isZapPollThreadZapReceipt(evt, event)) return
                 if (!isRssArticleUrlThreadInteraction(evt, urlThreadRootInfo.id)) return
                 if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
                   return
@@ -1247,6 +1287,7 @@ function ReplyNoteList({
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
             if (isPollVoteKind(evt)) return false
+            if (isZapPollThreadZapReceipt(evt, event)) return false
             const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
             if (!match) return false
             return !shouldHideThreadResponseEvent(
@@ -1267,7 +1308,11 @@ function ReplyNoteList({
           // This ensures we keep all previously seen replies and add any new ones
           // addReplies will deduplicate, so it's safe to call even if some replies are already displayed
           if (mergedCachedReplies) {
-            addReplies(mergedCachedReplies)
+            const mergedForUi =
+              event.kind === ExtendedKind.ZAP_POLL
+                ? mergedCachedReplies.filter((e) => !isZapPollThreadZapReceipt(e, event))
+                : mergedCachedReplies
+            addReplies(mergedForUi)
           } else {
             // Fallback: if cache somehow failed, at least add the fetched replies
             logger.warn('[ReplyNoteList] Cache returned null after store, using fetched replies only')
@@ -1468,6 +1513,7 @@ function ReplyNoteList({
     const events = await client.loadMoreTimeline(timelineKey, until, LIMIT)
     const olderEvents = events.filter((evt) => {
       if (isPollVoteKind(evt)) return false
+      if (isZapPollThreadZapReceipt(evt, event)) return false
       if (!rootInfo) return false
       const matchesThread = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
       if (!matchesThread) return false
@@ -1515,6 +1561,7 @@ function ReplyNoteList({
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {
       if (isPollVoteKind(item)) return false
+      if (isZapPollThreadZapReceipt(item, event)) return false
       if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
         return false
       }
@@ -1541,7 +1588,8 @@ function ReplyNoteList({
       hideUntrustedInteractions,
       isUserTrusted,
       rootInfo?.type,
-      repliesMap
+      repliesMap,
+      event
     ]
   )
 

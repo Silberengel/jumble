@@ -456,8 +456,8 @@ export const FOLLOWS_HISTORY_RELAY_URLS = [
   'wss://hist.nostr.land'
 ]
 
-// Combined relay URLs for profile fetching: search/index relays, fallback inboxes, and profile-specific relays.
-export const PROFILE_FETCH_RELAY_URLS = [...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
+// Profile reads + NIP-50 profile search: search/index relays first, then fast read + profile mirrors (order preserved; dedupe at use sites).
+export const PROFILE_FETCH_RELAY_URLS = [...SEARCHABLE_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
 
 export const ExtendedKind = {
   PICTURE: 20,
