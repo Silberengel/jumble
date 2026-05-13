@@ -13,6 +13,7 @@ import { normalizeUrl } from '@/lib/url'
 import { kinds, type Event as NEvent } from 'nostr-tools'
 import client, { eventService, queryService } from './client.service'
 import indexedDb from './indexed-db.service'
+import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 
 const DEFAULT_NOTES_LIMIT = 20
 
@@ -175,33 +176,20 @@ export async function searchEventsForPicker(
   }
 
   const sessionCap = Math.min(1500, Math.max(limit * 8, 200))
-  const fromSession = eventService.getSessionEventsMatchingSearch(q, sessionCap, kindsList)
-  fromSession.forEach(addUnique)
-  if (out.length >= limit) return out.slice(0, limit)
-
   const localMergeTarget = Math.min(PICKER_LOCAL_DB_MERGE_CAP, Math.max(limit * 10, 240))
 
-  const [fromLocalDb, userCentricRelayUrls] = await Promise.all([
-    indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(q, localMergeTarget, kindsList, {
-      archiveScanMaxMs: 24_000
-    }),
-    buildCitationPickerSearchRelayUrls()
-  ])
-  fromLocalDb.forEach(addUnique)
+  const fromLocalMerged = await collectLocalEventsForTextSearch({
+    query: q,
+    allowedKinds: kindsList,
+    sessionCap,
+    idbMergedLimit: localMergeTarget,
+    archiveScanMaxMs: 24_000,
+    includeOtherStoresFullText: true,
+    fullTextStoreHitCap: Math.min(PICKER_FULLTEXT_DB_CAP, Math.max(localMergeTarget, 200))
+  })
+  fromLocalMerged.forEach(addUnique)
 
-  try {
-    const fullTextHits = await indexedDb.searchAllCachedEventsFullText(q, {
-      limit: Math.min(PICKER_FULLTEXT_DB_CAP, Math.max(localMergeTarget, 200))
-    })
-    const kindSet = new Set(kindsList)
-    for (const hit of fullTextHits) {
-      const ev = hit.value
-      if (ev && kindSet.has(ev.kind)) addUnique(ev as NEvent)
-      if (out.length >= limit) break
-    }
-  } catch {
-    /* best-effort: other stores optional */
-  }
+  const userCentricRelayUrls = await buildCitationPickerSearchRelayUrls()
 
   if (out.length >= limit) return out.slice(0, limit)
 

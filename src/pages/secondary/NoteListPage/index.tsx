@@ -16,6 +16,10 @@ import {
 } from '@/lib/favorites-feed-relays'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { toProfileList } from '@/lib/link'
+import {
+  buildAlexandriaEventsUrlForDTagParam,
+  buildAlexandriaEventsUrlForHashtagParam
+} from '@/lib/alexandria-events-search-url'
 import { compareEventsForDTagQuery, eventMatchesDTagLooseQuery } from '@/lib/dtag-search'
 import { fetchPubkeysFromDomain, getWellKnownNip05Url } from '@/lib/nip05'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
@@ -62,6 +66,16 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
     | null
   >(null)
   const [subRequests, setSubRequests] = useState<TFeedSubRequest[]>([])
+
+  const alexandriaEmptyUrl = useMemo(() => {
+    if (!data) return null
+    if (data.type === 'dtag' && data.dtag) return buildAlexandriaEventsUrlForDTagParam(data.dtag)
+    if (data.type === 'hashtag' || data.type === 'hashtagSearch') {
+      const t = new URLSearchParams(window.location.search).get('t') ?? ''
+      return buildAlexandriaEventsUrlForHashtagParam(t)
+    }
+    return null
+  }, [data])
 
   // Get hashtag from URL if this is a hashtag page
   const hashtag = useMemo(() => {
@@ -355,9 +369,10 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           oneShotAfterMergeComparator={(a, b) => compareEventsForDTagQuery(data.dtag!, a, b)}
           extraShouldHideEvent={(ev) => !eventMatchesDTagLooseQuery(data.dtag!, ev)}
           oneShotMergedCap={400}
+          alexandriaEmptyUrl={alexandriaEmptyUrl}
         />
       ) : (
-        <NormalFeed ref={feedRef} subRequests={subRequests} />
+        <NormalFeed ref={feedRef} subRequests={subRequests} alexandriaEmptyUrl={alexandriaEmptyUrl} />
       )
   }
 

@@ -4,16 +4,17 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toRelay } from '@/lib/link'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
-import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
+import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import client from '@/services/client.service'
 import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS } from '@/services/client-query.service'
-import indexedDb from '@/services/indexed-db.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
 import type { TProfile } from '@/types'
 import type { Event, Filter } from 'nostr-tools'
+import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
+import { buildAlexandriaEventsSearchUrlFromNotesQuery } from '@/lib/alexandria-events-search-url'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -249,6 +250,10 @@ export default function FullTextSearchByRelay({
   const normalizedRelays = useMemo(() => normalizeRelayList(relayUrls), [relayUrls])
 
   const q = searchQuery.trim()
+  const alexandriaEmptyHref = useMemo(
+    () => (q ? buildAlexandriaEventsSearchUrlFromNotesQuery(q) : null),
+    [q]
+  )
   const searchProfileResetKey = useMemo(
     () => `${q}\n${normalizedRelays.join('\n')}`,
     [q, normalizedRelays]
@@ -401,34 +406,17 @@ export default function FullTextSearchByRelay({
     }
 
     void (async () => {
-      const fromSession = client.getSessionEventsMatchingSearch(q, 220, kindsArr)
-      let fromIdb: Event[] = []
-      try {
-        fromIdb = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(q, 120, kindsArr, {
-          archiveScanMaxMs: 15_000
-        })
-      } catch {
-        fromIdb = []
-      }
+      const mergedLocal = await collectLocalEventsForTextSearch({
+        query: q,
+        allowedKinds: kindsArr,
+        sessionCap: 220,
+        idbMergedLimit: 120,
+        archiveScanMaxMs: 15_000,
+        includeOtherStoresFullText: true,
+        fullTextStoreHitCap: 260
+      })
       if (myRun !== runGeneration.current || abort.signal.aborted) return
-      const seen = new Set<string>()
-      const mergedLocal: Event[] = []
-      for (const e of fromSession) {
-        if (seen.has(e.id)) continue
-        seen.add(e.id)
-        mergedLocal.push(e)
-      }
-      for (const e of fromIdb) {
-        if (seen.has(e.id)) continue
-        seen.add(e.id)
-        mergedLocal.push(e)
-      }
-      const mergedLocalMatching = mergedLocal.filter(
-        (e) =>
-          kindsArr.includes(e.kind) &&
-          eventMatchesNip50LocalFullTextQuery(e, q) &&
-          mergedSearchNoteHasPreviewBody(e)
-      )
+      const mergedLocalMatching = mergedLocal.filter((e) => mergedSearchNoteHasPreviewBody(e))
       if (mergedLocalMatching.length === 0) return
       applyMergedUpdate((map) => {
         for (const ev of mergedLocalMatching) {
@@ -619,9 +607,10 @@ export default function FullTextSearchByRelay({
       </SearchMergedProfileProvider>
 
       {allTerminal && mergedHits.length === 0 && (
-        <p className="text-sm text-muted-foreground" role="status">
-          {t('Full-text search empty merged')}
-        </p>
+        <div className="flex flex-col items-start gap-0" role="status">
+          <p className="text-sm text-muted-foreground">{t('Full-text search empty merged')}</p>
+          {alexandriaEmptyHref ? <AlexandriaEventsSearchEmptyCta href={alexandriaEmptyHref} /> : null}
+        </div>
       )}
 
       {allTerminal && mergedHits.length > 0 && (

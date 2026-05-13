@@ -1,5 +1,7 @@
 import type { Filter } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
+import { splitNip05Identifier } from '@/lib/nip05'
+import { normalizeProfileSearchQueryForMatch } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 
 /**
@@ -14,18 +16,20 @@ export function buildProfileKind0SearchFilters(opts: {
   limit: number
   until?: number
 }): Filter[] {
-  const search = opts.search.trim()
-  if (!search) return []
+  const searchRaw = opts.search.trim()
+  if (!searchRaw) return []
 
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
   const time =
     typeof opts.until === 'number' && opts.until > 0 ? ({ until: opts.until } as Pick<Filter, 'until'>) : {}
   const k = [kinds.Metadata] as number[]
 
-  const pubkeyHex = decodeProfileSearchQueryToPubkeyHex(search)
+  const pubkeyHex = decodeProfileSearchQueryToPubkeyHex(searchRaw)
   if (pubkeyHex) {
     return [{ kinds: k, authors: [pubkeyHex], limit, ...time }]
   }
+
+  const searchNorm = normalizeProfileSearchQueryForMatch(searchRaw)
 
   const seen = new Set<string>()
   const out: Filter[] = []
@@ -36,17 +40,31 @@ export function buildProfileKind0SearchFilters(opts: {
     out.push(f)
   }
 
-  add({ kinds: k, search, limit, ...time })
-
-  if (search.includes('@')) {
-    const firstToken = search.split(/\s+/)[0] ?? search
-    const nipLower = firstToken.trim().toLowerCase()
-    if (nipLower) add({ kinds: k, '#nip05': [nipLower], limit, ...time })
-    const nipExact = firstToken.trim()
-    if (nipExact && nipExact !== nipLower) add({ kinds: k, '#nip05': [nipExact], limit, ...time })
+  add({ kinds: k, search: searchRaw, limit, ...time })
+  if (searchNorm.length > 0 && searchNorm !== searchRaw) {
+    add({ kinds: k, search: searchNorm, limit, ...time })
   }
 
-  const token = search.startsWith('@') ? search.slice(1).trim() : search.trim()
+  if (searchRaw.includes('@')) {
+    const firstToken = (searchRaw.split(/\s+/)[0] ?? searchRaw).trim()
+    const nipVariants = new Set<string>()
+    if (firstToken) {
+      nipVariants.add(firstToken.toLowerCase())
+      nipVariants.add(firstToken)
+    }
+    if (searchNorm) nipVariants.add(searchNorm)
+    const sp = splitNip05Identifier(firstToken)
+    if (sp) {
+      nipVariants.add(`${sp.name}@${sp.domain}`.toLowerCase())
+      nipVariants.add(`${sp.name}@${sp.domain}`)
+    }
+    for (const v of nipVariants) {
+      if (!v) continue
+      add({ kinds: k, '#nip05': [v], limit, ...time })
+    }
+  }
+
+  const token = searchRaw.startsWith('@') ? searchRaw.slice(1).trim() : searchRaw.trim()
   if (
     token &&
     !/\s/.test(token) &&

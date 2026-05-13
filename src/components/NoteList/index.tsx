@@ -1,4 +1,5 @@
 import NewNotesButton from '@/components/NewNotesButton'
+import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
@@ -25,6 +26,8 @@ import {
 import logger from '@/lib/logger'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
+import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
+import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
@@ -399,6 +402,7 @@ function applyProgressiveSessionSearchLayer(params: ProgressiveSearchLocalLayerO
   const { warmQ, isStale, kindsForWarm, warmMatch, afterSort, setEvents, setLoading } = params
   const cap = FEED_FULL_SEARCH_MERGE_CAP
   let boot = client.getSessionEventsMatchingSearch(warmQ, cap, kindsForWarm)
+  boot = boot.filter((ev) => eventMatchesNip50LocalFullTextQuery(ev, warmQ))
   if (warmMatch) boot = boot.filter(warmMatch)
   const sortCreated = (evs: Event[]) => [...evs].sort((a, b) => b.created_at - a.created_at)
   const finalizeOrder = (evs: Event[]) => (afterSort ? [...evs].sort(afterSort) : sortCreated(evs))
@@ -413,14 +417,17 @@ function startProgressiveIdbSearchLayer(params: ProgressiveSearchLocalLayerOpts)
   const cap = FEED_FULL_SEARCH_MERGE_CAP
   void (async () => {
     try {
-      const idbE = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(
-        warmQ,
-        cap,
-        kindsForWarm,
-        { archiveScanMaxMs: PROGRESSIVE_IDB_ARCHIVE_SCAN_MAX_MS }
-      )
+      const local = await collectLocalEventsForTextSearch({
+        query: warmQ,
+        allowedKinds: kindsForWarm,
+        sessionCap: 0,
+        idbMergedLimit: cap,
+        archiveScanMaxMs: PROGRESSIVE_IDB_ARCHIVE_SCAN_MAX_MS,
+        includeOtherStoresFullText: true,
+        fullTextStoreHitCap: Math.min(400, Math.max(cap, 120))
+      })
       if (isStale()) return
-      const idbUse = warmMatch ? idbE.filter(warmMatch) : idbE
+      const idbUse = warmMatch ? local.filter(warmMatch) : local
       if (idbUse.length) {
         setEvents((prev) => mergeProgressiveSearchEvents(prev, idbUse, afterSort))
         setLoading(false)
@@ -763,7 +770,12 @@ const NoteList = forwardRef(
        * When true (multi-relay home feeds): if every relay in the subscribe wave fails before EOSE, run one
        * {@link client.fetchEvents} against {@link FAST_READ_RELAY_URLS} so the feed is not stuck on stale cache only.
        */
-      timelinePublicReadFallback = false
+      timelinePublicReadFallback = false,
+      /**
+       * When set and the timeline is empty (after relays finish), show a link to Alexandria with a matching query
+       * (hashtag / d-tag browse from {@link NormalFeed}).
+       */
+      alexandriaEmptyUrl = null
     }: {
       subRequests: TFeedSubRequest[]
       showKinds: number[]
@@ -820,6 +832,8 @@ const NoteList = forwardRef(
       /** When true, render events as an Instagram-style 3-column square media grid. */
       gridLayout?: boolean
       timelinePublicReadFallback?: boolean
+      /** Optional Alexandria `/events` URL when this feed’s timeline is empty (search / tag browse). */
+      alexandriaEmptyUrl?: string | null
     },
     ref
   ) => {
@@ -4456,6 +4470,7 @@ const NoteList = forwardRef(
             role="status"
           >
             <p>{t('No posts loaded for this feed. Try refreshing.')}</p>
+            {alexandriaEmptyUrl ? <AlexandriaEventsSearchEmptyCta href={alexandriaEmptyUrl} /> : null}
             <Button
               type="button"
               variant="outline"

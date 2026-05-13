@@ -9,6 +9,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import client from '@/services/client.service'
 import { normalizeUrl } from '@/lib/url'
+import { buildAlexandriaEventsUrlForHashtagParam } from '@/lib/alexandria-events-search-url'
 import { useLayoutEffect, useMemo } from 'react'
 
 function relayDedupeKey(url: string): string {
@@ -73,6 +74,14 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     [combinedRelays, searchableKeySet]
   )
 
+  const alexandriaEmptyUrlForHashtag = useMemo(
+    () =>
+      searchParams?.type === 'hashtag'
+        ? buildAlexandriaEventsUrlForHashtagParam(searchParams.search)
+        : null,
+    [searchParams?.type, searchParams?.search]
+  )
+
   if (!searchParams) {
     return null
   }
@@ -98,7 +107,11 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
       ...(nonSearchableRelays.length > 0 ? [{ urls: nonSearchableRelays, filter: hashtagFilter }] : [])
     ]
     return (
-      <NormalFeed timelinePublicReadFallback subRequests={subRequests} />
+      <NormalFeed
+        timelinePublicReadFallback
+        subRequests={subRequests}
+        alexandriaEmptyUrl={alexandriaEmptyUrlForHashtag}
+      />
     )
   }
   return <Relay url={searchParams.search} />

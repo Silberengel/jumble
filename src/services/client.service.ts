@@ -109,6 +109,7 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
 import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
+import { collectNip05ValuesFromKind0 } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import {
@@ -3906,15 +3907,9 @@ class ClientService extends EventTarget {
   private async addUsernameToIndex(profileEvent: NEvent) {
     try {
       const profileObj = JSON.parse(profileEvent.content)
-      const text = [
-        profileObj.display_name?.trim() ?? '',
-        profileObj.name?.trim() ?? '',
-        profileObj.nip05
-          ?.split('@')
-          .map((s: string) => s.trim())
-          .join(' ') ?? ''
-      ].join(' ')
-      if (!text) return
+      const nip05All = collectNip05ValuesFromKind0(profileEvent).join(' ')
+      const text = [profileObj.display_name?.trim() ?? '', profileObj.name?.trim() ?? '', nip05All].join(' ')
+      if (!text.trim()) return
 
       await this.userIndex.addAsync(profileEvent.pubkey, text)
     } catch {

@@ -35,6 +35,7 @@ import {
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
+import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
@@ -636,31 +637,14 @@ export class EventService {
    * Pubkeys whose session-cached kind 0 matches a name / display_name / nip-05 substring (for search without IDB).
    */
   searchSessionProfilePubkeys(query: string, limit: number): string[] {
-    const q = query.trim().toLowerCase()
+    const q = query.trim()
     if (!q || limit <= 0) return []
     const out: string[] = []
     for (const ev of this.sessionMetadataByPubkey.values()) {
       if (shouldDropEventOnIngest(ev)) continue
       if (out.length >= limit) break
-      try {
-        const o = JSON.parse(ev.content) as Record<string, unknown>
-        const nip05 =
-          typeof o.nip05 === 'string'
-            ? o.nip05
-                .split('@')
-                .map((s: string) => s.trim())
-                .join(' ')
-            : ''
-        const blob = [o.display_name, o.name, nip05]
-          .map((x) => (typeof x === 'string' ? x : ''))
-          .join(' ')
-          .toLowerCase()
-        const qNeedle = q.startsWith('@') ? q.slice(1) : q
-        if (blob.includes(q) || (qNeedle.length > 0 && blob.includes(qNeedle))) {
-          out.push(ev.pubkey.toLowerCase())
-        }
-      } catch {
-        /* invalid JSON */
+      if (profileKind0MatchesSearchQuery(ev, q)) {
+        out.push(ev.pubkey.toLowerCase())
       }
     }
     return out

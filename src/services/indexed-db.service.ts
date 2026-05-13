@@ -21,7 +21,7 @@ import {
 } from '@/lib/event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
-import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
+import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
@@ -76,36 +76,6 @@ function isLikelyCachedNostrEvent(v: unknown): v is Event {
     typeof o.content === 'string' &&
     Array.isArray(o.tags)
   )
-}
-
-/** Kind 0 JSON fields for profile search (display name, handle, NIP-05, pasted npub/nprofile). */
-function profileMetadataMatchesQuery(ev: Event, qRaw: string): boolean {
-  const qLower = qRaw.trim().toLowerCase()
-  if (!qLower || ev.kind !== kinds.Metadata) return false
-  if (ev.pubkey.toLowerCase().includes(qLower)) return true
-  const decodedPk = decodeProfileSearchQueryToPubkeyHex(qRaw)
-  if (decodedPk && ev.pubkey.toLowerCase() === decodedPk) return true
-  try {
-    const profileObj = JSON.parse(ev.content) as Record<string, unknown>
-    const nip05Raw = profileObj.nip05
-    const nip05 =
-      typeof nip05Raw === 'string'
-        ? nip05Raw
-            .split('@')
-            .map((s: string) => s.trim())
-            .join(' ')
-        : ''
-    const text = [
-      typeof profileObj.display_name === 'string' ? profileObj.display_name.trim() : '',
-      typeof profileObj.name === 'string' ? profileObj.name.trim() : '',
-      nip05
-    ]
-      .join(' ')
-      .toLowerCase()
-    return text.includes(qLower)
-  } catch {
-    return false
-  }
 }
 
 export const StoreNames = {
@@ -799,8 +769,8 @@ class IndexedDbService {
   }
 
   /**
-   * Scan cached kind-0 rows for a handle / display name / NIP-05 substring (case-insensitive).
-   * Newest replaceable wins per pubkey.
+   * Scan cached kind-0 rows for pubkey / npub / name / about / NIP-05 in JSON `content`, JSON `nip05`,
+   * and every `nip05` tag (see {@link profileKind0MatchesSearchQuery}). Newest replaceable wins per pubkey.
    */
   async searchProfileEventsInCache(query: string, limit: number): Promise<Event[]> {
     const qLower = query.trim().toLowerCase()
@@ -824,7 +794,7 @@ class IndexedDbService {
         }
         const row = cursor.value as TValue<Event>
         const value = row?.value
-        if (value && profileMetadataMatchesQuery(value, query.trim())) {
+        if (value && profileKind0MatchesSearchQuery(value, query.trim())) {
           const pk = value.pubkey.toLowerCase()
           const prev = byPubkey.get(pk)
           if (!prev || value.created_at > prev.created_at) {

@@ -1,6 +1,7 @@
 import { useSecondaryPage } from '@/PageManager'
 import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
+import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { toProfile } from '@/lib/link'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
@@ -9,6 +10,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import UserItem, { UserItemSkeleton } from '../UserItem'
+import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 
 const LIMIT = 50
 
@@ -176,7 +178,15 @@ export function ProfileListBySearch({ search }: { search: string }) {
         <p className="py-6 text-center text-sm text-muted-foreground">{t('Profile search failed')}</p>
       )}
       {phase === 'ready' && empty && (
-        <p className="py-6 text-center text-sm text-muted-foreground">{t('Profile search no results')}</p>
+        <div className="flex flex-col items-center py-6 text-center text-sm text-muted-foreground">
+          <p>{t('Profile search no results')}</p>
+          {(() => {
+            const trimmed = search.trim()
+            if (!trimmed) return null
+            const href = buildAlexandriaEventsSearchUrlForTSearchParams({ type: 'profiles', search })
+            return href ? <AlexandriaEventsSearchEmptyCta href={href} /> : null
+          })()}
+        </div>
       )}
       {pubkeys.map((pubkey, index) => (
         <div

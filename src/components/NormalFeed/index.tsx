@@ -106,6 +106,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
   oneShotMergedCap?: number
   /** When every relay in the subscribe wave fails before EOSE, merge a one-shot fetch from default read relays (home multi-relay feeds). */
   timelinePublicReadFallback?: boolean
+  /** When the feed is empty and terminal, {@link NoteList} can show an Alexandria search link (hashtag / d-tag pages). */
+  alexandriaEmptyUrl?: string | null
 }>(function NormalFeed(
   {
     subRequests,
@@ -138,7 +140,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     extraShouldHideEvent,
     extraShouldHideRepliesEvent,
     oneShotMergedCap,
-    timelinePublicReadFallback = false
+    timelinePublicReadFallback = false,
+    alexandriaEmptyUrl = null
   },
   ref
 ) {
@@ -378,6 +381,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           }
           oneShotMergedCap={oneShotMergedCap}
           timelinePublicReadFallback={timelinePublicReadFallback && listMode === 'postsAndReplies'}
+          alexandriaEmptyUrl={alexandriaEmptyUrl}
         />
       </div>
     </>
