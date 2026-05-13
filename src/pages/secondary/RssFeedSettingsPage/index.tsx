@@ -2,7 +2,7 @@ import storage from '@/services/local-storage.service'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
+import { ExtendedKind, FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
 import { getLatestEvent } from '@/lib/event'
 import { forwardRef, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -121,7 +121,7 @@ const RssFeedSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
     }
     setLoading(true)
     try {
-      const events = await queryService.fetchEvents(FAST_WRITE_RELAY_URLS.concat(PROFILE_RELAY_URLS), {
+      const events = await queryService.fetchEvents(FAST_READ_RELAY_URLS.concat(PROFILE_RELAY_URLS), {
         kinds: [ExtendedKind.RSS_FEED_LIST],
         authors: [pubkey],
         limit: 1

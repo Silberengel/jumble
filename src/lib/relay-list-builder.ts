@@ -9,7 +9,7 @@
  * - Includes seen relays
  */
 
-import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
@@ -57,7 +57,10 @@ export interface RelayListBuilderOptions {
   includeProfileFetchRelays?: boolean
   /** Whether to include FAST_READ_RELAY_URLS as fallback */
   includeFastReadRelays?: boolean
-  /** Whether to include FAST_WRITE_RELAY_URLS as fallback */
+  /**
+   * Legacy name: adds {@link FAST_READ_RELAY_URLS} as extra bootstrap mirrors for REQ/read lists
+   * (historically mis-tagged as “fast write”).
+   */
   includeFastWriteRelays?: boolean
   /** Whether to include SEARCHABLE_RELAY_URLS - for search */
   includeSearchableRelays?: boolean
@@ -236,9 +239,9 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     FAST_READ_RELAY_URLS.forEach(addRelay)
   }
 
-  // 8. Fast write relays (for writing)
+  // 8. Extra fast-read bootstrap mirrors (call sites use legacy `includeFastWriteRelays`)
   if (includeFastWriteRelays) {
-    FAST_WRITE_RELAY_URLS.forEach(addRelay)
+    FAST_READ_RELAY_URLS.forEach(addRelay)
   }
 
   // 9. Searchable relays (for search)

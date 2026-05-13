@@ -1,9 +1,4 @@
-import {
-  FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
-  NIP_SEARCH_PAGE_KINDS,
-  SEARCHABLE_RELAY_URLS
-} from '@/constants'
+import { FAST_READ_RELAY_URLS, NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { TSearchParams } from '@/types'
 import NormalFeed from '../NormalFeed'
@@ -47,7 +42,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
 
     relays.push(...(favoriteRelays || []))
 
-    relays.push(...FAST_READ_RELAY_URLS, ...FAST_WRITE_RELAY_URLS, ...SEARCHABLE_RELAY_URLS)
+    relays.push(...FAST_READ_RELAY_URLS, ...SEARCHABLE_RELAY_URLS)
 
     const normalized = Array.from(
       new Set(relays.map((url) => normalizeUrl(url) || url).filter((url): url is string => !!url))

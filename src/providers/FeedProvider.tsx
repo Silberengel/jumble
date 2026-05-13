@@ -1,4 +1,4 @@
-import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import { buildAllFavoritesFeedRelayUrls } from '@/lib/home-feed-relays'
@@ -86,7 +86,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
     return {
       inboxRelayUrls: relayList?.read?.length ? relayList.read : FAST_READ_RELAY_URLS,
-      outboxRelayUrls: relayList?.write?.length ? relayList.write : FAST_WRITE_RELAY_URLS,
+      outboxRelayUrls: relayList?.write?.length ? relayList.write : FAST_READ_RELAY_URLS,
       cacheRelayUrls,
       httpRelayUrls
     }

@@ -2,7 +2,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import ExternalLink from '@/components/ExternalLink'
 import {
   FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
   PROFILE_RELAY_URLS,
   SEARCHABLE_RELAY_URLS,
   ExtendedKind
@@ -537,7 +536,6 @@ function buildEmbedWideRelayUrlsStatic(
             ...nip66Service.getSearchableRelayUrls(),
             ...SEARCHABLE_RELAY_URLS,
             ...FAST_READ_RELAY_URLS,
-            ...FAST_WRITE_RELAY_URLS,
             ...PROFILE_RELAY_URLS,
             ...menuRelayUrls
           ])

@@ -220,8 +220,7 @@ export function useMenuActions({
         const allRelays = [
           ...(currentBrowsingRelayUrlsRef.current || []),
           ...(favoriteRelaysRef.current || []),
-          ...FAST_READ_RELAY_URLS,
-          ...FAST_WRITE_RELAY_URLS
+          ...FAST_READ_RELAY_URLS
         ]
         const comprehensiveRelays = Array.from(
           new Set(allRelays.map(url => normalizeAnyRelayUrl(url)).filter((url): url is string => !!url))
@@ -247,39 +246,47 @@ export function useMenuActions({
     if (!pubkey) return
     
     try {
-      // Build comprehensive relay list for pin list fetching
-      const allRelays = [
-        ...(currentBrowsingRelayUrls || []),
-        ...(favoriteRelays || []),
-        ...FAST_READ_RELAY_URLS,
-        ...FAST_READ_RELAY_URLS,
-        ...FAST_WRITE_RELAY_URLS
-      ]
-      
-      const normalizedRelays = allRelays
-        .map(url => normalizeAnyRelayUrl(url))
-        .filter((url): url is string => !!url)
-      
-      const comprehensiveRelays = Array.from(new Set(normalizedRelays))
+      const pinListReadRelays = Array.from(
+        new Set(
+          [...currentBrowsingRelayUrls, ...favoriteRelays, ...FAST_READ_RELAY_URLS]
+            .map((url) => normalizeAnyRelayUrl(url))
+            .filter((url): url is string => !!url)
+        )
+      )
 
-      const latestPinList = await fetchNewestPinListForPubkey(pubkey, comprehensiveRelays)
+      const latestPinList = await fetchNewestPinListForPubkey(pubkey, pinListReadRelays)
 
       logger.component('PinNote', 'Current pin list event', { hasEvent: !!latestPinList })
 
       const newTags = buildPinListTagsAfterToggle(latestPinList ?? null, event, !isPinned)
       const successMessage = isPinned ? t('Note unpinned') : t('Note pinned')
       logger.component('PinNote', 'Pin list tag count after merge', { count: newTags.length })
-      
+
+      const publishRelays = Array.from(
+        new Set([
+          ...pinListReadRelays,
+          ...FAST_WRITE_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url).filter(
+            (url): url is string => !!url
+          )
+        ])
+      )
+
       // Create and publish the new pin list event
-      logger.component('PinNote', 'Publishing new pin list event', { tagCount: newTags.length, relayCount: comprehensiveRelays.length })
-      const publishedEvent = await publish({
-        kind: 10001,
-        tags: newTags,
-        content: '',
-        created_at: Math.floor(Date.now() / 1000)
-      }, {
-        specifiedRelayUrls: comprehensiveRelays
+      logger.component('PinNote', 'Publishing new pin list event', {
+        tagCount: newTags.length,
+        relayCount: publishRelays.length
       })
+      const publishedEvent = await publish(
+        {
+          kind: 10001,
+          tags: newTags,
+          content: '',
+          created_at: Math.floor(Date.now() / 1000)
+        },
+        {
+          specifiedRelayUrls: publishRelays
+        }
+      )
       
       // Show publishing feedback with relay messages
       if ((publishedEvent as any)?.relayStatuses) {

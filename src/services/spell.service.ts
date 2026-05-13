@@ -2,7 +2,7 @@
  * NIP-A7 Spells: parse and execute kind 777 events as portable relay query filters.
  */
 
-import { ExtendedKind, FAST_WRITE_RELAY_URLS } from '@/constants'
+import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import { getRelayUrlsWithFavoritesFastReadAndInbox } from '@/lib/favorites-feed-relays'
 import { tagNameEquals } from '@/lib/tag'
 import logger from '@/lib/logger'
@@ -48,9 +48,9 @@ export type SpellExecutionContext = {
   contacts: string[]
 }
 
-/** When the spell has no `relays` tag and NIP-65 write list is empty: known-good write relays. */
-function defaultSpellWriteFallbackRelays(): string[] {
-  return dedupeRelayUrls([...FAST_WRITE_RELAY_URLS])
+/** When the spell has no `relays` tag and NIP-65 write list is empty: known-good read mirrors for REQ. */
+function defaultSpellRelayFallbackRelays(): string[] {
+  return dedupeRelayUrls([...FAST_READ_RELAY_URLS])
 }
 
 /** Max kind-777 events to pull when syncing spell definitions from relays (you only). */
@@ -109,15 +109,15 @@ function dedupeRelayUrls(urls: string[]): string[] {
 
 export type GetRelaysForSpellOptions = {
   /**
-   * When true (default): merge FAST_WRITE after the primary list (REQ feeds) for resilience.
-   * When false: use only spell `relays` tag, NIP-65 write relays, or write fallback — no extra padding (COUNT).
+ * When true (default): merge {@link FAST_READ_RELAY_URLS} after the primary list (REQ) for resilience.
+ * When false: use only spell `relays` tag, NIP-65 write relays, or read fallback — no extra padding (COUNT).
    */
   mergeDefaultReadRelays?: boolean
 }
 
 /**
  * Get relay URLs for executing a spell: spell `relays` tag, else the user's NIP-65 **write** (outbox) relays.
- * Publishing and running spells use outboxes only (plus optional FAST_WRITE padding when mergeDefaults is true).
+ * Running a spell issues REQ queries; optional {@link FAST_READ_RELAY_URLS} padding helps when primaries are slow.
  */
 export function getRelaysForSpell(
   spell: Event,
@@ -137,10 +137,10 @@ export function getRelaysForSpell(
     primary = [...context.relayListWrite]
   }
   if (!primary.length) {
-    return defaultSpellWriteFallbackRelays()
+    return defaultSpellRelayFallbackRelays()
   }
   if (mergeDefaults) {
-    return dedupeRelayUrls([...primary, ...FAST_WRITE_RELAY_URLS])
+    return dedupeRelayUrls([...primary, ...FAST_READ_RELAY_URLS])
   }
   return dedupeRelayUrls(primary)
 }

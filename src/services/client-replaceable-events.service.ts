@@ -1,7 +1,6 @@
 import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   METADATA_BATCH_AUTHORS_CHUNK,
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
@@ -653,8 +652,8 @@ export class ReplaceableEventService {
                 includeFastReadRelays: true,
                 includeFavoriteRelays: true,
                 includeLocalRelays: true,
-                /** Many users publish kind 0 to NIP-65 write relays; batch path skipped these before. */
-                includeFastWriteRelays: true,
+                /** Many users publish kind 0 to NIP-65 write relays; batch path includes public read mirrors via {@link buildComprehensiveRelayList}. */
+                includeFastWriteRelays: false,
                 includeSearchableRelays: false,
                 preferPublicReadRelaysEarly: true
               })
@@ -677,52 +676,39 @@ export class ReplaceableEventService {
             )
           ).filter(Boolean)
         } else if (kind === kinds.Contacts) {
-          // Contacts (kind 3): often on write relays; aggregators/profile mirrors also carry copies.
+          // Contacts (kind 3): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [
-                ...FAST_WRITE_RELAY_URLS,
-                ...READ_ONLY_RELAY_URLS,
-                ...PROFILE_FETCH_RELAY_URLS,
-                ...FAST_READ_RELAY_URLS
-              ].map((u) => normalizeUrl(u) || u)
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+                (u) => normalizeUrl(u) || u
+              )
             )
           ).filter(Boolean)
         } else if (kind === kinds.RelayList) {
-          // NIP-65 (10002): almost always on the author's write/outbox relays; FAST_READ-only misses most users.
+          // NIP-65 (10002): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [
-                ...FAST_WRITE_RELAY_URLS,
-                ...READ_ONLY_RELAY_URLS,
-                ...PROFILE_FETCH_RELAY_URLS,
-                ...FAST_READ_RELAY_URLS
-              ].map((u) => normalizeUrl(u) || u)
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+                (u) => normalizeUrl(u) || u
+              )
             )
           ).filter(Boolean)
         } else if (kind === kinds.Mutelist || kind === kinds.BookmarkList) {
-          // Mute / bookmark lists: same distribution as contacts (writes + mirrors); FAST_READ-only misses many copies.
+          // Mute / bookmark lists: same distribution as contacts; FAST_READ + mirrors.
           relayUrls = Array.from(
             new Set(
-              [
-                ...FAST_WRITE_RELAY_URLS,
-                ...READ_ONLY_RELAY_URLS,
-                ...PROFILE_FETCH_RELAY_URLS,
-                ...FAST_READ_RELAY_URLS
-              ].map((u) => normalizeUrl(u) || u)
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+                (u) => normalizeUrl(u) || u
+              )
             )
           ).filter(Boolean)
         } else if (kind === ExtendedKind.PAYMENT_INFO) {
-          // NIP-A3 kind 10133: often published to the user's write relays only; FAST_READ alone misses many copies.
-          // Mirror contacts + pin-list coverage (writes + profile mirrors + aggregators + fast read).
+          // NIP-A3 kind 10133: aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [
-                ...FAST_WRITE_RELAY_URLS,
-                ...READ_ONLY_RELAY_URLS,
-                ...PROFILE_FETCH_RELAY_URLS,
-                ...FAST_READ_RELAY_URLS
-              ].map((u) => normalizeUrl(u) || u)
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+                (u) => normalizeUrl(u) || u
+              )
             )
           ).filter(Boolean)
         } else {
@@ -1174,7 +1160,7 @@ export class ReplaceableEventService {
         includeFavoriteRelays: true,
         includeProfileFetchRelays: true,
         includeFastReadRelays: true,
-        includeFastWriteRelays: true,
+        includeFastWriteRelays: false,
         includeSearchableRelays: true,
         includeLocalRelays: true
       })
@@ -1400,7 +1386,7 @@ export class ReplaceableEventService {
   /**
    * Fetch follow list event.
    * When relayUrls are provided (e.g. user write + search relays), queries those directly.
-   * Otherwise uses the default relay set (FAST_WRITE + PROFILE_FETCH + FAST_READ).
+   * Otherwise uses the default relay set (READ_ONLY + PROFILE_FETCH + FAST_READ).
    */
   /** Hard cap: {@link fetchReplaceableEvent} can otherwise wedge the DataLoader chain when relays never answer. */
   private static readonly FETCH_FOLLOW_LIST_REPLACEABLE_TIMEOUT_MS = 14_000
@@ -1557,7 +1543,7 @@ export class ReplaceableEventService {
           includeFavoriteRelays: true,
           includeProfileFetchRelays: true,
           includeFastReadRelays: true,
-          includeFastWriteRelays: true,
+          includeFastWriteRelays: false,
           includeSearchableRelays: true,
           includeLocalRelays: true
         })

@@ -5,7 +5,6 @@ import {
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
   ExtendedKind,
   PROFILE_FETCH_RELAY_URLS,
   PROFILE_RELAY_URLS,
@@ -412,7 +411,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           })
 
           queryService
-            .fetchEvents(FAST_WRITE_RELAY_URLS.concat(PROFILE_RELAY_URLS), {
+            .fetchEvents(FAST_READ_RELAY_URLS.concat(PROFILE_RELAY_URLS), {
               kinds: [ExtendedKind.RSS_FEED_LIST],
               authors: [account.pubkey],
               limit: 1
@@ -505,7 +504,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const normalizedRelays = [
         ...mergedRelayList.write.map((url: string) => normalizeUrl(url) || url),
         ...mergedRelayList.read.map((url: string) => normalizeUrl(url) || url),
-        ...FAST_WRITE_RELAY_URLS.map((url: string) => normalizeUrl(url) || url),
+        ...FAST_READ_RELAY_URLS.map((url: string) => normalizeUrl(url) || url),
         ...PROFILE_FETCH_RELAY_URLS.map((url: string) => normalizeUrl(url) || url)
       ]
       const fetchRelays = Array.from(new Set(normalizedRelays)).slice(0, 16)
@@ -670,7 +669,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             ...mergedRelayList.read.map((u) => normalizeUrl(u) || u),
             ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
             ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-            ...FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
+            ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u)
           ])
         ).filter(Boolean)
         queryService
@@ -866,7 +865,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             ...rl.read.map((u) => normalizeUrl(u) || u),
             ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
             ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-            ...FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
+            ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u)
           ])
         ).filter(Boolean)
         return queryService.fetchEvents(relays, {

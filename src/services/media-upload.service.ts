@@ -1,4 +1,4 @@
-/** Compression runs entirely in-app before upload (`compress-upload-media`). Load `local-storage` before `./client.service` (that graph can re-enter here; constructor reads storage). */
+/** Compression runs entirely in-app before upload (`compress-upload-media`). Load `local-storage` before `./client.service`; the default export is lazily constructed so `client`↔`draft-event`↔this module cycles cannot run the constructor before `storage` is initialized. */
 import storage from './local-storage.service'
 import { compressMediaForUpload } from '@/lib/compress-upload-media'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
@@ -312,5 +312,21 @@ class MediaUploadService {
   }
 }
 
-const instance = new MediaUploadService()
+/**
+ * Eager `new MediaUploadService()` at module load can run while `storage` is still in the TDZ:
+ * `client.service` (and its graph) may synchronously pull `draft-event` → this module again
+ * before static imports have finished binding. Lazily construct on first property access.
+ */
+function createMediaUploadServiceLazy(): MediaUploadService {
+  let inner: MediaUploadService | undefined
+  return new Proxy({} as MediaUploadService, {
+    get(_target, prop, receiver) {
+      if (!inner) inner = new MediaUploadService()
+      const v = Reflect.get(inner, prop, receiver) as unknown
+      return typeof v === 'function' ? (v as (...args: unknown[]) => unknown).bind(inner) : v
+    }
+  })
+}
+
+const instance = createMediaUploadServiceLazy()
 export default instance
