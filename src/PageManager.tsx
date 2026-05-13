@@ -70,7 +70,6 @@ import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional } from
 const SpellsPageLazy = lazy(() => import('./pages/primary/SpellsPage'))
 /** Lazy NoteList pages break: PageManager → … → NoteList → NoteCard → useSmartNoteNavigation → PageManager */
 const NoteListPageLazy = lazy(() => import('@/pages/primary/NoteListPage'))
-const SecondaryNoteListPageLazy = lazy(() => import('@/pages/secondary/NoteListPage'))
 
 const primaryPageLazyFallback = (
   <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
@@ -725,60 +724,33 @@ export function useSmartProfileNavigationOptional() {
   return { navigateToProfile }
 }
 
-// Fixed: Hashtag navigation now uses primary note view since secondary panel is disabled
+// Hashtag / d-tag note list opens on the secondary stack (right panel or single-pane sheet), same as other search routes.
 export function useSmartHashtagNavigation() {
-  const { setPrimaryNoteView, getNavigationCounter } = usePrimaryNoteView()
-  
+  const { push: pushSecondaryPage } = useSecondaryPage()
+
   const navigateToHashtag = (url: string) => {
-    // Use primary note view to show hashtag feed since secondary panel is disabled
-    // Update URL first - do this synchronously before setting the view
     const parsedUrl = url.startsWith('/') ? url : `/${url}`
-    window.history.pushState(null, '', parsedUrl)
-    
-    // Extract hashtag from URL for the key to ensure unique keys for different hashtags
-    const searchParams = new URLSearchParams(parsedUrl.includes('?') ? parsedUrl.split('?')[1] : '')
-    const hashtag = searchParams.get('t') || ''
-    // Get the current navigation counter and use next value for the key
-    // This ensures unique keys that force remounting - setPrimaryNoteView will increment it
-    const counter = getNavigationCounter()
-    const key = `hashtag-${hashtag}-${counter + 1}`
-    
-    // Use a key based on the hashtag and navigation counter to force remounting when hashtag changes
-    // This ensures the component reads the new URL parameters when it mounts
-    // setPrimaryNoteView will increment the counter, so we use counter + 1 for the key
-    setPrimaryNoteView(
-      <Suspense fallback={primaryPageLazyFallback}>
-        <SecondaryNoteListPageLazy key={key} hideTitlebar={true} />
-      </Suspense>,
-      'hashtag'
-    )
-    // Dispatch custom event as a fallback for components that might be reused
+    pushSecondaryPage(parsedUrl)
     window.dispatchEvent(new CustomEvent('hashtag-navigation', { detail: { url: parsedUrl } }))
   }
-  
+
   return { navigateToHashtag }
 }
 
 /** Safe variant for createRoot trees. Returns fallback navigation when outside providers. */
 export function useSmartHashtagNavigationOptional() {
-  const primaryNoteView = usePrimaryNoteViewOptional()
-  if (!primaryNoteView) {
-    return { navigateToHashtag: (url: string) => { window.location.href = url.startsWith('/') ? url : `/${url}` } }
+  const secondaryPage = useSecondaryPageOptional()
+  if (!secondaryPage) {
+    return {
+      navigateToHashtag: (url: string) => {
+        window.location.href = url.startsWith('/') ? url : `/${url}`
+      }
+    }
   }
-  const { setPrimaryNoteView, getNavigationCounter } = primaryNoteView
+  const { push } = secondaryPage
   const navigateToHashtag = (url: string) => {
     const parsedUrl = url.startsWith('/') ? url : `/${url}`
-    window.history.pushState(null, '', parsedUrl)
-    const searchParams = new URLSearchParams(parsedUrl.includes('?') ? parsedUrl.split('?')[1] : '')
-    const hashtag = searchParams.get('t') || ''
-    const counter = getNavigationCounter()
-    const key = `hashtag-${hashtag}-${counter + 1}`
-    setPrimaryNoteView(
-      <Suspense fallback={primaryPageLazyFallback}>
-        <SecondaryNoteListPageLazy key={key} hideTitlebar={true} />
-      </Suspense>,
-      'hashtag'
-    )
+    push(parsedUrl)
     window.dispatchEvent(new CustomEvent('hashtag-navigation', { detail: { url: parsedUrl } }))
   }
   return { navigateToHashtag }

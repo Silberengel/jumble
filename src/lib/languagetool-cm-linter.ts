@@ -22,6 +22,9 @@ export function requestAdvancedLabGrammarLint(view: EditorView): void {
   view.dispatch({ annotations: advancedLabGrammarLangRerun.of(true) })
 }
 
+/** Extra editor mark class so the lab can style LT hits more prominently than default `info` underlines. */
+export const LT_GRAMMAR_MARK_CLASS = 'cm-ltGrammarIssue'
+
 function matchToDiagnostic(docLen: number, m: LanguageToolMatch): Diagnostic | null {
   const from = Math.max(0, Math.min(m.offset, docLen))
   const to = Math.max(from, Math.min(m.offset + m.length, docLen))
@@ -30,7 +33,13 @@ function matchToDiagnostic(docLen: number, m: LanguageToolMatch): Diagnostic | n
   const message = m.message + (m.rule?.id ? ` (${m.rule.id})` : '')
 
   if (!fix) {
-    return { from, to, severity: 'info', message }
+    return {
+      from,
+      to,
+      severity: 'warning',
+      markClass: LT_GRAMMAR_MARK_CLASS,
+      message
+    }
   }
 
   /**
@@ -42,7 +51,8 @@ function matchToDiagnostic(docLen: number, m: LanguageToolMatch): Diagnostic | n
   return {
     from,
     to,
-    severity: 'info',
+    severity: 'warning',
+    markClass: LT_GRAMMAR_MARK_CLASS,
     message,
     renderMessage(view: EditorView) {
       const wrap = document.createElement('span')

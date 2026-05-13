@@ -19,11 +19,11 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
   const { pubkey, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
-  /** Before child effects (e.g. NIP-50) open REQs, tear down idle feed / prefetch queries so search gets the pool. */
+  /** Before child effects (e.g. NIP-50) open REQs, abort background queries and drop pooled relay sockets so search gets the pool. */
   useLayoutEffect(() => {
     if (!searchParams) return
     if (searchParams.type === 'relay') return
-    client.interruptBackgroundQueries()
+    client.interruptBackgroundQueries({ closePooledRelayConnections: true })
   }, [searchParams?.type, searchParams?.search, searchParams?.input])
 
   /** NIP-50 / index relays — always queried first on their own shard so dead personal relays cannot zero out search. */

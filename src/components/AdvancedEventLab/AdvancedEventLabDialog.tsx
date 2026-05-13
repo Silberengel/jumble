@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select'
 import logger from '@/lib/logger'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
-import { languageToolLintExtension, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
+import { languageToolLintExtension, LT_GRAMMAR_MARK_CLASS, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
 import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
 import {
   buildResolvedTranslateMenuLanguageOptions,
@@ -629,6 +629,7 @@ export default function AdvancedEventLabDialog({
       const mkExtensions: Extension[] = [
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
+        EditorView.lineWrapping,
         lineNumbers(),
         cmPlaceholder(
           labTRef.current(
@@ -645,6 +646,20 @@ export default function AdvancedEventLabDialog({
           '.cm-content': {
             minHeight: '11rem',
             fontFamily: 'var(--font-mono, ui-monospace, monospace)'
+          },
+          // LanguageTool hits: drop default thin SVG underline, use thick wavy line (see `LT_GRAMMAR_MARK_CLASS`).
+          [`.cm-lintRange.${LT_GRAMMAR_MARK_CLASS}`]: {
+            backgroundImage: 'none',
+            paddingBottom: '2px',
+            textDecoration: 'underline',
+            textDecorationSkipInk: 'none',
+            textDecorationStyle: 'wavy',
+            textDecorationColor: '#ea580c',
+            textDecorationThickness: '3px',
+            textUnderlineOffset: '3px'
+          },
+          [`.cm-lintRange-active.${LT_GRAMMAR_MARK_CLASS}`]: {
+            backgroundColor: 'rgba(234, 88, 12, 0.22)'
           }
         }),
         EditorView.updateListener.of((update) => {
@@ -662,7 +677,26 @@ export default function AdvancedEventLabDialog({
           languageToolLintExtension(() => ltLangRef.current, 650, () => markupMode)
         )
       }
-      if (dark) mkExtensions.push(oneDark)
+      if (dark) {
+        mkExtensions.push(oneDark)
+        mkExtensions.push(
+          EditorView.theme({
+            [`.cm-lintRange.${LT_GRAMMAR_MARK_CLASS}`]: {
+              backgroundImage: 'none',
+              paddingBottom: '2px',
+              textDecoration: 'underline',
+              textDecorationSkipInk: 'none',
+              textDecorationStyle: 'wavy',
+              textDecorationColor: '#fdba74',
+              textDecorationThickness: '3px',
+              textUnderlineOffset: '3px'
+            },
+            [`.cm-lintRange-active.${LT_GRAMMAR_MARK_CLASS}`]: {
+              backgroundColor: 'rgba(251, 146, 60, 0.28)'
+            }
+          })
+        )
+      }
 
       const mkState = EditorState.create({
         doc: baseSlice.content,

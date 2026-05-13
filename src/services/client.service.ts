@@ -3125,9 +3125,27 @@ class ClientService extends EventTarget {
     set.add(relay)
   }
 
-  /** Yield relay pool / HTTP index capacity to search or publish by aborting default {@link QueryService.query} work. */
-  interruptBackgroundQueries(): void {
+  /**
+   * Yield capacity to foreground work: abort in-flight {@link QueryService.query} calls that did not pass
+   * `foreground: true` (feeds, prefetch, etc.).
+   * With {@link options.closePooledRelayConnections}, also closes every pooled relay socket so live timeline REQs
+   * release the pool (e.g. NIP-50 search); those subs reconnect when needed.
+   */
+  interruptBackgroundQueries(options?: { closePooledRelayConnections?: boolean }): void {
     this.queryService.interruptBackgroundQueries()
+    if (!options?.closePooledRelayConnections) return
+    let urls: string[] = []
+    try {
+      urls = [...this.pool.listConnectionStatus().keys()]
+    } catch {
+      /* ignore */
+    }
+    if (urls.length === 0) return
+    try {
+      this.pool.close(urls)
+    } catch {
+      /* ignore */
+    }
   }
 
   // Delegate to QueryService
@@ -3235,6 +3253,19 @@ class ClientService extends EventTarget {
       /** NIP-50 must run to EOSE; implicit feed grace would close the REQ after the first hit. */
       firstRelayResultGraceMs: false as const,
       ...(options?.signal ? { signal: options.signal } : {})
+    }
+
+    if (import.meta.env.DEV) {
+      const f0 = Array.isArray(filter) ? filter[0] : filter
+      const search =
+        f0 && typeof f0 === 'object' && 'search' in f0 && typeof (f0 as { search?: unknown }).search === 'string'
+          ? String((f0 as { search: string }).search).slice(0, 48)
+          : undefined
+      logger.info('[NIP-50] per-relay query', {
+        relay: normalized,
+        budgetMs: queryOpts.globalTimeout,
+        search
+      })
     }
 
     if (isHttpRelayUrl(normalized)) {

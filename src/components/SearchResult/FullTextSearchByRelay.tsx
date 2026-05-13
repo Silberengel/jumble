@@ -1,6 +1,7 @@
 import NoteCard from '@/components/NoteCard'
 import RelayIcon from '@/components/RelayIcon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toRelay } from '@/lib/link'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
@@ -12,16 +13,19 @@ import type { Event, Filter } from 'nostr-tools'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSmartRelayNavigationOptional } from '@/PageManager'
 
 type MergedHit = {
   event: Event
   relayUrls: string[]
 }
 
-/** Hard cap for the whole merged search wave (from effect start). */
+/** Hard cap for the merged search wave, counted from the first relay query start (not from React effect mount). */
 const SEARCH_TOTAL_WALL_MS = 10_000
-/** After the first relay reaches a terminal state, end the wave this many ms later (capped by {@link SEARCH_TOTAL_WALL_MS}). */
-const SEARCH_AFTER_FIRST_RELAY_MS = 2_000
+/** After the first results arrive from any relay, end the wave this many ms later (capped by {@link SEARCH_TOTAL_WALL_MS}). */
+const SEARCH_AFTER_FIRST_RELAY_MS = 3_000
+/** Per-relay {@link QueryService.query} budget from when that relay’s fetch starts (capped by remaining wave wall). */
+const SEARCH_PER_RELAY_QUERY_MS = 10_000
 /** Avoid opening every index relay at once (pool + main thread). */
 const FULL_TEXT_SEARCH_RELAY_CONCURRENCY = 3
 const FULL_TEXT_SEARCH_PER_RELAY_LIMIT = 80
@@ -224,6 +228,11 @@ export default function FullTextSearchByRelay({
   kinds: readonly number[]
 }) {
   const { t } = useTranslation()
+  const { navigateToRelay } = useSmartRelayNavigationOptional() ?? {
+    navigateToRelay: (url: string) => {
+      window.location.href = url
+    }
+  }
   const runGeneration = useRef(0)
   const [relayRows, setRelayRows] = useState<RelayFetchRow[]>([])
   const [mergedHits, setMergedHits] = useState<MergedHit[]>([])
@@ -281,9 +290,10 @@ export default function FullTextSearchByRelay({
     )
     setMergedHits([])
 
-    const waveT0 = Date.now()
-    let waveEndAt = waveT0 + SEARCH_TOTAL_WALL_MS
-    /** Only after ≥1 event from a relay: apply "first results + 2s" (empty EOSE must not shorten the wave). */
+    /** Set when the first {@link runOneRelay} begins (first real NIP-50 query); master wall clock starts then. */
+    let waveT0: number | null = null
+    let waveEndAt = 0
+    /** Only after ≥1 event from a relay: apply "first results + …ms" (empty EOSE must not shorten the wave). */
     let appliedRelativeWaveCutoff = false
 
     const scheduleMasterAbort = () => {
@@ -298,8 +308,15 @@ export default function FullTextSearchByRelay({
       }, ms)
     }
 
+    const beginWaveIfNeeded = () => {
+      if (waveT0 !== null) return
+      waveT0 = Date.now()
+      waveEndAt = waveT0 + SEARCH_TOTAL_WALL_MS
+      scheduleMasterAbort()
+    }
+
     const onFirstSearchHits = () => {
-      if (appliedRelativeWaveCutoff) return
+      if (appliedRelativeWaveCutoff || waveT0 === null) return
       appliedRelativeWaveCutoff = true
       const now = Date.now()
       waveEndAt = Math.min(waveT0 + SEARCH_TOTAL_WALL_MS, now + SEARCH_AFTER_FIRST_RELAY_MS)
@@ -319,8 +336,6 @@ export default function FullTextSearchByRelay({
       },
       { once: true }
     )
-
-    scheduleMasterAbort()
 
     let relayCursor = 0
     const nextRelayUrl = (): string | undefined => {
@@ -359,8 +374,10 @@ export default function FullTextSearchByRelay({
 
     const runOneRelay = async (relayUrl: string) => {
       if (myRun !== runGeneration.current || abort.signal.aborted) return
+      beginWaveIfNeeded()
       const t0 = performance.now()
-      const perRelayBudget = Math.max(1000, waveEndAt - Date.now())
+      const remainingWaveMs = Math.max(500, waveEndAt - Date.now())
+      const perRelayBudget = Math.min(SEARCH_PER_RELAY_QUERY_MS, remainingWaveMs)
       try {
         const { events: raw, connectionError } = await client.fetchEventsFromSingleRelay(
           relayUrl,
@@ -488,13 +505,18 @@ export default function FullTextSearchByRelay({
                 </span>
                 <div className="flex flex-wrap items-center gap-0.5">
                   {hit.relayUrls.map((url) => (
-                    <span
+                    <button
                       key={`${hit.event.id}-${relayKey(url)}`}
+                      type="button"
                       title={relayHostForSubscribeLog(url)}
-                      className="inline-flex shrink-0 opacity-90"
+                      className="inline-flex shrink-0 rounded-sm opacity-90 ring-offset-background hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigateToRelay(toRelay(url))
+                      }}
                     >
                       <RelayIcon url={url} skipRelayInfoFetch className="h-5 w-5 rounded-sm" iconSize={12} />
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
