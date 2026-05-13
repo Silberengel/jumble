@@ -15,7 +15,10 @@ const NoteCard = memo(function NoteCard({
   pinned = false,
   hideParentNotePreview = false,
   zapPollVoteHighlightOption,
-  bottomNoteLabel
+  bottomNoteLabel,
+  fetchNoteStatsIfMissing = true,
+  deferAuthorAvatar = false,
+  searchListPreview = false
 }: {
   event: Event
   className?: string
@@ -26,6 +29,9 @@ const NoteCard = memo(function NoteCard({
   zapPollVoteHighlightOption?: number
   /** Optional label rendered at the bottom of the card (e.g. why this event is in a composed feed). */
   bottomNoteLabel?: string
+  fetchNoteStatsIfMissing?: boolean
+  deferAuthorAvatar?: boolean
+  searchListPreview?: boolean
 }) {
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
@@ -59,6 +65,9 @@ const NoteCard = memo(function NoteCard({
       hideParentNotePreview={hideParentNotePreview}
       zapPollVoteHighlightOption={zapPollVoteHighlightOption}
       bottomNoteLabel={bottomNoteLabel}
+      fetchNoteStatsIfMissing={fetchNoteStatsIfMissing}
+      deferAuthorAvatar={deferAuthorAvatar}
+      searchListPreview={searchListPreview}
     />
   )
 }, (prevProps, nextProps) => {
@@ -71,7 +80,10 @@ const NoteCard = memo(function NoteCard({
     prevProps.pinned === nextProps.pinned &&
     prevProps.hideParentNotePreview === nextProps.hideParentNotePreview &&
     prevProps.zapPollVoteHighlightOption === nextProps.zapPollVoteHighlightOption &&
-    prevProps.bottomNoteLabel === nextProps.bottomNoteLabel
+    prevProps.bottomNoteLabel === nextProps.bottomNoteLabel &&
+    prevProps.fetchNoteStatsIfMissing === nextProps.fetchNoteStatsIfMissing &&
+    prevProps.deferAuthorAvatar === nextProps.deferAuthorAvatar &&
+    prevProps.searchListPreview === nextProps.searchListPreview
   )
 })
 

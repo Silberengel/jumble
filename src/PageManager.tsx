@@ -237,6 +237,15 @@ function mergePrimaryPageEntry(
   return [...prev, { name: entry.name, element, props: entry.props }]
 }
 
+function primaryPagePropsDebugFingerprint(props: object | undefined): string {
+  if (!props || typeof props !== 'object') return ''
+  return Object.keys(props)
+    .sort()
+    .join(',')
+}
+
+let lastActivePrimaryPageContentDebugKey = ''
+
 function renderActivePrimaryPageContent(
   primaryPages: TPrimaryPageStateEntry[],
   currentPrimaryPage: TPrimaryPageName
@@ -246,7 +255,11 @@ function renderActivePrimaryPageContent(
     (primaryPages.length > 0 ? primaryPages[0] : undefined)
   if (!entry) return null
   try {
-    logger.debug(`Rendering active primary page: ${entry.name}`)
+    const dbgKey = `${currentPrimaryPage}|${entry.name}|${primaryPagePropsDebugFingerprint(entry.props)}`
+    if (dbgKey !== lastActivePrimaryPageContentDebugKey) {
+      lastActivePrimaryPageContentDebugKey = dbgKey
+      logger.debug(`Rendering active primary page: ${entry.name}`)
+    }
     return entry.props ? applyPrimaryPageProps(entry.element, entry.props) : entry.element
   } catch (error) {
     logger.error(`Error rendering ${entry.name} component:`, error)
@@ -964,7 +977,12 @@ function MainContentArea({
   onPrimaryPanelRefresh: () => void
 }) {
   const [, forceUpdate] = useState(0)
-  
+  const mainContentDebugRef = useRef({
+    currentPrimaryPage: '' as TPrimaryPageName,
+    pages: '',
+    noteView: false
+  })
+
   // Listen for note page title updates
   useEffect(() => {
     const handleTitleUpdate = () => {
@@ -975,12 +993,26 @@ function MainContentArea({
       window.removeEventListener('notePageTitleUpdated', handleTitleUpdate)
     }
   }, [])
-  
-  logger.debug('MainContentArea rendering:', { 
-    currentPrimaryPage, 
-    primaryPages: primaryPages.map(p => p.name), 
-    primaryNoteView: !!primaryNoteView
-  })
+
+  const pagesKey = primaryPages.map((p) => p.name).join(',')
+  const noteView = !!primaryNoteView
+  const prevDbg = mainContentDebugRef.current
+  if (
+    prevDbg.currentPrimaryPage !== currentPrimaryPage ||
+    prevDbg.pages !== pagesKey ||
+    prevDbg.noteView !== noteView
+  ) {
+    mainContentDebugRef.current = {
+      currentPrimaryPage,
+      pages: pagesKey,
+      noteView
+    }
+    logger.debug('MainContentArea rendering:', {
+      currentPrimaryPage,
+      primaryPages: primaryPages.map((p) => p.name),
+      primaryNoteView: noteView
+    })
+  }
   
   // flex + min-h-0 + min-w-0 so primary pages get a real height in flex parents and can shrink horizontally (double-pane).
   return (

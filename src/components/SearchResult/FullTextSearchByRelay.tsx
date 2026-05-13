@@ -1,16 +1,23 @@
 import NoteCard from '@/components/NoteCard'
 import RelayIcon from '@/components/RelayIcon'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import logger from '@/lib/logger'
+import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
+import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import client from '@/services/client.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
+import type { TProfile } from '@/types'
 import type { Event, Filter } from 'nostr-tools'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+
+type MergedHit = {
+  event: Event
+  relayUrls: string[]
+}
 
 /** One-shot NIP-50 REQ per relay; bounded wait so the page always reaches a terminal state (see QueryService NIP-50 global floor). */
 const FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS = 45_000
@@ -21,6 +28,163 @@ const FULL_TEXT_SEARCH_PER_RELAY_LIMIT = 80
 const FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY = 40
 /** Max merged unique notes shown after deduping across relays. */
 const FULL_TEXT_SEARCH_MAX_MERGED_EVENTS = 150
+/** Batched kind-0 fetch chunk size (aligned with feed profile batching). */
+const SEARCH_MERGED_PROFILE_CHUNK = 80
+/** Coalesce rapid merge updates before hitting the network. */
+const SEARCH_MERGED_PROFILE_DEBOUNCE_MS = 240
+
+function extractMergedHitAuthorPubkeys(hits: MergedHit[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const h of hits) {
+    const pk = h.event.pubkey?.trim().toLowerCase()
+    if (!pk || !/^[0-9a-f]{64}$/.test(pk) || seen.has(pk)) continue
+    seen.add(pk)
+    out.push(pk)
+  }
+  return out
+}
+
+/**
+ * Feed-style batched profile hydration so merged NIP-50 cards do not each run a separate
+ * {@link useFetchProfile} network path (main-thread + pool pressure).
+ */
+function SearchMergedProfileProvider({
+  resetKey,
+  mergedHits,
+  children
+}: {
+  resetKey: string
+  mergedHits: MergedHit[]
+  children: ReactNode
+}) {
+  const [batch, setBatch] = useState(() => ({
+    profiles: new Map<string, TProfile>(),
+    pending: new Set<string>(),
+    version: 0
+  }))
+  const mergedHitsRef = useRef(mergedHits)
+  mergedHitsRef.current = mergedHits
+  const fetchAttemptedRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    fetchAttemptedRef.current = new Set()
+    setBatch({ profiles: new Map(), pending: new Set(), version: 0 })
+  }, [resetKey])
+
+  const hitsIdentity = useMemo(
+    () =>
+      [...mergedHits]
+        .map((h) => h.event.id)
+        .sort()
+        .join('\x1e'),
+    [mergedHits]
+  )
+
+  useEffect(() => {
+    if (!hitsIdentity) return
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      if (cancelled) return
+      const hits = mergedHitsRef.current
+      const pubkeys = extractMergedHitAuthorPubkeys(hits)
+      if (pubkeys.length === 0) return
+
+      const need = pubkeys.filter((pk) => !fetchAttemptedRef.current.has(pk))
+      if (need.length === 0) return
+      for (const pk of need) {
+        fetchAttemptedRef.current.add(pk)
+      }
+
+      setBatch((prev) => {
+        const pending = new Set(prev.pending)
+        let changed = false
+        for (const pk of need) {
+          if (!prev.profiles.has(pk)) {
+            pending.add(pk)
+            changed = true
+          }
+        }
+        if (!changed) return prev
+        return { ...prev, pending }
+      })
+
+      void (async () => {
+        const chunks: string[][] = []
+        for (let i = 0; i < need.length; i += SEARCH_MERGED_PROFILE_CHUNK) {
+          chunks.push(need.slice(i, i + SEARCH_MERGED_PROFILE_CHUNK))
+        }
+        for (const chunk of chunks) {
+          if (cancelled) return
+          let profiles: TProfile[] = []
+          try {
+            profiles = await client.fetchProfilesForPubkeys(chunk)
+          } catch {
+            profiles = []
+          }
+          if (cancelled) return
+          setBatch((prev) => {
+            const next = new Map(prev.profiles)
+            const pend = new Set(prev.pending)
+            for (const p of profiles) {
+              const pkNorm = p.pubkey.toLowerCase()
+              next.set(pkNorm, { ...p, pubkey: pkNorm })
+              pend.delete(pkNorm)
+            }
+            for (const pk of chunk) {
+              const pkNorm = pk.toLowerCase()
+              pend.delete(pkNorm)
+              if (!next.has(pkNorm)) {
+                next.set(pkNorm, {
+                  pubkey: pkNorm,
+                  npub: pubkeyToNpub(pkNorm) ?? '',
+                  username: formatPubkey(pkNorm),
+                  batchPlaceholder: true
+                })
+              }
+            }
+            return { profiles: next, pending: pend, version: prev.version + 1 }
+          })
+        }
+      })()
+    }, SEARCH_MERGED_PROFILE_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [hitsIdentity, resetKey])
+
+  const ctxVal = useMemo<NoteFeedProfileContextValue>(
+    () => ({
+      profiles: batch.profiles,
+      pendingPubkeys: batch.pending,
+      version: batch.version
+    }),
+    [batch.profiles, batch.pending, batch.version]
+  )
+
+  return <NoteFeedProfileContext.Provider value={ctxVal}>{children}</NoteFeedProfileContext.Provider>
+}
+
+/** Max events to push into session cache per animation frame (keeps the tab responsive during merges). */
+const ADD_TO_CACHE_PER_FRAME = 8
+
+async function addSearchEventsToSessionCacheBatched(
+  events: Event[],
+  runGeneration: { current: number },
+  myRun: number
+): Promise<void> {
+  for (let i = 0; i < events.length; i += ADD_TO_CACHE_PER_FRAME) {
+    if (myRun !== runGeneration.current) return
+    const slice = events.slice(i, i + ADD_TO_CACHE_PER_FRAME)
+    for (const e of slice) {
+      client.addEventToCache(e, { explicitNoteLookupHexId: e.id })
+    }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+  }
+}
 
 type RelayFetchPhase = 'loading' | 'done' | 'error'
 
@@ -31,11 +195,6 @@ type RelayFetchRow = {
   eventCount?: number
   ms?: number
   errorMessage?: string
-}
-
-type MergedHit = {
-  event: Event
-  relayUrls: string[]
 }
 
 function normalizeRelayList(urls: readonly string[]): string[] {
@@ -90,6 +249,10 @@ export default function FullTextSearchByRelay({
 
   const q = searchQuery.trim()
   const timeoutSec = Math.round(FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS / 1000)
+  const searchProfileResetKey = useMemo(
+    () => `${q}\n${normalizedRelays.join('\n')}`,
+    [q, normalizedRelays]
+  )
 
   const doneRelayCount = relayRows.filter((r) => r.phase === 'done' || r.phase === 'error').length
   const errorRelayCount = relayRows.filter((r) => r.phase === 'error').length
@@ -183,10 +346,8 @@ export default function FullTextSearchByRelay({
         const sorted = [...raw]
           .sort((a, b) => compareEventsForDTagQuery(q, a, b))
           .slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
-        for (const e of sorted) {
-          client.addEventToCache(e, { explicitNoteLookupHexId: e.id })
-        }
-
+        await addSearchEventsToSessionCacheBatched(sorted, runGeneration, myRun)
+        if (myRun !== runGeneration.current) return
         const ms = Math.round(performance.now() - t0)
         if (sorted.length === 0 && connectionError) {
           logger.debug('[NIP-50 full-text] card_end', {
@@ -310,8 +471,8 @@ export default function FullTextSearchByRelay({
   }
 
   return (
-    <div className="min-w-0 space-y-4" aria-busy={anyLoading}>
-      <p className="text-sm text-muted-foreground">
+    <div className="min-w-0 space-y-3" aria-busy={anyLoading}>
+      <p className="text-sm text-muted-foreground leading-snug">
         {t('Full-text search merged intro', {
           relayCount: normalizedRelays.length,
           seconds: timeoutSec,
@@ -332,42 +493,52 @@ export default function FullTextSearchByRelay({
         </p>
       )}
 
-      <div className="min-w-0 space-y-4">
-        {anyLoading && mergedHits.length === 0 && (
-          <div className="space-y-3" aria-label={t('Full-text search relay querying')}>
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        )}
+      <SearchMergedProfileProvider resetKey={searchProfileResetKey} mergedHits={mergedHits}>
+        <div className="min-w-0 space-y-2">
+          {anyLoading && mergedHits.length === 0 && (
+            <div className="space-y-2" aria-label={t('Full-text search relay querying')}>
+              <Skeleton className="h-16 w-full rounded-md" />
+              <Skeleton className="h-16 w-full rounded-md" />
+              <Skeleton className="h-14 w-full rounded-md" />
+            </div>
+          )}
 
-        {mergedHits.map((hit) => (
-          <Card key={hit.event.id} className="min-w-0 overflow-hidden">
-            <CardHeader className="pb-2 space-y-2 border-b bg-muted/30">
+          {mergedHits.map((hit) => (
+            <article
+              key={hit.event.id}
+              className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card/30 shadow-none transition-[border-color,box-shadow,background-color] duration-150 hover:border-border hover:bg-muted/15 hover:shadow-sm"
+            >
               <div
-                className="flex flex-wrap items-center gap-1.5"
+                className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2.5 py-1"
                 aria-label={t('Full-text search seen on relays')}
               >
-                <span className="text-xs text-muted-foreground shrink-0 mr-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90 shrink-0">
                   {t('Full-text search seen on label')}
                 </span>
-                {hit.relayUrls.map((url) => (
-                  <span
-                    key={`${hit.event.id}-${relayKey(url)}`}
-                    title={relayHostForSubscribeLog(url)}
-                    className="inline-flex shrink-0"
-                  >
-                    <RelayIcon url={url} skipRelayInfoFetch className="h-7 w-7 rounded-sm" iconSize={14} />
-                  </span>
-                ))}
+                <div className="flex flex-wrap items-center gap-0.5">
+                  {hit.relayUrls.map((url) => (
+                    <span
+                      key={`${hit.event.id}-${relayKey(url)}`}
+                      title={relayHostForSubscribeLog(url)}
+                      className="inline-flex shrink-0 opacity-90"
+                    >
+                      <RelayIcon url={url} skipRelayInfoFetch className="h-5 w-5 rounded-sm" iconSize={12} />
+                    </span>
+                  ))}
+                </div>
               </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <NoteCard event={hit.event} className="w-full border-0 shadow-none p-0" filterMutedNotes />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <NoteCard
+                event={hit.event}
+                className="w-full border-0 bg-transparent shadow-none"
+                filterMutedNotes
+                fetchNoteStatsIfMissing={false}
+                deferAuthorAvatar
+                searchListPreview
+              />
+            </article>
+          ))}
+        </div>
+      </SearchMergedProfileProvider>
 
       {allTerminal && mergedHits.length === 0 && (
         <p className="text-sm text-muted-foreground" role="status">

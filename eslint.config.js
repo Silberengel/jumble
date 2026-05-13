@@ -26,5 +26,12 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }]
     }
+  },
+  {
+    files: ['src/PageManager.tsx'],
+    rules: {
+      // File exports hooks + `PageManager` + helpers; Vite uses `// @refresh reset` instead of Fast Refresh.
+      'react-refresh/only-export-components': 'off'
+    }
   }
 )

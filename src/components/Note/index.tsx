@@ -119,11 +119,13 @@ function cacheEmbeddedRepostTarget(hostEvent: Event, targetEvent: Event) {
 function StringifiedNostrEventPreviewCard({
   hostEvent,
   targetEvent,
-  className
+  className,
+  deferAuthorAvatar = false
 }: {
   hostEvent: Event
   targetEvent: Event
   className?: string
+  deferAuthorAvatar?: boolean
 }) {
   const { t } = useTranslation()
 
@@ -148,7 +150,7 @@ function StringifiedNostrEventPreviewCard({
           userId={targetEvent.pubkey}
           size="tiny"
           className="mt-0.5 shrink-0"
-          deferRemoteAvatar={false}
+          deferRemoteAvatar={deferAuthorAvatar}
         />
         <div className="min-w-0 flex-1">
           <ContentPreview event={targetEvent} className="line-clamp-4" />
@@ -164,7 +166,8 @@ function StringifiedNostrEventContent({
   className,
   hideMetadata,
   autoLoadMedia,
-  fullCalendarInvite
+  fullCalendarInvite,
+  deferAuthorAvatar = false
 }: {
   hostEvent: Event
   match: StringifiedNostrEventMatch
@@ -172,6 +175,7 @@ function StringifiedNostrEventContent({
   hideMetadata?: boolean
   autoLoadMedia: boolean
   fullCalendarInvite?: { event: Event; naddr: string }
+  deferAuthorAvatar?: boolean
 }) {
   const textEvent = match.textBefore.trim()
     ? { ...hostEvent, content: match.textBefore }
@@ -187,7 +191,11 @@ function StringifiedNostrEventContent({
           fullCalendarInvite={fullCalendarInvite}
         />
       ) : null}
-      <StringifiedNostrEventPreviewCard hostEvent={hostEvent} targetEvent={match.event} />
+      <StringifiedNostrEventPreviewCard
+        hostEvent={hostEvent}
+        targetEvent={match.event}
+        deferAuthorAvatar={deferAuthorAvatar}
+      />
     </div>
   )
 }
@@ -218,7 +226,8 @@ export default function Note({
   embedded,
   fullCalendarInvite,
   zapPollVoteHighlightOption,
-  nip84HighlightEvents
+  nip84HighlightEvents,
+  deferAuthorAvatar = false
 }: {
   event: Event
   originalNoteId?: string
@@ -234,6 +243,8 @@ export default function Note({
   zapPollVoteHighlightOption?: number
   /** Kind-9802 events that cite this note; when spans match {@link displayEvent.content}, render green marks (note page OP). */
   nip84HighlightEvents?: Event[]
+  /** When true, defer remote profile avatars until near-viewport (dense lists e.g. merged NIP-50 search). */
+  deferAuthorAvatar?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -317,6 +328,7 @@ export default function Note({
             hideMetadata={hideMetadata}
             autoLoadMedia={autoLoadMedia}
             fullCalendarInvite={fullCalendarInvite}
+            deferAuthorAvatar={deferAuthorAvatar}
           />
         )
       }
@@ -374,7 +386,7 @@ export default function Note({
         />
       )
     },
-    [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents]
+    [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents, deferAuthorAvatar]
   )
 
   let content: React.ReactNode
@@ -618,7 +630,7 @@ export default function Note({
                   userId={event.pubkey}
                   size={size === 'small' ? 'medium' : 'normal'}
                   maxFileSizeKb={showFull ? 2048 : 500}
-                  deferRemoteAvatar={false}
+                  deferRemoteAvatar={deferAuthorAvatar}
                 />
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-hidden">
                   <Username
@@ -670,7 +682,7 @@ export default function Note({
                   userId={event.pubkey}
                   size={size === 'small' ? 'medium' : 'normal'}
                   maxFileSizeKb={showFull ? 2048 : 500}
-                  deferRemoteAvatar={false}
+                  deferRemoteAvatar={deferAuthorAvatar}
                 />
                 <div className="flex-1 w-0">
                   <div className="flex gap-2 items-center">

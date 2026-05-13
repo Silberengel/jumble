@@ -65,6 +65,8 @@ function sessionKey(url: string): string {
 class RelaySessionStrikes {
   private byKey = new Map<string, StrikeEntry>()
   private cacheRelayKeys = new Set<string>()
+  /** Throttle debug spam when many parallel REQs hit the same dead relay (cache rows bypass strike debounce). */
+  private lastReadFailureDebugLogAt = new Map<string, number>()
 
   setSessionCacheRelayKeysFromKind10432(ev: Event | null | undefined): void {
     this.cacheRelayKeys.clear()
@@ -168,7 +170,11 @@ class RelaySessionStrikes {
       e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
       logger.info('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
     } else {
-      logger.debug('[RelayStrikes] read failure counted', { key, readFailures: e.readFailures, cache })
+      const lastDbg = this.lastReadFailureDebugLogAt.get(key) ?? 0
+      if (now - lastDbg >= STRIKE_INCREMENT_DEBOUNCE_MS) {
+        this.lastReadFailureDebugLogAt.set(key, now)
+        logger.debug('[RelayStrikes] read failure counted', { key, readFailures: e.readFailures, cache })
+      }
     }
   }
 
@@ -180,6 +186,7 @@ class RelaySessionStrikes {
     e.readFailures = 0
     e.readStrikeSkipUntil = 0
     e.readLastStrikeIncrementAt = 0
+    this.lastReadFailureDebugLogAt.delete(key)
   }
 
   recordPublishFailure(url: string): void {
@@ -241,6 +248,7 @@ class RelaySessionStrikes {
   reset(): void {
     this.byKey.clear()
     this.cacheRelayKeys.clear()
+    this.lastReadFailureDebugLogAt.clear()
   }
 }
 

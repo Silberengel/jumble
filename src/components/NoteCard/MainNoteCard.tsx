@@ -23,7 +23,10 @@ export default function MainNoteCard({
   hideParentNotePreview = false,
   zapPollVoteHighlightOption,
   bottomNoteLabel,
-  showFull = false
+  showFull = false,
+  fetchNoteStatsIfMissing = true,
+  deferAuthorAvatar = false,
+  searchListPreview = false
 }: {
   event: Event
   className?: string
@@ -37,6 +40,12 @@ export default function MainNoteCard({
   zapPollVoteHighlightOption?: number
   bottomNoteLabel?: string
   showFull?: boolean
+  /** When false, skip relay-backed stats prefetch (e.g. merged NIP-50 search lists). */
+  fetchNoteStatsIfMissing?: boolean
+  /** When true, defer remote avatar HTTP until near-viewport (lighter list mounts). */
+  deferAuthorAvatar?: boolean
+  /** Compact row: no stats bar, no separator, no boost badges (e.g. merged NIP-50 search). */
+  searchListPreview?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -44,7 +53,10 @@ export default function MainNoteCard({
     event.kind === ExtendedKind.ZAP_RECEIPT || event.kind === ExtendedKind.ZAP_REQUEST
   /** NIP-52 kinds 31922 / 31923: card-level {@link Collapsible} clips the stats row; description collapses inside the card. */
   const isCalendarNoteKind = isNip52CalendarCardKind(event.kind)
-  const showNoteStatsRow = !embedded || isZapFeedCard
+  const showNoteStatsRow =
+    !searchListPreview && (!embedded || isZapFeedCard)
+  const notePadX = searchListPreview ? 'px-3' : 'px-4'
+  const innerY = searchListPreview ? 'py-2' : 'py-3'
 
   return (
     <div
@@ -84,12 +96,12 @@ export default function MainNoteCard({
       }}
     >
       <div
-        className={`clickable ${embedded ? 'not-prose p-2 sm:p-3 border rounded-lg' : 'py-3'}`}
+        className={`clickable ${embedded ? 'not-prose p-2 sm:p-3 border rounded-lg' : innerY}`}
         style={embedded ? { position: 'relative', overflow: 'visible' } : undefined}
       >
         {pinned && !embedded && (
           <div
-            className="flex items-center gap-1.5 px-4 pb-1 text-muted-foreground"
+            className={`flex items-center gap-1.5 ${notePadX} pb-1 text-muted-foreground`}
             role="img"
             aria-label={t('Pinned note')}
           >
@@ -97,10 +109,10 @@ export default function MainNoteCard({
           </div>
         )}
         <Collapsible alwaysExpand={embedded || isCalendarNoteKind}>
-          <RepostDescription className={embedded ? '' : 'px-4'} reposter={reposter} />
+          <RepostDescription className={embedded ? '' : notePadX} reposter={reposter} />
           <Note
-            className={embedded ? '' : 'px-4'}
-            size={embedded ? 'small' : 'normal'}
+            className={embedded ? '' : notePadX}
+            size={embedded || searchListPreview ? 'small' : 'normal'}
             event={event}
             embedded={embedded}
             originalNoteId={originalNoteId}
@@ -108,22 +120,23 @@ export default function MainNoteCard({
             hideParentNotePreview={hideParentNotePreview}
             zapPollVoteHighlightOption={zapPollVoteHighlightOption}
             showFull={showFull}
+            deferAuthorAvatar={deferAuthorAvatar}
           />
         </Collapsible>
-        {!embedded ? <NoteBoostBadges event={event} className="mt-2 px-4" /> : null}
+        {!embedded && !searchListPreview ? <NoteBoostBadges event={event} className={`mt-2 ${notePadX}`} /> : null}
         {showNoteStatsRow ? (
           <NoteStats
-            className={embedded ? 'mt-2 px-2 sm:px-3' : 'mt-3 px-4'}
+            className={embedded ? 'mt-2 px-2 sm:px-3' : `mt-3 ${notePadX}`}
             event={event}
-            fetchIfNotExisting={true}
+            fetchIfNotExisting={fetchNoteStatsIfMissing}
             displayTopZapsAndLikes={isZapFeedCard}
           />
         ) : null}
         {!embedded && bottomNoteLabel ? (
-          <div className="px-4 pt-1 text-xs text-muted-foreground">{bottomNoteLabel}</div>
+          <div className={`${notePadX} pt-1 text-xs text-muted-foreground`}>{bottomNoteLabel}</div>
         ) : null}
       </div>
-      {!embedded && <Separator />}
+      {!embedded && !searchListPreview ? <Separator /> : null}
     </div>
   )
 }

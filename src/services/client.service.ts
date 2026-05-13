@@ -3941,7 +3941,7 @@ class ClientService extends EventTarget {
     const cacheKey = this.relayListRequestCacheKey(pubkey)
     const existingRequest = this.relayListRequestCache.get(cacheKey)
     if (existingRequest) {
-      logger.debug('[FetchRelayList] Using cached in-flight request', { pubkey })
+      // Leader already logged `[FetchRelayList] Starting fetch`; joiners stay silent per burst.
       return existingRequest
     }
     

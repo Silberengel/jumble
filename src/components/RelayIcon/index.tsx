@@ -2,7 +2,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useFetchRelayInfo } from '@/hooks'
 import { getRelayIconOverrideSrc, relayUrlFingerprintColors } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
-import logger from '@/lib/logger'
 import { Server } from 'lucide-react'
 import { useMemo } from 'react'
 
@@ -48,7 +47,6 @@ export default function RelayIcon({
 
     const override = getRelayIconOverrideSrc(url)
     if (override) {
-      logger.debug('[RelayIcon] using override icon', { url, override })
       return override
     }
 
@@ -56,7 +54,6 @@ export default function RelayIcon({
     const rawIcon = relayInfo?.icon && typeof relayInfo.icon === 'string' ? relayInfo.icon : undefined
     const nip11Icon = rawIcon ? resolveRelayImageUrl(rawIcon, url) : undefined
     if (nip11Icon) {
-      logger.debug('[RelayIcon] using NIP-11 icon', { url, rawIcon, nip11Icon })
       return nip11Icon
     }
 

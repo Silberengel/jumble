@@ -1,6 +1,8 @@
+import { getPubkeysFromPTags } from '@/lib/tag'
 import storage from '@/services/local-storage.service'
 import { replaceableEventService } from '@/services/client.service'
 import { UserTrustContext } from '@/contexts/user-trust-context'
+import { kinds } from 'nostr-tools'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { useNostr } from './NostrProvider'
 
@@ -30,26 +32,30 @@ export function UserTrustProvider({ children }: { children: ReactNode }) {
     setIsTrustLoaded(false)
 
     const initWoT = async () => {
-      const followListEvent = await replaceableEventService.fetchReplaceableEvent(currentPubkey, kinds.Contacts)
-      const followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-      followings.forEach((pubkey) => wotSet.add(pubkey.toLowerCase()))
+      try {
+        const followListEvent = await replaceableEventService.fetchReplaceableEvent(currentPubkey, kinds.Contacts)
+        const followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
+        followings.forEach((pubkey) => wotSet.add(pubkey.toLowerCase()))
 
-      const batchSize = 20
-      for (let i = 0; i < followings.length; i += batchSize) {
-        const batch = followings.slice(i, i + batchSize)
-        await Promise.allSettled(
-          batch.map(async (pubkey) => {
-            const followListEvent = await replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Contacts)
-            const _followings = followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []
-            _followings.forEach((following) => {
-              wotSet.add(following.toLowerCase())
+        const batchSize = 20
+        for (let i = 0; i < followings.length; i += batchSize) {
+          const batch = followings.slice(i, i + batchSize)
+          await Promise.allSettled(
+            batch.map(async (pubkey) => {
+              const innerFollow = await replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Contacts)
+              const _followings = innerFollow ? getPubkeysFromPTags(innerFollow.tags) : []
+              _followings.forEach((following) => {
+                wotSet.add(following.toLowerCase())
+              })
             })
-          })
-        )
-        await new Promise((resolve) => setTimeout(resolve, 200))
+          )
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+      } finally {
+        setIsTrustLoaded(true)
       }
     }
-    initWoT()
+    void initWoT()
   }, [currentPubkey])
 
   const isUserTrusted = useCallback(
