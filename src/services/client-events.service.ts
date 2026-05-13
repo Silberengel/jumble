@@ -246,6 +246,21 @@ export class EventService {
   }
 
   /**
+   * IndexedDB publication store only (no session wait, no relay). Used to paint note stats before REQ.
+   */
+  async peekPublicationStoreEvent(hexId: string): Promise<NEvent | undefined> {
+    const id = hexId.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(id)) return undefined
+    const fromDb = await indexedDb.getEventFromPublicationStore(id)
+    if (fromDb && !shouldDropEventOnIngest(fromDb, { explicitNoteLookupHexId: id })) {
+      const ev = fromDb as NEvent
+      this.addEventToCache(ev, { explicitNoteLookupHexId: id })
+      return ev
+    }
+    return undefined
+  }
+
+  /**
    * When a matching event is added to the session cache, invoke `callback` (and when already cached).
    * Supports hex / note1 / nevent1 and **naddr1** (replaceable coordinate: kind + pubkey + `d`).
    */

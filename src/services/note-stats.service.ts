@@ -187,6 +187,14 @@ class NoteStatsService {
     const eventId = this.statsKey(event.id)
     const foreground = opts?.foreground === true
 
+    /** Session LRU already has many reactions/replies/zaps — paint counts before relay batch runs. */
+    if (event.kind !== ExtendedKind.RSS_THREAD_ROOT) {
+      const preFromSession = eventService.getSessionEventsForNoteStatsTarget(event)
+      if (preFromSession.length > 0) {
+        this.updateNoteStatsByEvents(preFromSession, event.pubkey, { statsRootEvent: event })
+      }
+    }
+
     const rememberRoot = () => {
       if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
         this.pendingSyntheticRootById.set(eventId, event)
@@ -266,6 +274,14 @@ class NoteStatsService {
       }
     }
     const hexIds = [...hexIdsSet]
+
+    for (const r of hexReplies) {
+      if (r.kind === ExtendedKind.RSS_THREAD_ROOT) continue
+      const pre = eventService.getSessionEventsForNoteStatsTarget(r)
+      if (pre.length > 0) {
+        this.updateNoteStatsByEvents(pre, r.pubkey)
+      }
+    }
 
     const markHexTargetsLoaded = () => {
       for (const id of hexIds) {
@@ -458,7 +474,16 @@ class NoteStatsService {
       this.pendingSyntheticRootById.delete(eventId)
       const callerRoot = this.pendingStatsRootEventById.get(eventId)
       this.pendingStatsRootEventById.delete(eventId)
-      resolvedEvent = synthetic ?? callerRoot ?? (await eventService.fetchEvent(eventId))
+      resolvedEvent = synthetic ?? callerRoot
+      if (!resolvedEvent && this.hexNoteStatsIdRe.test(eventId)) {
+        resolvedEvent = eventService.peekSessionCachedEvent(eventId)
+      }
+      if (!resolvedEvent && this.hexNoteStatsIdRe.test(eventId)) {
+        resolvedEvent = await eventService.peekPublicationStoreEvent(eventId)
+      }
+      if (!resolvedEvent) {
+        resolvedEvent = await eventService.fetchEvent(eventId)
+      }
       if (!resolvedEvent) {
         markStatsLoaded(eventId)
         return
