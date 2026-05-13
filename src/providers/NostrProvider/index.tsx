@@ -1537,6 +1537,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    client.interruptBackgroundQueries()
     noteStatsService.beginPublishPriority()
     try {
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
@@ -1657,6 +1658,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
 
     const deletionRequest = await signEvent(createDeletionRequestDraftEvent(targetEvent))
+
+    client.interruptBackgroundQueries()
 
     // Privacy: Only use user's own relays, never connect to "seen on" relays
     const favUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account?.pubkey ?? null)

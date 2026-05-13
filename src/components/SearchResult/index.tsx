@@ -7,8 +7,9 @@ import { ProfileListBySearch } from '../ProfileListBySearch'
 import Relay from '../Relay'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import client from '@/services/client.service'
 import { normalizeUrl } from '@/lib/url'
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo } from 'react'
 
 function relayDedupeKey(url: string): string {
   return (normalizeUrl(url) || url.trim()).toLowerCase()
@@ -17,6 +18,13 @@ function relayDedupeKey(url: string): string {
 export default function SearchResult({ searchParams }: { searchParams: TSearchParams | null }) {
   const { pubkey, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+
+  /** Before child effects (e.g. NIP-50) open REQs, tear down idle feed / prefetch queries so search gets the pool. */
+  useLayoutEffect(() => {
+    if (!searchParams) return
+    if (searchParams.type === 'relay') return
+    client.interruptBackgroundQueries()
+  }, [searchParams?.type, searchParams?.search, searchParams?.input])
 
   /** NIP-50 / index relays — always queried first on their own shard so dead personal relays cannot zero out search. */
   const searchableUrls = useMemo(
@@ -34,7 +42,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
 
   // User stack + defaults (hashtag search uses the non-searchable slice as a second shard)
   const combinedRelays = useMemo(() => {
-    let relays: string[] = []
+    const relays: string[] = []
 
     if (relayList) {
       relays.push(...(relayList.read || []), ...(relayList.write || []))

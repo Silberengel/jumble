@@ -3136,6 +3136,11 @@ class ClientService extends EventTarget {
     set.add(relay)
   }
 
+  /** Yield relay pool / HTTP index capacity to search or publish by aborting default {@link QueryService.query} work. */
+  interruptBackgroundQueries(): void {
+    this.queryService.interruptBackgroundQueries()
+  }
+
   // Delegate to QueryService
   private async query(
     urls: string[], 
@@ -3228,7 +3233,7 @@ class ClientService extends EventTarget {
   async fetchEventsFromSingleRelay(
     url: string,
     filter: Filter | Filter[],
-    options?: { globalTimeout?: number }
+    options?: { globalTimeout?: number; signal?: AbortSignal }
   ): Promise<{ events: NEvent[]; connectionError?: string }> {
     const normalized = normalizeAnyRelayUrl(url) || url
     if (!normalized) {
@@ -3236,7 +3241,9 @@ class ClientService extends EventTarget {
     }
     const queryOpts = {
       globalTimeout: options?.globalTimeout ?? 25_000,
-      relayOpSource: 'fetchEventsFromSingleRelay' as const
+      relayOpSource: 'fetchEventsFromSingleRelay' as const,
+      foreground: true as const,
+      ...(options?.signal ? { signal: options.signal } : {})
     }
 
     if (isHttpRelayUrl(normalized)) {

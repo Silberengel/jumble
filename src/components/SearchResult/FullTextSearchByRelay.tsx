@@ -242,15 +242,20 @@ export default function FullTextSearchByRelay({
     relayRows.length > 0 && relayRows.every((r) => r.phase === 'done' || r.phase === 'error')
 
   useEffect(() => {
+    const abort = new AbortController()
     const myRun = ++runGeneration.current
+    const cleanupInvalidatePreviousRun = () => {
+      runGeneration.current += 1
+    }
+    const dispose = () => {
+      abort.abort()
+      cleanupInvalidatePreviousRun()
+    }
+
     if (!q || normalizedRelays.length === 0) {
       setRelayRows([])
       setMergedHits([])
-      return
-    }
-
-    const cleanupInvalidatePreviousRun = () => {
-      runGeneration.current += 1
+      return dispose
     }
 
     const filter: Filter = {
@@ -311,7 +316,7 @@ export default function FullTextSearchByRelay({
         const { events: raw, connectionError } = await client.fetchEventsFromSingleRelay(
           relayUrl,
           filter,
-          { globalTimeout: FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS }
+          { globalTimeout: FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS, signal: abort.signal }
         )
         if (myRun !== runGeneration.current) return
 
@@ -375,7 +380,7 @@ export default function FullTextSearchByRelay({
       }
     })()
 
-    return cleanupInvalidatePreviousRun
+    return dispose
   }, [q, normalizedRelays, kinds])
 
   if (!q) {

@@ -185,8 +185,6 @@ export class ReplaceableEventService {
     d?: string,
     containingEventRelays: string[] = []
   ): Promise<NEvent | undefined> {
-    const cacheKey = d ? `${kind}:${pubkey}:${d}` : `${kind}:${pubkey}`
-
     try {
       if (kind === kinds.Metadata && !d) {
         const sessionEv = client.eventService.getSessionMetadataForPubkey(pubkey)
