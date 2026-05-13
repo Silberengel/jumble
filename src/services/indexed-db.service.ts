@@ -270,29 +270,6 @@ class IndexedDbService {
   private static readonly TOMBSTONE_NOT_CACHE_TTL_MS = 45_000
   private static readonly TOMBSTONE_NOT_CACHE_MAX = 4096
 
-  /**
-   * During bulk hydrates, `getReplaceableEvent` can run hundreds of times in a short window.
-   * One sample slot per completed lookup; first few per window log in full, then sample.
-   */
-  private replaceableGetDebugWindow = { t0: 0, n: 0 }
-  private static readonly REPLACEABLE_GET_DEBUG_WINDOW_MS = 150
-  private static readonly REPLACEABLE_GET_DEBUG_BURST_AFTER = 10
-  private static readonly REPLACEABLE_GET_DEBUG_SAMPLE_EVERY = 24
-
-  private takeReplaceableGetDebugLogSlot(): boolean {
-    const now = Date.now()
-    const winMs = IndexedDbService.REPLACEABLE_GET_DEBUG_WINDOW_MS
-    if (now - this.replaceableGetDebugWindow.t0 > winMs) {
-      this.replaceableGetDebugWindow = { t0: now, n: 0 }
-    }
-    this.replaceableGetDebugWindow.n += 1
-    const n = this.replaceableGetDebugWindow.n
-    const burstAfter = IndexedDbService.REPLACEABLE_GET_DEBUG_BURST_AFTER
-    const sampleEvery = IndexedDbService.REPLACEABLE_GET_DEBUG_SAMPLE_EVERY
-    return n <= burstAfter || n % sampleEvery === 0
-  }
-
-  /** First TTL sweep after DB open (profile / relay list rows). */
   private static readonly CLEANUP_INITIAL_DELAY_MS = 60 * 1000
   /** Repeat TTL sweeps on this interval so pruning is not a one-shot. */
   private static readonly CLEANUP_INTERVAL_MS = 60 * 60 * 1000
@@ -624,16 +601,8 @@ class IndexedDbService {
       const request = store.get(key)
 
       request.onsuccess = () => {
-        const allowDetailLog = this.takeReplaceableGetDebugLogSlot()
         const row = request.result as TValue<Event> | undefined
         if (!row) {
-          if (allowDetailLog) {
-            logger.debug('[IndexedDB] getReplaceableEvent - no row found', {
-              pubkey,
-              kind,
-              d
-            })
-          }
           transaction.commit()
           return resolve(undefined)
         }
@@ -644,22 +613,6 @@ class IndexedDbService {
         if (isProfileOrPayment && row.addedAt && Date.now() - row.addedAt > PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS) {
           // Profile is stale, but return it anyway - refresh will happen in background
           // This prevents the "no profile" state when cache exists but is just old
-          if (allowDetailLog) {
-            logger.debug('[IndexedDB] Profile cache is stale but returning anyway', {
-              pubkey,
-              age: Date.now() - row.addedAt,
-              maxAge: PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS,
-              eventId: row.value?.id
-            })
-          }
-        }
-        if (allowDetailLog) {
-          logger.debug('[IndexedDB] getReplaceableEvent - found', {
-            pubkey,
-            kind,
-            eventId: row.value?.id,
-            addedAt: row.addedAt
-          })
         }
         transaction.commit()
         resolve(row.value)

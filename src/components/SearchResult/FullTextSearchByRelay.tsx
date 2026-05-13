@@ -2,7 +2,6 @@ import NoteCard from '@/components/NoteCard'
 import RelayIcon from '@/components/RelayIcon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
-import logger from '@/lib/logger'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
@@ -213,24 +212,6 @@ function sortRelaysByHost(urls: readonly string[]): string[] {
   )
 }
 
-/** Console hint: what this one-shot outcome suggests about NIP-50 (never proof without NIP-11). */
-function nip50OutcomeHint(args: {
-  phase: 'done' | 'error'
-  rawCount: number
-  connectionError?: string
-}): string {
-  if (args.phase === 'error') {
-    return 'no_transport_or_relay_closed_request — cannot tell NIP-50 from this run'
-  }
-  if (args.rawCount > 0) {
-    return 'returned_events_for_REQ_with_search_field — relay likely honors NIP-50 for this query (verify with NIP-11 supported_nips)'
-  }
-  if (args.connectionError) {
-    return 'zero_events_but_connection_error_message — partial failure or restrictive CLOSE; NIP-50 unclear'
-  }
-  return 'zero_events_clean_close — no_hits_or_search_ignored_or_empty_index — cannot distinguish without NIP-11 or a known match'
-}
-
 export default function FullTextSearchByRelay({
   searchQuery,
   relayUrls,
@@ -325,15 +306,6 @@ export default function FullTextSearchByRelay({
     }
 
     const runOneRelay = async (relayUrl: string) => {
-      const host = relayHostForSubscribeLog(relayUrl)
-      logger.debug('[NIP-50 full-text] card_begin', {
-        runId: myRun,
-        relayUrl,
-        host,
-        timeoutMs: FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS,
-        filter: { search: filter.search, kinds: filter.kinds, limit: filter.limit }
-      })
-
       const t0 = performance.now()
       try {
         const { events: raw, connectionError } = await client.fetchEventsFromSingleRelay(
@@ -350,18 +322,6 @@ export default function FullTextSearchByRelay({
         if (myRun !== runGeneration.current) return
         const ms = Math.round(performance.now() - t0)
         if (sorted.length === 0 && connectionError) {
-          logger.debug('[NIP-50 full-text] card_end', {
-            runId: myRun,
-            relayUrl,
-            host,
-            phase: 'error' as const,
-            ms,
-            eventCountRaw: raw.length,
-            eventCountShown: 0,
-            connectionError,
-            cardErrorMessage: connectionError,
-            nip50Hint: nip50OutcomeHint({ phase: 'error', rawCount: 0, connectionError })
-          })
           setRelayRows((prev) =>
             prev.map((r) =>
               r.relayUrl === relayUrl
@@ -373,28 +333,6 @@ export default function FullTextSearchByRelay({
         }
 
         mergeIntoHits(relayUrl, sorted)
-
-        logger.debug('[NIP-50 full-text] card_end', {
-          runId: myRun,
-          relayUrl,
-          host,
-          phase: 'done' as const,
-          ms,
-          eventCountRaw: raw.length,
-          eventCountShown: sorted.length,
-          connectionError: sorted.length > 0 ? undefined : connectionError,
-          cardNote:
-            sorted.length === 0 && connectionError
-              ? 'UI shows soft warning (empty with message)'
-              : sorted.length === 0
-                ? 'UI empty state'
-                : 'UI lists notes',
-          nip50Hint: nip50OutcomeHint({
-            phase: 'done',
-            rawCount: raw.length,
-            connectionError: sorted.length > 0 ? undefined : connectionError
-          })
-        })
 
         setRelayRows((prev) =>
           prev.map((r) =>
@@ -413,18 +351,6 @@ export default function FullTextSearchByRelay({
         if (myRun !== runGeneration.current) return
         const msg = err instanceof Error ? err.message : String(err)
         const ms = Math.round(performance.now() - t0)
-        logger.debug('[NIP-50 full-text] card_end', {
-          runId: myRun,
-          relayUrl,
-          host,
-          phase: 'error' as const,
-          ms,
-          eventCountRaw: 0,
-          eventCountShown: 0,
-          connectionError: undefined,
-          cardErrorMessage: msg,
-          nip50Hint: nip50OutcomeHint({ phase: 'error', rawCount: 0 })
-        })
         setRelayRows((prev) =>
           prev.map((r) =>
             r.relayUrl === relayUrl ? { ...r, phase: 'error', eventCount: 0, ms, errorMessage: msg } : r
@@ -442,25 +368,11 @@ export default function FullTextSearchByRelay({
     }
 
     void (async () => {
-      logger.debug('[NIP-50 full-text] wave_begin', {
-        runId: myRun,
-        query: q,
-        relayCount: normalizedRelays.length,
-        concurrency: poolSize,
-        filter: { search: filter.search, kinds: filter.kinds, limit: filter.limit },
-        relays: normalizedRelays.map((u) => ({ url: u, host: relayHostForSubscribeLog(u) }))
-      })
       try {
         await Promise.all(Array.from({ length: poolSize }, () => worker()))
       } catch {
         /* runOneRelay already updates relay rows */
       }
-      if (myRun !== runGeneration.current) return
-      logger.debug('[NIP-50 full-text] wave_end', {
-        runId: myRun,
-        relayCount: normalizedRelays.length,
-        note: 'matches UI "all relays finished" when every relay row is done or error'
-      })
     })()
 
     return cleanupInvalidatePreviousRun

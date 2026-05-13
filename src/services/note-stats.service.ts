@@ -137,10 +137,6 @@ class NoteStatsService {
     }, this.BATCH_DELAY)
   }
 
-  private statsPendingSize() {
-    return this.pendingForeground.size + this.pendingEvents.size
-  }
-
   /** Up to {@link MAX_BATCH_SIZE} ids, foreground queue first (same insertion order within each set). */
   private takeNextStatsSlice(): string[] {
     const out: string[] = []
@@ -186,7 +182,6 @@ class NoteStatsService {
     opts?: { foreground?: boolean }
   ) {
     const eventId = this.statsKey(event.id)
-    const idShort = `${eventId.slice(0, 12)}…`
     const foreground = opts?.foreground === true
 
     const rememberRoot = () => {
@@ -204,12 +199,6 @@ class NoteStatsService {
         this.pendingEvents.delete(eventId)
         this.pendingForeground.add(eventId)
       }
-      logger.debug('[NoteStats] fetchNoteStats: merged into existing pending batch', {
-        eventId: idShort,
-        kind: event.kind,
-        pendingForeground: this.pendingForeground.size,
-        pendingBackground: this.pendingEvents.size
-      })
       this.maybeFlushStatsBatch(foreground)
       return
     }
@@ -220,10 +209,6 @@ class NoteStatsService {
       if (foreground) {
         this.deferredRequeueForeground.add(eventId)
       }
-      logger.debug('[NoteStats] fetchNoteStats: deferred (already processing same id)', {
-        eventId: idShort,
-        kind: event.kind
-      })
       return
     }
 
@@ -234,15 +219,6 @@ class NoteStatsService {
       this.pendingEvents.add(eventId)
     }
     rememberRoot()
-
-    logger.debug('[NoteStats] fetchNoteStats: queued new id', {
-      eventId: idShort,
-      kind: event.kind,
-      foreground,
-      pendingForeground: this.pendingForeground.size,
-      pendingBackground: this.pendingEvents.size,
-      immediateBatch: this.statsPendingSize() >= this.MAX_BATCH_SIZE
-    })
 
     this.maybeFlushStatsBatch(foreground)
   }
@@ -276,20 +252,12 @@ class NoteStatsService {
       return
     }
     if (this.processBatchRunning) {
-      logger.debug('[NoteStats] processBatch: skipped (already running)', {
-        pendingForeground: this.pendingForeground.size,
-        pendingBackground: this.pendingEvents.size
-      })
       return
     }
     if (this.pendingForeground.size === 0 && this.pendingEvents.size === 0) {
       return
     }
 
-    logger.debug('[NoteStats] processBatch: running', {
-      pendingForeground: this.pendingForeground.size,
-      pendingBackground: this.pendingEvents.size
-    })
     this.processBatchRunning = true
     if (this.batchTimeout) {
       clearTimeout(this.batchTimeout)
@@ -298,13 +266,6 @@ class NoteStatsService {
 
     try {
       const eventsToProcess = this.takeNextStatsSlice()
-      logger.debug('[NoteStats] processBatch slice', {
-        count: eventsToProcess.length,
-        ids: eventsToProcess.map((id) => `${id.slice(0, 12)}…`),
-        remainingForeground: this.pendingForeground.size,
-        remainingBackground: this.pendingEvents.size,
-        concurrency: this.STATS_SLICE_CONCURRENCY
-      })
       for (let i = 0; i < eventsToProcess.length; i += this.STATS_SLICE_CONCURRENCY) {
         const chunk = eventsToProcess.slice(i, i + this.STATS_SLICE_CONCURRENCY)
         await Promise.all(chunk.map((eventId) => this.processSingleEvent(eventId)))
@@ -319,9 +280,6 @@ class NoteStatsService {
 
   private async processSingleEvent(eventId: string) {
     if (this.processingCache.has(eventId)) {
-      logger.debug('[NoteStats] processSingleEvent: skip (concurrent in-flight)', {
-        eventId: `${eventId.slice(0, 12)}…`
-      })
       return
     }
 
@@ -331,7 +289,7 @@ class NoteStatsService {
     this.pendingFetchFavoriteRelays.delete(eventId)
 
     let publishedStatsSnapshot = false
-    const markStatsLoaded = (rawStatsKey: string, reason: string) => {
+    const markStatsLoaded = (rawStatsKey: string) => {
       if (publishedStatsSnapshot) return
       publishedStatsSnapshot = true
       const statsKey = this.statsKey(rawStatsKey)
@@ -339,35 +297,19 @@ class NoteStatsService {
         ...(this.noteStatsMap.get(statsKey) ?? {}),
         updatedAt: dayjs().unix()
       })
-      const subscriberCount = this.noteStatsSubscribers.get(statsKey)?.size ?? 0
-      logger.debug('[NoteStats] processSingleEvent: snapshot published', {
-        statsKey: `${statsKey.slice(0, 12)}…`,
-        reason,
-        subscriberCount
-      })
       this.notifyNoteStats(statsKey)
     }
 
     let resolvedEvent: Event | undefined
     try {
-      logger.debug('[NoteStats] processSingleEvent: start', { eventId: `${eventId.slice(0, 12)}…` })
       // Synthetic RSS/Web thread parents are not published; use the instance from fetchNoteStats.
       const synthetic = this.pendingSyntheticRootById.get(eventId)
       this.pendingSyntheticRootById.delete(eventId)
       const callerRoot = this.pendingStatsRootEventById.get(eventId)
       this.pendingStatsRootEventById.delete(eventId)
       resolvedEvent = synthetic ?? callerRoot ?? (await eventService.fetchEvent(eventId))
-      const rootSource = synthetic ? 'synthetic-rss' : callerRoot ? 'caller-card' : resolvedEvent ? 'fetchEvent' : 'none'
-      logger.debug('[NoteStats] processSingleEvent: root resolution', {
-        eventId: `${eventId.slice(0, 12)}…`,
-        rootSource,
-        resolvedKind: resolvedEvent?.kind
-      })
       if (!resolvedEvent) {
-        logger.debug('[NoteStats] processSingleEvent: no root event — publishing empty snapshot', {
-          eventId: `${eventId.slice(0, 12)}…`
-        })
-        markStatsLoaded(eventId, 'no-root-event')
+        markStatsLoaded(eventId)
         return
       }
 
@@ -378,10 +320,6 @@ class NoteStatsService {
         if (preFromSession.length > 0) {
           this.updateNoteStatsByEvents(preFromSession, resolvedEvent.pubkey, {
             statsRootEvent: resolvedEvent
-          })
-          logger.debug('[NoteStats] processSingleEvent: pre-merged session interactions', {
-            eventId: `${resolvedEvent.id.slice(0, 12)}…`,
-            count: preFromSession.length
           })
         }
       }
@@ -399,21 +337,11 @@ class NoteStatsService {
         firstRelayResultGraceMs: false as const
       }
 
-      const events: Event[] = []
-      logger.debug(
-        '[NoteStats] Fetching stats for event',
-        resolvedEvent.id.substring(0, 8),
-        'from',
-        finalRelayUrls.length,
-        'relays'
-      )
-
       const { queryService } = await import('@/services/client.service')
       const onStatsEvent = (evt: Event) => {
         this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey, {
           statsRootEvent: resolvedEvent!
         })
-        events.push(evt)
       }
       await Promise.all([
         nonSocial.length > 0
@@ -430,21 +358,16 @@ class NoteStatsService {
           : Promise.resolve([] as Event[])
       ])
 
-      logger.debug('[NoteStats] processSingleEvent: relay fetch finished', {
-        eventId: `${resolvedEvent.id.slice(0, 12)}…`,
-        interactionEventsReceived: events.length
-      })
-
-      markStatsLoaded(resolvedEvent.id, 'fetch-ok')
+      markStatsLoaded(resolvedEvent.id)
     } catch (err) {
       logger.warn('[NoteStats] processSingleEvent failed', {
         eventId: eventId.substring(0, 8),
         error: err instanceof Error ? err.message : String(err)
       })
-      markStatsLoaded(resolvedEvent?.id ?? eventId, 'catch-after-error')
+      markStatsLoaded(resolvedEvent?.id ?? eventId)
     } finally {
       if (!publishedStatsSnapshot) {
-        markStatsLoaded(resolvedEvent?.id ?? eventId, 'finally-fallback')
+        markStatsLoaded(resolvedEvent?.id ?? eventId)
       }
       this.processingCache.delete(eventId)
       if (this.inFlightDeferredFavoriteRelays.has(eventId)) {

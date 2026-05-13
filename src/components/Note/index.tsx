@@ -392,7 +392,6 @@ export default function Note({
   let content: React.ReactNode
   
   if (!isRenderableNoteKind(event.kind)) {
-    logger.debug('Note component - rendering UnknownNote for unsupported kind:', event.kind)
     content = <UnknownNote className="mt-2" event={displayEvent} omitKindLabel />
   } else if (muteSetHas(mutePubkeySet, event.pubkey) && !showMuted) {
     content = <MutedNote show={() => setShowMuted(true)} />

@@ -3941,23 +3941,12 @@ class ClientService extends EventTarget {
     const cacheKey = this.relayListRequestCacheKey(pubkey)
     const existingRequest = this.relayListRequestCache.get(cacheKey)
     if (existingRequest) {
-      // Leader already logged `[FetchRelayList] Starting fetch`; joiners stay silent per burst.
       return existingRequest
     }
-    
-    logger.debug('[FetchRelayList] Starting fetch', { pubkey })
+
     const requestPromise = (async () => {
       try {
-        const startTime = Date.now()
         const [relayList] = await this.fetchRelayLists([pubkey])
-        const duration = Date.now() - startTime
-        logger.debug('[FetchRelayList] Fetch completed', {
-          pubkey,
-          duration: `${duration}ms`,
-          hasRelayList: !!relayList,
-          writeCount: relayList?.write?.length ?? 0,
-          readCount: relayList?.read?.length ?? 0
-        })
         return relayList
       } catch (error) {
         logger.warn('[FetchRelayList] Fetch failed; using IndexedDB / defaults', {
@@ -4213,14 +4202,6 @@ class ClientService extends EventTarget {
 
       const missing10002Pubkeys = pubkeys.filter((_pk, i) => storedRelayEvents[i] == null)
       if (missing10002Pubkeys.length > 0) {
-        logger.debug(
-          '[FetchRelayLists] Kind 10002 missing in IndexedDB for some pubkeys; fetching only those over the network',
-          {
-            batchSize: pubkeys.length,
-            missingCount: missing10002Pubkeys.length,
-            missingPubkeyPrefixes: missing10002Pubkeys.map((p) => p.slice(0, 12))
-          }
-        )
         const [relFetched, httpFetched] = await Promise.all([
           this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
             missing10002Pubkeys,
@@ -4269,10 +4250,6 @@ class ClientService extends EventTarget {
 
     if (allHaveKind10002) {
       this.refreshRelayListsFromNetwork(pubkeys, storedRelayEvents)
-      logger.debug(
-        '[FetchRelayLists] Kind 10002 present in IndexedDB for all pubkeys; merging locally, network refresh in background',
-        { count: pubkeys.length }
-      )
       const cacheRelayEvents = await Promise.race([
         this.fetchCacheRelayEventsFromMultipleSources(pubkeys, storedRelayEvents, storedRelayEvents),
         new Promise<(NEvent | null | undefined)[]>((resolve) =>

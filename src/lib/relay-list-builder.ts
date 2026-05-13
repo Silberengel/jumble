@@ -150,13 +150,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       authorOutboxes.forEach(addRelay)
       const authorInboxes = userReadRelaysWithHttp(authorRelayList).slice(0, 10)
       authorInboxes.forEach(addRelay)
-      logger.debug('[RelayListBuilder] Added author relays', {
-        author: authorPubkey.substring(0, 8),
-        outboxes: authorOutboxes.length,
-        inboxes: authorInboxes.length
-      })
     } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to read author relay list from storage', { error })
+      logger.warn('[RelayListBuilder] Failed to read author relay list from storage', { error })
     }
   }
 
@@ -176,28 +171,16 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       }
       
       // Include favorite relays (kind 10012) if requested
-      let favoriteRelaysCount = 0
       if (includeFavoriteRelays) {
         try {
           const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
           favoriteRelays.forEach(addRelay)
-          favoriteRelaysCount = favoriteRelays.length
-          logger.debug('[RelayListBuilder] Added user favorite relays', {
-            count: favoriteRelaysCount
-          })
         } catch (error) {
-          logger.debug('[RelayListBuilder] Failed to fetch user favorite relays', { error })
+          logger.warn('[RelayListBuilder] Failed to fetch user favorite relays', { error })
         }
       }
-      
-      logger.debug('[RelayListBuilder] Added user own relays', {
-        read: (userRelayList.read || []).length,
-        write: (userRelayList.write || []).length,
-        local: includeLocalRelays ? (await getCacheRelayUrls(userPubkey)).length : 0,
-        favorite: favoriteRelaysCount
-      })
     } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch user relay list', { error })
+      logger.warn('[RelayListBuilder] Failed to fetch user relay list', { error })
     }
   } else if (userPubkey) {
     // Even if not including user's own relays, still include user's inboxes for reading
@@ -217,15 +200,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
         try {
           const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
           favoriteRelays.forEach(addRelay)
-          logger.debug('[RelayListBuilder] Added user favorite relays (with inboxes path)', {
-            count: favoriteRelays.length
-          })
         } catch (error) {
-          logger.debug('[RelayListBuilder] Failed to fetch user favorite relays', { error })
+          logger.warn('[RelayListBuilder] Failed to fetch user favorite relays', { error })
         }
       }
     } catch (error) {
-      logger.debug('[RelayListBuilder] Failed to fetch user inboxes', { error })
+      logger.warn('[RelayListBuilder] Failed to fetch user inboxes', { error })
     }
   }
 
@@ -362,7 +342,7 @@ export async function buildPollResultsReadRelayUrls(options: {
       viewerReadSlice = userReadRelaysWithHttp(viewerRl).slice(0, POLL_RESULTS_NIP65_READ_SLICE)
     }
   } catch {
-    logger.debug('[RelayListBuilder] poll results: NIP-65 relay list race failed')
+    /* ignore — poll results still use other layers */
   }
 
   pushLayer(viewerReadSlice)
@@ -373,7 +353,7 @@ export async function buildPollResultsReadRelayUrls(options: {
       const localRelays = await getCacheRelayUrls(viewerPubkey)
       pushLayer(localRelays)
     } catch {
-      logger.debug('[RelayListBuilder] poll results: cache relays failed')
+      /* ignore */
     }
   }
 

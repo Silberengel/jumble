@@ -503,33 +503,11 @@ export class EventService {
       filter.ids?.length === 1 && /^[0-9a-f]{64}$/i.test(String(filter.ids[0]))
         ? { explicitNoteLookupHexId: String(filter.ids[0]).toLowerCase() }
         : undefined
-    const logKey =
-      'ids' in filter && filter.ids?.[0]
-        ? filter.ids[0].slice(0, 8)
-        : Array.isArray(filter['#a']) && filter['#a'][0]
-          ? String(filter['#a'][0]).slice(0, 40)
-          : `${filter.kinds?.[0]}:${(filter.authors?.[0] ?? '').slice(0, 8)}`
-
-    logger.debug('fetchEventWithExternalRelays: Starting search', {
-      noteIdKey: logKey,
-      relayCount: externalRelays.length,
-      relays: externalRelays
-    })
-
-    const startTime = Date.now()
     /** User-driven “try everywhere”: wait for EOSE-ish completion so slower relays (e.g. nos.lol) can answer. */
     const events = await this.queryService.query(externalRelays, filter, undefined, {
       eoseTimeout: 12_000,
       globalTimeout: 35_000,
       immediateReturn: false
-    })
-    const duration = Date.now() - startTime
-
-    logger.debug('fetchEventWithExternalRelays: Search completed', {
-      noteIdKey: logKey,
-      relayCount: externalRelays.length,
-      eventsFound: events.length,
-      durationMs: duration
     })
 
     const usable = events
@@ -1249,13 +1227,6 @@ export class EventService {
       return undefined
     }
 
-    logger.debug('[EventService] Using comprehensive relay list', {
-      author: authorPubkey?.substring(0, 8),
-      relayCount: relayUrls.length,
-      hasHints: relayHints.length > 0,
-      hasSeen: seenRelays.length > 0
-    })
-
     const isSingleEventById = Boolean(filter.ids && filter.ids.length === 1 && filter.limit === 1)
     /** Replaceable coordinate: `#a` (preferred) or legacy `authors` + `#d`. */
     const isReplaceableCoordinateFetch =
@@ -1275,13 +1246,6 @@ export class EventService {
       .filter((e) => !shouldDropEventOnIngest(e, ingestOpts))
       .sort((a, b) => b.created_at - a.created_at)[0]
 
-    if (event && isSingleEventById && !isReplaceableEvent(event.kind)) {
-      logger.debug('[EventService] Non-replaceable event returned immediately', {
-        eventId: event.id.substring(0, 8),
-        kind: event.kind
-      })
-    }
-    
     return event
   }
 

@@ -29,13 +29,7 @@ import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
 import { isHttpRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
-import {
-  RelaySubscribeOpBatch,
-  compactFilterForRelayLog,
-  humanizeSubscribeTerminalDetail,
-  relayHostForSubscribeLog,
-  type RelayOpTerminalRow
-} from '@/services/relay-operation-log.service'
+import { RelaySubscribeOpBatch, type RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
@@ -82,54 +76,44 @@ function logQueryReqConsolidatedEnd(
     kindHistogram[k] = (kindHistogram[k] ?? 0) + 1
   }
 
-  const norm = (u: string) => normalizeUrl(u) || u
-  type Row = {
-    url: string
-    host: string
-    terminal?: RelayOpTerminalRow['outcome']
-    detail?: string
-    eventsReturned: number
-  }
-  const byKey = new Map<string, Row>()
-
-  const rowFor = (url: string): Row => {
-    const key = norm(url)
-    let r = byKey.get(key)
-    if (!r) {
-      r = { url: key, host: relayHostForSubscribeLog(key), eventsReturned: 0 }
-      byKey.set(key, r)
-    }
-    return r
-  }
-
+  const outcomeCounts: Record<string, number> = {}
   for (const t of terminals) {
-    const r = rowFor(t.relayUrl)
-    r.terminal = t.outcome
-    r.detail = humanizeSubscribeTerminalDetail(t.outcome, t.detail)
+    const k = t.outcome
+    outcomeCounts[k] = (outcomeCounts[k] ?? 0) + 1
+  }
+  const benignEmpty =
+    events.length === 0 &&
+    (terminals.length === 0 ||
+      terminals.every((t) => t.outcome === 'eose'))
+  if (benignEmpty) {
+    return
   }
 
-  for (const e of events) {
-    const seen = getSeenForEvent(e.id)
-    for (const u of seen) {
-      rowFor(u).eventsReturned += 1
+  const relayTotal = new Set([
+    ...inputRelays.map((u) => normalizeUrl(u) || u),
+    ...httpBases.map((u) => normalizeUrl(u) || u)
+  ]).size
+
+  let relaysWithHits = 0
+  if (events.length > 0) {
+    const hitUrls = new Set<string>()
+    for (const e of events) {
+      for (const u of getSeenForEvent(e.id)) {
+        hitUrls.add(normalizeUrl(u) || u)
+      }
     }
+    relaysWithHits = hitUrls.size
   }
-
-  for (const u of inputRelays) {
-    rowFor(u)
-  }
-  for (const b of httpBases) {
-    rowFor(b)
-  }
-
-  const perRelay = [...byKey.values()].sort((a, b) => a.host.localeCompare(b.host))
 
   logger.debug('[QueryService] req_end', {
     reqId,
     source,
     eventCount: events.length,
     kindHistogram,
-    perRelay
+    relayCandidateCount: relayTotal,
+    terminalCount: terminals.length,
+    terminalOutcomes: outcomeCounts,
+    relaysWithEventHits: relaysWithHits
   })
 }
 
@@ -435,17 +419,6 @@ export class QueryService {
     const source = options?.relayOpSource ?? 'QueryService.query'
     const inputRelaysOrdered = Array.from(new Set(urls.map((u) => normalizeUrl(u) || u).filter(Boolean)))
     const wsRelayCandidates = Array.from(new Set(wsQueryUrls.map((u) => normalizeUrl(u) || u).filter(Boolean)))
-
-    logger.debug('[QueryService] req_begin', {
-      reqId,
-      source,
-      relays: inputRelaysOrdered,
-      httpRelayBases,
-      wsRelayCandidates,
-      filters: sanitizedFilters.map(compactFilterForRelayLog),
-      eoseTimeout,
-      globalTimeout
-    })
 
     return await new Promise<NEvent[]>((resolve) => {
       const events: NEvent[] = []
