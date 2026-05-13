@@ -98,7 +98,14 @@ const SearchBar = forwardRef<
 
     if (params.type === 'note') {
       // Prime event cache so note page finds it without re-fetch
-      eventService.fetchEvent(params.search).then((ev) => { if (ev) eventService.addEventToCache(ev) }).catch(() => {})
+      eventService
+        .fetchEvent(params.search)
+        .then((ev) => {
+          if (!ev) return
+          const hex = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : undefined
+          eventService.addEventToCache(ev, hex ? { explicitNoteLookupHexId: hex } : undefined)
+        })
+        .catch(() => {})
       navigateToNote(toNote(params.search))
     } else if (params.type === 'hashtag') {
       navigateToHashtag(toNoteList({ hashtag: params.search }))

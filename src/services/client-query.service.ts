@@ -746,7 +746,14 @@ export class QueryService {
       return { url, filters: filtersForRelay }
     })
 
-    if (groupedRequests.length === 1) {
+    const hasNip50Search = filters.some(
+      (f) => typeof f.search === 'string' && f.search.trim().length > 0
+    )
+    /**
+     * Single-relay `pool.close` before subscribe resets the socket. Overlapping NIP-50 one-shots (e.g. Strict Mode
+     * double effect) then tear down each other’s REQ before EOSE → empty results until globalTimeout.
+     */
+    if (groupedRequests.length === 1 && !hasNip50Search) {
       try {
         this.pool.close([groupedRequests[0]!.url])
       } catch {

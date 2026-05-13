@@ -94,7 +94,7 @@ function canonicalSeenOnEventId(eventId: string): string {
   const t = eventId.trim()
   return /^[0-9a-f]{64}$/i.test(t) ? t.toLowerCase() : t
 }
-import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
 import { getHttpRelayListFromEvent, getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
@@ -179,6 +179,8 @@ import { buildProfileKind0SearchFilters } from '@/lib/profile-relay-search-filte
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import {
   compactFilterForRelayLog,
+  humanizeSubscribeTerminalDetail,
+  relayHostForSubscribeLog,
   RelayOpTerminalRow,
   RelayPublishOpBatch,
   RelaySubscribeOpBatch
@@ -199,6 +201,66 @@ const TIMELINE_STREAMING_COALESCE_MS = 24
  * fresher timestamps go to `onNew` (live / “new notes” UX).
  */
 const TIMELINE_STRAGGLER_MAX_AGE_SEC = 600
+
+/** Same shape as `QueryService` `req_end` `perRelay` — NIP-50 search uses `subscribeTimeline`, not `query()`. */
+function logSearchTimelineNip50ReqEnd(args: {
+  timelineBatchId: string
+  search: string
+  subRequests: { urls: string[]; filter: TSubRequestFilter }[]
+  eventsSnapshot: NEvent[]
+  terminals: RelayOpTerminalRow[]
+  getSeenForEvent: (eventId: string) => string[]
+}): void {
+  const { timelineBatchId, search, subRequests, eventsSnapshot, terminals, getSeenForEvent } = args
+  const norm = (u: string) => normalizeUrl(u) || u
+  type Row = {
+    url: string
+    host: string
+    terminal?: RelayOpTerminalRow['outcome']
+    detail?: string
+    eventsReturned: number
+  }
+  const byKey = new Map<string, Row>()
+  const rowFor = (url: string): Row => {
+    const key = norm(url)
+    let r = byKey.get(key)
+    if (!r) {
+      r = { url: key, host: relayHostForSubscribeLog(key), eventsReturned: 0 }
+      byKey.set(key, r)
+    }
+    return r
+  }
+  for (const t of terminals) {
+    const r = rowFor(t.relayUrl)
+    r.terminal = t.outcome
+    r.detail = humanizeSubscribeTerminalDetail(t.outcome, t.detail)
+  }
+  for (const e of eventsSnapshot) {
+    for (const u of getSeenForEvent(e.id)) {
+      rowFor(u).eventsReturned += 1
+    }
+  }
+  const inputRelaysOrdered = Array.from(
+    new Set(subRequests.flatMap((s) => s.urls).map((u) => norm(u)).filter(Boolean))
+  )
+  for (const u of inputRelaysOrdered) {
+    rowFor(u)
+  }
+  const kindHistogram: Record<string, number> = {}
+  for (const e of eventsSnapshot) {
+    const k = String(e.kind)
+    kindHistogram[k] = (kindHistogram[k] ?? 0) + 1
+  }
+  const perRelay = [...byKey.values()].sort((a, b) => a.host.localeCompare(b.host))
+  logger.info('[QueryService] search_req_end', {
+    timelineBatchId,
+    source: 'subscribeTimeline',
+    search,
+    eventCount: eventsSnapshot.length,
+    kindHistogram,
+    perRelay
+  })
+}
 
 function summarizeFiltersForRelayLog(filters: Filter[]): Record<string, unknown> {
   const f = filters[0]
@@ -2023,6 +2085,29 @@ class ClientService extends EventTarget {
       relayCounts: subRequests.map((r) => r.urls.length)
     })
 
+    const nip50SearchTerm = (() => {
+      for (const s of subRequests) {
+        const q =
+          typeof (s.filter as Filter).search === 'string' ? (s.filter as Filter).search!.trim() : ''
+        if (q.length > 0) return q
+      }
+      return ''
+    })()
+    if (nip50SearchTerm) {
+      const relaysForLog = Array.from(
+        new Set(subRequests.flatMap((s) => s.urls.map((u) => normalizeUrl(u) || u).filter(Boolean)))
+      )
+      logger.info('[QueryService] search_req_begin', {
+        timelineBatchId,
+        source: 'subscribeTimeline',
+        search: nip50SearchTerm,
+        relays: relaysForLog,
+        shardCount: subRequests.length,
+        relayCountsPerShard: subRequests.map((r) => r.urls.length),
+        filters: subRequests.map((s) => compactFilterForRelayLog(s.filter as Filter))
+      })
+    }
+
     const newEventIdSet = new Set<string>()
     const requestCount = subRequests.length
     let eventIdSet = new Set<string>()
@@ -2078,16 +2163,23 @@ class ClientService extends EventTarget {
 
     let subscribeWaveShardsRemaining = subRequests.length
     const subscribeWaveAcc: RelayOpTerminalRow[] = []
-    const onShardSubscribeBatchEnd =
-      onRelaySubscribeWaveComplete != null
-        ? (rows: RelayOpTerminalRow[]) => {
-            subscribeWaveAcc.push(...rows)
-            subscribeWaveShardsRemaining--
-            if (subscribeWaveShardsRemaining === 0) {
-              onRelaySubscribeWaveComplete(subscribeWaveAcc.slice())
-            }
-          }
-        : undefined
+    const onShardSubscribeBatchEnd = (rows: RelayOpTerminalRow[]) => {
+      subscribeWaveAcc.push(...rows)
+      subscribeWaveShardsRemaining--
+      if (subscribeWaveShardsRemaining === 0) {
+        if (nip50SearchTerm) {
+          logSearchTimelineNip50ReqEnd({
+            timelineBatchId,
+            search: nip50SearchTerm,
+            subRequests,
+            eventsSnapshot: events.length ? [...events] : [],
+            terminals: subscribeWaveAcc.slice(),
+            getSeenForEvent: (id) => this.getSeenEventRelayUrls(id)
+          })
+        }
+        onRelaySubscribeWaveComplete?.(subscribeWaveAcc.slice())
+      }
+    }
 
     const subs = await mapPoolWithConcurrency(
       subRequests,
@@ -2127,9 +2219,7 @@ class ClientService extends EventTarget {
             firstRelayResultGraceMs,
             relayReqLog: {
               groupId: `${timelineBatchId}:shard${shardIndex}`,
-              ...(onShardSubscribeBatchEnd
-                ? { onBatchEnd: onShardSubscribeBatchEnd }
-                : {})
+              onBatchEnd: onShardSubscribeBatchEnd
             }
           }
         )
@@ -3137,12 +3227,15 @@ class ClientService extends EventTarget {
     if (!normalized) {
       return { events: [], connectionError: 'Invalid relay URL' }
     }
+    const queryOpts = {
+      globalTimeout: options?.globalTimeout ?? 25_000,
+      relayOpSource: 'fetchEventsFromSingleRelay' as const
+    }
+
     if (isHttpRelayUrl(normalized)) {
       // HTTP index relay: use HTTP API instead of WebSocket pool
       try {
-        const events = await this.queryService.query([normalized], filter, undefined, {
-          globalTimeout: options?.globalTimeout ?? 25_000
-        })
+        const events = await this.queryService.query([normalized], filter, undefined, queryOpts)
         return { events, connectionError: undefined }
       } catch (e) {
         return { events: [], connectionError: e instanceof Error ? e.message : String(e) }
@@ -3155,9 +3248,7 @@ class ClientService extends EventTarget {
       return { events: [], connectionError: msg }
     }
     try {
-      const events = await this.queryService.query([normalized], filter, undefined, {
-        globalTimeout: options?.globalTimeout ?? 25_000
-      })
+      const events = await this.queryService.query([normalized], filter, undefined, queryOpts)
       return { events, connectionError: undefined }
     } catch (e) {
       return {
@@ -3193,8 +3284,8 @@ class ClientService extends EventTarget {
     return this.eventService.fetchEventWithExternalRelays(eventId, externalRelays)
   }
 
-  addEventToCache(event: NEvent) {
-    this.eventService.addEventToCache(event)
+  addEventToCache(event: NEvent, ingestOpts?: ShouldDropEventOnIngestOptions) {
+    this.eventService.addEventToCache(event, ingestOpts)
   }
 
   reapplySessionLruFromSettings(): void {

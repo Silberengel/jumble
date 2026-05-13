@@ -35,7 +35,7 @@ import {
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
-import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -151,11 +151,14 @@ export class EventService {
     return null
   }
 
-  /** Returns cached event or undefined; evicts stringified-JSON-object spam from the session LRU. */
-  private getSessionEventIfAllowed(hexId: string): NEvent | undefined {
+  /** Returns cached event or undefined; evicts ingest-blocked events from the session LRU. */
+  private getSessionEventIfAllowed(hexId: string, forExplicitNoteIdLookup = false): NEvent | undefined {
     const e = this.sessionEventCache.get(hexId)
     if (!e) return undefined
-    if (shouldDropEventOnIngest(e)) {
+    const ingestOpts: ShouldDropEventOnIngestOptions | undefined = forExplicitNoteIdLookup
+      ? { explicitNoteLookupHexId: hexId }
+      : undefined
+    if (shouldDropEventOnIngest(e, ingestOpts)) {
       this.sessionEventCache.delete(hexId)
       return undefined
     }
@@ -223,7 +226,7 @@ export class EventService {
     const trimmed = noteId.trim()
     const hex = this.resolveHexWaiterKey(trimmed)
     if (hex) {
-      return this.getSessionEventIfAllowed(hex)
+      return this.getSessionEventIfAllowed(hex, true)
     }
     try {
       const { type, data } = nip19.decode(trimmed)
@@ -247,7 +250,7 @@ export class EventService {
   subscribeWhenSessionHasEvent(eventId: string, callback: () => void): () => void {
     const hex = this.resolveHexWaiterKey(eventId)
     if (hex) {
-      if (this.getSessionEventIfAllowed(hex)) {
+      if (this.getSessionEventIfAllowed(hex, true)) {
         queueMicrotask(() => callback())
         /** Already in cache: do not register a waiter — the next {@link addEventToCache} would notify again and double-fire embeds / useFetchEvent. */
         return () => {}
@@ -338,17 +341,18 @@ export class EventService {
       }
     }
     if (hexId) {
-      const fromSession = this.getSessionEventIfAllowed(hexId)
+      const fromSession = this.getSessionEventIfAllowed(hexId, true)
       if (fromSession) return fromSession
       const cachedPromise = this.eventCacheMap.get(hexId)
       if (cachedPromise) {
         const resolved = await cachedPromise
-        if (resolved && !shouldDropEventOnIngest(resolved)) return resolved
-        const fromSessionAfterMiss = this.getSessionEventIfAllowed(hexId)
+        if (resolved && !shouldDropEventOnIngest(resolved, { explicitNoteLookupHexId: hexId }))
+          return resolved
+        const fromSessionAfterMiss = this.getSessionEventIfAllowed(hexId, true)
         if (fromSessionAfterMiss) return fromSessionAfterMiss
         const fromDb = await indexedDb.getEventFromPublicationStore(hexId)
-        if (fromDb && !shouldDropEventOnIngest(fromDb)) {
-          this.addEventToCache(fromDb)
+        if (fromDb && !shouldDropEventOnIngest(fromDb, { explicitNoteLookupHexId: hexId })) {
+          this.addEventToCache(fromDb, { explicitNoteLookupHexId: hexId })
           return fromDb
         }
         // Prior load() finished with undefined but left the promise in cacheMap — never retrying.
@@ -357,14 +361,18 @@ export class EventService {
     }
     if (opts?.relayHints?.length || pointerHasFetchHints) {
       const hinted = await this._fetchEvent(trimmed, opts?.relayHints)
-      if (hinted && !shouldDropEventOnIngest(hinted)) return hinted
+      if (
+        hinted &&
+        !shouldDropEventOnIngest(hinted, hexId ? { explicitNoteLookupHexId: hexId } : undefined)
+      )
+        return hinted
     }
     const loaded = await this.eventDataLoader.load(hexId ?? trimmed)
     if (hexId) {
-      const fromSessionAfter = this.getSessionEventIfAllowed(hexId)
+      const fromSessionAfter = this.getSessionEventIfAllowed(hexId, true)
       if (fromSessionAfter) return fromSessionAfter
     }
-    if (loaded && shouldDropEventOnIngest(loaded)) {
+    if (loaded && shouldDropEventOnIngest(loaded, hexId ? { explicitNoteLookupHexId: hexId } : undefined)) {
       return undefined
     }
     return loaded
@@ -491,6 +499,10 @@ export class EventService {
       return undefined
     }
 
+    const ingestOpts: ShouldDropEventOnIngestOptions | undefined =
+      filter.ids?.length === 1 && /^[0-9a-f]{64}$/i.test(String(filter.ids[0]))
+        ? { explicitNoteLookupHexId: String(filter.ids[0]).toLowerCase() }
+        : undefined
     const logKey =
       'ids' in filter && filter.ids?.[0]
         ? filter.ids[0].slice(0, 8)
@@ -521,7 +533,7 @@ export class EventService {
     })
 
     const usable = events
-      .filter((e) => !shouldDropEventOnIngest(e))
+      .filter((e) => !shouldDropEventOnIngest(e, ingestOpts))
       .sort((a, b) => b.created_at - a.created_at)
     return usable[0]
   }
@@ -529,8 +541,8 @@ export class EventService {
   /**
    * Add event to session cache
    */
-  addEventToCache(event: NEvent): void {
-    if (shouldDropEventOnIngest(event)) return
+  addEventToCache(event: NEvent, ingestOpts?: ShouldDropEventOnIngestOptions): void {
+    if (shouldDropEventOnIngest(event, ingestOpts)) return
     const cleanEvent = { ...event }
     delete (cleanEvent as any).relayStatuses
     // REQ filters and nip19 decode use lowercase hex; some relays/clients emit uppercase ids.
@@ -1116,12 +1128,22 @@ export class EventService {
 
     if (!filter) return undefined
 
+    const ingestHexForIdFetch =
+      filter.ids?.length === 1 &&
+      typeof filter.ids[0] === 'string' &&
+      /^[0-9a-f]{64}$/i.test(filter.ids[0])
+        ? filter.ids[0].toLowerCase()
+        : undefined
+    const ingestOpts: ShouldDropEventOnIngestOptions | undefined = ingestHexForIdFetch
+      ? { explicitNoteLookupHexId: ingestHexForIdFetch }
+      : undefined
+
     if (filter.ids?.length === 1) {
       const hid = filter.ids[0]!.toLowerCase()
       if (/^[0-9a-f]{64}$/.test(hid)) {
         const fromArchive = await loadArchivedEventForFetch(hid)
-        if (fromArchive && !shouldDropEventOnIngest(fromArchive)) {
-          this.addEventToCache(fromArchive)
+        if (fromArchive && !shouldDropEventOnIngest(fromArchive, ingestOpts)) {
+          this.addEventToCache(fromArchive, ingestOpts)
           return fromArchive
         }
       }
@@ -1130,8 +1152,8 @@ export class EventService {
     // Try cache first
     if (filter.ids?.length) {
       const cached = await indexedDb.getEventFromPublicationStore(filter.ids[0])
-      if (cached && !shouldDropEventOnIngest(cached)) {
-        this.addEventToCache(cached)
+      if (cached && !shouldDropEventOnIngest(cached, ingestOpts)) {
+        this.addEventToCache(cached, ingestOpts)
         // Extract relay hints from cached event's tags (e, a, q tags)
         const eventRelayHints = this.extractRelayHintsFromEvent(cached)
         if (eventRelayHints.length > 0) {
@@ -1144,8 +1166,8 @@ export class EventService {
     // Try big relays first (uses user's inboxes + defaults)
     if (filter.ids?.length) {
       const event = await this.fetchEventFromBigRelaysDataloader.load(filter.ids[0])
-      if (event && !shouldDropEventOnIngest(event)) {
-        this.addEventToCache(event)
+      if (event && !shouldDropEventOnIngest(event, ingestOpts)) {
+        this.addEventToCache(event, ingestOpts)
         // Extract relay hints from found event's tags (e, a, q tags)
         const eventRelayHints = this.extractRelayHintsFromEvent(event)
         if (eventRelayHints.length > 0) {
@@ -1156,9 +1178,9 @@ export class EventService {
     }
 
     // Always try comprehensive relay list (author's outboxes + user's inboxes + hints + seen + defaults)
-    const event = await this.tryHarderToFetchEvent(relays, filter, true, authorHintPubkey)
-    if (event && !shouldDropEventOnIngest(event)) {
-      this.addEventToCache(event)
+    const event = await this.tryHarderToFetchEvent(relays, filter, true, authorHintPubkey, ingestOpts)
+    if (event && !shouldDropEventOnIngest(event, ingestOpts)) {
+      this.addEventToCache(event, ingestOpts)
       return event
     }
 
@@ -1166,7 +1188,7 @@ export class EventService {
     if (filter.ids?.length === 1) {
       const raw = filter.ids[0]
       const key = /^[0-9a-f]{64}$/i.test(raw) ? raw.toLowerCase() : raw
-      const sess = this.getSessionEventIfAllowed(key)
+      const sess = this.getSessionEventIfAllowed(key, true)
       if (sess) return sess
     }
 
@@ -1203,7 +1225,8 @@ export class EventService {
     relayHints: string[],
     filter: Filter,
     alreadyFetchedFromBigRelays = false,
-    authorHintPubkey?: string
+    authorHintPubkey?: string,
+    ingestOpts?: ShouldDropEventOnIngestOptions
   ): Promise<NEvent | undefined> {
     // Get seen relays if we have an event ID
     const seenRelays = filter.ids?.length ? client.getSeenEventRelayUrls(filter.ids[0]) : []
@@ -1249,7 +1272,7 @@ export class EventService {
     })
 
     const event = events
-      .filter((e) => !shouldDropEventOnIngest(e))
+      .filter((e) => !shouldDropEventOnIngest(e, ingestOpts))
       .sort((a, b) => b.created_at - a.created_at)[0]
 
     if (event && isSingleEventById && !isReplaceableEvent(event.kind)) {
@@ -1283,6 +1306,10 @@ export class EventService {
 
     const missingIds = missingIndices.map((i) => normalized[i]!)
     const isSingleEventFetch = missingIds.length === 1
+    const batchIngestOpts: ShouldDropEventOnIngestOptions | undefined =
+      isSingleEventFetch && /^[0-9a-f]{64}$/i.test(missingIds[0]!)
+        ? { explicitNoteLookupHexId: missingIds[0]!.toLowerCase() }
+        : undefined
     // For single-event fetches, always use immediateReturn to return ASAP
     // This is especially important for non-replaceable events (not in 10000-19999 or 30000-39999 ranges)
     const events = await this.queryService.query(
@@ -1301,10 +1328,10 @@ export class EventService {
 
     const fetchedById = new Map<string, NEvent>()
     for (const event of events) {
-      if (shouldDropEventOnIngest(event)) continue
+      if (shouldDropEventOnIngest(event, batchIngestOpts)) continue
       const key = /^[0-9a-f]{64}$/i.test(event.id) ? event.id.toLowerCase() : event.id
       fetchedById.set(key, event)
-      this.addEventToCache(event)
+      this.addEventToCache(event, batchIngestOpts)
     }
 
     return normalized.map((k, i) => fromSession[i] ?? fetchedById.get(k))

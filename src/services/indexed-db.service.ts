@@ -491,15 +491,7 @@ class IndexedDbService {
       logger.error('[IndexedDB] Store name not found for kind', { kind: cleanEvent.kind })
       return Promise.reject('store name not found')
     }
-    
-    logger.debug('[IndexedDB] Putting replaceable event', {
-      kind: cleanEvent.kind,
-      storeName,
-      eventId: cleanEvent.id,
-      pubkey: cleanEvent.pubkey,
-      created_at: cleanEvent.created_at
-    })
-    
+
     await this.initPromise
     
     // Wait a bit for database upgrade to complete if store doesn't exist
@@ -526,69 +518,34 @@ class IndexedDbService {
           availableStores: Array.from(this.db.objectStoreNames),
           dbVersion: this.db.version
         })
-        logger.error('[IndexedDB] Store not found in database after waiting', { 
-          storeName,
-          kind: cleanEvent.kind,
-          availableStores: Array.from(this.db.objectStoreNames) 
-        })
         // Return the event anyway (don't reject) - caching is optional
         return resolve(cleanEvent)
       }
-      
-      logger.debug('[IndexedDB] Store exists, proceeding with save', {
-        storeName,
-        kind: cleanEvent.kind,
-        eventId: cleanEvent.id,
-        dbVersion: this.db.version,
-        allStores: Array.from(this.db.objectStoreNames)
-      })
-      
+
       const transaction = this.db.transaction(storeName, 'readwrite')
       const store = transaction.objectStore(storeName)
 
       const key = this.getReplaceableEventKeyFromEvent(cleanEvent)
-      logger.debug('[IndexedDB] Getting existing event', { storeName, key, eventId: cleanEvent.id })
-      
+
       const getRequest = store.get(key)
       getRequest.onsuccess = () => {
         const oldValue = getRequest.result as TValue<Event> | undefined
-        if (oldValue?.value) {
-          logger.debug('[IndexedDB] Found existing event', { 
-            storeName,
-            key,
-            oldEventId: oldValue.value.id,
-            oldCreatedAt: oldValue.value.created_at,
-            newCreatedAt: cleanEvent.created_at,
-            willUpdate: cleanEvent.created_at > oldValue.value.created_at 
-          })
-        } else {
-          logger.debug('[IndexedDB] No existing event found', { storeName, key })
-        }
-        
+
         if (oldValue?.value && oldValue.value.created_at > cleanEvent.created_at) {
-          logger.debug('[IndexedDB] Keeping existing event (strictly newer timestamp)', {
+          logger.debug('[IndexedDB] putReplaceableEvent', {
             storeName,
             key,
+            eventId: cleanEvent.id,
+            kind: cleanEvent.kind,
+            outcome: 'kept_existing_newer_row',
             existingEventId: oldValue.value.id
           })
           transaction.commit()
           return resolve(oldValue.value)
         }
-        
-        logger.debug('[IndexedDB] Putting new event', { 
-          storeName, 
-          key, 
-          eventId: cleanEvent.id,
-          content: cleanEvent.content
-        })
+
         const putRequest = store.put(this.formatValue(key, cleanEvent))
         putRequest.onsuccess = () => {
-          logger.debug('[IndexedDB] Successfully put event', { 
-            storeName, 
-            key, 
-            eventId: cleanEvent.id,
-            content: cleanEvent.content
-          })
           transaction.commit()
           resolve(cleanEvent)
         }

@@ -600,7 +600,10 @@ function ParentNote({
   const navigate = useCallback(
     (e: MouseEvent) => {
       e.stopPropagation()
-      if (event) client.addEventToCache(event)
+      if (event) {
+        const hex = /^[0-9a-f]{64}$/i.test(event.id) ? event.id.toLowerCase() : undefined
+        client.addEventToCache(event, hex ? { explicitNoteLookupHexId: hex } : undefined)
+      }
       navigateToNote(
         toNote(event ?? eventBech32Id),
         event,

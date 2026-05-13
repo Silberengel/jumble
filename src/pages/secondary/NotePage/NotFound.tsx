@@ -171,7 +171,10 @@ export default function NotFound({
       if (idHex) {
         const fromDb = await indexedDb.getEventFromPublicationStore(idHex)
         if (fromDb) {
-          client.addEventToCache(fromDb)
+          client.addEventToCache(
+            fromDb,
+            idHex ? { explicitNoteLookupHexId: idHex.toLowerCase() } : undefined
+          )
           onEventFound?.(fromDb)
           found = true
           logger.info('Event found in IndexedDB (NotFound try-harder)', { bech32Id })
@@ -199,7 +202,8 @@ export default function NotFound({
 
         if (event) {
           logger.info('Event found on external relay (NotFound)', { bech32Id, hexEventId })
-          client.addEventToCache(event)
+          const hex = idHex ?? (event.id && /^[0-9a-f]{64}$/i.test(event.id) ? event.id.toLowerCase() : undefined)
+          client.addEventToCache(event, hex ? { explicitNoteLookupHexId: hex } : undefined)
           onEventFound?.(event)
           found = true
         } else {

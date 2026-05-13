@@ -1,7 +1,7 @@
 import { FAST_READ_RELAY_URLS, NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
-import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { TSearchParams } from '@/types'
 import NormalFeed from '../NormalFeed'
+import FullTextSearchByRelay from './FullTextSearchByRelay'
 import Profile from '../Profile'
 import { ProfileListBySearch } from '../ProfileListBySearch'
 import Relay from '../Relay'
@@ -32,7 +32,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     [searchableUrls]
   )
 
-  // User stack + defaults (full list for second subRequest; excludes searchable URLs to avoid duplicate sockets)
+  // User stack + defaults (hashtag search uses the non-searchable slice as a second shard)
   const combinedRelays = useMemo(() => {
     let relays: string[] = []
 
@@ -75,24 +75,11 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     return <ProfileListBySearch search={searchParams.search} />
   }
   if (searchParams.type === 'notes') {
-    const notesFilter = {
-      search: searchParams.search,
-      kinds: [...NIP_SEARCH_PAGE_KINDS],
-      limit: 100
-    }
-    const subRequests = [
-      { urls: searchableUrls, filter: notesFilter },
-      ...(nonSearchableRelays.length > 0 ? [{ urls: nonSearchableRelays, filter: notesFilter }] : [])
-    ]
     return (
-      <NormalFeed
-        subRequests={subRequests}
-        useFilterAsIs
-        clientSideKindFilter
-        timelinePublicReadFallback
-        progressiveWarmupQuery={searchParams.search}
-        progressiveDocumentKinds={NIP_SEARCH_PAGE_KINDS}
-        oneShotAfterMergeComparator={(a, b) => compareEventsForDTagQuery(searchParams.search, a, b)}
+      <FullTextSearchByRelay
+        searchQuery={searchParams.search}
+        relayUrls={searchableUrls}
+        kinds={NIP_SEARCH_PAGE_KINDS}
       />
     )
   }

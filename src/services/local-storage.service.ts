@@ -21,7 +21,23 @@ import {
   TTheme,
   TThemeSetting,
 } from '@/types'
-import indexedDb from './indexed-db.service'
+/**
+ * Lazy-load IndexedDB service to avoid a static import cycle: `indexed-db` pulls modules that can
+ * re-import this file during evaluation; the `indexedDb` binding would still be in the TDZ when
+ * {@link LocalStorageService} runs its eager constructor.
+ */
+let indexedDbSingletonPromise: ReturnType<typeof importIndexedDbModule> | null = null
+
+function importIndexedDbModule() {
+  return import('./indexed-db.service').then((m) => m.default)
+}
+
+function loadIndexedDb() {
+  if (!indexedDbSingletonPromise) {
+    indexedDbSingletonPromise = importIndexedDbModule()
+  }
+  return indexedDbSingletonPromise
+}
 
 /** Keys we persist to IndexedDB (and migrate from localStorage when IDB is empty). */
 const SETTINGS_KEYS = [
@@ -450,7 +466,9 @@ class LocalStorageService {
   /** Persist a setting. Keys in SETTINGS_KEYS go only to IndexedDB; others use localStorage. */
   private persistSetting(key: string, value: string): void {
     if ((SETTINGS_KEYS as readonly string[]).includes(key)) {
-      indexedDb.setSetting(key, value).catch(() => {})
+      void loadIndexedDb()
+        .then((idb) => idb.setSetting(key, value))
+        .catch(() => {})
       return
     }
     window.localStorage.setItem(key, value)
@@ -469,11 +487,12 @@ class LocalStorageService {
   async initAsync(): Promise<void> {
     if (this.initPromise) return this.initPromise
     this.initPromise = (async () => {
-      await indexedDb.init()
-      let idbBefore = await indexedDb.getAllSettings()
+      const idb = await loadIndexedDb()
+      await idb.init()
+      let idbBefore = await idb.getAllSettings()
       if (Object.keys(idbBefore).length === 0) {
         await this.migrateToIdb()
-        idbBefore = await indexedDb.getAllSettings()
+        idbBefore = await idb.getAllSettings()
       }
       const merged = this.mergeSettingsRecordWithLocalStorage(idbBefore)
       this.applySettings(merged)
@@ -501,11 +520,12 @@ class LocalStorageService {
     idbBefore: Record<string, string>,
     merged: Record<string, string>
   ): Promise<void> {
+    const idb = await loadIndexedDb()
     for (const key of SETTINGS_KEYS) {
       const v = merged[key]
       if (v == null) continue
       if (idbBefore[key] !== v) {
-        await indexedDb.setSetting(key, v).catch(() => {})
+        await idb.setSetting(key, v).catch(() => {})
       }
     }
   }
@@ -518,9 +538,10 @@ class LocalStorageService {
   }
 
   private async migrateToIdb(): Promise<void> {
+    const idb = await loadIndexedDb()
     for (const key of SETTINGS_KEYS) {
       const value = window.localStorage.getItem(key)
-      if (value != null) await indexedDb.setSetting(key, value)
+      if (value != null) await idb.setSetting(key, value)
     }
   }
 
