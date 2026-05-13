@@ -1,4 +1,3 @@
-import logger from '@/lib/logger'
 import { notifyRelayNip42Accepted, notifyRelayNip42Rejected } from '@/lib/relay-auth-feedback'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools'
@@ -65,9 +64,6 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
     const r = asRelayInternals(this)
     if (!r.connectionPromise && typeof message === 'string' && message.startsWith('["AUTH"')) {
       abortPendingAuthForDeadSocket(r, message)
-      logger.debug('[RelayOp] Dropped AUTH (socket already closed; connect timeout vs signing race)', {
-        url: r.url
-      })
       return Promise.resolve()
     }
     return origSend.call(this, message) as Promise<void>
@@ -91,7 +87,6 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
           msg.includes('relay connection closed before AUTH') ||
           /relay connection closed/i.test(msg)
         if (benignRace) {
-          logger.debug('[RelayOp] Relay AUTH aborted (benign race)', { url: r.url, detail: msg })
           r.authPromise = undefined
           return ''
         }

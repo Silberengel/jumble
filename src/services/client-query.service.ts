@@ -28,7 +28,7 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
-import { isHttpRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import { canonicalRelaySessionKey, isHttpRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
 import { RelaySubscribeOpBatch, type RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import type { Filter, Event as NEvent } from 'nostr-tools'
@@ -405,11 +405,14 @@ export class QueryService {
     /** One chunk → pass a single Filter (compat); several (e.g. kinds split) → full array for WS + HTTP. */
     const effectiveFilter: Filter | Filter[] =
       sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters
-    const eoseTimeout = options?.eoseTimeout ?? 500
     const hasNip50Search = filtersHaveNip50Search(sanitizedFilters)
-    const globalTimeoutRaw = options?.globalTimeout ?? 10000
     const useNip50QueryTimeoutFloor =
       hasNip50Search && options?.relayOpSource === 'fetchEventsFromSingleRelay'
+    /** After all relays EOSE, wait this long before closing so slow `EVENT` tails are not cut off (NIP-50 is heavy). */
+    const eoseTimeout = useNip50QueryTimeoutFloor
+      ? Math.max(options?.eoseTimeout ?? 500, 3_000)
+      : options?.eoseTimeout ?? 500
+    const globalTimeoutRaw = options?.globalTimeout ?? 10000
     const globalTimeout = useNip50QueryTimeoutFloor
       ? Math.max(globalTimeoutRaw, NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS)
       : globalTimeoutRaw
@@ -733,7 +736,7 @@ export class QueryService {
     relayOpMeta?: {
       source: string
       logLevel?: 'info' | 'debug'
-      /** When true, suppress `[RelayOp] batch_begin` / `batch_end` (used by {@link QueryService.query}). */
+      /** When true (default on batches), suppress `[RelayOp] batch_begin` / `batch_end`. */
       quiet?: boolean
       onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
     }
@@ -780,19 +783,27 @@ export class QueryService {
       grouped.get(key)!.push(...filters)
     }
     
-    const searchableSet = new Set([
-      ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u),
-      ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    ])
-    
-    const groupedRequests = Array.from(grouped.entries()).map(([url, f]) => {
-      const relaySupportsSearch = searchableSet.has(url) || nip66Service.isRelaySearchable(url)
-      const filtersForRelay = f.map((one) => filterForRelay(one, relaySupportsSearch))
-      return { url, filters: filtersForRelay }
-    })
+    const searchableSet = new Set(
+      [
+        ...SEARCHABLE_RELAY_URLS,
+        ...nip66Service.getSearchableRelayUrls(),
+        ...PROFILE_RELAY_URLS
+      ]
+        .map((u) => canonicalRelaySessionKey(normalizeUrl(u) || String(u).trim()))
+        .filter((k): k is string => k.length > 0)
+    )
 
     const hasNip50Search = filtersHaveNip50Search(filters)
+    /** Single-relay NIP-50 (e.g. search page / per-relay spell): caller targets one index relay — never strip `search`. */
+    const singleRelayNip50 = hasNip50Search && grouped.size === 1
+
+    const groupedRequests = Array.from(grouped.entries()).map(([url, f]) => {
+      const sessionKey = canonicalRelaySessionKey(url)
+      const relaySupportsSearch =
+        searchableSet.has(sessionKey) || nip66Service.isRelaySearchable(url)
+      const filtersForRelay = singleRelayNip50 ? f : f.map((one) => filterForRelay(one, relaySupportsSearch))
+      return { url, filters: filtersForRelay }
+    })
     const relaySubscriptionEoseTimeoutMs = hasNip50Search
       ? NIP50_RELAY_SUBSCRIPTION_EOSE_TIMEOUT_MS
       : 10_000

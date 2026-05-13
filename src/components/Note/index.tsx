@@ -318,6 +318,9 @@ export default function Note({
       hideMetadata?: boolean
       className?: string
     } = {}) => {
+      if (isNip18RepostKind(displayEvent.kind)) {
+        return <RepostEventContent className={className} event={displayEvent} />
+      }
       const embeddedEvent = findTrailingStringifiedNostrEvent(displayEvent.content ?? '')
       if (embeddedEvent) {
         return (
@@ -333,6 +336,9 @@ export default function Note({
         )
       }
       if (isStringifiedJsonContent(displayEvent.content)) {
+        if (isNip18RepostKind(displayEvent.kind)) {
+          return <RepostEventContent className={className} event={displayEvent} />
+        }
         return (
           <pre
             className={cn(
@@ -379,7 +385,11 @@ export default function Note({
       return (
         <MarkdownArticle
           className={className}
-          event={displayEvent}
+          event={
+            isNip18RepostKind(displayEvent.kind)
+              ? { ...displayEvent, content: '' }
+              : displayEvent
+          }
           hideMetadata={hideMetadata}
           lazyMedia={!autoLoadMedia}
           fullCalendarInvite={fullCalendarInvite}
@@ -399,7 +409,7 @@ export default function Note({
     content = <NsfwNote show={() => setShowNsfw(true)} />
   } else if (isNip25ReactionKind(event.kind)) {
     content = null
-  } else if (isNip18RepostKind(event.kind)) {
+  } else if (isNip18RepostKind(displayEvent.kind)) {
     content = <RepostEventContent className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.POLL_RESPONSE) {
     content = <NotificationEventCard className="mt-2" event={displayEvent} />

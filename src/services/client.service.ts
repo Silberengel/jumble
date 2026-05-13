@@ -2068,17 +2068,6 @@ class ClientService extends EventTarget {
   ) {
     const timelineBatchId = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
     const timelineT0 = performance.now()
-    logger.debug('[RelayOp] timeline_wave_begin', {
-      timelineBatchId,
-      shardCount: subRequests.length,
-      relayCountsPerShard: subRequests.map((r) => r.urls.length),
-      shards: subRequests.map((s, shardIndex) => ({
-        shardIndex,
-        relayCount: s.urls.length,
-        relaysSample: [...new Set(s.urls.map((u) => normalizeUrl(u) || u))].slice(0, 40),
-        filter: compactFilterForRelayLog(s.filter as Filter)
-      }))
-    })
     logger.debug('[relay-req] timeline_batch_start', {
       timelineBatchId,
       subRequestCount: subRequests.length,
@@ -3243,6 +3232,8 @@ class ClientService extends EventTarget {
       globalTimeout: options?.globalTimeout ?? 25_000,
       relayOpSource: 'fetchEventsFromSingleRelay' as const,
       foreground: true as const,
+      /** NIP-50 must run to EOSE; implicit feed grace would close the REQ after the first hit. */
+      firstRelayResultGraceMs: false as const,
       ...(options?.signal ? { signal: options.signal } : {})
     }
 

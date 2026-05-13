@@ -139,9 +139,9 @@ function groupTerminalsByOutcome(rows: RelayOpTerminalRow[]): Record<string, { c
  * Tracks one logical subscribe/query wave: one `batch_begin` and one `batch_end` with per-relay outcomes.
  */
 export type RelaySubscribeOpBatchOptions = {
-  /** `info` logs every REQ wave at INFO; default `debug` keeps subscribe noise behind jumble-debug / VITE_DEBUG. */
+  /** When `quiet` is false: `info` logs batch_end at INFO; `debug` logs batch_begin/batch_end at DEBUG. */
   logLevel?: 'info' | 'debug'
-  /** When true, skip `[RelayOp] batch_begin` / `batch_end` lines (e.g. when {@link QueryService.query} logs `req_begin`/`req_end`). */
+  /** When true (default), skip `[RelayOp] batch_begin` / `batch_end`. Set false to opt into REQ wave logs. */
   quiet?: boolean
   /** Invoked once when this REQ wave finishes (same `rows` as `batch_end` / `terminals`). */
   onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
@@ -198,7 +198,7 @@ export class RelaySubscribeOpBatch {
     this.source = source
     this.grouped = grouped
     this.logLevel = options?.logLevel ?? 'debug'
-    this.quiet = options?.quiet ?? false
+    this.quiet = options?.quiet ?? true
     this.onBatchEnd = options?.onBatchEnd
   }
 
@@ -340,14 +340,7 @@ export class RelayPublishOpBatch {
   }
 
   logBegin(): void {
-    logger.debug('[RelayOp] publish_batch_begin', {
-      batchId: this.batchId,
-      source: this.source,
-      eventId: this.eventId,
-      relayCount: this.relays.length,
-      relays: this.relays,
-      commands: this.relays.map((relay, cmdIndex) => ({ cmdIndex, relay, eventId: this.eventId }))
-    })
+    /* Intentionally quiet: publish outcomes surface in UI; failures are logged in logEnd. */
   }
 
   record(cmdIndex: number, relayUrl: string, ok: boolean, error?: string): void {
@@ -365,7 +358,7 @@ export class RelayPublishOpBatch {
     )
     const ok = this.results.filter((r) => r.ok)
     const fail = this.results.filter((r) => !r.ok)
-    const sorted = this.results.sort((a, b) => a.cmdIndex - b.cmdIndex)
+    this.results.sort((a, b) => a.cmdIndex - b.cmdIndex)
     const readableSummary =
       this.relays.length === 0
         ? 'No relays targeted (empty list or skipped by session rules).'
@@ -381,31 +374,25 @@ export class RelayPublishOpBatch {
           ]
             .filter(Boolean)
             .join('\n')
-    logger.debug('[RelayOp] publish_batch_end', {
-      batchId: this.batchId,
-      source: this.source,
-      eventId: this.eventId,
-      status,
-      elapsedMs,
-      okCount: ok.length,
-      failCount: fail.length,
-      readableSummary,
-      byState: {
-        ok: {
-          count: ok.length,
-          relays: ok.map((r) => r.relayUrl),
-          hosts: ok.map((r) => relayHostForPublishLog(r.relayUrl)),
-          cmdIndices: ok.map((r) => r.cmdIndex)
-        },
-        fail: {
-          count: fail.length,
-          relays: fail.map((r) => r.relayUrl),
-          hosts: fail.map((r) => relayHostForPublishLog(r.relayUrl)),
-          cmdIndices: fail.map((r) => r.cmdIndex),
-          errors: fail.map((r) => r.error ?? '')
-        }
-      },
-      results: sorted
-    })
+    if (this.relays.length === 0 && status === 'no_targets') {
+      logger.warn('[RelayOp] publish_batch_end — no relay targets', {
+        batchId: this.batchId,
+        source: this.source,
+        eventId: this.eventId,
+        status
+      })
+      return
+    }
+    if (fail.length > 0) {
+      logger.warn(`[RelayOp] publish_batch_end — ${readableSummary}`, {
+        batchId: this.batchId,
+        source: this.source,
+        eventId: this.eventId,
+        status,
+        elapsedMs,
+        okCount: ok.length,
+        failCount: fail.length
+      })
+    }
   }
 }

@@ -65,8 +65,6 @@ function sessionKey(url: string): string {
 class RelaySessionStrikes {
   private byKey = new Map<string, StrikeEntry>()
   private cacheRelayKeys = new Set<string>()
-  /** Throttle debug spam when many parallel REQs hit the same dead relay (cache rows bypass strike debounce). */
-  private lastReadFailureDebugLogAt = new Map<string, number>()
 
   setSessionCacheRelayKeysFromKind10432(ev: Event | null | undefined): void {
     this.cacheRelayKeys.clear()
@@ -136,13 +134,8 @@ class RelaySessionStrikes {
   }
 
   private applyRateLimitCooldownKey(key: string): void {
-    const now = Date.now()
     const e = this.getEntry(key)
-    e.rateLimitUntil = Math.max(e.rateLimitUntil, now + RATE_LIMIT_COOLDOWN_MS)
-    logger.debug('[RelayStrikes] rate-limit cooldown', {
-      key,
-      untilMs: e.rateLimitUntil - now
-    })
+    e.rateLimitUntil = Math.max(e.rateLimitUntil, Date.now() + RATE_LIMIT_COOLDOWN_MS)
   }
 
   /** WS connect failure, HTTP transport failure, etc. */
@@ -159,8 +152,7 @@ class RelaySessionStrikes {
     // Cache relays from kind 10432 (e.g. localhost on another machine) always accrue failures.
     if (now < e.rateLimitUntil && !this.cacheRelayKeys.has(key)) return
 
-    const cache = this.cacheRelayKeys.has(key)
-    if (!cache) {
+    if (!this.cacheRelayKeys.has(key)) {
       if (now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
       e.readLastStrikeIncrementAt = now
     }
@@ -168,13 +160,7 @@ class RelaySessionStrikes {
     e.readFailures += 1
     if (e.readFailures >= STRIKE_FAILURES_THRESHOLD) {
       e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.info('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
-    } else {
-      const lastDbg = this.lastReadFailureDebugLogAt.get(key) ?? 0
-      if (now - lastDbg >= STRIKE_INCREMENT_DEBOUNCE_MS) {
-        this.lastReadFailureDebugLogAt.set(key, now)
-        logger.debug('[RelayStrikes] read failure counted', { key, readFailures: e.readFailures, cache })
-      }
+      logger.warn('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
     }
   }
 
@@ -186,7 +172,6 @@ class RelaySessionStrikes {
     e.readFailures = 0
     e.readStrikeSkipUntil = 0
     e.readLastStrikeIncrementAt = 0
-    this.lastReadFailureDebugLogAt.delete(key)
   }
 
   recordPublishFailure(url: string): void {
@@ -195,15 +180,14 @@ class RelaySessionStrikes {
     const now = Date.now()
     const e = this.getEntry(key)
     if (now < e.rateLimitUntil && !this.cacheRelayKeys.has(key)) return
-    const cache = this.cacheRelayKeys.has(key)
-    if (!cache) {
+    if (!this.cacheRelayKeys.has(key)) {
       if (now - e.publishLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
       e.publishLastStrikeIncrementAt = now
     }
     e.publishFailures += 1
     if (e.publishFailures >= STRIKE_FAILURES_THRESHOLD) {
       e.publishStrikeSkipUntil = Math.max(e.publishStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.info('[RelayStrikes] publish path strike skip', { key, publishFailures: e.publishFailures })
+      logger.warn('[RelayStrikes] publish path strike skip', { key, publishFailures: e.publishFailures })
     }
   }
 
@@ -248,7 +232,6 @@ class RelaySessionStrikes {
   reset(): void {
     this.byKey.clear()
     this.cacheRelayKeys.clear()
-    this.lastReadFailureDebugLogAt.clear()
   }
 }
 
