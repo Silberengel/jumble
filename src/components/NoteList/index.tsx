@@ -27,7 +27,7 @@ import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
 import { isTouchDevice } from '@/lib/utils'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
@@ -827,7 +827,11 @@ const NoteList = forwardRef(
     const { startLogin, pubkey } = useNostr()
     const { isUserTrusted } = useUserTrust()
     const { mutePubkeySet } = useMuteList()
-    const { hideContentMentioningMutedUsers, isOffline } = useContentPolicy()
+    const contentPolicy = useContentPolicyOptional()
+    const hideContentMentioningMutedUsers = contentPolicy?.hideContentMentioningMutedUsers ?? false
+    const isOffline =
+      contentPolicy?.isOffline ??
+      (!navigator.onLine || (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'none')
     const { isEventDeleted } = useDeletedEvent()
     const { zapReplyThreshold } = useZap()
     const { favoriteRelays, blockedRelays } = useFavoriteRelays()

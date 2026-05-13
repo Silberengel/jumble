@@ -622,6 +622,50 @@ class ClientService extends EventTarget {
     })
   }
 
+  /**
+   * When the user explicitly picked relays, reorder **only within that list** using a bounded
+   * {@link fetchRelayListWithPublishTimeout} for the author — not {@link fetchRelayLists} for every
+   * reply/mention context (which could stall publish for a long time on slow or failing relays).
+   */
+  private async prioritizeSpecifiedRelayPickerUrls(
+    pickerUrls: string[],
+    event: NEvent,
+    favoriteRelayUrls: string[] = []
+  ): Promise<string[]> {
+    const deduped = dedupeNormalizeRelayUrlsOrdered(pickerUrls)
+    let relayList: TRelayList
+    try {
+      relayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
+    } catch {
+      relayList = this.emptyRelayListForPublish()
+    }
+    const writeSet = new Set<string>()
+    for (const u of relayList.write ?? []) {
+      const n = normalizeUrl(u) || u
+      if (n) writeSet.add(n)
+    }
+    for (const u of relayList.httpWrite ?? []) {
+      const n = normalizeHttpRelayUrl(u) || u
+      if (n) writeSet.add(n)
+    }
+    const favSet = new Set(
+      favoriteRelayUrls.map((f) => normalizeUrl(f) || f).filter((u): u is string => !!u)
+    )
+
+    const outbox: string[] = []
+    const favRest: string[] = []
+    const other: string[] = []
+    for (const u of deduped) {
+      const n = normalizeAnyRelayUrl(u) || u
+      if (!n) continue
+      if (writeSet.has(n)) outbox.push(u)
+      else if (favSet.has(n)) favRest.push(u)
+      else other.push(u)
+    }
+    const merged = dedupeNormalizeRelayUrlsOrdered([...outbox, ...favRest, ...other])
+    return this.filterPublishingRelays(merged, event).slice(0, MAX_PUBLISH_RELAYS)
+  }
+
   private async prioritizePublishUrlList(
     relayUrls: string[],
     event: NEvent,
@@ -632,7 +676,7 @@ class ClientService extends EventTarget {
     const pubkeyOrder = Array.from(new Set([event.pubkey, ...ctx]))
     let lists: TRelayList[] = []
     try {
-      lists = await this.fetchRelayLists(pubkeyOrder)
+      lists = await this.fetchRelayListsWithPublishTimeout(pubkeyOrder)
     } catch {
       lists = []
     }
@@ -1120,7 +1164,12 @@ class ClientService extends EventTarget {
 
     if (specifiedRelayUrls?.length) {
       const checkedCount = specifiedRelayUrls.length
-      relays = await this.prioritizePublishUrlListWithTimeout(relays, event, favoriteRelayUrls ?? [])
+      /**
+       * User already chose relays — do not block publish on {@link fetchRelayLists} for every reply/mention
+       * context pubkey (can take tens of seconds on bad networks). Reorder only within the picker set:
+       * author's NIP-65 write relays first, then favorites among the selection, then remaining picker order.
+       */
+      relays = await this.prioritizeSpecifiedRelayPickerUrls(relays, event, favoriteRelayUrls ?? [])
       if (checkedCount > relays.length) {
         logger.info('[Publish] Relay picker: checked count exceeds per-publish cap (stage 1)', {
           checkedInRelayPicker: checkedCount,

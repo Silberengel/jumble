@@ -16,6 +16,7 @@ function isLikelyBrokenReactContextFromHmr(message: string): boolean {
   return (
     /must be used within (a )?[\w]+/i.test(message) ||
     message.includes('useNostr must be used within') ||
+    message.includes('useContentPolicy must be used within') ||
     message.includes('useInterestList must be used within') ||
     (message.includes('useContext') && message.includes('null'))
   )

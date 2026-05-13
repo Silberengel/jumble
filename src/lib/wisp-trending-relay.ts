@@ -2,9 +2,9 @@ import { ExtendedKind } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
 
 /**
- * Trending notes stream from nostrarchives, consumed by
- * {@link https://github.com/barrydeen/wisp | Wisp} (Android). Same URL shape as Wisp’s
- * `buildTrendingRelayUrl` / `FEED_KINDS` REQ.
+ * Trending notes stream from nostrarchives (path-based relay URL). The WebSocket speaks **standard NIP-01**
+ * `REQ` / `EVENT` / `EOSE` — safe for nostr-tools {@link SimplePool}. Same URL shape as Wisp’s
+ * {@link https://github.com/barrydeen/wisp | Wisp} (Android) `buildTrendingRelayUrl` / `FEED_KINDS` REQ.
  */
 export type WispTrendingMetric = 'reactions' | 'replies' | 'reposts' | 'zaps'
 
