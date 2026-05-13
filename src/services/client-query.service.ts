@@ -17,6 +17,7 @@ import {
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
   authenticateNip42Relay,
@@ -382,8 +383,10 @@ export class QueryService {
                       firstResultTime = Date.now()
                     }
                   }
+                  relaySessionStrikes.recordReadSuccess(base)
                 } catch (e) {
                   if ((e as Error).name === 'AbortError') return
+                  relaySessionStrikes.recordReadFailure(base, 'http')
                   if (isIndexRelayTransportFailure(e)) {
                     logger.debug('[QueryService] HTTP index relay unreachable', { base, error: e })
                   } else {
@@ -600,6 +603,11 @@ export class QueryService {
     }
     relays = relays.filter((url) => !isHttpRelayUrl(url))
 
+    const wsCountBeforeStrikes = relays.length
+    if (wsCountBeforeStrikes > 1) {
+      relays = relaySessionStrikes.filterReadHttpUrls(relays)
+    }
+
     if (relays.length === 0) {
       queueMicrotask(() => callbacks.oneose?.(true))
       return { close: () => {} }
@@ -624,6 +632,14 @@ export class QueryService {
       return { url, filters: filtersForRelay }
     })
 
+    if (groupedRequests.length === 1) {
+      try {
+        this.pool.close([groupedRequests[0]!.url])
+      } catch {
+        /* ignore */
+      }
+    }
+
     const opSource = relayOpMeta?.source ?? 'QueryService.subscribe'
     const opBatch =
       groupedRequests.length > 0
@@ -637,6 +653,7 @@ export class QueryService {
       if (eosesReceived[i]) return
       eosesReceived[i] = true
       opBatch?.setTerminal(i, 'eose')
+      relaySessionStrikes.recordReadSuccess(groupedRequests[i]!.url)
       if (eosesReceived.filter(Boolean).length === groupedRequests.length) {
         callbacks.oneose?.(true)
       }
@@ -684,6 +701,7 @@ export class QueryService {
             })
             patchRelayNoticeForFetchFailures(relay, relayKey, this.onRelayNoticeFetchFailure)
           } catch (err) {
+            relaySessionStrikes.recordReadFailure(url, 'connection')
             this.releaseSubSlot(relayKey)
             handleClose(i, (err as Error)?.message ?? String(err))
             return
@@ -730,6 +748,7 @@ export class QueryService {
                         })
                         patchRelayNoticeForFetchFailures(liveRelay, relayKey, this.onRelayNoticeFetchFailure)
                       } catch (err) {
+                        relaySessionStrikes.recordReadFailure(url, 'connection')
                         nip42ResubscribePending.delete(i)
                         this.releaseSubSlot(relayKey)
                         handleClose(i, (err as Error)?.message ?? String(err))
@@ -763,6 +782,7 @@ export class QueryService {
                         })
                         nip42ResubscribePending.delete(i)
                       } catch (err) {
+                        relaySessionStrikes.recordReadFailure(url, 'connection')
                         nip42ResubscribePending.delete(i)
                         releaseSlot2()
                         handleClose(i, (err as Error)?.message ?? String(err))

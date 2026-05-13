@@ -1,5 +1,6 @@
 import client from '@/services/client.service'
 import relayInfoService from '@/services/relay-info.service'
+import type { RelayStrikeDebugSnapshot } from '@/lib/relay-strikes'
 import { isHttpRelayUrl } from '@/lib/url'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -11,6 +12,7 @@ import { useNostr } from '@/providers/NostrProvider'
 type SessionDebug = {
   scoredRelays: { url: string; successCount: number; avgLatencyMs: number }[]
   presetWorking: string[]
+  relayStrikes: RelayStrikeDebugSnapshot
 }
 
 function loadDebug(): SessionDebug {
@@ -158,6 +160,27 @@ export default function SessionRelaysTab() {
             ))
           )}
         </ul>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium">{t('Session relay strikes', { defaultValue: 'Session relay strikes' })}</h3>
+        <p className="text-muted-foreground text-xs">
+          {t('Session relay strikes hint', {
+            defaultValue:
+              'Session-only: failed reads/publishes accrue strikes; five failures skip a relay for three minutes. Rate-limit NOTICEs apply a ten-minute cooldown without strikes. Cache relays (kind 10432) always count failures even during cooldown.'
+          })}
+        </p>
+        <p className="text-xs text-muted-foreground font-mono break-all">
+          {t('Cache relay keys', { defaultValue: 'Cache relay keys' })}:{' '}
+          {debug.relayStrikes.cacheRelayKeys.length === 0
+            ? t('None')
+            : debug.relayStrikes.cacheRelayKeys.join(', ')}
+        </p>
+        <pre className="rounded-lg border bg-muted/30 p-3 text-[11px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
+          {debug.relayStrikes.entries.length === 0
+            ? t('None')
+            : JSON.stringify(debug.relayStrikes.entries, null, 2)}
+        </pre>
       </section>
 
     </div>

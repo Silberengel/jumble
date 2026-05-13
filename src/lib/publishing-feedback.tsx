@@ -1,6 +1,8 @@
 import RelayStatusDisplay from '@/components/RelayStatusDisplay'
 import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useContext } from 'react'
+import { FavoriteRelaysContext } from '@/providers/favorite-relays-context'
 import storage from '@/services/local-storage.service'
 import { toast } from 'sonner'
 
@@ -47,6 +49,42 @@ export type PublishResult = {
   totalCount: number
 }
 
+function PublishToastRelayPanel({
+  message,
+  result
+}: {
+  message: string
+  result: PublishResult
+}) {
+  const fav = useContext(FavoriteRelaysContext)
+  const onBlockRelay = fav
+    ? (url: string) => {
+        void fav.addBlockedRelays([url])
+      }
+    : undefined
+
+  const { relayStatuses, successCount, totalCount } = result
+  const isSuccess = successCount > 0
+
+  return (
+    <div className="w-full min-w-0">
+      <div className="flex items-center gap-2 mb-3">
+        <CheckCircle2 className={`w-5 h-5 ${isSuccess ? 'text-green-500' : 'text-red-500'}`} />
+        <div className="font-semibold">{message}</div>
+      </div>
+      <div className="text-xs text-muted-foreground mb-2">
+        Published to {successCount} of {totalCount} relays
+      </div>
+      <RelayStatusDisplay
+        relayStatuses={relayStatuses}
+        successCount={successCount}
+        totalCount={totalCount}
+        onBlockRelay={onBlockRelay}
+      />
+    </div>
+  )
+}
+
 /**
  * Show publishing feedback with relay status details
  * @param result Publishing result with relay statuses
@@ -61,7 +99,7 @@ export function showPublishingFeedback(
 ) {
   const { message = 'Published successfully', duration = 6000 } = options
   
-  const { relayStatuses, successCount, totalCount } = result
+  const { relayStatuses, successCount } = result
 
   if (relayStatuses.length === 0) {
     // e.g. publishEvent with zero target relays still returns { relayStatuses: [] }; must not use success styling
@@ -86,26 +124,10 @@ export function showPublishingFeedback(
 
   const toastFunction = isSuccess ? toast.success : toast.error
   
-  toastFunction(
-    <div className="w-full min-w-0">
-      <div className="flex items-center gap-2 mb-3">
-        <CheckCircle2 className={`w-5 h-5 ${isSuccess ? 'text-green-500' : 'text-red-500'}`} />
-        <div className="font-semibold">{message}</div>
-      </div>
-      <div className="text-xs text-muted-foreground mb-2">
-        Published to {successCount} of {totalCount} relays
-      </div>
-      <RelayStatusDisplay
-        relayStatuses={relayStatuses}
-        successCount={successCount}
-        totalCount={totalCount}
-      />
-    </div>,
-    { 
-      duration,
-      className: 'max-w-lg w-full'
-    }
-  )
+  toastFunction(<PublishToastRelayPanel message={message} result={result} />, {
+    duration,
+    className: 'max-w-lg w-full'
+  })
 }
 
 /**

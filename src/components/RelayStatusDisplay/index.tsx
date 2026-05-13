@@ -1,6 +1,8 @@
 import React from 'react'
 import { Check, X } from 'lucide-react'
 import { simplifyUrl } from '@/lib/url'
+import { Button } from '@/components/ui/button'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Format relay error messages to be more user-friendly
@@ -105,6 +107,8 @@ interface RelayStatusDisplayProps {
    * “Published to …” copy (e.g. timeline REQ outcomes).
    */
   aggregateSummary?: React.ReactNode | false
+  /** When set, failed relays show a control to add the URL to the user’s blocked-relay list. */
+  onBlockRelay?: (relayUrl: string) => void
 }
 
 export default function RelayStatusDisplay({
@@ -112,8 +116,10 @@ export default function RelayStatusDisplay({
   successCount,
   totalCount,
   className = '',
-  aggregateSummary
+  aggregateSummary,
+  onBlockRelay
 }: RelayStatusDisplayProps) {
+  const { t } = useTranslation()
   if (relayStatuses.length === 0) {
     return null
   }
@@ -162,6 +168,22 @@ export default function RelayStatusDisplay({
                 {!status.success && status.error && (
                   <div className="text-xs text-red-600 dark:text-red-400 break-words">
                     {renderTextWithLinks(formatRelayError(status.error))}
+                  </div>
+                )}
+                {!status.success && onBlockRelay && (
+                  <div className="pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onBlockRelay(status.url)
+                      }}
+                    >
+                      {t('Block relay', { defaultValue: 'Block relay' })}
+                    </Button>
                   </div>
                 )}
                 {status.success && status.message && (

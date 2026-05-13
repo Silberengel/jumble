@@ -140,6 +140,7 @@ import {
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
@@ -333,7 +334,7 @@ class ClientService extends EventTarget {
     // Initialize sub-services
     this.queryService = new QueryService(this.pool, {
       onRelayNoticeFetchFailure: (normalizedUrl, noticeMessage) =>
-        this.logRelayNoticeFetchFailure(normalizedUrl, noticeMessage)
+        this.handleRelayNoticeSession(normalizedUrl, noticeMessage)
     })
     this.eventService = new EventService(this.queryService)
     this.replaceableEventService = new ReplaceableEventService(
@@ -1183,19 +1184,23 @@ class ClientService extends EventTarget {
     return relays
   }
 
-  /** NOTICE "failed to fetch events" — logged only (no session relay blocking). */
-  private logRelayNoticeFetchFailure(url: string, noticeMessage: string) {
-    const n = canonicalRelaySessionKey(url)
-    logger.debug('[Relay] NOTICE failed-fetch', {
-      url: n ?? url,
-      noticeSnippet: noticeMessage.slice(0, 220)
-    })
+  /** NOTICE handler: session strikes + rate-limit cooldown + debug log for fetch failures. */
+  private handleRelayNoticeSession(relayKey: string, noticeMessage: string) {
+    relaySessionStrikes.handleNotice(relayKey, noticeMessage)
+    if (/failed to fetch events/i.test(noticeMessage)) {
+      const n = canonicalRelaySessionKey(relayKey)
+      logger.debug('[Relay] NOTICE failed-fetch', {
+        url: n ?? relayKey,
+        noticeSnippet: noticeMessage.slice(0, 220)
+      })
+    }
   }
 
   /** Record a successful publish and its latency for session-based preference when selecting random relays. */
   recordPublishSuccess(url: string, latencyMs: number) {
     const n = canonicalRelaySessionKey(url)
     if (!n) return
+    relaySessionStrikes.recordPublishSuccess(url)
     const cur = this.sessionRelayPublishStats.get(n)
     if (cur) {
       cur.successCount += 1
@@ -1231,6 +1236,7 @@ class ClientService extends EventTarget {
   getSessionRelayDebug(): {
     scoredRelays: { url: string; successCount: number; avgLatencyMs: number }[]
     presetWorking: string[]
+    relayStrikes: ReturnType<typeof relaySessionStrikes.getDebugSnapshot>
   } {
     const presetSet = new Set<string>()
     for (const u of [
@@ -1249,7 +1255,7 @@ class ClientService extends EventTarget {
       avgLatencyMs: Math.round(s.sumLatencyMs / s.successCount)
     }))
     scoredRelays.sort((a, b) => a.avgLatencyMs - b.avgLatencyMs)
-    return { scoredRelays, presetWorking: preset }
+    return { scoredRelays, presetWorking: preset, relayStrikes: relaySessionStrikes.getDebugSnapshot() }
   }
 
   /**
@@ -1324,13 +1330,22 @@ class ClientService extends EventTarget {
     )
 
     const uniqueRelayUrls = filtered
+    const publishTargetUrls = relaySessionStrikes.filterPublishUrls(uniqueRelayUrls)
+    /** Single-relay publish: force a fresh socket so explorer / one-relay flows still try hard. */
+    if (publishTargetUrls.length === 1) {
+      try {
+        this.pool.close(publishTargetUrls)
+      } catch {
+        /* ignore */
+      }
+    }
     /** Single-relay: full NIP-42 ACK budget; multi-relay: avoid waiting on the slowest peer for “all settled”. */
     const publishAckBudgetCapMs =
-      uniqueRelayUrls.length <= 1
+      publishTargetUrls.length <= 1
         ? RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS
         : Math.min(RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS, MULTI_RELAY_PUBLISH_ACK_CAP_MS)
 
-    if (relayUrls.length !== uniqueRelayUrls.length || mergedRelayUrls.length !== uniqueRelayUrls.length) {
+    if (relayUrls.length !== publishTargetUrls.length || mergedRelayUrls.length !== publishTargetUrls.length) {
       logger.info('[PublishEvent] Publish target relays (UI selection vs actually contacted)', {
         eventId: event.id?.substring(0, 12),
         kind: event.kind,
@@ -1338,8 +1353,9 @@ class ClientService extends EventTarget {
         fromPickerOrDetermineCount: relayUrls.length,
         afterMergeWithYourOutboxes: mergedRelayUrls.length,
         afterReadonlySocialFilter: countAfterFiltersBeforeCap,
-        finalContactedRelayCount: uniqueRelayUrls.length,
-        finalRelays: uniqueRelayUrls,
+        afterStrikeFilter: publishTargetUrls.length,
+        finalContactedRelayCount: publishTargetUrls.length,
+        finalRelays: publishTargetUrls,
         explain:
           'Your NIP-65 write relays are prepended, then the list is de-duplicated, filtered (read-only / social-kind blocks), and capped at maxPublishRelays in outbox→inbox→favorite→fast-write priority. Unchecked relays in the picker are never contacted; checked relays beyond the cap or filtered out are also skipped.'
       })
@@ -1348,10 +1364,10 @@ class ClientService extends EventTarget {
     logger.debug('[PublishEvent] Starting publishEvent', {
       eventId: event.id?.substring(0, 8),
       kind: event.kind,
-      relayCount: uniqueRelayUrls.length,
+      relayCount: publishTargetUrls.length,
       relayUrlsPassedInCount: relayUrls.length
     })
-    if (uniqueRelayUrls.length === 0) {
+    if (publishTargetUrls.length === 0) {
       const emptyBatch = new RelayPublishOpBatch('ClientService.publishEvent', event.id, [])
       emptyBatch.logBegin()
       emptyBatch.logEnd('no_targets')
@@ -1371,11 +1387,11 @@ class ClientService extends EventTarget {
       logger.info('[PublishEvent] Publishing event to relays', {
         eventId: event.id?.substring(0, 8),
         kind: event.kind,
-        totalRelayCount: uniqueRelayUrls.length,
-        allRelays: uniqueRelayUrls
+        totalRelayCount: publishTargetUrls.length,
+        allRelays: publishTargetUrls
       })
     } else {
-      logger.debug('[PublishEvent] Unique relays', { count: uniqueRelayUrls.length, relays: uniqueRelayUrls.slice(0, 5) })
+      logger.debug('[PublishEvent] Unique relays', { count: publishTargetUrls.length, relays: publishTargetUrls.slice(0, 5) })
     }
 
     const publishBatchSource = publishExtras?.publishBatchLabel
@@ -1385,13 +1401,13 @@ class ClientService extends EventTarget {
       const idBit =
         event.id && /^[0-9a-f]{64}$/i.test(event.id) ? `${event.id.slice(0, 12)}…` : '(unsigned or no id)'
       logger.info(`[Publish] ${publishExtras.publishBatchLabel}`, {
-        readable: `Kind ${event.kind} note ${idBit} → ${uniqueRelayUrls.length} relay(s): ${uniqueRelayUrls.map(relayHostForUserLog).join(', ')}`,
-        targets: uniqueRelayUrls.map((url) => ({ where: relayHostForUserLog(url), url }))
+        readable: `Kind ${event.kind} note ${idBit} → ${publishTargetUrls.length} relay(s): ${publishTargetUrls.map(relayHostForUserLog).join(', ')}`,
+        targets: publishTargetUrls.map((url) => ({ where: relayHostForUserLog(url), url }))
       })
     }
 
     const relayStatuses: { url: string; success: boolean; error?: string }[] = []
-    const publishOpBatch = new RelayPublishOpBatch(publishBatchSource, event.id, uniqueRelayUrls)
+    const publishOpBatch = new RelayPublishOpBatch(publishBatchSource, event.id, publishTargetUrls)
     publishOpBatch.logBegin()
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1404,7 +1420,7 @@ class ClientService extends EventTarget {
       const flushPublishOpBatch = (status: string) => {
         if (publishOpBatchFlushed) return
         publishOpBatchFlushed = true
-        uniqueRelayUrls.forEach((url, idx) => {
+        publishTargetUrls.forEach((url, idx) => {
           const rs = [...relayStatuses].reverse().find((r) => r.url === url)
           publishOpBatch.record(idx, url, rs?.success === true, rs?.error)
         })
@@ -1418,7 +1434,7 @@ class ClientService extends EventTarget {
        * by {@link MAX_PUBLISH_RELAYS}. Budget still scales with relay count as a rough upper bound.
        */
       const slotCap = Math.max(1, MAX_CONCURRENT_RELAY_CONNECTIONS)
-      const publishWaves = Math.max(1, Math.ceil(uniqueRelayUrls.length / slotCap))
+      const publishWaves = Math.max(1, Math.ceil(publishTargetUrls.length / slotCap))
       const perWaveBudgetMs =
         RELAY_POOL_CONNECTION_TIMEOUT_MS + publishAckBudgetCapMs + 10_000
       const publishGlobalDeadlineMs = Math.min(
@@ -1431,7 +1447,7 @@ class ClientService extends EventTarget {
       logger.debug('[PublishEvent] Setting up global timeout', {
         publishGlobalDeadlineMs,
         publishWaves,
-        relayCount: uniqueRelayUrls.length,
+        relayCount: publishTargetUrls.length,
         slotCap
       })
       let hasResolved = false
@@ -1456,17 +1472,18 @@ class ClientService extends EventTarget {
         
         logger.warn('[PublishEvent] Global timeout reached!', {
           finishedCount,
-          totalRelays: uniqueRelayUrls.length,
+          totalRelays: publishTargetUrls.length,
           successCount,
           relayStatusesCount: relayStatuses.length
         })
         
         // Mark any unfinished relays as failed
-        uniqueRelayUrls.forEach(url => {
+        publishTargetUrls.forEach(url => {
           const alreadyFinished = relayStatuses.some(rs => rs.url === url)
           if (!alreadyFinished) {
             logger.warn('[PublishEvent] Marking relay as timed out', { url })
             relayStatuses.push({ url, success: false, error: 'Timeout: Operation took too long' })
+            relaySessionStrikes.recordPublishFailure(url)
             finishedCount++
           }
         })
@@ -1480,28 +1497,28 @@ class ClientService extends EventTarget {
           hasResolved = true
           maybeEmitNewEventForLiveFeeds()
           logger.debug('[PublishEvent] Resolving due to timeout', {
-            success: successCount >= uniqueRelayUrls.length / 3,
+            success: successCount >= publishTargetUrls.length / 3,
             successCount,
-            totalCount: uniqueRelayUrls.length,
+            totalCount: publishTargetUrls.length,
             relayStatuses: relayStatuses.length
           })
           flushPublishOpBatch('global_timeout')
           resolve({
-            success: successCount >= uniqueRelayUrls.length / 3,
+            success: successCount >= publishTargetUrls.length / 3,
             relayStatuses,
             successCount,
-            totalCount: uniqueRelayUrls.length
+            totalCount: publishTargetUrls.length
           })
         }
       }, publishGlobalDeadlineMs)
 
       logger.debug('[PublishEvent] Starting Promise.allSettled for all relays')
       const relayPublishAllSettled = Promise.allSettled(
-        uniqueRelayUrls.map(async (url, index) => {
+        publishTargetUrls.map(async (url, index) => {
           // eslint-disable-next-line @typescript-eslint/no-this-alias
           const that = this
           const startMs = Date.now()
-          logger.debug(`[PublishEvent] Starting relay ${index + 1}/${uniqueRelayUrls.length}`, { url })
+          logger.debug(`[PublishEvent] Starting relay ${index + 1}/${publishTargetUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
           /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
           const connectionTimeout = isLocal ? 5_000 : RELAY_POOL_CONNECTION_TIMEOUT_MS
@@ -1566,7 +1583,7 @@ class ClientService extends EventTarget {
                 logger.debug(`[PublishEvent] Relay connected`, { url })
                 const relayKeyPub = normalizeUrl(url) || url
                 patchRelayNoticeForFetchFailures(relay as unknown as AbstractRelay, relayKeyPub, (u, m) =>
-                  that.logRelayNoticeFetchFailure(u, m)
+                  that.handleRelayNoticeSession(u, m)
                 )
 
                 applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
@@ -1612,11 +1629,13 @@ class ClientService extends EventTarget {
                           logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authError.message })
                           errors.push({ url, error: authError })
                           relayStatuses.push({ url, success: false, error: authError.message })
+                          relaySessionStrikes.recordPublishFailure(url)
                         })
                     } else {
                       logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
                       errors.push({ url, error })
                       relayStatuses.push({ url, success: false, error: error.message })
+                      relaySessionStrikes.recordPublishFailure(url)
                     }
                   })
 
@@ -1674,36 +1693,37 @@ class ClientService extends EventTarget {
               success: false,
               error: error instanceof Error ? error.message : 'Connection failed'
             })
+            relaySessionStrikes.recordPublishFailure(url)
           } finally {
             clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount
             logger.debug(`[PublishEvent] Relay finished`, { 
               url, 
               finishedCount: currentFinished, 
-              totalRelays: uniqueRelayUrls.length,
+              totalRelays: publishTargetUrls.length,
               successCount 
             })
             
             maybeEmitNewEventForLiveFeeds()
-            if (currentFinished >= uniqueRelayUrls.length && !hasResolved) {
+            if (currentFinished >= publishTargetUrls.length && !hasResolved) {
               if (earlyGraceTimer != null) {
                 clearTimeout(earlyGraceTimer)
                 earlyGraceTimer = null
               }
               hasResolved = true
               logger.debug('[PublishEvent] All relays finished, resolving', {
-                success: successCount >= uniqueRelayUrls.length / 3,
+                success: successCount >= publishTargetUrls.length / 3,
                 successCount,
-                totalCount: uniqueRelayUrls.length,
+                totalCount: publishTargetUrls.length,
                 relayStatusesCount: relayStatuses.length
               })
               clearTimeout(globalTimeout)
               flushPublishOpBatch('all_relays_finished')
               resolve({
-                success: successCount >= uniqueRelayUrls.length / 3,
+                success: successCount >= publishTargetUrls.length / 3,
                 relayStatuses,
                 successCount,
-                totalCount: uniqueRelayUrls.length
+                totalCount: publishTargetUrls.length
               })
             } else if (!hasResolved && successCount >= 1 && earlyGraceTimer == null) {
               earlyGraceTimer = setTimeout(() => {
@@ -1713,17 +1733,17 @@ class ClientService extends EventTarget {
                 clearTimeout(globalTimeout)
                 flushPublishOpBatch('early_any_success_grace')
                 logger.debug('[PublishEvent] Resolving after first success grace', {
-                  success: successCount >= uniqueRelayUrls.length / 3,
+                  success: successCount >= publishTargetUrls.length / 3,
                   successCount,
-                  totalCount: uniqueRelayUrls.length,
+                  totalCount: publishTargetUrls.length,
                   finishedRelays: currentFinished,
                   graceMs: EARLY_PUBLISH_SUCCESS_GRACE_MS
                 })
                 resolve({
-                  success: successCount >= uniqueRelayUrls.length / 3,
+                  success: successCount >= publishTargetUrls.length / 3,
                   relayStatuses,
                   successCount,
-                  totalCount: uniqueRelayUrls.length
+                  totalCount: publishTargetUrls.length
                 })
               }, EARLY_PUBLISH_SUCCESS_GRACE_MS)
             }
@@ -2219,6 +2239,11 @@ class ClientService extends EventTarget {
     }
     relays = Array.from(new Set(relays))
 
+    const wsRelayCountBeforeStrikes = relays.length
+    if (wsRelayCountBeforeStrikes > 1) {
+      relays = relaySessionStrikes.filterReadHttpUrls(relays)
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const that = this
     const _knownIds = new Set<string>()
@@ -2239,6 +2264,14 @@ class ClientService extends EventTarget {
       const filtersForRelay = f.map((one) => filterForRelay(one, relaySupportsSearch))
       return { url, filters: filtersForRelay }
     })
+
+    if (groupedRequests.length === 1) {
+      try {
+        this.pool.close([groupedRequests[0]!.url])
+      } catch {
+        /* ignore */
+      }
+    }
 
     // Social-kind queries drop SOCIAL_KIND_BLOCKED_RELAY_URLS; if every URL was removed, no subs run and
     // oneose would never fire — timelines stay loading forever (e.g. favorites feed).
@@ -2298,6 +2331,7 @@ class ClientService extends EventTarget {
       eosesReceived[i] = true
       opBatch.setTerminal(i, 'eose')
       logFirstRelayResponse('eose', groupedRequests[i]!.url)
+      relaySessionStrikes.recordReadSuccess(groupedRequests[i]!.url)
       if (eosesReceived.filter(Boolean).length === groupedRequests.length) {
         oneose?.(true)
       }
@@ -2341,10 +2375,9 @@ class ClientService extends EventTarget {
           let relay: AbstractRelay
           try {
             relay = await that.pool.ensureRelay(url, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS })
-            patchRelayNoticeForFetchFailures(relay, relayKey, (u, m) =>
-              that.logRelayNoticeFetchFailure(u, m)
-            )
+            patchRelayNoticeForFetchFailures(relay, relayKey, (u, m) => that.handleRelayNoticeSession(u, m))
           } catch (err) {
+            relaySessionStrikes.recordReadFailure(url, 'connection')
             that.queryService.releaseSubSlot(relayKey)
             handleClose(i, (err as Error)?.message ?? String(err))
             return
@@ -2396,9 +2429,10 @@ class ClientService extends EventTarget {
                           connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
                         })
                         patchRelayNoticeForFetchFailures(liveRelay, relayKey, (u, m) =>
-                          that.logRelayNoticeFetchFailure(u, m)
+                          that.handleRelayNoticeSession(u, m)
                         )
                       } catch (err) {
+                        relaySessionStrikes.recordReadFailure(url, 'connection')
                         nip42ResubscribePending.delete(i)
                         that.queryService.releaseSubSlot(relayKey)
                         handleClose(i, (err as Error)?.message ?? String(err))
@@ -3808,7 +3842,7 @@ class ClientService extends EventTarget {
     storedHttpRelayEvents: (NEvent | null | undefined)[],
     storedCacheRelayEvents: (NEvent | null | undefined)[]
   ): TRelayList[] {
-    return pubkeys.map((targetPubkey, index) => {
+    const mergedLists = pubkeys.map((targetPubkey, index) => {
       const isOwnRelayList =
         this.pubkey != null && hexPubkeysEqual(this.pubkey, userIdToPubkey(targetPubkey))
 
@@ -3904,6 +3938,15 @@ class ClientService extends EventTarget {
       // were stripped above; strip again after HTTP merge for other users' bundles only (viewer keeps 10432/LAN).
       return isOwnRelayList ? merged : stripLocalNetworkRelaysFromRelayList(merged)
     })
+    if (this.pubkey) {
+      const i = pubkeys.findIndex((pk) => hexPubkeysEqual(this.pubkey!, userIdToPubkey(pk)))
+      if (i >= 0) {
+        const storedCacheEvent = storedCacheRelayEvents[i]
+        const cacheResolved = cacheRelayEvents[i] || storedCacheEvent
+        relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(cacheResolved ?? null)
+      }
+    }
+    return mergedLists
   }
 
   /** Background refresh so UI/publish can use IDB immediately while relays catch up. */

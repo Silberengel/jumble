@@ -2,25 +2,22 @@ import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 
 const patched = new WeakSet<object>()
 
-/** NOTICE bodies that indicate the relay backend failed to serve the REQ. */
-const FAILED_FETCH_EVENTS = /failed to fetch events/i
-
 /**
- * One-time patch: relay NOTICE "failed to fetch events" -> diagnostic callback.
+ * One-time patch: forward every relay NOTICE to the app (strikes / rate-limit cooldown / logs).
  * Safe to call on every ensureRelay; only the first patch per relay instance applies.
  */
 export function patchRelayNoticeForFetchFailures(
   relay: AbstractRelay,
   relayKey: string,
-  onFailure?: (normalizedUrl: string, noticeMessage: string) => void
+  onNotice?: (relayKey: string, noticeMessage: string) => void
 ): void {
-  if (!onFailure || patched.has(relay as object)) return
+  if (!onNotice || patched.has(relay as object)) return
   patched.add(relay as object)
   const previous = relay.onnotice.bind(relay)
   relay.onnotice = (msg: string) => {
-    if (typeof msg === 'string' && FAILED_FETCH_EVENTS.test(msg)) {
+    if (typeof msg === 'string' && msg.trim()) {
       try {
-        onFailure(relayKey, msg)
+        onNotice(relayKey, msg)
       } catch {
         /* ignore */
       }
