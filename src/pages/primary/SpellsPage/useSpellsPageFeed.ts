@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Event } from 'nostr-tools'
 import { kinds as nostrKinds } from 'nostr-tools'
+import storage from '@/services/local-storage.service'
 import { ExtendedKind, DEFAULT_FEED_SHOW_KINDS } from '@/constants'
 import { getPubkeysFromPTags } from '@/lib/tag'
 import { normalizeUrl } from '@/lib/url'
@@ -36,7 +37,6 @@ import {
 import { getRelaysForSpell, spellEventToFilter } from '@/services/spell.service'
 import type { TFeedSubRequest } from '@/types'
 import { isFollowFeedFauxSpellId } from './fauxSpellConfig'
-import storage from '@/services/local-storage.service'
 
 /** `fetchReplaceableEvent(kind 3)` / relay-list hydration can hang; never block the Following spell on it. */
 const FOLLOWING_FETCH_FOLLOWINGS_TIMEOUT_MS = 10_000

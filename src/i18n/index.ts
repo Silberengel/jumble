@@ -65,6 +65,10 @@ export function initI18n(): Promise<void> {
     })
 
     i18n.services.formatter?.add('date', (timestamp, lng) => {
+      const n = Number(timestamp)
+      if (!Number.isFinite(n)) {
+        return '\u2014'
+      }
       switch (lng) {
         case 'zh':
           return dayjs(timestamp).format('YYYY年MM月DD日')

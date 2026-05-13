@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import {
   DropdownMenu,
@@ -26,7 +27,6 @@ import { useUserTrust } from '@/contexts/user-trust-context'
 import { eventService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { TNoteStats } from '@/services/note-stats.service'
-import storage from '@/services/local-storage.service'
 import { TEmoji } from '@/types'
 import { SmilePlus } from 'lucide-react'
 import { Event } from 'nostr-tools'

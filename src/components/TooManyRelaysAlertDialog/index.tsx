@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -19,7 +20,6 @@ import { toRelaySettings } from '@/lib/link'
 import { useSecondaryPage } from '@/contexts/secondary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import storage from '@/services/local-storage.service'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 

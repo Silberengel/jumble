@@ -31,7 +31,11 @@ export function compactFilterForRelayLog(f: Filter): Record<string, unknown> {
   if (f['#p']?.length) out.pTagCount = f['#p'].length
   if (f['#e']?.length) out.eTagCount = f['#e'].length
   if (f['#t']?.length) out.tTagCount = f['#t'].length
-  if (f.search) out.search = true
+  if (typeof f.search === 'string' && f.search.length > 0) {
+    out.searchPreview = f.search.length > 120 ? `${f.search.slice(0, 117)}…` : f.search
+  } else if (f.search) {
+    out.search = true
+  }
   return out
 }
 
@@ -49,7 +53,7 @@ export interface RelayOpTerminalRow {
 type GroupedRelayRow = { url: string; filters: Filter[] }
 
 /** Short host label for subscribe REQ logs (same as publish). */
-function relayHostForSubscribeLog(url: string): string {
+export function relayHostForSubscribeLog(url: string): string {
   return relayHostForPublishLog(url)
 }
 
@@ -137,6 +141,8 @@ function groupTerminalsByOutcome(rows: RelayOpTerminalRow[]): Record<string, { c
 export type RelaySubscribeOpBatchOptions = {
   /** `info` logs every REQ wave at INFO; default `debug` keeps subscribe noise behind jumble-debug / VITE_DEBUG. */
   logLevel?: 'info' | 'debug'
+  /** When true, skip `[RelayOp] batch_begin` / `batch_end` lines (e.g. when {@link QueryService.query} logs `req_begin`/`req_end`). */
+  quiet?: boolean
   /** Invoked once when this REQ wave finishes (same `rows` as `batch_end` / `terminals`). */
   onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
 }
@@ -181,6 +187,7 @@ export class RelaySubscribeOpBatch {
   private readonly source: string
   private readonly grouped: GroupedRelayRow[]
   private readonly logLevel: 'info' | 'debug'
+  private readonly quiet: boolean
   private readonly onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
   private readonly terminal = new Map<number, RelayOpTerminalRow>()
   private endLogged = false
@@ -191,6 +198,7 @@ export class RelaySubscribeOpBatch {
     this.source = source
     this.grouped = grouped
     this.logLevel = options?.logLevel ?? 'debug'
+    this.quiet = options?.quiet ?? false
     this.onBatchEnd = options?.onBatchEnd
   }
 
@@ -203,6 +211,7 @@ export class RelaySubscribeOpBatch {
   }
 
   logBegin(): void {
+    if (this.quiet) return
     const uniqueRelays = [...new Set(this.grouped.map((g) => g.url))]
     this.logLine('[RelayOp] batch_begin', {
       batchId: this.batchId,
@@ -285,15 +294,17 @@ export class RelaySubscribeOpBatch {
       timeoutCount: nTimeout
     }
 
-    if (this.logLevel === 'debug') {
-      this.logLine('[RelayOp] batch_end', {
-        ...compact,
-        readableSummary,
-        byOutcome: groupTerminalsByOutcome(rows),
-        terminals: rows
-      })
-    } else {
-      logger.info(`[RelayOp] batch_end — ${headline}\n${readableSummary}`, compact)
+    if (!this.quiet) {
+      if (this.logLevel === 'debug') {
+        this.logLine('[RelayOp] batch_end', {
+          ...compact,
+          readableSummary,
+          byOutcome: groupTerminalsByOutcome(rows),
+          terminals: rows
+        })
+      } else {
+        logger.info(`[RelayOp] batch_end — ${headline}\n${readableSummary}`, compact)
+      }
     }
 
     this.onBatchEnd?.(rows)

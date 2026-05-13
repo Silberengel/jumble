@@ -25,6 +25,9 @@ function FormattedTimestampContent({
   short?: boolean
 }) {
   const { t } = useTranslation()
+  if (!Number.isFinite(timestamp)) {
+    return '\u2014'
+  }
   const time = dayjs(timestamp * 1000)
   const now = dayjs()
 

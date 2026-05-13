@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import {
   buildLiveActivitiesRelayUrls,
   filterLiveActivityItemsByReachableMedia,
@@ -11,7 +12,6 @@ import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import storage from '@/services/local-storage.service'
 import { registerLiveActivitiesPrewarmCallback } from '@/services/live-activities-prewarm-bridge'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LiveActivitiesContext } from './live-activities-context'

@@ -1,9 +1,9 @@
+import storage from '@/services/local-storage.service'
 import RelayStatusDisplay from '@/components/RelayStatusDisplay'
 import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useContext } from 'react'
 import { FavoriteRelaysContext } from '@/providers/favorite-relays-context'
-import storage from '@/services/local-storage.service'
 import { toast } from 'sonner'
 
 export type PublishSuccessSubtleDetail = { message?: string }

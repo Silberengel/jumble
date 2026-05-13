@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import PrimaryPageLayout, { type TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import {
   calendarOccurrenceOverlapsRange,
@@ -20,7 +21,6 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import storage from '@/services/local-storage.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { TPageRef } from '@/types'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'

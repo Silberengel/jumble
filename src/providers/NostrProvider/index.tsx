@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import LoginDialog from '@/components/LoginDialog'
 import NcryptsecPasswordPrompt from '@/components/NcryptsecPasswordPrompt'
 import {
@@ -34,7 +35,6 @@ import { queryService, replaceableEventService } from '@/services/client.service
 import customEmojiService from '@/services/custom-emoji.service'
 import indexedDb from '@/services/indexed-db.service'
 import postEditorCache from '@/services/post-editor-cache.service'
-import storage from '@/services/local-storage.service'
 import noteStatsService from '@/services/note-stats.service'
 import {
   ISigner,

@@ -2,6 +2,7 @@
 // making it incompatible with Vite's Fast Refresh auto-detection. Opting into explicit
 // full-reload mode to suppress the "incompatible export" HMR warning.
 // @refresh reset
+import storage from '@/services/local-storage.service'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -13,7 +14,6 @@ import { NavigationService } from '@/services/navigation.service'
 import { ImwaldBrandBar } from '@/assets/Logo'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import NoteDrawer from '@/components/NoteDrawer'
-import storage from '@/services/local-storage.service'
 import client from '@/services/client.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import type { Event } from 'nostr-tools'

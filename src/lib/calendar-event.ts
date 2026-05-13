@@ -240,10 +240,24 @@ export function stripCalendarEventRedundantTopicHashtagLines(
 
 const CALENDAR_DISPLAY_LOCALE = 'en-US'
 
+/** Safe fallback when `Date` is invalid — avoids `Intl.DateTimeFormat#formatToParts` throwing. */
+const INVALID_DATE_PARTS: Record<Intl.DateTimeFormatPartTypes, string> = new Proxy(
+  {} as Record<Intl.DateTimeFormatPartTypes, string>,
+  {
+    get(_target, prop: string | symbol) {
+      if (typeof prop !== 'string') return '\u2014'
+      if (prop === 'literal') return ''
+      if (prop === 'dayPeriod' || prop === 'timeZoneName') return ''
+      return '\u2014'
+    }
+  }
+)
+
 function readFormatParts(
   d: Date,
   opts: Intl.DateTimeFormatOptions
 ): Record<Intl.DateTimeFormatPartTypes, string> {
+  if (!Number.isFinite(d.getTime())) return INVALID_DATE_PARTS
   const out: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {}
   for (const p of new Intl.DateTimeFormat(CALENDAR_DISPLAY_LOCALE, opts).formatToParts(d)) {
     if (p.type !== 'literal') out[p.type] = p.value
@@ -256,7 +270,11 @@ function readFormatParts(
  * (e.g. `May 13, 2025 10:30 am EST`) in the viewer's local zone — avoids DD/MM vs MM/DD ambiguity.
  */
 export function formatCalendarTime(ts: number): string {
-  const d = new Date(ts * 1000)
+  if (!Number.isFinite(ts)) return '\u2014'
+  const ms = ts * 1000
+  if (!Number.isFinite(ms)) return '\u2014'
+  const d = new Date(ms)
+  if (!Number.isFinite(d.getTime())) return '\u2014'
   const p = readFormatParts(d, {
     month: 'long',
     day: 'numeric',
@@ -313,6 +331,7 @@ export function formatCalendarTimeRange(start: number, end: number | undefined):
 export function formatCalendarDate(dateStr: string): string {
   if (!dateStr) return ''
   const d = new Date(dateStr + 'T12:00:00')
+  if (!Number.isFinite(d.getTime())) return ''
   const p = readFormatParts(d, { month: 'long', day: 'numeric', year: 'numeric' })
   return `${p.month} ${p.day}, ${p.year}`
 }
@@ -331,7 +350,13 @@ const NIP52_SECONDS_PER_DAY = 86400
 
 function nip52DayIndexToUtcCalendarParts(dayIndex: number): { month: string; day: string; year: string } {
   const ms = dayIndex * NIP52_SECONDS_PER_DAY * 1000
+  if (!Number.isFinite(ms)) {
+    return { month: '\u2014', day: '\u2014', year: '\u2014' }
+  }
   const d = new Date(ms)
+  if (!Number.isFinite(d.getTime())) {
+    return { month: '\u2014', day: '\u2014', year: '\u2014' }
+  }
   const parts = new Intl.DateTimeFormat(CALENDAR_DISPLAY_LOCALE, {
     month: 'long',
     day: 'numeric',
@@ -507,8 +532,10 @@ function toYmdLocal(d: Date): string {
 
 /** Compact week banner for sidebar (en-US month names). */
 export function formatSidebarWeekLabel(weekStartMs: number, weekEndExclusiveMs: number): string {
+  if (!Number.isFinite(weekStartMs) || !Number.isFinite(weekEndExclusiveMs)) return ''
   const start = new Date(weekStartMs)
   const last = new Date(weekEndExclusiveMs)
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(last.getTime())) return ''
   last.setDate(last.getDate() - 1)
   const y1 = start.getFullYear()
   const y2 = last.getFullYear()
@@ -542,8 +569,9 @@ export function formatCalendarSidebarRow(event: Event): string {
     }
     return a
   }
-  if (m.start == null || Number.isNaN(m.start)) return ''
+  if (m.start == null || Number.isNaN(m.start) || !Number.isFinite(m.start)) return ''
   const d = new Date(m.start * 1000)
+  if (!Number.isFinite(d.getTime())) return ''
   const p = readFormatParts(d, {
     month: 'short',
     day: 'numeric',
@@ -554,8 +582,9 @@ export function formatCalendarSidebarRow(event: Event): string {
   })
   const ap = (p.dayPeriod ?? '').toLowerCase()
   const base = `${p.month} ${p.day} · ${p.hour}:${p.minute} ${ap} ${p.timeZoneName ?? ''}`.trim()
-  if (m.end != null && !Number.isNaN(m.end) && m.end > m.start) {
+  if (m.end != null && !Number.isNaN(m.end) && Number.isFinite(m.end) && m.end > m.start) {
     const d2 = new Date(m.end * 1000)
+    if (!Number.isFinite(d2.getTime())) return base
     const p2 = readFormatParts(d2, {
       hour: 'numeric',
       minute: '2-digit',

@@ -1,7 +1,7 @@
+import storage from '@/services/local-storage.service'
 import { toWallet } from '@/lib/link'
 import { useSecondaryPage } from '@/contexts/secondary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
-import storage from '@/services/local-storage.service'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'

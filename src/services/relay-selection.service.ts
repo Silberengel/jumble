@@ -1,5 +1,6 @@
 import { Event, kinds } from 'nostr-tools'
 import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT, READ_ONLY_RELAY_URLS } from '@/constants'
+import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
@@ -10,7 +11,6 @@ import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
 import nip66Service from '@/services/nip66.service'
-import storage from '@/services/local-storage.service'
 
 export interface RelaySelectionContext {
   // User's own relays

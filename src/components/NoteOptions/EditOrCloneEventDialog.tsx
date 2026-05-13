@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import { Card } from '@/components/ui/card'
 import {
   Dialog,
@@ -39,7 +40,6 @@ import {
 } from '@/lib/publishing-feedback'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import storage from '@/services/local-storage.service'
 import postEditorCache from '@/services/post-editor-cache.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'

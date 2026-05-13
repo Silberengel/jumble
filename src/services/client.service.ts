@@ -3398,27 +3398,6 @@ class ClientService extends EventTarget {
       relayOpSource: 'ClientService.searchProfiles'
     })
 
-    /** Which relays actually delivered each kind-0 id (for tuning SEARCHABLE_RELAY_URLS). DEBUG only. */
-    if (searchStr.length > 0) {
-      const relayHitCounts = new Map<string, number>()
-      for (const e of events) {
-        if (e.kind !== kinds.Metadata) continue
-        for (const u of this.queryService.getSeenEventRelayUrls(e.id)) {
-          const n = (normalizeUrl(u) || u).trim()
-          if (!n) continue
-          relayHitCounts.set(n, (relayHitCounts.get(n) ?? 0) + 1)
-        }
-      }
-      if (relayHitCounts.size > 0) {
-        const relayHits = [...relayHitCounts.entries()].sort((a, b) => b[1] - a[1])
-        logger.debug('[ClientService.searchProfiles] kind=0 deliveries by relay URL (count = events relay sent for this query)', {
-          searchPreview: searchStr.slice(0, 80),
-          totalKind0Events: events.filter((e) => e.kind === kinds.Metadata).length,
-          relayHits: Object.fromEntries(relayHits)
-        })
-      }
-    }
-
     const byPk = new Map<string, NEvent>()
     for (const e of events) {
       if (e.kind !== kinds.Metadata) continue

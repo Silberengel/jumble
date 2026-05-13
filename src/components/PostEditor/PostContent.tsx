@@ -1,3 +1,4 @@
+import storage from '@/services/local-storage.service'
 import Note from '@/components/Note'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -51,7 +52,6 @@ import { cleanUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import postEditorCache from '@/services/post-editor-cache.service'
-import storage from '@/services/local-storage.service'
 import { TPollCreateData } from '@/types'
 import {
   Book,

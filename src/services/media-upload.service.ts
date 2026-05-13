@@ -1,4 +1,5 @@
-/** Compression runs entirely in-app before upload (`compress-upload-media`). */
+/** Compression runs entirely in-app before upload (`compress-upload-media`). Load `local-storage` before `./client.service` (that graph can re-enter here; constructor reads storage). */
+import storage from './local-storage.service'
 import { compressMediaForUpload } from '@/lib/compress-upload-media'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
@@ -12,8 +13,6 @@ import { simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
 import { BlossomClient } from 'blossom-client-sdk'
 import { z } from 'zod'
-/** Must run before `./client.service` — that graph can synchronously re-enter this module; `storage` must be bound first (constructor reads it at module bottom). */
-import storage from './local-storage.service'
 import client from './client.service'
 
 type UploadOptions = {

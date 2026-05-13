@@ -1,7 +1,5 @@
-import { replaceableEventService } from '@/services/client.service'
-import { getPubkeysFromPTags } from '@/lib/tag'
-import { kinds } from 'nostr-tools'
 import storage from '@/services/local-storage.service'
+import { replaceableEventService } from '@/services/client.service'
 import { UserTrustContext } from '@/contexts/user-trust-context'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { useNostr } from './NostrProvider'
