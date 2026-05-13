@@ -18,8 +18,8 @@ export type TPrePublishRelayCapPreview = {
 }
 
 /**
- * Pre-publish preview: mirrors merge + cap order in {@link ClientService.publishEvent}: NIP-65 write list first, then
- * relays checked in the post relay picker, capped at {@link MAX_PUBLISH_RELAYS}.
+ * Pre-publish preview: mirrors {@link ClientService.publishEvent} when the user checked relays in the picker —
+ * only those URLs (deduped, capped), not a second merge of the full NIP-65 outbox on top.
  */
 export function computePrePublishRelayCapPreview({
   relayListWrite,
@@ -60,10 +60,14 @@ export function computePrePublishRelayCapPreview({
     })
   )
 
-  const merged = dedupeNormalizeRelayUrlsOrdered([...outbox, ...selectedRelayUrls])
+  const merged =
+    selectedRelayUrls.length > 0
+      ? dedupeNormalizeRelayUrlsOrdered(selectedRelayUrls)
+      : dedupeNormalizeRelayUrlsOrdered([...outbox])
   const capped = merged.slice(0, MAX_PUBLISH_RELAYS)
   const outboxNormSet = new Set(outbox)
-  const outboxSlotsInPublish = capped.filter((u) => outboxNormSet.has(u)).length
+  const outboxSlotsInPublish =
+    selectedRelayUrls.length > 0 ? 0 : capped.filter((u) => outboxNormSet.has(u)).length
   const selectedNorm = selectedRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u)
   const selectedContacted = selectedNorm.filter((u) => capped.includes(u)).length
 

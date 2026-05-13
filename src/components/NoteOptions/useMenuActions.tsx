@@ -342,7 +342,7 @@ export function useMenuActions({
         label: <div className="text-left">{t('All available relays')} ({allAvailableRelayUrls.length})</div>,
         onClick: async () => {
           closeDrawer()
-          const promise = client.publishEvent(allAvailableRelayUrls, event).then((result) => {
+          const promise = client.publishEvent(allAvailableRelayUrls, event, { skipOutboxRetry: true }).then((result) => {
             if (result.successCount < 1) {
               throw new Error(t('No relay accepted the event'))
             }
@@ -380,7 +380,7 @@ export function useMenuActions({
           if (!relays?.length) {
             throw new Error(t('No relays available'))
           }
-          const result = await client.publishEvent(relays, event)
+          const result = await client.publishEvent(relays, event, { skipOutboxRetry: true })
           const minRequired = usedMonitoringList ? 5 : 1
           if (result.successCount < minRequired) {
             throw new Error(
@@ -434,7 +434,7 @@ export function useMenuActions({
             label: <div className="text-left truncate">{set.name}</div>,
             onClick: async () => {
               closeDrawer()
-              const promise = client.publishEvent(set.relayUrls, event).then((result) => {
+              const promise = client.publishEvent(set.relayUrls, event, { skipOutboxRetry: true }).then((result) => {
                 if (result.successCount < 1) {
                   throw new Error(t('No relay accepted the event'))
                 }
@@ -466,7 +466,7 @@ export function useMenuActions({
           ),
           onClick: async () => {
             closeDrawer()
-            const promise = client.publishEvent([relay], event).then((result) => {
+            const promise = client.publishEvent([relay], event, { skipOutboxRetry: true }).then((result) => {
               if (result.successCount < 1) {
                 throw new Error(t('Relay did not accept the event'))
               }
@@ -612,7 +612,7 @@ export function useMenuActions({
           const batch = uniqueEvents.slice(i, i + BATCH_SIZE)
           const batchResults = await Promise.allSettled(
             batch.map(async (ev) => {
-              const result = await client.publishEvent(selectedRelayUrls, ev)
+              const result = await client.publishEvent(selectedRelayUrls, ev, { skipOutboxRetry: true })
               if (result.successCount > 0) {
                 acceptedEvents++
                 acceptedRelayAcks += result.successCount

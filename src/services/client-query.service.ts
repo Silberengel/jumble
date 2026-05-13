@@ -406,16 +406,27 @@ export class QueryService {
     const effectiveFilter: Filter | Filter[] =
       sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters
     const hasNip50Search = filtersHaveNip50Search(sanitizedFilters)
-    const useNip50QueryTimeoutFloor =
+    const useNip50FetchPath =
       hasNip50Search && options?.relayOpSource === 'fetchEventsFromSingleRelay'
-    /** After all relays EOSE, wait this long before closing so slow `EVENT` tails are not cut off (NIP-50 is heavy). */
-    const eoseTimeout = useNip50QueryTimeoutFloor
-      ? Math.max(options?.eoseTimeout ?? 500, 3_000)
-      : options?.eoseTimeout ?? 500
     const globalTimeoutRaw = options?.globalTimeout ?? 10000
-    const globalTimeout = useNip50QueryTimeoutFloor
-      ? Math.max(globalTimeoutRaw, NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS)
-      : globalTimeoutRaw
+    /**
+     * Callers that pass a budget **below** {@link NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS} (e.g. merged search UI)
+     * intend a short cap — honor it. Larger budgets still get the floor so one-shot fetches are not cut off
+     * before index relays finish (default {@link ClientService.fetchEventsFromSingleRelay} uses 25s).
+     */
+    const globalTimeout =
+      useNip50FetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
+        ? globalTimeoutRaw
+        : useNip50FetchPath
+          ? Math.max(globalTimeoutRaw, NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS)
+          : globalTimeoutRaw
+    /** After all relays EOSE, brief settle; shorter when the caller uses a short NIP-50 global budget. */
+    const eoseTimeout =
+      useNip50FetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
+        ? Math.max(options?.eoseTimeout ?? 500, Math.min(2_000, globalTimeout))
+        : useNip50FetchPath
+          ? Math.max(options?.eoseTimeout ?? 500, 3_000)
+          : options?.eoseTimeout ?? 500
     const replaceableRace = options?.replaceableRace ?? false
     const replaceableRaceWaitMs = options?.replaceableRaceWaitMs ?? FIRST_RELAY_RESULT_GRACE_MS
     const immediateReturn = options?.immediateReturn ?? false

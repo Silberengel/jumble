@@ -121,7 +121,7 @@ export default function ProfileOptions({
       toast.error(t('Profile event not available'))
       return
     }
-    const promise = client.publishEvent(allAvailableRelayUrls, kind0ForRelay).then((result) => {
+    const promise = client.publishEvent(allAvailableRelayUrls, kind0ForRelay, { skipOutboxRetry: true }).then((result) => {
       if (result.successCount < 1) {
         throw new Error(t('No relay accepted the event'))
       }
@@ -148,7 +148,7 @@ export default function ProfileOptions({
       if (!relays?.length) {
         throw new Error(t('No relays available'))
       }
-      const result = await client.publishEvent(relays, kind0ForRelay)
+      const result = await client.publishEvent(relays, kind0ForRelay, { skipOutboxRetry: true })
       const minRequired = usedMonitoringList ? 5 : 1
       if (result.successCount < minRequired) {
         throw new Error(

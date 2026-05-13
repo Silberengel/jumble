@@ -1550,7 +1550,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       logger.debug('[Publish] Target relays determined', { relayCount: relays.length, relays: relays.slice(0, 5) })
 
       logger.debug('[Publish] Calling client.publishEvent()...', { relayCount: relays.length, eventId: event.id?.substring(0, 8) })
-      const publishResult = await client.publishEvent(relays, event, { favoriteRelayUrls })
+      const publishResult = await client.publishEvent(relays, event, {
+        favoriteRelayUrls,
+        /** Picker / `specifiedRelayUrls` is the authoritative target list — do not prepend full NIP-65 outbox again. */
+        skipOutboxRetry: (options.specifiedRelayUrls?.length ?? 0) > 0
+      })
       logger.debug('[Publish] publishEvent completed', {
         success: publishResult.success,
         successCount: publishResult.successCount,

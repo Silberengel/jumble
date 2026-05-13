@@ -18,9 +18,11 @@ type MergedHit = {
   relayUrls: string[]
 }
 
-/** One-shot NIP-50 REQ per relay; bounded wait so the page always reaches a terminal state (see QueryService NIP-50 global floor). */
-const FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS = 45_000
-/** Avoid opening every index relay at once (pool + main thread); still completes all relays. */
+/** Hard cap for the whole merged search wave (from effect start). */
+const SEARCH_TOTAL_WALL_MS = 10_000
+/** After the first relay reaches a terminal state, end the wave this many ms later (capped by {@link SEARCH_TOTAL_WALL_MS}). */
+const SEARCH_AFTER_FIRST_RELAY_MS = 2_000
+/** Avoid opening every index relay at once (pool + main thread). */
 const FULL_TEXT_SEARCH_RELAY_CONCURRENCY = 3
 const FULL_TEXT_SEARCH_PER_RELAY_LIMIT = 80
 /** Per-relay cap before merge (limits duplicate work). */
@@ -229,7 +231,6 @@ export default function FullTextSearchByRelay({
   const normalizedRelays = useMemo(() => normalizeRelayList(relayUrls), [relayUrls])
 
   const q = searchQuery.trim()
-  const timeoutSec = Math.round(FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS / 1000)
   const searchProfileResetKey = useMemo(
     () => `${q}\n${normalizedRelays.join('\n')}`,
     [q, normalizedRelays]
@@ -243,11 +244,16 @@ export default function FullTextSearchByRelay({
 
   useEffect(() => {
     const abort = new AbortController()
+    let masterTimer: ReturnType<typeof setTimeout> | null = null
     const myRun = ++runGeneration.current
     const cleanupInvalidatePreviousRun = () => {
       runGeneration.current += 1
     }
     const dispose = () => {
+      if (masterTimer != null) {
+        clearTimeout(masterTimer)
+        masterTimer = null
+      }
       abort.abort()
       cleanupInvalidatePreviousRun()
     }
@@ -274,6 +280,47 @@ export default function FullTextSearchByRelay({
       }))
     )
     setMergedHits([])
+
+    const waveT0 = Date.now()
+    let waveEndAt = waveT0 + SEARCH_TOTAL_WALL_MS
+    /** Only after ≥1 event from a relay: apply "first results + 2s" (empty EOSE must not shorten the wave). */
+    let appliedRelativeWaveCutoff = false
+
+    const scheduleMasterAbort = () => {
+      if (masterTimer != null) {
+        clearTimeout(masterTimer)
+        masterTimer = null
+      }
+      const ms = Math.max(0, waveEndAt - Date.now())
+      masterTimer = setTimeout(() => {
+        masterTimer = null
+        abort.abort()
+      }, ms)
+    }
+
+    const onFirstSearchHits = () => {
+      if (appliedRelativeWaveCutoff) return
+      appliedRelativeWaveCutoff = true
+      const now = Date.now()
+      waveEndAt = Math.min(waveT0 + SEARCH_TOTAL_WALL_MS, now + SEARCH_AFTER_FIRST_RELAY_MS)
+      scheduleMasterAbort()
+    }
+
+    abort.signal.addEventListener(
+      'abort',
+      () => {
+        setRelayRows((prev) =>
+          prev.map((r) =>
+            r.phase === 'loading'
+              ? { ...r, phase: 'done' as const, eventCount: 0, ms: undefined, errorMessage: undefined }
+              : r
+          )
+        )
+      },
+      { once: true }
+    )
+
+    scheduleMasterAbort()
 
     let relayCursor = 0
     const nextRelayUrl = (): string | undefined => {
@@ -311,20 +358,21 @@ export default function FullTextSearchByRelay({
     }
 
     const runOneRelay = async (relayUrl: string) => {
+      if (myRun !== runGeneration.current || abort.signal.aborted) return
       const t0 = performance.now()
+      const perRelayBudget = Math.max(1000, waveEndAt - Date.now())
       try {
         const { events: raw, connectionError } = await client.fetchEventsFromSingleRelay(
           relayUrl,
           filter,
-          { globalTimeout: FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS, signal: abort.signal }
+          { globalTimeout: perRelayBudget, signal: abort.signal }
         )
         if (myRun !== runGeneration.current) return
 
         const sorted = [...raw]
           .sort((a, b) => compareEventsForDTagQuery(q, a, b))
           .slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
-        await addSearchEventsToSessionCacheBatched(sorted, runGeneration, myRun)
-        if (myRun !== runGeneration.current) return
+
         const ms = Math.round(performance.now() - t0)
         if (sorted.length === 0 && connectionError) {
           setRelayRows((prev) =>
@@ -338,7 +386,11 @@ export default function FullTextSearchByRelay({
         }
 
         mergeIntoHits(relayUrl, sorted)
+        void addSearchEventsToSessionCacheBatched(sorted, runGeneration, myRun)
 
+        if (sorted.length > 0) {
+          onFirstSearchHits()
+        }
         setRelayRows((prev) =>
           prev.map((r) =>
             r.relayUrl === relayUrl
@@ -354,6 +406,7 @@ export default function FullTextSearchByRelay({
         )
       } catch (err) {
         if (myRun !== runGeneration.current) return
+        if (abort.signal.aborted) return
         const msg = err instanceof Error ? err.message : String(err)
         const ms = Math.round(performance.now() - t0)
         setRelayRows((prev) =>
@@ -365,7 +418,7 @@ export default function FullTextSearchByRelay({
     }
 
     const worker = async () => {
-      while (myRun === runGeneration.current) {
+      while (myRun === runGeneration.current && !abort.signal.aborted) {
         const relayUrl = nextRelayUrl()
         if (!relayUrl) break
         await runOneRelay(relayUrl)
@@ -392,7 +445,8 @@ export default function FullTextSearchByRelay({
       <p className="text-sm text-muted-foreground leading-snug">
         {t('Full-text search merged intro', {
           relayCount: normalizedRelays.length,
-          seconds: timeoutSec,
+          totalSeconds: Math.round(SEARCH_TOTAL_WALL_MS / 1000),
+          afterFirstSeconds: Math.round(SEARCH_AFTER_FIRST_RELAY_MS / 1000),
           concurrency: FULL_TEXT_SEARCH_RELAY_CONCURRENCY
         })}
       </p>

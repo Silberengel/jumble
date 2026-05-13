@@ -201,7 +201,7 @@ export type TPublishOptions = {
 /** Options for {@link ClientService.publishEvent} (second argument bundle in code: favorites + internal retry pass). */
 export type TPublishEventExtras = {
   favoriteRelayUrls?: string[]
-  /** When true (internal): only publish to the given URLs; do not merge outboxes or schedule outbox retry. */
+  /** When true: publish only to the given URLs (no NIP-65 outbox prepend, no outbox retry wave). Use when the list is already authoritative (relay picker, relay set, monitoring list, …). */
   skipOutboxRetry?: boolean
   /** Shown in relay batch logs and an info line (e.g. "NIP-65 outbox retry — 2nd attempt"). */
   publishBatchLabel?: string

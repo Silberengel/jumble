@@ -1852,7 +1852,7 @@ export default {
     "Searching all available relays...": "Searching all available relays...",
     "Searching…": "Searching…",
     "Full-text search merged intro":
-      "Results are merged by note: each card shows one event and which index relays returned it ({{relayCount}} relays, up to {{seconds}}s per relay, up to {{concurrency}} in parallel). This is not a live feed — results do not auto-update.",
+      "Notes appear as each index relay responds (merged by card; each card shows which relays returned it). The search wave stops at the sooner of {{totalSeconds}}s from start or {{afterFirstSeconds}}s after the first results arrive from any relay (up to {{concurrency}} relays in parallel, {{relayCount}} total). This is not a live feed — results do not auto-update.",
     "Full-text search progress relays": "{{done}} / {{total}} index relays",
     "Full-text search seen on label": "Seen on",
     "Full-text search seen on relays": "Relays that returned this note",

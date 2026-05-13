@@ -332,7 +332,7 @@ export default function Profile({
 
   const handleRepublishToAllAvailable = async () => {
     if (!profileEvent) return
-    const promise = client.publishEvent(allAvailableRelayUrls, profileEvent).then((result) => {
+    const promise = client.publishEvent(allAvailableRelayUrls, profileEvent, { skipOutboxRetry: true }).then((result) => {
       if (result.successCount < 1) {
         throw new Error(t('No relay accepted the event'))
       }
@@ -356,7 +356,7 @@ export default function Profile({
       if (!relays?.length) {
         throw new Error(t('No relays available'))
       }
-      const result = await client.publishEvent(relays, profileEvent)
+      const result = await client.publishEvent(relays, profileEvent, { skipOutboxRetry: true })
       const minRequired = usedMonitoringList ? 5 : 1
       if (result.successCount < minRequired) {
         throw new Error(
