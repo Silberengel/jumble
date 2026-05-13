@@ -73,7 +73,7 @@ export const DESKTOP_APP_DOWNLOAD_URL_DEFAULT =
 
 export const DEFAULT_FAVORITE_RELAYS = [
   'wss://theforest.nostr1.com',
-  'wss://orly-relay.imwald.eu',
+  'wss://christpill.nostr1.com',
   'wss://nostr.land',
   'wss://nostr21.com'
 ]

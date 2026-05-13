@@ -1895,7 +1895,16 @@ class ClientService extends EventTarget {
 
   async getLocalFeedEvents(
     subRequests: { urls: string[]; filter: TSubRequestFilter }[],
-    options?: { maxRowsScanned?: number; maxMatches?: number }
+    options?: {
+      maxRowsScanned?: number
+      maxMatches?: number
+      /**
+       * When true, only load rows persisted for this feed’s timeline shard(s) — no global session scan or
+       * archive/publication sweeps. Used for single-relay explore so kindless `{ limit }` does not match every
+       * cached note while the UI is scoped to one relay.
+       */
+      strictRelayShardSourcesOnly?: boolean
+    }
   ): Promise<NEvent[]> {
     if (!subRequests.length) return []
     const filters = subRequests.map(({ filter }) => filter as Filter)
@@ -1919,6 +1928,14 @@ class ClientService extends EventTarget {
         if (shouldDropEventOnIngest(event)) continue
         if (!byId.has(event.id)) byId.set(event.id, event)
       }
+    }
+
+    if (options?.strictRelayShardSourcesOnly) {
+      const timelineRows = await this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[])
+      add(timelineRows)
+      return [...byId.values()]
+        .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+        .slice(0, maxMatches)
     }
 
     add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
@@ -3285,6 +3302,7 @@ class ClientService extends EventTarget {
     })
     let relayListResolved = 0
     let contactsResolved = 0
+    let profileResolved = 0
     const chunkSize = 20
     for (let i = 0; i * chunkSize < followings.length; i++) {
       if (signal.aborted) {
@@ -3292,20 +3310,24 @@ class ClientService extends EventTarget {
         return
       }
       const chunk = followings.slice(i * chunkSize, (i + 1) * chunkSize)
-      const [relayListEvents, contactsEvents] = await Promise.all([
+      const [relayListEvents, contactsEvents, metadataEvents] = await Promise.all([
         this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.RelayList),
         this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.Contacts),
-        Promise.all(chunk.map((pk) => this.fetchProfileEvent(pk)))
+        this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(chunk, kinds.Metadata)
       ])
       relayListResolved += relayListEvents.filter(Boolean).length
       contactsResolved += contactsEvents.filter(Boolean).length
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const profiles = metadataEvents.filter((ev): ev is NEvent => Boolean(ev))
+      profileResolved += profiles.length
+      await Promise.allSettled(profiles.map((ev) => this.addUsernameToIndex(ev)))
+      profiles.forEach((ev) => this.updateProfileEventCache(ev))
     }
     logger.info('[client] Prewarm: following profile + contacts + NIP-65 fetch finished', {
       pubkeySlice: pubkey.slice(0, 12),
       followingCount: followings.length,
       relayListEventsResolved: relayListResolved,
-      contactsEventsResolved: contactsResolved
+      contactsEventsResolved: contactsResolved,
+      profileEventsResolved: profileResolved
     })
   }
 

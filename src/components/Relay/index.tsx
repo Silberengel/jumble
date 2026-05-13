@@ -7,8 +7,10 @@ import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
+import client from '@/services/client.service'
 import type { TFeedSubRequest } from '@/types'
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import type { Event } from 'nostr-tools'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import NotFound from '../NotFound'
 
@@ -77,6 +79,21 @@ const Relay = forwardRef<
     ]
   }, [normalizedUrl, debouncedInput])
 
+  /** When we know delivery relays, drop rows that never arrived from this feed’s relay (stale cache / mis-tagged). */
+  const relaySeenMatchKey = useMemo(
+    () => (normalizedUrl ? (normalizeAnyRelayUrl(normalizedUrl) || normalizedUrl).toLowerCase() : ''),
+    [normalizedUrl]
+  )
+  const shouldHideEventNotFromThisRelay = useCallback(
+    (ev: Event) => {
+      if (!relaySeenMatchKey) return false
+      const seen = client.getSeenEventRelayUrls(ev.id)
+      if (seen.length === 0) return false
+      return !seen.some((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase() === relaySeenMatchKey)
+    },
+    [relaySeenMatchKey]
+  )
+
   if (!normalizedUrl) {
     return <NotFound />
   }
@@ -101,6 +118,8 @@ const Relay = forwardRef<
         showAllKinds
         showFeedClientFilter
         hostPrimaryPageName={hostPrimaryPageName}
+        extraShouldHideEvent={shouldHideEventNotFromThisRelay}
+        extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
       />
     </div>
   )

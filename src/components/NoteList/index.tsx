@@ -2054,8 +2054,15 @@ const NoteList = forwardRef(
           if (oneShotFetch || mappedSubRequests.length === 0) return
           if (isSpellPageLocalWarmup) return
           const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+          const strictSingleRelayShard =
+            mappedSubRequests.length === 1 &&
+            mappedSubRequests[0]!.urls.length === 1 &&
+            (hostPrimaryPageNameRef.current === 'relay' ||
+              (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
           void client
-            .getLocalFeedEvents(diskReq)
+            .getLocalFeedEvents(diskReq, {
+              strictRelayShardSourcesOnly: strictSingleRelayShard
+            })
             .then((diskRaw) => {
               if (!effectActive || timelineEffectStale()) return
               const diskNarrowed = narrowLiveBatch(diskRaw)
@@ -2429,8 +2436,15 @@ const NoteList = forwardRef(
                 urls: string[]
                 filter: TSubRequestFilter
               }>
+              const strictSingleRelayShardOneShot =
+                mappedSubRequests.length === 1 &&
+                mappedSubRequests[0]!.urls.length === 1 &&
+                (hostPrimaryPageNameRef.current === 'relay' ||
+                  (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
               void client
-                .getLocalFeedEvents(diskReqOneShot)
+                .getLocalFeedEvents(diskReqOneShot, {
+                  strictRelayShardSourcesOnly: strictSingleRelayShardOneShot
+                })
                 .then((diskRaw) => {
                   if (!effectActive || timelineEffectStale()) return
                   if (diskRaw.length === 0) return
