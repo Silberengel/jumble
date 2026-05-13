@@ -366,8 +366,24 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     try {
       // Strip empty/incomplete rows, trim whitespace.
       const validTags = profileTags
-        .filter((t) => Array.isArray(t) && t.length >= 2 && (t[0] ?? '').trim() && (t[1] ?? '').trim())
-        .map((t) => [t[0].trim(), t[1].trim(), ...t.slice(2)])
+        .filter((t) => {
+          if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
+          const name = (t[0] ?? '').trim()
+          if (name === 'bot') return true
+          return t.length >= 2 && (t[1] ?? '').trim()
+        })
+        .map((t) => {
+          const name = (t[0] ?? '').trim()
+          const v1 = (t[1] ?? '').trim()
+          if (name === 'bot') {
+            if (t.length === 1 || !v1) return ['bot']
+            const low = v1.toLowerCase()
+            if (low === 'false') return ['bot', 'false']
+            if (low === 'true') return ['bot', 'true']
+            return ['bot', v1]
+          }
+          return [name, v1, ...t.slice(2)]
+        })
 
       // Sort alphabetically by tag name (stable: same-name tags keep their relative order).
       const sortedTags = [...validTags]
@@ -388,6 +404,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       const seenContent = new Set<string>()
       for (const tag of sortedTags) {
         const name = tag[0]
+        if (name === 'bot') continue
         if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
           content[name] = tag[1]
           seenContent.add(name)
@@ -653,7 +670,10 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                 variant="outline"
                 size="icon"
                 className="h-8 w-8 shrink-0"
-                onClick={() => addTag(tagToAdd === '__custom__' ? '' : tagToAdd)}
+                onClick={() => {
+                  const name = tagToAdd === '__custom__' ? '' : tagToAdd
+                  addTag(name, name === 'bot' ? 'true' : '')
+                }}
                 aria-label={t('Add tag')}
               >
                 <Plus className="h-4 w-4" />

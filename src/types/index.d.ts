@@ -39,6 +39,8 @@ export type TProfile = {
   lightningAddress?: string
   lightningAddressList?: string[]
   created_at?: number
+  /** Kind 0: `bot` / `bot,true` tags without `bot,false` — see Nostr profile conventions. */
+  isBot?: boolean
 }
 
 export type TPaymentInfo = {

@@ -1,3 +1,4 @@
+import { ProfileBotBadge } from '@/components/ProfileBotBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
 import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
@@ -204,6 +205,21 @@ const UserAvatarSizeCnMap = {
   tiny: 'w-4 h-4'
 }
 
+function botBadgeSizeForAvatar(
+  size: keyof typeof UserAvatarSizeCnMap
+): 'sm' | 'md' | 'lg' {
+  switch (size) {
+    case 'tiny':
+    case 'xSmall':
+      return 'sm'
+    case 'large':
+    case 'big':
+      return 'lg'
+    default:
+      return 'md'
+  }
+}
+
 export default function UserAvatar({
   userId,
   className,
@@ -314,11 +330,14 @@ export default function UserAvatar({
 
   // Render image directly instead of using Radix UI Avatar for better reliability
   return (
-    <div 
+    <div
       ref={containerRef}
       data-user-avatar
-      className={cn('shrink-0 cursor-pointer block overflow-hidden rounded-full bg-muted', UserAvatarSizeCnMap[size], className)}
-      style={{ position: 'relative', zIndex: 10, isolation: 'isolate', display: 'block' }}
+      className={cn(
+        'relative isolate z-10 block shrink-0 cursor-pointer rounded-full bg-muted',
+        UserAvatarSizeCnMap[size],
+        className
+      )}
       onClick={(e) => {
         e.stopPropagation()
         if (!profileNavTarget) return
@@ -326,39 +345,42 @@ export default function UserAvatar({
         navigateToProfile(toProfile(profileNavTarget))
       }}
     >
-      {!imgError && currentSrc ? (
-        isVideoAvatar ? (
-          <video
-            src={currentSrc}
-            className="block w-full h-full object-cover object-center"
-            autoPlay
-            muted
-            loop
-            playsInline
-            onCanPlay={() => {
-              if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
-            }}
-            onError={handleImageError}
-          />
+      <div className="h-full w-full overflow-hidden rounded-full">
+        {!imgError && currentSrc ? (
+          isVideoAvatar ? (
+            <video
+              src={currentSrc}
+              className="block h-full w-full object-cover object-center"
+              autoPlay
+              muted
+              loop
+              playsInline
+              onCanPlay={() => {
+                if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
+              }}
+              onError={handleImageError}
+            />
+          ) : (
+            <img
+              src={currentSrc}
+              alt=""
+              className="block h-full w-full object-cover object-center"
+              style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
+              onError={handleImageError}
+              onLoad={handleImageLoad}
+              loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
+            />
+          )
         ) : (
-          <img 
-            src={currentSrc}
-            alt=""
-            className="block w-full h-full object-cover object-center"
-            style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
-            onError={handleImageError}
-            onLoad={handleImageLoad}
-            loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
-            decoding="async"
-            fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
-          />
-        )
-      ) : (
-        // Show initials or placeholder when image fails
-        <div className="h-full w-full flex items-center justify-center text-xs font-medium text-muted-foreground">
-          {(displayPubkey || userId).slice(0, 2).toUpperCase()}
-        </div>
-      )}
+          // Show initials or placeholder when image fails
+          <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">
+            {(displayPubkey || userId).slice(0, 2).toUpperCase()}
+          </div>
+        )}
+      </div>
+      {profile?.isBot ? <ProfileBotBadge size={botBadgeSizeForAvatar(size)} /> : null}
     </div>
   )
 }
@@ -457,43 +479,46 @@ export function SimpleUserAvatar({
   
   // Render image directly instead of using Radix UI Avatar for better reliability
   return (
-    <div 
+    <div
       ref={containerRef}
-      className={cn('shrink-0 relative overflow-hidden rounded-full bg-muted', UserAvatarSizeCnMap[size], className)}
+      className={cn('relative shrink-0 rounded-full bg-muted', UserAvatarSizeCnMap[size], className)}
     >
-      {!imgError && currentSrc ? (
-        isVideoAvatar ? (
-          <video
-            src={currentSrc}
-            className="block w-full h-full object-cover object-center"
-            autoPlay
-            muted
-            loop
-            playsInline
-            onCanPlay={() => {
-              if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
-            }}
-            onError={handleImageError}
-          />
+      <div className="h-full w-full overflow-hidden rounded-full">
+        {!imgError && currentSrc ? (
+          isVideoAvatar ? (
+            <video
+              src={currentSrc}
+              className="block h-full w-full object-cover object-center"
+              autoPlay
+              muted
+              loop
+              playsInline
+              onCanPlay={() => {
+                if (currentSrc && isHttpOrHttpsUrl(currentSrc)) loadedAvatarUrls.add(currentSrc)
+              }}
+              onError={handleImageError}
+            />
+          ) : (
+            <img
+              src={currentSrc}
+              alt=""
+              className="block h-full w-full object-cover object-center"
+              style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
+              onError={handleImageError}
+              onLoad={handleImageLoad}
+              loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
+            />
+          )
         ) : (
-          <img 
-            src={currentSrc}
-            alt=""
-            className="block w-full h-full object-cover object-center"
-            style={{ display: 'block', position: 'static', margin: 0, padding: 0, top: 0, left: 0, right: 0, bottom: 0 }}
-            onError={handleImageError}
-            onLoad={handleImageLoad}
-            loading={isHttpOrHttpsUrl(currentSrc) ? 'eager' : 'lazy'}
-            decoding="async"
-            fetchpriority={isHttpOrHttpsUrl(currentSrc) ? 'high' : undefined}
-          />
-        )
-      ) : (
-        // Show initials or placeholder when image fails
-        <div className="h-full w-full flex items-center justify-center text-xs font-medium text-muted-foreground">
-          {(displayPubkey || userId).slice(0, 2).toUpperCase()}
-        </div>
-      )}
+          // Show initials or placeholder when image fails
+          <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">
+            {(displayPubkey || userId).slice(0, 2).toUpperCase()}
+          </div>
+        )}
+      </div>
+      {profile?.isBot ? <ProfileBotBadge size={botBadgeSizeForAvatar(size)} /> : null}
     </div>
   )
 }

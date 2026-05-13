@@ -149,6 +149,28 @@ function nip05ListFromJson(raw: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
+/**
+ * Kind-0 metadata: profile is marked as a bot when there is `["bot"]` or `["bot","true"]`
+ * (case-insensitive tag name and value) and no `["bot","false"]` tag.
+ */
+export function profileIsBotFromKind0Tags(tags: string[][]): boolean {
+  let hasFalse = false
+  let hasAffirmative = false
+  for (const raw of tags) {
+    if (!Array.isArray(raw) || !raw.length) continue
+    if (String(raw[0]).toLowerCase() !== 'bot') continue
+    if (raw.length === 1) {
+      hasAffirmative = true
+      continue
+    }
+    const v = String(raw[1] ?? '').toLowerCase()
+    if (v === 'false') hasFalse = true
+    else if (v === 'true') hasAffirmative = true
+  }
+  if (hasFalse) return false
+  return hasAffirmative
+}
+
 export function getProfileFromEvent(event: Event) {
   // Parse JSON content as fallback
   let profileObj: any = {}
@@ -223,6 +245,7 @@ export function getProfileFromEvent(event: Event) {
     banner: profileObj.banner,
     avatar: avatarUrl,
     pictureSize,
+    isBot: event.kind === 0 ? profileIsBotFromKind0Tags(event.tags as string[][]) : undefined,
     username: username || formatPubkey(event.pubkey),
     original_username: username,
     nip05,

@@ -4,6 +4,7 @@ import Nip05List from '@/components/Nip05List'
 import NpubQrCode from '@/components/NpubQrCode'
 import ProfileAbout from '@/components/ProfileAbout'
 import ProfileBanner from '@/components/ProfileBanner'
+import { ProfileBotBadge } from '@/components/ProfileBotBadge'
 import ProfileOptions from '@/components/ProfileOptions'
 import ProfileZapButton from '@/components/ProfileZapButton'
 import PubkeyCopy from '@/components/PubkeyCopy'
@@ -453,7 +454,7 @@ export default function Profile({
   
   if (!profile) return null // TypeScript guard - should never reach here but satisfies type checker
 
-  const { banner, username, about, avatar, pubkey, website, websiteList, nip05List } = profile
+  const { banner, username, about, avatar, pubkey, website, websiteList, nip05List, isBot } = profile
 
   return (
     <>
@@ -467,29 +468,43 @@ export default function Profile({
             imageFetchPriority="low"
           />
           {isVideo(avatar ?? '') ? (
-            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 overflow-hidden rounded-full border-4 border-background bg-muted md:h-48 md:w-48">
-              <video
-                src={avatar}
-                className="h-full w-full object-cover object-center"
-                autoPlay
-                muted
-                loop
-                playsInline
-                fetchPriority="high"
-              />
+            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:h-48 md:w-48">
+              <div className="relative h-full w-full">
+                <div className="h-full w-full overflow-hidden rounded-full border-4 border-background bg-muted">
+                  <video
+                    src={avatar}
+                    className="h-full w-full object-cover object-center"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    fetchPriority="high"
+                  />
+                </div>
+                {isBot ? (
+                  <ProfileBotBadge size="lg" className="bottom-1 right-1 md:bottom-2 md:right-2" />
+                ) : null}
+              </div>
             </div>
           ) : (
-            <Avatar className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 border-4 border-background md:h-48 md:w-48">
-              <AvatarImage
-                src={avatar}
-                className="object-cover object-center"
-                fetchPriority="high"
-                loading="eager"
-              />
-              <AvatarFallback>
-                <img src={defaultImage} alt="" />
-              </AvatarFallback>
-            </Avatar>
+            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:h-48 md:w-48">
+              <div className="relative h-full w-full">
+                <Avatar className="h-full w-full border-4 border-background">
+                  <AvatarImage
+                    src={avatar}
+                    className="object-cover object-center"
+                    fetchPriority="high"
+                    loading="eager"
+                  />
+                  <AvatarFallback>
+                    <img src={defaultImage} alt="" />
+                  </AvatarFallback>
+                </Avatar>
+                {isBot ? (
+                  <ProfileBotBadge size="lg" className="bottom-1 right-1 md:bottom-2 md:right-2" />
+                ) : null}
+              </div>
+            </div>
           )}
         </div>
         <div className="px-4">
