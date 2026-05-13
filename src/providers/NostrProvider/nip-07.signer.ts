@@ -27,9 +27,8 @@ export class Nip07Signer implements ISigner {
     if (!this.signer) {
       throw new Error('Should call init() first')
     }
-    if (!this.pubkey) {
-      this.pubkey = await this.signer.getPublicKey()
-    }
+    /** Always ask the extension — it may change the active key without a full page reload. */
+    this.pubkey = await this.signer.getPublicKey()
     return this.pubkey
   }
 

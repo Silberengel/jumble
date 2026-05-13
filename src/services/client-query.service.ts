@@ -7,6 +7,7 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_CONCURRENT_SUBS_PER_RELAY,
+  PROFILE_RELAY_URLS,
   RELAY_FILTER_MAX_KINDS_PER_OBJECT,
   RELAY_REQ_MAX_FILTERS_PER_MESSAGE,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
@@ -623,7 +624,8 @@ export class QueryService {
     
     const searchableSet = new Set([
       ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
+      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u),
+      ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
     ])
     
     const groupedRequests = Array.from(grouped.entries()).map(([url, f]) => {

@@ -29,6 +29,7 @@ import {
   DEFAULT_FAVORITE_RELAYS,
   NIP66_DISCOVERY_RELAY_URLS,
   PROFILE_FETCH_RELAY_URLS,
+  PROFILE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS,
   SEARCHABLE_RELAY_URLS
@@ -174,6 +175,7 @@ import indexedDb from './indexed-db.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
 import { notifyLiveActivitiesPrewarmComplete } from './live-activities-prewarm-bridge'
 import nip66Service from './nip66.service'
+import { buildProfileKind0SearchFilters } from '@/lib/profile-relay-search-filters'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import {
   compactFilterForRelayLog,
@@ -3357,36 +3359,75 @@ class ClientService extends EventTarget {
     const normalizedAll = dedupeNormalizeRelayUrlsOrdered(
       relayUrls.map((u) => normalizeUrl(u) || u).filter(Boolean)
     )
+    const profileRelayLayer = dedupeNormalizeRelayUrlsOrdered(
+      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    )
+    const searchableSet = new Set([
+      ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u),
+      ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    ])
     let urls = normalizedAll
     if (searchStr.length > 0) {
-      const searchableSet = new Set([
-        ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-        ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
-      ])
       const searchCapable = normalizedAll.filter(
         (u) => searchableSet.has(u) || nip66Service.isRelaySearchable(u)
       )
-      if (searchCapable.length > 0) {
-        urls = searchCapable
+      urls = dedupeNormalizeRelayUrlsOrdered([...searchCapable, ...profileRelayLayer])
+      if (urls.length === 0) {
+        urls = normalizedAll
       }
     }
 
-    const events = await this.queryService.query(
-      urls,
-      {
-        ...filter,
-        kinds: [kinds.Metadata]
-      },
-      undefined,
-      {
-        replaceableRace: true,
-        // Search spans many relays; sub-second EOSE was cutting off almost all index relays.
-        eoseTimeout: 4500,
-        globalTimeout: 9000
-      }
-    )
+    const limitCap = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const queryFilter: Filter | Filter[] =
+      searchStr.length > 0
+        ? (() => {
+            const built = buildProfileKind0SearchFilters({
+              search: searchStr,
+              limit: limitCap,
+              until: filter.until
+            })
+            return built.length > 0 ? built : [{ ...filter, kinds: [kinds.Metadata] }]
+          })()
+        : { ...filter, kinds: [kinds.Metadata] }
 
-    const profileEvents = events.sort((a, b) => b.created_at - a.created_at)
+    const events = await this.queryService.query(urls, queryFilter, undefined, {
+      replaceableRace: false,
+      eoseTimeout: 4500,
+      globalTimeout: 9000,
+      relayOpSource: 'ClientService.searchProfiles'
+    })
+
+    /** Which relays actually delivered each kind-0 id (for tuning SEARCHABLE_RELAY_URLS). DEBUG only. */
+    if (searchStr.length > 0) {
+      const relayHitCounts = new Map<string, number>()
+      for (const e of events) {
+        if (e.kind !== kinds.Metadata) continue
+        for (const u of this.queryService.getSeenEventRelayUrls(e.id)) {
+          const n = (normalizeUrl(u) || u).trim()
+          if (!n) continue
+          relayHitCounts.set(n, (relayHitCounts.get(n) ?? 0) + 1)
+        }
+      }
+      if (relayHitCounts.size > 0) {
+        const relayHits = [...relayHitCounts.entries()].sort((a, b) => b[1] - a[1])
+        logger.debug('[ClientService.searchProfiles] kind=0 deliveries by relay URL (count = events relay sent for this query)', {
+          searchPreview: searchStr.slice(0, 80),
+          totalKind0Events: events.filter((e) => e.kind === kinds.Metadata).length,
+          relayHits: Object.fromEntries(relayHits)
+        })
+      }
+    }
+
+    const byPk = new Map<string, NEvent>()
+    for (const e of events) {
+      if (e.kind !== kinds.Metadata) continue
+      const prev = byPk.get(e.pubkey)
+      if (!prev || e.created_at > prev.created_at) {
+        byPk.set(e.pubkey, e)
+      }
+    }
+    const profileEvents = [...byPk.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limitCap)
     await Promise.allSettled(profileEvents.map((profile) => this.addUsernameToIndex(profile)))
     profileEvents.forEach((profile) => this.updateProfileEventCache(profile))
     return profileEvents.map((profileEvent) => getProfileFromEvent(profileEvent))

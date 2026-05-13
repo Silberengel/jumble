@@ -1005,81 +1005,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     void customEmojiService.init(userEmojiListEvent, account.pubkey, profileEvent)
   }, [userEmojiListEvent, account?.pubkey, profileEvent])
 
-  /**
-   * If session restore temporarily fell back to read-only (`npub`) while the stored
-   * account is still `nip-07`, periodically retry reconnecting the extension signer.
-   */
-  useEffect(() => {
-    if (!account || account.signerType !== 'npub') return
-    const preferred = storage.getCurrentAccount()
-    if (!preferred || preferred.signerType !== 'nip-07') return
-    if (preferred.pubkey !== account.pubkey) return
-
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    let attempts = 0
-    const maxAttempts = 10
-
-    const schedule = (ms: number) => {
-      if (cancelled) return
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        void tryRecover()
-      }, ms)
-    }
-
-    const tryRecover = async () => {
-      if (cancelled || attempts >= maxAttempts) return
-      attempts += 1
-      try {
-        const nip07Signer = new Nip07Signer()
-        await nip07Signer.init()
-        const pubkey = await nip07Signer.getPublicKey()
-        if (pubkey.toLowerCase() !== preferred.pubkey.toLowerCase()) {
-          throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
-        }
-        login(nip07Signer, preferred)
-        logger.info('[NostrProvider] Recovered NIP-07 signer from read-only fallback', {
-          pubkeySlice: pubkey.slice(0, 12),
-          attempts
-        })
-        return
-      } catch (error) {
-        if (isNip07SignerPubkeyMismatchError(error)) {
-          logger.info('[NostrProvider] NIP-07 recovery: extension key mismatch on attempt', {
-            attempts,
-            wantedPubkey: preferred.pubkey.slice(0, 12)
-          })
-          if (!nip07KeyMismatchToastShownRef.current) {
-            nip07KeyMismatchToastShownRef.current = true
-            toast.error(t('nip07.extensionKeyMismatch'), {
-              duration: 20_000,
-              action: { label: t('nip07.reloadPage'), onClick: () => window.location.reload() }
-            })
-          }
-          // Keep retrying — the extension may update its approved key after a moment.
-          schedule(3_000)
-          return
-        }
-        logger.info('[NostrProvider] NIP-07 recovery retry failed', {
-          pubkeySlice: preferred.pubkey.slice(0, 12),
-          attempts,
-          error: error instanceof Error ? error.message : String(error)
-        })
-      }
-      schedule(Math.min(10_000, attempts * 1_500))
-    }
-
-    schedule(1_200)
-    return () => {
-      cancelled = true
-      if (timer) clearTimeout(timer)
-    }
-  // nip07RecoveryBump is incremented by switchAccount after it updates storage following an
-  // npub fallback, so the loop re-fires with the correct preferred account.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, nip07RecoveryBump])
-
   const hasNostrLoginHash = () => {
     return window.location.hash && window.location.hash.startsWith('#nostr-login')
   }
@@ -1350,11 +1275,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           (isNip07SignerPubkeyMismatchError(err) || isNip07SignerPubkeyMismatchError(lastNip07Err)) &&
           !nip07KeyMismatchToastShownRef.current
         ) {
-          nip07KeyMismatchToastShownRef.current = true
-          toast.error(t('nip07.extensionKeyMismatch'), {
-            duration: 20_000,
-            action: { label: t('nip07.reloadPage'), onClick: () => window.location.reload() }
-          })
+          fireNip07ExtensionKeyMismatchToast()
         }
         return fallbackToReadOnlyNpub(storedAccount.pubkey, err)
       }
@@ -1390,6 +1311,120 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     storage.removeAccount(storedAccount)
     return null
   }
+
+  /**
+   * Stored NIP-07 account pubkey no longer matches the extension (user switched keys).
+   * Drop the stale stored NIP-07 row and sign in with whatever pubkey the extension returns now.
+   */
+  const adoptCurrentExtensionNip07Identity = useEventCallback(async () => {
+    try {
+      const nip07Signer = new Nip07Signer()
+      await nip07Signer.init()
+      const extPubkey = await nip07Signer.getPublicKey()
+      if (!extPubkey?.trim()) {
+        throw new Error('Empty pubkey from extension')
+      }
+      const preferred = storage.getCurrentAccount()
+      if (
+        preferred?.signerType === 'nip-07' &&
+        preferred.pubkey.toLowerCase() !== extPubkey.toLowerCase()
+      ) {
+        removeAccount(preferred)
+      }
+      const existing = storage
+        .getAccounts()
+        .find((a) => a.pubkey.toLowerCase() === extPubkey.toLowerCase() && a.signerType === 'nip-07')
+      const act: TAccount = existing ?? { pubkey: extPubkey, signerType: 'nip-07' }
+      login(nip07Signer, act)
+      toast.success(t('nip07.switchedToExtensionIdentity'))
+    } catch (e) {
+      toast.error(`${t('nip07.adoptExtensionFailed')}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  })
+
+  const fireNip07ExtensionKeyMismatchToast = useCallback(() => {
+    if (nip07KeyMismatchToastShownRef.current) return
+    nip07KeyMismatchToastShownRef.current = true
+    toast.error(t('nip07.extensionKeyMismatch'), {
+      duration: 35_000,
+      action: { label: t('nip07.reloadPage'), onClick: () => window.location.reload() },
+      cancel: {
+        label: t('nip07.useExtensionIdentity'),
+        onClick: () => {
+          void adoptCurrentExtensionNip07Identity()
+        }
+      }
+    })
+  }, [t, adoptCurrentExtensionNip07Identity])
+
+  /**
+   * If session restore temporarily fell back to read-only (`npub`) while the stored
+   * account is still `nip-07`, periodically retry reconnecting the extension signer.
+   */
+  useEffect(() => {
+    if (!account || account.signerType !== 'npub') return
+    const preferred = storage.getCurrentAccount()
+    if (!preferred || preferred.signerType !== 'nip-07') return
+    if (preferred.pubkey !== account.pubkey) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let attempts = 0
+    const maxAttempts = 10
+
+    const schedule = (ms: number) => {
+      if (cancelled) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        void tryRecover()
+      }, ms)
+    }
+
+    const tryRecover = async () => {
+      if (cancelled || attempts >= maxAttempts) return
+      attempts += 1
+      try {
+        const nip07Signer = new Nip07Signer()
+        await nip07Signer.init()
+        const pubkey = await nip07Signer.getPublicKey()
+        if (pubkey.toLowerCase() !== preferred.pubkey.toLowerCase()) {
+          throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
+        }
+        login(nip07Signer, preferred)
+        logger.info('[NostrProvider] Recovered NIP-07 signer from read-only fallback', {
+          pubkeySlice: pubkey.slice(0, 12),
+          attempts
+        })
+        return
+      } catch (error) {
+        if (isNip07SignerPubkeyMismatchError(error)) {
+          logger.info('[NostrProvider] NIP-07 recovery: extension key mismatch on attempt', {
+            attempts,
+            wantedPubkey: preferred.pubkey.slice(0, 12)
+          })
+          fireNip07ExtensionKeyMismatchToast()
+          // Keep retrying — the extension may update its approved key after a moment.
+          schedule(3_000)
+          return
+        }
+        logger.info('[NostrProvider] NIP-07 recovery retry failed', {
+          pubkeySlice: preferred.pubkey.slice(0, 12),
+          attempts,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+      schedule(Math.min(10_000, attempts * 1_500))
+    }
+
+    schedule(1_200)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+    // nip07RecoveryBump is incremented by switchAccount after it updates storage following an
+    // npub fallback, so the loop re-fires with the correct preferred account.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, nip07RecoveryBump, fireNip07ExtensionKeyMismatchToast])
 
   const normalizeDraftEventTags = (
     draftEvent: TDraftEvent,

@@ -1,5 +1,5 @@
 import { Skeleton } from '@/components/ui/skeleton'
-import { verifyNip05 } from '@/lib/nip05'
+import { splitNip05Identifier, verifyNip05 } from '@/lib/nip05'
 import { toNoteList } from '@/lib/link'
 import { SecondaryPageLink } from '@/PageManager'
 import { BadgeAlert, BadgeCheck } from 'lucide-react'
@@ -24,13 +24,13 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
       const newVerifications = new Map<string, Nip05Verification>()
       
       // Initialize all as fetching
-      nip05List.forEach(nip05 => {
-        const [nip05Name, nip05Domain] = nip05.split('@')
+      nip05List.forEach((nip05) => {
+        const parts = splitNip05Identifier(nip05.trim())
         newVerifications.set(nip05, {
           nip05,
           isVerified: false,
-          nip05Name: nip05Name || '',
-          nip05Domain: nip05Domain || '',
+          nip05Name: parts?.name ?? '',
+          nip05Domain: parts?.domain ?? '',
           isFetching: true
         })
       })
@@ -43,11 +43,12 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
             const result = await verifyNip05(nip05, pubkey)
             setVerifications(prev => {
               const updated = new Map(prev)
+              const fb = splitNip05Identifier(nip05.trim())
               updated.set(nip05, {
                 nip05,
                 isVerified: result.isVerified,
-                nip05Name: result.nip05Name || nip05.split('@')[0] || '',
-                nip05Domain: result.nip05Domain || nip05.split('@')[1] || '',
+                nip05Name: result.nip05Name || fb?.name || '',
+                nip05Domain: result.nip05Domain || fb?.domain || '',
                 isFetching: false
               })
               return updated
@@ -55,11 +56,12 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
           } catch (error) {
             setVerifications(prev => {
               const updated = new Map(prev)
+              const fb = splitNip05Identifier(nip05.trim())
               const existing = updated.get(nip05) || {
                 nip05,
                 isVerified: false,
-                nip05Name: nip05.split('@')[0] || '',
-                nip05Domain: nip05.split('@')[1] || '',
+                nip05Name: fb?.name || '',
+                nip05Domain: fb?.domain || '',
                 isFetching: false
               }
               updated.set(nip05, { ...existing, isFetching: false })
@@ -81,8 +83,9 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
         const verification = verifications.get(nip05)
         const isFetching = verification?.isFetching ?? true
         const isVerified = verification?.isVerified ?? false
-        const nip05Name = verification?.nip05Name || nip05.split('@')[0] || ''
-        const nip05Domain = verification?.nip05Domain || nip05.split('@')[1] || ''
+        const fb = splitNip05Identifier(nip05.trim())
+        const nip05Name = verification?.nip05Name || fb?.name || ''
+        const nip05Domain = verification?.nip05Domain || fb?.domain || ''
 
         if (isFetching) {
           return (
