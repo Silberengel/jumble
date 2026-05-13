@@ -2393,7 +2393,14 @@ class ClientService extends EventTarget {
       return { url, filters: filtersForRelay }
     })
 
-    if (groupedRequests.length === 1) {
+    const hasNip50Search = filters.some(
+      (f) => typeof f.search === 'string' && f.search.trim().length > 0
+    )
+    /**
+     * Same rule as {@link QueryService.subscribe}: never `pool.close` a lone relay when the REQ carries NIP-50
+     * `search` — overlapping one-shots (e.g. Strict Mode) otherwise reset the socket before EOSE.
+     */
+    if (groupedRequests.length === 1 && !hasNip50Search) {
       try {
         this.pool.close([groupedRequests[0]!.url])
       } catch {

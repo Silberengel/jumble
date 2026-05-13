@@ -1851,11 +1851,14 @@ export default {
     "Search threads by title, content, tags, npub, author...": "Search threads by title, content, tags, npub, author...",
     "Searching all available relays...": "Searching all available relays...",
     "Searching…": "Searching…",
-    "Full-text search per relay intro":
-      "Each card runs one bounded NIP-50 query on that index relay ({{relayCount}} relays, {{seconds}}s timeout each, up to {{concurrency}} in parallel so the tab stays responsive). This is not a live feed — results do not auto-update.",
+    "Full-text search merged intro":
+      "Results are merged by note: each card shows one event and which index relays returned it ({{relayCount}} relays, up to {{seconds}}s per relay, up to {{concurrency}} in parallel). This is not a live feed — results do not auto-update.",
+    "Full-text search progress relays": "{{done}} / {{total}} index relays",
+    "Full-text search seen on label": "Seen on",
+    "Full-text search seen on relays": "Relays that returned this note",
+    "Full-text search empty merged": "No notes matched this search on any index relay.",
+    "Full-text search relay errors summary": "{{count}} relay(s) could not be queried.",
     "Full-text search relay querying": "Querying relay…",
-    "Full-text search relay timing": "Finished in {{ms}} ms",
-    "Full-text search relay no hits": "No hits on this relay.",
     "Full-text search relay error": "Query failed",
     "Full-text search relay unknown error": "Unknown error",
     "Full-text search all relays finished": "All relay queries have finished.",

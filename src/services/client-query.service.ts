@@ -51,6 +51,18 @@ function filterForRelay(f: Filter, relaySupportsSearch: boolean): Filter {
   return rest as Filter
 }
 
+function filtersHaveNip50Search(filters: readonly Filter[]): boolean {
+  return filters.some((f) => typeof f.search === 'string' && f.search.trim().length > 0)
+}
+
+/** NIP-50 index relays answer after connect + slot wait; nostr-tools synthetic EOSE runs this long after REQ `fire()`. */
+const NIP50_RELAY_SUBSCRIPTION_EOSE_TIMEOUT_MS = 38_000
+/**
+ * {@link QueryService.query} `globalTimeout` is armed at call start; REQ may start seconds later. Used only for
+ * {@link ClientService.fetchEventsFromSingleRelay} so mention/picker queries keep their own shorter caps.
+ */
+const NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS = 42_000
+
 const HEX_EVENT_ID_RE = /^[0-9a-f]{64}$/i
 
 let queryReqSeq = 0
@@ -384,7 +396,13 @@ export class QueryService {
     const effectiveFilter: Filter | Filter[] =
       sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters
     const eoseTimeout = options?.eoseTimeout ?? 500
-    const globalTimeout = options?.globalTimeout ?? 10000
+    const hasNip50Search = filtersHaveNip50Search(sanitizedFilters)
+    const globalTimeoutRaw = options?.globalTimeout ?? 10000
+    const useNip50QueryTimeoutFloor =
+      hasNip50Search && options?.relayOpSource === 'fetchEventsFromSingleRelay'
+    const globalTimeout = useNip50QueryTimeoutFloor
+      ? Math.max(globalTimeoutRaw, NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS)
+      : globalTimeoutRaw
     const replaceableRace = options?.replaceableRace ?? false
     const replaceableRaceWaitMs = options?.replaceableRaceWaitMs ?? FIRST_RELAY_RESULT_GRACE_MS
     const immediateReturn = options?.immediateReturn ?? false
@@ -746,9 +764,10 @@ export class QueryService {
       return { url, filters: filtersForRelay }
     })
 
-    const hasNip50Search = filters.some(
-      (f) => typeof f.search === 'string' && f.search.trim().length > 0
-    )
+    const hasNip50Search = filtersHaveNip50Search(filters)
+    const relaySubscriptionEoseTimeoutMs = hasNip50Search
+      ? NIP50_RELAY_SUBSCRIPTION_EOSE_TIMEOUT_MS
+      : 10_000
     /**
      * Single-relay `pool.close` before subscribe resets the socket. Overlapping NIP-50 one-shots (e.g. Strict Mode
      * double effect) then tear down each other’s REQ before EOSE → empty results until globalTimeout.
@@ -896,7 +915,7 @@ export class QueryService {
                             handleClose(i, reason2)
                           },
                           alreadyHaveEvent: localAlreadyHaveEvent,
-                          eoseTimeout: 10_000
+                          eoseTimeout: relaySubscriptionEoseTimeoutMs
                         })
                         subs.push({
                           relayKey,
@@ -928,7 +947,7 @@ export class QueryService {
               handleClose(i, reason)
             },
             alreadyHaveEvent: localAlreadyHaveEvent,
-            eoseTimeout: 10_000
+            eoseTimeout: relaySubscriptionEoseTimeoutMs
           })
           subs.push({
             relayKey,

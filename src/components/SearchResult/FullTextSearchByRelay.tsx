@@ -1,10 +1,9 @@
 import NoteCard from '@/components/NoteCard'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import RelayIcon from '@/components/RelayIcon'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import logger from '@/lib/logger'
-import { cn } from '@/lib/utils'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
@@ -13,29 +12,46 @@ import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-/** One-shot NIP-50 REQ per relay; bounded wait so the page always reaches a terminal state. */
-const FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS = 10_000
+/** One-shot NIP-50 REQ per relay; bounded wait so the page always reaches a terminal state (see QueryService NIP-50 global floor). */
+const FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS = 45_000
 /** Avoid opening every index relay at once (pool + main thread); still completes all relays. */
 const FULL_TEXT_SEARCH_RELAY_CONCURRENCY = 3
 const FULL_TEXT_SEARCH_PER_RELAY_LIMIT = 80
-/** Cap rows per card so a hot relay cannot mount hundreds of {@link NoteCard}s at once. */
+/** Per-relay cap before merge (limits duplicate work). */
 const FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY = 40
+/** Max merged unique notes shown after deduping across relays. */
+const FULL_TEXT_SEARCH_MAX_MERGED_EVENTS = 150
 
-type RelayCardPhase = 'loading' | 'done' | 'error'
+type RelayFetchPhase = 'loading' | 'done' | 'error'
 
-type RelayCardModel = {
+type RelayFetchRow = {
   relayUrl: string
   host: string
-  phase: RelayCardPhase
-  events: Event[]
+  phase: RelayFetchPhase
+  eventCount?: number
   ms?: number
   errorMessage?: string
+}
+
+type MergedHit = {
+  event: Event
+  relayUrls: string[]
 }
 
 function normalizeRelayList(urls: readonly string[]): string[] {
   return Array.from(
     new Set(urls.map((u) => normalizeUrl(u) || u.trim()).filter((u): u is string => u.length > 0))
   ).sort((a, b) => relayHostForSubscribeLog(a).localeCompare(relayHostForSubscribeLog(b)))
+}
+
+function relayKey(url: string): string {
+  return (normalizeUrl(url) || url.trim()).toLowerCase()
+}
+
+function sortRelaysByHost(urls: readonly string[]): string[] {
+  return Array.from(new Set(urls.map((u) => normalizeUrl(u) || u.trim()).filter(Boolean) as string[])).sort((a, b) =>
+    relayHostForSubscribeLog(a).localeCompare(relayHostForSubscribeLog(b))
+  )
 }
 
 /** Console hint: what this one-shot outcome suggests about NIP-50 (never proof without NIP-11). */
@@ -67,21 +83,28 @@ export default function FullTextSearchByRelay({
 }) {
   const { t } = useTranslation()
   const runGeneration = useRef(0)
-  const [cards, setCards] = useState<RelayCardModel[]>([])
+  const [relayRows, setRelayRows] = useState<RelayFetchRow[]>([])
+  const [mergedHits, setMergedHits] = useState<MergedHit[]>([])
 
   const normalizedRelays = useMemo(() => normalizeRelayList(relayUrls), [relayUrls])
 
   const q = searchQuery.trim()
   const timeoutSec = Math.round(FULL_TEXT_SEARCH_PER_RELAY_TIMEOUT_MS / 1000)
 
+  const doneRelayCount = relayRows.filter((r) => r.phase === 'done' || r.phase === 'error').length
+  const errorRelayCount = relayRows.filter((r) => r.phase === 'error').length
+  const anyLoading = relayRows.some((r) => r.phase === 'loading')
+  const allTerminal =
+    relayRows.length > 0 && relayRows.every((r) => r.phase === 'done' || r.phase === 'error')
+
   useEffect(() => {
     const myRun = ++runGeneration.current
     if (!q || normalizedRelays.length === 0) {
-      setCards([])
+      setRelayRows([])
+      setMergedHits([])
       return
     }
 
-    /** React 18 Strict Mode (dev) mounts twice; bump invalidates the previous run’s workers and ignores stale fetches. */
     const cleanupInvalidatePreviousRun = () => {
       runGeneration.current += 1
     }
@@ -94,19 +117,48 @@ export default function FullTextSearchByRelay({
 
     const poolSize = Math.min(FULL_TEXT_SEARCH_RELAY_CONCURRENCY, normalizedRelays.length)
 
-    setCards(
+    setRelayRows(
       normalizedRelays.map((relayUrl) => ({
         relayUrl,
         host: relayHostForSubscribeLog(relayUrl),
-        phase: 'loading',
-        events: []
+        phase: 'loading'
       }))
     )
+    setMergedHits([])
 
     let relayCursor = 0
     const nextRelayUrl = (): string | undefined => {
       if (relayCursor >= normalizedRelays.length) return undefined
       return normalizedRelays[relayCursor++]!
+    }
+
+    const mergeIntoHits = (relayUrl: string, events: Event[]) => {
+      const rk = relayKey(relayUrl)
+      setMergedHits((prev) => {
+        const map = new Map<string, { event: Event; relays: Set<string> }>()
+        for (const hit of prev) {
+          map.set(hit.event.id, { event: hit.event, relays: new Set(hit.relayUrls.map((u) => relayKey(u))) })
+        }
+        for (const ev of events) {
+          const cur = map.get(ev.id)
+          if (cur) {
+            cur.relays.add(rk)
+          } else {
+            map.set(ev.id, { event: ev, relays: new Set([rk]) })
+          }
+        }
+        const urlByKey = new Map<string, string>()
+        for (const u of normalizedRelays) {
+          urlByKey.set(relayKey(u), normalizeUrl(u) || u)
+        }
+        return [...map.values()]
+          .map(({ event, relays }) => ({
+            event,
+            relayUrls: sortRelaysByHost([...relays].map((k) => urlByKey.get(k) || k))
+          }))
+          .sort((a, b) => compareEventsForDTagQuery(q, a.event, b.event))
+          .slice(0, FULL_TEXT_SEARCH_MAX_MERGED_EVENTS)
+      })
     }
 
     const runOneRelay = async (relayUrl: string) => {
@@ -128,7 +180,9 @@ export default function FullTextSearchByRelay({
         )
         if (myRun !== runGeneration.current) return
 
-        const sorted = [...raw].sort((a, b) => compareEventsForDTagQuery(q, a, b)).slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
+        const sorted = [...raw]
+          .sort((a, b) => compareEventsForDTagQuery(q, a, b))
+          .slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
         for (const e of sorted) {
           client.addEventToCache(e, { explicitNoteLookupHexId: e.id })
         }
@@ -147,21 +201,17 @@ export default function FullTextSearchByRelay({
             cardErrorMessage: connectionError,
             nip50Hint: nip50OutcomeHint({ phase: 'error', rawCount: 0, connectionError })
           })
-          setCards((prev) =>
-            prev.map((c) =>
-              c.relayUrl === relayUrl
-                ? {
-                    ...c,
-                    phase: 'error',
-                    events: [],
-                    ms,
-                    errorMessage: connectionError
-                  }
-                : c
+          setRelayRows((prev) =>
+            prev.map((r) =>
+              r.relayUrl === relayUrl
+                ? { ...r, phase: 'error', eventCount: 0, ms, errorMessage: connectionError }
+                : r
             )
           )
           return
         }
+
+        mergeIntoHits(relayUrl, sorted)
 
         logger.debug('[NIP-50 full-text] card_end', {
           runId: myRun,
@@ -185,17 +235,17 @@ export default function FullTextSearchByRelay({
           })
         })
 
-        setCards((prev) =>
-          prev.map((c) =>
-            c.relayUrl === relayUrl
+        setRelayRows((prev) =>
+          prev.map((r) =>
+            r.relayUrl === relayUrl
               ? {
-                  ...c,
+                  ...r,
                   phase: 'done',
-                  events: sorted,
+                  eventCount: sorted.length,
                   ms,
                   errorMessage: sorted.length > 0 ? undefined : connectionError
                 }
-              : c
+              : r
           )
         )
       } catch (err) {
@@ -214,17 +264,9 @@ export default function FullTextSearchByRelay({
           cardErrorMessage: msg,
           nip50Hint: nip50OutcomeHint({ phase: 'error', rawCount: 0 })
         })
-        setCards((prev) =>
-          prev.map((c) =>
-            c.relayUrl === relayUrl
-              ? {
-                  ...c,
-                  phase: 'error',
-                  events: [],
-                  ms,
-                  errorMessage: msg
-                }
-              : c
+        setRelayRows((prev) =>
+          prev.map((r) =>
+            r.relayUrl === relayUrl ? { ...r, phase: 'error', eventCount: 0, ms, errorMessage: msg } : r
           )
         )
       }
@@ -250,22 +292,18 @@ export default function FullTextSearchByRelay({
       try {
         await Promise.all(Array.from({ length: poolSize }, () => worker()))
       } catch {
-        /* runOneRelay already updates card errors */
+        /* runOneRelay already updates relay rows */
       }
       if (myRun !== runGeneration.current) return
       logger.debug('[NIP-50 full-text] wave_end', {
         runId: myRun,
         relayCount: normalizedRelays.length,
-        note: 'matches UI "all relays finished" when every card is done or error'
+        note: 'matches UI "all relays finished" when every relay row is done or error'
       })
     })()
 
     return cleanupInvalidatePreviousRun
   }, [q, normalizedRelays, kinds])
-
-  const allTerminal =
-    cards.length > 0 && cards.every((c) => c.phase === 'done' || c.phase === 'error')
-  const anyLoading = cards.some((c) => c.phase === 'loading')
 
   if (!q) {
     return null
@@ -274,76 +312,70 @@ export default function FullTextSearchByRelay({
   return (
     <div className="min-w-0 space-y-4" aria-busy={anyLoading}>
       <p className="text-sm text-muted-foreground">
-        {t('Full-text search per relay intro', {
+        {t('Full-text search merged intro', {
           relayCount: normalizedRelays.length,
           seconds: timeoutSec,
           concurrency: FULL_TEXT_SEARCH_RELAY_CONCURRENCY
         })}
       </p>
 
-      <div
-        className={cn(
-          'grid gap-4 min-w-0',
-          'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+      {relayRows.length > 0 && (
+        <p className="text-xs text-muted-foreground flex items-center gap-2" role="status">
+          {anyLoading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />}
+          {t('Full-text search progress relays', { done: doneRelayCount, total: relayRows.length })}
+        </p>
+      )}
+
+      {errorRelayCount > 0 && allTerminal && (
+        <p className="text-xs text-amber-600 dark:text-amber-500" role="status">
+          {t('Full-text search relay errors summary', { count: errorRelayCount })}
+        </p>
+      )}
+
+      <div className="min-w-0 space-y-4">
+        {anyLoading && mergedHits.length === 0 && (
+          <div className="space-y-3" aria-label={t('Full-text search relay querying')}>
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
         )}
-      >
-        {cards.map((c) => (
-          <Card key={c.relayUrl} className="min-w-0 flex flex-col overflow-hidden">
-            <CardHeader className="pb-2 space-y-1">
-              <div className="flex items-start justify-between gap-2">
-                <CardTitle className="text-base font-medium break-all">{c.host}</CardTitle>
-                {c.phase === 'loading' ? (
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-                ) : (
-                  <Badge variant="secondary" className="shrink-0">
-                    {c.events.length}
-                  </Badge>
-                )}
+
+        {mergedHits.map((hit) => (
+          <Card key={hit.event.id} className="min-w-0 overflow-hidden">
+            <CardHeader className="pb-2 space-y-2 border-b bg-muted/30">
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                aria-label={t('Full-text search seen on relays')}
+              >
+                <span className="text-xs text-muted-foreground shrink-0 mr-1">
+                  {t('Full-text search seen on label')}
+                </span>
+                {hit.relayUrls.map((url) => (
+                  <span
+                    key={`${hit.event.id}-${relayKey(url)}`}
+                    title={relayHostForSubscribeLog(url)}
+                    className="inline-flex shrink-0"
+                  >
+                    <RelayIcon url={url} skipRelayInfoFetch className="h-7 w-7 rounded-sm" iconSize={14} />
+                  </span>
+                ))}
               </div>
-              <CardDescription className="break-all text-xs font-mono opacity-80">{c.relayUrl}</CardDescription>
-              {c.phase === 'done' && c.ms != null && (
-                <p className="text-xs text-muted-foreground">
-                  {t('Full-text search relay timing', { ms: c.ms })}
-                </p>
-              )}
             </CardHeader>
-            <CardContent className="flex-1 min-h-0 pt-0 flex flex-col gap-2">
-              {c.phase === 'loading' && (
-                <div className="space-y-2" aria-label={t('Full-text search relay querying')}>
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              )}
-              {c.phase === 'error' && (
-                <p className="text-sm text-destructive">
-                  {t('Full-text search relay error')}: {c.errorMessage ?? t('Full-text search relay unknown error')}
-                </p>
-              )}
-              {c.phase === 'done' && c.events.length === 0 && !c.errorMessage && (
-                <p className="text-sm text-muted-foreground">{t('Full-text search relay no hits')}</p>
-              )}
-              {c.phase === 'done' && c.events.length === 0 && c.errorMessage && (
-                <p className="text-sm text-muted-foreground">{c.errorMessage}</p>
-              )}
-              {c.events.length > 0 && (
-                <ul
-                  className="max-h-[min(28rem,55vh)] overflow-y-auto space-y-3 pr-1 -mr-1 min-w-0"
-                  role="list"
-                >
-                  {c.events.map((ev) => (
-                    <li key={ev.id} className="min-w-0">
-                      <NoteCard event={ev} className="w-full" filterMutedNotes />
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <CardContent className="pt-4">
+              <NoteCard event={hit.event} className="w-full border-0 shadow-none p-0" filterMutedNotes />
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {allTerminal && (
+      {allTerminal && mergedHits.length === 0 && (
+        <p className="text-sm text-muted-foreground" role="status">
+          {t('Full-text search empty merged')}
+        </p>
+      )}
+
+      {allTerminal && mergedHits.length > 0 && (
         <p className="text-sm text-muted-foreground border-t pt-3" role="status">
           {t('Full-text search all relays finished')}
         </p>
