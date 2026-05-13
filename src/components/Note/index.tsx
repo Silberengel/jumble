@@ -214,6 +214,8 @@ export default function Note({
   hideParentNotePreview = false,
   showFull = false,
   disableClick = false,
+  /** From {@link MainNoteCard}: embedded cards need eager poll results (viewport IO often misses nested scrollers). */
+  embedded,
   fullCalendarInvite,
   zapPollVoteHighlightOption,
   nip84HighlightEvents
@@ -225,6 +227,7 @@ export default function Note({
   hideParentNotePreview?: boolean
   showFull?: boolean
   disableClick?: boolean
+  embedded?: boolean
   /** When viewing a kind-24 invite, use this to replace the embedded calendar with the full card (RSVP) in content */
   fullCalendarInvite?: { event: Event; naddr: string }
   /** Profile: highlight option when this row is from a zap vote receipt. */
@@ -500,7 +503,7 @@ export default function Note({
     content = (
       <>
         {renderEventContent({ hideMetadata: true })}
-        <Poll className="mt-2" event={displayEvent} />
+        <Poll className="mt-2" event={displayEvent} eagerFetchResults={Boolean(embedded)} />
       </>
     )
   } else if (event.kind === ExtendedKind.ZAP_POLL) {

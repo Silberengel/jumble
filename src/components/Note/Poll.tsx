@@ -13,12 +13,48 @@ import dayjs from 'dayjs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CheckCircle2 } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import logger from '@/lib/logger'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
 import PollOptionContent from './PollOptionContent'
+
+/** Nearest ancestor that scrolls — use as IntersectionObserver root so polls in split panes still load. */
+function nearestScrollportRoot(el: HTMLElement | null): Element | undefined {
+  if (!el) return undefined
+  let cur: HTMLElement | null = el.parentElement
+  while (cur && cur !== document.documentElement) {
+    const st = window.getComputedStyle(cur)
+    const oy = st.overflowY
+    const ox = st.overflowX
+    if (
+      oy === 'auto' ||
+      oy === 'scroll' ||
+      oy === 'overlay' ||
+      ox === 'auto' ||
+      ox === 'scroll' ||
+      ox === 'overlay'
+    ) {
+      return cur
+    }
+    cur = cur.parentElement
+  }
+  return undefined
+}
+
+function rectsOverlap(a: DOMRectReadOnly, b: DOMRectReadOnly): boolean {
+  return a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right
+}
+
+/** Visible in window or in nearest scrollport (split-pane columns, nested scroll). */
+function isPollLikelyVisible(el: HTMLElement): boolean {
+  const root = nearestScrollportRoot(el)
+  if (root) {
+    return rectsOverlap(el.getBoundingClientRect(), root.getBoundingClientRect())
+  }
+  return isPartiallyInViewport(el)
+}
 
 /**
  * Persists "See results" across remounts (React Strict Mode dev double-mount, list recycle).
@@ -26,7 +62,19 @@ import PollOptionContent from './PollOptionContent'
  */
 const pollSessionRevealResultIds = new Set<string>()
 
-export default function Poll({ event, className }: { event: Event; className?: string }) {
+export default function Poll({
+  event,
+  className,
+  /**
+   * When the poll is shown inside another card (nostr: embed), fetch results on mount:
+   * viewport-only IntersectionObserver often never fires in nested / overflow layouts.
+   */
+  eagerFetchResults = false
+}: {
+  event: Event
+  className?: string
+  eagerFetchResults?: boolean
+}) {
   const { t } = useTranslation()
   const nostr = useNostrOptional()
   const pubkey = nostr?.pubkey ?? null
@@ -97,6 +145,51 @@ export default function Poll({ event, className }: { event: Event; className?: s
   }, [event, pubkey, favoriteRelays, blockedRelays])
 
   useEffect(() => {
+    if (!eagerFetchResults || isExpired || pollResults || isLoadingResults || pollResultsViewportFetchDoneRef.current) {
+      return
+    }
+    void fetchResults()
+  }, [eagerFetchResults, isExpired, pollResults, isLoadingResults, fetchResults, event.id])
+
+  useLayoutEffect(() => {
+    if (
+      eagerFetchResults ||
+      isExpired ||
+      pollResults ||
+      isLoadingResults ||
+      !containerElement ||
+      pollResultsViewportFetchDoneRef.current
+    ) {
+      return
+    }
+    const tryFetch = () => {
+      if (pollResultsViewportFetchDoneRef.current || pollResults) return
+      if (isPollLikelyVisible(containerElement)) {
+        void fetchResults()
+      }
+    }
+    tryFetch()
+    let r2 = 0
+    const r1 = requestAnimationFrame(() => {
+      tryFetch()
+      r2 = requestAnimationFrame(tryFetch)
+    })
+    const t = window.setTimeout(tryFetch, 400)
+    return () => {
+      cancelAnimationFrame(r1)
+      cancelAnimationFrame(r2)
+      window.clearTimeout(t)
+    }
+  }, [
+    eagerFetchResults,
+    containerElement,
+    isExpired,
+    pollResults,
+    isLoadingResults,
+    fetchResults
+  ])
+
+  useEffect(() => {
     if (
       isExpired ||
       pollResults ||
@@ -107,17 +200,23 @@ export default function Poll({ event, className }: { event: Event; className?: s
       return
     }
 
+    const scrollRoot = nearestScrollportRoot(containerElement)
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setTimeout(() => {
-            if (isPartiallyInViewport(containerElement)) {
+            if (pollResultsViewportFetchDoneRef.current) return
+            if (isPollLikelyVisible(containerElement)) {
               void fetchResults()
             }
           }, 200)
         }
       },
-      { threshold: 0.1 }
+      {
+        threshold: 0.05,
+        rootMargin: '100px',
+        ...(scrollRoot ? { root: scrollRoot } : {})
+      }
     )
 
     observer.observe(containerElement)

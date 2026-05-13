@@ -311,6 +311,11 @@ function replyMatchesThreadForList(
   return false
 }
 
+/** NIP-69 poll responses (kind 1018): aggregated in the poll UI, not as thread rows under “Antworten”. */
+function isPollVoteKind(evt: Pick<NEvent, 'kind'>): boolean {
+  return evt.kind === ExtendedKind.POLL_RESPONSE
+}
+
 function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   if (item.kind === kinds.Highlights) return t('highlighted this note')
   if (item.kind === kinds.ShortTextNote) return t('quoted this note')
@@ -438,6 +443,7 @@ function ReplyNoteList({
       events.forEach((evt) => {
         if (replyIdSet.has(evt.id)) return
         if (isNip25ReactionKind(evt.kind)) return
+        if (isPollVoteKind(evt)) return
         if (
           shouldHideThreadResponseEvent(
             evt,
@@ -944,7 +950,7 @@ function ReplyNoteList({
         try {
           const ev = await eventService.fetchEvent(id)
           if (cancelled) return
-          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true)) {
+          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true) && !isPollVoteKind(ev)) {
             batch.push(ev)
           } else {
             discussionStatsHydratedReplyIdsRef.current.delete(id)
@@ -984,6 +990,7 @@ function ReplyNoteList({
 
   const onNewReply = useCallback(
     (evt: NEvent) => {
+      if (isPollVoteKind(evt)) return
       if (
         shouldHideThreadResponseEvent(
           evt,
@@ -1217,6 +1224,7 @@ function ReplyNoteList({
           const urlThreadOnevent = urlThreadRootInfo
             ? (evt: NEvent) => {
                 if (fetchGeneration !== replyFetchGenRef.current) return
+                if (isPollVoteKind(evt)) return
                 if (!isRssArticleUrlThreadInteraction(evt, urlThreadRootInfo.id)) return
                 if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
                   return
@@ -1238,6 +1246,7 @@ function ReplyNoteList({
 
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
+            if (isPollVoteKind(evt)) return false
             const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
             if (!match) return false
             return !shouldHideThreadResponseEvent(
@@ -1299,6 +1308,7 @@ function ReplyNoteList({
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (isPollVoteKind(evt)) return
                     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
                       return
                     addReplies([evt])
@@ -1309,6 +1319,7 @@ function ReplyNoteList({
               }
               const validNested = nestedAccum.filter(
                 (evt) =>
+                  !isPollVoteKind(evt) &&
                   !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
               )
               if (validNested.length > 0) {
@@ -1366,6 +1377,7 @@ function ReplyNoteList({
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (isPollVoteKind(evt)) return
                     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
                       return
                     if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
@@ -1377,6 +1389,7 @@ function ReplyNoteList({
               }
               const validNested = nestedAccum.filter(
                 (evt) =>
+                  !isPollVoteKind(evt) &&
                   !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers) &&
                   replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
               )
@@ -1454,6 +1467,7 @@ function ReplyNoteList({
     setLoading(true)
     const events = await client.loadMoreTimeline(timelineKey, until, LIMIT)
     const olderEvents = events.filter((evt) => {
+      if (isPollVoteKind(evt)) return false
       if (!rootInfo) return false
       const matchesThread = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
       if (!matchesThread) return false
@@ -1500,6 +1514,7 @@ function ReplyNoteList({
 
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {
+      if (isPollVoteKind(item)) return false
       if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
         return false
       }

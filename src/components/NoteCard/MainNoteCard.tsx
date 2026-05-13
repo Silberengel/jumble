@@ -102,6 +102,7 @@ export default function MainNoteCard({
             className={embedded ? '' : 'px-4'}
             size={embedded ? 'small' : 'normal'}
             event={event}
+            embedded={embedded}
             originalNoteId={originalNoteId}
             disableClick={true}
             hideParentNotePreview={hideParentNotePreview}

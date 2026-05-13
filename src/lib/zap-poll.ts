@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import { getAmountFromInvoice } from '@/lib/lightning'
 import { userIdToPubkey } from '@/lib/pubkey'
 import { tagNameEquals } from '@/lib/tag'
@@ -18,51 +18,101 @@ export type TZapPollMeta = {
   primaryRelay: string
 }
 
+/** `wss` / `ws` relay URL on `r` or `relay` tags (Primal megaFeed / zap vote relay list). */
+function firstWsRelayFromEventTags(tags: string[][]): string | undefined {
+  for (const t of tags) {
+    const u = t[1]?.trim()
+    if (!u || (t[0] !== 'r' && t[0] !== 'relay')) continue
+    if (u.startsWith('wss://') || u.startsWith('ws://')) {
+      return normalizeUrl(u) || u
+    }
+  }
+  return undefined
+}
+
+/**
+ * Relay hint on a `p` tag: Primal web publishes `['p', pubkey, relay]`; `zapVote` also reads index 3.
+ * Only treat values that look like relay URLs as relays (pubkey-only `p` tags stay pubkey-no-relay).
+ */
+function relayHintFromPTag(t: string[]): string | undefined {
+  for (const i of [2, 3] as const) {
+    const c = t[i]?.trim()
+    if (!c || c === 'mention') continue
+    if (c.startsWith('wss://') || c.startsWith('ws://')) {
+      return normalizeUrl(c) || c
+    }
+  }
+  return undefined
+}
+
+function defaultZapPollReadRelay(tags: string[][]): string {
+  return (
+    firstWsRelayFromEventTags(tags) ??
+    FAST_READ_RELAY_URLS[0] ??
+    'wss://relay.damus.io'
+  )
+}
+
 /** Parse NIP-B9 kind 6969 into structured metadata. */
 export function parseZapPollEvent(event: Event): TZapPollMeta | null {
   if (event.kind !== ExtendedKind.ZAP_POLL) return null
-  const pTags = event.tags.filter(tagNameEquals('p'))
+  const tags = event.tags
+  const authorPk = event.pubkey.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(authorPk)) return null
+
+  const hintRelay = firstWsRelayFromEventTags(tags)
+  const fallbackRelay = hintRelay ?? defaultZapPollReadRelay(tags)
+
+  const pTags = tags.filter(tagNameEquals('p'))
   const recipients: { pubkey: string; relay: string }[] = []
   const withRelay: { pubkey: string; relay: string }[] = []
   const pubkeyNoRelay: string[] = []
   for (const t of pTags) {
     const pk = t[1]?.trim().toLowerCase()
-    const relay = t[2]?.trim()
     if (!pk || !/^[0-9a-f]{64}$/.test(pk)) continue
+    const relay = relayHintFromPTag(t)
     if (relay) {
-      const n = normalizeUrl(relay) || relay
-      withRelay.push({ pubkey: pk, relay: n })
+      withRelay.push({ pubkey: pk, relay })
     } else {
       pubkeyNoRelay.push(pk)
     }
   }
-  if (withRelay.length === 0 && pubkeyNoRelay.length === 0) return null
+
   if (withRelay.length > 0) {
     recipients.push(...withRelay)
-    const fallbackRelay = withRelay[0]!.relay
+    const primary = withRelay[0]!.relay
+    for (const pk of pubkeyNoRelay) {
+      if (!recipients.some((r) => r.pubkey === pk)) {
+        recipients.push({ pubkey: pk, relay: primary })
+      }
+    }
+  } else if (pubkeyNoRelay.length > 0) {
     for (const pk of pubkeyNoRelay) {
       if (!recipients.some((r) => r.pubkey === pk)) {
         recipients.push({ pubkey: pk, relay: fallbackRelay })
       }
     }
   } else {
-    return null
+    // Primal: no `p` on poll → zap the poll author (see primal-web-app src/lib/zap.ts zapVote).
+    recipients.push({ pubkey: authorPk, relay: fallbackRelay })
   }
 
   const options: TZapPollOption[] = []
-  for (const t of event.tags) {
-    if (t[0] !== 'poll_option' || t[1] == null || t[2] == null) continue
-    const idx = parseInt(t[1], 10)
+  for (const t of tags) {
+    const name = t[0]
+    // `poll_option` everywhere in megaFeed; some paths used `option` (same shape).
+    if ((name !== 'poll_option' && name !== 'option') || t[1] == null || t[2] == null) continue
+    const idx = parseInt(String(t[1]), 10)
     if (Number.isNaN(idx)) continue
     options.push({ index: idx, label: t[2] })
   }
   options.sort((a, b) => a.index - b.index)
   if (options.length < 2) return null
 
-  const vmin = event.tags.find(tagNameEquals('value_minimum'))?.[1]
-  const vmax = event.tags.find(tagNameEquals('value_maximum'))?.[1]
-  const consensus = event.tags.find(tagNameEquals('consensus_threshold'))?.[1]
-  const closed = event.tags.find(tagNameEquals('closed_at'))?.[1]
+  const vmin = tags.find(tagNameEquals('value_minimum'))?.[1]
+  const vmax = tags.find(tagNameEquals('value_maximum'))?.[1]
+  const consensus = tags.find(tagNameEquals('consensus_threshold'))?.[1]
+  const closed = tags.find(tagNameEquals('closed_at'))?.[1]
 
   const valueMinimum = vmin != null && vmin !== '' ? parseInt(vmin, 10) : undefined
   const valueMaximum = vmax != null && vmax !== '' ? parseInt(vmax, 10) : undefined
