@@ -28,7 +28,7 @@ export default function RelayReviewCard({
   const { navigateToRelay } = useSmartRelayNavigation()
   const stars = useMemo(() => getStarsFromRelayReviewEvent(event), [event])
   const relayUrl = useMemo(() => getRelayUrlFromRelayReviewEvent(event), [event])
-  const { relayInfo } = useFetchRelayInfo(relayUrl)
+  const { relayInfo } = useFetchRelayInfo(showRelayInfo ? relayUrl : undefined)
 
   return (
     <div

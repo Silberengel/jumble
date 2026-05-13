@@ -32,13 +32,16 @@ function resolveRelayImageUrl(raw: string, relayUrl: string): string | undefined
 export default function RelayIcon({
   url,
   className,
-  iconSize = 14
+  iconSize = 14,
+  /** When true, do not hit NIP-11 (parent already fetches relay info, or icon-only row). */
+  skipRelayInfoFetch = false
 }: {
   url?: string
   className?: string
   iconSize?: number
+  skipRelayInfoFetch?: boolean
 }) {
-  const { relayInfo } = useFetchRelayInfo(url)
+  const { relayInfo } = useFetchRelayInfo(skipRelayInfoFetch ? undefined : url)
   const iconUrl = useMemo(() => {
     if (!url) return undefined
 

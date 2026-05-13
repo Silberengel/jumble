@@ -10,6 +10,7 @@ import {
   userReadRelaysWithHttp
 } from '@/lib/favorites-feed-relays'
 import { toRelay } from '@/lib/link'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { useSmartRelayNavigation } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -29,7 +30,7 @@ function RelayGroupHeader({ url, reviewCount }: { url: string; reviewCount: numb
       className="flex w-full min-w-0 items-center gap-2 px-4 md:px-4 pt-4 pb-2 border-b text-left hover:opacity-75 transition-opacity"
       onClick={() => navigateToRelay(toRelay(url))}
     >
-      <RelayIcon url={url} className="h-8 w-8 shrink-0 rounded-sm" iconSize={16} />
+      <RelayIcon url={url} skipRelayInfoFetch className="h-8 w-8 shrink-0 rounded-sm" iconSize={16} />
       <div className="min-w-0 flex-1">
         {relayInfo?.name && (
           <div className="truncate font-semibold text-sm leading-tight">{relayInfo.name}</div>
@@ -87,10 +88,34 @@ async function loadCachedRelayReviews(limit: number): Promise<Event[]> {
   }
 }
 
+function stableRelayInputsKey(
+  favoriteRelays: string[],
+  blockedRelays: string[],
+  relayList: { read?: string[]; write?: string[]; httpRead?: string[] } | null | undefined
+): string {
+  const normSortJoin = (urls: string[]) =>
+    [...urls]
+      .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .join('|')
+  return [
+    normSortJoin(favoriteRelays),
+    normSortJoin(blockedRelays),
+    normSortJoin([...(relayList?.httpRead ?? []), ...(relayList?.read ?? [])]),
+    normSortJoin(relayList?.write ?? [])
+  ].join('::')
+}
+
 export default function ExploreRelayReviews() {
   const { t } = useTranslation()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { relayList } = useNostr()
+
+  const relayInputsKey = useMemo(
+    () => stableRelayInputsKey(favoriteRelays, blockedRelays, relayList),
+    [favoriteRelays, blockedRelays, relayList]
+  )
 
   const relayUrls = useMemo(() => {
     const stacked = appendCuratedReadOnlyRelays(
@@ -106,10 +131,14 @@ export default function ExploreRelayReviews() {
       ),
       blockedRelays
     )
-    return stacked.slice(0, EXPLORE_REVIEWS_MAX_RELAYS)
-  }, [favoriteRelays, blockedRelays, relayList])
+    const sliced = stacked.slice(0, EXPLORE_REVIEWS_MAX_RELAYS)
+    const normalized = sliced.map((u) => normalizeAnyRelayUrl(u) || u.trim()).filter(Boolean)
+    normalized.sort((a, b) => a.localeCompare(b))
+    return normalized
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- relayInputsKey is a content hash of favorites/blocked/NIP-65; relayList identity churn must not re-open REQ sockets.
+  }, [relayInputsKey])
 
-  const relayUrlsKey = useMemo(() => relayUrls.join('|'), [relayUrls])
+  const relayUrlsKey = relayInputsKey
 
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<Event[]>([])

@@ -8,7 +8,11 @@ export function useFetchRelayInfo(url?: string) {
   const [relayInfo, setRelayInfo] = useState<TRelayInfo | undefined>(undefined)
 
   useEffect(() => {
-    if (!url) return
+    if (!url) {
+      setRelayInfo(undefined)
+      setIsFetching(false)
+      return
+    }
     const fetchRelayInfos = async () => {
       setIsFetching(true)
       const timer = setTimeout(() => {
