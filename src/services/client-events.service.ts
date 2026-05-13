@@ -90,6 +90,9 @@ const PREFETCH_HEX_IDS_CHUNK = 48
 /** Cap session LRU scan per note-stats target — cache iterates newest-first; avoids O(session)×batch stalls. */
 const NOTE_STATS_SESSION_PREMERGE_SCAN_MAX = 6000
 
+/** Max session events scanned for {@link EventService.getSessionEventsMatchingSearch} (Map order is not recency). */
+const SESSION_SEARCH_MAX_SCAN = 48_000
+
 export class EventService {
   private queryService: QueryService
   private eventCacheMap = new Map<string, Promise<NEvent | undefined>>()
@@ -650,32 +653,35 @@ export class EventService {
   }
 
   /**
-   * Get events from session cache matching search
+   * Get events from session cache matching search (newest {@link Event.created_at} first).
+   * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries so LRU insertion order does not hide recent matches.
    */
   getSessionEventsMatchingSearch(query: string, limit: number, allowedKinds?: number[]): NEvent[] {
-    const results: NEvent[] = []
     const queryTrim = query.trim()
     const queryLower = queryTrim.toLowerCase()
+    const kindSet = allowedKinds && allowedKinds.length > 0 ? new Set(allowedKinds) : null
+    const buf: NEvent[] = []
+    let scanned = 0
 
     for (const [, event] of this.sessionEventCache.entries()) {
+      if (++scanned > SESSION_SEARCH_MAX_SCAN) break
       if (shouldDropEventOnIngest(event)) continue
-      if (allowedKinds && !allowedKinds.includes(event.kind)) continue
+      if (kindSet && !kindSet.has(event.kind)) continue
 
       if (queryTrim === '') {
-        results.push(event)
-        if (results.length >= limit) break
+        buf.push(event)
         continue
       }
 
       const content = (event.content ?? '').toLowerCase()
       const tagsStr = (event.tags ?? []).flat().join(' ').toLowerCase()
       if (content.includes(queryLower) || tagsStr.includes(queryLower)) {
-        results.push(event)
-        if (results.length >= limit) break
+        buf.push(event)
       }
     }
 
-    return results
+    buf.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+    return buf.slice(0, limit)
   }
 
   getSessionEventsMatchingFilters(filters: readonly Filter[], limit: number): NEvent[] {

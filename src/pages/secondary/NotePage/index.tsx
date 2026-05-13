@@ -510,8 +510,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       <div className="px-4 pt-3 w-full">
         {rootITag && <ExternalRoot value={rootITag[1]} />}
         {rootEventId &&
-          !eventPointersReferenceSameNote(rootEventId, parentEventId) &&
-          (isFetchingRootEvent || rootEventForStrip) && (
+          !eventPointersReferenceSameNote(rootEventId, parentEventId) && (
             <ParentNote
               key={`root-note-${finalEvent.id}`}
               isFetching={isFetchingRootEvent}
@@ -520,7 +519,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
               isConsecutive={isConsecutive(rootEventForStrip, parentEventForStrip)}
             />
           )}
-        {parentEventId && (isFetchingParentEvent || parentEventForStrip) && (
+        {parentEventId && (
           <ParentNote
             key={`parent-note-${finalEvent.id}`}
             isFetching={isFetchingParentEvent}

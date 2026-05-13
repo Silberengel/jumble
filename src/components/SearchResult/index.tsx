@@ -15,36 +15,61 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { normalizeUrl } from '@/lib/url'
 import { useMemo } from 'react'
 
+function relayDedupeKey(url: string): string {
+  return (normalizeUrl(url) || url.trim()).toLowerCase()
+}
+
 export default function SearchResult({ searchParams }: { searchParams: TSearchParams | null }) {
   const { pubkey, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  
-  // Build comprehensive relay list for search (all available relays)
-  const searchRelays = useMemo(() => {
+
+  /** NIP-50 / index relays — always queried first on their own shard so dead personal relays cannot zero out search. */
+  const searchableUrls = useMemo(
+    () =>
+      Array.from(
+        new Set(SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u.trim()).filter(Boolean))
+      ),
+    []
+  )
+
+  const searchableKeySet = useMemo(
+    () => new Set(searchableUrls.map(relayDedupeKey)),
+    [searchableUrls]
+  )
+
+  // User stack + defaults (full list for second subRequest; excludes searchable URLs to avoid duplicate sockets)
+  const combinedRelays = useMemo(() => {
     let relays: string[] = []
-    
-    // User's relays
+
     if (relayList) {
       relays.push(...(relayList.read || []), ...(relayList.write || []))
     }
-    
-    // User's favorite relays
+
     relays.push(...(favoriteRelays || []))
-    
-    // All default relays
+
     relays.push(...FAST_READ_RELAY_URLS, ...FAST_WRITE_RELAY_URLS, ...SEARCHABLE_RELAY_URLS)
-    
-    // Normalize and deduplicate
-    const normalized = Array.from(new Set(
-      relays.map(url => normalizeUrl(url) || url).filter((url): url is string => !!url)
-    ))
-    
-    // Filter blocked
-    return normalized.filter(relay => 
-      !blockedRelays.some(blocked => relay.includes(blocked))
+
+    const normalized = Array.from(
+      new Set(relays.map((url) => normalizeUrl(url) || url).filter((url): url is string => !!url))
     )
+
+    const blockedSet = new Set(
+      (blockedRelays ?? [])
+        .map((b) => normalizeUrl(b) || b.trim())
+        .filter((b): b is string => !!b)
+    )
+
+    return normalized.filter((relay) => {
+      const n = normalizeUrl(relay) || relay
+      return !blockedSet.has(n)
+    })
   }, [pubkey, relayList, favoriteRelays, blockedRelays])
-  
+
+  const nonSearchableRelays = useMemo(
+    () => combinedRelays.filter((u) => !searchableKeySet.has(relayDedupeKey(u))),
+    [combinedRelays, searchableKeySet]
+  )
+
   if (!searchParams) {
     return null
   }
@@ -55,20 +80,21 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     return <ProfileListBySearch search={searchParams.search} />
   }
   if (searchParams.type === 'notes') {
+    const notesFilter = {
+      search: searchParams.search,
+      kinds: [...NIP_SEARCH_PAGE_KINDS],
+      limit: 100
+    }
+    const subRequests = [
+      { urls: searchableUrls, filter: notesFilter },
+      ...(nonSearchableRelays.length > 0 ? [{ urls: nonSearchableRelays, filter: notesFilter }] : [])
+    ]
     return (
       <NormalFeed
-        subRequests={[
-          {
-            urls: searchRelays,
-            filter: {
-              search: searchParams.search,
-              kinds: [...NIP_SEARCH_PAGE_KINDS],
-              limit: 100
-            }
-          }
-        ]}
+        subRequests={subRequests}
         useFilterAsIs
         clientSideKindFilter
+        timelinePublicReadFallback
         progressiveWarmupQuery={searchParams.search}
         progressiveDocumentKinds={NIP_SEARCH_PAGE_KINDS}
         oneShotAfterMergeComparator={(a, b) => compareEventsForDTagQuery(searchParams.search, a, b)}
@@ -76,10 +102,13 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     )
   }
   if (searchParams.type === 'hashtag') {
+    const hashtagFilter = { '#t': [searchParams.search] }
+    const subRequests = [
+      { urls: searchableUrls, filter: hashtagFilter },
+      ...(nonSearchableRelays.length > 0 ? [{ urls: nonSearchableRelays, filter: hashtagFilter }] : [])
+    ]
     return (
-      <NormalFeed
-        subRequests={[{ urls: searchRelays, filter: { '#t': [searchParams.search] } }]}
-      />
+      <NormalFeed timelinePublicReadFallback subRequests={subRequests} />
     )
   }
   return <Relay url={searchParams.search} />

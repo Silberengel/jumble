@@ -25,6 +25,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useInterestListOptional } from '@/providers/interest-list-context'
 import client from '@/services/client.service'
 import { TFeedSubRequest } from '@/types'
+import { normalizeUrl } from '@/lib/url'
 import { UserRound, Plus } from 'lucide-react'
 import React, { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -238,7 +239,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
             setSubRequests([])
           }
         } else {
-          // D-tag browse: NIP-50 search + exact #d REQ (merged), substring match client-side, exact d-tag sorted first
+          // D-tag browse: exact `#d` REQ on index + user relays (no NIP-50 full-text — that is not the same as a d-tag pick).
           setTitle(`D-Tag: ${domain}`)
           setData({
             type: 'dtag',
@@ -255,17 +256,11 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
             new Set([...NIP_SEARCH_DOCUMENT_KINDS, ...(kinds.length > 0 ? kinds : [])])
           ).sort((a, b) => a - b)
           const kindFilter = { kinds: mergedReqKinds }
-          // NIP-50 full-text search works better with natural-language spacing;
-          // convert the hyphenated slug back to a space-separated query for the search relay.
-          const searchQuery = domain.replace(/-/g, ' ')
+          const dUrls = [...new Set([...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean), ...relayUrls])]
           setSubRequests([
             {
-              filter: { search: searchQuery, ...kindFilter },
-              urls: [...new Set([...relayUrls, ...SEARCHABLE_RELAY_URLS])]
-            },
-            {
               filter: { '#d': [domain], ...kindFilter },
-              urls: relayUrls
+              urls: dUrls
             }
           ])
         }

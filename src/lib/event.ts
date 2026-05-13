@@ -2,6 +2,7 @@ import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
 import { cleanUrl, normalizeUrl } from '@/lib/url'
+import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import client from '@/services/client.service'
 import { TImetaInfo } from '@/types'
 import { LRUCache } from 'lru-cache'
@@ -622,25 +623,33 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
  */
 export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
   if (!event) return []
-  const hints: string[] = []
+  const fromTags: string[] = []
   for (const tag of event.tags) {
     if (['e', 'a', 'q'].includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
       const hint = tag[2]
-      if (hint.startsWith('wss://') || hint.startsWith('ws://')) hints.push(hint)
+      if (hint.startsWith('wss://') || hint.startsWith('ws://')) {
+        const n = normalizeUrl(hint) || hint
+        if (urlIsNonLocalForRemoteViewer(n)) fromTags.push(hint)
+      }
     }
   }
   const relaysTag = event.tags.find((t) => t[0] === 'relays')
   if (relaysTag) {
     for (let i = 1; i < relaysTag.length; i++) {
       const u = relaysTag[i]
-      if (typeof u === 'string' && (u.startsWith('wss://') || u.startsWith('ws://'))) hints.push(u)
+      if (typeof u === 'string' && (u.startsWith('wss://') || u.startsWith('ws://'))) {
+        const n = normalizeUrl(u) || u
+        if (urlIsNonLocalForRemoteViewer(n)) fromTags.push(u)
+      }
     }
   }
+  const seen: string[] = []
   try {
-    hints.push(...client.getSeenEventRelayUrls(event.id))
+    seen.push(...client.getSeenEventRelayUrls(event.id))
   } catch {
     /* ignore */
   }
+  const hints = [...fromTags, ...seen]
   const normalized = hints
     .map((u) => normalizeUrl(u))
     .filter((u): u is string => Boolean(u))

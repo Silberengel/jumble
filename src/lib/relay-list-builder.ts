@@ -12,6 +12,7 @@
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { getCacheRelayUrls } from './private-relays'
 import client from '@/services/client.service'
@@ -283,13 +284,13 @@ export async function buildExploreProfileAndUserRelayList(
   }
 }
 
-/** NIP-10 relay hints from `e` / `E` tags (third value) on the focused event or thread. */
+/** NIP-10 relay hints from `e` / `E` tags (third value) on the focused event or thread. Omits loopback/LAN — those are only meaningful on the tag author's machine. */
 export function relayHintsFromEventTags(event: { tags: string[][] }): string[] {
   const out = new Set<string>()
   for (const tag of event.tags) {
     if ((tag[0] === 'e' || tag[0] === 'E') && tag[2]) {
       const n = normalizeUrl(tag[2]) || tag[2]
-      if (n) out.add(n)
+      if (n && urlIsNonLocalForRemoteViewer(n)) out.add(n)
     }
   }
   return [...out]

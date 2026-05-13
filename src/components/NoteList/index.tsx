@@ -3483,8 +3483,6 @@ const NoteList = forwardRef(
       if (!timelinePublicReadFallback) return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return
-      const warm = progressiveWarmupQuery?.trim()
-      if (warm) return
       if (feedFullSearchEvents !== null) return
       if (feedSubscribeRelayOutcomes.length === 0) return
       if (publicReadFallbackAttemptedRef.current) return
@@ -3492,10 +3490,21 @@ const NoteList = forwardRef(
       const uiStatuses = relayOpTerminalRowsToTimelineRelayUiStatuses(feedSubscribeRelayOutcomes)
       if (uiStatuses.some((s) => s.success)) return
 
-      publicReadFallbackAttemptedRef.current = true
-
       const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
       if (!mapped.length) return
+
+      // Skip fallback for d-tag / layered warmup feeds where the live REQ has no NIP-50 `search`
+      // (merging unfiltered FAST_READ would flood the list). Nostr text search passes `search` on
+      // the same filter as {@link progressiveWarmupQuery} — allow fallback there.
+      const warm = progressiveWarmupQuery?.trim()
+      if (warm) {
+        const primaryFilter = mapped[0]!.filter as Filter
+        const hasNip50Search =
+          typeof primaryFilter.search === 'string' && primaryFilter.search.trim().length > 0
+        if (!hasNip50Search) return
+      }
+
+      publicReadFallbackAttemptedRef.current = true
 
       const filter: Filter = { ...(mapped[0]!.filter as Filter) }
       if (!filter.kinds?.length) {

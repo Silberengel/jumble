@@ -1412,31 +1412,45 @@ class IndexedDbService {
 
   /**
    * Iterate PUBLICATION_EVENTS and return events whose kind is in allowedKinds and content or tags
-   * match the search query (case-insensitive). Used by nevent/naddr picker to show cached events first.
+   * match the query (case-insensitive). Scans up to `scanBudget` rows and keeps up to `collectCap` matches,
+   * then returns the newest `limit` by {@link Event.created_at} (cursor order alone is not recency).
    */
-  async getCachedEventsForSearch(query: string, limit: number, allowedKinds: number[]): Promise<Event[]> {
+  async getCachedEventsForSearch(
+    query: string,
+    limit: number,
+    allowedKinds: number[],
+    options?: { scanBudget?: number; collectCap?: number }
+  ): Promise<Event[]> {
     await this.initPromise
     if (!this.db || !this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
       return []
     }
     const q = query.trim().toLowerCase()
-    if (!q || allowedKinds.length === 0) return []
+    if (!q || allowedKinds.length === 0 || limit <= 0) return []
 
     const kindSet = new Set(allowedKinds)
+    const scanBudget = Math.min(Math.max(options?.scanBudget ?? 28_000, 400), 120_000)
+    const collectCap = Math.min(
+      Math.max(options?.collectCap ?? Math.max(limit * 8, limit + 200, 200), limit),
+      12_000
+    )
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
       const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
       const request = store.openCursor()
       const results: Event[] = []
+      let scanned = 0
 
       request.onsuccess = () => {
         const cursor = (request as IDBRequest<IDBCursorWithValue>).result
-        if (!cursor || results.length >= limit) {
+        if (!cursor || scanned >= scanBudget || results.length >= collectCap) {
           transaction.commit()
-          resolve(results)
+          results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+          resolve(results.slice(0, limit))
           return
         }
+        scanned += 1
         const item = cursor.value as TValue<Event> | undefined
         if (item?.value) {
           const event = item.value as Event
@@ -1575,11 +1589,17 @@ class IndexedDbService {
     allowedKinds: number[],
     options?: { archiveScanMaxMs?: number }
   ): Promise<Event[]> {
-    const fromPub = await this.getCachedEventsForSearch(query, limit, allowedKinds)
-    if (fromPub.length >= limit) return fromPub.slice(0, limit)
+    const pubCap = Math.min(900, Math.max(limit * 6, limit + 280, 220))
+    const fromPub = await this.getCachedEventsForSearch(query, pubCap, allowedKinds, {
+      scanBudget: 70_000,
+      collectCap: Math.min(10_000, pubCap * 12)
+    })
+    if (fromPub.length >= pubCap) {
+      return fromPub.slice(0, limit)
+    }
 
     const q = query.trim().toLowerCase()
-    if (!q || allowedKinds.length === 0) return fromPub
+    if (!q || allowedKinds.length === 0) return fromPub.slice(0, limit)
 
     const kindSet = new Set(allowedKinds)
     const seen = new Set(fromPub.map((e) => e.id))
@@ -1589,7 +1609,7 @@ class IndexedDbService {
 
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) {
-      return fromPub
+      return fromPub.slice(0, limit)
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -1607,7 +1627,7 @@ class IndexedDbService {
           return
         }
         const cursor = (request as IDBRequest<IDBCursorWithValue>).result
-        if (!cursor || fromPub.length + rest.length >= limit) {
+        if (!cursor || fromPub.length + rest.length >= pubCap) {
           transaction.commit()
           resolve()
           return
@@ -1633,7 +1653,9 @@ class IndexedDbService {
       logger.warn('[indexedDb] getCachedAndArchivedEventsMatchingLocalSearch archive scan failed', { e })
     })
 
-    return [...fromPub, ...rest].slice(0, limit)
+    const merged = [...fromPub, ...rest]
+    merged.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+    return merged.slice(0, limit)
   }
 
   /**

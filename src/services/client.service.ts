@@ -3899,7 +3899,10 @@ class ClientService extends EventTarget {
         })
       }
 
-      return mergeKind10243(relayList)
+      const merged = mergeKind10243(relayList)
+      // Kind 10243 can still carry another user's loopback index (e.g. http://localhost:8080). NIP-65 `r` rows
+      // were stripped above; strip again after HTTP merge for other users' bundles only (viewer keeps 10432/LAN).
+      return isOwnRelayList ? merged : stripLocalNetworkRelaysFromRelayList(merged)
     })
   }
 

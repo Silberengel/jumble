@@ -9,6 +9,7 @@ import {
   tryParseCitationEventIdFromQuery
 } from '@/lib/citation-picker-search'
 import { ExtendedKind, NIP71_VIDEO_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { normalizeUrl } from '@/lib/url'
 import { kinds, type Event as NEvent } from 'nostr-tools'
 import client, { eventService, queryService } from './client.service'
 import indexedDb from './indexed-db.service'
@@ -138,8 +139,13 @@ async function searchCitationEventsForPickerInternal(
   return out.slice(0, limit)
 }
 
+/** Local DB + session budget for picker search (before relay NIP-50). */
+const PICKER_LOCAL_DB_MERGE_CAP = 880
+const PICKER_FULLTEXT_DB_CAP = 260
+
 /**
- * Search for events: session cache → IndexedDB → relays. Merges and dedupes by event id, up to limit.
+ * Search for events: session cache → IndexedDB (publication + archive + cross-store full text) → relays.
+ * Merges and dedupes by event id, up to limit.
  * @param mode - 'nevent' uses NEVENT_KINDS (incl. NIP-71 video 21/22/34235/34236), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
  * @param kindFilter - When set, only these kinds are searched (overrides `mode` for the kinds list).
  */
@@ -168,22 +174,58 @@ export async function searchEventsForPicker(
     out.push(evt)
   }
 
-  const fromSession = eventService.getSessionEventsMatchingSearch(q, limit, kindsList)
+  const sessionCap = Math.min(1500, Math.max(limit * 8, 200))
+  const fromSession = eventService.getSessionEventsMatchingSearch(q, sessionCap, kindsList)
   fromSession.forEach(addUnique)
   if (out.length >= limit) return out.slice(0, limit)
 
+  const localMergeTarget = Math.min(PICKER_LOCAL_DB_MERGE_CAP, Math.max(limit * 10, 240))
+
+  const [fromLocalDb, userCentricRelayUrls] = await Promise.all([
+    indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(q, localMergeTarget, kindsList, {
+      archiveScanMaxMs: 24_000
+    }),
+    buildCitationPickerSearchRelayUrls()
+  ])
+  fromLocalDb.forEach(addUnique)
+
+  try {
+    const fullTextHits = await indexedDb.searchAllCachedEventsFullText(q, {
+      limit: Math.min(PICKER_FULLTEXT_DB_CAP, Math.max(localMergeTarget, 200))
+    })
+    const kindSet = new Set(kindsList)
+    for (const hit of fullTextHits) {
+      const ev = hit.value
+      if (ev && kindSet.has(ev.kind)) addUnique(ev as NEvent)
+      if (out.length >= limit) break
+    }
+  } catch {
+    /* best-effort: other stores optional */
+  }
+
+  if (out.length >= limit) return out.slice(0, limit)
+
   const need = limit - out.length
-  const userCentricRelayUrls = await buildCitationPickerSearchRelayUrls()
-  const [fromIdb, fromRelays] = await Promise.all([
-    indexedDb.getCachedEventsForSearch(q, need, kindsList),
+  const searchableNip50Layer = Array.from(
+    new Set(SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u.trim()).filter(Boolean))
+  ).slice(0, 28)
+
+  const [fromUserCentric, fromSearchableIndex] = await Promise.all([
     queryService.fetchEvents(
       userCentricRelayUrls,
       { kinds: kindsList, search: q, limit: need },
       { eoseTimeout: 5000, globalTimeout: 8000 }
-    )
+    ),
+    searchableNip50Layer.length > 0
+      ? queryService.fetchEvents(
+          searchableNip50Layer,
+          { kinds: kindsList, search: q, limit: need },
+          { eoseTimeout: 6500, globalTimeout: 12_000 }
+        )
+      : Promise.resolve([] as NEvent[])
   ])
-  fromIdb.forEach(addUnique)
-  fromRelays.forEach(addUnique)
+  fromUserCentric.forEach(addUnique)
+  fromSearchableIndex.forEach(addUnique)
   return out.slice(0, limit)
 }
 
