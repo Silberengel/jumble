@@ -20,11 +20,22 @@ import { kinds } from 'nostr-tools'
 
 const THREAD_PARENT_WALK_MAX = 14
 
+/** Prefer session LRU; use `localByHex` for events in the current relay batch (not yet indexed for parent walks). */
+function peekThreadEvent(hexLower: string, localByHex?: ReadonlyMap<string, Event>): Event | undefined {
+  const k = hexLower.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/i.test(k)) return undefined
+  return localByHex?.get(k) ?? client.peekSessionCachedEvent(k)
+}
+
 /**
  * Whether a note (hex id) sits in the thread under `rootHexLower`: it is the root, declares that root,
  * or we can reach the root by walking `e` parents in the session cache.
  */
-function hexNoteParticipatesInThread(noteHexLower: string, rootHexLower: string): boolean {
+function hexNoteParticipatesInThread(
+  noteHexLower: string,
+  rootHexLower: string,
+  localByHex?: ReadonlyMap<string, Event>
+): boolean {
   const root = rootHexLower.trim().toLowerCase()
   const start = noteHexLower.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/i.test(start)) return false
@@ -39,7 +50,7 @@ function hexNoteParticipatesInThread(noteHexLower: string, rootHexLower: string)
     seen.add(k)
     if (k === root) return true
 
-    const ev = client.peekSessionCachedEvent(k)
+    const ev = peekThreadEvent(k, localByHex)
     if (!ev) return false
     if (ev.id.toLowerCase() === root) return true
 
@@ -54,16 +65,20 @@ function hexNoteParticipatesInThread(noteHexLower: string, rootHexLower: string)
 }
 
 /** Reply whose direct parent is a zap receipt whose zapped note is in this thread (OP or nested under OP). */
-function replyParentIsZapToThreadHex(reply: Event, rootHexLower: string): boolean {
+function replyParentIsZapToThreadHex(
+  reply: Event,
+  rootHexLower: string,
+  localByHex?: ReadonlyMap<string, Event>
+): boolean {
   const parentHex = getParentEventHexId(reply)
   if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return false
   const pl = parentHex.toLowerCase()
   if (pl === rootHexLower) return false
-  const parentEv = client.peekSessionCachedEvent(pl)
+  const parentEv = peekThreadEvent(pl, localByHex)
   if (!parentEv || parentEv.kind !== kinds.Zap) return false
   const zapped = getZapInfoFromEvent(parentEv)?.originalEventId
   if (!zapped || !/^[0-9a-f]{64}$/i.test(zapped)) return false
-  return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower)
+  return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower, localByHex)
 }
 
 function reactionTargetNoteHex(reaction: Event): string | undefined {
@@ -75,16 +90,20 @@ function reactionTargetNoteHex(reaction: Event): string | undefined {
 }
 
 /** Reply whose direct parent is a reaction to some note in this thread (OP or a nested reply under OP). */
-function replyParentIsReactionToThreadHex(reply: Event, rootHexLower: string): boolean {
+function replyParentIsReactionToThreadHex(
+  reply: Event,
+  rootHexLower: string,
+  localByHex?: ReadonlyMap<string, Event>
+): boolean {
   const parentHex = getParentEventHexId(reply)
   if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return false
   const pl = parentHex.toLowerCase()
   if (pl === rootHexLower) return false
-  const parentEv = client.peekSessionCachedEvent(pl)
+  const parentEv = peekThreadEvent(pl, localByHex)
   if (!parentEv || !isNip25ReactionKind(parentEv.kind)) return false
   const targetHex = reactionTargetNoteHex(parentEv)
   if (!targetHex) return false
-  return hexNoteParticipatesInThread(targetHex, rootHexLower)
+  return hexNoteParticipatesInThread(targetHex, rootHexLower, localByHex)
 }
 
 /** Matches `ReplyNoteList` / discussion thread root shapes. */
@@ -94,7 +113,11 @@ export type TThreadRootRef =
   | { type: 'I'; id: string }
 
 /** Whether a newly published/fetched reply belongs to the thread rooted at `root`. */
-export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): boolean {
+export function eventReplyMatchesThreadRoot(
+  evt: Event,
+  root: TThreadRootRef,
+  localByHex?: ReadonlyMap<string, Event>
+): boolean {
   if (root.type === 'I') {
     const u = getArticleUrlFromCommentITags(evt)
     if (u && canonicalizeRssArticleUrl(u) === canonicalizeRssArticleUrl(root.id)) return true
@@ -106,7 +129,7 @@ export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): b
     // cache: if the declared root or direct parent is a URL-thread comment, accept this event.
     const urlMatchesRoot = (hexId: string | undefined): boolean => {
       if (!hexId || !/^[0-9a-f]{64}$/i.test(hexId)) return false
-      const ancestor = client.peekSessionCachedEvent(hexId.toLowerCase())
+      const ancestor = peekThreadEvent(hexId.toLowerCase(), localByHex)
       if (!ancestor) return false
       const aUrl = getArticleUrlFromCommentITags(ancestor)
       return !!aUrl && canonicalizeRssArticleUrl(aUrl) === canonicalizeRssArticleUrl(root.id)
@@ -125,7 +148,7 @@ export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): b
     if (
       parentHex &&
       /^[0-9a-f]{64}$/i.test(rootEventHex) &&
-      hexNoteParticipatesInThread(parentHex, rootEventHex)
+      hexNoteParticipatesInThread(parentHex, rootEventHex, localByHex)
     ) {
       return true
     }
@@ -136,9 +159,9 @@ export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): b
   if (evtRootHex === rid) return true
   if (evtRootHex && resolveDeclaredThreadRootEventHex(evtRootHex) === rid) return true
   const parentHex = getParentEventHexId(evt)?.toLowerCase()
-  if (parentHex && hexNoteParticipatesInThread(parentHex, rid)) return true
-  if (replyParentIsZapToThreadHex(evt, rid)) return true
-  if (replyParentIsReactionToThreadHex(evt, rid)) return true
+  if (parentHex && hexNoteParticipatesInThread(parentHex, rid, localByHex)) return true
+  if (replyParentIsZapToThreadHex(evt, rid, localByHex)) return true
+  if (replyParentIsReactionToThreadHex(evt, rid, localByHex)) return true
   return kind1QuotesThreadRoot(evt, root)
 }
 
@@ -148,11 +171,16 @@ export function eventReplyMatchesThreadRoot(evt: Event, root: TThreadRootRef): b
  * tag the quoted inner note as `e`+`root` do not show under the quoter's thread).
  * For quote posts, also drops kind-1 replies whose **parent** is the embedded quoted id but not the OP.
  */
-export function replyBelongsToNoteThread(evt: Event, opEvent: Event, root: TThreadRootRef): boolean {
+export function replyBelongsToNoteThread(
+  evt: Event,
+  opEvent: Event,
+  root: TThreadRootRef,
+  localByHex?: ReadonlyMap<string, Event>
+): boolean {
   if (root.type === 'I') {
-    return eventReplyMatchesThreadRoot(evt, root)
+    return eventReplyMatchesThreadRoot(evt, root, localByHex)
   }
-  if (!eventReplyMatchesThreadRoot(evt, root)) return false
+  if (!eventReplyMatchesThreadRoot(evt, root, localByHex)) return false
   if (root.type === 'A') return true
 
   if (opEvent.kind !== kinds.ShortTextNote) return true

@@ -98,6 +98,8 @@ class NoteStatsService {
   private readonly BATCH_DELAY = 40
   /** Larger slices: feed cards each trigger a stats fetch; tiny slices left the tail of the feed starved. */
   private readonly MAX_BATCH_SIZE = 32
+  /** Max `#e` values per REQ filter when batching thread reply stats (relays often cap array length). */
+  private readonly THREAD_REPLY_STATS_BATCH_HEX_CHUNK = 32
   /** Parallel stats REQs per slice (bounded by relay pool pressure). */
   private readonly STATS_SLICE_CONCURRENCY = 8
   /** Client-only RSS/Web thread roots are not on relays; use the event passed into {@link fetchNoteStats}. */
@@ -221,6 +223,146 @@ class NoteStatsService {
     rememberRoot()
 
     this.maybeFlushStatsBatch(foreground)
+  }
+
+  /**
+   * One relay wave for stats on many thread replies: chunked `#e` / `#q` filters instead of N
+   * {@link fetchNoteStats} queue entries. Replaceable-address notes still use {@link fetchNoteStats};
+   * non-hex ids use {@link fetchNoteStats} as well.
+   *
+   * Ingest uses {@link updateNoteStatsByEvents} without per-reply `statsRootEvent` (reactions/reposts/zaps
+   * route by tags; OP-reference kinds that need `statsRootEvent` are uncommon on reply rows).
+   */
+  async fetchThreadReplyNoteStatsBatch(
+    replies: Event[],
+    relayUrls: string[],
+    _pubkey?: string | null,
+    opts?: { foreground?: boolean }
+  ): Promise<void> {
+    const urls = (relayUrls ?? []).filter(Boolean)
+    const hexReplies: Event[] = []
+    const replaceableReplies: Event[] = []
+    const oddIdReplies: Event[] = []
+
+    for (const r of replies) {
+      if (!this.hexNoteStatsIdRe.test(r.id)) {
+        oddIdReplies.push(r)
+        continue
+      }
+      if (isReplaceableEvent(r.kind)) {
+        replaceableReplies.push(r)
+      } else {
+        hexReplies.push(r)
+      }
+    }
+
+    const hexIds = [...new Set(hexReplies.map((r) => this.statsKey(r.id)))]
+
+    const markHexTargetsLoaded = () => {
+      for (const id of hexIds) {
+        this.touchStatsLoadedMarker(id)
+      }
+    }
+
+    try {
+      if (hexIds.length > 0 && urls.length > 0) {
+        const { nonSocial, social } = this.buildBatchFilterGroupsForHexNoteTargets(hexIds)
+        const fetchOpts = {
+          eoseTimeout: 10_000,
+          globalTimeout: 28_000,
+          firstRelayResultGraceMs: false as const
+        }
+        const onStatsEvent = (evt: Event) => {
+          this.updateNoteStatsByEvents([evt], undefined)
+        }
+        const { queryService } = await import('@/services/client.service')
+        await Promise.all([
+          nonSocial.length > 0
+            ? queryService.fetchEvents(urls, nonSocial, {
+                ...fetchOpts,
+                onevent: onStatsEvent
+              })
+            : Promise.resolve([] as Event[]),
+          social.length > 0
+            ? queryService.fetchEvents(urls, social, {
+                ...fetchOpts,
+                onevent: onStatsEvent
+              })
+            : Promise.resolve([] as Event[])
+        ])
+      }
+    } catch (err) {
+      logger.warn('[NoteStats] fetchThreadReplyNoteStatsBatch failed', {
+        hexCount: hexIds.length,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    } finally {
+      markHexTargetsLoaded()
+      for (const r of replaceableReplies) {
+        void this.fetchNoteStats(r, _pubkey, urls, opts)
+      }
+      for (const r of oddIdReplies) {
+        void this.fetchNoteStats(r, _pubkey, urls, opts)
+      }
+    }
+  }
+
+  private touchStatsLoadedMarker(rawStatsKey: string) {
+    const statsKey = this.statsKey(rawStatsKey)
+    this.noteStatsMap.set(statsKey, {
+      ...(this.noteStatsMap.get(statsKey) ?? {}),
+      updatedAt: dayjs().unix()
+    })
+    this.notifyNoteStats(statsKey)
+  }
+
+  /**
+   * Same shape as {@link buildFilterGroups} for fixed hex roots, but ORs many ids per filter via `#e` arrays.
+   * Omits `#e` / `#E` filters whose kinds are merged only with `statsRootEvent` (OP-reference branch).
+   */
+  private buildBatchFilterGroupsForHexNoteTargets(hexIds: string[]): { nonSocial: Filter[]; social: Filter[] } {
+    const reactionLimit = 900
+    const interactionLimit = 200
+    const nip18RepostKinds = [kinds.Repost, ExtendedKind.GENERIC_REPOST]
+    const qKindsHex = Array.from(
+      new Set<number>([
+        kinds.ShortTextNote,
+        ExtendedKind.COMMENT,
+        ExtendedKind.VOICE_COMMENT,
+        ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+      ])
+    ).sort((a, b) => a - b)
+
+    const nonSocial: Filter[] = []
+    const social: Filter[] = []
+
+    for (let off = 0; off < hexIds.length; off += this.THREAD_REPLY_STATS_BATCH_HEX_CHUNK) {
+      const ch = hexIds.slice(off, off + this.THREAD_REPLY_STATS_BATCH_HEX_CHUNK)
+      nonSocial.push(
+        { '#e': ch, kinds: [kinds.Reaction], limit: reactionLimit },
+        { '#e': ch, kinds: [kinds.Zap], limit: 100 }
+      )
+      social.push(
+        {
+          '#e': ch,
+          kinds: [
+            ...nip18RepostKinds,
+            kinds.ShortTextNote,
+            ExtendedKind.COMMENT,
+            ExtendedKind.VOICE_COMMENT,
+            kinds.Highlights
+          ],
+          limit: interactionLimit
+        },
+        {
+          '#q': ch,
+          kinds: qKindsHex,
+          limit: 75
+        }
+      )
+    }
+
+    return { nonSocial, social }
   }
 
   private scheduleStatsBatchContinuation() {

@@ -287,7 +287,9 @@ function replyMatchesThreadForList(
   evt: NEvent,
   opEvent: NEvent,
   rootInfo: TRootInfo,
-  isDiscussionRoot: boolean
+  isDiscussionRoot: boolean,
+  /** Events from the current relay batch (parent walk may not be in session LRU yet). */
+  threadWalkLocal?: ReadonlyMap<string, NEvent>
 ): boolean {
   if (rootInfo.type === 'I') {
     return isRssArticleUrlThreadInteraction(evt, rootInfo.id)
@@ -299,7 +301,7 @@ function replyMatchesThreadForList(
   ) {
     return true
   }
-  if (replyBelongsToNoteThread(evt, opEvent, rootInfo)) return true
+  if (replyBelongsToNoteThread(evt, opEvent, rootInfo, threadWalkLocal)) return true
   if (
     (rootInfo.type === 'E' || rootInfo.type === 'A') &&
     evt.kind !== kinds.ShortTextNote &&
@@ -1284,11 +1286,15 @@ function ReplyNoteList({
 
           mergeFetchedKind7ReactionsIntoRootNoteStats(allReplies, rootInfo)
 
+          const threadWalkFromBatch = new Map<string, NEvent>(
+            allReplies.map((e) => [e.id.toLowerCase(), e] as const)
+          )
+
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
             if (isPollVoteKind(evt)) return false
             if (isZapPollThreadZapReceipt(evt, event)) return false
-            const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
+            const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromBatch)
             if (!match) return false
             return !shouldHideThreadResponseEvent(
               evt,
@@ -1303,27 +1309,40 @@ function ReplyNoteList({
           
           // Get the merged cache (which includes all replies we've ever seen, including new ones)
           const mergedCachedReplies = discussionFeedCache.getCachedReplies(rootInfo)
-          
-          // Always add all merged cached replies to UI
-          // This ensures we keep all previously seen replies and add any new ones
-          // addReplies will deduplicate, so it's safe to call even if some replies are already displayed
-          if (mergedCachedReplies) {
-            const mergedForUi =
+
+          let mergedForUi: NEvent[]
+          if (mergedCachedReplies === null) {
+            logger.warn('[ReplyNoteList] Cache returned null after store, using fetched replies only')
+            mergedForUi = regularReplies
+          } else {
+            mergedForUi =
               event.kind === ExtendedKind.ZAP_POLL
                 ? mergedCachedReplies.filter((e) => !isZapPollThreadZapReceipt(e, event))
                 : mergedCachedReplies
-            addReplies(mergedForUi)
-          } else {
-            // Fallback: if cache somehow failed, at least add the fetched replies
-            logger.warn('[ReplyNoteList] Cache returned null after store, using fetched replies only')
-            addReplies(regularReplies)
           }
+          const repliesForStatsPrime = mergedForUi
+          addReplies(mergedForUi)
 
-          const statsBatch = mergedCachedReplies?.length ? mergedCachedReplies : regularReplies
+          const statsBatch = mergedCachedReplies !== null && mergedCachedReplies.length > 0 ? mergedCachedReplies : regularReplies
           if (statsBatch.length > 0) {
             noteStatsService.updateNoteStatsByEvents(statsBatch, event.pubkey, {
               statsRootEvent: event
             })
+          }
+
+          if (repliesForStatsPrime.length > 0) {
+            for (const reply of repliesForStatsPrime) {
+              const sessionEdge = eventService.getSessionEventsForNoteStatsTarget(reply)
+              if (sessionEdge.length > 0) {
+                noteStatsService.updateNoteStatsByEvents(sessionEdge, reply.pubkey)
+              }
+            }
+            void noteStatsService.fetchThreadReplyNoteStatsBatch(
+              repliesForStatsPrime,
+              relayUrlsForThreadReq,
+              userPubkey ?? null,
+              { foreground: statsForeground }
+            )
           }
 
           if (!hasCache) {
@@ -1409,6 +1428,9 @@ function ReplyNoteList({
             )
             if (parentIdsNested.length > 0) {
               const nestedAccum: NEvent[] = []
+              const streamWalkById = new Map<string, NEvent>(
+                regularReplies.map((e) => [e.id.toLowerCase(), e] as const)
+              )
               for (let off = 0; off < parentIdsNested.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
                 const idChunk = parentIdsNested.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
                 const nestedFilters: Filter[] = [
@@ -1425,18 +1447,21 @@ function ReplyNoteList({
                     if (isPollVoteKind(evt)) return
                     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
                       return
-                    if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
+                    streamWalkById.set(evt.id.toLowerCase(), evt)
+                    if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, streamWalkById)) return
                     addReplies([evt])
                   }
                 })
                 if (fetchGeneration !== replyFetchGenRef.current) return
                 nestedAccum.push(...nestedReplies)
               }
+              const nestedWalkMerged = new Map<string, NEvent>(streamWalkById)
+              for (const e of nestedAccum) nestedWalkMerged.set(e.id.toLowerCase(), e)
               const validNested = nestedAccum.filter(
                 (evt) =>
                   !isPollVoteKind(evt) &&
                   !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers) &&
-                  replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
+                  replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
               )
               if (validNested.length > 0) {
                 discussionFeedCache.setCachedReplies(rootInfo, validNested)

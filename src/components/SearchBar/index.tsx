@@ -123,7 +123,12 @@ const SearchBar = forwardRef<
 
   useEffect(() => {
     const search = input.trim()
-    if (!search) return
+    if (!search) {
+      setSelectableOptions([])
+      setSelectedIndex(-1)
+      setSearching(false)
+      return
+    }
 
     const hex64 = /^[0-9a-f]{64}$/i
     if (hex64.test(search)) {

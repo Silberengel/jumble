@@ -1176,6 +1176,10 @@ export default {
     "Latest from your follows": "Neuestes von deinen Follows",
     "Latest from our recommended follows": "Neuestes von unseren empfohlenen Follows",
     "Search page title": "Nostr durchsuchen",
+    "Search on Alexandria": "Mit Alexandria suchen",
+    "Search page clear": "Leeren",
+    "Search page clear description":
+      "Suchfeld leeren, Vorschläge schließen und Ergebnisse entfernen, um neu zu suchen.",
     "Follows latest page title": "Neuestes von Follows",
     "Follows latest page description": "Aktuelle Notizen von Leuten, denen du folgst (ohne Konto: unsere kuratierte Liste). Wir führen Outbox-Relays aus ihren NIP-65-Listen mit deinen Favoriten zusammen und laden in Stapeln. Zeile aufklappen für Notizen oder Profil antippen.",
     "Follows latest nav label": "Follows: neueste",

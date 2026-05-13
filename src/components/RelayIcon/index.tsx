@@ -3,7 +3,7 @@ import { useFetchRelayInfo } from '@/hooks'
 import { getRelayIconOverrideSrc, relayUrlFingerprintColors } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
 import { Server } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 /**
  * Resolve an image URL from NIP-11.  Handles:
@@ -42,6 +42,10 @@ export default function RelayIcon({
   skipRelayInfoFetch?: boolean
 }) {
   const { relayInfo } = useFetchRelayInfo(skipRelayInfoFetch ? undefined : url)
+  const [iconLoadFailed, setIconLoadFailed] = useState(false)
+  useEffect(() => {
+    setIconLoadFailed(false)
+  }, [url, relayInfo?.icon])
   const iconUrl = useMemo(() => {
     if (!url) return undefined
 
@@ -64,7 +68,13 @@ export default function RelayIcon({
 
   return (
     <Avatar className={cn('w-6 h-6', className)}>
-      {iconUrl && <AvatarImage src={iconUrl} className="object-cover object-center" />}
+      {iconUrl && !iconLoadFailed && (
+        <AvatarImage
+          src={iconUrl}
+          className="object-cover object-center"
+          onError={() => setIconLoadFailed(true)}
+        />
+      )}
       <AvatarFallback
         className="bg-transparent"
         style={{ backgroundColor: fallbackColors.background, color: fallbackColors.color }}

@@ -1176,6 +1176,10 @@ export default {
     "Latest from your follows": "Latest from your follows",
     "Latest from our recommended follows": "Latest from our recommended follows",
     "Search page title": "Search Nostr",
+    "Search on Alexandria": "Search on Alexandria",
+    "Search page clear": "Clear",
+    "Search page clear description":
+      "Clear the search field, close suggestions, and remove results so you can start a new search.",
     "Follows latest page title": "Latest from follows",
     "Follows latest page description": "Recent notes from accounts you follow (or a curated list when not signed in), using their outbox relays merged with your favorites. Expand a row for notes or open the profile from the row.",
     "Follows latest nav label": "Follows latest",

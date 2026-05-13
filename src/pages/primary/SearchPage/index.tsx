@@ -6,12 +6,13 @@ import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { TPageRef, TSearchParams } from '@/types'
-import { BookOpen, Search } from 'lucide-react'
+import { BookOpen, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SearchPage = forwardRef<TPageRef>((_props, ref) => {
+  const { t } = useTranslation()
   const { current, display } = usePrimaryPage()
   const { pubkey, relayList } = useNostr()
   const [input, setInput] = useState('')
@@ -51,6 +52,14 @@ const SearchPage = forwardRef<TPageRef>((_props, ref) => {
     layoutRef.current?.scrollToTop('instant')
   }
 
+  const clearSearch = useCallback(() => {
+    setInput('')
+    setSearchParams(null)
+    setResultRefreshKey((k) => k + 1)
+    searchBarRef.current?.blur()
+    void Promise.resolve().then(() => searchBarRef.current?.focus())
+  }, [])
+
   return (
     <PrimaryPageLayout
       ref={layoutRef}
@@ -59,26 +68,37 @@ const SearchPage = forwardRef<TPageRef>((_props, ref) => {
       displayScrollToTopButton
     >
       <div className="min-w-0 pt-4 px-4 pb-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4 relative z-40">
-          <div className="flex-1 relative order-2 sm:order-1">
-            <SearchBar ref={searchBarRef} onSearch={onSearch} input={input} setInput={setInput} />
-          </div>
-          <div className="flex-shrink-0 relative z-50 w-full sm:w-auto order-1 sm:order-2">
+        <div className="mb-4 space-y-2 relative z-40">
+          <div className="flex items-stretch gap-2">
+            <div className="min-w-0 flex-1">
+              <SearchBar ref={searchBarRef} onSearch={onSearch} input={input} setInput={setInput} />
+            </div>
             <Button
-              variant="ghost"
-              className="h-9 shrink-0 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-md px-3 gap-2 w-full sm:w-auto"
-              asChild
+              type="button"
+              variant="outline"
+              className="h-auto min-h-9 shrink-0 px-3 text-muted-foreground hover:text-foreground"
+              onClick={clearSearch}
+              title={t('Search page clear description')}
+              aria-label={t('Search page clear description')}
             >
-              <a
-                href="https://next-alexandria.gitcitadel.eu/events"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span className="text-sm">Search on Alexandria</span>
-              </a>
+              <X className="h-4 w-4 sm:mr-1.5" aria-hidden />
+              <span className="hidden sm:inline">{t('Search page clear')}</span>
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            className="h-9 w-full justify-start text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-md px-3 gap-2 sm:w-auto"
+            asChild
+          >
+            <a
+              href="https://next-alexandria.gitcitadel.eu/events"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <BookOpen className="h-4 w-4 shrink-0" />
+              <span className="text-sm">{t('Search on Alexandria')}</span>
+            </a>
+          </Button>
         </div>
         <div className="h-4"></div>
         <div key={resultRefreshKey} className="min-w-0">

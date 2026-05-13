@@ -3,10 +3,12 @@ import RelayIcon from '@/components/RelayIcon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toRelay } from '@/lib/link'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
+import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import client from '@/services/client.service'
+import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS } from '@/services/client-query.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
 import type { TProfile } from '@/types'
 import type { Event, Filter } from 'nostr-tools'
@@ -20,12 +22,15 @@ type MergedHit = {
   relayUrls: string[]
 }
 
-/** Hard cap for the merged search wave, counted from the first relay query start (not from React effect mount). */
-const SEARCH_TOTAL_WALL_MS = 10_000
+/**
+ * Hard cap for the merged search wave (abort signal), from the first relay query start.
+ * Must exceed {@link NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS} so at least one slow index relay can EOSE.
+ */
+const SEARCH_TOTAL_WALL_MS = NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000
 /** After the first results arrive from any relay, end the wave this many ms later (capped by {@link SEARCH_TOTAL_WALL_MS}). */
-const SEARCH_AFTER_FIRST_RELAY_MS = 3_000
-/** Per-relay {@link QueryService.query} budget from when that relay’s fetch starts (capped by remaining wave wall). */
-const SEARCH_PER_RELAY_QUERY_MS = 10_000
+const SEARCH_AFTER_FIRST_RELAY_MS = 6_000
+/** Per-relay {@link QueryService.query} budget (capped by remaining wave wall). Align with NIP-50 index latency. */
+const SEARCH_PER_RELAY_QUERY_MS = NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
 /** Avoid opening every index relay at once (pool + main thread). */
 const FULL_TEXT_SEARCH_RELAY_CONCURRENCY = 3
 const FULL_TEXT_SEARCH_PER_RELAY_LIMIT = 80
@@ -351,6 +356,7 @@ export default function FullTextSearchByRelay({
           map.set(hit.event.id, { event: hit.event, relays: new Set(hit.relayUrls.map((u) => relayKey(u))) })
         }
         for (const ev of events) {
+          if (!mergedSearchNoteHasPreviewBody(ev)) continue
           const cur = map.get(ev.id)
           if (cur) {
             cur.relays.add(rk)
@@ -515,7 +521,7 @@ export default function FullTextSearchByRelay({
                         navigateToRelay(toRelay(url))
                       }}
                     >
-                      <RelayIcon url={url} skipRelayInfoFetch className="h-5 w-5 rounded-sm" iconSize={12} />
+                      <RelayIcon url={url} className="h-5 w-5 rounded-sm" iconSize={12} />
                     </button>
                   ))}
                 </div>

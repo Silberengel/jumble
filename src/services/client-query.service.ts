@@ -54,8 +54,9 @@ const NIP50_RELAY_SUBSCRIPTION_EOSE_TIMEOUT_MS = 38_000
 /**
  * {@link QueryService.query} `globalTimeout` is armed at call start; REQ may start seconds later. Used only for
  * {@link ClientService.fetchEventsFromSingleRelay} so mention/picker queries keep their own shorter caps.
+ * Merged search UI must not use a budget below this — index relays often exceed 10–20s before EOSE.
  */
-const NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS = 42_000
+export const NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS = 42_000
 
 const HEX_EVENT_ID_RE = /^[0-9a-f]{64}$/i
 
