@@ -163,16 +163,38 @@ function mergePaymentMethods(
     if (addr) add('lightning', addr, `payto://lightning/${addr}`, 'Lightning Network')
   })
 
-  // Kind-0 `w` tags: on-chain / liquid (lightning rows are already in lightningAddressList)
+  // Kind-0 `w` tags: ["w", currency, address, network] — NIP-19-style multi-wallet (lightning via lud*/list above)
   profile?.wWalletTags?.forEach((w) => {
     const net = w.network.toLowerCase()
     if (net === 'lightning') return
     const addr = w.address?.trim()
     if (!addr) return
+    const cur = (w.currency || '').trim().toLowerCase()
+
     if (net === 'bitcoin') {
       add('bitcoin', addr, buildPaytoUri('bitcoin', addr), 'Bitcoin', { currency: w.currency })
-    } else if (net === 'liquid') {
-      add('liquid', addr, buildPaytoUri('liquid', addr), 'Liquid', { currency: w.currency })
+      return
+    }
+
+    if (cur === 'usdt' || cur === 'usd₮' || cur === 'tether' || net === 'usdt') {
+      add('usdt', addr, buildPaytoUri('usdt', addr), 'Tether (USDT)', { currency: w.currency || 'USDT' })
+      return
+    }
+
+    if (net === 'liquid') {
+      if (cur === 'lbtc' || cur === 'l-btc' || cur === 'liquid btc') {
+        add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
+      } else {
+        add('liquid', addr, buildPaytoUri('liquid', addr), cur ? `Liquid (${w.currency})` : 'Liquid', {
+          currency: w.currency
+        })
+      }
+      return
+    }
+
+    if (cur === 'lbtc' || cur === 'l-btc') {
+      add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
+      return
     }
   })
 
@@ -236,14 +258,16 @@ export default function Profile({
   const mergedPaymentMethods = useMemo(() => {
     const list = mergePaymentMethods(paymentInfo, profile ?? null)
     return [...list].sort((a, b) => {
-      const rank = (type: string) => (type === 'lightning' ? 0 : type === 'bitcoin' ? 1 : 2)
+      const rank = (type: string) =>
+        type === 'lightning' || type === 'liquid' || type === 'lbtc' ? 0 : type === 'bitcoin' ? 1 : 2
       return rank(a.type) - rank(b.type)
     })
   }, [paymentInfo, profile])
 
   /** Group payment methods by displayType so same-type addresses render under one heading */
   const paymentMethodsByType = useMemo(() => {
-    const rank = (type: string) => (type === 'lightning' ? 0 : type === 'bitcoin' ? 1 : 2)
+    const rank = (type: string) =>
+      type === 'lightning' || type === 'liquid' || type === 'lbtc' ? 0 : type === 'bitcoin' ? 1 : 2
     const groups = new Map<string, MergedPaymentMethod[]>()
     for (const method of mergedPaymentMethods) {
       const key = method.displayType || method.type

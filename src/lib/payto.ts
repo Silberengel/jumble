@@ -39,11 +39,18 @@ export function buildPaytoUri(type: string, authority: string): string {
 /** Known payment types: NIP-A3 recommended + common extras (crypto, fiat, tipping) */
 export const PAYTO_KNOWN_TYPES: Record<
   string,
-  { label: string; symbol?: string; category: 'bitcoin' | 'crypto' | 'stablecoin' | 'fiat' | 'lightning' | 'tip' }
+  { label: string; symbol?: string; category: 'bitcoin' | 'bitcoin-layer' | 'crypto' | 'stablecoin' | 'fiat' | 'tip' }
 > = {
   bitcoin: { label: 'Bitcoin', symbol: '₿', category: 'bitcoin' },
+  /**
+   * Liquid sidechain — Bitcoin L3 (settlement layer), analogous in role to Lightning (L2) as a
+   * Bitcoin-native extension; not an alt-L1 “crypto” bucket.
+   */
+  liquid: { label: 'Liquid', symbol: '⛓', category: 'bitcoin-layer' },
+  /** Confidential Bitcoin on Liquid (L-BTC). */
+  lbtc: { label: 'Liquid Bitcoin', symbol: '₿', category: 'bitcoin-layer' },
   sats: { label: 'Satoshis', symbol: '丰', category: 'bitcoin' },
-  lightning: { label: 'Lightning Network', symbol: '⚡', category: 'lightning' },
+  lightning: { label: 'Lightning Network', symbol: '⚡', category: 'bitcoin-layer' },
   ethereum: { label: 'Ethereum', symbol: 'Ξ', category: 'crypto' },
   monero: { label: 'Monero', symbol: 'ɱ', category: 'crypto' },
   nano: { label: 'Nano', symbol: 'Ӿ', category: 'crypto' },
@@ -81,11 +88,10 @@ export const PAYTO_KNOWN_TYPES: Record<
 
 /**
  * Short labels accepted after payto:// that map to a canonical type.
- * e.g. payto://BTC/..., payto://LBTC/..., payto://DOGE/... are recognized as bitcoin, lightning, dogecoin.
+ * e.g. payto://BTC/... maps to bitcoin; payto://LBTC/... maps to Liquid Bitcoin (not Lightning).
  */
 const PAYTO_TYPE_ALIASES: Record<string, string> = {
   btc: 'bitcoin',
-  lbtc: 'lightning',
   doge: 'dogecoin',
   eth: 'ethereum',
   xmr: 'monero',
@@ -108,6 +114,8 @@ export function getPaytoIconChar(type: string): string | null {
 
 /** Logo filename in /payto_logos/ for types that have an asset. Any image format works: .svg, .gif, .jpg, .png, .webp, etc. */
 const PAYTO_LOGO_FILES: Record<string, string> = {
+  liquid: 'LBTC.svg',
+  lbtc: 'LBTC.svg',
   ethereum: 'ethereum-eth-logo.svg',
   monero: 'Monero.png',
   litecoin: 'Litecoin.png',

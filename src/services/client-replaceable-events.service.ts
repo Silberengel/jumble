@@ -24,6 +24,7 @@ import logger from '@/lib/logger'
 import client from './client.service'
 import { buildComprehensiveRelayList, buildExploreProfileAndUserRelayList } from '@/lib/relay-list-builder'
 import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
+import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 
 export class ReplaceableEventService {
@@ -51,35 +52,6 @@ export class ReplaceableEventService {
     )
     const next = ReplaceableEventService.profileFallbackWaitQueue.shift()
     if (next) next()
-  }
-
-  /**
-   * After a full profile fetch (cache + defaults + NIP-65 + comprehensive) returns nothing,
-   * skip repeating that expensive work for a few minutes. Cleared when we index kind 0 or user forces refresh.
-   */
-  private static profileFetchMissUntil = new Map<string, number>()
-  private static readonly PROFILE_FETCH_MISS_TTL_MS = 10 * 60 * 1000
-
-  private static isProfileFetchMissCached(pubkey: string): boolean {
-    const k = pubkey.trim().toLowerCase()
-    const until = ReplaceableEventService.profileFetchMissUntil.get(k)
-    if (until == null) return false
-    if (Date.now() >= until) {
-      ReplaceableEventService.profileFetchMissUntil.delete(k)
-      return false
-    }
-    return true
-  }
-
-  private static rememberProfileFetchMiss(pubkey: string): void {
-    ReplaceableEventService.profileFetchMissUntil.set(
-      pubkey.trim().toLowerCase(),
-      Date.now() + ReplaceableEventService.PROFILE_FETCH_MISS_TTL_MS
-    )
-  }
-
-  private static clearProfileFetchMiss(pubkey: string): void {
-    ReplaceableEventService.profileFetchMissUntil.delete(pubkey.trim().toLowerCase())
   }
 
   /** True when kind 10002 exists locally — {@link client.fetchRelayList} would mostly merge IDB anyway. */
@@ -198,15 +170,6 @@ export class ReplaceableEventService {
         }
       }
 
-      if (
-        kind === kinds.Metadata &&
-        !d &&
-        containingEventRelays.length === 0 &&
-        ReplaceableEventService.isProfileFetchMissCached(pubkey)
-      ) {
-        return undefined
-      }
-
       // Kind 3 / NIP-65: IndexedDB + session LRU before DataLoader (newest wins); then background network refresh.
       if (!d && (kind === kinds.Contacts || kind === kinds.RelayList)) {
         let idbEv: NEvent | undefined | null
@@ -252,7 +215,9 @@ export class ReplaceableEventService {
         }
 
         // Not in IndexedDB, fetch from network with custom relay list
-        const relayUrls = await this.buildComprehensiveRelayListForAuthor(pubkey, kind, containingEventRelays, [])
+        const relayUrls = stripLocalNetworkRelaysForWssReq(
+          await this.buildComprehensiveRelayListForAuthor(pubkey, kind, containingEventRelays, [])
+        )
         const events = await this.queryService.query(
           relayUrls,
           {
@@ -261,7 +226,7 @@ export class ReplaceableEventService {
           },
           undefined,
           {
-            replaceableRace: true,
+            replaceableRace: kind !== kinds.Metadata,
             eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
             globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
           }
@@ -509,9 +474,6 @@ export class ReplaceableEventService {
           eventsMap.set(`${m.pubkey}:${m.kind}`, ev)
           continue
         }
-        if (ReplaceableEventService.isProfileFetchMissCached(m.pubkey)) {
-          continue
-        }
       }
       networkMissing.push(m)
     }
@@ -614,7 +576,9 @@ export class ReplaceableEventService {
         } else {
           relayUrls = [...FAST_READ_RELAY_URLS]
         }
-        relayUrls = prependAggrNostrLandIfViewerEligible(relayUrls)
+        relayUrls = prependAggrNostrLandIfViewerEligible(
+          stripLocalNetworkRelaysForWssReq(relayUrls)
+        )
         // Contacts + NIP-65 need the same patience as pins/payment: 100ms EOSE loses the race on slow relays
         // and multi-author batches must not use replaceableRace (first EVENT may not be the latest per author).
         const isSlowReplaceableBatch =
@@ -628,8 +592,10 @@ export class ReplaceableEventService {
         const multiAuthorBatch = pubkeys.length > 1
         // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
+        // Kind 0: never race — first relay may answer without Damus/mirrors; wait for EOSE window so the
+        // newest metadata across relays is collected (same as multi-author batches).
         const useReplaceableRace =
-          !isSlowReplaceableBatch || !multiAuthorBatch
+          kind === kinds.Metadata ? false : !isSlowReplaceableBatch || !multiAuthorBatch
         const queryOpts = {
           replaceableRace: useReplaceableRace,
           eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
@@ -643,7 +609,8 @@ export class ReplaceableEventService {
             const slice = missingItems.slice(off, off + METADATA_BATCH_AUTHORS_CHUNK)
             const chunkPubkeys = slice.map((m) => m.pubkey)
             const chunkMulti = chunkPubkeys.length > 1
-            const chunkRace = !isSlowReplaceableBatch || !chunkMulti
+            const chunkRace =
+              kind === kinds.Metadata ? false : !isSlowReplaceableBatch || !chunkMulti
             const evts = await this.queryService.query(
               relayUrls,
               { authors: chunkPubkeys, kinds: [kind] },
@@ -881,17 +848,12 @@ export class ReplaceableEventService {
         )
         await this.indexProfile(sessionEv)
         void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
-        ReplaceableEventService.clearProfileFetchMiss(pubkey)
         sessionFallback = sessionEv
       }
     }
 
     // Relay hints from bech32 (nprofile, etc.) — highest priority in later steps
     const relayHints = relays.length > 0 ? [...relays] : []
-
-    if (!_skipCache && relayHints.length === 0 && ReplaceableEventService.isProfileFetchMissCached(pubkey)) {
-      return sessionFallback
-    }
 
     // CRITICAL: Always use relay hints from bech32 addresses (nprofile, naddr, nevent) when available
     // Relay hints should have highest priority and always be included
@@ -944,13 +906,15 @@ export class ReplaceableEventService {
       : []
 
     const expandedRelays = prependAggrNostrLandIfViewerEligible(
-      Array.from(
-        new Set([
-          ...relayHints,
-          ...authorRelays,
-          ...PROFILE_FETCH_RELAY_URLS,
-          ...FAST_READ_RELAY_URLS
-        ])
+      stripLocalNetworkRelaysForWssReq(
+        Array.from(
+          new Set([
+            ...relayHints,
+            ...authorRelays,
+            ...PROFILE_FETCH_RELAY_URLS,
+            ...FAST_READ_RELAY_URLS
+          ])
+        )
       )
     )
 
@@ -982,7 +946,9 @@ export class ReplaceableEventService {
       })
 
       if (comprehensiveRelays.length > 0) {
-        const relaysForQuery = prependAggrNostrLandIfViewerEligible(comprehensiveRelays)
+        const relaysForQuery = prependAggrNostrLandIfViewerEligible(
+          stripLocalNetworkRelaysForWssReq(comprehensiveRelays)
+        )
         const events = await this.queryService.query(
           relaysForQuery,
           {
@@ -991,9 +957,9 @@ export class ReplaceableEventService {
           },
           undefined,
           {
-            replaceableRace: true,
-            eoseTimeout: 220,
-            globalTimeout: 3500
+            replaceableRace: false,
+            eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+            globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
           }
         )
 
@@ -1014,9 +980,6 @@ export class ReplaceableEventService {
       ReplaceableEventService.releaseProfileFallbackNetworkSlot()
     }
 
-    if (!_skipCache && relayHints.length === 0 && !sessionFallback) {
-      ReplaceableEventService.rememberProfileFetchMiss(pubkey)
-    }
     return sessionFallback
   }
 
@@ -1165,9 +1128,6 @@ export class ReplaceableEventService {
    * Index profile for search (calls callback if provided)
    */
   private async indexProfile(profileEvent: NEvent): Promise<void> {
-    if (profileEvent.kind === kinds.Metadata) {
-      ReplaceableEventService.clearProfileFetchMiss(profileEvent.pubkey)
-    }
     if (this.onProfileIndexed) {
       await this.onProfileIndexed(profileEvent)
     }

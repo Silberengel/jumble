@@ -5,7 +5,10 @@ import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isImage, isMedia, isVideo } from '@/lib/url'
 import { generateImageByPubkey, isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { toProfile } from '@/lib/link'
-import { seedProfileForNavigation } from '@/lib/profile-navigation-seed'
+import {
+  seedProfileForNavigation,
+  seedProfileForNavigationFromSessionIfKnown
+} from '@/lib/profile-navigation-seed'
 import { cn } from '@/lib/utils'
 import { useSmartProfileNavigationOptional } from '@/PageManager'
 import type { TProfile } from '@/types'
@@ -341,7 +344,11 @@ export default function UserAvatar({
       onClick={(e) => {
         e.stopPropagation()
         if (!profileNavTarget) return
-        if (profile) seedProfileForNavigation(profile)
+        if (profile) {
+          seedProfileForNavigation(profile)
+        } else if (pubkey) {
+          seedProfileForNavigationFromSessionIfKnown(pubkey)
+        }
         navigateToProfile(toProfile(profileNavTarget))
       }}
     >

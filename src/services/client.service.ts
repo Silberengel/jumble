@@ -187,7 +187,7 @@ import {
   RelayPublishOpBatch,
   RelaySubscribeOpBatch
 } from '@/services/relay-operation-log.service'
-import { QueryService } from './client-query.service'
+import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS, QueryService } from './client-query.service'
 import { EventService } from './client-events.service'
 import { ReplaceableEventService } from './client-replaceable-events.service'
 import { MacroService, createBookstrService } from './client-macro.service'
@@ -3562,11 +3562,19 @@ class ClientService extends EventTarget {
           })()
         : { ...filter, kinds: [kinds.Metadata] }
 
+    /** NIP-50 text on many index relays: per-relay EOSE can be ~38s; global cap was 9s so subs were torn down early. */
+    const filtersArr = Array.isArray(queryFilter) ? queryFilter : [queryFilter]
+    const usesNip50TextSearch = filtersArr.some(
+      (f) => typeof f.search === 'string' && f.search.trim().length > 0
+    )
     const events = await this.queryService.query(urls, queryFilter, undefined, {
       replaceableRace: false,
-      eoseTimeout: 4500,
-      globalTimeout: 9000,
-      relayOpSource: 'ClientService.searchProfiles'
+      eoseTimeout: usesNip50TextSearch ? 10_000 : 4500,
+      globalTimeout: usesNip50TextSearch
+        ? NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000
+        : 9000,
+      relayOpSource: 'ClientService.searchProfiles',
+      foreground: usesNip50TextSearch
     })
 
     const byPk = new Map<string, NEvent>()

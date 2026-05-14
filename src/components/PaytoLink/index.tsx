@@ -76,7 +76,12 @@ export default function PaytoLink({
   }
 
   const displayLabel = info?.label ?? type
-  const categoryLabel = info?.category ? info.category.charAt(0).toUpperCase() + info.category.slice(1) : ''
+  const categoryLabel = (() => {
+    const c = info?.category
+    if (!c) return ''
+    if (c === 'bitcoin-layer') return 'Bitcoin layer'
+    return c.charAt(0).toUpperCase() + c.slice(1)
+  })()
   const logoPath = getPaytoLogoPath(type)
   const iconChar = getPaytoIconChar(type)
   const profileUrl = getPaytoProfileUrl(type, authority)

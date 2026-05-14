@@ -50,6 +50,25 @@ export function stripLocalNetworkRelaysFromRelayList(list: TRelayList): TRelayLi
   }
 }
 
+/**
+ * Drop loopback/LAN WebSocket relay URLs before REQ — they burn {@link MAX_CONCURRENT_RELAY_CONNECTIONS}
+ * slots and time out in the browser, delaying public relays (e.g. Damus) that actually hold kind 0.
+ */
+export function stripLocalNetworkRelaysForWssReq(urls: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of urls) {
+    if (isHttpRelayUrl(raw)) continue
+    const n = normalizeAnyRelayUrl(raw) || raw.trim()
+    if (!n || isLocalNetworkUrl(n)) continue
+    const key = (normalizeUrl(n) || n).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(n)
+  }
+  return out
+}
+
 const normRelayKey = (u: string): string => {
   const t = typeof u === 'string' ? u.trim() : ''
   if (!t) return ''
