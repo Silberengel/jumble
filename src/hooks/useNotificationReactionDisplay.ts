@@ -7,7 +7,6 @@ import { getRootEventHexId } from '@/lib/event'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import { eventService } from '@/services/client.service'
-import type { NEvent } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
@@ -19,8 +18,8 @@ export type NotificationReactionDisplay =
 
 function classifyDiscussionReactionFromTargets(
   reaction: Event,
-  target: NEvent,
-  root: NEvent | undefined
+  target: Event,
+  root: Event | undefined
 ): NotificationReactionDisplay {
   let inDiscussion = target.kind === ExtendedKind.DISCUSSION
   if (!inDiscussion && target.kind === ExtendedKind.COMMENT) {
@@ -39,7 +38,7 @@ function peekReactionDisplayFromSessionCaches(event: Event): NotificationReactio
   if (!targetId) return { status: 'default' }
   const target = eventService.peekHexIdNoteFromSessionCache(targetId)
   if (!target) return { status: 'default' }
-  let root: NEvent | undefined
+  let root: Event | undefined
   if (target.kind === ExtendedKind.COMMENT) {
     const rootId = getRootEventHexId(target)
     if (rootId) root = eventService.peekHexIdNoteFromSessionCache(rootId)
@@ -93,7 +92,7 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
         return
       }
 
-      let root: NEvent | undefined
+      let root: Event | undefined
       let inDiscussion = target.kind === ExtendedKind.DISCUSSION
       if (!inDiscussion && target.kind === ExtendedKind.COMMENT) {
         const rootId = getRootEventHexId(target)

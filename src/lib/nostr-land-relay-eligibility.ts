@@ -3,7 +3,8 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 
 /**
  * True when any URL’s host is `nostr.land` (e.g. `wss://nostr.land`, `wss://aggr.nostr.land`).
- * Used to decide whether read fetches should prepend {@link AGGR_NOSTR_LAND_WSS} (except the primary home OP feed).
+ * Used to decide whether read fetches should prepend {@link AGGR_NOSTR_LAND_WSS} (home OP / Replies / Gallery
+   * never prepend aggr via {@link FeedProvider}; side-panel threads, profiles, spells, and other reads still use it).
  */
 export function relayUrlsMentionNostrLandDomain(urls: readonly string[]): boolean {
   return urls.some((url) => {

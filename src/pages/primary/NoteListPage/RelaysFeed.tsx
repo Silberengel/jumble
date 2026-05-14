@@ -115,6 +115,15 @@ const RelaysFeed = forwardRef<
     },
     [relayUrls]
   )
+  const hideAggrOnlyReplyGalleryStackEvent = useCallback(
+    (event: Event) => {
+      const seenRelays = client.getSeenEventRelayUrls(event.id).map(relaySeenKey)
+      if (!seenRelays.includes(AGGR_RELAY_KEY)) return false
+      const allowedRelays = new Set(replyRelayUrls.map(relaySeenKey))
+      return !seenRelays.some((relay) => relay !== AGGR_RELAY_KEY && allowedRelays.has(relay))
+    },
+    [replyRelayUrls]
+  )
   const hideAggrOnlyNonReplyEvent = useCallback(
     (event: Event) => hideAggrOnlyMainFeedEvent(event) && !isReplyNoteEvent(event),
     [hideAggrOnlyMainFeedEvent]
@@ -135,12 +144,14 @@ const RelaysFeed = forwardRef<
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
       repliesSubRequests={repliesSubRequests}
+      mainFeedGalleryRelayUrls={replyRelayUrls}
       widenMainGalleryRelays={false}
       feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"
       showFeedClientFilter
       hostPrimaryPageName="feed"
       extraShouldHideEvent={hideAggrOnlyMainFeedEvent}
+      extraShouldHideGalleryEvent={hideAggrOnlyReplyGalleryStackEvent}
       extraShouldHideRepliesEvent={hideAggrOnlyNonReplyEvent}
       timelinePublicReadFallback
     />

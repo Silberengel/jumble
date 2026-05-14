@@ -9,19 +9,29 @@ function relayUrlIsNostrLandAggr(url: string): boolean {
   return normalized === aggr
 }
 
+/** Drop nostr.land aggregate from REQ stacks where it must not appear (e.g. home feeds). */
+export function stripNostrLandAggrFromRelayUrls(urls: readonly string[]): string[] {
+  return urls.filter((url) => !relayUrlIsNostrLandAggr(url))
+}
+
 export function buildAllFavoritesFeedRelayUrls(
   favoriteRelays: string[],
   blockedRelays: string[],
   extraFeedRelayUrls: string[]
 ): string[] {
-  return feedRelayPolicyUrls([
-    { source: 'favorites', urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays) },
-    { source: 'fallback', urls: extraFeedRelayUrls }
-  ], {
-    operation: 'favorites-feed',
-    blockedRelays,
-    nostrLandAggr: 'never',
-    applySocialKindBlockedFilter: false,
-    allowThirdPartyLocalRelays: true
-  }).filter((url) => !relayUrlIsNostrLandAggr(url))
+  return stripNostrLandAggrFromRelayUrls(
+    feedRelayPolicyUrls(
+      [
+        { source: 'favorites', urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays) },
+        { source: 'fallback', urls: extraFeedRelayUrls }
+      ],
+      {
+        operation: 'favorites-feed',
+        blockedRelays,
+        nostrLandAggr: 'never',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
+      }
+    )
+  )
 }

@@ -61,6 +61,11 @@ const NormalFeed = forwardRef<TNoteListRef, {
   mergeTimelineWhenSubRequestFiltersMatch?: boolean
   /** Home Replies can widen relays without changing Notes/Gallery. */
   repliesSubRequests?: TFeedSubRequest[]
+  /**
+   * When set on the home main feed, Gallery tab REQ uses this relay stack (same as {@link repliesSubRequests})
+   * instead of OP-only {@link subRequests} URLs.
+   */
+  mainFeedGalleryRelayUrls?: string[]
   /** Main Gallery historically widened with fast read relays; home can opt out to stay favorites+trending only. */
   widenMainGalleryRelays?: boolean
   /** Home following: second subscribe wave (delta relays / new authors); see {@link NoteList}. */
@@ -102,6 +107,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
   oneShotAfterMergeComparator?: (a: Event, b: Event) => number
   extraShouldHideEvent?: (ev: Event) => boolean
   extraShouldHideRepliesEvent?: (ev: Event) => boolean
+  /** When set with home Gallery, filters rows (e.g. aggr-only) using the widened relay stack. */
+  extraShouldHideGalleryEvent?: (ev: Event) => boolean
   /** Override default cap for merged one-shot batches (wide d-tag / search merges). */
   oneShotMergedCap?: number
   /** When every relay in the subscribe wave fails before EOSE, merge a one-shot fetch from default read relays (home multi-relay feeds). */
@@ -119,6 +126,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     preserveTimelineOnSubRequestsChange = false,
     mergeTimelineWhenSubRequestFiltersMatch = false,
     repliesSubRequests,
+    mainFeedGalleryRelayUrls,
     widenMainGalleryRelays = true,
     followingFeedDeltaSubRequests,
     feedSubscriptionKey,
@@ -139,6 +147,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     oneShotAfterMergeComparator,
     extraShouldHideEvent,
     extraShouldHideRepliesEvent,
+    extraShouldHideGalleryEvent,
     oneShotMergedCap,
     timelinePublicReadFallback = false,
     alexandriaEmptyUrl = null
@@ -198,7 +207,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     return base
   }, [isMainFeed, isWispTrendingOnlyFeed])
 
-  /** Replies may widen relays; Gallery only swaps kinds and widens relays when the caller opts in. */
+  /** Replies may widen relays; Gallery swaps kinds and may use {@link mainFeedGalleryRelayUrls} on home. */
   const effectiveSubRequests = useMemo(() => {
     if (listMode === 'postsAndReplies' && repliesSubRequests) {
       return repliesSubRequests
@@ -206,10 +215,29 @@ const NormalFeed = forwardRef<TNoteListRef, {
     if (listMode !== 'media') return subRequests
     return subRequests.map((req) => ({
       ...req,
-      urls: isMainFeed && widenMainGalleryRelays ? galleryRelayUrlsMergedWithReadLayer(req.urls) : req.urls,
+      urls:
+        isMainFeed && mainFeedGalleryRelayUrls && mainFeedGalleryRelayUrls.length > 0
+          ? mainFeedGalleryRelayUrls
+          : isMainFeed && widenMainGalleryRelays
+            ? galleryRelayUrlsMergedWithReadLayer(req.urls)
+            : req.urls,
       filter: { ...req.filter, kinds: MEDIA_KINDS }
     }))
-  }, [listMode, subRequests, repliesSubRequests, MEDIA_KINDS, isMainFeed, widenMainGalleryRelays])
+  }, [
+    listMode,
+    subRequests,
+    repliesSubRequests,
+    MEDIA_KINDS,
+    isMainFeed,
+    widenMainGalleryRelays,
+    mainFeedGalleryRelayUrls
+  ])
+
+  const noteListExtraShouldHide = useMemo(() => {
+    if (listMode === 'postsAndReplies') return extraShouldHideRepliesEvent
+    if (listMode === 'media' && extraShouldHideGalleryEvent) return extraShouldHideGalleryEvent
+    return extraShouldHideEvent
+  }, [listMode, extraShouldHideRepliesEvent, extraShouldHideGalleryEvent, extraShouldHideEvent])
 
   const handleListModeChange = useCallback(
     (mode: TNoteListMode | string) => {
@@ -374,11 +402,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           progressiveWarmupMatch={progressiveWarmupMatch}
           progressiveDocumentKinds={progressiveDocumentKinds}
           oneShotAfterMergeComparator={oneShotAfterMergeComparator}
-          extraShouldHideEvent={
-            listMode === 'postsAndReplies'
-              ? extraShouldHideRepliesEvent
-              : extraShouldHideEvent
-          }
+          extraShouldHideEvent={noteListExtraShouldHide}
           oneShotMergedCap={oneShotMergedCap}
           timelinePublicReadFallback={timelinePublicReadFallback && listMode === 'postsAndReplies'}
           alexandriaEmptyUrl={alexandriaEmptyUrl}

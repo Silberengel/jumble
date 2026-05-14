@@ -5,9 +5,12 @@
 import { createContext, useContext } from 'react'
 
 export type TFeedContext = {
-  /** Home Notes/Gallery: favorites plus mixed trending discovery. */
+  /** Home Notes (OP): favorites plus Wisp trending only — no aggr, no FAST_READ padding. */
   relayUrls: string[]
-  /** Home Replies: primary feed relays plus viewer inbox, HTTP, cache, and eligible aggregator relays. */
+  /**
+   * Home Replies + Gallery: same OP base, then NIP-65 read inboxes (FAST_READ when empty), kind 10432 cache
+   * read relays, HTTP read index — never aggr (aggr is for side-panel threads, profiles, and spells only).
+   */
   replyRelayUrls: string[]
 }
 

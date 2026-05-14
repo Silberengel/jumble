@@ -1,7 +1,7 @@
 import { FAST_READ_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
-import { buildAllFavoritesFeedRelayUrls } from '@/lib/home-feed-relays'
+import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
 import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -29,19 +29,23 @@ function buildHomeReplyFeedRelayUrls(
   httpRelayUrls: string[],
   blockedRelays: string[]
 ): string[] {
-  return feedRelayPolicyUrls(
-    [
-      { source: 'favorites', urls: primaryRelayUrls },
-      { source: 'viewer-read', urls: inboxRelayUrls },
-      { source: 'cache', urls: cacheRelayUrls },
-      { source: 'http-index', urls: httpRelayUrls }
-    ],
-    {
-      operation: 'read',
-      blockedRelays,
-      applySocialKindBlockedFilter: false,
-      allowThirdPartyLocalRelays: true
-    }
+  /** Home Replies/Gallery: never prepend aggr (reserved for side-panel threads, profiles, spells). */
+  return stripNostrLandAggrFromRelayUrls(
+    feedRelayPolicyUrls(
+      [
+        { source: 'favorites', urls: primaryRelayUrls },
+        { source: 'viewer-read', urls: inboxRelayUrls },
+        { source: 'cache', urls: cacheRelayUrls },
+        { source: 'http-index', urls: httpRelayUrls }
+      ],
+      {
+        operation: 'read',
+        blockedRelays,
+        nostrLandAggr: 'never',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
+      }
+    )
   )
 }
 
@@ -60,18 +64,18 @@ export function FeedProvider({ children }: { children: ReactNode }) {
    */
   const primaryExtraRelayUrls = useMemo(() => [buildWispTrendingNotesRelayUrl()], [])
 
-  /** Home Replies widen to relays that can surface inbox/reply context. */
+  /** Read-side layers merged into {@link replyRelayUrls}; {@link outboxRelayUrls} is only for aggr eligibility sync. */
   const replyExtraRelayLayers = useMemo(() => {
     const cacheRelayUrls: string[] = []
     if (cacheRelayListEvent) {
       const list = getRelayListFromEvent(cacheRelayListEvent, blockedRelays)
-      cacheRelayUrls.push(...list.read, ...list.write)
+      cacheRelayUrls.push(...list.read)
     }
 
-    const httpRelayUrls: string[] = [...(relayList?.httpRead ?? []), ...(relayList?.httpWrite ?? [])]
+    const httpRelayUrls: string[] = [...(relayList?.httpRead ?? [])]
     if (httpRelayListEvent) {
       const list = getHttpRelayListFromEvent(httpRelayListEvent, blockedRelays)
-      httpRelayUrls.push(...list.httpRead, ...list.httpWrite)
+      httpRelayUrls.push(...list.httpRead)
     }
 
     return {
@@ -106,7 +110,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     []
   )
 
-  const viewerNostrLandAggrEligible = useMemo(() => {
+  /** Keeps {@link getViewerRelayStackNostrLandAggrEligible} in sync for non-home reads (threads, profiles, etc.). */
+  useEffect(() => {
     const urls = [
       ...favoriteFeedRelayUrls,
       ...replyExtraRelayLayers.inboxRelayUrls,
@@ -114,7 +119,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       ...replyExtraRelayLayers.cacheRelayUrls,
       ...replyExtraRelayLayers.httpRelayUrls
     ]
-    return syncViewerRelayStackNostrLandAggrEligible(urls)
+    syncViewerRelayStackNostrLandAggrEligible(urls)
   }, [favoriteFeedRelayUrls, replyExtraRelayLayers])
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
@@ -139,14 +144,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
     setUrlStateIfChanged(setRelayUrls, primaryRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
-  }, [
-    favoriteFeedRelayUrls,
-    blockedRelays,
-    primaryExtraRelayUrls,
-    replyExtraRelayLayers,
-    setUrlStateIfChanged,
-    viewerNostrLandAggrEligible
-  ])
+  }, [favoriteFeedRelayUrls, blockedRelays, primaryExtraRelayUrls, replyExtraRelayLayers, setUrlStateIfChanged])
 
   const favoriteRelaysIdentity = useMemo(
     () =>
@@ -170,7 +168,6 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     () =>
       [
         ...replyExtraRelayLayers.inboxRelayUrls,
-        ...replyExtraRelayLayers.outboxRelayUrls,
         ...replyExtraRelayLayers.cacheRelayUrls,
         ...replyExtraRelayLayers.httpRelayUrls
       ]
@@ -191,7 +188,6 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       relaySets.length,
       favoriteFeedRelayUrls.length - favoriteRelays.length,
       replyExtraRelayLayers.inboxRelayUrls.length,
-      replyExtraRelayLayers.outboxRelayUrls.length,
       replyExtraRelayLayers.cacheRelayUrls.length,
       replyExtraRelayLayers.httpRelayUrls.length,
       blockedRelays.length
@@ -206,7 +202,6 @@ export function FeedProvider({ children }: { children: ReactNode }) {
           relaySets: relaySets.length,
           relaySetRelays: favoriteFeedRelayUrls.length - favoriteRelays.length,
           inboxRelays: replyExtraRelayLayers.inboxRelayUrls.length,
-          outboxRelays: replyExtraRelayLayers.outboxRelayUrls.length,
           cacheRelays: replyExtraRelayLayers.cacheRelayUrls.length,
           httpRelays: replyExtraRelayLayers.httpRelayUrls.length,
           blockedRelays: blockedRelays.length
