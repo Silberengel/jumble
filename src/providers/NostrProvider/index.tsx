@@ -2,6 +2,7 @@ import storage from '@/services/local-storage.service'
 import LoginDialog from '@/components/LoginDialog'
 import NcryptsecPasswordPrompt from '@/components/NcryptsecPasswordPrompt'
 import {
+  ACCOUNT_SESSION_HYDRATE_WALL_MS,
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
@@ -239,6 +240,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         hydrationGen: hydrationGenForThisRun
       })
       const controller = new AbortController()
+      /** Abort + bounded time on hydrate REQs so tab close / account switch does not leave hung subs. */
+      const hydrateFetchOpts = {
+        signal: controller.signal,
+        globalTimeout: 28_000,
+        foreground: true as const,
+        firstRelayResultGraceMs: false as const
+      }
       const storedNsec = storage.getAccountNsec(account.pubkey)
       if (storedNsec) {
         setNsec(storedNsec)
@@ -415,7 +423,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
               kinds: [ExtendedKind.RSS_FEED_LIST],
               authors: [account.pubkey],
               limit: 1
-            })
+            }, hydrateFetchOpts)
             .then((events) => {
               const latestEvent = getLatestEvent(events)
               if (latestEvent) {
@@ -457,16 +465,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         queryService.fetchEvents(FAST_READ_RELAY_URLS, {
           kinds: [kinds.RelayList],
           authors: [account.pubkey]
-        }),
+        }, hydrateFetchOpts),
         queryService.fetchEvents(FAST_READ_RELAY_URLS, {
           kinds: [ExtendedKind.CACHE_RELAYS],
           authors: [account.pubkey]
-        }),
+        }, hydrateFetchOpts),
         queryService.fetchEvents(FAST_READ_RELAY_URLS, {
           kinds: [ExtendedKind.HTTP_RELAY_LIST],
           authors: [account.pubkey],
           limit: 1
-        })
+        }, hydrateFetchOpts)
       ])
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
         return controller
@@ -523,7 +531,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           ],
           authors: [account.pubkey]
         }
-      ])
+      ], hydrateFetchOpts)
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
         return controller
       }
@@ -625,7 +633,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             authors: [account.pubkey],
             kinds: [kinds.Contacts],
             limit: 1
-          })
+          }, hydrateFetchOpts)
           .then((evts) => {
             const evt = evts.sort((a, b) => b.created_at - a.created_at)[0]
             if (evt && hydrationGenForThisRun === accountHydrationGenerationRef.current) {
@@ -677,7 +685,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             authors: [account.pubkey],
             kinds: [kinds.Mutelist],
             limit: 10
-          })
+          }, hydrateFetchOpts)
           .then((evts) => {
             const evt = getLatestEvent(evts)
             if (evt && hydrationGenForThisRun === accountHydrationGenerationRef.current) {
@@ -793,7 +801,18 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       return controller
     }
     const promise = init()
+    const wallTimer = window.setTimeout(() => {
+      if (accountHydrationGenerationRef.current === hydrationGenForThisRun) {
+        logger.warn('[NostrProvider] Account session hydrate exceeded wall time; clearing spinner', {
+          pubkeySlice: account?.pubkey?.slice(0, 12),
+          hydrationGen: hydrationGenForThisRun,
+          wallMs: ACCOUNT_SESSION_HYDRATE_WALL_MS
+        })
+        setIsAccountSessionHydrating(false)
+      }
+    }, ACCOUNT_SESSION_HYDRATE_WALL_MS)
     void promise.finally(() => {
+      window.clearTimeout(wallTimer)
       const r = manualNetworkHydrateResolveRef.current
       manualNetworkHydrateResolveRef.current = null
       r?.()
@@ -811,6 +830,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       finishHydration()
     })
     return () => {
+      window.clearTimeout(wallTimer)
       promise
         .then((controller) => {
           controller?.abort()

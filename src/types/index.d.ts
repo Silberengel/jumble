@@ -38,6 +38,11 @@ export type TProfile = {
   lud16?: string
   lightningAddress?: string
   lightningAddressList?: string[]
+  /**
+   * Kind-0 `w` tags: `["w", currency, address, network]` (bitcoin / liquid / lightning, etc.).
+   * Lightning rows are merged into {@link lightningAddressList}; this keeps on-chain / liquid for payto UI.
+   */
+  wWalletTags?: Array<{ currency: string; address: string; network: string }>
   created_at?: number
   /** Kind 0: `bot` / `bot,true` tags without `bot,false` — see Nostr profile conventions. */
   isBot?: boolean

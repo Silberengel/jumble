@@ -28,5 +28,5 @@ export function getLightningAddressFromProfile(profile: TProfile) {
     lud06 = a
   }
 
-  return lud16 || lud06 || undefined
+  return lud16 || lud06 || profile.lightningAddress || undefined
 }

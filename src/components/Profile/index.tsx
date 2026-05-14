@@ -19,7 +19,7 @@ import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-
 import { toProfileEditor } from '@/lib/link'
 import { encodeProfileInteractionsSpellId } from '@/pages/primary/SpellsPage/fauxSpellConfig'
 import { generateImageByPubkey } from '@/lib/pubkey'
-import { isVideo } from '@/lib/url'
+import { isVideo, normalizeAnyRelayUrl } from '@/lib/url'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSecondaryPage } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
@@ -81,7 +81,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { buildPaytoUri } from '@/lib/payto'
 import type { TProfile } from '@/types'
 
 /**
@@ -161,6 +161,19 @@ function mergePaymentMethods(
       : []
   fromProfile.forEach((addr) => {
     if (addr) add('lightning', addr, `payto://lightning/${addr}`, 'Lightning Network')
+  })
+
+  // Kind-0 `w` tags: on-chain / liquid (lightning rows are already in lightningAddressList)
+  profile?.wWalletTags?.forEach((w) => {
+    const net = w.network.toLowerCase()
+    if (net === 'lightning') return
+    const addr = w.address?.trim()
+    if (!addr) return
+    if (net === 'bitcoin') {
+      add('bitcoin', addr, buildPaytoUri('bitcoin', addr), 'Bitcoin', { currency: w.currency })
+    } else if (net === 'liquid') {
+      add('liquid', addr, buildPaytoUri('liquid', addr), 'Liquid', { currency: w.currency })
+    }
   })
 
   // Then kind 10133 (payto tags and JSON content)

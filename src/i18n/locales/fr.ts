@@ -1988,7 +1988,7 @@ export default {
     "Type a topic or pick from the list": "Type a topic or pick from the list",
     "Uploading to media server…": "Uploading to media server…",
     profileEditorRefreshCacheHint: "profileEditorRefreshCacheHint",
-    startupSessionHydrating: "startupSessionHydrating",
+    startupSessionHydrating: "Syncing your relays and profile from the network…",
     "AI / LLM prompt citation": "AI / LLM prompt citation",
     "AsciiDoc wiki contribution": "AsciiDoc wiki contribution",
     "Attach image, audio, or video": "Attach image, audio, or video",

@@ -2009,7 +2009,7 @@ export default {
     "Type a topic or pick from the list": "Type a topic or pick from the list",
     "Uploading to media server…": "Wird zum Medienserver hochgeladen…",
     profileEditorRefreshCacheHint: "profileEditorRefreshCacheHint",
-    startupSessionHydrating: "startupSessionHydrating",
+    startupSessionHydrating: "Relais und Profil werden aus dem Netz synchronisiert…",
     "AI / LLM prompt citation": "AI / LLM prompt citation",
     "AsciiDoc wiki contribution": "AsciiDoc wiki contribution",
     "Attach image, audio, or video": "Attach image, audio, or video",

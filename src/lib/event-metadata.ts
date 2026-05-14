@@ -185,6 +185,17 @@ export function getProfileFromEvent(event: Event) {
   const websiteTags = event.tags.filter(tag => tag[0] === 'website' && tag[1]).map(tag => tag[1])
   const lud06Tags = event.tags.filter(tag => tag[0] === 'lud06' && tag[1]).map(tag => tag[1])
   const lud16Tags = event.tags.filter(tag => tag[0] === 'lud16' && tag[1]).map(tag => tag[1])
+
+  /** `["w", currency, address, network]` — multi-wallet hints on kind 0 */
+  const wWalletTags = event.tags
+    .filter((tag): tag is string[] => tag[0] === 'w' && !!tag[1] && !!tag[2] && !!tag[3])
+    .map((tag) => ({
+      currency: String(tag[1]).trim(),
+      address: String(tag[2]).trim(),
+      network: String(tag[3]).trim().toLowerCase()
+    }))
+    .filter((w) => w.address && w.network)
+  const wLightningAddresses = wWalletTags.filter((w) => w.network === 'lightning').map((w) => w.address)
   
   // Use first tag entry for single values, or fallback to JSON
   const nip05 =
@@ -205,7 +216,7 @@ export function getProfileFromEvent(event: Event) {
   
   // Build lightning address from FIRST tag or JSON (prefer first tag, fallback to JSON)
   // This is used by the zap button and should only come from kind 0, not kind 10133 payto
-  const lightningAddressFromTags = lud16 || lud06
+  const lightningAddressFromTags = lud16 || lud06 || wLightningAddresses[0]
   const lightningAddressFromJson = getLightningAddressFromProfile({ lud06: profileObj.lud06, lud16: profileObj.lud16 } as TProfile)
   const lightningAddress = lightningAddressFromTags || lightningAddressFromJson
   
@@ -213,6 +224,7 @@ export function getProfileFromEvent(event: Event) {
   const lightningAddressList = [...new Set([
     ...(lud16Tags.length > 0 ? lud16Tags : []),
     ...(lud06Tags.length > 0 ? lud06Tags : []),
+    ...wLightningAddresses,
     ...(profileObj.lud16 ? [profileObj.lud16] : []),
     ...(profileObj.lud06 ? [profileObj.lud06] : []),
     ...(lightningAddressFromJson && !lightningAddressFromTags ? [lightningAddressFromJson] : [])
@@ -257,6 +269,7 @@ export function getProfileFromEvent(event: Event) {
     lud16,
     lightningAddress,
     lightningAddressList: lightningAddressList.length > 0 ? lightningAddressList : undefined,
+    wWalletTags: wWalletTags.length > 0 ? wWalletTags : undefined,
     created_at: event.created_at
   }
 }

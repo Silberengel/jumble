@@ -344,34 +344,91 @@ class LightningService {
     callback: string
     lnurl: string
   }> {
+    const candidates = this.lightningAddressCandidates(profile)
+    for (const addr of candidates) {
+      const resolved = await this.fetchLnurlPayZapEndpoint(addr)
+      if (resolved) return resolved
+    }
+    return null
+  }
+
+  /** Ordered lightning identifiers from kind 0 (lud16/lud06 + `w` lightning rows); de-duplicated. */
+  private lightningAddressCandidates(profile: TProfile): string[] {
+    const raw =
+      profile.lightningAddressList?.length && profile.lightningAddressList.length > 0
+        ? profile.lightningAddressList
+        : profile.lightningAddress
+          ? [profile.lightningAddress]
+          : []
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const a of raw) {
+      const t = a?.trim()
+      if (!t) continue
+      const k = t.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(t)
+    }
+    return out
+  }
+
+  private async fetchLnurlPayZapEndpoint(lightningAddress: string): Promise<null | {
+    callback: string
+    lnurl: string
+  }> {
     try {
-      let lnurl: string = ''
+      let lnurl = ''
 
-      // Some clients have incorrectly filled in the positions for lud06 and lud16
-      if (!profile.lightningAddress) {
-        return null
-      }
-
-      if (profile.lightningAddress.includes('@')) {
-        const [name, domain] = profile.lightningAddress.split('@')
+      if (lightningAddress.includes('@')) {
+        const [name, domain] = lightningAddress.split('@')
+        if (!name?.trim() || !domain?.trim()) return null
         lnurl = new URL(`/.well-known/lnurlp/${name}`, `https://${domain}`).toString()
       } else {
-        const { words } = bech32.decode(profile.lightningAddress as any, 1000)
+        const { words } = bech32.decode(lightningAddress as any, 1000)
         const data = bech32.fromWords(words)
         lnurl = utf8Decoder.decode(data)
       }
 
       const res = await fetchWithTimeout(lnurl, { timeoutMs: 15_000 })
-      const body = await res.json()
+      if (!res.ok) {
+        logger.warn('LNURL-pay metadata HTTP error', {
+          status: res.status,
+          statusText: res.statusText,
+          lnurl,
+          lightningAddress
+        })
+        return null
+      }
 
-      if (body.allowsNostr && body.nostrPubkey) {
+      const text = await res.text()
+      let body: { allowsNostr?: unknown; nostrPubkey?: unknown; callback?: unknown }
+      try {
+        body = JSON.parse(text) as { allowsNostr?: unknown; nostrPubkey?: unknown; callback?: unknown }
+      } catch {
+        logger.warn('LNURL-pay metadata was not valid JSON (HTML error page or empty redirect target?)', {
+          lnurl,
+          lightningAddress,
+          preview: text.slice(0, 160)
+        })
+        return null
+      }
+
+      if (body.allowsNostr && body.nostrPubkey && typeof body.callback === 'string') {
         return {
           callback: body.callback,
           lnurl
         }
       }
     } catch (err) {
-      logger.error('Failed to resolve LNURL from profile', { error: err, profile })
+      const failedFetch =
+        err instanceof TypeError || (err instanceof Error && err.message === 'Failed to fetch')
+      logger.error('Failed to resolve LNURL from profile', {
+        error: err,
+        lightningAddress,
+        /** Browser blocks reading cross-origin LNURL without `Access-Control-Allow-Origin`. */
+        hint: typeof window !== 'undefined' && failedFetch ? 'possible_missing_cors_on_lnurl_host' : undefined
+      })
     }
 
     return null

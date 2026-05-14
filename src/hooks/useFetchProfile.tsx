@@ -2,7 +2,7 @@ import { PROFILE_FETCH_PROMISE_TIMEOUT_MS } from '@/constants'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
-import { userIdToPubkey } from '@/lib/pubkey'
+import { normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { eventService, replaceableEventService } from '@/services/client.service'
@@ -610,8 +610,12 @@ export function useFetchProfile(id?: string, skipCache = false) {
     if (targetPk.length !== 64 || !/^[0-9a-f]{64}$/i.test(targetPk)) return
     if (targetPk !== accPk.toLowerCase()) return
 
+    const profilePk = profile?.pubkey?.trim()
     const haveFullLocal =
-      profile?.pubkey === targetPk && !profile.batchPlaceholder
+      !!profilePk &&
+      /^[0-9a-f]{64}$/i.test(profilePk) &&
+      normalizeHexPubkey(profilePk) === targetPk &&
+      !profile?.batchPlaceholder
     if (haveFullLocal) return
 
     setProfile(acc)

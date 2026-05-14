@@ -2,7 +2,6 @@ import { useEmojiInfosForEvent, useMediaExtraction } from '@/hooks'
 import { parseContent, PARSE_CONTENT_PARSERS_NOTE_TEXT } from '@/lib/content-parser'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
-import logger from '@/lib/logger'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { cn } from '@/lib/utils'
 import { getHttpUrlFromITags } from '@/lib/event'
@@ -308,134 +307,121 @@ export default function Content({
     return links
   }, [event, contentLinks])
 
-  // Create maps for quick lookup of images/media by cleaned URL
-  const imageMap = new Map<string, TImetaInfo>()
-  const mediaMap = new Map<string, TImetaInfo>()
-  extractedMedia.all.forEach((img: TImetaInfo) => {
-    const cleaned = cleanUrl(img.url)
-    if (!cleaned) return
-    if (img.m?.startsWith('image/')) {
-      imageMap.set(cleaned, img)
-    } else if (
-      img.m?.startsWith('video/') ||
-      img.m?.startsWith('audio/') ||
-      img.m === 'media/*' ||
-      isHlsPlaylistUrl(cleaned)
-    ) {
-      mediaMap.set(cleaned, img)
-    } else if (isImage(cleaned)) {
-      imageMap.set(cleaned, img)
-    } else if (isMedia(cleaned)) {
-      mediaMap.set(cleaned, img)
-    }
-  })
-
-  // If no nodes but we have media from tags, still render the media (or i-tag article preview)
-  if (!nodes || nodes.length === 0) {
-    if (
-      extractedMedia.images.length === 0 &&
-      extractedMedia.videos.length === 0 &&
-      extractedMedia.audio.length === 0 &&
-      !iArticleUrl
-    ) {
-      return null
-    }
-  }
-
-  // First pass: find which media appears in content (will be rendered in carousels or inline)
-  const mediaInContent = new Set<string>()
-  const imagesInContent: TImetaInfo[] = []
-  const videosInContent: TImetaInfo[] = []
-  const audioInContent: TImetaInfo[] = []
-  
-  // Only process nodes if they exist and are not empty
-  if (nodes && nodes.length > 0) {
-    nodes.forEach((node) => {
-    if (node.type === 'image') {
-      const cleanedUrl = cleanUrl(node.data)
-      mediaInContent.add(cleanedUrl)
-      const imageInfo = imageMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey }
-      if (!imagesInContent.find(img => img.url === cleanedUrl)) {
-        imagesInContent.push(imageInfo)
+  /** Maps, node scan, and tag-vs-content splits — memoized so feed/provider re-renders do not redo O(n²) work per note. */
+  const contentMediaLayout = useMemo(() => {
+    const imageMap = new Map<string, TImetaInfo>()
+    const mediaMap = new Map<string, TImetaInfo>()
+    extractedMedia.all.forEach((img: TImetaInfo) => {
+      const cleaned = cleanUrl(img.url)
+      if (!cleaned) return
+      if (img.m?.startsWith('image/')) {
+        imageMap.set(cleaned, img)
+      } else if (
+        img.m?.startsWith('video/') ||
+        img.m?.startsWith('audio/') ||
+        img.m === 'media/*' ||
+        isHlsPlaylistUrl(cleaned)
+      ) {
+        mediaMap.set(cleaned, img)
+      } else if (isImage(cleaned)) {
+        imageMap.set(cleaned, img)
+      } else if (isMedia(cleaned)) {
+        mediaMap.set(cleaned, img)
       }
-    } else if (node.type === 'images') {
-      const urls = Array.isArray(node.data) ? node.data : [node.data]
-      urls.forEach(url => {
-        const cleaned = cleanUrl(url)
-        mediaInContent.add(cleaned)
-        const imageInfo = imageMap.get(cleaned) || { url: cleaned, pubkey: event?.pubkey }
-        if (!imagesInContent.find(img => img.url === cleaned)) {
-          imagesInContent.push(imageInfo)
+    })
+
+    if (!nodes || nodes.length === 0) {
+      if (
+        extractedMedia.images.length === 0 &&
+        extractedMedia.videos.length === 0 &&
+        extractedMedia.audio.length === 0 &&
+        !iArticleUrl
+      ) {
+        return null
+      }
+    }
+
+    const pubkey = event?.pubkey
+    const mediaInContent = new Set<string>()
+    const imagesInContent: TImetaInfo[] = []
+
+    if (nodes && nodes.length > 0) {
+      nodes.forEach((node) => {
+        if (node.type === 'image') {
+          const cleanedUrl = cleanUrl(node.data)
+          mediaInContent.add(cleanedUrl)
+          const imageInfo = imageMap.get(cleanedUrl) || { url: cleanedUrl, pubkey }
+          if (!imagesInContent.find((img) => img.url === cleanedUrl)) {
+            imagesInContent.push(imageInfo)
+          }
+        } else if (node.type === 'images') {
+          const urls = Array.isArray(node.data) ? node.data : [node.data]
+          urls.forEach((url) => {
+            const cleaned = cleanUrl(url)
+            mediaInContent.add(cleaned)
+            const imageInfo = imageMap.get(cleaned) || { url: cleaned, pubkey }
+            if (!imagesInContent.find((img) => img.url === cleaned)) {
+              imagesInContent.push(imageInfo)
+            }
+          })
+        } else if (node.type === 'media') {
+          const cleanedUrl = cleanUrl(node.data)
+          mediaInContent.add(cleanedUrl)
+        } else if (node.type === 'url') {
+          const cleanedUrl = cleanUrl(node.data)
+          if (isImage(cleanedUrl)) {
+            mediaInContent.add(cleanedUrl)
+            const imageInfo = imageMap.get(cleanedUrl) || { url: cleanedUrl, pubkey }
+            if (!imagesInContent.find((img) => img.url === cleanedUrl)) {
+              imagesInContent.push(imageInfo)
+            }
+          } else if (isVideo(cleanedUrl) || isHlsPlaylistUrl(cleanedUrl)) {
+            mediaInContent.add(cleanedUrl)
+          } else if (isAudio(cleanedUrl)) {
+            mediaInContent.add(cleanedUrl)
+          } else if (isMedia(cleanedUrl)) {
+            mediaInContent.add(cleanedUrl)
+          }
         }
       })
-    } else if (node.type === 'media') {
-      const cleanedUrl = cleanUrl(node.data)
-      mediaInContent.add(cleanedUrl)
-      const mediaInfo = mediaMap.get(cleanedUrl)
-      if (isVideo(cleanedUrl) || isHlsPlaylistUrl(cleanedUrl) || mediaInfo?.m?.startsWith('video/')) {
-        const row = mediaInfo || { url: cleanedUrl, pubkey: event?.pubkey, m: 'video/*' }
-        if (!videosInContent.find((v) => v.url === cleanedUrl)) {
-          videosInContent.push(row)
-        }
-      } else if (isAudio(cleanedUrl) || mediaInfo?.m?.startsWith('audio/')) {
-        const row = mediaInfo || { url: cleanedUrl, pubkey: event?.pubkey, m: 'audio/*' }
-        if (!audioInContent.find((a) => a.url === cleanedUrl)) {
-          audioInContent.push(row)
-        }
-      }
-    } else if (node.type === 'url') {
-      const cleanedUrl = cleanUrl(node.data)
-        if (isImage(cleanedUrl)) {
-        mediaInContent.add(cleanedUrl)
-        const imageInfo = imageMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey }
-        if (!imagesInContent.find(img => img.url === cleanedUrl)) {
-          imagesInContent.push(imageInfo)
-        }
-      } else if (isVideo(cleanedUrl) || isHlsPlaylistUrl(cleanedUrl)) {
-        mediaInContent.add(cleanedUrl)
-        const videoInfo = mediaMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey, m: 'video/*' }
-        if (!videosInContent.find(v => v.url === cleanedUrl)) {
-          videosInContent.push(videoInfo)
-        }
-      } else if (isAudio(cleanedUrl)) {
-        mediaInContent.add(cleanedUrl)
-        const audioInfo = mediaMap.get(cleanedUrl) || { url: cleanedUrl, pubkey: event?.pubkey, m: 'audio/*' }
-        if (!audioInContent.find(a => a.url === cleanedUrl)) {
-          audioInContent.push(audioInfo)
-        }
-      } else if (isMedia(cleanedUrl)) {
-        mediaInContent.add(cleanedUrl)
-      }
     }
-    })
-  }
-  
-  // Filter: only show media that DON'T appear in content (from tags)
-  // Use cleaned URLs for comparison to ensure consistency
-  const carouselImages = extractedMedia.images.filter((img: TImetaInfo) => {
-    const cleaned = cleanUrl(img.url)
-    return cleaned && !mediaInContent.has(cleaned)
-  })
-  const videosFromTags = extractedMedia.videos.filter((video: TImetaInfo) => {
-    const cleaned = cleanUrl(video.url)
-    return cleaned && !mediaInContent.has(cleaned)
-  })
-  const audioFromTags = extractedMedia.audio.filter((audio: TImetaInfo) => {
-    const cleaned = cleanUrl(audio.url)
-    return cleaned && !mediaInContent.has(cleaned)
-  })
 
-  logger.debug('[Content] Parsed content:', { 
-    nodeCount: nodes?.length || 0, 
-    allMedia: extractedMedia.all.length,
-    images: extractedMedia.images.length,
-    videos: extractedMedia.videos.length,
-    audio: extractedMedia.audio.length,
-    imageMapSize: imageMap.size, 
-    mediaMapSize: mediaMap.size,
-    nodes: nodes?.map(n => ({ type: n.type, data: Array.isArray(n.data) ? n.data.length : n.data })) || [] 
-  })
-  
+    const carouselImages = extractedMedia.images.filter((img: TImetaInfo) => {
+      const cleaned = cleanUrl(img.url)
+      return cleaned && !mediaInContent.has(cleaned)
+    })
+    const videosFromTags = extractedMedia.videos.filter((video: TImetaInfo) => {
+      const cleaned = cleanUrl(video.url)
+      return cleaned && !mediaInContent.has(cleaned)
+    })
+    const audioFromTags = extractedMedia.audio.filter((audio: TImetaInfo) => {
+      const cleaned = cleanUrl(audio.url)
+      return cleaned && !mediaInContent.has(cleaned)
+    })
+
+    return {
+      imageMap,
+      mediaMap,
+      mediaInContent,
+      imagesInContent,
+      carouselImages,
+      videosFromTags,
+      audioFromTags
+    }
+  }, [nodes, extractedMedia, event?.pubkey, iArticleUrl])
+
+  if (!contentMediaLayout) return null
+
+  const {
+    imageMap,
+    mediaMap,
+    mediaInContent,
+    imagesInContent,
+    carouselImages,
+    videosFromTags,
+    audioFromTags
+  } = contentMediaLayout
+
   // Track which images/media have been rendered individually to prevent duplicates
   const renderedUrls = new Set<string>()
   

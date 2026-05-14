@@ -227,6 +227,8 @@ export const SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS = 6000
  * IndexedDB cache still applies on every load; this only skips redundant network merges after a recent run.
  */
 export const ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000
+/** Failsafe: clear {@link NostrProvider} `isAccountSessionHydrating` if the hydrate promise never settles (hung relays, etc.). */
+export const ACCOUNT_SESSION_HYDRATE_WALL_MS = 60_000
 
 /**
  * Batched kind-0 queries (ReplaceableEventService) over many relays (inbox, favorites, cache, defaults).

@@ -106,7 +106,10 @@ export function useProfileAuthorFeedSubRequests({
     return () => {
       cancelled = true
     }
-  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, favoriteRelays, blockedRelays, includeAuthorLocalRelays])
+    // `relayListsKey` already fingerprints `favoriteRelays` + `blockedRelays` by sorted URL content.
+    // Do not list those arrays here: the provider often hands new `[]` references each render and would
+    // retrigger this effect forever (setState → re-render → new refs → effect → …).
+  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays])
 
   const activeUrls = fullUrls?.length ? fullUrls : provisionalUrls
 

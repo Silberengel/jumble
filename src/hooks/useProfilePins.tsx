@@ -283,7 +283,8 @@ export function useProfilePins(pubkey: string | undefined) {
         setLoadingPins(false)
       }
     },
-    [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays]
+    // `blockedKey` fingerprints `blockedRelays`; omit the array so new [] references do not recreate loadPins every render.
+    [pubkey, blockedKey, includeAuthorLocalRelays]
   )
 
   useEffect(() => {
