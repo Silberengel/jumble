@@ -1,14 +1,23 @@
 import { Event } from 'nostr-tools'
 import { getImetaInfosFromEvent } from '@/lib/event'
-import { cleanUrl, isImage, isMedia, isAudio, isVideo, isHlsPlaylistUrl } from '@/lib/url'
-
-/** Any URL we may embed or extract from note bodies (incl. video-only extensions like .3gp, HLS manifests). */
-function isEmbeddableMediaUrl(cleaned: string): boolean {
-  return isImage(cleaned) || isMedia(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)
-}
+import {
+  blossomSha256FromBlobUrl,
+  cleanUrl,
+  isImage,
+  isMedia,
+  isAudio,
+  isVideo,
+  isHlsPlaylistUrl,
+  isBlossomBudBlobUrl
+} from '@/lib/url'
 import { TImetaInfo } from '@/types'
 import mediaUpload from './media-upload.service'
 import { getImetaInfoFromImetaTag } from '@/lib/tag'
+
+/** Any URL we may embed or extract from note bodies (incl. video-only extensions like .3gp, HLS manifests). */
+function isEmbeddableMediaUrl(cleaned: string): boolean {
+  return isImage(cleaned) || isMedia(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned) || isBlossomBudBlobUrl(cleaned)
+}
 
 export interface ExtractedMedia {
   images: TImetaInfo[]
@@ -43,6 +52,8 @@ export function extractAllMediaFromEvent(
     let mime = mimeType
     if (!mime) {
       if (isImage(cleaned)) {
+        mime = 'image/*'
+      } else if (isBlossomBudBlobUrl(cleaned)) {
         mime = 'image/*'
       } else if (isHlsPlaylistUrl(cleaned)) {
         mime = 'video/*'
@@ -157,6 +168,10 @@ export function extractAllMediaFromEvent(
     try {
       const u = cleanUrl(url)
       if (!u) return null
+      const blossom = blossomSha256FromBlobUrl(u)
+      if (blossom) {
+        return `blossom-sha256:${blossom}`
+      }
       const pathname = new URL(u).pathname
       const filename = pathname.split('/').pop() || ''
       if (filename && /^[a-f0-9]{32,}\.(png|jpg|jpeg|gif|webp|svg|avif|apng)$/i.test(filename)) {
@@ -171,10 +186,14 @@ export function extractAllMediaFromEvent(
   imetaInfos.forEach((imeta) => {
     const imetaUrl = cleanUrl(imeta.url)
     const imetaKey = imetaUrl ? imageIdentityKey(imetaUrl) : null
+    const x = imeta.x?.trim()
+    const imetaKeyFromX = x && /^[a-f0-9]{64}$/i.test(x) ? `blossom-sha256:${x.toLowerCase()}` : null
     allMedia.forEach((media, index) => {
       if (imetaUrl && imetaUrl === media.url) {
         allMedia[index] = { ...media, ...imeta, url: media.url }
       } else if (imetaKey && imetaKey === imageIdentityKey(media.url)) {
+        allMedia[index] = { ...media, ...imeta, url: media.url }
+      } else if (imetaKeyFromX && imetaKeyFromX === imageIdentityKey(media.url)) {
         allMedia[index] = { ...media, ...imeta, url: media.url }
       } else {
         // Try to get imeta from media upload service
@@ -201,6 +220,14 @@ export function extractAllMediaFromEvent(
       videos.push(media)
     } else if (media.m?.startsWith('audio/') || isAudio(media.url)) {
       audio.push(media)
+    } else if (isBlossomBudBlobUrl(media.url)) {
+      if (media.m?.startsWith('video/')) {
+        videos.push(media)
+      } else if (media.m?.startsWith('audio/')) {
+        audio.push(media)
+      } else {
+        images.push(media)
+      }
     } else {
       // Fallback: try to determine by URL extension
       if (isImage(media.url)) {

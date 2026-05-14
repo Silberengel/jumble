@@ -32,7 +32,7 @@ import {
   NIP22_URL_SCOPE_KIND
 } from '@/lib/rss-article'
 import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
-import { cleanUrl } from '@/lib/url'
+import { blossomSha256FromBlobUrl, cleanUrl, isBlossomBudBlobUrl } from '@/lib/url'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
 import { generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
@@ -195,6 +195,7 @@ export function collectUploadImetaTagsForContentUrls(content: string): string[][
     const keys = [raw]
     const c = cleanUrl(raw)
     if (c && c !== raw) keys.push(c)
+    let fromUpload = false
     for (const key of keys) {
       const tag = mediaUpload.getImetaTagByUrl(key)
       if (tag) {
@@ -203,7 +204,15 @@ export function collectUploadImetaTagsForContentUrls(content: string): string[][
           seen.add(u)
           out.push(tag)
         }
+        fromUpload = true
         break
+      }
+    }
+    if (!fromUpload && c && isBlossomBudBlobUrl(c)) {
+      const x = blossomSha256FromBlobUrl(c)
+      if (x && !seen.has(c)) {
+        seen.add(c)
+        out.push(['imeta', `url ${c}`, 'm image/jpeg', `x ${x}`])
       }
     }
   }

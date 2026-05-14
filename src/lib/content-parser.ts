@@ -12,7 +12,7 @@ import {
 } from '@/lib/content-patterns'
 import { PAYTO_URI_REGEX } from '@/lib/payto'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
-import { isImage, isMedia, isHlsPlaylistUrl } from './url'
+import { isImage, isMedia, isHlsPlaylistUrl, isBlossomBudBlobUrl } from './url'
 import { isSpotifyOpenUrl } from './spotify-url'
 import { isZapStreamWatchUrl } from './zap-stream-url'
 
@@ -110,6 +110,8 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
     const url = match[0]
     let type: TEmbeddedNodeType = 'url'
     if (isImage(url)) {
+      type = 'image'
+    } else if (isBlossomBudBlobUrl(url)) {
       type = 'image'
     } else if (isHlsPlaylistUrl(url)) {
       type = 'media'

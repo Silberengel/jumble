@@ -246,11 +246,25 @@ export const METADATA_BATCH_AUTHORS_CHUNK = 22
  */
 export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 20000
 
-export const RECOMMENDED_BLOSSOM_SERVERS = [
-  'https://blossom.band',
-  'https://blossom.primal.net',
-  'https://nostr.media'
-]
+/**
+ * Public Blossom (BUD) upload bases: presets in post settings and merged after the user’s
+ * kind-10063 URLs when resolving the default Blossom server list.
+ * @see https://0x0.happytavern.co/ — Lotus-style ephemeral Blossom (0x0 backend).
+ */
+export const STANDARD_BLOSSOM_UPLOAD_HOSTS = [
+  { url: 'https://0x0.happytavern.co', labelKey: 'BlossomUploadOptionHappyTavern' },
+  { url: 'https://blossom.band', labelKey: 'BlossomUploadOptionBand' },
+  { url: 'https://blossom.primal.net', labelKey: 'BlossomUploadOptionPrimal' },
+  { url: 'https://nostr.media', labelKey: 'BlossomUploadOptionNostrMedia' },
+  { url: 'https://blossom.nostr.build', labelKey: 'BlossomUploadOptionNostrBuild' }
+] as const
+
+export const RECOMMENDED_BLOSSOM_SERVERS = STANDARD_BLOSSOM_UPLOAD_HOSTS.map((h) => h.url)
+
+/** Prefix for media-upload Select values that pin a Blossom host (`URL` is URI-encoded after this). */
+export const BLOSSOM_PRESET_SELECT_PREFIX = 'blossom-preset:'
+/** [Lotus](https://github.com/0ceanSlim/lotus) — self-hosted Blossom (BUD) server (see GitHub for cdn_url / api_addr). */
+export const LOTUS_BLOSSOM_REPO_URL = 'https://github.com/0ceanSlim/lotus'
 
 export const StorageKey = {
   VERSION: 'version',

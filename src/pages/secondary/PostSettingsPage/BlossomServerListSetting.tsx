@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { RECOMMENDED_BLOSSOM_SERVERS } from '@/constants'
+import { LOTUS_BLOSSOM_REPO_URL, RECOMMENDED_BLOSSOM_SERVERS } from '@/constants'
 import { createBlossomServerListDraftEvent } from '@/lib/draft-event'
 import { getServersFromServerTags } from '@/lib/tag'
 import { normalizeHttpUrl } from '@/lib/url'
@@ -185,6 +185,18 @@ export default function BlossomServerListSetting() {
           {t('Add')}
         </Button>
       </div>
+      <p className="text-xs text-muted-foreground leading-snug pt-1">
+        <a
+          href={LOTUS_BLOSSOM_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline underline-offset-2 hover:no-underline"
+        >
+          {t('Lotus on GitHub')}
+        </a>
+        {' — '}
+        {t('BlossomSelfHostLotusHint')}
+      </p>
     </div>
   )
 }

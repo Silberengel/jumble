@@ -163,7 +163,10 @@ class MediaUploadService {
     }
     startPseudoProgress()
 
-    const servers = await client.fetchBlossomServerList(pubkey)
+    const servers =
+      this.serviceConfig.type === 'blossom-preset'
+        ? [this.serviceConfig.url]
+        : await client.fetchBlossomServerList(pubkey)
     if (servers.length === 0) {
       throw new Error('No Blossom services available')
     }

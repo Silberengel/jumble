@@ -230,6 +230,11 @@ export type TMediaUploadServiceConfig =
   | {
       type: 'blossom'
     }
+  /** Blossom (BUD) upload pinned to one public host (ignores the kind-10063 list for the primary upload). */
+  | {
+      type: 'blossom-preset'
+      url: string
+    }
 
 export type TPollType = (typeof POLL_TYPE)[keyof typeof POLL_TYPE]
 

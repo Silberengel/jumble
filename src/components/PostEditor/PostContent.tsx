@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
-import { cleanUrl, rewritePlainTextHttpUrls } from '@/lib/url'
+import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import postEditorCache from '@/services/post-editor-cache.service'
@@ -1531,6 +1531,7 @@ export default function PostContent({
   }
 
   const inferKindFromEditorMediaUrl = (url: string): number | null => {
+    if (isBlossomBudBlobUrl(url)) return ExtendedKind.PICTURE
     const path = url.split(/[?#]/)[0].toLowerCase()
     if (/\.(jpg|jpeg|png|gif|webp|heic|avif|apng)$/i.test(path)) return ExtendedKind.PICTURE
     if (/\.(mp3|m4a|mka|ogg|opus|wav|aac|flac)$/i.test(path)) return ExtendedKind.VOICE

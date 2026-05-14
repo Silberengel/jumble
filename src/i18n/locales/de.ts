@@ -545,6 +545,20 @@ export default {
     "Show green notifications when posts, replies, reactions, and other publishes succeed. When off, a small checkmark appears briefly at the bottom-right instead. Errors and failures still use a toast.": "Grüne Hinweise anzeigen, wenn Beiträge, Antworten, Reaktionen und andere Veröffentlichungen gelingen. Wenn aus, erscheint kurz ein kleines Häkchen unten rechts. Fehler weiterhin als Hinweis.",
     "Publish successful": "Veröffentlichung erfolgreich",
     "Media upload service": "Medien-Upload-Service",
+    BlossomUploadYourListOption: "Blossom (eigene Liste)",
+    BlossomUploadOptionHappyTavern: "Happy Tavern 0x0 (Blossom)",
+    BlossomUploadOptionBand: "blossom.band (Blossom)",
+    BlossomUploadOptionPrimal: "Primal (Blossom)",
+    BlossomUploadOptionNostrMedia: "nostr.media (Blossom)",
+    BlossomUploadOptionNostrBuild: "Nostr.build (Blossom)",
+    BlossomUploadServiceBlurb:
+      "Nutzt das Blossom-(BUD-)Protokoll mit deiner sortierten Serverliste unten (öffentliche Anbieter wie Primal oder eigene).",
+    BlossomPresetUploadServiceBlurb:
+      "Fester Blossom-(BUD-)Host: Uploads laufen nur über diesen Server, nicht über deine veröffentlichte Kind-10063-Liste.",
+    BlossomPresetSelectedHostLabel: "Blossom-Host (dieses Preset)",
+    "Lotus on GitHub": "Lotus auf GitHub",
+    BlossomSelfHostLotusHint:
+      "Eigene Blossom-(BUD-)Server: öffentliche Basis-URL einfügen (siehe README des Projekts zu cdn_url / api_addr).",
     "Choose a relay": "Wähle ein Relay",
     "no relays found": "Keine Relays gefunden",
     video: "Video",

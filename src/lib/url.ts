@@ -354,6 +354,30 @@ export function isMedia(url: string) {
   }
 }
 
+/**
+ * SHA-256 hex from a Blossom (BUD) blob URL path (`https://host/<64-hex>`), or null.
+ */
+export function blossomSha256FromBlobUrl(url: string): string | null {
+  try {
+    const u = new URL(url.trim())
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    const segs = u.pathname.split('/').filter(Boolean)
+    if (segs.length !== 1) return null
+    const h = segs[0]!
+    return /^[a-f0-9]{64}$/i.test(h) ? h.toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Blossom (BUD) blob URLs: `https://host/<64-hex-sha256>` with no file extension.
+ * MIME comes from the server or from NIP-94 `imeta` (`m`, `x`, etc.).
+ */
+export function isBlossomBudBlobUrl(url: string): boolean {
+  return blossomSha256FromBlobUrl(url) !== null
+}
+
 export function isAudio(url: string) {
   try {
     const path = new URL(url).pathname.toLowerCase()

@@ -20,7 +20,8 @@ import {
   isWebsocketUrl,
   isPseudoNostrHttpsUrl,
   isSafeMediaUrl,
-  isHlsPlaylistUrl
+  isHlsPlaylistUrl,
+  isBlossomBudBlobUrl
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
@@ -1946,7 +1947,7 @@ function parseMarkdownContentLegacy(
                   }
                   
                   // Render the image
-                  if (isImage(cleaned)) {
+                  if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
                     let imageIndex = imageIndexMap.get(cleaned)
                     if (imageIndex === undefined && getImageIdentifier) {
                       const identifier = getImageIdentifier(cleaned)
@@ -2092,7 +2093,7 @@ function parseMarkdownContentLegacy(
         }
       }
       
-      if (isImage(cleaned)) {
+      if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
         parts.push(
           <div key={`img-${patternIdx}`} className="my-2 block max-w-[400px]">
             <Image
@@ -2135,7 +2136,7 @@ function parseMarkdownContentLegacy(
         const imageUrl = imageMatch[2]
         const cleaned = cleanUrl(imageUrl)
         
-        if (isImage(cleaned)) {
+        if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
           // Check if there's a thumbnail available for this image
           let thumbnailUrl: string | undefined
           if (imageThumbnailMap) {
@@ -2774,7 +2775,7 @@ function parseMarkdownContentLegacy(
             }
             
             // Render the image
-            if (isImage(cleaned)) {
+            if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
               let imageIndex = imageIndexMap.get(cleaned)
               if (imageIndex === undefined && getImageIdentifier) {
                 const identifier = getImageIdentifier(cleaned)
@@ -3262,6 +3263,38 @@ function parseMarkdownContentMarked(
     )
   }
 
+  /** Blossom BUD URLs (single path segment: 64-hex SHA-256) and normal image URLs; uses `imeta` `m` for video/audio. */
+  const renderStandaloneHttpsImageOrBlossomBlob = (cleaned: string, reactKey: string) => {
+    const im = imetaInfoForStandaloneImageUrl(cleaned)
+    if (im.m?.startsWith('video/')) {
+      const poster = videoPosterMap?.get(cleaned) ?? im.image
+      return (
+        <div key={reactKey} className="my-2">
+          <MediaPlayer
+            src={cleaned}
+            poster={poster}
+            blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+            className="max-w-[400px]"
+            mustLoad={!lazyMedia}
+          />
+        </div>
+      )
+    }
+    if (im.m?.startsWith('audio/')) {
+      return (
+        <div key={reactKey} className="my-2">
+          <MediaPlayer
+            src={cleaned}
+            blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+            className="max-w-[400px]"
+            mustLoad={!lazyMedia}
+          />
+        </div>
+      )
+    }
+    return renderStandaloneHttpsImageBlock(cleaned, reactKey)
+  }
+
   const hashtagsInContent = new Set<string>()
   const footnotes = new Map<string, string>()
   const citations: Array<{ id: string; type: string; citationId: string }> = []
@@ -3303,6 +3336,22 @@ function parseMarkdownContentMarked(
     if (raw == null) return undefined
     const s = String(raw).trim()
     return s.length > 0 ? s : undefined
+  }
+
+  const isBareMarkdownLinkToUrl = (
+    token: { text?: string; tokens?: unknown[] },
+    href: string,
+    cleaned: string | null
+  ): boolean => {
+    if (!cleaned) return false
+    const inner = String(token.text ?? '').trim()
+    if (inner === href || inner === cleaned) return true
+    const tok = token.tokens
+    if (Array.isArray(tok) && tok.length === 1 && tok[0] && typeof tok[0] === 'object' && 'text' in (tok[0] as object)) {
+      const tx = String((tok[0] as { text?: string }).text ?? '').trim()
+      return tx === href || tx === cleaned
+    }
+    return false
   }
 
   const renderInlineTokens = (tokens: any[], keyPrefix: string): React.ReactNode[] => {
@@ -3362,16 +3411,17 @@ function parseMarkdownContentMarked(
         }
         case 'link': {
           const href = String(token.href ?? '')
+          const cleaned = cleanUrl(href)
           const linkTip = markdownTokenTitle(token)
           const linkVisual = cn(
             'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words',
             linkTip && 'cursor-help underline decoration-dotted decoration-current/70 underline-offset-2'
           )
-          const children = stripNestedAnchorsFromNodes(
-            renderInlineTokens(token.tokens ?? [{ type: 'text', text: token.text ?? href }], `${key}-link`),
-            `${key}-link-sanitized`
-          )
           if (href.startsWith('payto://')) {
+            const children = stripNestedAnchorsFromNodes(
+              renderInlineTokens(token.tokens ?? [{ type: 'text', text: token.text ?? href }], `${key}-link`),
+              `${key}-link-sanitized`
+            )
             out.push(
               <PaytoLink
                 key={`${key}-payto`}
@@ -3382,7 +3432,57 @@ function parseMarkdownContentMarked(
                 {children}
               </PaytoLink>
             )
+          } else if (cleaned && isSafeMediaUrl(cleaned)) {
+            const bare = isBareMarkdownLinkToUrl(token, href, cleaned)
+            const embedMedia =
+              isBlossomBudBlobUrl(cleaned) ||
+              (bare &&
+                (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned) || isImage(cleaned)))
+            if (embedMedia) {
+              if (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned)) {
+                const poster = videoPosterMap?.get(cleaned)
+                out.push(
+                  <div key={`${key}-link-inline-media`} className="my-2 not-prose">
+                    <MediaPlayer
+                      src={cleaned}
+                      poster={poster}
+                      blurHash={mediaBlurHashMap?.get(cleaned)}
+                      className="max-w-[400px]"
+                      mustLoad={!lazyMedia}
+                    />
+                  </div>
+                )
+              } else {
+                out.push(
+                  renderStandaloneHttpsImageOrBlossomBlob(
+                    cleaned,
+                    `${key}-link-as-img`
+                  ) as React.ReactNode
+                )
+              }
+            } else {
+              const children = stripNestedAnchorsFromNodes(
+                renderInlineTokens(token.tokens ?? [{ type: 'text', text: token.text ?? href }], `${key}-link`),
+                `${key}-link-sanitized`
+              )
+              out.push(
+                <a
+                  key={`${key}-href`}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={linkTip}
+                  className={linkVisual}
+                >
+                  {children}
+                </a>
+              )
+            }
           } else {
+            const children = stripNestedAnchorsFromNodes(
+              renderInlineTokens(token.tokens ?? [{ type: 'text', text: token.text ?? href }], `${key}-link`),
+              `${key}-link-sanitized`
+            )
             out.push(
               <a
                 key={`${key}-href`}
@@ -3422,7 +3522,25 @@ function parseMarkdownContentMarked(
             )
             break
           }
-          if (!isImage(cleaned) || !isSafeMediaUrl(cleaned)) {
+          if (isBlossomBudBlobUrl(cleaned) && isSafeMediaUrl(cleaned)) {
+            const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
+            if (baseImeta.m?.startsWith('video/') || baseImeta.m?.startsWith('audio/')) {
+              const poster = videoPosterMap?.get(cleaned) ?? baseImeta.image
+              out.push(
+                <div key={`${key}-blossom-inline-media`} className="my-2 not-prose">
+                  <MediaPlayer
+                    src={cleaned}
+                    poster={poster}
+                    blurHash={mediaBlurHashMap?.get(cleaned) ?? baseImeta.blurHash}
+                    className="max-w-[400px]"
+                    mustLoad={!lazyMedia}
+                  />
+                </div>
+              )
+              break
+            }
+          }
+          if ((!isImage(cleaned) && !isBlossomBudBlobUrl(cleaned)) || !isSafeMediaUrl(cleaned)) {
             out.push(
               <span key={`${key}-img-fallback`} className="break-words">
                 {label || src}
@@ -3513,7 +3631,7 @@ function parseMarkdownContentMarked(
     const recoveredMdImage = tryRecoverMalformedMarkdownImageParagraph(paragraphText)
     if (recoveredMdImage) {
       const cleaned = cleanUrl(recoveredMdImage.href)
-      if (cleaned && isImage(cleaned) && isSafeMediaUrl(cleaned)) {
+      if (cleaned && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) && isSafeMediaUrl(cleaned)) {
         const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
         let imageIdx = imageIndexMap.get(cleaned)
         if (imageIdx === undefined && getImageIdentifier) {
@@ -3688,8 +3806,8 @@ function parseMarkdownContentMarked(
                     </div>
                   )
                 }
-                if (isImage(cleaned) && isSafeMediaUrl(cleaned)) {
-                  return renderStandaloneHttpsImageBlock(cleaned, `${key}-line-img-${lineIdx}`)
+                if ((isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) && isSafeMediaUrl(cleaned)) {
+                  return renderStandaloneHttpsImageOrBlossomBlob(cleaned, `${key}-line-img-${lineIdx}`)
                 }
                 if (suppressStandaloneWebPreviewCleanedUrls?.has(cleaned)) {
                   return (
@@ -3861,8 +3979,8 @@ function parseMarkdownContentMarked(
             </div>
           )
         }
-        if (isImage(cleaned) && isSafeMediaUrl(cleaned)) {
-          return renderStandaloneHttpsImageBlock(cleaned, `${key}-para-img`)
+        if ((isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) && isSafeMediaUrl(cleaned)) {
+          return renderStandaloneHttpsImageOrBlossomBlob(cleaned, `${key}-para-img`)
         }
         if (suppressStandaloneWebPreviewCleanedUrls?.has(cleaned)) {
           return (
@@ -4241,7 +4359,24 @@ function parseMarkdownContentMarked(
             </div>
           )
         }
-        if (!isImage(cleaned) || !isSafeMediaUrl(cleaned)) {
+        if (isBlossomBudBlobUrl(cleaned) && isSafeMediaUrl(cleaned)) {
+          const im = imetaInfoForStandaloneImageUrl(cleaned)
+          if (im.m?.startsWith('video/') || im.m?.startsWith('audio/')) {
+            const poster = videoPosterMap?.get(cleaned) ?? im.image
+            return (
+              <div key={`${key}-blossom-media-block`} className="my-2">
+                <MediaPlayer
+                  src={cleaned}
+                  poster={poster}
+                  blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+                  className="max-w-[400px]"
+                  mustLoad={!lazyMedia}
+                />
+              </div>
+            )
+          }
+        }
+        if ((!isImage(cleaned) && !isBlossomBudBlobUrl(cleaned)) || !isSafeMediaUrl(cleaned)) {
           return (
             <div key={`${key}-img-inline-fallback`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
               {renderInlineTokens(paragraphTokens, `${key}-img-inline-fallback`)}
@@ -5217,12 +5352,18 @@ export default function MarkdownArticle({
     imetaInfos.forEach((info) => {
       const cleaned = cleanUrl(info.url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned) && !isHlsPlaylistUrl(cleaned)) return
-      
+      const byMime = !!(info.m && /^(image|video|audio)\//i.test(info.m))
+      if (
+        !isImage(cleaned) &&
+        !isMedia(cleaned) &&
+        !isHlsPlaylistUrl(cleaned) &&
+        !isBlossomBudBlobUrl(cleaned) &&
+        !byMime
+      )
+        return
+
       seenUrls.add(cleaned)
-      if (info.m?.startsWith('image/') || isImage(cleaned)) {
-        media.push({ url: info.url, type: 'image' })
-      } else if (
+      if (
         info.m?.startsWith('video/') ||
         isVideo(cleaned) ||
         isHlsPlaylistUrl(cleaned) ||
@@ -5241,6 +5382,8 @@ export default function MarkdownArticle({
           poster: info.thumb,
           blurHash: info.blurHash
         })
+      } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
+        media.push({ url: info.url, type: 'image' })
       }
     })
     
@@ -5249,10 +5392,10 @@ export default function MarkdownArticle({
       const url = tag[1]
       const cleaned = cleanUrl(url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned) && !isHlsPlaylistUrl(cleaned)) return
-      
+      if (!isImage(cleaned) && !isMedia(cleaned) && !isHlsPlaylistUrl(cleaned) && !isBlossomBudBlobUrl(cleaned)) return
+
       seenUrls.add(cleaned)
-      if (isImage(cleaned)) {
+      if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
         media.push({ url, type: 'image' })
       } else if (isVideo(cleaned) || isHlsPlaylistUrl(cleaned)) {
         media.push({ url, type: 'video' })
@@ -5265,7 +5408,7 @@ export default function MarkdownArticle({
     const imageTag = event.tags.find(tag => tag[0] === 'image' && tag[1])
     if (imageTag?.[1]) {
       const cleaned = cleanUrl(imageTag[1])
-      if (cleaned && !seenUrls.has(cleaned) && isImage(cleaned)) {
+      if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
         media.push({ url: imageTag[1], type: 'image' })
       }
@@ -5348,7 +5491,7 @@ export default function MarkdownArticle({
         const url = tag[1]
         if (!url.startsWith('http://') && !url.startsWith('https://')) return
         if (isPseudoNostrHttpsUrl(url)) return
-        if (isImage(url) || isMedia(url) || isHlsPlaylistUrl(url)) return
+        if (isImage(url) || isMedia(url) || isHlsPlaylistUrl(url) || isBlossomBudBlobUrl(url)) return
         if (isYouTubeUrl(url)) return // Exclude YouTube URLs
         if (isSpotifyUrl(url)) return
         if (isZapStreamWatchUrl(url)) return
@@ -5380,7 +5523,7 @@ export default function MarkdownArticle({
     // Add metadata image if it exists
     if (metadata.image) {
       const cleaned = cleanUrl(metadata.image)
-      if (cleaned && !seenUrls.has(cleaned) && isImage(cleaned)) {
+      if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
         images.push({ url: metadata.image })
       }
@@ -5422,6 +5565,9 @@ export default function MarkdownArticle({
         const pathname = parsed.pathname
         // Extract the filename (last segment of the path)
         const filename = pathname.split('/').pop() || ''
+        if (filename && /^[a-f0-9]{64}$/i.test(filename)) {
+          return `blossom-sha256:${filename.toLowerCase()}`
+        }
         // If the filename looks like a hash (hex string), use it for comparison
         // Also use the full pathname as a fallback
         if (filename && /^[a-f0-9]{32,}\.(png|jpg|jpeg|gif|webp|svg)$/i.test(filename)) {
@@ -5467,7 +5613,7 @@ export default function MarkdownArticle({
     while ((match = urlRegex.exec(event.content)) !== null) {
       const url = match[0]
       const cleaned = cleanUrl(url)
-      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))) {
+      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         urls.add(cleaned)
         // Also add image identifier for filename-based matching
         const identifier = getImageIdentifier(cleaned)

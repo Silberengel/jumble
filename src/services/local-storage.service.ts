@@ -851,7 +851,18 @@ class LocalStorageService {
     if (!pubkey) {
       return defaultConfig
     }
-    return this.mediaUploadServiceConfigMap[pubkey] ?? defaultConfig
+    const cfg = this.mediaUploadServiceConfigMap[pubkey] ?? defaultConfig
+    // Legacy `{ type: 'lotus' }` matched `blossom` uploads; migrate to `blossom`.
+    if ((cfg as { type?: string }).type === 'lotus') {
+      const migrated: TMediaUploadServiceConfig = { type: 'blossom' }
+      this.mediaUploadServiceConfigMap[pubkey] = migrated
+      this.persistSetting(
+        StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP,
+        JSON.stringify(this.mediaUploadServiceConfigMap)
+      )
+      return migrated
+    }
+    return cfg
   }
 
   setMediaUploadServiceConfig(

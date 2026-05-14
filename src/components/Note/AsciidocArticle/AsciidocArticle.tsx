@@ -11,7 +11,8 @@ import {
   isMedia,
   isVideo,
   isAudio,
-  isWebsocketUrl
+  isWebsocketUrl,
+  isBlossomBudBlobUrl
 } from '@/lib/url'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
@@ -441,27 +442,28 @@ export default function AsciidocArticle({
     imetaInfos.forEach((info) => {
       const cleaned = cleanUrl(info.url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned)) return
-      
+      const byMime = !!(info.m && /^(image|video|audio)\//i.test(info.m))
+      if (!isImage(cleaned) && !isMedia(cleaned) && !isBlossomBudBlobUrl(cleaned) && !byMime) return
+
       seenUrls.add(cleaned)
-      if (info.m?.startsWith('image/') || isImage(cleaned)) {
-        media.push({ url: info.url, type: 'image' })
-      } else if (info.m?.startsWith('video/') || isVideo(cleaned)) {
+      if (info.m?.startsWith('video/') || isVideo(cleaned)) {
         media.push({ url: info.url, type: 'video', poster: info.image })
       } else if (info.m?.startsWith('audio/') || isAudio(cleaned)) {
         media.push({ url: info.url, type: 'audio' })
+      } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
+        media.push({ url: info.url, type: 'image' })
       }
     })
-    
+
     // Extract from r tags
     event.tags.filter(tag => tag[0] === 'r' && tag[1]).forEach(tag => {
       const url = tag[1]
       const cleaned = cleanUrl(url)
       if (!cleaned || seenUrls.has(cleaned)) return
-      if (!isImage(cleaned) && !isMedia(cleaned)) return
-      
+      if (!isImage(cleaned) && !isMedia(cleaned) && !isBlossomBudBlobUrl(cleaned)) return
+
       seenUrls.add(cleaned)
-      if (isImage(cleaned)) {
+      if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
         media.push({ url, type: 'image' })
       } else if (isVideo(cleaned)) {
         media.push({ url, type: 'video' })
@@ -474,7 +476,7 @@ export default function AsciidocArticle({
     const imageTag = event.tags.find(tag => tag[0] === 'image' && tag[1])
     if (imageTag?.[1]) {
       const cleaned = cleanUrl(imageTag[1])
-      if (cleaned && !seenUrls.has(cleaned) && isImage(cleaned)) {
+      if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
         media.push({ url: imageTag[1], type: 'image' })
       }

@@ -9,7 +9,7 @@ import { getImetaInfosFromEvent } from '@/lib/event'
 import { URL_REGEX, ExtendedKind } from '@/constants'
 import { TImetaInfo } from '@/types'
 import logger from '@/lib/logger'
-import { isPseudoNostrHttpsUrl } from '@/lib/url'
+import { isPseudoNostrHttpsUrl, isBlossomBudBlobUrl } from '@/lib/url'
 
 export interface ParsedContent {
   html: string
@@ -803,13 +803,13 @@ class ContentParserService {
     const rawUrls = content.match(URL_REGEX) || []
     rawUrls.forEach(url => {
       if (!seenUrls.has(url)) {
-        const isImage = /\.(jpeg|jpg|png|gif|webp|svg)$/i.test(url)
-        const isVideo = /\.(mp4|webm|ogg|ogv|mov|mkv|m4v|3gp|3g2)$/i.test(url)
-        if (isImage || isVideo) {
-          media.push({ 
-            url, 
-            pubkey: event?.pubkey || '', 
-            m: isVideo ? 'video/*' : 'image/*' 
+        const isImageExt = /\.(jpeg|jpg|png|gif|webp|svg)$/i.test(url)
+        const isVideoExt = /\.(mp4|webm|ogg|ogv|mov|mkv|m4v|3gp|3g2)$/i.test(url)
+        if (isImageExt || isVideoExt || isBlossomBudBlobUrl(url)) {
+          media.push({
+            url,
+            pubkey: event?.pubkey || '',
+            m: isVideoExt ? 'video/*' : 'image/*'
           })
           seenUrls.add(url)
         }

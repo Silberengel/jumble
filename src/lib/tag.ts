@@ -1,5 +1,5 @@
 import { TEmoji, TImetaInfo } from '@/types'
-import { cleanUrl, isImage, isMedia } from './url'
+import { cleanUrl, isImage, isMedia, isBlossomBudBlobUrl } from './url'
 import { isBlurhashValid } from 'blurhash'
 import { nip19 } from 'nostr-tools'
 import { isValidPubkey } from './pubkey'
@@ -137,6 +137,7 @@ export function getImetaInfoFromImetaTag(tag: string[], pubkey?: string): TImeta
       if (
         isImage(t) ||
         isMedia(t) ||
+        isBlossomBudBlobUrl(t) ||
         (mimeHint &&
           (mimeHint.startsWith('image/') ||
             mimeHint.startsWith('video/') ||
