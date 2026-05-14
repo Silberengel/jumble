@@ -74,10 +74,9 @@ export function buildAllAvailableTopics(dynamicTopics?: TDiscussionDynamicTopics
 
   if (dynamicTopics) {
     dynamicTopics.mainTopics.forEach((dynamicTopic) => {
-      const isGroupsTopic = dynamicTopic.id === 'groups'
       combined.push({
         id: dynamicTopic.id,
-        label: `${dynamicTopic.label} (${dynamicTopic.count}) ${isGroupsTopic ? '👥' : '🔥'}`,
+        label: `${dynamicTopic.label} (${dynamicTopic.count}) 🔥`,
         icon: Hash
       })
     })
@@ -138,31 +137,16 @@ export function collectDiscussionThreadTags(params: {
   processedContent: string
   topicForTags: string
   title: string
-  selectedGroup: string
   dynamicTopics?: TDiscussionDynamicTopics | null
   isReadingGroup: boolean
   author: string
   subject: string
   isNsfw: boolean
 }): string[][] {
-  const {
-    processedContent,
-    topicForTags,
-    title,
-    selectedGroup,
-    dynamicTopics,
-    isReadingGroup,
-    author,
-    subject,
-    isNsfw
-  } = params
+  const { processedContent, topicForTags, title, dynamicTopics, isReadingGroup, author, subject, isNsfw } = params
   const images = extractImagesFromContent(processedContent)
   const hashtags = extractHashtagsFromContent(processedContent)
   const tags: string[][] = [['title', title.trim()], ['-']]
-
-  if (topicForTags === 'groups' && selectedGroup) {
-    tags.push(['h', selectedGroup])
-  }
 
   if (topicForTags !== 'all' && topicForTags !== 'general' && topicForTags !== 'groups') {
     const selectedDynamicTopic = dynamicTopics?.allTopics.find((dt) => dt.id === topicForTags)

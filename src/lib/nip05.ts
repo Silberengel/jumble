@@ -1,5 +1,10 @@
 import { LRUCache } from 'lru-cache'
 import { nip19 } from 'nostr-tools'
+import {
+  clearSitesProxyUnavailableThisSession,
+  isSitesProxyUnavailableThisSession,
+  markSitesProxyUnavailableFromHttpStatus
+} from '@/lib/optional-proxy-session'
 import { buildViteProxySitesFetchUrl } from '@/lib/vite-proxy-url'
 import { hexPubkeysEqual, isValidPubkey, normalizeHexPubkey } from './pubkey'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
@@ -187,7 +192,8 @@ async function fetchWellKnownNostrJsonOnce(
 ): Promise<Record<string, unknown> | null> {
   const targetUrl = getWellKnownNip05Url(domain, nameInQuery)
   const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
-  const fetchUrl = proxyServer ? buildViteProxySitesFetchUrl(targetUrl, proxyServer) : targetUrl
+  const useProxy = Boolean(proxyServer && !isSitesProxyUnavailableThisSession())
+  const fetchUrl = useProxy ? buildViteProxySitesFetchUrl(targetUrl, proxyServer!) : targetUrl
   try {
     const res = await fetchWithTimeout(fetchUrl, {
       credentials: 'omit',
@@ -197,7 +203,11 @@ async function fetchWellKnownNostrJsonOnce(
       timeoutMs: 15_000
     })
     /** NIP-05: well-known MUST NOT redirect; following redirects can land on unrelated JSON. */
-    if (res.redirected || !res.ok) return null
+    if (res.redirected || !res.ok) {
+      if (useProxy && !res.redirected) markSitesProxyUnavailableFromHttpStatus(res.status)
+      return null
+    }
+    if (useProxy) clearSitesProxyUnavailableThisSession()
     const data: unknown = await res.json()
     return data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null
   } catch {

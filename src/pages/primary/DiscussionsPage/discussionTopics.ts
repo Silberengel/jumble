@@ -39,6 +39,5 @@ export const DISCUSSION_TOPICS = [
   { id: 'travel', label: 'Travel & Adventure', icon: MapPin },
   { id: 'home', label: 'Home & Garden', icon: Home },
   { id: 'pets', label: 'Pets & Animals', icon: PawPrint },
-  { id: 'fashion', label: 'Fashion & Beauty', icon: Shirt },
-  { id: 'groups', label: 'Groups', icon: Users }
+  { id: 'fashion', label: 'Fashion & Beauty', icon: Shirt }
 ]

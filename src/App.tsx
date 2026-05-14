@@ -12,7 +12,6 @@ import { FavoriteRelaysProvider } from '@/providers/FavoriteRelaysProvider'
 import { FeedProvider } from '@/providers/FeedProvider'
 import { FontSizeProvider } from '@/providers/FontSizeProvider'
 import { FollowListProvider } from '@/providers/FollowListProvider'
-import { GroupListProvider } from '@/providers/GroupListProvider'
 import { InterestListProvider } from '@/providers/InterestListProvider'
 import { KindFilterProvider } from '@/providers/KindFilterProvider'
 import { MediaUploadServiceProvider } from '@/providers/MediaUploadServiceProvider'
@@ -50,30 +49,28 @@ export default function App(): JSX.Element {
                         <MuteListProvider>
                           <FavoriteRelaysActivityProvider>
                             <InterestListProvider>
-                              <GroupListProvider>
-                                <UserTrustProvider>
-                                  <BookmarksProvider>
-                                    <FeedProvider>
-                                      <ReplyProvider>
-                                        <MediaUploadServiceProvider>
-                                          <KindFilterProvider>
-                                            <UserPreferencesProvider>
-                                              <LiveActivitiesProvider>
-                                                <CacheBrowserProvider>
-                                                  <PageManager />
-                                                </CacheBrowserProvider>
-                                              </LiveActivitiesProvider>
-                                              <ReadAloudPlayerModal />
-                                              <PublishSuccessSubtleIndicator />
-                                              <Toaster />
-                                            </UserPreferencesProvider>
-                                          </KindFilterProvider>
-                                        </MediaUploadServiceProvider>
-                                      </ReplyProvider>
-                                    </FeedProvider>
-                                  </BookmarksProvider>
-                                </UserTrustProvider>
-                              </GroupListProvider>
+                              <UserTrustProvider>
+                                <BookmarksProvider>
+                                  <FeedProvider>
+                                    <ReplyProvider>
+                                      <MediaUploadServiceProvider>
+                                        <KindFilterProvider>
+                                          <UserPreferencesProvider>
+                                            <LiveActivitiesProvider>
+                                              <CacheBrowserProvider>
+                                                <PageManager />
+                                              </CacheBrowserProvider>
+                                            </LiveActivitiesProvider>
+                                            <ReadAloudPlayerModal />
+                                            <PublishSuccessSubtleIndicator />
+                                            <Toaster />
+                                          </UserPreferencesProvider>
+                                        </KindFilterProvider>
+                                      </MediaUploadServiceProvider>
+                                    </ReplyProvider>
+                                  </FeedProvider>
+                                </BookmarksProvider>
+                              </UserTrustProvider>
                             </InterestListProvider>
                           </FavoriteRelaysActivityProvider>
                         </MuteListProvider>

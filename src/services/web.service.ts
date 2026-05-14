@@ -1,4 +1,9 @@
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
+import {
+  clearSitesProxyUnavailableThisSession,
+  isSitesProxyUnavailableThisSession,
+  markSitesProxyUnavailableFromHttpStatus
+} from '@/lib/optional-proxy-session'
 import { buildViteProxySitesFetchUrl, urlLooksLikeViteProxyRequest } from '@/lib/vite-proxy-url'
 import { TWebMetadata } from '@/types'
 import DataLoader from 'dataloader'
@@ -20,7 +25,10 @@ const HTML_FETCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (compatible; Imwald/1.0; +https://jumble.imwald.eu)'
 }
 
-async function tryFetchHtml(fetchUrl: string, timeoutMs: number): Promise<string | null> {
+async function tryFetchHtml(
+  fetchUrl: string,
+  timeoutMs: number
+): Promise<{ html: string | null; status?: number }> {
   try {
     const res = await fetchWithTimeout(fetchUrl, {
       timeoutMs,
@@ -28,13 +36,13 @@ async function tryFetchHtml(fetchUrl: string, timeoutMs: number): Promise<string
       credentials: 'omit',
       headers: HTML_FETCH_HEADERS
     })
-    if (!res.ok) return null
+    if (!res.ok) return { html: null, status: res.status }
     const html = await res.text()
-    if (html.length < 50) return null
-    if (htmlLooksLikeLocalDevAppShell(html)) return null
-    return html
+    if (html.length < 50) return { html: null, status: res.status }
+    if (htmlLooksLikeLocalDevAppShell(html)) return { html: null, status: res.status }
+    return { html }
   } catch {
-    return null
+    return { html: null }
   }
 }
 
@@ -45,31 +53,35 @@ async function fetchHtmlForOpenGraph(originalUrl: string): Promise<{ html: strin
   const isAlreadyProxyRequest = urlLooksLikeViteProxyRequest(originalUrl)
 
   if (isAlreadyProxyRequest) {
-    const html = await tryFetchHtml(originalUrl, 35_000)
+    const { html } = await tryFetchHtml(originalUrl, 35_000)
     return html ? { html, via: originalUrl } : null
   }
 
   const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
 
-  if (proxyServer) {
+  if (proxyServer && !isSitesProxyUnavailableThisSession()) {
     const proxyFetchUrl = buildViteProxySitesFetchUrl(originalUrl, proxyServer)
     logger.debug('[WebService] OG fetch via VITE_PROXY_SERVER', { originalUrl, proxyFetchUrl })
-    let html = await tryFetchHtml(proxyFetchUrl, 35_000)
-    if (html) {
-      return { html, via: proxyFetchUrl }
+    const proxyTry = await tryFetchHtml(proxyFetchUrl, 35_000)
+    if (proxyTry.html) {
+      clearSitesProxyUnavailableThisSession()
+      return { html: proxyTry.html, via: proxyFetchUrl }
     }
-    logger.debug('[WebService] OG proxy unavailable or bad response', { originalUrl })
+    if (typeof proxyTry.status === 'number') {
+      markSitesProxyUnavailableFromHttpStatus(proxyTry.status)
+    }
+    logger.debug('[WebService] OG proxy unavailable or bad response', { originalUrl, status: proxyTry.status })
     // In production with a configured proxy, skip direct fetch: random sites rarely allow browser CORS,
     // and the attempt spams DevTools with cross-origin errors without improving OG success.
     if (!import.meta.env.PROD) {
-      html = await tryFetchHtml(originalUrl, 15_000)
-      return html ? { html, via: 'direct' } : null
+      const direct = await tryFetchHtml(originalUrl, 15_000)
+      return direct.html ? { html: direct.html, via: 'direct' } : null
     }
     return null
   }
 
-  const html = await tryFetchHtml(originalUrl, 15_000)
-  return html ? { html, via: 'direct' } : null
+  const directOnly = await tryFetchHtml(originalUrl, 15_000)
+  return directOnly.html ? { html: directOnly.html, via: 'direct' } : null
 }
 
 function parseOpenGraphFromHtml(html: string, pageUrl: string): TWebMetadata {

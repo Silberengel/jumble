@@ -175,7 +175,7 @@ import {
 import { AbstractRelay } from 'nostr-tools/abstract-relay'
 import indexedDb from './indexed-db.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
-import { notifyLiveActivitiesPrewarmComplete } from './live-activities-prewarm-bridge'
+import { notifySessionInteractivePrewarmComplete } from './session-interactive-prewarm-bridge'
 import nip66Service from './nip66.service'
 import { buildProfileKind0SearchFilters } from '@/lib/profile-relay-search-filters'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
@@ -361,8 +361,9 @@ class ClientService extends EventTarget {
   private sessionRelayPublishStats = new Map<string, { successCount: number; sumLatencyMs: number }>()
 
   /**
-   * IndexedDB profile index + NIP-66 relay discovery run once per page session; when logged in,
-   * {@link initUserIndexFromFollowings} hydrates each follow's kind 0, 3, and 10002 in batches.
+   * IndexedDB profile index + NIP-66 relay discovery run once per page session. When logged in,
+   * {@link initUserIndexFromFollowings} runs **after** this batch completes (deferred) so startup is not
+   * blocked on hundreds of follow relay round-trips.
    * @see {@link runSessionPrewarm}
    */
   private sessionPrewarmBaseCompleted = false
@@ -447,6 +448,16 @@ class ClientService extends EventTarget {
     return ClientService.instance
   }
 
+  private async yieldForUiPaint(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => resolve())
+      } else {
+        setTimeout(resolve, 0)
+      }
+    })
+  }
+
   private async prewarmProfileSearchIndexFromIdb(): Promise<void> {
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0
     let profileRows = 0
@@ -461,37 +472,50 @@ class ClientService extends EventTarget {
   }
 
   /**
-   * One-shot batch: local profile search index + NIP-66 relay discovery (once per session) + optional following-profile fetch (parallel).
-   * Call after Nostr session is ready so it does not compete with the first relay-list REQ.
+   * One-shot: local profile @-index + NIP-66 relay discovery (once per session). When logged in,
+   * the heavy follow-list relay fetch runs **after** this returns (see {@link runSessionPrewarm}) so the
+   * session gate and live-activities prewarm hook are not held for minutes on large follow graphs.
    */
   async runSessionPrewarm(options: { pubkey: string | null; signal?: AbortSignal }): Promise<void> {
     const signal = options.signal ?? new AbortController().signal
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0
-    const tasks: Promise<unknown>[] = []
+    const fastTasks: Promise<unknown>[] = []
 
     if (!this.sessionPrewarmBaseCompleted) {
       this.sessionPrewarmBaseCompleted = true
-      tasks.push(this.prewarmProfileSearchIndexFromIdb(), this.fetchNip66RelayDiscovery())
-    }
-    if (options.pubkey) {
-      tasks.push(this.initUserIndexFromFollowings(options.pubkey, signal))
+      fastTasks.push(this.prewarmProfileSearchIndexFromIdb(), this.fetchNip66RelayDiscovery())
     }
 
-    if (tasks.length === 0) {
-      notifyLiveActivitiesPrewarmComplete()
+    if (fastTasks.length === 0 && !options.pubkey) {
+      notifySessionInteractivePrewarmComplete()
       return
     }
 
-    logger.info('[client] Session prewarm batch started (parallel)', {
+    logger.info('[client] Session prewarm batch started (interactive)', {
       hasPubkey: !!options.pubkey,
-      taskCount: tasks.length
+      fastTaskCount: fastTasks.length
     })
-    const results = await Promise.allSettled(tasks)
-    logger.info('[client] Session prewarm batch finished', {
+    const fastResults = await Promise.allSettled(fastTasks)
+    logger.info('[client] Session prewarm batch finished (interactive)', {
       ms: typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : undefined,
-      results: results.map((r) => r.status)
+      fastResults: fastResults.map((r) => r.status)
     })
-    notifyLiveActivitiesPrewarmComplete()
+    notifySessionInteractivePrewarmComplete()
+
+    if (options.pubkey) {
+      const pk = options.pubkey
+      /** Defer: follow graph pulls compete with first feed REQs; same hydrate {@link AbortSignal} still applies. */
+      void Promise.resolve().then(async () => {
+        try {
+          await this.initUserIndexFromFollowings(pk, signal)
+        } catch (err) {
+          logger.debug('[client] Prewarm: following index background pass failed', {
+            pubkeySlice: pk.slice(0, 12),
+            err: err instanceof Error ? err.message : String(err)
+          })
+        }
+      })
+    }
   }
 
   // Update signer in query service when it changes
@@ -3478,6 +3502,9 @@ class ClientService extends EventTarget {
       profileResolved += profiles.length
       await Promise.allSettled(profiles.map((ev) => this.addUsernameToIndex(ev)))
       profiles.forEach((ev) => this.updateProfileEventCache(ev))
+      if ((i + 1) * chunkSize < followings.length && !signal.aborted) {
+        await this.yieldForUiPaint()
+      }
     }
     logger.info('[client] Prewarm: following profile + contacts + NIP-65 fetch finished', {
       pubkeySlice: pubkey.slice(0, 12),

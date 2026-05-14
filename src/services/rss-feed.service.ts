@@ -1,6 +1,10 @@
 import { DEFAULT_RSS_FEEDS } from '@/constants'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
+import {
+  isSitesProxyUnavailableThisSession,
+  markSitesProxyUnavailableFromHttpStatus
+} from '@/lib/optional-proxy-session'
 import { cleanUrl } from '@/lib/url'
 import logger from '@/lib/logger'
 import { buildViteProxySitesFetchUrl, urlLooksLikeViteProxyRequest } from '@/lib/vite-proxy-url'
@@ -285,7 +289,7 @@ class RssFeedService {
     
     // Strategy 1: Same `VITE_PROXY_SERVER` contract as OG/link preview (`sites/?url=…`), not path-encoded `/sites/{url}`.
     const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
-    if (proxyServer && !urlLooksLikeViteProxyRequest(url)) {
+    if (proxyServer && !urlLooksLikeViteProxyRequest(url) && !isSitesProxyUnavailableThisSession()) {
       strategies.push({
         name: 'configured-proxy',
         getUrl: (u) => buildViteProxySitesFetchUrl(u, proxyServer)
@@ -335,6 +339,9 @@ class RssFeedService {
       })
 
       if (!res.ok) {
+        if (strategy.name === 'configured-proxy') {
+          markSitesProxyUnavailableFromHttpStatus(res.status)
+        }
         throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       }
 

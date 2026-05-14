@@ -13,6 +13,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import { queryService, replaceableEventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -305,6 +306,13 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
       cancelled = true
     }
   }, [viewerPubkey, followings.length])
+
+  /** After session interactive prewarm, relay URLs / follow context are stable — refresh pulse once. */
+  useEffect(() => {
+    return registerSessionInteractivePrewarmListener(() => {
+      void fetchRef.current()
+    })
+  }, [])
 
   /** While the document is visible: poll once per hour; when returning after a long background, catch up if due. */
   useEffect(() => {

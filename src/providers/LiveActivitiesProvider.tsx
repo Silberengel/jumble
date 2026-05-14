@@ -12,7 +12,7 @@ import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import { registerLiveActivitiesPrewarmCallback } from '@/services/live-activities-prewarm-bridge'
+import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LiveActivitiesContext } from './live-activities-context'
 import { useFavoriteRelays } from './FavoriteRelaysProvider'
@@ -125,10 +125,9 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
   refreshRef.current = refresh
 
   useEffect(() => {
-    registerLiveActivitiesPrewarmCallback(() => {
+    return registerSessionInteractivePrewarmListener(() => {
       void refreshRef.current()
     })
-    return () => registerLiveActivitiesPrewarmCallback(null)
   }, [])
 
   useEffect(() => {

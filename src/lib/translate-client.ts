@@ -8,6 +8,19 @@ const memoryCache = new Map<string, { text: string; at: number }>()
 const MAX_MEMORY = 80
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24
 
+/** After `/languages` or `/translate` hits 502/503/504, skip further translate HTTP this tab (optional dev proxy). */
+let translateBackendGoneThisSession = false
+
+const translateOptionalLoggedKeys = new Set<string>()
+
+function translateDevLogOnce(key: string, message: string, payload?: Record<string, unknown>): void {
+  if (translateOptionalLoggedKeys.has(key)) return
+  translateOptionalLoggedKeys.add(key)
+  if (import.meta.env.DEV) {
+    logger.debug(message, payload)
+  }
+}
+
 function cacheKey(source: string, sourceLang: string, targetLang: string): string {
   const h = bytesToHex(sha256(new TextEncoder().encode(`${sourceLang}|${targetLang}|${source}`)))
   return h
@@ -23,6 +36,10 @@ function pruneMemory(): void {
     if (first) memoryCache.delete(first)
     else break
   }
+}
+
+export function isTranslateBackendUnreachableThisSession(): boolean {
+  return translateBackendGoneThisSession
 }
 
 export function isTranslateConfigured(): boolean {
@@ -135,6 +152,14 @@ function parseLanguagesResponse(data: unknown): TranslateLanguageOption[] {
 export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption[]> {
   const base = TRANSLATE_URL.trim().replace(/\/$/u, '')
   if (!base) return []
+  if (translateBackendGoneThisSession) {
+    translateDevLogOnce(
+      'languages-skip',
+      '[Translate] /languages skipped — optional translate backend unavailable this session.'
+    )
+    recordAdvertisedTranslateCodesFromServer(languagesCache?.list ?? [])
+    return languagesCache?.list ?? []
+  }
   const now = Date.now()
   if (languagesCache) {
     const ttl = languagesCache.fromFailure ? LANGUAGES_FAILURE_CACHE_TTL_MS : LANGUAGES_CACHE_TTL_MS
@@ -152,16 +177,14 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
     const res = await electronAwareFetch(url)
     if (!res.ok) {
       const t = Date.now()
-      if (t - lastLanguagesFailureLogAt > 10_000) {
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        translateBackendGoneThisSession = true
+        translateDevLogOnce('languages-fail', '[Translate] Optional translate proxy offline (502/503/504); skipping further translate HTTP this session.', {
+          status: res.status
+        })
+      } else if (t - lastLanguagesFailureLogAt > 10_000) {
         lastLanguagesFailureLogAt = t
-        if (import.meta.env.DEV && (res.status === 503 || res.status === 502)) {
-          logger.debug(
-            '[Translate] /languages skipped — dev translate proxy has no backend (:5000). See PROXY_SETUP.md.',
-            { status: res.status }
-          )
-        } else {
-          logger.warn('[Translate] /languages failed', { status: res.status })
-        }
+        logger.warn('[Translate] /languages failed', { status: res.status })
       }
       languagesCache = { list: [], at: t, fromFailure: true }
       recordAdvertisedTranslateCodesFromServer([])
@@ -171,6 +194,7 @@ export async function fetchTranslateLanguages(): Promise<TranslateLanguageOption
       const data = (await res.json()) as unknown
       const list = parseLanguagesResponse(data)
       languagesCache = { list, at: Date.now() }
+      translateBackendGoneThisSession = false
       recordAdvertisedTranslateCodesFromServer(list)
       return list
     } catch (e) {
@@ -194,6 +218,8 @@ export function clearTranslateLanguagesCache(): void {
   languagesCache = null
   advertisedTranslateApiCodes = null
   warmTranslateLanguagesPromise = null
+  translateBackendGoneThisSession = false
+  translateOptionalLoggedKeys.clear()
 }
 
 /**
@@ -212,6 +238,13 @@ export async function translatePlainText(
   const base = TRANSLATE_URL.trim().replace(/\/$/u, '')
   if (!base) {
     throw new Error('Translation URL not configured')
+  }
+  if (translateBackendGoneThisSession) {
+    translateDevLogOnce(
+      'translate-post-skip',
+      '[Translate] Skipping translate POST — optional backend unavailable this session.'
+    )
+    return text
   }
 
   /** LibreTranslate often trims `q` / `translatedText`; keep edge whitespace so markup segments still join cleanly. */
@@ -269,6 +302,13 @@ export async function translatePlainText(
     })
   })
   if (!res.ok) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      translateBackendGoneThisSession = true
+      translateDevLogOnce('translate-post-fail', '[Translate] Optional translate proxy offline; skipping further translate HTTP this session.', {
+        status: res.status
+      })
+      return text
+    }
     const err = await res.text().catch(() => '')
     logger.warn('[Translate] HTTP error', { status: res.status, err: err.slice(0, 200) })
     const detail = err.replace(/\s+/gu, ' ').trim().slice(0, 160)
@@ -278,6 +318,7 @@ export async function translatePlainText(
   }
   const data = (await res.json()) as { translatedText?: string }
   const outCore = data.translatedText ?? ''
+  translateBackendGoneThisSession = false
   pruneMemory()
   memoryCache.set(key, { text: outCore, at: Date.now() })
   logger.info('[AdvancedLab] translate', {

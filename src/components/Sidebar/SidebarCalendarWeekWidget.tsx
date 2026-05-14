@@ -17,12 +17,13 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
+import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
 import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { Button } from '@/components/ui/button'
@@ -46,6 +47,14 @@ export default function SidebarCalendarWeekWidget() {
   const followList = useFollowListOptional()
   const { navigateToNote } = useSmartNoteNavigation()
   const { navigate: navigatePrimary } = usePrimaryPage()
+
+  const [prewarmRefreshKey, bumpPrewarmRefresh] = useReducer((n: number) => n + 1, 0)
+
+  useEffect(() => {
+    return registerSessionInteractivePrewarmListener(() => {
+      bumpPrewarmRefresh()
+    })
+  }, [])
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [rawEvents, setRawEvents] = useState<Event[]>([])
@@ -269,7 +278,7 @@ export default function SidebarCalendarWeekWidget() {
       cancelled = true
       if (lateMergeTimer != null) window.clearTimeout(lateMergeTimer)
     }
-  }, [relayKey, followAuthorsKey, weekOffset])
+  }, [relayKey, followAuthorsKey, weekOffset, prewarmRefreshKey])
 
   const openEvent = useCallback(
     (ev: Event) => {

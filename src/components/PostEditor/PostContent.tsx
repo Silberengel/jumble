@@ -60,7 +60,6 @@ import {
   ListTodo,
   MessageCircle,
   MessagesSquare,
-  Users,
   X,
   Highlighter,
   FileText,
@@ -94,7 +93,6 @@ import {
 import { prefixNostrAddresses } from '@/lib/nostr-address'
 import dayjs from 'dayjs'
 import { TDraftEvent } from '@/types'
-import { useGroupList } from '@/providers/group-list-context'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
@@ -194,7 +192,6 @@ export default function PostContent({
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
-  const { userGroups } = useGroupList()
   const { addReplies } = useReply()
 
   const mergePublishedReplyIntoThread = useCallback(
@@ -308,13 +305,11 @@ export default function PostContent({
     return row?.label ?? 'general'
   })
   const [threadSelectedTopic, setThreadSelectedTopic] = useState('general')
-  const [threadSelectedGroup, setThreadSelectedGroup] = useState('')
   const [threadIsReadingGroup, setThreadIsReadingGroup] = useState(false)
   const [threadReadingAuthor, setThreadReadingAuthor] = useState('')
   const [threadReadingSubject, setThreadReadingSubject] = useState('')
   const [threadShowReadingsPanel, setThreadShowReadingsPanel] = useState(false)
   const [threadTopicPopoverOpen, setThreadTopicPopoverOpen] = useState(false)
-  const [threadGroupPopoverOpen, setThreadGroupPopoverOpen] = useState(false)
   const [threadErrors, setThreadErrors] = useState<{
     title?: string
     content?: string
@@ -322,7 +317,6 @@ export default function PostContent({
     relay?: string
     author?: string
     subject?: string
-    group?: string
   }>({})
   const [mediaNoteKind, setMediaNoteKind] = useState<number | null>(null)
   const [mediaImetaTags, setMediaImetaTags] = useState<string[][]>([])
@@ -438,7 +432,6 @@ export default function PostContent({
       processedContent: prefixNostrAddresses(text.trim()),
       topicForTags: resolved,
       title: threadTitle,
-      selectedGroup: threadSelectedGroup,
       dynamicTopics: discussionDynamicTopics,
       isReadingGroup: threadIsReadingGroup,
       author: threadReadingAuthor,
@@ -451,7 +444,6 @@ export default function PostContent({
     allAvailableTopics,
     text,
     threadTitle,
-    threadSelectedGroup,
     discussionDynamicTopics,
     threadIsReadingGroup,
     threadReadingAuthor,
@@ -485,8 +477,7 @@ export default function PostContent({
         !!text.trim() &&
         text.length <= 5000 &&
         additionalRelayUrls.length > 0 &&
-        (!threadIsReadingGroup || (!!threadReadingAuthor.trim() && !!threadReadingSubject.trim())) &&
-        (threadTopicResolved !== 'groups' || !!threadSelectedGroup.trim()))
+        (!threadIsReadingGroup || (!!threadReadingAuthor.trim() && !!threadReadingSubject.trim())))
     const result = (
       !!pubkey &&
       !posting &&
@@ -537,7 +528,6 @@ export default function PostContent({
     threadIsReadingGroup,
     threadReadingAuthor,
     threadReadingSubject,
-    threadSelectedGroup,
     relayCapBlockInfo
   ])
 
@@ -805,7 +795,6 @@ export default function PostContent({
         processedContent: processed,
         topicForTags: topicResolved,
         title: threadTitle,
-        selectedGroup: threadSelectedGroup,
         dynamicTopics: discussionDynamicTopics,
         isReadingGroup: threadIsReadingGroup,
         author: threadReadingAuthor,
@@ -1130,7 +1119,6 @@ export default function PostContent({
     allAvailableTopics,
     threadSelectedTopic,
     threadTitle,
-    threadSelectedGroup,
     discussionDynamicTopics,
     threadIsReadingGroup,
     threadReadingAuthor,
@@ -1298,9 +1286,6 @@ export default function PostContent({
           if (!threadReadingSubject.trim()) {
             newErrors.subject = t('Subject (book title) is required for reading groups')
           }
-        }
-        if (topicResolved === 'groups' && !threadSelectedGroup.trim()) {
-          newErrors.group = t('Please select a group')
         }
         setThreadErrors(newErrors)
         if (Object.keys(newErrors).length > 0) {
@@ -2246,7 +2231,6 @@ export default function PostContent({
     setThreadSelectedTopic('general')
     const gRow = DISCUSSION_TOPICS.find((x) => x.id === 'general')
     setThreadTopicInput(gRow?.label ?? 'general')
-    setThreadSelectedGroup('')
     setThreadIsReadingGroup(false)
     setThreadReadingAuthor('')
     setThreadReadingSubject('')
@@ -2419,63 +2403,6 @@ export default function PostContent({
               )}
             </p>
           </div>
-
-          {threadTopicResolved === 'groups' && (
-            <div className="space-y-2">
-              <Label htmlFor="discussion-group" className="text-sm font-medium">
-                {t('Select Group')}
-              </Label>
-              <Popover open={threadGroupPopoverOpen} onOpenChange={setThreadGroupPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={threadGroupPopoverOpen}
-                    title={t('Select group...')}
-                    className="h-9 w-full justify-between bg-background font-normal"
-                  >
-                    {threadSelectedGroup ? threadSelectedGroup : t('Select group...')}
-                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="z-[10000] w-[--radix-popover-trigger-width] p-2"
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <div className="max-h-60 overflow-y-auto">
-                    {userGroups.length === 0 ? (
-                      <div className="p-2 text-center text-sm text-muted-foreground">
-                        {t('No groups available. Join some groups first.')}
-                      </div>
-                    ) : (
-                      userGroups.map((groupId) => (
-                        <div
-                          key={groupId}
-                          className="flex cursor-pointer items-center rounded p-2 hover:bg-accent"
-                          onClick={() => {
-                            setThreadSelectedGroup(groupId)
-                            setThreadGroupPopoverOpen(false)
-                          }}
-                        >
-                          <Check
-                            className={`mr-2 h-4 w-4 ${threadSelectedGroup === groupId ? 'opacity-100' : 'opacity-0'}`}
-                          />
-                          <Users className="mr-2 h-4 w-4" />
-                          {groupId}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              {threadErrors.group && <p className="text-sm text-destructive">{threadErrors.group}</p>}
-              <p className="text-xs text-muted-foreground">
-                {t('Select the group where you want to create this discussion.')}
-              </p>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label htmlFor="discussion-thread-title" className="text-sm font-medium">
