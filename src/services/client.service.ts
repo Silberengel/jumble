@@ -483,7 +483,15 @@ class ClientService extends EventTarget {
 
     if (!this.sessionPrewarmBaseCompleted) {
       this.sessionPrewarmBaseCompleted = true
-      fastTasks.push(this.prewarmProfileSearchIndexFromIdb(), this.fetchNip66RelayDiscovery())
+      fastTasks.push(this.prewarmProfileSearchIndexFromIdb())
+      /** NIP-66 discovery hits extra relays; defer so first feed/session work is not competing for sockets. */
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          void this.fetchNip66RelayDiscovery()
+        }, 12_000)
+      } else {
+        void this.fetchNip66RelayDiscovery()
+      }
     }
 
     if (fastTasks.length === 0 && !options.pubkey) {

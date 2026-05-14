@@ -67,7 +67,10 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     [favoriteRelays, relaySets]
   )
 
-  /** Home Notes/Gallery stay focused: favorites/defaults plus the mixed trending relay. */
+  /**
+   * Mixed trending slice (nostrarchives / Wisp-style feed) so the home timeline isn’t only the user’s
+   * graph — keeps a finger on what the wider network is surfacing, alongside favorites / NIP-65.
+   */
   const primaryExtraRelayUrls = useMemo(() => [buildWispTrendingNotesRelayUrl()], [])
 
   /** Home Replies widen to relays that can surface inbox/reply context. */
@@ -182,6 +185,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   )
   const lastRelayInitDebugKey = useRef('')
   const lastHadFavoriteRelaysRef = useRef<boolean | null>(null)
+  const relayUrlDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const initKey = [
       isInitialized ? '1' : '0',
@@ -194,29 +199,47 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       replyExtraRelayLayers.httpRelayUrls.length,
       blockedRelays.length
     ].join('\x1e')
-    if (initKey !== lastRelayInitDebugKey.current) {
-      lastRelayInitDebugKey.current = initKey
-      logger.debug('FeedProvider relay init:', {
-        isInitialized,
-        favoriteRelays: favoriteRelays.length,
-        relaySets: relaySets.length,
-        relaySetRelays: favoriteFeedRelayUrls.length - favoriteRelays.length,
-        inboxRelays: replyExtraRelayLayers.inboxRelayUrls.length,
-        outboxRelays: replyExtraRelayLayers.outboxRelayUrls.length,
-        cacheRelays: replyExtraRelayLayers.cacheRelayUrls.length,
-        httpRelays: replyExtraRelayLayers.httpRelayUrls.length,
-        blockedRelays: blockedRelays.length
-      })
+
+    const flush = () => {
+      if (initKey !== lastRelayInitDebugKey.current) {
+        lastRelayInitDebugKey.current = initKey
+        logger.debug('FeedProvider relay init:', {
+          isInitialized,
+          favoriteRelays: favoriteRelays.length,
+          relaySets: relaySets.length,
+          relaySetRelays: favoriteFeedRelayUrls.length - favoriteRelays.length,
+          inboxRelays: replyExtraRelayLayers.inboxRelayUrls.length,
+          outboxRelays: replyExtraRelayLayers.outboxRelayUrls.length,
+          cacheRelays: replyExtraRelayLayers.cacheRelayUrls.length,
+          httpRelays: replyExtraRelayLayers.httpRelayUrls.length,
+          blockedRelays: blockedRelays.length
+        })
+      }
+
+      const hasFavoriteRelays = favoriteFeedRelayUrls.length > 0
+      const prevHad = lastHadFavoriteRelaysRef.current
+      lastHadFavoriteRelaysRef.current = hasFavoriteRelays
+      if (!hasFavoriteRelays && prevHad !== false) {
+        logger.debug('FeedProvider: no favorite or relay-set relays, using defaults')
+      }
+
+      updateFeedRelayUrls()
     }
 
-    const hasFavoriteRelays = favoriteFeedRelayUrls.length > 0
-    const prevHad = lastHadFavoriteRelaysRef.current
-    lastHadFavoriteRelaysRef.current = hasFavoriteRelays
-    if (!hasFavoriteRelays && prevHad !== false) {
-      logger.debug('FeedProvider: no favorite or relay-set relays, using defaults')
+    if (relayUrlDebounceTimerRef.current) {
+      clearTimeout(relayUrlDebounceTimerRef.current)
     }
+    relayUrlDebounceTimerRef.current = setTimeout(() => {
+      relayUrlDebounceTimerRef.current = null
+      flush()
+    }, 80)
 
-    updateFeedRelayUrls()
+    return () => {
+      if (relayUrlDebounceTimerRef.current) {
+        clearTimeout(relayUrlDebounceTimerRef.current)
+        relayUrlDebounceTimerRef.current = null
+      }
+    }
   }, [isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, replyExtraRelaysIdentity, updateFeedRelayUrls])
 
   return (

@@ -811,35 +811,53 @@ class IndexedDbService {
     })
   }
 
-  async iterateProfileEvents(callback: (event: Event) => Promise<void>): Promise<void> {
+  /**
+   * Loads all cached kind-0 rows in one synchronous cursor pass (no `await` inside `onsuccess`, which
+   * would risk inactive transactions), then invokes `callback` in chunks with `requestAnimationFrame`
+   * yields so FlexSearch indexing does not monopolize the main thread.
+   */
+  async iterateProfileEvents(callback: (event: Event) => void | Promise<void>): Promise<void> {
     await this.initPromise
     if (!this.db) {
       return
     }
 
-    return new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction(StoreNames.PROFILE_EVENTS, 'readwrite')
+    const events = await new Promise<Event[]>((resolve, reject) => {
+      const out: Event[] = []
+      const transaction = this.db!.transaction(StoreNames.PROFILE_EVENTS, 'readonly')
       const store = transaction.objectStore(StoreNames.PROFILE_EVENTS)
       const request = store.openCursor()
       request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest).result
-        if (cursor) {
-          const value = (cursor.value as TValue<Event>).value
-          if (value) {
-            callback(value)
-          }
-          cursor.continue()
-        } else {
-          transaction.commit()
-          resolve()
+        const cursor = (event.target as IDBRequest).result as IDBCursorWithValue | null
+        if (!cursor) {
+          resolve(out)
+          return
         }
+        const value = (cursor.value as TValue<Event>).value
+        if (value) out.push(value)
+        cursor.continue()
       }
-
-      request.onerror = (event) => {
-        transaction.commit()
-        reject(event)
+      request.onerror = () => {
+        reject(request.error ?? new Error('iterateProfileEvents: cursor failed'))
       }
     })
+
+    const yieldToMain = () =>
+      new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve())
+        } else {
+          setTimeout(resolve, 0)
+        }
+      })
+
+    const chunkYieldEvery = 150
+    for (let i = 0; i < events.length; i++) {
+      await Promise.resolve(callback(events[i]!))
+      if (i > 0 && (i + 1) % chunkYieldEvery === 0) {
+        await yieldToMain()
+      }
+    }
   }
 
   async putFollowingFavoriteRelays(pubkey: string, relays: [string, string[]][]): Promise<void> {

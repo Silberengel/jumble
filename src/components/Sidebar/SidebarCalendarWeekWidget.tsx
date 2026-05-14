@@ -20,7 +20,6 @@ import client from '@/services/client.service'
 import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
 import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
-import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
@@ -69,7 +68,8 @@ export default function SidebarCalendarWeekWidget() {
         applySocialKindBlockedFilter: false
       }
     )
-    return appendCuratedReadOnlyRelays(base, blockedRelays).slice(0, SIDEBAR_CALENDAR_MAX_RELAYS)
+    /** Sidebar only: avoid prepending {@link READ_ONLY_RELAY_URLS} so idle shell does not open aggregator sockets. */
+    return base.slice(0, SIDEBAR_CALENDAR_MAX_RELAYS)
   }, [favoriteRelays, blockedRelays, relayList])
 
   const relayKey = useMemo(() => [...relayUrls].sort().join('|'), [relayUrls])
