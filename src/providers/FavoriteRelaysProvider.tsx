@@ -25,10 +25,9 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (!favoriteRelaysEvent) {
-      // For anonymous users (no login), only use relays from FAST_READ_RELAY_URLS
-      // Don't load potentially untrusted relays from local storage
-      const favoriteRelays: string[] = pubkey ? DEFAULT_FAVORITE_RELAYS : FAST_READ_RELAY_URLS.slice()
-      
+      /** Curated app defaults for the home feed — same for anonymous and logged-in users until kind 10012 loads. */
+      const favoriteRelays: string[] = [...DEFAULT_FAVORITE_RELAYS]
+
       if (pubkey) {
         // Only add stored relay sets if user is logged in
         const storedRelaySets = storage.getRelaySets()

@@ -28,6 +28,9 @@ import WebSocket from 'ws'
 const RELAY_DISCOVERY_KIND = 30166
 const RELAY_MONITOR_ANNOUNCEMENT_KIND = 10166
 
+/** Same convention as kind-0 profile metadata (`["bot","true"]`): marks automated monitor output. */
+const MONITOR_BOT_TAG = ['bot', 'true']
+
 /**
  * Default URLs to run NIP-11 checks against (30166); always merged with the monitor’s kind 10002 unless overridden.
  * Union of relay presets in src/constants.ts: DEFAULT_FAVORITE_RELAYS, FAST_READ_RELAY_URLS,
@@ -144,7 +147,7 @@ function build30166 (relayUrl, nip11, sk) {
     kind: RELAY_DISCOVERY_KIND,
     created_at: Math.floor(Date.now() / 1000),
     content: '',
-    tags
+    tags: [...tags, MONITOR_BOT_TAG]
   }
   return finalizeEvent(draft, sk)
 }
@@ -155,7 +158,7 @@ function build10166 (sk) {
     kind: RELAY_MONITOR_ANNOUNCEMENT_KIND,
     created_at: Math.floor(Date.now() / 1000),
     content: '',
-    tags: [['frequency', String(freqSec)], ['c', 'nip11'], ['c', 'ws']]
+    tags: [['frequency', String(freqSec)], ['c', 'nip11'], ['c', 'ws'], MONITOR_BOT_TAG]
   }
   return finalizeEvent(draft, sk)
 }
