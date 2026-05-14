@@ -5,7 +5,12 @@ describe('applyFeedRelayPolicy', () => {
   it('prepends aggr.nostr.land for read feeds before caps', () => {
     const result = applyFeedRelayPolicy(
       [{ source: 'viewer-read', urls: ['wss://reader-a.example/', 'wss://reader-b.example/'] }],
-      { operation: 'read', maxRelays: 2, applySocialKindBlockedFilter: false }
+      {
+        operation: 'read',
+        maxRelays: 2,
+        applySocialKindBlockedFilter: false,
+        nostrLandAggrEligible: true
+      }
     )
 
     expect(result.urls).toEqual(['wss://aggr.nostr.land/', 'wss://reader-a.example/'])
@@ -33,7 +38,8 @@ describe('applyFeedRelayPolicy', () => {
       {
         operation: 'read',
         blockedRelays: ['wss://aggr.nostr.land/'],
-        applySocialKindBlockedFilter: false
+        applySocialKindBlockedFilter: false,
+        nostrLandAggrEligible: true
       }
     )
 

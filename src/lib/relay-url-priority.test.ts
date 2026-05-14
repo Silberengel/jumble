@@ -6,6 +6,7 @@ import {
 } from '@/lib/relay-url-priority'
 import { buildProfilePageReadRelayUrls, getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
+import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 
 describe('filterContextAuthorReadRelaysForPublish', () => {
   it('drops loopback, LAN, and .onion; keeps public relays', () => {
@@ -46,7 +47,8 @@ describe('stripMailboxLocalUrlsForRemoteViewers', () => {
 })
 
 describe('nostr.land aggregator feed relay policy', () => {
-  it('keeps aggr.nostr.land in capped read feed relay stacks', () => {
+  it('keeps aggr.nostr.land in capped read feed relay stacks when viewer uses nostr.land relays', () => {
+    syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
     const out = buildPrioritizedReadRelayUrls({
       userReadRelays: [
         'wss://reader-a.example/',
@@ -60,6 +62,7 @@ describe('nostr.land aggregator feed relay policy', () => {
 
     expect(out).toHaveLength(3)
     expect(out[0]).toBe('wss://aggr.nostr.land/')
+    syncViewerRelayStackNostrLandAggrEligible([])
   })
 
   it('excludes aggr.nostr.land from the favorites feed relay list', () => {
@@ -74,6 +77,7 @@ describe('nostr.land aggregator feed relay policy', () => {
 
 describe('buildProfilePageReadRelayUrls', () => {
   it('includes viewed author write relays for remote profile timelines', () => {
+    syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
     const out = buildProfilePageReadRelayUrls(
       [],
       [],
@@ -85,9 +89,11 @@ describe('buildProfilePageReadRelayUrls', () => {
     )
 
     expect(out).toContain('wss://author-outbox.example/')
+    syncViewerRelayStackNostrLandAggrEligible([])
   })
 
   it('prioritizes viewed author write relays ahead of long read lists', () => {
+    syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
     const out = buildProfilePageReadRelayUrls(
       [],
       [],
@@ -100,5 +106,6 @@ describe('buildProfilePageReadRelayUrls', () => {
 
     expect(out[0]).toBe('wss://aggr.nostr.land/')
     expect(out[1]).toBe('wss://author-outbox.example/')
+    syncViewerRelayStackNostrLandAggrEligible([])
   })
 })

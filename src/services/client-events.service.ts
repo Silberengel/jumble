@@ -649,6 +649,16 @@ export class EventService {
   }
 
   /**
+   * Session LRU only — for UI that must classify before async fetch (e.g. notification reactions).
+   * Does not query IndexedDB or relays; {@link fetchEvent} remains authoritative when missing.
+   */
+  peekHexIdNoteFromSessionCache(hexId: string): NEvent | undefined {
+    const id = hexId.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(id)) return undefined
+    return this.getSessionEventIfAllowed(id, true)
+  }
+
+  /**
    * Pubkeys whose session-cached kind 0 matches a name / display_name / nip-05 substring (for search without IDB).
    */
   searchSessionProfilePubkeys(query: string, limit: number): string[] {

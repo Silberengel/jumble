@@ -179,12 +179,7 @@ export default function ReplyNote({
                       : 'text-muted-foreground text-sm'
                   )}
                 >
-                  {reactionDisplay.status === 'pending' ? (
-                    <Skeleton
-                      className="h-10 w-10 shrink-0 rounded-lg sm:h-11 sm:w-11"
-                      aria-hidden
-                    />
-                  ) : reactionDisplay.status === 'vote_up' ? (
+                  {reactionDisplay.status === 'vote_up' ? (
                     <span className="text-sm leading-none opacity-90" aria-hidden>
                       {DISCUSSION_UPVOTE_DISPLAY}
                     </span>

@@ -76,7 +76,6 @@ import NotificationEventCard from './NotificationEventCard'
 import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
 import NoteKindLabel from './NoteKindLabel'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
 import RelayReview from './RelayReview'
@@ -607,12 +606,7 @@ export default function Note({
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {isNip25ReactionKind(event.kind) ? (
               <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2">
-                {reactionDisplay.status === 'pending' ? (
-                  <Skeleton
-                    className={cn('shrink-0 rounded-sm', size === 'small' ? 'size-7' : 'size-8')}
-                    aria-hidden
-                  />
-                ) : reactionDisplay.status === 'vote_up' ? (
+                {reactionDisplay.status === 'vote_up' ? (
                   <span
                     className={cn(
                       'inline-flex shrink-0 select-none leading-none',

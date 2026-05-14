@@ -211,10 +211,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
       try {
         globalFetchingPubkeys.add(pubkey)
 
-        const quick = tryHydrateProfileFromSessionOnly(pubkey, skipCache)
-        if (quick) {
-          return quick
-        }
+        /** Session-only fast path removed: {@link replaceableEventService.fetchProfileEvent} still refreshes from relays while session primes the loader. */
 
         /** Disk read runs in parallel with `fetchProfileEvent` — never block network on IDB. */
         idbEarlyP = profileFromIdbPromise(pubkey, skipCache)
@@ -516,8 +513,16 @@ export function useFetchProfile(id?: string, skipCache = false) {
 
     const run = async () => {
       try {
-        setIsFetching(true)
         setError(null)
+        const earlyProfile =
+          tryHydrateProfileFromSessionOnly(extractedPubkey, skipCache) ??
+          (await profileFromIdbPromise(extractedPubkey, skipCache))
+        if (!cancelled.current && earlyProfile) {
+          setProfile(earlyProfile)
+          setIsFetching(false)
+        } else if (!cancelled.current) {
+          setIsFetching(true)
+        }
 
         const profile = await checkProfile(extractedPubkey, cancelled)
 

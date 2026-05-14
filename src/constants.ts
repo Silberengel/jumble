@@ -469,7 +469,10 @@ export const SEARCHABLE_RELAY_URLS = [
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
-  'wss://purplepag.es'
+  'wss://purplepag.es',
+  'wss://relay.primal.net',
+  'wss://relay.damus.io',
+  'wss://nos.lol'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

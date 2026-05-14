@@ -4,6 +4,7 @@ import {
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
+import { getViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 import {
   relayFiltersUseCapitalLetterTagKeys,
   relayUrlsStripExtendedTagReqBlocked
@@ -66,10 +67,16 @@ export type FeedRelayPolicyContext = {
   eventKind?: number
   maxRelays?: number
   /**
-   * Default: read surfaces include aggr.nostr.land; favorites and write
-   * surfaces do not. Set explicitly for specialized fetches.
+   * Default: for `operation === 'read'`, prepend {@link AGGR_NOSTR_LAND_WSS} only when the viewer has a
+   * `nostr.land` host in their relay stack (see {@link getViewerRelayStackNostrLandAggrEligible}) or this
+   * flag is set true. `favorites-feed` never prepends. Use `nostrLandAggr: 'always'|'never'` to override.
    */
   nostrLandAggr?: 'default' | 'always' | 'never'
+  /**
+   * Per-call override for read-surface aggr eligibility. When omitted, uses the global synced flag from
+   * {@link syncViewerRelayStackNostrLandAggrEligible}.
+   */
+  nostrLandAggrEligible?: boolean
   applySocialKindBlockedFilter?: boolean
   applyExtendedTagBlockedFilter?: boolean
   preserveSingleExplicitRelay?: boolean
@@ -105,10 +112,17 @@ function shouldApplyExtendedTagFilter(ctx: FeedRelayPolicyContext): boolean {
   return (ctx.filters ?? []).some((filter) => relayFiltersUseCapitalLetterTagKeys([filter]))
 }
 
+function nostrLandAggrEligibleEffective(ctx: FeedRelayPolicyContext): boolean {
+  if (ctx.nostrLandAggrEligible !== undefined) return ctx.nostrLandAggrEligible
+  return getViewerRelayStackNostrLandAggrEligible()
+}
+
 function shouldEnsureAggr(ctx: FeedRelayPolicyContext): boolean {
   if (ctx.nostrLandAggr === 'always') return true
   if (ctx.nostrLandAggr === 'never') return false
-  return ctx.operation === 'read'
+  if (ctx.operation === 'favorites-feed') return false
+  if (ctx.operation === 'read') return nostrLandAggrEligibleEffective(ctx)
+  return false
 }
 
 function isReadOnlyRelay(norm: string): boolean {

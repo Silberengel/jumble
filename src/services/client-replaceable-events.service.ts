@@ -23,6 +23,7 @@ import type { QueryService } from './client-query.service'
 import logger from '@/lib/logger'
 import client from './client.service'
 import { buildComprehensiveRelayList, buildExploreProfileAndUserRelayList } from '@/lib/relay-list-builder'
+import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 
 export class ReplaceableEventService {
@@ -613,6 +614,7 @@ export class ReplaceableEventService {
         } else {
           relayUrls = [...FAST_READ_RELAY_URLS]
         }
+        relayUrls = prependAggrNostrLandIfViewerEligible(relayUrls)
         // Contacts + NIP-65 need the same patience as pins/payment: 100ms EOSE loses the race on slow relays
         // and multi-author batches must not use replaceableRace (first EVENT may not be the latest per author).
         const isSlowReplaceableBatch =
@@ -868,6 +870,8 @@ export class ReplaceableEventService {
       throw new Error('Invalid id')
     }
 
+    /** Used only when relay steps miss — UI should already show this from {@link useFetchProfile} IDB/session first. */
+    let sessionFallback: NEvent | undefined
     if (!_skipCache) {
       const sessionEv = client.eventService.getSessionMetadataForPubkey(pubkey)
       if (sessionEv && !shouldDropEventOnIngest(sessionEv)) {
@@ -878,7 +882,7 @@ export class ReplaceableEventService {
         await this.indexProfile(sessionEv)
         void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
         ReplaceableEventService.clearProfileFetchMiss(pubkey)
-        return sessionEv
+        sessionFallback = sessionEv
       }
     }
 
@@ -886,7 +890,7 @@ export class ReplaceableEventService {
     const relayHints = relays.length > 0 ? [...relays] : []
 
     if (!_skipCache && relayHints.length === 0 && ReplaceableEventService.isProfileFetchMissCached(pubkey)) {
-      return undefined
+      return sessionFallback
     }
 
     // CRITICAL: Always use relay hints from bech32 addresses (nprofile, naddr, nevent) when available
@@ -939,14 +943,16 @@ export class ReplaceableEventService {
         ]
       : []
 
-    const expandedRelays = [
-      ...new Set([
-        ...relayHints,
-        ...authorRelays,
-        ...PROFILE_FETCH_RELAY_URLS,
-        ...FAST_READ_RELAY_URLS
-      ])
-    ]
+    const expandedRelays = prependAggrNostrLandIfViewerEligible(
+      Array.from(
+        new Set([
+          ...relayHints,
+          ...authorRelays,
+          ...PROFILE_FETCH_RELAY_URLS,
+          ...FAST_READ_RELAY_URLS
+        ])
+      )
+    )
 
     const profileFromExpanded = await this.fetchReplaceableEvent(
       pubkey,
@@ -976,8 +982,9 @@ export class ReplaceableEventService {
       })
 
       if (comprehensiveRelays.length > 0) {
+        const relaysForQuery = prependAggrNostrLandIfViewerEligible(comprehensiveRelays)
         const events = await this.queryService.query(
-          comprehensiveRelays,
+          relaysForQuery,
           {
             authors: [pubkey],
             kinds: [kinds.Metadata]
@@ -1007,10 +1014,10 @@ export class ReplaceableEventService {
       ReplaceableEventService.releaseProfileFallbackNetworkSlot()
     }
 
-    if (!_skipCache && relayHints.length === 0) {
+    if (!_skipCache && relayHints.length === 0 && !sessionFallback) {
       ReplaceableEventService.rememberProfileFetchMiss(pubkey)
     }
-    return undefined
+    return sessionFallback
   }
 
   /**

@@ -7,19 +7,52 @@ import { getRootEventHexId } from '@/lib/event'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import { eventService } from '@/services/client.service'
+import type { NEvent } from '@/types'
 import { Event, kinds } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
 export type NotificationReactionDisplay =
-  | { status: 'pending' }
   | { status: 'vote_up' }
   | { status: 'vote_down' }
   | { status: 'discussion_custom' }
   | { status: 'default' }
 
+function classifyDiscussionReactionFromTargets(
+  reaction: Event,
+  target: NEvent,
+  root: NEvent | undefined
+): NotificationReactionDisplay {
+  let inDiscussion = target.kind === ExtendedKind.DISCUSSION
+  if (!inDiscussion && target.kind === ExtendedKind.COMMENT) {
+    inDiscussion = root?.kind === ExtendedKind.DISCUSSION
+  }
+  if (!inDiscussion) return { status: 'default' }
+  const raw = reaction.content?.trim() ?? ''
+  if (isDiscussionUpvoteEmoji(raw)) return { status: 'vote_up' }
+  if (isDiscussionDownvoteEmoji(raw)) return { status: 'vote_down' }
+  return { status: 'discussion_custom' }
+}
+
+function peekReactionDisplayFromSessionCaches(event: Event): NotificationReactionDisplay {
+  if (event.kind !== kinds.Reaction) return { status: 'default' }
+  const targetId = getFirstHexEventIdFromETags(event.tags)
+  if (!targetId) return { status: 'default' }
+  const target = eventService.peekHexIdNoteFromSessionCache(targetId)
+  if (!target) return { status: 'default' }
+  let root: NEvent | undefined
+  if (target.kind === ExtendedKind.COMMENT) {
+    const rootId = getRootEventHexId(target)
+    if (rootId) root = eventService.peekHexIdNoteFromSessionCache(rootId)
+  }
+  return classifyDiscussionReactionFromTargets(event, target, root)
+}
+
 /**
  * For kind 7: resolves whether the reacted-to note is a discussion (kind 11 or 1111 under 11)
  * and classifies +/- / ⬆️⬇️ as vote display vs other reactions.
+ *
+ * Always starts from session cache (sync) so the glyph is never a blank skeleton; async fetch refines
+ * when the target was not yet in memory.
  */
 export function useNotificationReactionDisplay(event: Event): NotificationReactionDisplay {
   const targetId = useMemo(() => {
@@ -29,9 +62,11 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
 
   const reactionRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
 
-  const [state, setState] = useState<NotificationReactionDisplay>(() =>
-    event.kind === kinds.Reaction ? { status: 'pending' } : { status: 'default' }
-  )
+  const [state, setState] = useState<NotificationReactionDisplay>({ status: 'default' })
+
+  useLayoutEffect(() => {
+    setState(peekReactionDisplayFromSessionCaches(event))
+  }, [event.id, event.kind, event.content, event.tags])
 
   useEffect(() => {
     if (event.kind === ExtendedKind.EXTERNAL_REACTION) {
@@ -48,8 +83,6 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
     }
 
     let cancelled = false
-    setState({ status: 'pending' })
-
     const fetchOpts = reactionRelayHints.length ? { relayHints: reactionRelayHints } : undefined
 
     ;(async () => {
@@ -60,13 +93,14 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
         return
       }
 
+      let root: NEvent | undefined
       let inDiscussion = target.kind === ExtendedKind.DISCUSSION
       if (!inDiscussion && target.kind === ExtendedKind.COMMENT) {
         const rootId = getRootEventHexId(target)
         if (rootId) {
           const rootHints = relayHintsFromEventTags(target)
           const rootOpts = rootHints.length ? { relayHints: rootHints } : fetchOpts
-          const root = await eventService.fetchEvent(rootId, rootOpts)
+          root = await eventService.fetchEvent(rootId, rootOpts)
           if (cancelled) return
           inDiscussion = root?.kind === ExtendedKind.DISCUSSION
         }
@@ -77,14 +111,7 @@ export function useNotificationReactionDisplay(event: Event): NotificationReacti
         return
       }
 
-      const raw = event.content?.trim() ?? ''
-      if (isDiscussionUpvoteEmoji(raw)) {
-        setState({ status: 'vote_up' })
-      } else if (isDiscussionDownvoteEmoji(raw)) {
-        setState({ status: 'vote_down' })
-      } else {
-        setState({ status: 'discussion_custom' })
-      }
+      setState(classifyDiscussionReactionFromTargets(event, target, root))
     })()
 
     return () => {

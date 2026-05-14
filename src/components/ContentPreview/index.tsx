@@ -1,4 +1,3 @@
-import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
 import {
   notificationReactionSummaryKey,
@@ -371,9 +370,7 @@ export default function ContentPreview({
   if (isNip25ReactionKind(event.kind)) {
     return withKindRow(
       <div className="pointer-events-none flex items-center gap-1.5 text-sm text-muted-foreground">
-        {reactionDisplay.status === 'pending' ? (
-          <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />
-        ) : reactionDisplay.status === 'vote_up' ? (
+        {reactionDisplay.status === 'vote_up' ? (
           <span className="text-base leading-none" aria-hidden>
             {DISCUSSION_UPVOTE_DISPLAY}
           </span>
