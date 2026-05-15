@@ -6,62 +6,65 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useNostr } from '@/providers/NostrProvider'
-import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 
 export default function NotificationThreadWatchButtons({ event }: { event: Event }) {
   const { t } = useTranslation()
-  const { pubkey } = useNostr()
+  const { pubkey, checkLogin } = useNostr()
   const watch = useNotificationThreadWatchOptional()
   const [busy, setBusy] = useState<'follow' | 'mute' | null>(null)
 
+  // Show for your own notes too (e.g. notifications feed): you may still want follow/mute on that anchor.
   if (!watch || !pubkey) return null
-  if (hexPubkeysEqual(event.pubkey, normalizeHexPubkey(pubkey))) return null
 
   const followed = watch.isFollowedForNotifications(event)
   const muted = watch.isMutedForNotifications(event)
 
-  const onFollow = async (e: React.MouseEvent) => {
+  const onFollow = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setBusy('follow')
-    try {
-      if (followed) {
-        const ok = await watch.unfollowThreadForNotifications(event)
-        if (ok) {
-          toast.success(t('Unfollowed thread notifications'))
+    void checkLogin(async () => {
+      setBusy('follow')
+      try {
+        if (followed) {
+          const ok = await watch.unfollowThreadForNotifications(event)
+          if (ok) {
+            toast.success(t('Unfollowed thread notifications'))
+          } else {
+            toast.error(t('Thread notification list update failed'))
+          }
         } else {
-          toast.error(t('Thread notification list update failed'))
+          await watch.followThreadForNotifications(event)
+          toast.success(t('Following thread for notifications'))
         }
-      } else {
-        await watch.followThreadForNotifications(event)
-        toast.success(t('Following thread for notifications'))
+      } catch (err) {
+        toast.error(t('Thread notification list update failed') + ': ' + (err as Error).message)
+      } finally {
+        setBusy(null)
       }
-    } catch (err) {
-      toast.error(t('Thread notification list update failed') + ': ' + (err as Error).message)
-    } finally {
-      setBusy(null)
-    }
+    })
   }
 
-  const onMute = async (e: React.MouseEvent) => {
+  const onMute = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setBusy('mute')
-    try {
-      if (muted) {
-        const ok = await watch.unmuteThreadForNotifications(event)
-        if (ok) {
-          toast.success(t('Unmuted thread notifications'))
+    void checkLogin(async () => {
+      setBusy('mute')
+      try {
+        if (muted) {
+          const ok = await watch.unmuteThreadForNotifications(event)
+          if (ok) {
+            toast.success(t('Unmuted thread notifications'))
+          } else {
+            toast.error(t('Thread notification list update failed'))
+          }
         } else {
-          toast.error(t('Thread notification list update failed'))
+          await watch.muteThreadForNotifications(event)
+          toast.success(t('Muted thread for notifications'))
         }
-      } else {
-        await watch.muteThreadForNotifications(event)
-        toast.success(t('Muted thread for notifications'))
+      } catch (err) {
+        toast.error(t('Thread notification list update failed') + ': ' + (err as Error).message)
+      } finally {
+        setBusy(null)
       }
-    } catch (err) {
-      toast.error(t('Thread notification list update failed') + ': ' + (err as Error).message)
-    } finally {
-      setBusy(null)
-    }
+    })
   }
 
   return (

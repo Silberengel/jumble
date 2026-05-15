@@ -1,8 +1,10 @@
 import { ExtendedKind } from '@/constants'
 import {
   getParentEventHexId,
+  getReplaceableCoordinateFromEvent,
   getRootEventHexId,
   isNip18RepostKind,
+  isReplaceableEvent,
   isReplyNoteEvent,
   normalizeReplaceableCoordinateString,
   resolveDeclaredThreadRootEventHex
@@ -86,39 +88,17 @@ export function threadWatchMatchesRefs(
   return false
 }
 
-function threadWatchListTagMatchesEvent(tag: string[], event: Event): boolean {
-  const k = tag[0]
-  if ((k === 'e' || k === 'E') && tag[1] && /^[0-9a-f]{64}$/i.test(tag[1])) {
-    const id = tag[1].toLowerCase()
-    const refs: TThreadWatchListRefs = { eHexLower: new Set([id]), aCoordLower: new Set() }
-    return threadWatchMatchesRefs(event, refs)
-  }
-  if ((k === 'a' || k === 'A') && tag[1]) {
-    const n = normalizeReplaceableCoordinateString(tag[1])
-    if (!n) return false
-    const refs: TThreadWatchListRefs = { eHexLower: new Set(), aCoordLower: new Set([n]) }
-    return threadWatchMatchesRefs(event, refs)
-  }
-  return false
-}
-
 /**
- * Drops every `e` / `a` ref that applies to `event` (same rules as {@link threadWatchMatchesRefs}),
- * so toggling off works when the list stores a thread root id but the UI row is a reply (or vice versa).
+ * True if the list contains this **exact** event (`e` = {@link Event.id}, or `a` = replaceable coordinate).
+ * Use for per-note bell UI and for writing list updates. For “any reply in this thread”, use {@link threadWatchMatchesRefs}.
  */
-export function listTagsAfterRemovingThreadWatchMatches(
-  listTags: string[][],
-  event: Event
-): string[][] | null {
-  let changed = false
-  const next = listTags.filter((t) => {
-    if (threadWatchListTagMatchesEvent(t, event)) {
-      changed = true
-      return false
-    }
-    return true
-  })
-  return changed ? next : null
+export function eventHasExactNotificationThreadWatchRef(event: Event, refs: TThreadWatchListRefs): boolean {
+  if (!refs.eHexLower.size && !refs.aCoordLower.size) return false
+  if (isReplaceableEvent(event.kind)) {
+    const n = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(event))
+    return !!n && refs.aCoordLower.has(n)
+  }
+  return refs.eHexLower.has(event.id.toLowerCase())
 }
 
 /** Replies, reactions, reposts, zaps-on-note, comments, poll votes, highlights — not plain top-level notes. */

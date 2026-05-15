@@ -1,3 +1,4 @@
+import { normalizeReplaceableCoordinateString } from '@/lib/event'
 import { nip19 } from 'nostr-tools'
 
 /** Decoded target for one bookmark/pin list entry (NIP-19 nevent/note or naddr). */
@@ -32,8 +33,12 @@ export function bookmarkListTagsAfterRemovingRef(
 ): string[][] | null {
   if (!ref.eIdLower && !ref.aCoordLower) return null
   const next = tags.filter((tag) => {
-    if (ref.eIdLower && tag[0] === 'e' && tag[1]?.toLowerCase() === ref.eIdLower) return false
-    if (ref.aCoordLower && tag[0] === 'a' && tag[1]?.toLowerCase() === ref.aCoordLower) return false
+    const k = tag[0]
+    if (ref.eIdLower && (k === 'e' || k === 'E') && tag[1]?.toLowerCase() === ref.eIdLower) return false
+    if (ref.aCoordLower && (k === 'a' || k === 'A') && tag[1]) {
+      const n = normalizeReplaceableCoordinateString(tag[1])
+      if (n === ref.aCoordLower) return false
+    }
     return true
   })
   return next.length === tags.length ? null : next

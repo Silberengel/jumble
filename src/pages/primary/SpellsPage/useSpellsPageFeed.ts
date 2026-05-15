@@ -579,6 +579,9 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       const followRefs = parseThreadWatchListRefs(notificationEventsIFollowListEvent ?? null)
       const mutedRefs = parseThreadWatchListRefs(notificationEventsIMutedListEvent ?? null)
 
+      // Never list your own authored events in this account's notifications (`#p` REQ still returns self-replies, self-`#p`, etc.).
+      if (hexPubkeysEqual(evt.pubkey, pk)) return true
+
       if (
         threadWatchMatchesRefs(evt, mutedRefs) &&
         isNotificationThreadInteractionEvent(evt)
@@ -587,8 +590,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       }
 
       if (isUserInEventMentions(evt, pk)) return false
-
-      if (hexPubkeysEqual(evt.pubkey, pk)) return false
 
       if (
         threadWatchMatchesRefs(evt, followRefs) &&

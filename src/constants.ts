@@ -446,7 +446,6 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
  */
 export const E_TAG_FILTER_BLOCKED_RELAY_URLS = [
   'wss://nostr.v0l.io',
-  'wss://nostr.sovbit.host'
 ]
 
 // Optimized relay list for read operations (includes aggregator)

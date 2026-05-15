@@ -210,7 +210,8 @@
     --muted-foreground: 140 8% 72%;
     --accent: 150 14% 18%;
     --accent-foreground: 100 10% 95%;
-    --destructive: 0 62.8% 30.6%;
+    /* Was ~31% L — too dark on popovers/menus; use ~60% L for readable red labels (Report, Mute, …). */
+    --destructive: 0 72% 60%;
     --destructive-foreground: 0 0% 98%;
     --border: 150 12% 22%;
     --input: 150 12% 18%;

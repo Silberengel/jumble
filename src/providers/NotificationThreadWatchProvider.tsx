@@ -8,15 +8,23 @@ import {
 } from '@/lib/personal-list-mutations'
 import { fetchLatestReplaceableListEvent } from '@/lib/replaceable-list-latest'
 import {
-  listTagsAfterRemovingThreadWatchMatches,
-  parseThreadWatchListRefs,
-  threadWatchMatchesRefs
+  eventHasExactNotificationThreadWatchRef,
+  parseThreadWatchListRefs
 } from '@/lib/notification-thread-watch'
 import logger from '@/lib/logger'
 import { ExtendedKind } from '@/constants'
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
-import { useCallback, useContext, useEffect, useMemo, useState, createContext, type ReactNode } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  createContext,
+  type ReactNode
+} from 'react'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 
@@ -79,10 +87,15 @@ function mergeTagsPreservingMeta(baseTags: string[][], refTags: string[][]): str
 }
 
 export function NotificationThreadWatchProvider({ children }: { children: ReactNode }) {
-  const { pubkey: accountPubkey, publish } = useNostr()
+  const { pubkey: accountPubkey, publish, signEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [eventsIFollowListEvent, setEventsIFollowListEvent] = useState<Event | null>(null)
   const [eventsIMutedListEvent, setEventsIMutedListEvent] = useState<Event | null>(null)
+  /** Same as state, updated during render so async handlers never read a stale list before effects run. */
+  const eventsIFollowListEventRef = useRef<Event | null>(null)
+  const eventsIMutedListEventRef = useRef<Event | null>(null)
+  eventsIFollowListEventRef.current = eventsIFollowListEvent
+  eventsIMutedListEventRef.current = eventsIMutedListEvent
 
   const buildComprehensiveRelayList = useCallback(async () => {
     if (!accountPubkey) return [] as string[]
@@ -134,14 +147,10 @@ export function NotificationThreadWatchProvider({ children }: { children: ReactN
     }
     const f = pick(remoteFollow, idbFollow ?? undefined)
     const m = pick(remoteMuted, idbMuted ?? undefined)
-    if (f) {
-      await indexedDb.putReplaceableEvent(f)
-      setEventsIFollowListEvent(f)
-    }
-    if (m) {
-      await indexedDb.putReplaceableEvent(m)
-      setEventsIMutedListEvent(m)
-    }
+    if (f) await indexedDb.putReplaceableEvent(f)
+    if (m) await indexedDb.putReplaceableEvent(m)
+    setEventsIFollowListEvent(f ?? null)
+    setEventsIMutedListEvent(m ?? null)
   }, [accountPubkey, buildComprehensiveRelayList, hydrateFromStorage])
 
   useEffect(() => {
@@ -174,17 +183,17 @@ export function NotificationThreadWatchProvider({ children }: { children: ReactN
   )
 
   const isFollowedForNotifications = useCallback(
-    (event: Event) => threadWatchMatchesRefs(event, followRefs),
+    (event: Event) => eventHasExactNotificationThreadWatchRef(event, followRefs),
     [followRefs]
   )
   const isMutedForNotifications = useCallback(
-    (event: Event) => threadWatchMatchesRefs(event, mutedRefs),
+    (event: Event) => eventHasExactNotificationThreadWatchRef(event, mutedRefs),
     [mutedRefs]
   )
 
-  const publishList = useCallback(
+  const relayPublishList = useCallback(
     async (kind: number, nextTags: string[][], content: string) => {
-      if (!accountPubkey) return
+      if (!accountPubkey) throw new Error('Not logged in')
       const comprehensiveRelays = await buildComprehensiveRelayList()
       const draft = createReplaceablePersonalListDraftEvent(kind, nextTags, content)
       const ev = await publish(draft, { specifiedRelayUrls: comprehensiveRelays })
@@ -194,213 +203,266 @@ export function NotificationThreadWatchProvider({ children }: { children: ReactN
       } else {
         setEventsIMutedListEvent(stored)
       }
+      return stored
     },
     [accountPubkey, buildComprehensiveRelayList, publish]
   )
 
+  const signApplyListLocal = useCallback(
+    async (kind: number, nextTags: string[][], content: string): Promise<Event> => {
+      const draft = createReplaceablePersonalListDraftEvent(kind, nextTags, content)
+      const ev = await signEvent(draft)
+      if (kind === ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST) {
+        setEventsIFollowListEvent(ev)
+      } else {
+        setEventsIMutedListEvent(ev)
+      }
+      void indexedDb.putReplaceableEvent(ev).catch((err) =>
+        logger.warn('NotificationThreadWatchProvider: optimistic IndexedDB write failed', { err })
+      )
+      return ev
+    },
+    [signEvent]
+  )
+
+  const restoreListSnapshots = useCallback(async (snapFollow: Event | null, snapMuted: Event | null) => {
+    setEventsIFollowListEvent(snapFollow)
+    setEventsIMutedListEvent(snapMuted)
+    try {
+      await Promise.all([
+        snapFollow ? indexedDb.putReplaceableEvent(snapFollow) : Promise.resolve(),
+        snapMuted ? indexedDb.putReplaceableEvent(snapMuted) : Promise.resolve()
+      ])
+    } catch (err) {
+      logger.warn('NotificationThreadWatchProvider: rollback IndexedDB write failed', { err })
+    }
+  }, [])
+
   const followThreadForNotifications = useCallback(
     async (event: Event) => {
       if (!accountPubkey) return
-      const comprehensiveRelays = await buildComprehensiveRelayList()
+      const prevF = eventsIFollowListEventRef.current
+      const prevM = eventsIMutedListEventRef.current
+      const snapF = prevF
+      const snapM = prevM
+
       const refTag = isReplaceableEvent(event.kind) ? buildATag(event) : buildETag(event.id, event.pubkey)
-      let followEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!followEv) {
-        followEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST
-          )) ?? null
-      }
-      let mutedEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!mutedEv) {
-        mutedEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
-          )) ?? null
-      }
+      const ref = refKeyForEvent(event)
 
-      const mutedStripped = mutedEv ? listTagsAfterRemovingThreadWatchMatches(mutedEv.tags, event) : null
-      if (mutedStripped) {
-        await publishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, mutedStripped, mutedEv.content)
-      }
+      const mutedStripped = prevM ? listTagsWithoutRef(prevM.tags, ref) : null
 
-      const curTags = followEv?.tags ?? []
-      const curFollowRefs = parseThreadWatchListRefs(followEv)
-      if (threadWatchMatchesRefs(event, curFollowRefs)) {
+      const curFollowRefs = parseThreadWatchListRefs(prevF)
+      if (eventHasExactNotificationThreadWatchRef(event, curFollowRefs)) {
+        if (prevF) {
+          try {
+            await indexedDb.putReplaceableEvent(prevF)
+          } catch {
+            /* ignore */
+          }
+          setEventsIFollowListEvent(prevF)
+        }
         return
       }
-      const next = mergeTagsPreservingMeta(curTags, [refTag])
-      await publishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, followEv?.content ?? '')
-      logger.component('NotificationThreadWatchProvider', 'follow thread for notifications', {
-        kind: event.kind
-      })
+
+      const nextFollowTags = mergeTagsPreservingMeta(prevF?.tags ?? [], [refTag])
+      const followContent = prevF?.content ?? ''
+
+      try {
+        if (mutedStripped && prevM) {
+          await signApplyListLocal(
+            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
+            mutedStripped,
+            prevM.content
+          )
+        }
+        await signApplyListLocal(
+          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
+          nextFollowTags,
+          followContent
+        )
+
+        if (mutedStripped && prevM) {
+          await relayPublishList(
+            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
+            mutedStripped,
+            prevM.content
+          )
+        }
+        await relayPublishList(
+          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
+          nextFollowTags,
+          followContent
+        )
+        logger.component('NotificationThreadWatchProvider', 'follow thread for notifications', {
+          kind: event.kind
+        })
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const muteThreadForNotifications = useCallback(
     async (event: Event) => {
       if (!accountPubkey) return
-      const comprehensiveRelays = await buildComprehensiveRelayList()
+      const prevF = eventsIFollowListEventRef.current
+      const prevM = eventsIMutedListEventRef.current
+      const snapF = prevF
+      const snapM = prevM
+
       const refTag = isReplaceableEvent(event.kind) ? buildATag(event) : buildETag(event.id, event.pubkey)
-      let mutedEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!mutedEv) {
-        mutedEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
-          )) ?? null
-      }
-      let followEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!followEv) {
-        followEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST
-          )) ?? null
-      }
+      const ref = refKeyForEvent(event)
 
-      const followStripped = followEv ? listTagsAfterRemovingThreadWatchMatches(followEv.tags, event) : null
-      if (followStripped) {
-        await publishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, followStripped, followEv.content)
-      }
+      const followStripped = prevF ? listTagsWithoutRef(prevF.tags, ref) : null
 
-      const curTags = mutedEv?.tags ?? []
-      const curMutedRefs = parseThreadWatchListRefs(mutedEv)
-      if (threadWatchMatchesRefs(event, curMutedRefs)) {
+      const curMutedRefs = parseThreadWatchListRefs(prevM)
+      if (eventHasExactNotificationThreadWatchRef(event, curMutedRefs)) {
+        if (prevM) {
+          try {
+            await indexedDb.putReplaceableEvent(prevM)
+          } catch {
+            /* ignore */
+          }
+          setEventsIMutedListEvent(prevM)
+        }
         return
       }
-      const next = mergeTagsPreservingMeta(curTags, [refTag])
-      await publishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, mutedEv?.content ?? '')
+
+      const nextMutedTags = mergeTagsPreservingMeta(prevM?.tags ?? [], [refTag])
+      const mutedContent = prevM?.content ?? ''
+
+      try {
+        if (followStripped && prevF) {
+          await signApplyListLocal(
+            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
+            followStripped,
+            prevF.content
+          )
+        }
+        await signApplyListLocal(
+          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
+          nextMutedTags,
+          mutedContent
+        )
+
+        if (followStripped && prevF) {
+          await relayPublishList(
+            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
+            followStripped,
+            prevF.content
+          )
+        }
+        await relayPublishList(
+          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
+          nextMutedTags,
+          mutedContent
+        )
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const unfollowThreadForNotifications = useCallback(
     async (event: Event): Promise<boolean> => {
       if (!accountPubkey) return false
-      const comprehensiveRelays = await buildComprehensiveRelayList()
-      let followEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!followEv) {
-        followEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST
-          )) ?? null
-      }
-      if (!followEv) return false
-      const next = listTagsAfterRemovingThreadWatchMatches(followEv.tags, event)
+      const pk = accountPubkey.trim().toLowerCase()
+      let prevF =
+        eventsIFollowListEventRef.current ??
+        (await indexedDb.getReplaceableEvent(pk, ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST))
+      if (!prevF) return false
+      const next = listTagsWithoutRef(prevF.tags, refKeyForEvent(event))
       if (!next) return false
-      await publishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, followEv.content)
-      return true
+      const snapF = prevF
+      const snapM = eventsIMutedListEventRef.current
+      try {
+        await signApplyListLocal(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, prevF.content)
+        await relayPublishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, prevF.content)
+        return true
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const unmuteThreadForNotifications = useCallback(
     async (event: Event): Promise<boolean> => {
       if (!accountPubkey) return false
-      const comprehensiveRelays = await buildComprehensiveRelayList()
-      let mutedEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!mutedEv) {
-        mutedEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
-          )) ?? null
-      }
-      if (!mutedEv) return false
-      const next = listTagsAfterRemovingThreadWatchMatches(mutedEv.tags, event)
+      const pk = accountPubkey.trim().toLowerCase()
+      let prevM =
+        eventsIMutedListEventRef.current ??
+        (await indexedDb.getReplaceableEvent(pk, ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST))
+      if (!prevM) return false
+      const next = listTagsWithoutRef(prevM.tags, refKeyForEvent(event))
       if (!next) return false
-      await publishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, mutedEv.content)
-      return true
+      const snapF = eventsIFollowListEventRef.current
+      const snapM = prevM
+      try {
+        await signApplyListLocal(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, prevM.content)
+        await relayPublishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, prevM.content)
+        return true
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const removeFollowRefByBech32 = useCallback(
     async (bech32Id: string): Promise<boolean> => {
       const ref = decodePersonalListBech32Ref(bech32Id)
       if (!ref || !accountPubkey) return false
-      const comprehensiveRelays = await buildComprehensiveRelayList()
+      const pk = accountPubkey.trim().toLowerCase()
       let followEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!followEv) {
-        followEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST
-          )) ?? null
-      }
+        eventsIFollowListEventRef.current ??
+        (await indexedDb.getReplaceableEvent(pk, ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST))
       if (!followEv) return false
       const next = listTagsWithoutRef(followEv.tags, ref)
       if (!next) return false
-      await publishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, followEv.content)
-      return true
+      const snapF = followEv
+      const snapM = eventsIMutedListEventRef.current
+      try {
+        await signApplyListLocal(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, followEv.content)
+        await relayPublishList(ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST, next, followEv.content)
+        return true
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const removeMuteRefByBech32 = useCallback(
     async (bech32Id: string): Promise<boolean> => {
       const ref = decodePersonalListBech32Ref(bech32Id)
       if (!ref || !accountPubkey) return false
-      const comprehensiveRelays = await buildComprehensiveRelayList()
+      const pk = accountPubkey.trim().toLowerCase()
       let mutedEv =
-        (await fetchLatestReplaceableListEvent(
-          accountPubkey,
-          ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
-          comprehensiveRelays
-        )) ?? null
-      if (!mutedEv) {
-        mutedEv =
-          (await indexedDb.getReplaceableEvent(
-            accountPubkey.trim().toLowerCase(),
-            ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
-          )) ?? null
-      }
+        eventsIMutedListEventRef.current ??
+        (await indexedDb.getReplaceableEvent(pk, ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST))
       if (!mutedEv) return false
       const next = listTagsWithoutRef(mutedEv.tags, ref)
       if (!next) return false
-      await publishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, mutedEv.content)
-      return true
+      const snapF = eventsIFollowListEventRef.current
+      const snapM = mutedEv
+      try {
+        await signApplyListLocal(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, mutedEv.content)
+        await relayPublishList(ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST, next, mutedEv.content)
+        return true
+      } catch (e) {
+        await restoreListSnapshots(snapF, snapM)
+        throw e
+      }
     },
-    [accountPubkey, buildComprehensiveRelayList, publishList]
+    [accountPubkey, relayPublishList, restoreListSnapshots, signApplyListLocal]
   )
 
   const value = useMemo(
