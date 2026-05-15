@@ -49,7 +49,8 @@ export function pubkeyToNpub(pubkey: string) {
 }
 
 export function userIdToPubkey(userId: string) {
-  const trimmed = userId.trim()
+  /** NIP-21 `nostr:` URI — must strip before bech32 / hex branches (otherwise we miss `npub1` / hex). */
+  const trimmed = userId.trim().replace(/^nostr:/i, '').trim()
   if (!trimmed) return ''
 
   if (trimmed.startsWith('npub1') || trimmed.startsWith('nprofile1')) {

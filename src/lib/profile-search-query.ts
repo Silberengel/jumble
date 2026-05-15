@@ -7,13 +7,10 @@ const HEX_PUBKEY = /^[0-9a-f]{64}$/i
  * profile fetch and IndexedDB kind-0 matching. NIP-50 text search does not match bech32 npubs.
  */
 export function decodeProfileSearchQueryToPubkeyHex(raw: string): string | undefined {
-  const q = raw.trim()
+  const q = raw.trim().replace(/^nostr:/i, '').trim()
   if (!q) return undefined
   if (HEX_PUBKEY.test(q)) return q.toLowerCase()
-  let bech = q
-  if (q.toLowerCase().startsWith('nostr:')) {
-    bech = q.slice(6).trim()
-  }
+  const bech = q
   try {
     const { type, data } = nip19.decode(bech)
     if (type === 'npub' && typeof data === 'string') return data.toLowerCase()

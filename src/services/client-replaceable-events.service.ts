@@ -359,15 +359,21 @@ export class ReplaceableEventService {
           'replaceableEventFromBigRelaysDataloader.loadMany'
         )
       } catch (err) {
+        // Never throw: a DataLoader/relay error would abort the whole feed profile batch and skip IDB
+        // hydration in {@link fetchProfilesForPubkeysBody}. Degrade like timeout — gaps fill from IDB/session below.
         if (isPromiseTimeoutError(err)) {
           logger.warn('[ReplaceableEventService] Profile batch network load timed out', {
             missingCount: stillMissing.length,
             kind
           })
-          newEvents = stillMissing.map(() => undefined)
         } else {
-          throw err
+          logger.warn('[ReplaceableEventService] Profile batch network load failed', {
+            missingCount: stillMissing.length,
+            kind,
+            error: err instanceof Error ? err.message : String(err)
+          })
         }
+        newEvents = stillMissing.map(() => undefined)
       }
       newEvents.forEach((event, idx) => {
         if (event && !(event instanceof Error)) {
@@ -1060,10 +1066,16 @@ export class ReplaceableEventService {
         'fetchProfilesForPubkeys'
       )
     } catch (err) {
-      if (!isPromiseTimeoutError(err)) throw err
-      logger.warn('[ReplaceableEventService] fetchProfilesForPubkeys exceeded wall timeout', {
-        pubkeyCount: deduped.length
-      })
+      if (isPromiseTimeoutError(err)) {
+        logger.warn('[ReplaceableEventService] fetchProfilesForPubkeys exceeded wall timeout', {
+          pubkeyCount: deduped.length
+        })
+      } else {
+        logger.warn('[ReplaceableEventService] fetchProfilesForPubkeys failed; using session / IndexedDB only', {
+          pubkeyCount: deduped.length,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
       return this.fetchProfilesForPubkeysLocalFallback(deduped)
     }
   }

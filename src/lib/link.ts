@@ -87,8 +87,9 @@ export const toNoteList = ({
   return `${path}?${query.toString()}`
 }
 export const toProfile = (userId: string) => {
-  if (userId.startsWith('npub') || userId.startsWith('nprofile')) return `/users/${userId}`
-  const npub = nip19.npubEncode(userId)
+  const t = userId.trim().replace(/^nostr:/i, '').trim()
+  if (t.startsWith('npub') || t.startsWith('nprofile')) return `/users/${t}`
+  const npub = nip19.npubEncode(t)
   return `/users/${npub}`
 }
 export const toProfileList = ({ search, domain }: { search?: string; domain?: string }) => {
