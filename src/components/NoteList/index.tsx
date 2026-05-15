@@ -100,6 +100,7 @@ import {
   stableFeedKindKey
 } from '@/features/feed/descriptor'
 import { mapNoteListSubRequestsForTimeline } from '@/features/feed/note-list-requests'
+import { stripNostrLandAggrFromTimelineSubRequests } from '@/lib/home-feed-relays'
 import { createFetchEventsFeedRuntimeLoader } from '@/features/feed/client-loader'
 import { FeedRuntime } from '@/features/feed/runtime'
 import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/feed/diagnostics'
@@ -1893,7 +1894,10 @@ const NoteList = forwardRef(
         let diskPrimeCancelled = false
         const primeDiskWhileAwaitingRelayProbe = async () => {
           try {
-            const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
+            const mapped = stripNostrLandAggrFromTimelineSubRequests(
+              feedSubscriptionKey,
+              mapLiveSubRequestsForTimeline(subRequestsRef.current)
+            )
               .map((req) =>
                 isOfflineRef.current
                   ? { ...req, urls: req.urls.filter((u) => isLocalNetworkUrl(u)) }
@@ -1975,7 +1979,10 @@ const NoteList = forwardRef(
 
         const seeAllNoSpell = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
 
-        const mappedSubRequests = mapLiveSubRequestsForTimeline(subRequestsRef.current)
+        const mappedSubRequests = stripNostrLandAggrFromTimelineSubRequests(
+          feedSubscriptionKey,
+          mapLiveSubRequestsForTimeline(subRequestsRef.current)
+        )
           .map((req) =>
             isOfflineRef.current
               ? { ...req, urls: req.urls.filter((u) => isLocalNetworkUrl(u)) }
@@ -3064,6 +3071,7 @@ const NoteList = forwardRef(
       }
     }, [
       timelineSubscriptionKey,
+      feedSubscriptionKey,
       sessionSnapshotIdentityKey,
       subRequestsKey,
       preserveTimelineOnSubRequestsChange,
@@ -3104,7 +3112,10 @@ const NoteList = forwardRef(
       if (!tk) return
 
       let deltaActive = true
-      const mappedDelta = mapLiveSubRequestsForTimeline(deltas)
+      const mappedDelta = stripNostrLandAggrFromTimelineSubRequests(
+        feedSubscriptionKey,
+        mapLiveSubRequestsForTimeline(deltas)
+      )
       const seeAllNoSpellDelta = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
       const filterMissingKindsDelta = (f: Filter) => !f.kinds || f.kinds.length === 0
       const invalidDelta = mappedDelta.filter(({ urls, filter: f }) => {
@@ -3335,6 +3346,7 @@ const NoteList = forwardRef(
       followingFeedDeltaSubRequestsKey,
       timelineKey,
       oneShotFetch,
+      feedSubscriptionKey,
       mapLiveSubRequestsForTimeline,
       areAlgoRelays,
       allowKindlessRelayExplore,
@@ -3511,6 +3523,7 @@ const NoteList = forwardRef(
 
     useEffect(() => {
       if (!timelinePublicReadFallback) return
+      if (feedSubscriptionKey === 'home-all-favorites') return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return
       if (feedFullSearchEvents !== null) return
@@ -3587,6 +3600,7 @@ const NoteList = forwardRef(
       })()
     }, [
       timelinePublicReadFallback,
+      feedSubscriptionKey,
       oneShotFetch,
       areAlgoRelays,
       progressiveWarmupQuery,

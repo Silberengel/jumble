@@ -1,4 +1,5 @@
 import { Event } from 'nostr-tools'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import {
   buildAuthorInboxOutboxRelayUrls,
   buildProfileAugmentedReadRelayUrls,
@@ -79,6 +80,7 @@ function blockedRelaysContentKey(blockedRelays: string[]): string {
 export function useProfilePins(pubkey: string | undefined) {
   const nostr = useNostrOptional()
   const { blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const blockedKey = useMemo(() => blockedRelaysContentKey(blockedRelays), [blockedRelays])
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
@@ -179,7 +181,7 @@ export function useProfilePins(pubkey: string | undefined) {
           client.fetchPinListEvent(pk).catch(() => undefined)
         ])
         const authorRelays = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays)
-        const pinsResolveRelays = buildProfileAugmentedReadRelayUrls(authorRelays, blockedRelays)
+        const pinsResolveRelays = buildProfileAugmentedReadRelayUrls(authorRelays, blockedRelays, 16, useGlobalRelayBootstrap)
         if (!pinsResolveRelays.length) {
           if (!paintedLocalPins) setPinEvents([])
           return

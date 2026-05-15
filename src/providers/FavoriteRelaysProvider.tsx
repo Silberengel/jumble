@@ -1,4 +1,5 @@
 import { FAST_READ_RELAY_URLS, DEFAULT_FAVORITE_RELAYS } from '@/constants'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import storage from '@/services/local-storage.service'
 import { createFavoriteRelaysDraftEvent, createBlockedRelaysDraftEvent, createRelaySetDraftEvent } from '@/lib/draft-event'
 import { getReplaceableEventIdentifier } from '@/lib/event'
@@ -25,11 +26,9 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (!favoriteRelaysEvent) {
-      /** Curated app defaults for the home feed — same for anonymous and logged-in users until kind 10012 loads. */
-      const favoriteRelays: string[] = [...DEFAULT_FAVORITE_RELAYS]
+      let favoriteRelays: string[] = []
 
       if (pubkey) {
-        // Only add stored relay sets if user is logged in
         const storedRelaySets = storage.getRelaySets()
         storedRelaySets.forEach(({ relayUrls }) => {
           relayUrls.forEach((url) => {
@@ -38,6 +37,15 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
             }
           })
         })
+      }
+
+      const useGlobal = viewerUsesGlobalRelayDefaults({
+        viewerPubkey: pubkey,
+        favoriteRelayUrls: favoriteRelays,
+        relayList
+      })
+      if (favoriteRelays.length === 0 && useGlobal) {
+        favoriteRelays = [...DEFAULT_FAVORITE_RELAYS]
       }
 
       setFavoriteRelays(favoriteRelays)
@@ -82,9 +90,16 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
       )
       setRelaySetEvents(storedRelaySetEvents.filter(Boolean) as Event[])
 
+      const relaySetDiscoverGlobal = viewerUsesGlobalRelayDefaults({
+        viewerPubkey: pubkey,
+        favoriteRelayUrls: relays,
+        relayList
+      })
       const normalizedRelays = [
-        ...(relayList?.write ?? []).map(url => normalizeAnyRelayUrl(url) || url),
-        ...FAST_READ_RELAY_URLS.map(url => normalizeUrl(url) || url)
+        ...(relayList?.write ?? []).map((url) => normalizeAnyRelayUrl(url) || url),
+        ...(relaySetDiscoverGlobal
+          ? FAST_READ_RELAY_URLS.map((url) => normalizeUrl(url) || url)
+          : [])
       ]
       const newRelaySetEvents = await queryService.fetchEvents(
         Array.from(new Set(normalizedRelays)).slice(0, 5),
@@ -121,7 +136,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
       )
     }
     init()
-  }, [favoriteRelaysEvent, pubkey])
+  }, [favoriteRelaysEvent, pubkey, relayList])
 
   useEffect(() => {
     if (!blockedRelaysEvent) {

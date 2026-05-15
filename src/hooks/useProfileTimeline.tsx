@@ -3,6 +3,7 @@ import client, { eventService } from '@/services/client.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds as nostrKinds, type Filter } from 'nostr-tools'
 import { CALENDAR_EVENT_KINDS, ExtendedKind, isDocumentRelayKind, isSocialKindBlockedKind } from '@/constants'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
@@ -130,6 +131,7 @@ export function useProfileTimeline({
 }: UseProfileTimelineOptions): UseProfileTimelineResult {
   const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
     if (!me) return false
@@ -311,7 +313,8 @@ export function useProfileTimeline({
         emptyAuthor,
         socialKinds,
         includeAuthorLocalRelays,
-        kinds
+        kinds,
+        useGlobalRelayBootstrap
       )
 
       const startWave = async (subRequests: ReturnType<typeof buildSubRequests>) => {
@@ -406,7 +409,8 @@ export function useProfileTimeline({
           authorRl,
           socialKinds,
           includeAuthorLocalRelays,
-          kinds
+          kinds,
+          useGlobalRelayBootstrap
         )
         const deltaUrls = subtractNormalizedRelayUrls(fullFeedUrls, provisionalFeedUrls)
         if (cancelled || deltaUrls.length === 0) return
@@ -439,7 +443,7 @@ export function useProfileTimeline({
       subscriptionRef.current()
       subscriptionRef.current = () => {}
     }
-  }, [pubkey, cacheKey, JSON.stringify(kinds), limit, refreshToken, relayListsKey, includeAuthorLocalRelays])
+  }, [pubkey, cacheKey, JSON.stringify(kinds), limit, refreshToken, relayListsKey, includeAuthorLocalRelays, useGlobalRelayBootstrap])
 
   const refresh = useCallback(() => {
     subscriptionRef.current()

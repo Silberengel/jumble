@@ -1,8 +1,7 @@
 import storage from '@/services/local-storage.service'
 import logger from '@/lib/logger'
 import { ExtendedKind, NIP71_VIDEO_KINDS } from '@/constants'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { buildLiveActivitiesRelayUrls } from '@/lib/live-activities'
+import { buildRelayPulseQueryRelayUrls } from '@/lib/home-feed-relays'
 import {
   readRelayPulseActiveNpubsCache,
   writeRelayPulseActiveNpubsCache
@@ -25,9 +24,14 @@ import {
 const ACTIVE_WINDOW_SEC = 3600
 /** Recent slice (seconds): newest notes dominate global REQ limits; a shorter window improves author diversity. */
 const PULSE_RECENT_TAIL_SEC = 1200
-/** Per-REQ event cap; two time slices run in parallel and merge (see {@link fetchRelayPulseNoteEvents}). */
-const PULSE_REQ_LIMIT_RECENT = 900
-const PULSE_REQ_LIMIT_EARLIER = 1400
+/**
+ * Per-REQ event caps for the sidebar relay pulse. Keep small: each event is Schnorr-verified on the WebSocket
+ * thread in nostr-tools; limits of 900+1400 caused main-thread timeouts in verifyEvent when relays returned large batches.
+ */
+const PULSE_REQ_LIMIT_RECENT = 120
+const PULSE_REQ_LIMIT_EARLIER = 160
+/** Hard cap after merging two slices — enough for pubkey diversity without megabytes of verification work. */
+const PULSE_MERGED_EVENT_CAP = 400
 const FETCH_RETRY_DELAY_MS = 2500
 /** Wall-clock cadence while the tab is visible */
 const POLL_INTERVAL_MS = 60 * 60 * 1000
@@ -94,7 +98,9 @@ async function fetchRelayPulseNoteEvents(
   for (const r of settled) {
     if (r.status === 'fulfilled') merged.push(...r.value)
   }
-  return mergeRelayPulseEventsById(merged)
+  const deduped = mergeRelayPulseEventsById(merged)
+  deduped.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id))
+  return deduped.slice(0, PULSE_MERGED_EVENT_CAP)
 }
 
 function aggregatePubkeysByRecency(events: { pubkey: string; created_at: number }[]): string[] {
@@ -139,8 +145,9 @@ function partitionByFollows(orderedPubkeys: string[], followings: string[]) {
 }
 
 export function FavoriteRelaysActivityProvider({ children }: { children: React.ReactNode }) {
-  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { pubkey: viewerPubkey, followListEvent, relayList } = useNostr()
+  const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
+  const { pubkey: viewerPubkey, followListEvent, relayList, cacheRelayListEvent, httpRelayListEvent } =
+    useNostr()
   const followings = useMemo(
     () => (followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []),
     [followListEvent]
@@ -160,85 +167,87 @@ export function FavoriteRelaysActivityProvider({ children }: { children: React.R
   orderedPubkeysRef.current = orderedPubkeys
   /** After restoring from disk, ignore the first empty network result (timeouts / slow relays), then behave normally. */
   const skipFirstEmptyNetworkOverwriteRef = useRef(false)
+  const favoriteRelayUrlsForPulse = useMemo(
+    () => [...favoriteRelays, ...relaySets.flatMap((rs) => rs.relayUrls)],
+    [favoriteRelays, relaySets]
+  )
+
   const pulseQueryUrls = useMemo(
     () =>
-      buildLiveActivitiesRelayUrls({
-        loggedIn: !!viewerPubkey,
-        favoriteRelays,
+      buildRelayPulseQueryRelayUrls({
+        viewerPubkey,
+        favoriteRelayUrls: favoriteRelayUrlsForPulse,
         blockedRelays,
-        relayListRead: userReadRelaysWithHttp(relayList),
-        relayListWrite: relayList?.write ?? []
+        relayList,
+        cacheRelayListEvent,
+        httpRelayListEvent
       }),
-    [viewerPubkey, favoriteRelays, blockedRelays, relayList]
+    [
+      viewerPubkey,
+      favoriteRelayUrlsForPulse,
+      blockedRelays,
+      relayList,
+      cacheRelayListEvent,
+      httpRelayListEvent
+    ]
   )
 
   const relayKey = useMemo(() => pulseQueryUrls.join('\n'), [pulseQueryUrls])
 
-  const fetchActive = useCallback(
-    async (useDefaultRelays = false) => {
-      const cacheViewer = viewerPubkey ?? storage.getCurrentAccount()?.pubkey ?? null
-      const urls = useDefaultRelays
-        ? buildLiveActivitiesRelayUrls({
-            loggedIn: false,
-            favoriteRelays: [],
-            blockedRelays,
-            relayListRead: [],
-            relayListWrite: []
-          })
-        : pulseQueryUrls
-      if (urls.length === 0) {
-        setLoading(false)
-        setRelayActivityReady(true)
-        const now = Date.now()
-        setOrderedPubkeys([])
+  const fetchActive = useCallback(async () => {
+    const cacheViewer = viewerPubkey ?? storage.getCurrentAccount()?.pubkey ?? null
+    const urls = pulseQueryUrls
+    if (urls.length === 0) {
+      setLoading(false)
+      setRelayActivityReady(true)
+      const now = Date.now()
+      setOrderedPubkeys([])
+      lastCompletedFetchAtRef.current = now
+      setLastFetchedAtMs(now)
+      writeRelayPulseActiveNpubsCache({
+        relayKey,
+        viewerPubkey: cacheViewer,
+        orderedPubkeys: [],
+        lastFetchedAtMs: now
+      })
+      return
+    }
+    setLoading(true)
+    const anchorSec = Math.floor(Date.now() / 1000)
+    try {
+      const events = await fetchRelayPulseNoteEvents(urls, anchorSec)
+      const now = Date.now()
+      const nextPubkeys = aggregatePubkeysByRecency(events)
+      const prev = orderedPubkeysRef.current
+      if (
+        skipFirstEmptyNetworkOverwriteRef.current &&
+        nextPubkeys.length === 0 &&
+        prev.length > 0
+      ) {
+        skipFirstEmptyNetworkOverwriteRef.current = false
+        logger.debug('[FavoriteRelaysActivity] kept relay pulse from cache; first fetch returned empty')
+      } else {
+        skipFirstEmptyNetworkOverwriteRef.current = false
+        setOrderedPubkeys(nextPubkeys)
         lastCompletedFetchAtRef.current = now
         setLastFetchedAtMs(now)
         writeRelayPulseActiveNpubsCache({
           relayKey,
           viewerPubkey: cacheViewer,
-          orderedPubkeys: [],
+          orderedPubkeys: nextPubkeys,
           lastFetchedAtMs: now
         })
-        return
       }
-      setLoading(true)
-      const anchorSec = Math.floor(Date.now() / 1000)
-      try {
-        const events = await fetchRelayPulseNoteEvents(urls, anchorSec)
-        const now = Date.now()
-        const nextPubkeys = aggregatePubkeysByRecency(events)
-        const prev = orderedPubkeysRef.current
-        if (
-          skipFirstEmptyNetworkOverwriteRef.current &&
-          nextPubkeys.length === 0 &&
-          prev.length > 0
-        ) {
-          skipFirstEmptyNetworkOverwriteRef.current = false
-          logger.debug('[FavoriteRelaysActivity] kept relay pulse from cache; first fetch returned empty')
-        } else {
-          skipFirstEmptyNetworkOverwriteRef.current = false
-          setOrderedPubkeys(nextPubkeys)
-          lastCompletedFetchAtRef.current = now
-          setLastFetchedAtMs(now)
-          writeRelayPulseActiveNpubsCache({
-            relayKey,
-            viewerPubkey: cacheViewer,
-            orderedPubkeys: nextPubkeys,
-            lastFetchedAtMs: now
-          })
-        }
-      } catch (error) {
-        logger.debug('[FavoriteRelaysActivity] fetch failed', { error, useDefaultRelays })
-        if (!useDefaultRelays && favoriteRelays.length > 0) {
-          setTimeout(() => void fetchRef.current(true), FETCH_RETRY_DELAY_MS)
-        }
-      } finally {
-        setLoading(false)
-        setRelayActivityReady(true)
+    } catch (error) {
+      logger.debug('[FavoriteRelaysActivity] fetch failed', { error })
+      if (pulseQueryUrls.length > 0) {
+        setTimeout(() => void fetchRef.current(), FETCH_RETRY_DELAY_MS)
       }
-    },
-    [favoriteRelays, blockedRelays, relayKey, viewerPubkey, pulseQueryUrls]
-  )
+    } finally {
+      setLoading(false)
+      setRelayActivityReady(true)
+    }
+  }, [relayKey, viewerPubkey, pulseQueryUrls])
 
   const fetchRef = useRef(fetchActive)
   fetchRef.current = fetchActive

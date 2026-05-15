@@ -87,11 +87,14 @@ export function getRelaysForSpellCatalogSync(
   favoriteRelays: string[],
   blockedRelays: string[],
   userInboxReadRelays: string[],
-  options?: { userWriteRelays?: string[] }
+  options?: { userWriteRelays?: string[]; useGlobalRelayBootstrap?: boolean }
 ): string[] {
+  const g = options?.useGlobalRelayBootstrap !== false
   return getRelayUrlsWithFavoritesFastReadAndInbox(favoriteRelays, blockedRelays, userInboxReadRelays, {
     userWriteRelays: options?.userWriteRelays ?? [],
-    applySocialKindBlockedFilter: false
+    applySocialKindBlockedFilter: false,
+    useGlobalFavoriteDefaults: g,
+    includeGlobalFastRead: g
   })
 }
 

@@ -1,6 +1,7 @@
 import RelaySimpleInfo, { RelaySimpleInfoSkeleton } from '@/components/RelaySimpleInfo'
 import { Button } from '@/components/ui/button'
 import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useFetchRelayInfo } from '@/hooks'
 import { toRelay, toRelaySettings } from '@/lib/link'
 import { normalizeUrl, simplifyUrl } from '@/lib/url'
@@ -61,6 +62,7 @@ export default function ExploreFavoriteRelays() {
   const { navigate } = usePrimaryPage()
   const { push } = useSecondaryPage()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
 
   const blockedSet = useMemo(
     () => new Set(blockedRelays.map((b) => normalizeUrl(b) || b)),
@@ -75,6 +77,9 @@ export default function ExploreFavoriteRelays() {
     if (visible.length > 0) {
       return { urls: visible, usingDefaults: false }
     }
+    if (!useGlobalRelayBootstrap) {
+      return { urls: [], usingDefaults: false }
+    }
     const defaultsFiltered = DEFAULT_FAVORITE_RELAYS.filter((r) => {
       const k = normalizeUrl(r) || r
       return k && !blockedSet.has(k)
@@ -83,7 +88,7 @@ export default function ExploreFavoriteRelays() {
       urls: defaultsFiltered.length > 0 ? defaultsFiltered : DEFAULT_FAVORITE_RELAYS,
       usingDefaults: true
     }
-  }, [favoriteRelays, blockedSet])
+  }, [favoriteRelays, blockedSet, useGlobalRelayBootstrap])
 
   if (urls.length === 0) return null
 

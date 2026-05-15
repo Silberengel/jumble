@@ -18,6 +18,7 @@ import {
   dedupeAppendIds,
   resolveSpellListATags
 } from '@/lib/spell-list-import'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useBookmarks } from '@/providers/bookmarks-context'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -294,6 +295,7 @@ export default function CreateSpellDialog({
   const { pubkey, publish, checkLogin, relayList } = useNostr()
   const { addBookmark, removeBookmark } = useBookmarks()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const [form, setForm] = useState<TSpellDraftParams>(DEFAULT_PARAMS)
   const [saving, setSaving] = useState(false)
   const scrollBodyRef = useRef<HTMLDivElement>(null)
@@ -325,7 +327,8 @@ export default function CreateSpellDialog({
       setForm(draft)
       setListImportNotices(notices)
       const urls = getRelaysForSpellCatalogSync(favoriteRelays, blockedRelays, userReadRelaysWithHttp(relayList), {
-        userWriteRelays: relayList?.write ?? []
+        userWriteRelays: relayList?.write ?? [],
+        useGlobalRelayBootstrap
       })
       if (pendingATags.length === 0) return
       void resolveSpellListATags(pendingATags, urls).then(({ ids, notices: extra }) => {
@@ -335,7 +338,7 @@ export default function CreateSpellDialog({
         if (extra.length) setListImportNotices((n) => [...n, ...extra])
       })
     },
-    [favoriteRelays, blockedRelays, relayList]
+    [favoriteRelays, blockedRelays, relayList, useGlobalRelayBootstrap]
   )
 
   const handleLoadManualList = useCallback(async () => {

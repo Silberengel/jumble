@@ -18,6 +18,7 @@ import {
 } from '@/lib/relay-url-priority'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
+import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
 
 const blockedSet = (blockedRelays: string[]) =>
   new Set(blockedRelays.map((b) => normalizeAnyRelayUrl(b) || b))
@@ -25,8 +26,8 @@ const blockedSet = (blockedRelays: string[]) =>
 /**
  * Logged-in user’s favorite relays (kind 10012 `relay` tags via {@link useFavoriteRelays}, plus bootstrap defaults
  * when the event is missing): drop blocked, dedupe, normalize. If no non-blocked entries remain, use
- * {@link DEFAULT_FAVORITE_RELAYS}. Same list drives the favorites tier in REQ/publish prioritization and the
- * all-favorites home feed.
+ * {@link DEFAULT_FAVORITE_RELAYS} only when `useGlobalFavoriteDefaults` is true (signed-out or no NIP-65 and no favorites).
+ * Same list drives the favorites tier in REQ/publish prioritization and the all-favorites home feed.
  */
 /**
  * NIP-65 `read` plus HTTP index inboxes (kind 10243) for feed REQ / query URL lists.
@@ -41,14 +42,15 @@ export function userReadRelaysWithHttp(
 
 export function getFavoritesFeedRelayUrls(
   favoriteRelays: string[],
-  blockedRelays: string[]
+  blockedRelays: string[],
+  useGlobalFavoriteDefaults = true
 ): string[] {
   const blocked = blockedSet(blockedRelays)
   const visible = favoriteRelays.filter((r) => {
     const k = normalizeAnyRelayUrl(r) || r
     return k && !blocked.has(k)
   })
-  const base = visible.length > 0 ? visible : DEFAULT_FAVORITE_RELAYS
+  const base = visible.length > 0 ? visible : useGlobalFavoriteDefaults ? DEFAULT_FAVORITE_RELAYS : []
   return feedRelayPolicyUrls(
     [{ source: 'favorites', urls: base }],
     {
@@ -107,10 +109,14 @@ const PROFILE_AUGMENTED_READ_MAX_RELAYS = 16
 export function buildProfileAugmentedReadRelayUrls(
   authorRelayUrls: string[],
   blockedRelays: string[],
-  maxRelays: number = PROFILE_AUGMENTED_READ_MAX_RELAYS
+  maxRelays: number = PROFILE_AUGMENTED_READ_MAX_RELAYS,
+  useGlobalRelayBootstrap = true
 ): string[] {
   const readOnlyLayer = READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-  const fastReadLayer = FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+  const fastReadLayer =
+    useGlobalRelayBootstrap
+      ? (FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[])
+      : []
   const merged = mergeRelayUrlLayers([authorRelayUrls, readOnlyLayer, fastReadLayer], blockedRelays)
   return merged.slice(0, maxRelays)
 }
@@ -127,6 +133,12 @@ export type ReadRelayPriorityOptions = {
    * relays in `SOCIAL_KIND_BLOCKED_RELAY_URLS` before capping.
    */
   applySocialKindBlockedFilter?: boolean
+  /**
+   * When false, empty favorites do not fall back to {@link DEFAULT_FAVORITE_RELAYS}. Default true.
+   */
+  useGlobalFavoriteDefaults?: boolean
+  /** When false, omit the global FAST_READ tier. Default true. */
+  includeGlobalFastRead?: boolean
 }
 
 /**
@@ -138,7 +150,9 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
   userInboxReadRelays: string[],
   options?: ReadRelayPriorityOptions
 ): string[] {
-  const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+  const useFavDefaults = options?.useGlobalFavoriteDefaults !== false
+  const includeFast = options?.includeGlobalFastRead !== false
+  const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useFavDefaults)
   return buildPrioritizedReadRelayUrls({
     userReadRelays: userInboxReadRelays,
     userWriteRelays: options?.userWriteRelays ?? [],
@@ -146,7 +160,8 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
     favoriteRelays: favorites,
     blockedRelays,
     maxRelays: options?.maxRelays,
-    applySocialKindBlockedFilter: options?.applySocialKindBlockedFilter
+    applySocialKindBlockedFilter: options?.applySocialKindBlockedFilter,
+    includeGlobalFastRead: includeFast
   })
 }
 
@@ -169,8 +184,11 @@ export function buildProfilePageReadRelayUrls(
   kindsIncludeSocialBlockedKind: boolean,
   includeAuthorLocalRelays = false,
   /** When the timeline includes document kinds (30023, 30040, …), add document index relays and raise the cap. */
-  profileKindsHint?: readonly number[]
+  profileKindsHint?: readonly number[],
+  /** When false, omit global FAST_READ / profile-fetch widening for logged-in users with their own relay stack. */
+  useGlobalRelayBootstrap?: boolean
 ): string[] {
+  const useGlobal = useGlobalRelayBootstrap !== false
   const wantsDocumentLayer = profileKindsHint?.some((k) => isDocumentRelayKind(k)) ?? false
   const maxRelays = wantsDocumentLayer ? PROFILE_PAGE_DOCUMENT_FEED_MAX_RELAYS : PROFILE_PAGE_FEED_MAX_RELAYS
   const list = includeAuthorLocalRelays
@@ -180,8 +198,10 @@ export function buildProfilePageReadRelayUrls(
   const authorWrite = [...(list.httpWrite ?? []), ...(list.write ?? [])]
   const authorHasNoNip65 = authorRead.length === 0 && authorWrite.length === 0
 
-  const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-  const fastReadLayer = FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+  const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobal)
+  const fastReadLayer = useGlobal
+    ? (FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[])
+    : []
   const authorWriteLayer = relayUrlsLocalsFirst(authorWrite)
   const authorReadLayer = relayUrlsLocalsFirst(authorRead)
   const urls = feedRelayPolicyUrls(
@@ -202,7 +222,8 @@ export function buildProfilePageReadRelayUrls(
   )
   /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
   if (authorHasNoNip65) {
-    const profileFetchLayer = PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+    const profileSource = useGlobal ? PROFILE_FETCH_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer()
+    const profileFetchLayer = profileSource.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
     return mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
   }
   if (wantsDocumentLayer) {
@@ -235,7 +256,9 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
         ? options.applySocialKindBlockedFilter
         : relayFilterIncludesSocialKindBlockedKind(r.filter)
 
-    const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
+    const useFavDefaults = options?.useGlobalFavoriteDefaults !== false
+    const includeFast = options?.includeGlobalFastRead !== false
+    const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useFavDefaults)
 
     const authorOnly = dedupeNormalizeRelayUrlsOrdered(options?.authorWriteRelays ?? [])
 
@@ -243,7 +266,8 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
       userReadRelays: userInboxReadRelays,
       userWriteRelays: options?.userWriteRelays ?? [],
       authorWriteRelays: authorOnly,
-      favoriteRelays: favorites
+      favoriteRelays: favorites,
+      includeGlobalFastRead: includeFast
     })
 
     const layers = [relayUrlsLocalsFirst(r.urls), ...coreLayers]

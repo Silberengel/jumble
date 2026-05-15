@@ -1084,7 +1084,7 @@ function ReplyNoteList({
         if (!rootInfo) return // Type guard
 
         try {
-          // READ from: FAST_READ_RELAY_URLS + user's inboxes + local relays + OP author's outboxes
+          // READ from: thread hints, author/user NIP-65, favorites, cache — then DEFAULT_FAVORITE_RELAYS fallback.
           const opAuthorPubkey = rootInfo.type === 'E' || rootInfo.type === 'A' ? rootInfo.pubkey : undefined
           const seenOn = client.getSeenEventRelayUrls(event.id).map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
           const fromBrowsingFeed = browsingRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)

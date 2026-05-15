@@ -11,10 +11,11 @@
 
 import { FAST_READ_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { getCacheRelayUrls } from './private-relays'
+import { defaultFavoriteRelaysForViewer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 import logger from '@/lib/logger'
 import type { Event } from 'nostr-tools'
@@ -249,21 +250,38 @@ export async function buildExploreProfileAndUserRelayList(
   if (!userPubkey) {
     return boot
   }
+  let useGlobal = true
+  try {
+    const [fav, peeked] = await Promise.all([
+      client.fetchFavoriteRelays(userPubkey).catch(() => [] as string[]),
+      client.peekRelayListFromStorage(userPubkey).catch(() => null)
+    ])
+    useGlobal = viewerUsesGlobalRelayDefaults({
+      viewerPubkey: userPubkey,
+      favoriteRelayUrls: fav,
+      relayList: peeked ?? undefined
+    })
+  } catch {
+    useGlobal = true
+  }
   try {
     const built = await buildComprehensiveRelayList({
       userPubkey,
       includeUserOwnRelays: true,
       includeProfileFetchRelays: true,
-      includeFastReadRelays: true,
+      includeFastReadRelays: useGlobal,
       includeFavoriteRelays: false,
       includeLocalRelays: true,
       includeFastWriteRelays: false,
       includeSearchableRelays: false
     })
+    if (!useGlobal) {
+      return built
+    }
     if (!built.length) return boot
     return dedupeNormalizedRelayUrls([...boot, ...built])
   } catch {
-    return boot
+    return useGlobal ? boot : []
   }
 }
 
@@ -330,6 +348,7 @@ export async function buildPollResultsReadRelayUrls(options: {
 
   let authorReadSlice: string[] = []
   let viewerReadSlice: string[] = []
+  let useGlobalFastRead = true
   try {
     const [authorRl, viewerRl] = await Promise.all([
       pollEvent.pubkey ? client.peekRelayListFromStorage(pollEvent.pubkey) : Promise.resolve(null),
@@ -340,6 +359,11 @@ export async function buildPollResultsReadRelayUrls(options: {
     }
     if (viewerRl) {
       viewerReadSlice = userReadRelaysWithHttp(viewerRl).slice(0, POLL_RESULTS_NIP65_READ_SLICE)
+      useGlobalFastRead = viewerUsesGlobalRelayDefaults({
+        viewerPubkey,
+        favoriteRelayUrls: viewerFavoriteRelayUrls,
+        relayList: viewerRl
+      })
     }
   } catch {
     /* ignore — poll results still use other layers */
@@ -357,7 +381,9 @@ export async function buildPollResultsReadRelayUrls(options: {
     }
   }
 
-  pushLayer([...FAST_READ_RELAY_URLS])
+  if (useGlobalFastRead) {
+    pushLayer([...FAST_READ_RELAY_URLS])
+  }
   pushLayer(authorReadSlice)
 
   return feedRelayPolicyUrls([{ source: 'fallback', urls: ordered }], {
@@ -370,8 +396,8 @@ export async function buildPollResultsReadRelayUrls(options: {
 }
 
 /**
- * Build relay list for reading replies/comments
- * READ from: FAST_READ_RELAY_URLS + user's inboxes/outboxes + local relays + OP author's outboxes
+ * Build relay list for reading replies/comments: thread hints, author/user NIP-65, favorites, cache —
+ * then default favorite relays only when global bootstrap applies (signed-out or no configured stack).
  */
 export async function buildReplyReadRelayList(
   opAuthorPubkey: string | undefined,
@@ -379,18 +405,34 @@ export async function buildReplyReadRelayList(
   blockedRelays: string[] = [],
   threadRelayHints: string[] = []
 ): Promise<string[]> {
-  return buildComprehensiveRelayList({
+  let useGlobal = true
+  if (userPubkey) {
+    try {
+      const [fav, rl] = await Promise.all([
+        client.fetchFavoriteRelays(userPubkey).catch(() => [] as string[]),
+        client.peekRelayListFromStorage(userPubkey)
+      ])
+      useGlobal = viewerUsesGlobalRelayDefaults({
+        viewerPubkey: userPubkey,
+        favoriteRelayUrls: fav,
+        relayList: rl ?? undefined
+      })
+    } catch {
+      useGlobal = true
+    }
+  }
+  const scoped = await buildComprehensiveRelayList({
     authorPubkey: opAuthorPubkey,
     userPubkey,
     relayHints: threadRelayHints,
     includeUserOwnRelays: Boolean(userPubkey),
-    includeFastReadRelays: true,
-    includeSearchableRelays: true,
+    includeFastReadRelays: useGlobal,
+    includeSearchableRelays: false,
     includeLocalRelays: true,
-    /** Same menu list as timelines — threads often opened from favorites. */
     includeFavoriteRelays: Boolean(userPubkey),
-    /** FAST_READ + SEARCHABLE before author/user NIP-65 slices so broken personal relays do not starve thread REQ under the global connection cap. */
-    preferPublicReadRelaysEarly: true,
+    preferPublicReadRelaysEarly: false,
+    includeProfileFetchRelays: useGlobal,
     blockedRelays
   })
+  return mergeRelayUrlLayers([scoped, defaultFavoriteRelaysForViewer(useGlobal)], blockedRelays)
 }

@@ -1,4 +1,6 @@
 import { buildProfileAuthorSubRequestsFromUrlGroups } from '@/lib/profile-author-subrequests'
+import { isSocialKindBlockedKind } from '@/constants'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -6,7 +8,6 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
 import type { TFeedSubRequest } from '@/types'
-import { isSocialKindBlockedKind } from '@/constants'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[]): string {
@@ -41,6 +42,7 @@ export function useProfileAuthorFeedSubRequests({
 } {
   const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
 
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
@@ -80,7 +82,8 @@ export function useProfileAuthorFeedSubRequests({
       emptyAuthor,
       socialKinds,
       includeAuthorLocalRelays,
-      kinds
+      kinds,
+      useGlobalRelayBootstrap
     )
     if (!cancelled) {
       setProvisionalUrls(provisional)
@@ -98,7 +101,8 @@ export function useProfileAuthorFeedSubRequests({
           authorRl,
           socialKinds,
           includeAuthorLocalRelays,
-          kinds
+          kinds,
+          useGlobalRelayBootstrap
         )
         setFullUrls(full)
       })
@@ -109,7 +113,7 @@ export function useProfileAuthorFeedSubRequests({
     // `relayListsKey` already fingerprints `favoriteRelays` + `blockedRelays` by sorted URL content.
     // Do not list those arrays here: the provider often hands new `[]` references each render and would
     // retrigger this effect forever (setState → re-render → new refs → effect → …).
-  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays])
+  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays, useGlobalRelayBootstrap])
 
   const activeUrls = fullUrls?.length ? fullUrls : provisionalUrls
 

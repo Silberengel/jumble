@@ -71,6 +71,8 @@ export function buildReadRelayPriorityLayers(opts: {
   userWriteRelays?: string[]
   authorWriteRelays?: string[]
   favoriteRelays: string[]
+  /** When false, omit the global FAST_READ tier (logged-in users with their own relay stack). Default true. */
+  includeGlobalFastRead?: boolean
 }): string[][] {
   const userWrite = opts.userWriteRelays ?? []
   const writeLocals = userWrite.filter((u) => {
@@ -81,7 +83,7 @@ export function buildReadRelayPriorityLayers(opts: {
   const tier1 = dedupeNormalizeRelayUrlsOrdered([...writeLocals, ...userReadOrdered])
   const tier2 = dedupeNormalizeRelayUrlsOrdered(opts.authorWriteRelays ?? [])
   const tier3 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
-  const tier4 = normFastRead()
+  const tier4 = opts.includeGlobalFastRead === false ? [] : normFastRead()
   return [tier1, tier2, tier3, tier4]
 }
 
@@ -98,6 +100,8 @@ export function buildPrioritizedReadRelayUrls(opts: {
   maxRelays?: number
   /** Default true: strip {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} for social-kind-heavy timelines. Set false for other queries. */
   applySocialKindBlockedFilter?: boolean
+  /** Default true: append global FAST_READ tier. */
+  includeGlobalFastRead?: boolean
 }): string[] {
   const max = opts.maxRelays ?? MAX_REQ_RELAY_URLS
   const applySocial = opts.applySocialKindBlockedFilter !== false
@@ -110,7 +114,8 @@ export function buildPrioritizedReadRelayUrls(opts: {
     userReadRelays: opts.userReadRelays,
     userWriteRelays: opts.userWriteRelays,
     authorWriteRelays: opts.authorWriteRelays,
-    favoriteRelays: opts.favoriteRelays
+    favoriteRelays: opts.favoriteRelays,
+    includeGlobalFastRead: opts.includeGlobalFastRead
   })
   const policyLayers: FeedRelayLayer[] = [
     { source: 'viewer-read', urls: layers[0] ?? [] },
@@ -136,11 +141,16 @@ function buildWriteRelayPriorityLayers(opts: {
   authorReadRelays?: string[]
   favoriteRelays?: string[]
   extraRelays?: string[]
+  /** When false, omit global FAST_WRITE and FAST_READ tails. Default true. */
+  includeGlobalFastWriteReadTails?: boolean
 }): string[][] {
   const tier1 = relayUrlsLocalsFirst(opts.userWriteRelays)
   const tier2 = filterContextAuthorReadRelaysForPublish(opts.authorReadRelays ?? [])
   const tier3 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
   const tier4 = dedupeNormalizeRelayUrlsOrdered(opts.extraRelays ?? [])
+  if (opts.includeGlobalFastWriteReadTails === false) {
+    return [tier1, tier2, tier3, tier4, [], []]
+  }
   const tier5 = normFastWrite()
   const tier6 = normFastRead()
   return [tier1, tier2, tier3, tier4, tier5, tier6]
@@ -158,13 +168,16 @@ export function buildPrioritizedWriteRelayUrls(opts: {
   maxRelays?: number
   /** When true, strip {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} before capping (social kinds). */
   applySocialKindBlockedFilter?: boolean
+  /** Default true: append FAST_WRITE then FAST_READ tiers. */
+  includeGlobalFastWriteReadTails?: boolean
 }): string[] {
   const max = opts.maxRelays ?? MAX_PUBLISH_RELAYS
   const layers = buildWriteRelayPriorityLayers({
     userWriteRelays: opts.userWriteRelays,
     authorReadRelays: opts.authorReadRelays,
     favoriteRelays: opts.favoriteRelays,
-    extraRelays: opts.extraRelays
+    extraRelays: opts.extraRelays,
+    includeGlobalFastWriteReadTails: opts.includeGlobalFastWriteReadTails
   })
   return feedRelayPolicyUrls([
     { source: 'viewer-write', urls: layers[0] ?? [] },

@@ -2,6 +2,7 @@ import storage from '@/services/local-storage.service'
 import NoteList, { TNoteListRef } from '@/components/NoteList'
 import { RefreshButton } from '@/components/RefreshButton'
 import Tabs, { TabDefinition } from '@/components/Tabs'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { PROFILE_MEDIA_TAB_KINDS, FAST_READ_RELAY_URLS } from '@/constants'
@@ -27,7 +28,10 @@ import KindFilter from '../KindFilter'
  * Home Gallery: favorites (or chip relays) first, then {@link FAST_READ_RELAY_URLS} so NIP-71 / picture / voice
  * events are not starved when the user’s relay set is mostly text timelines. Deduped by normalized URL.
  */
-function galleryRelayUrlsMergedWithReadLayer(favoriteUrls: readonly string[]): string[] {
+function galleryRelayUrlsMergedWithReadLayer(
+  favoriteUrls: readonly string[],
+  mergeGlobalFastRead: boolean
+): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   const add = (raw: string) => {
@@ -39,7 +43,9 @@ function galleryRelayUrlsMergedWithReadLayer(favoriteUrls: readonly string[]): s
     out.push(n)
   }
   for (const u of favoriteUrls) add(u)
-  for (const u of FAST_READ_RELAY_URLS) add(u)
+  if (mergeGlobalFastRead) {
+    for (const u of FAST_READ_RELAY_URLS) add(u)
+  }
   return out
 }
 
@@ -155,6 +161,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
   ref
 ) {
   const { hideUntrustedNotes } = useUserTrust()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
     useKindFilterOrDefaults()
   const [listMode, setListMode] = useState<TNoteListMode>(() => {
@@ -219,7 +226,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
         isMainFeed && mainFeedGalleryRelayUrls && mainFeedGalleryRelayUrls.length > 0
           ? mainFeedGalleryRelayUrls
           : isMainFeed && widenMainGalleryRelays
-            ? galleryRelayUrlsMergedWithReadLayer(req.urls)
+            ? galleryRelayUrlsMergedWithReadLayer(req.urls, useGlobalRelayBootstrap)
             : req.urls,
       filter: { ...req.filter, kinds: MEDIA_KINDS }
     }))
@@ -230,7 +237,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     MEDIA_KINDS,
     isMainFeed,
     widenMainGalleryRelays,
-    mainFeedGalleryRelayUrls
+    mainFeedGalleryRelayUrls,
+    useGlobalRelayBootstrap
   ])
 
   const noteListExtraShouldHide = useMemo(() => {

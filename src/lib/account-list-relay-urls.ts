@@ -1,6 +1,7 @@
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { buildPrioritizedReadRelayUrls, buildPrioritizedWriteRelayUrls } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl } from '@/lib/url'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 
 /**
@@ -14,21 +15,28 @@ export async function buildAccountListRelayUrlsForMerge(options: {
 }): Promise<string[]> {
   const { accountPubkey, favoriteRelays, blockedRelays } = options
   const myRelayList = await client.fetchRelayList(accountPubkey)
-  const favoritesTier = getFavoritesFeedRelayUrls(favoriteRelays ?? [], blockedRelays)
+  const useGlobal = viewerUsesGlobalRelayDefaults({
+    viewerPubkey: accountPubkey,
+    favoriteRelayUrls: favoriteRelays ?? [],
+    relayList: myRelayList
+  })
+  const favoritesTier = getFavoritesFeedRelayUrls(favoriteRelays ?? [], blockedRelays, useGlobal)
   const read = buildPrioritizedReadRelayUrls({
     userReadRelays: myRelayList.read ?? [],
     userWriteRelays: myRelayList.write ?? [],
     favoriteRelays: favoritesTier,
     blockedRelays,
     maxRelays: 100,
-    applySocialKindBlockedFilter: false
+    applySocialKindBlockedFilter: false,
+    includeGlobalFastRead: useGlobal
   })
   const write = buildPrioritizedWriteRelayUrls({
     userWriteRelays: myRelayList.write ?? [],
     favoriteRelays: favoritesTier,
     blockedRelays,
     maxRelays: 100,
-    applySocialKindBlockedFilter: false
+    applySocialKindBlockedFilter: false,
+    includeGlobalFastWriteReadTails: useGlobal
   })
   const merged = [...read, ...write]
   return [...new Set(merged.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]

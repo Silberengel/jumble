@@ -662,21 +662,31 @@ export function buildLiveActivitiesRelayUrls(options: {
   blockedRelays: string[]
   relayListRead: string[]
   relayListWrite: string[]
+  /**
+   * When false for a logged-in viewer with their own relay stack, omit {@link FAST_READ_RELAY_URLS} and skip
+   * {@link DEFAULT_FAVORITE_RELAYS} when favorites are empty. Default true (signed-out / bootstrap).
+   */
+  includeGlobalFastRead?: boolean
 }): string[] {
   const { loggedIn, favoriteRelays, blockedRelays, relayListRead, relayListWrite } = options
+  const includeFast = options.includeGlobalFastRead !== false
+  const useGlobalFavoriteDefaults = includeFast
   if (loggedIn) {
-    const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays))
+    const fav = relayUrlsLocalsFirst(
+      getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
+    )
     const read = relayUrlsLocalsFirst(relayListRead)
     const write = relayUrlsLocalsFirst(relayListWrite)
     const fast = dedupeNormalizeRelayUrlsOrdered(
       FAST_READ_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
     )
-    return feedRelayPolicyUrls([
-      { source: 'favorites', urls: fav },
-      { source: 'viewer-read', urls: read },
-      { source: 'viewer-write', urls: write },
-      { source: 'fast-read', urls: fast }
-    ], {
+    const layers = [
+      { source: 'favorites' as const, urls: fav },
+      { source: 'viewer-read' as const, urls: read },
+      { source: 'viewer-write' as const, urls: write },
+      ...(includeFast ? [{ source: 'fast-read' as const, urls: fast }] : [])
+    ]
+    return feedRelayPolicyUrls(layers, {
       operation: 'read',
       blockedRelays,
       maxRelays: MAX_REQ_RELAY_URLS,
@@ -684,20 +694,23 @@ export function buildLiveActivitiesRelayUrls(options: {
       allowThirdPartyLocalRelays: true
     })
   }
-  const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays))
+  const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, true))
   const fast = dedupeNormalizeRelayUrlsOrdered(
     FAST_READ_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
   )
-  return feedRelayPolicyUrls([
-    { source: 'favorites', urls: fav },
-    { source: 'fast-read', urls: fast }
-  ], {
-    operation: 'read',
-    blockedRelays,
-    maxRelays: MAX_REQ_RELAY_URLS,
-    applySocialKindBlockedFilter: true,
-    allowThirdPartyLocalRelays: true
-  })
+  return feedRelayPolicyUrls(
+    [
+      { source: 'favorites', urls: fav },
+      { source: 'fast-read', urls: fast }
+    ],
+    {
+      operation: 'read',
+      blockedRelays,
+      maxRelays: MAX_REQ_RELAY_URLS,
+      applySocialKindBlockedFilter: true,
+      allowThirdPartyLocalRelays: true
+    }
+  )
 }
 
 /** Milliseconds until the next wall-clock quarter hour (:00, :15, :30, :45). */

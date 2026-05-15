@@ -16,8 +16,30 @@ const emptyHttpRelayListFields = {
   httpOriginalRelays: [] as TMailboxRelay[]
 }
 
-export function getRelayListFromEvent(event?: Event | null, blockedRelays?: string[]) {
+export type GetRelayListFromEventOptions = {
+  /**
+   * When false, never substitute {@link FAST_READ_RELAY_URLS} / {@link FAST_WRITE_RELAY_URLS} for missing or
+   * oversized lists (use `[]` or the first 8 entries instead). Default true for anonymous / bootstrap callers.
+   */
+  globalReadWriteFallback?: boolean
+}
+
+export function getRelayListFromEvent(
+  event?: Event | null,
+  blockedRelays?: string[],
+  options?: GetRelayListFromEventOptions
+) {
+  const globalFb = options?.globalReadWriteFallback !== false
+
   if (!event) {
+    if (!globalFb) {
+      return {
+        write: [] as string[],
+        read: [] as string[],
+        originalRelays: [] as TRelayList['originalRelays'],
+        ...emptyHttpRelayListFields
+      }
+    }
     return {
       write: FAST_WRITE_RELAY_URLS,
       read: FAST_READ_RELAY_URLS,
@@ -61,12 +83,60 @@ export function getRelayListFromEvent(event?: Event | null, blockedRelays?: stri
 
   // If there are too many relays, use the default inbox/outbox relays.
   // Because they don't know anything about relays, their settings cannot be trusted
+  const readOut =
+    relayList.read.length && relayList.read.length <= 8
+      ? relayList.read
+      : globalFb
+        ? FAST_READ_RELAY_URLS
+        : relayList.read.slice(0, 8)
+  const writeOut =
+    relayList.write.length && relayList.write.length <= 8
+      ? relayList.write
+      : globalFb
+        ? FAST_WRITE_RELAY_URLS
+        : relayList.write.slice(0, 8)
   return {
-    write: relayList.write.length && relayList.write.length <= 8 ? relayList.write : FAST_WRITE_RELAY_URLS,
-    read: relayList.read.length && relayList.read.length <= 8 ? relayList.read : FAST_READ_RELAY_URLS,
+    write: writeOut,
+    read: readOut,
     originalRelays: relayList.originalRelays,
     ...emptyHttpRelayListFields
   }
+}
+
+/**
+ * Read-side `r` tags from a relay list event (e.g. kind 10012) without {@link FAST_READ_RELAY_URLS} fallback
+ * when the list is empty or oversized — for strict “viewer-owned” REQ stacks (relay pulse).
+ */
+export function getRelayListReadFromEventNoFastFallback(
+  event: Event | null | undefined,
+  blockedRelays?: string[]
+): string[] {
+  if (!event) return []
+
+  const torBrowserDetected = isTorBrowser()
+  const normalizedBlockedRelays = (blockedRelays || []).map((url) => normalizeUrl(url) || url)
+  const read: string[] = []
+
+  event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
+    if (!url || typeof url !== 'string' || url.trim() === '' || url === 'ws://' || url === 'wss://') return
+    if (!isWebsocketUrl(url)) return
+
+    const normalizedUrl = normalizeUrl(url)
+    if (!normalizedUrl) return
+    if (normalizedBlockedRelays.includes(normalizedUrl)) return
+    if (normalizedUrl.endsWith('.onion/') && !torBrowserDetected) return
+
+    if (type === 'write') return
+    if (type === 'read') {
+      read.push(normalizedUrl)
+    } else {
+      read.push(normalizedUrl)
+    }
+  })
+
+  if (read.length === 0) return []
+  if (read.length <= 8) return read
+  return read.slice(0, 8)
 }
 
 /** Kind 10243: `r` tags with http(s) URLs only; same read/write/both semantics as NIP-65. */

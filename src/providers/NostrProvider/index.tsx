@@ -25,6 +25,7 @@ import { getLatestEvent, minePow } from '@/lib/event'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getHttpRelayListFromEvent, getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
@@ -66,18 +67,33 @@ export { useNostr } from '@/providers/nostr-context'
 export type { TNostrContext } from '@/providers/nostr-context'
 
 /** Kind 10012 `relay` tags for publish / target-relay prioritization. */
-function favoriteRelayUrlsForPublish(favoriteRelaysEvent: Event | null, pubkey: string | null): string[] {
-  if (!favoriteRelaysEvent) {
-    return pubkey ? [...DEFAULT_FAVORITE_RELAYS] : []
+function favoriteRelayUrlsForPublish(
+  favoriteRelaysEvent: Event | null,
+  pubkey: string | null,
+  relayList: TRelayList | null | undefined
+): string[] {
+  const urlsFromEvent = (): string[] => {
+    const urls: string[] = []
+    if (!favoriteRelaysEvent) return urls
+    favoriteRelaysEvent.tags.forEach(([name, v]) => {
+      if (name === 'relay' && v) {
+        const n = normalizeAnyRelayUrl(v) || v
+        if (n && !urls.includes(n)) urls.push(n)
+      }
+    })
+    return urls
   }
-  const urls: string[] = []
-  favoriteRelaysEvent.tags.forEach(([name, v]) => {
-    if (name === 'relay' && v) {
-      const n = normalizeAnyRelayUrl(v) || v
-      if (n && !urls.includes(n)) urls.push(n)
-    }
+  const fromEvent = urlsFromEvent()
+  const useGlobal = viewerUsesGlobalRelayDefaults({
+    viewerPubkey: pubkey,
+    favoriteRelayUrls: fromEvent,
+    relayList
   })
-  return urls.length > 0 ? urls : pubkey ? [...DEFAULT_FAVORITE_RELAYS] : []
+  if (!favoriteRelaysEvent) {
+    return useGlobal && pubkey ? [...DEFAULT_FAVORITE_RELAYS] : []
+  }
+  if (fromEvent.length > 0) return fromEvent
+  return useGlobal && pubkey ? [...DEFAULT_FAVORITE_RELAYS] : []
 }
 
 function blockedRelayUrlsFromEvent(blockedRelaysEvent: Event | null): string[] {
@@ -1561,7 +1577,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     noteStatsService.beginPublishPriority()
     try {
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
-      const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey)
+      const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey, relayList)
       const relays = await client.determineTargetRelays(event, {
         ...options,
         favoriteRelayUrls,
@@ -1686,7 +1702,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     client.interruptBackgroundQueries()
 
     // Privacy: Only use user's own relays, never connect to "seen on" relays
-    const favUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account?.pubkey ?? null)
+    const favUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account?.pubkey ?? null, relayList)
     const relays = await client.determineTargetRelays(targetEvent, {
       favoriteRelayUrls: favUrls,
       blockedRelayUrls: blockedRelayUrlsFromEvent(blockedRelaysEvent)

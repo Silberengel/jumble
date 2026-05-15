@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import PrimaryPageLayout, { type TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import logger from '@/lib/logger'
@@ -89,6 +90,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   const { hideUntrustedNotifications } = useUserTrust()
   const { isSmallScreen } = useScreenSize()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const {
     showKinds: kindFilterShowKinds,
     showKind1OPs,
@@ -369,7 +371,8 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       }
 
       const urls = getRelaysForSpellCatalogSync(favoriteRelays, blockedRelays, userReadRelaysWithHttp(relayList), {
-        userWriteRelays: relayList?.write ?? []
+        userWriteRelays: relayList?.write ?? [],
+        useGlobalRelayBootstrap
       })
       const catalogAuthors = buildSpellCatalogAuthors(pubkey, contacts)
       const authorAllowlist = new Set(catalogAuthors)
@@ -484,7 +487,8 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     relayMailboxStableKey,
     loadSpells,
     contactsSyncKey,
-    spellCatalogManualRefreshKey
+    spellCatalogManualRefreshKey,
+    useGlobalRelayBootstrap
   ])
 
   useEffect(() => {

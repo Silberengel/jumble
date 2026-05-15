@@ -14,6 +14,7 @@ import {
   getRelayUrlsWithFavoritesFastReadAndInbox,
   userReadRelaysWithHttp
 } from '@/lib/favorites-feed-relays'
+import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { toProfileList } from '@/lib/link'
 import {
@@ -47,6 +48,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   const { push } = useSecondaryPage()
   const { relayList, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const interestList = useInterestListOptional()
   const isSubscribed = interestList?.isSubscribed ?? (() => false)
   const subscribe = interestList?.subscribe ?? (async () => {})
@@ -109,7 +111,9 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       .filter((k) => !isNaN(k))
     const readUrlOpts = {
       userWriteRelays: relayList?.write ?? [],
-      applySocialKindBlockedFilter: kinds.length === 0 || kinds.some(isSocialKindBlockedKind)
+      applySocialKindBlockedFilter: kinds.length === 0 || kinds.some(isSocialKindBlockedKind),
+      useGlobalFavoriteDefaults: useGlobalRelayBootstrap,
+      includeGlobalFastRead: useGlobalRelayBootstrap
     }
     const hashtag = searchParams.get('t')
     const searchFromUrl = searchParams.get('s')
@@ -205,7 +209,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
               favoriteRelays,
               blockedRelays,
               userReadRelaysWithHttp(relayList),
-              { userWriteRelays: relayList?.write ?? [] }
+              { userWriteRelays: relayList?.write ?? [], useGlobalFavoriteDefaults: useGlobalRelayBootstrap, includeGlobalFastRead: useGlobalRelayBootstrap }
             )
           }
         ])
@@ -237,7 +241,11 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
                 favoriteRelays,
                 blockedRelays,
                 userReadRelaysWithHttp(relayList),
-                { userWriteRelays: relayList?.write ?? [] }
+                {
+                  userWriteRelays: relayList?.write ?? [],
+                  useGlobalFavoriteDefaults: useGlobalRelayBootstrap,
+                  includeGlobalFastRead: useGlobalRelayBootstrap
+                }
               )
             )
             setControls(
@@ -294,7 +302,8 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
     t,
     isSubscribed,
     subscribe,
-    client
+    client,
+    useGlobalRelayBootstrap
   ])
 
   // Initialize on mount

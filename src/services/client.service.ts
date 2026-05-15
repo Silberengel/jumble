@@ -36,6 +36,8 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 
+import { profileFetchRelayUrlsWithoutFastReadLayer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
 function filterForRelay(f: Filter, relaySupportsSearch: boolean): Filter {
   if (relaySupportsSearch) return f
@@ -986,6 +988,14 @@ class ClientService extends EventTarget {
       blockedRelays: blockedRelayUrls,
       applySocialKindBlockedFilter: isSocialKindBlockedKind(event.kind)
     }
+    const policyRelayList = await this.peekRelayListFromStorage(event.pubkey).catch(() =>
+      this.emptyRelayListForPublish()
+    )
+    const useGlobalRelayDefaults = viewerUsesGlobalRelayDefaults({
+      viewerPubkey: event.pubkey,
+      favoriteRelayUrls: favoriteRelayUrls ?? [],
+      relayList: policyRelayList
+    })
     if (event.kind === kinds.RelayList) {
       logger.info('[DetermineTargetRelays] Determining target relays for relay list event', {
         pubkey: event.pubkey,
@@ -1023,11 +1033,24 @@ class ClientService extends EventTarget {
       }
       
       if (userWriteRelays.length === 0 && seenRelays.length === 0) {
+        if (!useGlobalRelayDefaults) {
+          return this.filterPublishingRelays(
+            buildPrioritizedWriteRelayUrls({
+              userWriteRelays: [],
+              favoriteRelays: favoriteRelayUrls ?? [],
+              maxRelays: MAX_PUBLISH_RELAYS,
+              includeGlobalFastWriteReadTails: false,
+              ...writeRelayPubOpts
+            }),
+            event
+          )
+        }
         return this.filterPublishingRelays(
           buildPrioritizedWriteRelayUrls({
             userWriteRelays: [...FAST_WRITE_RELAY_URLS],
             favoriteRelays: favoriteRelayUrls ?? [],
             maxRelays: MAX_PUBLISH_RELAYS,
+            includeGlobalFastWriteReadTails: false,
             ...writeRelayPubOpts
           }),
           event
@@ -1040,6 +1063,7 @@ class ClientService extends EventTarget {
           favoriteRelays: favoriteRelayUrls ?? [],
           extraRelays: seenRelays,
           maxRelays: MAX_PUBLISH_RELAYS,
+          includeGlobalFastWriteReadTails: useGlobalRelayDefaults,
           ...writeRelayPubOpts
         }),
         event
@@ -1073,7 +1097,7 @@ class ClientService extends EventTarget {
         .filter((url): url is string => !!url)
       let authorWrite = dedupeNormalizeRelayUrlsOrdered([...authorHttpWrites, ...authorWsWrites])
       if (authorWrite.length === 0) {
-        authorWrite = [...FAST_WRITE_RELAY_URLS]
+        authorWrite = useGlobalRelayDefaults ? [...FAST_WRITE_RELAY_URLS] : []
       }
       let recipientRead: string[] = []
       recipientRead = recipientRelayLists.flatMap((rl) => [
@@ -1112,6 +1136,9 @@ class ClientService extends EventTarget {
         recipientReadCount: recipientRead.length
       })
       if (pubRelays.length > 0) return pubRelays
+      if (!useGlobalRelayDefaults) {
+        return this.filterPublishingRelays([], event)
+      }
       return this.filterPublishingRelays(
         feedRelayPolicyUrls([{ source: 'fast-write', urls: relayUrlsLocalsFirst([...FAST_WRITE_RELAY_URLS]) }], {
           operation: 'write',
@@ -1161,10 +1188,14 @@ class ClientService extends EventTarget {
             userWriteRelays:
               spellWriteFiltered.length > 0
                 ? spellWriteFiltered
-                : dedupeNormalizeRelayUrlsOrdered(FAST_WRITE_RELAY_URLS),
+                : useGlobalRelayDefaults
+                  ? dedupeNormalizeRelayUrlsOrdered(FAST_WRITE_RELAY_URLS)
+                  : [],
             favoriteRelays: favoriteRelayUrls ?? [],
             extraRelays: [],
             maxRelays: MAX_PUBLISH_RELAYS,
+            includeGlobalFastWriteReadTails:
+              spellWriteFiltered.length > 0 ? useGlobalRelayDefaults : false,
             ...writeRelayPubOpts
           }),
           event
@@ -1203,23 +1234,33 @@ class ClientService extends EventTarget {
           ExtendedKind.RELAY_REVIEW
         ].includes(event.kind)
       ) {
-        bootstrapExtras.push(...PROFILE_FETCH_RELAY_URLS)
+        bootstrapExtras.push(
+          ...(useGlobalRelayDefaults ? PROFILE_FETCH_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer())
+        )
         logger.debug('[DetermineTargetRelays] Relay list event detected, adding PROFILE_FETCH_RELAY_URLS', {
           kind: event.kind,
-          profileFetchRelays: PROFILE_FETCH_RELAY_URLS,
+          profileFetchRelays: useGlobalRelayDefaults
+            ? PROFILE_FETCH_RELAY_URLS
+            : profileFetchRelayUrlsWithoutFastReadLayer(),
           additionalRelayCount: bootstrapExtras.length
         })
       } else if (event.kind === ExtendedKind.FAVORITE_RELAYS || event.kind === kinds.Relaysets) {
         // Use fast write relays for favorite-relays and kind 30002 relay-set replaceables to avoid
         // timeouts and auth-only relays dominating the attempt list.
-        bootstrapExtras.push(...FAST_WRITE_RELAY_URLS)
+        if (useGlobalRelayDefaults) {
+          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS)
+        }
         logger.debug('[DetermineTargetRelays] Favorite relays or relay set event, adding FAST_WRITE_RELAY_URLS', {
           kind: event.kind,
           fastWriteRelays: FAST_WRITE_RELAY_URLS,
           additionalRelayCount: bootstrapExtras.length
         })
       } else if (event.kind === ExtendedKind.RSS_FEED_LIST) {
-        bootstrapExtras.push(...FAST_WRITE_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS)
+        if (useGlobalRelayDefaults) {
+          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS)
+        } else {
+          bootstrapExtras.push(...profileFetchRelayUrlsWithoutFastReadLayer())
+        }
       }
       if (isDocumentRelayKind(event.kind)) {
         bootstrapExtras.push(...DOCUMENT_RELAY_URLS)
@@ -1253,6 +1294,7 @@ class ClientService extends EventTarget {
           favoriteRelays: favoriteRelayUrls ?? [],
           extraRelays: bootstrapExtras,
           maxRelays: MAX_PUBLISH_RELAYS,
+          includeGlobalFastWriteReadTails: useGlobalRelayDefaults,
           ...writeRelayPubOpts
         }),
         event
@@ -1275,12 +1317,14 @@ class ClientService extends EventTarget {
     // Fallback for all publishing when no relays (e.g. after cache clear or fetch failure).
     // Use FAST_WRITE_RELAY_URLS so writes always have known-good write relays.
     if (!relays.length) {
-      relays = isDocumentRelayKind(event.kind)
-        ? dedupeNormalizeRelayUrlsOrdered([...FAST_WRITE_RELAY_URLS, ...DOCUMENT_RELAY_URLS])
-        : [...FAST_WRITE_RELAY_URLS]
-      logger.info('[DetermineTargetRelays] Using default write relays (no user/extra relays)', {
-        count: relays.length
-      })
+      if (useGlobalRelayDefaults) {
+        relays = isDocumentRelayKind(event.kind)
+          ? dedupeNormalizeRelayUrlsOrdered([...FAST_WRITE_RELAY_URLS, ...DOCUMENT_RELAY_URLS])
+          : [...FAST_WRITE_RELAY_URLS]
+        logger.info('[DetermineTargetRelays] Using default write relays (no user/extra relays)', {
+          count: relays.length
+        })
+      }
     }
 
     relays = this.filterPublishingRelays(relays, event)

@@ -1,10 +1,11 @@
-import { FAST_READ_RELAY_URLS } from '@/constants'
+import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
 import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 import { normalizeAnyRelayUrl } from '@/lib/url'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
@@ -50,8 +51,18 @@ function buildHomeReplyFeedRelayUrls(
 }
 
 export function FeedProvider({ children }: { children: ReactNode }) {
-  const { isInitialized, relayList, cacheRelayListEvent, httpRelayListEvent } = useNostr()
+  const { isInitialized, relayList, cacheRelayListEvent, httpRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
+
+  const useGlobalRelayDefaults = useMemo(
+    () =>
+      viewerUsesGlobalRelayDefaults({
+        viewerPubkey: pubkey,
+        favoriteRelayUrls: [...favoriteRelays, ...relaySets.flatMap((relaySet) => relaySet.relayUrls)],
+        relayList
+      }),
+    [pubkey, favoriteRelays, relaySets, relayList]
+  )
 
   const favoriteFeedRelayUrls = useMemo(
     () => [...favoriteRelays, ...relaySets.flatMap((relaySet) => relaySet.relayUrls)],
@@ -68,7 +79,9 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   const replyExtraRelayLayers = useMemo(() => {
     const cacheRelayUrls: string[] = []
     if (cacheRelayListEvent) {
-      const list = getRelayListFromEvent(cacheRelayListEvent, blockedRelays)
+      const list = getRelayListFromEvent(cacheRelayListEvent, blockedRelays, {
+        globalReadWriteFallback: useGlobalRelayDefaults
+      })
       cacheRelayUrls.push(...list.read)
     }
 
@@ -79,12 +92,20 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
 
     return {
-      inboxRelayUrls: relayList?.read?.length ? relayList.read : FAST_READ_RELAY_URLS,
-      outboxRelayUrls: relayList?.write?.length ? relayList.write : FAST_READ_RELAY_URLS,
+      inboxRelayUrls: relayList?.read?.length
+        ? relayList.read
+        : useGlobalRelayDefaults
+          ? DEFAULT_FAVORITE_RELAYS
+          : [],
+      outboxRelayUrls: relayList?.write?.length
+        ? relayList.write
+        : useGlobalRelayDefaults
+          ? DEFAULT_FAVORITE_RELAYS
+          : [],
       cacheRelayUrls,
       httpRelayUrls
     }
-  }, [relayList, cacheRelayListEvent, httpRelayListEvent, blockedRelays])
+  }, [relayList, cacheRelayListEvent, httpRelayListEvent, blockedRelays, useGlobalRelayDefaults])
 
   /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
   const [relayUrls, setRelayUrls] = useState<string[]>(() =>
@@ -124,7 +145,12 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {
-    const primaryRelays = buildAllFavoritesFeedRelayUrls(favoriteFeedRelayUrls, blockedRelays, primaryExtraRelayUrls)
+    const primaryRelays = buildAllFavoritesFeedRelayUrls(
+      favoriteFeedRelayUrls,
+      blockedRelays,
+      primaryExtraRelayUrls,
+      useGlobalRelayDefaults
+    )
     const replyRelays = buildHomeReplyFeedRelayUrls(
       primaryRelays,
       replyExtraRelayLayers.inboxRelayUrls,
@@ -144,7 +170,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
     setUrlStateIfChanged(setRelayUrls, primaryRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
-  }, [favoriteFeedRelayUrls, blockedRelays, primaryExtraRelayUrls, replyExtraRelayLayers, setUrlStateIfChanged])
+  }, [favoriteFeedRelayUrls, blockedRelays, primaryExtraRelayUrls, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
 
   const favoriteRelaysIdentity = useMemo(
     () =>

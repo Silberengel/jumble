@@ -10,6 +10,7 @@ import {
 } from '@/lib/live-activities'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
@@ -28,6 +29,16 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
   const userPrefs = useUserPreferencesOptional()
   const showLiveActivitiesBanner =
     userPrefs?.showLiveActivitiesBanner ?? storage.getShowLiveActivitiesBanner()
+
+  const useGlobalBootstrap = useMemo(
+    () =>
+      viewerUsesGlobalRelayDefaults({
+        viewerPubkey: pubkey,
+        favoriteRelayUrls: favoriteRelays,
+        relayList
+      }),
+    [pubkey, favoriteRelays, relayList]
+  )
 
   const [items, setItems] = useState<TLiveActivityItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,7 +61,8 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       favoriteRelays,
       blockedRelays,
       relayListRead: relayRead,
-      relayListWrite: relayWrite
+      relayListWrite: relayWrite,
+      includeGlobalFastRead: useGlobalBootstrap
     })
     if (urls.length === 0) {
       rawItemsRef.current = []
@@ -91,7 +103,8 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
     blockedRelays,
     relayRead,
     relayWrite,
-    followings
+    followings,
+    useGlobalBootstrap
   ])
 
   const toggleLiveActivityCarouselHidden = useCallback(async (address: string) => {
