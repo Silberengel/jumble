@@ -13,6 +13,11 @@ import {
 import { stableSpellFeedFilterKey } from '@/lib/spell-feed-request-identity'
 import { isUserInEventMentions } from '@/lib/event'
 import {
+  isNotificationThreadInteractionEvent,
+  parseThreadWatchListRefs,
+  threadWatchMatchesRefs
+} from '@/lib/notification-thread-watch'
+import {
   decodeFollowSetSpellId,
   getFollowSetDTag,
   isFollowSetSpellId,
@@ -25,6 +30,7 @@ import {
   buildDiscussionFilter,
   buildInterestsSubRequests,
   buildMediaSpellFilter,
+  buildNotificationsFollowedThreadSubRequests,
   buildNotificationsSpellSubRequests,
   buildWebBookmarksSpellSubRequests,
   NOTIFICATION_SPELL_LOADING_SAFETY_MS,
@@ -37,6 +43,7 @@ import {
 import { getRelaysForSpell, spellEventToFilter } from '@/services/spell.service'
 import type { TFeedSubRequest } from '@/types'
 import { isFollowFeedFauxSpellId } from './fauxSpellConfig'
+import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 
 /** `fetchReplaceableEvent(kind 3)` / relay-list hydration can hang; never block the Following spell on it. */
 const FOLLOWING_FETCH_FOLLOWINGS_TIMEOUT_MS = 10_000
@@ -115,6 +122,8 @@ export type UseSpellsPageFeedArgs = {
   followSetListEvents: Event[]
   followSetCatalogLoading: boolean
   kindFilterShowKinds: number[]
+  notificationEventsIFollowListEvent: Event | null | undefined
+  notificationEventsIMutedListEvent: Event | null | undefined
 }
 
 export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
@@ -133,7 +142,9 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     contactsSyncKey,
     followSetListEvents,
     followSetCatalogLoading,
-    kindFilterShowKinds
+    kindFilterShowKinds,
+    notificationEventsIFollowListEvent,
+    notificationEventsIMutedListEvent
   } = a
 
   const hideRepliesFollowing = useNoteListHideReplies()
@@ -334,6 +345,20 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
         [...bookmarkListEvent.tags].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
       )
     : ''
+  const notificationFollowTagsStableKey = notificationEventsIFollowListEvent
+    ? JSON.stringify(
+        [...notificationEventsIFollowListEvent.tags].sort((a, b) =>
+          JSON.stringify(a).localeCompare(JSON.stringify(b))
+        )
+      )
+    : ''
+  const notificationMutedTagsStableKey = notificationEventsIMutedListEvent
+    ? JSON.stringify(
+        [...notificationEventsIMutedListEvent.tags].sort((a, b) =>
+          JSON.stringify(a).localeCompare(JSON.stringify(b))
+        )
+      )
+    : ''
 
   const fauxFeedRelaysDepsKey = [
     sortedFavoriteRelaysKey,
@@ -343,7 +368,13 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     interestTagsStableKey,
     bookmarkListEvent?.id ?? '',
     String(bookmarkListEvent?.created_at ?? ''),
-    bookmarkTagsStableKey
+    bookmarkTagsStableKey,
+    notificationEventsIFollowListEvent?.id ?? '',
+    String(notificationEventsIFollowListEvent?.created_at ?? ''),
+    notificationFollowTagsStableKey,
+    notificationEventsIMutedListEvent?.id ?? '',
+    String(notificationEventsIMutedListEvent?.created_at ?? ''),
+    notificationMutedTagsStableKey
   ].join('\0')
 
   const syncFauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
@@ -374,7 +405,12 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
 
     if (selectedFauxSpell === 'notifications') {
       if (!notificationsFeedPubkey || !feedUrls.length) return []
-      return buildNotificationsSpellSubRequests(feedUrls, notificationsFeedPubkey)
+      const base = buildNotificationsSpellSubRequests(feedUrls, notificationsFeedPubkey)
+      const extra = buildNotificationsFollowedThreadSubRequests(
+        feedUrls,
+        notificationEventsIFollowListEvent ?? null
+      )
+      return [...base, ...extra]
     }
     if (selectedFauxSpell === 'discussions') {
       if (!feedUrls.length) return []
@@ -409,7 +445,20 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       ]
     }
     return []
-  }, [selectedFauxSpell, pubkey, notificationsFeedPubkey, fauxFeedRelaysDepsKey, relayMailboxStableKey, interestListEvent, bookmarkListEvent, favoriteRelays, blockedRelays, relayList])
+  }, [
+    selectedFauxSpell,
+    pubkey,
+    notificationsFeedPubkey,
+    fauxFeedRelaysDepsKey,
+    relayMailboxStableKey,
+    interestListEvent,
+    bookmarkListEvent,
+    notificationEventsIFollowListEvent,
+    notificationEventsIMutedListEvent,
+    favoriteRelays,
+    blockedRelays,
+    relayList
+  ])
 
   const fauxSubRequests = useMemo<TFeedSubRequest[]>(() => {
     const base = isFollowFeedFauxSpellId(selectedFauxSpell ?? '')
@@ -524,9 +573,37 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
   )
 
   const notificationsMentionExtraHide = useCallback(
-    (evt: Event) =>
-      notificationsFeedPubkey ? !isUserInEventMentions(evt, notificationsFeedPubkey) : false,
-    [notificationsFeedPubkey]
+    (evt: Event) => {
+      if (!notificationsFeedPubkey) return false
+      const pk = normalizeHexPubkey(notificationsFeedPubkey)
+      const followRefs = parseThreadWatchListRefs(notificationEventsIFollowListEvent ?? null)
+      const mutedRefs = parseThreadWatchListRefs(notificationEventsIMutedListEvent ?? null)
+
+      if (
+        threadWatchMatchesRefs(evt, mutedRefs) &&
+        isNotificationThreadInteractionEvent(evt)
+      ) {
+        return true
+      }
+
+      if (isUserInEventMentions(evt, pk)) return false
+
+      if (hexPubkeysEqual(evt.pubkey, pk)) return false
+
+      if (
+        threadWatchMatchesRefs(evt, followRefs) &&
+        isNotificationThreadInteractionEvent(evt)
+      ) {
+        return false
+      }
+
+      return true
+    },
+    [
+      notificationsFeedPubkey,
+      notificationEventsIFollowListEvent,
+      notificationEventsIMutedListEvent
+    ]
   )
 
   return {

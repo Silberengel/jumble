@@ -586,7 +586,17 @@ export const ExtendedKind = {
   /** NIP-34 / Git Republic: issue */
   GIT_ISSUE: 1621,
   /** Git Republic: release (linked to repo via `a` tag) */
-  GIT_RELEASE: 1642
+  GIT_RELEASE: 1642,
+  /**
+   * Imwald: replaceable list (`e` / `a` refs) of thread roots whose replies should appear in your
+   * notifications as if you authored the root.
+   */
+  EVENTS_I_FOLLOW_NOTIFICATIONS_LIST: 19130,
+  /**
+   * Imwald: replaceable list (`e` / `a` refs) of thread roots whose replies you do not want in
+   * notifications (e.g. noisy or hostile threads).
+   */
+  EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
 }
 
 /**

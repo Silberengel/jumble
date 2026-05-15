@@ -86,6 +86,10 @@ export const StoreNames = {
   FOLLOW_SET_EVENTS: 'followSetEvents',
   MUTE_LIST_EVENTS: 'muteListEvents',
   BOOKMARK_LIST_EVENTS: 'bookmarkListEvents',
+  /** Imwald kind 19130: thread roots to mirror in notifications. */
+  NOTIFICATION_THREAD_FOLLOW_EVENTS: 'notificationThreadFollowEvents',
+  /** Imwald kind 19132: thread roots to hide interaction notifications for. */
+  NOTIFICATION_THREAD_MUTE_EVENTS: 'notificationThreadMuteEvents',
   PIN_LIST_EVENTS: 'pinListEvents',
   BLOSSOM_SERVER_LIST_EVENTS: 'blossomServerListEvents',
   INTEREST_LIST_EVENTS: 'interestListEvents',
@@ -168,7 +172,7 @@ const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set(
 ])
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 35
+const DB_VERSION = 36
 
 /** Max age for profile and payment info cache before we refetch (5 min). */
 const PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -313,6 +317,12 @@ class IndexedDbService {
           }
           if (!db.objectStoreNames.contains(StoreNames.BOOKMARK_LIST_EVENTS)) {
             db.createObjectStore(StoreNames.BOOKMARK_LIST_EVENTS, { keyPath: 'key' })
+          }
+          if (!db.objectStoreNames.contains(StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS)) {
+            db.createObjectStore(StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS, { keyPath: 'key' })
+          }
+          if (!db.objectStoreNames.contains(StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS)) {
+            db.createObjectStore(StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS, { keyPath: 'key' })
           }
           if (!db.objectStoreNames.contains(StoreNames.PIN_LIST_EVENTS)) {
             db.createObjectStore(StoreNames.PIN_LIST_EVENTS, { keyPath: 'key' })
@@ -1073,6 +1083,10 @@ class IndexedDbService {
         return StoreNames.MUTE_LIST_EVENTS
       case kinds.BookmarkList:
         return StoreNames.BOOKMARK_LIST_EVENTS
+      case ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST:
+        return StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS
+      case ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST:
+        return StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS
       case 10001: // Pin list
         return StoreNames.PIN_LIST_EVENTS
       case 10015: // Interest list
@@ -2182,6 +2196,10 @@ class IndexedDbService {
     if (storeName === StoreNames.FOLLOW_SET_EVENTS) return ExtendedKind.FOLLOW_SET
     if (storeName === StoreNames.MUTE_LIST_EVENTS) return kinds.Mutelist
     if (storeName === StoreNames.BOOKMARK_LIST_EVENTS) return kinds.BookmarkList
+    if (storeName === StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS)
+      return ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST
+    if (storeName === StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS)
+      return ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
     if (storeName === StoreNames.PIN_LIST_EVENTS) return 10001
     if (storeName === StoreNames.INTEREST_LIST_EVENTS) return 10015
     if (storeName === StoreNames.BLOSSOM_SERVER_LIST_EVENTS) return ExtendedKind.BLOSSOM_SERVER_LIST

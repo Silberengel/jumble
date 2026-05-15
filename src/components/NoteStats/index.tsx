@@ -11,6 +11,7 @@ import { shouldHideInteractions } from '@/lib/event-filtering'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
+import NotificationThreadWatchButtons from '../NotificationThreadWatchButtons'
 import { LikeButtonWithStats } from './LikeButton'
 import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
@@ -107,6 +108,7 @@ export default function NoteStats({
           {!isRssArticleRoot && !isZapPoll && (
             <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
           )}
+          {!isRssArticleRoot && <NotificationThreadWatchButtons event={event} />}
           {!isRssArticleRoot && <BookmarkButton event={event} />}
           <SeenOnButton event={event} />
         </div>
@@ -136,6 +138,7 @@ export default function NoteStats({
           )}
         </div>
         <div className="flex items-center">
+          {!isRssArticleRoot && <NotificationThreadWatchButtons event={event} />}
           {!isRssArticleRoot && <BookmarkButton event={event} />}
           <SeenOnButton event={event} />
         </div>

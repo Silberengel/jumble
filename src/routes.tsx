@@ -13,6 +13,16 @@ const FollowingListPageLazy = lazy(() => import('./pages/secondary/FollowingList
 const GeneralSettingsPageLazy = lazy(() => import('./pages/secondary/GeneralSettingsPage'))
 const MuteListPageLazy = lazy(() => import('./pages/secondary/MuteListPage'))
 const BookmarkListPageLazy = lazy(() => import('./pages/secondary/BookmarkListPage'))
+const NotificationThreadFollowListPageLazy = lazy(() =>
+  import('./pages/secondary/NotificationThreadWatchListPage').then((m) => ({
+    default: m.NotificationThreadFollowListPage
+  }))
+)
+const NotificationThreadMuteListPageLazy = lazy(() =>
+  import('./pages/secondary/NotificationThreadWatchListPage').then((m) => ({
+    default: m.NotificationThreadMuteListPage
+  }))
+)
 const PinListPageLazy = lazy(() => import('./pages/secondary/PinListPage'))
 const InterestListPageLazy = lazy(() => import('./pages/secondary/InterestListPage'))
 const NoteListPageLazy = lazy(() => import('./pages/secondary/NoteListPage'))
@@ -91,6 +101,8 @@ const ROUTES = [
   { path: '/profile-editor', element: SR(ProfileEditorPageLazy) },
   { path: '/mutes', element: SR(MuteListPageLazy) },
   { path: '/bookmarks', element: SR(BookmarkListPageLazy) },
+  { path: '/notification-thread-follow', element: SR(NotificationThreadFollowListPageLazy) },
+  { path: '/notification-thread-mute', element: SR(NotificationThreadMuteListPageLazy) },
   { path: '/pins', element: SR(PinListPageLazy) },
   { path: '/interests', element: SR(InterestListPageLazy) },
   { path: '/user-emojis', element: SR(UserEmojiListPageLazy) },

@@ -134,6 +134,9 @@ export const toMuteList = () => '/mutes'
 
 export const toBookmarksList = () => '/bookmarks'
 
+export const toNotificationThreadFollowList = () => '/notification-thread-follow'
+export const toNotificationThreadMuteList = () => '/notification-thread-mute'
+
 export const toPinsList = () => '/pins'
 export const toInterestsList = () => '/interests'
 export const toUserEmojiList = () => '/user-emojis'

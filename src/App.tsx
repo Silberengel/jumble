@@ -5,6 +5,7 @@ import PublishSuccessSubtleIndicator from '@/components/PublishSuccessSubtleIndi
 import ReadAloudPlayerModal from '@/components/ReadAloudPlayerModal'
 import { Toaster } from '@/components/ui/sonner'
 import { BookmarksProvider } from '@/providers/BookmarksProvider'
+import { NotificationThreadWatchProvider } from '@/providers/NotificationThreadWatchProvider'
 import { ContentPolicyProvider } from '@/providers/ContentPolicyProvider'
 import { DeletedEventProvider } from '@/providers/DeletedEventProvider'
 import { FavoriteRelaysActivityProvider } from '@/providers/FavoriteRelaysActivityProvider'
@@ -51,7 +52,8 @@ export default function App(): JSX.Element {
                             <InterestListProvider>
                               <UserTrustProvider>
                                 <BookmarksProvider>
-                                  <FeedProvider>
+                                  <NotificationThreadWatchProvider>
+                                    <FeedProvider>
                                     <ReplyProvider>
                                       <MediaUploadServiceProvider>
                                         <KindFilterProvider>
@@ -69,6 +71,7 @@ export default function App(): JSX.Element {
                                       </MediaUploadServiceProvider>
                                     </ReplyProvider>
                                   </FeedProvider>
+                                  </NotificationThreadWatchProvider>
                                 </BookmarksProvider>
                               </UserTrustProvider>
                             </InterestListProvider>

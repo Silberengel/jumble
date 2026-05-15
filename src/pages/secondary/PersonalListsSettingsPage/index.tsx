@@ -8,6 +8,8 @@ import {
   useSmartFollowingListNavigation,
   useSmartInterestListNavigation,
   useSmartMuteListNavigation,
+  useSmartNotificationThreadFollowListNavigation,
+  useSmartNotificationThreadMuteListNavigation,
   useSmartPinListNavigation,
   useSmartSettingsNavigation,
   useSmartUserEmojiListNavigation
@@ -19,11 +21,13 @@ import {
   toFollowingList,
   toInterestsList,
   toMuteList,
+  toNotificationThreadFollowList,
+  toNotificationThreadMuteList,
   toPinsList,
   toUserEmojiList
 } from '@/lib/link'
 import { useNostr } from '@/providers/NostrProvider'
-import { Bookmark, ChevronRight, Hash, Pin, Smile, Sticker, Users, VolumeX } from 'lucide-react'
+import { Bookmark, Bell, BellOff, ChevronRight, Hash, Pin, Smile, Sticker, Users, VolumeX } from 'lucide-react'
 import { forwardRef, HTMLProps, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -39,6 +43,8 @@ const PersonalListsSettingsPage = forwardRef(
     const { navigateToMuteList } = useSmartMuteListNavigation()
     const { navigateToFollowingList } = useSmartFollowingListNavigation()
     const { navigateToBookmarkList } = useSmartBookmarkListNavigation()
+    const { navigateToNotificationThreadFollowList } = useSmartNotificationThreadFollowListNavigation()
+    const { navigateToNotificationThreadMuteList } = useSmartNotificationThreadMuteListNavigation()
     const { navigateToPinList } = useSmartPinListNavigation()
     const { navigateToInterestList } = useSmartInterestListNavigation()
     const { navigateToUserEmojiList } = useSmartUserEmojiListNavigation()
@@ -84,10 +90,37 @@ const PersonalListsSettingsPage = forwardRef(
             </SettingRow>
           ) : null}
           {pubkey ? (
-            <SettingRow className="clickable" onClick={() => navigateToBookmarkList(toBookmarksList())}>
+            <SettingRow
+              className="clickable"
+              onClick={() => navigateToBookmarkList(toBookmarksList())}
+            >
               <div className="flex items-center gap-3">
                 <Bookmark />
                 <div>{t('Bookmarks list')}</div>
+              </div>
+              <ChevronRight />
+            </SettingRow>
+          ) : null}
+          {pubkey ? (
+            <SettingRow
+              className="clickable"
+              onClick={() => navigateToNotificationThreadFollowList(toNotificationThreadFollowList())}
+            >
+              <div className="flex items-center gap-3">
+                <Bell />
+                <div>{t('Notification thread follow list')}</div>
+              </div>
+              <ChevronRight />
+            </SettingRow>
+          ) : null}
+          {pubkey ? (
+            <SettingRow
+              className="clickable"
+              onClick={() => navigateToNotificationThreadMuteList(toNotificationThreadMuteList())}
+            >
+              <div className="flex items-center gap-3">
+                <BellOff />
+                <div>{t('Notification thread mute list')}</div>
               </div>
               <ChevronRight />
             </SettingRow>

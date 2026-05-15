@@ -21,6 +21,14 @@ import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeTopic } from '@/lib/discussion-topics'
+import {
+  chunkArray,
+  extractACoordsForNotificationReq,
+  extractEHexIdsForNotificationReq,
+  NOTIFICATION_THREAD_WATCH_A_CHUNK,
+  NOTIFICATION_THREAD_WATCH_E_CHUNK,
+  parseThreadWatchListRefs
+} from '@/lib/notification-thread-watch'
 import { userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
@@ -179,6 +187,29 @@ export function buildMentionsSpellFilter(pubkey: string): Filter {
 export function buildNotificationsSpellSubRequests(urls: string[], pubkey: string): TFeedSubRequest[] {
   const pk = normalizeMentionPubkey(pubkey)
   return [{ urls, filter: { limit: FAUX_SPELL_EVENT_LIMIT, '#p': [pk] } }]
+}
+
+/**
+ * Extra shards: events referencing followed thread roots via `#e` / `#a` (OR within each filter).
+ * Merged with {@link buildNotificationsSpellSubRequests} in the notifications faux spell.
+ */
+export function buildNotificationsFollowedThreadSubRequests(
+  urls: string[],
+  followListEvent: Event | null | undefined
+): TFeedSubRequest[] {
+  if (!urls.length) return []
+  const refs = parseThreadWatchListRefs(followListEvent ?? null)
+  const kinds = [...NOTIFICATION_SPELL_KINDS]
+  const out: TFeedSubRequest[] = []
+  for (const chunk of chunkArray(extractEHexIdsForNotificationReq(refs), NOTIFICATION_THREAD_WATCH_E_CHUNK)) {
+    if (chunk.length === 0) continue
+    out.push({ urls, filter: { kinds, limit: FAUX_SPELL_EVENT_LIMIT, '#e': chunk } })
+  }
+  for (const chunk of chunkArray(extractACoordsForNotificationReq(refs), NOTIFICATION_THREAD_WATCH_A_CHUNK)) {
+    if (chunk.length === 0) continue
+    out.push({ urls, filter: { kinds, limit: FAUX_SPELL_EVENT_LIMIT, '#a': chunk } })
+  }
+  return out
 }
 
 export function buildDiscussionFilter(): Filter {

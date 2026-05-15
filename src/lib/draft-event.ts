@@ -990,6 +990,20 @@ export function createBookmarkDraftEvent(tags: string[][], content = ''): TDraft
   }
 }
 
+/** Replaceable personal list (same tag shape as bookmarks: `e` / `a` refs). */
+export function createReplaceablePersonalListDraftEvent(
+  kind: number,
+  tags: string[][],
+  content = ''
+): TDraftEvent {
+  return {
+    kind,
+    content,
+    tags,
+    created_at: dayjs().unix()
+  }
+}
+
 /** NIP-B0 (kind 39701): parameterized web bookmark; `d` = URL without scheme, `i`/`I` = canonical http(s) URL. */
 export function createWebBookmarkDraftEvent(options: {
   url: string

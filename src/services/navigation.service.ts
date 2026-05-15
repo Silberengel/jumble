@@ -46,6 +46,8 @@ export type ViewType =
   | 'pins'
   | 'interests'
   | 'user-emojis'
+  | 'notification-thread-follow'
+  | 'notification-thread-mute'
   | 'others-relay-settings'
   | null
 
@@ -293,6 +295,8 @@ export class NavigationService {
     if (viewType === 'following') return 'Following'
     if (viewType === 'mute') return 'Muted Users'
     if (viewType === 'bookmarks') return 'Bookmarks'
+    if (viewType === 'notification-thread-follow') return 'Thread notifications (follow)'
+    if (viewType === 'notification-thread-mute') return 'Thread notifications (mute)'
     if (viewType === 'pins') return 'Pinned notes'
     if (viewType === 'interests') return 'Interests'
     if (viewType === 'user-emojis') return 'Custom emoji list'

@@ -8,13 +8,14 @@ import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
 import { useBookmarksOptional } from '@/providers/bookmarks-context'
 import { useNostr } from '@/providers/NostrProvider'
+import { useNotificationThreadWatchOptional } from '@/providers/NotificationThreadWatchProvider'
 import { ChevronRight, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { Event } from 'nostr-tools'
 
-type TListMode = 'bookmark' | 'pin'
+type TListMode = 'bookmark' | 'pin' | 'notificationThreadFollow' | 'notificationThreadMute'
 
 /**
  * One row in bookmark / pin list pages (same idea as {@link UserItem} on mute/follow lists).
@@ -33,6 +34,7 @@ export default function PersonalListNoteRefRow({
   const { navigateToNote } = useSmartNoteNavigation()
   const { checkLogin } = useNostr()
   const bookmarks = useBookmarksOptional()
+  const notificationWatch = useNotificationThreadWatchOptional()
   const removePinEntry = useRemovePinListEntry(onEntryRemoved)
   const [removing, setRemoving] = useState(false)
 
@@ -65,12 +67,34 @@ export default function PersonalListNoteRefRow({
             } else {
               toast.info(t('Bookmark not in list'))
             }
-          } else {
+          } else if (listMode === 'pin') {
             const ok = await removePinEntry(bech32Id, event as Event | null)
             if (ok) {
               toast.success(t('Note unpinned'))
             } else {
               toast.info(t('Pin not in list'))
+            }
+          } else if (listMode === 'notificationThreadFollow') {
+            if (!notificationWatch) {
+              toast.error(t('Thread notification list update failed'))
+              return
+            }
+            const ok = await notificationWatch.removeFollowRefByBech32(bech32Id)
+            if (ok) {
+              toast.success(t('Removed from notification thread follow list'))
+            } else {
+              toast.info(t('Entry not in list'))
+            }
+          } else if (listMode === 'notificationThreadMute') {
+            if (!notificationWatch) {
+              toast.error(t('Thread notification list update failed'))
+              return
+            }
+            const ok = await notificationWatch.removeMuteRefByBech32(bech32Id)
+            if (ok) {
+              toast.success(t('Removed from notification thread mute list'))
+            } else {
+              toast.info(t('Entry not in list'))
             }
           }
         } catch (err) {
@@ -78,7 +102,9 @@ export default function PersonalListNoteRefRow({
           toast.error(
             listMode === 'bookmark'
               ? `${t('Remove bookmark failed')}: ${msg}`
-              : `${t('Failed to remove pin')}: ${msg}`
+              : listMode === 'pin'
+                ? `${t('Failed to remove pin')}: ${msg}`
+                : `${t('Thread notification list update failed')}: ${msg}`
           )
         } finally {
           setRemoving(false)
@@ -91,6 +117,7 @@ export default function PersonalListNoteRefRow({
       checkLogin,
       event,
       listMode,
+      notificationWatch,
       removePinEntry,
       removing,
       t

@@ -101,6 +101,16 @@ const SecondaryProfilePageLazy = lazy(() => import('@/pages/secondary/ProfilePag
 const PrimaryFollowingListPageLazy = lazy(() => import('@/pages/secondary/FollowingListPage'))
 const PrimaryMuteListPageLazy = lazy(() => import('@/pages/secondary/MuteListPage'))
 const PrimaryBookmarkListPageLazy = lazy(() => import('@/pages/secondary/BookmarkListPage'))
+const PrimaryNotificationThreadFollowListPageLazy = lazy(() =>
+  import('@/pages/secondary/NotificationThreadWatchListPage').then((m) => ({
+    default: m.NotificationThreadFollowListPage
+  }))
+)
+const PrimaryNotificationThreadMuteListPageLazy = lazy(() =>
+  import('@/pages/secondary/NotificationThreadWatchListPage').then((m) => ({
+    default: m.NotificationThreadMuteListPage
+  }))
+)
 const PrimaryPinListPageLazy = lazy(() => import('@/pages/secondary/PinListPage'))
 const PrimaryInterestListPageLazy = lazy(() => import('@/pages/secondary/InterestListPage'))
 const PrimaryUserEmojiListPageLazy = lazy(() => import('@/pages/secondary/UserEmojiListPage'))
@@ -838,6 +848,46 @@ export function useSmartPinListNavigation() {
   }
 
   return { navigateToPinList }
+}
+
+export function useSmartNotificationThreadFollowListNavigation() {
+  const { setPrimaryNoteView } = usePrimaryNoteView()
+  const { push: pushSecondaryPage } = useSecondaryPage()
+  const { isSmallScreen } = useScreenSize()
+
+  const navigateToNotificationThreadFollowList = (url: string) => {
+    if (isSmallScreen) {
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<PrimaryNotificationThreadFollowListPageLazy index={0} hideTitlebar={true} />),
+        'notification-thread-follow'
+      )
+    } else {
+      pushSecondaryPage(url)
+    }
+  }
+
+  return { navigateToNotificationThreadFollowList }
+}
+
+export function useSmartNotificationThreadMuteListNavigation() {
+  const { setPrimaryNoteView } = usePrimaryNoteView()
+  const { push: pushSecondaryPage } = useSecondaryPage()
+  const { isSmallScreen } = useScreenSize()
+
+  const navigateToNotificationThreadMuteList = (url: string) => {
+    if (isSmallScreen) {
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<PrimaryNotificationThreadMuteListPageLazy index={0} hideTitlebar={true} />),
+        'notification-thread-mute'
+      )
+    } else {
+      pushSecondaryPage(url)
+    }
+  }
+
+  return { navigateToNotificationThreadMuteList }
 }
 
 export function useSmartInterestListNavigation() {
@@ -1858,7 +1908,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       primaryViewType === 'pins' ||
       primaryViewType === 'interests' ||
       primaryViewType === 'user-emojis' ||
-      primaryViewType === 'mute'
+      primaryViewType === 'mute' ||
+      primaryViewType === 'notification-thread-follow' ||
+      primaryViewType === 'notification-thread-mute'
     ) {
       setPrimaryNoteView(null)
       return

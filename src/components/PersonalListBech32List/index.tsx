@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 const PAGE = 10
 
-type TListMode = 'bookmark' | 'pin'
+type TListMode = 'bookmark' | 'pin' | 'notificationThreadFollow' | 'notificationThreadMute'
 
 /** Paginated list of nevent/naddr ids (same infinite-scroll pattern as mute list / {@link ProfileList}). */
 export default function PersonalListBech32List({

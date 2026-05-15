@@ -13,6 +13,8 @@ export type TPrimaryOverlayViewType =
   | 'pins'
   | 'interests'
   | 'user-emojis'
+  | 'notification-thread-follow'
+  | 'notification-thread-mute'
   | 'others-relay-settings'
 
 export type PrimaryNoteViewContextValue = {

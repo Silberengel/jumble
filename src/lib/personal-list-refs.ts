@@ -31,6 +31,14 @@ export function bookmarkBech32IdsFromListEvent(ev: Event | null): string[] {
   return dedupePreserveOrder(raw).reverse()
 }
 
+/**
+ * Imwald kinds **19130** / **19132** (thread notification follow / mute lists): same `e` / `a` → nevent/naddr
+ * ordering as {@link bookmarkBech32IdsFromListEvent} (newest-first).
+ */
+export function notificationThreadWatchBech32IdsFromListEvent(ev: Event | null): string[] {
+  return bookmarkBech32IdsFromListEvent(ev)
+}
+
 /** Kind 10001 pin list: `e` reversed then `a`, same ordering as profile pins. */
 export function pinBech32IdsFromListEvent(ev: Event | null): string[] {
   if (!ev?.tags?.length) return []

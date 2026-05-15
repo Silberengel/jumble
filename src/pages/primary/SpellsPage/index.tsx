@@ -27,6 +27,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useBookmarks } from '@/providers/bookmarks-context'
 import { useNostr } from '@/providers/NostrProvider'
+import { useNotificationThreadWatch } from '@/providers/NotificationThreadWatchProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { dedupeFollowSetEventsByD } from '@/lib/follow-set-spell'
@@ -88,6 +89,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   } = useNostr()
   const { addBookmark, removeBookmark } = useBookmarks()
   const { hideUntrustedNotifications } = useUserTrust()
+  const { eventsIFollowListEvent, eventsIMutedListEvent } = useNotificationThreadWatch()
   const { isSmallScreen } = useScreenSize()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
@@ -245,7 +247,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     contactsSyncKey,
     followSetListEvents,
     followSetCatalogLoading,
-    kindFilterShowKinds
+    kindFilterShowKinds,
+    notificationEventsIFollowListEvent: eventsIFollowListEvent,
+    notificationEventsIMutedListEvent: eventsIMutedListEvent
   })
 
   useEffect(() => {
