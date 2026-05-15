@@ -234,19 +234,45 @@ export const ACCOUNT_SESSION_HYDRATE_WALL_MS = 60_000
  * Batched kind-0 queries (ReplaceableEventService) over many relays (inbox, favorites, cache, defaults).
  * Too low causes empty profiles and NIP-05 gaps when relays are slow or many URLs are queried.
  */
-export const METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS = 16000
+export const METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS = 18000
 /** After all relays EOSE, wait this long before closing so slow EVENTs still land (slot queue + TLS). */
-export const METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS = 2800
+export const METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS = 4000
 /**
  * Max `authors` per REQ for batched kind-0; large arrays are split so relays return more complete rows.
  */
 export const METADATA_BATCH_AUTHORS_CHUNK = 22
 
 /**
+ * Hard wall on {@link ReplaceableEventService.fetchProfilesForPubkeys} (feed / thread batch avatars).
+ * On timeout, callers get session/IndexedDB rows plus {@link TProfile.batchPlaceholder} for gaps.
+ */
+export const FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS = 14_000
+
+/**
+ * After this delay while a pubkey stays in the feed’s `pendingPubkeys` set, {@link useFetchProfile}
+ * may run a per-pubkey fetch. Must exceed {@link FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS} so we do not
+ * stack batch + N individual profile REQs on the same refresh.
+ */
+export const FEED_PROFILE_PENDING_BATCH_ESCAPE_MS = FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS + 4_000
+
+/** Network-only cap on {@link ReplaceableEventService.fetchReplaceableEventsFromProfileFetchRelays} `loadMany`. */
+export const PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS = 12_000
+
+/**
+ * Hex-id / replaceable-coordinate note lookup ({@link EventService.tryHarderToFetchEvent}, big-relays dataloader).
+ */
+export const SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS = 5_000
+export const SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS = 28_000
+
+/** Wide REQ for embeds / explicit external lists ({@link EventService.fetchEventWithExternalRelays}). */
+export const EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS = 14_000
+export const EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS = 40_000
+
+/**
  * useFetchProfile: outer Promise.race on fetchProfileEvent and wait-for-shared-promise timeouts.
  * Must be greater than {@link METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS} so the batch can finish first.
  */
-export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 20000
+export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 22_000
 
 /**
  * Public Blossom (BUD) upload bases: presets in post settings and merged after the user’s

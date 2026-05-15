@@ -528,6 +528,8 @@ export default {
     embeddedNoteInvalidHex: "This is not a valid hex event id (expected exactly 64 hexadecimal characters).",
     embeddedNoteInvalidBech32: "This is not a valid Nostr id (bech32 decode failed). It may be mistyped or truncated.",
     embeddedNoteInvalidWrongKind: "This is a {{type}} id. Embedded notes must use note1, nevent1, naddr1, or 64-character hex.",
+    embeddedNoteFetchMiss:
+      "This note is not in local storage and was not returned by the relays we queried. Retries run in the background; you can also open it in another client.",
     "The note was not found on your relays or default relays.": "The note was not found on your relays or default relays.",
     "Try searching author's relays": "Try searching author's relays",
     "Searching external relays...": "Searching external relays...",

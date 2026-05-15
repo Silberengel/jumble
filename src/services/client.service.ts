@@ -323,6 +323,8 @@ async function mapPoolWithConcurrency<T, R>(
 /** Many features call `fetchRelayLists` in parallel; each timeout used to emit an identical WARN. */
 let fetchRelayListBudgetWarnLastMs = 0
 const FETCH_RELAY_LIST_BUDGET_WARN_MIN_INTERVAL_MS = 60_000
+/** Background kind-10002 refresh per pubkey set — avoids re-REQ on every embed/publish lookup. */
+const REFRESH_RELAY_LIST_BG_MIN_INTERVAL_MS = 5 * 60_000
 
 class ClientService extends EventTarget {
   static instance: ClientService
@@ -352,6 +354,9 @@ class ClientService extends EventTarget {
   private timelinePersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
   /** In-flight {@link fetchRelayList} dedupe: key = viewer pubkey + target pubkey (sanitization depends on viewer). */
   private relayListRequestCache = new Map<string, Promise<TRelayList>>()
+  /** Dedupe {@link refreshRelayListsFromNetwork} — was firing on every cached lookup and stacking REQs. */
+  private refreshRelayListsBgInFlight = new Set<string>()
+  private refreshRelayListsBgLastAtMs = new Map<string, number>()
   private userIndex = new FlexSearch.Index({
     tokenize: 'forward'
   })
@@ -4225,19 +4230,47 @@ class ClientService extends EventTarget {
     pubkeys: string[],
     storedKind10002: (NEvent | null | undefined)[]
   ): void {
+    const missingPubkeys: string[] = []
+    const storedForMissing: (NEvent | null | undefined)[] = []
+    for (let i = 0; i < pubkeys.length; i++) {
+      if (storedKind10002[i] != null) continue
+      missingPubkeys.push(pubkeys[i]!)
+      storedForMissing.push(storedKind10002[i])
+    }
+    if (missingPubkeys.length === 0) return
+
+    const key = missingPubkeys
+      .map((pk) => pk.toLowerCase())
+      .sort()
+      .join('\x1e')
+    const now = Date.now()
+    if (now - (this.refreshRelayListsBgLastAtMs.get(key) ?? 0) < REFRESH_RELAY_LIST_BG_MIN_INTERVAL_MS) {
+      return
+    }
+    if (this.refreshRelayListsBgInFlight.has(key)) return
+
+    this.refreshRelayListsBgInFlight.add(key)
+    this.refreshRelayListsBgLastAtMs.set(key, now)
+
     void (async () => {
       try {
         const relayEvents = await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-          pubkeys,
+          missingPubkeys,
           kinds.RelayList
         )
         await this.replaceableEventService.fetchReplaceableEventsFromProfileFetchRelays(
-          pubkeys,
+          missingPubkeys,
           ExtendedKind.HTTP_RELAY_LIST
         )
-        await this.fetchCacheRelayEventsFromMultipleSources(pubkeys, relayEvents, storedKind10002)
+        await this.fetchCacheRelayEventsFromMultipleSources(
+          missingPubkeys,
+          relayEvents,
+          storedForMissing
+        )
       } catch {
         /* best-effort */
+      } finally {
+        this.refreshRelayListsBgInFlight.delete(key)
       }
     })()
   }

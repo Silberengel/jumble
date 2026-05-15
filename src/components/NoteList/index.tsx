@@ -193,8 +193,8 @@ type TFeedClientAuthorMode = 'everyone' | 'me' | 'npub'
 const FEED_FILTER_KIND_MIN = 0
 const FEED_FILTER_KIND_MAX = 40_000
 
-/** Short debounce: batch rapid timeline updates without delaying first paint on feeds like notifications. */
-const FEED_PROFILE_BATCH_DEBOUNCE_MS = 50
+/** Debounce rapid timeline updates so profile batches do not stack on every streaming EVENT. */
+const FEED_PROFILE_BATCH_DEBOUNCE_MS = 400
 /** Larger chunks + parallel fetches below — sequential 36-pubkey rounds made notification avatars lag. */
 const FEED_PROFILE_CHUNK = 80
 

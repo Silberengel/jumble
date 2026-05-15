@@ -1,8 +1,12 @@
 import {
   AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS,
   ExtendedKind,
+  EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS,
+  EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
   isDocumentRelayKind,
-  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
+  SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS,
+  SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
 import logger from '@/lib/logger'
 import {
@@ -79,6 +83,7 @@ async function buildComprehensiveRelayListForEvents(
     relayHints,
     seenRelays,
     containingEventRelays,
+    includeProfileFetchRelays: true,
     includeFastReadRelays: true,
     includeSearchableRelays: true,
     includeLocalRelays: true,
@@ -522,8 +527,8 @@ export class EventService {
         : undefined
     /** User-driven “try everywhere”: wait for EOSE-ish completion so slower relays (e.g. nos.lol) can answer. */
     const events = await this.queryService.query(externalRelays, filter, undefined, {
-      eoseTimeout: 12_000,
-      globalTimeout: 35_000,
+      eoseTimeout: EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS,
+      globalTimeout: EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
       immediateReturn: false
     })
 
@@ -1246,8 +1251,8 @@ export class EventService {
 
     const events = await this.queryService.query(relayUrls, filter, undefined, {
       immediateReturn: useFastSingleHitQuery,
-      eoseTimeout: useFastSingleHitQuery ? 2500 : 500,
-      globalTimeout: useFastSingleHitQuery ? 20_000 : 10000
+      eoseTimeout: useFastSingleHitQuery ? SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS : 500,
+      globalTimeout: useFastSingleHitQuery ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS : 10000
     })
 
     const event = events
@@ -1293,8 +1298,8 @@ export class EventService {
       undefined,
       {
         immediateReturn: isSingleEventFetch,
-        eoseTimeout: isSingleEventFetch ? 2500 : 500,
-        globalTimeout: isSingleEventFetch ? 20_000 : 10000
+        eoseTimeout: isSingleEventFetch ? SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS : 500,
+        globalTimeout: isSingleEventFetch ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS : 10000
       }
     )
 

@@ -1,10 +1,12 @@
 import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
+  FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   METADATA_BATCH_AUTHORS_CHUNK,
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+  PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
   PROFILE_FETCH_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   RECOMMENDED_BLOSSOM_SERVERS
@@ -26,6 +28,7 @@ import { buildComprehensiveRelayList, buildExploreProfileAndUserRelayList } from
 import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
 
 export class ReplaceableEventService {
   /** Limits parallel Step 2/3 profile network work (relay list + wide metadata REQ). */
@@ -346,9 +349,26 @@ export class ReplaceableEventService {
 
     const stillMissing = needsIndexedDb.filter(({ index }) => results[index] === undefined)
     if (stillMissing.length > 0) {
-      const newEvents = await this.replaceableEventFromBigRelaysDataloader.loadMany(
-        stillMissing.map(({ pubkey }) => ({ pubkey, kind }))
-      )
+      let newEvents: (NEvent | Error | null | undefined)[]
+      try {
+        newEvents = await racePromiseWithTimeout(
+          this.replaceableEventFromBigRelaysDataloader.loadMany(
+            stillMissing.map(({ pubkey }) => ({ pubkey, kind }))
+          ),
+          PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
+          'replaceableEventFromBigRelaysDataloader.loadMany'
+        )
+      } catch (err) {
+        if (isPromiseTimeoutError(err)) {
+          logger.warn('[ReplaceableEventService] Profile batch network load timed out', {
+            missingCount: stillMissing.length,
+            kind
+          })
+          newEvents = stillMissing.map(() => undefined)
+        } else {
+          throw err
+        }
+      }
       newEvents.forEach((event, idx) => {
         if (event && !(event instanceof Error)) {
           const { index } = stillMissing[idx]!
@@ -1028,6 +1048,64 @@ export class ReplaceableEventService {
   async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
     const deduped = Array.from(new Set(pubkeys.filter((p) => p && p.length === 64)))
     if (deduped.length === 0) return []
+    try {
+      return await racePromiseWithTimeout(
+        this.fetchProfilesForPubkeysBody(deduped),
+        FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
+        'fetchProfilesForPubkeys'
+      )
+    } catch (err) {
+      if (!isPromiseTimeoutError(err)) throw err
+      logger.warn('[ReplaceableEventService] fetchProfilesForPubkeys exceeded wall timeout', {
+        pubkeyCount: deduped.length
+      })
+      return this.fetchProfilesForPubkeysLocalFallback(deduped)
+    }
+  }
+
+  private async fetchProfilesForPubkeysLocalFallback(pubkeys: string[]): Promise<TProfile[]> {
+    const events: (NEvent | undefined)[] = []
+    for (const pubkey of pubkeys) {
+      const pkLower = pubkey.toLowerCase()
+      let ev: NEvent | undefined = client.eventService.getSessionMetadataForPubkey(pkLower)
+      if (ev && shouldDropEventOnIngest(ev)) ev = undefined
+      if (!ev) {
+        try {
+          const row = await indexedDb.getReplaceableEvent(pkLower, kinds.Metadata)
+          if (row && !shouldDropEventOnIngest(row)) ev = row as NEvent
+        } catch {
+          /* ignore */
+        }
+      }
+      events.push(ev)
+    }
+    return this.profilesFromMetadataEvents(pubkeys, events)
+  }
+
+  private async profilesFromMetadataEvents(
+    pubkeys: string[],
+    events: (NEvent | undefined)[]
+  ): Promise<TProfile[]> {
+    const profiles: TProfile[] = []
+    for (let i = 0; i < pubkeys.length; i++) {
+      const ev = events[i]
+      if (ev) {
+        await this.indexProfile(ev)
+        profiles.push(getProfileFromEvent(ev))
+      } else {
+        const pubkey = pubkeys[i]!
+        profiles.push({
+          pubkey,
+          npub: pubkeyToNpub(pubkey) ?? '',
+          username: formatPubkey(pubkey),
+          batchPlaceholder: true
+        })
+      }
+    }
+    return profiles
+  }
+
+  private async fetchProfilesForPubkeysBody(deduped: string[]): Promise<TProfile[]> {
     let events = await this.fetchReplaceableEventsFromProfileFetchRelays(deduped, kinds.Metadata)
     const gapIdx: number[] = []
     for (let i = 0; i < deduped.length; i++) {
@@ -1080,48 +1158,7 @@ export class ReplaceableEventService {
       )
     }
 
-    const MAX_METADATA_GAP_FILL_NETWORK = 48
-    const GAP_FILL_NETWORK_PARALLEL = 4
-    const stillGap: number[] = []
-    for (let i = 0; i < deduped.length; i++) {
-      if (!events[i]) stillGap.push(i)
-    }
-    const cappedNetwork = stillGap.slice(0, MAX_METADATA_GAP_FILL_NETWORK)
-    for (let off = 0; off < cappedNetwork.length; off += GAP_FILL_NETWORK_PARALLEL) {
-      const slice = cappedNetwork.slice(off, off + GAP_FILL_NETWORK_PARALLEL)
-      await Promise.allSettled(
-        slice.map(async (idx) => {
-          const pubkey = deduped[idx]!
-          try {
-            const ev = await this.fetchProfileEvent(pubkey, false)
-            if (ev && !shouldDropEventOnIngest(ev)) {
-              events[idx] = ev
-            }
-          } catch {
-            /* ignore */
-          }
-        })
-      )
-    }
-
-    const profiles: TProfile[] = []
-    for (let i = 0; i < deduped.length; i++) {
-      const ev = events[i]
-      if (ev) {
-        await this.indexProfile(ev)
-        profiles.push(getProfileFromEvent(ev))
-      } else {
-        const pubkey = deduped[i]!
-        profiles.push({
-          pubkey,
-          npub: pubkeyToNpub(pubkey) ?? '',
-          username: formatPubkey(pubkey),
-          /** Lets {@link useFetchProfile} retry per-pubkey when batch REQ missed kind 0. */
-          batchPlaceholder: true
-        })
-      }
-    }
-    return profiles
+    return this.profilesFromMetadataEvents(deduped, events)
   }
 
   /**

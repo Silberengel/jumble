@@ -1,4 +1,4 @@
-import { PROFILE_FETCH_PROMISE_TIMEOUT_MS } from '@/constants'
+import { FEED_PROFILE_PENDING_BATCH_ESCAPE_MS, PROFILE_FETCH_PROMISE_TIMEOUT_MS } from '@/constants'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
@@ -11,6 +11,10 @@ import { TProfile } from '@/types'
 import { kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '@/lib/logger'
+
+function feedProfileBatchRetryStaggerMs(pubkeyLower: string): number {
+  return (parseInt(pubkeyLower.slice(0, 8), 16) % 40) * 400
+}
 
 function tryHydrateProfileFromSessionOnly(pubkey: string, skipCache: boolean): TProfile | null {
   if (skipCache) return null
@@ -375,8 +379,46 @@ export function useFetchProfile(id?: string, skipCache = false) {
           initializedPubkeysRef.current.add(extractedPubkey)
           effectRunCountRef.current.delete(extractedPubkey)
         })
+        const pendingEscapeTimer = window.setTimeout(() => {
+          if (pendingCancelled.current) return
+          const s2 = eventService.getSessionMetadataForPubkey(pkL)
+          if (s2) {
+            const q = getProfileFromEvent(s2)
+            setProfile(q)
+            setIsFetching(false)
+            setError(null)
+            processingPubkeyRef.current = extractedPubkey
+            initializedPubkeysRef.current.add(extractedPubkey)
+            effectRunCountRef.current.delete(extractedPubkey)
+            return
+          }
+          void checkProfile(extractedPubkey, pendingCancelled)
+        }, FEED_PROFILE_PENDING_BATCH_ESCAPE_MS)
         return () => {
           pendingCancelled.current = true
+          window.clearTimeout(pendingEscapeTimer)
+          if (processingPubkeyRef.current === extractedPubkey) {
+            processingPubkeyRef.current = null
+          }
+          if (checkIntervalRef.current) {
+            clearInterval(checkIntervalRef.current)
+            checkIntervalRef.current = null
+          }
+          if (extractedPubkey) {
+            effectRunCountRef.current.delete(extractedPubkey)
+          }
+        }
+      }
+      if (fromBatch?.batchPlaceholder) {
+        const placeholderCancelled = { current: false }
+        const staggerMs = feedProfileBatchRetryStaggerMs(pkL)
+        const placeholderTimer = window.setTimeout(() => {
+          if (placeholderCancelled.current) return
+          void checkProfile(extractedPubkey, placeholderCancelled)
+        }, staggerMs)
+        return () => {
+          placeholderCancelled.current = true
+          window.clearTimeout(placeholderTimer)
           if (processingPubkeyRef.current === extractedPubkey) {
             processingPubkeyRef.current = null
           }

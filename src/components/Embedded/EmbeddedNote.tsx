@@ -211,6 +211,7 @@ function EmbeddedNoteFetched({
   showFull: boolean
   allowLiveEmbeds: boolean
 }) {
+  const { t } = useTranslation()
   const { isEventDeleted } = useDeletedEvent()
   const { addReplies } = useReply()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
@@ -397,8 +398,13 @@ function EmbeddedNoteFetched({
         onClick={(e) => e.stopPropagation()}
         data-embedded-note-loading
       >
-        <EmbeddedNoteSkeleton className="border-0 p-0 shadow-none" />
-        <ClientSelect className="w-full mt-3" originalNoteId={noteId.trim() || undefined} />
+        <p className="text-xs text-muted-foreground mb-2">
+          {t('embeddedNoteFetchMiss', {
+            defaultValue:
+              'This note is not in local storage and was not returned by the relays we queried. Retries run in the background; you can also open it in another client.'
+          })}
+        </p>
+        <ClientSelect className="w-full" originalNoteId={noteId.trim() || undefined} />
       </div>
     )
   }
