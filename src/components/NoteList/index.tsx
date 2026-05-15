@@ -773,6 +773,12 @@ const NoteList = forwardRef(
        */
       timelinePublicReadFallback = false,
       /**
+       * Explore single-relay feed: paint only live events from that relay’s REQ — no session snapshot, no disk
+       * prime merge, no {@link ClientService.subscribeTimeline} IndexedDB hydrate / persist, no profile prefetch
+       * fan-out to other relays.
+       */
+      relayAuthoritativeFeedOnly = false,
+      /**
        * When set and the timeline is empty (after relays finish), show a link to Alexandria with a matching query
        * (hashtag / d-tag browse from {@link NormalFeed}).
        */
@@ -833,6 +839,8 @@ const NoteList = forwardRef(
       /** When true, render events as an Instagram-style 3-column square media grid. */
       gridLayout?: boolean
       timelinePublicReadFallback?: boolean
+      /** Single-relay explore: only show events returned by that relay (no session/IDB/local merge). */
+      relayAuthoritativeFeedOnly?: boolean
       /** Optional Alexandria `/events` URL when this feed’s timeline is empty (search / tag browse). */
       alexandriaEmptyUrl?: string | null
     },
@@ -928,6 +936,8 @@ const NoteList = forwardRef(
     const [feedSubscribeRelayOutcomes, setFeedSubscribeRelayOutcomes] = useState<RelayOpTerminalRow[]>([])
     /** One-shot per timeline init: after an all-failed relay wave, try {@link FAST_READ_RELAY_URLS}. */
     const publicReadFallbackAttemptedRef = useRef(false)
+    const relayAuthoritativeFeedOnlyRef = useRef(relayAuthoritativeFeedOnly)
+    relayAuthoritativeFeedOnlyRef.current = relayAuthoritativeFeedOnly
     /**
      * Bumped when {@link feedPaintLiveRelayDoneRef} becomes true so the empty-feed toast effect re-runs.
      * (Loading clears when subscribe wires; merged EOSE arrives later.)
@@ -1893,6 +1903,7 @@ const NoteList = forwardRef(
         setLoading(true)
         let diskPrimeCancelled = false
         const primeDiskWhileAwaitingRelayProbe = async () => {
+          if (relayAuthoritativeFeedOnlyRef.current) return
           try {
             const mapped = stripNostrLandAggrFromTimelineSubRequests(
               feedSubscriptionKey,
@@ -1974,7 +1985,9 @@ const NoteList = forwardRef(
           eventsRef.current.length > 0
 
         const sessionSnap =
-          !userPulledRefresh ? getSessionFeedSnapshot(sessionSnapshotIdentityKey) : undefined
+          !userPulledRefresh && !relayAuthoritativeFeedOnlyRef.current
+            ? getSessionFeedSnapshot(sessionSnapshotIdentityKey)
+            : undefined
         const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
 
         const seeAllNoSpell = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
@@ -2074,6 +2087,7 @@ const NoteList = forwardRef(
          * {@link onEvents} so rows appear as soon as local sources resolve.
          */
         const startNonBlockingTimelineDiskPrime = () => {
+          if (relayAuthoritativeFeedOnlyRef.current) return
           if (oneShotFetch || mappedSubRequests.length === 0) return
           if (isSpellPageLocalWarmup) return
           const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
@@ -2802,6 +2816,7 @@ const NoteList = forwardRef(
                     timelinePrefetchDebounceRef.current = setTimeout(() => {
                       timelinePrefetchDebounceRef.current = null
                       if (!effectActive) return
+                      if (relayAuthoritativeFeedOnlyRef.current) return
                       const evs = lastEventsForTimelinePrefetchRef.current
                       if (evs.length === 0) return
 
@@ -2997,6 +3012,7 @@ const NoteList = forwardRef(
             startLogin,
             needSort: !areAlgoRelays,
             firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
+            relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current,
             onRelaySubscribeWaveComplete: (rows) => {
               if (!effectActive) return
               setFeedSubscribeRelayOutcomes(rows)
@@ -3051,7 +3067,9 @@ const NoteList = forwardRef(
         setProgressiveLayersSearching(false)
         followingFeedDeltaCloserRef.current?.()
         followingFeedDeltaCloserRef.current = null
-        setSessionFeedSnapshot(snapshotKeyForCleanup, eventsRef.current)
+        if (!relayAuthoritativeFeedOnlyRef.current) {
+          setSessionFeedSnapshot(snapshotKeyForCleanup, eventsRef.current)
+        }
         if (kindlessEoseTimeoutRef.current) {
           clearTimeout(kindlessEoseTimeoutRef.current)
           kindlessEoseTimeoutRef.current = null
@@ -3097,7 +3115,8 @@ const NoteList = forwardRef(
       onSingleRelayKindlessEmpty,
       mapLiveSubRequestsForTimeline,
       progressiveWarmupQuery,
-      hostPrimaryPageName
+      hostPrimaryPageName,
+      relayAuthoritativeFeedOnly
     ])
 
     useEffect(() => {
@@ -3316,7 +3335,8 @@ const NoteList = forwardRef(
             {
               startLogin,
               needSort: !areAlgoRelays,
-              firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS
+              firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
+              relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current
             }
           )
           if (!deltaActive) {
@@ -3522,6 +3542,7 @@ const NoteList = forwardRef(
     ])
 
     useEffect(() => {
+      if (relayAuthoritativeFeedOnly) return
       if (!timelinePublicReadFallback) return
       if (feedSubscriptionKey === 'home-all-favorites') return
       if (oneShotFetch || areAlgoRelays) return
@@ -3609,7 +3630,8 @@ const NoteList = forwardRef(
       mapLiveSubRequestsForTimeline,
       effectiveShowKinds,
       allowKindlessRelayExplore,
-      timelineSubscriptionKey
+      timelineSubscriptionKey,
+      relayAuthoritativeFeedOnly
     ])
     
     useEffect(() => {

@@ -349,6 +349,8 @@ class ClientService extends EventTarget {
         refs: TTimelineRef[]
         filter: TSubRequestFilter
         urls: string[]
+        /** When true, skip writing this shard to IndexedDB via {@link scheduleTimelinePersist} (relay-authoritative feeds). */
+        disablePersist?: boolean
       }
     | string[]
     | undefined
@@ -2146,14 +2148,20 @@ class ClientService extends EventTarget {
       startLogin,
       needSort = true,
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
-      onRelaySubscribeWaveComplete
+      onRelaySubscribeWaveComplete,
+      relayAuthoritativeTimeline = false
     }: {
       startLogin?: () => void
       needSort?: boolean
       /** Passed to each shard’s {@link ClientService._subscribeTimeline}: 2s after first event completes initial load if EOSE is slower. */
       firstRelayResultGraceMs?: number
       /** After every timeline shard’s REQ wave has ended (per-relay EOSE / close / timeout), merged rows in shard order. */
-      onRelaySubscribeWaveComplete?: (rows: RelayOpTerminalRow[]) => void
+      onRelaySubscribeWaveComplete?: (rows: RelayOpTerminalRow[]) => void,
+      /**
+       * Single-relay “what this relay stores” feeds: skip IndexedDB + session snapshot hydrate before the live REQ,
+       * skip persisting this shard, and do not widen an empty shard to {@link FAST_READ_RELAY_URLS}.
+       */
+      relayAuthoritativeTimeline?: boolean
     } = {}
   ) {
     const timelineBatchId = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
@@ -2296,6 +2304,7 @@ class ClientService extends EventTarget {
             startLogin,
             needSort,
             firstRelayResultGraceMs,
+            relayAuthoritativeTimeline,
             relayReqLog: {
               groupId: `${timelineBatchId}:shard${shardIndex}`,
               onBatchEnd: onShardSubscribeBatchEnd
@@ -2778,13 +2787,16 @@ class ClientService extends EventTarget {
        * every slow/hung relay. Real EOSE still clears the timer and completes earlier if all relays finish first.
        */
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
-      relayReqLog
+      relayReqLog,
+      relayAuthoritativeTimeline = false
     }: {
       startLogin?: () => void
       needSort?: boolean
       firstRelayResultGraceMs?: number
       /** Correlate {@link ClientService.subscribe} logs with a timeline shard */
-      relayReqLog?: { groupId: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
+      relayReqLog?: { groupId: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void },
+      /** See {@link ClientService.subscribeTimeline} third-arg `relayAuthoritativeTimeline`. */
+      relayAuthoritativeTimeline?: boolean
     } = {}
   ) {
     let relays = Array.from(new Set(urls))
@@ -2795,7 +2807,7 @@ class ClientService extends EventTarget {
     }
     if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
       relays = relayUrlsStripExtendedTagReqBlocked(relays)
-      if (relays.length === 0 && navigator.onLine) {
+      if (relays.length === 0 && navigator.onLine && !relayAuthoritativeTimeline) {
         relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
       }
     }
@@ -2806,7 +2818,8 @@ class ClientService extends EventTarget {
       this.timelines[key] = {
         refs: [],
         filter,
-        urls: relays
+        urls: relays,
+        ...(relayAuthoritativeTimeline ? { disablePersist: true as const } : {})
       }
       timeline = this.timelines[key]
     } else {
@@ -2817,10 +2830,18 @@ class ClientService extends EventTarget {
       timeline.filter = filter
       timeline.urls = relays
       timeline.refs = []
+      if (relayAuthoritativeTimeline) {
+        timeline.disablePersist = true
+      } else {
+        delete timeline.disablePersist
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const that = this
+    const maybePersistTimeline = () => {
+      if (!relayAuthoritativeTimeline) that.scheduleTimelinePersist(key)
+    }
     let events: NEvent[] = []
     /** `null` until initial backlog is considered complete; then wall-clock unix at completion (for straggler vs live). */
     let eosedAt: number | null = null
@@ -2898,25 +2919,27 @@ class ClientService extends EventTarget {
     }
 
     try {
-      const st = await indexedDb.getTimelinePersistedState(key)
-      if (st?.refs?.length) {
-        const hexIds = st.refs.map((r) => r[0])
-        const list = await indexedDb.getArchivedEventsByIds(hexIds)
-        for (const ev of list) {
-          if (shouldDropEventOnIngest(ev)) continue
-          if (eventIds.has(ev.id)) continue
-          eventIds.add(ev.id)
-          events.push(ev)
-        }
-        for (const refId of hexIds) {
-          if (eventIds.has(refId)) continue
-          const sess = that.eventService.peekSessionCachedEvent(refId)
-          if (sess && !shouldDropEventOnIngest(sess)) {
-            eventIds.add(refId)
-            events.push(sess)
+      if (!relayAuthoritativeTimeline) {
+        const st = await indexedDb.getTimelinePersistedState(key)
+        if (st?.refs?.length) {
+          const hexIds = st.refs.map((r) => r[0])
+          const list = await indexedDb.getArchivedEventsByIds(hexIds)
+          for (const ev of list) {
+            if (shouldDropEventOnIngest(ev)) continue
+            if (eventIds.has(ev.id)) continue
+            eventIds.add(ev.id)
+            events.push(ev)
           }
+          for (const refId of hexIds) {
+            if (eventIds.has(refId)) continue
+            const sess = that.eventService.peekSessionCachedEvent(refId)
+            if (sess && !shouldDropEventOnIngest(sess)) {
+              eventIds.add(refId)
+              events.push(sess)
+            }
+          }
+          flushStreamingSnapshot()
         }
-        flushStreamingSnapshot()
       }
     } catch (err) {
       logger.warn('[ClientService] Timeline disk hydrate failed', err)
@@ -2952,7 +2975,7 @@ class ClientService extends EventTarget {
           timeline.refs = events
             .map((e) => [e.id, e.created_at] as TTimelineRef)
             .sort((a, b) => b[1] - a[1])
-          that.scheduleTimelinePersist(key)
+          maybePersistTimeline()
         }
         return
       }
@@ -2967,7 +2990,7 @@ class ClientService extends EventTarget {
 
       if (timeline.refs.length === 0) {
         timeline.refs = events.map((e) => [e.id, e.created_at] as TTimelineRef).sort((a, b) => b[1] - a[1])
-        that.scheduleTimelinePersist(key)
+        maybePersistTimeline()
         return
       }
 
@@ -2983,7 +3006,7 @@ class ClientService extends EventTarget {
       }
       // idx === refs.length → strictly older than tail; splice appends (previous early-return dropped these).
       timeline.refs.splice(idx, 0, [evt.id, evt.created_at])
-      that.scheduleTimelinePersist(key)
+      maybePersistTimeline()
     }
 
     const runHttpTimelinePollQuery = async (pollFilter: Filter) => {
@@ -3045,7 +3068,8 @@ class ClientService extends EventTarget {
         that.timelines[key] = {
           refs: events.map((evt) => [evt.id, evt.created_at]),
           filter,
-          urls: relays
+          urls: relays,
+          ...(relayAuthoritativeTimeline ? { disablePersist: true as const } : {})
         }
       } else if (tl.refs.length === 0) {
         tl.refs = events.map((evt) => [evt.id, evt.created_at] as TTimelineRef)
@@ -3062,7 +3086,7 @@ class ClientService extends EventTarget {
       }
       armHttpTimelinePollingAfterInitial()
       onEvents([...events], true)
-      that.scheduleTimelinePersist(key)
+      maybePersistTimeline()
     }
 
     // HTTP index relays are handled via httpTimelinePollBases above — never pass them to the WS subscribe path.
@@ -3163,7 +3187,9 @@ class ClientService extends EventTarget {
       timeline.refs.push(...newRefs)
     }
 
-    this.scheduleTimelinePersist(key)
+    if (!timeline.disablePersist) {
+      this.scheduleTimelinePersist(key)
+    }
     return events
   }
 

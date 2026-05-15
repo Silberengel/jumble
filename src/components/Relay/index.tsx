@@ -7,9 +7,10 @@ import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
+import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import client from '@/services/client.service'
 import type { TFeedSubRequest } from '@/types'
-import type { Event } from 'nostr-tools'
+import { kinds, type Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import NotFound from '../NotFound'
@@ -20,6 +21,7 @@ const Relay = forwardRef<
 >(function Relay({ url, className, hostPrimaryPageName }, ref) {
   const { t } = useTranslation()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
+  const { showKinds } = useKindFilterOrDefaults()
   const normalizedUrl = useMemo(() => (url ? normalizeAnyRelayUrl(url) : undefined), [url])
   const { relayInfo } = useFetchRelayInfo(normalizedUrl)
   const [searchInput, setSearchInput] = useState('')
@@ -66,18 +68,32 @@ const Relay = forwardRef<
     }
   }, [normalizedUrl, noteListRef])
 
+  /** Default browse: explicit kinds (many strfry / small relays never return a useful kindless global REQ). */
+  const relayBrowseKinds = useMemo(
+    () => (showKinds.length > 0 ? showKinds : [kinds.ShortTextNote]),
+    [showKinds]
+  )
+
   const relayFeedSubRequests = useMemo<TFeedSubRequest[]>(() => {
     if (!normalizedUrl) return []
     const q = debouncedInput.trim()
+    if (q) {
+      return [
+        {
+          urls: [normalizedUrl],
+          filter: { search: q, limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
+        }
+      ]
+    }
     return [
       {
         urls: [normalizedUrl],
-        filter: q
-          ? { search: q, limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
-          : { limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
+        filter: { kinds: [...relayBrowseKinds], limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
       }
     ]
-  }, [normalizedUrl, debouncedInput])
+  }, [normalizedUrl, debouncedInput, relayBrowseKinds])
+
+  const allowKindlessRelayExplore = debouncedInput.trim().length > 0
 
   /** When we know delivery relays, drop rows that never arrived from this feed’s relay (stale cache / mis-tagged). */
   const relaySeenMatchKey = useMemo(
@@ -117,12 +133,13 @@ const Relay = forwardRef<
         ref={noteListRef}
         subRequests={relayFeedSubRequests}
         useFilterAsIs
-        allowKindlessRelayExplore
+        allowKindlessRelayExplore={allowKindlessRelayExplore}
         showAllKinds
         showFeedClientFilter
         hostPrimaryPageName={hostPrimaryPageName}
         extraShouldHideEvent={shouldHideEventNotFromThisRelay}
         extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
+        relayAuthoritativeFeedOnly
       />
     </div>
   )

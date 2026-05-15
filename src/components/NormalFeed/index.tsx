@@ -16,7 +16,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -121,6 +120,10 @@ const NormalFeed = forwardRef<TNoteListRef, {
   timelinePublicReadFallback?: boolean
   /** When the feed is empty and terminal, {@link NoteList} can show an Alexandria search link (hashtag / d-tag pages). */
   alexandriaEmptyUrl?: string | null
+  /**
+   * Single-relay explore: only events from that relay’s live REQ (no session/IDB prime, no prefetch to other relays).
+   */
+  relayAuthoritativeFeedOnly?: boolean
 }>(function NormalFeed(
   {
     subRequests,
@@ -156,7 +159,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     extraShouldHideGalleryEvent,
     oneShotMergedCap,
     timelinePublicReadFallback = false,
-    alexandriaEmptyUrl = null
+    alexandriaEmptyUrl = null,
+    relayAuthoritativeFeedOnly = false
   },
   ref
 ) {
@@ -324,8 +328,15 @@ const NormalFeed = forwardRef<TNoteListRef, {
   const mergeFilterWithTabsRow =
     showFeedClientFilter && ((isMainFeed && !!setSubHeader) || renderTabsInFeed)
 
-  /** Same row for multi-relay and single-relay chips: Notes/Replies + refresh + kind picker (REQ may stay kindless for single relay; NoteList filters client-side). */
-  useLayoutEffect(() => {
+  /**
+   * Push the tab row into {@link PrimaryPageLayout} subHeader. Use `useEffect` (not `useLayoutEffect`) so
+   * parent `setHomeSubHeader` runs after paint; synchronous layout updates here caused React #185
+   * (maximum update depth) when navigating onto the home feed after other primaries (e.g. notifications).
+   * Intentionally omit `tabsElement` from deps — covered by `listMode` + `subHeaderFilterDepsKey`.
+   * Omit `onSubHeaderRefresh` / `onFeedFilterTabRowSlotRef`: only embedded in `tabsElement`; unstable
+   * identities there would retrigger every render and loop with parent state.
+   */
+  useEffect(() => {
     if (!isMainFeed || !setSubHeader) return
     if (mergeFilterWithTabsRow) {
       setSubHeader(
@@ -341,19 +352,14 @@ const NormalFeed = forwardRef<TNoteListRef, {
       setSubHeader(tabsElement)
     }
     return () => setSubHeader(null)
-    // Intentionally omit `tabsElement`: same semantics are covered by listMode + subHeaderFilterDepsKey.
-    // Listing tabsElement here can retrigger the effect every render if its useMemo input references churn,
-    // which calls setSubHeader repeatedly → parent state → maximum update depth (#185).
   }, [
     isMainFeed,
     setSubHeader,
     listMode,
     isWispTrendingOnlyFeed,
     subHeaderFilterDepsKey,
-    onSubHeaderRefresh,
     allowKindlessRelayExplore,
-    mergeFilterWithTabsRow,
-    onFeedFilterTabRowSlotRef
+    mergeFilterWithTabsRow
   ])
 
   return (
@@ -414,6 +420,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           oneShotMergedCap={oneShotMergedCap}
           timelinePublicReadFallback={timelinePublicReadFallback && listMode === 'postsAndReplies'}
           alexandriaEmptyUrl={alexandriaEmptyUrl}
+          relayAuthoritativeFeedOnly={relayAuthoritativeFeedOnly}
         />
       </div>
     </>
