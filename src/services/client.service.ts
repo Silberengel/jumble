@@ -98,7 +98,12 @@ function canonicalSeenOnEventId(eventId: string): string {
   return /^[0-9a-f]{64}$/i.test(t) ? t.toLowerCase() : t
 }
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
-import { getHttpRelayListFromEvent, getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import {
+  getHttpRelayListFromEvent,
+  getProfileFromEvent,
+  getRelayListFromEvent,
+  getRelaySetFromEvent
+} from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
@@ -3463,14 +3468,40 @@ class ClientService extends EventTarget {
       if (!favoriteRelaysEvent) return []
 
       const relays: string[] = []
+      const relaySetIds: string[] = []
       favoriteRelaysEvent.tags.forEach(([tagName, tagValue]) => {
         if (tagName === 'relay' && tagValue) {
           const normalized = normalizeUrl(tagValue)
           if (normalized) {
             relays.push(normalized)
           }
+        } else if (tagName === 'a' && tagValue) {
+          const [kindStr, author, d] = tagValue.split(':')
+          if (
+            kindStr === String(kinds.Relaysets) &&
+            author === pubkey &&
+            d &&
+            !relaySetIds.includes(d)
+          ) {
+            relaySetIds.push(d)
+          }
         }
       })
+
+      // NIP-51 relay sets on kind 10012: same expansion as {@link FavoriteRelaysProvider} (not only `relay` tags).
+      for (const id of relaySetIds) {
+        try {
+          const ev = await indexedDb.getReplaceableEvent(pubkey, kinds.Relaysets, id)
+          if (!ev || shouldDropEventOnIngest(ev)) continue
+          const set = getRelaySetFromEvent(ev)
+          for (const u of set.relayUrls) {
+            const n = normalizeUrl(u) || normalizeAnyRelayUrl(u)
+            if (n && !relays.includes(n)) relays.push(n)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
 
       return Array.from(new Set(relays))
     } catch {
@@ -4044,8 +4075,11 @@ class ClientService extends EventTarget {
     return this.replaceableEventService.fetchProfile(id, skipCache)
   }
 
-  async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
-    return this.replaceableEventService.fetchProfilesForPubkeys(pubkeys)
+  async fetchProfilesForPubkeys(
+    pubkeys: string[],
+    options?: { contextualReadRelays?: string[] }
+  ): Promise<TProfile[]> {
+    return this.replaceableEventService.fetchProfilesForPubkeys(pubkeys, options)
   }
 
   async getProfileFromIndexedDB(id: string): Promise<TProfile | undefined> {

@@ -661,6 +661,20 @@ function ReplyNoteList({
     return zapsThenTimeSorted(merged, 'desc')
   }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo, event.kind])
 
+  /** Relays that actually delivered thread rows — used to resolve kind-0 when profile mirrors do not replicate them. */
+  const threadProfileContextRelays = useMemo(() => {
+    const s = new Set<string>()
+    const addEv = (e: NEvent) => {
+      for (const u of client.getSeenEventRelayUrls(e.id)) {
+        const n = normalizeAnyRelayUrl(u) || u
+        if (n) s.add(n)
+      }
+    }
+    addEv(event)
+    for (const e of mergedFeed) addEv(e)
+    return [...s]
+  }, [event, mergedFeed])
+
   useEffect(() => {
     if (!rootInfo) return
     const toAdd = filteredQuoteEvents.filter((evt) =>
@@ -745,12 +759,13 @@ function ReplyNoteList({
       })
 
       void (async () => {
+        const contextualReadRelays = threadProfileContextRelays
         const chunks: string[][] = []
         for (let i = 0; i < need.length; i += THREAD_PROFILE_CHUNK) {
           chunks.push(need.slice(i, i + THREAD_PROFILE_CHUNK))
         }
         const settled = await Promise.allSettled(
-          chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
+          chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk, { contextualReadRelays }))
         )
         if (gen !== threadProfileBatchGenRef.current) return
 
@@ -788,7 +803,13 @@ function ReplyNoteList({
       })()
     }, THREAD_PROFILE_BATCH_DEBOUNCE_MS)
     return () => window.clearTimeout(handle)
-  }, [event, mergedFeed, parentNoteFeed?.profiles, parentNoteFeed?.pendingPubkeys])
+  }, [
+    event,
+    mergedFeed,
+    parentNoteFeed?.profiles,
+    parentNoteFeed?.pendingPubkeys,
+    threadProfileContextRelays
+  ])
 
   const [timelineKey] = useState<string | undefined>(undefined)
   const [until, setUntil] = useState<number | undefined>(undefined)

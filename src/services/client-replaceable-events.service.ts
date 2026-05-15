@@ -14,7 +14,7 @@ import {
 import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
-import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
+import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { formatPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
@@ -1044,13 +1044,18 @@ export class ReplaceableEventService {
 
   /**
    * Fetch profiles for multiple pubkeys
+   * @param contextualReadRelays Optional relays used for the surrounding feed/thread REQ — queried for kind-0
+   * when default profile mirrors miss (e.g. metadata only on a community relay).
    */
-  async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
+  async fetchProfilesForPubkeys(
+    pubkeys: string[],
+    options?: { contextualReadRelays?: string[] }
+  ): Promise<TProfile[]> {
     const deduped = Array.from(new Set(pubkeys.filter((p) => p && p.length === 64)))
     if (deduped.length === 0) return []
     try {
       return await racePromiseWithTimeout(
-        this.fetchProfilesForPubkeysBody(deduped),
+        this.fetchProfilesForPubkeysBody(deduped, options),
         FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
         'fetchProfilesForPubkeys'
       )
@@ -1105,7 +1110,10 @@ export class ReplaceableEventService {
     return profiles
   }
 
-  private async fetchProfilesForPubkeysBody(deduped: string[]): Promise<TProfile[]> {
+  private async fetchProfilesForPubkeysBody(
+    deduped: string[],
+    options?: { contextualReadRelays?: string[] }
+  ): Promise<TProfile[]> {
     let events = await this.fetchReplaceableEventsFromProfileFetchRelays(deduped, kinds.Metadata)
     const gapIdx: number[] = []
     for (let i = 0; i < deduped.length; i++) {
@@ -1156,6 +1164,53 @@ export class ReplaceableEventService {
           if (ev) events[idx] = ev
         })
       )
+    }
+
+    const stillMissingIdx: number[] = []
+    for (let i = 0; i < deduped.length; i++) {
+      if (!events[i]) stillMissingIdx.push(i)
+    }
+    if (stillMissingIdx.length > 0 && options?.contextualReadRelays?.length) {
+      const urls = Array.from(
+        new Set(
+          options.contextualReadRelays
+            .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
+            .filter((u): u is string => !!u && !isHttpRelayUrl(u))
+        )
+      )
+      if (urls.length > 0) {
+        const authors = stillMissingIdx.map((i) => deduped[i]!)
+        try {
+          const sanitizedUrls = stripLocalNetworkRelaysForWssReq(urls)
+          const withAggr = prependAggrNostrLandIfViewerEligible(sanitizedUrls)
+          if (withAggr.length > 0) {
+            const evs = await this.queryService.query(
+              withAggr,
+              {
+                kinds: [kinds.Metadata],
+                authors,
+                limit: Math.min(Math.max(authors.length * 2, authors.length), 500)
+              } as Filter,
+              undefined,
+              {
+                firstRelayResultGraceMs: false,
+                globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+                eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+                replaceableRace: false
+              }
+            )
+            for (const ev of evs) {
+              if (ev.kind !== kinds.Metadata || shouldDropEventOnIngest(ev)) continue
+              const ix = deduped.findIndex((p) => p.toLowerCase() === ev.pubkey.toLowerCase())
+              if (ix >= 0 && !events[ix]) {
+                events[ix] = ev
+              }
+            }
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
     }
 
     return this.profilesFromMetadataEvents(deduped, events)
