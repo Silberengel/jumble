@@ -56,6 +56,9 @@ function explicitLookupMatchesEvent(eventId: string, lookup?: string): boolean {
   return eventId.toLowerCase() === l
 }
 
+/** NIP-71 addressable short video — dropped site-wide (relay spam). */
+const DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND = 34236
+
 /**
  * Single gate for subscribe/cache/IDB read paths: drop kind-1 JSON-object spam, Kacti broadcast spam,
  * and malformed relay reviews. Optional {@link ShouldDropEventOnIngestOptions} relaxes Kacti drops for explicit id fetch.
@@ -64,6 +67,7 @@ export function shouldDropEventOnIngest(
   event: NEvent,
   options?: ShouldDropEventOnIngestOptions
 ): boolean {
+  if (event.kind === DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND) return true
   if (isIncompleteRelayReviewIngest(event)) return true
   if (isStringifiedJsonObjectContentNostrEvent(event)) return true
   if (isKactiBroadcastSpamKind1(event)) {

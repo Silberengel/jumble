@@ -282,7 +282,6 @@ export default function Highlight({
         ExtendedKind.VIDEO,
         ExtendedKind.SHORT_VIDEO,
         ExtendedKind.VIDEO_ADDRESSABLE,
-        ExtendedKind.SHORT_VIDEO_ADDRESSABLE, // NIP-71 addressable; same VideoNotePreview path as 21/22
         ExtendedKind.PICTURE, // Has PictureNotePreview
         ExtendedKind.PUBLICATION, // Has PublicationCard
         ExtendedKind.WIKI_ARTICLE, // Has special card

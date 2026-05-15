@@ -335,7 +335,7 @@ class LocalStorageService {
         }
       }
       if (showKindsVersion < 13) {
-        // NIP-71 addressable video (34235 / 34236): add when user already had regular video kinds enabled.
+        // NIP-71 addressable normal video (34235): add when user already had regular video kinds enabled.
         if (
           showKinds.includes(ExtendedKind.VIDEO) ||
           showKinds.includes(ExtendedKind.SHORT_VIDEO)
@@ -343,8 +343,14 @@ class LocalStorageService {
           if (!showKinds.includes(ExtendedKind.VIDEO_ADDRESSABLE)) {
             showKinds.push(ExtendedKind.VIDEO_ADDRESSABLE)
           }
-          if (!showKinds.includes(ExtendedKind.SHORT_VIDEO_ADDRESSABLE)) {
-            showKinds.push(ExtendedKind.SHORT_VIDEO_ADDRESSABLE)
+        }
+      }
+      if (showKindsVersion < 14) {
+        // Kind 34236 (NIP-71 addressable short video) removed from the app — strip from saved filters.
+        const deprecatedShortVideoAddressable = 34236
+        for (let i = showKinds.length - 1; i >= 0; i--) {
+          if (showKinds[i] === deprecatedShortVideoAddressable) {
+            showKinds.splice(i, 1)
           }
         }
       }
@@ -354,7 +360,7 @@ class LocalStorageService {
       // keys cleared), persisting would write DEFAULT_FEED_SHOW_KINDS to IndexedDB and wipe the user's
       // saved filter before initAsync/applySettings runs.
       this.persistSetting(StorageKey.SHOW_KINDS, JSON.stringify(this.showKinds))
-      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '13')
+      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '14')
     }
 
     // Feed filter: kind 1 OPs, kind 1 replies, kind 1111 (migrate from legacy showRepliesAndComments if set)

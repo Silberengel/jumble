@@ -37,7 +37,6 @@ function getEventTypeName(kind: number): string {
     case ExtendedKind.VIDEO_ADDRESSABLE:
       return 'Video'
     case ExtendedKind.SHORT_VIDEO:
-    case ExtendedKind.SHORT_VIDEO_ADDRESSABLE:
       return 'Short Video'
     case ExtendedKind.POLL:
       return 'Poll'

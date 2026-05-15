@@ -27,8 +27,7 @@ export const WISP_TRENDING_FEED_KINDS: readonly number[] = [
   ExtendedKind.PICTURE,
   ExtendedKind.VIDEO,
   ExtendedKind.SHORT_VIDEO,
-  ExtendedKind.VIDEO_ADDRESSABLE,
-  ExtendedKind.SHORT_VIDEO_ADDRESSABLE
+  ExtendedKind.VIDEO_ADDRESSABLE
 ]
 
 /** True when `url` is any nostrarchives notes trending WebSocket feed (path `/notes/trending/...`). */

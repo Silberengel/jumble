@@ -1964,7 +1964,7 @@ export async function createVideoDraftEvent(
   content: string,
   imetaTags: string[][],
   mentions: string[],
-  videoKind: number, // 21, 22, 34235, or 34236 (NIP-71)
+  videoKind: number, // 21, 22, or 34235 (NIP-71)
   options: {
     title?: string
     addClientTag?: boolean
@@ -2002,7 +2002,7 @@ export async function createVideoDraftEvent(
   }
   
   return setDraftEventCache({
-    kind: videoKind, // ExtendedKind.VIDEO or ExtendedKind.SHORT_VIDEO
+    kind: videoKind, // NIP-71: 21, 22, or 34235
     content: transformedEmojisContent,
     tags
   })

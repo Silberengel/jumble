@@ -515,8 +515,6 @@ export const ExtendedKind = {
   SHORT_VIDEO: 22,
   /** NIP-71: addressable normal video (same rendering as {@link ExtendedKind.VIDEO}). */
   VIDEO_ADDRESSABLE: 34235,
-  /** NIP-71: addressable short video (same rendering as {@link ExtendedKind.SHORT_VIDEO}). */
-  SHORT_VIDEO_ADDRESSABLE: 34236,
   POLL: 1068,
   /** NIP-B9 zap poll (paid votes via zaps). */
   ZAP_POLL: 6969,
@@ -602,12 +600,11 @@ export function isUnsignedExperimentalKind(kind: number): boolean {
   return kind >= UNSIGNED_EXPERIMENTAL_KIND_MIN && kind <= UNSIGNED_EXPERIMENTAL_KIND_MAX
 }
 
-/** NIP-71 regular + addressable video kinds (21, 22, 34235, 34236). */
+/** NIP-71 regular + addressable video kinds (21, 22, 34235). Kind 34236 is not supported. */
 export const NIP71_VIDEO_KINDS: readonly number[] = [
   ExtendedKind.VIDEO,
   ExtendedKind.SHORT_VIDEO,
-  ExtendedKind.VIDEO_ADDRESSABLE,
-  ExtendedKind.SHORT_VIDEO_ADDRESSABLE
+  ExtendedKind.VIDEO_ADDRESSABLE
 ]
 
 const NIP71_VIDEO_KIND_SET = new Set<number>(NIP71_VIDEO_KINDS)
@@ -628,9 +625,9 @@ export function isNip71StyleVideoKind(kind: number): boolean {
  */
 export const AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS: ReadonlySet<number> = new Set<number>()
 
-/** Short-form portrait-style bucket (kind 22 or 34236). */
+/** Short-form portrait-style bucket (kind 22 only; addressable 34236 is not supported). */
 export function isNip71ShortVideoKind(kind: number): boolean {
-  return kind === ExtendedKind.SHORT_VIDEO || kind === ExtendedKind.SHORT_VIDEO_ADDRESSABLE
+  return kind === ExtendedKind.SHORT_VIDEO
 }
 
 /** Max kind for signed “custom event” notes in the generic composer (below the unsigned experimental range). */
@@ -837,7 +834,6 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.VIDEO,
   ExtendedKind.SHORT_VIDEO,
   ExtendedKind.VIDEO_ADDRESSABLE,
-  ExtendedKind.SHORT_VIDEO_ADDRESSABLE,
   ExtendedKind.POLL,
   ExtendedKind.ZAP_POLL,
   ExtendedKind.COMMENT,

@@ -147,7 +147,7 @@ const PICKER_FULLTEXT_DB_CAP = 260
 /**
  * Search for events: session cache → IndexedDB (publication + archive + cross-store full text) → relays.
  * Merges and dedupes by event id, up to limit.
- * @param mode - 'nevent' uses NEVENT_KINDS (incl. NIP-71 video 21/22/34235/34236), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
+ * @param mode - 'nevent' uses NEVENT_KINDS (incl. NIP-71 video 21/22/34235), 'naddr' uses NADDR_KINDS (30023,30817,30818,30040).
  * @param kindFilter - When set, only these kinds are searched (overrides `mode` for the kinds list).
  */
 export async function searchEventsForPicker(
