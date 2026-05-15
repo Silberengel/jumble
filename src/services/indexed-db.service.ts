@@ -64,7 +64,8 @@ export type TCachedEventSearchHit = {
   addedAt: number
 }
 
-function isLikelyCachedNostrEvent(v: unknown): v is Event {
+/** Shape check for persisted rows that look like Nostr events (used by cache search and cache browser). */
+export function isLikelyCachedNostrEvent(v: unknown): v is Event {
   if (!v || typeof v !== 'object') return false
   const o = v as Record<string, unknown>
   return (

@@ -119,6 +119,31 @@ function quietOptionalDevProxyErrors(devIndexRelayTarget: string): Plugin {
   }
 }
 
+/**
+ * Loopback / RFC1918 / ULA — mirrors `isLocalNetworkUrl` in `src/lib/url.ts` without importing it
+ * (Vite's config bundle does not resolve `@/` for transitive deps).
+ */
+function isLocalNetworkHostForSw(url: URL): boolean {
+  const hostname = url.hostname
+  if (hostname === 'localhost' || hostname === '::1') return true
+  const ipv4Match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (ipv4Match) {
+    const [, a, b, c, d] = ipv4Match.map(Number)
+    return (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 127 && b === 0 && c === 0 && d === 1)
+    )
+  }
+  if (hostname.includes(':')) {
+    const lower = hostname.toLowerCase()
+    if (lower.startsWith('fe80:')) return true
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true
+  }
+  return false
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // `.env.local` is not on `process.env` when this file is evaluated unless we load it.
@@ -500,8 +525,15 @@ export default defineConfig(({ mode }) => {
           {
             // NIP-11 relay info documents: short-lived cache so relay metadata is fresh but
             // the app can render offline or on a slow connection without blocking on network.
-            urlPattern: ({ request }: { request: Request }) =>
-              request.headers.get('accept')?.includes('application/nostr+json') ?? false,
+            // Do not intercept loopback/LAN: cross-origin + CORS often yields no cacheable response;
+            // StaleWhileRevalidate then rejects (Firefox: SW "no-response") and breaks relay pages.
+            urlPattern: ({ request, url }: { request: Request; url: URL }) => {
+              if (!(request.headers.get('accept')?.includes('application/nostr+json') ?? false)) {
+                return false
+              }
+              if (isLocalNetworkHostForSw(url)) return false
+              return true
+            },
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'nip11-relay-info',

@@ -5,7 +5,7 @@ import SearchInput from '@/components/SearchInput'
 import { useFetchRelayInfo } from '@/hooks'
 import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import client from '@/services/client.service'
 import type { TFeedSubRequest } from '@/types'
@@ -87,11 +87,14 @@ const Relay = forwardRef<
   const shouldHideEventNotFromThisRelay = useCallback(
     (ev: Event) => {
       if (!relaySeenMatchKey) return false
+      // LAN/loopback: REQ already targets this relay; "seen on" often lists another URL first
+      // (favorites merge, localhost vs 127.0.0.1, etc.) — hiding would empty the relay-only feed.
+      if (normalizedUrl && isLocalNetworkUrl(normalizedUrl)) return false
       const seen = client.getSeenEventRelayUrls(ev.id)
       if (seen.length === 0) return false
       return !seen.some((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase() === relaySeenMatchKey)
     },
-    [relaySeenMatchKey]
+    [relaySeenMatchKey, normalizedUrl]
   )
 
   if (!normalizedUrl) {

@@ -14,6 +14,7 @@
   "homepage": "https://github.com/Silberengel/jumble",
   "scripts": {
     "dev": "vite --host",
+    "orly:relay": "bash scripts/start-orly-cache-relay.sh",
     "dev:all": "bash scripts/dev-all-local.sh",
     "stack:remote": "bash scripts/stack-remote.sh",
     "dev:refresh": "rm -rf node_modules/.vite && vite --host",

@@ -2,7 +2,7 @@ import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, POLL_TYPE } 
 import { TEmoji, TMailboxRelay, TPollType, TRelayList, TRelaySet, TPaymentInfo, TProfile } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { buildATag } from './draft-event'
-import { getReplaceableEventIdentifier } from './event'
+import { getLatestEvent, getReplaceableEventIdentifier } from './event'
 import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightning'
 import { formatPubkey, pubkeyToNpub } from './pubkey'
 import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
@@ -22,6 +22,25 @@ export type GetRelayListFromEventOptions = {
    * oversized lists (use `[]` or the first 8 entries instead). Default true for anonymous / bootstrap callers.
    */
   globalReadWriteFallback?: boolean
+}
+
+/**
+ * Merge kind-10432 (cache relays) from a network fetch with IndexedDB for session hydrate.
+ * Some mirrors return an empty or malformed 10432 with a newer `created_at` than good local data; prefer any
+ * candidate that still parses to at least one `r` WebSocket URL, then newest by time.
+ */
+export function mergeHydratedCacheRelayListEvents(
+  fetchedEvents: Event[],
+  stored: Event | undefined | null
+): Event | null {
+  const fromFetch = fetchedEvents.length ? getLatestEvent(fetchedEvents) : undefined
+  const candidates = [fromFetch, stored ?? undefined].filter((e): e is Event => Boolean(e))
+  if (candidates.length === 0) return null
+  const relayRowCount = (e: Event) =>
+    getRelayListFromEvent(e, undefined, { globalReadWriteFallback: false }).originalRelays.length
+  const withRelays = candidates.filter((e) => relayRowCount(e) > 0)
+  const pool = withRelays.length > 0 ? withRelays : candidates
+  return pool.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))[0]!
 }
 
 export function getRelayListFromEvent(

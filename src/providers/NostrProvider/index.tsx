@@ -23,7 +23,12 @@ import {
 } from '@/lib/draft-event'
 import { getLatestEvent, minePow } from '@/lib/event'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
-import { getHttpRelayListFromEvent, getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import {
+  getHttpRelayListFromEvent,
+  getProfileFromEvent,
+  getRelayListFromEvent,
+  mergeHydratedCacheRelayListEvents
+} from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { LoginRequiredError } from '@/lib/nostr-errors'
@@ -246,6 +251,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setMuteListEvent(null)
         setBookmarkListEvent(null)
         setRssFeedListEvent(null)
+        setCacheRelayListEvent(null)
         setHttpRelayListEvent(undefined)
       }
 
@@ -414,6 +420,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setHttpRelayListEvent(storedHttpRelayListEvent ?? null)
       }
 
+      /** Kind 10432: always surface IDB in UI (incl. forced network hydrate); network merge refines below. */
+      if (storedCacheRelayListEvent) {
+        setCacheRelayListEvent(storedCacheRelayListEvent)
+      }
+
       const lastNetworkHydrateAt = storage.getAccountNetworkHydrateAt(account.pubkey)
       const hasLocalRelayAndProfile = !!storedRelayListEvent && !!storedProfileEvent
       const skipNetworkHydrate =
@@ -496,7 +507,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         return controller
       }
       const relayListEvent = getLatestEvent(relayListEvents) ?? storedRelayListEvent
-      const cacheRelayListEvent = getLatestEvent(cacheRelayListEvents) ?? storedCacheRelayListEvent
+      const cacheRelayListEvent = mergeHydratedCacheRelayListEvents(
+        cacheRelayListEvents,
+        storedCacheRelayListEvent
+      )
       const httpRelayListEventFetched = getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null
       if (relayListEvent) {
         client.updateRelayListCache(relayListEvent)

@@ -1935,7 +1935,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   const pushSecondaryPage = (url: string, index?: number) => {
     logger.component('PageManager', 'pushSecondaryPage called', { url })
-    
+
+    // Small screens render either the primary overlay OR the secondary stack — not both.
+    // Clear overlays (e.g. full-screen note) so pushes from Seen-on, settings deep links, etc. show the target page.
+    if (isSmallScreen && primaryNoteView) {
+      setPrimaryNoteView(null)
+    }
+
     // Save tab state before navigating
     const currentTab = currentTabStateRef.current.get(currentPrimaryPage)
 

@@ -4110,6 +4110,17 @@ class ClientService extends EventTarget {
     return rl!
   }
 
+  /**
+   * Write targets for republishing from the cache browser: merged NIP-65 WS outbox + kind 10432 cache relays +
+   * kind 10243 HTTP write relays (same merge as {@link peekRelayListFromStorage}). No FAST_WRITE padding.
+   */
+  async getMailboxStackWriteUrlsForRepublish(pubkey: string): Promise<string[]> {
+    const rl = await this.peekRelayListFromStorage(pubkey)
+    const ws = (rl.write ?? []).map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u)
+    const http = (rl.httpWrite ?? []).map((u) => normalizeHttpRelayUrl(u) || u).filter((u): u is string => !!u)
+    return dedupeNormalizeRelayUrlsOrdered([...http, ...ws])
+  }
+
   /** Newest kind 10002 for `pubkey` from IndexedDB and/or session LRU (session may hold a copy not persisted yet). */
   private async getKind10002FromIdbOrSession(pubkey: string): Promise<NEvent | undefined | null> {
     let idb: NEvent | undefined | null
