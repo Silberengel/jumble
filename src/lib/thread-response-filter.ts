@@ -14,37 +14,39 @@ export function buildNormalizedBlockedRelaySet(blockedRelays: readonly string[] 
 }
 
 /**
- * NIP-18 boosts: kind **6** (repost kind-1) and kind **16** (generic repost). Shown on the OP
- * booster strip only — never as discussion thread rows.
+ * NIP-18 boosts: kind **6** (repost kind-1) and kind **16** (generic repost). Stats on OP/replies
+ * only — never as thread rows (see notifications for full boost events).
  */
 export function isThreadBoosterOnlyRow(evt: Event): boolean {
   return isNip18RepostKind(evt.kind)
 }
 
 /**
- * The signed-in user's NIP-25 reactions are already on the note stats bar — omit duplicate thread rows.
- * Counts still use {@link noteStatsService} / merged stats; this only affects thread list rendering.
+ * NIP-25 reactions: kind **7** and **17** (external). Stats on OP/replies only — never thread rows.
  */
+export function isThreadReactionOnlyRow(evt: Event): boolean {
+  return isNip25ReactionKind(evt.kind)
+}
+
+/** @deprecated Use {@link isThreadReactionOnlyRow} / {@link shouldHideThreadResponseEvent}. */
 export function shouldHideOwnReactionThreadRow(
   item: Event,
-  viewerPubkey: string | null | undefined
+  _viewerPubkey?: string | null
 ): boolean {
-  const viewer = viewerPubkey?.trim().toLowerCase()
-  if (!viewer || !/^[0-9a-f]{64}$/i.test(viewer)) return false
-  if (item.pubkey.toLowerCase() !== viewer) return false
-  return isNip25ReactionKind(item.kind)
+  return isThreadReactionOnlyRow(item)
 }
 
 /** @deprecated Use {@link shouldHideOwnReactionThreadRow}. */
 export const shouldHideOwnReactionInOthersThread = shouldHideOwnReactionThreadRow
 
-/** Hide thread replies / backlinks: boosts, wire-format JSON blobs, muted author, or mute mentions. */
+/** Hide thread replies / backlinks: boosts, reactions, muted author, or mute mentions. */
 export function shouldHideThreadResponseEvent(
   evt: Event,
   mutePubkeySet: Set<string>,
   hideContentMentioningMutedUsers: boolean | undefined
 ): boolean {
   if (isThreadBoosterOnlyRow(evt)) return true
+  if (isThreadReactionOnlyRow(evt)) return true
   if (muteSetHas(mutePubkeySet, evt.pubkey)) return true
   if (hideContentMentioningMutedUsers === true && isMentioningMutedUsers(evt, mutePubkeySet)) return true
   return false

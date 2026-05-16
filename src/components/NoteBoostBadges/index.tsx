@@ -11,7 +11,7 @@ const MAX_VISIBLE = 28
 
 /**
  * Avatar strip of users who boosted (kind 6 / 16) — feed cards only (attention on the timeline).
- * Thread view uses {@link ThreadLowEffortStrip} at the bottom of replies instead.
+ * Thread view omits boost rows; boosts appear in note stats on OP/replies only.
  */
 export default function NoteBoostBadges({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()

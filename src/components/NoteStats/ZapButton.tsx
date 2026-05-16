@@ -144,11 +144,8 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     <>
       <button
         className={cn(
-          'flex items-center gap-1 select-none px-3 h-full',
-          hasZapped ? 'text-yellow-400' : 'text-muted-foreground',
-          disable
-            ? 'cursor-not-allowed text-muted-foreground/40'
-            : 'cursor-pointer enabled:hover:text-yellow-400'
+          'group flex items-center gap-1 select-none px-3 h-full',
+          disable ? 'cursor-not-allowed' : 'cursor-pointer'
         )}
         title={t('Zap')}
         disabled={disable || zapping}
@@ -161,9 +158,28 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         {zapping ? (
           <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
         ) : (
-          <Zap className={hasZapped ? 'fill-yellow-400' : ''} />
+          <Zap
+            className={cn(
+              hasZapped && 'fill-yellow-400',
+              disable
+                ? 'text-muted-foreground/40'
+                : cn(
+                    'text-muted-foreground group-hover:text-yellow-400',
+                    hasZapped && 'text-yellow-400'
+                  )
+            )}
+          />
         )}
-        {!hideCount && !!zapAmount && <div className="text-sm">{formatAmount(zapAmount)}</div>}
+        {!hideCount && !!zapAmount && (
+          <div
+            className={cn(
+              'text-sm tabular-nums',
+              hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+            )}
+          >
+            {formatAmount(zapAmount)}
+          </div>
+        )}
       </button>
       <ZapDialog
         open={openZapDialog}

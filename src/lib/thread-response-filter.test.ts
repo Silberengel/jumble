@@ -4,7 +4,7 @@ import type { Event } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
 import {
   isThreadBoosterOnlyRow,
-  shouldHideOwnReactionThreadRow,
+  isThreadReactionOnlyRow,
   shouldHideThreadResponseEvent
 } from './thread-response-filter'
 
@@ -50,21 +50,23 @@ describe('thread response filter', () => {
     expect(isThreadBoosterOnlyRow(repost)).toBe(true)
   })
 
-  it('hides viewer NIP-25 reactions in thread rows (own or others’ notes)', () => {
-    const viewer = 'b'.repeat(64)
-    const myReaction = baseEvent({
-      pubkey: viewer,
+  it('hides all NIP-25 reactions from thread rows (stats only)', () => {
+    const reaction = baseEvent({
       kind: kinds.Reaction,
-      content: '+',
+      content: '🔥',
       tags: [['e', 'c'.repeat(64), '', 'root']]
     })
-    expect(shouldHideOwnReactionThreadRow(myReaction, viewer)).toBe(true)
-    expect(shouldHideOwnReactionThreadRow(myReaction, 'a'.repeat(64))).toBe(false)
-    expect(
-      shouldHideOwnReactionThreadRow(
-        baseEvent({ pubkey: 'c'.repeat(64), kind: kinds.Reaction, content: '+' }),
-        viewer
-      )
-    ).toBe(false)
+    expect(isThreadReactionOnlyRow(reaction)).toBe(true)
+    expect(shouldHideThreadResponseEvent(reaction, new Set(), false)).toBe(true)
+
+    const external = baseEvent({ kind: ExtendedKind.EXTERNAL_REACTION, content: '👍' })
+    expect(isThreadReactionOnlyRow(external)).toBe(true)
+    expect(shouldHideThreadResponseEvent(external, new Set(), false)).toBe(true)
+  })
+
+  it('does not hide kind-1 replies as reactions', () => {
+    const reply = baseEvent({ kind: kinds.ShortTextNote, content: 'thanks' })
+    expect(isThreadReactionOnlyRow(reply)).toBe(false)
+    expect(shouldHideThreadResponseEvent(reply, new Set(), false)).toBe(false)
   })
 })

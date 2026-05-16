@@ -19,20 +19,15 @@ import {
   isNip56ReportEvent,
   isMentioningMutedUsers,
   isNip18RepostKind,
-  isNip25ReactionKind,
   isReplaceableEvent,
   kind1QuotesThreadRoot,
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import { getZapInfoFromEvent, shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
-import { isLowEffortCollapsedReactionContent } from '@/lib/like-reaction-emojis'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
-import {
-  shouldHideOwnReactionThreadRow,
-  shouldHideThreadResponseEvent
-} from '@/lib/thread-response-filter'
+import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { generateBech32IdFromETag } from '@/lib/tag'
@@ -72,17 +67,10 @@ import { useTranslation } from 'react-i18next'
 import { useQuoteEvents } from '@/hooks'
 import { LoadingBar } from '../LoadingBar'
 import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
-import ThreadLowEffortStrip from './ThreadLowEffortStrip'
 import ThreadQuoteBacklink, {
   BacklinkAvatarStrip,
   ThreadQuoteBacklinkSkeleton
 } from './ThreadQuoteBacklink'
-
-/** Collapse `+`/heart/👍/👎 into {@link ThreadLowEffortStrip}; keep discussion ⬆️/⬇️ vote rows. */
-function isLowEffortCollapsedReactionEvent(evt: NEvent, isDiscussionRoot: boolean): boolean {
-  if (isDiscussionRoot) return false
-  return isNip25ReactionKind(evt.kind) && isLowEffortCollapsedReactionContent(evt.content)
-}
 
 type TRootInfo =
   | { type: 'E'; id: string; pubkey: string }
@@ -238,11 +226,8 @@ function moveReportsToEndPreserveOrder(events: NEvent[]): NEvent[] {
 /** Shown after thread replies for E/A roots (quote stream + kind 1 #q-only); matches {@link THREAD_BACKLINK_STREAM_KINDS}. */
 const EA_THREAD_TAIL_REFERENCE_KINDS = new Set<number>(THREAD_BACKLINK_STREAM_KINDS)
 
-/** Web (NIP-22) thread: tail = reference-style rows + URL-only external reactions (kind-7 stays in the chronological middle with other replies). */
-const WEB_THREAD_EXTRA_TAIL_KINDS = new Set<number>([ExtendedKind.EXTERNAL_REACTION])
-
 function isWebThreadTailKind(kind: number): boolean {
-  return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind) || WEB_THREAD_EXTRA_TAIL_KINDS.has(kind)
+  return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind)
 }
 
 /** Kind 1111 / 1244 that includes the thread root id on an e/E tag (common on relays; stricter root-tag walks may miss these). */
@@ -277,7 +262,7 @@ function noteReactionEtagEqualsHex(ev: NEvent, hexLower: string): boolean {
 
 /**
  * Thread REQ may still omit some kind-7 rows; merge reactions that tag the root hex so OP stats stay warm.
- * Listed reactions under “Antworten” come from {@link ReplyNoteList} BFS + {@link replyMatchesThreadForList}.
+ * Reactions are not listed under “Antworten”; this merge keeps OP stats warm when the thread REQ omits kind 7.
  */
 function mergeFetchedKind7ReactionsIntoRootNoteStats(all: NEvent[], rootInfo: TRootInfo) {
   if (rootInfo.type === 'E') {
@@ -1637,8 +1622,6 @@ function ReplyNoteList({
     (item: NEvent) => {
       if (isPollVoteKind(item)) return false
       if (isZapPollThreadZapReceipt(item, event)) return false
-      if (isLowEffortCollapsedReactionEvent(item, isDiscussionRoot)) return false
-      if (shouldHideOwnReactionThreadRow(item, userPubkey)) return false
       if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
         return false
       }
@@ -1667,8 +1650,7 @@ function ReplyNoteList({
       rootInfo?.type,
       repliesMap,
       event,
-      isDiscussionRoot,
-      userPubkey
+      isDiscussionRoot
     ]
   )
 
@@ -1845,7 +1827,6 @@ function ReplyNoteList({
           <ThreadQuoteBacklinkSkeleton />
         </div>
       )}
-      <ThreadLowEffortStrip event={event} className="mt-1" />
       {!loading && !quoteLoading && (
         <div className="text-sm mt-2 mb-3 text-center text-muted-foreground">
           {mergedFeed.length > 0 ? t('no more replies') : t('no replies')}

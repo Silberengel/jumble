@@ -14,11 +14,6 @@ export const DEFAULT_LIKE_REACTION_CONTENT = '+' as const
  */
 export const DEFAULT_LIKE_REACTION_DISPLAY_EMOJI = '\u2665\uFE0F'
 
-export const THUMBS_UP_DISPLAY_EMOJI = '\u{1F44D}' as const
-export const THUMBS_DOWN_DISPLAY_EMOJI = '\u{1F44E}' as const
-export const ARROW_UP_DISPLAY_EMOJI = '\u2B06\uFE0F' as const
-export const ARROW_DOWN_DISPLAY_EMOJI = '\u2B07\uFE0F' as const
-
 export const DEFAULT_SUGGESTED_EMOJIS = [
   DEFAULT_LIKE_REACTION_CONTENT,
   '👍',
@@ -50,7 +45,6 @@ const COMMON_HEART_LIKE_GLYPHS = new Set([
 
 const THUMBS_UP_GLYPHS = new Set(['👍', '+1'])
 const THUMBS_DOWN_GLYPHS = new Set(['👎', '-1'])
-
 const ARROW_UP_GLYPHS = new Set(['⬆', '⬆️', '↑', '🔼'])
 const ARROW_DOWN_GLYPHS = new Set(['⬇', '⬇️', '↓', '🔽'])
 
@@ -59,7 +53,6 @@ const THUMBS_UP_SHORTCODES = new Set(['thumbsup', 'thumbs_up', '+1', 'like', 'th
 const THUMBS_DOWN_SHORTCODES = new Set(['thumbsdown', 'thumbs_down', '-1', 'thumbdown'])
 const ARROW_UP_SHORTCODES = new Set(['arrow_up', 'arrowup', 'up', 'upvote', 'up_arrow'])
 const ARROW_DOWN_SHORTCODES = new Set(['arrow_down', 'arrowdown', 'down', 'downvote', 'down_arrow'])
-/** NIP-30 shortcode only — not 💔 (sympathy/sadness, not a downvote). */
 const DISLIKE_SHORTCODES = new Set(['dislike'])
 
 function normalizedReactionString(emoji: TEmoji | string): string | undefined {
@@ -70,7 +63,6 @@ function normalizedReactionString(emoji: TEmoji | string): string | undefined {
   return undefined
 }
 
-/** Strip emoji presentation selectors so ⬆️ matches ⬆. */
 function normalizedGlyph(s: string): string {
   return s.normalize('NFC').replace(/\ufe0f/gi, '').trim()
 }
@@ -96,7 +88,7 @@ function matchesShortcodeSet(
   return false
 }
 
-export function isHeartOrPlusLikeReactionEmoji(emoji: TEmoji | string): boolean {
+function isHeartOrPlusLike(emoji: TEmoji | string): boolean {
   if (typeof emoji === 'object' && emoji !== null && 'shortcode' in emoji) {
     return HEART_LIKE_SHORTCODES.has(emoji.shortcode.trim().toLowerCase())
   }
@@ -105,7 +97,7 @@ export function isHeartOrPlusLikeReactionEmoji(emoji: TEmoji | string): boolean 
   return c === '' || c === DEFAULT_LIKE_REACTION_CONTENT || COMMON_HEART_LIKE_GLYPHS.has(c)
 }
 
-export function isThumbsUpReactionEmoji(emoji: TEmoji | string): boolean {
+function isThumbsUp(emoji: TEmoji | string): boolean {
   const normalized = normalizedReactionString(emoji)
   if (normalized === undefined) return false
   if (matchesShortcodeSet(emoji, normalized, THUMBS_UP_SHORTCODES)) return true
@@ -113,7 +105,7 @@ export function isThumbsUpReactionEmoji(emoji: TEmoji | string): boolean {
   return false
 }
 
-export function isThumbsDownReactionEmoji(emoji: TEmoji | string): boolean {
+function isThumbsDown(emoji: TEmoji | string): boolean {
   const normalized = normalizedReactionString(emoji)
   if (normalized === undefined) return false
   if (matchesShortcodeSet(emoji, normalized, THUMBS_DOWN_SHORTCODES)) return true
@@ -121,7 +113,7 @@ export function isThumbsDownReactionEmoji(emoji: TEmoji | string): boolean {
   return false
 }
 
-export function isArrowUpReactionEmoji(emoji: TEmoji | string): boolean {
+function isArrowUp(emoji: TEmoji | string): boolean {
   const normalized = normalizedReactionString(emoji)
   if (normalized === undefined) return false
   if (matchesShortcodeSet(emoji, normalized, ARROW_UP_SHORTCODES)) return true
@@ -129,7 +121,7 @@ export function isArrowUpReactionEmoji(emoji: TEmoji | string): boolean {
   return false
 }
 
-export function isArrowDownReactionEmoji(emoji: TEmoji | string): boolean {
+function isArrowDown(emoji: TEmoji | string): boolean {
   const normalized = normalizedReactionString(emoji)
   if (normalized === undefined) return false
   if (matchesShortcodeSet(emoji, normalized, ARROW_DOWN_SHORTCODES)) return true
@@ -137,8 +129,7 @@ export function isArrowDownReactionEmoji(emoji: TEmoji | string): boolean {
   return false
 }
 
-/** Explicit `dislike` shortcode / content only (not 💔 or 👎). */
-export function isDislikeReactionEmoji(emoji: TEmoji | string): boolean {
+function isDislike(emoji: TEmoji | string): boolean {
   const normalized = normalizedReactionString(emoji)
   if (normalized === undefined) return false
   if (matchesShortcodeSet(emoji, normalized, DISLIKE_SHORTCODES)) return true
@@ -146,39 +137,24 @@ export function isDislikeReactionEmoji(emoji: TEmoji | string): boolean {
   return false
 }
 
-export function isPositiveLowEffortReactionEmoji(emoji: TEmoji | string): boolean {
-  return (
-    isHeartOrPlusLikeReactionEmoji(emoji) ||
-    isThumbsUpReactionEmoji(emoji) ||
-    isArrowUpReactionEmoji(emoji)
-  )
-}
-
-export function isNegativeLowEffortReactionEmoji(emoji: TEmoji | string): boolean {
-  return (
-    isThumbsDownReactionEmoji(emoji) ||
-    isArrowDownReactionEmoji(emoji) ||
-    isDislikeReactionEmoji(emoji)
-  )
-}
-
 /**
- * Reactions collapsed into {@link ThreadLowEffortStrip} and hidden as thread rows.
+ * Generic positive/negative reactions (hearts, +, thumbs, arrows, explicit dislike) — counted in
+ * note stats only; not rendered as separate thread rows.
  */
-export function isLowEffortCollapsedReactionEmoji(emoji: TEmoji | string): boolean {
-  return isPositiveLowEffortReactionEmoji(emoji) || isNegativeLowEffortReactionEmoji(emoji)
+export function isGenericStatsReactionEmoji(emoji: TEmoji | string): boolean {
+  return (
+    isHeartOrPlusLike(emoji) ||
+    isThumbsUp(emoji) ||
+    isThumbsDown(emoji) ||
+    isArrowUp(emoji) ||
+    isArrowDown(emoji) ||
+    isDislike(emoji)
+  )
 }
 
-/** @deprecated Prefer {@link isLowEffortCollapsedReactionEmoji}. */
-export function isDefaultPlusLikeReactionEmoji(emoji: TEmoji | string): boolean {
-  return isLowEffortCollapsedReactionEmoji(emoji)
+export function isGenericStatsReactionContent(content: string): boolean {
+  return isGenericStatsReactionEmoji(content)
 }
 
-export function isLowEffortCollapsedReactionContent(content: string): boolean {
-  return isLowEffortCollapsedReactionEmoji(content)
-}
-
-/** @deprecated Prefer {@link isLowEffortCollapsedReactionContent}. */
-export function isDefaultPlusLikeReactionContent(content: string): boolean {
-  return isLowEffortCollapsedReactionContent(content)
-}
+/** @deprecated Use {@link isGenericStatsReactionContent}. */
+export const isLowEffortCollapsedReactionContent = isGenericStatsReactionContent
