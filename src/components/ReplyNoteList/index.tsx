@@ -1,5 +1,4 @@
 import {
-  E_TAG_FILTER_BLOCKED_RELAY_URLS,
   ExtendedKind,
   NOTE_STATS_OP_REFERENCE_KINDS,
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
@@ -1127,8 +1126,7 @@ function ReplyNoteList({
             ...new Set([...relayHintsFromEventTags(event), ...seenOn, ...fromBrowsingFeed])
           ]
           const replyBlockedRelays = [
-            ...(blockedRelays || []),
-            ...E_TAG_FILTER_BLOCKED_RELAY_URLS
+            ...(blockedRelays || [])
           ]
           const finalRelayUrls = await buildReplyReadRelayList(
             opAuthorPubkey,

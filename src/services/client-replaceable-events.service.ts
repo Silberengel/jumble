@@ -8,7 +8,6 @@ import {
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
   PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
   PROFILE_RELAY_URLS,
-  READ_ONLY_RELAY_URLS,
   RECOMMENDED_BLOSSOM_SERVERS
 } from '@/constants'
 import { kinds, nip19 } from 'nostr-tools'
@@ -558,7 +557,7 @@ export class ReplaceableEventService {
           // and 100ms EOSE loses the race when several relays are down.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -567,7 +566,7 @@ export class ReplaceableEventService {
           // Contacts (kind 3): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -576,7 +575,7 @@ export class ReplaceableEventService {
           // NIP-65 (10002): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -585,7 +584,7 @@ export class ReplaceableEventService {
           // Mute / bookmark lists: same distribution as contacts; FAST_READ + mirrors.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -594,7 +593,7 @@ export class ReplaceableEventService {
           // NIP-A3 kind 10133: aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -1244,7 +1243,7 @@ export class ReplaceableEventService {
   /**
    * Fetch follow list event.
    * When relayUrls are provided (e.g. user write + search relays), queries those directly.
-   * Otherwise uses the default relay set (READ_ONLY + PROFILE_FETCH + FAST_READ).
+   * Otherwise uses the default relay set (PROFILE_RELAY_URLS + FAST_READ).
    */
   /** Hard cap: {@link fetchReplaceableEvent} can otherwise wedge the DataLoader chain when relays never answer. */
   private static readonly FETCH_FOLLOW_LIST_REPLACEABLE_TIMEOUT_MS = 14_000

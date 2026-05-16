@@ -1,5 +1,4 @@
 import {
-  E_TAG_FILTER_BLOCKED_RELAY_URLS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
@@ -35,7 +34,7 @@ import {
   getNip25ReactionTargetHexFromTags,
   tagNameEquals
 } from '@/lib/tag'
-import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
 import { TEmoji, type TRelayList } from '@/types'
 import dayjs from 'dayjs'
@@ -589,12 +588,8 @@ class NoteStatsService {
   /**
    * Build relay list for note stats: SEARCHABLE + FAST_READ + optional user favorites + seen relays +
    * `e`-tag hints on the note + hints from session-cached referrers + author NIP-65 read (slice 10).
-   * Excludes E_TAG_FILTER_BLOCKED_RELAY_URLS (stats use #e filters).
    */
   private async buildNoteStatsRelayList(event: Event, favoriteRelays?: string[] | null): Promise<string[]> {
-    const blocked = new Set(
-      E_TAG_FILTER_BLOCKED_RELAY_URLS.map((u) => (normalizeUrl(u) || u).toLowerCase()).filter(Boolean)
-    )
     const seen = new Set<string>()
 
     const add = (url: string | undefined) => {
@@ -602,8 +597,7 @@ class NoteStatsService {
       // Must use normalizeAnyRelayUrl, not normalizeUrl: the latter converts http(s)://
       // index relay URLs into ws(s):// which then hit the WebSocket pool.
       const n = normalizeAnyRelayUrl(url)
-      if (!n || blocked.has(n.toLowerCase()) || seen.has(n)) return
-      seen.add(n)
+      if (n) seen.add(n)
     }
 
     // 1. Search / discovery relay set (includes read-only index mirrors; see READ_ONLY_RELAY_URLS in constants)
@@ -660,7 +654,6 @@ class NoteStatsService {
 
     return feedRelayPolicyUrls([{ source: 'fallback', urls: Array.from(seen) }], {
       operation: 'read',
-      blockedRelays: E_TAG_FILTER_BLOCKED_RELAY_URLS,
       applySocialKindBlockedFilter: false,
       allowThirdPartyLocalRelays: true
     })

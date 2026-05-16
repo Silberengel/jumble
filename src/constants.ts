@@ -402,7 +402,8 @@ export const DOCUMENT_RELAY_URLS = [
 
 /**
  * Relays that must never receive publishes: search engines, index mirrors, and similar endpoints that only ingest
- * or aggregate for read. Distinct from {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} (kind-coverage limits, not write policy).
+ * or aggregate for read. Use only to strip URLs from publish / write / publish-picker paths — do not prepend this
+ * list to generic read REQ stacks. Distinct from {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} (kind-coverage limits).
  */
 export const READ_ONLY_RELAY_URLS = [
   'wss://aggr.nostr.land',
@@ -440,16 +441,6 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://hist.nostr.land',
 ]
 
-/**
- * Relays that reject certain tag filters in REQs (e.g. `#e` on some stacks) and, on nostr.sovbit.host,
- * filter keys whose tag letter is uppercase (`#E`, `#A`, `#I`, …). Skip for reply/quote/stats fetches and
- * whenever filters use a capital letter after `#` in a tag key (see `relayFiltersUseCapitalLetterTagKeys` in
- * `relay-extended-tag-req-blocks.ts`).
- */
-export const E_TAG_FILTER_BLOCKED_RELAY_URLS = [
-  'wss://nostr.v0l.io',
-]
-
 // Optimized relay list for read operations (includes aggregator)
 export const FAST_READ_RELAY_URLS = [
   'wss://theforest.nostr1.com',
@@ -464,8 +455,7 @@ export const FAST_WRITE_RELAY_URLS = [
   'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
-  'wss://nos.lol',
-  'wss://freelay.sovbit.host'
+  'wss://nos.lol'
 ]
 
 /** Relays used for NIP-94 file metadata (kind 1063) / GIF discovery and publish.

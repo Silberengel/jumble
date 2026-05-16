@@ -3,7 +3,6 @@ import {
   DOCUMENT_RELAY_URLS,
   FAST_READ_RELAY_URLS,
   PROFILE_RELAY_URLS,
-  READ_ONLY_RELAY_URLS,
   isDocumentRelayKind,
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
@@ -102,7 +101,7 @@ export function buildAuthorInboxOutboxRelayUrls(
 
 /**
  * Profile pins + Medien: author NIP-65 tier (pass from {@link buildAuthorInboxOutboxRelayUrls}), then
- * {@link READ_ONLY_RELAY_URLS}, then {@link FAST_READ_RELAY_URLS}; dedupe, blocked-stripped, capped.
+ * {@link FAST_READ_RELAY_URLS}; dedupe, blocked-stripped, capped.
  */
 const PROFILE_AUGMENTED_READ_MAX_RELAYS = 16
 
@@ -112,12 +111,11 @@ export function buildProfileAugmentedReadRelayUrls(
   maxRelays: number = PROFILE_AUGMENTED_READ_MAX_RELAYS,
   useGlobalRelayBootstrap = true
 ): string[] {
-  const readOnlyLayer = READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
   const fastReadLayer =
     useGlobalRelayBootstrap
       ? (FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[])
       : []
-  const merged = mergeRelayUrlLayers([authorRelayUrls, readOnlyLayer, fastReadLayer], blockedRelays)
+  const merged = mergeRelayUrlLayers([authorRelayUrls, fastReadLayer], blockedRelays)
   return merged.slice(0, maxRelays)
 }
 

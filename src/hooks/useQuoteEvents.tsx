@@ -1,5 +1,4 @@
 import {
-  E_TAG_FILTER_BLOCKED_RELAY_URLS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
@@ -81,9 +80,6 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
       const userRelays = userRelayList?.read || []
       const fromFeed = browsingRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
       const seenOn = client.getSeenEventRelayUrls(ev.id)
-      const eTagBlockedSet = new Set(
-        E_TAG_FILTER_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u)
-      )
       const finalRelayUrls = Array.from(
         new Set([
           ...fromFeed,
@@ -94,7 +90,6 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
         ])
       )
         .filter(Boolean)
-        .filter((u) => !eTagBlockedSet.has(normalizeUrl(u) || u))
         .filter((u) => !userBlockedRelaysNorm.has((normalizeUrl(u) || u).toLowerCase()))
 
       const filterQeId = isReplaceableEvent(ev.kind)
