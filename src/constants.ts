@@ -31,7 +31,7 @@ export const TRANSLATE_URL =
 
 /** HiveTalk (WebRTC video call) base URL; override with VITE_HIVETALK_BASE_URL for self-hosted instances. */
 export const HIVETALK_BASE_URL =
-  (import.meta.env.VITE_HIVETALK_BASE_URL as string | undefined) ?? 'https://vanilla.hivetalk.org'
+  (import.meta.env.VITE_HIVETALK_BASE_URL as string | undefined) ?? 'https://honey.hivetalk.org'
 
 /**
  * Stable reference to this module's URL at load time.
