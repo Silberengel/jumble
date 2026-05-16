@@ -7,7 +7,15 @@ import {
 } from './long-video-load-policy'
 
 function fakeEvent(kind: number): Event {
-  return { kind, id: 'ab'.repeat(32), pubkey: 'cd'.repeat(32), created_at: 0, tags: [], content: '' }
+  return {
+    kind,
+    id: 'ab'.repeat(32),
+    pubkey: 'cd'.repeat(32),
+    created_at: 0,
+    tags: [],
+    content: '',
+    sig: 'ef'.repeat(64)
+  }
 }
 
 describe('long-video-load-policy', () => {
