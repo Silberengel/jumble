@@ -3,6 +3,8 @@ import {
   ExtendedKind,
   EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS,
   EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
+  HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS,
+  HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
   isDocumentRelayKind,
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
   SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS,
@@ -10,6 +12,7 @@ import {
 } from '@/constants'
 import logger from '@/lib/logger'
 import {
+  collectEmbeddedEventPrefetchTargets,
   getParentATag,
   getParentETag,
   getQuotedReferenceFromQTags,
@@ -21,7 +24,8 @@ import {
   isReplyNoteEvent,
   isReplaceableEvent,
   kind1QuotesThreadRoot,
-  normalizeReplaceableCoordinateString
+  normalizeReplaceableCoordinateString,
+  relayHintWssUrlsFromEvent
 } from '@/lib/event'
 import { getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
 import type { Event as NEvent, Filter } from 'nostr-tools'
@@ -94,6 +98,21 @@ async function buildComprehensiveRelayListForEvents(
 }
 
 const PREFETCH_HEX_IDS_CHUNK = 48
+
+/** Parent kinds that often embed `nostr:…` notes — prefetch targets on ingest with the parent. */
+const EMBEDDED_NOTE_PREFETCH_ON_INGEST_KINDS = new Set<number>([
+  kinds.ShortTextNote,
+  kinds.LongFormArticle,
+  kinds.Highlights,
+  kinds.Repost,
+  ExtendedKind.GENERIC_REPOST,
+  ExtendedKind.PUBLICATION_CONTENT,
+  ExtendedKind.WIKI_ARTICLE,
+  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.COMMENT,
+  ExtendedKind.VOICE_COMMENT,
+  ExtendedKind.DISCUSSION
+])
 
 /** Cap session LRU scan per note-stats target — cache iterates newest-first; avoids O(session)×batch stalls. */
 const NOTE_STATS_SESSION_PREMERGE_SCAN_MAX = 6000
@@ -433,11 +452,71 @@ export class EventService {
     return this.fetchEvent(eventId, opts)
   }
 
+  private readonly embeddedPrefetchHexScheduled = new Set<string>()
+  private readonly embeddedPrefetchNip19Scheduled = new Set<string>()
+
+  /**
+   * Resolve embed targets from parent notes immediately (same relay hints as the parent).
+   * Dedupes across feed batches / Note mounts; notifies session waiters when hits land.
+   */
+  prefetchEmbeddedEventsForParents(
+    parents: readonly NEvent[],
+    opts?: { relayHintsOnly?: boolean }
+  ): void {
+    if (parents.length === 0) return
+
+    const hexSet = new Set<string>()
+    const nip19Set = new Set<string>()
+    const relayHintSet = new Set<string>()
+    for (const parent of parents) {
+      const { hexIds, nip19Pointers } = collectEmbeddedEventPrefetchTargets(parent)
+      for (const id of hexIds) hexSet.add(id)
+      for (const p of nip19Pointers) nip19Set.add(p)
+      for (const url of relayHintWssUrlsFromEvent(parent)) {
+        const n = normalizeUrl(url)
+        if (n) relayHintSet.add(n)
+      }
+    }
+
+    const hexIds = [...hexSet].filter((id) => {
+      if (this.getSessionEventIfAllowed(id)) return false
+      if (this.embeddedPrefetchHexScheduled.has(id)) return false
+      this.embeddedPrefetchHexScheduled.add(id)
+      return true
+    })
+    const nip19Pointers = [...nip19Set].filter((p) => {
+      if (this.embeddedPrefetchNip19Scheduled.has(p)) return false
+      this.embeddedPrefetchNip19Scheduled.add(p)
+      return true
+    })
+    if (hexIds.length === 0 && nip19Pointers.length === 0) return
+
+    const relayHints = [...relayHintSet]
+    const fetchOpts = relayHints.length > 0 ? { relayHints } : undefined
+
+    void (async () => {
+      try {
+        if (hexIds.length > 0) {
+          await this.prefetchHexEventIds(hexIds, { relayHints, relayHintsOnly: opts?.relayHintsOnly })
+        }
+        await Promise.all(
+          nip19Pointers.map((pointer) => this.fetchEvent(pointer, fetchOpts))
+        )
+      } catch {
+        for (const id of hexIds) this.embeddedPrefetchHexScheduled.delete(id)
+        for (const p of nip19Pointers) this.embeddedPrefetchNip19Scheduled.delete(p)
+      }
+    })()
+  }
+
   /**
    * Batch-prefetch events by hex id into session cache (single REQ per chunk).
    * Used by feeds so embedded notes resolve without N parallel fetches.
    */
-  async prefetchHexEventIds(rawIds: readonly string[]): Promise<void> {
+  async prefetchHexEventIds(
+    rawIds: readonly string[],
+    opts?: { relayHints?: string[]; relayHintsOnly?: boolean }
+  ): Promise<void> {
     const hexIds = [
       ...new Set(
         rawIds
@@ -455,7 +534,13 @@ export class EventService {
     toFetch = toFetch.filter((id) => !this.getSessionEventIfAllowed(id))
     if (toFetch.length === 0) return
 
-    const relayUrls = await buildComprehensiveRelayListForEvents(undefined, [], [], [])
+    const hints = (opts?.relayHints ?? [])
+      .map((u) => normalizeUrl(u))
+      .filter((u): u is string => Boolean(u))
+    const relayUrls =
+      opts?.relayHintsOnly && hints.length > 0
+        ? [...new Set(hints)]
+        : await buildComprehensiveRelayListForEvents(undefined, hints, hints, hints)
     if (!relayUrls.length) return
 
     for (let i = 0; i < toFetch.length; i += PREFETCH_HEX_IDS_CHUNK) {
@@ -466,8 +551,8 @@ export class EventService {
         undefined,
         {
           immediateReturn: false,
-          eoseTimeout: 2500,
-          globalTimeout: 12000
+          eoseTimeout: hints.length > 0 ? 1800 : 2500,
+          globalTimeout: hints.length > 0 ? 8000 : 12000
         }
       )
       for (const ev of events) {
@@ -580,6 +665,9 @@ export class EventService {
       if (pk && /^[0-9a-f]{64}$/i.test(pk)) {
         void client.prefetchAuthorCoreReplaceables([pk.toLowerCase()])
       }
+    }
+    if (EMBEDDED_NOTE_PREFETCH_ON_INGEST_KINDS.has(cleanEvent.kind)) {
+      this.prefetchEmbeddedEventsForParents([cleanEvent as NEvent])
     }
     this.notifySessionEventWaiters(id)
     this.notifyReplaceableCoordinateWaiters(cleanEvent as NEvent)
@@ -1153,6 +1241,21 @@ export class EventService {
           relays = [...new Set([...relays, ...eventRelayHints])]
         }
         return cached
+      }
+    }
+
+    if (relays.length > 0) {
+      const hintedEvents = await this.queryService.query(relays, filter, undefined, {
+        immediateReturn: true,
+        eoseTimeout: HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS,
+        globalTimeout: HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS
+      })
+      const hinted = hintedEvents
+        .filter((e) => !shouldDropEventOnIngest(e, ingestOpts))
+        .sort((a, b) => b.created_at - a.created_at)[0]
+      if (hinted) {
+        this.addEventToCache(hinted, ingestOpts)
+        return hinted
       }
     }
 

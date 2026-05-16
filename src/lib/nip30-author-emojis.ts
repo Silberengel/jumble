@@ -89,16 +89,78 @@ async function loadAuthorNip30FromIndexedDbUncached(pubkey: string): Promise<TEm
 const inflightAuthorEmoji = new Map<string, Promise<TEmoji[]>>()
 const inflightAuthorEmojiIdb = new Map<string, Promise<TEmoji[]>>()
 
+/** Shared author inventory so every mounted note row updates when NIP-30 emoji loads. */
+const authorEmojiCache = new Map<string, TEmoji[]>()
+const authorEmojiListeners = new Map<string, Set<() => void>>()
+
+/** Stable empty snapshot for {@link useSyncExternalStore} (must not allocate `[]` per read). */
+export const EMPTY_AUTHOR_NIP30_EMOJIS: readonly TEmoji[] = []
+
+function authorEmojiListsEqual(a: readonly TEmoji[], b: readonly TEmoji[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].shortcode !== b[i].shortcode || a[i].url !== b[i].url) return false
+  }
+  return true
+}
+
+function publishAuthorEmojiCache(pk: string, infos: TEmoji[]) {
+  if (infos.length === 0) return
+  const prev = authorEmojiCache.get(pk)
+  if (prev && authorEmojiListsEqual(prev, infos)) return
+  authorEmojiCache.set(pk, infos)
+  authorEmojiListeners.get(pk)?.forEach((fn) => fn())
+}
+
+export function getAuthorNip30EmojiCache(pubkey: string): readonly TEmoji[] {
+  const pk = pubkey.trim().toLowerCase()
+  return authorEmojiCache.get(pk) ?? EMPTY_AUTHOR_NIP30_EMOJIS
+}
+
+export function subscribeAuthorNip30EmojiCache(pubkey: string, onStoreChange: () => void): () => void {
+  const pk = pubkey.trim().toLowerCase()
+  let set = authorEmojiListeners.get(pk)
+  if (!set) {
+    set = new Set()
+    authorEmojiListeners.set(pk, set)
+  }
+  set.add(onStoreChange)
+  return () => {
+    set!.delete(onStoreChange)
+    if (set!.size === 0) authorEmojiListeners.delete(pk)
+  }
+}
+
+/** Start NIP-30 emoji inventory loads for authors (deduped; updates {@link getAuthorNip30EmojiCache}). */
+export function prefetchAuthorNip30EmojisForPubkeys(pubkeys: readonly string[]): void {
+  for (const raw of pubkeys) {
+    const pk = raw.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) continue
+    if (authorEmojiCache.has(pk)) continue
+    void fetchAuthorNip30EmojiInfosFromIndexedDb(pk).then((infos) => publishAuthorEmojiCache(pk, infos))
+    void fetchAuthorNip30EmojiInfos(pk).then((infos) => publishAuthorEmojiCache(pk, infos))
+  }
+}
+
 export function fetchAuthorNip30EmojiInfos(pubkey: string): Promise<TEmoji[]> {
   const pk = pubkey.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/.test(pk)) return Promise.resolve([])
 
+  const cached = authorEmojiCache.get(pk)
+  if (cached?.length) return Promise.resolve(cached)
+
   const existing = inflightAuthorEmoji.get(pk)
   if (existing) return existing
 
-  const p = loadAuthorNip30EmojiInfosUncached(pk).finally(() => {
-    if (inflightAuthorEmoji.get(pk) === p) inflightAuthorEmoji.delete(pk)
-  })
+  const p = loadAuthorNip30EmojiInfosUncached(pk)
+    .then((infos) => {
+      publishAuthorEmojiCache(pk, infos)
+      return infos
+    })
+    .finally(() => {
+      if (inflightAuthorEmoji.get(pk) === p) inflightAuthorEmoji.delete(pk)
+    })
   inflightAuthorEmoji.set(pk, p)
   return p
 }
@@ -108,12 +170,20 @@ export function fetchAuthorNip30EmojiInfosFromIndexedDb(pubkey: string): Promise
   const pk = pubkey.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/.test(pk)) return Promise.resolve([])
 
+  const cached = authorEmojiCache.get(pk)
+  if (cached?.length) return Promise.resolve(cached)
+
   const existing = inflightAuthorEmojiIdb.get(pk)
   if (existing) return existing
 
-  const p = loadAuthorNip30FromIndexedDbUncached(pk).finally(() => {
-    if (inflightAuthorEmojiIdb.get(pk) === p) inflightAuthorEmojiIdb.delete(pk)
-  })
+  const p = loadAuthorNip30FromIndexedDbUncached(pk)
+    .then((infos) => {
+      publishAuthorEmojiCache(pk, infos)
+      return infos
+    })
+    .finally(() => {
+      if (inflightAuthorEmojiIdb.get(pk) === p) inflightAuthorEmojiIdb.delete(pk)
+    })
   inflightAuthorEmojiIdb.set(pk, p)
   return p
 }

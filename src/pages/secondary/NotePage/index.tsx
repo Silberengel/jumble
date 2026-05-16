@@ -17,7 +17,6 @@ import { useNostr } from '@/providers/NostrProvider'
 import noteStatsService from '@/services/note-stats.service'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import {
-  collectEmbeddedEventPrefetchTargets,
   getParentBech32Id,
   getParentETag,
   getParentEventHexId,
@@ -35,7 +34,7 @@ import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
-import { forwardRef, useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NOSTR_URI_NADDR_REGEX } from '@/lib/content-patterns'
 import {
@@ -228,14 +227,10 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     void client.fetchProfilesForPubkeys([pk])
   }, [finalEvent?.id, finalEvent?.pubkey])
 
-  /** Warm session cache so markdown/embed cards resolve before each {@link EmbeddedNote} mounts. */
-  useEffect(() => {
+  /** Resolve nostr embeds with the open note (parent relay hints), before embed cards mount. */
+  useLayoutEffect(() => {
     if (!finalEvent) return
-    const { hexIds, nip19Pointers } = collectEmbeddedEventPrefetchTargets(finalEvent)
-    if (hexIds.length > 0) void client.prefetchHexEventIds(hexIds)
-    for (const pointer of nip19Pointers) {
-      void client.fetchEvent(pointer)
-    }
+    client.prefetchEmbeddedEventsForParents([finalEvent])
   }, [finalEvent?.id])
 
   const getNoteTypeTitle = (kind: number): string => {

@@ -2,8 +2,7 @@ import {
   E_TAG_FILTER_BLOCKED_RELAY_URLS,
   ExtendedKind,
   NOTE_STATS_OP_REFERENCE_KINDS,
-  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
-  THREAD_BACKLINK_STREAM_KINDS
+  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
 } from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
@@ -223,8 +222,8 @@ function moveReportsToEndPreserveOrder(events: NEvent[]): NEvent[] {
   return [...non, ...rep]
 }
 
-/** Shown after thread replies for E/A roots (quote stream + kind 1 #q-only); matches {@link THREAD_BACKLINK_STREAM_KINDS}. */
-const EA_THREAD_TAIL_REFERENCE_KINDS = new Set<number>(THREAD_BACKLINK_STREAM_KINDS)
+/** Shown after thread replies for E/A roots (quote stream + kind 1 #q-only); matches {@link NOTE_STATS_OP_REFERENCE_KINDS}. */
+const EA_THREAD_TAIL_REFERENCE_KINDS = new Set<number>(NOTE_STATS_OP_REFERENCE_KINDS)
 
 function isWebThreadTailKind(kind: number): boolean {
   return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind)
@@ -351,7 +350,7 @@ function isKind1QuoteOnlyOfEaRoot(evt: NEvent, root: TRootInfo): boolean {
   return kind1QuotesThreadRoot(evt, root)
 }
 
-/** E/A roots: #q-only kind 1 + relay “reply” rows for {@link THREAD_BACKLINK_STREAM_KINDS} belong in backlinks tail, not the chronological middle. */
+/** E/A roots: #q-only kind 1 + relay “reply” rows for {@link NOTE_STATS_OP_REFERENCE_KINDS} belong in backlinks tail, not the chronological middle. */
 function isEaThreadTailBacklinkCandidate(evt: NEvent, root: TRootInfo): boolean {
   if (root.type !== 'E' && root.type !== 'A') return false
   if (isKind1QuoteOnlyOfEaRoot(evt, root)) return true
@@ -1616,7 +1615,16 @@ function ReplyNoteList({
     }, 1500)
   }, [])
 
-  const visibleFeed = mergedFeed.slice(0, showCount)
+  /** Paginate replies only; always show the backlinks tail (quotes, highlights, bookmarks, …). */
+  const visibleFeed = useMemo(() => {
+    const backlinks: NEvent[] = []
+    const main: NEvent[] = []
+    for (const item of mergedFeed) {
+      if (quoteUiIdSet.has(item.id)) backlinks.push(item)
+      else main.push(item)
+    }
+    return [...main.slice(0, showCount), ...backlinks]
+  }, [mergedFeed, showCount, quoteUiIdSet])
 
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {

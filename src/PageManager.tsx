@@ -474,7 +474,7 @@ export function useSmartNoteNavigation() {
       navigationEventStore.setEvent(event)
       client.addEventToCache(event)
     }
-    // Pre-cache related events (parent, root, embedded) so NotePage avoids re-fetching
+    // Pre-cache related events (parent, root) and nostr embeds so NotePage avoids skeletons.
     if (relatedEvents?.length) {
       for (const ev of relatedEvents) {
         if (ev && ev !== event) {
@@ -482,6 +482,11 @@ export function useSmartNoteNavigation() {
           navigationEventStore.setEvent(ev)
         }
       }
+    }
+    if (event) {
+      client.prefetchEmbeddedEventsForParents(
+        [event, ...(relatedEvents ?? []).filter((ev) => ev && ev !== event)]
+      )
     }
     
     // Build contextual URL based on current page

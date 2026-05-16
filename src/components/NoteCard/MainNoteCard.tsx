@@ -108,7 +108,10 @@ export default function MainNoteCard({
             <Pin className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
           </div>
         )}
-        <Collapsible alwaysExpand={embedded || isCalendarNoteKind}>
+        <Collapsible
+          alwaysExpand={showFull || isCalendarNoteKind}
+          {...(embedded && !showFull ? { threshold: 480, collapsedHeight: 220 } : {})}
+        >
           <RepostDescription className={embedded ? '' : notePadX} reposter={reposter} />
           <Note
             className={embedded ? '' : notePadX}

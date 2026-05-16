@@ -32,7 +32,7 @@ import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   getWebBookmarkArticleUrl,
@@ -268,6 +268,10 @@ export default function Note({
   const [callInviteContent, setCallInviteContent] = useState<string | null>(null)
   const noteTranslation = useNoteTranslation(event.id)
   const displayEvent = useMemo(() => mergeTranslatedNote(event, noteTranslation), [event, noteTranslation])
+
+  useLayoutEffect(() => {
+    client.prefetchEmbeddedEventsForParents([event])
+  }, [event.id])
 
   const reactionDisplay = useNotificationReactionDisplay(event)
   const webReactionParentUrl = useMemo(

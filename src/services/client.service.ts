@@ -3433,8 +3433,19 @@ class ClientService extends EventTarget {
   }
 
   /** Batch-prefetch by hex id into session cache (feed embeds). */
-  async prefetchHexEventIds(hexIds: readonly string[]): Promise<void> {
-    return this.eventService.prefetchHexEventIds(hexIds)
+  async prefetchHexEventIds(
+    hexIds: readonly string[],
+    opts?: { relayHints?: string[]; relayHintsOnly?: boolean }
+  ): Promise<void> {
+    return this.eventService.prefetchHexEventIds(hexIds, opts)
+  }
+
+  /** Prefetch nostr embeds referenced by parent notes (with parent relay hints). */
+  prefetchEmbeddedEventsForParents(
+    parents: readonly NEvent[],
+    opts?: { relayHintsOnly?: boolean }
+  ): void {
+    this.eventService.prefetchEmbeddedEventsForParents(parents, opts)
   }
 
   async fetchEventWithExternalRelays(eventId: string, externalRelays: string[]): Promise<NEvent | undefined> {

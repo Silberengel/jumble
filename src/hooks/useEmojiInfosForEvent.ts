@@ -1,18 +1,21 @@
 import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
 import {
+  EMPTY_AUTHOR_NIP30_EMOJIS,
   fetchAuthorNip30EmojiInfos,
-  fetchAuthorNip30EmojiInfosFromIndexedDb
+  fetchAuthorNip30EmojiInfosFromIndexedDb,
+  getAuthorNip30EmojiCache,
+  subscribeAuthorNip30EmojiCache
 } from '@/lib/nip30-author-emojis'
 import { getEmojiInfosFromEmojiTags } from '@/lib/tag'
 import { TEmoji } from '@/types'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { type Event } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 
 /** Event `emoji` tags override the same shortcode from the author's kind 0. */
 export function mergeEmojiInfosEventOverridesAuthor(
-  fromAuthor: TEmoji[],
-  fromEvent: TEmoji[]
+  fromAuthor: readonly TEmoji[],
+  fromEvent: readonly TEmoji[]
 ): TEmoji[] {
   const m = new Map<string, TEmoji>()
   for (const e of fromAuthor) m.set(e.shortcode, e)
@@ -51,31 +54,17 @@ export function useEmojiInfosForEvent(event: Event | undefined | null): TEmoji[]
   const pubkey = event?.pubkey?.trim().toLowerCase() ?? ''
   const validPk = /^[0-9a-f]{64}$/.test(pubkey)
 
-  const [fromAuthor, setFromAuthor] = useState<TEmoji[]>([])
+  const fromAuthor = useSyncExternalStore(
+    (onStoreChange) =>
+      validPk && needsLookup ? subscribeAuthorNip30EmojiCache(pubkey, onStoreChange) : () => {},
+    () => (validPk && needsLookup ? getAuthorNip30EmojiCache(pubkey) : EMPTY_AUTHOR_NIP30_EMOJIS),
+    () => EMPTY_AUTHOR_NIP30_EMOJIS
+  )
 
   useEffect(() => {
-    if (!needsLookup || !validPk) {
-      setFromAuthor([])
-      return
-    }
-    let cancelled = false
-    let fullResolved = false
-    void fetchAuthorNip30EmojiInfosFromIndexedDb(pubkey).then((infos) => {
-      if (cancelled || fullResolved) return
-      setFromAuthor(infos)
-    })
+    if (!needsLookup || !validPk) return
+    void fetchAuthorNip30EmojiInfosFromIndexedDb(pubkey)
     void fetchAuthorNip30EmojiInfos(pubkey)
-      .then((infos) => {
-        if (cancelled) return
-        fullResolved = true
-        setFromAuthor(infos)
-      })
-      .catch(() => {
-        fullResolved = true
-      })
-    return () => {
-      cancelled = true
-    }
   }, [needsLookup, validPk, pubkey])
 
   return useMemo(

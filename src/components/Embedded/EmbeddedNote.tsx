@@ -302,21 +302,25 @@ function EmbeddedNoteFetched({
     }
 
     const runParallelFetch = async () => {
-      const { fetchRelayOpts: opts, wideRelaysStatic: wide0 } = embedFetchCtxRef.current
+      const { fetchRelayOpts: opts } = embedFetchCtxRef.current
       const hex = hexEventIdFromNoteId(noteKey)
-      const primary = client.fetchEvent(noteKey, opts)
-      const wide = runWidePass(wide0)
-      const idb =
-        hex && /^[0-9a-f]{64}$/i.test(hex)
-          ? indexedDb.getEventFromPublicationStore(hex.toLowerCase()).catch(() => undefined)
-          : Promise.resolve(undefined)
-      const [p, w, db] = await Promise.all([primary, wide, idb])
+      const isUsable = (e: Event) =>
+        !isEventDeletedRef.current(e) && !shouldDropEventOnIngest(e)
+      const chosen = await firstResolvedUsableEmbedEvent(
+        [
+          () => client.fetchEvent(noteKey, opts),
+          () =>
+            hex && /^[0-9a-f]{64}$/i.test(hex)
+              ? indexedDb
+                  .getEventFromPublicationStore(hex.toLowerCase())
+                  .catch(() => undefined)
+              : Promise.resolve(undefined)
+        ],
+        isUsable
+      )
       if (cancelled) return
-      const chosen = pickUsableEvent([p, w, db], isEventDeletedRef.current)
       if (chosen) {
         resolve(chosen)
-        setIsFetching(false)
-        return
       }
       setIsFetching(false)
     }
@@ -619,15 +623,28 @@ async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event)
   return dedupeRelayUrls(hintRelays)
 }
 
-function pickUsableEvent(
-  candidates: (Event | undefined)[],
-  isEventDeleted: (e: Event) => boolean
-): Event | undefined {
-  for (const e of candidates) {
-    if (!e || isEventDeleted(e) || shouldDropEventOnIngest(e)) continue
-    return e
-  }
-  return undefined
+/** Resolve as soon as any fetch path returns a usable event (do not wait for slow wide-relay fan-out). */
+function firstResolvedUsableEmbedEvent(
+  tasks: Array<() => Promise<Event | undefined>>,
+  isUsable: (e: Event) => boolean
+): Promise<Event | undefined> {
+  if (tasks.length === 0) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    let settled = 0
+    let resolved = false
+    const finish = (ev: Event | undefined) => {
+      settled++
+      if (!resolved && ev && isUsable(ev)) {
+        resolved = true
+        resolve(ev)
+        return
+      }
+      if (settled === tasks.length && !resolved) resolve(undefined)
+    }
+    for (const run of tasks) {
+      void run().then(finish).catch(() => finish(undefined))
+    }
+  })
 }
 
 function EmbeddedNoteSkeleton({ className }: { className?: string }) {
