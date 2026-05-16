@@ -10,7 +10,6 @@ import {
   getArticleUrlFromCommentITags
 } from '@/lib/rss-article'
 import {
-  getParentATag,
   getParentETag,
   getReplaceableCoordinateFromEvent,
   getRootATag,
