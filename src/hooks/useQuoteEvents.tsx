@@ -1,7 +1,7 @@
 import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
-  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
+  NOTE_STATS_OP_REFERENCE_KINDS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
@@ -17,15 +17,6 @@ import { Event, kinds } from 'nostr-tools'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const LIMIT = 100
-const MAX_KINDS_PER_RELAY_FILTER = 4
-
-function chunkKinds(list: readonly number[], size = MAX_KINDS_PER_RELAY_FILTER): number[][] {
-  const out: number[][] = []
-  for (let i = 0; i < list.length; i += size) {
-    out.push([...list.slice(i, i + size)])
-  }
-  return out
-}
 const INITIAL_QUOTE_LOAD_TIMEOUT_MS = 12_000
 
 /** Fetches events that quote or reference the given event (#q, #e, #a tags). */
@@ -102,16 +93,15 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
         ? getReplaceableCoordinateFromEvent(ev)
         : `${ev.kind}:${ev.pubkey}:${ev.id}`
 
-      const highlightKinds = [kinds.Highlights] as const
-      const opRefKindChunks = chunkKinds(NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT)
       const qKindsBroad = Array.from(
         new Set<number>([
           kinds.ShortTextNote,
           ExtendedKind.COMMENT,
           ExtendedKind.VOICE_COMMENT,
-          ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
+          ...NOTE_STATS_OP_REFERENCE_KINDS
         ])
       ).sort((a, b) => a - b)
+      const opRefKinds = [...NOTE_STATS_OP_REFERENCE_KINDS]
       const qValsReplaceable = Array.from(
         new Set(
           [ev.id, eventCoordinate]
@@ -131,35 +121,18 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
         },
         {
           urls: finalRelayUrls,
-          filter: { '#q': [qeIdForTagFilter], kinds: [...highlightKinds], limit: LIMIT }
-        },
-        {
-          urls: finalRelayUrls,
           filter: {
             '#a': [eventCoordinate],
-            kinds: [...highlightKinds],
+            kinds: opRefKinds,
             limit: LIMIT
           }
-        },
-        ...opRefKindChunks.map(
-          (kindsChunk) =>
-            ({
-              urls: finalRelayUrls,
-              filter: {
-                '#a': [eventCoordinate],
-                kinds: kindsChunk,
-                limit: LIMIT
-              }
-            }) as { urls: string[]; filter: TSubRequestFilter }
-        )
+        }
       ]
       if (isReplaceableEvent(ev.kind)) {
-        for (const kindsChunk of opRefKindChunks) {
-          subRequests.push({
-            urls: finalRelayUrls,
-            filter: { '#A': [eventCoordinate], kinds: kindsChunk, limit: LIMIT }
-          })
-        }
+        subRequests.push({
+          urls: finalRelayUrls,
+          filter: { '#A': [eventCoordinate], kinds: opRefKinds, limit: LIMIT }
+        })
       }
       // `#e` tag filters must use 64-hex event ids. For replaceable roots we use `#a`/`#q` only.
       if (qeIdIsHexEventId) {
@@ -168,34 +141,18 @@ export function useQuoteEvents(event: Event | null, enabled: boolean) {
             urls: finalRelayUrls,
             filter: {
               '#e': [qeIdForTagFilter],
-              kinds: [...highlightKinds],
+              kinds: opRefKinds,
               limit: LIMIT
             }
           },
-          ...opRefKindChunks.map((kindsChunk) => ({
-            urls: finalRelayUrls,
-            filter: {
-              '#e': [qeIdForTagFilter],
-              kinds: kindsChunk,
-              limit: LIMIT
-            }
-          })),
           {
             urls: finalRelayUrls,
             filter: {
               '#E': [qeIdForTagFilter],
-              kinds: [...highlightKinds],
+              kinds: opRefKinds,
               limit: LIMIT
             }
-          },
-          ...opRefKindChunks.map((kindsChunk) => ({
-            urls: finalRelayUrls,
-            filter: {
-              '#E': [qeIdForTagFilter],
-              kinds: kindsChunk,
-              limit: LIMIT
-            }
-          }))
+          }
         )
       }
 

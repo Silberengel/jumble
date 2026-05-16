@@ -9,7 +9,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import client from '@/services/client.service'
 import { normalizeUrl } from '@/lib/url'
-import { buildAlexandriaEventsUrlForHashtagParam } from '@/lib/alexandria-events-search-url'
+import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { useLayoutEffect, useMemo } from 'react'
 
 function relayDedupeKey(url: string): string {
@@ -20,10 +20,18 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
   const { pubkey, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
-  /** Before child effects (e.g. NIP-50) open REQs, abort background queries and drop pooled relay sockets so search gets the pool. */
+  /**
+   * Before NIP-50 / hashtag REQs, yield the pool — but do not abort profile lookups (npub / profile search).
+   */
   useLayoutEffect(() => {
     if (!searchParams) return
-    if (searchParams.type === 'relay') return
+    if (
+      searchParams.type === 'relay' ||
+      searchParams.type === 'profile' ||
+      searchParams.type === 'profiles'
+    ) {
+      return
+    }
     client.interruptBackgroundQueries({ closePooledRelayConnections: true })
   }, [searchParams?.type, searchParams?.search, searchParams?.input])
 
@@ -74,22 +82,23 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     [combinedRelays, searchableKeySet]
   )
 
-  const alexandriaEmptyUrlForHashtag = useMemo(
-    () =>
-      searchParams?.type === 'hashtag'
-        ? buildAlexandriaEventsUrlForHashtagParam(searchParams.search)
-        : null,
-    [searchParams?.type, searchParams?.search]
+  const alexandriaEmptyHref = useMemo(
+    () => (searchParams ? buildAlexandriaEventsSearchUrlForTSearchParams(searchParams) : null),
+    [searchParams]
   )
 
   if (!searchParams) {
     return null
   }
   if (searchParams.type === 'profile') {
-    return <Profile id={searchParams.search} />
+    return (
+      <Profile id={searchParams.search} alexandriaNotFoundHref={alexandriaEmptyHref} />
+    )
   }
   if (searchParams.type === 'profiles') {
-    return <ProfileListBySearch search={searchParams.search} />
+    return (
+      <ProfileListBySearch search={searchParams.search} alexandriaEmptyHref={alexandriaEmptyHref} />
+    )
   }
   if (searchParams.type === 'notes') {
     return (
@@ -97,6 +106,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
         searchQuery={searchParams.search}
         relayUrls={searchableUrls}
         kinds={NIP_SEARCH_PAGE_KINDS}
+        alexandriaEmptyHref={alexandriaEmptyHref}
       />
     )
   }
@@ -110,9 +120,15 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
       <NormalFeed
         timelinePublicReadFallback
         subRequests={subRequests}
-        alexandriaEmptyUrl={alexandriaEmptyUrlForHashtag}
+        alexandriaEmptyUrl={alexandriaEmptyHref}
       />
     )
   }
-  return <Relay url={searchParams.search} />
+  return (
+    <Relay
+      url={searchParams.search}
+      alexandriaEmptyUrl={alexandriaEmptyHref}
+      alexandriaNotFoundHref={alexandriaEmptyHref}
+    />
+  )
 }

@@ -3,8 +3,9 @@ import ProfileList from '@/components/ProfileList'
 import { ProfileListBySearch } from '@/components/ProfileListBySearch'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
+import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { fetchPubkeysFromDomain } from '@/lib/nip05'
-import { forwardRef, useCallback, useEffect, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const ProfileListPage = forwardRef(({ index }: { index?: number }, ref) => {
@@ -39,9 +40,19 @@ const ProfileListPage = forwardRef(({ index }: { index?: number }, ref) => {
     }
   }, [])
 
+  const profileSearchAlexandriaHref = useMemo(
+    () =>
+      data?.type === 'search'
+        ? buildAlexandriaEventsSearchUrlForTSearchParams({ type: 'profiles', search: data.id })
+        : null,
+    [data]
+  )
+
   let content: React.ReactNode = null
   if (data?.type === 'search') {
-    content = <ProfileListBySearch search={data.id} />
+    content = (
+      <ProfileListBySearch search={data.id} alexandriaEmptyHref={profileSearchAlexandriaHref} />
+    )
   } else if (data?.type === 'domain') {
     content = <ProfileListByDomain domain={data.id} />
   }

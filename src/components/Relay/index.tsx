@@ -13,12 +13,23 @@ import type { TFeedSubRequest } from '@/types'
 import { kinds, type Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
+import { buildAlexandriaEventsSearchUrlFromNotesQuery } from '@/lib/alexandria-events-search-url'
 import NotFound from '../NotFound'
 
 const Relay = forwardRef<
   TNoteListRef,
-  { url?: string; className?: string; hostPrimaryPageName?: TPrimaryPageName }
->(function Relay({ url, className, hostPrimaryPageName }, ref) {
+  {
+    url?: string
+    className?: string
+    hostPrimaryPageName?: TPrimaryPageName
+    alexandriaEmptyUrl?: string | null
+    alexandriaNotFoundHref?: string | null
+  }
+>(function Relay(
+  { url, className, hostPrimaryPageName, alexandriaEmptyUrl = null, alexandriaNotFoundHref = null },
+  ref
+) {
   const { t } = useTranslation()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const { showKinds } = useKindFilterOrDefaults()
@@ -113,8 +124,18 @@ const Relay = forwardRef<
     [relaySeenMatchKey, normalizedUrl]
   )
 
+  const alexandriaFeedEmptyUrl = useMemo(() => {
+    const q = debouncedInput.trim()
+    if (q) return buildAlexandriaEventsSearchUrlFromNotesQuery(q)
+    return alexandriaEmptyUrl
+  }, [debouncedInput, alexandriaEmptyUrl])
+
   if (!normalizedUrl) {
-    return <NotFound />
+    return (
+      <NotFound>
+        {alexandriaNotFoundHref ? <AlexandriaEventsSearchEmptyCta href={alexandriaNotFoundHref} /> : null}
+      </NotFound>
+    )
   }
 
   return (
@@ -140,6 +161,7 @@ const Relay = forwardRef<
         extraShouldHideEvent={shouldHideEventNotFromThisRelay}
         extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
         relayAuthoritativeFeedOnly
+        alexandriaEmptyUrl={alexandriaFeedEmptyUrl}
       />
     </div>
   )

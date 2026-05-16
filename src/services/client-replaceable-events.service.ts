@@ -829,6 +829,45 @@ export class ReplaceableEventService {
    * =========== Profile Methods ===========
    */
 
+  /** Direct kind-0 REQ on {@link PROFILE_RELAY_URLS} by `authors` (npub / hex lookup — not NIP-50 text). */
+  private async fetchKind0FromProfileRelays(pubkey: string): Promise<NEvent | undefined> {
+    const pk = pubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return undefined
+
+    const relays = prependAggrNostrLandIfViewerEligible(
+      stripLocalNetworkRelaysForWssReq(
+        Array.from(
+          new Set(PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u.trim()).filter(Boolean))
+        )
+      )
+    )
+    if (relays.length === 0) return undefined
+
+    try {
+      const events = await this.queryService.query(
+        relays,
+        { authors: [pk], kinds: [kinds.Metadata], limit: 1 },
+        undefined,
+        {
+          replaceableRace: false,
+          eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+          globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+          foreground: true,
+          relayOpSource: 'ReplaceableEventService.fetchKind0FromProfileRelays'
+        }
+      )
+      if (events.length === 0) return undefined
+      const sorted = events.sort((a, b) => b.created_at - a.created_at)
+      return sorted[0]
+    } catch (error) {
+      logger.warn('[ReplaceableEventService] fetchKind0FromProfileRelays failed', {
+        pubkey: pk.slice(0, 8),
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return undefined
+    }
+  }
+
   /**
    * Fetch profile event by id (hex, npub, nprofile)
    */
@@ -880,10 +919,19 @@ export class ReplaceableEventService {
     // Relay hints from bech32 (nprofile, etc.) — highest priority in later steps
     const relayHints = relays.length > 0 ? [...relays] : []
 
-    // CRITICAL: Always use relay hints from bech32 addresses (nprofile, naddr, nevent) when available
-    // Relay hints should have highest priority and always be included
-    
-    // Step 1: ALWAYS use DataLoader first (checks IndexedDB, then uses default relays)
+    // Step 0: {@link PROFILE_RELAY_URLS} by `authors` — reliable for npub/hex; avoids batched DataLoader + abort races.
+    const fromProfileRelays = await this.fetchKind0FromProfileRelays(pubkey)
+    if (fromProfileRelays) {
+      this.replaceableEventFromBigRelaysDataloader.prime(
+        { pubkey, kind: kinds.Metadata },
+        Promise.resolve(fromProfileRelays)
+      )
+      await this.indexProfile(fromProfileRelays)
+      void indexedDb.putReplaceableEvent(fromProfileRelays).catch(() => {})
+      return fromProfileRelays
+    }
+
+    // Step 1: DataLoader (IndexedDB + batched profile relay stack)
     // CRITICAL: Do NOT pass relay hints here - passing any relays bypasses DataLoader and creates individual subscriptions
     // DataLoader already uses default relays internally and batches all profile fetches
     // We'll use relay hints in Step 2/3 only if Step 1 fails
@@ -984,7 +1032,8 @@ export class ReplaceableEventService {
           {
             replaceableRace: false,
             eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
-            globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
+            globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+            foreground: true
           }
         )
 

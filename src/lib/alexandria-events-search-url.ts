@@ -84,22 +84,31 @@ export function buildAlexandriaEventsSearchUrlFromNotesQuery(query: string): str
   return `${ALEXANDRIA_NEXT_EVENTS_BASE}?q=${encodeURIComponent(q)}`
 }
 
+/** Map any in-app search route to a matching Alexandria `/events` URL (empty-state CTA). */
 export function buildAlexandriaEventsSearchUrlForTSearchParams(params: TSearchParams): string | null {
-  if (params.type === 'hashtag') {
-    const tag = params.search?.trim().toLowerCase()
-    if (!tag) return null
-    return `${ALEXANDRIA_NEXT_EVENTS_BASE}?t=${encodeURIComponent(tag)}`
+  const search = params.search?.trim()
+  if (!search) return null
+
+  switch (params.type) {
+    case 'hashtag':
+      return buildAlexandriaEventsUrlForHashtagParam(search)
+    case 'profile':
+    case 'profiles': {
+      let n = search
+      if (n.toLowerCase().startsWith('n:')) n = n.slice(2).trim()
+      if (!n) return null
+      return `${ALEXANDRIA_NEXT_EVENTS_BASE}?n=${encodeURIComponent(n)}`
+    }
+    case 'notes':
+    case 'note':
+      return buildAlexandriaEventsSearchUrlFromNotesQuery(search)
+    case 'dtag':
+      return buildAlexandriaEventsUrlForDTagParam(search)
+    case 'relay':
+      return `${ALEXANDRIA_NEXT_EVENTS_BASE}?q=${encodeURIComponent(search)}`
+    default:
+      return buildAlexandriaEventsSearchUrlFromNotesQuery(search)
   }
-  if (params.type === 'profiles') {
-    let n = params.search.trim()
-    if (n.toLowerCase().startsWith('n:')) n = n.slice(2).trim()
-    if (!n) return null
-    return `${ALEXANDRIA_NEXT_EVENTS_BASE}?n=${encodeURIComponent(n)}`
-  }
-  if (params.type === 'notes') {
-    return buildAlexandriaEventsSearchUrlFromNotesQuery(params.search)
-  }
-  return null
 }
 
 export function buildAlexandriaEventsUrlForHashtagParam(tag: string): string | null {

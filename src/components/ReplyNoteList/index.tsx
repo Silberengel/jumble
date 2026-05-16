@@ -76,17 +76,8 @@ type TRootInfo =
 
 const LIMIT = 200
 const SHOW_COUNT = 10
-const MAX_KINDS_PER_THREAD_REQ_FILTER = 4
 /** Some relays cap `#e` array length; chunk parent-id batches for nested-thread REQs. */
 const MAX_PARENT_IDS_PER_NESTED_REQ = 64
-
-function chunkKindsForThreadReq(list: readonly number[], size = MAX_KINDS_PER_THREAD_REQ_FILTER): number[][] {
-  const out: number[][] = []
-  for (let i = 0; i < list.length; i += size) {
-    out.push([...list.slice(i, i + size)])
-  }
-  return out
-}
 /** Short debounce so thread / detail headers populate avatars quickly after events arrive. */
 const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 400
 const THREAD_PROFILE_CHUNK = 80
@@ -1149,7 +1140,7 @@ function ReplyNoteList({
               ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
             ])
           ).sort((a, b) => a - b)
-          const opRefChunks = chunkKindsForThreadReq(NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT)
+          const opRefKinds = [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT]
           const kindsNoteCommentVoiceZap: number[] = [
             kinds.ShortTextNote,
             ExtendedKind.COMMENT,
@@ -1169,8 +1160,6 @@ function ReplyNoteList({
               : [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap]
 
           if (rootInfo.type === 'E') {
-            // Fetch all reply types for event-based replies (keep ≤4 kinds per filter — some relays
-            // NOTICE "too many kinds N" and drop the whole REQ if kind 7 is bundled with four others).
             filters.push({
               '#e': [rootInfo.id],
               kinds: kindsPrimaryThread,
@@ -1200,10 +1189,8 @@ function ReplyNoteList({
                 limit: LIMIT
               })
             }
-            for (const chunk of opRefChunks) {
-              filters.push({ '#e': [rootInfo.id], kinds: chunk, limit: LIMIT })
-              filters.push({ '#E': [rootInfo.id], kinds: chunk, limit: LIMIT })
-            }
+            filters.push({ '#e': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
+            filters.push({ '#E': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
           } else if (rootInfo.type === 'A') {
             // Fetch all reply types for replaceable event-based replies
             filters.push(
@@ -1237,10 +1224,8 @@ function ReplyNoteList({
                 kinds: [kinds.Reaction],
                 limit: LIMIT
               })
-              for (const chunk of opRefChunks) {
-                filters.push({ '#e': [eSnap], kinds: chunk, limit: LIMIT })
-                filters.push({ '#E': [eSnap], kinds: chunk, limit: LIMIT })
-              }
+              filters.push({ '#e': [eSnap], kinds: opRefKinds, limit: LIMIT })
+              filters.push({ '#E': [eSnap], kinds: opRefKinds, limit: LIMIT })
             }
             const qVals = Array.from(
               new Set(
@@ -1259,10 +1244,8 @@ function ReplyNoteList({
             if (rootInfo.relay) {
               finalRelayUrls.push(rootInfo.relay)
             }
-            for (const chunk of opRefChunks) {
-              filters.push({ '#a': [rootInfo.id], kinds: chunk, limit: LIMIT })
-              filters.push({ '#A': [rootInfo.id], kinds: chunk, limit: LIMIT })
-            }
+            filters.push({ '#a': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
+            filters.push({ '#A': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
           } else if (rootInfo.type === 'I') {
             filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
           }

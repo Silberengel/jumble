@@ -176,18 +176,17 @@ export const RELAY_POOL_SOCKET_IDLE_MS = 90_000
 export const RELAY_POOL_IDLE_SWEEP_INTERVAL_MS = 45_000
 
 /**
- * Maximum `kinds` length in a single NIP-01 filter. Some relays NOTICE "too many kinds" and reject the
- * entire REQ (e.g. strfry derivatives, relay.vukihreedia.xyz). QueryService splits larger arrays into
- * multiple filters with the same tag scope.
+ * Maximum `kinds` length in a single NIP-01 filter. A few strfry-style relays still NOTICE "too many kinds";
+ * {@link QueryService} splits larger arrays into multiple filters with the same tag scope. Sized to fit
+ * {@link NOTE_STATS_OP_REFERENCE_KINDS} plus thread/quote note kinds in one object without manual chunking.
  */
-export const RELAY_FILTER_MAX_KINDS_PER_OBJECT = 10
+export const RELAY_FILTER_MAX_KINDS_PER_OBJECT = 20
 
 /**
- * Maximum NIP-01 filters per REQ (`["REQ", subId, …filters]`). Primal, damus.io, and others return
- * NOTICE `bad req: arr too big` when the filter list is long (e.g. replaceable threads with #a + #e
- * snapshot + many kind-chunked op-reference filters).
+ * Maximum NIP-01 filters per REQ (`["REQ", subId, …filters]`). Some relays return NOTICE `bad req: arr too big`
+ * when the filter list is very long; QueryService issues sequential REQ slices when over this cap.
  */
-export const RELAY_REQ_MAX_FILTERS_PER_MESSAGE = 10
+export const RELAY_REQ_MAX_FILTERS_PER_MESSAGE = 12
 
 /** `SimplePool.ensureRelay` WebSocket handshake timeout (parallel multi-relay + slow TLS). */
 export const RELAY_POOL_CONNECTION_TIMEOUT_MS = 20_000
@@ -486,14 +485,16 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://orly-relay.imwald.eu',
   'wss://relay.noswhere.com',
-  'wss://nostr-pub.wellorder.net'
+  'wss://nostr-pub.wellorder.net',
 ]
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://purplepag.es',
   'wss://profiles.nostrver.se/',
-  'wss://indexer.coracle.social/'
+  'wss://indexer.coracle.social/',
+  'wss://relay.primal.net',
+  'wss://relay.damus.io'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [
@@ -664,7 +665,7 @@ export const NOTE_STATS_OP_REFERENCE_KINDS: readonly number[] = Array.from(
   new Set<number>([...THREAD_BACKLINK_STREAM_KINDS, ExtendedKind.PUBLICATION])
 ).sort((a, b) => a - b)
 
-/** {@link NOTE_STATS_OP_REFERENCE_KINDS} without kind 9802 — pair with a small highlights-only filter on relays that cap `kinds`. */
+/** {@link NOTE_STATS_OP_REFERENCE_KINDS} without kind 9802 — use when highlights are requested on a separate `#q` filter. */
 export const NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT: readonly number[] =
   NOTE_STATS_OP_REFERENCE_KINDS.filter((k) => k !== kinds.Highlights)
 

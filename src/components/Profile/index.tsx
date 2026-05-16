@@ -58,6 +58,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import logger from '@/lib/logger'
+import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import NotFound from '../NotFound'
 import FollowedBy from './FollowedBy'
 import ProfileFeedWithPins from './ProfileFeedWithPins'
@@ -221,11 +222,14 @@ function mergePaymentMethods(
 
 export default function Profile({
   id,
-  feedRef
+  feedRef,
+  alexandriaNotFoundHref = null
 }: {
   id?: string
   /** When set, exposes {@link ProfileFeedWithPins} `refresh` for titlebars / parent pages. */
   feedRef?: Ref<{ refresh: () => void }>
+  /** When profile lookup fails, link to Alexandria with the same identifier (search / deep link). */
+  alexandriaNotFoundHref?: string | null
 }) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
@@ -487,7 +491,13 @@ export default function Profile({
       </>
     )
   }
-  if (!profile && !isFetching) return <NotFound />
+  if (!profile && !isFetching) {
+    return (
+      <NotFound>
+        {alexandriaNotFoundHref ? <AlexandriaEventsSearchEmptyCta href={alexandriaNotFoundHref} /> : null}
+      </NotFound>
+    )
+  }
   
   if (!profile) return null // TypeScript guard - should never reach here but satisfies type checker
 

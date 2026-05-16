@@ -11,7 +11,8 @@ import {
   SITE_NAME,
   updateMetaTag
 } from '@/lib/document-meta'
-import { forwardRef, useCallback, useEffect, useRef } from 'react'
+import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
+import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
 
 const ProfilePage = forwardRef(({ id, index, hideTitlebar = false }: { id?: string; index?: number; hideTitlebar?: boolean }, ref) => {
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
@@ -28,6 +29,12 @@ const ProfilePage = forwardRef(({ id, index, hideTitlebar = false }: { id?: stri
   }, [hideTitlebar, registerPrimaryPanelRefresh, bumpFeed])
 
   const { profile } = useFetchProfile(id)
+
+  const alexandriaNotFoundHref = useMemo(() => {
+    const lookup = id?.trim()
+    if (!lookup) return null
+    return buildAlexandriaEventsSearchUrlForTSearchParams({ type: 'profile', search: lookup })
+  }, [id])
 
   useEffect(() => {
     if (!profile) {
@@ -95,7 +102,7 @@ const ProfilePage = forwardRef(({ id, index, hideTitlebar = false }: { id?: stri
       displayScrollToTopButton
       ref={ref}
     >
-      <Profile id={id} feedRef={feedRef} />
+      <Profile id={id} feedRef={feedRef} alexandriaNotFoundHref={alexandriaNotFoundHref} />
     </SecondaryPageLayout>
   )
 })

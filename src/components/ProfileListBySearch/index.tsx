@@ -1,7 +1,6 @@
 import { useSecondaryPage } from '@/PageManager'
 import { PROFILE_RELAY_URLS } from '@/constants'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
-import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { toProfile } from '@/lib/link'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
@@ -18,7 +17,13 @@ const PROFILE_SEARCH_RELAY_URLS = Array.from(
   new Set(PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
 )
 
-export function ProfileListBySearch({ search }: { search: string }) {
+export function ProfileListBySearch({
+  search,
+  alexandriaEmptyHref = null
+}: {
+  search: string
+  alexandriaEmptyHref?: string | null
+}) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
   const [pubkeys, setPubkeys] = useState<string[]>([])
@@ -180,12 +185,7 @@ export function ProfileListBySearch({ search }: { search: string }) {
       {phase === 'ready' && empty && (
         <div className="flex flex-col items-center py-6 text-center text-sm text-muted-foreground">
           <p>{t('Profile search no results')}</p>
-          {(() => {
-            const trimmed = search.trim()
-            if (!trimmed) return null
-            const href = buildAlexandriaEventsSearchUrlForTSearchParams({ type: 'profiles', search })
-            return href ? <AlexandriaEventsSearchEmptyCta href={href} /> : null
-          })()}
+          {alexandriaEmptyHref ? <AlexandriaEventsSearchEmptyCta href={alexandriaEmptyHref} /> : null}
         </div>
       )}
       {pubkeys.map((pubkey, index) => (

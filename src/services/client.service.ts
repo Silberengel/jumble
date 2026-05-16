@@ -3696,6 +3696,7 @@ class ClientService extends EventTarget {
     const usesNip50TextSearch = filtersArr.some(
       (f) => typeof f.search === 'string' && f.search.trim().length > 0
     )
+    const usesAuthorsLookup = filtersArr.some((f) => (f.authors?.length ?? 0) > 0)
     const events = await this.queryService.query(urls, queryFilter, undefined, {
       replaceableRace: false,
       eoseTimeout: usesNip50TextSearch ? 10_000 : 4500,
@@ -3703,7 +3704,7 @@ class ClientService extends EventTarget {
         ? NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000
         : 9000,
       relayOpSource: 'ClientService.searchProfiles',
-      foreground: usesNip50TextSearch
+      foreground: usesNip50TextSearch || usesAuthorsLookup
     })
 
     const byPk = new Map<string, NEvent>()

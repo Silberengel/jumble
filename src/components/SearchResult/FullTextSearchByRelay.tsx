@@ -231,11 +231,13 @@ function sortRelaysByHost(urls: readonly string[]): string[] {
 export default function FullTextSearchByRelay({
   searchQuery,
   relayUrls,
-  kinds
+  kinds,
+  alexandriaEmptyHref: alexandriaEmptyHrefProp = null
 }: {
   searchQuery: string
   relayUrls: readonly string[]
   kinds: readonly number[]
+  alexandriaEmptyHref?: string | null
 }) {
   const { t } = useTranslation()
   const { navigateToRelay } = useSmartRelayNavigationOptional() ?? {
@@ -250,10 +252,10 @@ export default function FullTextSearchByRelay({
   const normalizedRelays = useMemo(() => normalizeRelayList(relayUrls), [relayUrls])
 
   const q = searchQuery.trim()
-  const alexandriaEmptyHref = useMemo(
-    () => (q ? buildAlexandriaEventsSearchUrlFromNotesQuery(q) : null),
-    [q]
-  )
+  const alexandriaEmptyHref = useMemo(() => {
+    if (alexandriaEmptyHrefProp) return alexandriaEmptyHrefProp
+    return q ? buildAlexandriaEventsSearchUrlFromNotesQuery(q) : null
+  }, [alexandriaEmptyHrefProp, q])
   const searchProfileResetKey = useMemo(
     () => `${q}\n${normalizedRelays.join('\n')}`,
     [q, normalizedRelays]
