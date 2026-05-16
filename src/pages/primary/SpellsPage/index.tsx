@@ -367,6 +367,11 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
         spellCatalogLastManualKeyRef.current = spellCatalogManualRefreshKey
       }
 
+      /** Avoid relay catalog SUB on every Spells visit; sync when the picker opens or user refreshes. */
+      if (!manualBump && !spellPickerOpen) {
+        return
+      }
+
       const idbSpellsP = indexedDb.getSpellEvents()
       if (!manualBump) {
         const cachedSpells = await idbSpellsP
@@ -494,6 +499,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     loadSpells,
     contactsSyncKey,
     spellCatalogManualRefreshKey,
+    spellPickerOpen,
     useGlobalRelayBootstrap
   ])
 

@@ -1,4 +1,5 @@
 import { useFetchRelayInfo } from '@/hooks'
+import { isExploreBrowsableRelayUrl } from '@/lib/explore-popular-relays'
 import { toRelay } from '@/lib/link'
 import { useSmartRelayNavigation } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
@@ -23,7 +24,9 @@ export default function FollowingFavoriteRelayList() {
     const init = async () => {
       if (!pubkey) return
 
-      const relays = (await client.fetchFollowingFavoriteRelays(pubkey)) ?? []
+      const relays = ((await client.fetchFollowingFavoriteRelays(pubkey)) ?? []).filter(([url]) =>
+        isExploreBrowsableRelayUrl(url)
+      )
       setRelays(relays)
     }
     init().finally(() => {

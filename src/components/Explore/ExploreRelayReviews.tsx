@@ -10,6 +10,7 @@ import {
   userReadRelaysWithHttp
 } from '@/lib/favorites-feed-relays'
 import { toRelay } from '@/lib/link'
+import { isExploreBrowsableRelayUrl } from '@/lib/explore-popular-relays'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { useSmartRelayNavigation } from '@/PageManager'
@@ -132,7 +133,9 @@ export default function ExploreRelayReviews() {
       blockedRelays
     )
     const sliced = stacked.slice(0, EXPLORE_REVIEWS_MAX_RELAYS)
-    const normalized = sliced.map((u) => normalizeAnyRelayUrl(u) || u.trim()).filter(Boolean)
+    const normalized = sliced
+      .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+      .filter((u): u is string => Boolean(u) && isExploreBrowsableRelayUrl(u))
     normalized.sort((a, b) => a.localeCompare(b))
     return normalized
     // eslint-disable-next-line react-hooks/exhaustive-deps -- relayInputsKey is a content hash of favorites/blocked/NIP-65; relayList identity churn must not re-open REQ sockets.
@@ -212,7 +215,7 @@ export default function ExploreRelayReviews() {
     const groups = new Map<string, Event[]>()
     for (const event of visible) {
       const url = getRelayUrlFromRelayReviewEvent(event)
-      if (!url) continue
+      if (!url || !isExploreBrowsableRelayUrl(url)) continue
       if (!groups.has(url)) groups.set(url, [])
       groups.get(url)!.push(event)
     }

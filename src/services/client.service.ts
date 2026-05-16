@@ -380,6 +380,10 @@ class ClientService extends EventTarget {
    * @see {@link runSessionPrewarm}
    */
   private sessionPrewarmBaseCompleted = false
+  private profileSearchIndexWarmPromise: Promise<void> | null = null
+  private profileSearchIndexWarmed = false
+  /** Deferred follow-graph prefetch; cancelled on new session prewarm. */
+  private followingIndexPrefetchTimer: ReturnType<typeof setTimeout> | null = null
   /** Per-pubkey cooldown for {@link prefetchAuthorCoreReplaceables} from feed ingest (avoid REQ storms). */
   private authorCorePrefetchCooldownUntilMs = new Map<string, number>()
   private static readonly AUTHOR_CORE_PREFETCH_COOLDOWN_MS = 6 * 60 * 1000
@@ -489,54 +493,56 @@ class ClientService extends EventTarget {
    * the heavy follow-list relay fetch runs **after** this returns (see {@link runSessionPrewarm}) so the
    * session gate and live-activities prewarm hook are not held for minutes on large follow graphs.
    */
+  /**
+   * Build FlexSearch @-mention index from IndexedDB on first use (not at session start).
+   */
+  async ensureProfileSearchIndexFromIdb(): Promise<void> {
+    if (this.profileSearchIndexWarmed) return
+    if (!this.profileSearchIndexWarmPromise) {
+      this.profileSearchIndexWarmPromise = this.prewarmProfileSearchIndexFromIdb()
+        .catch(() => {})
+        .finally(() => {
+          this.profileSearchIndexWarmed = true
+        })
+    }
+    await this.profileSearchIndexWarmPromise
+  }
+
   async runSessionPrewarm(options: { pubkey: string | null; signal?: AbortSignal }): Promise<void> {
     const signal = options.signal ?? new AbortController().signal
-    const t0 = typeof performance !== 'undefined' ? performance.now() : 0
-    const fastTasks: Promise<unknown>[] = []
 
     if (!this.sessionPrewarmBaseCompleted) {
       this.sessionPrewarmBaseCompleted = true
-      fastTasks.push(this.prewarmProfileSearchIndexFromIdb())
-      /** NIP-66 discovery hits extra relays; defer so first feed/session work is not competing for sockets. */
-      if (typeof window !== 'undefined') {
-        window.setTimeout(() => {
-          void this.fetchNip66RelayDiscovery()
-        }, 12_000)
-      } else {
-        void this.fetchNip66RelayDiscovery()
-      }
     }
 
-    if (fastTasks.length === 0 && !options.pubkey) {
-      notifySessionInteractivePrewarmComplete()
-      return
-    }
-
-    logger.info('[client] Session prewarm batch started (interactive)', {
-      hasPubkey: !!options.pubkey,
-      fastTaskCount: fastTasks.length
-    })
-    const fastResults = await Promise.allSettled(fastTasks)
-    logger.info('[client] Session prewarm batch finished (interactive)', {
-      ms: typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : undefined,
-      fastResults: fastResults.map((r) => r.status)
-    })
+    /** Unblock sidebar/widgets immediately — no IndexedDB scan or NIP-66 at startup. */
     notifySessionInteractivePrewarmComplete()
 
     if (options.pubkey) {
       const pk = options.pubkey
-      /** Defer: follow graph pulls compete with first feed REQs; same hydrate {@link AbortSignal} still applies. */
-      void Promise.resolve().then(async () => {
-        try {
-          await this.initUserIndexFromFollowings(pk, signal)
-        } catch (err) {
+      if (this.followingIndexPrefetchTimer != null) {
+        clearTimeout(this.followingIndexPrefetchTimer)
+      }
+      /** Idle follow-graph prefetch only after the first minute (feeds win the connection pool). */
+      this.followingIndexPrefetchTimer = setTimeout(() => {
+        this.followingIndexPrefetchTimer = null
+        if (signal.aborted) return
+        void this.initUserIndexFromFollowings(pk, signal).catch((err) => {
           logger.debug('[client] Prewarm: following index background pass failed', {
             pubkeySlice: pk.slice(0, 12),
             err: err instanceof Error ? err.message : String(err)
           })
-        }
-      })
+        })
+      }, 60_000)
     }
+  }
+
+  /** NIP-66 discovery for Explore / publish hints — call when the user opens Explore, not at boot. */
+  scheduleNip66RelayDiscoveryFromExplore(): void {
+    if (typeof window === 'undefined') return
+    window.setTimeout(() => {
+      void this.fetchNip66RelayDiscovery()
+    }, 500)
   }
 
   // Update signer in query service when it changes
@@ -3642,6 +3648,7 @@ class ClientService extends EventTarget {
   /** =========== Profile =========== */
 
   async searchProfiles(relayUrls: string[], filter: Filter): Promise<TProfile[]> {
+    void this.ensureProfileSearchIndexFromIdb()
     const searchStr = typeof filter.search === 'string' ? filter.search.trim() : ''
     const normalizedAll = dedupeNormalizeRelayUrlsOrdered(
       relayUrls.map((u) => normalizeUrl(u) || u).filter(Boolean)
@@ -3708,6 +3715,7 @@ class ClientService extends EventTarget {
   }
 
   async searchNpubsFromLocal(query: string, limit: number = 100) {
+    await this.ensureProfileSearchIndexFromIdb()
     const seen = new Set<string>()
     const out: string[] = []
     const pushNpub = (npub: string) => {
@@ -4008,6 +4016,7 @@ class ClientService extends EventTarget {
    * Profile search local sources: IndexedDB kind-0 cache first, then FlexSearch/session npubs + fetchProfile.
    */
   async searchProfilesFromLocal(query: string, limit: number = 100): Promise<TProfile[]> {
+    await this.ensureProfileSearchIndexFromIdb()
     const q = query.trim()
     if (!q) return []
 

@@ -1,7 +1,8 @@
-import Explore from '@/components/Explore'
-import ExploreFavoriteRelays from '@/components/Explore/ExploreFavoriteRelays'
+import ExplorePopularRelays from '@/components/Explore/ExplorePopularRelays'
 import ExploreRelayReviews from '@/components/Explore/ExploreRelayReviews'
+import { buildExplorePopularRelayUrls } from '@/lib/explore-popular-relays'
 import FollowingFavoriteRelayList from '@/components/FollowingFavoriteRelayList'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import Tabs from '@/components/Tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +14,7 @@ import PrimaryPageLayout from '@/layouts/PrimaryPageLayout'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { useSmartRelayNavigation } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
-import nip66Service from '@/services/nip66.service'
+import client from '@/services/client.service'
 import { TPageRef } from '@/types'
 import { ArrowRight, Compass, Plus } from 'lucide-react'
 import {
@@ -30,18 +31,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 const RELAY_SUGGESTION_LIMIT = 20
-
-function dedupeNormalizedRelayUrls(urls: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const u of urls) {
-    const k = normalizeAnyRelayUrl(u) || u.trim()
-    if (!k || seen.has(k)) continue
-    seen.add(k)
-    out.push(k)
-  }
-  return out
-}
 
 /** Lower rank = better match for ordering suggestions. */
 function relaySuggestionRank(normalizedUrl: string, queryLower: string): number {
@@ -100,6 +89,11 @@ const ExplorePage = forwardRef<TPageRef>((_, ref) => {
     [bumpExploreContent]
   )
 
+  useEffect(() => {
+    if (tab !== 'explore') return
+    client.scheduleNip66RelayDiscoveryFromExplore()
+  }, [tab])
+
   // Listen for tab restoration from PageManager
   useEffect(() => {
     const handleRestore = (e: CustomEvent<{ page: string; tab: string }>) => {
@@ -139,9 +133,8 @@ const ExplorePage = forwardRef<TPageRef>((_, ref) => {
       <div className="min-w-0 pt-2">
         {tab === 'explore' && (
           <div key={contentRefreshKey} className="min-w-0">
-            <ExploreFavoriteRelays />
             <ExploreRelaySearchSection />
-            <Explore />
+            <ExplorePopularRelays />
           </div>
         )}
         {tab === 'reviews' && (
@@ -194,16 +187,20 @@ function ExplorePageTitlebar({ onRefresh }: { onRefresh: () => void }) {
 function ExploreRelaySearchSection() {
   const { t } = useTranslation()
   const { navigateToRelay } = useSmartRelayNavigation()
+  const { relayList } = useNostr()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [relayQuery, setRelayQuery] = useState('')
-  const [monitoringRelays, setMonitoringRelays] = useState<string[]>([])
   const [suggestOpen, setSuggestOpen] = useState(false)
   const blurCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    nip66Service.getPublicLivelyRelayUrls().then((urls) => {
-      setMonitoringRelays(dedupeNormalizedRelayUrls(urls ?? []))
+  const monitoringRelays = useMemo(() => {
+    return buildExplorePopularRelayUrls({
+      relayList,
+      favoriteRelays,
+      blockedRelays,
+      max: 200
     })
-  }, [])
+  }, [relayList, favoriteRelays, blockedRelays])
 
   useEffect(() => {
     return () => {
