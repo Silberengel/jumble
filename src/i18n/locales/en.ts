@@ -552,6 +552,8 @@ export default {
     "Relay sets": "Relay sets",
     "Search for Relays": "Search for Relays",
     "Popular relays": "Popular relays",
+    "Your inbox": "Your inbox",
+    "Your relays first, then those your network favors and reviews.": "Your relays first, then those your network favors and reviews.",
     "From your mailbox, favorites, and cached relay lists on this device.": "From your mailbox, favorites, and cached relay lists on this device.",
     "No relays in your lists yet.": "No relays in your lists yet.",
     "Using app default relays": "Using app default relays",

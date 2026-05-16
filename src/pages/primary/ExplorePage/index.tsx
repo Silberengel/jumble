@@ -1,14 +1,5 @@
-import ExplorePopularRelays from '@/components/Explore/ExplorePopularRelays'
-import ExploreRelayReviews from '@/components/Explore/ExploreRelayReviews'
+import ExploreRelayDirectory from '@/components/Explore/ExploreRelayDirectory'
 import { buildExplorePopularRelayUrls } from '@/lib/explore-popular-relays'
-import FollowingFavoriteRelayList from '@/components/FollowingFavoriteRelayList'
-import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
-import Tabs from '@/components/Tabs'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { toRelay } from '@/lib/link'
-import { cn } from '@/lib/utils'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
 import { RefreshButton } from '@/components/RefreshButton'
 import PrimaryPageLayout from '@/layouts/PrimaryPageLayout'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
@@ -29,6 +20,12 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { toRelay } from '@/lib/link'
+import { cn } from '@/lib/utils'
+import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
 
 const RELAY_SUGGESTION_LIMIT = 20
 
@@ -57,21 +54,11 @@ function filterMonitoringRelaySuggestions(urls: string[], rawQuery: string): str
   return matches.slice(0, RELAY_SUGGESTION_LIMIT)
 }
 
-type TExploreTabs = 'explore' | 'reviews' | 'following'
-
-function normalizeHomeTab(restored: string): TExploreTabs {
-  if (restored === 'following') return 'following'
-  if (restored === 'reviews') return 'reviews'
-  // Removed "favorites" tab — treat saved state as Explore
-  return 'explore'
-}
-
 const ExplorePage = forwardRef<TPageRef>((_, ref) => {
-  const { t } = useTranslation()
   const { pubkey, relayList } = useNostr()
-  const [tab, setTab] = useState<TExploreTabs>('explore')
   const layoutRef = useRef<TPageRef>(null)
   const [contentRefreshKey, setContentRefreshKey] = useState(0)
+  const [listFilter, setListFilter] = useState('')
 
   const bumpExploreContent = useCallback(() => {
     void (async () => {
@@ -90,19 +77,7 @@ const ExplorePage = forwardRef<TPageRef>((_, ref) => {
   )
 
   useEffect(() => {
-    if (tab !== 'explore') return
     client.scheduleNip66RelayDiscoveryFromExplore()
-  }, [tab])
-
-  // Listen for tab restoration from PageManager
-  useEffect(() => {
-    const handleRestore = (e: CustomEvent<{ page: string; tab: string }>) => {
-      if (e.detail.page === 'explore' && e.detail.tab) {
-        setTab(normalizeHomeTab(e.detail.tab))
-      }
-    }
-    window.addEventListener('restorePageTab', handleRestore as EventListener)
-    return () => window.removeEventListener('restorePageTab', handleRestore as EventListener)
   }, [])
 
   return (
@@ -110,43 +85,11 @@ const ExplorePage = forwardRef<TPageRef>((_, ref) => {
       ref={layoutRef}
       pageName="explore"
       titlebar={<ExplorePageTitlebar onRefresh={bumpExploreContent} />}
-      subHeader={
-        <Tabs
-          value={tab}
-          tabs={[
-            { value: 'explore', label: t('Explore') },
-            { value: 'reviews', label: t('Relay reviews') },
-            { value: 'following', label: t("Following's Favorites") }
-          ]}
-          onTabChange={(next) => {
-            setTab(next as TExploreTabs)
-            window.dispatchEvent(
-              new CustomEvent('pageTabChanged', {
-                detail: { page: 'explore', tab: next }
-              })
-            )
-          }}
-        />
-      }
       displayScrollToTopButton
     >
-      <div className="min-w-0 pt-2">
-        {tab === 'explore' && (
-          <div key={contentRefreshKey} className="min-w-0">
-            <ExploreRelaySearchSection />
-            <ExplorePopularRelays />
-          </div>
-        )}
-        {tab === 'reviews' && (
-          <div key={contentRefreshKey} className="min-w-0">
-            <ExploreRelayReviews />
-          </div>
-        )}
-        {tab === 'following' && (
-          <div key={contentRefreshKey} className="min-w-0">
-            <FollowingFavoriteRelayList />
-          </div>
-        )}
+      <div key={contentRefreshKey} className="min-w-0 pt-2">
+        <ExploreRelaySearchSection listFilter={listFilter} onListFilterChange={setListFilter} />
+        <ExploreRelayDirectory listFilter={listFilter} />
       </div>
     </PrimaryPageLayout>
   )
@@ -165,31 +108,36 @@ function ExplorePageTitlebar({ onRefresh }: { onRefresh: () => void }) {
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <RefreshButton onClick={onRefresh} />
-      <Button
-        variant="ghost"
-        size="titlebar-icon"
-        className="relative w-fit shrink-0 px-3"
-        onClick={() => {
-          window.open(
-            'https://github.com/CodyTseng/awesome-nostr-relays/issues/new?template=add-relay.md',
-            '_blank'
-          )
-        }}
-      >
-        <Plus size={16} />
-        {t('Submit Relay')}
-      </Button>
+        <Button
+          variant="ghost"
+          size="titlebar-icon"
+          className="relative w-fit shrink-0 px-3"
+          onClick={() => {
+            window.open(
+              'https://github.com/CodyTseng/awesome-nostr-relays/issues/new?template=add-relay.md',
+              '_blank'
+            )
+          }}
+        >
+          <Plus size={16} />
+          {t('Submit Relay')}
+        </Button>
       </div>
     </div>
   )
 }
 
-function ExploreRelaySearchSection() {
+function ExploreRelaySearchSection({
+  listFilter,
+  onListFilterChange
+}: {
+  listFilter: string
+  onListFilterChange: (value: string) => void
+}) {
   const { t } = useTranslation()
   const { navigateToRelay } = useSmartRelayNavigation()
   const { relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const [relayQuery, setRelayQuery] = useState('')
   const [suggestOpen, setSuggestOpen] = useState(false)
   const blurCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -209,8 +157,8 @@ function ExploreRelaySearchSection() {
   }, [])
 
   const relaySuggestions = useMemo(
-    () => filterMonitoringRelaySuggestions(monitoringRelays, relayQuery),
-    [monitoringRelays, relayQuery]
+    () => filterMonitoringRelaySuggestions(monitoringRelays, listFilter),
+    [monitoringRelays, listFilter]
   )
 
   const clearBlurTimer = () => {
@@ -222,12 +170,12 @@ function ExploreRelaySearchSection() {
 
   const openRelayAndReset = (normalizedUrl: string) => {
     navigateToRelay(toRelay(normalizedUrl))
-    setRelayQuery('')
+    onListFilterChange('')
     setSuggestOpen(false)
   }
 
   const tryOpenRelay = () => {
-    const trimmed = relayQuery.trim()
+    const trimmed = listFilter.trim()
     if (!trimmed) return
     const normalized = normalizeAnyRelayUrl(trimmed)
     if (!normalized || (!isHttpRelayUrl(normalized) && !isWebsocketUrl(normalized))) {
@@ -254,8 +202,8 @@ function ExploreRelaySearchSection() {
               autoComplete="off"
               placeholder={t('Relay URL…')}
               className="h-9 w-full font-mono text-sm"
-              value={relayQuery}
-              onChange={(e) => setRelayQuery(e.target.value)}
+              value={listFilter}
+              onChange={(e) => onListFilterChange(e.target.value)}
               aria-label={t('Relay URL…')}
               aria-autocomplete="list"
               aria-expanded={suggestOpen && relaySuggestions.length > 0}

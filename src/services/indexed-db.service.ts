@@ -1,4 +1,7 @@
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
+
+/** Legacy object store names removed in DB migrations (do not re-add to {@link StoreNames}). */
+const LEGACY_DELETED_OBJECT_STORES = ['relayInfoEvents', 'spellListSourceEvents'] as const
 import {
   publicationCoordinateLookupKeys,
   splitPublicationCoordinate
@@ -107,7 +110,6 @@ export const StoreNames = {
   RELAY_SETS: 'relaySets',
   FOLLOWING_FAVORITE_RELAYS: 'followingFavoriteRelays',
   RELAY_INFOS: 'relayInfos',
-  RELAY_INFO_EVENTS: 'relayInfoEvents', // deprecated
   PUBLICATION_EVENTS: 'publicationEvents',
   /** NIP-66: cached list of public lively relay URLs (from 30166 discovery). */
   PUBLIC_LIVELY_RELAYS: 'publicLivelyRelays',
@@ -172,8 +174,44 @@ const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set(
   StoreNames.CALENDAR_RSVP_EVENTS
 ])
 
+/**
+ * Replaceable list / profile / spell rows — still persisted for offline boot, but not timeline notes.
+ * {@link IndexedDbService.searchAllCachedEventsFullText} only scans {@link FULL_TEXT_NOTE_SEARCH_STORES}.
+ */
+const REPLACEABLE_METADATA_EVENT_STORES: ReadonlySet<string> = new Set([
+  StoreNames.PROFILE_EVENTS,
+  StoreNames.RELAY_LIST_EVENTS,
+  StoreNames.FOLLOW_LIST_EVENTS,
+  StoreNames.FOLLOW_SET_EVENTS,
+  StoreNames.MUTE_LIST_EVENTS,
+  StoreNames.BOOKMARK_LIST_EVENTS,
+  StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS,
+  StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS,
+  StoreNames.PIN_LIST_EVENTS,
+  StoreNames.INTEREST_LIST_EVENTS,
+  StoreNames.BLOSSOM_SERVER_LIST_EVENTS,
+  StoreNames.USER_EMOJI_LIST_EVENTS,
+  StoreNames.EMOJI_SET_EVENTS,
+  StoreNames.FAVORITE_RELAYS,
+  StoreNames.BLOCKED_RELAYS_EVENTS,
+  StoreNames.CACHE_RELAYS_EVENTS,
+  StoreNames.HTTP_RELAY_LIST_EVENTS,
+  StoreNames.RSS_FEED_LIST_EVENTS,
+  StoreNames.PAYMENT_INFO_EVENTS,
+  StoreNames.BADGE_DEFINITION_EVENTS,
+  StoreNames.SPELL_EVENTS
+])
+
+/** Stores that hold note-like bodies for local full-text search (not NIP-65 / kind-0 list rows). */
+const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
+  StoreNames.EVENT_ARCHIVE,
+  StoreNames.PUBLICATION_EVENTS
+])
+
+const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
+
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 36
+const DB_VERSION = 37
 
 /** Max age for profile and payment info cache before we refetch (5 min). */
 const PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -274,6 +312,9 @@ class IndexedDbService {
             openWithStored.onsuccess = () => {
               this.db = openWithStored.result
               this.scheduleNextCleanUp(IndexedDbService.CLEANUP_INITIAL_DELAY_MS)
+              void this.purgeLegacyArchivedCalendarEventsOnce().catch((e) =>
+                logger.warn('[IndexedDB] Legacy calendar archive purge failed', { e })
+              )
               resolve()
             }
             openWithStored.onupgradeneeded = () => {
@@ -290,16 +331,18 @@ class IndexedDbService {
       request.onsuccess = () => {
         this.db = request.result
         this.scheduleNextCleanUp(IndexedDbService.CLEANUP_INITIAL_DELAY_MS)
+        void this.purgeLegacyArchivedCalendarEventsOnce().catch((e) =>
+          logger.warn('[IndexedDB] Legacy calendar archive purge failed', { e })
+        )
         resolve()
       }
 
       request.onupgradeneeded = (event) => {
           const db = (event.target as IDBOpenDBRequest).result
-          if (
-            event.oldVersion < 26 &&
-            db.objectStoreNames.contains('spellListSourceEvents')
-          ) {
-            db.deleteObjectStore('spellListSourceEvents')
+          for (const legacyName of LEGACY_DELETED_OBJECT_STORES) {
+            if (db.objectStoreNames.contains(legacyName)) {
+              db.deleteObjectStore(legacyName)
+            }
           }
           if (!db.objectStoreNames.contains(StoreNames.PROFILE_EVENTS)) {
             db.createObjectStore(StoreNames.PROFILE_EVENTS, { keyPath: 'key' })
@@ -357,9 +400,6 @@ class IndexedDbService {
           }
           if (!db.objectStoreNames.contains(StoreNames.RELAY_INFOS)) {
             db.createObjectStore(StoreNames.RELAY_INFOS, { keyPath: 'key' })
-          }
-          if (db.objectStoreNames.contains(StoreNames.RELAY_INFO_EVENTS)) {
-            db.deleteObjectStore(StoreNames.RELAY_INFO_EVENTS)
           }
           if (!db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
             db.createObjectStore(StoreNames.PUBLICATION_EVENTS, { keyPath: 'key' })
@@ -421,6 +461,9 @@ class IndexedDbService {
               const rsvp = db.createObjectStore(StoreNames.CALENDAR_RSVP_EVENTS, { keyPath: 'key' })
               rsvp.createIndex('parentCoordinate', 'parentCoordinate', { unique: false })
             }
+          }
+          if (event.oldVersion < 37) {
+            // v37: drop legacy object stores; calendar notes purged from EVENT_ARCHIVE post-open
           }
           ensureMissingObjectStores(db)
         }
@@ -1911,8 +1954,8 @@ class IndexedDbService {
   }
 
   /**
-   * Scan object stores (excluding blobs, settings, and relay-only metadata) for rows that look like
-   * Nostr events. Case-insensitive match on id, pubkey, kind, content, and every tag cell.
+   * Full-text scan of note-like IndexedDB rows: {@link StoreNames.EVENT_ARCHIVE} and
+   * {@link StoreNames.PUBLICATION_EVENTS} only (not replaceable list / profile / spell stores).
    */
   async searchAllCachedEventsFullText(
     query: string,
@@ -1926,7 +1969,10 @@ class IndexedDbService {
     }
 
     const storeNames = Array.from(this.db.objectStoreNames).filter(
-      (name) => !CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES.has(name)
+      (name) =>
+        FULL_TEXT_NOTE_SEARCH_STORES.has(name) &&
+        !CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES.has(name) &&
+        !REPLACEABLE_METADATA_EVENT_STORES.has(name)
     )
     const results: TCachedEventSearchHit[] = []
     const seen = new Set<string>()
@@ -2282,6 +2328,56 @@ class IndexedDbService {
         ensureMissingObjectStores(db)
       }
     })
+  }
+
+  /**
+   * NIP-52 rows were once written to {@link StoreNames.EVENT_ARCHIVE}; ingest now uses dedicated calendar stores only.
+   * One-time purge so disk scans and cache search do not surface stale calendar bodies.
+   */
+  private async purgeLegacyArchivedCalendarEventsOnce(): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.EVENT_ARCHIVE)) return
+    const done = await this.getSetting(ARCHIVE_CALENDAR_PURGE_SETTING_KEY)
+    if (done === '1') return
+
+    const calendarKinds = new Set<number>([
+      ...CALENDAR_EVENT_KINDS,
+      ExtendedKind.CALENDAR_EVENT_RSVP
+    ])
+    let removed = 0
+    const maxScanned = 80_000
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.EVENT_ARCHIVE, 'readwrite')
+      const store = tx.objectStore(StoreNames.EVENT_ARCHIVE)
+      const req = store.openCursor()
+      let scanned = 0
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor || scanned >= maxScanned) {
+          tx.commit()
+          resolve()
+          return
+        }
+        scanned += 1
+        const row = cursor.value as TArchivedEventRow
+        const ev = row?.value
+        if (ev && calendarKinds.has(ev.kind)) {
+          cursor.delete()
+          removed += 1
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+
+    await this.setSetting(ARCHIVE_CALENDAR_PURGE_SETTING_KEY, '1')
+    if (removed > 0) {
+      logger.info('[IndexedDB] Purged legacy calendar rows from event archive', { removed })
+    }
   }
 
   private scheduleNextCleanUp(delayMs: number): void {

@@ -11,9 +11,6 @@ import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import nip66Service from '@/services/nip66.service'
 
-/** Broad NIP-50 / index relays not always present in {@link SEARCHABLE_RELAY_URLS}. */
-const CITATION_SEARCH_EXTRA_INDEX_RELAYS = ['wss://relay.nostr.band'] as const
-
 /** Cap NIP-66 “supports search” relays so we do not open hundreds of sockets. */
 const CITATION_SEARCH_NIP66_NIP50_CAP = 42
 
@@ -60,7 +57,6 @@ export async function buildCitationPickerSearchRelayUrls(): Promise<string[]> {
       normList(DOCUMENT_RELAY_URLS),
       normList(NIP66_DISCOVERY_RELAY_URLS),
       normList(BOOKSTR_RELAY_URLS),
-      normList([...CITATION_SEARCH_EXTRA_INDEX_RELAYS]),
       nip66Search,
       normList(FAST_READ_RELAY_URLS)
     ],
