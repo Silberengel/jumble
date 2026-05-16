@@ -1,4 +1,4 @@
-import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { PROFILE_RELAY_URLS } from '@/constants'
 import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TRelayList } from '@/types'
 
@@ -16,7 +16,7 @@ export function buildDeletionRelayUrls(relayList: TRelayList | null | undefined)
   const httpW = relayList?.httpWrite ?? []
   if (!relayList?.read?.length && !relayList?.write?.length && !httpR.length && !httpW.length) {
     return Array.from(
-      new Set(PROFILE_FETCH_RELAY_URLS.map((url) => normalizeUrl(url) || url).filter(Boolean))
+      new Set(PROFILE_RELAY_URLS.map((url) => normalizeUrl(url) || url).filter(Boolean))
     ).slice(0, 20)
   }
   const ws = relayList?.write ?? []
@@ -27,7 +27,7 @@ export function buildDeletionRelayUrls(relayList: TRelayList | null | undefined)
       ...rs.slice(0, 8).map((url: string) => normalizeUrl(url) || url),
       ...httpW.map((url: string) => normalizeHttpRelayUrl(url) || url),
       ...httpR.slice(0, 8).map((url: string) => normalizeHttpRelayUrl(url) || url),
-      ...PROFILE_FETCH_RELAY_URLS.map((url: string) => normalizeAnyRelayUrl(url) || url)
+      ...PROFILE_RELAY_URLS.map((url: string) => normalizeAnyRelayUrl(url) || url)
     ])
   ).slice(0, 20)
 }

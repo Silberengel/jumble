@@ -1,7 +1,7 @@
 import {
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
-  PROFILE_FETCH_RELAY_URLS
+  PROFILE_RELAY_URLS
 } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
 
@@ -43,7 +43,7 @@ const fastReadKeySet = (): Set<string> => {
 /** PROFILE_FETCH stack with {@link FAST_READ_RELAY_URLS} entries removed (order preserved). */
 export function profileFetchRelayUrlsWithoutFastReadLayer(): string[] {
   const drop = fastReadKeySet()
-  return PROFILE_FETCH_RELAY_URLS.filter((u) => {
+  return PROFILE_RELAY_URLS.filter((u) => {
     const n = (normalizeUrl(u) || u).toLowerCase()
     return n && !drop.has(n)
   })

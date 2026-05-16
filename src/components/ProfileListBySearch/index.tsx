@@ -1,5 +1,5 @@
 import { useSecondaryPage } from '@/PageManager'
-import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { PROFILE_RELAY_URLS } from '@/constants'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { toProfile } from '@/lib/link'
@@ -15,7 +15,7 @@ import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSea
 const LIMIT = 50
 
 const PROFILE_SEARCH_RELAY_URLS = Array.from(
-  new Set(PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
+  new Set(PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
 )
 
 export function ProfileListBySearch({ search }: { search: string }) {

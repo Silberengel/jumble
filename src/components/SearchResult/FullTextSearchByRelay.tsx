@@ -266,8 +266,10 @@ export default function FullTextSearchByRelay({
     relayRows.length > 0 && relayRows.every((r) => r.phase === 'done' || r.phase === 'error')
 
   useEffect(() => {
-    const abort = new AbortController()
+    /** Unmount / total wall only — must not abort in-flight NIP-50 when the “first hits + …ms” scheduling cutoff runs. */
+    const runAbort = new AbortController()
     let masterTimer: ReturnType<typeof setTimeout> | null = null
+    let stopSchedulingTimer: ReturnType<typeof setTimeout> | null = null
     const myRun = ++runGeneration.current
     const cleanupInvalidatePreviousRun = () => {
       runGeneration.current += 1
@@ -277,7 +279,11 @@ export default function FullTextSearchByRelay({
         clearTimeout(masterTimer)
         masterTimer = null
       }
-      abort.abort()
+      if (stopSchedulingTimer != null) {
+        clearTimeout(stopSchedulingTimer)
+        stopSchedulingTimer = null
+      }
+      runAbort.abort()
       cleanupInvalidatePreviousRun()
     }
 
@@ -307,38 +313,44 @@ export default function FullTextSearchByRelay({
 
     /** Set when the first {@link runOneRelay} begins (first real NIP-50 query); master wall clock starts then. */
     let waveT0: number | null = null
-    let waveEndAt = 0
-    /** Only after ≥1 event from a relay: apply "first results + …ms" (empty EOSE must not shorten the wave). */
-    let appliedRelativeWaveCutoff = false
+    /** After first preview-visible relay hits: stop dequeuing new relays; in-flight REQs keep their per-relay budget. */
+    let stopSchedulingNewRelays = false
+    /** Only after ≥1 preview-visible event from a relay: stop starting new relays after …ms (empty EOSE must not shorten). */
+    let appliedRelativeSchedulingCutoff = false
 
-    const scheduleMasterAbort = () => {
+    const scheduleMasterWallAbort = () => {
       if (masterTimer != null) {
         clearTimeout(masterTimer)
         masterTimer = null
       }
-      const ms = Math.max(0, waveEndAt - Date.now())
+      if (waveT0 === null) return
+      const ms = Math.max(0, waveT0 + SEARCH_TOTAL_WALL_MS - Date.now())
       masterTimer = setTimeout(() => {
         masterTimer = null
-        abort.abort()
+        stopSchedulingNewRelays = true
+        runAbort.abort()
       }, ms)
     }
 
     const beginWaveIfNeeded = () => {
       if (waveT0 !== null) return
       waveT0 = Date.now()
-      waveEndAt = waveT0 + SEARCH_TOTAL_WALL_MS
-      scheduleMasterAbort()
+      scheduleMasterWallAbort()
     }
 
-    const onFirstSearchHits = () => {
-      if (appliedRelativeWaveCutoff || waveT0 === null) return
-      appliedRelativeWaveCutoff = true
-      const now = Date.now()
-      waveEndAt = Math.min(waveT0 + SEARCH_TOTAL_WALL_MS, now + SEARCH_AFTER_FIRST_RELAY_MS)
-      scheduleMasterAbort()
+    const onFirstPreviewVisibleRelayHits = () => {
+      if (appliedRelativeSchedulingCutoff || waveT0 === null) return
+      appliedRelativeSchedulingCutoff = true
+      if (stopSchedulingTimer != null) {
+        clearTimeout(stopSchedulingTimer)
+      }
+      stopSchedulingTimer = setTimeout(() => {
+        stopSchedulingTimer = null
+        stopSchedulingNewRelays = true
+      }, SEARCH_AFTER_FIRST_RELAY_MS)
     }
 
-    abort.signal.addEventListener(
+    runAbort.signal.addEventListener(
       'abort',
       () => {
         setRelayRows((prev) =>
@@ -415,7 +427,7 @@ export default function FullTextSearchByRelay({
         includeOtherStoresFullText: true,
         fullTextStoreHitCap: 260
       })
-      if (myRun !== runGeneration.current || abort.signal.aborted) return
+      if (myRun !== runGeneration.current || runAbort.signal.aborted) return
       const mergedLocalMatching = mergedLocal.filter((e) => mergedSearchNoteHasPreviewBody(e))
       if (mergedLocalMatching.length === 0) return
       applyMergedUpdate((map) => {
@@ -432,25 +444,24 @@ export default function FullTextSearchByRelay({
     })()
 
     const runOneRelay = async (relayUrl: string) => {
-      if (myRun !== runGeneration.current || abort.signal.aborted) return
+      if (myRun !== runGeneration.current || runAbort.signal.aborted) return
       beginWaveIfNeeded()
       const t0 = performance.now()
-      const remainingWaveMs = Math.max(500, waveEndAt - Date.now())
-      const perRelayBudget = Math.min(SEARCH_PER_RELAY_QUERY_MS, remainingWaveMs)
       try {
         const { events: raw, connectionError } = await client.fetchEventsFromSingleRelay(
           relayUrl,
           filter,
-          { globalTimeout: perRelayBudget, signal: abort.signal }
+          { globalTimeout: SEARCH_PER_RELAY_QUERY_MS, signal: runAbort.signal }
         )
         if (myRun !== runGeneration.current) return
 
         const sorted = [...raw]
           .sort((a, b) => compareEventsForDTagQuery(q, a, b))
           .slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
+        const previewVisible = sorted.filter((e) => mergedSearchNoteHasPreviewBody(e))
 
         const ms = Math.round(performance.now() - t0)
-        if (sorted.length === 0 && connectionError) {
+        if (previewVisible.length === 0 && connectionError) {
           setRelayRows((prev) =>
             prev.map((r) =>
               r.relayUrl === relayUrl
@@ -462,10 +473,10 @@ export default function FullTextSearchByRelay({
         }
 
         mergeIntoHits(relayUrl, sorted)
-        void addSearchEventsToSessionCacheBatched(sorted, runGeneration, myRun)
+        void addSearchEventsToSessionCacheBatched(previewVisible, runGeneration, myRun)
 
-        if (sorted.length > 0) {
-          onFirstSearchHits()
+        if (previewVisible.length > 0) {
+          onFirstPreviewVisibleRelayHits()
         }
         setRelayRows((prev) =>
           prev.map((r) =>
@@ -473,16 +484,16 @@ export default function FullTextSearchByRelay({
               ? {
                   ...r,
                   phase: 'done',
-                  eventCount: sorted.length,
+                  eventCount: previewVisible.length,
                   ms,
-                  errorMessage: sorted.length > 0 ? undefined : connectionError
+                  errorMessage: previewVisible.length > 0 ? undefined : connectionError
                 }
               : r
           )
         )
       } catch (err) {
         if (myRun !== runGeneration.current) return
-        if (abort.signal.aborted) return
+        if (runAbort.signal.aborted) return
         const msg = err instanceof Error ? err.message : String(err)
         const ms = Math.round(performance.now() - t0)
         setRelayRows((prev) =>
@@ -494,7 +505,7 @@ export default function FullTextSearchByRelay({
     }
 
     const worker = async () => {
-      while (myRun === runGeneration.current && !abort.signal.aborted) {
+      while (myRun === runGeneration.current && !runAbort.signal.aborted && !stopSchedulingNewRelays) {
         const relayUrl = nextRelayUrl()
         if (!relayUrl) break
         await runOneRelay(relayUrl)

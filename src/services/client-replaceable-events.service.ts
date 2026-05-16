@@ -7,7 +7,7 @@ import {
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
   PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
-  PROFILE_FETCH_RELAY_URLS,
+  PROFILE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   RECOMMENDED_BLOSSOM_SERVERS
 } from '@/constants'
@@ -120,7 +120,7 @@ export class ReplaceableEventService {
 
   /**
    * Build comprehensive relay list: author's outboxes + user's inboxes + relay hints + defaults
-   * For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_FETCH_RELAY_URLS
+   * For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_RELAY_URLS
    */
   private async buildComprehensiveRelayListForAuthor(
     authorPubkey: string,
@@ -138,7 +138,7 @@ export class ReplaceableEventService {
       relayHints,
       containingEventRelays,
       includeUserOwnRelays: isProfileOrMetadata, // For profiles/metadata, include user's own relays
-      includeProfileFetchRelays: isProfileOrMetadata, // For profiles/metadata, include PROFILE_FETCH_RELAY_URLS
+      includeProfileFetchRelays: isProfileOrMetadata, // For profiles/metadata, include PROFILE_RELAY_URLS
       includeFastReadRelays: true,
       includeLocalRelays: true
     })
@@ -148,7 +148,7 @@ export class ReplaceableEventService {
    * Fetch replaceable event (profile, relay list, etc.)
    * Uses DataLoader to batch IndexedDB checks and network fetches
    * ALWAYS uses: author's outboxes + user's inboxes + relay hints + defaults
-   * For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_FETCH_RELAY_URLS
+   * For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_RELAY_URLS
    * 
    * @param pubkey - Author's pubkey
    * @param kind - Event kind
@@ -518,11 +518,11 @@ export class ReplaceableEventService {
       Array.from(missingGroups.entries()).map(async ([kind, missingItems]) => {
         const pubkeys = missingItems.map(item => item.pubkey)
         // ALWAYS use comprehensive relay list: author's outboxes + user's inboxes + defaults
-        // For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_FETCH_RELAY_URLS
+        // For profiles/metadata: includes user's own relays (read/write/local) + PROFILE_RELAY_URLS
         // For each pubkey, build comprehensive relay list
         // CRITICAL FIX: For batch fetches, use default relays instead of fetching relay lists for each author
         // Fetching relay lists for hundreds of authors causes infinite loops and browser crashes
-        // Use PROFILE_FETCH_RELAY_URLS + FAST_READ_RELAY_URLS for profiles, or FAST_READ_RELAY_URLS for other kinds.
+        // Use PROFILE_RELAY_URLS + FAST_READ_RELAY_URLS for profiles, or FAST_READ_RELAY_URLS for other kinds.
         // For metadata with a logged-in user, merge defaults with {@link buildComprehensiveRelayList}: inboxes (read),
         // local/cache relays (10432), favorite relays (10012), plus profile + fast read — same idea as favorites feed
         // / inbox-scoped discovery without per-author relay list fetches.
@@ -546,10 +546,10 @@ export class ReplaceableEventService {
                 preferPublicReadRelaysEarly: true
               })
             } catch {
-              relayUrls = Array.from(new Set([...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
+              relayUrls = Array.from(new Set([...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
             }
           } else {
-            relayUrls = Array.from(new Set([...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
+            relayUrls = Array.from(new Set([...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
           }
         } else if (kind === ExtendedKind.FAVORITE_RELAYS) {
           relayUrls = await buildExploreProfileAndUserRelayList(client.pubkey)
@@ -558,7 +558,7 @@ export class ReplaceableEventService {
           // and 100ms EOSE loses the race when several relays are down.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -567,7 +567,7 @@ export class ReplaceableEventService {
           // Contacts (kind 3): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -576,7 +576,7 @@ export class ReplaceableEventService {
           // NIP-65 (10002): aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -585,7 +585,7 @@ export class ReplaceableEventService {
           // Mute / bookmark lists: same distribution as contacts; FAST_READ + mirrors.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -594,7 +594,7 @@ export class ReplaceableEventService {
           // NIP-A3 kind 10133: aggregators + profile mirrors + fast read.
           relayUrls = Array.from(
             new Set(
-              [...READ_ONLY_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
+              [...READ_ONLY_RELAY_URLS, ...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map(
                 (u) => normalizeUrl(u) || u
               )
             )
@@ -937,7 +937,7 @@ export class ReplaceableEventService {
           new Set([
             ...relayHints,
             ...authorRelays,
-            ...PROFILE_FETCH_RELAY_URLS,
+            ...PROFILE_RELAY_URLS,
             ...FAST_READ_RELAY_URLS
           ])
         )

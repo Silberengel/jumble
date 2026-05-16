@@ -29,7 +29,7 @@ import {
   EARLY_PUBLISH_SUCCESS_GRACE_MS,
   DEFAULT_FAVORITE_RELAYS,
   NIP66_DISCOVERY_RELAY_URLS,
-  PROFILE_FETCH_RELAY_URLS,
+  PROFILE_RELAY_URLS,
   PROFILE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS,
@@ -1242,12 +1242,12 @@ class ClientService extends EventTarget {
         ].includes(event.kind)
       ) {
         bootstrapExtras.push(
-          ...(useGlobalRelayDefaults ? PROFILE_FETCH_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer())
+          ...(useGlobalRelayDefaults ? PROFILE_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer())
         )
-        logger.debug('[DetermineTargetRelays] Relay list event detected, adding PROFILE_FETCH_RELAY_URLS', {
+        logger.debug('[DetermineTargetRelays] Relay list event detected, adding PROFILE_RELAY_URLS', {
           kind: event.kind,
           profileFetchRelays: useGlobalRelayDefaults
-            ? PROFILE_FETCH_RELAY_URLS
+            ? PROFILE_RELAY_URLS
             : profileFetchRelayUrlsWithoutFastReadLayer(),
           additionalRelayCount: bootstrapExtras.length
         })
@@ -1264,7 +1264,7 @@ class ClientService extends EventTarget {
         })
       } else if (event.kind === ExtendedKind.RSS_FEED_LIST) {
         if (useGlobalRelayDefaults) {
-          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS, ...PROFILE_FETCH_RELAY_URLS)
+          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS, ...PROFILE_RELAY_URLS)
         } else {
           bootstrapExtras.push(...profileFetchRelayUrlsWithoutFastReadLayer())
         }
@@ -3733,7 +3733,7 @@ class ClientService extends EventTarget {
 
   /**
    * Npubs for @-mention dropdown: (1) follow-list profiles matching the query,
-   * (2) local index, (3) kind-0 NIP-50 search on {@link PROFILE_FETCH_RELAY_URLS} (includes search relays + profile mirrors; deduped).
+   * (2) local index, (3) kind-0 NIP-50 search on {@link PROFILE_RELAY_URLS} (includes search relays + profile mirrors; deduped).
    * Returns cached results immediately, then streams relay results via callback.
    */
   /**
@@ -3775,7 +3775,7 @@ class ClientService extends EventTarget {
     const pk = authorPubkey?.trim().toLowerCase()
     if (!pk || !/^[0-9a-f]{64}$/.test(pk)) return
 
-    const urls = (relayUrls.length > 0 ? relayUrls : [...PROFILE_FETCH_RELAY_URLS])
+    const urls = (relayUrls.length > 0 ? relayUrls : [...PROFILE_RELAY_URLS])
       .map((u) => normalizeUrl(u) || u)
       .filter(Boolean)
     const capped = Array.from(new Set(urls)).slice(0, 16)
@@ -3867,7 +3867,7 @@ class ClientService extends EventTarget {
 
     // Relay query starts immediately so it can run in parallel with local + follow work (slow relays).
     const profileSearchRelayUrls = dedupeNormalizeRelayUrlsOrdered(
-      PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
     )
     const relayTask =
       q.length >= 1
@@ -4152,8 +4152,8 @@ class ClientService extends EventTarget {
           const [fallback] = await this.mergeRelayListsFromStoredOnly([pubkey])
           return fallback!
         } catch {
-          const read = PROFILE_FETCH_RELAY_URLS
-          const write = PROFILE_FETCH_RELAY_URLS
+          const read = PROFILE_RELAY_URLS
+          const write = PROFILE_RELAY_URLS
           return {
             write,
             read,
@@ -4174,7 +4174,7 @@ class ClientService extends EventTarget {
 
   /**
    * Merge relay list from IndexedDB only (no network). Same rules as a timed-out {@link fetchRelayLists}:
-   * defaults to {@link PROFILE_FETCH_RELAY_URLS} when kind 10002 is missing.
+   * defaults to {@link PROFILE_RELAY_URLS} when kind 10002 is missing.
    */
   async peekRelayListFromStorage(pubkey: string): Promise<TRelayList> {
     const [rl] = await this.mergeRelayListsFromStoredOnly([pubkey])
@@ -4308,14 +4308,14 @@ class ClientService extends EventTarget {
         if (isOwnRelayList && storedCacheEvent) {
           const cacheRelayList = getRelayListFromEvent(storedCacheEvent)
           return mergeKind10243({
-            write: cacheRelayList.write.length > 0 ? cacheRelayList.write : PROFILE_FETCH_RELAY_URLS,
-            read: cacheRelayList.read.length > 0 ? cacheRelayList.read : PROFILE_FETCH_RELAY_URLS,
+            write: cacheRelayList.write.length > 0 ? cacheRelayList.write : PROFILE_RELAY_URLS,
+            read: cacheRelayList.read.length > 0 ? cacheRelayList.read : PROFILE_RELAY_URLS,
             originalRelays: cacheRelayList.originalRelays,
             ...emptyHttp
           })
         }
-        let read = PROFILE_FETCH_RELAY_URLS
-        let write = PROFILE_FETCH_RELAY_URLS
+        let read = PROFILE_RELAY_URLS
+        let write = PROFILE_RELAY_URLS
         if (!isOwnRelayList) {
           const stripped = stripMailboxLocalUrlsForRemoteViewers({ read, write })
           read =
@@ -4551,8 +4551,8 @@ class ClientService extends EventTarget {
       try {
         return await this.mergeRelayListsFromStoredOnly(pubkeys)
       } catch {
-        const read = PROFILE_FETCH_RELAY_URLS
-        const write = PROFILE_FETCH_RELAY_URLS
+        const read = PROFILE_RELAY_URLS
+        const write = PROFILE_RELAY_URLS
         return pubkeys.map(() => ({
           write,
           read,
@@ -4571,7 +4571,7 @@ class ClientService extends EventTarget {
 
   /**
    * Fetch cache relay events (kind 10432) from multiple sources:
-   * - PROFILE_FETCH_RELAY_URLS
+   * - PROFILE_RELAY_URLS
    * - User's inboxes (read relays from kind 10002)
    * - User's outboxes (write relays from kind 10002)
    */
@@ -4708,7 +4708,7 @@ class ClientService extends EventTarget {
       ...relayList.write.map((u) => normalizeUrl(u) || u),
       ...relayList.read.map((u) => normalizeUrl(u) || u),
       ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-      ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u)
+      ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
     ]).filter(Boolean)
     const capped = urls.slice(0, 20)
     if (capped.length === 0) return []

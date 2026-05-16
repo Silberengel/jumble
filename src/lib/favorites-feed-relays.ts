@@ -2,7 +2,7 @@ import {
   DEFAULT_FAVORITE_RELAYS,
   DOCUMENT_RELAY_URLS,
   FAST_READ_RELAY_URLS,
-  PROFILE_FETCH_RELAY_URLS,
+  PROFILE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   isDocumentRelayKind,
   relayFilterIncludesSocialKindBlockedKind
@@ -222,7 +222,7 @@ export function buildProfilePageReadRelayUrls(
   )
   /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
   if (authorHasNoNip65) {
-    const profileSource = useGlobal ? PROFILE_FETCH_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer()
+    const profileSource = useGlobal ? PROFILE_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer()
     const profileFetchLayer = profileSource.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
     return mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
   }

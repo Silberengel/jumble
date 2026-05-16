@@ -1,11 +1,11 @@
-import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { PROFILE_RELAY_URLS } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { TProfile } from '@/types'
 import { useEffect, useState } from 'react'
 
 const PROFILE_SEARCH_RELAY_URLS = Array.from(
-  new Set(PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
+  new Set(PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean))
 )
 
 export function useSearchProfiles(search: string, limit: number) {

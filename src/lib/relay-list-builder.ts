@@ -9,7 +9,7 @@
  * - Includes seen relays
  */
 
-import { FAST_READ_RELAY_URLS, PROFILE_FETCH_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
@@ -38,7 +38,7 @@ function dedupeNormalizedRelayUrls(urls: string[]): string[] {
  * PROFILE_FETCH + FAST_READ.
  */
 function exploreDiscoveryBootstrapRelayUrls(): string[] {
-  return dedupeNormalizedRelayUrls([...PROFILE_FETCH_RELAY_URLS, ...FAST_READ_RELAY_URLS])
+  return dedupeNormalizedRelayUrls([...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS])
 }
 
 export interface RelayListBuilderOptions {
@@ -54,7 +54,7 @@ export interface RelayListBuilderOptions {
   containingEventRelays?: string[]
   /** Whether to include user's own relays (read/write/local) - for profiles/metadata */
   includeUserOwnRelays?: boolean
-  /** Whether to include PROFILE_FETCH_RELAY_URLS - for profiles/metadata */
+  /** Whether to include PROFILE_RELAY_URLS - for profiles/metadata */
   includeProfileFetchRelays?: boolean
   /** Whether to include FAST_READ_RELAY_URLS as fallback */
   includeFastReadRelays?: boolean
@@ -72,7 +72,7 @@ export interface RelayListBuilderOptions {
   /** Whether to include user's favorite relays (kind 10012) */
   includeFavoriteRelays?: boolean
   /**
-   * When true with fast-read / searchable / profile-fetch includes: insert `PROFILE_FETCH_RELAY_URLS`,
+   * When true with fast-read / searchable / profile-fetch includes: insert `PROFILE_RELAY_URLS`,
    * `FAST_READ_RELAY_URLS`, and `SEARCHABLE_RELAY_URLS` immediately after hints/seen/containing and **before**
    * author + user NIP-65 lists. Used for batched metadata and embed fetches so public mirrors are not queued
    * behind broken personal relays under the global connection cap.
@@ -133,7 +133,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   // connection slots on broken personal relays before PROFILE_FETCH + FAST_READ answer).
   if (preferPublicReadRelaysEarly) {
     if (includeProfileFetchRelays) {
-      PROFILE_FETCH_RELAY_URLS.forEach(addRelay)
+      PROFILE_RELAY_URLS.forEach(addRelay)
     }
     if (includeFastReadRelays) {
       FAST_READ_RELAY_URLS.forEach(addRelay)
@@ -212,7 +212,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
 
   // 6. Profile fetch relays (for profiles/metadata)
   if (includeProfileFetchRelays) {
-    PROFILE_FETCH_RELAY_URLS.forEach(addRelay)
+    PROFILE_RELAY_URLS.forEach(addRelay)
   }
 
   // 7. Fast read relays (fallback)

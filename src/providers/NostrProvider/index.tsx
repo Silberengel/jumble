@@ -7,7 +7,6 @@ import {
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
   ExtendedKind,
-  PROFILE_FETCH_RELAY_URLS,
   PROFILE_RELAY_URLS,
   SEARCHABLE_RELAY_URLS,
   UNSIGNED_EXPERIMENTAL_KIND_MAX,
@@ -543,7 +542,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         ...mergedRelayList.write.map((url: string) => normalizeUrl(url) || url),
         ...mergedRelayList.read.map((url: string) => normalizeUrl(url) || url),
         ...FAST_READ_RELAY_URLS.map((url: string) => normalizeUrl(url) || url),
-        ...PROFILE_FETCH_RELAY_URLS.map((url: string) => normalizeUrl(url) || url)
+        ...PROFILE_RELAY_URLS.map((url: string) => normalizeUrl(url) || url)
       ]
       const fetchRelays = Array.from(new Set(normalizedRelays)).slice(0, 16)
       const events = await queryService.fetchEvents(fetchRelays, [
@@ -706,7 +705,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             ...mergedRelayList.write.map((u) => normalizeUrl(u) || u),
             ...mergedRelayList.read.map((u) => normalizeUrl(u) || u),
             ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-            ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
             ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u)
           ])
         ).filter(Boolean)
@@ -914,7 +913,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             ...rl.write.map((u) => normalizeUrl(u) || u),
             ...rl.read.map((u) => normalizeUrl(u) || u),
             ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-            ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+            ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
             ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u)
           ])
         ).filter(Boolean)

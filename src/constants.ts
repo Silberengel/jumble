@@ -73,9 +73,7 @@ export const DESKTOP_APP_DOWNLOAD_URL_DEFAULT =
 
 export const DEFAULT_FAVORITE_RELAYS = [
   'wss://theforest.nostr1.com',
-  'wss://christpill.nostr1.com',
-  'wss://nostr.land',
-  'wss://nostr21.com'
+  'wss://nostr.land'
 ]
 
 /**
@@ -284,7 +282,6 @@ export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 22_000
  * @see https://blossom.happytavern.co/ — Lotus-style ephemeral Blossom (0x0 backend).
  */
 export const STANDARD_BLOSSOM_UPLOAD_HOSTS = [
-  { url: 'https://blossom.happytavern.co', labelKey: 'BlossomUploadOptionHappyTavern' },
   { url: 'https://0x0.happytavern.co', labelKey: 'BlossomUploadOptionHappyTavern' },
   { url: 'https://blossom.band', labelKey: 'BlossomUploadOptionBand' },
   { url: 'https://blossom.primal.net', labelKey: 'BlossomUploadOptionPrimal' },
@@ -415,7 +412,8 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://search.nos.today',
   'wss://trending.nostr.wine',
   'wss://relay.nip46.com',
-  'wss://filter.nostr.wine'
+  'wss://filter.nostr.wine',
+  'wss://primus.nostr1.com'
 ]
 
 /**
@@ -455,14 +453,10 @@ export const E_TAG_FILTER_BLOCKED_RELAY_URLS = [
 // Optimized relay list for read operations (includes aggregator)
 export const FAST_READ_RELAY_URLS = [
   'wss://theforest.nostr1.com',
-  'wss://orly-relay.imwald.eu',
-  'wss://nostr.wine',
   'wss://nostr.land',
-  'wss://nostr21.com',
-  'wss://thecitadel.nostr1.com',
-  'wss://aggr.nostr.land',
-  'wss://primus.nostr1.com',
-  'wss://wheat.happytavern.co'
+  'wss://nostr.wine',
+  'wss://orly-relay.imwald.eu',
+  'wss://nostr21.com'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -477,11 +471,11 @@ export const FAST_WRITE_RELAY_URLS = [
 /** Relays used for NIP-94 file metadata (kind 1063) / GIF discovery and publish.
  *  Publish to all of these so GIFs are discoverable across clients; some may be temporarily down. */
 export const GIF_RELAY_URLS = [
-  'wss://relay.gifbuddy.lol',
   'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
   'wss://nos.lol',
+  'wss://nostr.mom'
 ]
 
 export const SEARCHABLE_RELAY_URLS = [
@@ -489,28 +483,19 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://orly-relay.imwald.eu',
   'wss://relay.noswhere.com',
-  'wss://relay.wikifreedia.xyz',
-  'wss://nostr.einundzwanzig.space',
-  'wss://nostr-pub.wellorder.net',
-  'wss://pyramid.fiatjaf.com/',
-  'wss://nostrelites.org',
-  'wss://wheat.happytavern.co'
+  'wss://nostr-pub.wellorder.net'
 ]
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://purplepag.es',
-  'wss://relay.primal.net',
-  'wss://relay.damus.io',
-  'wss://nos.lol'
+  'wss://profiles.nostrver.se/',
+  'wss://indexer.coracle.social/'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [
   'wss://hist.nostr.land'
 ]
-
-// Profile reads + NIP-50 profile search: search/index relays first, then fast read + profile mirrors (order preserved; dedupe at use sites).
-export const PROFILE_FETCH_RELAY_URLS = [...SEARCHABLE_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...PROFILE_RELAY_URLS]
 
 export const ExtendedKind = {
   PICTURE: 20,

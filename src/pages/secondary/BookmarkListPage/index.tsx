@@ -27,7 +27,7 @@ import { getLatestEvent } from '@/lib/event'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import { fetchLatestReplaceableListEvent } from '@/lib/replaceable-list-latest'
 import { normalizeUrl } from '@/lib/url'
-import { PROFILE_FETCH_RELAY_URLS } from '@/constants'
+import { PROFILE_RELAY_URLS } from '@/constants'
 import { queryService } from '@/services/client.service'
 import dayjs from 'dayjs'
 import { Code, Eraser, MoreVertical } from 'lucide-react'
@@ -64,7 +64,7 @@ const BookmarkListPage = forwardRef(
         const urls = Array.from(
           new Set(
             [
-              ...PROFILE_FETCH_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+              ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
               ...(relayList?.write ?? []).map((u) => normalizeUrl(u) || u)
             ].filter(Boolean)
           )
