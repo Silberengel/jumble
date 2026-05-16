@@ -17,12 +17,17 @@ import {
   getRootATag,
   getRootETag,
   isNip56ReportEvent,
+  isMentioningMutedUsers,
+  isNip18RepostKind,
+  isNip25ReactionKind,
   isReplaceableEvent,
   kind1QuotesThreadRoot,
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import { getZapInfoFromEvent, shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
+import { isDefaultPlusLikeReactionContent } from '@/lib/like-reaction-emojis'
+import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
@@ -64,10 +69,18 @@ import { useTranslation } from 'react-i18next'
 import { useQuoteEvents } from '@/hooks'
 import { LoadingBar } from '../LoadingBar'
 import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
+import ThreadContextRootNote from './ThreadContextRootNote'
+import ThreadLowEffortStrip from './ThreadLowEffortStrip'
 import ThreadQuoteBacklink, {
   BacklinkAvatarStrip,
   ThreadQuoteBacklinkSkeleton
 } from './ThreadQuoteBacklink'
+
+/** Collapse default `+` likes into {@link ThreadLowEffortStrip}; keep discussion ⬆️/⬇️ vote rows. */
+function isDefaultPlusLikeReactionEvent(evt: NEvent, isDiscussionRoot: boolean): boolean {
+  if (isDiscussionRoot) return false
+  return isNip25ReactionKind(evt.kind) && isDefaultPlusLikeReactionContent(evt.content)
+}
 
 type TRootInfo =
   | { type: 'E'; id: string; pubkey: string }
@@ -1026,6 +1039,22 @@ function ReplyNoteList({
     (evt: NEvent) => {
       if (isPollVoteKind(evt)) return
       if (isZapPollThreadZapReceipt(evt, event)) return
+      if (isNip18RepostKind(evt.kind)) {
+        if (
+          rootInfo &&
+          replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot) &&
+          !muteSetHas(mutePubkeySet, evt.pubkey) &&
+          !(
+            hideContentMentioningMutedUsers === true &&
+            isMentioningMutedUsers(evt, mutePubkeySet)
+          )
+        ) {
+          noteStatsService.updateNoteStatsByEvents([evt], event.pubkey, {
+            statsRootEvent: event
+          })
+        }
+        return
+      }
       if (
         shouldHideThreadResponseEvent(
           evt,
@@ -1606,6 +1635,7 @@ function ReplyNoteList({
     (item: NEvent) => {
       if (isPollVoteKind(item)) return false
       if (isZapPollThreadZapReceipt(item, event)) return false
+      if (isDefaultPlusLikeReactionEvent(item, isDiscussionRoot)) return false
       if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
         return false
       }
@@ -1633,13 +1663,27 @@ function ReplyNoteList({
       isUserTrusted,
       rootInfo?.type,
       repliesMap,
-      event
+      event,
+      isDiscussionRoot
     ]
   )
 
+  const threadStatsNoteId = useMemo(() => {
+    if (rootInfo?.type === 'E') return rootInfo.id
+    if (rootInfo?.type === 'A' && /^[0-9a-f]{64}$/i.test(rootInfo.eventId)) {
+      return rootInfo.eventId.toLowerCase()
+    }
+    return event.id
+  }, [rootInfo, event.id])
+
+  const showThreadContextRoot =
+    rootInfo?.type === 'E' &&
+    /^[0-9a-f]{64}$/i.test(rootInfo.id) &&
+    rootInfo.id.toLowerCase() !== event.id.toLowerCase()
+
   const visibleForRender = useMemo(
-    () => visibleFeed.filter(shouldShowFeedItem),
-    [visibleFeed, shouldShowFeedItem]
+    () => visibleFeed.filter((e) => shouldShowFeedItem(e) && e.id !== event.id),
+    [visibleFeed, shouldShowFeedItem, event.id]
   )
 
   const displayRows = useMemo(
@@ -1660,6 +1704,9 @@ function ReplyNoteList({
         </div>
       )}
       <div>
+        {showThreadContextRoot && rootInfo?.type === 'E' && (
+          <ThreadContextRootNote rootHex={rootInfo.id} contextEvent={event} />
+        )}
         {displayRows.map((row, ri) => {
           const prevRow = ri > 0 ? displayRows[ri - 1] : undefined
           if (row.type === 'reply') {
@@ -1799,6 +1846,7 @@ function ReplyNoteList({
           <ThreadQuoteBacklinkSkeleton />
         </div>
       )}
+      <ThreadLowEffortStrip event={event} statsNoteId={threadStatsNoteId} className="mt-1" />
       {!loading && !quoteLoading && (
         <div className="text-sm mt-2 mb-3 text-center text-muted-foreground">
           {mergedFeed.length > 0 ? t('no more replies') : t('no replies')}

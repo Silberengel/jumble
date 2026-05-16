@@ -9,6 +9,7 @@ import {
   getQuotedReferenceFromQTags,
   getRootATag,
   getRootETag,
+  isNip18RepostKind,
   isNip25ReactionKind,
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
@@ -42,6 +43,11 @@ export function ReplyProvider({ children }: { children: React.ReactNode }) {
     const newReplyEventMap = new Map<string, Event[]>()
     replies.forEach((reply) => {
       if (newReplyIdSet.has(reply.id)) return
+      // NIP-18 kind 6 / 16 — stats + OP booster strip only, not thread reply map keys.
+      if (isNip18RepostKind(reply.kind)) {
+        client.addEventToCache(reply)
+        return
+      }
       if (isNip25ReactionKind(reply.kind)) {
         newReplyIdSet.add(reply.id)
         client.addEventToCache(reply)

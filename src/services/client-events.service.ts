@@ -16,6 +16,7 @@ import {
   getReplaceableCoordinateFromEvent,
   getRootATag,
   getRootETag,
+  isNip18RepostKind,
   isNip25ReactionKind,
   isReplyNoteEvent,
   isReplaceableEvent,
@@ -969,7 +970,7 @@ export class EventService {
       const qref = getQuotedReferenceFromQTags(ev)
       add(qref?.hexId)
       add(qref?.coordinate)
-      if (ev.kind === kinds.Zap || ev.kind === kinds.Repost || ev.kind === ExtendedKind.GENERIC_REPOST) {
+      if (ev.kind === kinds.Zap || isNip18RepostKind(ev.kind)) {
         add(getFirstHexEventIdFromETags(ev.tags))
       }
       if (
@@ -998,6 +999,7 @@ export class EventService {
       let added = 0
       for (const [, ev] of this.sessionEventCache.entries()) {
         if (shouldDropEventOnIngest(ev)) continue
+        if (isNip18RepostKind(ev.kind)) continue
         const threadishKind1Quote =
           (root.type === 'E' || root.type === 'A') && kind1QuotesThreadRoot(ev, root)
         if (!isReplyNoteEvent(ev) && !threadishKind1Quote && !isNip25ReactionKind(ev.kind))

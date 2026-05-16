@@ -5,7 +5,6 @@ import { ExtendedKind } from '@/constants'
 import ContentPreview from '@/components/ContentPreview'
 import client from '@/services/client.service'
 import Note from '@/components/Note'
-import NoteBoostBadges from '@/components/NoteBoostBadges'
 import NoteInteractions from '@/components/NoteInteractions'
 import NoteStats from '@/components/NoteStats'
 import UserAvatar from '@/components/UserAvatar'
@@ -507,24 +506,29 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     >
       <div className="px-4 pt-3 w-full">
         {rootITag && <ExternalRoot value={rootITag[1]} />}
-        {rootEventId &&
-          !eventPointersReferenceSameNote(rootEventId, parentEventId) && (
-            <ParentNote
-              key={`root-note-${finalEvent.id}`}
-              isFetching={isFetchingRootEvent}
-              event={rootEventForStrip}
-              eventBech32Id={rootEventId}
-              isConsecutive={isConsecutive(rootEventForStrip, parentEventForStrip)}
-            />
-          )}
-        {parentEventId && (
+        {rootEventId && (
           <ParentNote
-            key={`parent-note-${finalEvent.id}`}
-            isFetching={isFetchingParentEvent}
-            event={parentEventForStrip}
-            eventBech32Id={parentEventId}
+            key={`thread-root-${finalEvent.id}`}
+            isFetching={isFetchingRootEvent}
+            event={rootEventForStrip}
+            eventBech32Id={rootEventId}
+            isConsecutive={
+              !parentEventId ||
+              eventPointersReferenceSameNote(parentEventId, rootEventId) ||
+              isConsecutive(rootEventForStrip, parentEventForStrip)
+            }
           />
         )}
+        {parentEventId &&
+          !eventPointersReferenceSameNote(parentEventId, rootEventId) &&
+          !eventPointersReferenceSameNote(parentEventId, finalEvent.id) && (
+            <ParentNote
+              key={`parent-note-${finalEvent.id}`}
+              isFetching={isFetchingParentEvent}
+              event={parentEventForStrip}
+              eventBech32Id={parentEventId}
+            />
+          )}
         <Note
           key={`note-${finalEvent.id}`}
           event={finalEvent}
@@ -539,7 +543,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
               : undefined
           }
         />
-        <NoteBoostBadges event={finalEvent} className="mt-2" />
         <NoteStats
           className="mt-3"
           event={finalEvent}

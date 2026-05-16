@@ -60,6 +60,7 @@ import katex from 'katex'
 import '@/styles/katex-bundle.css'
 import { isContentSpacingDebug, reprString } from '@/lib/content-spacing-debug'
 import logger from '@/lib/logger'
+import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
 
 /**
  * Inline/block image metadata: use merged rows from {@link extractAllMediaFromEvent} first
@@ -5776,7 +5777,7 @@ export default function MarkdownArticle({
   // Preprocess content to convert URLs to markdown syntax
   const preprocessedContent = useMemo(() => {
     // First unescape JSON-encoded escape sequences
-    let processed = unescapeJsonContent(event.content)
+    let processed = stripTrailingStringifiedNostrEvent(unescapeJsonContent(event.content))
     // Keep multi-newline runs intact so Marked `space` tokens can reproduce intentional vertical gaps.
     // Normalize single newlines within bold/italic spans to spaces
     processed = normalizeInlineFormattingNewlines(processed)

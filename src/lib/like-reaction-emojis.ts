@@ -1,3 +1,5 @@
+import type { TEmoji } from '@/types'
+
 /**
  * Single source for the quick-like emoji row used by the EmojiPicker / LikeButton.
  * EmojiPicker re-exports this list as EMOJI_PICKER_REACTIONS for LikeButton.
@@ -21,3 +23,14 @@ export const DEFAULT_SUGGESTED_EMOJIS = [
   '🫂',
   '🚀'
 ] as const
+
+/** Kind-7 content (or stats row emoji) for the default quick-like (`+`). */
+export function isDefaultPlusLikeReactionEmoji(emoji: TEmoji | string): boolean {
+  if (typeof emoji !== 'string') return false
+  const c = emoji.trim()
+  return c === '' || c === DEFAULT_LIKE_REACTION_CONTENT
+}
+
+export function isDefaultPlusLikeReactionContent(content: string): boolean {
+  return isDefaultPlusLikeReactionEmoji(content)
+}

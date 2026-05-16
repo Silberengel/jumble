@@ -12,7 +12,7 @@ import {
   DISCUSSION_UPVOTE_DISPLAY
 } from '@/lib/discussion-votes'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
-import { isMentioningMutedUsers, isNip25ReactionKind } from '@/lib/event'
+import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
 import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
@@ -31,7 +31,6 @@ import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import Nip05 from '../Nip05'
 import NoteOptions from '../NoteOptions'
-import NoteBoostBadges from '../NoteBoostBadges'
 import NoteStats from '../NoteStats'
 import ParentNotePreview from '../ParentNotePreview'
 import WebPreview from '../WebPreview'
@@ -196,7 +195,7 @@ export default function ReplyNote({
                 </div>
               ) : event.kind === kinds.Zap ? (
                 <Zap className="mt-1.5" event={event} omitSenderHeading variant="compact" />
-              ) : (
+              ) : isNip18RepostKind(event.kind) ? null : (
                 <MarkdownArticle
                   className="mt-2"
                   event={event}
@@ -220,11 +219,8 @@ export default function ReplyNote({
           </div>
         </div>
       </Collapsible>
-      {show && (
+      {show && !isNip18RepostKind(event.kind) && (
         <>
-          {!isNip25ReactionKind(event.kind) && (
-            <NoteBoostBadges event={event} className="ml-14 pl-1 mr-4 mt-2" />
-          )}
           <NoteStats
             className="ml-14 pl-1 mr-4 mt-2"
             event={event}

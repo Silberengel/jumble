@@ -10,7 +10,8 @@ import UserAvatar from '../UserAvatar'
 const MAX_VISIBLE = 28
 
 /**
- * Small avatar strip of users who boosted (kind 6 / 16) the note — shown under the OP on the note page.
+ * Avatar strip of users who boosted (kind 6 / 16) — feed cards only (attention on the timeline).
+ * Thread view uses {@link ThreadLowEffortStrip} at the bottom of replies instead.
  */
 export default function NoteBoostBadges({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()

@@ -36,6 +36,8 @@ export default {
     followings: "followings",
     boosted: "boosted",
     "Boosted by:": "Boosted by:",
+    "Liked by:": "Liked by:",
+    "Original post": "Original post",
     "just now": "just now",
     "n minutes ago": "{{n}} minutes ago",
     "n m": "{{n}}m",
