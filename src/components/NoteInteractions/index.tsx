@@ -13,7 +13,8 @@ export default function NoteInteractions({
   event,
   showQuotes: showQuotesProp,
   statsForeground = false,
-  refreshToken = 0
+  refreshToken = 0,
+  singleRelayAuthoritativeRead = false
 }: {
   pageIndex?: number
   event: Event
@@ -23,6 +24,8 @@ export default function NoteInteractions({
   statsForeground?: boolean
   /** Bump to force the reply list to refetch. */
   refreshToken?: number
+  /** Explore single-relay context: scope reply REQ to the browsing relay only. */
+  singleRelayAuthoritativeRead?: boolean
 }) {
   const { t } = useTranslation()
   const [replySort, setReplySort] = useState<ReplySortOption>('oldest')
@@ -61,6 +64,7 @@ export default function NoteInteractions({
         showQuotes={showQuotes}
         statsForeground={statsForeground}
         refreshToken={refreshToken}
+        singleRelayAuthoritativeRead={singleRelayAuthoritativeRead}
       />
     </>
   )

@@ -137,6 +137,7 @@ import {
   stripLocalNetworkRelaysFromRelayList,
   stripMailboxLocalUrlsForRemoteViewers,
   syntheticOriginalRelaysFromReadWrite,
+  stripLocalNetworkRelaysForWssReq,
   urlIsNonLocalForRemoteViewer
 } from '@/lib/relay-list-sanitize'
 import {
@@ -2422,20 +2423,25 @@ class ClientService extends EventTarget {
       oneose,
       onclose,
       startLogin,
-      onAllClose
+      onAllClose,
+      connectionSlotPriority
     }: {
       onevent?: (evt: NEvent) => void
       oneose?: (eosed: boolean) => void
       onclose?: (url: string, reason: string) => void
       startLogin?: () => void
       onAllClose?: (reasons: string[]) => void
+      /** Jump the global connection queue (single-relay authoritative timelines). */
+      connectionSlotPriority?: boolean
     },
     relayReqLog?: { groupId?: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
     let relays = originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
-    // While offline, silently drop every non-local relay so nothing is added to groupedRequests.
-    if (!navigator.onLine) {
+    if (navigator.onLine) {
+      relays = stripLocalNetworkRelaysForWssReq(relays)
+    } else {
+      // While offline, silently drop every non-local relay so nothing is added to groupedRequests.
       relays = relays.filter((url) => isLocalNetworkUrl(url))
     }
     const filters = sanitizeSubscribeFiltersBeforeReq(filter)
@@ -2605,9 +2611,12 @@ class ClientService extends EventTarget {
     /** Ignore a follow-up `closed by caller` while NIP-42 auth + resubscribe is in flight (parent `close()` must not finalize the batch early). */
     const nip42ResubscribePending = new Set<number>()
     const nip42HasAuthedOnce = new Set<number>()
+    const slotPriority = connectionSlotPriority === true
     const allOpened = Promise.all(
       groupedRequests.map(async ({ url, filters: relayFilters }, i) => {
-        await that.queryService.acquireGlobalRelayConnectionSlot()
+        await that.queryService.acquireGlobalRelayConnectionSlot(
+          slotPriority ? { priority: true } : undefined
+        )
         try {
           const relayKey = normalizeUrl(url) || url
           await that.queryService.acquireSubSlot(relayKey)
@@ -2657,7 +2666,9 @@ class ClientService extends EventTarget {
                 })
                   .then(async () => {
                     nip42HasAuthedOnce.add(i)
-                    await that.queryService.acquireGlobalRelayConnectionSlot()
+                    await that.queryService.acquireGlobalRelayConnectionSlot(
+                      slotPriority ? { priority: true } : undefined
+                    )
                     try {
                       await that.queryService.acquireSubSlot(relayKey)
                       // After AUTH the socket may be closed or the relay dropped from the pool;
@@ -2816,9 +2827,11 @@ class ClientService extends EventTarget {
     } = {}
   ) {
     let relays = Array.from(new Set(urls))
-    // While offline, strip non-local relays before any further processing so the
-    // capital-letter-tag fallback below cannot re-introduce internet relays.
-    if (!navigator.onLine) {
+    if (navigator.onLine) {
+      relays = stripLocalNetworkRelaysForWssReq(relays)
+    } else {
+      // While offline, strip non-local relays before any further processing so the
+      // capital-letter-tag fallback below cannot re-introduce internet relays.
       relays = relays.filter((url) => isLocalNetworkUrl(url))
     }
     if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
@@ -3124,7 +3137,9 @@ class ClientService extends EventTarget {
         applySubscribedTimelineEvent(evt)
       },
       oneose: httpOnlyShard ? undefined : handleTimelineEose,
-      onclose: onClose
+      onclose: onClose,
+      connectionSlotPriority:
+        relayAuthoritativeTimeline && wsRelays.length === 1 && navigator.onLine
     },
     httpOnlyShard ? undefined : relayReqLog)
 

@@ -80,7 +80,7 @@ export const DEFAULT_FAVORITE_RELAYS = [
  * Max concurrent relay connection + REQ setups (ensureRelay + subscribe) app-wide.
  * Limits parallel WebSocket handshakes when many relays or timeline shards open at once.
  */
-export const MAX_CONCURRENT_RELAY_CONNECTIONS = 10
+export const MAX_CONCURRENT_RELAY_CONNECTIONS = 12
 
 /**
  * Max concurrent live REQ subscriptions on a single relay. Some relays enforce ≤10 SUBs; stay under

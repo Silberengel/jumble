@@ -113,6 +113,9 @@ const Relay = forwardRef<
   )
   const shouldHideEventNotFromThisRelay = useCallback(
     (ev: Event) => {
+      if (hostPrimaryPageName === 'relay' || allowKindlessRelayExplore) {
+        return false
+      }
       if (!relaySeenMatchKey) return false
       // LAN/loopback: REQ already targets this relay; "seen on" often lists another URL first
       // (favorites merge, localhost vs 127.0.0.1, etc.) — hiding would empty the relay-only feed.
@@ -121,7 +124,7 @@ const Relay = forwardRef<
       if (seen.length === 0) return false
       return !seen.some((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase() === relaySeenMatchKey)
     },
-    [relaySeenMatchKey, normalizedUrl]
+    [relaySeenMatchKey, normalizedUrl, hostPrimaryPageName, allowKindlessRelayExplore]
   )
 
   const alexandriaFeedEmptyUrl = useMemo(() => {
@@ -158,6 +161,7 @@ const Relay = forwardRef<
         showAllKinds
         showFeedClientFilter
         hostPrimaryPageName={hostPrimaryPageName}
+        feedTimelineScopeKey={`relay:${normalizedUrl}`}
         extraShouldHideEvent={shouldHideEventNotFromThisRelay}
         extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
         relayAuthoritativeFeedOnly

@@ -1947,7 +1947,12 @@ const NoteList = forwardRef(
         setLoading(true)
         let diskPrimeCancelled = false
         const primeDiskWhileAwaitingRelayProbe = async () => {
-          if (relayAuthoritativeFeedOnlyRef.current) return
+          const strictSingleRelayAuthoritative =
+            subRequestsRef.current.length === 1 &&
+            subRequestsRef.current[0]!.urls.length === 1 &&
+            (hostPrimaryPageNameRef.current === 'relay' ||
+              (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
+          if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
           try {
             const mapped = stripNostrLandAggrFromTimelineSubRequests(
               feedSubscriptionKey,
@@ -2028,12 +2033,6 @@ const NoteList = forwardRef(
           keepExistingTimelineEvents &&
           eventsRef.current.length > 0
 
-        const sessionSnap =
-          !userPulledRefresh && !relayAuthoritativeFeedOnlyRef.current
-            ? getSessionFeedSnapshot(sessionSnapshotIdentityKey)
-            : undefined
-        const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
-
         const seeAllNoSpell = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
 
         const mappedSubRequests = stripNostrLandAggrFromTimelineSubRequests(
@@ -2048,6 +2047,18 @@ const NoteList = forwardRef(
           // Drop shards whose every relay was filtered out; avoids timeline-cache
           // key collisions where all offline relay-specific views share the same key.
           .filter((req) => req.urls.length > 0)
+
+        const strictSingleRelayAuthoritativeEarly =
+          mappedSubRequests.length === 1 &&
+          mappedSubRequests[0]!.urls.length === 1 &&
+          (hostPrimaryPageNameRef.current === 'relay' ||
+            (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
+        const sessionSnap =
+          !userPulledRefresh &&
+          (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeEarly)
+            ? getSessionFeedSnapshot(sessionSnapshotIdentityKey)
+            : undefined
+        const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
 
         const filterMissingKinds = (f: Filter) => !f.kinds || f.kinds.length === 0
         const invalidFilters = mappedSubRequests.filter(({ urls, filter: f }) => {
@@ -2131,7 +2142,12 @@ const NoteList = forwardRef(
          * {@link onEvents} so rows appear as soon as local sources resolve.
          */
         const startNonBlockingTimelineDiskPrime = () => {
-          if (relayAuthoritativeFeedOnlyRef.current) return
+          const strictSingleRelayAuthoritative =
+            mappedSubRequests.length === 1 &&
+            mappedSubRequests[0]!.urls.length === 1 &&
+            (hostPrimaryPageNameRef.current === 'relay' ||
+              (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
+          if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
           if (oneShotFetch || mappedSubRequests.length === 0) return
           if (isSpellPageLocalWarmup) return
           const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
@@ -2252,7 +2268,7 @@ const NoteList = forwardRef(
         }
 
         if (!keepExistingTimelineEvents) {
-          if (restoredFromSession && sessionSnap) {
+          if (restoredFromSession && sessionSnap && sessionSnap.length > 0) {
             feedPaintSessionPendingRef.current = true
             const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
             timelineMergeBootstrapRef.current = restored.slice()
@@ -3087,7 +3103,12 @@ const NoteList = forwardRef(
         setProgressiveLayersSearching(false)
         followingFeedDeltaCloserRef.current?.()
         followingFeedDeltaCloserRef.current = null
-        if (!relayAuthoritativeFeedOnlyRef.current) {
+        const strictSingleRelayAuthoritativeCleanup =
+          subRequestsRef.current.length === 1 &&
+          subRequestsRef.current[0]!.urls.length === 1 &&
+          (hostPrimaryPageNameRef.current === 'relay' ||
+            (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
+        if (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeCleanup) {
           setSessionFeedSnapshot(snapshotKeyForCleanup, eventsRef.current)
         }
         if (kindlessEoseTimeoutRef.current) {

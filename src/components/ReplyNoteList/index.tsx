@@ -342,7 +342,8 @@ function ReplyNoteList({
   showQuotes = true,
   duplicateWebPreviewCleanedUrlHints,
   statsForeground = false,
-  refreshToken = 0
+  refreshToken = 0,
+  singleRelayAuthoritativeRead
 }: {
   index?: number
   event: NEvent
@@ -355,6 +356,8 @@ function ReplyNoteList({
   statsForeground?: boolean
   /** Bump to force the relay reply scan to run again. */
   refreshToken?: number
+  /** Explore single-relay: only query the active browsing relay (see `useCurrentRelays`). */
+  singleRelayAuthoritativeRead?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -367,6 +370,8 @@ function ReplyNoteList({
   const { zapReplyThreshold } = useZap()
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
+  const relayAuthoritativeRead =
+    singleRelayAuthoritativeRead ?? browsingRelayUrls.length === 1
   const [rootInfo, setRootInfo] = useState<TRootInfo | undefined>(undefined)
   const { repliesMap, addReplies } = useReply()
   const isDiscussionRoot = event.kind === ExtendedKind.DISCUSSION
@@ -1064,7 +1069,8 @@ function ReplyNoteList({
             opAuthorPubkey,
             userPubkey || undefined,
             replyBlockedRelays,
-            threadRelayHints
+            threadRelayHints,
+            relayAuthoritativeRead ? { relayAuthoritative: true } : undefined
           )
 
           // URL/article threads (NIP-22 `#i`): synthetic root has no e-tags or seen-relay hints — merge the same

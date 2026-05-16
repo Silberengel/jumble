@@ -264,7 +264,7 @@ export class QueryService {
 
   /** App-wide cap on parallel ensureRelay + initial subscribe setup (any relay). */
   private globalRelayConnectionSlotsInUse = 0
-  private globalRelayConnectionWaitQueue: Array<() => void> = []
+  private globalRelayConnectionWaitQueue: Array<{ resolve: () => void; priority: boolean }> = []
 
   /**
    * Aborted whenever {@link interruptBackgroundQueries} runs. Default {@link query} runs listen until close so
@@ -281,23 +281,38 @@ export class QueryService {
     this.backgroundInterruptController = new AbortController()
   }
 
-  async acquireGlobalRelayConnectionSlot(): Promise<void> {
+  async acquireGlobalRelayConnectionSlot(opts?: { priority?: boolean }): Promise<void> {
+    const priority = opts?.priority === true
     if (this.globalRelayConnectionSlotsInUse < MAX_CONCURRENT_RELAY_CONNECTIONS) {
       this.globalRelayConnectionSlotsInUse++
       return
     }
     await new Promise<void>((resolve) => {
-      this.globalRelayConnectionWaitQueue.push(() => {
-        this.globalRelayConnectionSlotsInUse++
-        resolve()
-      })
+      const entry = { resolve, priority }
+      if (priority) {
+        this.globalRelayConnectionWaitQueue.unshift(entry)
+      } else {
+        this.globalRelayConnectionWaitQueue.push(entry)
+      }
     })
   }
 
   releaseGlobalRelayConnectionSlot(): void {
     this.globalRelayConnectionSlotsInUse = Math.max(0, this.globalRelayConnectionSlotsInUse - 1)
-    const next = this.globalRelayConnectionWaitQueue.shift()
-    if (next) next()
+    const pickNext = (): (() => void) | undefined => {
+      const priIdx = this.globalRelayConnectionWaitQueue.findIndex((e) => e.priority)
+      if (priIdx >= 0) {
+        const [entry] = this.globalRelayConnectionWaitQueue.splice(priIdx, 1)
+        return entry!.resolve
+      }
+      const entry = this.globalRelayConnectionWaitQueue.shift()
+      return entry?.resolve
+    }
+    const next = pickNext()
+    if (next) {
+      this.globalRelayConnectionSlotsInUse++
+      next()
+    }
   }
 
   constructor(pool: SimplePool, relaySession?: QueryServiceRelaySessionOptions) {

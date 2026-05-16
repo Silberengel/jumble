@@ -572,12 +572,36 @@ export async function buildPollResultsReadRelayUrls(options: {
  * Build relay list for reading replies/comments: thread hints, author/user NIP-65, favorites, cache —
  * then default favorite relays only when global bootstrap applies (signed-out or no configured stack).
  */
+export type BuildReplyReadRelayListOptions = {
+  /** When true (e.g. Explore single-relay page), query only thread hints + author/user NIP-65 — no favorite/fast-read bootstrap layer. */
+  relayAuthoritative?: boolean
+}
+
 export async function buildReplyReadRelayList(
   opAuthorPubkey: string | undefined,
   userPubkey: string | undefined,
   blockedRelays: string[] = [],
-  threadRelayHints: string[] = []
+  threadRelayHints: string[] = [],
+  options?: BuildReplyReadRelayListOptions
 ): Promise<string[]> {
+  if (options?.relayAuthoritative) {
+    const scoped = await buildComprehensiveRelayList({
+      authorPubkey: opAuthorPubkey,
+      userPubkey,
+      relayHints: threadRelayHints,
+      includeUserOwnRelays: Boolean(userPubkey),
+      includeFastReadRelays: false,
+      useGlobalRelayDefaults: false,
+      includeSearchableRelays: false,
+      includeLocalRelays: true,
+      includeFavoriteRelays: false,
+      preferPublicReadRelaysEarly: false,
+      includeProfileFetchRelays: false,
+      blockedRelays
+    })
+    return scoped
+  }
+
   let useGlobal = true
   if (userPubkey) {
     try {
