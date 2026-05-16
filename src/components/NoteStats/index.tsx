@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
+import { useNearViewport } from '@/hooks/useNearViewport'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
@@ -24,6 +25,7 @@ export default function NoteStats({
   classNames,
   fetchIfNotExisting = false,
   foregroundStats = false,
+  deferFetchUntilNearViewport,
   useIconOnlyLikeTrigger = false
 }: {
   event: Event
@@ -34,6 +36,11 @@ export default function NoteStats({
   fetchIfNotExisting?: boolean
   /** Jump ahead of spell-feed backlog so counts resolve on the open note / article. */
   foregroundStats?: boolean
+  /**
+   * When true, {@link fetchNoteStats} waits until the stats row is near the viewport.
+   * Defaults to on for feed cards (`fetchIfNotExisting` && !`foregroundStats`).
+   */
+  deferFetchUntilNearViewport?: boolean
   /**
    * Thread rows for kind-7 reactions: like control shows icon + total only (body already shows the reaction glyph).
    */
@@ -63,8 +70,14 @@ export default function NoteStats({
   statsRelaysRef.current = statsRelays
   const isZapPoll = event.kind === ExtendedKind.ZAP_POLL
 
+  const shouldDeferStatsFetch =
+    deferFetchUntilNearViewport ?? (fetchIfNotExisting && !foregroundStats)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isNearViewport = useNearViewport(containerRef, { enabled: shouldDeferStatsFetch })
+
   useEffect(() => {
     if (!fetchIfNotExisting) return
+    if (shouldDeferStatsFetch && !isNearViewport) return
     setLoading(true)
     noteStatsService
       .fetchNoteStats(event, pubkey, statsRelaysRef.current, { foreground: foregroundStats })
@@ -79,6 +92,8 @@ export default function NoteStats({
     event.sig,
     fetchIfNotExisting,
     foregroundStats,
+    shouldDeferStatsFetch,
+    isNearViewport,
     pubkey,
     statsRelayFetchTier,
     currentRelaysKey
@@ -86,7 +101,12 @@ export default function NoteStats({
 
   if (isSmallScreen) {
     return (
-      <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={containerRef}
+        className={cn('select-none', className)}
+        data-note-stats
+        onClick={(e) => e.stopPropagation()}
+      >
         <div
           className={cn(
             'flex justify-between items-center h-5 [&_svg]:size-5',
@@ -117,7 +137,12 @@ export default function NoteStats({
   }
 
   return (
-    <div className={cn('select-none', className)} data-note-stats onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={containerRef}
+      className={cn('select-none', className)}
+      data-note-stats
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="flex justify-between h-5 [&_svg]:size-4">
         <div
           className={cn('flex items-center', loading ? 'animate-pulse' : '')}

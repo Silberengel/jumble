@@ -4336,6 +4336,7 @@ const NoteList = forwardRef(
               event={event}
               filterMutedNotes={filterMutedNotes}
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
+              deferAuthorAvatar
             />
           ))
         )}

@@ -1,3 +1,4 @@
+export * from './useNearViewport'
 export * from './useFetchCalendarRsvps'
 export * from './useFetchEvent'
 export * from './useFetchFollowings'

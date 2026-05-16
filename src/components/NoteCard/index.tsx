@@ -17,7 +17,7 @@ const NoteCard = memo(function NoteCard({
   zapPollVoteHighlightOption,
   bottomNoteLabel,
   fetchNoteStatsIfMissing = true,
-  deferAuthorAvatar = false,
+  deferAuthorAvatar = true,
   searchListPreview = false
 }: {
   event: Event
@@ -54,6 +54,7 @@ const NoteCard = memo(function NoteCard({
         filterMutedNotes={filterMutedNotes}
         pinned={pinned}
         bottomNoteLabel={bottomNoteLabel}
+        deferAuthorAvatar={deferAuthorAvatar}
       />
     )
   }
