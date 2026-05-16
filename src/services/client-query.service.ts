@@ -351,6 +351,13 @@ export class QueryService {
     }
   }
 
+  /** True when this relay still has at least one open REQ subscription (live timeline, etc.). */
+  relayHasActiveSubscriptions(relayKeyOrUrl: string): boolean {
+    const key = canonicalRelaySessionKey(normalizeUrl(relayKeyOrUrl) || relayKeyOrUrl.trim())
+    if (!key) return false
+    return (this.activeSubCountByRelay.get(key) ?? 0) > 0
+  }
+
   private canonicalSeenOnEventId(eventId: string): string {
     const t = eventId.trim()
     return /^[0-9a-f]{64}$/i.test(t) ? t.toLowerCase() : t

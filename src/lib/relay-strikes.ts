@@ -1,7 +1,14 @@
+import {
+  RELAY_SLOW_PARK_ABSOLUTE_MS,
+  RELAY_SLOW_PARK_COOLDOWN_MS,
+  RELAY_SLOW_PARK_MEDIAN_MULTIPLIER,
+  RELAY_SLOW_PARK_SIGNALS_THRESHOLD
+} from '@/constants'
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { canonicalRelaySessionKey, isHttpRelayUrl } from '@/lib/url'
+import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 /** Conservative: 5 read/publish failures → skip until this many ms after last qualifying failure. */
 const STRIKE_FAILURES_THRESHOLD = 5
@@ -31,6 +38,8 @@ type StrikeEntry = {
   readFailures: number
   readLastStrikeIncrementAt: number
   readStrikeSkipUntil: number
+  slowSignals: number
+  slowParkUntil: number
   publishFailures: number
   publishLastStrikeIncrementAt: number
   publishStrikeSkipUntil: number
@@ -47,6 +56,8 @@ function emptyEntry(): StrikeEntry {
     readFailures: 0,
     readLastStrikeIncrementAt: 0,
     readStrikeSkipUntil: 0,
+    slowSignals: 0,
+    slowParkUntil: 0,
     publishFailures: 0,
     publishLastStrikeIncrementAt: 0,
     publishStrikeSkipUntil: 0,
@@ -103,7 +114,7 @@ class RelaySessionStrikes {
     if (!key) return false
     const e = this.byKey.get(key)
     if (!e) return false
-    return Date.now() < Math.max(e.rateLimitUntil, e.readStrikeSkipUntil)
+    return Date.now() < Math.max(e.rateLimitUntil, e.readStrikeSkipUntil, e.slowParkUntil)
   }
 
   /** True when publish should omit this relay (unless single-target override). */
@@ -172,6 +183,70 @@ class RelaySessionStrikes {
     e.readFailures = 0
     e.readStrikeSkipUntil = 0
     e.readLastStrikeIncrementAt = 0
+    e.slowSignals = 0
+    e.slowParkUntil = 0
+  }
+
+  /**
+   * After a subscribe/query wave: session-park relays that were much slower than peers (or timed out).
+   * Returns URLs whose pooled sockets should be closed when idle.
+   */
+  observeSubscribeBatch(rows: readonly RelayOpTerminalRow[]): string[] {
+    if (rows.length === 0) return []
+    const now = Date.now()
+    const socketsToClose: string[] = []
+
+    const eoseRows = rows.filter((r) => r.outcome === 'eose')
+    const sortedLatencies =
+      eoseRows.length > 0 ? [...eoseRows.map((r) => r.msFromBatchStart)].sort((a, b) => a - b) : []
+    const medianMs =
+      sortedLatencies.length > 0
+        ? sortedLatencies[Math.floor((sortedLatencies.length - 1) / 2)]!
+        : RELAY_SLOW_PARK_ABSOLUTE_MS
+
+    const slowThresholdMs =
+      rows.length > 1
+        ? Math.max(RELAY_SLOW_PARK_ABSOLUTE_MS, Math.round(medianMs * RELAY_SLOW_PARK_MEDIAN_MULTIPLIER))
+        : RELAY_SLOW_PARK_ABSOLUTE_MS
+
+    for (const row of rows) {
+      const key = sessionKey(row.relayUrl)
+      if (!key) continue
+
+      const timedOut = row.outcome === 'timeout'
+      const slowEose = row.outcome === 'eose' && row.msFromBatchStart >= slowThresholdMs
+      const fastEose = row.outcome === 'eose' && row.msFromBatchStart < slowThresholdMs * 0.6
+
+      if (timedOut || slowEose) {
+        const parked = this.recordSlowSignalKey(key, now)
+        if (parked) socketsToClose.push(row.relayUrl)
+        if (timedOut) this.recordReadFailureKey(key, 'connection')
+        continue
+      }
+
+      if (fastEose) {
+        const e = this.byKey.get(key)
+        if (e && e.slowSignals > 0) {
+          e.slowSignals = Math.max(0, e.slowSignals - 1)
+        }
+      }
+    }
+
+    return socketsToClose
+  }
+
+  private recordSlowSignalKey(key: string, now: number): boolean {
+    const e = this.getEntry(key)
+    if (this.cacheRelayKeys.has(key)) return false
+    e.slowSignals += 1
+    if (e.slowSignals < RELAY_SLOW_PARK_SIGNALS_THRESHOLD) return false
+    e.slowParkUntil = Math.max(e.slowParkUntil, now + RELAY_SLOW_PARK_COOLDOWN_MS)
+    logger.warn('[RelayStrikes] session-parked slow relay', {
+      key,
+      slowSignals: e.slowSignals,
+      cooldownMs: RELAY_SLOW_PARK_COOLDOWN_MS
+    })
+    return true
   }
 
   recordPublishFailure(url: string): void {

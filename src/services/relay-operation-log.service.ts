@@ -1,3 +1,5 @@
+import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import logger from '@/lib/logger'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { Filter } from 'nostr-tools'
@@ -305,6 +307,11 @@ export class RelaySubscribeOpBatch {
       } else {
         logger.info(`[RelayOp] batch_end — ${headline}\n${readableSummary}`, compact)
       }
+    }
+
+    const parkedCloseUrls = relaySessionStrikes.observeSubscribeBatch(rows)
+    if (parkedCloseUrls.length > 0) {
+      closeRelayPoolSocketsIfIdle(parkedCloseUrls)
     }
 
     this.onBatchEnd?.(rows)

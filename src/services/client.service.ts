@@ -150,6 +150,7 @@ import {
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import { initRelayPoolIdle, touchRelayPoolActivity } from '@/lib/relay-pool-idle'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
@@ -421,6 +422,7 @@ class ClientService extends EventTarget {
       })
       patchPoolRelayAuthRaceAndFeedback(relay)
       applyRelayNip42AckTimeout(relay)
+      touchRelayPoolActivity(url)
       return relay
     }
 
@@ -456,6 +458,10 @@ class ClientService extends EventTarget {
       }
     })
     this.bookstrService = createBookstrService(this.queryService)
+
+    initRelayPoolIdle(this.pool, (relayKeyOrUrl) =>
+      this.queryService.relayHasActiveSubscriptions(relayKeyOrUrl)
+    )
   }
 
   public static getInstance(): ClientService {
