@@ -411,7 +411,6 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://relaypag.es',
   'wss://relay.noswhere.com',
   'wss://search.nos.today',
-  'wss://trending.nostr.wine',
   'wss://relay.nip46.com',
   'wss://filter.nostr.wine',
   'wss://primus.nostr1.com'

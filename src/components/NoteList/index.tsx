@@ -23,7 +23,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
@@ -1520,22 +1520,12 @@ const NoteList = forwardRef(
 
       void (async () => {
         if (gen !== feedProfileBatchGenRef.current) return
-        const contextualReadRelays = Array.from(
-          new Set(
-            subRequestsRef.current
-              .flatMap((r) => r.urls)
-              .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
-              .filter(Boolean)
-          )
-        )
         const chunks: string[][] = []
         for (let i = 0; i < need.length; i += FEED_PROFILE_CHUNK) {
           chunks.push(need.slice(i, i + FEED_PROFILE_CHUNK))
         }
         const settled = await Promise.allSettled(
-          chunks.map((chunk) =>
-            client.fetchProfilesForPubkeys(chunk, { contextualReadRelays })
-          )
+          chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
         )
         if (gen !== feedProfileBatchGenRef.current) return
 

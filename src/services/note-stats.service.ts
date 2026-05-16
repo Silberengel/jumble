@@ -1,9 +1,4 @@
-import {
-  ExtendedKind,
-  FAST_READ_RELAY_URLS,
-  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
-  SEARCHABLE_RELAY_URLS
-} from '@/constants'
+import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT } from '@/constants'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import {
   getNip18RepostTargetId,
@@ -27,16 +22,15 @@ import {
 } from '@/lib/rss-article'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
-import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { buildComprehensiveRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import {
   getEmojiInfosFromEmojiTags,
   getNip25ReactionTargetHexFromTags,
   tagNameEquals
 } from '@/lib/tag'
-import { normalizeAnyRelayUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
-import { TEmoji, type TRelayList } from '@/types'
+import { TEmoji } from '@/types'
 import dayjs from 'dayjs'
 import { Event, Filter, kinds } from 'nostr-tools'
 
@@ -585,77 +579,45 @@ class NoteStatsService {
     }
   }
 
-  /**
-   * Build relay list for note stats: SEARCHABLE + FAST_READ + optional user favorites + seen relays +
-   * `e`-tag hints on the note + hints from session-cached referrers + author NIP-65 read (slice 10).
-   */
+  /** {@link buildComprehensiveRelayList} for reactions/reposts/zaps on a note (thread hints, capped author NIP-65). */
   private async buildNoteStatsRelayList(event: Event, favoriteRelays?: string[] | null): Promise<string[]> {
-    const seen = new Set<string>()
+    const me = client.pubkey?.trim()
+    const relayHints = [
+      ...relayHintsFromEventTags(event),
+      ...client.getSeenEventRelayUrls(event.id),
+      ...client.eventService.getSessionRelayHintsForHexTarget(event.id),
+      ...(favoriteRelays ?? [])
+    ]
 
-    const add = (url: string | undefined) => {
-      if (!url) return
-      // Must use normalizeAnyRelayUrl, not normalizeUrl: the latter converts http(s)://
-      // index relay URLs into ws(s):// which then hit the WebSocket pool.
-      const n = normalizeAnyRelayUrl(url)
-      if (n) seen.add(n)
-    }
-
-    // 1. Search / discovery relay set (includes read-only index mirrors; see READ_ONLY_RELAY_URLS in constants)
-    SEARCHABLE_RELAY_URLS.forEach(add)
-
-    // 2. Default fast read set (includes e.g. theforest — not in SEARCHABLE)
-    FAST_READ_RELAY_URLS.forEach(add)
-
-    // 3. User's favorite relays (spell feed / sidebar) — was previously ignored
-    favoriteRelays?.forEach(add)
-
-    // 4. Relay(s) where the event was seen
-    client.getSeenEventRelayUrls(event.id).forEach(add)
-
-    // 5. NIP-10 `e`-tag relay hints on the note itself (often where replies/reactions to it were published)
-    for (const t of event.tags) {
-      if ((t[0] === 'e' || t[0] === 'E') && t[2]?.trim()) {
-        add(t[2])
+    let useGlobal = true
+    if (me) {
+      try {
+        const [fav, rl] = await Promise.all([
+          client.fetchFavoriteRelays(me).catch(() => [] as string[]),
+          client.peekRelayListFromStorage(me)
+        ])
+        useGlobal = viewerUsesGlobalRelayDefaults({
+          viewerPubkey: me,
+          favoriteRelayUrls: fav,
+          relayList: rl ?? undefined
+        })
+      } catch {
+        useGlobal = true
       }
     }
 
-    // 6. Session cache (e.g. notifications): events that reference this id with a relay hint
-    client.eventService.getSessionRelayHintsForHexTarget(event.id).forEach(add)
-
-    const emptyViewerRl: TRelayList = {
-      write: [],
-      read: [],
-      originalRelays: [],
-      httpRead: [],
-      httpWrite: [],
-      httpOriginalRelays: []
-    }
-    const me = client.pubkey?.trim()
-    const [authorRelayList, viewerRelayList] = await Promise.all([
-      Promise.race([
-        client.fetchRelayList(event.pubkey),
-        new Promise<{ read?: string[] }>((r) => setTimeout(() => r({}), 1500))
-      ]).catch(() => undefined),
-      me
-        ? Promise.race([
-            client.fetchRelayList(me),
-            new Promise<TRelayList>((r) => setTimeout(() => r(emptyViewerRl), 1500))
-          ]).catch(() => undefined)
-        : Promise.resolve(undefined)
-    ])
-    // 7. Author's inboxes (read relays from kind 10002)
-    if (authorRelayList) {
-      userReadRelaysWithHttp(authorRelayList).slice(0, 10).forEach(add)
-    }
-    // 8. Logged-in viewer's inboxes (NIP-65 read + kind 10243 http read) — same events often land on personal relays.
-    if (viewerRelayList) {
-      userReadRelaysWithHttp(viewerRelayList).slice(0, 12).forEach(add)
-    }
-
-    return feedRelayPolicyUrls([{ source: 'fallback', urls: Array.from(seen) }], {
-      operation: 'read',
-      applySocialKindBlockedFilter: false,
-      allowThirdPartyLocalRelays: true
+    return buildComprehensiveRelayList({
+      authorPubkey: event.pubkey,
+      userPubkey: me,
+      relayHints,
+      includeUserOwnRelays: Boolean(me),
+      includeFavoriteRelays: Boolean(me),
+      includeFastReadRelays: useGlobal,
+      useGlobalRelayDefaults: useGlobal,
+      includeProfileFetchRelays: false,
+      includeSearchableRelays: false,
+      includeLocalRelays: true,
+      includeViewerHttpIndexRelays: true
     })
   }
 
@@ -1036,14 +998,7 @@ class NoteStatsService {
     if (!/^[0-9a-f]{64}$/i.test(rootHex)) return
 
     const hintRelays = client.eventService.getSessionRelayHintsForHexTarget(rootHex)
-    const urls = feedRelayPolicyUrls(
-      [{ source: 'fallback', urls: [...new Set([...hintRelays, ...relayUrls])] }],
-      {
-        operation: 'read',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
-      }
-    )
+    const urls = [...new Set([...relayUrls, ...hintRelays])]
     if (!urls.length) return
 
     const filters: Filter[] = [

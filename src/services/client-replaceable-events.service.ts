@@ -23,7 +23,11 @@ import indexedDb from './indexed-db.service'
 import type { QueryService } from './client-query.service'
 import logger from '@/lib/logger'
 import client from './client.service'
-import { buildComprehensiveRelayList, buildExploreProfileAndUserRelayList } from '@/lib/relay-list-builder'
+import {
+  buildComprehensiveRelayList,
+  buildExploreProfileAndUserRelayList,
+  buildProfileAndUserRelayList
+} from '@/lib/relay-list-builder'
 import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
@@ -128,16 +132,28 @@ export class ReplaceableEventService {
     containingEventRelays: string[] = []
   ): Promise<string[]> {
     const userPubkey = client.pubkey
-    const isProfileOrMetadata = kind === kinds.Metadata || kind === kinds.RelayList
-    
-    // Use the comprehensive relay list builder
+    if (kind === kinds.Metadata) {
+      const profileStack = await buildProfileAndUserRelayList(userPubkey)
+      const hintLayer = [...relayHints, ...containingEventRelays]
+      if (hintLayer.length === 0) return profileStack
+      return Array.from(
+        new Set([
+          ...profileStack,
+          ...hintLayer
+            .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
+            .filter((u): u is string => !!u && !isHttpRelayUrl(u))
+        ])
+      )
+    }
+
+    const isProfileOrMetadata = kind === kinds.RelayList
     return buildComprehensiveRelayList({
       authorPubkey,
       userPubkey,
       relayHints,
       containingEventRelays,
-      includeUserOwnRelays: isProfileOrMetadata, // For profiles/metadata, include user's own relays
-      includeProfileFetchRelays: isProfileOrMetadata, // For profiles/metadata, include PROFILE_RELAY_URLS
+      includeUserOwnRelays: isProfileOrMetadata,
+      includeProfileFetchRelays: isProfileOrMetadata,
       includeFastReadRelays: true,
       includeLocalRelays: true
     })
@@ -529,26 +545,10 @@ export class ReplaceableEventService {
         // (profile + FAST_READ + viewer read/write/local when logged in).
         let relayUrls: string[]
         if (kind === kinds.Metadata) {
-          const userPk = client.pubkey
-          if (userPk) {
-            try {
-              relayUrls = await buildComprehensiveRelayList({
-                userPubkey: userPk,
-                includeUserOwnRelays: false,
-                includeProfileFetchRelays: true,
-                includeFastReadRelays: true,
-                includeFavoriteRelays: true,
-                includeLocalRelays: true,
-                /** Many users publish kind 0 to NIP-65 write relays; batch path includes public read mirrors via {@link buildComprehensiveRelayList}. */
-                includeFastWriteRelays: false,
-                includeSearchableRelays: false,
-                preferPublicReadRelaysEarly: true
-              })
-            } catch {
-              relayUrls = Array.from(new Set([...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
-            }
-          } else {
-            relayUrls = Array.from(new Set([...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS]))
+          try {
+            relayUrls = await buildProfileAndUserRelayList(client.pubkey)
+          } catch {
+            relayUrls = [...PROFILE_RELAY_URLS]
           }
         } else if (kind === ExtendedKind.FAVORITE_RELAYS) {
           relayUrls = await buildExploreProfileAndUserRelayList(client.pubkey)
@@ -1047,20 +1047,13 @@ export class ReplaceableEventService {
     return getProfileFromEvent(event)
   }
 
-  /**
-   * Fetch profiles for multiple pubkeys
-   * @param contextualReadRelays Optional relays used for the surrounding feed/thread REQ — queried for kind-0
-   * when default profile mirrors miss (e.g. metadata only on a community relay).
-   */
-  async fetchProfilesForPubkeys(
-    pubkeys: string[],
-    options?: { contextualReadRelays?: string[] }
-  ): Promise<TProfile[]> {
+  /** Fetch profiles for multiple pubkeys (profile mirrors + viewer's own relays only). */
+  async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
     const deduped = Array.from(new Set(pubkeys.filter((p) => p && p.length === 64)))
     if (deduped.length === 0) return []
     try {
       return await racePromiseWithTimeout(
-        this.fetchProfilesForPubkeysBody(deduped, options),
+        this.fetchProfilesForPubkeysBody(deduped),
         FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
         'fetchProfilesForPubkeys'
       )
@@ -1121,10 +1114,7 @@ export class ReplaceableEventService {
     return profiles
   }
 
-  private async fetchProfilesForPubkeysBody(
-    deduped: string[],
-    options?: { contextualReadRelays?: string[] }
-  ): Promise<TProfile[]> {
+  private async fetchProfilesForPubkeysBody(deduped: string[]): Promise<TProfile[]> {
     let events = await this.fetchReplaceableEventsFromProfileFetchRelays(deduped, kinds.Metadata)
     const gapIdx: number[] = []
     for (let i = 0; i < deduped.length; i++) {
@@ -1175,53 +1165,6 @@ export class ReplaceableEventService {
           if (ev) events[idx] = ev
         })
       )
-    }
-
-    const stillMissingIdx: number[] = []
-    for (let i = 0; i < deduped.length; i++) {
-      if (!events[i]) stillMissingIdx.push(i)
-    }
-    if (stillMissingIdx.length > 0 && options?.contextualReadRelays?.length) {
-      const urls = Array.from(
-        new Set(
-          options.contextualReadRelays
-            .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
-            .filter((u): u is string => !!u && !isHttpRelayUrl(u))
-        )
-      )
-      if (urls.length > 0) {
-        const authors = stillMissingIdx.map((i) => deduped[i]!)
-        try {
-          const sanitizedUrls = stripLocalNetworkRelaysForWssReq(urls)
-          const withAggr = prependAggrNostrLandIfViewerEligible(sanitizedUrls)
-          if (withAggr.length > 0) {
-            const evs = await this.queryService.query(
-              withAggr,
-              {
-                kinds: [kinds.Metadata],
-                authors,
-                limit: Math.min(Math.max(authors.length * 2, authors.length), 500)
-              } as Filter,
-              undefined,
-              {
-                firstRelayResultGraceMs: false,
-                globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
-                eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
-                replaceableRace: false
-              }
-            )
-            for (const ev of evs) {
-              if (ev.kind !== kinds.Metadata || shouldDropEventOnIngest(ev)) continue
-              const ix = deduped.findIndex((p) => p.toLowerCase() === ev.pubkey.toLowerCase())
-              if (ix >= 0 && !events[ix]) {
-                events[ix] = ev
-              }
-            }
-          }
-        } catch {
-          /* best-effort */
-        }
-      }
     }
 
     return this.profilesFromMetadataEvents(deduped, events)

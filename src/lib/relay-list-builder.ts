@@ -20,6 +20,46 @@ import client from '@/services/client.service'
 import logger from '@/lib/logger'
 import type { Event } from 'nostr-tools'
 
+/** Max author NIP-65 read / write URLs merged into comprehensive read lists (shared with viewer first). */
+export const AUTHOR_NIP65_RELAY_CAP = 2
+
+function relayKey(url: string): string {
+  return (normalizeUrl(url) || normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+}
+
+/**
+ * Up to `max` author relays, preferring URLs that also appear on the viewer's NIP-65 read/write lists.
+ */
+export function pickAuthorNip65RelaysPreferringViewerOverlap(
+  authorUrls: readonly string[],
+  viewerUrls: readonly string[],
+  max: number
+): string[] {
+  if (max <= 0) return []
+  const viewerKeys = new Set(viewerUrls.map(relayKey).filter(Boolean))
+  const shared: string[] = []
+  const authorOnly: string[] = []
+  const seen = new Set<string>()
+  for (const raw of authorUrls) {
+    const k = relayKey(raw)
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    if (viewerKeys.has(k)) shared.push(normalizeAnyRelayUrl(raw) || raw.trim())
+    else authorOnly.push(normalizeAnyRelayUrl(raw) || raw.trim())
+  }
+  const out: string[] = []
+  const push = (u: string) => {
+    const k = relayKey(u)
+    if (!k || out.some((x) => relayKey(x) === k)) return
+    out.push(u)
+  }
+  for (const u of [...shared, ...authorOnly]) {
+    if (out.length >= max) break
+    push(u)
+  }
+  return out
+}
+
 function dedupeNormalizedRelayUrls(urls: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -78,6 +118,13 @@ export interface RelayListBuilderOptions {
    * behind broken personal relays under the global connection cap.
    */
   preferPublicReadRelaysEarly?: boolean
+  /**
+   * When set, skips {@link viewerUsesGlobalRelayDefaults} and forces fast-read bootstrap on/off.
+   * Otherwise fast-read is omitted for logged-in users who have favorites or NIP-65 configured.
+   */
+  useGlobalRelayDefaults?: boolean
+  /** Append the viewer's kind 10243 HTTP index relays when present (not subject to WS-only `addRelay`). */
+  includeViewerHttpIndexRelays?: boolean
 }
 
 /**
@@ -98,10 +145,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     blockedRelays = [],
     includeLocalRelays = true,
     includeFavoriteRelays = false,
-    preferPublicReadRelaysEarly = false
+    preferPublicReadRelaysEarly = false,
+    useGlobalRelayDefaults: useGlobalRelayDefaultsOption,
+    includeViewerHttpIndexRelays = true
   } = options
 
   const relayUrls = new Set<string>()
+  const httpRelayUrls: string[] = []
   const normalizedBlocked = new Set(
     (blockedRelays || []).map(url => {
       const normalized = normalizeUrl(url) || url
@@ -120,6 +170,49 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     relayUrls.add(normalized)
   }
 
+  const addHttpRelay = (url: string | undefined) => {
+    if (!url || !isHttpRelayUrl(url)) return
+    const normalized = normalizeAnyRelayUrl(url) || url.trim()
+    if (!normalized || normalizedBlocked.has(normalized.toLowerCase())) return
+    if (httpRelayUrls.some((u) => relayKey(u) === relayKey(normalized))) return
+    httpRelayUrls.push(normalized)
+  }
+
+  let viewerRelayListForShare: { read?: string[]; write?: string[]; httpRead?: string[]; httpWrite?: string[] } | null =
+    null
+  if (userPubkey) {
+    try {
+      viewerRelayListForShare = await client.peekRelayListFromStorage(userPubkey)
+    } catch {
+      viewerRelayListForShare = null
+    }
+  }
+  const viewerWsForAuthorOverlap = [
+    ...(viewerRelayListForShare?.read ?? []),
+    ...(viewerRelayListForShare?.write ?? [])
+  ]
+
+  let effectiveIncludeFastRead = includeFastReadRelays
+  if (userPubkey && includeFastReadRelays) {
+    if (useGlobalRelayDefaultsOption !== undefined) {
+      effectiveIncludeFastRead = useGlobalRelayDefaultsOption
+    } else {
+      try {
+        const fav =
+          includeFavoriteRelays && userPubkey
+            ? await client.fetchFavoriteRelays(userPubkey).catch(() => [] as string[])
+            : []
+        effectiveIncludeFastRead = viewerUsesGlobalRelayDefaults({
+          viewerPubkey: userPubkey,
+          favoriteRelayUrls: fav,
+          relayList: viewerRelayListForShare ?? undefined
+        })
+      } catch {
+        effectiveIncludeFastRead = true
+      }
+    }
+  }
+
   // 1. Relay hints (highest priority - explicit hints)
   relayHints.forEach(addRelay)
 
@@ -135,7 +228,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     if (includeProfileFetchRelays) {
       PROFILE_RELAY_URLS.forEach(addRelay)
     }
-    if (includeFastReadRelays) {
+    if (effectiveIncludeFastRead) {
       FAST_READ_RELAY_URLS.forEach(addRelay)
     }
     if (includeSearchableRelays) {
@@ -147,10 +240,16 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   if (authorPubkey) {
     try {
       const authorRelayList = await client.peekRelayListFromStorage(authorPubkey)
-      const authorOutboxes = [...(authorRelayList.write || []).slice(0, 10)]
-      authorOutboxes.forEach(addRelay)
-      const authorInboxes = userReadRelaysWithHttp(authorRelayList).slice(0, 10)
-      authorInboxes.forEach(addRelay)
+      pickAuthorNip65RelaysPreferringViewerOverlap(
+        authorRelayList.write ?? [],
+        viewerWsForAuthorOverlap,
+        AUTHOR_NIP65_RELAY_CAP
+      ).forEach(addRelay)
+      pickAuthorNip65RelaysPreferringViewerOverlap(
+        authorRelayList.read ?? [],
+        viewerWsForAuthorOverlap,
+        AUTHOR_NIP65_RELAY_CAP
+      ).forEach(addRelay)
     } catch (error) {
       logger.warn('[RelayListBuilder] Failed to read author relay list from storage', { error })
     }
@@ -159,7 +258,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   // 5. User's own relays (for profiles/metadata)
   if (includeUserOwnRelays && userPubkey) {
     try {
-      const userRelayList = await client.peekRelayListFromStorage(userPubkey)
+      const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
       const userRead = userReadRelaysWithHttp(userRelayList).slice(0, 10)
       const userWrite = [...(userRelayList.write || []).slice(0, 10)]
       userRead.forEach(addRelay)
@@ -186,10 +285,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   } else if (userPubkey) {
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
-      const userRelayList = await client.peekRelayListFromStorage(userPubkey)
-      userReadRelaysWithHttp(userRelayList)
-        .slice(0, 10)
-        .forEach(addRelay)
+      const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
+      ;(userRelayList.read ?? []).slice(0, 10).forEach(addRelay)
 
       // Include local relays from kind 10432 if enabled
       if (includeLocalRelays) {
@@ -216,12 +313,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   // 7. Fast read relays (fallback)
-  if (includeFastReadRelays && !preferPublicReadRelaysEarly) {
+  if (effectiveIncludeFastRead && !preferPublicReadRelaysEarly) {
     FAST_READ_RELAY_URLS.forEach(addRelay)
   }
 
   // 8. Extra fast-read bootstrap mirrors (call sites use legacy `includeFastWriteRelays`)
-  if (includeFastWriteRelays) {
+  if (includeFastWriteRelays && effectiveIncludeFastRead) {
     FAST_READ_RELAY_URLS.forEach(addRelay)
   }
 
@@ -230,13 +327,89 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     SEARCHABLE_RELAY_URLS.forEach(addRelay)
   }
 
+  if (includeViewerHttpIndexRelays && userPubkey && viewerRelayListForShare) {
+    const hasHttp =
+      (viewerRelayListForShare.httpRead?.length ?? 0) > 0 ||
+      (viewerRelayListForShare.httpWrite?.length ?? 0) > 0
+    if (hasHttp) {
+      ;[...(viewerRelayListForShare.httpRead ?? []), ...(viewerRelayListForShare.httpWrite ?? [])].forEach(
+        addHttpRelay
+      )
+    }
+  }
+
   const merged = Array.from(relayUrls)
-  return feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
+  const ws = feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
     operation: 'read',
     blockedRelays,
     applySocialKindBlockedFilter: false,
     allowThirdPartyLocalRelays: true
   })
+  if (httpRelayUrls.length === 0) return ws
+  const seen = new Set(ws.map(relayKey))
+  const out = [...ws]
+  for (const u of httpRelayUrls) {
+    const k = relayKey(u)
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    out.push(u)
+  }
+  return out
+}
+
+/**
+ * Batched kind-0 / profile hydration: {@link PROFILE_RELAY_URLS} plus the logged-in viewer's own relays only.
+ */
+export async function buildProfileAndUserRelayList(
+  userPubkey: string | null | undefined,
+  blockedRelays: string[] = []
+): Promise<string[]> {
+  const profileWs = dedupeNormalizedRelayUrls([...PROFILE_RELAY_URLS])
+  if (!userPubkey?.trim()) {
+    return feedRelayPolicyUrls([{ source: 'profile-fetch', urls: profileWs }], {
+      operation: 'read',
+      blockedRelays,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    })
+  }
+  const userStack = await buildComprehensiveRelayList({
+    userPubkey,
+    includeUserOwnRelays: true,
+    includeProfileFetchRelays: false,
+    includeFastReadRelays: false,
+    includeFastWriteRelays: false,
+    includeSearchableRelays: false,
+    includeFavoriteRelays: true,
+    includeLocalRelays: true,
+    includeViewerHttpIndexRelays: true,
+    blockedRelays
+  })
+  const httpPart = userStack.filter((u) => isHttpRelayUrl(u))
+  const wsPart = userStack.filter((u) => !isHttpRelayUrl(u))
+  const seen = new Set<string>()
+  const mergedWs: string[] = []
+  for (const u of [...profileWs, ...wsPart]) {
+    const k = relayKey(u)
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    mergedWs.push(u)
+  }
+  const policyWs = feedRelayPolicyUrls([{ source: 'profile-fetch', urls: mergedWs }], {
+    operation: 'read',
+    blockedRelays,
+    applySocialKindBlockedFilter: false,
+    allowThirdPartyLocalRelays: true
+  })
+  const outSeen = new Set(policyWs.map(relayKey))
+  const out = [...policyWs]
+  for (const u of httpPart) {
+    const k = relayKey(u)
+    if (!k || outSeen.has(k)) continue
+    outSeen.add(k)
+    out.push(u)
+  }
+  return out
 }
 
 /**
@@ -427,6 +600,7 @@ export async function buildReplyReadRelayList(
     relayHints: threadRelayHints,
     includeUserOwnRelays: Boolean(userPubkey),
     includeFastReadRelays: useGlobal,
+    useGlobalRelayDefaults: useGlobal,
     includeSearchableRelays: false,
     includeLocalRelays: true,
     includeFavoriteRelays: Boolean(userPubkey),

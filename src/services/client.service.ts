@@ -4094,11 +4094,8 @@ class ClientService extends EventTarget {
     return this.replaceableEventService.fetchProfile(id, skipCache)
   }
 
-  async fetchProfilesForPubkeys(
-    pubkeys: string[],
-    options?: { contextualReadRelays?: string[] }
-  ): Promise<TProfile[]> {
-    return this.replaceableEventService.fetchProfilesForPubkeys(pubkeys, options)
+  async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
+    return this.replaceableEventService.fetchProfilesForPubkeys(pubkeys)
   }
 
   async getProfileFromIndexedDB(id: string): Promise<TProfile | undefined> {
