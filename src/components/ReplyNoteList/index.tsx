@@ -301,6 +301,13 @@ function replyMatchesThreadForList(
   }
   if (replyBelongsToNoteThread(evt, opEvent, rootInfo, threadWalkLocal)) return true
   if (
+    evt.kind === kinds.Zap &&
+    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
+    eventReferencesThreadTarget(evt, rootInfo)
+  ) {
+    return true
+  }
+  if (
     (rootInfo.type === 'E' || rootInfo.type === 'A') &&
     evt.kind !== kinds.ShortTextNote &&
     NOTE_STATS_OP_REFERENCE_KINDS.includes(evt.kind) &&
@@ -343,17 +350,10 @@ function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   return t('referenced this note')
 }
 
-function isKind1QuoteOnlyOfEaRoot(evt: NEvent, root: TRootInfo): boolean {
-  if (root.type === 'I') return false
-  if (evt.kind !== kinds.ShortTextNote) return false
-  if (getParentETag(evt) || getParentATag(evt)) return false
-  return kind1QuotesThreadRoot(evt, root)
-}
-
-/** E/A roots: #q-only kind 1 + relay “reply” rows for {@link NOTE_STATS_OP_REFERENCE_KINDS} belong in backlinks tail, not the chronological middle. */
+/** E/A roots: kind-1 #q quotes + op-reference kinds belong in backlinks tail, not the chronological middle. */
 function isEaThreadTailBacklinkCandidate(evt: NEvent, root: TRootInfo): boolean {
   if (root.type !== 'E' && root.type !== 'A') return false
-  if (isKind1QuoteOnlyOfEaRoot(evt, root)) return true
+  if (evt.kind === kinds.ShortTextNote && kind1QuotesThreadRoot(evt, root)) return true
   return EA_THREAD_TAIL_REFERENCE_KINDS.has(evt.kind)
 }
 
@@ -1371,11 +1371,17 @@ function ReplyNoteList({
                 noteStatsService.updateNoteStatsByEvents(sessionEdge, reply.pubkey)
               }
             }
+            const threadRootHexId =
+              rootInfo.type === 'E'
+                ? rootInfo.id
+                : rootInfo.type === 'A' && /^[0-9a-f]{64}$/i.test(rootInfo.eventId)
+                  ? rootInfo.eventId.toLowerCase()
+                  : undefined
             void noteStatsService.fetchThreadReplyNoteStatsBatch(
               repliesForStatsPrime,
               relayUrlsForThreadReq,
               userPubkey ?? null,
-              { foreground: statsForeground }
+              { foreground: statsForeground, threadRootHexId }
             )
           }
 
@@ -1634,8 +1640,11 @@ function ReplyNoteList({
         return false
       }
       const isQuote = quoteUiIdSet.has(item.id)
+      // Zap receipts are public payment records — always show when they passed mute filters.
+      if (item.kind === kinds.Zap) return true
+      // Backlink rows (quotes, highlights, …): show even when author is not in the trust list.
+      if (isQuote) return true
       if (isTrustLoaded && hideUntrustedInteractions && !isUserTrusted(item.pubkey)) {
-        if (isQuote) return false
         if (rootInfo?.type !== 'I') {
           const repliesForThisReply = repliesMap.get(item.id)
           if (

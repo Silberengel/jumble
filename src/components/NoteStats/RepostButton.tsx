@@ -42,6 +42,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
   const [reposting, setReposting] = useState(false)
   const [isPostDialogOpen, setIsPostDialogOpen] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const statsLoaded = noteStats?.updatedAt != null
   const { repostCount, hasReposted } = useMemo(() => {
     return {
       repostCount: hideUntrustedInteractions
@@ -49,7 +50,8 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
         : noteStats?.reposts?.length,
       hasReposted: pubkey ? noteStats?.repostPubkeySet?.has(pubkey) : false
     }
-  }, [noteStats, event.id, hideUntrustedInteractions])
+  }, [noteStats, event.id, hideUntrustedInteractions, isUserTrusted])
+  const showRepostCount = !hideCount && (statsLoaded || (repostCount ?? 0) > 0)
   const canRepost = !hasReposted && !reposting
 
   const repost = async () => {
@@ -112,7 +114,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
       }}
     >
       {reposting ? <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden /> : <Repeat />}
-      {!hideCount && !!repostCount && <div className="text-sm">{formatCount(repostCount)}</div>}
+      {showRepostCount && <div className="text-sm tabular-nums">{formatCount(repostCount ?? 0)}</div>}
     </button>
   )
 

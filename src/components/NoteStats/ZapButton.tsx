@@ -30,12 +30,14 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null)
   const [openZapDialog, setOpenZapDialog] = useState(false)
   const [zapping, setZapping] = useState(false)
+  const statsLoaded = noteStats?.updatedAt != null
   const { zapAmount, hasZapped } = useMemo(() => {
     return {
       zapAmount: noteStats?.zaps?.reduce((acc, zap) => acc + zap.amount, 0),
       hasZapped: pubkey ? noteStats?.zaps?.some((zap) => zap.pubkey === pubkey) : false
     }
   }, [noteStats, pubkey])
+  const showZapAmount = !hideCount && (statsLoaded || (zapAmount ?? 0) > 0)
   const [disable, setDisable] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isLongPressRef = useRef(false)
@@ -170,14 +172,14 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
             )}
           />
         )}
-        {!hideCount && !!zapAmount && (
+        {showZapAmount && (
           <div
             className={cn(
               'text-sm tabular-nums',
               hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
             )}
           >
-            {formatAmount(zapAmount)}
+            {formatAmount(zapAmount ?? 0)}
           </div>
         )}
       </button>

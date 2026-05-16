@@ -14,8 +14,6 @@ import {
   isNip25ReactionKind,
   isReplaceableEvent
 } from '@/lib/event'
-import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
-import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import {
@@ -28,9 +26,15 @@ import {
   getWebExternalReactionTargetUrl,
   rssArticleStableEventId
 } from '@/lib/rss-article'
+import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
+import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { getEmojiInfosFromEmojiTags, getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
+import {
+  getEmojiInfosFromEmojiTags,
+  getNip25ReactionTargetHexFromTags,
+  tagNameEquals
+} from '@/lib/tag'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
 import { TEmoji, type TRelayList } from '@/types'
@@ -246,7 +250,7 @@ class NoteStatsService {
     replies: Event[],
     relayUrls: string[],
     _pubkey?: string | null,
-    opts?: { foreground?: boolean }
+    opts?: { foreground?: boolean; threadRootHexId?: string }
   ): Promise<void> {
     const urls = (relayUrls ?? []).filter(Boolean)
     const hexReplies: Event[] = []
@@ -272,6 +276,10 @@ class NoteStatsService {
       if (parentHex && this.hexNoteStatsIdRe.test(parentHex)) {
         hexIdsSet.add(this.statsKey(parentHex))
       }
+    }
+    const rootHex = opts?.threadRootHexId?.trim().toLowerCase()
+    if (rootHex && this.hexNoteStatsIdRe.test(rootHex)) {
+      hexIdsSet.add(this.statsKey(rootHex))
     }
     const hexIds = [...hexIdsSet]
 
@@ -365,6 +373,7 @@ class NoteStatsService {
       const ch = hexIds.slice(off, off + this.THREAD_REPLY_STATS_BATCH_HEX_CHUNK)
       nonSocial.push(
         { '#e': ch, kinds: [kinds.Reaction], limit: reactionLimit },
+        { '#E': ch, kinds: [kinds.Reaction], limit: reactionLimit },
         { '#e': ch, kinds: [kinds.Zap], limit: 100 }
       )
       social.push(
@@ -514,9 +523,12 @@ class NoteStatsService {
       }
 
       const { queryService } = await import('@/services/client.service')
+      const rootHex = this.statsKey(resolvedEvent.id)
       const onStatsEvent = (evt: Event) => {
         this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey, {
-          statsRootEvent: resolvedEvent!
+          statsRootEvent: resolvedEvent!,
+          interactionTargetNoteId:
+            evt.kind === kinds.Reaction && /^[0-9a-f]{64}$/i.test(rootHex) ? rootHex : undefined
         })
       }
       await Promise.all([
@@ -533,6 +545,13 @@ class NoteStatsService {
             })
           : Promise.resolve([] as Event[])
       ])
+
+      if (resolvedEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) {
+        const likeCount = this.noteStatsMap.get(rootHex)?.likes?.length ?? 0
+        if (likeCount === 0) {
+          await this.fetchReactionsForNoteTarget(resolvedEvent, finalRelayUrls)
+        }
+      }
 
       markStatsLoaded(resolvedEvent.id)
     } catch (err) {
@@ -692,6 +711,7 @@ class NoteStatsService {
     const rootId = this.statsKey(event.id)
     const nonSocial: Filter[] = [
       { '#e': [rootId], kinds: [kinds.Reaction], limit: reactionLimit },
+      { '#E': [rootId], kinds: [kinds.Reaction], limit: reactionLimit },
       { '#e': [rootId], kinds: [kinds.Zap], limit: 100 }
     ]
 
@@ -743,6 +763,7 @@ class NoteStatsService {
       )
       nonSocial.push(
         { '#a': [replaceableCoordinate], kinds: [kinds.Reaction], limit: reactionLimit },
+        { '#A': [replaceableCoordinate], kinds: [kinds.Reaction], limit: reactionLimit },
         { '#a': [replaceableCoordinate], kinds: [kinds.Zap], limit: 100 }
       )
       social.push(
@@ -1002,11 +1023,11 @@ class NoteStatsService {
 
   private reactionTargetHexForLike(evt: Event, forcedTargetEventId?: string): string | undefined {
     const forced = forcedTargetEventId?.trim()
-    if (forced) return forced
+    if (forced) return this.statsKey(forced)
+    const nip25 = getNip25ReactionTargetHexFromTags(evt.tags)
+    if (nip25 && /^[0-9a-f]{64}$/i.test(nip25)) return nip25.toLowerCase()
     const parentHex = getParentEventHexId(evt)
-    if (parentHex && /^[0-9a-f]{64}$/i.test(parentHex)) return parentHex
-    const firstE = getFirstHexEventIdFromETags(evt.tags)
-    if (firstE) return firstE
+    if (parentHex && /^[0-9a-f]{64}$/i.test(parentHex)) return parentHex.toLowerCase()
     if (evt.kind === kinds.Reaction) {
       const pageUrl = getReactionPageUrlFromRTags(evt)
       if (pageUrl) {
@@ -1014,6 +1035,41 @@ class NoteStatsService {
       }
     }
     return undefined
+  }
+
+  /** Second pass when the main stats wave returned no kind-7 rows (common on direct note open). */
+  private async fetchReactionsForNoteTarget(rootEvent: Event, relayUrls: string[]): Promise<void> {
+    const rootHex = this.statsKey(rootEvent.id)
+    if (!/^[0-9a-f]{64}$/i.test(rootHex)) return
+
+    const hintRelays = client.eventService.getSessionRelayHintsForHexTarget(rootHex)
+    const urls = feedRelayPolicyUrls(
+      [{ source: 'fallback', urls: [...new Set([...hintRelays, ...relayUrls])] }],
+      {
+        operation: 'read',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
+      }
+    )
+    if (!urls.length) return
+
+    const filters: Filter[] = [
+      { '#e': [rootHex], kinds: [kinds.Reaction], limit: 500 },
+      { '#E': [rootHex], kinds: [kinds.Reaction], limit: 500 }
+    ]
+    const { queryService } = await import('@/services/client.service')
+    await queryService.fetchEvents(urls, filters, {
+      eoseTimeout: 12_000,
+      globalTimeout: 22_000,
+      firstRelayResultGraceMs: false,
+      onevent: (evt: Event) => {
+        this.updateNoteStatsByEvents([evt], rootEvent.pubkey, {
+          statsRootEvent: rootEvent,
+          interactionTargetNoteId: rootHex
+        })
+      }
+    })
+    this.notifyNoteStats(rootHex)
   }
 
   private addLikeByEvent(evt: Event, _originalEventAuthor?: string, forcedTargetEventId?: string) {
