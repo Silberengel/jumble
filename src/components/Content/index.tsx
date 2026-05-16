@@ -39,6 +39,7 @@ import { toNote } from '@/lib/link'
 import { YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
+import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
 
 // Helper function to check if a URL is a YouTube URL
 function isYouTubeUrl(url: string): boolean {
@@ -92,6 +93,9 @@ export default function Content({
     () => (iArticleUrl ? cleanUrl(iArticleUrl) || iArticleUrl : ''),
     [iArticleUrl]
   )
+  const deferLongVideoLoad = shouldDeferLongVideoAutoload(event, {
+    forceLoadMedia: mustLoadMedia
+  })
 
   // Use unified media extraction service
   const extractedMedia = useMediaExtraction(event, _content)
@@ -464,6 +468,7 @@ export default function Content({
             src={video.url}
             className="w-full max-w-full"
             mustLoad={mustLoadMedia}
+            deferLoadUntilClick={deferLongVideoLoad}
             poster={video.image || video.thumb}
             blurHash={video.blurHash}
           />
@@ -538,6 +543,7 @@ export default function Content({
               key={index}
               src={cleanedUrl}
               mustLoad={mustLoadMedia}
+              deferLoadUntilClick={deferLongVideoLoad}
               poster={tagMediaInfo?.image || tagMediaInfo?.thumb}
               blurHash={tagMediaInfo?.blurHash}
             />
@@ -566,6 +572,7 @@ export default function Content({
                 key={`url-media-${index}`}
                 src={cleanedUrl}
                 mustLoad={mustLoadMedia}
+                deferLoadUntilClick={deferLongVideoLoad}
                 poster={poster}
                 blurHash={mediaInfo?.blurHash}
               />

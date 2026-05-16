@@ -1,4 +1,5 @@
 import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
+import { isLongFormNip71VideoEventKind } from '@/lib/long-video-load-policy'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import client from '@/services/client.service'
@@ -16,15 +17,18 @@ export default function MediaGridItem({ event }: { event: Event }) {
 
   /** Kind 20 is always treated as image unless imeta explicitly says video (rare mis-tag). */
   const isPictureKind = event.kind === ExtendedKind.PICTURE
+  const isLongFormVideo = isLongFormNip71VideoEventKind(event.kind)
   const isVideo =
     (!isPictureKind && first?.m?.startsWith('video/')) ||
     (!isPictureKind && isNip71StyleVideoKind(event.kind))
   const isAudio = first?.m?.startsWith('audio/') || event.kind === ExtendedKind.VOICE
   const hasMultiple = media.all.length > 1
 
-  // For videos prefer the poster image; fall back to video URL (browser extracts frame)
+  // For videos prefer the poster image; long-form feed tiles never prefetch the .mp4 (open note to play).
   const displayUrl = isVideo
-    ? (first?.image ?? first?.url)
+    ? isLongFormVideo
+      ? (first?.image ?? first?.thumb)
+      : (first?.image ?? first?.url)
     : (first?.thumb ?? first?.url)
 
   const handleClick = () => {
@@ -38,9 +42,9 @@ export default function MediaGridItem({ event }: { event: Event }) {
       onClick={handleClick}
     >
       {displayUrl ? (
-        isVideo && !first?.image ? (
+        isVideo && !isLongFormVideo && !(first?.image ?? first?.thumb) && first?.url ? (
           <video
-            src={displayUrl}
+            src={first.url}
             className="h-full w-full object-cover"
             muted
             preload="metadata"

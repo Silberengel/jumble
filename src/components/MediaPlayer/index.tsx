@@ -47,6 +47,7 @@ export default function MediaPlayer({
   src,
   className,
   mustLoad = false,
+  deferLoadUntilClick = false,
   poster,
   blurHash,
   fallbackPageUrl
@@ -54,6 +55,11 @@ export default function MediaPlayer({
   src: string
   className?: string
   mustLoad?: boolean
+  /**
+   * When true, never autoload/embed (even if global auto-load media is on) until the user taps the
+   * placeholder. Used for NIP-71 long-form video events in feeds.
+   */
+  deferLoadUntilClick?: boolean
   poster?: string
   /** NIP-94 / imeta blurhash for lazy placeholder when poster is missing */
   blurHash?: string
@@ -89,7 +95,8 @@ export default function MediaPlayer({
   /** Probe result wins when set (e.g. audio-only mp4); URL hint avoids a blank frame before useEffect runs. */
   const effectiveMediaType = mediaType ?? urlEmbedSurfaceHint
 
-  const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
+  const showEmbed =
+    mustLoad || (!deferLoadUntilClick && autoLoadMedia) || userClickedLoad
 
   useLayoutEffect(() => {
     if (!autoLoadMedia) setUserClickedLoad(false)

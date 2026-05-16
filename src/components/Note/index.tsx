@@ -558,7 +558,7 @@ export default function Note({
   } else if (event.kind === ExtendedKind.PICTURE) {
     content = <PictureNote className="mt-2" event={event} />
   } else if (isNip71StyleVideoKind(event.kind)) {
-    content = <VideoNote className="mt-2" event={event} />
+    content = <VideoNote className="mt-2" event={event} loadMedia={showFull} />
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {
     content = <RelayReview className="mt-2" event={displayEvent} />
   } else if (isCalendarEventKind(event.kind)) {
