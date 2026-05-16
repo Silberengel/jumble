@@ -1,8 +1,4 @@
-import {
-  ExtendedKind,
-  NOTE_STATS_OP_REFERENCE_KINDS,
-  NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
-} from '@/constants'
+import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
   canonicalizeRssArticleUrl,
@@ -47,27 +43,20 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
-import {
-  buildRssArticleUrlThreadInteractionFilters,
-  buildRssWebNostrQueryRelayUrls,
-  isRssArticleUrlThreadInteraction
-} from '@/lib/rss-web-feed'
+import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
 import type { TProfile } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
-import { useQuoteEvents } from '@/hooks'
 import { LoadingBar } from '../LoadingBar'
 import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
-import ThreadQuoteBacklink, {
-  BacklinkAvatarStrip,
-  ThreadQuoteBacklinkSkeleton
-} from './ThreadQuoteBacklink'
+import ThreadQuoteBacklink, { BacklinkAvatarStrip } from './ThreadQuoteBacklink'
 
 type TRootInfo =
   | { type: 'E'; id: string; pubkey: string }
@@ -380,20 +369,6 @@ function ReplyNoteList({
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const [rootInfo, setRootInfo] = useState<TRootInfo | undefined>(undefined)
   const { repliesMap, addReplies } = useReply()
-  const { quoteEvents, quoteLoading } = useQuoteEvents(event, true)
-  const filteredQuoteEvents = useMemo(
-    () =>
-      quoteEvents.filter(
-        (e) =>
-          !shouldHideThreadResponseEvent(
-            e,
-            mutePubkeySet,
-            hideContentMentioningMutedUsers
-          )
-      ),
-    [quoteEvents, mutePubkeySet, hideContentMentioningMutedUsers]
-  )
-
   const isDiscussionRoot = event.kind === ExtendedKind.DISCUSSION
 
   const replyDuplicateWebPreviewHints = useMemo(() => {
@@ -570,7 +545,7 @@ function ReplyNoteList({
   const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
   /** Render with quote card chrome (tail stream + kind 1 #q-only of E/A root). */
   const quoteUiIdSet = useMemo(() => {
-    const s = new Set(filteredQuoteEvents.map((e) => e.id))
+    const s = new Set<string>()
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
       for (const r of replies) {
         if (isEaThreadTailBacklinkCandidate(r, rootInfo)) s.add(r.id)
@@ -582,7 +557,7 @@ function ReplyNoteList({
       }
     }
     return s
-  }, [filteredQuoteEvents, replies, rootInfo])
+  }, [replies, rootInfo])
   const mergedFeed = useMemo(() => {
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
@@ -595,8 +570,6 @@ function ReplyNoteList({
     }
 
     if (!showQuotes) return replies
-
-    const quoteOnly = filteredQuoteEvents.filter((e) => !replyIdSet.has(e.id))
 
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
@@ -612,7 +585,6 @@ function ReplyNoteList({
         tail.push(e)
       }
       for (const e of tailFromReplies) pushTail(e)
-      for (const e of quoteOnly) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
       return [...replyFeedZapsFirst(middle, zapsShown), ...tailSorted]
     }
@@ -631,31 +603,18 @@ function ReplyNoteList({
         tail.push(e)
       }
       for (const e of tailFromReplies) pushTail(e)
-      for (const e of quoteOnly) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
       return [...replyFeedZapsFirst(middle, zapsShownI), ...tailSorted]
     }
 
-    const merged = [...replies, ...quoteOnly]
+    const merged = [...replies]
     if (sort === 'oldest') return zapsThenTimeSorted(merged, 'asc')
     if (sort === 'newest') return zapsThenTimeSorted(merged, 'desc')
     if (sort === 'top' || sort === 'controversial' || sort === 'most-zapped') {
-      const replyIds = new Set(replies.map((r) => r.id))
-      const sortedReplies = [...replies]
-      const qo = merged.filter((e) => !replyIds.has(e.id))
-      const sortedQuotes = partitionAndSortBacklinkTail([...qo])
-      return [...sortedReplies, ...sortedQuotes]
+      return [...replies]
     }
     return zapsThenTimeSorted(merged, 'desc')
-  }, [replies, filteredQuoteEvents, showQuotes, sort, replyIdSet, rootInfo, event.kind])
-
-  useEffect(() => {
-    if (!rootInfo) return
-    const toAdd = filteredQuoteEvents.filter((evt) =>
-      replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
-    )
-    if (toAdd.length > 0) addReplies(toAdd)
-  }, [filteredQuoteEvents, rootInfo, event, isDiscussionRoot, addReplies])
+  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -783,8 +742,6 @@ function ReplyNoteList({
     parentNoteFeed?.pendingPubkeys
   ])
 
-  const [timelineKey] = useState<string | undefined>(undefined)
-  const [until, setUntil] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState<boolean>(false)
   const [showCount, setShowCount] = useState(SHOW_COUNT)
   const [highlightReplyId, setHighlightReplyId] = useState<string | undefined>(undefined)
@@ -1131,124 +1088,15 @@ function ReplyNoteList({
             }
           }
 
-          const filters: Filter[] = []
-          const qKindsHex = Array.from(
-            new Set<number>([
-              kinds.ShortTextNote,
-              ExtendedKind.COMMENT,
-              ExtendedKind.VOICE_COMMENT,
-              ...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
-            ])
-          ).sort((a, b) => a - b)
-          const opRefKinds = [...NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT]
-          const kindsNoteCommentVoiceZap: number[] = [
-            kinds.ShortTextNote,
-            ExtendedKind.COMMENT,
-            ExtendedKind.VOICE_COMMENT,
-            kinds.Zap
-          ]
-          const kindsNoteCommentVoice: number[] = [
-            kinds.ShortTextNote,
-            ExtendedKind.COMMENT,
-            ExtendedKind.VOICE_COMMENT
-          ]
-          const kindsPrimaryThread =
-            event.kind === ExtendedKind.ZAP_POLL ? kindsNoteCommentVoice : kindsNoteCommentVoiceZap
-          const kindsUpperEThread: number[] =
-            event.kind === ExtendedKind.ZAP_POLL
-              ? [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT]
-              : [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap]
-
-          if (rootInfo.type === 'E') {
-            filters.push({
-              '#e': [rootInfo.id],
-              kinds: kindsPrimaryThread,
-              limit: LIMIT
-            })
-            // Also fetch with uppercase E tag for replaceable events
-            filters.push({
-              '#E': [rootInfo.id],
-              kinds: kindsUpperEThread,
-              limit: LIMIT
-            })
-            filters.push({
-              '#e': [rootInfo.id],
-              kinds: [kinds.Reaction],
-              limit: LIMIT
-            })
-            filters.push({
-              '#q': [rootInfo.id],
-              kinds: qKindsHex,
-              limit: LIMIT
-            })
-            // For public messages (kind 24), also look for replies using 'q' tags
-            if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
-              filters.push({
-                '#q': [rootInfo.id],
-                kinds: [ExtendedKind.PUBLIC_MESSAGE],
-                limit: LIMIT
-              })
-            }
-            filters.push({ '#e': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
-            filters.push({ '#E': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
-          } else if (rootInfo.type === 'A') {
-            // Fetch all reply types for replaceable event-based replies
-            filters.push(
-              {
-                '#a': [rootInfo.id],
-                kinds: kindsPrimaryThread,
-                limit: LIMIT
-              },
-              {
-                '#A': [rootInfo.id],
-                kinds: kindsUpperEThread,
-                limit: LIMIT
-              }
-            )
-            // Many clients tag only `#e` with the published snapshot id (not `#a`). Mirror the E-root
-            // filters so kind-1 threads and op-reference kinds are not missed on longform/wiki URLs.
-            if (/^[0-9a-f]{64}$/i.test(rootInfo.eventId)) {
-              const eSnap = rootInfo.eventId.trim().toLowerCase()
-              filters.push({
-                '#e': [eSnap],
-                kinds: kindsPrimaryThread,
-                limit: LIMIT
-              })
-              filters.push({
-                '#E': [eSnap],
-                kinds: kindsUpperEThread,
-                limit: LIMIT
-              })
-              filters.push({
-                '#e': [eSnap],
-                kinds: [kinds.Reaction],
-                limit: LIMIT
-              })
-              filters.push({ '#e': [eSnap], kinds: opRefKinds, limit: LIMIT })
-              filters.push({ '#E': [eSnap], kinds: opRefKinds, limit: LIMIT })
-            }
-            const qVals = Array.from(
-              new Set(
-                [rootInfo.eventId, rootInfo.id]
-                  .map((x) => (typeof x === 'string' ? x.trim() : ''))
-                  .filter(Boolean)
-              )
-            )
-            if (qVals.length > 0) {
-              filters.push({
-                '#q': qVals,
-                kinds: qKindsHex,
-                limit: LIMIT
-              })
-            }
-            if (rootInfo.relay) {
-              finalRelayUrls.push(rootInfo.relay)
-            }
-            filters.push({ '#a': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
-            filters.push({ '#A': [rootInfo.id], kinds: opRefKinds, limit: LIMIT })
-          } else if (rootInfo.type === 'I') {
-            filters.push(...buildRssArticleUrlThreadInteractionFilters(rootInfo.id, LIMIT))
+          if (rootInfo.type === 'A' && rootInfo.relay) {
+            finalRelayUrls.push(rootInfo.relay)
           }
+
+          const filters = buildThreadInteractionFilters({
+            root: rootInfo,
+            opEventKind: event.kind,
+            limit: LIMIT
+          })
 
           const relayUrlsForThreadReq = feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
             operation: 'read',
@@ -1274,11 +1122,11 @@ function ReplyNoteList({
             : undefined
 
           // Use fetchEvents instead of subscribeTimeline for one-time fetching
-          const allReplies = await queryService.fetchEvents(
-            relayUrlsForThreadReq,
-            filters,
-            urlThreadOnevent ? { onevent: urlThreadOnevent } : undefined
-          )
+          const allReplies = await queryService.fetchEvents(relayUrlsForThreadReq, filters, {
+            ...(urlThreadOnevent ? { onevent: urlThreadOnevent } : {}),
+            foreground: statsForeground,
+            relayOpSource: 'ReplyNoteList.thread'
+          })
 
           if (fetchGeneration !== replyFetchGenRef.current) return
 
@@ -1341,12 +1189,15 @@ function ReplyNoteList({
                 : rootInfo.type === 'A' && /^[0-9a-f]{64}$/i.test(rootInfo.eventId)
                   ? rootInfo.eventId.toLowerCase()
                   : undefined
-            void noteStatsService.fetchThreadReplyNoteStatsBatch(
-              repliesForStatsPrime,
-              relayUrlsForThreadReq,
-              userPubkey ?? null,
-              { foreground: statsForeground, threadRootHexId }
-            )
+            window.setTimeout(() => {
+              if (fetchGeneration !== replyFetchGenRef.current) return
+              void noteStatsService.fetchThreadReplyNoteStatsBatch(
+                repliesForStatsPrime,
+                relayUrlsForThreadReq,
+                userPubkey ?? null,
+                { foreground: statsForeground, threadRootHexId }
+              )
+            }, 0)
           }
 
           if (!hasCache) {
@@ -1500,14 +1351,9 @@ function ReplyNoteList({
     addReplies,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
-    isDiscussionRoot
+    isDiscussionRoot,
+    statsForeground
   ])
-
-  useEffect(() => {
-    if (replies.length === 0 && !loading && timelineKey) {
-      loadMore()
-    }
-  }, [replies.length, loading, timelineKey]) // More specific dependencies to prevent infinite loops
 
   useEffect(() => {
     const options = {
@@ -1534,40 +1380,6 @@ function ReplyNoteList({
       }
     }
   }, [mergedFeed.length, showCount])
-
-  const loadMore = useCallback(async () => {
-    if (loading || !until || !timelineKey) return
-
-    setLoading(true)
-    const events = await client.loadMoreTimeline(timelineKey, until, LIMIT)
-    const olderEvents = events.filter((evt) => {
-      if (isPollVoteKind(evt)) return false
-      if (isZapPollThreadZapReceipt(evt, event)) return false
-      if (!rootInfo) return false
-      const matchesThread = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
-      if (!matchesThread) return false
-      return !shouldHideThreadResponseEvent(
-        evt,
-        mutePubkeySet,
-        hideContentMentioningMutedUsers
-      )
-    })
-    if (olderEvents.length > 0) {
-      addReplies(olderEvents)
-    }
-    setUntil(events.length ? events[events.length - 1].created_at - 1 : undefined)
-    setLoading(false)
-  }, [
-    loading,
-    until,
-    timelineKey,
-    rootInfo,
-    event,
-    mutePubkeySet,
-    hideContentMentioningMutedUsers,
-    addReplies,
-    isDiscussionRoot
-  ])
 
   const highlightReply = useCallback((eventId: string, scrollTo = true) => {
     if (scrollTo) {
@@ -1660,14 +1472,6 @@ function ReplyNoteList({
     <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
     <div className="min-h-[80vh] pb-12">
       {loading && <LoadingBar />}
-      {!loading && until && (
-        <div
-          className={`text-sm text-center text-muted-foreground border-b py-2 ${!loading ? 'hover:text-foreground cursor-pointer' : ''}`}
-          onClick={loadMore}
-        >
-          {t('load more older replies')}
-        </div>
-      )}
       <div>
         {displayRows.map((row, ri) => {
           const prevRow = ri > 0 ? displayRows[ri - 1] : undefined
@@ -1803,12 +1607,7 @@ function ReplyNoteList({
           )
         })}
       </div>
-      {quoteLoading && showQuotes && (
-        <div className="mt-4 space-y-2">
-          <ThreadQuoteBacklinkSkeleton />
-        </div>
-      )}
-      {!loading && !quoteLoading && (
+      {!loading && (
         <div className="text-sm mt-2 mb-3 text-center text-muted-foreground">
           {mergedFeed.length > 0 ? t('no more replies') : t('no replies')}
         </div>

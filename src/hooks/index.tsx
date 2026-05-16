@@ -1,5 +1,4 @@
 export * from './useFetchCalendarRsvps'
-export * from './useQuoteEvents'
 export * from './useFetchEvent'
 export * from './useFetchFollowings'
 export * from './useFetchNip05'

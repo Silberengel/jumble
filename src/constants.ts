@@ -636,7 +636,7 @@ export function isNip71ShortVideoKind(kind: number): boolean {
 export const MAX_SIGNED_CUSTOM_EVENT_KIND = 40000
 
 /**
- * Kinds subscribed on `#e` / `#a` for the OP in {@link useQuoteEvents} (thread “backlinks” shard),
+ * Kinds on `#e` / `#a` / `#q` in {@link buildThreadInteractionFilters} (thread backlinks),
  * alongside kind-1 `#q` quotes. Covers highlights, long-form, NIP-32 labels, NIP-56 reports,
  * NIP-51 lists (bookmarks, pins, generic/bookmark/curation sets), and NIP-58 badge awards.
  */
