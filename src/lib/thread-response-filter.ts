@@ -1,4 +1,4 @@
-import { isMentioningMutedUsers, isNip18RepostKind } from '@/lib/event'
+import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeUrl } from '@/lib/url'
 import type { Event } from 'nostr-tools'
@@ -20,6 +20,23 @@ export function buildNormalizedBlockedRelaySet(blockedRelays: readonly string[] 
 export function isThreadBoosterOnlyRow(evt: Event): boolean {
   return isNip18RepostKind(evt.kind)
 }
+
+/**
+ * The signed-in user's NIP-25 reactions are already on the note stats bar — omit duplicate thread rows.
+ * Counts still use {@link noteStatsService} / merged stats; this only affects thread list rendering.
+ */
+export function shouldHideOwnReactionThreadRow(
+  item: Event,
+  viewerPubkey: string | null | undefined
+): boolean {
+  const viewer = viewerPubkey?.trim().toLowerCase()
+  if (!viewer || !/^[0-9a-f]{64}$/i.test(viewer)) return false
+  if (item.pubkey.toLowerCase() !== viewer) return false
+  return isNip25ReactionKind(item.kind)
+}
+
+/** @deprecated Use {@link shouldHideOwnReactionThreadRow}. */
+export const shouldHideOwnReactionInOthersThread = shouldHideOwnReactionThreadRow
 
 /** Hide thread replies / backlinks: boosts, wire-format JSON blobs, muted author, or mute mentions. */
 export function shouldHideThreadResponseEvent(

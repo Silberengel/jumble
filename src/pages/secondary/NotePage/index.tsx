@@ -12,6 +12,9 @@ import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchEvent, useFetchProfile, useNip84HighlightTargetEvents } from '@/hooks'
+import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
+import { useNostr } from '@/providers/NostrProvider'
+import noteStatsService from '@/services/note-stats.service'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import {
   collectEmbeddedEventPrefetchTargets,
@@ -147,16 +150,36 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     () => (threadRelayHints.length ? { relayHints: threadRelayHints } : undefined),
     [threadRelayHints]
   )
+  const rootInitialEvent = useMemo(() => {
+    if (!finalEvent) return undefined
+    const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
+    if (!rootHex || !/^[0-9a-f]{64}$/i.test(rootHex)) return undefined
+    const resolved = resolveDeclaredThreadRootEventHex(rootHex)
+    return client.peekSessionCachedEvent(resolved) ?? client.peekSessionCachedEvent(rootHex)
+  }, [finalEvent])
+  const parentInitialEvent = useMemo(() => {
+    if (!finalEvent) return undefined
+    const parentHex = getParentEventHexId(finalEvent)?.toLowerCase()
+    if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return undefined
+    return client.peekSessionCachedEvent(parentHex)
+  }, [finalEvent])
   const { isFetching: isFetchingRootEvent, event: rootEvent, refetch: refetchRoot } =
-    useFetchEvent(rootEventId, undefined, parentRootFetchOpts)
+    useFetchEvent(rootEventId, rootInitialEvent, parentRootFetchOpts)
   const { isFetching: isFetchingParentEvent, event: parentEvent, refetch: refetchParent } =
-    useFetchEvent(parentEventId, undefined, parentRootFetchOpts)
+    useFetchEvent(parentEventId, parentInitialEvent, parentRootFetchOpts)
 
   const selfHex = finalEvent?.id?.toLowerCase()
   const rootEventForStrip =
     rootEvent && selfHex && rootEvent.id.toLowerCase() !== selfHex ? rootEvent : undefined
   const parentEventForStrip =
     parentEvent && selfHex && parentEvent.id.toLowerCase() !== selfHex ? parentEvent : undefined
+  const { pubkey } = useNostr()
+  const { relays: statsRelays, currentRelaysKey } = useNoteStatsRelayHints()
+
+  useEffect(() => {
+    if (!rootEventForStrip) return
+    void noteStatsService.fetchNoteStats(rootEventForStrip, pubkey, statsRelays, { foreground: true })
+  }, [rootEventForStrip, pubkey, statsRelays, currentRelaysKey])
 
   // When viewing a kind-24 invite (e.g. from notifications), extract calendar event naddr from content and show full calendar card with RSVP
   const calendarInviteNaddr = useMemo(() => {
@@ -509,7 +532,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         {rootEventId && (
           <ParentNote
             key={`thread-root-${finalEvent.id}`}
-            isFetching={isFetchingRootEvent}
+            isFetching={isFetchingRootEvent && !rootEventForStrip}
             event={rootEventForStrip}
             eventBech32Id={rootEventId}
             isConsecutive={
@@ -521,14 +544,19 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         )}
         {parentEventId &&
           !eventPointersReferenceSameNote(parentEventId, rootEventId) &&
-          !eventPointersReferenceSameNote(parentEventId, finalEvent.id) && (
-            <ParentNote
-              key={`parent-note-${finalEvent.id}`}
-              isFetching={isFetchingParentEvent}
-              event={parentEventForStrip}
-              eventBech32Id={parentEventId}
-            />
-          )}
+          !eventPointersReferenceSameNote(parentEventId, finalEvent.id) &&
+          (parentEventForStrip ? (
+            <div key={`parent-note-${parentEventForStrip.id}`} className="mb-3 mt-1">
+              {!isConsecutive(rootEventForStrip, parentEventForStrip) ? (
+                <Ellipsis className="ml-3.5 mb-1 text-muted-foreground/60 size-3" />
+              ) : null}
+              <Note event={parentEventForStrip} hideParentNotePreview showFull />
+              <div className="ml-5 w-px h-3 bg-border" />
+            </div>
+          ) : isFetchingParentEvent ? (
+            <ThreadContextSkeleton key={`parent-note-skeleton-${finalEvent.id}`} />
+          ) : null)}
+        {(rootEventForStrip || parentEventForStrip) && <Separator className="my-3" />}
         <Note
           key={`note-${finalEvent.id}`}
           event={finalEvent}
@@ -565,6 +593,24 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
 })
 NotePage.displayName = 'NotePage'
 export default NotePage
+
+function ThreadContextSkeleton() {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center space-x-2">
+        <Skeleton className="w-10 h-10 rounded-full" />
+        <div className="flex-1 w-0">
+          <Skeleton className="h-4 w-24 mb-1" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+      <div className="pt-2 space-y-2">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-4/5" />
+      </div>
+    </div>
+  )
+}
 
 function ExternalRoot({ value }: { value: string }) {
   const { push } = useSecondaryPage()

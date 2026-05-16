@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
 import type { Event } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
-import { isThreadBoosterOnlyRow, shouldHideThreadResponseEvent } from './thread-response-filter'
+import {
+  isThreadBoosterOnlyRow,
+  shouldHideOwnReactionThreadRow,
+  shouldHideThreadResponseEvent
+} from './thread-response-filter'
 
 function baseEvent(overrides: Partial<Event> = {}): Event {
   return {
@@ -44,5 +48,23 @@ describe('thread response filter', () => {
       tags: [['e', 'c'.repeat(64)]]
     })
     expect(isThreadBoosterOnlyRow(repost)).toBe(true)
+  })
+
+  it('hides viewer NIP-25 reactions in thread rows (own or others’ notes)', () => {
+    const viewer = 'b'.repeat(64)
+    const myReaction = baseEvent({
+      pubkey: viewer,
+      kind: kinds.Reaction,
+      content: '+',
+      tags: [['e', 'c'.repeat(64), '', 'root']]
+    })
+    expect(shouldHideOwnReactionThreadRow(myReaction, viewer)).toBe(true)
+    expect(shouldHideOwnReactionThreadRow(myReaction, 'a'.repeat(64))).toBe(false)
+    expect(
+      shouldHideOwnReactionThreadRow(
+        baseEvent({ pubkey: 'c'.repeat(64), kind: kinds.Reaction, content: '+' }),
+        viewer
+      )
+    ).toBe(false)
   })
 })

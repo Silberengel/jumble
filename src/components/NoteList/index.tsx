@@ -1494,8 +1494,6 @@ const NoteList = forwardRef(
       [showFeedClientFilter, applyClientFeedFilter, filteredEvents]
     )
 
-    /** Bumps when {@link noteStatsService} updates any visible row so profile batch can include boosters/likers. */
-    const [feedStatsProfileBump, setFeedStatsProfileBump] = useState(0)
     const visibleNoteIdsForStatsPrefetchKey = useMemo(
       () =>
         clientFilteredEvents
@@ -1505,15 +1503,123 @@ const NoteList = forwardRef(
       [clientFilteredEvents, showCount]
     )
 
+    const enqueueFeedProfilePubkeys = useCallback((need: string[]) => {
+      if (need.length === 0) return
+      const gen = feedProfileBatchGenRef.current
+      need.forEach((pk) => feedProfileLoadedRef.current.add(pk))
+
+      setFeedProfileBatch((prev) => {
+        const pending = new Set(prev.pending)
+        let pendingChanged = false
+        for (const pk of need) {
+          if (!pending.has(pk)) {
+            pending.add(pk)
+            pendingChanged = true
+          }
+        }
+        if (!pendingChanged) return prev
+        return { ...prev, pending }
+      })
+
+      void (async () => {
+        if (gen !== feedProfileBatchGenRef.current) return
+        const contextualReadRelays = Array.from(
+          new Set(
+            subRequestsRef.current
+              .flatMap((r) => r.urls)
+              .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
+              .filter(Boolean)
+          )
+        )
+        const chunks: string[][] = []
+        for (let i = 0; i < need.length; i += FEED_PROFILE_CHUNK) {
+          chunks.push(need.slice(i, i + FEED_PROFILE_CHUNK))
+        }
+        const settled = await Promise.allSettled(
+          chunks.map((chunk) =>
+            client.fetchProfilesForPubkeys(chunk, { contextualReadRelays })
+          )
+        )
+        if (gen !== feedProfileBatchGenRef.current) return
+
+        setFeedProfileBatch((prev) => {
+          const next = new Map(prev.profiles)
+          const pend = new Set(prev.pending)
+          settled.forEach((res, idx) => {
+            const chunk = chunks[idx]!
+            if (res.status === 'rejected') {
+              chunk.forEach((pk) => feedProfileLoadedRef.current.delete(pk))
+              chunk.forEach((pk) => pend.delete(pk))
+              return
+            }
+            const profiles = res.value
+            for (const p of profiles) {
+              const pkNorm = p.pubkey.toLowerCase()
+              next.set(pkNorm, { ...p, pubkey: pkNorm })
+              pend.delete(pkNorm)
+            }
+            for (const pk of chunk) {
+              const pkNorm = pk.toLowerCase()
+              pend.delete(pkNorm)
+              if (!next.has(pkNorm)) {
+                next.set(pkNorm, {
+                  pubkey: pkNorm,
+                  npub: pubkeyToNpub(pkNorm) ?? '',
+                  username: formatPubkey(pkNorm),
+                  batchPlaceholder: true
+                })
+              }
+            }
+          })
+          return { profiles: next, pending: pend, version: prev.version + 1 }
+        })
+      })()
+    }, [])
+
+    const statsProfilePrefetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const pendingStatsProfilePubkeysRef = useRef<Set<string>>(new Set())
+
     useEffect(() => {
       if (!visibleNoteIdsForStatsPrefetchKey) return
       const ids = visibleNoteIdsForStatsPrefetchKey.split('\n').filter(Boolean)
-      const bump = () => setFeedStatsProfileBump((n) => n + 1)
-      const unsubs = ids.map((id) => noteStatsService.subscribeNoteStats(id, bump))
+
+      const flushStatsProfiles = () => {
+        statsProfilePrefetchDebounceRef.current = null
+        const need = [...pendingStatsProfilePubkeysRef.current].filter(
+          (pk) => !feedProfileLoadedRef.current.has(pk)
+        )
+        pendingStatsProfilePubkeysRef.current.clear()
+        enqueueFeedProfilePubkeys(need)
+      }
+
+      const onStatsUpdate = (noteId: string) => {
+        const candidates = new Set<string>()
+        collectProfilePrefetchPubkeysFromNoteStats(noteStatsService.getNoteStats(noteId), candidates)
+        for (const pk of candidates) {
+          if (!feedProfileLoadedRef.current.has(pk)) {
+            pendingStatsProfilePubkeysRef.current.add(pk)
+          }
+        }
+        if (pendingStatsProfilePubkeysRef.current.size === 0) return
+        if (statsProfilePrefetchDebounceRef.current) {
+          clearTimeout(statsProfilePrefetchDebounceRef.current)
+        }
+        statsProfilePrefetchDebounceRef.current = setTimeout(
+          flushStatsProfiles,
+          FEED_PROFILE_BATCH_DEBOUNCE_MS
+        )
+      }
+
+      const unsubs = ids.map((id) => noteStatsService.subscribeNoteStats(id, () => onStatsUpdate(id)))
       return () => {
         unsubs.forEach((u) => u())
+        if (statsProfilePrefetchDebounceRef.current) {
+          clearTimeout(statsProfilePrefetchDebounceRef.current)
+          statsProfilePrefetchDebounceRef.current = null
+        }
+        pendingStatsProfilePubkeysRef.current.clear()
       }
-    }, [visibleNoteIdsForStatsPrefetchKey])
+    }, [visibleNoteIdsForStatsPrefetchKey, enqueueFeedProfilePubkeys])
 
     const clientFilteredNewEvents = useMemo(
       () =>
@@ -1564,7 +1670,6 @@ const NoteList = forwardRef(
 
     useEffect(() => {
       const handle = window.setTimeout(() => {
-        const gen = feedProfileBatchGenRef.current
         const candidates = new Set<string>()
         for (const e of timelineEventsForFilter) {
           collectProfilePrefetchPubkeysFromEvent(e, candidates)
@@ -1577,79 +1682,16 @@ const NoteList = forwardRef(
         }
 
         const need = [...candidates].filter((pk) => !feedProfileLoadedRef.current.has(pk))
-        if (need.length === 0) return
-
-        need.forEach((pk) => feedProfileLoadedRef.current.add(pk))
-
-        setFeedProfileBatch((prev) => {
-          const pending = new Set(prev.pending)
-          let pendingChanged = false
-          for (const pk of need) {
-            if (!pending.has(pk)) {
-              pending.add(pk)
-              pendingChanged = true
-            }
-          }
-          if (!pendingChanged) return prev
-          return { ...prev, pending }
-        })
-
-        void (async () => {
-          if (gen !== feedProfileBatchGenRef.current) return
-          const contextualReadRelays = Array.from(
-            new Set(
-              subRequestsRef.current
-                .flatMap((r) => r.urls)
-                .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
-                .filter(Boolean)
-            )
-          )
-          const chunks: string[][] = []
-          for (let i = 0; i < need.length; i += FEED_PROFILE_CHUNK) {
-            chunks.push(need.slice(i, i + FEED_PROFILE_CHUNK))
-          }
-          const settled = await Promise.allSettled(
-            chunks.map((chunk) =>
-              client.fetchProfilesForPubkeys(chunk, { contextualReadRelays })
-            )
-          )
-          if (gen !== feedProfileBatchGenRef.current) return
-
-          setFeedProfileBatch((prev) => {
-            const next = new Map(prev.profiles)
-            const pend = new Set(prev.pending)
-            settled.forEach((res, idx) => {
-              const chunk = chunks[idx]!
-              if (res.status === 'rejected') {
-                chunk.forEach((pk) => feedProfileLoadedRef.current.delete(pk))
-                chunk.forEach((pk) => pend.delete(pk))
-                return
-              }
-              const profiles = res.value
-              for (const p of profiles) {
-                const pkNorm = p.pubkey.toLowerCase()
-                next.set(pkNorm, { ...p, pubkey: pkNorm })
-                pend.delete(pkNorm)
-              }
-              for (const pk of chunk) {
-                const pkNorm = pk.toLowerCase()
-                pend.delete(pkNorm)
-                if (!next.has(pkNorm)) {
-                  next.set(pkNorm, {
-                    pubkey: pkNorm,
-                    npub: pubkeyToNpub(pkNorm) ?? '',
-                    username: formatPubkey(pkNorm),
-                    batchPlaceholder: true
-                  })
-                }
-              }
-            })
-            return { profiles: next, pending: pend, version: prev.version + 1 }
-          })
-        })()
+        enqueueFeedProfilePubkeys(need)
       }, FEED_PROFILE_BATCH_DEBOUNCE_MS)
       return () => window.clearTimeout(handle)
-    }, [timelineEventsForFilter, newEvents, clientFilteredEvents, showCount, feedStatsProfileBump])
+    }, [
+      timelineEventsForFilter,
+      newEvents,
+      clientFilteredEvents,
+      showCount,
+      enqueueFeedProfilePubkeys
+    ])
 
     const scrollToTop = useCallback((behavior: ScrollBehavior = 'instant') => {
       setTimeout(() => {

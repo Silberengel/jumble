@@ -93,7 +93,12 @@ export function LikeButtonWithStats({
       downVoteCount = likes?.filter((like) => isDiscussionDownvoteEmoji(like.emoji)).length || 0
     }
 
-    return { myLastEmoji: myLike?.emoji, likeCount: likes?.length, upVoteCount, downVoteCount }
+    return {
+      myLastEmoji: myLike?.emoji,
+      likeCount: likes?.length,
+      upVoteCount,
+      downVoteCount
+    }
   }, [noteStats, pubkey, hideUntrustedInteractions, showDiscussionVotes])
 
   /** Same idea as {@link ReplyButton}: merged likes (thread fetch / publish) can exist before snapshot sets `updatedAt`. */

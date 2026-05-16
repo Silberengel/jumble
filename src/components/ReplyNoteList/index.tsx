@@ -26,10 +26,13 @@ import {
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import { getZapInfoFromEvent, shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
-import { isDefaultPlusLikeReactionContent } from '@/lib/like-reaction-emojis'
+import { isLowEffortCollapsedReactionContent } from '@/lib/like-reaction-emojis'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
-import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
+import {
+  shouldHideOwnReactionThreadRow,
+  shouldHideThreadResponseEvent
+} from '@/lib/thread-response-filter'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { generateBech32IdFromETag } from '@/lib/tag'
@@ -69,17 +72,16 @@ import { useTranslation } from 'react-i18next'
 import { useQuoteEvents } from '@/hooks'
 import { LoadingBar } from '../LoadingBar'
 import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
-import ThreadContextRootNote from './ThreadContextRootNote'
 import ThreadLowEffortStrip from './ThreadLowEffortStrip'
 import ThreadQuoteBacklink, {
   BacklinkAvatarStrip,
   ThreadQuoteBacklinkSkeleton
 } from './ThreadQuoteBacklink'
 
-/** Collapse default `+` likes into {@link ThreadLowEffortStrip}; keep discussion ⬆️/⬇️ vote rows. */
-function isDefaultPlusLikeReactionEvent(evt: NEvent, isDiscussionRoot: boolean): boolean {
+/** Collapse `+`/heart/👍/👎 into {@link ThreadLowEffortStrip}; keep discussion ⬆️/⬇️ vote rows. */
+function isLowEffortCollapsedReactionEvent(evt: NEvent, isDiscussionRoot: boolean): boolean {
   if (isDiscussionRoot) return false
-  return isNip25ReactionKind(evt.kind) && isDefaultPlusLikeReactionContent(evt.content)
+  return isNip25ReactionKind(evt.kind) && isLowEffortCollapsedReactionContent(evt.content)
 }
 
 type TRootInfo =
@@ -1635,7 +1637,8 @@ function ReplyNoteList({
     (item: NEvent) => {
       if (isPollVoteKind(item)) return false
       if (isZapPollThreadZapReceipt(item, event)) return false
-      if (isDefaultPlusLikeReactionEvent(item, isDiscussionRoot)) return false
+      if (isLowEffortCollapsedReactionEvent(item, isDiscussionRoot)) return false
+      if (shouldHideOwnReactionThreadRow(item, userPubkey)) return false
       if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
         return false
       }
@@ -1664,26 +1667,25 @@ function ReplyNoteList({
       rootInfo?.type,
       repliesMap,
       event,
-      isDiscussionRoot
+      isDiscussionRoot,
+      userPubkey
     ]
   )
 
-  const threadStatsNoteId = useMemo(() => {
-    if (rootInfo?.type === 'E') return rootInfo.id
-    if (rootInfo?.type === 'A' && /^[0-9a-f]{64}$/i.test(rootInfo.eventId)) {
-      return rootInfo.eventId.toLowerCase()
-    }
-    return event.id
-  }, [rootInfo, event.id])
-
-  const showThreadContextRoot =
-    rootInfo?.type === 'E' &&
-    /^[0-9a-f]{64}$/i.test(rootInfo.id) &&
-    rootInfo.id.toLowerCase() !== event.id.toLowerCase()
+  const threadRootHex =
+    rootInfo?.type === 'E' && /^[0-9a-f]{64}$/i.test(rootInfo.id)
+      ? rootInfo.id.toLowerCase()
+      : undefined
 
   const visibleForRender = useMemo(
-    () => visibleFeed.filter((e) => shouldShowFeedItem(e) && e.id !== event.id),
-    [visibleFeed, shouldShowFeedItem, event.id]
+    () =>
+      visibleFeed.filter((e) => {
+        if (!shouldShowFeedItem(e)) return false
+        if (e.id === event.id) return false
+        if (threadRootHex && e.id.toLowerCase() === threadRootHex) return false
+        return true
+      }),
+    [visibleFeed, shouldShowFeedItem, event.id, threadRootHex]
   )
 
   const displayRows = useMemo(
@@ -1704,9 +1706,6 @@ function ReplyNoteList({
         </div>
       )}
       <div>
-        {showThreadContextRoot && rootInfo?.type === 'E' && (
-          <ThreadContextRootNote rootHex={rootInfo.id} contextEvent={event} />
-        )}
         {displayRows.map((row, ri) => {
           const prevRow = ri > 0 ? displayRows[ri - 1] : undefined
           if (row.type === 'reply') {
@@ -1846,7 +1845,7 @@ function ReplyNoteList({
           <ThreadQuoteBacklinkSkeleton />
         </div>
       )}
-      <ThreadLowEffortStrip event={event} statsNoteId={threadStatsNoteId} className="mt-1" />
+      <ThreadLowEffortStrip event={event} className="mt-1" />
       {!loading && !quoteLoading && (
         <div className="text-sm mt-2 mb-3 text-center text-muted-foreground">
           {mergedFeed.length > 0 ? t('no more replies') : t('no replies')}
