@@ -150,10 +150,31 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
     return { rangeStartMs: startMs - pad, rangeEndExclusiveMs: endExclusiveMs + pad }
   }, [viewYear, viewMonth])
 
+  const calendarFetchGenRef = useRef(0)
+
   useEffect(() => {
+    const fetchGen = ++calendarFetchGenRef.current
     let cancelled = false
     let lateMergeTimer: number | null = null
+    const stale = () => cancelled || calendarFetchGenRef.current !== fetchGen
     const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
+
+    const replacePool = (pool: NostrEvent[]) => {
+      if (stale()) return
+      setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange(pool, rangeStartMs, rangeEndExclusiveMs))
+      setLoading(false)
+    }
+
+    const mergeIntoPool = (incoming: NostrEvent[]) => {
+      if (stale()) return
+      setRawEvents((prev) =>
+        dedupeCalendarEventsPreferringOccurrenceRange(
+          [...prev, ...incoming],
+          rangeStartMs,
+          rangeEndExclusiveMs
+        )
+      )
+    }
 
     /** Same-tick paint from in-memory session (no await) — IDB + relays merge in the async block below. */
     const fromSessionSync = client.getSessionEventsMatchingSearch(
@@ -161,30 +182,20 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
       SESSION_CALENDAR_MERGE_CAP,
       [...CALENDAR_EVENT_KINDS]
     )
-    const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
-      fromSessionSync,
-      rangeStartMs,
-      rangeEndExclusiveMs
+    replacePool(
+      dedupeCalendarEventsPreferringOccurrenceRange(fromSessionSync, rangeStartMs, rangeEndExclusiveMs)
     )
-    setRawEvents(sessionOnly)
-    setLoading(false)
 
-    const scheduleLateSessionMerge = (mergeWithIdb: NostrEvent[]) => {
+    const scheduleLateSessionMerge = () => {
       lateMergeTimer = window.setTimeout(() => {
         lateMergeTimer = null
-        if (cancelled) return
+        if (stale()) return
         const later = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents((prev) =>
-          dedupeCalendarEventsPreferringOccurrenceRange(
-            [...prev, ...later, ...mergeWithIdb],
-            rangeStartMs,
-            rangeEndExclusiveMs
-          )
-        )
+        mergeIntoPool(later)
       }, 2500)
     }
 
@@ -212,26 +223,18 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           )
           .catch((): NostrEvent[] => [])
 
-        void idbP.then((localBaseline) => {
-          if (cancelled) return
-          const s2 = client.getSessionEventsMatchingSearch(
+        if (stale()) return
+
+        if (!relayUrls.length) {
+          const localBaseline = await idbP
+          if (stale()) return
+          const fromSession = client.getSessionEventsMatchingSearch(
             '',
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents(
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...localBaseline, ...s2],
-              rangeStartMs,
-              rangeEndExclusiveMs
-            )
-          )
-        })
-
-        if (!relayUrls.length) {
-          void idbP.then((lb) => {
-            if (!cancelled) scheduleLateSessionMerge(lb)
-          })
+          replacePool([...localBaseline, ...fromSession])
+          scheduleLateSessionMerge()
           return
         }
 
@@ -288,38 +291,17 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
           .catch(() => ({ batch: [] as NostrEvent[], fromFollowing: [] as NostrEvent[] }))
 
         const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
-        if (cancelled) return
+        if (stale()) return
 
         const fromSession = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents(
-          dedupeCalendarEventsPreferringOccurrenceRange(
-            [...batch, ...fromFollowing, ...fromSession, ...localBaseline],
-            rangeStartMs,
-            rangeEndExclusiveMs
-          )
-        )
-        lateMergeTimer = window.setTimeout(() => {
-          lateMergeTimer = null
-          if (cancelled) return
-          const later = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          setRawEvents((prev) =>
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...prev, ...later, ...localBaseline],
-              rangeStartMs,
-              rangeEndExclusiveMs
-            )
-          )
-        }, 2500)
+        replacePool([...localBaseline, ...fromSession, ...batch, ...fromFollowing])
+        scheduleLateSessionMerge()
       } catch {
-        if (!cancelled) {
+        if (!stale()) {
           try {
             const rs = rangeStartMs
             const re = rangeEndExclusiveMs

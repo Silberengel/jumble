@@ -91,6 +91,8 @@ class NoteStatsService {
   private batchTimeout: NodeJS.Timeout | null = null
   /** Prevents overlapping processBatch runs (reentrant calls corrupted pendingEvents). */
   private processBatchRunning = false
+  /** When true (secondary panel open), skip background stats relay batches so the note panel is not starved. */
+  private backgroundStatsPaused = false
   /** While greater than zero, {@link processBatch} defers so user publishes are not starved for WebSocket pool / bandwidth. */
   private publishPriorityDepth = 0
   private readonly BATCH_DELAY = 40
@@ -153,8 +155,13 @@ class NoteStatsService {
     return out
   }
 
+  setBackgroundStatsPaused(paused: boolean): void {
+    this.backgroundStatsPaused = paused
+  }
+
   /** Coalesce scroll bursts; flush immediately when backlog is large or a foreground note was queued. */
   private maybeFlushStatsBatch(foreground: boolean) {
+    if (!foreground && this.backgroundStatsPaused) return
     if (this.processBatchRunning) {
       return
     }
@@ -198,6 +205,11 @@ class NoteStatsService {
       } else {
         this.pendingStatsRootEventById.set(eventId, event)
       }
+    }
+
+    if (!foreground && this.backgroundStatsPaused) {
+      rememberRoot()
+      return
     }
 
     if (this.pendingEvents.has(eventId) || this.pendingForeground.has(eventId)) {

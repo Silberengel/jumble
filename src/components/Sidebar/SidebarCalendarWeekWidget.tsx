@@ -22,7 +22,7 @@ import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { Button } from '@/components/ui/button'
@@ -103,36 +103,50 @@ export default function SidebarCalendarWeekWidget() {
     }
   }, [rawEvents, weekOffset])
 
+  const fetchGenRef = useRef(0)
+
   useEffect(() => {
+    const fetchGen = ++fetchGenRef.current
     let cancelled = false
     let lateMergeTimer: number | null = null
-    const { weekStartMs, weekEndExclusiveMs } = getLocalMondayWeekBounds(weekOffset)
+    const stale = () => cancelled || fetchGenRef.current !== fetchGen
 
+    const weekBounds = () => getLocalMondayWeekBounds(weekOffset)
+
+    const replacePool = (pool: Event[]) => {
+      if (stale()) return
+      const { weekStartMs, weekEndExclusiveMs } = weekBounds()
+      setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange(pool, weekStartMs, weekEndExclusiveMs))
+    }
+
+    const mergeIntoPool = (incoming: Event[]) => {
+      if (stale()) return
+      const { weekStartMs, weekEndExclusiveMs } = weekBounds()
+      setRawEvents((prev) =>
+        dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...incoming], weekStartMs, weekEndExclusiveMs)
+      )
+    }
+
+    const { weekStartMs, weekEndExclusiveMs } = weekBounds()
     const fromSessionSync = client.getSessionEventsMatchingSearch(
       '',
       SESSION_CALENDAR_MERGE_CAP,
       [...CALENDAR_EVENT_KINDS]
     )
-    const sessionOnly = dedupeCalendarEventsPreferringOccurrenceRange(
-      fromSessionSync,
-      weekStartMs,
-      weekEndExclusiveMs
+    replacePool(
+      dedupeCalendarEventsPreferringOccurrenceRange(fromSessionSync, weekStartMs, weekEndExclusiveMs)
     )
-    setRawEvents(sessionOnly)
 
-    const scheduleLateSessionMerge = (mergeWithIdb: Event[]) => {
+    const scheduleLateSessionMerge = () => {
       lateMergeTimer = window.setTimeout(() => {
         lateMergeTimer = null
-        if (cancelled) return
-        const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+        if (stale()) return
         const later = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        setRawEvents((prev) =>
-          dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...mergeWithIdb], ws, we)
-        )
+        mergeIntoPool(later)
       }, 2500)
     }
 
@@ -151,25 +165,18 @@ export default function SidebarCalendarWeekWidget() {
           )
           .catch((): Event[] => [])
 
-        void idbP.then((localBaseline) => {
-          if (cancelled) return
-          const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
-          const s2 = client.getSessionEventsMatchingSearch(
+        if (stale()) return
+
+        if (!relayUrls.length) {
+          const localBaseline = await idbP
+          if (stale()) return
+          const fromSession = client.getSessionEventsMatchingSearch(
             '',
             SESSION_CALENDAR_MERGE_CAP,
             [...CALENDAR_EVENT_KINDS]
           )
-          setRawEvents(
-            dedupeCalendarEventsPreferringOccurrenceRange([...localBaseline, ...s2], ws, we)
-          )
-        })
-
-        if (cancelled) return
-
-        if (!relayUrls.length) {
-          void idbP.then((lb) => {
-            if (!cancelled) scheduleLateSessionMerge(lb)
-          })
+          replacePool([...localBaseline, ...fromSession])
+          scheduleLateSessionMerge()
           return
         }
 
@@ -223,40 +230,19 @@ export default function SidebarCalendarWeekWidget() {
           .catch(() => ({ batch: [] as Event[], fromFollowing: [] as Event[] }))
 
         const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
-        if (cancelled) return
+        if (stale()) return
 
-        const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
         const fromSessionAfterNet = client.getSessionEventsMatchingSearch(
           '',
           SESSION_CALENDAR_MERGE_CAP,
           [...CALENDAR_EVENT_KINDS]
         )
-        if (!cancelled) {
-          setRawEvents(
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing],
-              ws,
-              we
-            )
-          )
-        }
-        lateMergeTimer = window.setTimeout(() => {
-          lateMergeTimer = null
-          if (cancelled) return
-          const { weekStartMs: w2, weekEndExclusiveMs: w2e } = getLocalMondayWeekBounds(weekOffset)
-          const later = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          setRawEvents((prev) =>
-            dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...later, ...localBaseline], w2, w2e)
-          )
-        }, 2500)
+        replacePool([...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing])
+        scheduleLateSessionMerge()
       } catch {
-        if (!cancelled) {
+        if (!stale()) {
           try {
-            const { weekStartMs: ws, weekEndExclusiveMs: we } = getLocalMondayWeekBounds(weekOffset)
+            const { weekStartMs: ws, weekEndExclusiveMs: we } = weekBounds()
             const [idb, arc] = await Promise.all([
               indexedDb.getCalendarEventsForOccurrenceWindow(ws, we),
               indexedDb.getArchivedCalendarEventsOverlappingWindow(ws, we, 25_000, 400)
@@ -267,9 +253,9 @@ export default function SidebarCalendarWeekWidget() {
               SESSION_CALENDAR_MERGE_CAP,
               [...CALENDAR_EVENT_KINDS]
             )
-            setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange([...salvage, ...fromSession], ws, we))
+            replacePool([...salvage, ...fromSession])
           } catch {
-            setRawEvents([])
+            if (!stale()) setRawEvents([])
           }
         }
       }

@@ -15,6 +15,7 @@ import { ImwaldBrandBar } from '@/assets/Logo'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import NoteDrawer from '@/components/NoteDrawer'
 import client from '@/services/client.service'
+import noteStatsService from '@/services/note-stats.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import type { Event } from 'nostr-tools'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
@@ -2126,19 +2127,31 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     setSinglePaneSheetOpen(shouldBeOpen)
   }, [panelMode, isSmallScreen, secondaryStack.length, drawerOpen])
 
+  const primaryFrozen =
+    secondaryStack.length > 0 && (isSmallScreen || panelMode === 'double')
+
+  useEffect(() => {
+    noteStatsService.setBackgroundStatsPaused(primaryFrozen)
+    if (primaryFrozen) {
+      client.interruptBackgroundQueries()
+    }
+  }, [primaryFrozen])
+
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({
       navigate: navigatePrimaryPageStable,
       current: currentPrimaryPage,
       currentPageProps,
-      display: isSmallScreen ? secondaryStack.length === 0 : true
+      display: isSmallScreen ? secondaryStack.length === 0 : true,
+      frozen: primaryFrozen
     }),
     [
       navigatePrimaryPageStable,
       currentPrimaryPage,
       currentPageProps,
       isSmallScreen,
-      secondaryStack.length
+      secondaryStack.length,
+      primaryFrozen
     ]
   )
 

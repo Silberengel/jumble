@@ -12,7 +12,16 @@ export type PrimaryPageContextValue = {
   current: TPrimaryPageName | null
   /** Props passed to the current primary page (e.g. `{ spell: 'discussions' }` for spells). */
   currentPageProps: object | undefined
+  /**
+   * False on small screens while the secondary stack is open (primary feed unmounted).
+   * True on desktop double-pane so the left column stays visible.
+   */
   display: boolean
+  /**
+   * True while a secondary panel is open: pause primary feed timelines / background stats
+   * and preserve scroll position until the panel closes.
+   */
+  frozen: boolean
 }
 
 export const PrimaryPageContext = createContext<PrimaryPageContextValue | undefined>(undefined)

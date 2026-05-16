@@ -44,7 +44,9 @@ const PrimaryPageLayout = forwardRef(
     const smallScreenScrollAreaRef = useRef<HTMLDivElement>(null)
     const smallScreenLastScrollTopRef = useRef(0)
     const { isSmallScreen } = useScreenSize()
-    const { current, display } = usePrimaryPage()
+    const { current, display, frozen } = usePrimaryPage()
+    const savedScrollTopRef = useRef(0)
+    const wasFrozenRef = useRef(false)
 
     useImperativeHandle(
       ref,
@@ -83,6 +85,28 @@ const PrimaryPageLayout = forwardRef(
         window.removeEventListener('scroll', handleScroll)
       }
     }, [current, isSmallScreen, display])
+
+    useEffect(() => {
+      if (isSmallScreen) return
+      const el = scrollAreaRef.current
+      if (!el) return
+
+      if (frozen && !wasFrozenRef.current) {
+        savedScrollTopRef.current = el.scrollTop
+        wasFrozenRef.current = true
+        return
+      }
+
+      if (!frozen && wasFrozenRef.current) {
+        wasFrozenRef.current = false
+        const top = savedScrollTopRef.current
+        requestAnimationFrame(() => {
+          if (scrollAreaRef.current) {
+            scrollAreaRef.current.scrollTop = top
+          }
+        })
+      }
+    }, [frozen, isSmallScreen, pageName])
 
     useEffect(() => {
       if (isSmallScreen) return
@@ -133,7 +157,10 @@ const PrimaryPageLayout = forwardRef(
     }
 
     return (
-      <DeepBrowsingProvider active={current === pageName && display} scrollAreaRef={scrollAreaRef}>
+      <DeepBrowsingProvider
+        active={current === pageName && display && !frozen}
+        scrollAreaRef={scrollAreaRef}
+      >
         <div className="relative flex h-full min-h-0 min-w-0 flex-col">
           {hasTitlebarRow ? (
             <PrimaryPageTitlebar
