@@ -1535,6 +1535,13 @@ export default {
       "Treffer im Veröffentlichungs-Cache oder Event-Archiv auf diesem Gerät. Index-Relays haben die Notiz ggf. noch nicht.",
     "Full-text search empty merged":
       "Keine Notizen zu dieser Suche in deinem Archiv oder auf den konfigurierten Index-Relays (langsam oder offline).",
+    "Full-text search sources progress": "Suchquellen",
+    "Full-text search source local": "Dieses Gerät",
+    "Full-text search source loading": "Suche läuft…",
+    "Full-text search source zero hits": "0 Treffer",
+    "Full-text search source zero with note": "0 Treffer · {{note}}",
+    "Full-text search source hits": "{{count}} Treffer",
+    "Full-text search source hits with raw": "{{shown}} angezeigt ({{raw}} von der Quelle)",
     Geohash: "Geohash",
     "Geohash (optional)": "Geohash (optional)",
     "Global quiet mode": "Global quiet mode",

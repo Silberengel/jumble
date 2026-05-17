@@ -2,7 +2,7 @@ import NoteCard from '@/components/NoteCard'
 import RelayIcon from '@/components/RelayIcon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toRelay } from '@/lib/link'
-import { compareEventsForDTagQuery } from '@/lib/dtag-search'
+import { compareMergedNip50SearchHits } from '@/lib/dtag-search'
 import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
@@ -10,12 +10,14 @@ import { normalizeUrl } from '@/lib/url'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import client from '@/services/client.service'
 import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS } from '@/services/client-query.service'
+import relayInfoService from '@/services/relay-info.service'
 import { relayHostForSubscribeLog } from '@/services/relay-operation-log.service'
-import type { TProfile } from '@/types'
+import type { TProfile, TRelayInfo } from '@/types'
 import type { Event, Filter } from 'nostr-tools'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import { buildAlexandriaEventsSearchUrlFromNotesQuery } from '@/lib/alexandria-events-search-url'
-import { Loader2 } from 'lucide-react'
+import { HardDrive, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSmartRelayNavigationOptional } from '@/PageManager'
@@ -201,21 +203,178 @@ async function addSearchEventsToSessionCacheBatched(
   }
 }
 
-type RelayFetchPhase = 'loading' | 'done' | 'error'
+type SearchSourcePhase = 'loading' | 'done' | 'error'
 
-type RelayFetchRow = {
-  relayUrl: string
-  host: string
-  phase: RelayFetchPhase
-  eventCount?: number
+type LocalSearchRow = {
+  phase: SearchSourcePhase
+  /** Notes that pass the preview filter (shown in results). */
+  hitCount: number
+  /** Raw matches before preview filter. */
+  rawCount: number
   ms?: number
   errorMessage?: string
 }
 
+type RelayFetchRow = {
+  relayUrl: string
+  host: string
+  phase: SearchSourcePhase
+  /** Preview-visible hits merged into results. */
+  eventCount?: number
+  /** Events returned by the relay before preview filter. */
+  rawEventCount?: number
+  ms?: number
+  errorMessage?: string
+}
+
+function formatSourceStatusLabel(
+  row: {
+    phase: SearchSourcePhase
+    hitCount: number
+    rawCount?: number
+    errorMessage?: string
+  },
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string {
+  if (row.phase === 'loading') {
+    return t('Full-text search source loading')
+  }
+  if (row.phase === 'error') {
+    const msg = row.errorMessage?.trim()
+    return msg && msg.length <= 120 ? msg : t('Full-text search relay error')
+  }
+  const shown = row.hitCount
+  const raw = row.rawCount ?? shown
+  if (shown === 0 && raw === 0) {
+    if (row.errorMessage?.trim()) {
+      return t('Full-text search source zero with note', { note: row.errorMessage.trim() })
+    }
+    return t('Full-text search source zero hits')
+  }
+  if (raw > shown) {
+    return t('Full-text search source hits with raw', { shown, raw })
+  }
+  return t('Full-text search source hits', { count: shown })
+}
+
+function SearchSourceProgressList({
+  localRow,
+  relayRows,
+  relayInfoByKey,
+  anyLoading
+}: {
+  localRow: LocalSearchRow | null
+  relayRows: RelayFetchRow[]
+  relayInfoByKey: Record<string, TRelayInfo | undefined>
+  anyLoading: boolean
+}) {
+  const { t } = useTranslation()
+
+  if (!localRow && relayRows.length === 0) return null
+
+  return (
+    <section
+      className="rounded-lg border border-border/60 bg-muted/20 text-xs"
+      aria-label={t('Full-text search sources progress')}
+      aria-busy={anyLoading}
+    >
+      <ul className="divide-y divide-border/50">
+        {localRow ? (
+          <li className="flex min-w-0 items-center gap-2 px-2.5 py-2">
+            <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0 shrink-0 font-medium text-foreground">
+              {t('Full-text search source local')}
+            </span>
+            <span
+              className={cn(
+                'ml-auto min-w-0 text-right',
+                localRow.phase === 'error'
+                  ? 'text-destructive'
+                  : localRow.phase === 'loading'
+                    ? 'text-muted-foreground'
+                    : localRow.hitCount > 0
+                      ? 'text-foreground'
+                      : 'text-muted-foreground'
+              )}
+            >
+              {formatSourceStatusLabel(
+                {
+                  phase: localRow.phase,
+                  hitCount: localRow.hitCount,
+                  rawCount: localRow.rawCount,
+                  errorMessage: localRow.errorMessage
+                },
+                t
+              )}
+              {localRow.ms != null && localRow.phase !== 'loading' ? (
+                <span className="text-muted-foreground"> · {localRow.ms} ms</span>
+              ) : null}
+            </span>
+            {localRow.phase === 'loading' ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+            ) : null}
+          </li>
+        ) : null}
+        {relayRows.map((row) => (
+          <li key={row.relayUrl} className="flex min-w-0 items-center gap-2 px-2.5 py-2">
+            <RelayIcon
+              url={row.relayUrl}
+              className="h-4 w-4 shrink-0 rounded-sm"
+              iconSize={10}
+              relayInfo={relayInfoByKey[relayKey(row.relayUrl)]}
+              skipRelayInfoFetch
+            />
+            <span className="min-w-0 truncate font-mono text-foreground" title={row.relayUrl}>
+              {row.host}
+            </span>
+            <span
+              className={cn(
+                'ml-auto min-w-0 max-w-[55%] text-right leading-snug',
+                row.phase === 'error'
+                  ? 'text-destructive'
+                  : row.phase === 'loading'
+                    ? 'text-muted-foreground'
+                    : (row.eventCount ?? 0) > 0
+                      ? 'text-foreground'
+                      : 'text-muted-foreground'
+              )}
+            >
+              {formatSourceStatusLabel(
+                {
+                  phase: row.phase,
+                  hitCount: row.eventCount ?? 0,
+                  rawCount: row.rawEventCount,
+                  errorMessage: row.errorMessage
+                },
+                t
+              )}
+              {row.ms != null && row.phase !== 'loading' ? (
+                <span className="text-muted-foreground"> · {row.ms} ms</span>
+              ) : null}
+            </span>
+            {row.phase === 'loading' ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Dedupe while preserving {@link SEARCHABLE_RELAY_URLS} priority (fast index relays first). */
 function normalizeRelayList(urls: readonly string[]): string[] {
-  return Array.from(
-    new Set(urls.map((u) => normalizeUrl(u) || u.trim()).filter((u): u is string => u.length > 0))
-  ).sort((a, b) => relayHostForSubscribeLog(a).localeCompare(relayHostForSubscribeLog(b)))
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of urls) {
+    const n = normalizeUrl(raw) || raw.trim()
+    if (!n) continue
+    const k = relayKey(n)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(n)
+  }
+  return out
 }
 
 function relayKey(url: string): string {
@@ -246,8 +405,10 @@ export default function FullTextSearchByRelay({
     }
   }
   const runGeneration = useRef(0)
+  const [localSearchRow, setLocalSearchRow] = useState<LocalSearchRow | null>(null)
   const [relayRows, setRelayRows] = useState<RelayFetchRow[]>([])
   const [mergedHits, setMergedHits] = useState<MergedHit[]>([])
+  const [relayInfoByKey, setRelayInfoByKey] = useState<Record<string, TRelayInfo | undefined>>({})
 
   const normalizedRelays = useMemo(() => normalizeRelayList(relayUrls), [relayUrls])
 
@@ -261,11 +422,49 @@ export default function FullTextSearchByRelay({
     [q, normalizedRelays]
   )
 
-  const doneRelayCount = relayRows.filter((r) => r.phase === 'done' || r.phase === 'error').length
-  const errorRelayCount = relayRows.filter((r) => r.phase === 'error').length
-  const anyLoading = relayRows.some((r) => r.phase === 'loading')
+  const relayUrlsForIconPrefetch = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    const push = (url: string) => {
+      const k = relayKey(url)
+      if (!k || seen.has(k)) return
+      seen.add(k)
+      out.push(url)
+    }
+    for (const u of normalizedRelays) push(u)
+    for (const hit of mergedHits) {
+      for (const u of hit.relayUrls) push(u)
+    }
+    return out
+  }, [normalizedRelays, mergedHits])
+
+  useEffect(() => {
+    if (relayUrlsForIconPrefetch.length === 0) {
+      setRelayInfoByKey({})
+      return
+    }
+    let cancelled = false
+    void relayInfoService.getRelayInfos(relayUrlsForIconPrefetch).then((infos) => {
+      if (cancelled) return
+      const next: Record<string, TRelayInfo | undefined> = {}
+      relayUrlsForIconPrefetch.forEach((url, i) => {
+        const info = infos[i]
+        if (info) next[relayKey(url)] = info
+      })
+      setRelayInfoByKey((prev) => ({ ...prev, ...next }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [relayUrlsForIconPrefetch])
+
+  const anyLoading =
+    localSearchRow?.phase === 'loading' || relayRows.some((r) => r.phase === 'loading')
   const allTerminal =
-    relayRows.length > 0 && relayRows.every((r) => r.phase === 'done' || r.phase === 'error')
+    localSearchRow != null &&
+    localSearchRow.phase !== 'loading' &&
+    relayRows.length > 0 &&
+    relayRows.every((r) => r.phase === 'done' || r.phase === 'error')
 
   useEffect(() => {
     /** Unmount / total wall only — must not abort in-flight NIP-50 when the “first hits + …ms” scheduling cutoff runs. */
@@ -290,6 +489,7 @@ export default function FullTextSearchByRelay({
     }
 
     if (!q || normalizedRelays.length === 0) {
+      setLocalSearchRow(null)
       setRelayRows([])
       setMergedHits([])
       return dispose
@@ -304,6 +504,7 @@ export default function FullTextSearchByRelay({
 
     const poolSize = Math.min(FULL_TEXT_SEARCH_RELAY_CONCURRENCY, normalizedRelays.length)
 
+    setLocalSearchRow({ phase: 'loading', hitCount: 0, rawCount: 0 })
     setRelayRows(
       normalizedRelays.map((relayUrl) => ({
         relayUrl,
@@ -312,12 +513,16 @@ export default function FullTextSearchByRelay({
       }))
     )
     setMergedHits([])
+    setRelayInfoByKey({})
 
     /** Set when the first {@link runOneRelay} begins (first real NIP-50 query); master wall clock starts then. */
     let waveT0: number | null = null
-    /** After first preview-visible relay hits: stop dequeuing new relays; in-flight REQs keep their per-relay budget. */
+    /**
+     * After first preview-visible relay hits: may stop dequeuing *extra* relays after a short delay,
+     * but every index relay in the list still gets one REQ (see worker loop).
+     */
     let stopSchedulingNewRelays = false
-    /** Only after ≥1 preview-visible event from a relay: stop starting new relays after …ms (empty EOSE must not shorten). */
+    /** Only after ≥1 preview-visible event from a relay: arm the early scheduling cutoff (empty EOSE must not shorten). */
     let appliedRelativeSchedulingCutoff = false
 
     const scheduleMasterWallAbort = () => {
@@ -399,7 +604,7 @@ export default function FullTextSearchByRelay({
             return row
           })
           .filter((h) => h.relayUrls.length > 0 || h.fromLocalArchive)
-          .sort((a, b) => compareEventsForDTagQuery(q, a.event, b.event))
+          .sort((a, b) => compareMergedNip50SearchHits(q, a, b))
           .slice(0, FULL_TEXT_SEARCH_MAX_MERGED_EVENTS)
       })
     }
@@ -420,29 +625,49 @@ export default function FullTextSearchByRelay({
     }
 
     void (async () => {
-      const mergedLocal = await collectLocalEventsForTextSearch({
-        query: q,
-        allowedKinds: kindsArr,
-        sessionCap: 220,
-        idbMergedLimit: 120,
-        archiveScanMaxMs: 15_000,
-        includeOtherStoresFullText: true,
-        fullTextStoreHitCap: 260
-      })
-      if (myRun !== runGeneration.current || runAbort.signal.aborted) return
-      const mergedLocalMatching = mergedLocal.filter((e) => mergedSearchNoteHasPreviewBody(e))
-      if (mergedLocalMatching.length === 0) return
-      applyMergedUpdate((map) => {
-        for (const ev of mergedLocalMatching) {
-          const cur = map.get(ev.id)
-          if (cur) {
-            cur.local = true
-          } else {
-            map.set(ev.id, { event: ev, relays: new Set(), local: true })
-          }
+      const localT0 = performance.now()
+      try {
+        const mergedLocal = await collectLocalEventsForTextSearch({
+          query: q,
+          allowedKinds: kindsArr,
+          sessionCap: 220,
+          idbMergedLimit: 120,
+          archiveScanMaxMs: 15_000,
+          includeOtherStoresFullText: true,
+          fullTextStoreHitCap: 260
+        })
+        if (myRun !== runGeneration.current || runAbort.signal.aborted) return
+        const mergedLocalMatching = mergedLocal.filter((e) => mergedSearchNoteHasPreviewBody(e))
+        const localMs = Math.round(performance.now() - localT0)
+        setLocalSearchRow({
+          phase: 'done',
+          hitCount: mergedLocalMatching.length,
+          rawCount: mergedLocal.length,
+          ms: localMs
+        })
+        if (mergedLocalMatching.length > 0) {
+          applyMergedUpdate((map) => {
+            for (const ev of mergedLocalMatching) {
+              const cur = map.get(ev.id)
+              if (cur) {
+                cur.local = true
+              } else {
+                map.set(ev.id, { event: ev, relays: new Set(), local: true })
+              }
+            }
+          })
+          void addSearchEventsToSessionCacheBatched(mergedLocalMatching, runGeneration, myRun)
         }
-      })
-      void addSearchEventsToSessionCacheBatched(mergedLocalMatching, runGeneration, myRun)
+      } catch (err) {
+        if (myRun !== runGeneration.current) return
+        setLocalSearchRow({
+          phase: 'error',
+          hitCount: 0,
+          rawCount: 0,
+          ms: Math.round(performance.now() - localT0),
+          errorMessage: err instanceof Error ? err.message : String(err)
+        })
+      }
     })()
 
     const runOneRelay = async (relayUrl: string) => {
@@ -458,7 +683,7 @@ export default function FullTextSearchByRelay({
         if (myRun !== runGeneration.current) return
 
         const sorted = [...raw]
-          .sort((a, b) => compareEventsForDTagQuery(q, a, b))
+          .sort((a, b) => compareMergedNip50SearchHits(q, { event: a }, { event: b }))
           .slice(0, FULL_TEXT_SEARCH_MAX_NOTES_PER_RELAY)
         const previewVisible = sorted.filter((e) => mergedSearchNoteHasPreviewBody(e))
 
@@ -467,7 +692,14 @@ export default function FullTextSearchByRelay({
           setRelayRows((prev) =>
             prev.map((r) =>
               r.relayUrl === relayUrl
-                ? { ...r, phase: 'error', eventCount: 0, ms, errorMessage: connectionError }
+                ? {
+                    ...r,
+                    phase: 'error',
+                    eventCount: 0,
+                    rawEventCount: sorted.length,
+                    ms,
+                    errorMessage: connectionError
+                  }
                 : r
             )
           )
@@ -487,6 +719,7 @@ export default function FullTextSearchByRelay({
                   ...r,
                   phase: 'done',
                   eventCount: previewVisible.length,
+                  rawEventCount: sorted.length,
                   ms,
                   errorMessage: previewVisible.length > 0 ? undefined : connectionError
                 }
@@ -500,14 +733,17 @@ export default function FullTextSearchByRelay({
         const ms = Math.round(performance.now() - t0)
         setRelayRows((prev) =>
           prev.map((r) =>
-            r.relayUrl === relayUrl ? { ...r, phase: 'error', eventCount: 0, ms, errorMessage: msg } : r
+            r.relayUrl === relayUrl
+              ? { ...r, phase: 'error', eventCount: 0, rawEventCount: 0, ms, errorMessage: msg }
+              : r
           )
         )
       }
     }
 
     const worker = async () => {
-      while (myRun === runGeneration.current && !runAbort.signal.aborted && !stopSchedulingNewRelays) {
+      while (myRun === runGeneration.current && !runAbort.signal.aborted) {
+        if (stopSchedulingNewRelays && relayCursor >= normalizedRelays.length) break
         const relayUrl = nextRelayUrl()
         if (!relayUrl) break
         await runOneRelay(relayUrl)
@@ -540,18 +776,12 @@ export default function FullTextSearchByRelay({
         })}
       </p>
 
-      {relayRows.length > 0 && (
-        <p className="text-xs text-muted-foreground flex items-center gap-2" role="status">
-          {anyLoading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />}
-          {t('Full-text search progress relays', { done: doneRelayCount, total: relayRows.length })}
-        </p>
-      )}
-
-      {errorRelayCount > 0 && allTerminal && (
-        <p className="text-xs text-amber-600 dark:text-amber-500" role="status">
-          {t('Full-text search relay errors summary', { count: errorRelayCount })}
-        </p>
-      )}
+      <SearchSourceProgressList
+        localRow={localSearchRow}
+        relayRows={relayRows}
+        relayInfoByKey={relayInfoByKey}
+        anyLoading={anyLoading}
+      />
 
       <SearchMergedProfileProvider resetKey={searchProfileResetKey} mergedHits={mergedHits}>
         <div className="min-w-0 space-y-2">
@@ -592,7 +822,13 @@ export default function FullTextSearchByRelay({
                           navigateToRelay(toRelay(url))
                         }}
                       >
-                        <RelayIcon url={url} className="h-5 w-5 rounded-sm" iconSize={12} />
+                        <RelayIcon
+                          url={url}
+                          className="h-5 w-5 rounded-sm"
+                          iconSize={12}
+                          relayInfo={relayInfoByKey[relayKey(url)]}
+                          skipRelayInfoFetch
+                        />
                       </button>
                     ))}
                     {hit.fromLocalArchive && (

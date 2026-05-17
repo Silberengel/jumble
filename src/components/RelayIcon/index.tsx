@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useFetchRelayInfo } from '@/hooks'
 import { getRelayIconOverrideSrc, relayUrlFingerprintColors } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
+import type { TRelayInfo } from '@/types'
 import { Server } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -33,15 +34,21 @@ export default function RelayIcon({
   url,
   className,
   iconSize = 14,
+  /** When set, used instead of fetching NIP-11 (e.g. parent batched {@link relayInfoService.getRelayInfos}). */
+  relayInfo: relayInfoProp,
   /** When true, do not hit NIP-11 (parent already fetches relay info, or icon-only row). */
   skipRelayInfoFetch = false
 }: {
   url?: string
   className?: string
   iconSize?: number
+  relayInfo?: TRelayInfo
   skipRelayInfoFetch?: boolean
 }) {
-  const { relayInfo } = useFetchRelayInfo(skipRelayInfoFetch ? undefined : url)
+  const { relayInfo: fetchedRelayInfo } = useFetchRelayInfo(
+    relayInfoProp !== undefined || skipRelayInfoFetch ? undefined : url
+  )
+  const relayInfo = relayInfoProp !== undefined ? relayInfoProp : fetchedRelayInfo
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   useEffect(() => {
     setIconLoadFailed(false)
