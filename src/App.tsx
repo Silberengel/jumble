@@ -65,7 +65,6 @@ export default function App(): JSX.Element {
                                             </LiveActivitiesProvider>
                                             <ReadAloudPlayerModal />
                                             <PublishSuccessSubtleIndicator />
-                                            <Toaster />
                                           </UserPreferencesProvider>
                                         </KindFilterProvider>
                                       </MediaUploadServiceProvider>
@@ -83,6 +82,7 @@ export default function App(): JSX.Element {
                 </div>
               </div>
             </NostrProvider>
+            <Toaster />
           </DeletedEventProvider>
         </ScreenSizeProvider>
       </ContentPolicyProvider>

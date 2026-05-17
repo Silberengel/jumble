@@ -132,6 +132,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const ncryptsecPasswordResolveRef = useRef<((value: string | null) => void) | null>(null)
   /** One toast per mismatch episode; cleared after a successful NIP-07 login. */
   const nip07KeyMismatchToastShownRef = useRef(false)
+  /**
+   * User picked a stored NIP-07 account from the notifications switcher but the extension key
+   * differs — we fall back to read-only npub without spamming the mismatch toast / recovery UI.
+   */
+  const intentionalNip07ReadOnlyPubkeyRef = useRef<string | null>(null)
   const [profile, setProfile] = useState<TProfile | null>(null)
 
   const [profileEvent, setProfileEvent] = useState<Event | null>(null)
@@ -1074,6 +1079,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const login = (signer: ISigner, act: TAccount) => {
     if (act.signerType === 'nip-07') {
       nip07KeyMismatchToastShownRef.current = false
+      intentionalNip07ReadOnlyPubkeyRef.current = null
     }
     const newAccounts = storage.addAccount(act)
     setAccounts(newAccounts)
@@ -1093,13 +1099,14 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }
 
   const switchAccount = async (act: TAccountPointer | null): Promise<string | null> => {
+    intentionalNip07ReadOnlyPubkeyRef.current = null
     if (!act) {
       storage.switchAccount(null)
       setAccount(null)
       setSigner(null)
       return null
     }
-    const result = await loginWithAccountPointer(act)
+    const result = await loginWithAccountPointer(act, { userInitiatedSwitch: true })
     // If loginWithAccountPointer fell back to read-only npub it skips storage.switchAccount.
     // Persist the user's intent here so:
     //   • session restore on refresh targets the right account, and
@@ -1228,7 +1235,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  const loginWithAccountPointer = async (act: TAccountPointer): Promise<string | null> => {
+  const loginWithAccountPointer = async (
+    act: TAccountPointer,
+    options?: { userInitiatedSwitch?: boolean }
+  ): Promise<string | null> => {
     const fallbackToReadOnlyNpub = (pubkey: string, reason?: unknown): string => {
       const npubSigner = new NpubSigner()
       const npub = nip19.npubEncode(pubkey)
@@ -1323,7 +1333,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           (isNip07SignerPubkeyMismatchError(err) || isNip07SignerPubkeyMismatchError(lastNip07Err)) &&
           !nip07KeyMismatchToastShownRef.current
         ) {
-          fireNip07ExtensionKeyMismatchToast()
+          if (options?.userInitiatedSwitch) {
+            intentionalNip07ReadOnlyPubkeyRef.current = storedAccount.pubkey.toLowerCase()
+          } else {
+            fireNip07ExtensionKeyMismatchToast()
+          }
         }
         return fallbackToReadOnlyNpub(storedAccount.pubkey, err)
       }
@@ -1366,6 +1380,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
    */
   const adoptCurrentExtensionNip07Identity = useEventCallback(async () => {
     try {
+      intentionalNip07ReadOnlyPubkeyRef.current = null
       const nip07Signer = new Nip07Signer()
       await nip07Signer.init()
       const extPubkey = await nip07Signer.getPublicKey()
@@ -1450,9 +1465,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             attempts,
             wantedPubkey: preferred.pubkey.slice(0, 12)
           })
-          fireNip07ExtensionKeyMismatchToast()
+          const quietReadOnly =
+            intentionalNip07ReadOnlyPubkeyRef.current === preferred.pubkey.toLowerCase()
+          if (!quietReadOnly) {
+            fireNip07ExtensionKeyMismatchToast()
+          }
           // Keep retrying — the extension may update its approved key after a moment.
-          schedule(3_000)
+          schedule(quietReadOnly ? 8_000 : 3_000)
           return
         }
         logger.info('[NostrProvider] NIP-07 recovery retry failed', {
