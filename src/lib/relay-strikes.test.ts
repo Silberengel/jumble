@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { relaySessionStrikes } from './relay-strikes'
+import { isRelayStrikeEntryActive, relaySessionStrikes } from './relay-strikes'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 function row(
@@ -40,5 +40,39 @@ describe('relaySessionStrikes.observeSubscribeBatch', () => {
     expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
     relaySessionStrikes.recordReadSuccess(url)
     expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+  })
+})
+
+describe('relaySessionStrikes.clearKey', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+  })
+
+  it('removes strike state so relay is no longer skipped', () => {
+    const url = 'ws://localhost:4000/'
+    relaySessionStrikes.applyRateLimitCooldownForUrl(url)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+    relaySessionStrikes.clearKey(url)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+    const snap = relaySessionStrikes.getDebugSnapshot()
+    expect(snap.entries.find((e) => e.key.includes('localhost'))).toBeUndefined()
+  })
+})
+
+describe('isRelayStrikeEntryActive', () => {
+  it('is false for empty entry', () => {
+    expect(
+      isRelayStrikeEntryActive({
+        readFailures: 0,
+        readLastStrikeIncrementAt: 0,
+        readStrikeSkipUntil: 0,
+        slowSignals: 0,
+        slowParkUntil: 0,
+        publishFailures: 0,
+        publishLastStrikeIncrementAt: 0,
+        publishStrikeSkipUntil: 0,
+        rateLimitUntil: 0
+      })
+    ).toBe(false)
   })
 })

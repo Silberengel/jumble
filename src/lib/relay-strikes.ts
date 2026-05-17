@@ -51,6 +51,16 @@ export type RelayStrikeDebugSnapshot = {
   cacheRelayKeys: string[]
 }
 
+/** True when the relay is skipped or has accrued session strike / cooldown state. */
+export function isRelayStrikeEntryActive(entry: StrikeEntry, now = Date.now()): boolean {
+  if (entry.readFailures > 0 || entry.publishFailures > 0 || entry.slowSignals > 0) return true
+  if (now < entry.readStrikeSkipUntil) return true
+  if (now < entry.publishStrikeSkipUntil) return true
+  if (now < entry.rateLimitUntil) return true
+  if (now < entry.slowParkUntil) return true
+  return false
+}
+
 function emptyEntry(): StrikeEntry {
   return {
     readFailures: 0,
@@ -302,6 +312,13 @@ class RelaySessionStrikes {
       })),
       cacheRelayKeys: Array.from(this.cacheRelayKeys)
     }
+  }
+
+  /** Remove session strike / cooldown state for one relay (settings “free relay”). */
+  clearKey(urlOrSessionKey: string): void {
+    const key = sessionKey(urlOrSessionKey) || urlOrSessionKey.trim()
+    if (!key) return
+    this.byKey.delete(key)
   }
 
   reset(): void {

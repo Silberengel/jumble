@@ -1443,6 +1443,11 @@ class ClientService extends EventTarget {
     return { scoredRelays, presetWorking: preset, relayStrikes: relaySessionStrikes.getDebugSnapshot() }
   }
 
+  /** Clear session strike / cooldown for one relay (Settings → Session relays). */
+  clearSessionRelayStrike(urlOrSessionKey: string): void {
+    relaySessionStrikes.clearKey(urlOrSessionKey)
+  }
+
   /**
    * From a list of candidate relay URLs (e.g. public lively), return up to `count` relays,
    * preferring those that have succeeded and been fast this session. Excludes read-only relays.
