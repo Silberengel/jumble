@@ -472,7 +472,7 @@ export function useSmartNoteNavigation() {
 
     navigationEventStore.clear()
     if (event) {
-      navigationEventStore.setEvent(event)
+      navigationEventStore.setEvent(event, noteId)
       client.addEventToCache(event)
     }
     // Pre-cache related events (parent, root) and nostr embeds so NotePage avoids skeletons.
@@ -545,7 +545,7 @@ export function useSmartNoteNavigationOptional() {
     const { noteId } = parsed
     navigationEventStore.clear()
     if (event) {
-      navigationEventStore.setEvent(event)
+      navigationEventStore.setEvent(event, noteId)
       client.addEventToCache(event)
     }
     if (relatedEvents?.length) {
@@ -2564,9 +2564,20 @@ function findAndCreateComponent(url: string, index: number) {
       logger.component('PageManager', 'Decoded URL parameter', { url: params.url })
     }
     
-    logger.component('PageManager', 'Creating component with params', { params, index })
+    const noteRouteId = typeof params.id === 'string' ? params.id : undefined
+    const initialEvent = noteRouteId ? navigationEventStore.peekEvent(noteRouteId) : undefined
+    logger.component('PageManager', 'Creating component with params', {
+      params,
+      index,
+      hasInitialEvent: !!initialEvent
+    })
     try {
-      const component = cloneSecondaryRouteElement(element, { ...params, index, ref })
+      const component = cloneSecondaryRouteElement(element, {
+        ...params,
+        index,
+        ref,
+        ...(initialEvent ? { initialEvent } : {})
+      })
       logger.component('PageManager', 'Component created successfully', { hasComponent: !!component })
       return { component, ref }
     } catch (error) {

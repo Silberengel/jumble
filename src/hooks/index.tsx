@@ -1,6 +1,7 @@
 export * from './useNearViewport'
 export * from './useFetchCalendarRsvps'
 export * from './useFetchEvent'
+export * from './useFetchThreadContextEvent'
 export * from './useFetchFollowings'
 export * from './useFetchNip05'
 export * from './useFetchProfile'

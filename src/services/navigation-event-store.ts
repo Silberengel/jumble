@@ -6,15 +6,21 @@ import { getNoteBech32Id } from '@/lib/event'
 import { Event, nip19 } from 'nostr-tools'
 
 /** URL paths use bech32 (nevent1…, naddr1…); lookups must match the `id` passed to `useFetchEvent`. */
-function candidateKeysForNoteUrlId(eventId: string): string[] {
-  const keys = [eventId]
-  if (/^[a-f0-9]{64}$/i.test(eventId)) return keys
+export function candidateKeysForNoteUrlId(eventId: string): string[] {
+  const trimmed = eventId.trim()
+  if (!trimmed) return []
+  const keys = [trimmed]
+  if (/^[a-f0-9]{64}$/i.test(trimmed)) return keys
   try {
-    const decoded = nip19.decode(eventId)
+    const decoded = nip19.decode(trimmed)
     if (decoded.type === 'nevent') {
       keys.push(decoded.data.id)
     } else if (decoded.type === 'note') {
       keys.push(decoded.data)
+    } else if (decoded.type === 'naddr') {
+      keys.push(
+        `${decoded.data.kind}:${decoded.data.pubkey}:${decoded.data.identifier ?? ''}`
+      )
     }
   } catch {
     /* not bech32 */
@@ -26,17 +32,25 @@ class NavigationEventStore {
   private eventMap = new Map<string, Event>()
 
   /**
-   * Store an event for navigation (hex id + same bech32 form as {@link toNote} / the URL).
+   * Store an event for navigation (hex id + bech32 forms + optional URL segment from {@link parseNoteUrl}).
    */
-  setEvent(event: Event): void {
-    this.eventMap.set(event.id, event)
+  setEvent(event: Event, navigatedNoteId?: string): void {
+    const keys = new Set<string>([event.id.toLowerCase()])
+    if (navigatedNoteId?.trim()) {
+      for (const k of candidateKeysForNoteUrlId(navigatedNoteId)) {
+        keys.add(k)
+      }
+    }
     try {
       const urlId = getNoteBech32Id(event)
-      if (urlId !== event.id) {
-        this.eventMap.set(urlId, event)
+      for (const k of candidateKeysForNoteUrlId(urlId)) {
+        keys.add(k)
       }
     } catch {
       /* ignore */
+    }
+    for (const key of keys) {
+      if (key) this.eventMap.set(key, event)
     }
   }
 

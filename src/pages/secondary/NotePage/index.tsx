@@ -11,7 +11,12 @@ import UserAvatar from '@/components/UserAvatar'
 import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useFetchEvent, useFetchProfile, useNip84HighlightTargetEvents } from '@/hooks'
+import {
+  useFetchEvent,
+  useFetchProfile,
+  useFetchThreadContextEvent,
+  useNip84HighlightTargetEvents
+} from '@/hooks'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
 import noteStatsService from '@/services/note-stats.service'
@@ -29,7 +34,6 @@ import { toNote, toNoteList } from '@/lib/link'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { stripMarkupForPreview } from '@/lib/parent-reply-blurb'
 import { tagNameEquals } from '@/lib/tag'
-import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
 import type { Event } from 'nostr-tools'
@@ -141,14 +145,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     () => (finalEvent?.kind === ExtendedKind.COMMENT ? finalEvent.tags.find(tagNameEquals('I')) : undefined),
     [finalEvent]
   )
-  const threadRelayHints = useMemo(
-    () => (finalEvent ? relayHintsFromEventTags(finalEvent) : []),
-    [finalEvent]
-  )
-  const parentRootFetchOpts = useMemo(
-    () => (threadRelayHints.length ? { relayHints: threadRelayHints } : undefined),
-    [threadRelayHints]
-  )
   const rootInitialEvent = useMemo(() => {
     if (!finalEvent) return undefined
     const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
@@ -163,9 +159,9 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
     return client.peekSessionCachedEvent(parentHex)
   }, [finalEvent])
   const { isFetching: isFetchingRootEvent, event: rootEvent, refetch: refetchRoot } =
-    useFetchEvent(rootEventId, rootInitialEvent, parentRootFetchOpts)
+    useFetchThreadContextEvent(rootEventId, finalEvent, 'root', rootInitialEvent)
   const { isFetching: isFetchingParentEvent, event: parentEvent, refetch: refetchParent } =
-    useFetchEvent(parentEventId, parentInitialEvent, parentRootFetchOpts)
+    useFetchThreadContextEvent(parentEventId, finalEvent, 'parent', parentInitialEvent)
 
   const selfHex = finalEvent?.id?.toLowerCase()
   const rootEventForStrip =
