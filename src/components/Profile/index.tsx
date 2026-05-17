@@ -16,7 +16,7 @@ import { kinds, type NostrEvent } from 'nostr-tools'
 import { createReactionDraftEvent } from '@/lib/draft-event'
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
 import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-feedback'
-import { toProfileEditor } from '@/lib/link'
+import { getNostrArchivesProfileUrl, openExternalUrl, toProfileEditor } from '@/lib/link'
 import { encodeProfileInteractionsSpellId } from '@/pages/primary/SpellsPage/fauxSpellConfig'
 import { generateImageByPubkey } from '@/lib/pubkey'
 import { isVideo, normalizeAnyRelayUrl } from '@/lib/url'
@@ -35,6 +35,7 @@ import {
 import {
   Copy,
   Ellipsis,
+  ExternalLink,
   Calendar,
   MapPin,
   Pencil,
@@ -502,6 +503,7 @@ export default function Profile({
   if (!profile) return null // TypeScript guard - should never reach here but satisfies type checker
 
   const { banner, username, about, avatar, pubkey, website, websiteList, nip05List, isBot } = profile
+  const nostrArchivesProfileUrl = getNostrArchivesProfileUrl(pubkey)
 
   return (
     <>
@@ -623,6 +625,12 @@ export default function Profile({
                     <Network />
                     {t('Interactions map')}
                   </DropdownMenuItem>
+                  {nostrArchivesProfileUrl ? (
+                    <DropdownMenuItem onClick={() => openExternalUrl(nostrArchivesProfileUrl)}>
+                      <ExternalLink />
+                      {t('View on Nostr.Archives')}
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem onClick={() => push(toProfileEditor())}>
                     <Pencil />
                     {t('Edit')}

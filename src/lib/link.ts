@@ -1,7 +1,9 @@
 import { Event, kinds, nip19 } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
 import { getNoteBech32Id, isReplaceableEvent } from './event'
+import { isValidPubkey, normalizeHexPubkey } from './pubkey'
 import { TSearchParams } from '@/types'
+import { normalizeAnyRelayUrl } from './url'
 
 /** Same kinds as {@link useMenuActions} `isArticleType` for naddr + Alexandria publication URLs. */
 const ALEXANDRIA_PUBLICATION_NADDR_KINDS = new Set<number>([
@@ -146,3 +148,21 @@ export const toChachiChat = (relay: string, d: string) => {
   return `https://chachi.chat/${relay.replace(/^wss?:\/\//, '').replace(/\/$/, '')}/${d}`
 }
 export const toAlexandria = (id: string) => `https://next-alexandria.gitcitadel.eu/events?id=${encodeURIComponent(id)}`
+
+/** {@link https://nostr.watch/relays/wss/relay.example.com} path slug from a relay WebSocket/HTTP URL. */
+export function getNostrWatchRelayUrl(relayUrl: string): string {
+  const normalized = (normalizeAnyRelayUrl(relayUrl) || relayUrl).trim().replace(/\/+$/, '')
+  const slug = normalized.replace(/^([a-z][a-z0-9+.-]*):\/\//i, '$1/')
+  return `https://nostr.watch/relays/${slug}`
+}
+
+/** Profile page on nostrarchives.com (hex pubkey). */
+export function getNostrArchivesProfileUrl(pubkey: string): string | null {
+  const hex = normalizeHexPubkey(pubkey)
+  if (!isValidPubkey(hex)) return null
+  return `https://nostrarchives.com/profiles/${hex}`
+}
+
+export function openExternalUrl(url: string): void {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}

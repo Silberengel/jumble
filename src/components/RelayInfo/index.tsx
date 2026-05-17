@@ -1,13 +1,20 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { useFetchRelayInfo } from '@/hooks'
+import { getNostrWatchRelayUrl, openExternalUrl } from '@/lib/link'
 import { normalizeHttpUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { nip66Service } from '@/services/nip66.service'
-import { Check, Copy, GitBranch, Link, Mail, SquareCode, Activity } from 'lucide-react'
+import { Activity, Check, Copy, Ellipsis, ExternalLink, GitBranch, Link, Mail, SquareCode } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -263,8 +270,10 @@ function RelayLivelinessSection({ discovery }: { discovery: TNip66RelayDiscovery
 }
 
 function RelayControls({ url }: { url: string }) {
+  const { t } = useTranslation()
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [copiedShareableUrl, setCopiedShareableUrl] = useState(false)
+  const nostrWatchUrl = useMemo(() => getNostrWatchRelayUrl(url), [url])
 
   const handleCopyUrl = () => {
     navigator.clipboard.writeText(url)
@@ -287,6 +296,19 @@ function RelayControls({ url }: { url: string }) {
       <Button variant="ghost" size="titlebar-icon" onClick={handleCopyUrl}>
         {copiedUrl ? <Check /> : <Copy />}
       </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="titlebar-icon" aria-label={t('Relay options')}>
+            <Ellipsis />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => openExternalUrl(nostrWatchUrl)}>
+            <ExternalLink />
+            {t('View on Nostr.Watch')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SaveRelayDropdownMenu urls={[url]} bigButton />
     </div>
   )

@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { buildHiveTalkJoinUrl, roomIdForPubkeys } from '@/lib/hivetalk'
+import { getNostrArchivesProfileUrl, openExternalUrl } from '@/lib/link'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
@@ -26,6 +27,7 @@ import {
   Code,
   Copy,
   Ellipsis,
+  ExternalLink,
   ThumbsUp,
   MessageCircle,
   Network,
@@ -92,6 +94,7 @@ export default function ProfileOptions({
   
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, pubkey), [mutePubkeySet, pubkey])
   const displayName = profile?.username ?? (accountPubkey ? formatPubkey(accountPubkey) : 'jumble')
+  const nostrArchivesProfileUrl = useMemo(() => getNostrArchivesProfileUrl(pubkey), [pubkey])
 
   /** All available relays: current feed, favorites, relay sets, defaults (FAST_READ, FAST_WRITE). */
   const allAvailableRelayUrls = useMemo(() => {
@@ -255,6 +258,12 @@ export default function ProfileOptions({
           <Network />
           {t('Interactions map')}
         </DropdownMenuItem>
+        {nostrArchivesProfileUrl && (
+          <DropdownMenuItem onClick={() => openExternalUrl(nostrArchivesProfileUrl)}>
+            <ExternalLink />
+            {t('View on Nostr.Archives')}
+          </DropdownMenuItem>
+        )}
         {kind0ForRelay && (
           <>
             <DropdownMenuSeparator />
