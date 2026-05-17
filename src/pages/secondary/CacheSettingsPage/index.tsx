@@ -1,3 +1,4 @@
+import CacheEventImportSettings from '@/components/CacheEventImportSettings'
 import InBrowserCacheSetting from '@/components/InBrowserCacheSetting'
 import EventArchiveCacheSettings from '@/components/EventArchiveCacheSettings'
 import { RefreshButton } from '@/components/RefreshButton'
@@ -31,6 +32,7 @@ const CacheSettingsPage = forwardRef(
       >
         <div key={contentKey} className="px-4 py-3 space-y-6">
           <InBrowserCacheSetting />
+          <CacheEventImportSettings />
           <EventArchiveCacheSettings />
         </div>
       </SecondaryPageLayout>
