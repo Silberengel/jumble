@@ -2,33 +2,16 @@ import { HIVETALK_BASE_URL } from '@/constants'
 
 export interface HiveTalkJoinParams {
   room: string
-  name: string
-  roomPassword?: string
-  audio?: boolean
-  video?: boolean
-  screen?: boolean
-  notify?: boolean
-  hide?: boolean
-  token?: string
 }
 
 /**
- * Build a HiveTalk Honey direct-join URL (`/meet/{room}&name=…&…`).
- * Legacy vanilla used `/join?room=…` — see https://honey.hivetalk.org
+ * HiveTalk Honey join URL: `{base}/meet/{room}` (user enters name on the join page).
+ * @see https://honey.hivetalk.org/meet/{room}
  */
 export function buildHiveTalkJoinUrl(params: HiveTalkJoinParams): string {
   const base = HIVETALK_BASE_URL.replace(/\/$/, '')
-  const query = [
-    `name=${encodeURIComponent(params.name)}`,
-    `roomPassword=${encodeURIComponent(params.roomPassword ?? '0')}`,
-    `audio=${params.audio !== false ? '1' : '0'}`,
-    `video=${params.video !== false ? '1' : '0'}`,
-    `screen=${params.screen ? '1' : '0'}`,
-    `notify=${params.notify !== false ? '1' : '0'}`
-  ]
-  if (params.hide !== undefined) query.push(`hide=${params.hide ? '1' : '0'}`)
-  if (params.token) query.push(`token=${encodeURIComponent(params.token)}`)
-  return `${base}/meet/${encodeURIComponent(params.room)}&${query.join('&')}`
+  const room = params.room.trim().replace(/^\/+|\/+$/g, '')
+  return `${base}/meet/${room}`
 }
 
 /** Deterministic room id for a 1:1 call between two pubkeys (same room from either side). */

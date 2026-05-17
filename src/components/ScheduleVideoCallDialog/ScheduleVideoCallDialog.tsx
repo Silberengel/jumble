@@ -82,7 +82,7 @@ export function ScheduleVideoCallDialog({
     if (endUnix != null && endUnix <= startUnix) return null
     const d = 'preview'
     const roomId = roomIdForScheduledCall(d)
-    const defaultJoinUrl = buildHiveTalkJoinUrl({ room: roomId, name: 'Guest' })
+    const defaultJoinUrl = buildHiveTalkJoinUrl({ room: roomId })
     const joinUrl = locationUrl.trim() || defaultJoinUrl
     return createCalendarEventDraftEvent({
       d,
@@ -139,10 +139,7 @@ export function ScheduleVideoCallDialog({
 
       const d = `jumble-cal-${randomString(12)}`
       const roomId = roomIdForScheduledCall(d)
-      const defaultJoinUrl = buildHiveTalkJoinUrl({
-        room: roomId,
-        name: 'Guest'
-      })
+      const defaultJoinUrl = buildHiveTalkJoinUrl({ room: roomId })
       const joinUrl = locationUrl.trim() || defaultJoinUrl
 
       const calendarDraft = createCalendarEventDraftEvent({

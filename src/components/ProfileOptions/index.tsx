@@ -189,10 +189,7 @@ export default function ProfileOptions({
 
   const callInviteUrl =
     accountPubkey &&
-    buildHiveTalkJoinUrl({
-      room: roomIdForPubkeys(accountPubkey, pubkey),
-      name: displayName
-    })
+    buildHiveTalkJoinUrl({ room: roomIdForPubkeys(accountPubkey, pubkey) })
 
   return (
     <DropdownMenu>

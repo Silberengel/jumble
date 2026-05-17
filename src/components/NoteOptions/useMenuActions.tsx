@@ -4,7 +4,7 @@ import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { buildHiveTalkJoinUrl } from '@/lib/hivetalk'
 import { toAlexandria, encodeArticleLikePublicationNaddr, openAlexandriaPublicationFromNaddr } from '@/lib/link'
 import logger from '@/lib/logger'
-import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import { pubkeyToNpub } from '@/lib/pubkey'
 import {
   batchFetchPublicationSectionEvents,
   buildPublicationSectionRelayUrls,
@@ -997,9 +997,8 @@ export function useMenuActions({
         separator: true,
         onClick: () => {
           closeDrawer()
-          const roomId = `jumble-note-${event.id}`
-          const displayName = pubkey ? (profile?.username ?? formatPubkey(pubkey)) : 'jumble'
-          const url = buildHiveTalkJoinUrl({ room: roomId, name: displayName })
+          const roomId = `imwald-note-${event.id}`
+          const url = buildHiveTalkJoinUrl({ room: roomId })
           window.open(url, '_blank', 'noopener,noreferrer')
         }
       },
@@ -1008,9 +1007,8 @@ export function useMenuActions({
         label: t('Copy call invite link'),
         onClick: () => {
           closeDrawer()
-          const roomId = `jumble-note-${event.id}`
-          const displayName = pubkey ? (profile?.username ?? formatPubkey(pubkey)) : 'jumble'
-          const url = buildHiveTalkJoinUrl({ room: roomId, name: displayName })
+          const roomId = `imwald-note-${event.id}`
+          const url = buildHiveTalkJoinUrl({ room: roomId })
           navigator.clipboard.writeText(url)
           toast.success(t('Copied to clipboard'))
         }
@@ -1022,9 +1020,8 @@ export function useMenuActions({
               label: t('Send call invite'),
               onClick: () => {
                 closeDrawer()
-                const roomId = `jumble-note-${event.id}`
-                const displayName = pubkey ? (profile?.username ?? formatPubkey(pubkey)) : 'jumble'
-                const url = buildHiveTalkJoinUrl({ room: roomId, name: displayName })
+                const roomId = `imwald-note-${event.id}`
+                const url = buildHiveTalkJoinUrl({ room: roomId })
                 onOpenCallInvite(`${t('Join the video call')}: ${url}`)
               }
             } as MenuAction
