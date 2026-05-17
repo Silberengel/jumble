@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { kinds, finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools'
+import { kinds, finalizeEvent, generateSecretKey } from 'nostr-tools'
 import { parseJsonlCacheImportText, parsePastedCacheImportJson } from './cache-event-import'
 
 function signedNote(content: string) {
   const sk = generateSecretKey()
-  const pubkey = getPublicKey(sk)
   return finalizeEvent(
     {
       kind: kinds.ShortTextNote,

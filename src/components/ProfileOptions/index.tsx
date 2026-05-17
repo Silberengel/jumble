@@ -9,7 +9,7 @@ import {
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { buildHiveTalkJoinUrl, roomIdForPubkeys } from '@/lib/hivetalk'
 import { getNostrArchivesProfileUrl, openExternalUrl } from '@/lib/link'
-import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import { pubkeyToNpub } from '@/lib/pubkey'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -59,7 +59,7 @@ export default function ProfileOptions({
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
-  const { pubkey: accountPubkey, profile, publish, checkLogin } = useNostr()
+  const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
   const { mutePubkeySet, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } = useMuteList()
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
@@ -93,7 +93,6 @@ export default function ProfileOptions({
   }, [pubkey, profileEvent])
   
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, pubkey), [mutePubkeySet, pubkey])
-  const displayName = profile?.username ?? (accountPubkey ? formatPubkey(accountPubkey) : 'jumble')
   const nostrArchivesProfileUrl = useMemo(() => getNostrArchivesProfileUrl(pubkey), [pubkey])
 
   /** All available relays: current feed, favorites, relay sets, defaults (FAST_READ, FAST_WRITE). */
