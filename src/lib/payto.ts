@@ -3,7 +3,7 @@
  * Parse and normalize payto://<type>/<authority> URIs; known types for UI (icons, labels, dialogs).
  */
 
-import { publicAssetUrl } from '@/constants'
+import { PAYTO_LOGO_URL_BY_FILENAME } from '@/lib/payto-logos'
 
 export const PAYTO_URI_REGEX = /payto:\/\/([a-z0-9-]+)\/([^\s\]\)\<\"']+)/gi
 
@@ -112,7 +112,7 @@ export function getPaytoIconChar(type: string): string | null {
   return info?.symbol ?? null
 }
 
-/** Logo filename in /payto_logos/ for types that have an asset. Any image format works: .svg, .gif, .jpg, .png, .webp, etc. */
+/** Logo filename in `src/assets/payto_logos/` for types that have an asset. Any image format works: .svg, .gif, .jpg, .png, .webp, etc. */
 const PAYTO_LOGO_FILES: Record<string, string> = {
   liquid: 'LBTC.svg',
   lbtc: 'LBTC.svg',
@@ -169,10 +169,10 @@ export function getPaytoProfileUrl(type: string, authority: string): string | nu
 }
 
 export function getPaytoLogoPath(type: string): string | null {
-  const key = type.toLowerCase()
+  const key = getCanonicalPaytoType(type)
   const file = PAYTO_LOGO_FILES[key]
   if (!file) return null
-  return publicAssetUrl(`payto_logos/${file}`)
+  return PAYTO_LOGO_URL_BY_FILENAME[file] ?? null
 }
 
 export function getPaytoTypeInfo(type: string): (typeof PAYTO_KNOWN_TYPES)[string] | undefined {
