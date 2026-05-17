@@ -71,7 +71,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
         }
 
         const repost = createRepostDraftEvent(event)
-        const evt = await publish(repost, { addClientTag: storage.getAddClientTag() })
+        const evt = await publish(repost, {
+          addClientTag: storage.getAddClientTag(),
+          companionSourceEvent: event
+        })
         
         // Show publishing feedback
         if ((evt as any)?.relayStatuses) {
