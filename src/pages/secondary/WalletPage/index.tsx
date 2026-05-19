@@ -21,6 +21,7 @@ import DefaultZapAmountInput from './DefaultZapAmountInput'
 import DefaultZapCommentInput from './DefaultZapCommentInput'
 import LightningAddressInput from './LightningAddressInput'
 import QuickZapSwitch from './QuickZapSwitch'
+import IncludePublicZapReceiptSwitch from './IncludePublicZapReceiptSwitch'
 import ZapReplyThresholdInput from './ZapReplyThresholdInput'
 
 const WalletPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
@@ -78,6 +79,7 @@ const WalletPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
             <DefaultZapAmountInput />
             <DefaultZapCommentInput />
             <QuickZapSwitch />
+            <IncludePublicZapReceiptSwitch />
             <LightningAddressInput />
           </>
         ) : (

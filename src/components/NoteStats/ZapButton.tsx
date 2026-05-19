@@ -26,7 +26,7 @@ type ZapButtonProps = {
 export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapButtonProps) {
   const { t } = useTranslation()
   const { checkLogin, pubkey } = useNostr()
-  const { defaultZapSats, defaultZapComment, quickZap } = useZap()
+  const { defaultZapSats, defaultZapComment, quickZap, includePublicZapReceipt } = useZap()
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null)
   const [openZapDialog, setOpenZapDialog] = useState(false)
   const [zapping, setZapping] = useState(false)
@@ -66,7 +66,14 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
       if (zapping) return
 
       setZapping(true)
-      const zapResult = await lightning.zap(pubkey, event, defaultZapSats, defaultZapComment)
+      const zapResult = await lightning.zap(
+        pubkey,
+        event,
+        defaultZapSats,
+        defaultZapComment,
+        undefined,
+        includePublicZapReceipt
+      )
       // user canceled
       if (!zapResult) {
         return

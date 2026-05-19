@@ -16,6 +16,8 @@ type TZapContext = {
   updateQuickZap: (quickZap: boolean) => void
   zapReplyThreshold: number
   updateZapReplyThreshold: (sats: number) => void
+  includePublicZapReceipt: boolean
+  updateIncludePublicZapReceipt: (include: boolean) => void
 }
 
 const ZapContext = createContext<TZapContext | undefined>(undefined)
@@ -33,6 +35,9 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
   const [defaultZapComment, setDefaultZapComment] = useState<string>(storage.getDefaultZapComment())
   const [quickZap, setQuickZap] = useState<boolean>(storage.getQuickZap())
   const [zapReplyThreshold, setZapReplyThreshold] = useState<number>(storage.getZapReplyThreshold())
+  const [includePublicZapReceipt, setIncludePublicZapReceipt] = useState<boolean>(
+    storage.getIncludePublicZapReceipt()
+  )
   const [isWalletConnected, setIsWalletConnected] = useState(false)
   const [provider, setProvider] = useState<WebLNProvider | null>(null)
   const [walletInfo, setWalletInfo] = useState<GetInfoResponse | null>(null)
@@ -77,6 +82,11 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
     setZapReplyThreshold(sats)
   }
 
+  const updateIncludePublicZapReceipt = (include: boolean) => {
+    setIncludePublicZapReceipt(include)
+    void storage.setIncludePublicZapReceiptAsync(include)
+  }
+
   return (
     <ZapContext.Provider
       value={{
@@ -90,7 +100,9 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
         quickZap,
         updateQuickZap,
         zapReplyThreshold,
-        updateZapReplyThreshold
+        updateZapReplyThreshold,
+        includePublicZapReceipt,
+        updateIncludePublicZapReceipt
       }}
     >
       {children}

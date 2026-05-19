@@ -520,6 +520,8 @@ export default {
     "Lightning Address (or LNURL)": "Lightning Address (or LNURL)",
     "Quick zap": "Quick zap",
     "If enabled, you can zap with a single click. Click and hold for custom amounts": "If enabled, you can zap with a single click. Click and hold for custom amounts",
+    "Include public zap receipt": "Include public zap receipt",
+    "When off, your zap may still succeed but a public receipt may not be published to relays": "When off, your zap may still succeed but a public receipt may not be published to relays",
     All: "All",
     Reactions: "Reactions",
     Zaps: "Zaps",

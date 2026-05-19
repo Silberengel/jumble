@@ -52,6 +52,7 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_ZAP_SATS,
   StorageKey.DEFAULT_ZAP_COMMENT,
   StorageKey.QUICK_ZAP,
+  StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT,
   StorageKey.ZAP_REPLY_THRESHOLD,
   StorageKey.AUTOPLAY,
   StorageKey.HIDE_UNTRUSTED_INTERACTIONS,
@@ -98,6 +99,7 @@ class LocalStorageService {
   private defaultZapSats: number = 21
   private defaultZapComment: string = 'Zap!'
   private quickZap: boolean = false
+  private includePublicZapReceipt: boolean = true
   private zapReplyThreshold: number = 1
   private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
   private autoplay: boolean = true
@@ -195,6 +197,10 @@ class LocalStorageService {
     }
     this.defaultZapComment = window.localStorage.getItem(StorageKey.DEFAULT_ZAP_COMMENT) ?? 'Zap!'
     this.quickZap = window.localStorage.getItem(StorageKey.QUICK_ZAP) === 'true'
+    const includeReceiptStr = window.localStorage.getItem(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
+    if (includeReceiptStr != null) {
+      this.includePublicZapReceipt = includeReceiptStr !== 'false'
+    }
 
     const zapReplyThresholdStr = window.localStorage.getItem(StorageKey.ZAP_REPLY_THRESHOLD)
     if (zapReplyThresholdStr) {
@@ -472,12 +478,20 @@ class LocalStorageService {
   /** Persist a setting. Keys in SETTINGS_KEYS go only to IndexedDB; others use localStorage. */
   private persistSetting(key: string, value: string): void {
     if ((SETTINGS_KEYS as readonly string[]).includes(key)) {
-      void loadIndexedDb()
-        .then((idb) => idb.setSetting(key, value))
-        .catch(() => {})
+      void this.persistSettingToIndexedDb(key, value)
       return
     }
     window.localStorage.setItem(key, value)
+  }
+
+  /** Awaited write to the IndexedDB `settings` store (source of truth for {@link SETTINGS_KEYS}). */
+  private async persistSettingToIndexedDb(key: string, value: string): Promise<void> {
+    try {
+      const idb = await loadIndexedDb()
+      await idb.setSetting(key, value)
+    } catch {
+      // IndexedDB unavailable; in-memory value still updated for this session
+    }
   }
 
   private initPromise: Promise<void> | null = null
@@ -589,6 +603,8 @@ class LocalStorageService {
     if (defaultZapCommentStr != null) this.defaultZapComment = defaultZapCommentStr
     const quickZapStr = get(StorageKey.QUICK_ZAP)
     if (quickZapStr != null) this.quickZap = quickZapStr === 'true'
+    const includeReceiptStr = get(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
+    if (includeReceiptStr != null) this.includePublicZapReceipt = includeReceiptStr !== 'false'
     const zapReplyStr = get(StorageKey.ZAP_REPLY_THRESHOLD)
     if (zapReplyStr != null) {
       const num = parseInt(zapReplyStr)
@@ -799,6 +815,21 @@ class LocalStorageService {
   setQuickZap(quickZap: boolean) {
     this.quickZap = quickZap
     this.persistSetting(StorageKey.QUICK_ZAP, quickZap.toString())
+  }
+
+  getIncludePublicZapReceipt() {
+    return this.includePublicZapReceipt
+  }
+
+  setIncludePublicZapReceipt(include: boolean) {
+    this.includePublicZapReceipt = include
+    void this.persistSettingToIndexedDb(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT, include.toString())
+  }
+
+  /** Persist include-public-zap-receipt to IndexedDB settings (await for callers that need flush). */
+  async setIncludePublicZapReceiptAsync(include: boolean): Promise<void> {
+    this.includePublicZapReceipt = include
+    await this.persistSettingToIndexedDb(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT, include.toString())
   }
 
   getZapReplyThreshold() {

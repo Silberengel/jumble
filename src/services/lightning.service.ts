@@ -16,6 +16,7 @@ import { SubCloser } from 'nostr-tools/abstract-pool'
 import { makeZapRequest } from 'nostr-tools/nip57'
 import { utf8Decoder } from 'nostr-tools/utils'
 import client from './client.service'
+import storage from './local-storage.service'
 import { queryService, replaceableEventService } from './client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
@@ -47,7 +48,8 @@ class LightningService {
     recipientOrEvent: string | NostrEvent,
     sats: number,
     comment: string,
-    closeOuterModel?: () => void
+    closeOuterModel?: () => void,
+    includePublicReceipt: boolean = storage.getIncludePublicZapReceipt()
   ): Promise<{ preimage: string; invoice: string } | null> {
     if (!client.signer) {
       throw new Error('You need to be logged in to zap')
@@ -76,11 +78,13 @@ class LightningService {
     }
     const { callback, lnurl } = zapEndpoint
     const amount = sats * 1000
+    const zapRelays = includePublicReceipt
+      ? senderRelayList.write.slice(0, 4).concat(FAST_READ_RELAY_URLS)
+      : []
     const zapRequestDraft = makeZapRequest({
       ...(event ? { event } : { pubkey: recipient }),
       amount,
-      // Privacy: Only use sender's relays + defaults, not recipient's relays
-      relays: senderRelayList.write.slice(0, 4).concat(FAST_READ_RELAY_URLS),
+      relays: zapRelays,
       comment
     })
     const zapRequest = await client.signer.signEvent(zapRequestDraft)
@@ -169,7 +173,8 @@ class LightningService {
     optionIndex: number,
     sats: number,
     comment: string,
-    closeOuterModel?: () => void
+    closeOuterModel?: () => void,
+    includePublicReceipt: boolean = storage.getIncludePublicZapReceipt()
   ): Promise<{ preimage: string; invoice: string } | null> {
     if (!client.signer) {
       throw new Error('You need to be logged in to zap')
@@ -199,13 +204,16 @@ class LightningService {
     }
     const { callback, lnurl } = zapEndpoint
     const amount = sats * 1000
+    const zapRelays = includePublicReceipt
+      ? senderRelayList.write.slice(0, 4).concat(FAST_READ_RELAY_URLS)
+      : []
     const zapRequestDraft = buildZapPollVoteRequestTemplate({
       poll: pollEvent,
       meta,
       recipientPubkey: rec,
       optionIndex,
       amountMillisats: amount,
-      relays: senderRelayList.write.slice(0, 4).concat(FAST_READ_RELAY_URLS),
+      relays: zapRelays,
       comment
     })
     const zapRequest = await client.signer.signEvent(zapRequestDraft)

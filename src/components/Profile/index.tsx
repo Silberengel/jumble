@@ -33,7 +33,6 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
-  Copy,
   Ellipsis,
   ExternalLink,
   Calendar,
@@ -57,7 +56,6 @@ import {
   type Ref
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import logger from '@/lib/logger'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import NotFound from '../NotFound'
@@ -74,7 +72,6 @@ import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
 import ZapDialog from '@/components/ZapDialog'
-import PaytoLink from '@/components/PaytoLink'
 import PostEditor from '@/components/PostEditor'
 import {
   ScheduleVideoCallDialog,
@@ -85,151 +82,12 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
-import { buildPaytoUri, getCanonicalPaytoType, getPaytoEditorTypeLabel, getPaytoTypeInfo } from '@/lib/payto'
-import type { TProfile } from '@/types'
-
-/**
- * Normalize lightning/LUD-16 authority to a canonical form for deduplication.
- * Handles "user@domain" and "user.domain" (dot variant) as the same address.
- */
-function normalizeLightningAuthority(authority: string): string {
-  const s = authority.trim().toLowerCase()
-  if (!s) return s
-  if (s.includes('@')) return s
-  const firstDot = s.indexOf('.')
-  if (firstDot > 0) return s.slice(0, firstDot) + '@' + s.slice(firstDot + 1)
-  return s
-}
-
-/** Normalize authority for deduplication (canonical key per type) */
-function normalizePaymentAuthority(type: string, authority: string): string {
-  const t = type.toLowerCase()
-  if (t === 'lightning' && authority) return normalizeLightningAuthority(authority)
-  return authority.trim().toLowerCase()
-}
-
-/** Prefer displaying lightning address in canonical "user@domain" form when we have both variants */
-function preferCanonicalLightningAuthority(a: string, b: string): string {
-  const hasAt = (s: string) => s.trim().includes('@')
-  if (hasAt(a) && !hasAt(b)) return a
-  if (hasAt(b) && !hasAt(a)) return b
-  return a
-}
-
-type MergedPaymentMethod = {
-  type: string
-  authority: string
-  payto?: string
-  displayType: string
-  currency?: string
-  minAmount?: number
-  maxAmount?: number
-}
-
-/** Bitcoin-layer first, then on-chain Bitcoin family, then everything else. */
-function paytoPaymentSortRank(type: string): number {
-  const category = getPaytoTypeInfo(type)?.category
-  if (category === 'bitcoin-layer') return 0
-  if (category === 'bitcoin') return 1
-  return 2
-}
-
-/** Merge payment methods from kind 10133 and profile (kind 0: JSON + tags), normalized and deduplicated */
-function mergePaymentMethods(
-  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
-  profile: TProfile | null
-): MergedPaymentMethod[] {
-  const seen = new Map<string, MergedPaymentMethod>()
-  const out: MergedPaymentMethod[] = []
-
-  const add = (type: string, authority: string, payto?: string, displayType?: string, extra?: { currency?: string; minAmount?: number; maxAmount?: number }) => {
-    if (!authority?.trim()) return
-    const normType = getCanonicalPaytoType(type)
-    const key = `${normType}:${normalizePaymentAuthority(normType, authority)}`
-    const existing = seen.get(key)
-    if (existing) {
-      if (normType === 'lightning') {
-        existing.authority = preferCanonicalLightningAuthority(existing.authority, authority.trim())
-        existing.payto = existing.payto || payto || (normType && authority ? `payto://${normType}/${existing.authority}` : undefined)
-      }
-      return
-    }
-    const entry: MergedPaymentMethod = {
-      type: normType,
-      authority: authority.trim(),
-      payto: payto || (normType && authority ? `payto://${normType}/${authority.trim()}` : undefined),
-      displayType: displayType || getPaytoEditorTypeLabel(normType),
-      ...extra
-    }
-    seen.set(key, entry)
-    out.push(entry)
-  }
-
-  // Aggregate: profile (kind 0) first – from lightningAddressList (tags + JSON) and single lightningAddress
-  const fromProfile = profile?.lightningAddressList?.length
-    ? profile.lightningAddressList
-    : profile?.lightningAddress
-      ? [profile.lightningAddress]
-      : []
-  fromProfile.forEach((addr) => {
-    if (addr) add('lightning', addr, `payto://lightning/${addr}`, 'Lightning Network')
-  })
-
-  // Kind-0 `w` tags: ["w", currency, address, network] — NIP-19-style multi-wallet (lightning via lud*/list above)
-  profile?.wWalletTags?.forEach((w) => {
-    const net = w.network.toLowerCase()
-    if (net === 'lightning') return
-    const addr = w.address?.trim()
-    if (!addr) return
-    const cur = (w.currency || '').trim().toLowerCase()
-
-    if (net === 'bitcoin') {
-      add('bitcoin', addr, buildPaytoUri('bitcoin', addr), 'Bitcoin', { currency: w.currency })
-      return
-    }
-
-    if (cur === 'usdt' || cur === 'usd₮' || cur === 'tether' || net === 'usdt') {
-      add('usdt', addr, buildPaytoUri('usdt', addr), 'Tether (USDT)', { currency: w.currency || 'USDT' })
-      return
-    }
-
-    if (net === 'liquid') {
-      if (cur === 'lbtc' || cur === 'l-btc' || cur === 'liquid btc') {
-        add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
-      } else {
-        add('liquid', addr, buildPaytoUri('liquid', addr), cur ? `Liquid (${w.currency})` : 'Liquid', {
-          currency: w.currency
-        })
-      }
-      return
-    }
-
-    if (cur === 'lbtc' || cur === 'l-btc') {
-      add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
-      return
-    }
-  })
-
-  // Then kind 10133 (payto tags and JSON content)
-  if (paymentInfo?.methods?.length) {
-    paymentInfo.methods.forEach((m) => {
-      const authority = m.authority || m.address || ''
-      add(
-        (m.type || 'lightning').toLowerCase(),
-        authority,
-        m.payto,
-        m.displayType,
-        { currency: m.currency, minAmount: m.minAmount, maxAmount: m.maxAmount }
-      )
-    })
-  } else if (paymentInfo?.payto) {
-    const type = (paymentInfo.type || 'lightning').toLowerCase()
-    const authority = paymentInfo.authority || paymentInfo.payto.replace(/^payto:\/\/[^/]+\//, '') || ''
-    add(type, authority, paymentInfo.payto, type === 'lightning' ? 'Lightning Network' : paymentInfo.type || 'Payment')
-  }
-
-  return out
-}
+import PaymentMethodsSection from '@/components/PaymentMethodsSection'
+import {
+  groupPaymentMethodsByDisplayType,
+  mergePaymentMethods,
+  sortMergedPaymentMethods
+} from '@/lib/merge-payment-methods'
 
 export default function Profile({
   id,
@@ -276,28 +134,15 @@ export default function Profile({
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
 
-  const mergedPaymentMethods = useMemo(() => {
-    const list = mergePaymentMethods(paymentInfo, profile ?? null)
-    return [...list].sort((a, b) => paytoPaymentSortRank(a.type) - paytoPaymentSortRank(b.type))
+  const paymentMethodsByType = useMemo(() => {
+    const list = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null))
+    return groupPaymentMethodsByDisplayType(list)
   }, [paymentInfo, profile])
 
-  /** Group payment methods by displayType so same-type addresses render under one heading */
-  const paymentMethodsByType = useMemo(() => {
-    const groups = new Map<string, MergedPaymentMethod[]>()
-    for (const method of mergedPaymentMethods) {
-      const key = method.displayType || method.type
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(method)
-    }
-    const order = Array.from(groups.keys()).sort((a, b) => {
-      const arrA = groups.get(a)
-      const arrB = groups.get(b)
-      const typeA = arrA?.[0]?.type ?? ''
-      const typeB = arrB?.[0]?.type ?? ''
-      return paytoPaymentSortRank(typeA) - paytoPaymentSortRank(typeB)
-    })
-    return order.map((key) => ({ displayType: key, methods: groups.get(key) ?? [] }))
-  }, [mergedPaymentMethods])
+  const hasLightningForZap = useMemo(
+    () => paymentMethodsByType.some((g) => g.methods.some((m) => m.type === 'lightning')),
+    [paymentMethodsByType]
+  )
 
   // Fetch payment info (kind 10133) for this profile; uses cached replaceable events and IndexedDB
   useEffect(() => {
@@ -686,7 +531,7 @@ export default function Profile({
             )}
             {!isSelf ? (
               <>
-                {mergedPaymentMethods.some((m) => m.type === 'lightning') && (
+                {hasLightningForZap && (
                   <ProfileZapButton pubkey={pubkey} openZapDialog={openZapDialog} setOpenZapDialog={setOpenZapDialog} />
                 )}
                 <FollowButton pubkey={pubkey} />
@@ -746,61 +591,13 @@ export default function Profile({
                 ))}
               </div>
             )}
-            {/* Payment methods: merged from kind 10133 + profile lightning, deduplicated – use PaytoLink for consistent behavior */}
             {paymentMethodsByType.length > 0 && (
-              <div className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0">
-                <div className="text-xs font-semibold text-muted-foreground mb-2">Payment Methods</div>
-                <div className="space-y-3 min-w-0">
-                  {paymentMethodsByType.map((group, groupIdx) => (
-                    <div key={groupIdx} className="text-sm min-w-0">
-                      <div className="font-medium">{group.displayType}</div>
-                      <div className="space-y-1.5 mt-1">
-                        {group.methods.map((method, idx) => (
-                          <div key={idx} className="min-w-0">
-                            {method.authority && (
-                              <div className="text-muted-foreground flex items-center gap-1 min-w-0">
-                                <PaytoLink
-                                  type={method.type}
-                                  authority={method.authority}
-                                  paytoUri={method.payto}
-                                  pubkey={method.type === 'lightning' ? pubkey : undefined}
-                                  onOpenZap={method.type === 'lightning' ? () => setOpenZapDialog(true) : undefined}
-                                  className="hover:underline break-all min-w-0 text-primary flex-1"
-                                >
-                                  {method.authority}
-                                </PaytoLink>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    navigator.clipboard.writeText(method.authority)
-                                    toast.success(t('Copied to clipboard'))
-                                  }}
-                                  className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                                  title={t('Copy address')}
-                                >
-                                  <Copy className="size-3.5" />
-                                </button>
-                              </div>
-                            )}
-                            {(method.currency || (method.minAmount !== undefined && method.maxAmount !== undefined)) && (
-                              <div className="text-muted-foreground text-xs mt-0.5">
-                                {method.currency && <span>({method.currency})</span>}
-                                {method.minAmount !== undefined && method.maxAmount !== undefined && (
-                                  <span className="ml-2">
-                                    {method.minAmount}-{method.maxAmount}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PaymentMethodsSection
+                groups={paymentMethodsByType}
+                recipientPubkey={pubkey}
+                onOpenZap={() => setOpenZapDialog(true)}
+                className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0"
+              />
             )}
             <ZapDialog
               open={openZapDialog}

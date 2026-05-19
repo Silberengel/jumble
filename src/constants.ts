@@ -328,6 +328,7 @@ export const StorageKey = {
   DEFAULT_ZAP_SATS: 'defaultZapSats',
   DEFAULT_ZAP_COMMENT: 'defaultZapComment',
   QUICK_ZAP: 'quickZap',
+  INCLUDE_PUBLIC_ZAP_RECEIPT: 'includePublicZapReceipt',
   ZAP_REPLY_THRESHOLD: 'zapReplyThreshold',
   /** Per-pubkey ms timestamps: last full network hydrate (see ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS). */
   ACCOUNT_NETWORK_HYDRATE_AT_MAP: 'accountNetworkHydrateAtMap',

@@ -216,8 +216,11 @@ const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 /** Schema version we expect. When adding stores or migrations, bump this. */
 const DB_VERSION = 38
 
-/** Max age for profile and payment info cache before we refetch (5 min). */
-const PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+/** Hint age for profile/payment reads (stale rows still returned; background refresh). */
+const PROFILE_AND_PAYMENT_STALE_READ_MS = 5 * 60 * 1000
+
+/** IndexedDB TTL for kind 10133 payment info (matches profile replaceable cache). */
+const PAYMENT_INFO_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24
 
 /** Convert IDB request.onerror Event to a proper Error for logging and UI */
 function idbEventToError(ev: Parameters<NonNullable<IDBRequest['onerror']>>[0]): Error {
@@ -626,7 +629,7 @@ class IndexedDbService {
         // BUT: Always return cached profiles even if stale - we'll refresh in background
         // This ensures profiles are always visible, even if slightly outdated
         const isProfileOrPayment = kind === kinds.Metadata || kind === ExtendedKind.PAYMENT_INFO
-        if (isProfileOrPayment && row.addedAt && Date.now() - row.addedAt > PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS) {
+        if (isProfileOrPayment && row.addedAt && Date.now() - row.addedAt > PROFILE_AND_PAYMENT_STALE_READ_MS) {
           // Profile is stale, but return it anyway - refresh will happen in background
           // This prevents the "no profile" state when cache exists but is just old
         }
@@ -2411,7 +2414,7 @@ class IndexedDbService {
     try {
     const stores = [
       { name: StoreNames.PROFILE_EVENTS, expirationTimestamp: Date.now() - 1000 * 60 * 60 * 24 }, // 1 day
-      { name: StoreNames.PAYMENT_INFO_EVENTS, expirationTimestamp: Date.now() - PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS }, // 5 min
+      { name: StoreNames.PAYMENT_INFO_EVENTS, expirationTimestamp: Date.now() - PAYMENT_INFO_CACHE_MAX_AGE_MS }, // 1 day
       { name: StoreNames.RELAY_LIST_EVENTS, expirationTimestamp: Date.now() - 1000 * 60 * 60 * 24 }, // 1 day
       {
         name: StoreNames.FOLLOW_LIST_EVENTS,

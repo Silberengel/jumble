@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useZap } from '@/providers/ZapProvider'
@@ -148,7 +149,8 @@ function ZapDialogContent({
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey } = useNostr()
-  const { defaultZapSats, defaultZapComment } = useZap()
+  const { defaultZapSats, defaultZapComment, includePublicZapReceipt, updateIncludePublicZapReceipt } =
+    useZap()
   const [sats, setSats] = useState(defaultAmount ?? defaultZapSats)
   const [comment, setComment] = useState(defaultComment ?? defaultZapComment)
   const [zapping, setZapping] = useState(false)
@@ -192,8 +194,13 @@ function ZapDialogContent({
         throw new Error('You need to be logged in to zap')
       }
       setZapping(true)
-      const zapResult = await lightning.zap(pubkey, event ?? recipient, sats, comment, () =>
-        setOpen(false)
+      const zapResult = await lightning.zap(
+        pubkey,
+        event ?? recipient,
+        sats,
+        comment,
+        () => setOpen(false),
+        includePublicZapReceipt
       )
       // user canceled
       if (!zapResult) {
@@ -256,6 +263,20 @@ function ZapDialogContent({
         <div className="px-4">
           <Label htmlFor="comment">{t('zapComment')}</Label>
           <Input id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
+        </div>
+
+        <div className="px-4 flex items-center justify-between gap-3">
+          <Label htmlFor="zap-include-receipt" className="flex-1 cursor-pointer">
+            <div className="text-sm font-medium">{t('Include public zap receipt')}</div>
+            <div className="text-xs text-muted-foreground font-normal">
+              {t('When off, your zap may still succeed but a public receipt may not be published to relays')}
+            </div>
+          </Label>
+          <Switch
+            id="zap-include-receipt"
+            checked={includePublicZapReceipt}
+            onCheckedChange={updateIncludePublicZapReceipt}
+          />
         </div>
       </div>
 
