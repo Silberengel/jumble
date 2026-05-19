@@ -5,6 +5,7 @@ import { Event, kinds as nostrKinds, type Filter } from 'nostr-tools'
 import { CALENDAR_EVENT_KINDS, ExtendedKind, isDocumentRelayKind, isSocialKindBlockedKind } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import type { ProfileReportsRelayList } from '@/lib/profile-reports-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -21,12 +22,21 @@ type ProfileTimelineMemoryEntry = {
 const memoryTimelineByKey = new Map<string, ProfileTimelineMemoryEntry>()
 const CACHE_DURATION = 5 * 60 * 1000
 
+export type ProfileTimelineRelayUrlsBuilder = (
+  favoriteRelays: string[],
+  blockedRelays: string[],
+  authorRelayList: ProfileReportsRelayList,
+  includeAuthorLocalRelays: boolean
+) => string[]
+
 type UseProfileTimelineOptions = {
   pubkey: string
   cacheKey: string
   kinds: number[]
   limit?: number
   filterPredicate?: (event: Event) => boolean
+  /** When set, replaces {@link buildProfilePageReadRelayUrls} (e.g. profile Reports tab inboxes only). */
+  relayUrlsBuilder?: ProfileTimelineRelayUrlsBuilder
 }
 
 type UseProfileTimelineResult = {
@@ -127,7 +137,8 @@ export function useProfileTimeline({
   cacheKey,
   kinds,
   limit = 200,
-  filterPredicate
+  filterPredicate,
+  relayUrlsBuilder
 }: UseProfileTimelineOptions): UseProfileTimelineResult {
   const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
@@ -151,8 +162,37 @@ export function useProfileTimeline({
 
   const filterPredicateRef = useRef(filterPredicate)
   filterPredicateRef.current = filterPredicate
+  const relayUrlsBuilderRef = useRef(relayUrlsBuilder)
+  relayUrlsBuilderRef.current = relayUrlsBuilder
   const limitRef = useRef(limit)
   limitRef.current = limit
+
+  const resolveFeedUrls = useCallback(
+    (
+      favoriteRelaysArg: string[],
+      blockedRelaysArg: string[],
+      authorRelayList: ProfileReportsRelayList,
+      includeAuthorLocalRelaysArg: boolean,
+      kindsArg: number[],
+      useGlobalRelayBootstrapArg: boolean
+    ) => {
+      const custom = relayUrlsBuilderRef.current
+      if (custom) {
+        return custom(favoriteRelaysArg, blockedRelaysArg, authorRelayList, includeAuthorLocalRelaysArg)
+      }
+      const socialKinds = kindsArg.some(isSocialKindBlockedKind)
+      return buildProfilePageReadRelayUrls(
+        favoriteRelaysArg,
+        blockedRelaysArg,
+        authorRelayList as { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] },
+        socialKinds,
+        includeAuthorLocalRelaysArg,
+        kindsArg,
+        useGlobalRelayBootstrapArg
+      )
+    },
+    []
+  )
 
   const cachedEntry = useMemo(() => memoryTimelineByKey.get(cacheKey), [cacheKey])
   const [events, setEvents] = useState<Event[]>(cachedEntry?.events ?? [])
@@ -307,11 +347,10 @@ export function useProfileTimeline({
 
       const authorRelayPromise = client.fetchRelayList(pubkey).catch(() => emptyAuthor)
 
-      const provisionalFeedUrls = buildProfilePageReadRelayUrls(
+      const provisionalFeedUrls = resolveFeedUrls(
         favoriteRelays,
         blockedRelays,
         emptyAuthor,
-        socialKinds,
         includeAuthorLocalRelays,
         kinds,
         useGlobalRelayBootstrap
@@ -403,11 +442,10 @@ export function useProfileTimeline({
       void (async () => {
         const authorRl = await authorRelayPromise
         if (cancelled) return
-        const fullFeedUrls = buildProfilePageReadRelayUrls(
+        const fullFeedUrls = resolveFeedUrls(
           favoriteRelays,
           blockedRelays,
           authorRl,
-          socialKinds,
           includeAuthorLocalRelays,
           kinds,
           useGlobalRelayBootstrap
@@ -443,7 +481,17 @@ export function useProfileTimeline({
       subscriptionRef.current()
       subscriptionRef.current = () => {}
     }
-  }, [pubkey, cacheKey, JSON.stringify(kinds), limit, refreshToken, relayListsKey, includeAuthorLocalRelays, useGlobalRelayBootstrap])
+  }, [
+    pubkey,
+    cacheKey,
+    JSON.stringify(kinds),
+    limit,
+    refreshToken,
+    relayListsKey,
+    includeAuthorLocalRelays,
+    useGlobalRelayBootstrap,
+    resolveFeedUrls
+  ])
 
   const refresh = useCallback(() => {
     subscriptionRef.current()

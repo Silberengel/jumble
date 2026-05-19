@@ -577,8 +577,10 @@ export const ExtendedKind = {
   CALENDAR_EVENT_RSVP: 31925,
   /** NIP-A7 Spells: portable relay query filters (kind 777) */
   SPELL: 777,
-  /** NIP-58 Badges: profile badges list (addressable, d=profile_badges) */
+  /** NIP-58 Badge set (addressable, NIP-51 set). Legacy profile list used d=profile_badges on this kind. */
   PROFILE_BADGES: 30008,
+  /** NIP-58 Profile Badges display list (NIP-51 replaceable list, current format). */
+  PROFILE_BADGES_LIST: 10008,
   /** NIP-58 Badges: badge definition (addressable) */
   BADGE_DEFINITION: 30009,
   /** Web page bookmark (URL in i/I or r tags); used in RSS+Web relay discovery */

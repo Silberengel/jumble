@@ -66,6 +66,8 @@ import ProfileFeedWithPins from './ProfileFeedWithPins'
 import ProfileLikedFeed from './ProfileLikedFeed'
 import ProfileMediaFeed from './ProfileMediaFeed'
 import ProfilePublicationsFeed from './ProfilePublicationsFeed'
+import ProfileReportsFeed from './ProfileReportsFeed'
+import ProfileWallFeed from './ProfileWallFeed'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { TNoteListRef } from '@/components/NoteList'
 import SmartFollowings from './SmartFollowings'
@@ -240,8 +242,12 @@ export default function Profile({
   const postsFeedRef = useRef<{ refresh: () => void }>(null)
   const mediaFeedRef = useRef<TNoteListRef>(null)
   const publicationsFeedRef = useRef<{ refresh: () => void }>(null)
+  const reportsFeedRef = useRef<{ refresh: () => void }>(null)
+  const wallFeedRef = useRef<{ refresh: () => void }>(null)
   const likedFeedRef = useRef<{ refresh: () => void }>(null)
-  const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications' | 'liked'>('posts')
+  const [profileFeedTab, setProfileFeedTab] = useState<
+    'posts' | 'media' | 'publications' | 'reports' | 'wall' | 'liked'
+  >('posts')
   /** Bumped after profile-view relay sync so payment + kind-0 JSON re-query storage and relays. */
   const [authorReplaceablesSyncGen, setAuthorReplaceablesSyncGen] = useState(0)
   const profilePubkeyRef = useRef<string | null>(null)
@@ -474,6 +480,10 @@ export default function Profile({
       mediaFeedRef.current?.refresh()
     } else if (profileFeedTab === 'publications') {
       publicationsFeedRef.current?.refresh()
+    } else if (profileFeedTab === 'reports') {
+      reportsFeedRef.current?.refresh()
+    } else if (profileFeedTab === 'wall') {
+      wallFeedRef.current?.refresh()
     } else if (profileFeedTab === 'liked') {
       likedFeedRef.current?.refresh()
     }
@@ -807,7 +817,14 @@ export default function Profile({
       <Tabs
         value={profileFeedTab}
         onValueChange={(v) => {
-          if (v === 'posts' || v === 'media' || v === 'publications' || (isSelf && v === 'liked')) {
+          if (
+            v === 'posts' ||
+            v === 'media' ||
+            v === 'publications' ||
+            v === 'reports' ||
+            v === 'wall' ||
+            (isSelf && v === 'liked')
+          ) {
             setProfileFeedTab(v)
           }
         }}
@@ -826,6 +843,12 @@ export default function Profile({
           >
             {t('Articles and Publications')}
           </TabsTrigger>
+          <TabsTrigger value="reports" className="shrink-0">
+            {t('Reports')}
+          </TabsTrigger>
+          <TabsTrigger value="wall" className="shrink-0">
+            {t('Wall')}
+          </TabsTrigger>
           {isSelf && (
             <TabsTrigger value="liked" className="shrink-0">
               {t('Liked')}
@@ -840,6 +863,12 @@ export default function Profile({
         </TabsContent>
         <TabsContent value="publications" className="min-w-0 focus-visible:outline-none">
           <ProfilePublicationsFeed ref={publicationsFeedRef} pubkey={pubkey} />
+        </TabsContent>
+        <TabsContent value="reports" className="min-w-0 focus-visible:outline-none">
+          <ProfileReportsFeed ref={reportsFeedRef} pubkey={pubkey} />
+        </TabsContent>
+        <TabsContent value="wall" className="min-w-0 focus-visible:outline-none">
+          <ProfileWallFeed ref={wallFeedRef} pubkey={pubkey} profileEventId={profileEvent?.id} />
         </TabsContent>
         {isSelf && (
           <TabsContent value="liked" className="min-w-0 focus-visible:outline-none">

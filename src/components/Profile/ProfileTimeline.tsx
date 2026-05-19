@@ -4,7 +4,7 @@ import { RefreshCw } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Event } from 'nostr-tools'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, useRef } from 'react'
-import { useProfileTimeline } from '@/hooks/useProfileTimeline'
+import { useProfileTimeline, type ProfileTimelineRelayUrlsBuilder } from '@/hooks/useProfileTimeline'
 
 const INITIAL_SHOW_COUNT = 25
 const LOAD_MORE_COUNT = 25
@@ -18,6 +18,7 @@ interface ProfileTimelineProps {
   kinds: number[]
   cacheKey: string
   filterPredicate?: (event: Event) => boolean
+  relayUrlsBuilder?: ProfileTimelineRelayUrlsBuilder
   getKindLabel: (kindValue: string) => string
   refreshLabel: string
   emptyLabel: string
@@ -38,6 +39,7 @@ const ProfileTimeline = forwardRef<
       kinds: timelineKinds,
       cacheKey,
       filterPredicate,
+      relayUrlsBuilder,
       getKindLabel,
       refreshLabel,
       emptyLabel,
@@ -54,7 +56,8 @@ const ProfileTimeline = forwardRef<
       cacheKey,
       kinds: timelineKinds,
       limit: 200,
-      filterPredicate
+      filterPredicate,
+      relayUrlsBuilder
     })
 
     useEffect(() => {
