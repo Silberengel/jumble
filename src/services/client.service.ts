@@ -37,6 +37,13 @@ import {
 } from '@/constants'
 
 import { getCacheRelayUrls } from '@/lib/private-relays'
+import {
+  buildPersonalRelayKeySet,
+  filterReadOnlyRelaysUnlessPersonal,
+  isReadOnlyIndexerRelay,
+  isReadOnlyRelayAllowedForViewer,
+  setViewerPersonalRelayKeys
+} from '@/lib/read-only-relay-personal'
 import { profileFetchRelayUrlsWithoutFastReadLayer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
@@ -569,6 +576,8 @@ class ClientService extends EventTarget {
       this.pool.automaticallyAuth = (relayURL: string) => {
         const n = normalizeUrl(relayURL) || relayURL
         if (!READ_ONLY_RELAY_CONNECT_BOOST_URLS.has(n)) return null
+        // Read-only index relays (e.g. filter.nostr.wine): only AUTH when on the viewer's relay lists.
+        if (isReadOnlyIndexerRelay(n) && !isReadOnlyRelayAllowedForViewer(n)) return null
         return async (event: EventTemplate) => {
           const evt = await queueRelayAuthSign(() => signer.signEvent(event))
           return evt as VerifiedEvent
@@ -577,6 +586,41 @@ class ClientService extends EventTarget {
     } else {
       this.pool.automaticallyAuth = undefined
     }
+  }
+
+  /**
+   * NIP-65 read/write + favorites (10012) + cache relays (10432) for the logged-in viewer.
+   * Used to gate {@link READ_ONLY_RELAY_URLS} and proactive NIP-42 on those relays.
+   */
+  async syncViewerPersonalRelayKeys(pubkey?: string): Promise<void> {
+    const pk = pubkey?.trim() || this.pubkey?.trim()
+    if (!pk) {
+      setViewerPersonalRelayKeys(new Set())
+      return
+    }
+    const urls: string[] = []
+    try {
+      const rl = await this.peekRelayListFromStorage(pk)
+      urls.push(
+        ...(rl.read ?? []),
+        ...(rl.write ?? []),
+        ...(rl.httpRead ?? []),
+        ...(rl.httpWrite ?? [])
+      )
+    } catch {
+      // ignore
+    }
+    try {
+      urls.push(...(await this.fetchFavoriteRelays(pk)))
+    } catch {
+      // ignore
+    }
+    try {
+      urls.push(...(await getCacheRelayUrls(pk)))
+    } catch {
+      // ignore
+    }
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls))
   }
 
   /** NIP-66: fetch relay discovery events (30166) in background to supplement search/NIP support. */
@@ -2476,7 +2520,9 @@ class ClientService extends EventTarget {
     relayReqLog?: { groupId?: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
-    let relays = originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+    let relays = filterReadOnlyRelaysUnlessPersonal(
+      originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+    )
     if (navigator.onLine) {
       relays = stripLocalNetworkRelaysForWssReq(relays)
     } else {
@@ -3336,10 +3382,10 @@ class ClientService extends EventTarget {
 
   // Delegate to QueryService
   private async query(
-    urls: string[], 
-    filter: Filter | Filter[], 
+    urls: string[],
+    filter: Filter | Filter[],
     onevent?: (evt: NEvent) => void,
-    options?: { 
+    options?: {
       eoseTimeout?: number
       globalTimeout?: number
       /** For replaceable events: race strategy - wait 2s after first result, then return best */
@@ -3349,7 +3395,7 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs?: number | false
     }
   ) {
-    return this.queryService.query(urls, filter, onevent, options)
+    return this.queryService.query(filterReadOnlyRelaysUnlessPersonal(urls), filter, onevent, options)
   }
 
   // Legacy query implementation removed - now delegated to QueryService
@@ -3384,7 +3430,9 @@ class ClientService extends EventTarget {
           .filter(Boolean)
       )
     )
-    const wsOriginal = originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+    const wsOriginal = filterReadOnlyRelaysUnlessPersonal(
+      originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+    )
     let relays = [...wsOriginal]
     if (relays.length === 0 && httpRelayBases.length === 0) {
       relays = [...FAST_READ_RELAY_URLS]
@@ -4208,6 +4256,9 @@ class ClientService extends EventTarget {
     const requestPromise = (async () => {
       try {
         const [relayList] = await this.fetchRelayLists([pubkey])
+        if (this.pubkey && hexPubkeysEqual(this.pubkey, pubkey)) {
+          void this.syncViewerPersonalRelayKeys(pubkey)
+        }
         return relayList
       } catch (error) {
         logger.warn('[FetchRelayList] Fetch failed; using IndexedDB / defaults', {

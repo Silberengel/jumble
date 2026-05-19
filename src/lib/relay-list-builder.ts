@@ -14,6 +14,7 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { buildPersonalRelayKeySet, filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrls } from './private-relays'
 import { defaultFavoriteRelaysForViewer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
@@ -152,6 +153,11 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
 
   const relayUrls = new Set<string>()
   const httpRelayUrls: string[] = []
+  /** NIP-65 / favorites / 10432 — read-only index relays are only kept when listed here. */
+  const personalRelayUrls: string[] = []
+  const trackPersonal = (url: string) => {
+    personalRelayUrls.push(url)
+  }
   const normalizedBlocked = new Set(
     (blockedRelays || []).map(url => {
       const normalized = normalizeUrl(url) || url
@@ -261,20 +267,32 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
       const userRead = userReadRelaysWithHttp(userRelayList).slice(0, 10)
       const userWrite = [...(userRelayList.write || []).slice(0, 10)]
-      userRead.forEach(addRelay)
-      userWrite.forEach(addRelay)
+      userRead.forEach((u) => {
+        trackPersonal(u)
+        addRelay(u)
+      })
+      userWrite.forEach((u) => {
+        trackPersonal(u)
+        addRelay(u)
+      })
 
       // Include local relays from kind 10432
       if (includeLocalRelays) {
         const localRelays = await getCacheRelayUrls(userPubkey)
-        localRelays.forEach(addRelay)
+        localRelays.forEach((u) => {
+          trackPersonal(u)
+          addRelay(u)
+        })
       }
       
       // Include favorite relays (kind 10012) if requested
       if (includeFavoriteRelays) {
         try {
           const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
-          favoriteRelays.forEach(addRelay)
+          favoriteRelays.forEach((u) => {
+            trackPersonal(u)
+            addRelay(u)
+          })
         } catch (error) {
           logger.warn('[RelayListBuilder] Failed to fetch user favorite relays', { error })
         }
@@ -286,18 +304,27 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
       const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
-      ;(userRelayList.read ?? []).slice(0, 10).forEach(addRelay)
+      ;(userRelayList.read ?? []).slice(0, 10).forEach((u) => {
+        trackPersonal(u)
+        addRelay(u)
+      })
 
       // Include local relays from kind 10432 if enabled
       if (includeLocalRelays) {
         const localRelays = await getCacheRelayUrls(userPubkey)
-        localRelays.forEach(addRelay)
+        localRelays.forEach((u) => {
+          trackPersonal(u)
+          addRelay(u)
+        })
       }
       // Menu / feed “favorite relays” (kind 10012) — same list as the sidebar; not part of NIP-65 alone.
       if (includeFavoriteRelays) {
         try {
           const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
-          favoriteRelays.forEach(addRelay)
+          favoriteRelays.forEach((u) => {
+            trackPersonal(u)
+            addRelay(u)
+          })
         } catch (error) {
           logger.warn('[RelayListBuilder] Failed to fetch user favorite relays', { error })
         }
@@ -339,12 +366,16 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   const merged = Array.from(relayUrls)
-  const ws = feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
-    operation: 'read',
-    blockedRelays,
-    applySocialKindBlockedFilter: false,
-    allowThirdPartyLocalRelays: true
-  })
+  const personalKeys = userPubkey ? buildPersonalRelayKeySet(personalRelayUrls) : undefined
+  const ws = filterReadOnlyRelaysUnlessPersonal(
+    feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
+      operation: 'read',
+      blockedRelays,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }),
+    personalKeys
+  )
   if (httpRelayUrls.length === 0) return ws
   const seen = new Set(ws.map(relayKey))
   const out = [...ws]

@@ -34,6 +34,7 @@ import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
+import { filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
 import nip66Service from './nip66.service'
 import type { ISigner, TSignerType } from '@/types'
 
@@ -400,11 +401,12 @@ export class QueryService {
    * Core query method with race-based fetching strategies
    */
   async query(
-    urls: string[], 
-    filter: Filter | Filter[], 
+    urls: string[],
+    filter: Filter | Filter[],
     onevent?: (evt: NEvent) => void,
     options?: QueryOptions
   ): Promise<NEvent[]> {
+    urls = filterReadOnlyRelaysUnlessPersonal(urls)
     const sanitizedFilters = sanitizeFiltersBeforeReq(filter)
     if (sanitizedFilters.length === 0) return []
     if (options?.signal?.aborted) return []
@@ -781,7 +783,7 @@ export class QueryService {
       return { close: () => {} }
     }
     const originalDedupedRelays = Array.from(new Set(urls))
-    let relays = originalDedupedRelays
+    let relays = filterReadOnlyRelaysUnlessPersonal(originalDedupedRelays)
 
     const stripSocialBlockedRelays =
       SOCIAL_KIND_BLOCKED_RELAY_URLS.length > 0 &&

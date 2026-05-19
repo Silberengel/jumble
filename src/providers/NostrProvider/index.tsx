@@ -1050,8 +1050,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (account) {
       client.pubkey = account.pubkey
+      void client.syncViewerPersonalRelayKeys(account.pubkey)
     } else {
       client.pubkey = undefined
+      void client.syncViewerPersonalRelayKeys()
     }
   }, [account])
 

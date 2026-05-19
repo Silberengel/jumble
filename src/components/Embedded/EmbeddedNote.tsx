@@ -19,6 +19,7 @@ import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import { useViewerInboxRelayUrls } from '@/hooks/useViewerInboxRelayUrls'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import { filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -535,28 +536,30 @@ function buildEmbedWideRelayUrlsStatic(
   relayHintsFromParent: string[],
   viewerInboxRelayUrls: string[]
 ): string[] {
-  return feedRelayPolicyUrls(
-    [
+  return filterReadOnlyRelaysUnlessPersonal(
+    feedRelayPolicyUrls(
+      [
+        {
+          source: 'fallback',
+          urls: preferPublicIndexRelaysFirst(
+            dedupeRelayUrls([
+              ...relayHintsFromParent,
+              ...viewerInboxRelayUrls,
+              ...nip66Service.getSearchableRelayUrls(),
+              ...SEARCHABLE_RELAY_URLS,
+              ...FAST_READ_RELAY_URLS,
+              ...PROFILE_RELAY_URLS,
+              ...menuRelayUrls
+            ])
+          )
+        }
+      ],
       {
-        source: 'fallback',
-        urls: preferPublicIndexRelaysFirst(
-          dedupeRelayUrls([
-            ...relayHintsFromParent,
-            ...viewerInboxRelayUrls,
-            ...nip66Service.getSearchableRelayUrls(),
-            ...SEARCHABLE_RELAY_URLS,
-            ...FAST_READ_RELAY_URLS,
-            ...PROFILE_RELAY_URLS,
-            ...menuRelayUrls
-          ])
-        )
+        operation: 'read',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
       }
-    ],
-    {
-      operation: 'read',
-      applySocialKindBlockedFilter: false,
-      allowThirdPartyLocalRelays: true
-    }
+    )
   )
 }
 

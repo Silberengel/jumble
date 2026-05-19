@@ -430,6 +430,12 @@ export const READ_ONLY_RELAY_URLS = [
 ]
 
 /**
+ * Subset of {@link READ_ONLY_RELAY_URLS} that must also appear on the viewer's NIP-65 / favorites / 10432
+ * before read or NIP-42 AUTH (unauthorized otherwise). Does not include aggr.nostr.land or search indexers.
+ */
+export const READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS = ['wss://filter.nostr.wine'] as const
+
+/**
  * Relays that need NIP-42 signed before the first REQ returns useful data. Same pool treatment as
  * {@link READ_ONLY_RELAY_URLS} (longer connect timeout + proactive `automaticallyAuth`), but **not**
  * necessarily read-only for publish — keep those relays out of {@link READ_ONLY_RELAY_URLS}.
