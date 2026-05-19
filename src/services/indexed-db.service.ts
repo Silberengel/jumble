@@ -95,6 +95,8 @@ export const StoreNames = {
   /** Imwald kind 19132: thread roots to hide interaction notifications for. */
   NOTIFICATION_THREAD_MUTE_EVENTS: 'notificationThreadMuteEvents',
   PIN_LIST_EVENTS: 'pinListEvents',
+  /** NIP-58 profile badges display list (kind 10008). */
+  PROFILE_BADGES_LIST_EVENTS: 'profileBadgesListEvents',
   BLOSSOM_SERVER_LIST_EVENTS: 'blossomServerListEvents',
   INTEREST_LIST_EVENTS: 'interestListEvents',
   MUTE_DECRYPTED_TAGS: 'muteDecryptedTags',
@@ -188,6 +190,7 @@ const REPLACEABLE_METADATA_EVENT_STORES: ReadonlySet<string> = new Set([
   StoreNames.NOTIFICATION_THREAD_FOLLOW_EVENTS,
   StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS,
   StoreNames.PIN_LIST_EVENTS,
+  StoreNames.PROFILE_BADGES_LIST_EVENTS,
   StoreNames.INTEREST_LIST_EVENTS,
   StoreNames.BLOSSOM_SERVER_LIST_EVENTS,
   StoreNames.USER_EMOJI_LIST_EVENTS,
@@ -211,7 +214,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 37
+const DB_VERSION = 38
 
 /** Max age for profile and payment info cache before we refetch (5 min). */
 const PROFILE_AND_PAYMENT_CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -370,6 +373,9 @@ class IndexedDbService {
           }
           if (!db.objectStoreNames.contains(StoreNames.PIN_LIST_EVENTS)) {
             db.createObjectStore(StoreNames.PIN_LIST_EVENTS, { keyPath: 'key' })
+          }
+          if (!db.objectStoreNames.contains(StoreNames.PROFILE_BADGES_LIST_EVENTS)) {
+            db.createObjectStore(StoreNames.PROFILE_BADGES_LIST_EVENTS, { keyPath: 'key' })
           }
           if (!db.objectStoreNames.contains(StoreNames.INTEREST_LIST_EVENTS)) {
             db.createObjectStore(StoreNames.INTEREST_LIST_EVENTS, { keyPath: 'key' })
@@ -1133,6 +1139,8 @@ class IndexedDbService {
         return StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS
       case 10001: // Pin list
         return StoreNames.PIN_LIST_EVENTS
+      case ExtendedKind.PROFILE_BADGES_LIST:
+        return StoreNames.PROFILE_BADGES_LIST_EVENTS
       case 10015: // Interest list
         return StoreNames.INTEREST_LIST_EVENTS
       case ExtendedKind.BLOSSOM_SERVER_LIST:
@@ -2248,6 +2256,7 @@ class IndexedDbService {
     if (storeName === StoreNames.NOTIFICATION_THREAD_MUTE_EVENTS)
       return ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST
     if (storeName === StoreNames.PIN_LIST_EVENTS) return 10001
+    if (storeName === StoreNames.PROFILE_BADGES_LIST_EVENTS) return ExtendedKind.PROFILE_BADGES_LIST
     if (storeName === StoreNames.INTEREST_LIST_EVENTS) return 10015
     if (storeName === StoreNames.BLOSSOM_SERVER_LIST_EVENTS) return ExtendedKind.BLOSSOM_SERVER_LIST
     if (storeName === StoreNames.RELAY_SETS) return kinds.Relaysets

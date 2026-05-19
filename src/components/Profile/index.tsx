@@ -85,7 +85,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
-import { buildPaytoUri } from '@/lib/payto'
+import { buildPaytoUri, getCanonicalPaytoType, getPaytoEditorTypeLabel, getPaytoTypeInfo } from '@/lib/payto'
 import type { TProfile } from '@/types'
 
 /**
@@ -126,6 +126,14 @@ type MergedPaymentMethod = {
   maxAmount?: number
 }
 
+/** Bitcoin-layer first, then on-chain Bitcoin family, then everything else. */
+function paytoPaymentSortRank(type: string): number {
+  const category = getPaytoTypeInfo(type)?.category
+  if (category === 'bitcoin-layer') return 0
+  if (category === 'bitcoin') return 1
+  return 2
+}
+
 /** Merge payment methods from kind 10133 and profile (kind 0: JSON + tags), normalized and deduplicated */
 function mergePaymentMethods(
   paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
@@ -136,7 +144,7 @@ function mergePaymentMethods(
 
   const add = (type: string, authority: string, payto?: string, displayType?: string, extra?: { currency?: string; minAmount?: number; maxAmount?: number }) => {
     if (!authority?.trim()) return
-    const normType = type.toLowerCase()
+    const normType = getCanonicalPaytoType(type)
     const key = `${normType}:${normalizePaymentAuthority(normType, authority)}`
     const existing = seen.get(key)
     if (existing) {
@@ -150,7 +158,7 @@ function mergePaymentMethods(
       type: normType,
       authority: authority.trim(),
       payto: payto || (normType && authority ? `payto://${normType}/${authority.trim()}` : undefined),
-      displayType: displayType || (normType === 'lightning' ? 'Lightning Network' : normType === 'bitcoin' ? 'Bitcoin' : type || 'Payment'),
+      displayType: displayType || getPaytoEditorTypeLabel(normType),
       ...extra
     }
     seen.set(key, entry)
@@ -270,17 +278,11 @@ export default function Profile({
 
   const mergedPaymentMethods = useMemo(() => {
     const list = mergePaymentMethods(paymentInfo, profile ?? null)
-    return [...list].sort((a, b) => {
-      const rank = (type: string) =>
-        type === 'lightning' || type === 'liquid' || type === 'lbtc' ? 0 : type === 'bitcoin' ? 1 : 2
-      return rank(a.type) - rank(b.type)
-    })
+    return [...list].sort((a, b) => paytoPaymentSortRank(a.type) - paytoPaymentSortRank(b.type))
   }, [paymentInfo, profile])
 
   /** Group payment methods by displayType so same-type addresses render under one heading */
   const paymentMethodsByType = useMemo(() => {
-    const rank = (type: string) =>
-      type === 'lightning' || type === 'liquid' || type === 'lbtc' ? 0 : type === 'bitcoin' ? 1 : 2
     const groups = new Map<string, MergedPaymentMethod[]>()
     for (const method of mergedPaymentMethods) {
       const key = method.displayType || method.type
@@ -292,7 +294,7 @@ export default function Profile({
       const arrB = groups.get(b)
       const typeA = arrA?.[0]?.type ?? ''
       const typeB = arrB?.[0]?.type ?? ''
-      return rank(typeA) - rank(typeB)
+      return paytoPaymentSortRank(typeA) - paytoPaymentSortRank(typeB)
     })
     return order.map((key) => ({ displayType: key, methods: groups.get(key) ?? [] }))
   }, [mergedPaymentMethods])
@@ -433,6 +435,8 @@ export default function Profile({
         postsFeedRef.current?.refresh()
         mediaFeedRef.current?.refresh()
         publicationsFeedRef.current?.refresh()
+        reportsFeedRef.current?.refresh()
+        wallFeedRef.current?.refresh()
         likedFeedRef.current?.refresh()
         const pk = profilePubkeyRef.current
         if (pk) {
@@ -689,7 +693,7 @@ export default function Profile({
               </>
             ) : null}
           </div>
-          <div className="pt-2 md:pl-56">
+          <div className="pt-2 pb-4 md:pl-56">
             <div className="flex flex-wrap gap-2 items-center min-w-0">
               <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
               {isFollowingYou && (
@@ -744,7 +748,7 @@ export default function Profile({
             )}
             {/* Payment methods: merged from kind 10133 + profile lightning, deduplicated – use PaytoLink for consistent behavior */}
             {paymentMethodsByType.length > 0 && (
-              <div className="mt-2 p-2 border rounded-lg bg-muted/50 min-w-0 overflow-hidden">
+              <div className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0">
                 <div className="text-xs font-semibold text-muted-foreground mb-2">Payment Methods</div>
                 <div className="space-y-3 min-w-0">
                   {paymentMethodsByType.map((group, groupIdx) => (

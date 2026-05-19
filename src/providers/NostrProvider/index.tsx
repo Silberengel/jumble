@@ -6,6 +6,7 @@ import {
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
+  AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   ExtendedKind,
   PROFILE_RELAY_URLS,
   SEARCHABLE_RELAY_URLS,
@@ -553,17 +554,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const fetchRelays = Array.from(new Set(normalizedRelays)).slice(0, 16)
       const events = await queryService.fetchEvents(fetchRelays, [
         {
-          kinds: [
-            kinds.Metadata,
-            kinds.Contacts,
-            kinds.Mutelist,
-            kinds.BookmarkList,
-            INTEREST_LIST_KIND,
-            ExtendedKind.FAVORITE_RELAYS,
-            ExtendedKind.BLOCKED_RELAYS,
-            ExtendedKind.BLOSSOM_SERVER_LIST,
-            kinds.UserEmojiList
-          ],
+          kinds: [...AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS],
           authors: [account.pubkey]
         }
       ], hydrateFetchOpts)
@@ -786,6 +777,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           setUserEmojiListEvent(userEmojiListEvent)
         }
       }
+
+      await replaceableEventService
+        .refreshAuthorPublishedReplaceablesFromRelays(account.pubkey)
+        .catch((err) => {
+          logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
+        })
 
         storage.setAccountNetworkHydrateAt(account.pubkey, Date.now())
         void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })

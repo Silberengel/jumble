@@ -11,6 +11,7 @@ import {
   useSmartNotificationThreadFollowListNavigation,
   useSmartNotificationThreadMuteListNavigation,
   useSmartPinListNavigation,
+  useSmartProfileBadgesListNavigation,
   useSmartSettingsNavigation,
   useSmartUserEmojiListNavigation
 } from '@/PageManager'
@@ -24,10 +25,11 @@ import {
   toNotificationThreadFollowList,
   toNotificationThreadMuteList,
   toPinsList,
+  toProfileBadgesList,
   toUserEmojiList
 } from '@/lib/link'
 import { useNostr } from '@/providers/NostrProvider'
-import { Bookmark, Bell, BellOff, ChevronRight, Hash, Pin, Smile, Sticker, Users, VolumeX } from 'lucide-react'
+import { Award, Bookmark, Bell, BellOff, ChevronRight, Hash, Pin, Smile, Sticker, Users, VolumeX } from 'lucide-react'
 import { forwardRef, HTMLProps, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -46,6 +48,7 @@ const PersonalListsSettingsPage = forwardRef(
     const { navigateToNotificationThreadFollowList } = useSmartNotificationThreadFollowListNavigation()
     const { navigateToNotificationThreadMuteList } = useSmartNotificationThreadMuteListNavigation()
     const { navigateToPinList } = useSmartPinListNavigation()
+    const { navigateToProfileBadgesList } = useSmartProfileBadgesListNavigation()
     const { navigateToInterestList } = useSmartInterestListNavigation()
     const { navigateToUserEmojiList } = useSmartUserEmojiListNavigation()
     const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
@@ -130,6 +133,15 @@ const PersonalListsSettingsPage = forwardRef(
               <div className="flex items-center gap-3">
                 <Pin />
                 <div>{t('Pinned notes list')}</div>
+              </div>
+              <ChevronRight />
+            </SettingRow>
+          ) : null}
+          {pubkey ? (
+            <SettingRow className="clickable" onClick={() => navigateToProfileBadgesList(toProfileBadgesList())}>
+              <div className="flex items-center gap-3">
+                <Award />
+                <div>{t('Profile badges list')}</div>
               </div>
               <ChevronRight />
             </SettingRow>

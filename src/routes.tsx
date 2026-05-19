@@ -24,6 +24,7 @@ const NotificationThreadMuteListPageLazy = lazy(() =>
   }))
 )
 const PinListPageLazy = lazy(() => import('./pages/secondary/PinListPage'))
+const ProfileBadgesListPageLazy = lazy(() => import('./pages/secondary/ProfileBadgesListPage'))
 const InterestListPageLazy = lazy(() => import('./pages/secondary/InterestListPage'))
 const NoteListPageLazy = lazy(() => import('./pages/secondary/NoteListPage'))
 const NotePageLazy = lazy(() => import('./pages/secondary/NotePage'))
@@ -104,6 +105,7 @@ const ROUTES = [
   { path: '/notification-thread-follow', element: SR(NotificationThreadFollowListPageLazy) },
   { path: '/notification-thread-mute', element: SR(NotificationThreadMuteListPageLazy) },
   { path: '/pins', element: SR(PinListPageLazy) },
+  { path: '/profile-badges', element: SR(ProfileBadgesListPageLazy) },
   { path: '/interests', element: SR(InterestListPageLazy) },
   { path: '/user-emojis', element: SR(UserEmojiListPageLazy) },
   { path: '/follow-packs', element: SR(FollowPacksRedirectLazy) }

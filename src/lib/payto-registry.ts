@@ -34,6 +34,9 @@ const catalog = paytoTypesCatalog as PaytoTypesCatalogJson
 
 export const PAYTO_EDITOR_TYPE_ORDER: readonly string[] = catalog.editorOrder
 
+/** Select value: opens free-text payto type field (not published as this literal). */
+export const PAYTO_EDITOR_OTHER_OPTION = '__other__'
+
 const GENERIC_AUTHORITY_HELP: PaytoAuthorityHelp = catalog.genericAuthorityHelp
 
 const PAYTO_TYPE_ALIASES: Record<string, string> = catalog.aliases
@@ -77,13 +80,16 @@ export function getPaytoEditorTypeLabel(type: string): string {
   return getPaytoTypeInfo(type)?.label ?? getCanonicalPaytoType(type)
 }
 
-/** Dropdown options: catalog order plus the row's type when not listed. */
-export function paytoEditorSelectTypes(currentType: string): string[] {
-  const key = getCanonicalPaytoType(currentType)
-  const ordered = new Set(PAYTO_EDITOR_TYPE_ORDER)
-  const out = [...PAYTO_EDITOR_TYPE_ORDER]
-  if (key && !ordered.has(key)) out.push(key)
-  return out
+/** True when the row uses a custom payto type (Other selected or unknown type from JSON). */
+export function isPaytoEditorCustomType(type: string): boolean {
+  const trimmed = type.trim()
+  if (!trimmed || trimmed === PAYTO_EDITOR_OTHER_OPTION) return true
+  return !isKnownPaytoType(trimmed)
+}
+
+/** Dropdown options: catalog presets plus “Other”. */
+export function paytoEditorSelectTypes(): string[] {
+  return [...PAYTO_EDITOR_TYPE_ORDER, PAYTO_EDITOR_OTHER_OPTION]
 }
 
 /** Bundled asset URL for `<img src>` (resolved from catalog `logoAssetPath`). */

@@ -1,0 +1,17 @@
+---
+description: Do not use Framer Motion or Motion for React animations
+alwaysApply: true
+---
+
+# No Framer Motion
+
+This project does **not** use Framer Motion or the `motion` package.
+
+- Never add `framer-motion`, `motion`, or `motion/react` to `package.json`.
+- Never import from `framer-motion`, `motion`, or `motion/react`.
+- Never use `motion.div`, `motion.span`, `motion.button`, or other `motion.*` components.
+- Never use `AnimatePresence`, `useAnimation`, `useMotionValue`, or related APIs.
+
+Use plain HTML elements (`motion`-free elements) with **Tailwind** and **CSS** instead: `transition-*`, `animate-*`, `motion-reduce:*`, etc.
+
+If you need enter/exit effects, prefer CSS transitions, conditional render, or existing UI patterns in the codebase — not animation libraries.

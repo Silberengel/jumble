@@ -141,6 +141,7 @@ export const toNotificationThreadFollowList = () => '/notification-thread-follow
 export const toNotificationThreadMuteList = () => '/notification-thread-mute'
 
 export const toPinsList = () => '/pins'
+export const toProfileBadgesList = () => '/profile-badges'
 export const toInterestsList = () => '/interests'
 export const toUserEmojiList = () => '/user-emojis'
 

@@ -19,6 +19,35 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'framer-motion',
+              message:
+                'Framer Motion is not used in this project. Use plain elements with Tailwind/CSS transitions.'
+            },
+            {
+              name: 'motion',
+              message:
+                'The Motion package is not used in this project. Use plain elements with Tailwind/CSS transitions.'
+            },
+            {
+              name: 'motion/react',
+              message:
+                'The Motion package is not used in this project. Use plain elements with Tailwind/CSS transitions.'
+            }
+          ],
+          patterns: [
+            {
+              group: ['framer-motion/*', 'motion/*'],
+              message:
+                'Framer Motion / Motion is not used in this project. Use plain elements with Tailwind/CSS transitions.'
+            }
+          ]
+        }
+      ],
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       'react/prop-types': 'off',

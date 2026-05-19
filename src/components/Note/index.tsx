@@ -226,7 +226,8 @@ export default function Note({
   fullCalendarInvite,
   zapPollVoteHighlightOption,
   nip84HighlightEvents,
-  deferAuthorAvatar = false
+  deferAuthorAvatar = false,
+  pinned = false
 }: {
   event: Event
   originalNoteId?: string
@@ -236,6 +237,8 @@ export default function Note({
   showFull?: boolean
   disableClick?: boolean
   embedded?: boolean
+  /** Passed to note menu when this row is already shown as pinned. */
+  pinned?: boolean
   /** When viewing a kind-24 invite, use this to replace the embedded calendar with the full card (RSVP) in content */
   fullCalendarInvite?: { event: Event; naddr: string }
   /** Profile: highlight option when this row is from a zap vote receipt. */
@@ -731,6 +734,7 @@ export default function Note({
               event.kind === ExtendedKind.ZAP_RECEIPT) && (
               <NoteOptions
                 event={event}
+                pinned={pinned}
                 className={cn(
                   'py-1 shrink-0',
                   size === 'small' ? '[&_svg]:size-4' : '[&_svg]:size-5'

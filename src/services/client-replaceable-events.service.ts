@@ -1,4 +1,5 @@
 import {
+  AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
@@ -15,6 +16,7 @@ import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
 import { formatPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
 import { TProfile } from '@/types'
@@ -1358,8 +1360,14 @@ export class ReplaceableEventService {
   async forceRefreshProfileAndPaymentInfoCache(pubkey: string): Promise<void> {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return
-    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: kinds.Metadata })
-    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: ExtendedKind.PAYMENT_INFO })
+    for (const kind of AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS) {
+      this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind })
+    }
+    this.replaceableEventDataLoader.clear({
+      pubkey: pk,
+      kind: ExtendedKind.PROFILE_BADGES,
+      d: LEGACY_PROFILE_BADGES_D_TAG
+    })
     await this.refreshAuthorPublishedReplaceablesFromRelays(pk)
   }
 
@@ -1369,24 +1377,6 @@ export class ReplaceableEventService {
    * then dispatch `ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT` so the session can re-sync UI.
    */
   static readonly AUTHOR_REPLACEABLES_REFRESHED_EVENT = 'jumble:author-replaceables-refreshed' as const
-
-  private static readonly PROFILE_VIEW_AUTHOR_REPLACEABLE_KINDS: readonly number[] = [
-    kinds.Metadata,
-    kinds.Contacts,
-    kinds.RelayList,
-    kinds.Mutelist,
-    kinds.BookmarkList,
-    10001, // pins (NIP-51)
-    10015, // interests
-    ExtendedKind.FAVORITE_RELAYS,
-    ExtendedKind.BLOCKED_RELAYS,
-    ExtendedKind.BLOSSOM_SERVER_LIST,
-    ExtendedKind.PAYMENT_INFO,
-    kinds.UserEmojiList,
-    ExtendedKind.CACHE_RELAYS,
-    ExtendedKind.HTTP_RELAY_LIST,
-    ExtendedKind.RSS_FEED_LIST
-  ]
 
   async refreshAuthorPublishedReplaceablesFromRelays(pubkey: string): Promise<void> {
     const pk = pubkey.trim().toLowerCase()
@@ -1428,12 +1418,28 @@ export class ReplaceableEventService {
 
       const events = await this.queryService.query(
         relayUrls,
-        { authors: [pk], kinds: [...ReplaceableEventService.PROFILE_VIEW_AUTHOR_REPLACEABLE_KINDS] },
+        { authors: [pk], kinds: [...AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS] },
         undefined,
         {
           replaceableRace: false,
           eoseTimeout: 2500,
           globalTimeout: 14_000
+        }
+      )
+
+      const legacyProfileBadgeRows = await this.queryService.query(
+        relayUrls,
+        {
+          authors: [pk],
+          kinds: [ExtendedKind.PROFILE_BADGES],
+          '#d': [LEGACY_PROFILE_BADGES_D_TAG],
+          limit: 10
+        },
+        undefined,
+        {
+          replaceableRace: false,
+          eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+          globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
         }
       )
 
@@ -1446,8 +1452,13 @@ export class ReplaceableEventService {
         }
       }
 
+      const legacyProfileBadges = legacyProfileBadgeRows.filter(shouldDropEventOnIngest).reduce<
+        NEvent | undefined
+      >((best, e) => (!best || e.created_at > best.created_at ? e : best), undefined)
+
       await Promise.allSettled(
-        Array.from(bestByKind.values()).map(async (ev) => {
+        [...Array.from(bestByKind.values()), ...(legacyProfileBadges ? [legacyProfileBadges] : [])].map(
+          async (ev) => {
           try {
             await indexedDb.putReplaceableEvent(ev)
           } catch {

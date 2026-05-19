@@ -116,6 +116,8 @@ interface UseMenuActionsProps {
   onOpenCallInvite?: (url: string) => void
   /** Opens edit/clone dialog (signed-in accounts only, not read-only npub). */
   onOpenEditOrClone?: (mode: TEditOrCloneMode) => void
+  /** When the feed already marks this note pinned (e.g. profile pin section). */
+  pinned?: boolean
 }
 
 export function useMenuActions({
@@ -128,6 +130,7 @@ export function useMenuActions({
   onOpenPublicMessage,
   onOpenCallInvite,
   onOpenEditOrClone,
+  pinned: pinnedInFeed = false
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
   // Use useContext directly to avoid error if provider is not available
@@ -198,8 +201,8 @@ export function useMenuActions({
     }
   }, [])
 
-  // Check if event is pinned
-  const [isPinned, setIsPinned] = useState(false)
+  // Check if event is pinned (feed hint avoids "Pin note" on rows already shown as pinned)
+  const [isPinned, setIsPinned] = useState(pinnedInFeed)
 
   // Keep refs so the effect can read the latest relay lists without making them
   // part of the dependency array.  Including live array references as deps causes
@@ -226,21 +229,18 @@ export function useMenuActions({
           new Set(allRelays.map(url => normalizeAnyRelayUrl(url)).filter((url): url is string => !!url))
         )
         const pinListEvent = await fetchNewestPinListForPubkey(pubkey, comprehensiveRelays)
-        if (pinListEvent) {
-          setIsPinned(isEventInPinList(pinListEvent, event))
-        } else {
-          setIsPinned(false)
-        }
+        const inList = pinListEvent ? isEventInPinList(pinListEvent, event) : false
+        setIsPinned(inList || pinnedInFeed)
       } catch (error) {
         logger.component('PinStatus', 'Error checking pin status', { error: (error as Error).message })
-        setIsPinned(false)
+        setIsPinned(pinnedInFeed)
       }
     }
     checkIfPinned()
     // Only re-run when the user or the specific event changes, not on relay list
     // reference churn (relay arrays are read via refs above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pubkey, event.id])
+  }, [pubkey, event.id, pinnedInFeed])
   
   const handlePinNote = async () => {
     if (!pubkey) return

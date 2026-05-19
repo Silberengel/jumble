@@ -16,6 +16,7 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
+import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds, type Filter } from 'nostr-tools'
 
@@ -184,6 +185,23 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     setIsLoading(true)
     setRefreshToken((t) => t + 1)
   }, [cacheKey])
+
+  useEffect(() => {
+    const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
+      const pk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
+      if (!pk || pk !== normalizeHexPubkey(pubkey)) return
+      refresh()
+    }
+    window.addEventListener(
+      ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+      onAuthorReplaceablesRefreshed
+    )
+    return () =>
+      window.removeEventListener(
+        ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+        onAuthorReplaceablesRefreshed
+      )
+  }, [pubkey, refresh])
 
   return { badges, comments, isLoading, refresh }
 }

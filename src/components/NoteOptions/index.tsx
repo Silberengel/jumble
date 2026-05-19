@@ -21,10 +21,13 @@ export default function NoteOptions({
   onOpenPublicMessage,
   initialPublicMessageTo,
   onOpenCallInvite,
-  initialDefaultContent
+  initialDefaultContent,
+  pinned = false
 }: {
   event: Event
   className?: string
+  /** Note is shown in a pinned section (profile pins, etc.). */
+  pinned?: boolean
   initialHighlightData?: HighlightData
   highlightDefaultContent?: string
   isPostEditorOpen?: boolean
@@ -83,7 +86,8 @@ export default function NoteOptions({
     onOpenEditOrClone: (mode) => {
       setEditCloneMode(mode)
       setEditCloneOpen(true)
-    }
+    },
+    pinned
   })
 
   const trigger = useMemo(

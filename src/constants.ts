@@ -609,6 +609,31 @@ export function isAuthorProfileMetadataPublishKind(kind: number): boolean {
 }
 
 /**
+ * Author-published replaceables refetched on profile-view refresh, profile editor “Refresh cache”,
+ * settings “Refresh cache”, and {@link ReplaceableEventService.refreshAuthorPublishedReplaceablesFromRelays}.
+ */
+export const AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS: readonly number[] = [
+  kinds.Metadata,
+  kinds.Contacts,
+  kinds.RelayList,
+  kinds.Mutelist,
+  kinds.BookmarkList,
+  10001, // NIP-51 pin list
+  10015, // interests
+  ExtendedKind.PROFILE_BADGES_LIST,
+  ExtendedKind.EVENTS_I_FOLLOW_NOTIFICATIONS_LIST,
+  ExtendedKind.EVENTS_I_MUTED_NOTIFICATIONS_LIST,
+  ExtendedKind.FAVORITE_RELAYS,
+  ExtendedKind.BLOCKED_RELAYS,
+  ExtendedKind.BLOSSOM_SERVER_LIST,
+  ExtendedKind.PAYMENT_INFO,
+  kinds.UserEmojiList,
+  ExtendedKind.CACHE_RELAYS,
+  ExtendedKind.HTTP_RELAY_LIST,
+  ExtendedKind.RSS_FEED_LIST
+]
+
+/**
  * Relay-local experiment: event `id` is the standard Nostr hash, but `sig` is empty.
  * Not verifiable on the public relay network; relays that accept writes should require NIP-42 AUTH first.
  */

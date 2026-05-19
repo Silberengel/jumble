@@ -9,6 +9,7 @@ import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromIme
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeHttpUrl, normalizeUrl } from './url'
 import { isTorBrowser } from './utils'
 import logger from '@/lib/logger'
+import { getCanonicalPaytoType, getPaytoEditorTypeLabel } from '@/lib/payto-registry'
 
 const emptyHttpRelayListFields = {
   httpRead: [] as string[],
@@ -386,7 +387,7 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
   
   // Parse each payto tag according to NIP-A3 spec
   paytoTags.forEach((tag) => {
-    const type = tag[1]?.toLowerCase() || 'lightning' // Normalize to lowercase per spec
+    const type = getCanonicalPaytoType(tag[1]?.toLowerCase() || 'lightning')
     const authority = tag[2] || ''
     const extra = tag.slice(3) // Optional extra fields
     
@@ -397,16 +398,7 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
       type,
       authority,
       payto: paytoUri,
-      // Map common types to display names
-      displayType: type === 'lightning' ? 'Lightning Network' : 
-                   type === 'bitcoin' ? 'Bitcoin' :
-                   type === 'ethereum' ? 'Ethereum' :
-                   type === 'monero' ? 'Monero' :
-                   type === 'nano' ? 'Nano' :
-                   type === 'cashme' ? 'Cash App' :
-                   type === 'revolut' ? 'Revolut' :
-                   type === 'venmo' ? 'Venmo' :
-                   type.charAt(0).toUpperCase() + type.slice(1),
+      displayType: getPaytoEditorTypeLabel(type),
       ...(extra.length > 0 && { extra })
     }
     methods.push(method)
@@ -414,10 +406,19 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
   
   // If we have methods in JSON but no tags, use JSON methods
   if (methods.length === 0 && paymentInfo.methods && Array.isArray(paymentInfo.methods)) {
-    methods.push(...paymentInfo.methods.map((m: any) => ({
-      ...m,
-      payto: m.payto || (m.type && m.authority ? `payto://${m.type}/${m.authority}` : undefined)
-    })))
+    methods.push(
+      ...paymentInfo.methods.map((m: any) => {
+        const type = getCanonicalPaytoType((m.type || 'lightning').toLowerCase())
+        const authority = m.authority || m.address || ''
+        return {
+          ...m,
+          type,
+          authority,
+          displayType: m.displayType || getPaytoEditorTypeLabel(type),
+          payto: m.payto || (type && authority ? `payto://${type}/${authority}` : undefined)
+        }
+      })
+    )
   }
   
   // If we have payto at root level in JSON but no methods array
@@ -426,7 +427,7 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
       payto: paymentInfo.payto,
       type: paymentInfo.type || 'lightning',
       authority: paymentInfo.authority,
-      displayType: paymentInfo.type === 'lightning' ? 'Lightning Network' : paymentInfo.type || 'Payment'
+      displayType: getPaytoEditorTypeLabel(paymentInfo.type || 'lightning')
     })
   }
   

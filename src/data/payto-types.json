@@ -6,9 +6,11 @@
   "editorOrder": [
     "lightning",
     "bitcoin",
+    "bolt12",
+    "bip353",
+    "bip352",
     "liquid",
     "lbtc",
-    "sats",
     "ethereum",
     "monero",
     "litecoin",
@@ -40,6 +42,10 @@
   },
   "aliases": {
     "btc": "bitcoin",
+    "sats": "lightning",
+    "bolt-12": "bolt12",
+    "bip-353": "bip353",
+    "bip-352": "bip352",
     "doge": "dogecoin",
     "eth": "ethereum",
     "xmr": "monero",
@@ -56,6 +62,33 @@
       "authority": {
         "placeholder": "bc1q…",
         "hint": "On-chain Bitcoin address (Bech32 bc1… preferred)"
+      }
+    },
+    "bolt12": {
+      "label": "Bolt 12",
+      "symbol": "₿",
+      "category": "bitcoin",
+      "authority": {
+        "placeholder": "lno1…",
+        "hint": "BOLT-12 offer (static offer string, e.g. lno1…)"
+      }
+    },
+    "bip353": {
+      "label": "BIP-353",
+      "symbol": "₿",
+      "category": "bitcoin",
+      "authority": {
+        "placeholder": "₿user@example.com",
+        "hint": "BIP-353 DNS payment address (human-readable name@domain)"
+      }
+    },
+    "bip352": {
+      "label": "BIP-352",
+      "symbol": "₿",
+      "category": "bitcoin",
+      "authority": {
+        "placeholder": "sp1…",
+        "hint": "BIP-352 silent payment address (sp1…)"
       }
     },
     "liquid": {
@@ -76,15 +109,6 @@
       "authority": {
         "placeholder": "VJL…",
         "hint": "Liquid Bitcoin (L-BTC) receiving address"
-      }
-    },
-    "sats": {
-      "label": "Satoshis",
-      "symbol": "丰",
-      "category": "bitcoin",
-      "authority": {
-        "placeholder": "bc1q… or lightning address",
-        "hint": "Satoshis payment target (same formats as Bitcoin / Lightning)"
       }
     },
     "lightning": {

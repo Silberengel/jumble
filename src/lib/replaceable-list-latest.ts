@@ -1,13 +1,41 @@
-import { METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS, METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS } from '@/constants'
+import { ExtendedKind, METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS, METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS } from '@/constants'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
-import client from '@/services/client.service'
+import client, { eventService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import type { TPersonalListBech32Ref } from '@/lib/personal-list-mutations'
-import type { Event } from 'nostr-tools'
+import { kinds, type Event } from 'nostr-tools'
+
+function isSlowReplaceableListKind(kind: number): boolean {
+  return (
+    kind === kinds.Metadata ||
+    kind === 10001 ||
+    kind === ExtendedKind.PAYMENT_INFO ||
+    kind === kinds.Contacts ||
+    kind === kinds.RelayList ||
+    kind === kinds.Mutelist ||
+    kind === kinds.BookmarkList ||
+    kind === ExtendedKind.PROFILE_BADGES_LIST
+  )
+}
+
+function replaceableListFetchQueryOpts(kind: number) {
+  const slow = isSlowReplaceableListKind(kind)
+  return {
+    replaceableRace: !slow,
+    eoseTimeout: slow ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
+    globalTimeout: slow ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000
+  }
+}
+
+function newestReplaceableEvent(candidates: Event[]): Event | undefined {
+  if (!candidates.length) return undefined
+  return candidates.reduce((best, e) => (e.created_at > best.created_at ? e : best))
+}
 
 /**
- * REQ across relays with {@link replaceableRace}, then keep the newest `created_at` row for this author+kind.
- * Use before appending to pin / bookmark / follow / mute / interest lists so merges don’t drop remote state.
+ * REQ across relays, then keep the newest `created_at` row for this author+kind.
+ * Slow replaceables (pins, contacts, …) wait for EOSE instead of {@link replaceableRace} so mirrors aren’t missed.
  */
 export async function fetchLatestReplaceableListEvent(
   pubkeyHex: string,
@@ -18,15 +46,13 @@ export async function fetchLatestReplaceableListEvent(
   const allUrls = [...new Set(relayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]
   if (!allUrls.length) return undefined
 
-  // client.fetchEvents() handles both HTTP index relays and WebSocket relays internally.
-  const rows = await client.fetchEvents(allUrls, { authors: [pk], kinds: [kind], limit: 80 }, {
-    replaceableRace: true,
-    eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
-    globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
-  })
+  const rows = await client.fetchEvents(
+    allUrls,
+    { authors: [pk], kinds: [kind], limit: 80 },
+    replaceableListFetchQueryOpts(kind)
+  )
 
-  if (!rows.length) return undefined
-  return rows.reduce((best, e) => (e.created_at > best.created_at ? e : best))
+  return newestReplaceableEvent(rows)
 }
 
 /**
@@ -39,15 +65,17 @@ export async function fetchNewestPinListForPubkey(
   relayUrls: string[]
 ): Promise<Event | undefined> {
   const pk = normalizeHexPubkey(pubkeyHex)
+  const diskPin = await indexedDb.getReplaceableEvent(pk, 10001).catch(() => undefined)
+  const sessionPins = eventService.listSessionEventsAuthoredBy(pk, { kinds: [10001], limit: 8 })
   const [fromRelays, fromService] = await Promise.all([
     relayUrls.length
       ? fetchLatestReplaceableListEvent(pk, 10001, relayUrls)
       : Promise.resolve(undefined),
     client.fetchPinListEvent(pk).catch(() => undefined)
   ])
-  if (!fromRelays) return fromService
-  if (!fromService) return fromRelays
-  return fromService.created_at >= fromRelays.created_at ? fromService : fromRelays
+  return newestReplaceableEvent(
+    [fromRelays, fromService, diskPin, ...sessionPins].filter((e): e is Event => !!e)
+  )
 }
 
 /** Whether this event is referenced by the pin list via `e` (hex id) or `a` (NIP-33 coordinate). */

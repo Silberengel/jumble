@@ -11,6 +11,8 @@ import {
   getCanonicalPaytoType,
   getPaytoAuthorityFieldHelp,
   getPaytoEditorTypeLabel,
+  isPaytoEditorCustomType,
+  PAYTO_EDITOR_OTHER_OPTION,
   paytoEditorSelectTypes
 } from '@/lib/payto'
 import { Trash2 } from 'lucide-react'
@@ -26,27 +28,72 @@ type PaymentMethodRowProps = {
 
 export default function PaymentMethodRow({ row, onChange, onRemove }: PaymentMethodRowProps) {
   const { t } = useTranslation()
-  const selectTypes = paytoEditorSelectTypes(row.type)
-  const canonicalType = getCanonicalPaytoType(row.type || 'lightning')
-  const fieldHelp = getPaytoAuthorityFieldHelp(canonicalType)
+  const selectTypes = paytoEditorSelectTypes()
+  const isCustomType = isPaytoEditorCustomType(row.type)
+  const canonicalType =
+    isCustomType && row.type !== PAYTO_EDITOR_OTHER_OPTION
+      ? getCanonicalPaytoType(row.type)
+      : isCustomType
+        ? 'other'
+        : getCanonicalPaytoType(row.type || 'lightning')
+  const fieldHelp = getPaytoAuthorityFieldHelp(isCustomType ? '' : canonicalType)
+  const selectValue = isCustomType ? PAYTO_EDITOR_OTHER_OPTION : canonicalType
+  const customTypeInputValue = row.type === PAYTO_EDITOR_OTHER_OPTION ? '' : row.type
 
   return (
     <div className="flex gap-2 items-start">
-      <Select
-        value={canonicalType}
-        onValueChange={(type) => onChange({ ...row, type })}
-      >
-        <SelectTrigger className="w-[11.5rem] shrink-0 font-medium text-sm">
-          <SelectValue placeholder={t('Payment type')} />
-        </SelectTrigger>
-        <SelectContent className="max-h-[min(20rem,70vh)]">
-          {selectTypes.map((type) => (
-            <SelectItem key={type} value={type}>
-              {getPaytoEditorTypeLabel(type)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {isCustomType ? (
+        <div className="w-[11.5rem] shrink-0 space-y-1">
+          <Input
+            value={customTypeInputValue}
+            onChange={(e) => onChange({ ...row, type: e.target.value })}
+            placeholder={t('paytoEditor.customTypePlaceholder', {
+              defaultValue: 'Custom type (e.g. mycoin)'
+            })}
+            className="text-sm font-medium"
+            aria-label={t('paytoEditor.customTypeLabel', { defaultValue: 'Custom payment type' })}
+          />
+          <p className="text-xs text-muted-foreground leading-snug">
+            {t('paytoEditor.customTypeHint', {
+              defaultValue:
+                'This is for custom options not in the list. Use lowercase letters, numbers, and hyphens in the type name.'
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs text-muted-foreground"
+            onClick={() => onChange({ ...row, type: 'lightning' })}
+          >
+            {t('paytoEditor.choosePresetType', { defaultValue: 'Choose from list' })}
+          </Button>
+        </div>
+      ) : (
+        <Select
+          value={selectValue}
+          onValueChange={(type) => {
+            if (type === PAYTO_EDITOR_OTHER_OPTION) {
+              onChange({ ...row, type: PAYTO_EDITOR_OTHER_OPTION })
+            } else {
+              onChange({ ...row, type })
+            }
+          }}
+        >
+          <SelectTrigger className="w-[11.5rem] shrink-0 font-medium text-sm">
+            <SelectValue placeholder={t('Payment type')} />
+          </SelectTrigger>
+          <SelectContent className="max-h-[min(20rem,70vh)]">
+            {selectTypes.map((type) => (
+              <SelectItem key={type} value={type}>
+                {type === PAYTO_EDITOR_OTHER_OPTION
+                  ? t('paytoEditor.other', { defaultValue: 'Other' })
+                  : getPaytoEditorTypeLabel(type)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <div className="flex-1 min-w-0 space-y-1">
         <Input

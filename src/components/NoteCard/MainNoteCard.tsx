@@ -124,6 +124,7 @@ export default function MainNoteCard({
             zapPollVoteHighlightOption={zapPollVoteHighlightOption}
             showFull={showFull}
             deferAuthorAvatar={deferAuthorAvatar}
+            pinned={pinned}
           />
         </Collapsible>
         {!embedded && !searchListPreview ? <NoteBoostBadges event={event} className={`mt-2 ${notePadX}`} /> : null}

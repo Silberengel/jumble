@@ -113,6 +113,7 @@ const PrimaryNotificationThreadMuteListPageLazy = lazy(() =>
   }))
 )
 const PrimaryPinListPageLazy = lazy(() => import('@/pages/secondary/PinListPage'))
+const PrimaryProfileBadgesListPageLazy = lazy(() => import('@/pages/secondary/ProfileBadgesListPage'))
 const PrimaryInterestListPageLazy = lazy(() => import('@/pages/secondary/InterestListPage'))
 const PrimaryUserEmojiListPageLazy = lazy(() => import('@/pages/secondary/UserEmojiListPage'))
 const PrimaryOthersRelaySettingsPageLazy = lazy(() => import('@/pages/secondary/OthersRelaySettingsPage'))
@@ -854,6 +855,26 @@ export function useSmartPinListNavigation() {
   }
 
   return { navigateToPinList }
+}
+
+export function useSmartProfileBadgesListNavigation() {
+  const { setPrimaryNoteView } = usePrimaryNoteView()
+  const { push: pushSecondaryPage } = useSecondaryPage()
+  const { isSmallScreen } = useScreenSize()
+
+  const navigateToProfileBadgesList = (url: string) => {
+    if (isSmallScreen) {
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<PrimaryProfileBadgesListPageLazy index={0} hideTitlebar={true} />),
+        'profile-badges'
+      )
+    } else {
+      pushSecondaryPage(url)
+    }
+  }
+
+  return { navigateToProfileBadgesList }
 }
 
 export function useSmartNotificationThreadFollowListNavigation() {

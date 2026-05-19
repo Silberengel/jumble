@@ -50,7 +50,7 @@ export default function PaytoDialog({
               : t('Payment address – copy to use in your wallet or app')}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-3 pb-2">
           <div className="rounded-md bg-muted px-3 py-2 font-mono text-sm break-all select-text">
             {authority}
           </div>

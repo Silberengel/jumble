@@ -161,6 +161,12 @@ export default {
     "Payment type": "Payment type",
     "paytoEditor.intro":
       "Choose a payment type, then enter the address or username shown in the hint below each field.",
+    "paytoEditor.other": "Other",
+    "paytoEditor.customTypeLabel": "Custom payment type",
+    "paytoEditor.customTypePlaceholder": "Custom type (e.g. mycoin)",
+    "paytoEditor.customTypeHint":
+      "This is for custom options not in the list. Use lowercase letters, numbers, and hyphens in the type name.",
+    "paytoEditor.choosePresetType": "Choose from list",
     "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).": "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).",
     "Type (e.g. lightning)": "Type (e.g. lightning)",
     "Authority (e.g. user@domain.com)": "Authority (e.g. user@domain.com)",
@@ -1815,7 +1821,7 @@ export default {
     "RSS Feed Settings": "RSS Feed Settings",
     "Follow sets": "Follow sets",
     "Personal Lists": "Personal Lists",
-    "Personal lists hub intro": "Open mute list, following, bookmarks list, thread notification follow/mute lists (kinds 19130 / 19132), pinned notes, interest topics (kind 10015), your NIP-30 user emoji list (kind 10030), and emoji set packs (kind 30030) on their own pages. Follow sets are below. Web page bookmarks (NIP-B0, kind 39701) are separate—save from an article’s panel or use the Bookmarks spell for a mixed feed.",
+    "Personal lists hub intro": "Open mute list, following, bookmarks list, thread notification follow/mute lists (kinds 19130 / 19132), pinned notes, profile badges (kind 10008), interest topics (kind 10015), your NIP-30 user emoji list (kind 10030), and emoji set packs (kind 30030) on their own pages. Follow sets are below. Web page bookmarks (NIP-B0, kind 39701) are separate—save from an article’s panel or use the Bookmarks spell for a mixed feed.",
     "Mute list": "Mute list",
     "Following list": "Following list",
     "Bookmarks list": "Bookmarks list",
@@ -1823,6 +1829,24 @@ export default {
     "Notification thread mute list": "Thread notifications (mute)",
     "Pinned notes list": "Pinned notes list",
     "Interests list": "Interests list",
+    "Profile badges list": "Profile badges list",
+    "Profile badges list intro":
+      "NIP-58 badges shown on your profile wall: consecutive `a` (badge definition) and `e` (badge award) tag pairs on kind 10008. Publish when you are done editing.",
+    "Profile badges migrate hint":
+      "You still have a deprecated kind 30008 profile badges list (`d=profile_badges`). Copy its entries to kind 10008 — the old event is not deleted.",
+    "Migrate from kind 30008": "Migrate from kind 30008",
+    "No profile badges on your list": "No profile badges on your list yet.",
+    "Profile badges list updated": "Profile badges list published",
+    "Migrated profile badges to kind 10008": "Profile badges migrated to kind 10008",
+    "No badges found in deprecated list": "No badges found in the deprecated list",
+    "Profile badges need both definition (a) and award (e)":
+      "Enter both a badge definition coordinate and an award event id.",
+    "Award must be a 64-character hex event id": "Award must be a 64-character hex event id",
+    "Add badge": "Add badge",
+    "Badge definition (a tag), e.g. 30009:pubkey:bravery":
+      "Badge definition (a tag), e.g. 30009:pubkey:bravery",
+    "Badge award event id (e tag)": "Badge award event id (e tag)",
+    "Publish profile badges list": "Publish profile badges list",
     "User emoji list": "User emoji list (kind 10030)",
     "Emoji sets": "Emoji sets (kind 30030)",
     "User emoji list title": "{{username}}'s emoji list",

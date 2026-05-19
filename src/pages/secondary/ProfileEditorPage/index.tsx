@@ -35,6 +35,7 @@ import {
 import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
 import PaymentMethodRow from '@/components/ProfileEditor/PaymentMethodRow'
+import { PAYTO_EDITOR_OTHER_OPTION } from '@/lib/payto'
 import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -238,8 +239,11 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const savePaymentInfo = useCallback(async () => {
     if (savingPaymentInfoRef.current) return
     const tags: string[][] = paymentInfoEditMethods
-      .filter((m) => m.authority.trim())
-      .map((m) => ['payto', (m.type.trim() || 'lightning').toLowerCase(), m.authority.trim()])
+      .filter((m) => {
+        const type = m.type.trim()
+        return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
+      })
+      .map((m) => ['payto', m.type.trim().toLowerCase(), m.authority.trim()])
     savingPaymentInfoRef.current = true
     setSavingPaymentInfo(true)
     try {
@@ -734,34 +738,6 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               {paymentInfoEvent ? t('Edit payment info') : t('Add payment info')}
             </Button>
           </div>
-          <Collapsible>
-            <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-              <ChevronDown className="h-4 w-4 transition-transform [[data-state=open]_&]:rotate-180" />
-              {t('Raw payment info event')}
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2 space-y-2">
-              {paymentInfoEvent ? (
-                <>
-                  <div>
-                    <Label className="text-muted-foreground text-xs">{t('Content (JSON)')}</Label>
-                    <pre className="mt-1 p-3 rounded-md bg-muted text-xs overflow-auto max-h-48 break-all whitespace-pre-wrap">
-                      {paymentInfoEvent.content || '{}'}
-                    </pre>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground text-xs">{t('Tags')}</Label>
-                    <pre className="mt-1 p-3 rounded-md bg-muted text-xs overflow-auto max-h-48">
-                      {JSON.stringify(paymentInfoEvent.tags ?? [], null, 2)}
-                    </pre>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t('No payment info event yet. Click "Add payment info" to create one.')}
-                </p>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
         </Item>
       </div>
 
@@ -813,7 +789,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           <DialogHeader>
             <DialogTitle>{t('Edit payment info')} (kind 10133)</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-auto space-y-4">
+          <div className="flex-1 overflow-auto space-y-4 pb-6">
             <Item>
               <Label className="text-muted-foreground">{t('Payment methods')}</Label>
               <p className="text-xs text-muted-foreground">
@@ -883,12 +859,11 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                     createPaymentInfoDraftEvent(
                       paymentInfoEditContent.trim() || '{}',
                       paymentInfoEditMethods
-                        .filter((m) => m.authority.trim())
-                        .map((m) => [
-                          'payto',
-                          (m.type.trim() || 'lightning').toLowerCase(),
-                          m.authority.trim()
-                        ])
+                        .filter((m) => {
+                          const type = m.type.trim()
+                          return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
+                        })
+                        .map((m) => ['payto', m.type.trim().toLowerCase(), m.authority.trim()])
                     ),
                     null,
                     2
