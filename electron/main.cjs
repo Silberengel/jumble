@@ -345,9 +345,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Packaged shell is loopback `http://127.0.0.1` → public HTTPS APIs; Chromium CORS blocks
-      // renderer `fetch` unless disabled for this window (IPC + net.fetch still used as defense).
-      webSecurity: !app.isPackaged
+      // Always on: CORS, CSP, and mixed-content protections. Loopback packaged shell still reaches
+      // public APIs via `relaxCorsForRendererSubresources()` (media/HLS) and `imwald:backend-request`
+      // IPC (`electronAwareFetch` for translate + LanguageTool).
+      webSecurity: true
     }
   })
 
