@@ -46,6 +46,7 @@ export type ViewType =
   | 'pins'
   | 'interests'
   | 'user-emojis'
+  | 'profile-badges'
   | 'notification-thread-follow'
   | 'notification-thread-mute'
   | 'others-relay-settings'
@@ -300,6 +301,7 @@ export class NavigationService {
     if (viewType === 'pins') return 'Pinned notes'
     if (viewType === 'interests') return 'Interests'
     if (viewType === 'user-emojis') return 'Custom emoji list'
+    if (viewType === 'profile-badges') return 'Profile badges'
     if (viewType === 'others-relay-settings') return 'Relays and Storage Settings'
     return 'Page'
   }

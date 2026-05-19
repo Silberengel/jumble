@@ -10,8 +10,9 @@ import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
+import type { TSubRequestFilter } from '@/types'
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { Event, kinds, type Filter } from 'nostr-tools'
+import { Event, kinds } from 'nostr-tools'
 
 const REPORT_KINDS = [kinds.Report, ExtendedKind.REPORT] as const
 const CACHE_DURATION = 5 * 60 * 1000
@@ -51,7 +52,7 @@ function eventsEqualById(a: Event[], b: Event[]): boolean {
 
 type FetchMode = 'received' | 'made'
 
-function buildFilter(pubkey: string, mode: FetchMode, limit: number): Filter {
+function buildFilter(pubkey: string, mode: FetchMode, limit: number): TSubRequestFilter {
   if (mode === 'made') {
     return { authors: [pubkey], kinds: [...REPORT_KINDS], limit }
   }

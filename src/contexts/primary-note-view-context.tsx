@@ -13,6 +13,7 @@ export type TPrimaryOverlayViewType =
   | 'pins'
   | 'interests'
   | 'user-emojis'
+  | 'profile-badges'
   | 'notification-thread-follow'
   | 'notification-thread-mute'
   | 'others-relay-settings'

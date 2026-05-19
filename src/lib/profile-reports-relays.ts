@@ -27,9 +27,15 @@ export function buildProfileReportsRelayUrls(
   const blocked = new Set(
     blockedRelays.map((b) => normalizeAnyRelayUrl(b) || b).filter(Boolean)
   )
+  const mailboxList = {
+    read: authorRelayList.read ?? [],
+    write: authorRelayList.write ?? [],
+    httpRead: authorRelayList.httpRead,
+    httpWrite: authorRelayList.httpWrite
+  }
   const list = options.includeAuthorLocalRelays
-    ? authorRelayList
-    : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
+    ? mailboxList
+    : stripMailboxLocalUrlsForRemoteViewers(mailboxList)
   const inboxLayer = relayUrlsLocalsFirst([...(list.httpRead ?? []), ...(list.read ?? [])])
   const cacheLayer = relayUrlsLocalsFirst(
     (options.cacheRelayUrls ?? []).filter((u) => {

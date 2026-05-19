@@ -282,7 +282,6 @@ export function useProfileTimeline({
       }
 
       const hasCalendarKinds = kinds.some((k) => CALENDAR_EVENT_KINDS.includes(k))
-      const socialKinds = kinds.some(isSocialKindBlockedKind)
       const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
       const idbDocKinds = kinds.filter((k) => isDocumentRelayKind(k))
 

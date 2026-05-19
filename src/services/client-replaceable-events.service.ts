@@ -1452,7 +1452,7 @@ export class ReplaceableEventService {
         }
       }
 
-      const legacyProfileBadges = legacyProfileBadgeRows.filter(shouldDropEventOnIngest).reduce<
+      const legacyProfileBadges = legacyProfileBadgeRows.filter((e) => !shouldDropEventOnIngest(e)).reduce<
         NEvent | undefined
       >((best, e) => (!best || e.created_at > best.created_at ? e : best), undefined)
 
