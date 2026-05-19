@@ -269,8 +269,8 @@
       "logoAssetPath": "src/assets/payto_logos/paypal.webp",
       "profileUrlTemplate": "https://paypal.me/{authority}",
       "authority": {
-        "placeholder": "username",
-        "hint": "PayPal.me username (without paypal.me/)"
+        "placeholder": "username (not email)",
+        "hint": "PayPal.me username (not email), or a full PayPal donation link (Donate button / hosted_button_id URL from paypal.com/donate)."
       }
     },
     "buymeacoffee": {

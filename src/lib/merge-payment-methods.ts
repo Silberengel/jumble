@@ -1,5 +1,6 @@
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
 import { buildPaytoUri, getCanonicalPaytoType, getPaytoEditorTypeLabel, getPaytoTypeInfo } from '@/lib/payto'
+import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import type { TProfile } from '@/types'
 
 export type MergedPaymentMethod = {
@@ -82,7 +83,11 @@ export function mergePaymentMethods(
     }
     const trimmedAuthority = authority.trim()
     const resolvedAuthority =
-      normType === 'lightning' ? resolveLightningAuthority(trimmedAuthority) : trimmedAuthority
+      normType === 'lightning'
+        ? resolveLightningAuthority(trimmedAuthority)
+        : normType === 'paypal'
+          ? normalizePaypalAuthority(trimmedAuthority)
+          : trimmedAuthority
     const entry: MergedPaymentMethod = {
       type: normType,
       authority: resolvedAuthority,

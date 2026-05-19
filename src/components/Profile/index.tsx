@@ -86,6 +86,7 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import {
+  getAlternativePaymentMethods,
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
   sortMergedPaymentMethods
@@ -134,10 +135,20 @@ export default function Profile({
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
 
-  const paymentMethodsByType = useMemo(() => {
-    const list = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null))
-    return groupPaymentMethodsByDisplayType(list)
-  }, [paymentInfo, profile])
+  const mergedPaymentMethods = useMemo(
+    () => sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null)),
+    [paymentInfo, profile]
+  )
+
+  const paymentMethodsByType = useMemo(
+    () => groupPaymentMethodsByDisplayType(mergedPaymentMethods),
+    [mergedPaymentMethods]
+  )
+
+  const alternativePaymentGroups = useMemo(() => {
+    const alts = getAlternativePaymentMethods(mergedPaymentMethods, profile?.lightningAddress)
+    return groupPaymentMethodsByDisplayType(alts)
+  }, [mergedPaymentMethods, profile?.lightningAddress])
 
   const hasLightningForZap = useMemo(
     () => paymentMethodsByType.some((g) => g.methods.some((m) => m.type === 'lightning')),
@@ -574,6 +585,7 @@ export default function Profile({
               open={openZapDialog}
               setOpen={setOpenZapDialog}
               pubkey={pubkey}
+              alternativePaymentGroups={alternativePaymentGroups}
             />
             <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
               <div className="flex flex-wrap gap-4 items-center min-w-0">

@@ -26,6 +26,10 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import type { PaymentMethodGroup } from '@/lib/merge-payment-methods'
+import PaymentMethodsSection from '@/components/PaymentMethodsSection'
+import { useRecipientAlternativePayments } from '@/hooks/useRecipientAlternativePayments'
+import TipPublicMessagePrompt from './TipPublicMessagePrompt'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
 
@@ -35,7 +39,8 @@ export default function ZapDialog({
   pubkey,
   event,
   defaultAmount,
-  defaultComment
+  defaultComment,
+  alternativePaymentGroups
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
@@ -43,10 +48,34 @@ export default function ZapDialog({
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
+  /** Non-Lightning (and non-zap-duplicate) payto targets from kind 10133 / profile. */
+  alternativePaymentGroups?: PaymentMethodGroup[]
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const drawerContentRef = useRef<HTMLDivElement | null>(null)
+  const { pubkey: selfPubkey } = useNostr()
+  const fetchedAlternativeGroups = useRecipientAlternativePayments(pubkey, open)
+  const effectiveAlternativeGroups = alternativePaymentGroups ?? fetchedAlternativeGroups
+  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
+  const skipTipNoticeOnCloseRef = useRef(false)
+
+  const maybeOfferTipNoticeOnClose = () => {
+    if (skipTipNoticeOnCloseRef.current) return
+    if (selfPubkey && pubkey === selfPubkey) return
+    setTipNoticeOpen(true)
+  }
+
+  const handleZapDialogOpenChange: Dispatch<SetStateAction<boolean>> = (next) => {
+    const willOpen = typeof next === 'function' ? next(open) : next
+    if (!willOpen) {
+      maybeOfferTipNoticeOnClose()
+      skipTipNoticeOnCloseRef.current = false
+    } else {
+      skipTipNoticeOnCloseRef.current = false
+    }
+    setOpen(next)
+  }
 
   useEffect(() => {
     const handleResize = () => {
@@ -75,20 +104,19 @@ export default function ZapDialog({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerOverlay onClick={() => setOpen(false)} />
+      <Drawer open={open} onOpenChange={handleZapDialogOpenChange}>
+        <DrawerOverlay onClick={() => handleZapDialogOpenChange(false)} />
         <DrawerContent
           hideOverlay
           onOpenAutoFocus={(e) => e.preventDefault()}
           ref={drawerContentRef}
-          className="flex flex-col h-[80vh]"
+          className="flex max-h-[80vh] flex-col overflow-y-auto overscroll-contain"
           style={{
             maxHeight: 'calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
-            height: '80vh',
             paddingBottom: '0' // Remove default padding since we handle it in the button container
           }}
         >
-          <DrawerHeader className="px-4">
+          <DrawerHeader className="shrink-0 px-4">
             <DrawerTitle className="flex gap-2 items-center">
               <div className="shrink-0">{t('Zap to')}</div>
               <UserAvatar size="small" userId={pubkey} />
@@ -98,19 +126,29 @@ export default function ZapDialog({
           </DrawerHeader>
           <ZapDialogContent
             open={open}
-            setOpen={setOpen}
+            setOpen={handleZapDialogOpenChange}
             recipient={pubkey}
             event={event}
             defaultAmount={defaultAmount}
             defaultComment={defaultComment}
+            alternativePaymentGroups={effectiveAlternativeGroups}
+            onBeforeZapDialogClose={(withPublicReceipt) => {
+              if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
+            }}
           />
         </DrawerContent>
+        <TipPublicMessagePrompt
+          open={tipNoticeOpen}
+          onOpenChange={setTipNoticeOpen}
+          recipientPubkey={pubkey}
+        />
       </Drawer>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
+    <Dialog open={open} onOpenChange={handleZapDialogOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex gap-2 items-center">
@@ -122,14 +160,24 @@ export default function ZapDialog({
         </DialogHeader>
         <ZapDialogContent
           open={open}
-          setOpen={setOpen}
+          setOpen={handleZapDialogOpenChange}
           recipient={pubkey}
           event={event}
           defaultAmount={defaultAmount}
           defaultComment={defaultComment}
+          alternativePaymentGroups={effectiveAlternativeGroups}
+          onBeforeZapDialogClose={(withPublicReceipt) => {
+            if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
+          }}
         />
       </DialogContent>
     </Dialog>
+    <TipPublicMessagePrompt
+      open={tipNoticeOpen}
+      onOpenChange={setTipNoticeOpen}
+      recipientPubkey={pubkey}
+    />
+    </>
   )
 }
 
@@ -138,7 +186,9 @@ function ZapDialogContent({
   recipient,
   event,
   defaultAmount,
-  defaultComment
+  defaultComment,
+  alternativePaymentGroups,
+  onBeforeZapDialogClose
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
@@ -146,6 +196,9 @@ function ZapDialogContent({
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
+  alternativePaymentGroups?: PaymentMethodGroup[]
+  /** Runs before the zap dialog closes (e.g. after payment); skip tip notice if a public receipt was sent. */
+  onBeforeZapDialogClose?: (withPublicReceipt: boolean) => void
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey } = useNostr()
@@ -194,12 +247,16 @@ function ZapDialogContent({
         throw new Error('You need to be logged in to zap')
       }
       setZapping(true)
+      const closeZapDialog = () => {
+        onBeforeZapDialogClose?.(includePublicZapReceipt)
+        setOpen(false)
+      }
       const zapResult = await lightning.zap(
         pubkey,
         event ?? recipient,
         sats,
         comment,
-        () => setOpen(false),
+        closeZapDialog,
         includePublicZapReceipt
       )
       // user canceled
@@ -217,9 +274,8 @@ function ZapDialogContent({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+    <div>
+      <div className="space-y-4">
         {/* Sats slider or input */}
         <div className="flex flex-col items-center px-4">
           <div className="flex justify-center w-full max-w-xs">
@@ -264,8 +320,13 @@ function ZapDialogContent({
           <Label htmlFor="comment">{t('zapComment')}</Label>
           <Input id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
         </div>
+      </div>
 
-        <div className="px-4 flex items-center justify-between gap-3">
+      <div
+        className="space-y-3 border-t border-border bg-background px-4 pt-3"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="flex items-center justify-between gap-3">
           <Label htmlFor="zap-include-receipt" className="flex-1 cursor-pointer">
             <div className="text-sm font-medium">{t('Include public zap receipt')}</div>
             <div className="text-xs text-muted-foreground font-normal">
@@ -278,14 +339,23 @@ function ZapDialogContent({
             onCheckedChange={updateIncludePublicZapReceipt}
           />
         </div>
-      </div>
 
-      {/* Zap button - fixed at bottom */}
-      <div className="flex-shrink-0 bg-background pt-2 border-t border-border px-4" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <Button onClick={handleZap} className="w-full">
           {zapping && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}{' '}
           {t('Zap n sats', { n: sats })}
         </Button>
+
+        {alternativePaymentGroups && alternativePaymentGroups.length > 0 ? (
+          <div>
+            <PaymentMethodsSection
+              groups={alternativePaymentGroups}
+              recipientPubkey={recipient}
+              title={t('Other payment methods')}
+              className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">{t('Zap dialog other payment hint')}</p>
+          </div>
+        ) : null}
       </div>
     </div>
   )

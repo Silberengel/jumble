@@ -9,6 +9,7 @@ import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromIme
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeHttpUrl, normalizeUrl } from './url'
 import { isTorBrowser } from './utils'
 import logger from '@/lib/logger'
+import { buildPaytoUri } from '@/lib/payto'
 import { getCanonicalPaytoType, getPaytoEditorTypeLabel } from '@/lib/payto-registry'
 
 const emptyHttpRelayListFields = {
@@ -391,8 +392,7 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
     const authority = tag[2] || ''
     const extra = tag.slice(3) // Optional extra fields
     
-    // Build payto URI: payto://<type>/<authority>
-    const paytoUri = `payto://${type}/${authority}`
+    const paytoUri = buildPaytoUri(type, authority)
     
     const method: any = {
       type,

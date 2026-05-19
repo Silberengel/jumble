@@ -36,6 +36,7 @@ import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
 import PaymentMethodRow from '@/components/ProfileEditor/PaymentMethodRow'
 import { PAYTO_EDITOR_OTHER_OPTION } from '@/lib/payto'
+import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -243,7 +244,12 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         const type = m.type.trim()
         return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
       })
-      .map((m) => ['payto', m.type.trim().toLowerCase(), m.authority.trim()])
+      .map((m) => {
+        const type = m.type.trim().toLowerCase()
+        const authority =
+          type === 'paypal' ? normalizePaypalAuthority(m.authority) : m.authority.trim()
+        return ['payto', type, authority]
+      })
     savingPaymentInfoRef.current = true
     setSavingPaymentInfo(true)
     try {
@@ -863,7 +869,12 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                           const type = m.type.trim()
                           return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
                         })
-                        .map((m) => ['payto', m.type.trim().toLowerCase(), m.authority.trim()])
+                        .map((m) => {
+        const type = m.type.trim().toLowerCase()
+        const authority =
+          type === 'paypal' ? normalizePaypalAuthority(m.authority) : m.authority.trim()
+        return ['payto', type, authority]
+      })
                     ),
                     null,
                     2

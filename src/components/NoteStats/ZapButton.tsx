@@ -16,6 +16,7 @@ import { MouseEvent, TouchEvent, useEffect, useMemo, useRef, useState } from 're
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
+import TipPublicMessagePrompt from '../ZapDialog/TipPublicMessagePrompt'
 
 type ZapButtonProps = {
   event: Event
@@ -29,6 +30,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const { defaultZapSats, defaultZapComment, quickZap, includePublicZapReceipt } = useZap()
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null)
   const [openZapDialog, setOpenZapDialog] = useState(false)
+  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
   const [zapping, setZapping] = useState(false)
   const statsLoaded = noteStats?.updatedAt != null
   const { zapAmount, hasZapped } = useMemo(() => {
@@ -85,6 +87,9 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         defaultZapSats,
         defaultZapComment
       )
+      if (event.pubkey !== pubkey && !includePublicZapReceipt) {
+        setTipNoticeOpen(true)
+      }
     } catch (error) {
       toast.error(`${t('Zap failed')}: ${(error as Error).message}`)
     } finally {
@@ -198,6 +203,11 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         }}
         pubkey={event.pubkey}
         event={event}
+      />
+      <TipPublicMessagePrompt
+        open={tipNoticeOpen}
+        onOpenChange={setTipNoticeOpen}
+        recipientPubkey={event.pubkey}
       />
     </>
   )
