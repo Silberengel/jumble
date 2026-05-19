@@ -1,4 +1,5 @@
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
+import { SEARCHABLE_RELAY_URLS, THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -105,10 +106,23 @@ export function useFetchThreadContextEvent(
           viewerPubkey ?? undefined,
           blockedRelays
         )
-        const opts = relayUrls.length ? { relayHints: relayUrls } : undefined
-        let fetchedEvent = skipShortcuts
-          ? await eventService.fetchEventForceRetry(eventId, opts)
-          : await eventService.fetchEvent(eventId, opts)
+        const threadOpts = relayUrls.length
+          ? { relayHints: relayUrls, threadContext: true as const }
+          : { threadContext: true as const }
+
+        const fetchParentOrRoot = async () => {
+          if (skipShortcuts) {
+            return eventService.fetchEventForceRetry(eventId, threadOpts)
+          }
+          return eventService.fetchEvent(eventId, threadOpts)
+        }
+
+        let fetchedEvent = await Promise.race([
+          fetchParentOrRoot(),
+          new Promise<undefined>((resolve) => {
+            window.setTimeout(() => resolve(undefined), THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS)
+          })
+        ])
 
         if (
           !fetchedEvent &&
@@ -116,10 +130,13 @@ export function useFetchThreadContextEvent(
           SEARCHABLE_RELAY_URLS.length > 0
         ) {
           searchableAttemptedRef.current = true
-          fetchedEvent = await client.fetchEventWithExternalRelays(
-            eventId,
-            SEARCHABLE_RELAY_URLS
-          )
+          const searchable = sanitizeRelayUrlsForFetch([...SEARCHABLE_RELAY_URLS])
+          fetchedEvent = await Promise.race([
+            client.fetchEventWithExternalRelays(eventId, searchable),
+            new Promise<undefined>((resolve) => {
+              window.setTimeout(() => resolve(undefined), THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS)
+            })
+          ])
           if (fetchedEvent) {
             client.addEventToCache(fetchedEvent)
           }

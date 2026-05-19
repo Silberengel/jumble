@@ -32,6 +32,7 @@ import {
   NIP66_DISCOVERY_RELAY_URLS,
   PROFILE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
+  READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS,
   NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
@@ -39,7 +40,7 @@ import {
 import { getCacheRelayUrls } from '@/lib/private-relays'
 import {
   buildPersonalRelayKeySet,
-  filterReadOnlyRelaysUnlessPersonal,
+  sanitizeRelayUrlsForFetch,
   isReadOnlyIndexerRelay,
   isReadOnlyRelayAllowedForViewer,
   setViewerPersonalRelayKeys
@@ -296,10 +297,17 @@ function summarizeFiltersForRelayLog(filters: Filter[]): Record<string, unknown>
   return out
 }
 
+/** Long connect + NIP-42 boost for global index relays — not {@link READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS}. */
 const READ_ONLY_RELAY_CONNECT_BOOST_URLS = new Set(
-  [...READ_ONLY_RELAY_URLS, ...NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS].map(
-    (u) => normalizeUrl(u) || u
-  )
+  [
+    ...READ_ONLY_RELAY_URLS.filter(
+      (u) =>
+        !READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS.some(
+          (r) => (normalizeUrl(r) || r).toLowerCase() === (normalizeUrl(u) || u).toLowerCase()
+        )
+    ),
+    ...NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS
+  ].map((u) => normalizeUrl(u) || u)
 )
 
 /** Hostname (+ path when not "/") for readable publish / retry console lines. */
@@ -2520,7 +2528,7 @@ class ClientService extends EventTarget {
     relayReqLog?: { groupId?: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
-    let relays = filterReadOnlyRelaysUnlessPersonal(
+    let relays = sanitizeRelayUrlsForFetch(
       originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
     )
     if (navigator.onLine) {
@@ -3395,7 +3403,7 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs?: number | false
     }
   ) {
-    return this.queryService.query(filterReadOnlyRelaysUnlessPersonal(urls), filter, onevent, options)
+    return this.queryService.query(sanitizeRelayUrlsForFetch(urls), filter, onevent, options)
   }
 
   // Legacy query implementation removed - now delegated to QueryService
@@ -3430,7 +3438,7 @@ class ClientService extends EventTarget {
           .filter(Boolean)
       )
     )
-    const wsOriginal = filterReadOnlyRelaysUnlessPersonal(
+    const wsOriginal = sanitizeRelayUrlsForFetch(
       originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
     )
     let relays = [...wsOriginal]

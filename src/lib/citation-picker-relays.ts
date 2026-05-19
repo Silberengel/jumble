@@ -6,7 +6,7 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
-import { filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
@@ -64,5 +64,5 @@ export async function buildCitationPickerSearchRelayUrls(): Promise<string[]> {
     []
   )
 
-  return filterReadOnlyRelaysUnlessPersonal(merged).slice(0, CITATION_SEARCH_MAX_RELAYS)
+  return sanitizeRelayUrlsForFetch(merged).slice(0, CITATION_SEARCH_MAX_RELAYS)
 }

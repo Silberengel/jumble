@@ -1,3 +1,4 @@
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -36,7 +37,9 @@ export async function buildThreadContextFetchRelayUrls(
   blockedRelays: string[] = []
 ): Promise<string[]> {
   const tagHints = relayHintsFromThreadETag(targetTag)
-  const threadRelayHints = [...new Set([...tagHints, ...relayHintsFromEventTags(contextEvent)])]
+  const threadRelayHints = sanitizeRelayUrlsForFetch([
+    ...new Set([...tagHints, ...relayHintsFromEventTags(contextEvent)])
+  ])
   const opAuthorPubkey = pubkeyFromThreadETag(targetTag)
   return buildReplyReadRelayList(opAuthorPubkey, viewerPubkey, blockedRelays, threadRelayHints)
 }

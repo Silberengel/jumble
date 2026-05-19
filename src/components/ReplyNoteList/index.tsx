@@ -43,6 +43,7 @@ import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
@@ -1059,9 +1060,9 @@ function ReplyNoteList({
           const opAuthorPubkey = rootInfo.type === 'E' || rootInfo.type === 'A' ? rootInfo.pubkey : undefined
           const seenOn = client.getSeenEventRelayUrls(event.id).map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
           const fromBrowsingFeed = browsingRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
-          const threadRelayHints = [
+          const threadRelayHints = sanitizeRelayUrlsForFetch([
             ...new Set([...relayHintsFromEventTags(event), ...seenOn, ...fromBrowsingFeed])
-          ]
+          ])
           const replyBlockedRelays = [
             ...(blockedRelays || [])
           ]
@@ -1104,12 +1105,14 @@ function ReplyNoteList({
             limit: LIMIT
           })
 
-          const relayUrlsForThreadReq = feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
-            operation: 'read',
-            blockedRelays: replyBlockedRelays,
-            applySocialKindBlockedFilter: false,
-            allowThirdPartyLocalRelays: true
-          })
+          const relayUrlsForThreadReq = sanitizeRelayUrlsForFetch(
+            feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
+              operation: 'read',
+              blockedRelays: replyBlockedRelays,
+              applySocialKindBlockedFilter: false,
+              allowThirdPartyLocalRelays: false
+            })
+          )
 
           // For URL threads: stream events as they arrive from each relay so replies appear
           // immediately, rather than waiting up to 10 s for all relays to EOSE.

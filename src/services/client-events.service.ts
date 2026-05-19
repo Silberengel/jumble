@@ -5,11 +5,14 @@ import {
   EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
   HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS,
   HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
+  THREAD_CONTEXT_TRY_HARDER_GLOBAL_TIMEOUT_MS,
   isDocumentRelayKind,
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT,
   SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS,
   SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import logger from '@/lib/logger'
 import {
   collectEmbeddedEventPrefetchTargets,
@@ -351,7 +354,10 @@ export class EventService {
    * Fetch single event by ID (hex, note1, nevent1, naddr1).
    * Optional `relayHints` (e.g. from the parent article’s tags) are merged first so REQ targets the same relays that likely hold the embed.
    */
-  async fetchEvent(id: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
+  async fetchEvent(
+    id: string,
+    opts?: { relayHints?: string[]; /** Shorter timeouts; do not block note UI on parent/root. */ threadContext?: boolean }
+  ): Promise<NEvent | undefined> {
     const trimmed = id.trim()
     let hexId: string | undefined
     let pointerHasFetchHints = false
@@ -402,7 +408,7 @@ export class EventService {
       }
     }
     if (opts?.relayHints?.length || pointerHasFetchHints) {
-      const hinted = await this._fetchEvent(trimmed, opts?.relayHints)
+      const hinted = await this._fetchEvent(trimmed, opts?.relayHints, opts?.threadContext)
       if (
         hinted &&
         !shouldDropEventOnIngest(hinted, hexId ? { explicitNoteLookupHexId: hexId } : undefined)
@@ -447,7 +453,10 @@ export class EventService {
   /**
    * Force retry fetch event
    */
-  async fetchEventForceRetry(eventId: string, opts?: { relayHints?: string[] }): Promise<NEvent | undefined> {
+  async fetchEventForceRetry(
+    eventId: string,
+    opts?: { relayHints?: string[]; threadContext?: boolean }
+  ): Promise<NEvent | undefined> {
     this.clearDataloaderCacheForFetchId(eventId)
     return this.fetchEvent(eventId, opts)
   }
@@ -1128,22 +1137,29 @@ export class EventService {
     for (const tag of event.tags) {
       if (tagTypesWithRelayHints.includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
         const hint = tag[2]
-        if (hint.startsWith('wss://') || hint.startsWith('ws://')) {
+        if (
+          (hint.startsWith('wss://') || hint.startsWith('ws://')) &&
+          urlIsNonLocalForRemoteViewer(hint)
+        ) {
           hints.add(hint)
         }
       }
     }
-    
+
     // Also check for dedicated "relays" tag
-    const relaysTag = event.tags.find(tag => tag[0] === 'relays')
+    const relaysTag = event.tags.find((tag) => tag[0] === 'relays')
     if (relaysTag && relaysTag.length > 1) {
-      relaysTag.slice(1).forEach(url => {
-        if (typeof url === 'string' && (url.startsWith('wss://') || url.startsWith('ws://'))) {
+      relaysTag.slice(1).forEach((url) => {
+        if (
+          typeof url === 'string' &&
+          (url.startsWith('wss://') || url.startsWith('ws://')) &&
+          urlIsNonLocalForRemoteViewer(url)
+        ) {
           hints.add(url)
         }
       })
     }
-    
+
     return Array.from(hints)
   }
 
@@ -1165,18 +1181,20 @@ export class EventService {
   /**
    * Private: Fetch event by ID (internal implementation)
    */
-  private async _fetchEvent(id: string, extraRelayHints?: string[]): Promise<NEvent | undefined> {
+  private async _fetchEvent(
+    id: string,
+    extraRelayHints?: string[],
+    threadContext = false
+  ): Promise<NEvent | undefined> {
     let filter: Filter | undefined
     let relays: string[] = []
     let authorHintPubkey: string | undefined
+    const normalizeRelayList = (urls: string[]) =>
+      sanitizeRelayUrlsForFetch(
+        [...new Set(urls.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u)))]
+      )
     if (extraRelayHints?.length) {
-      relays = [
-        ...new Set(
-          extraRelayHints
-            .map((u) => normalizeUrl(u))
-            .filter((u): u is string => Boolean(u))
-        )
-      ]
+      relays = normalizeRelayList(extraRelayHints)
     }
 
     if (/^[0-9a-f]{64}$/i.test(id)) {
@@ -1189,7 +1207,7 @@ export class EventService {
           break
         case 'nevent':
           filter = { ids: [data.id], limit: 1 }
-          if (data.relays) relays = [...new Set([...relays, ...data.relays])]
+          if (data.relays) relays = normalizeRelayList([...relays, ...data.relays])
           if (data.author && /^[0-9a-f]{64}$/i.test(data.author)) {
             authorHintPubkey = data.author.toLowerCase()
           }
@@ -1203,7 +1221,7 @@ export class EventService {
             '#d': [ident],
             limit: 1
           }
-          if (data.relays) relays = [...new Set([...relays, ...data.relays])]
+          if (data.relays) relays = normalizeRelayList([...relays, ...data.relays])
           break
         }
       }
@@ -1240,7 +1258,7 @@ export class EventService {
         // Extract relay hints from cached event's tags (e, a, q tags)
         const eventRelayHints = this.extractRelayHintsFromEvent(cached)
         if (eventRelayHints.length > 0) {
-          relays = [...new Set([...relays, ...eventRelayHints])]
+          relays = normalizeRelayList([...relays, ...eventRelayHints])
         }
         return cached
       }
@@ -1269,14 +1287,21 @@ export class EventService {
         // Extract relay hints from found event's tags (e, a, q tags)
         const eventRelayHints = this.extractRelayHintsFromEvent(event)
         if (eventRelayHints.length > 0) {
-          relays = [...new Set([...relays, ...eventRelayHints])]
+          relays = normalizeRelayList([...relays, ...eventRelayHints])
         }
         return event
       }
     }
 
     // Always try comprehensive relay list (author's outboxes + user's inboxes + hints + seen + defaults)
-    const event = await this.tryHarderToFetchEvent(relays, filter, true, authorHintPubkey, ingestOpts)
+    const event = await this.tryHarderToFetchEvent(
+      relays,
+      filter,
+      true,
+      authorHintPubkey,
+      ingestOpts,
+      threadContext
+    )
     if (event && !shouldDropEventOnIngest(event, ingestOpts)) {
       this.addEventToCache(event, ingestOpts)
       return event
@@ -1324,7 +1349,8 @@ export class EventService {
     filter: Filter,
     alreadyFetchedFromBigRelays = false,
     authorHintPubkey?: string,
-    ingestOpts?: ShouldDropEventOnIngestOptions
+    ingestOpts?: ShouldDropEventOnIngestOptions,
+    threadContext = false
   ): Promise<NEvent | undefined> {
     // Get seen relays if we have an event ID
     const seenRelays = filter.ids?.length ? client.getSeenEventRelayUrls(filter.ids[0]) : []
@@ -1356,10 +1382,15 @@ export class EventService {
         (filter.authors?.length === 1 && Array.isArray(filter['#d']) && filter['#d'].length >= 1))
     const useFastSingleHitQuery = isSingleEventById || isReplaceableCoordinateFetch
 
+    const tryHarderGlobalTimeout = threadContext
+      ? THREAD_CONTEXT_TRY_HARDER_GLOBAL_TIMEOUT_MS
+      : useFastSingleHitQuery
+        ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS
+        : 10000
     const events = await this.queryService.query(relayUrls, filter, undefined, {
       immediateReturn: useFastSingleHitQuery,
       eoseTimeout: useFastSingleHitQuery ? SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS : 500,
-      globalTimeout: useFastSingleHitQuery ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS : 10000
+      globalTimeout: tryHarderGlobalTimeout
     })
 
     const event = events

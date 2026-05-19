@@ -279,6 +279,10 @@ export const SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS = 28_000
 export const HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS = 2_000
 export const HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS = 5_000
 
+/** Parent/root strip on note pages — fail open so the main note is not blocked behind tryHarder. */
+export const THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS = 10_000
+export const THREAD_CONTEXT_TRY_HARDER_GLOBAL_TIMEOUT_MS = 8_000
+
 /** Wide REQ for embeds / explicit external lists ({@link EventService.fetchEventWithExternalRelays}). */
 export const EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS = 14_000
 export const EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS = 40_000

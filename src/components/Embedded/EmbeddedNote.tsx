@@ -19,7 +19,7 @@ import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import { useViewerInboxRelayUrls } from '@/hooks/useViewerInboxRelayUrls'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -343,7 +343,7 @@ function EmbeddedNoteFetched({
           operation: 'read',
           blockedRelays,
           applySocialKindBlockedFilter: false,
-          allowThirdPartyLocalRelays: true
+          allowThirdPartyLocalRelays: false
         })
       )
       if (cancelled || !ev) return
@@ -536,7 +536,7 @@ function buildEmbedWideRelayUrlsStatic(
   relayHintsFromParent: string[],
   viewerInboxRelayUrls: string[]
 ): string[] {
-  return filterReadOnlyRelaysUnlessPersonal(
+  return sanitizeRelayUrlsForFetch(
     feedRelayPolicyUrls(
       [
         {
@@ -557,7 +557,7 @@ function buildEmbedWideRelayUrlsStatic(
       {
         operation: 'read',
         applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
+        allowThirdPartyLocalRelays: false
       }
     )
   )

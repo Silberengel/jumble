@@ -12,6 +12,14 @@ export function urlIsNonLocalForRemoteViewer(url: string): boolean {
 }
 
 /**
+ * Remove loopback/LAN URLs from tag, nevent, or seen-on hints. The viewer's own cache relays (kind 10432)
+ * are added separately via {@link getCacheRelayUrls} — never from another user's `e` tag hint.
+ */
+export function stripLocalRelaysFromThirdPartyHints(urls: readonly string[]): string[] {
+  return urls.filter(urlIsNonLocalForRemoteViewer)
+}
+
+/**
  * Drop LAN/loopback from NIP-65 + HTTP mailbox fields when resolving **another** author's data:
  * the viewer cannot reach the author's `localhost` / `192.168.*` / etc., but we used to rank them first.
  */

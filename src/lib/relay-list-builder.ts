@@ -14,7 +14,7 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
-import { buildPersonalRelayKeySet, filterReadOnlyRelaysUnlessPersonal } from '@/lib/read-only-relay-personal'
+import { buildPersonalRelayKeySet, sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrls } from './private-relays'
 import { defaultFavoriteRelaysForViewer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
@@ -176,6 +176,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     relayUrls.add(normalized)
   }
 
+  /** Hints / NIP-65 lists — no loopback/LAN (viewer cache relays come from kind 10432 only). */
+  const addRelayFromHints = (url: string | undefined) => {
+    if (!url || !urlIsNonLocalForRemoteViewer(url)) return
+    addRelay(url)
+  }
+
   const addHttpRelay = (url: string | undefined) => {
     if (!url || !isHttpRelayUrl(url)) return
     const normalized = normalizeAnyRelayUrl(url) || url.trim()
@@ -220,13 +226,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   // 1. Relay hints (highest priority - explicit hints)
-  relayHints.forEach(addRelay)
+  relayHints.filter(urlIsNonLocalForRemoteViewer).forEach(addRelayFromHints)
 
   // 2. Relays where event was seen
-  seenRelays.forEach(addRelay)
+  seenRelays.filter(urlIsNonLocalForRemoteViewer).forEach(addRelayFromHints)
 
   // 3. Relays where containing event was found (for embedded events)
-  containingEventRelays.forEach(addRelay)
+  containingEventRelays.filter(urlIsNonLocalForRemoteViewer).forEach(addRelayFromHints)
 
   // 3b. Public profile / read relays before user favorites & NIP-65 (batched kind-0 — avoids burning
   // connection slots on broken personal relays before PROFILE_FETCH + FAST_READ answer).
@@ -247,15 +253,15 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     try {
       const authorRelayList = await client.peekRelayListFromStorage(authorPubkey)
       pickAuthorNip65RelaysPreferringViewerOverlap(
-        authorRelayList.write ?? [],
+        (authorRelayList.write ?? []).filter(urlIsNonLocalForRemoteViewer),
         viewerWsForAuthorOverlap,
         AUTHOR_NIP65_RELAY_CAP
-      ).forEach(addRelay)
+      ).forEach(addRelayFromHints)
       pickAuthorNip65RelaysPreferringViewerOverlap(
-        authorRelayList.read ?? [],
+        (authorRelayList.read ?? []).filter(urlIsNonLocalForRemoteViewer),
         viewerWsForAuthorOverlap,
         AUTHOR_NIP65_RELAY_CAP
-      ).forEach(addRelay)
+      ).forEach(addRelayFromHints)
     } catch (error) {
       logger.warn('[RelayListBuilder] Failed to read author relay list from storage', { error })
     }
@@ -267,13 +273,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
       const userRead = userReadRelaysWithHttp(userRelayList).slice(0, 10)
       const userWrite = [...(userRelayList.write || []).slice(0, 10)]
-      userRead.forEach((u) => {
+      userRead.filter(urlIsNonLocalForRemoteViewer).forEach((u) => {
         trackPersonal(u)
-        addRelay(u)
+        addRelayFromHints(u)
       })
-      userWrite.forEach((u) => {
+      userWrite.filter(urlIsNonLocalForRemoteViewer).forEach((u) => {
         trackPersonal(u)
-        addRelay(u)
+        addRelayFromHints(u)
       })
 
       // Include local relays from kind 10432
@@ -304,10 +310,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
       const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
-      ;(userRelayList.read ?? []).slice(0, 10).forEach((u) => {
-        trackPersonal(u)
-        addRelay(u)
-      })
+      ;(userRelayList.read ?? [])
+        .slice(0, 10)
+        .filter(urlIsNonLocalForRemoteViewer)
+        .forEach((u) => {
+          trackPersonal(u)
+          addRelayFromHints(u)
+        })
 
       // Include local relays from kind 10432 if enabled
       if (includeLocalRelays) {
@@ -367,12 +376,12 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
 
   const merged = Array.from(relayUrls)
   const personalKeys = userPubkey ? buildPersonalRelayKeySet(personalRelayUrls) : undefined
-  const ws = filterReadOnlyRelaysUnlessPersonal(
+  const ws = sanitizeRelayUrlsForFetch(
     feedRelayPolicyUrls([{ source: 'fallback', urls: merged }], {
       operation: 'read',
       blockedRelays,
       applySocialKindBlockedFilter: false,
-      allowThirdPartyLocalRelays: true
+      allowThirdPartyLocalRelays: false
     }),
     personalKeys
   )

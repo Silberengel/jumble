@@ -1,4 +1,5 @@
 import { READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS } from '@/constants'
+import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 
 const personalListRequiredKeySet = new Set(
@@ -64,4 +65,21 @@ export function filterReadOnlyRelaysUnlessPersonal(
 ): string[] {
   const keys = personalKeys ?? viewerPersonalRelayKeys
   return urls.filter((u) => isAllowedForKeys(u, keys))
+}
+
+/**
+ * Sanitize relay URLs assembled for REQ/fetch: drop other people's LAN/localhost hints (keep viewer's
+ * own locals from NIP-65 / favorites / 10432), then gated read-only indexers.
+ */
+export function sanitizeRelayUrlsForFetch(
+  urls: readonly string[],
+  personalKeys?: ReadonlySet<string>
+): string[] {
+  const keys = personalKeys ?? viewerPersonalRelayKeys
+  const withoutThirdPartyLocals = urls.filter((u) => {
+    if (urlIsNonLocalForRemoteViewer(u)) return true
+    const key = relayUrlKey(u)
+    return key.length > 0 && keys.has(key)
+  })
+  return filterReadOnlyRelaysUnlessPersonal(withoutThirdPartyLocals, keys)
 }
