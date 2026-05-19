@@ -649,7 +649,9 @@ export class EventService {
     // NIP-65 (10002) and contacts (3) are not “document” replaceables; without this they never hit IndexedDB
     // from timeline/REQ ingest—only the logged-in account’s list was hydrated in NostrProvider / prewarm.
     if (
-      (cleanEvent.kind === kinds.RelayList || cleanEvent.kind === kinds.Contacts) &&
+      (cleanEvent.kind === kinds.RelayList ||
+        cleanEvent.kind === kinds.Contacts ||
+        cleanEvent.kind === ExtendedKind.PAYMENT_INFO) &&
       indexedDb.hasReplaceableEventStoreForKind(cleanEvent.kind)
     ) {
       const coord = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(cleanEvent as NEvent))

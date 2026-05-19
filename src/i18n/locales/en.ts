@@ -1662,6 +1662,8 @@ export default {
     "Log in to run this spell (it uses $me or $contacts).": "Log in to run this spell (it uses $me or $contacts).",
     "Login failed": "Login failed",
     "nip07.extensionKeyMismatch": "Your browser extension is using a different key on this tab. Switch to the matching key in the extension, reload the page to apply your extension's current selection, or use the other action on this message to log in with the key currently selected in your extension.",
+    "nip07.extensionKeyMismatchTitle": "Extension key mismatch",
+    "nip07.extensionKeyMismatchBody": "Your browser extension is using a different key than this tab. Switch keys in the extension, reload the page, or sign in with the extension's current key.",
     "nip07.reloadPage": "Reload page",
     "nip07.useExtensionIdentity": "Use extension identity",
     "nip07.switchedToExtensionIdentity": "Switched to your extension's current identity.",

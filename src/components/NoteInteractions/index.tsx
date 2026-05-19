@@ -39,9 +39,9 @@ export default function NoteInteractions({
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div className="flex-1 w-0 min-w-0">
-          <div className="py-2 px-2 sm:px-4 md:px-6 font-semibold text-xs sm:text-sm md:text-base text-foreground whitespace-nowrap">
+      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1 basis-full sm:basis-0">
+          <div className="py-2 px-2 sm:px-4 md:px-6 font-semibold text-xs sm:text-sm md:text-base text-foreground">
             {t('Replies')}
           </div>
         </div>

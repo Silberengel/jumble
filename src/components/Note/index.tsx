@@ -606,7 +606,7 @@ export default function Note({
           navigateToNote(toNote(event), event, getCachedThreadContextEvents(event))
         }}
       >
-        <div className="flex justify-between items-start gap-2">
+        <div className="flex flex-wrap justify-between items-start gap-2 min-w-0">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {isNip25ReactionKind(event.kind) ? (
               <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2">

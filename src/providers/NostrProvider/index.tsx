@@ -60,6 +60,7 @@ import { NostrContext, type TNostrContext } from '@/providers/nostr-context'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEventCallback } from '@/hooks/use-event-callback'
 import { useTranslation } from 'react-i18next'
+import { showNip07ExtensionKeyMismatchToast } from '@/lib/nip07-extension-key-mismatch-toast'
 import { toast } from 'sonner'
 import { BunkerSigner } from './bunker.signer'
 import { Nip07Signer } from './nip-07.signer'
@@ -1002,6 +1003,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           if (httpRel) setHttpRelayListEvent(httpRel)
           const blossom = await loadOk(ExtendedKind.BLOSSOM_SERVER_LIST)
           if (blossom) void client.updateBlossomServerListEventCache(blossom)
+          const payment = await loadOk(ExtendedKind.PAYMENT_INFO)
+          if (payment) {
+            void replaceableEventService.updateReplaceableEventCache(payment).catch(() => {})
+          }
 
           const merged = await client.fetchRelayList(acc.pubkey)
           setRelayList(merged)
@@ -1408,17 +1413,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const fireNip07ExtensionKeyMismatchToast = useCallback(() => {
     if (nip07KeyMismatchToastShownRef.current) return
     nip07KeyMismatchToastShownRef.current = true
-    toast.error(t('nip07.extensionKeyMismatch'), {
-      duration: 35_000,
-      action: { label: t('nip07.reloadPage'), onClick: () => window.location.reload() },
-      cancel: {
-        label: t('nip07.useExtensionIdentity'),
-        onClick: () => {
-          void adoptCurrentExtensionNip07Identity()
-        }
+    showNip07ExtensionKeyMismatchToast({
+      onReload: () => window.location.reload(),
+      onUseExtensionIdentity: () => {
+        void adoptCurrentExtensionNip07Identity()
       }
     })
-  }, [t, adoptCurrentExtensionNip07Identity])
+  }, [adoptCurrentExtensionNip07Identity])
 
   /**
    * If session restore temporarily fell back to read-only (`npub`) while the stored
@@ -1842,6 +1843,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       logger.warn('[NostrProvider] updateProfileEvent: putReplaceableEvent failed', { error: e })
     }
+    void replaceableEventService.updateReplaceableEventCache(profileEvent).catch(() => {})
     // Always apply the just-published event to state regardless of IDB's newer-wins result,
     // so the UI is never left showing a stale event that IDB preferred over what we just saved.
     setProfileEvent(profileEvent)

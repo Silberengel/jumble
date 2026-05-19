@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useNearViewport } from '@/hooks/useNearViewport'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
@@ -46,17 +45,16 @@ export default function NoteStats({
    */
   useIconOnlyLikeTrigger?: boolean
 }) {
-  const { isSmallScreen } = useScreenSize()
   const { pubkey } = useNostr()
   const noteStats = useNoteStatsById(event.id)
   const { relays: hintRelays, currentRelaysKey } = useNoteStatsRelayHints()
   const { relayUrls: rssUrlThreadRelays, relayMergeTier } = useRssUrlThreadQueryRelays()
   const [loading, setLoading] = useState(false)
-  
+
   // Hide boost button for discussion events and replies to discussions
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
   const isReplyToDiscussion = useReplyUnderDiscussionRoot(event)
-  
+
   // Hide interaction counts if event is in quiet mode
   const hideInteractions = shouldHideInteractions(event)
 
@@ -99,72 +97,49 @@ export default function NoteStats({
     currentRelaysKey
   ])
 
-  if (isSmallScreen) {
-    return (
-      <div
-        ref={containerRef}
-        className={cn('select-none', className)}
-        data-note-stats
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className={cn(
-            'flex justify-between items-center h-5 [&_svg]:size-5',
-            loading ? 'animate-pulse' : '',
-            classNames?.buttonBar
-          )}
-        >
-          <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
-            <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          )}
-          <LikeButtonWithStats
-            event={event}
-            hideCount={hideInteractions}
-            noteStats={noteStats}
-            isReplyToDiscussion={isReplyToDiscussion}
-            useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
-          />
-          {!isRssArticleRoot && !isZapPoll && (
-            <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          )}
-          {!isRssArticleRoot && <NotificationThreadWatchButtons event={event} />}
-          {!isRssArticleRoot && <BookmarkButton event={event} />}
-          <SeenOnButton event={event} />
-        </div>
-      </div>
-    )
-  }
+  const interactionButtons = (
+    <>
+      <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+      {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
+        <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+      )}
+      <LikeButtonWithStats
+        event={event}
+        hideCount={hideInteractions}
+        noteStats={noteStats}
+        isReplyToDiscussion={isReplyToDiscussion}
+        useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
+      />
+      {!isRssArticleRoot && !isZapPoll && (
+        <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+      )}
+    </>
+  )
+
+  const utilityButtons = !isRssArticleRoot ? (
+    <>
+      <NotificationThreadWatchButtons event={event} />
+      <BookmarkButton event={event} />
+    </>
+  ) : null
 
   return (
     <div
       ref={containerRef}
-      className={cn('select-none', className)}
+      className={cn('select-none min-w-0', className)}
       data-note-stats
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex justify-between h-5 [&_svg]:size-4">
-        <div
-          className={cn('flex items-center', loading ? 'animate-pulse' : '')}
-        >
-          <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
-            <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          )}
-          <LikeButtonWithStats
-            event={event}
-            hideCount={hideInteractions}
-            noteStats={noteStats}
-            isReplyToDiscussion={isReplyToDiscussion}
-            useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
-          />
-          {!isRssArticleRoot && !isZapPoll && (
-            <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
-          )}
-        </div>
-        <div className="flex items-center">
-          {!isRssArticleRoot && <NotificationThreadWatchButtons event={event} />}
-          {!isRssArticleRoot && <BookmarkButton event={event} />}
+      <div
+        className={cn(
+          'flex min-w-0 flex-wrap items-center justify-between gap-x-1 gap-y-2 [&_svg]:size-4 max-sm:[&_button]:pr-2',
+          loading ? 'animate-pulse' : '',
+          classNames?.buttonBar
+        )}
+      >
+        <div className="flex min-w-0 flex-wrap items-center">{interactionButtons}</div>
+        <div className="flex shrink-0 flex-wrap items-center">
+          {utilityButtons}
           <SeenOnButton event={event} />
         </div>
       </div>

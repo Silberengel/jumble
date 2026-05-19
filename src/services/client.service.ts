@@ -6,6 +6,7 @@ import {
   FIRST_RELAY_RESULT_GRACE_MS,
   HTTP_TIMELINE_POLL_INTERVAL_MS,
   HTTP_TIMELINE_POLL_SINCE_OVERLAP_SEC,
+  isAuthorProfileMetadataPublishKind,
   isDocumentRelayKind,
   isSocialKindBlockedKind,
   relayFilterIncludesDocumentRelayKind,
@@ -35,6 +36,7 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 
+import { getCacheRelayUrls } from '@/lib/private-relays'
 import { profileFetchRelayUrlsWithoutFastReadLayer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
@@ -667,6 +669,32 @@ class ClientService extends EventTarget {
     )
   }
 
+  /**
+   * Author kind 0 / 10133 publish: NIP-65 WS outbox + HTTP write (10243) + cache relays (10432).
+   * {@link fetchRelayList} usually merges cache into `write`; this also appends 10432 tags when missing.
+   */
+  private async resolveFullMailboxWriteUrlsForPublish(
+    pubkey: string,
+    relayList: TRelayList
+  ): Promise<string[]> {
+    const ws = (relayList.write ?? [])
+      .map((u) => normalizeUrl(u) || u)
+      .filter((u): u is string => !!u)
+    const http = (relayList.httpWrite ?? [])
+      .map((u) => normalizeHttpRelayUrl(u) || u)
+      .filter((u): u is string => !!u)
+    let merged = dedupeNormalizeRelayUrlsOrdered([...http, ...ws])
+    try {
+      const cache = await getCacheRelayUrls(pubkey)
+      if (cache.length > 0) {
+        merged = dedupeNormalizeRelayUrlsOrdered([...merged, ...cache])
+      }
+    } catch {
+      /* ignore */
+    }
+    return merged
+  }
+
   /** NIP-65 `write` URLs for `event.pubkey`, filtered for publish (no read-only / social-kind blocks). */
   private async getUserOutboxRelayUrlsForPublish(event: NEvent): Promise<string[]> {
     try {
@@ -682,13 +710,16 @@ class ClientService extends EventTarget {
         })
         return []
       }
-      const wsOut = (relayList?.write ?? [])
-        .map((u) => normalizeUrl(u) || u)
-        .filter((u): u is string => !!u)
-      const httpOut = (relayList?.httpWrite ?? [])
-        .map((u) => normalizeHttpRelayUrl(u) || u)
-        .filter((u): u is string => !!u)
-      const raw = dedupeNormalizeRelayUrlsOrdered([...httpOut, ...wsOut])
+      const raw = isAuthorProfileMetadataPublishKind(event.kind)
+        ? await this.resolveFullMailboxWriteUrlsForPublish(event.pubkey, relayList)
+        : dedupeNormalizeRelayUrlsOrdered([
+            ...(relayList.httpWrite ?? [])
+              .map((u) => normalizeHttpRelayUrl(u) || u)
+              .filter((u): u is string => !!u),
+            ...(relayList.write ?? [])
+              .map((u) => normalizeUrl(u) || u)
+              .filter((u): u is string => !!u)
+          ])
       return this.filterPublishingRelays(raw, event)
     } catch {
       return []
@@ -1244,6 +1275,7 @@ class ClientService extends EventTarget {
         }
       })
       if (
+        isAuthorProfileMetadataPublishKind(event.kind) ||
         [
           kinds.RelayList,
           ExtendedKind.CACHE_RELAYS,
@@ -1256,7 +1288,7 @@ class ClientService extends EventTarget {
         bootstrapExtras.push(
           ...(useGlobalRelayDefaults ? PROFILE_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer())
         )
-        logger.debug('[DetermineTargetRelays] Relay list event detected, adding PROFILE_RELAY_URLS', {
+        logger.debug('[DetermineTargetRelays] Profile / list event: adding profile-fetch relays', {
           kind: event.kind,
           profileFetchRelays: useGlobalRelayDefaults
             ? PROFILE_RELAY_URLS
@@ -1305,7 +1337,9 @@ class ClientService extends EventTarget {
       const httpWrites = (relayList?.httpWrite ?? [])
         .map((u) => normalizeHttpRelayUrl(u) || u)
         .filter((u): u is string => !!u)
-      const userWritesOrdered = dedupeNormalizeRelayUrlsOrdered([...httpWrites, ...wsWrites])
+      const userWritesOrdered = isAuthorProfileMetadataPublishKind(event.kind)
+        ? await this.resolveFullMailboxWriteUrlsForPublish(event.pubkey, relayList ?? this.emptyRelayListForPublish())
+        : dedupeNormalizeRelayUrlsOrdered([...httpWrites, ...wsWrites])
       relays = this.filterPublishingRelays(
         buildPrioritizedWriteRelayUrls({
           userWriteRelays: userWritesOrdered,

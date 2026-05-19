@@ -82,6 +82,8 @@ export class ReplaceableEventService {
     max: 50,
     ttl: 1000 * 60 * 60
   })
+  /** One in-flight profile replaceables pull per author (avoids stacked REQs when profile UI remounts). */
+  private authorReplaceablesRefreshByPubkey = new Map<string, Promise<void>>()
   private replaceableEventFromBigRelaysDataloader: DataLoader<
     { pubkey: string; kind: number },
     NEvent | null,
@@ -188,8 +190,8 @@ export class ReplaceableEventService {
         }
       }
 
-      // Kind 3 / NIP-65: IndexedDB + session LRU before DataLoader (newest wins); then background network refresh.
-      if (!d && (kind === kinds.Contacts || kind === kinds.RelayList)) {
+      // Kind 3 / NIP-65 / 10133: IndexedDB + session LRU before DataLoader (newest wins); then background network refresh.
+      if (!d && (kind === kinds.Contacts || kind === kinds.RelayList || kind === ExtendedKind.PAYMENT_INFO)) {
         let idbEv: NEvent | undefined | null
         try {
           idbEv = await indexedDb.getReplaceableEvent(pubkey, kind, d)
@@ -484,7 +486,13 @@ export class ReplaceableEventService {
 
     for (let mi = missingParams.length - 1; mi >= 0; mi--) {
       const m = missingParams[mi]!
-      if (m.kind !== kinds.Contacts && m.kind !== kinds.RelayList) continue
+      if (
+        m.kind !== kinds.Contacts &&
+        m.kind !== kinds.RelayList &&
+        m.kind !== ExtendedKind.PAYMENT_INFO
+      ) {
+        continue
+      }
       const hits = client.eventService.listSessionEventsAuthoredBy(m.pubkey, {
         kinds: [m.kind],
         limit: 20
@@ -619,8 +627,10 @@ export class ReplaceableEventService {
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.
         // Kind 0: never race — first relay may answer without Damus/mirrors; wait for EOSE window so the
         // newest metadata across relays is collected (same as multi-author batches).
+        // Slow replaceables (10133 payment, pins, contacts, …): never race — a single-author fetch used to
+        // set replaceableRace=true and close after 100ms EOSE, missing events on profile mirrors.
         const useReplaceableRace =
-          kind === kinds.Metadata ? false : !isSlowReplaceableBatch || !multiAuthorBatch
+          kind === kinds.Metadata || isSlowReplaceableBatch ? false : !multiAuthorBatch
         const queryOpts = {
           replaceableRace: useReplaceableRace,
           eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
@@ -1343,13 +1353,14 @@ export class ReplaceableEventService {
   }
 
   /**
-   * Force refresh profile and payment info cache
+   * Force refresh profile and payment info: clear in-memory loaders, pull from relays (incl. 10133), persist to IndexedDB.
    */
   async forceRefreshProfileAndPaymentInfoCache(pubkey: string): Promise<void> {
-    await Promise.all([
-      this.fetchReplaceableEvent(pubkey, kinds.Metadata),
-      this.fetchReplaceableEvent(pubkey, ExtendedKind.PAYMENT_INFO)
-    ])
+    const pk = pubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return
+    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: kinds.Metadata })
+    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: ExtendedKind.PAYMENT_INFO })
+    await this.refreshAuthorPublishedReplaceablesFromRelays(pk)
   }
 
   /**
@@ -1381,6 +1392,20 @@ export class ReplaceableEventService {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return
 
+    const inFlight = this.authorReplaceablesRefreshByPubkey.get(pk)
+    if (inFlight) return inFlight
+
+    const run = this.refreshAuthorPublishedReplaceablesFromRelaysBody(pk)
+    this.authorReplaceablesRefreshByPubkey.set(pk, run)
+    void run.finally(() => {
+      if (this.authorReplaceablesRefreshByPubkey.get(pk) === run) {
+        this.authorReplaceablesRefreshByPubkey.delete(pk)
+      }
+    })
+    return run
+  }
+
+  private async refreshAuthorPublishedReplaceablesFromRelaysBody(pk: string): Promise<void> {
     await ReplaceableEventService.acquireProfileFallbackNetworkSlot()
     try {
       let relayUrls: string[]

@@ -1615,6 +1615,8 @@ export default {
     "Log in to run this spell (it uses $me or $contacts).": "Zum Ausführen anmelden (verwendet $me oder $contacts).",
     "Login failed": "Login failed",
     "nip07.extensionKeyMismatch": "Ihre Browser-Erweiterung verwendet auf diesem Tab einen anderen Schlüssel. Wechseln Sie in der Erweiterung zum passenden Schlüssel, laden Sie die Seite neu, um die aktuelle Erweiterungsauswahl zu übernehmen, oder nutzen Sie die andere Aktion in dieser Meldung, um sich mit dem in der Erweiterung gewählten Schlüssel anzumelden.",
+    "nip07.extensionKeyMismatchTitle": "Erweiterungsschlüssel passt nicht",
+    "nip07.extensionKeyMismatchBody": "Die Erweiterung nutzt einen anderen Schlüssel als dieser Tab. Schlüssel in der Erweiterung wechseln, Seite neu laden oder mit dem aktuell in der Erweiterung gewählten Schlüssel anmelden.",
     "nip07.reloadPage": "Seite neu laden",
     "nip07.useExtensionIdentity": "Erweiterungs-Identität verwenden",
     "nip07.switchedToExtensionIdentity": "Auf die aktuelle Identität Ihrer Erweiterung umgestellt.",

@@ -244,8 +244,10 @@ export default function Profile({
   const [profileFeedTab, setProfileFeedTab] = useState<'posts' | 'media' | 'publications' | 'liked'>('posts')
   /** Bumped after profile-view relay sync so payment + kind-0 JSON re-query storage and relays. */
   const [authorReplaceablesSyncGen, setAuthorReplaceablesSyncGen] = useState(0)
+  const profilePubkeyRef = useRef<string | null>(null)
 
   const { profile, isFetching } = useFetchProfile(id)
+  profilePubkeyRef.current = profile?.pubkey ?? null
   const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
   const [paymentInfo, setPaymentInfo] = useState<ReturnType<typeof getPaymentInfoFromEvent> | null>(null)
   const [profileEvent, setProfileEvent] = useState<NostrEvent | undefined>(undefined)
@@ -426,6 +428,12 @@ export default function Profile({
         mediaFeedRef.current?.refresh()
         publicationsFeedRef.current?.refresh()
         likedFeedRef.current?.refresh()
+        const pk = profilePubkeyRef.current
+        if (pk) {
+          void client.refreshAuthorPublishedReplaceablesOnProfileView(pk).finally(() => {
+            setAuthorReplaceablesSyncGen((g) => g + 1)
+          })
+        }
       }
     }
     return () => {
@@ -557,7 +565,7 @@ export default function Profile({
           )}
         </div>
         <div className="px-4">
-          <div className="flex justify-end h-8 gap-2 items-center">
+          <div className="flex flex-wrap justify-end gap-2 items-center min-w-0">
             <ProfileOptions
               pubkey={pubkey}
               profileEvent={profileEvent}
@@ -672,8 +680,8 @@ export default function Profile({
             ) : null}
           </div>
           <div className="pt-2 md:pl-56">
-            <div className="flex gap-2 items-center">
-              <div className="text-xl font-semibold truncate select-text">{username}</div>
+            <div className="flex flex-wrap gap-2 items-center min-w-0">
+              <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
               {isFollowingYou && (
                 <div className="text-muted-foreground rounded-full bg-muted text-xs h-fit px-2 shrink-0">
                   {t('Follows you')}
@@ -785,8 +793,8 @@ export default function Profile({
               setOpen={setOpenZapDialog}
               pubkey={pubkey}
             />
-            <div className="flex justify-between items-center mt-2 text-sm">
-              <div className="flex gap-4 items-center">
+            <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
+              <div className="flex flex-wrap gap-4 items-center min-w-0">
                 <SmartFollowings pubkey={pubkey} />
                 <SmartRelays pubkey={pubkey} />
                 {isSelf && <SmartMuteLink />}
@@ -805,11 +813,24 @@ export default function Profile({
         }}
         className="min-w-0 pt-4"
       >
-        <TabsList className="mb-2 ml-1 w-auto justify-start md:ml-4">
-          <TabsTrigger value="posts">{t('Posts')}</TabsTrigger>
-          <TabsTrigger value="media">{t('Media')}</TabsTrigger>
-          <TabsTrigger value="publications">{t('Articles and Publications')}</TabsTrigger>
-          {isSelf && <TabsTrigger value="liked">{t('Liked')}</TabsTrigger>}
+        <TabsList className="mb-2 ml-1 h-auto min-h-9 w-full max-w-full justify-start flex-wrap gap-1 md:ml-4">
+          <TabsTrigger value="posts" className="shrink-0">
+            {t('Posts')}
+          </TabsTrigger>
+          <TabsTrigger value="media" className="shrink-0">
+            {t('Media')}
+          </TabsTrigger>
+          <TabsTrigger
+            value="publications"
+            className="shrink whitespace-normal text-center leading-tight max-sm:px-2 max-sm:text-xs"
+          >
+            {t('Articles and Publications')}
+          </TabsTrigger>
+          {isSelf && (
+            <TabsTrigger value="liked" className="shrink-0">
+              {t('Liked')}
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="posts" className="min-w-0 focus-visible:outline-none">
           <ProfileFeedWithPins ref={postsFeedRef} pubkey={pubkey} />

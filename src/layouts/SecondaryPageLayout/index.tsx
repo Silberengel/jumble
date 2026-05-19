@@ -182,7 +182,7 @@ function SecondaryPageTitlebar({
             <BackButton>{title}</BackButton>
           </div>
         )}
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 min-w-0 max-w-[min(100%,14rem)] sm:max-w-none">
           {controls}
           {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
         </div>

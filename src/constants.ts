@@ -591,6 +591,11 @@ export const ExtendedKind = {
   EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
 }
 
+/** Kind 0 + NIP-A3 payment: publish to profile mirrors, full outbox (NIP-65 + HTTP + cache), and IndexedDB. */
+export function isAuthorProfileMetadataPublishKind(kind: number): boolean {
+  return kind === kinds.Metadata || kind === ExtendedKind.PAYMENT_INFO
+}
+
 /**
  * Relay-local experiment: event `id` is the standard Nostr hash, but `sig` is empty.
  * Not verifiable on the public relay network; relays that accept writes should require NIP-42 AUTH first.

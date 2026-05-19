@@ -36,7 +36,7 @@ import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
 import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import type { Event } from 'nostr-tools'
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -131,6 +131,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const [paymentInfoEditMethods, setPaymentInfoEditMethods] = useState<Array<{ type: string; authority: string }>>([])
   const [paymentInfoShowFullJson, setPaymentInfoShowFullJson] = useState(false)
   const [savingPaymentInfo, setSavingPaymentInfo] = useState(false)
+  const savingPaymentInfoRef = useRef(false)
   const [profileEventJson, setProfileEventJson] = useState<string>('')
   const [savingFullProfile, setSavingFullProfile] = useState(false)
   const [refreshingCache, setRefreshingCache] = useState(false)
@@ -234,19 +235,20 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   }, [paymentInfoEvent])
 
   const savePaymentInfo = useCallback(async () => {
+    if (savingPaymentInfoRef.current) return
     const tags: string[][] = paymentInfoEditMethods
       .filter((m) => m.authority.trim())
       .map((m) => ['payto', (m.type.trim() || 'lightning').toLowerCase(), m.authority.trim()])
+    savingPaymentInfoRef.current = true
     setSavingPaymentInfo(true)
     try {
       const contentStr = paymentInfoEditContent.trim() || '{}'
       try { JSON.parse(contentStr) } catch {
         toast.error(t('Invalid content JSON'))
-        setSavingPaymentInfo(false)
         return
       }
       const draft = createPaymentInfoDraftEvent(contentStr, tags)
-      const published = await publish(draft)
+      const published = await publish(draft, { skipCompanionPublish: true })
       await client.updatePaymentInfoCache(published)
       setPaymentInfoEvent(published)
       setPaymentInfoEditOpen(false)
@@ -254,6 +256,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     } catch {
       toast.error(t('Failed to publish payment info'))
     } finally {
+      savingPaymentInfoRef.current = false
       setSavingPaymentInfo(false)
     }
   }, [paymentInfoEditContent, paymentInfoEditMethods, publish, t])
@@ -287,13 +290,13 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   if (!profile) {
     const loadingControls = (
-      <div className="pr-3 flex items-center gap-2">
+      <div className="pr-3 flex flex-wrap items-center justify-end gap-2 min-w-0">
         <Button
           variant="outline"
           size="sm"
           onClick={forceRefreshProfileAndPaymentCache}
           disabled={refreshingCache}
-          className="gap-1.5"
+          className="gap-1.5 max-w-full"
         >
           {refreshingCache ? (
             <Skeleton className="size-3.5 shrink-0 rounded-sm" aria-hidden />
@@ -459,13 +462,13 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   // ─── Controls ─────────────────────────────────────────────────────────────────
 
   const controls = (
-    <div className="pr-3 flex items-center gap-2">
+    <div className="pr-3 flex flex-wrap items-center justify-end gap-2 min-w-0">
       <Button
         variant="outline"
         size="sm"
         onClick={forceRefreshProfileAndPaymentCache}
         disabled={refreshingCache}
-        className="gap-1.5"
+        className="gap-1.5 max-w-full"
         title={t('profileEditorRefreshCacheHint', {
           defaultValue:
             'Full account sync from relays (like Settings → Cache), deletion tombstones, then profile and payment info.'
@@ -478,7 +481,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         )}
         {t('Refresh cache')}
       </Button>
-      <Button className="w-16 rounded-full" onClick={save} disabled={saving || !hasChanged}>
+      <Button className="min-w-16 shrink-0 rounded-full" onClick={save} disabled={saving || !hasChanged}>
         {saving ? <Skeleton className="mx-auto h-4 w-12 rounded-md" aria-hidden /> : t('Save')}
       </Button>
     </div>
@@ -598,9 +601,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               }
 
               return (
-                <div key={idx} className="flex gap-2 items-start">
+                <div key={idx} className="flex flex-wrap gap-2 items-start min-w-0">
                   {/* Tag name: fixed label for known, editable input for custom */}
-                  <div className="flex-none w-28 shrink-0">
+                  <div className="w-full shrink-0 sm:w-28 sm:flex-none">
                     {isKnown ? (
                       <p
                         className="text-xs font-medium text-muted-foreground pt-2 truncate"
@@ -651,9 +654,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             })}
 
             {/* Add-tag row: dropdown + single + button */}
-            <div className="flex gap-2 pt-1 items-center">
+            <div className="flex flex-wrap gap-2 pt-1 items-center min-w-0">
               <Select value={tagToAdd} onValueChange={setTagToAdd}>
-                <SelectTrigger className="flex-1 h-8 text-sm">
+                <SelectTrigger className="min-w-0 flex-1 basis-full h-8 text-sm sm:basis-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -723,8 +726,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
         {/* ── Payment info (kind 10133) ── */}
         <Item>
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-muted-foreground">{t('Payment info')} (kind 10133)</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label className="text-muted-foreground shrink-0">{t('Payment info')} (kind 10133)</Label>
             <Button variant="outline" size="sm" onClick={openPaymentInfoEditor} className="shrink-0">
               <Pencil className="h-3.5 w-3.5 mr-1" />
               {paymentInfoEvent ? t('Edit payment info') : t('Add payment info')}
@@ -916,7 +919,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             <Button variant="outline" onClick={() => setPaymentInfoEditOpen(false)}>
               {t('Cancel')}
             </Button>
-            <Button onClick={savePaymentInfo} disabled={savingPaymentInfo} className="gap-2">
+            <Button type="button" onClick={savePaymentInfo} disabled={savingPaymentInfo} className="gap-2">
               {savingPaymentInfo && <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />}
               {savingPaymentInfo ? t('Saving…') : t('Save')}
             </Button>
@@ -1048,8 +1051,8 @@ function ProfileImageTagRow({
 }) {
   const label = TAG_LABELS[tagName] || tagName
   return (
-    <div className="flex gap-2 items-center">
-      <p className="flex-none w-28 text-xs font-medium text-muted-foreground truncate" title={label}>
+    <div className="flex flex-wrap gap-2 items-center min-w-0">
+      <p className="w-full shrink-0 text-xs font-medium text-muted-foreground truncate sm:w-28" title={label}>
         {label}
       </p>
       <Input
