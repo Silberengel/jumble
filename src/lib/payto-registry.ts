@@ -5,6 +5,7 @@
 
 import paytoTypesCatalog from '@/data/payto-types.json'
 import { resolvePaytoLogoAssetPath } from '@/lib/payto-logos'
+import { resolvePaypalPaymentUrl } from '@/lib/payto-paypal-url'
 
 export type PaytoCategory = 'bitcoin' | 'bitcoin-layer' | 'crypto' | 'stablecoin' | 'fiat' | 'tip'
 
@@ -103,8 +104,15 @@ export function getPaytoLogoUrl(type: string): string | null {
 }
 
 export function getPaytoProfileUrl(type: string, authority: string): string | null {
+  if (!authority.trim()) return null
+
+  const canonical = getCanonicalPaytoType(type)
+  if (canonical === 'paypal') {
+    return resolvePaypalPaymentUrl(authority)
+  }
+
   const template = getPaytoTypeRecord(type)?.profileUrlTemplate
-  if (!template || !authority.trim()) return null
+  if (!template) return null
   return template.replace('{authority}', encodeURIComponent(authority.trim()))
 }
 

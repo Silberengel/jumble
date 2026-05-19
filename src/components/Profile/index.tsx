@@ -25,6 +25,7 @@ import { useSecondaryPage } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
 import { replaceableEventService } from '@/services/client.service'
+import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,7 @@ import {
   ThumbsUp
 } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -114,8 +116,6 @@ export default function Profile({
   const [profileFeedTab, setProfileFeedTab] = useState<
     'posts' | 'media' | 'publications' | 'reports' | 'wall' | 'liked'
   >('posts')
-  /** Bumped after profile-view relay sync so payment + kind-0 JSON re-query storage and relays. */
-  const [authorReplaceablesSyncGen, setAuthorReplaceablesSyncGen] = useState(0)
   const profilePubkeyRef = useRef<string | null>(null)
 
   const { profile, isFetching } = useFetchProfile(id)
@@ -144,66 +144,51 @@ export default function Profile({
     [paymentMethodsByType]
   )
 
-  // Fetch payment info (kind 10133) for this profile; uses cached replaceable events and IndexedDB
+  const syncAuthorReplaceablesFromCache = useCallback(async (pubkey: string) => {
+    try {
+      const [paymentEvent, metaEvent] = await Promise.all([
+        client.fetchPaymentInfoEvent(pubkey),
+        replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Metadata)
+      ])
+      setPaymentInfo(paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null)
+      setProfileEvent(metaEvent ?? undefined)
+    } catch (error) {
+      logger.error('Failed to sync author replaceables from cache', { error, pubkey })
+    }
+  }, [])
+
   useEffect(() => {
     if (!profile?.pubkey) {
       setPaymentInfo(null)
-      return
-    }
-
-    const fetchPaymentInfo = async () => {
-      try {
-        const paymentEvent = await client.fetchPaymentInfoEvent(profile.pubkey)
-        if (paymentEvent) {
-          setPaymentInfo(getPaymentInfoFromEvent(paymentEvent))
-        } else {
-          setPaymentInfo(null)
-        }
-      } catch (error) {
-        logger.error('Failed to fetch payment info', { error, pubkey: profile.pubkey })
-        setPaymentInfo(null)
-      }
-    }
-
-    fetchPaymentInfo()
-  }, [profile?.pubkey, authorReplaceablesSyncGen])
-
-  useEffect(() => {
-    if (!profile?.pubkey) return
-    let cancelled = false
-    void client.refreshAuthorPublishedReplaceablesOnProfileView(profile.pubkey).finally(() => {
-      if (!cancelled) setAuthorReplaceablesSyncGen((g) => g + 1)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [profile?.pubkey])
-
-  // Fetch profile event (kind 0) for republishing and viewing JSON
-  // Use fetchProfileEvent which does comprehensive search, not fetchReplaceableEvent
-  useEffect(() => {
-    if (!profile?.pubkey) {
       setProfileEvent(undefined)
       return
     }
+    void syncAuthorReplaceablesFromCache(profile.pubkey)
+  }, [profile?.pubkey, syncAuthorReplaceablesFromCache])
 
-    const fetchProfileEventData = async () => {
-      try {
-        // Use fetchProfileEvent which includes comprehensive relay search
-        const event = await replaceableEventService.fetchProfileEvent(profile.pubkey, false)
-        if (event) {
-          setProfileEvent(event)
-        } else {
-          setProfileEvent(undefined)
-        }
-      } catch (error) {
-        logger.error('Failed to fetch profile event', { error, pubkey: profile.pubkey })
-        setProfileEvent(undefined)
-      }
+  useEffect(() => {
+    if (!profile?.pubkey) return
+    void client.refreshAuthorPublishedReplaceablesOnProfileView(profile.pubkey)
+  }, [profile?.pubkey])
+
+  useEffect(() => {
+    if (!profile?.pubkey) return
+    const pk = profile.pubkey.toLowerCase()
+    const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
+      const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
+      if (detailPk !== pk) return
+      void syncAuthorReplaceablesFromCache(profile.pubkey)
     }
-
-    fetchProfileEventData()
-  }, [profile?.pubkey, authorReplaceablesSyncGen])
+    window.addEventListener(
+      ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+      onAuthorReplaceablesRefreshed
+    )
+    return () =>
+      window.removeEventListener(
+        ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+        onAuthorReplaceablesRefreshed
+      )
+  }, [profile?.pubkey, syncAuthorReplaceablesFromCache])
 
   const isFollowingYou = useMemo(() => {
     // This will be handled by the FollowedBy component
@@ -285,9 +270,7 @@ export default function Profile({
         likedFeedRef.current?.refresh()
         const pk = profilePubkeyRef.current
         if (pk) {
-          void client.refreshAuthorPublishedReplaceablesOnProfileView(pk).finally(() => {
-            setAuthorReplaceablesSyncGen((g) => g + 1)
-          })
+          void client.refreshAuthorPublishedReplaceablesOnProfileView(pk)
         }
       }
     }
@@ -295,18 +278,6 @@ export default function Profile({
       m.current = null
     }
   }, [])
-
-  useEffect(() => {
-    if (!profile?.pubkey) return
-
-    const forceUpdateCache = async () => {
-      await Promise.all([
-        client.forceUpdateRelayListEvent(profile.pubkey),
-        replaceableEventService.fetchReplaceableEvent(profile.pubkey, kinds.Metadata)
-      ])
-    }
-    forceUpdateCache()
-  }, [profile?.pubkey])
 
   useEffect(() => {
     if (!profile?.pubkey) return

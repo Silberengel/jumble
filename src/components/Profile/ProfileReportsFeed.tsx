@@ -1,4 +1,4 @@
-import NoteCard from '@/components/NoteCard'
+import ReportCard from '@/components/ReportCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileReportsEvents } from '@/hooks/useProfileReportsEvents'
 import { useProfileReportsRelayBuilder } from '@/hooks/useProfileReportsRelayBuilder'
@@ -65,7 +65,7 @@ const ProfileReportsFeed = forwardRef<{ refresh: () => void }, { pubkey: string 
         ) : (
           <div className="space-y-2">
             {received.map((event) => (
-              <NoteCard key={event.id} className="w-full" event={event} filterMutedNotes={false} />
+              <ReportCard key={event.id} className="w-full" event={event} />
             ))}
           </div>
         )}
@@ -80,7 +80,7 @@ const ProfileReportsFeed = forwardRef<{ refresh: () => void }, { pubkey: string 
         ) : (
           <div className="space-y-2">
             {made.map((event) => (
-              <NoteCard key={event.id} className="w-full" event={event} filterMutedNotes={false} />
+              <ReportCard key={event.id} className="w-full" event={event} />
             ))}
           </div>
         )}

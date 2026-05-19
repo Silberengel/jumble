@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getPaytoTypeInfo } from '@/lib/payto'
-import { Zap } from 'lucide-react'
+import { getPaytoTypeInfo, getPaytoProfileUrl } from '@/lib/payto'
+import { Zap, ExternalLink } from 'lucide-react'
 
 export default function PaytoDialog({
   open,
@@ -29,6 +29,7 @@ export default function PaytoDialog({
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
+  const profileUrl = getPaytoProfileUrl(type, authority)
 
   const handleCopy = (text: string, label?: string) => {
     navigator.clipboard.writeText(text)
@@ -55,6 +56,14 @@ export default function PaytoDialog({
             {authority}
           </div>
           <div className="flex flex-wrap gap-2">
+            {profileUrl && (
+              <Button variant="default" size="sm" asChild className="gap-2">
+                <a href={profileUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-4" />
+                  {t('Open on website')}
+                </a>
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"

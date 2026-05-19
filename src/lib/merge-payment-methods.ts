@@ -40,6 +40,12 @@ function preferCanonicalLightningAuthority(a: string, b: string): string {
   return a
 }
 
+/** Canonical LUD-16 authority (user@domain) for display and payto:// URIs. */
+function resolveLightningAuthority(a: string, b?: string): string {
+  const preferred = b !== undefined ? preferCanonicalLightningAuthority(a, b) : a
+  return normalizeLightningAuthority(preferred) || preferred.trim()
+}
+
 /** Bitcoin-layer first, then on-chain Bitcoin family, then everything else. */
 export function paytoPaymentSortRank(type: string): number {
   const category = getPaytoTypeInfo(type)?.category
@@ -69,18 +75,18 @@ export function mergePaymentMethods(
     const existing = seen.get(key)
     if (existing) {
       if (normType === 'lightning') {
-        existing.authority = preferCanonicalLightningAuthority(existing.authority, authority.trim())
-        existing.payto =
-          existing.payto ||
-          payto ||
-          (normType && authority ? `payto://${normType}/${existing.authority}` : undefined)
+        existing.authority = resolveLightningAuthority(existing.authority, authority.trim())
+        existing.payto = buildPaytoUri(normType, existing.authority)
       }
       return
     }
+    const trimmedAuthority = authority.trim()
+    const resolvedAuthority =
+      normType === 'lightning' ? resolveLightningAuthority(trimmedAuthority) : trimmedAuthority
     const entry: MergedPaymentMethod = {
       type: normType,
-      authority: authority.trim(),
-      payto: payto || (normType && authority ? `payto://${normType}/${authority.trim()}` : undefined),
+      authority: resolvedAuthority,
+      payto: payto || (normType && resolvedAuthority ? buildPaytoUri(normType, resolvedAuthority) : undefined),
       displayType: displayType || getPaytoEditorTypeLabel(normType),
       ...extra
     }
