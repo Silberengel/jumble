@@ -865,10 +865,14 @@ export default function Profile({
           <ProfilePublicationsFeed ref={publicationsFeedRef} pubkey={pubkey} />
         </TabsContent>
         <TabsContent value="reports" className="min-w-0 focus-visible:outline-none">
-          <ProfileReportsFeed ref={reportsFeedRef} pubkey={pubkey} />
+          {profileFeedTab === 'reports' ? (
+            <ProfileReportsFeed ref={reportsFeedRef} pubkey={pubkey} />
+          ) : null}
         </TabsContent>
         <TabsContent value="wall" className="min-w-0 focus-visible:outline-none">
-          <ProfileWallFeed ref={wallFeedRef} pubkey={pubkey} profileEventId={profileEvent?.id} />
+          {profileFeedTab === 'wall' ? (
+            <ProfileWallFeed ref={wallFeedRef} pubkey={pubkey} profileEventId={profileEvent?.id} />
+          ) : null}
         </TabsContent>
         {isSelf && (
           <TabsContent value="liked" className="min-w-0 focus-visible:outline-none">

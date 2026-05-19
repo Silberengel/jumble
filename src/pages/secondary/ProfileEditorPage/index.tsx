@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select'
 import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
+import PaymentMethodRow from '@/components/ProfileEditor/PaymentMethodRow'
 import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -816,44 +817,25 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             <Item>
               <Label className="text-muted-foreground">{t('Payment methods')}</Label>
               <p className="text-xs text-muted-foreground">
-                {t('NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).')}
+                {t('paytoEditor.intro', {
+                  defaultValue:
+                    'Choose a payment type, then enter the address or username shown in the hint below each field.'
+                })}
               </p>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {paymentInfoEditMethods.map((row, idx) => (
-                  <div key={idx} className="flex gap-2 items-center">
-                    <Input
-                      placeholder={t('Type (e.g. lightning)')}
-                      value={row.type}
-                      onChange={(e) => {
-                        const next = [...paymentInfoEditMethods]
-                        next[idx] = { ...next[idx], type: e.target.value }
-                        setPaymentInfoEditMethods(next)
-                      }}
-                      className="flex-1 max-w-[140px] font-mono text-sm"
-                    />
-                    <Input
-                      placeholder={t('Authority (e.g. user@domain.com)')}
-                      value={row.authority}
-                      onChange={(e) => {
-                        const next = [...paymentInfoEditMethods]
-                        next[idx] = { ...next[idx], authority: e.target.value }
-                        setPaymentInfoEditMethods(next)
-                      }}
-                      className="flex-1 font-mono text-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() =>
-                        setPaymentInfoEditMethods(paymentInfoEditMethods.filter((_, i) => i !== idx))
-                      }
-                      aria-label={t('Remove')}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <PaymentMethodRow
+                    key={idx}
+                    row={row}
+                    onChange={(next) => {
+                      const methods = [...paymentInfoEditMethods]
+                      methods[idx] = next
+                      setPaymentInfoEditMethods(methods)
+                    }}
+                    onRemove={() =>
+                      setPaymentInfoEditMethods(paymentInfoEditMethods.filter((_, i) => i !== idx))
+                    }
+                  />
                 ))}
                 <Button
                   type="button"

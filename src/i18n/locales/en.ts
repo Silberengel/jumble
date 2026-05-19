@@ -158,6 +158,9 @@ export default {
     "Failed to publish payment info": "Failed to publish payment info",
     "Invalid tags JSON": "Invalid tags JSON",
     "Payment methods": "Payment methods",
+    "Payment type": "Payment type",
+    "paytoEditor.intro":
+      "Choose a payment type, then enter the address or username shown in the hint below each field.",
     "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).": "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).",
     "Type (e.g. lightning)": "Type (e.g. lightning)",
     "Authority (e.g. user@domain.com)": "Authority (e.g. user@domain.com)",

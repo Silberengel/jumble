@@ -12,6 +12,7 @@ import {
 } from '@/lib/nip58-profile-badges'
 import { isDirectProfileWallComment } from '@/lib/profile-wall-comments'
 import { normalizeHexPubkey } from '@/lib/pubkey'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
@@ -20,6 +21,12 @@ import { Event, kinds, type Filter } from 'nostr-tools'
 
 const CACHE_DURATION = 5 * 60 * 1000
 const wallCacheByKey = new Map<string, { badges: ResolvedProfileBadge[]; comments: Event[]; lastUpdated: number }>()
+
+function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[]): string {
+  const fav = [...favoriteRelays].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort().join('\u0001')
+  const blk = [...blockedRelays].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort().join('\u0001')
+  return `${fav}\u0000${blk}`
+}
 
 export function useProfileWall(pubkey: string, profileEventId: string | undefined) {
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
@@ -35,6 +42,17 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   const [comments, setComments] = useState<Event[]>(cached?.comments ?? [])
   const [isLoading, setIsLoading] = useState(!cached)
   const [refreshToken, setRefreshToken] = useState(0)
+
+  const relayListsKey = useMemo(
+    () => relayListsContentKey(favoriteRelays, blockedRelays),
+    [favoriteRelays, blockedRelays]
+  )
+  const favoriteRelaysRef = useRef(favoriteRelays)
+  const blockedRelaysRef = useRef(blockedRelays)
+  favoriteRelaysRef.current = favoriteRelays
+  blockedRelaysRef.current = blockedRelays
+  const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
+  useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
 
   useEffect(() => {
     let cancelled = false
@@ -62,13 +80,13 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       if (cancelled) return
 
       const relayUrls = buildProfilePageReadRelayUrls(
-        favoriteRelays,
-        blockedRelays,
+        favoriteRelaysRef.current,
+        blockedRelaysRef.current,
         authorRl,
         false,
         false,
         [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION],
-        useGlobalRelayBootstrap
+        useGlobalRelayBootstrapRef.current
       )
 
       // --- Badges (NIP-58) ---
@@ -159,15 +177,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     return () => {
       cancelled = true
     }
-  }, [
-    pubkey,
-    profileEventId,
-    cacheKey,
-    refreshToken,
-    favoriteRelays,
-    blockedRelays,
-    useGlobalRelayBootstrap
-  ])
+  }, [pubkey, profileEventId, cacheKey, refreshToken, relayListsKey])
 
   const refresh = useCallback(() => {
     wallCacheByKey.delete(cacheKey)

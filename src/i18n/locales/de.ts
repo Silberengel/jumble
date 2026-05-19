@@ -152,8 +152,11 @@ export default {
     "Payment info updated": "Payment info updated",
     "Failed to publish payment info": "Failed to publish payment info",
     "Invalid tags JSON": "Invalid tags JSON",
-    "Payment methods": "Payment methods",
-    "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).": "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).",
+    "Payment methods": "Zahlungsmethoden",
+    "Payment type": "Zahlungsart",
+    "paytoEditor.intro":
+      "Zahlungsart wählen, dann Adresse oder Benutzername wie in der Hinweiszeile darunter eintragen.",
+    "NIP-A3 payto tags: type (e.g. lightning) and authority (e.g. user@domain.com).": "NIP-A3 payto-Tags: Typ (z. B. lightning) und Authority (z. B. user@domain.com).",
     "Type (e.g. lightning)": "Type (e.g. lightning)",
     "Authority (e.g. user@domain.com)": "Authority (e.g. user@domain.com)",
     "Add payment method": "Add payment method",

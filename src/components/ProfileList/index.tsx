@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import UserItem from '../UserItem'
 
 export default function ProfileList({ pubkeys }: { pubkeys: string[] }) {
   const [visiblePubkeys, setVisiblePubkeys] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
+  const pubkeysKey = useMemo(() => pubkeys.join('\u0001'), [pubkeys])
 
   useEffect(() => {
     setVisiblePubkeys(pubkeys.slice(0, 10))
-  }, [pubkeys])
+  }, [pubkeysKey, pubkeys])
 
   useEffect(() => {
     const options = {
@@ -32,7 +33,7 @@ export default function ProfileList({ pubkeys }: { pubkeys: string[] }) {
         observerInstance.unobserve(currentBottomRef)
       }
     }
-  }, [visiblePubkeys, pubkeys])
+  }, [visiblePubkeys, pubkeysKey, pubkeys])
 
   return (
     <div className="px-4 pt-2">

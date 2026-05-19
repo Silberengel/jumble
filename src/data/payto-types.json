@@ -1,0 +1,376 @@
+{
+  "_meta": {
+    "logoAssetsDir": "src/assets/payto_logos",
+    "logoAssetPathNote": "Repo-relative path to the logo file. The app bundles these via Vite and exposes them under /assets/ at runtime (see getPaytoLogoPath)."
+  },
+  "editorOrder": [
+    "lightning",
+    "bitcoin",
+    "liquid",
+    "lbtc",
+    "sats",
+    "ethereum",
+    "monero",
+    "litecoin",
+    "dogecoin",
+    "bitcoin-cash",
+    "solana",
+    "nano",
+    "usdt",
+    "usdc",
+    "dai",
+    "euroc",
+    "paypal",
+    "cashme",
+    "venmo",
+    "revolut",
+    "buymeacoffee",
+    "ko-fi",
+    "patreon",
+    "github",
+    "geyser",
+    "gofundme",
+    "kickstarter",
+    "apple-pay",
+    "google-pay"
+  ],
+  "genericAuthorityHelp": {
+    "placeholder": "payment target",
+    "hint": "Authority segment of payto://<type>/<this value> (address, username, or ID)"
+  },
+  "aliases": {
+    "btc": "bitcoin",
+    "doge": "dogecoin",
+    "eth": "ethereum",
+    "xmr": "monero",
+    "ltc": "litecoin",
+    "xno": "nano",
+    "sol": "solana",
+    "bch": "bitcoin-cash"
+  },
+  "types": {
+    "bitcoin": {
+      "label": "Bitcoin",
+      "symbol": "₿",
+      "category": "bitcoin",
+      "authority": {
+        "placeholder": "bc1q…",
+        "hint": "On-chain Bitcoin address (Bech32 bc1… preferred)"
+      }
+    },
+    "liquid": {
+      "label": "Liquid",
+      "symbol": "⛓",
+      "category": "bitcoin-layer",
+      "logoAssetPath": "src/assets/payto_logos/LBTC.svg",
+      "authority": {
+        "placeholder": "VJL… or bc1q… on Liquid",
+        "hint": "Liquid network address (confidential or explicit)"
+      }
+    },
+    "lbtc": {
+      "label": "Liquid Bitcoin",
+      "symbol": "₿",
+      "category": "bitcoin-layer",
+      "logoAssetPath": "src/assets/payto_logos/LBTC.svg",
+      "authority": {
+        "placeholder": "VJL…",
+        "hint": "Liquid Bitcoin (L-BTC) receiving address"
+      }
+    },
+    "sats": {
+      "label": "Satoshis",
+      "symbol": "丰",
+      "category": "bitcoin",
+      "authority": {
+        "placeholder": "bc1q… or lightning address",
+        "hint": "Satoshis payment target (same formats as Bitcoin / Lightning)"
+      }
+    },
+    "lightning": {
+      "label": "Lightning Network",
+      "symbol": "⚡",
+      "category": "bitcoin-layer",
+      "authority": {
+        "placeholder": "user@getalby.com",
+        "hint": "Lightning address (LUD-16): name@domain — not a BOLT11 invoice"
+      }
+    },
+    "ethereum": {
+      "label": "Ethereum",
+      "symbol": "Ξ",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/ethereum-eth-logo.svg",
+      "authority": {
+        "placeholder": "0x…",
+        "hint": "Ethereum address (0x + 40 hex characters)"
+      }
+    },
+    "monero": {
+      "label": "Monero",
+      "symbol": "ɱ",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/Monero.png",
+      "authority": {
+        "placeholder": "4… or 8…",
+        "hint": "Monero primary address (starts with 4 or 8)"
+      }
+    },
+    "nano": {
+      "label": "Nano",
+      "symbol": "Ӿ",
+      "category": "crypto",
+      "authority": {
+        "placeholder": "nano_…",
+        "hint": "Nano account address (nano_ prefix)"
+      }
+    },
+    "cashme": {
+      "label": "Cash App",
+      "symbol": "$",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/cashapp.webp",
+      "profileUrlTemplate": "https://cash.app/{authority}",
+      "authority": {
+        "placeholder": "$cashtag",
+        "hint": "Cash App $cashtag or phone-linked ID"
+      }
+    },
+    "revolut": {
+      "label": "Revolut",
+      "symbol": "💳",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/revolut.webp",
+      "profileUrlTemplate": "https://revolut.me/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "Revolut.me username"
+      }
+    },
+    "venmo": {
+      "label": "Venmo",
+      "symbol": "$",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/venmo.png",
+      "profileUrlTemplate": "https://venmo.com/{authority}",
+      "authority": {
+        "placeholder": "@username",
+        "hint": "Venmo username (with or without @)"
+      }
+    },
+    "bitcoin-cash": {
+      "label": "Bitcoin Cash",
+      "symbol": "₿",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/bitcoin-cash-bch-logo.svg",
+      "authority": {
+        "placeholder": "bitcoincash:… or q…",
+        "hint": "Bitcoin Cash address (CashAddr or legacy)"
+      }
+    },
+    "dogecoin": {
+      "label": "Dogecoin",
+      "symbol": "Ð",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/dogecoin-doge-logo.svg",
+      "authority": {
+        "placeholder": "D…",
+        "hint": "Dogecoin address (usually starts with D)"
+      }
+    },
+    "litecoin": {
+      "label": "Litecoin",
+      "symbol": "Ł",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/Litecoin.png",
+      "authority": {
+        "placeholder": "ltc1q… or L… or M…",
+        "hint": "Litecoin address"
+      }
+    },
+    "usdt": {
+      "label": "Tether",
+      "symbol": "₮",
+      "category": "stablecoin",
+      "logoAssetPath": "src/assets/payto_logos/tether-usdt-logo.svg",
+      "authority": {
+        "placeholder": "0x… or T…",
+        "hint": "USDT address — include network if needed (ERC-20, TRC-20, etc.)"
+      }
+    },
+    "usdc": {
+      "label": "USD Coin",
+      "symbol": "◎",
+      "category": "stablecoin",
+      "logoAssetPath": "src/assets/payto_logos/usd-coin-usdc-logo.svg",
+      "authority": {
+        "placeholder": "0x…",
+        "hint": "USDC address — specify chain in notes if not obvious"
+      }
+    },
+    "dai": {
+      "label": "Dai",
+      "symbol": "◈",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/multi-collateral-dai-dai-logo.svg",
+      "authority": {
+        "placeholder": "0x…",
+        "hint": "Dai (ERC-20) wallet address"
+      }
+    },
+    "euroc": {
+      "label": "Euro Coin",
+      "symbol": "€",
+      "category": "stablecoin",
+      "logoAssetPath": "src/assets/payto_logos/EurC.png",
+      "authority": {
+        "placeholder": "0x…",
+        "hint": "Euro Coin (EURC) wallet address"
+      }
+    },
+    "solana": {
+      "label": "Solana",
+      "symbol": "◎",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/solana.png",
+      "authority": {
+        "placeholder": "Base58 pubkey…",
+        "hint": "Solana wallet address (base58, 32–44 characters)"
+      }
+    },
+    "paypal": {
+      "label": "PayPal",
+      "symbol": "💙",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/paypal.webp",
+      "profileUrlTemplate": "https://paypal.me/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "PayPal.me username (without paypal.me/)"
+      }
+    },
+    "buymeacoffee": {
+      "label": "Buy Me a Coffee",
+      "symbol": "☕",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/buymeacoffee.png",
+      "profileUrlTemplate": "https://buymeacoffee.com/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "Buy Me a Coffee page slug"
+      }
+    },
+    "ko-fi": {
+      "label": "Ko-fi",
+      "symbol": "☕",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/ko-fi.png",
+      "profileUrlTemplate": "https://ko-fi.com/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "Ko-fi profile name"
+      }
+    },
+    "kofi": {
+      "label": "Ko-fi",
+      "symbol": "☕",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/ko-fi.png",
+      "profileUrlTemplate": "https://ko-fi.com/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "Ko-fi profile name"
+      }
+    },
+    "patreon": {
+      "label": "Patreon",
+      "symbol": "🎭",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/patreon.png",
+      "profileUrlTemplate": "https://patreon.com/{authority}",
+      "authority": {
+        "placeholder": "creator",
+        "hint": "Patreon creator / page slug"
+      }
+    },
+    "github": {
+      "label": "GitHub Sponsors",
+      "symbol": "🐙",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/github_sponsors.png",
+      "profileUrlTemplate": "https://github.com/sponsors/{authority}",
+      "authority": {
+        "placeholder": "username",
+        "hint": "GitHub Sponsors username"
+      }
+    },
+    "apple-pay": {
+      "label": "Apple Pay",
+      "symbol": "🍎",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/apple_pay.svg",
+      "authority": {
+        "placeholder": "phone or email",
+        "hint": "Apple Pay contact (phone number or email)"
+      }
+    },
+    "google-pay": {
+      "label": "Google Pay",
+      "symbol": "G",
+      "category": "fiat",
+      "logoAssetPath": "src/assets/payto_logos/google_pay.jpeg",
+      "authority": {
+        "placeholder": "phone or email",
+        "hint": "Google Pay contact (phone number or email)"
+      }
+    },
+    "geyser": {
+      "label": "Geyser Fund",
+      "symbol": "⛲",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/geyser_fund.webp",
+      "profileUrlTemplate": "https://geyser.fund/project/{authority}",
+      "authority": {
+        "placeholder": "project-slug",
+        "hint": "Geyser Fund project identifier"
+      }
+    },
+    "gofundme": {
+      "label": "GoFundMe",
+      "symbol": "🎯",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/gofundme.jpeg",
+      "profileUrlTemplate": "https://www.gofundme.com/f/{authority}",
+      "authority": {
+        "placeholder": "campaign-slug",
+        "hint": "GoFundMe campaign path segment"
+      }
+    },
+    "kickstarter": {
+      "label": "Kickstarter",
+      "symbol": "🚀",
+      "category": "tip",
+      "logoAssetPath": "src/assets/payto_logos/kickstarter.webp",
+      "profileUrlTemplate": "https://www.kickstarter.com/projects/{authority}",
+      "authority": {
+        "placeholder": "project-slug",
+        "hint": "Kickstarter project slug"
+      }
+    },
+    "bnb": {
+      "label": "BNB",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/BNB.png"
+    },
+    "tron": {
+      "label": "Tron",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/Tron.png"
+    },
+    "xrp": {
+      "label": "XRP",
+      "category": "crypto",
+      "logoAssetPath": "src/assets/payto_logos/XRP.gif"
+    }
+  }
+}

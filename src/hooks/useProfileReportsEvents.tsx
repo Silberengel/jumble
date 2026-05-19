@@ -10,7 +10,7 @@ import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Event, kinds, type Filter } from 'nostr-tools'
 
 const REPORT_KINDS = [kinds.Report, ExtendedKind.REPORT] as const
@@ -39,6 +39,14 @@ function mergeReportEvents(
     dedup.set(e.id, e)
   }
   return [...dedup.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limit)
+}
+
+function eventsEqualById(a: Event[], b: Event[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false
+  }
+  return true
 }
 
 type FetchMode = 'received' | 'made'
@@ -102,6 +110,12 @@ export function useProfileReportsEvents({
 
   const relayUrlsBuilderRef = useRef(relayUrlsBuilder)
   relayUrlsBuilderRef.current = relayUrlsBuilder
+  const favoriteRelaysRef = useRef(favoriteRelays)
+  const blockedRelaysRef = useRef(blockedRelays)
+  favoriteRelaysRef.current = favoriteRelays
+  blockedRelaysRef.current = blockedRelays
+  const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
+  useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
 
   const resolveFeedUrls = useCallback(
     (
@@ -110,19 +124,24 @@ export function useProfileReportsEvents({
     ) => {
       const custom = relayUrlsBuilderRef.current
       if (custom) {
-        return custom(favoriteRelays, blockedRelays, authorRelayList, includeAuthorLocal)
+        return custom(
+          favoriteRelaysRef.current,
+          blockedRelaysRef.current,
+          authorRelayList,
+          includeAuthorLocal
+        )
       }
       return buildProfilePageReadRelayUrls(
-        favoriteRelays,
-        blockedRelays,
+        favoriteRelaysRef.current,
+        blockedRelaysRef.current,
         authorRelayList,
         false,
         includeAuthorLocal,
         [...REPORT_KINDS],
-        useGlobalRelayBootstrap
+        useGlobalRelayBootstrapRef.current
       )
     },
-    [favoriteRelays, blockedRelays, useGlobalRelayBootstrap]
+    []
   )
 
   useEffect(() => {
@@ -142,12 +161,11 @@ export function useProfileReportsEvents({
 
   useEffect(() => {
     let cancelled = false
-    const closers: (() => void)[] = []
 
     const loadMode = async (
       mode: FetchMode,
       cacheKey: string,
-      setEvents: (events: Event[]) => void
+      setEvents: Dispatch<SetStateAction<Event[]>>
     ) => {
       const mem = memoryByKey.get(cacheKey)
       const cacheAge = mem ? Date.now() - mem.lastUpdated : Infinity
@@ -166,7 +184,7 @@ export function useProfileReportsEvents({
           postFilter(pubkey, mode)
         )
         memoryByKey.set(cacheKey, { events: processed, lastUpdated: Date.now() })
-        setEvents(processed)
+        setEvents((prev) => (eventsEqualById(prev, processed) ? prev : processed))
       }
 
       let pkNorm = pubkey
@@ -207,28 +225,6 @@ export function useProfileReportsEvents({
         /* ignore */
       }
 
-      try {
-        const { closer } = await client.subscribeTimeline(
-          subRequests,
-          {
-            onEvents: (rows) => {
-              if (cancelled) return
-              for (const e of rows as Event[]) pool.set(e.id, e)
-              flush()
-            },
-            onNew: (evt) => {
-              if (cancelled) return
-              pool.set((evt as Event).id, evt as Event)
-              flush()
-            }
-          },
-          { needSort: true }
-        )
-        closers.push(closer)
-      } catch {
-        /* ignore */
-      }
-
       const authorRl = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
       if (cancelled) return
       const fullUrls = resolveFeedUrls(authorRl, includeAuthorLocalRelays)
@@ -246,23 +242,15 @@ export function useProfileReportsEvents({
         /* ignore */
       }
       try {
-        const { closer } = await client.subscribeTimeline(
-          deltaRequests,
-          {
-            onEvents: (rows) => {
-              if (cancelled) return
-              for (const e of rows as Event[]) pool.set(e.id, e)
-              flush()
-            },
-            onNew: (evt) => {
-              if (cancelled) return
-              pool.set((evt as Event).id, evt as Event)
-              flush()
-            }
-          },
-          { needSort: true }
-        )
-        closers.push(closer)
+        const fetchedDelta = await client.fetchEvents(deltaUrls, filter, {
+          cache: true,
+          eoseTimeout: 4500,
+          globalTimeout: 14_000
+        })
+        if (!cancelled) {
+          for (const e of fetchedDelta) pool.set(e.id, e)
+          flush()
+        }
       } catch {
         /* ignore */
       }
@@ -280,12 +268,12 @@ export function useProfileReportsEvents({
       if (madeFresh && madeMem) {
         setMade(madeMem.events)
       }
-      if (recvFresh && madeFresh) {
+      if (recvFresh && madeFresh && refreshToken === 0) {
         setIsLoading(false)
-        if (refreshToken === 0) return
-      } else {
-        setIsLoading(true)
+        return
       }
+
+      setIsLoading(true)
 
       await Promise.all([
         loadMode('received', receivedCacheKey, setReceived),
@@ -299,7 +287,6 @@ export function useProfileReportsEvents({
 
     return () => {
       cancelled = true
-      closers.forEach((c) => c())
     }
   }, [
     pubkey,
