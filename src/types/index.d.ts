@@ -201,13 +201,6 @@ export type TPublishOptions = {
   disableFallbacks?: boolean // If true, don't use fallback relays when publishing fails
   /** Override global "Add client tag" preference for this publish (default: read from localStorage) */
   addClientTag?: boolean
-  /**
-   * Resolve companion republishes from this event (default: the event being published).
-   * Use when the published event is a wrapper (e.g. boost) but embeds live on the target note.
-   */
-  companionSourceEvent?: Event
-  /** Skip automatic companion republish of embedded / q / a / e references. */
-  skipCompanionPublish?: boolean
 }
 
 /** Options for {@link ClientService.publishEvent} (second argument bundle in code: favorites + internal retry pass). */

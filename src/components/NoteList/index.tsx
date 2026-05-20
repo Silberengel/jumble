@@ -78,6 +78,10 @@ import type { TPrimaryPageName } from '@/PageManager'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { buildFeedFullSearchRelayUrls } from '@/lib/feed-full-search-relays'
+import {
+  getProfileAuthorWarmupRelayUrls,
+  getProfileAuthorWarmupSpec
+} from '@/lib/profile-author-warmup-spec'
 import type { TProfile } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -590,36 +594,6 @@ function tightestSinceFromSpellFilters(shardFilters: Filter[]): number | undefin
     .map((f) => (typeof f.since === 'number' ? f.since : undefined))
     .filter((n): n is number => n !== undefined)
   return sinceCandidates.length > 0 ? Math.max(...sinceCandidates) : undefined
-}
-
-/**
- * Profile Posts / Media feeds shard by relay but share one author + kinds REQ. Session + IDB author scans are keyed
- * only on that author/kinds pair. Timeline rows may live under per-shard persist keys; profile async warmup merges
- * {@link ClientService.getTimelineDiskSnapshotEvents} with the author archive scan so both layers paint together.
- */
-function getProfileSingleAuthorWarmupSpec(
-  mapped: Array<{ urls: string[]; filter: TSubRequestFilter }>
-): { author: string; kinds: number[] } | null {
-  if (mapped.length === 0) return null
-  let normAuthor: string | null = null
-  const kindUnion = new Set<number>()
-  for (const { filter: f } of mapped) {
-    const authors = Array.isArray(f.authors) ? f.authors : undefined
-    if (!authors || authors.length !== 1) return null
-    let pk: string
-    try {
-      pk = normalizeHexPubkey(authors[0])
-    } catch {
-      return null
-    }
-    if (normAuthor === null) normAuthor = pk
-    else if (normAuthor !== pk) return null
-    const ks = Array.isArray(f.kinds) ? f.kinds : undefined
-    if (!ks || ks.length === 0) return null
-    for (const k of ks) kindUnion.add(k)
-  }
-  if (normAuthor === null) return null
-  return { author: normAuthor, kinds: Array.from(kindUnion).sort((a, b) => a - b) }
 }
 
 /** Union of `filter.kinds` across mapped REQ shards; empty if any shard omits kinds (caller should not use fallback). */
@@ -2397,9 +2371,11 @@ const NoteList = forwardRef(
                 }
               })()
             } else {
-              const profileAuthorWarmSpec = getProfileSingleAuthorWarmupSpec(
-                mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-              )
+              const profileMapped = mappedSubRequests as Array<{
+                urls: string[]
+                filter: TSubRequestFilter
+              }>
+              const profileAuthorWarmSpec = getProfileAuthorWarmupSpec(profileMapped)
               if (
                 hostPrimaryPageName === 'profile' &&
                 profileAuthorWarmSpec &&
@@ -2476,6 +2452,44 @@ const NoteList = forwardRef(
                       }
                       setFeedEmptyToastGateTick((n) => n + 1)
                       setFeedTimelineEmptyUiReady(true)
+                    }
+
+                    const relayUrls = getProfileAuthorWarmupRelayUrls(profileMapped)
+                    if (relayUrls.length > 0) {
+                      const fetched = await client.fetchEvents(
+                        relayUrls,
+                        {
+                          authors: [profileAuthorWarmSpec.author],
+                          kinds: profileAuthorWarmSpec.kinds,
+                          limit: 200
+                        },
+                        {
+                          cache: true,
+                          eoseTimeout: 4500,
+                          globalTimeout: 18_000,
+                          replaceableRace: true
+                        }
+                      )
+                      if (!effectActive || timelineEffectStale()) return
+                      if (fetched.length === 0) return
+                      const narrowedFetch = narrowLiveBatch(fetched)
+                      if (narrowedFetch.length === 0) return
+                      setEvents((prev) => {
+                        const merged = collapseDuplicateNip18RepostTimelineRows(
+                          mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
+                        )
+                        if (merged.length > 0) {
+                          timelineMergeBootstrapRef.current = merged.slice()
+                        }
+                        lastEventsForTimelinePrefetchRef.current = merged
+                        return merged
+                      })
+                      feedRelayReturnedAnyEventRef.current = true
+                      if (!feedPaintLiveRelayDoneRef.current) {
+                        setLoading(false)
+                        setFeedEmptyToastGateTick((n) => n + 1)
+                        setFeedTimelineEmptyUiReady(true)
+                      }
                     }
                   } catch {
                     /* profile local archive is best-effort */
@@ -3614,7 +3628,26 @@ const NoteList = forwardRef(
 
       publicReadFallbackAttemptedRef.current = true
 
-      const filter: Filter = { ...(mapped[0]!.filter as Filter) }
+      const profileWarm =
+        hostPrimaryPageNameRef.current === 'profile'
+          ? getProfileAuthorWarmupSpec(
+              mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
+            )
+          : null
+      const profileRelayUrls =
+        profileWarm != null
+          ? getProfileAuthorWarmupRelayUrls(
+              mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
+            )
+          : []
+
+      const filter: Filter = profileWarm
+        ? {
+            authors: [profileWarm.author],
+            kinds: profileWarm.kinds,
+            limit: LIMIT
+          }
+        : { ...(mapped[0]!.filter as Filter) }
       if (!filter.kinds?.length) {
         filter.kinds = effectiveShowKinds.length > 0 ? [...effectiveShowKinds] : [kinds.ShortTextNote]
       }
@@ -3626,9 +3659,12 @@ const NoteList = forwardRef(
           ? ALGO_LIMIT
           : LIMIT
 
+      const fallbackRelays =
+        profileRelayUrls.length > 0 ? profileRelayUrls : FAST_READ_RELAY_URLS
+
       void (async () => {
         try {
-          const raw = await client.fetchEvents(FAST_READ_RELAY_URLS, filter, {
+          const raw = await client.fetchEvents(fallbackRelays, filter, {
             cache: true,
             globalTimeout: 22_000,
             eoseTimeout: 3500,

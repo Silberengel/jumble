@@ -50,4 +50,9 @@ describe('nostr event JSON helpers', () => {
     expect(findTrailingStringifiedNostrEvent(content)).toBeNull()
     expect(stripTrailingStringifiedNostrEvent(content)).toBe(content)
   })
+
+  it('returns quickly when content has many braces but no trailing event', () => {
+    const content = 'x'.repeat(20_000) + '{'.repeat(10_000) + '}'
+    expect(findTrailingStringifiedNostrEvent(content)).toBeNull()
+  })
 })

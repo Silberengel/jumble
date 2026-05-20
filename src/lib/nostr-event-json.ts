@@ -44,35 +44,47 @@ function parseNostrEventJson(raw: string): Event | null {
   }
 }
 
+/** Only scan the tail — trailing serialized events are never megabytes into the body. */
+const MAX_TRAILING_SCAN_LEN = 256 * 1024
+/** Profile metadata and prose can contain many `{`; cap work per call. */
+const MAX_BRACE_ITERATIONS = 64
+
 /**
  * Some clients append a full serialized event after quote/repost text. Treat a trailing event JSON
  * object as structured data instead of showing it as prose.
  */
 export function findTrailingStringifiedNostrEvent(content: string): StringifiedNostrEventMatch | null {
   const trimmed = content.trimEnd()
-  if (!trimmed) return null
+  if (!trimmed || !trimmed.endsWith('}')) return null
 
-  const whole = parseNostrEventJson(trimmed)
+  const windowStart = Math.max(0, trimmed.length - MAX_TRAILING_SCAN_LEN)
+  const window = trimmed.slice(windowStart)
+  const windowOffset = windowStart
+
+  const whole = parseNostrEventJson(window)
   if (whole) {
     return {
       event: whole,
-      textBefore: '',
-      jsonText: trimmed
+      textBefore: trimmed.slice(0, windowOffset).trimEnd(),
+      jsonText: window
     }
   }
 
-  let start = trimmed.lastIndexOf('{')
-  while (start >= 0) {
-    const jsonText = trimmed.slice(start)
+  let start = window.lastIndexOf('{')
+  let iterations = 0
+  while (start >= 0 && iterations < MAX_BRACE_ITERATIONS) {
+    iterations += 1
+    const jsonText = window.slice(start)
     const event = parseNostrEventJson(jsonText)
     if (event) {
+      const absStart = windowOffset + start
       return {
         event,
-        textBefore: trimmed.slice(0, start).trimEnd(),
+        textBefore: trimmed.slice(0, absStart).trimEnd(),
         jsonText
       }
     }
-    start = trimmed.lastIndexOf('{', start - 1)
+    start = window.lastIndexOf('{', start - 1)
   }
 
   return null

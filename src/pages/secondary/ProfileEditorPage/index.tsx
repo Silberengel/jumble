@@ -274,7 +274,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         return
       }
       const draft = createPaymentInfoDraftEvent(contentStr, tags)
-      const published = await publish(draft, { skipCompanionPublish: true })
+      const published = await publish(draft)
       await client.updatePaymentInfoCache(published)
       setPaymentInfoEvent(published)
       setPaymentInfoEditOpen(false)

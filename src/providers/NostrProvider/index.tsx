@@ -1624,14 +1624,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         skipOutboxRetry: (options.specifiedRelayUrls?.length ?? 0) > 0
       }
       const publishResult = await client.publishEvent(relays, event, publishExtras)
-      if (publishResult.successCount >= 1 && !options.skipCompanionPublish) {
-        const companionSource = options.companionSourceEvent ?? event
-        void import('@/lib/companion-publish').then(({ resolveCompanionEventsForPublish, publishCompanionEventsBestEffort }) =>
-          resolveCompanionEventsForPublish(companionSource, { excludeIds: [event.id] }).then((companions) =>
-            publishCompanionEventsBestEffort(relays, companions, publishExtras)
-          )
-        )
-      }
       logger.debug('[Publish] publishEvent completed', {
         success: publishResult.success,
         successCount: publishResult.successCount,

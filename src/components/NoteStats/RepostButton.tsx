@@ -72,8 +72,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
 
         const repost = createRepostDraftEvent(event)
         const evt = await publish(repost, {
-          addClientTag: storage.getAddClientTag(),
-          companionSourceEvent: event
+          addClientTag: storage.getAddClientTag()
         })
         
         // Show publishing feedback
