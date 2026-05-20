@@ -1,6 +1,10 @@
 import { Event, kinds } from 'nostr-tools'
 import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
+import {
+  collectRecipientInboxUrls,
+  collectSenderOutboxUrls
+} from '@/lib/public-message-publish-relays'
 import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
@@ -101,12 +105,31 @@ class RelaySelectionService {
   ): Promise<{ relays: string[]; relayTypes: Record<string, RelaySourceType>; randomRelayUrls: string[] }> {
     const {
       userWriteRelays,
+      userHttpWriteRelays,
       favoriteRelays,
       relaySets,
       parentEvent,
       isPublicMessage,
       openFrom
     } = context
+
+    if (
+      isPublicMessage ||
+      (parentEvent != null && parentEvent.kind === ExtendedKind.PUBLIC_MESSAGE)
+    ) {
+      const pmRelays = await this.getPublicMessageRelays(context)
+      const filtered = this.filterPublishPickerRelays(
+        this.filterBlockedRelays(pmRelays, context.blockedRelays)
+      )
+      const relayTypes: Record<string, RelaySourceType> = {}
+      const httpSet = new Set(
+        (userHttpWriteRelays ?? []).map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
+      )
+      filtered.forEach((url) => {
+        relayTypes[url] = httpSet.has(url) ? 'http_relay_list' : 'relay_list'
+      })
+      return { relays: filtered, relayTypes, randomRelayUrls: [] }
+    }
 
     const order: { url: string; type: RelaySourceType }[] = []
     const seen = new Set<string>()
@@ -385,9 +408,10 @@ class RelaySelectionService {
     else if (parentEvent && (parentEvent.kind === ExtendedKind.DISCUSSION || parentEvent.kind === ExtendedKind.COMMENT)) {
       selectedRelays = await this.getDiscussionReplyRelays(context)
     }
-    // For public messages, use sender outboxes + receiver inboxes
+    // For public messages, use sender outboxes + receiver inboxes only
     else if (isPublicMessage || (parentEvent && parentEvent.kind === ExtendedKind.PUBLIC_MESSAGE)) {
       selectedRelays = await this.getPublicMessageRelays(context)
+      return this.filterPublishPickerRelays(this.filterBlockedRelays(selectedRelays, context.blockedRelays))
     }
     // For regular replies, use user's write relays + mention relays
     else if (parentEvent && this.isRegularReply(parentEvent)) {
@@ -456,28 +480,22 @@ class RelaySelectionService {
     const allMembers = new Set<string>()
 
     try {
-      // Get sender's outboxes (write relays)
+      // Get sender's outboxes (write + HTTP write relays)
       if (userPubkey) {
         allMembers.add(userPubkey)
-        let senderRelays = userWriteRelays
-        
-        // If userWriteRelays is empty, try to fetch the user's relay list
+        let senderRelays = collectSenderOutboxUrls(
+          null,
+          [...(context.userHttpWriteRelays ?? []), ...userWriteRelays]
+        )
         if (senderRelays.length === 0) {
           try {
             const userRelayList = await this.getCachedRelayList(userPubkey)
-            if (userRelayList?.write && userRelayList.write.length > 0) {
-              senderRelays = userRelayList.write
-            } else {
-              // Only fall back to fast write relays if we truly have no user relays
-              senderRelays = FAST_WRITE_RELAY_URLS
-            }
+            senderRelays = collectSenderOutboxUrls(userRelayList)
           } catch (error) {
             logger.warn('Failed to fetch user relay list for PM', { error, userPubkey })
-            // Fall back to fast write relays if fetch fails
-            senderRelays = FAST_WRITE_RELAY_URLS
           }
         }
-        
+
         senderRelays.forEach(url => {
           const normalized = normalizeAnyRelayUrl(url)
           if (normalized) {
@@ -523,9 +541,7 @@ class RelaySelectionService {
               // Use cached version from IndexedDB
               const relayList = await this.getCachedRelayList(pubkey)
               if (!relayList) return []
-              const userRelays = relayList.read || []
-              // Filter out local relays from other users
-              return this.filterLocalRelaysFromOthers(userRelays)
+              return this.filterLocalRelaysFromOthers(collectRecipientInboxUrls(relayList))
             } catch (error) {
               logger.warn('Failed to fetch relay list', { pubkey, error })
               return []
@@ -609,9 +625,10 @@ class RelaySelectionService {
       return Array.from(new Set(normalizedRelays))
     } catch (error) {
       logger.error('Failed to get public message relays', { error, parentEvent: context.parentEvent?.id })
-      // Fallback to sender's write relays
-      const senderRelays = userWriteRelays.length > 0 ? userWriteRelays : FAST_WRITE_RELAY_URLS
-      return senderRelays.map(url => normalizeAnyRelayUrl(url) || url).filter(Boolean)
+      return collectSenderOutboxUrls(null, [
+        ...(context.userHttpWriteRelays ?? []),
+        ...userWriteRelays
+      ])
     }
   }
 

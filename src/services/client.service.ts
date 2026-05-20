@@ -16,8 +16,6 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_PUBLISH_RELAYS,
-  PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP,
-  PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS,
   PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
   FETCH_RELAY_LIST_UI_TIMEOUT_MS,
@@ -131,10 +129,14 @@ import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import {
+  buildPublicMessagePublishRelayUrls,
+  collectRecipientInboxUrls,
+  collectSenderOutboxUrls
+} from '@/lib/public-message-publish-relays'
+import {
   buildPrioritizedWriteRelayUrls,
   dedupeNormalizeRelayUrlsOrdered,
-  filterContextAuthorReadRelaysForPublish,
-  relayUrlsLocalsFirst
+  filterContextAuthorReadRelaysForPublish
 } from '@/lib/relay-url-priority'
 import {
   IndexRelayTransportError,
@@ -162,7 +164,6 @@ import {
   simplifyUrl
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
-import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { initRelayPoolIdle, touchRelayPoolActivity } from '@/lib/relay-pool-idle'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
@@ -1191,44 +1192,12 @@ class ClientService extends EventTarget {
         this.fetchRelayListWithPublishTimeout(event.pubkey),
         recipientListsPromise
       ])
-      const authorHttpWrites = (authorRelayList?.httpWrite ?? [])
-        .map((url) => normalizeHttpRelayUrl(url))
-        .filter((url): url is string => !!url)
-      const authorWsWrites = (authorRelayList?.write ?? [])
-        .map((url) => normalizeUrl(url))
-        .filter((url): url is string => !!url)
-      let authorWrite = dedupeNormalizeRelayUrlsOrdered([...authorHttpWrites, ...authorWsWrites])
-      if (authorWrite.length === 0) {
-        authorWrite = useGlobalRelayDefaults ? [...FAST_WRITE_RELAY_URLS] : []
-      }
-      let recipientRead: string[] = []
-      recipientRead = recipientRelayLists.flatMap((rl) => [
-        ...(rl?.httpRead ?? []).map((url) => normalizeHttpRelayUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u)),
-        ...(rl?.read ?? []).map((url) => normalizeUrl(url)).filter((u): u is string => !!u && !isLocalNetworkUrl(u))
-      ])
-      recipientRead = dedupeNormalizeRelayUrlsOrdered(recipientRead)
-      const authorWriteOrdered = relayUrlsLocalsFirst(authorWrite)
-      /** Without this, tier‑1 author outboxes can consume all of {@link MAX_PUBLISH_RELAYS} and organizer inboxes never receive RSVPs. */
-      const recipientReadDeduped = recipientRead
-      const authorTier1Cap =
-        recipientReadDeduped.length > 0
-          ? Math.min(PUBLIC_MESSAGE_RSVP_PUBLISH_AUTHOR_WRITE_CAP, authorWriteOrdered.length)
-          : authorWriteOrdered.length
-      const authorPrimary = authorWriteOrdered.slice(0, authorTier1Cap)
-      const authorOverflow = authorWriteOrdered.slice(authorTier1Cap)
-      const publishCap =
-        recipientReadDeduped.length > 0 ? PUBLIC_MESSAGE_RSVP_PUBLISH_MAX_RELAYS : MAX_PUBLISH_RELAYS
-      let pubRelays = feedRelayPolicyUrls([
-        { source: 'viewer-write', urls: authorPrimary },
-        { source: 'author-read', urls: recipientReadDeduped },
-        { source: 'viewer-write', urls: authorOverflow }
-      ], {
-        operation: 'write',
-        blockedRelays: blockedRelayUrls,
-        maxRelays: publishCap,
-        nostrLandAggr: 'never',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
+      const authorWrite = collectSenderOutboxUrls(authorRelayList)
+      const recipientRead = dedupeNormalizeRelayUrlsOrdered(
+        recipientRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
+      )
+      let pubRelays = buildPublicMessagePublishRelayUrls(authorWrite, recipientRead, {
+        blockedRelays: blockedRelayUrls
       })
       pubRelays = this.filterPublishingRelays(pubRelays, event)
       logger.debug('[DetermineTargetRelays] Public message / calendar RSVP: author outbox + recipient inboxes only', {
@@ -1237,21 +1206,7 @@ class ClientService extends EventTarget {
         authorWriteCount: authorWrite.length,
         recipientReadCount: recipientRead.length
       })
-      if (pubRelays.length > 0) return pubRelays
-      if (!useGlobalRelayDefaults) {
-        return this.filterPublishingRelays([], event)
-      }
-      return this.filterPublishingRelays(
-        feedRelayPolicyUrls([{ source: 'fast-write', urls: relayUrlsLocalsFirst([...FAST_WRITE_RELAY_URLS]) }], {
-          operation: 'write',
-          blockedRelays: blockedRelayUrls,
-          maxRelays: MAX_PUBLISH_RELAYS,
-          nostrLandAggr: 'never',
-          applySocialKindBlockedFilter: false,
-          allowThirdPartyLocalRelays: true
-        }),
-        event
-      )
+      return pubRelays
     }
 
     let relays: string[]
