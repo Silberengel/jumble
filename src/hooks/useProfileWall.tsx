@@ -92,10 +92,16 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
 
   const cacheKey = useMemo(() => `${pubkey}-profile-wall-v1`, [pubkey])
   const cached = wallCacheByKey.get(cacheKey)
+  const hasUsefulWallCache =
+    !!cached &&
+    cached.badges.length > 0 &&
+    Date.now() - cached.lastUpdated < CACHE_DURATION
 
-  const [badges, setBadges] = useState<ResolvedProfileBadge[]>(cached?.badges ?? [])
-  const [comments, setComments] = useState<Event[]>(cached?.comments ?? [])
-  const [isLoading, setIsLoading] = useState(!cached)
+  const [badges, setBadges] = useState<ResolvedProfileBadge[]>(
+    hasUsefulWallCache ? cached!.badges : []
+  )
+  const [comments, setComments] = useState<Event[]>(hasUsefulWallCache ? cached!.comments : [])
+  const [isLoading, setIsLoading] = useState(!hasUsefulWallCache)
   const [refreshToken, setRefreshToken] = useState(0)
 
   const relayListsKey = useMemo(
@@ -108,17 +114,28 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   blockedRelaysRef.current = blockedRelays
   const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
   useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
+  const runGenRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
+    const runGen = ++runGenRef.current
 
     const run = async () => {
       const mem = wallCacheByKey.get(cacheKey)
-      if (mem && Date.now() - mem.lastUpdated < CACHE_DURATION && refreshToken === 0) {
+      // Do not reuse empty cache (transient abort when secondary panel opens used to cache [] for 5m).
+      if (
+        mem &&
+        mem.badges.length > 0 &&
+        Date.now() - mem.lastUpdated < CACHE_DURATION &&
+        refreshToken === 0
+      ) {
         setBadges(mem.badges)
         setComments(mem.comments)
-        setIsLoading(false)
+        if (runGen === runGenRef.current) setIsLoading(false)
         return
+      }
+      if (mem?.badges.length === 0) {
+        wallCacheByKey.delete(cacheKey)
       }
 
       setIsLoading(true)
@@ -148,7 +165,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         )
 
         // --- Badges (NIP-58): IndexedDB + profile read relays (favorites / fast-read), not inbox-only ---
-        let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls)
+        let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls, { foreground: true })
         if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
           const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls)
           if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
@@ -208,13 +225,17 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         if (cancelled) return
         setBadges(resolvedBadges)
         setComments(wallComments)
-        wallCacheByKey.set(cacheKey, {
-          badges: resolvedBadges,
-          comments: wallComments,
-          lastUpdated: Date.now()
-        })
+        if (resolvedBadges.length > 0 || wallComments.length > 0) {
+          wallCacheByKey.set(cacheKey, {
+            badges: resolvedBadges,
+            comments: wallComments,
+            lastUpdated: Date.now()
+          })
+        } else {
+          wallCacheByKey.delete(cacheKey)
+        }
       } finally {
-        if (!cancelled) setIsLoading(false)
+        if (!cancelled && runGen === runGenRef.current) setIsLoading(false)
       }
     }
 

@@ -89,10 +89,20 @@ export function useProfileReportsEvents({
 
   const receivedCached = memoryByKey.get(receivedCacheKey)
   const madeCached = memoryByKey.get(madeCacheKey)
+  const reportsCacheHasRows =
+    (receivedCached?.events.length ?? 0) + (madeCached?.events.length ?? 0) > 0
+  const reportsCacheFresh =
+    !!receivedCached &&
+    !!madeCached &&
+    Date.now() - receivedCached.lastUpdated < CACHE_DURATION &&
+    Date.now() - madeCached.lastUpdated < CACHE_DURATION
+  const hasUsefulReportsCache = reportsCacheHasRows && reportsCacheFresh
 
-  const [received, setReceived] = useState<Event[]>(receivedCached?.events ?? [])
-  const [made, setMade] = useState<Event[]>(madeCached?.events ?? [])
-  const [isLoading, setIsLoading] = useState(!receivedCached || !madeCached)
+  const [received, setReceived] = useState<Event[]>(
+    hasUsefulReportsCache ? receivedCached!.events : []
+  )
+  const [made, setMade] = useState<Event[]>(hasUsefulReportsCache ? madeCached!.events : [])
+  const [isLoading, setIsLoading] = useState(!hasUsefulReportsCache)
   const [refreshToken, setRefreshToken] = useState(0)
 
   const includeAuthorLocalRelays = useMemo(() => {
@@ -118,6 +128,7 @@ export function useProfileReportsEvents({
   blockedRelaysRef.current = blockedRelays
   const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
   useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
+  const runGenRef = useRef(0)
 
   const resolveFeedUrls = useCallback(
     (
@@ -174,6 +185,7 @@ export function useProfileReportsEvents({
 
   useEffect(() => {
     let cancelled = false
+    const runGen = ++runGenRef.current
 
     const loadMode = async (
       mode: FetchMode,
@@ -196,7 +208,11 @@ export function useProfileReportsEvents({
           isEventDeletedRef.current,
           postFilter(pubkey, mode)
         )
-        memoryByKey.set(cacheKey, { events: processed, lastUpdated: Date.now() })
+        if (processed.length > 0) {
+          memoryByKey.set(cacheKey, { events: processed, lastUpdated: Date.now() })
+        } else {
+          memoryByKey.delete(cacheKey)
+        }
         setEvents((prev) => (eventsEqualById(prev, processed) ? prev : processed))
       }
 
@@ -284,15 +300,21 @@ export function useProfileReportsEvents({
       const madeMem = memoryByKey.get(madeCacheKey)
       const recvFresh = recvMem && Date.now() - recvMem.lastUpdated < CACHE_DURATION
       const madeFresh = madeMem && Date.now() - madeMem.lastUpdated < CACHE_DURATION
+      const cachedAny =
+        (recvMem?.events.length ?? 0) + (madeMem?.events.length ?? 0) > 0
 
       if (recvFresh && recvMem) {
         setReceived(recvMem.events)
+      } else if (recvMem?.events.length === 0) {
+        memoryByKey.delete(receivedCacheKey)
       }
       if (madeFresh && madeMem) {
         setMade(madeMem.events)
+      } else if (madeMem?.events.length === 0) {
+        memoryByKey.delete(madeCacheKey)
       }
-      if (recvFresh && madeFresh && refreshToken === 0) {
-        setIsLoading(false)
+      if (recvFresh && madeFresh && refreshToken === 0 && cachedAny) {
+        if (runGen === runGenRef.current) setIsLoading(false)
         return
       }
 
@@ -303,7 +325,7 @@ export function useProfileReportsEvents({
           loadMode('made', madeCacheKey, setMade)
         ])
       } finally {
-        if (!cancelled) setIsLoading(false)
+        if (!cancelled && runGen === runGenRef.current) setIsLoading(false)
       }
     }
 

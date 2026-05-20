@@ -13,6 +13,7 @@ import { normalizeHexPubkey } from '@/lib/pubkey'
 import { fetchLatestReplaceableListEvent } from '@/lib/replaceable-list-latest'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import client, { replaceableEventService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
 export function profileBadgeEntriesToTags(entries: ProfileBadgeEntry[]): string[][] {
@@ -42,19 +43,31 @@ export function profileBadgeListTagsAfterRemovingEntry(
 
 export async function fetchProfileBadgesListEvent(
   pubkeyHex: string,
-  relayUrls: string[]
+  relayUrls: string[],
+  options?: { foreground?: boolean }
 ): Promise<Event | undefined> {
   const pk = normalizeHexPubkey(pubkeyHex)
+  const foreground = options?.foreground === true
   let cached: Event | undefined
   try {
-    cached =
-      (await replaceableEventService.fetchReplaceableEvent(pk, ExtendedKind.PROFILE_BADGES_LIST)) ??
-      undefined
+    const disk = await indexedDb.getReplaceableEvent(pk, ExtendedKind.PROFILE_BADGES_LIST)
+    if (disk) cached = disk
   } catch {
     cached = undefined
   }
+  try {
+    const fromService =
+      (await replaceableEventService.fetchReplaceableEvent(pk, ExtendedKind.PROFILE_BADGES_LIST)) ??
+      undefined
+    if (!cached) cached = fromService
+    else if (fromService && fromService.created_at >= cached.created_at) cached = fromService
+  } catch {
+    /* best-effort */
+  }
   const fromRelays = relayUrls.length
-    ? await fetchLatestReplaceableListEvent(pk, ExtendedKind.PROFILE_BADGES_LIST, relayUrls)
+    ? await fetchLatestReplaceableListEvent(pk, ExtendedKind.PROFILE_BADGES_LIST, relayUrls, {
+        foreground
+      })
     : undefined
   if (!cached) return fromRelays
   if (!fromRelays) return cached
@@ -93,7 +106,8 @@ export async function fetchLegacyProfileBadgesListEvent(
     {
       replaceableRace: true,
       eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
-      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
+      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+      foreground: true
     }
   )
 

@@ -76,7 +76,6 @@ const DEFAULT_RELAYS_TO_MONITOR = [
 /** Relays to publish 30166/10166 and to REQ kind 10002 from; broad enough for Imwald + NIP-66 discovery. */
 const DEFAULT_PUBLISH_RELAYS = [
   'wss://nos.lol',
-  'wss://orly-relay.imwald.eu',
   'wss://relay.damus.io',
   'wss://relay.nostr.watch',
   'wss://relay.primal.net',

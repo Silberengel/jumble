@@ -41,7 +41,8 @@ function newestReplaceableEvent(candidates: Event[]): Event | undefined {
 export async function fetchLatestReplaceableListEvent(
   pubkeyHex: string,
   kind: number,
-  relayUrls: string[]
+  relayUrls: string[],
+  options?: { foreground?: boolean }
 ): Promise<Event | undefined> {
   const pk = normalizeHexPubkey(pubkeyHex)
   const allUrls = [...new Set(relayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]
@@ -50,7 +51,10 @@ export async function fetchLatestReplaceableListEvent(
   const rows = await client.fetchEvents(
     allUrls,
     { authors: [pk], kinds: networkKindsForReplaceableFetch(kind), limit: 80 },
-    replaceableListFetchQueryOpts(kind)
+    {
+      ...replaceableListFetchQueryOpts(kind),
+      ...(options?.foreground ? { foreground: true } : {})
+    }
   )
 
   return newestReplaceableEvent(rows.filter((e) => e.kind === kind))

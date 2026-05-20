@@ -493,7 +493,6 @@ export const GIF_RELAY_URLS = [
 export const SEARCHABLE_RELAY_URLS = [
   'wss://search.nos.today',
   'wss://nostr.wine',
-  'wss://orly-relay.imwald.eu',
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
 ]
