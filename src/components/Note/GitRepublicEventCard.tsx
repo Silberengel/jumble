@@ -145,7 +145,7 @@ export default function GitRepublicEventCard({
               href={webUrl}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex max-w-full items-center gap-1 text-xs font-medium text-primary hover:underline"
+              className="inline-flex max-w-full items-center gap-1 text-xs font-medium text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink className="size-3 shrink-0" aria-hidden />

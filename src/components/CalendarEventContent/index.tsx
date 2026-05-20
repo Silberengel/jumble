@@ -283,7 +283,7 @@ export default function CalendarEventContent({
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:text-foreground hover:underline transition-colors"
             >
               <ExternalLink className="size-3 shrink-0 opacity-80" aria-hidden />
               {t('Open link')}

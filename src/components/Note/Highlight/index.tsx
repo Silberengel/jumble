@@ -90,7 +90,7 @@ function HighlightAuthorCard({
         A{' '}
         <button
           onClick={handleNoteClick}
-          className="text-primary hover:text-primary/80 hover:underline font-medium cursor-pointer"
+          className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors font-medium cursor-pointer"
         >
           note
         </button>

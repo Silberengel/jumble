@@ -10,10 +10,12 @@ import {
   getPaytoLogoPath,
   getPaytoProfileUrl,
   isKnownPaytoType,
-  isLightningPaytoType
+  isLightningPaytoType,
+  isZappableLightningPaytoType
 } from '@/lib/payto'
 import PaytoDialog from '@/components/PaytoDialog'
 import { HelpCircle } from 'lucide-react'
+import { PRIMARY_LINK_HOVER_CLASS, URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
 
 export default function PaytoLink({
@@ -58,7 +60,7 @@ export default function PaytoLink({
   const info = getPaytoTypeInfo(type)
   const known = isKnownPaytoType(type)
   const isLightning = isLightningPaytoType(type)
-  const canZap = isLightning && !!pubkey && !!onOpenZap
+  const canZap = isZappableLightningPaytoType(type) && !!pubkey && !!onOpenZap
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -112,7 +114,8 @@ export default function PaytoLink({
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
-          'text-primary hover:underline cursor-pointer text-left break-words inline-flex items-center gap-1.5',
+          URI_LINK_CLASS,
+          'cursor-pointer text-left inline-flex items-center gap-1.5',
           className
         )}
         title={
@@ -133,7 +136,8 @@ export default function PaytoLink({
         type="button"
         onClick={handleClick}
         className={cn(
-          'text-primary hover:underline cursor-pointer text-left break-words inline-flex items-center gap-1.5',
+          URI_LINK_CLASS,
+          'cursor-pointer text-left inline-flex items-center gap-1.5',
           className
         )}
         title={

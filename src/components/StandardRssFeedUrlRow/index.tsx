@@ -68,7 +68,7 @@ export default function StandardRssFeedUrlRow({ feedUrl, className, actions }: P
             href={feedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="block break-all text-xs text-primary hover:underline"
+            className="block break-all text-xs text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors"
             onClick={(e) => e.stopPropagation()}
           >
             {feedUrl}

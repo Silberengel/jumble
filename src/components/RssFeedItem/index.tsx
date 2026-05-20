@@ -914,7 +914,7 @@ export default function RssFeedItem({
           href={item.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary hover:underline inline-flex items-center gap-1 min-w-0 truncate"
+          className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors inline-flex items-center gap-1 min-w-0 truncate"
           onClick={(e) => e.stopPropagation()}
         >
           <span className="truncate">{t('Read full article')}</span>

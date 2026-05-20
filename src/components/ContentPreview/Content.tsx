@@ -42,11 +42,7 @@ export default function Content({
         }
         if (node.type === 'payto') {
           return (
-            <PaytoLink
-              key={index}
-              paytoUri={node.data}
-              className="text-green-600 dark:text-green-400 hover:underline break-words"
-            />
+            <PaytoLink key={index} paytoUri={node.data} />
           )
         }
         if (node.type === 'emoji') {

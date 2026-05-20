@@ -442,7 +442,7 @@ export default function Note({
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-primary underline-offset-4 hover:underline break-all"
+              className="text-sm text-primary underline-offset-4 hover:text-foreground hover:underline transition-colors break-all"
             >
               {href}
             </a>

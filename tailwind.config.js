@@ -64,7 +64,10 @@ export default {
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))'
         },
-        highlight: 'hsl(var(--highlight))'
+        highlight: 'hsl(var(--highlight))',
+        link: {
+          uri: 'hsl(var(--uri-link))'
+        }
       }
     }
   },

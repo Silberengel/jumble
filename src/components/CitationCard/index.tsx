@@ -390,7 +390,7 @@ export default function CitationCard({ event, className, displayType = 'end', ci
             <div className="text-muted-foreground">{formatDate(citationData.publishedOn)}</div>
           )}
           {citationData.url && (
-            <div className="flex items-center gap-1 text-primary hover:underline">
+            <div className="flex items-center gap-1 text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors">
               <ExternalLink className="w-3 h-3" />
               <a href={citationData.url} target="_blank" rel="noreferrer noopener" className="break-all">
                 {citationData.url}
@@ -526,7 +526,7 @@ export default function CitationCard({ event, className, displayType = 'end', ci
             <div className="text-xs text-muted-foreground">{t('Version')}: {citationData.version}</div>
           )}
           {citationData.url && (
-            <div className="flex items-center gap-1 text-primary hover:underline">
+            <div className="flex items-center gap-1 text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors">
               <ExternalLink className="w-3 h-3" />
               <a href={citationData.url} target="_blank" rel="noreferrer noopener" className="break-all">
                 {citationData.url}
@@ -572,7 +572,7 @@ export default function CitationCard({ event, className, displayType = 'end', ci
       <span className={className}>
         <a
           href={`/notes/${event.id}`}
-          className="text-primary hover:underline"
+          className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors"
           onClick={(e) => {
             e.preventDefault()
             // Scroll to full citation in references section

@@ -1,18 +1,22 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { getLightningAddressFromProfile } from '@/lib/lightning'
+import {
+  buildOrderedZapLightningAddresses,
+  recipientHasAnyPaymentOptions
+} from '@/lib/merge-payment-methods'
+import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import { cn } from '@/lib/utils'
+import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { useNostr } from '@/providers/NostrProvider'
 import { useZap } from '@/providers/ZapProvider'
-import { replaceableEventService } from '@/services/client.service'
-import { getProfileFromEvent } from '@/lib/event-metadata'
-import { kinds } from 'nostr-tools'
+import client, { replaceableEventService } from '@/services/client.service'
+import type { TProfile } from '@/types'
+import { kinds, type Event } from 'nostr-tools'
 import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { Zap } from 'lucide-react'
-import { Event } from 'nostr-tools'
-import { MouseEvent, TouchEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
@@ -40,25 +44,79 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     }
   }, [noteStats, pubkey])
   const showZapAmount = !hideCount && (statsLoaded || (zapAmount ?? 0) > 0)
+  const authorPubkey = event.pubkey.toLowerCase()
+  const isSelf = !!pubkey && pubkey.toLowerCase() === authorPubkey
+  const feedProfiles = useNoteFeedProfileContext()
+  const feedProfile = feedProfiles?.profiles.get(authorPubkey)
+  const feedProfileRef = useRef(feedProfile)
+  feedProfileRef.current = feedProfile
+
   const [disable, setDisable] = useState(true)
+  const [canLightningZap, setCanLightningZap] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isLongPressRef = useRef(false)
 
+  const applyTipAvailability = useCallback(
+    (
+      profile: TProfile | null,
+      profileEvent: Event | null | undefined,
+      paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+    ) => {
+      const canTip = recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent ?? null)
+      setDisable(!canTip)
+      setCanLightningZap(
+        buildOrderedZapLightningAddresses({ profileEvent, paymentInfo }).length > 0
+      )
+    },
+    []
+  )
+
+  /** Re-enable when the feed batch loads a real profile (not a placeholder row). */
   useEffect(() => {
+    if (isSelf) return
+    if (!feedProfile || feedProfile.batchPlaceholder) return
+    applyTipAvailability(feedProfile, null, null)
+  }, [isSelf, feedProfile, feedProfiles?.version, applyTipAvailability])
+
+  useEffect(() => {
+    if (isSelf) {
+      setDisable(true)
+      setCanLightningZap(false)
+      return
+    }
+
     setDisable(true)
+    setCanLightningZap(false)
     let cancelled = false
-    replaceableEventService.fetchReplaceableEvent(event.pubkey, kinds.Metadata).then((profileEvent) => {
+
+    void Promise.allSettled([
+      replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
+      client.fetchPaymentInfoEvent(authorPubkey),
+      replaceableEventService.getProfileFromIndexedDB(authorPubkey)
+    ]).then(([profileRes, paymentRes, idbRes]) => {
       if (cancelled) return
-      const profile = profileEvent ? getProfileFromEvent(profileEvent) : undefined
-      if (!profile) return
-      if (pubkey === profile.pubkey) return
-      const lightningAddress = getLightningAddressFromProfile(profile)
-      if (lightningAddress) setDisable(false)
+
+      const profileEvent =
+        profileRes.status === 'fulfilled' ? profileRes.value : undefined
+      const paymentEvent =
+        paymentRes.status === 'fulfilled' ? paymentRes.value : undefined
+      const idbProfile = idbRes.status === 'fulfilled' ? idbRes.value : undefined
+
+      const cachedFeed = feedProfileRef.current
+      const profile =
+        (profileEvent ? getProfileFromEvent(profileEvent) : null) ??
+        (cachedFeed && !cachedFeed.batchPlaceholder ? cachedFeed : null) ??
+        idbProfile ??
+        null
+      const paymentInfo = paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
+
+      applyTipAvailability(profile, profileEvent ?? null, paymentInfo)
     })
+
     return () => {
       cancelled = true
     }
-  }, [event.pubkey, pubkey])
+  }, [authorPubkey, isSelf, applyTipAvailability])
 
   const handleZap = async () => {
     try {
@@ -143,7 +201,14 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         setZapping(true)
       })
     } else if (!isLongPressRef.current) {
-      checkLogin(() => handleZap())
+      if (canLightningZap) {
+        checkLogin(() => handleZap())
+      } else {
+        checkLogin(() => {
+          setOpenZapDialog(true)
+          setZapping(true)
+        })
+      }
     }
     isLongPressRef.current = false
   }

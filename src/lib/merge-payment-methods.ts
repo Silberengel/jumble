@@ -1,10 +1,11 @@
-import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
+import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import {
   buildPaytoUri,
   getCanonicalPaytoType,
   getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
-  isLightningPaytoType
+  isLightningPaytoType,
+  isZappableLightningPaytoType
 } from '@/lib/payto'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import type { TProfile } from '@/types'
@@ -132,7 +133,8 @@ export function paytoPaymentSortRank(type: string): number {
 /** Merge payment methods from kind 10133 and profile (kind 0: JSON + tags), normalized and deduplicated. */
 export function mergePaymentMethods(
   paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
-  profile: TProfile | null
+  profile: TProfile | null,
+  profileEvent?: Event | null
 ): MergedPaymentMethod[] {
   const seen = new Map<string, MergedPaymentMethod>()
   const out: MergedPaymentMethod[] = []
@@ -232,7 +234,25 @@ export function mergePaymentMethods(
     add(type, authority, paymentInfo.payto, type === 'lightning' ? 'Lightning Network' : paymentInfo.type || 'Payment')
   }
 
+  if (profileEvent?.kind === kinds.Metadata) {
+    for (const tag of profileEvent.tags) {
+      if (tag[0] === 'payto' && tag[1] && tag[2]) {
+        const type = String(tag[1]).toLowerCase()
+        add(type, String(tag[2]), buildPaytoUri(getCanonicalPaytoType(type), String(tag[2])))
+      }
+    }
+  }
+
   return out
+}
+
+/** True when the recipient has any payto / Lightning target (kind 0 or 10133). */
+export function recipientHasAnyPaymentOptions(
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
+  profile: TProfile | null,
+  profileEvent?: Event | null
+): boolean {
+  return mergePaymentMethods(paymentInfo, profile, profileEvent).length > 0
 }
 
 export function sortMergedPaymentMethods(methods: MergedPaymentMethod[]): MergedPaymentMethod[] {
@@ -277,20 +297,25 @@ export function buildOrderedZapLightningAddresses(opts: {
   }
 
   const ev = opts.profileEvent
+  const profile = ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : null
   if (ev?.kind === kinds.Metadata) {
     for (const tag of ev.tags) {
       if (tag[0] === 'lud16' && tag[1]) add(tag[1])
+      if (tag[0] === 'lud06' && tag[1]) add(tag[1])
     }
     for (const tag of ev.tags) {
-      if (tag[0] === 'w' && tag[1] && tag[2] && String(tag[3]).toLowerCase() === 'lightning') {
+      if (tag[0] !== 'w' || !tag[1] || !tag[2]) continue
+      if (tag[3] && String(tag[3]).toLowerCase() === 'lightning') {
+        add(tag[2])
+      } else if (!tag[3] && String(tag[1]).toLowerCase() === 'lightning') {
         add(tag[2])
       }
     }
   }
 
-  const paymentMethods = mergePaymentMethods(opts.paymentInfo, null)
+  const paymentMethods = mergePaymentMethods(opts.paymentInfo, profile, ev)
   for (const m of paymentMethods) {
-    if (isLightningPaytoType(m.type)) add(m.authority)
+    if (isZappableLightningPaytoType(m.type)) add(m.authority)
   }
 
   return prioritizeZapLightningAddress(out, opts.preferredAddress ?? undefined)
@@ -308,7 +333,7 @@ export function prioritizeZapLightningAddress(candidates: string[], preferred?: 
   return [candidates[idx], ...rest]
 }
 
-/** Non-Lightning payto targets for zap dialog “other payment methods” (Lightning has its own selector). */
+/** Non-zap payto targets for zap dialog “other payment methods” (LUD-16 uses the Lightning selector). */
 export function getAlternativePaymentMethods(methods: MergedPaymentMethod[]): MergedPaymentMethod[] {
-  return methods.filter((m) => !isLightningPaytoType(m.type))
+  return methods.filter((m) => !isZappableLightningPaytoType(m.type))
 }

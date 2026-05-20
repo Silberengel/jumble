@@ -14,6 +14,12 @@ export function formatAmount(amount: number) {
 }
 
 export function getLightningAddressFromProfile(profile: TProfile) {
+  if (profile.lightningAddress?.trim()) return profile.lightningAddress.trim()
+  if (profile.lightningAddressList?.length) {
+    const first = profile.lightningAddressList.find((a) => a?.trim())
+    if (first) return first.trim()
+  }
+
   // Some clients have incorrectly filled in the positions for lud06 and lud16
   const { lud16: a, lud06: b } = profile
   let lud16: string | undefined
@@ -22,11 +28,13 @@ export function getLightningAddressFromProfile(profile: TProfile) {
     lud16 = a
   } else if (b && isEmail(b)) {
     lud16 = b
+  } else if (a?.trim() && a.includes('.')) {
+    lud16 = a.trim()
   } else if (b && b.startsWith('lnurl')) {
     lud06 = b
   } else if (a && a.startsWith('lnurl')) {
     lud06 = a
   }
 
-  return lud16 || lud06 || profile.lightningAddress || undefined
+  return lud16 || lud06 || undefined
 }

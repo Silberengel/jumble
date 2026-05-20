@@ -183,6 +183,8 @@
     --sidebar-border: 130 18% 82%;
     --brand-wordmark: 155 32% 22%;
     --prose-link: 152 38% 28%;
+    /* Lighter forest green for inline URIs (http, payto, …); hover uses --primary. */
+    --uri-link: 154 32% 42%;
     --highlight: 152 45% 36%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
@@ -221,6 +223,7 @@
     --sidebar-border: 150 14% 20%;
     --brand-wordmark: 145 28% 91%;
     --prose-link: 145 35% 72%;
+    --uri-link: 145 28% 68%;
     --highlight: 150 40% 48%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -230,12 +233,15 @@
   }
 
   :where(.prose) a {
-    color: hsl(var(--prose-link));
+    color: hsl(var(--uri-link));
+    text-decoration: none;
     text-underline-offset: 2px;
+    transition: color 0.15s ease;
   }
 
   :where(.prose) a:hover {
     color: hsl(var(--primary));
+    text-decoration: underline;
   }
 
   .dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
@@ -475,15 +481,15 @@
 }
 
 .asciidoc-content .footnote a {
-  @apply text-primary hover:underline;
+  @apply text-link-uri no-underline hover:text-primary hover:underline underline-offset-2 transition-colors;
 }
 
 .asciidoc-content .footnote-backref {
-  @apply ml-1 text-primary hover:underline;
+  @apply ml-1 text-link-uri no-underline hover:text-primary hover:underline underline-offset-2 transition-colors;
 }
 
 .asciidoc-content .footnoteref {
-  @apply text-primary hover:underline;
+  @apply text-link-uri no-underline hover:text-primary hover:underline underline-offset-2 transition-colors;
   vertical-align: super;
   font-size: 0.75em;
   text-decoration: none;

@@ -361,7 +361,7 @@ export default function Image({
               href={openLinkHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-primary underline-offset-4 hover:underline break-all max-w-full"
+              className="text-sm text-primary underline-offset-4 hover:text-foreground hover:underline transition-colors break-all max-w-full"
               onClick={(e) => e.stopPropagation()}
             >
               {t('Open image link')}

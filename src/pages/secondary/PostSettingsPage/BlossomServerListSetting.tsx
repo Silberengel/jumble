@@ -134,7 +134,7 @@ export default function BlossomServerListSetting() {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="truncate hover:underline"
+            className="truncate hover:text-foreground hover:underline underline-offset-2 transition-colors"
           >
             {url}
           </a>

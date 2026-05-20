@@ -29,7 +29,7 @@ export default function Nip05({ pubkey, append }: { pubkey: string; append?: str
       onClick={(e) => e.stopPropagation()}
     >
       {nip05Name !== '_' ? (
-        <span className="text-sm text-muted-foreground truncate">@{nip05Name}</span>
+        <span className="text-sm text-muted-foreground truncate shrink-0">{nip05Name}</span>
       ) : null}
       {nip05IsVerified ? (
         <Favicon
@@ -42,7 +42,7 @@ export default function Nip05({ pubkey, append }: { pubkey: string; append?: str
       )}
       <SecondaryPageLink
         to={toNoteList({ domain: nip05Domain })}
-        className={`hover:underline truncate text-sm ${nip05IsVerified ? 'text-primary' : 'text-muted-foreground'}`}
+        className={`truncate text-sm hover:text-foreground hover:underline underline-offset-2 transition-colors ${nip05IsVerified ? 'text-primary' : 'text-muted-foreground'}`}
       >
         {nip05Domain}
       </SecondaryPageLink>

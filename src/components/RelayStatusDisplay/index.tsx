@@ -71,7 +71,7 @@ function renderTextWithLinks(text: string): React.ReactNode {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-600 dark:text-blue-400 hover:underline break-all"
+        className="text-blue-600 dark:text-blue-400 hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
         onClick={(e) => e.stopPropagation()}
       >
         {url}

@@ -65,7 +65,7 @@ function renderRedirectText(text: string, key: number) {
       {prefix}
       Read{' '}
       <a
-        className="text-primary hover:underline"
+        className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors"
         href={href}
         onClick={(e) => e.stopPropagation()}
       >
@@ -618,11 +618,7 @@ export default function Content({
         }
         if (node.type === 'payto') {
           return (
-            <PaytoLink
-              key={index}
-              paytoUri={node.data}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
-            />
+            <PaytoLink key={index} paytoUri={node.data} />
           )
         }
         if (node.type === 'websocket-url') {

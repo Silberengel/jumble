@@ -198,7 +198,7 @@ export default function VideoPlayer({
             href={fallbackPageUrl.trim()}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex text-sm font-medium text-green-600 underline-offset-2 hover:underline dark:text-green-400 dark:hover:text-green-300"
+            className="inline-flex text-sm font-medium text-link-uri no-underline underline-offset-2 hover:text-primary hover:underline transition-colors"
             onClick={(e) => e.stopPropagation()}
           >
             {t('Open in browser')}

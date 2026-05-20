@@ -22,7 +22,7 @@ export default function Wikilink({ dTag, displayText, className }: WikilinkProps
       <CollapsibleTrigger asChild>
         <Button
           variant="link"
-          className="p-0 h-auto text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
+          className="p-0 h-auto text-blue-600 hover:text-foreground hover:underline underline-offset-2 transition-colors inline-flex items-center gap-1"
         >
           <span>{displayText}</span>
           {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}

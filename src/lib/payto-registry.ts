@@ -120,8 +120,13 @@ export function getPaytoIconChar(type: string): string | null {
   return getPaytoTypeRecord(type)?.symbol ?? null
 }
 
-/** LUD-16 lightning and BIP-353 DNS payment instructions (not on-chain Bitcoin). */
+/** LUD-16 / LNURL lightning and BIP-353 DNS instructions — payment UI, not on-chain Bitcoin. */
 export function isLightningPaytoType(type: string): boolean {
   const canonical = getCanonicalPaytoType(type)
   return canonical === 'lightning' || canonical === 'bip353'
+}
+
+/** Lightning targets that support zaps (LUD-16 / LNURL only; BIP-353 is pay/copy, not zappable). */
+export function isZappableLightningPaytoType(type: string): boolean {
+  return getCanonicalPaytoType(type) === 'lightning'
 }

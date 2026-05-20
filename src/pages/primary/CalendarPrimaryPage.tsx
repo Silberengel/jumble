@@ -510,7 +510,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                   {excess > 0 ? (
                     <button
                       type="button"
-                      className="mt-0.5 w-full shrink-0 rounded-md py-1 text-center text-[11px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="mt-0.5 w-full shrink-0 rounded-md py-1 text-center text-[11px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:text-foreground hover:underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label={t('calendarPageMoreEventsAria', { count: excess })}
                       onClick={() => openDayEventsPanel(day)}
                     >
@@ -566,7 +566,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                             onClick={() => navigateToNote(toNote(ev), ev)}
                             className={cn(
                               'flex w-full min-w-0 items-center gap-0.5 rounded px-0.5 py-px text-left text-[9px] font-medium leading-tight text-primary underline-offset-2',
-                              'hover:bg-muted/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]'
+                              'hover:bg-muted/80 hover:text-foreground hover:underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]'
                             )}
                             title={title}
                           >
@@ -585,7 +585,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
                   {excess > 0 ? (
                     <button
                       type="button"
-                      className="mt-0.5 w-full shrink-0 rounded py-0.5 text-center text-[9px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]"
+                      className="mt-0.5 w-full shrink-0 rounded py-0.5 text-center text-[9px] font-semibold text-primary underline-offset-2 hover:bg-muted/50 hover:text-foreground hover:underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-[10px]"
                       aria-label={t('calendarPageMoreEventsAria', { count: excess })}
                       onClick={() => openDayEventsPanel(day)}
                     >

@@ -52,7 +52,7 @@ function CompactProfileCard({ event }: { event: Event }) {
                 <li key={id} className="truncate font-mono">
                   <SecondaryPageLink
                     to={profileUrl}
-                    className="text-primary hover:underline"
+                    className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors"
                     onClick={closeDrawer}
                   >
                     {id}

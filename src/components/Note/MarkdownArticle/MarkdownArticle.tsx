@@ -25,6 +25,7 @@ import {
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
+import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import Emoji, { EMOJI_IMG_INLINE_CLASS } from '@/components/Emoji'
@@ -2188,7 +2189,7 @@ function parseMarkdownContentLegacy(
             <a
               key={`link-${patternIdx}`}
               href={url}
-              className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+              className={cn('inline', URI_LINK_CLASS)}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -2202,7 +2203,7 @@ function parseMarkdownContentLegacy(
           <a
             key={`link-${patternIdx}`}
             href={url}
-            className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+            className={cn('inline', URI_LINK_CLASS)}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -2236,7 +2237,7 @@ function parseMarkdownContentLegacy(
           <a
             key={`link-${patternIdx}`}
             href={url}
-            className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+            className={cn('inline', URI_LINK_CLASS)}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -2248,7 +2249,7 @@ function parseMarkdownContentLegacy(
           <a
             key={`link-${patternIdx}`}
             href={url}
-            className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+            className={cn('inline', URI_LINK_CLASS)}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -2283,7 +2284,7 @@ function parseMarkdownContentLegacy(
           <a
             key={`relay-${patternIdx}`}
             href={relayPath}
-            className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words cursor-pointer"
+            className={cn('inline cursor-pointer', URI_LINK_CLASS)}
             onClick={(e) => {
               e.stopPropagation()
               e.preventDefault()
@@ -2300,7 +2301,7 @@ function parseMarkdownContentLegacy(
           <a
             key={`link-${patternIdx}`}
             href={url}
-            className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+            className={cn('inline', URI_LINK_CLASS)}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -2347,7 +2348,7 @@ function parseMarkdownContentLegacy(
         <a
           key={`relay-${patternIdx}`}
           href={relayPath}
-          className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words cursor-pointer"
+          className={cn('inline cursor-pointer', URI_LINK_CLASS)}
           onClick={(e) => {
             e.stopPropagation()
             e.preventDefault()
@@ -2547,7 +2548,7 @@ function parseMarkdownContentLegacy(
             <a 
               href={`#footnote-${footnoteId}`} 
               id={`footnote-ref-${footnoteId}`}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline no-underline"
+              className={cn(URI_LINK_CLASS, 'no-underline')}
               onClick={(e) => {
                 e.preventDefault()
                 const footnoteElement = document.getElementById(`footnote-${footnoteId}`)
@@ -2585,7 +2586,7 @@ function parseMarkdownContentLegacy(
             <a
               href={`#citation-${citationIndex}`}
               id={`citation-ref-${citationIndex}`}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline no-underline"
+              className={cn(URI_LINK_CLASS, 'no-underline')}
               onClick={(e) => {
                 e.preventDefault()
                 const citationElement = document.getElementById(`citation-${citationIndex}`)
@@ -2615,7 +2616,7 @@ function parseMarkdownContentLegacy(
             <a
               href="#references-section"
               id={`citation-ref-${citationIndex}`}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline no-underline"
+              className={cn(URI_LINK_CLASS, 'no-underline')}
               onClick={(e) => {
                 e.preventDefault()
                 const refSection = document.getElementById('references-section')
@@ -2673,7 +2674,7 @@ function parseMarkdownContentLegacy(
         <a
           key={`hashtag-${patternIdx}`}
           href={`/notes?t=${tagLower}`}
-          className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline cursor-pointer whitespace-nowrap"
+          className={cn('inline cursor-pointer whitespace-nowrap', URI_LINK_CLASS)}
           onClick={(e) => {
             e.stopPropagation()
             e.preventDefault()
@@ -3041,7 +3042,7 @@ function parseMarkdownContentLegacy(
               {' '}
               <a 
                 href={`#footnote-ref-${id}`}
-                className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs"
+                className={cn('text-xs', URI_LINK_CLASS)}
                 onClick={(e) => {
                   e.preventDefault()
                   const refElement = document.getElementById(`footnote-ref-${id}`)
@@ -3082,7 +3083,7 @@ function parseMarkdownContentLegacy(
                 </span>
                 <a 
                   href={`#citation-ref-${citation.id.replace('citation-', '')}`}
-                  className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs ml-2 inline-flex items-center absolute right-0 top-0"
+                  className={cn('text-xs ml-2 inline-flex items-center absolute right-0 top-0', URI_LINK_CLASS)}
                   aria-label="Return to citation"
                   onClick={(e) => {
                     e.preventDefault()
@@ -3126,7 +3127,7 @@ function parseMarkdownContentLegacy(
                 </span>
                 <a 
                   href={`#citation-ref-${citation.id.replace('citation-', '')}`}
-                  className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs ml-2 inline-flex items-center absolute right-0 top-0"
+                  className={cn('text-xs ml-2 inline-flex items-center absolute right-0 top-0', URI_LINK_CLASS)}
                   aria-label="Return to citation"
                   onClick={(e) => {
                     e.preventDefault()
@@ -3415,8 +3416,9 @@ function parseMarkdownContentMarked(
           const cleaned = cleanUrl(href)
           const linkTip = markdownTokenTitle(token)
           const linkVisual = cn(
-            'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words',
-            linkTip && 'cursor-help underline decoration-dotted decoration-current/70 underline-offset-2'
+            URI_LINK_CLASS,
+            linkTip &&
+              'cursor-help no-underline hover:underline decoration-dotted decoration-current/70 underline-offset-2'
           )
           if (href.startsWith('payto://')) {
             const children = stripNestedAnchorsFromNodes(
@@ -3711,7 +3713,7 @@ function parseMarkdownContentMarked(
         <a
           key={`${key}-relay`}
           href={`/relays/${encodeURIComponent(paragraphText)}`}
-          className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+          className={cn('inline', URI_LINK_CLASS)}
           onClick={(e) => {
             e.preventDefault()
             navigateToRelay(paragraphText)
@@ -3742,7 +3744,7 @@ function parseMarkdownContentMarked(
                 <a
                   key={`${key}-line-relay-${lineIdx}`}
                   href={`/relays/${encodeURIComponent(line)}`}
-                  className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+                  className={cn('inline', URI_LINK_CLASS)}
                   onClick={(e) => {
                     e.preventDefault()
                     navigateToRelay(line)
@@ -3817,7 +3819,7 @@ function parseMarkdownContentMarked(
                         href={cleaned}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+                        className={cn('inline', URI_LINK_CLASS)}
                       >
                         {cleaned}
                       </a>
@@ -3990,7 +3992,7 @@ function parseMarkdownContentMarked(
                 href={cleaned}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+                className={cn('inline', URI_LINK_CLASS)}
               >
                 {cleaned}
               </a>
@@ -4672,7 +4674,7 @@ function parseMarkdownContentMarked(
               <span>{parseInlineMarkdown(text, `footnote-${id}`, footnotes, emojiInfos, navigateToHashtag, emojiLightbox)}</span>{' '}
               <a
                 href={`#footnote-ref-${id}`}
-                className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs"
+                className={cn('text-xs', URI_LINK_CLASS)}
                 onClick={(e) => {
                   e.preventDefault()
                   const refElement = document.getElementById(`footnote-ref-${id}`)
@@ -4789,7 +4791,7 @@ function parseInlineMarkdown(
             <PaytoLink
               key={`${tokenKey}-payto-link`}
               paytoUri={href}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+              className={URI_LINK_CLASS}
             >
               {children}
             </PaytoLink>
@@ -4799,7 +4801,7 @@ function parseInlineMarkdown(
             <a
               key={`${tokenKey}-link`}
               href={href}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+              className={URI_LINK_CLASS}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -5076,7 +5078,7 @@ function parseInlineMarkdownLegacy(
       const { text, url } = pattern.data
       if (url.startsWith('payto://')) {
         parts.push(
-          <PaytoLink key={`${keyPrefix}-payto-link-${i}`} paytoUri={url} className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words">
+          <PaytoLink key={`${keyPrefix}-payto-link-${i}`} paytoUri={url} className={URI_LINK_CLASS}>
             {parseInlineMarkdownLegacy(text, `${keyPrefix}-link-${i}`, _footnotes, emojiInfos, undefined, emojiLightbox)}
           </PaytoLink>
         )
@@ -5093,7 +5095,7 @@ function parseInlineMarkdownLegacy(
           <a
             key={`${keyPrefix}-link-${i}`}
             href={url}
-            className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+            className={URI_LINK_CLASS}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -5109,7 +5111,7 @@ function parseInlineMarkdownLegacy(
         <a
           key={`${keyPrefix}-hashtag-${i}`}
           href={`/notes?t=${tagLower}`}
-          className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+          className={URI_LINK_CLASS}
           onClick={(e) => {
             if (!navigateToHashtag) return
             e.stopPropagation()
@@ -5127,7 +5129,7 @@ function parseInlineMarkdownLegacy(
           <a
             href={`#footnote-${footnoteId}`}
             id={`footnote-ref-${footnoteId}`}
-            className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs"
+            className={cn('text-xs', URI_LINK_CLASS)}
             onClick={(e) => {
               e.preventDefault()
               const footnoteElement = document.getElementById(`footnote-${footnoteId}`)
@@ -5150,7 +5152,7 @@ function parseInlineMarkdownLegacy(
         <a
           key={`${keyPrefix}-relay-${i}`}
           href={relayPath}
-          className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+          className={URI_LINK_CLASS}
         >
           {url}
         </a>
@@ -5175,7 +5177,7 @@ function parseInlineMarkdownLegacy(
         <PaytoLink
           key={`${keyPrefix}-payto-${i}`}
           paytoUri={payto.raw}
-          className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+          className={URI_LINK_CLASS}
         />
       )
     } else if (pattern.type === 'emoji') {

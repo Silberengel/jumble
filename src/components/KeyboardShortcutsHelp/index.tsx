@@ -176,7 +176,7 @@ function ReadmeOverviewPanel({ className }: { className?: string }) {
     <div
       className={cn(
         'min-w-0 pt-1 text-sm prose prose-sm dark:prose-invert max-w-none',
-        '[&_a]:text-green-600 [&_a]:dark:text-green-400 hover:[&_a]:underline',
+        '[&_a]:text-link-uri [&_a]:no-underline hover:[&_a]:text-primary hover:[&_a]:underline',
         '[&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded',
         '[&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto',
         '[&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md',

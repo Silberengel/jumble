@@ -184,7 +184,7 @@ const PersonalListsSettingsPage = forwardRef(
               {t('Personal lists bookmarks spell hint')}{' '}
               <button
                 type="button"
-                className="text-primary underline-offset-4 hover:underline"
+                className="text-primary underline-offset-4 hover:text-foreground hover:underline transition-colors"
                 onClick={() => navigatePrimary('spells', { spell: 'bookmarks' })}
               >
                 {t('Bookmarks spell')}
@@ -197,7 +197,7 @@ const PersonalListsSettingsPage = forwardRef(
               {t('Personal lists interests spell hint')}{' '}
               <button
                 type="button"
-                className="text-primary underline-offset-4 hover:underline"
+                className="text-primary underline-offset-4 hover:text-foreground hover:underline transition-colors"
                 onClick={() => navigatePrimary('spells', { spell: 'interests' })}
               >
                 {t('Interests spell')}

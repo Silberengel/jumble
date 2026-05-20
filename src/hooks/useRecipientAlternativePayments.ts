@@ -2,6 +2,7 @@ import {
   getAlternativePaymentMethods,
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
+  recipientHasAnyPaymentOptions,
   sortMergedPaymentMethods,
   type PaymentMethodGroup
 } from '@/lib/merge-payment-methods'
@@ -17,6 +18,8 @@ export type RecipientZapPaymentData = {
   profile: TProfile | null
   profileEvent: Event | null
   alternativeGroups: PaymentMethodGroup[]
+  /** Any payto / Lightning target on kind 0 or 10133 — used to enable zap UI. */
+  canReceiveTip: boolean
 }
 
 /** Kind 10133 + profile payto targets except the Lightning address used for zapping. */
@@ -59,14 +62,19 @@ export function useRecipientZapPaymentData(
     }
   }, [recipientPubkey, enabled])
 
+  const canReceiveTip = useMemo(
+    () => recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent),
+    [paymentInfo, profile, profileEvent]
+  )
+
   const alternativeGroups = useMemo(() => {
     if (!recipientPubkey) return []
-    const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile))
+    const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile, profileEvent))
     const alts = getAlternativePaymentMethods(merged)
     return groupPaymentMethodsByDisplayType(alts)
-  }, [recipientPubkey, paymentInfo, profile])
+  }, [recipientPubkey, paymentInfo, profile, profileEvent])
 
-  return { paymentInfo, profile, profileEvent, alternativeGroups }
+  return { paymentInfo, profile, profileEvent, alternativeGroups, canReceiveTip }
 }
 
 /** @deprecated Use {@link useRecipientZapPaymentData} */

@@ -563,12 +563,12 @@ class ContentParserService {
     
     // Convert hashtag links to HTML with green styling
     processed = processed.replace(/hashtag:([^[]+)\[([^\]]+)\]/g, (_match, normalizedHashtag, displayText) => {
-      return `<a href="/notes?t=${normalizedHashtag}" class="hashtag-link text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline">${displayText}</a>`
+      return `<a href="/notes?t=${normalizedHashtag}" class="hashtag-link text-link-uri no-underline hover:text-primary hover:underline underline-offset-2 transition-colors">${displayText}</a>`
     })
     
     // Convert wikilink:dtag[display] format to HTML with data attributes
     processed = processed.replace(/wikilink:([^[]+)\[([^\]]+)\]/g, (_match, dTag, displayText) => {
-      return `<span class="wikilink cursor-pointer text-blue-600 hover:text-blue-800 hover:underline border-b border-dotted border-blue-300" data-dtag="${dTag}" data-display="${displayText}">${displayText}</span>`
+      return `<span class="wikilink cursor-pointer text-blue-600 hover:text-foreground hover:underline underline-offset-2 transition-colors border-b border-dotted border-blue-300" data-dtag="${dTag}" data-display="${displayText}">${displayText}</span>`
     })
     
     // Convert nostr: links to proper embedded components
@@ -583,7 +583,7 @@ class ContentParserService {
         return `<span class="user-handle" data-pubkey="${bech32Id}">@${displayText}</span>`
       } else {
         // Fallback to regular link
-        return `<a href="nostr:${bech32Id}" class="nostr-link text-blue-600 hover:text-blue-800 hover:underline" data-nostr-type="${nostrType}" data-bech32="${bech32Id}">${displayText}</a>`
+        return `<a href="nostr:${bech32Id}" class="nostr-link text-blue-600 hover:text-foreground hover:underline underline-offset-2 transition-colors" data-nostr-type="${nostrType}" data-bech32="${bech32Id}">${displayText}</a>`
       }
     })
     

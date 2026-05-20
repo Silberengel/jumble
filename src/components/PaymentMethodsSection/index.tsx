@@ -1,6 +1,7 @@
 import PaytoLink from '@/components/PaytoLink'
 import type { PaymentMethodGroup } from '@/lib/merge-payment-methods'
-import { isLightningPaytoType } from '@/lib/payto'
+import { PRIMARY_LINK_HOVER_CLASS } from '@/lib/link-styles'
+import { isZappableLightningPaytoType } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -33,10 +34,7 @@ export default function PaymentMethodsSection({
         {title ?? t('Payment Methods')}
       </div>
       {headerHelpText ? (
-        <p
-          className="mb-3 rounded-md border border-amber-500/45 bg-amber-500/15 px-3 py-2.5 text-sm font-semibold leading-snug text-foreground"
-          role="note"
-        >
+        <p className="mb-3 text-xs leading-snug text-muted-foreground" role="note">
           {headerHelpText}
         </p>
       ) : null}
@@ -62,13 +60,13 @@ export default function PaymentMethodsSection({
                         type={method.type}
                         authority={method.authority}
                         paytoUri={method.payto}
-                        pubkey={isLightningPaytoType(method.type) ? recipientPubkey : undefined}
+                        pubkey={isZappableLightningPaytoType(method.type) ? recipientPubkey : undefined}
                         onOpenZap={
-                          isLightningPaytoType(method.type) && onOpenZap
+                          isZappableLightningPaytoType(method.type) && onOpenZap
                             ? (_pk, authority) => onOpenZap(authority)
                             : undefined
                         }
-                        className="hover:underline break-all min-w-0 text-primary flex-1"
+                        className={cn(PRIMARY_LINK_HOVER_CLASS, 'break-all min-w-0 flex-1')}
                       >
                         {method.authority}
                       </PaytoLink>

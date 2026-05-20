@@ -86,12 +86,13 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import {
-  getAlternativePaymentMethods,
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
+  recipientHasAnyPaymentOptions,
   sortMergedPaymentMethods
 } from '@/lib/merge-payment-methods'
-import { isLightningPaytoType } from '@/lib/payto'
+import { PRIMARY_LINK_HOVER_CLASS } from '@/lib/link-styles'
+import { cn } from '@/lib/utils'
 
 export default function Profile({
   id,
@@ -139,8 +140,8 @@ export default function Profile({
   const { relaySets, favoriteRelays } = useFavoriteRelays()
 
   const mergedPaymentMethods = useMemo(
-    () => sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null)),
-    [paymentInfo, profile]
+    () => sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null, profileEvent)),
+    [paymentInfo, profile, profileEvent]
   )
 
   const paymentMethodsByType = useMemo(
@@ -148,11 +149,10 @@ export default function Profile({
     [mergedPaymentMethods]
   )
 
-  const hasTipDialog = useMemo(() => {
-    const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null))
-    if (merged.some((m) => isLightningPaytoType(m.type))) return true
-    return getAlternativePaymentMethods(merged).length > 0
-  }, [paymentInfo, profile])
+  const hasTipDialog = useMemo(
+    () => recipientHasAnyPaymentOptions(paymentInfo, profile ?? null, profileEvent),
+    [paymentInfo, profile, profileEvent]
+  )
 
   const syncAuthorReplaceablesFromCache = useCallback(async (pubkey: string) => {
     try {
@@ -563,13 +563,16 @@ export default function Profile({
             />
             {/* Display websites - show first one prominently, others below */}
             {website && (
-              <div className="flex gap-1 items-center text-primary mt-2 truncate select-text">
-                <Link size={14} className="shrink-0" />
+              <div className="group flex gap-1 items-center mt-2 truncate select-text">
+                <Link
+                  size={14}
+                  className={cn('shrink-0 text-primary transition-colors', 'group-hover:text-foreground')}
+                />
                 <a
                   href={website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:underline truncate flex-1 max-w-fit w-0"
+                  className={cn(PRIMARY_LINK_HOVER_CLASS, 'truncate flex-1 max-w-fit w-0')}
                 >
                   {website}
                 </a>
@@ -578,13 +581,22 @@ export default function Profile({
             {websiteList && websiteList.length > 1 && (
               <div className="flex flex-col gap-1 mt-1">
                 {websiteList.slice(1).map((url: string, idx: number) => (
-                  <div key={idx} className="flex gap-1 items-center text-primary truncate select-text">
-                    <Link size={12} className="shrink-0" />
+                  <div
+                    key={idx}
+                    className="group flex gap-1 items-center truncate select-text"
+                  >
+                    <Link
+                      size={12}
+                      className={cn(
+                        'shrink-0 text-primary transition-colors',
+                        'group-hover:text-foreground'
+                      )}
+                    />
                     <a
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline truncate text-sm"
+                      className={cn(PRIMARY_LINK_HOVER_CLASS, 'truncate text-sm')}
                     >
                       {url}
                     </a>

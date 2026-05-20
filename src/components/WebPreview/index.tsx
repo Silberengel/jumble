@@ -616,7 +616,7 @@ export default function WebPreview({ url, className }: { url: string; className?
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-muted-foreground truncate block hover:underline break-all"
+              className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
             >
               {truncatedUrl}
             </a>
@@ -685,7 +685,7 @@ export default function WebPreview({ url, className }: { url: string; className?
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-muted-foreground truncate block hover:underline break-all"
+              className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
             >
               {truncatedUrl}
             </a>
@@ -738,7 +738,7 @@ export default function WebPreview({ url, className }: { url: string; className?
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-muted-foreground break-all line-clamp-2 block hover:underline"
+            className="text-xs text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
           >
             {cleanedUrl}
           </a>
@@ -780,7 +780,7 @@ export default function WebPreview({ url, className }: { url: string; className?
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-muted-foreground truncate block hover:underline break-all"
+            className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
           >
             {url}
           </a>
@@ -832,7 +832,7 @@ export default function WebPreview({ url, className }: { url: string; className?
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-xs text-muted-foreground truncate block hover:underline break-all"
+          className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
         >
           {url}
         </a>

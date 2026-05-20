@@ -51,7 +51,7 @@ export function CalendarEventNip52StructuredMeta({
     if (!hasLocations && !summaryTrim && !hasGeo) return null
 
     const linkClass =
-      'inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline'
+      'inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:text-foreground hover:underline transition-colors'
 
     return (
       <div className="min-w-0 space-y-2.5 border-t border-border/50 pt-2">
@@ -183,7 +183,7 @@ export function CalendarEventNip52StructuredMeta({
                     href={r.value}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex min-w-0 max-w-full items-start gap-1 break-all text-xs font-medium text-primary underline-offset-2 hover:underline"
+                    className="inline-flex min-w-0 max-w-full items-start gap-1 break-all text-xs font-medium text-primary underline-offset-2 hover:text-foreground hover:underline transition-colors"
                   >
                     <Link2 className="mt-0.5 size-3 shrink-0 opacity-80" aria-hidden />
                     <span>{r.value}</span>

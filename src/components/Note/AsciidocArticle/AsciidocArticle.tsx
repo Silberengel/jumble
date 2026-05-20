@@ -27,6 +27,7 @@ import { EmbeddedNote, EmbeddedMention } from '@/components/Embedded'
 import EmbeddedCitation from '@/components/EmbeddedCitation'
 import { parsePaytoUri } from '@/lib/payto'
 import PaytoLink from '@/components/PaytoLink'
+import { URI_LINK_CLASS, URI_LINK_INLINE_HTML_CLASS } from '@/lib/link-styles'
 import { DeletedEventProvider } from '@/providers/DeletedEventProvider'
 import { ReplyProvider } from '@/providers/ReplyProvider'
 import Wikilink from '@/components/UniversalContent/Wikilink'
@@ -923,7 +924,7 @@ export default function AsciidocArticle({
           // Check if the href is a relay URL
           else if (isWebsocketUrl(href)) {
             const relayPath = `/relays/${encodeURIComponent(href)}`
-            replacement = `<a href="${relayPath}" class="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words cursor-pointer" data-relay-url="${href}" data-original-text="${linkText.replace(/"/g, '&quot;')}">${linkText}</a>`
+            replacement = `<a href="${relayPath}" class="${URI_LINK_INLINE_HTML_CLASS} cursor-pointer" data-relay-url="${href}" data-original-text="${linkText.replace(/"/g, '&quot;')}">${linkText}</a>`
           }
           
           htmlString = htmlString.substring(0, linkMatches[i].index) + replacement + htmlString.substring(linkMatches[i].index + match.length)
@@ -946,7 +947,7 @@ export default function AsciidocArticle({
           // Only replace if not already in a tag (basic check)
           if (!match.includes('<') && !match.includes('>') && isWebsocketUrl(match)) {
             const relayPath = `/relays/${encodeURIComponent(match)}`
-            return `<a href="${relayPath}" class="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words cursor-pointer" data-relay-url="${match}" data-original-text="${match.replace(/"/g, '&quot;')}">${match}</a>`
+            return `<a href="${relayPath}" class="${URI_LINK_INLINE_HTML_CLASS} cursor-pointer" data-relay-url="${match}" data-original-text="${match.replace(/"/g, '&quot;')}">${match}</a>`
           }
           return match
         })
@@ -961,7 +962,7 @@ export default function AsciidocArticle({
             if (isImage(rawUrl) || isVideo(rawUrl) || isAudio(rawUrl)) return rawUrl
             const cleanedUrl = cleanUrl(rawUrl)
             if (!cleanedUrl) return rawUrl
-            return `<a href="${cleanedUrl}" class="inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words" target="_blank" rel="noopener noreferrer">${rawUrl}</a>`
+            return `<a href="${cleanedUrl}" class="${URI_LINK_INLINE_HTML_CLASS}" target="_blank" rel="noopener noreferrer">${rawUrl}</a>`
           })
           return `>${replacedText}<`
         })
@@ -1102,7 +1103,7 @@ export default function AsciidocArticle({
       parent.replaceChild(container, element)
       try {
         const root = createRoot(container)
-        root.render(<PaytoLink paytoUri={decoded} className="text-primary hover:underline break-words" />)
+        root.render(<PaytoLink paytoUri={decoded} />)
         reactRootsRef.current.set(container, root)
       } catch (error) {
         logger.error('Failed to render payto link', { paytoUri: decoded, error })
@@ -1198,7 +1199,7 @@ export default function AsciidocArticle({
         const link = document.createElement('a')
         link.href = `#${getCitationAnchorId(citation.index)}`
         link.id = getCitationRefId(citation.index)
-        link.className = 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline no-underline'
+        link.className = `${URI_LINK_CLASS} no-underline`
         link.textContent = `[${citationNumber}]`
         link.addEventListener('click', (e) => {
           e.preventDefault()
@@ -1218,7 +1219,7 @@ export default function AsciidocArticle({
         const link = document.createElement('a')
         link.href = `#${referencesSectionId}`
         link.id = getCitationRefId(citation.index)
-        link.className = 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline no-underline'
+        link.className = `${URI_LINK_CLASS} no-underline`
         link.textContent = `[${citationNumber}]`
         link.addEventListener('click', (e) => {
           e.preventDefault()
@@ -1332,7 +1333,7 @@ export default function AsciidocArticle({
         
         const backLink = document.createElement('a')
         backLink.href = `#${getCitationRefId(citation.index)}`
-        backLink.className = 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs ml-2 inline-flex items-center'
+        backLink.className = `text-xs ml-2 inline-flex items-center ${URI_LINK_CLASS}`
         backLink.setAttribute('aria-label', 'Return to citation')
         // Use hyperlink icon instead of emoji
         backLink.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>'
@@ -1430,7 +1431,7 @@ export default function AsciidocArticle({
         
         const backLink = document.createElement('a')
         backLink.href = `#${getCitationRefId(citation.index)}`
-        backLink.className = 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline text-xs ml-2 inline-flex items-center'
+        backLink.className = `text-xs ml-2 inline-flex items-center ${URI_LINK_CLASS}`
         backLink.setAttribute('aria-label', 'Return to citation')
         backLink.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>'
         backLink.addEventListener('click', (e) => {
@@ -1697,7 +1698,7 @@ export default function AsciidocArticle({
           // Create hashtag link
           const link = document.createElement('a')
           link.href = `/notes?t=${match[1].toLowerCase()}`
-          link.className = 'inline text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline cursor-pointer'
+          link.className = `${URI_LINK_INLINE_HTML_CLASS} cursor-pointer`
           link.textContent = `#${match[1]}`
           link.addEventListener('click', (e) => {
             e.stopPropagation()

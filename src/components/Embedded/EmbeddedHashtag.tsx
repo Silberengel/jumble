@@ -13,7 +13,7 @@ export function EmbeddedHashtag({ hashtag }: { hashtag: string }) {
   
   return (
     <button
-      className="text-primary hover:underline cursor-pointer"
+      className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors cursor-pointer"
       onClick={handleClick}
     >
       {hashtag}

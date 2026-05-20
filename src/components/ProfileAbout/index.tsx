@@ -8,6 +8,8 @@ import {
 } from '@/lib/content-parser'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import PaytoLink from '@/components/PaytoLink'
+import { URI_LINK_CLASS } from '@/lib/link-styles'
+import { cn } from '@/lib/utils'
 import { marked } from 'marked'
 import {
   EmbeddedHashtag,
@@ -53,11 +55,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
         }
         if (node.type === 'payto') {
           return (
-            <PaytoLink
-              key={`${keyPrefix}-payto-${index}`}
-              paytoUri={node.data}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
-            />
+            <PaytoLink key={`${keyPrefix}-payto-${index}`} paytoUri={node.data} />
           )
         }
         if (node.type === 'hashtag') {
@@ -120,11 +118,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
         const label = String(token.text ?? href)
         if (href.startsWith('payto://')) {
           out.push(
-            <PaytoLink
-              key={`${key}-payto-link`}
-              paytoUri={href}
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
-            >
+            <PaytoLink key={`${key}-payto-link`} paytoUri={href}>
               {label}
             </PaytoLink>
           )
@@ -135,7 +129,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline break-words"
+              className={URI_LINK_CLASS}
             >
               {label}
             </a>

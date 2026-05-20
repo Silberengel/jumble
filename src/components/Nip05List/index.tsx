@@ -102,7 +102,7 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
             onClick={(e) => e.stopPropagation()}
           >
             {nip05Name !== '_' ? (
-              <span className="text-sm text-muted-foreground truncate">@{nip05Name}</span>
+              <span className="text-sm text-muted-foreground truncate shrink-0">{nip05Name}@</span>
             ) : null}
             {isVerified ? (
               <Favicon
@@ -115,7 +115,7 @@ export default function Nip05List({ nip05List, pubkey }: { nip05List: string[]; 
             )}
             <SecondaryPageLink
               to={toNoteList({ domain: nip05Domain })}
-              className={`hover:underline truncate text-sm ${isVerified ? 'text-primary' : 'text-muted-foreground'}`}
+              className={`truncate text-sm hover:text-foreground hover:underline underline-offset-2 transition-colors ${isVerified ? 'text-primary' : 'text-muted-foreground'}`}
             >
               {nip05Domain}
             </SecondaryPageLink>

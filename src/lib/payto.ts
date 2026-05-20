@@ -16,6 +16,7 @@ export {
   getPaytoTypeInfo,
   isKnownPaytoType,
   isLightningPaytoType,
+  isZappableLightningPaytoType,
   isPaytoEditorCustomType,
   paytoEditorSelectTypes,
   PAYTO_EDITOR_OTHER_OPTION,
