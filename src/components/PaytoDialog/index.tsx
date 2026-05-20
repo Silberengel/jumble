@@ -1,3 +1,4 @@
+import TipPublicMessagePrompt from '@/components/ZapDialog/TipPublicMessagePrompt'
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Copy, ExternalLink, Wallet, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   filterPaytoPaymentOpenHandlersForDevice,
@@ -15,6 +17,7 @@ import {
   getPaytoTypeInfo
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
+import { useNostr } from '@/providers/NostrProvider'
 import LightningInvoiceSection from './LightningInvoiceSection'
 
 export default function PaytoDialog({
@@ -22,15 +25,21 @@ export default function PaytoDialog({
   onOpenChange,
   type,
   authority,
-  paytoUri
+  paytoUri,
+  recipientPubkey
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   type: string
   authority: string
   paytoUri: string
+  /** When set, closing the dialog offers a kind-24 tip notice to this pubkey. */
+  recipientPubkey?: string
 }) {
   const { t } = useTranslation()
+  const { pubkey: selfPubkey } = useNostr()
+  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
+  const skipTipNoticeOnCloseRef = useRef(false)
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
@@ -41,11 +50,29 @@ export default function PaytoDialog({
   const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
     toast.success(copyLabel ? t('Copied {{label}} address', { label: copyLabel }) : t('Copied to clipboard'))
-    onOpenChange(false)
+    handleDialogOpenChange(false)
+  }
+
+  const maybeOfferTipNoticeOnClose = () => {
+    if (!recipientPubkey) return
+    if (skipTipNoticeOnCloseRef.current) return
+    if (selfPubkey && recipientPubkey === selfPubkey) return
+    setTipNoticeOpen(true)
+  }
+
+  const handleDialogOpenChange = (next: boolean) => {
+    if (!next) {
+      maybeOfferTipNoticeOnClose()
+      skipTipNoticeOnCloseRef.current = false
+    } else {
+      skipTipNoticeOnCloseRef.current = false
+    }
+    onOpenChange(next)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent
         className={cn(
           'left-[50%] top-[50%] flex w-[calc(100vw-1.25rem)] max-w-md translate-x-[-50%] translate-y-[-50%] flex-col gap-0',
@@ -133,5 +160,13 @@ export default function PaytoDialog({
         </div>
       </DialogContent>
     </Dialog>
+    {recipientPubkey ? (
+      <TipPublicMessagePrompt
+        open={tipNoticeOpen}
+        onOpenChange={setTipNoticeOpen}
+        recipientPubkey={recipientPubkey}
+      />
+    ) : null}
+    </>
   )
 }

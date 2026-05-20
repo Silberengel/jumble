@@ -119,7 +119,6 @@ export default function ZapDialog({
       : t('Send a payment to this user')
 
   const maybeOfferTipNoticeOnClose = () => {
-    if (paymentsOnly) return
     if (skipTipNoticeOnCloseRef.current) return
     if (selfPubkey && pubkey === selfPubkey) return
     setTipNoticeOpen(true)
@@ -198,13 +197,11 @@ export default function ZapDialog({
             }}
           />
         </DrawerContent>
-        {!paymentsOnly && (
-          <TipPublicMessagePrompt
-            open={tipNoticeOpen}
-            onOpenChange={setTipNoticeOpen}
-            recipientPubkey={pubkey}
-          />
-        )}
+        <TipPublicMessagePrompt
+          open={tipNoticeOpen}
+          onOpenChange={setTipNoticeOpen}
+          recipientPubkey={pubkey}
+        />
       </Drawer>
     )
   }
@@ -237,13 +234,11 @@ export default function ZapDialog({
         />
       </DialogContent>
     </Dialog>
-    {!paymentsOnly && (
-      <TipPublicMessagePrompt
-        open={tipNoticeOpen}
-        onOpenChange={setTipNoticeOpen}
-        recipientPubkey={pubkey}
-      />
-    )}
+    <TipPublicMessagePrompt
+      open={tipNoticeOpen}
+      onOpenChange={setTipNoticeOpen}
+      recipientPubkey={pubkey}
+    />
     </>
   )
 }

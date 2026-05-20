@@ -425,6 +425,7 @@ export const DOCUMENT_RELAY_URLS = [
  */
 export const READ_ONLY_RELAY_URLS = [
   'wss://aggr.nostr.land',
+  'wss://nostr.land',
   'wss://relay.nostr.watch',
   'wss://relaypag.es',
   'wss://relay.noswhere.com',

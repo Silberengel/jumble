@@ -66,4 +66,24 @@ describe('applyFeedRelayPolicy', () => {
       })
     )
   })
+
+  it('excludes profile/index mirrors for kind 1 writes', () => {
+    const result = applyFeedRelayPolicy(
+      [
+        {
+          source: 'viewer-write',
+          urls: ['wss://profiles.nostrver.se/', 'wss://relay.example/']
+        }
+      ],
+      { operation: 'write', eventKind: 1, applySocialKindBlockedFilter: false }
+    )
+
+    expect(result.urls).toEqual(['wss://relay.example/'])
+    expect(result.dropped).toContainEqual(
+      expect.objectContaining({
+        normalizedUrl: 'wss://profiles.nostrver.se/',
+        reason: 'profile-index-for-write'
+      })
+    )
+  })
 })

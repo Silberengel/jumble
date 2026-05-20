@@ -3,6 +3,7 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
+import { relayAllowsPublishKind } from '@/lib/relay-publish-filter'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
 import { getViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 import {
@@ -19,6 +20,7 @@ export type FeedRelayDropReason =
   | 'duplicate'
   | 'user-blocked'
   | 'read-only-for-write'
+  | 'profile-index-for-write'
   | 'social-kind-blocked'
   | 'extended-tag-blocked'
   | 'third-party-local'
@@ -193,6 +195,14 @@ export function applyFeedRelayPolicy(
         isReadOnlyRelay(key)
       ) {
         addDrop(dropped, normalized, layer.source, 'read-only-for-write')
+        continue
+      }
+      if (
+        (context.operation === 'write' || context.operation === 'publish-picker') &&
+        context.eventKind !== undefined &&
+        !relayAllowsPublishKind(normalized, context.eventKind)
+      ) {
+        addDrop(dropped, normalized, layer.source, 'profile-index-for-write')
         continue
       }
       if (

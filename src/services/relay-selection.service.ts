@@ -1,5 +1,6 @@
 import { Event, kinds } from 'nostr-tools'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT, READ_ONLY_RELAY_URLS } from '@/constants'
+import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
+import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
@@ -176,7 +177,7 @@ class RelaySelectionService {
     }
 
     const deduplicatedRelays = order.map((o) => o.url)
-    const filtered = this.filterReadOnlyRelays(
+    const filtered = this.filterPublishPickerRelays(
       this.filterBlockedRelays(deduplicatedRelays, context.blockedRelays)
     )
     const relayTypes: Record<string, RelaySourceType> = {}
@@ -186,7 +187,7 @@ class RelaySelectionService {
     return {
       relays: filtered,
       relayTypes,
-      randomRelayUrls: this.filterReadOnlyRelays(randomRelayUrls)
+      randomRelayUrls: this.filterPublishPickerRelays(randomRelayUrls)
     }
   }
 
@@ -438,7 +439,7 @@ class RelaySelectionService {
       selectedRelays = Array.from(new Set(selectedRelays))
     }
 
-    return this.filterReadOnlyRelays(this.filterBlockedRelays(selectedRelays, context.blockedRelays))
+    return this.filterPublishPickerRelays(this.filterBlockedRelays(selectedRelays, context.blockedRelays))
   }
 
   /**
@@ -808,17 +809,11 @@ class RelaySelectionService {
   }
 
   /**
-   * Strip relays that never accept writes ({@link READ_ONLY_RELAY_URLS}) so they do not appear in the publish picker.
-   * Same set as `ClientService` uses when filtering publish targets.
+   * Strip read-only aggregators and profile/index mirrors from the post/reaction publish picker
+   * (notes and reactions are not kind 0 / NIP-65 list traffic).
    */
-  private filterReadOnlyRelays(relays: string[]): string[] {
-    const readOnlySet = new Set(
-      READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
-    )
-    return relays.filter((relay) => {
-      const n = normalizeAnyRelayUrl(relay) || relay
-      return !readOnlySet.has(n)
-    })
+  private filterPublishPickerRelays(relays: string[]): string[] {
+    return filterRelaysForEventPublish(relays, kinds.ShortTextNote)
   }
 
   /**

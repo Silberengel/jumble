@@ -129,6 +129,7 @@ import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/
 import { collectNip05ValuesFromKind0 } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
+import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import {
   buildPrioritizedWriteRelayUrls,
   dedupeNormalizeRelayUrlsOrdered,
@@ -710,12 +711,10 @@ class ClientService extends EventTarget {
    * Normalize, dedupe, then cap at {@link MAX_PUBLISH_RELAYS}.
    */
   private filterPublishingRelays(relays: string[], event: NEvent): string[] {
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u))
     const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
     return dedupeNormalizeRelayUrlsOrdered(
-      relays.filter((url) => {
+      filterRelaysForEventPublish(relays, event.kind).filter((url) => {
         const n = normalizeAnyRelayUrl(url) || url
-        if (readOnlySet.has(n)) return false
         if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
         return true
       })
@@ -1589,11 +1588,9 @@ class ClientService extends EventTarget {
           : relayUrls
     }
 
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u))
     const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-    let filtered = mergedRelayUrls.filter((url) => {
+    let filtered = filterRelaysForEventPublish(mergedRelayUrls, event.kind).filter((url) => {
       const n = normalizeAnyRelayUrl(url) || url
-      if (readOnlySet.has(n)) return false
       if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
       return true
     })

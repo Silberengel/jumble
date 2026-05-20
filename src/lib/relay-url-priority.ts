@@ -21,12 +21,14 @@ export function dedupeNormalizeRelayUrlsOrdered(urls: string[]): string[] {
   return out
 }
 
+import { filterContextAuthorReadRelaysForPublish as stripNonInboxPublishHints } from '@/lib/relay-publish-filter'
+
 /**
- * NIP-65 **read** (inbox) hints from reply/mention context must never add LAN, loopback, or Tor-only
- * endpoints to the publish list — those are the author's private reachability, not yours.
+ * NIP-65 **read** (inbox) hints from reply/mention context must never add LAN, loopback, Tor-only,
+ * read-only aggregators, or profile/index mirrors to the publish list.
  */
 export function filterContextAuthorReadRelaysForPublish(urls: string[]): string[] {
-  return dedupeNormalizeRelayUrlsOrdered(urls).filter((u) => {
+  const reachable = dedupeNormalizeRelayUrlsOrdered(urls).filter((u) => {
     const n = normalizeAnyRelayUrl(u) || u.trim()
     if (!n) return false
     if (isLocalNetworkUrl(u) || isLocalNetworkUrl(n)) return false
@@ -38,6 +40,7 @@ export function filterContextAuthorReadRelaysForPublish(urls: string[]): string[
     }
     return true
   })
+  return dedupeNormalizeRelayUrlsOrdered(stripNonInboxPublishHints(reachable))
 }
 
 /** LAN / local host relays first, then the rest; deduped. */
@@ -141,7 +144,7 @@ function buildWriteRelayPriorityLayers(opts: {
   authorReadRelays?: string[]
   favoriteRelays?: string[]
   extraRelays?: string[]
-  /** When false, omit global FAST_WRITE and FAST_READ tails. Default true. */
+  /** When false, omit global FAST_WRITE tail. Default true. */
   includeGlobalFastWriteReadTails?: boolean
 }): string[][] {
   const tier1 = relayUrlsLocalsFirst(opts.userWriteRelays)
@@ -149,15 +152,15 @@ function buildWriteRelayPriorityLayers(opts: {
   const tier3 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
   const tier4 = dedupeNormalizeRelayUrlsOrdered(opts.extraRelays ?? [])
   if (opts.includeGlobalFastWriteReadTails === false) {
-    return [tier1, tier2, tier3, tier4, [], []]
+    return [tier1, tier2, tier3, tier4, []]
   }
   const tier5 = normFastWrite()
-  const tier6 = normFastRead()
-  return [tier1, tier2, tier3, tier4, tier5, tier6]
+  return [tier1, tier2, tier3, tier4, tier5]
 }
 
 /**
- * Publish / write: user outboxes (locals first) → target author inboxes → favorites → extras → FAST_WRITE → FAST_READ.
+ * Publish / write: user outboxes (locals first) → target author inboxes → favorites → extras → FAST_WRITE.
+ * Read aggregators ({@link FAST_READ_RELAY_URLS}) are intentionally omitted — they reject social writes.
  */
 export function buildPrioritizedWriteRelayUrls(opts: {
   userWriteRelays: string[]
@@ -168,7 +171,7 @@ export function buildPrioritizedWriteRelayUrls(opts: {
   maxRelays?: number
   /** When true, strip {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} before capping (social kinds). */
   applySocialKindBlockedFilter?: boolean
-  /** Default true: append FAST_WRITE then FAST_READ tiers. */
+  /** Default true: append FAST_WRITE tier. */
   includeGlobalFastWriteReadTails?: boolean
 }): string[] {
   const max = opts.maxRelays ?? MAX_PUBLISH_RELAYS
@@ -184,8 +187,7 @@ export function buildPrioritizedWriteRelayUrls(opts: {
     { source: 'author-read', urls: layers[1] ?? [] },
     { source: 'favorites', urls: layers[2] ?? [] },
     { source: 'explicit', urls: layers[3] ?? [] },
-    { source: 'fast-write', urls: layers[4] ?? [] },
-    { source: 'fast-read', urls: layers[5] ?? [] }
+    { source: 'fast-write', urls: layers[4] ?? [] }
   ], {
     operation: 'write',
     blockedRelays: opts.blockedRelays,

@@ -151,6 +151,7 @@ export default function PaytoLink({
           type={type}
           authority={authority}
           paytoUri={raw}
+          recipientPubkey={pubkey}
         />
       )}
     </>

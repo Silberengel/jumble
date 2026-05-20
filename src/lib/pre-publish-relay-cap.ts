@@ -1,9 +1,6 @@
-import {
-  isSocialKindBlockedKind,
-  MAX_PUBLISH_RELAYS,
-  READ_ONLY_RELAY_URLS,
-  SOCIAL_KIND_BLOCKED_RELAY_URLS
-} from '@/constants'
+import { isSocialKindBlockedKind, MAX_PUBLISH_RELAYS, SOCIAL_KIND_BLOCKED_RELAY_URLS } from '@/constants'
+import { kinds } from 'nostr-tools'
+import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
 import type { NostrEvent } from 'nostr-tools'
@@ -49,12 +46,11 @@ export function computePrePublishRelayCapPreview({
     .map((u) => normalizeHttpRelayUrl(u) || u)
     .filter((u): u is string => !!u)
   let outbox = dedupeNormalizeRelayUrlsOrdered([...httpOut, ...wsOut])
-  const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u))
+  const previewKind = kinds.ShortTextNote
   const socialBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
   outbox = dedupeNormalizeRelayUrlsOrdered(
-    outbox.filter((url) => {
+    filterRelaysForEventPublish(outbox, previewKind).filter((url) => {
       const n = normalizeAnyRelayUrl(url) || url
-      if (readOnlySet.has(n)) return false
       if (applySocialOutboxFilter && socialBlockedSet.has(n)) return false
       return true
     })
