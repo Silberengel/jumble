@@ -18,12 +18,11 @@ import {
   type ResolvedProfileBadge
 } from '@/lib/nip58-profile-badges'
 import { isDirectProfileWallComment } from '@/lib/profile-wall-comments'
-import { normalizeHexPubkey } from '@/lib/pubkey'
+import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
-import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import indexedDb from '@/services/indexed-db.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds, type Filter } from 'nostr-tools'
@@ -111,6 +110,8 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
 
   useEffect(() => {
     let cancelled = false
+    let idleHandle: number | undefined
+    let idleTimeout: ReturnType<typeof setTimeout> | undefined
 
     const run = async () => {
       const mem = wallCacheByKey.get(cacheKey)
@@ -123,15 +124,14 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
 
       setIsLoading(true)
 
-      let pkNorm = pubkey
-      try {
-        pkNorm = normalizeHexPubkey(pubkey)
-      } catch {
-        /* use raw */
+      const pkNorm = userIdToPubkey(pubkey) || pubkey
+      if (!isValidPubkey(pkNorm)) {
+        if (!cancelled) setIsLoading(false)
+        return
       }
 
       const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
-      const authorRl = await client.fetchRelayList(pubkey).catch(() => emptyAuthor)
+      const authorRl = await client.peekRelayListFromStorage(pubkey).catch(() => emptyAuthor)
       if (cancelled) return
 
       const relayUrls = buildProfilePageReadRelayUrls(
@@ -212,9 +212,23 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       setIsLoading(false)
     }
 
-    void run()
+    const scheduleRun = () => {
+      if (typeof requestIdleCallback === 'function') {
+        idleHandle = requestIdleCallback(() => void run(), { timeout: 4_000 })
+      } else {
+        idleTimeout = setTimeout(() => void run(), 400)
+      }
+    }
+    scheduleRun()
+
     return () => {
       cancelled = true
+      if (idleHandle !== undefined && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleHandle)
+      }
+      if (idleTimeout !== undefined) {
+        clearTimeout(idleTimeout)
+      }
     }
   }, [pubkey, profileEventId, cacheKey, refreshToken, relayListsKey])
 
@@ -223,23 +237,6 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     setIsLoading(true)
     setRefreshToken((t) => t + 1)
   }, [cacheKey])
-
-  useEffect(() => {
-    const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
-      const pk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
-      if (!pk || pk !== normalizeHexPubkey(pubkey)) return
-      refresh()
-    }
-    window.addEventListener(
-      ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
-      onAuthorReplaceablesRefreshed
-    )
-    return () =>
-      window.removeEventListener(
-        ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
-        onAuthorReplaceablesRefreshed
-      )
-  }, [pubkey, refresh])
 
   return { badges, comments, isLoading, refresh }
 }

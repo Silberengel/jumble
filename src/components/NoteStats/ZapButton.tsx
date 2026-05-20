@@ -1,3 +1,4 @@
+import { ZAP_SENDING_ENABLED } from '@/constants'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import {
@@ -33,7 +34,161 @@ type ZapButtonProps = {
   noteStats?: Partial<TNoteStats>
 }
 
+function formatAmount(amount: number) {
+  if (amount < 1000) return amount
+  if (amount < 1000000) return `${Math.round(amount / 100) / 10}k`
+  return `${Math.round(amount / 100000) / 10}M`
+}
+
+/** Zap tally + payment-methods dialog when {@link ZAP_SENDING_ENABLED} is false. */
+function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapButtonProps) {
+  const { t } = useTranslation()
+  const { pubkey } = useNostr()
+  const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
+  const statsLoaded = noteStats?.updatedAt != null
+  const { zapAmount, hasZapped } = useMemo(() => {
+    return {
+      zapAmount: noteStats?.zaps?.reduce((acc, zap) => acc + zap.amount, 0),
+      hasZapped: pubkey ? noteStats?.zaps?.some((zap) => zap.pubkey === pubkey) : false
+    }
+  }, [noteStats, pubkey])
+  const showZapAmount = !hideCount && (statsLoaded || (zapAmount ?? 0) > 0)
+  const authorPubkey = event.pubkey.toLowerCase()
+  const isSelf = !!pubkey && pubkey.toLowerCase() === authorPubkey
+  const feedProfiles = useNoteFeedProfileContext()
+  const feedProfile = feedProfiles?.profiles.get(authorPubkey)
+  const feedProfileRef = useRef(feedProfile)
+  feedProfileRef.current = feedProfile
+
+  const [disable, setDisable] = useState(true)
+  const [tipPaymentData, setTipPaymentData] = useState<RecipientZapPaymentData | null>(null)
+
+  const applyTipAvailability = useCallback(
+    (
+      profile: TProfile | null,
+      profileEvent: Event | null | undefined,
+      paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+    ) => {
+      const canTip = recipientHasAnyPaymentOptions(
+        paymentInfo,
+        profile,
+        profileEvent ?? null
+      )
+      setDisable(!canTip)
+      setTipPaymentData((prev) =>
+        mergeRecipientZapPaymentData(
+          buildRecipientZapPaymentData(paymentInfo, profile, profileEvent ?? null),
+          prev
+        )
+      )
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (isSelf) return
+    if (!feedProfile || feedProfile.batchPlaceholder) return
+    applyTipAvailability(feedProfile, null, null)
+  }, [isSelf, feedProfile, feedProfiles?.version, applyTipAvailability])
+
+  useEffect(() => {
+    if (isSelf) {
+      setDisable(true)
+      setTipPaymentData(null)
+      return
+    }
+
+    setDisable(true)
+    setTipPaymentData(null)
+    let cancelled = false
+
+    void Promise.allSettled([
+      replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
+      client.fetchPaymentInfoEvent(authorPubkey),
+      replaceableEventService.getProfileFromIndexedDB(authorPubkey)
+    ]).then(([profileRes, paymentRes, idbRes]) => {
+      if (cancelled) return
+
+      const profileEvent =
+        profileRes.status === 'fulfilled' ? profileRes.value : undefined
+      const paymentEvent =
+        paymentRes.status === 'fulfilled' ? paymentRes.value : undefined
+      const idbProfile = idbRes.status === 'fulfilled' ? idbRes.value : undefined
+
+      const cachedFeed = feedProfileRef.current
+      const profile =
+        (profileEvent ? getProfileFromEvent(profileEvent) : null) ??
+        (cachedFeed && !cachedFeed.batchPlaceholder ? cachedFeed : null) ??
+        idbProfile ??
+        null
+      const paymentInfo = paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
+
+      applyTipAvailability(profile, profileEvent ?? null, paymentInfo)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authorPubkey, isSelf, applyTipAvailability])
+
+  const handleOpenPaymentMethods = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (disable) return
+    setOpenPaymentDialog(true)
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={cn(
+          'group flex items-center gap-1 select-none px-3 h-full',
+          disable ? 'cursor-not-allowed' : 'cursor-pointer'
+        )}
+        title={disable ? t('Zaps') : t('Payment methods')}
+        aria-label={disable ? t('Zaps') : t('Payment methods')}
+        disabled={disable}
+        onClick={handleOpenPaymentMethods}
+      >
+        <Zap
+          className={cn(
+            hasZapped && 'fill-yellow-400',
+            disable
+              ? 'text-muted-foreground/40'
+              : cn(
+                  'text-muted-foreground group-hover:text-yellow-400',
+                  hasZapped && 'text-yellow-400'
+                )
+          )}
+        />
+        {showZapAmount && (
+          <div
+            className={cn(
+              'text-sm tabular-nums',
+              hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+            )}
+          >
+            {formatAmount(zapAmount ?? 0)}
+          </div>
+        )}
+      </button>
+      <ZapDialog
+        open={openPaymentDialog}
+        setOpen={setOpenPaymentDialog}
+        pubkey={event.pubkey}
+        event={event}
+        prefetchedPayment={tipPaymentData}
+      />
+    </>
+  )
+}
+
 export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapButtonProps) {
+  if (!ZAP_SENDING_ENABLED) {
+    return <ZapPaymentMethodsButton event={event} hideCount={hideCount} noteStats={noteStats} />
+  }
+
   const { t } = useTranslation()
   const { checkLogin, pubkey } = useNostr()
   const { defaultZapSats, defaultZapComment, quickZap, includePublicZapReceipt } = useZap()
@@ -304,10 +459,4 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
 export default function ZapButton({ event, hideCount = false }: ZapButtonProps) {
   const noteStats = useNoteStatsById(event.id)
   return <ZapButtonWithStats event={event} hideCount={hideCount} noteStats={noteStats} />
-}
-
-function formatAmount(amount: number) {
-  if (amount < 1000) return amount
-  if (amount < 1000000) return `${Math.round(amount / 100) / 10}k`
-  return `${Math.round(amount / 100000) / 10}M`
 }

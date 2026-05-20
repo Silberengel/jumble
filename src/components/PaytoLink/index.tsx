@@ -1,3 +1,4 @@
+import { ZAP_SENDING_ENABLED } from '@/constants'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -65,7 +66,8 @@ export default function PaytoLink({
   const info = getPaytoTypeInfo(type)
   const known = isKnownPaytoType(type)
   const isLightning = isLightningPaytoType(type)
-  const canZap = isZappableLightningPaytoType(type) && !!pubkey && !!onOpenZap
+  const canZap =
+    ZAP_SENDING_ENABLED && isZappableLightningPaytoType(type) && !!pubkey && !!onOpenZap
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()

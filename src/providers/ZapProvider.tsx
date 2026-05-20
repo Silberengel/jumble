@@ -1,3 +1,4 @@
+import { ZAP_SENDING_ENABLED } from '@/constants'
 import lightningService from '@/services/lightning.service'
 import storage from '@/services/local-storage.service'
 import { onConnected, onDisconnected } from '@getalby/bitcoin-connect-react'
@@ -43,6 +44,8 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
   const [walletInfo, setWalletInfo] = useState<GetInfoResponse | null>(null)
 
   useEffect(() => {
+    if (!ZAP_SENDING_ENABLED) return
+
     const unSubOnConnected = onConnected((provider) => {
       setIsWalletConnected(true)
       setWalletInfo(null)

@@ -1,10 +1,11 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import type { ProfileTimelineRelayUrlsBuilder } from '@/hooks/useProfileTimeline'
 import { buildProfilePageReadRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
 import { isNip56ReportEvent } from '@/lib/event'
 import { isReportAuthoredBy, reportTargetsPubkey } from '@/lib/nip56-reports'
 import { normalizeHexPubkey } from '@/lib/pubkey'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -207,7 +208,15 @@ export function useProfileReportsEvents({
       }
 
       const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
-      const provisionalUrls = resolveFeedUrls(emptyAuthor, includeAuthorLocalRelays)
+      const authorPeek = await client.peekRelayListFromStorage(pubkey).catch(() => emptyAuthor)
+      if (cancelled) return
+      let provisionalUrls = resolveFeedUrls(authorPeek, includeAuthorLocalRelays)
+      if (provisionalUrls.length === 0) {
+        provisionalUrls = dedupeNormalizeRelayUrlsOrdered([
+          ...PROFILE_RELAY_URLS,
+          ...FAST_READ_RELAY_URLS
+        ]).slice(0, 24)
+      }
       if (provisionalUrls.length === 0) return
 
       const filter = buildFilter(pkNorm, mode, limit)

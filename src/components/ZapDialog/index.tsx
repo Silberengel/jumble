@@ -1,3 +1,4 @@
+import { ZAP_SENDING_ENABLED } from '@/constants'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -32,7 +33,10 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
   buildOrderedZapLightningAddresses,
+  groupPaymentMethodsByDisplayType,
+  mergePaymentMethods,
   prepareZapDialogAlternativePayments,
+  sortMergedPaymentMethods,
   ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
 } from '@/lib/merge-payment-methods'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
@@ -102,12 +106,20 @@ export default function ZapDialog({
     ]
   )
   const canLightningZap = lightningAddressOptions.length > 0
-  const dialogTitlePrefix = canLightningZap ? t('Zap to') : t('Pay to')
-  const dialogDescription = canLightningZap
-    ? t('Send a Lightning payment to this user')
-    : t('Send a payment to this user')
+  const paymentsOnly = !ZAP_SENDING_ENABLED
+  const dialogTitlePrefix = paymentsOnly
+    ? t('Payment methods')
+    : canLightningZap
+      ? t('Zap to')
+      : t('Pay to')
+  const dialogDescription = paymentsOnly
+    ? t('Payment methods')
+    : canLightningZap
+      ? t('Send a Lightning payment to this user')
+      : t('Send a payment to this user')
 
   const maybeOfferTipNoticeOnClose = () => {
+    if (paymentsOnly) return
     if (skipTipNoticeOnCloseRef.current) return
     if (selfPubkey && pubkey === selfPubkey) return
     setTipNoticeOpen(true)
@@ -186,11 +198,13 @@ export default function ZapDialog({
             }}
           />
         </DrawerContent>
-        <TipPublicMessagePrompt
-          open={tipNoticeOpen}
-          onOpenChange={setTipNoticeOpen}
-          recipientPubkey={pubkey}
-        />
+        {!paymentsOnly && (
+          <TipPublicMessagePrompt
+            open={tipNoticeOpen}
+            onOpenChange={setTipNoticeOpen}
+            recipientPubkey={pubkey}
+          />
+        )}
       </Drawer>
     )
   }
@@ -223,11 +237,13 @@ export default function ZapDialog({
         />
       </DialogContent>
     </Dialog>
-    <TipPublicMessagePrompt
-      open={tipNoticeOpen}
-      onOpenChange={setTipNoticeOpen}
-      recipientPubkey={pubkey}
-    />
+    {!paymentsOnly && (
+      <TipPublicMessagePrompt
+        open={tipNoticeOpen}
+        onOpenChange={setTipNoticeOpen}
+        recipientPubkey={pubkey}
+      />
+    )}
     </>
   )
 }
@@ -258,8 +274,43 @@ function ZapDialogContent({
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey } = useNostr()
+  const paymentsOnly = !ZAP_SENDING_ENABLED
   const { defaultZapSats, defaultZapComment, includePublicZapReceipt, updateIncludePublicZapReceipt } =
     useZap()
+
+  const allPaymentGroups = useMemo(() => {
+    if (!paymentsOnly) return []
+    const merged = sortMergedPaymentMethods(
+      mergePaymentMethods(
+        recipientPayment.paymentInfo,
+        recipientPayment.profile,
+        recipientPayment.profileEvent
+      )
+    )
+    return groupPaymentMethodsByDisplayType(merged)
+  }, [paymentsOnly, recipientPayment])
+
+  if (paymentsOnly) {
+    return (
+      <div
+        className="px-4 pb-4"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
+        {allPaymentGroups.length > 0 ? (
+          <PaymentMethodsSection
+            groups={allPaymentGroups}
+            recipientPubkey={recipient}
+            title={t('Payment methods')}
+            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+          />
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t('No payment methods available for this profile')}
+          </p>
+        )}
+      </div>
+    )
+  }
   const [sats, setSats] = useState(() => clampZapSats(defaultAmount ?? defaultZapSats))
   const [comment, setComment] = useState(defaultComment ?? defaultZapComment)
   const [zapping, setZapping] = useState(false)

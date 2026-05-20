@@ -2,7 +2,7 @@ import { buildProfileAuthorSubRequestsFromUrlGroups } from '@/lib/profile-author
 import { isSocialKindBlockedKind } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
-import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
+import { hexPubkeysEqual, isValidPubkey, normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
@@ -65,11 +65,8 @@ export function useProfileAuthorFeedSubRequests({
   const kindsKey = useMemo(() => [...kinds].join(','), [kinds])
 
   const authorHex = useMemo(() => {
-    try {
-      return normalizeHexPubkey(pubkey)
-    } catch {
-      return pubkey.trim()
-    }
+    const pk = userIdToPubkey(pubkey)
+    return isValidPubkey(pk) ? pk : ''
   }, [pubkey])
 
   const [refreshToken, setRefreshToken] = useState(0)
@@ -103,6 +100,10 @@ export function useProfileAuthorFeedSubRequests({
       }
     }
 
+    // Bootstrap immediately (favorites + fast-read) so /users/… feeds are not stuck on "Nothing to load"
+    // while fetchRelayList runs (often 10–30s under relay contention).
+    applyRelayList(emptyAuthor)
+
     void client
       .peekRelayListFromStorage(pubkey)
       .then((cached) => {
@@ -125,7 +126,7 @@ export function useProfileAuthorFeedSubRequests({
   }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays, useGlobalRelayBootstrap])
 
   const subRequests = useMemo(() => {
-    if (!relayUrls?.length) return [] as TFeedSubRequest[]
+    if (!relayUrls?.length || !authorHex) return [] as TFeedSubRequest[]
     return buildProfileAuthorSubRequestsFromUrlGroups([relayUrls], authorHex, [...kinds], limit)
   }, [relayUrls, authorHex, kinds, limit])
 

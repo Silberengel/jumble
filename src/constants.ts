@@ -603,6 +603,9 @@ export const ExtendedKind = {
   EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
 }
 
+/** NIP-57 send flow (wallet connect, zap dialog, note zap button). Kind 9735 receipts and payment targets stay visible when false. */
+export const ZAP_SENDING_ENABLED = false
+
 /** Kind 0 + NIP-A3 payment: publish to profile mirrors, full outbox (NIP-65 + HTTP + cache), and IndexedDB. */
 export function isAuthorProfileMetadataPublishKind(kind: number): boolean {
   return kind === kinds.Metadata || kind === ExtendedKind.PAYMENT_INFO

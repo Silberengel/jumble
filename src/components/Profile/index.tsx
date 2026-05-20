@@ -68,7 +68,6 @@ import ProfileReportsDialog from './ProfileReportsDialog'
 import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
-import ZapDialog from '@/components/ZapDialog'
 import PostEditor from '@/components/PostEditor'
 import {
   ScheduleVideoCallDialog,
@@ -81,6 +80,7 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import { buildRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
+import ZapDialog from '@/components/ZapDialog'
 import {
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
@@ -114,8 +114,7 @@ export default function Profile({
   const { pubkey: accountPubkey, profileEvent: accountProfileEvent, publish, checkLogin } = useNostr()
   const [paymentInfo, setPaymentInfo] = useState<ReturnType<typeof getPaymentInfoFromEvent> | null>(null)
   const [profileEvent, setProfileEvent] = useState<NostrEvent | undefined>(undefined)
-  const [openZapDialog, setOpenZapDialog] = useState(false)
-  const [zapLightningDefault, setZapLightningDefault] = useState<string | null>(null)
+  const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openPublicMessageTo, setOpenPublicMessageTo] = useState<string | null>(null)
   const [openCallInviteTo, setOpenCallInviteTo] = useState<{ pubkey: string; url: string } | null>(null)
   const [openScheduleOwnCall, setOpenScheduleOwnCall] = useState(false)
@@ -147,12 +146,12 @@ export default function Profile({
     [mergedPaymentMethods]
   )
 
-  const hasTipDialog = useMemo(
+  const hasPaymentMethods = useMemo(
     () => recipientHasAnyPaymentOptions(paymentInfo, profile ?? null, effectiveProfileEvent),
     [paymentInfo, profile, effectiveProfileEvent]
   )
 
-  const prefetchedZapPayment = useMemo(
+  const prefetchedPaymentData = useMemo(
     () =>
       profile?.pubkey
         ? buildRecipientZapPaymentData(paymentInfo, profile ?? null, effectiveProfileEvent ?? null)
@@ -506,15 +505,11 @@ export default function Profile({
             )}
             {!isSelf ? (
               <>
-                {hasTipDialog && (
+                {hasPaymentMethods && (
                   <ProfileZapButton
                     pubkey={pubkey}
-                    openZapDialog={openZapDialog}
-                    setOpenZapDialog={(open) => {
-                      if (open) setZapLightningDefault(null)
-                      setOpenZapDialog(open)
-                      if (!open) setZapLightningDefault(null)
-                    }}
+                    openZapDialog={openPaymentDialog}
+                    setOpenZapDialog={setOpenPaymentDialog}
                   />
                 )}
                 <FollowButton pubkey={pubkey} />
@@ -585,24 +580,17 @@ export default function Profile({
               <PaymentMethodsSection
                 groups={paymentMethodsByType}
                 recipientPubkey={pubkey}
-                onOpenZap={(lightningAuthority) => {
-                  setZapLightningDefault(lightningAuthority)
-                  setOpenZapDialog(true)
-                }}
                 className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0"
               />
             )}
-            <ZapDialog
-              open={openZapDialog}
-              setOpen={(next) => {
-                const willOpen = typeof next === 'function' ? next(openZapDialog) : next
-                setOpenZapDialog(willOpen)
-                if (!willOpen) setZapLightningDefault(null)
-              }}
-              pubkey={pubkey}
-              defaultLightningAddress={zapLightningDefault}
-              prefetchedPayment={prefetchedZapPayment}
-            />
+            {!isSelf && hasPaymentMethods && (
+              <ZapDialog
+                open={openPaymentDialog}
+                setOpen={setOpenPaymentDialog}
+                pubkey={pubkey}
+                prefetchedPayment={prefetchedPaymentData}
+              />
+            )}
             <div className="flex flex-wrap gap-4 items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
               <SmartFollowings pubkey={pubkey} />
               <SmartRelays pubkey={pubkey} />
