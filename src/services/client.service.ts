@@ -3419,7 +3419,8 @@ class ClientService extends EventTarget {
       globalTimeout,
       firstRelayResultGraceMs,
       replaceableRace,
-      immediateReturn
+      immediateReturn,
+      foreground
     }: {
       onevent?: (evt: NEvent) => void
       cache?: boolean
@@ -3428,6 +3429,8 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs?: number | false
       replaceableRace?: boolean
       immediateReturn?: boolean
+      /** When true, ignore {@link QueryService.interruptBackgroundQueries} (e.g. secondary-panel profile loads). */
+      foreground?: boolean
     } = {}
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
@@ -3467,7 +3470,8 @@ class ClientService extends EventTarget {
       globalTimeout,
       firstRelayResultGraceMs,
       replaceableRace,
-      immediateReturn
+      immediateReturn,
+      foreground
     })
     if (cache) {
       events.forEach((evt) => {

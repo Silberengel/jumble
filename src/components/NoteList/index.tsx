@@ -995,6 +995,11 @@ const NoteList = forwardRef(
     const primaryPageCtx = usePrimaryPageOptional()
     const primaryPageCurrent = primaryPageCtx?.current ?? null
     const primaryPanelFrozen = primaryPageCtx?.frozen ?? false
+    /** Only pause timelines on the active primary page feed — not secondary-panel profiles, search, etc. */
+    const pauseTimelineForPrimaryFreeze =
+      primaryPanelFrozen &&
+      hostPrimaryPageName != null &&
+      hostPrimaryPageName === primaryPageCurrent
 
     /** Clears text/author/time/full-search; does not change panel open state. */
     const clearFeedClientSearchCriteria = useCallback(() => {
@@ -1890,7 +1895,7 @@ const NoteList = forwardRef(
       timelineEstablishedCloserRef.current?.()
       timelineEstablishedCloserRef.current = null
 
-      if (primaryPanelFrozen) {
+      if (pauseTimelineForPrimaryFreeze) {
         return () => {}
       }
 
@@ -3251,12 +3256,12 @@ const NoteList = forwardRef(
       progressiveWarmupQuery,
       hostPrimaryPageName,
       relayAuthoritativeFeedOnly,
-      primaryPanelFrozen
+      pauseTimelineForPrimaryFreeze
     ])
 
     useEffect(() => {
       if (oneShotFetch) return
-      if (primaryPanelFrozen) {
+      if (pauseTimelineForPrimaryFreeze) {
         followingFeedDeltaCloserRef.current?.()
         followingFeedDeltaCloserRef.current = null
         return
@@ -3519,7 +3524,7 @@ const NoteList = forwardRef(
       showKind1OPs,
       showKind1Replies,
       showKind1111,
-      primaryPanelFrozen
+      pauseTimelineForPrimaryFreeze
     ])
 
     const oneShotDebugPrevLoadingRef = useRef(false)

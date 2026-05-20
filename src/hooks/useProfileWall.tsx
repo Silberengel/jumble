@@ -65,7 +65,8 @@ async function fetchBadgeDefinitionOnRelays(
     {
       replaceableRace: true,
       eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
-      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
+      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+      foreground: true
     }
   )
   const matches = rows.filter((e) => e.kind === ExtendedKind.BADGE_DEFINITION)
@@ -110,8 +111,6 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
 
   useEffect(() => {
     let cancelled = false
-    let idleHandle: number | undefined
-    let idleTimeout: ReturnType<typeof setTimeout> | undefined
 
     const run = async () => {
       const mem = wallCacheByKey.get(cacheKey)
@@ -123,112 +122,106 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       }
 
       setIsLoading(true)
-
-      const pkNorm = userIdToPubkey(pubkey) || pubkey
-      if (!isValidPubkey(pkNorm)) {
-        if (!cancelled) setIsLoading(false)
-        return
-      }
-
-      const emptyAuthor = { read: [] as string[], write: [] as string[], httpRead: [] as string[], httpWrite: [] as string[] }
-      const authorRl = await client.peekRelayListFromStorage(pubkey).catch(() => emptyAuthor)
-      if (cancelled) return
-
-      const relayUrls = buildProfilePageReadRelayUrls(
-        favoriteRelaysRef.current,
-        blockedRelaysRef.current,
-        authorRl,
-        false,
-        false,
-        [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION],
-        useGlobalRelayBootstrapRef.current
-      )
-
-      // --- Badges (NIP-58): IndexedDB + profile read relays (favorites / fast-read), not inbox-only ---
-      let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls)
-      if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
-        const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls)
-        if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
-      }
-
-      const entries = parseProfileBadgeEntries(listEvent)
-      const defCoords = [...new Set(entries.map((e) => e.definitionCoordinate))]
-      const defByCoord = new Map<string, Event | undefined>()
-
-      await Promise.all(
-        defCoords.map(async (coord) => {
-          defByCoord.set(coord, await fetchBadgeDefinitionOnRelays(coord, relayUrls))
-        })
-      )
-
-      const resolvedBadges = entries.map((entry) =>
-        resolveBadgeDisplayFromDefinition(entry, defByCoord.get(entry.definitionCoordinate))
-      )
-
-      // --- Wall comments (kind 1111 on profile kind 0) ---
-      let wallComments: Event[] = []
-      const profileId = profileEventId?.trim().toLowerCase()
-      if (profileId && /^[0-9a-f]{64}$/.test(profileId) && relayUrls.length > 0) {
-        const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
-        const filters: Filter[] = [
-          { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
-          { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
-        ]
-        const pool = new Map<string, Event>()
-        try {
-          const rows = await Promise.all(
-            filters.map((filter) =>
-              client.fetchEvents(relayUrls, filter, {
-                cache: true,
-                eoseTimeout: 4500,
-                globalTimeout: 14_000
-              })
-            )
-          )
-          for (const batch of rows) {
-            for (const e of batch) pool.set(e.id, e)
-          }
-        } catch {
-          /* ignore */
+      try {
+        const pkNorm = userIdToPubkey(pubkey) || pubkey
+        if (!isValidPubkey(pkNorm)) {
+          return
         }
 
-        wallComments = [...pool.values()]
-          .filter(
-            (e) =>
-              !isEventDeletedRef.current(e) &&
-              isDirectProfileWallComment(e, profileId, pkNorm)
-          )
-          .sort((a, b) => b.created_at - a.created_at)
-      }
+        const emptyAuthor = {
+          read: [] as string[],
+          write: [] as string[],
+          httpRead: [] as string[],
+          httpWrite: [] as string[]
+        }
+        const authorRl = await client.peekRelayListFromStorage(pubkey).catch(() => emptyAuthor)
+        if (cancelled) return
 
-      if (cancelled) return
-      setBadges(resolvedBadges)
-      setComments(wallComments)
-      wallCacheByKey.set(cacheKey, {
-        badges: resolvedBadges,
-        comments: wallComments,
-        lastUpdated: Date.now()
-      })
-      setIsLoading(false)
+        const relayUrls = buildProfilePageReadRelayUrls(
+          favoriteRelaysRef.current,
+          blockedRelaysRef.current,
+          authorRl,
+          false,
+          false,
+          [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION],
+          useGlobalRelayBootstrapRef.current
+        )
+
+        // --- Badges (NIP-58): IndexedDB + profile read relays (favorites / fast-read), not inbox-only ---
+        let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls)
+        if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
+          const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls)
+          if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
+        }
+
+        const entries = parseProfileBadgeEntries(listEvent)
+        const defCoords = [...new Set(entries.map((e) => e.definitionCoordinate))]
+        const defByCoord = new Map<string, Event | undefined>()
+
+        await Promise.all(
+          defCoords.map(async (coord) => {
+            defByCoord.set(coord, await fetchBadgeDefinitionOnRelays(coord, relayUrls))
+          })
+        )
+
+        const resolvedBadges = entries.map((entry) =>
+          resolveBadgeDisplayFromDefinition(entry, defByCoord.get(entry.definitionCoordinate))
+        )
+
+        // --- Wall comments (kind 1111 on profile kind 0) ---
+        let wallComments: Event[] = []
+        const profileId = profileEventId?.trim().toLowerCase()
+        if (profileId && /^[0-9a-f]{64}$/.test(profileId) && relayUrls.length > 0) {
+          const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
+          const filters: Filter[] = [
+            { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
+            { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
+          ]
+          const pool = new Map<string, Event>()
+          try {
+            const rows = await Promise.all(
+              filters.map((filter) =>
+                client.fetchEvents(relayUrls, filter, {
+                  cache: true,
+                  eoseTimeout: 4500,
+                  globalTimeout: 14_000,
+                  foreground: true
+                })
+              )
+            )
+            for (const batch of rows) {
+              for (const e of batch) pool.set(e.id, e)
+            }
+          } catch {
+            /* ignore */
+          }
+
+          wallComments = [...pool.values()]
+            .filter(
+              (e) =>
+                !isEventDeletedRef.current(e) &&
+                isDirectProfileWallComment(e, profileId, pkNorm)
+            )
+            .sort((a, b) => b.created_at - a.created_at)
+        }
+
+        if (cancelled) return
+        setBadges(resolvedBadges)
+        setComments(wallComments)
+        wallCacheByKey.set(cacheKey, {
+          badges: resolvedBadges,
+          comments: wallComments,
+          lastUpdated: Date.now()
+        })
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
     }
 
-    const scheduleRun = () => {
-      if (typeof requestIdleCallback === 'function') {
-        idleHandle = requestIdleCallback(() => void run(), { timeout: 4_000 })
-      } else {
-        idleTimeout = setTimeout(() => void run(), 400)
-      }
-    }
-    scheduleRun()
+    void run()
 
     return () => {
       cancelled = true
-      if (idleHandle !== undefined && typeof cancelIdleCallback === 'function') {
-        cancelIdleCallback(idleHandle)
-      }
-      if (idleTimeout !== undefined) {
-        clearTimeout(idleTimeout)
-      }
     }
   }, [pubkey, profileEventId, cacheKey, refreshToken, relayListsKey])
 

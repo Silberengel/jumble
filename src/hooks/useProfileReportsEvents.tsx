@@ -236,7 +236,8 @@ export function useProfileReportsEvents({
         const fetched = await client.fetchEvents(provisionalUrls, filter, {
           cache: true,
           eoseTimeout: 4500,
-          globalTimeout: 14_000
+          globalTimeout: 14_000,
+          foreground: true
         })
         if (!cancelled) {
           for (const e of fetched) pool.set(e.id, e)
@@ -266,7 +267,8 @@ export function useProfileReportsEvents({
         const fetchedDelta = await client.fetchEvents(deltaUrls, filter, {
           cache: true,
           eoseTimeout: 4500,
-          globalTimeout: 14_000
+          globalTimeout: 14_000,
+          foreground: true
         })
         if (!cancelled) {
           for (const e of fetchedDelta) pool.set(e.id, e)
@@ -295,13 +297,14 @@ export function useProfileReportsEvents({
       }
 
       setIsLoading(true)
-
-      await Promise.all([
-        loadMode('received', receivedCacheKey, setReceived),
-        loadMode('made', madeCacheKey, setMade)
-      ])
-
-      if (!cancelled) setIsLoading(false)
+      try {
+        await Promise.all([
+          loadMode('received', receivedCacheKey, setReceived),
+          loadMode('made', madeCacheKey, setMade)
+        ])
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
     }
 
     void run()

@@ -2165,7 +2165,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const primaryFrozen =
     secondaryStack.length > 0 && (isSmallScreen || panelMode === 'double')
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     noteStatsService.setBackgroundStatsPaused(primaryFrozen)
     if (primaryFrozen) {
       client.interruptBackgroundQueries()
