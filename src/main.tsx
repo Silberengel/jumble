@@ -13,8 +13,10 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { initI18n } from './i18n'
 import { restoreSessionFeedSnapshotsAfterHardRefresh } from './services/session-feed-snapshot.service'
 import { installStaleBuildChunkRecovery } from './lib/stale-chunk-recovery'
+import { initPwaUpdate } from './lib/pwa-update'
 
 installStaleBuildChunkRecovery()
+initPwaUpdate()
 
 declare global {
   interface Window {

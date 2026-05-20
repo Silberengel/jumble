@@ -439,7 +439,8 @@ export default defineConfig(({ mode }) => {
     fullReloadOnProvidersAndPages(),
     quietOptionalDevProxyErrors(devIndexRelayTarget),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Prompt mode + virtual:pwa-register (main bundle) — do not auto-activate; VersionUpdateBanner calls updateSW().
+      registerType: 'prompt',
       // Use public/manifest.webmanifest and index.html <link> only; avoid duplicate manifest link in build
       manifest: false,
       workbox: {
@@ -447,8 +448,6 @@ export default defineConfig(({ mode }) => {
         globDirectory: 'dist/',
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         cleanupOutdatedCaches: true,
-        skipWaiting: true,
-        clientsClaim: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/_/, /^\/admin/],
         // Exclude source files and development files from precaching

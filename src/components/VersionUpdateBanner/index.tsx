@@ -1,9 +1,14 @@
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  getPwaApplyUpdate,
+  initPwaUpdate,
+  probePwaWaitingWorker,
+  subscribePwaNeedRefresh
+} from '@/lib/pwa-update'
 import { RefreshCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import logger from '@/lib/logger'
 
 function readVersionUpdateDismissed(): boolean {
   if (typeof window === 'undefined') return false
@@ -21,97 +26,33 @@ export default function VersionUpdateBanner() {
   const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
-    // Skip in dev: no SW is registered (vite-plugin-pwa devOptions.enabled: false), and .ready can reject with "operation is insecure"
     if (import.meta.env.DEV || typeof window === 'undefined' || !window.isSecureContext || !('serviceWorker' in navigator)) {
       return
     }
 
-    /**
-     * Workbox is built with skipWaiting + clientsClaim, so `registration.waiting` is almost never
-     * set — the new worker activates immediately. The reliable signal is `controllerchange`.
-     * Skip the first such event when we started without a controller (first install for this origin).
-     */
-    let ignoreNextControllerChange = !navigator.serviceWorker.controller
-    let cancelled = false
-    const cleanups: Array<() => void> = []
+    initPwaUpdate()
 
-    const runCleanup = () => {
-      for (let i = cleanups.length - 1; i >= 0; i--) {
-        try {
-          cleanups[i]?.()
-        } catch {
-          // ignore
-        }
-      }
-      cleanups.length = 0
+    const showBanner = () => setUpdateAvailable(true)
+    const unsubscribe = subscribePwaNeedRefresh(showBanner)
+
+    void probePwaWaitingWorker().then((waiting) => {
+      if (waiting) showBanner()
+    })
+
+    const checkForUpdate = () => {
+      if (document.hidden) return
+      void navigator.serviceWorker.ready
+        .then((registration) => registration.update())
+        .catch(() => {})
     }
-
-    const onControllerChange = () => {
-      if (ignoreNextControllerChange) {
-        ignoreNextControllerChange = false
-        return
-      }
-      if (navigator.serviceWorker.controller) {
-        setUpdateAvailable(true)
-      }
-    }
-
-    ;(async () => {
-      try {
-        const registration = await navigator.serviceWorker.ready
-        if (cancelled || !registration) return
-
-        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
-        cleanups.push(() => navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange))
-
-        if (registration.waiting) {
-          setUpdateAvailable(true)
-        }
-
-        const installingListeners: Array<{ worker: ServiceWorker; fn: () => void }> = []
-
-        const handleUpdateFound = () => {
-          const newWorker = registration.installing
-          if (!newWorker) return
-
-          const onState = () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              setUpdateAvailable(true)
-            }
-          }
-          // May already be `installed` before we attach (skipWaiting race)
-          onState()
-          newWorker.addEventListener('statechange', onState)
-          installingListeners.push({ worker: newWorker, fn: onState })
-        }
-
-        registration.addEventListener('updatefound', handleUpdateFound)
-        cleanups.push(() => registration.removeEventListener('updatefound', handleUpdateFound))
-        cleanups.push(() => {
-          for (const { worker, fn } of installingListeners) {
-            worker.removeEventListener('statechange', fn)
-          }
-          installingListeners.length = 0
-        })
-
-        const checkUpdate = () => {
-          if (document.hidden) return
-          registration.update().catch(() => {})
-        }
-        const interval = window.setInterval(checkUpdate, 60_000)
-        cleanups.push(() => window.clearInterval(interval))
-        document.addEventListener('visibilitychange', checkUpdate)
-        cleanups.push(() => document.removeEventListener('visibilitychange', checkUpdate))
-
-        checkUpdate()
-      } catch (error) {
-        logger.debug('Service worker update check skipped or failed', { error })
-      }
-    })()
+    const interval = window.setInterval(checkForUpdate, 60_000)
+    document.addEventListener('visibilitychange', checkForUpdate)
+    checkForUpdate()
 
     return () => {
-      cancelled = true
-      runCleanup()
+      unsubscribe()
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', checkForUpdate)
     }
   }, [])
 
@@ -128,18 +69,12 @@ export default function VersionUpdateBanner() {
       window.location.reload()
     }
 
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
-      reload()
+    const apply = getPwaApplyUpdate()
+    if (apply) {
+      void apply().catch(reload)
       return
     }
-
-    void navigator.serviceWorker
-      .getRegistration()
-      .then((registration) => {
-        registration?.waiting?.postMessage({ type: 'SKIP_WAITING' })
-        reload()
-      })
-      .catch(reload)
+    reload()
   }
 
   const handleDismiss = () => {

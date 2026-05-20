@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/vanillajs" />
 import { TNip07 } from '@/types'
 
 declare module '*.md?raw' {
