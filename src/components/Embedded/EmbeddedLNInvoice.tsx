@@ -2,7 +2,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatAmount, getAmountFromInvoice } from '@/lib/lightning'
 import { cn } from '@/lib/utils'
-import { useNostr } from '@/providers/NostrProvider'
 import lightning from '@/services/lightning.service'
 import { Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -11,7 +10,6 @@ import { toast } from 'sonner'
 
 export function EmbeddedLNInvoice({ invoice, className }: { invoice: string; className?: string }) {
   const { t } = useTranslation()
-  const { checkLogin, pubkey } = useNostr()
   const [paying, setPaying] = useState(false)
 
   const amount = useMemo(() => {
@@ -20,9 +18,6 @@ export function EmbeddedLNInvoice({ invoice, className }: { invoice: string; cla
 
   const handlePay = async () => {
     try {
-      if (!pubkey) {
-        throw new Error('You need to be logged in to zap')
-      }
       setPaying(true)
       const invoiceResult = await lightning.payInvoice(invoice)
       // user canceled
@@ -38,7 +33,7 @@ export function EmbeddedLNInvoice({ invoice, className }: { invoice: string; cla
 
   const handlePayClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    checkLogin(() => handlePay())
+    void handlePay()
   }
 
   return (

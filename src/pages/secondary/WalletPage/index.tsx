@@ -1,5 +1,5 @@
 import { RefreshButton } from '@/components/RefreshButton'
-import { ZAP_SENDING_ENABLED } from '@/constants'
+import { LIGHTNING_WALLET_PAY_ENABLED } from '@/constants'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { forwardRef, useCallback, useEffect, useState } from 'react'
@@ -31,7 +31,7 @@ const WalletPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
       controls={hideTitlebar ? undefined : <RefreshButton onClick={bump} />}
     >
       <div key={contentKey} className="px-4 pt-3 space-y-4">
-        {ZAP_SENDING_ENABLED ? <WalletZapSendingSettings /> : null}
+        {LIGHTNING_WALLET_PAY_ENABLED ? <WalletZapSendingSettings /> : null}
         <LightningAddressInput />
         <ZapReplyThresholdInput />
       </div>

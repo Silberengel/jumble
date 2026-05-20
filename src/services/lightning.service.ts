@@ -14,12 +14,21 @@ import client from './client.service'
 import storage from './local-storage.service'
 import { queryService, replaceableEventService } from './client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
+import { clampZapSats } from '@/lib/lightning'
 import { prioritizeZapLightningAddress } from '@/lib/merge-payment-methods'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
 import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
 
 export type TRecentSupporter = { pubkey: string; amount: number; comment?: string }
+
+/** LNURL-pay limits from the recipient’s `.well-known/lnurlp` metadata. */
+export type LnurlPayInvoiceOptions = {
+  /** Max description length; `0` means the endpoint does not accept comments. */
+  commentAllowed: number
+  minSendableMsat?: number
+  maxSendableMsat?: number
+}
 
 const OFFICIAL_PUBKEYS = [IMWALD_MAINTAINER_PUBKEY, CODY_PUBKEY]
 
@@ -256,9 +265,86 @@ class LightningService {
     return prioritizeZapLightningAddress(out, preferredFirst)
   }
 
+  /**
+   * LNURL-pay metadata for a lightning address (LUD-16 or lnurl bech32).
+   * Does not require Nostr zap support — use {@link createLnurlInvoice} for plain invoices.
+   */
+  async getLnurlPayInvoiceOptions(lightningAddress: string): Promise<LnurlPayInvoiceOptions | null> {
+    const meta = await this.resolveLnurlPayMetadata(lightningAddress)
+    if (!meta) return null
+    return {
+      commentAllowed: meta.commentAllowed,
+      minSendableMsat: meta.minSendable,
+      maxSendableMsat: meta.maxSendable
+    }
+  }
+
+  async createLnurlInvoice(
+    lightningAddress: string,
+    sats: number,
+    options?: { description?: string }
+  ): Promise<string> {
+    const meta = await this.resolveLnurlPayMetadata(lightningAddress)
+    if (!meta) {
+      throw new Error('Lightning address could not be resolved')
+    }
+    const clamped = clampZapSats(sats)
+    if (clamped < 1) {
+      throw new Error('Amount must be at least 1 sat')
+    }
+    const amountMsat = clamped * 1000
+    if (meta.minSendable != null && amountMsat < meta.minSendable) {
+      throw new Error(`Minimum amount is ${Math.ceil(meta.minSendable / 1000)} sats`)
+    }
+    if (meta.maxSendable != null && amountMsat > meta.maxSendable) {
+      throw new Error(`Maximum amount is ${Math.floor(meta.maxSendable / 1000)} sats`)
+    }
+
+    const description = options?.description?.trim() ?? ''
+    if (description) {
+      if (meta.commentAllowed < 1) {
+        throw new Error('This Lightning address does not accept payment descriptions')
+      }
+      if (description.length > meta.commentAllowed) {
+        throw new Error(`Description must be at most ${meta.commentAllowed} characters`)
+      }
+    }
+
+    const params = new URLSearchParams({ amount: String(amountMsat) })
+    if (description) {
+      params.set('comment', description)
+    }
+
+    const res = await fetchWithTimeout(`${meta.callback}?${params.toString()}`, {
+      timeoutMs: 25_000
+    })
+    const body = (await res.json()) as { pr?: string; reason?: string; error?: string; message?: string }
+    if (body.error) {
+      throw new Error(body.message ?? String(body.error))
+    }
+    if (!body.pr) {
+      throw new Error(body.reason ?? 'Failed to create invoice')
+    }
+    return body.pr
+  }
+
   private async fetchLnurlPayZapEndpoint(lightningAddress: string): Promise<null | {
     callback: string
     lnurl: string
+  }> {
+    const meta = await this.resolveLnurlPayMetadata(lightningAddress)
+    if (!meta?.allowsNostr || !meta.nostrPubkey) return null
+    return { callback: meta.callback, lnurl: meta.lnurl }
+  }
+
+  private async resolveLnurlPayMetadata(lightningAddress: string): Promise<null | {
+    callback: string
+    lnurl: string
+    allowsNostr: boolean
+    nostrPubkey?: string
+    commentAllowed: number
+    minSendable?: number
+    maxSendable?: number
   }> {
     try {
       let lnurl = ''
@@ -285,9 +371,16 @@ class LightningService {
       }
 
       const text = await res.text()
-      let body: { allowsNostr?: unknown; nostrPubkey?: unknown; callback?: unknown }
+      let body: {
+        allowsNostr?: unknown
+        nostrPubkey?: unknown
+        callback?: unknown
+        commentAllowed?: unknown
+        minSendable?: unknown
+        maxSendable?: unknown
+      }
       try {
-        body = JSON.parse(text) as { allowsNostr?: unknown; nostrPubkey?: unknown; callback?: unknown }
+        body = JSON.parse(text) as typeof body
       } catch {
         logger.warn('LNURL-pay metadata was not valid JSON (HTML error page or empty redirect target?)', {
           lnurl,
@@ -297,11 +390,21 @@ class LightningService {
         return null
       }
 
-      if (body.allowsNostr && body.nostrPubkey && typeof body.callback === 'string') {
-        return {
-          callback: body.callback,
-          lnurl
-        }
+      if (typeof body.callback !== 'string' || !body.callback) return null
+
+      const commentAllowed =
+        typeof body.commentAllowed === 'number' && body.commentAllowed >= 0
+          ? Math.floor(body.commentAllowed)
+          : 0
+
+      return {
+        callback: body.callback,
+        lnurl,
+        allowsNostr: Boolean(body.allowsNostr && body.nostrPubkey),
+        nostrPubkey: typeof body.nostrPubkey === 'string' ? body.nostrPubkey : undefined,
+        commentAllowed,
+        minSendable: typeof body.minSendable === 'number' ? body.minSendable : undefined,
+        maxSendable: typeof body.maxSendable === 'number' ? body.maxSendable : undefined
       }
     } catch (err) {
       const failedFetch =
