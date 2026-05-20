@@ -192,9 +192,13 @@ export default function ZapDialog({
             recipientPayment={recipientPayment}
             lightningAddressOptions={lightningAddressOptions}
             canLightningZap={canLightningZap}
-            onBeforeZapDialogClose={(withPublicReceipt) => {
-              if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
-            }}
+            onBeforeZapDialogClose={
+              paymentsOnly
+                ? undefined
+                : (withPublicReceipt) => {
+                    if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
+                  }
+            }
           />
         </DrawerContent>
         <TipPublicMessagePrompt
@@ -228,9 +232,13 @@ export default function ZapDialog({
           recipientPayment={recipientPayment}
           lightningAddressOptions={lightningAddressOptions}
           canLightningZap={canLightningZap}
-          onBeforeZapDialogClose={(withPublicReceipt) => {
-            if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
-          }}
+          onBeforeZapDialogClose={
+            paymentsOnly
+              ? undefined
+              : (withPublicReceipt) => {
+                  if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
+                }
+          }
         />
       </DialogContent>
     </Dialog>
@@ -295,6 +303,7 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={allPaymentGroups}
             recipientPubkey={recipient}
+            offerTipNoticeOnClose={false}
             title={t('Payment methods')}
             className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
           />
@@ -414,6 +423,7 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={zapAlternativePayments.groups}
             recipientPubkey={recipient}
+            offerTipNoticeOnClose={false}
             title={t('Payment methods')}
             headerHelpText={
               zapAlternativePayments.showBitcoinOnChainHint
@@ -552,6 +562,7 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={zapAlternativePayments.groups}
             recipientPubkey={recipient}
+            offerTipNoticeOnClose={false}
             title={t('Other payment methods')}
             headerHelpText={
               zapAlternativePayments.showBitcoinOnChainHint

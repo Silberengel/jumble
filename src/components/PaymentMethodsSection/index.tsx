@@ -11,6 +11,7 @@ export default function PaymentMethodsSection({
   groups,
   recipientPubkey,
   onOpenZap,
+  offerTipNoticeOnClose = true,
   title,
   className,
   headerHelpText
@@ -19,6 +20,8 @@ export default function PaymentMethodsSection({
   recipientPubkey?: string
   /** When set, lightning rows open the zap flow with that address as the default. */
   onOpenZap?: (lightningAuthority: string) => void
+  /** When false, PaytoDialog defer tip notice to parent (e.g. ZapDialog). */
+  offerTipNoticeOnClose?: boolean
   title?: string
   className?: string
   /** Prominent note above the list (e.g. on-chain Bitcoin eligibility in zap dialog). */
@@ -67,6 +70,7 @@ export default function PaymentMethodsSection({
                             ? (_pk, authority) => onOpenZap(authority)
                             : undefined
                         }
+                        offerTipNoticeOnClose={offerTipNoticeOnClose}
                         className={cn(PRIMARY_LINK_HOVER_CLASS, 'break-all min-w-0 flex-1')}
                       >
                         {method.authority}

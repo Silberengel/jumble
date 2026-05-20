@@ -1,4 +1,10 @@
-import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, CODY_PUBKEY, IMWALD_MAINTAINER_PUBKEY } from '@/constants'
+import {
+  CODY_PUBKEY,
+  FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
+  IMWALD_MAINTAINER_PUBKEY,
+  ZAP_SENDING_ENABLED
+} from '@/constants'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { TProfile } from '@/types'
 import { init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
@@ -17,6 +23,7 @@ import { getProfileFromEvent } from '@/lib/event-metadata'
 import { clampZapSats } from '@/lib/lightning'
 import { prioritizeZapLightningAddress } from '@/lib/merge-payment-methods'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
+import { buildLnurlPayCallbackUrl, parseLnurlCommentAllowed } from '@/lib/lnurl-pay'
 import logger from '@/lib/logger'
 import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
 
@@ -36,6 +43,10 @@ class LightningService {
   static instance: LightningService
   provider: WebLNProvider | null = null
   private recentSupportersCache: TRecentSupporter[] | null = null
+  private lnurlPayMetadataCache = new Map<
+    string,
+    { fetchedAt: number; meta: NonNullable<Awaited<ReturnType<LightningService['resolveLnurlPayMetadata']>>> }
+  >()
 
   constructor() {
     if (!LightningService.instance) {
@@ -57,6 +68,9 @@ class LightningService {
     includePublicReceipt: boolean = storage.getIncludePublicZapReceipt(),
     zapLightning?: { address?: string; candidates?: string[] }
   ): Promise<{ preimage: string; invoice: string } | null> {
+    if (!ZAP_SENDING_ENABLED) {
+      throw new Error('NIP-57 zaps are disabled; use LNURL-pay invoices instead')
+    }
     if (!client.signer) {
       throw new Error('You need to be logged in to zap')
     }
@@ -94,10 +108,12 @@ class LightningService {
       comment
     })
     const zapRequest = await client.signer.signEvent(zapRequestDraft)
-    const zapRequestRes = await fetchWithTimeout(
-      `${callback}?amount=${amount}&nostr=${encodeURI(JSON.stringify(zapRequest))}&lnurl=${lnurl}`,
-      { timeoutMs: 25_000 }
-    )
+    const zapRequestUrl = buildLnurlPayCallbackUrl(callback, {
+      amount: String(amount),
+      nostr: JSON.stringify(zapRequest),
+      lnurl
+    })
+    const zapRequestRes = await fetchWithTimeout(zapRequestUrl, { timeoutMs: 25_000 })
     const zapRequestResBody = await zapRequestRes.json()
     if (zapRequestResBody.error) {
       throw new Error(zapRequestResBody.message)
@@ -310,12 +326,13 @@ class LightningService {
       }
     }
 
-    const params = new URLSearchParams({ amount: String(amountMsat) })
+    // Plain LNURL-pay only — never NIP-57 (`nostr`); relay-visible zap receipts use {@link zap} when enabled.
+    const payParams: Record<string, string> = { amount: String(amountMsat) }
     if (description) {
-      params.set('comment', description)
+      payParams.comment = description
     }
 
-    const res = await fetchWithTimeout(`${meta.callback}?${params.toString()}`, {
+    const res = await fetchWithTimeout(buildLnurlPayCallbackUrl(meta.callback, payParams), {
       timeoutMs: 25_000
     })
     const body = (await res.json()) as { pr?: string; reason?: string; error?: string; message?: string }
@@ -346,6 +363,12 @@ class LightningService {
     minSendable?: number
     maxSendable?: number
   }> {
+    const cacheKey = lightningAddress.trim().toLowerCase()
+    const cached = this.lnurlPayMetadataCache.get(cacheKey)
+    if (cached && Date.now() - cached.fetchedAt < 30_000) {
+      return cached.meta
+    }
+
     try {
       let lnurl = ''
 
@@ -392,12 +415,9 @@ class LightningService {
 
       if (typeof body.callback !== 'string' || !body.callback) return null
 
-      const commentAllowed =
-        typeof body.commentAllowed === 'number' && body.commentAllowed >= 0
-          ? Math.floor(body.commentAllowed)
-          : 0
+      const commentAllowed = parseLnurlCommentAllowed(body.commentAllowed)
 
-      return {
+      const meta = {
         callback: body.callback,
         lnurl,
         allowsNostr: Boolean(body.allowsNostr && body.nostrPubkey),
@@ -406,6 +426,8 @@ class LightningService {
         minSendable: typeof body.minSendable === 'number' ? body.minSendable : undefined,
         maxSendable: typeof body.maxSendable === 'number' ? body.maxSendable : undefined
       }
+      this.lnurlPayMetadataCache.set(cacheKey, { fetchedAt: Date.now(), meta })
+      return meta
     } catch (err) {
       const failedFetch =
         err instanceof TypeError || (err instanceof Error && err.message === 'Failed to fetch')

@@ -10,6 +10,7 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ZAP_SENDING_ENABLED } from '@/constants'
 import { useZap } from '@/providers/ZapProvider'
 import { disconnect, launchModal } from '@getalby/bitcoin-connect-react'
 import { useTranslation } from 'react-i18next'
@@ -52,9 +53,13 @@ export default function WalletZapSendingSettings() {
           </AlertDialog>
         </div>
         <DefaultZapAmountInput />
-        <DefaultZapCommentInput />
-        <QuickZapSwitch />
-        <IncludePublicZapReceiptSwitch />
+        {ZAP_SENDING_ENABLED ? (
+          <>
+            <DefaultZapCommentInput />
+            <QuickZapSwitch />
+            <IncludePublicZapReceiptSwitch />
+          </>
+        ) : null}
       </>
     )
   }

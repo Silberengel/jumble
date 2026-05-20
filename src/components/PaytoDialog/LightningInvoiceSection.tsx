@@ -36,10 +36,13 @@ export default function LightningInvoiceSection({
   paytoUri: string
 }) {
   const { t } = useTranslation()
-  const { defaultZapSats, defaultZapComment, isWalletConnected } = useZap()
+  const { defaultZapSats, isWalletConnected } = useZap()
   const [sats, setSats] = useState(() => clampZapSats(defaultZapSats))
-  const [description, setDescription] = useState(defaultZapComment)
+  const [description, setDescription] = useState('')
   const [commentMax, setCommentMax] = useState<number | null>(null)
+  const [lnurlMetadataState, setLnurlMetadataState] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  )
   const [invoice, setInvoice] = useState<string | null>(null)
   const [invoiceDescription, setInvoiceDescription] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -47,18 +50,27 @@ export default function LightningInvoiceSection({
 
   useEffect(() => {
     setSats(clampZapSats(defaultZapSats))
-    setDescription(defaultZapComment)
+    setDescription('')
     setInvoice(null)
     setInvoiceDescription(null)
     setCommentMax(null)
+    setLnurlMetadataState('loading')
     let cancelled = false
     void lightning.getLnurlPayInvoiceOptions(lightningAddress).then((opts) => {
-      if (!cancelled) setCommentMax(opts?.commentAllowed ?? 0)
+      if (!cancelled) {
+        if (opts) {
+          setCommentMax(opts.commentAllowed)
+          setLnurlMetadataState('ready')
+        } else {
+          setCommentMax(0)
+          setLnurlMetadataState('error')
+        }
+      }
     })
     return () => {
       cancelled = true
     }
-  }, [lightningAddress, defaultZapSats, defaultZapComment])
+  }, [lightningAddress, defaultZapSats])
 
   useEffect(() => {
     setInvoice(null)
@@ -171,23 +183,31 @@ export default function LightningInvoiceSection({
         </div>
       </div>
 
-      {commentMax === null ? (
+      {lnurlMetadataState === 'loading' ? (
         <Skeleton className="h-[4.5rem] w-full rounded-lg" aria-hidden />
-      ) : commentMax > 0 ? (
+      ) : lnurlMetadataState === 'error' ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm leading-relaxed text-muted-foreground sm:text-base">
+          {t(
+            'Could not read this Lightning address (network or browser block). Descriptions need LNURL-pay support on the recipient side.'
+          )}
+        </p>
+      ) : (commentMax ?? 0) > 0 ? (
         <div className="min-w-0 space-y-2">
           <div className="flex items-baseline justify-between gap-2">
             <Label htmlFor="ln-invoice-description" className="text-sm font-medium text-muted-foreground sm:text-base">
               {t('Description (optional)')}
             </Label>
             <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
-              {description.length}/{commentMax}
+              {description.length}/{commentMax ?? 0}
             </span>
           </div>
           <Textarea
             id="ln-invoice-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value.slice(0, commentMax))}
-            maxLength={commentMax}
+            onChange={(e) =>
+              setDescription(e.target.value.slice(0, commentMax ?? 0))
+            }
+            maxLength={commentMax ?? 0}
             rows={3}
             placeholder={t('Payment description')}
             className="min-h-[5rem] resize-none text-base leading-relaxed sm:text-lg"

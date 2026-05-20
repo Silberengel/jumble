@@ -26,7 +26,8 @@ export default function PaytoDialog({
   type,
   authority,
   paytoUri,
-  recipientPubkey
+  recipientPubkey,
+  offerTipNoticeOnClose = true
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -35,6 +36,8 @@ export default function PaytoDialog({
   paytoUri: string
   /** When set, closing the dialog offers a kind-24 tip notice to this pubkey. */
   recipientPubkey?: string
+  /** When false, a parent (e.g. ZapDialog) will offer the tip notice on its own close. */
+  offerTipNoticeOnClose?: boolean
 }) {
   const { t } = useTranslation()
   const { pubkey: selfPubkey } = useNostr()
@@ -54,6 +57,7 @@ export default function PaytoDialog({
   }
 
   const maybeOfferTipNoticeOnClose = () => {
+    if (!offerTipNoticeOnClose) return
     if (!recipientPubkey) return
     if (skipTipNoticeOnCloseRef.current) return
     if (selfPubkey && recipientPubkey === selfPubkey) return

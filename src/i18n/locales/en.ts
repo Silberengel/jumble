@@ -141,6 +141,8 @@ export default {
     "Description (optional)": "Description (optional)",
     "Payment description": "Payment description",
     "This address does not support payment descriptions.": "This address does not support payment descriptions.",
+    "Could not read this Lightning address (network or browser block). Descriptions need LNURL-pay support on the recipient side.":
+      "Could not read this Lightning address (network or browser block). Descriptions need LNURL-pay support on the recipient side.",
     "Lightning payment": "Lightning payment",
     "Invoice ready": "Invoice ready",
     "BOLT11 invoice": "BOLT11 invoice",

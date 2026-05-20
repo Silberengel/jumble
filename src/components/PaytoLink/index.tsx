@@ -27,6 +27,7 @@ export default function PaytoLink({
   authority: authorityProp,
   pubkey,
   onOpenZap,
+  offerTipNoticeOnClose = true,
   className,
   children,
   /** `compact`: `47R4Npvudm... (Monero)` for notes/markup; `full`: show authority as-is (e.g. zap dialog). */
@@ -40,6 +41,8 @@ export default function PaytoLink({
   /** When set with lightning type, clicking can open Zap dialog via onOpenZap */
   pubkey?: string
   onOpenZap?: (pubkey: string, lightningAuthority: string) => void
+  /** Passed to PaytoDialog; set false when a parent already offers the tip notice on close. */
+  offerTipNoticeOnClose?: boolean
   className?: string
   children?: React.ReactNode
   displayFormat?: 'compact' | 'full'
@@ -152,6 +155,7 @@ export default function PaytoLink({
           authority={authority}
           paytoUri={raw}
           recipientPubkey={pubkey}
+          offerTipNoticeOnClose={offerTipNoticeOnClose}
         />
       )}
     </>
