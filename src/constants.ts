@@ -122,7 +122,7 @@ export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 900
  * Budget for `fetchRelayLists` / NIP-65 resolution on the publish path. Longer waits block the reply button
  * while relays stall; shorter values fall back to IndexedDB + deduped picker order sooner (still correct).
  */
-export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 20_000
+export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 5_000
 
 /**
  * How long {@link ClientService.fetchRelayLists} waits on the network before returning an IndexedDB + default
@@ -138,12 +138,6 @@ export const FETCH_RELAY_LIST_UI_TIMEOUT_MS = 10_000
  * so the UI cannot stay on “loading…” forever.
  */
 export const FETCH_RELAY_LIST_HOOK_MAX_MS = FETCH_RELAY_LIST_UI_TIMEOUT_MS + 12_000
-
-/**
- * {@link ClientService.prioritizePublishUrlListWithTimeout}: must exceed {@link PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS}
- * so one full `fetchRelayLists` budget can elapse before we fall back to “deduped order without inbox fetch”.
- */
-export const PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS = PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS + 14_000
 
 /**
  * When {@link ClientService.publishEvent} targets more than one relay, cap per-relay publish ACK wait so one

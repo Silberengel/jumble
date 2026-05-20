@@ -16,7 +16,6 @@ import {
   SOCIAL_KIND_BLOCKED_RELAY_URLS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
   MAX_PUBLISH_RELAYS,
-  PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS,
   PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS,
   FETCH_RELAY_LIST_UI_TIMEOUT_MS,
   MULTI_RELAY_PUBLISH_ACK_CAP_MS,
@@ -133,11 +132,7 @@ import {
   collectRecipientInboxUrls,
   collectSenderOutboxUrls
 } from '@/lib/public-message-publish-relays'
-import {
-  buildPrioritizedWriteRelayUrls,
-  dedupeNormalizeRelayUrlsOrdered,
-  filterContextAuthorReadRelaysForPublish
-} from '@/lib/relay-url-priority'
+import { buildPrioritizedWriteRelayUrls, dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import {
   IndexRelayTransportError,
   isIndexRelayTransportFailure,
@@ -748,19 +743,34 @@ class ClientService extends EventTarget {
     return merged
   }
 
+  private relayListHasWriteUrls(relayList: TRelayList): boolean {
+    return (relayList.write?.length ?? 0) > 0 || (relayList.httpWrite?.length ?? 0) > 0
+  }
+
+  private relayListUsableForInboxOrdering(relayList: TRelayList): boolean {
+    return (
+      this.relayListHasWriteUrls(relayList) ||
+      (relayList.read?.length ?? 0) > 0 ||
+      (relayList.httpRead?.length ?? 0) > 0
+    )
+  }
+
+  /** IndexedDB/session first; network only when no write relays are cached (keeps publish off the 20s path). */
+  private async peekOrFetchRelayListForPublish(pubkey: string): Promise<TRelayList> {
+    try {
+      const peeked = await this.peekRelayListFromStorage(pubkey)
+      if (this.relayListHasWriteUrls(peeked)) return peeked
+    } catch {
+      /* fall through to bounded network fetch */
+    }
+    return this.fetchRelayListWithPublishTimeout(pubkey)
+  }
+
   /** NIP-65 `write` URLs for `event.pubkey`, filtered for publish (no read-only / social-kind blocks). */
   private async getUserOutboxRelayUrlsForPublish(event: NEvent): Promise<string[]> {
     try {
-      const relayList = await Promise.race([
-        this.fetchRelayList(event.pubkey),
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
-        )
-      ])
-      if (relayList == null) {
-        logger.warn('[PublishEvent] fetchRelayList timed out while resolving outboxes; publishing without NIP-65 prepend', {
-          pubkey: event.pubkey.slice(0, 12)
-        })
+      const relayList = await this.peekOrFetchRelayListForPublish(event.pubkey)
+      if (!this.relayListHasWriteUrls(relayList)) {
         return []
       }
       const raw = isAuthorProfileMetadataPublishKind(event.kind)
@@ -863,7 +873,7 @@ class ClientService extends EventTarget {
     const deduped = dedupeNormalizeRelayUrlsOrdered(pickerUrls)
     let relayList: TRelayList
     try {
-      relayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
+      relayList = await this.peekOrFetchRelayListForPublish(event.pubkey)
     } catch {
       relayList = this.emptyRelayListForPublish()
     }
@@ -894,117 +904,16 @@ class ClientService extends EventTarget {
     return this.filterPublishingRelays(merged, event).slice(0, MAX_PUBLISH_RELAYS)
   }
 
-  private async prioritizePublishUrlList(
-    relayUrls: string[],
-    event: NEvent,
-    favoriteRelayUrls: string[] = []
-  ): Promise<string[]> {
-    const ctx = this.collectReplyAndMentionPubkeys(event)
-    /** One `fetchRelayLists` round-trip (author first) — avoids two back-to-back relay-list budgets that always lost the outer race. */
-    const pubkeyOrder = Array.from(new Set([event.pubkey, ...ctx]))
-    let lists: TRelayList[] = []
-    try {
-      lists = await this.fetchRelayListsWithPublishTimeout(pubkeyOrder)
-    } catch {
-      lists = []
-    }
-
-    let userWriteSet = new Set<string>()
-    const authorRl = lists[0]
-    if (authorRl) {
-      userWriteSet = new Set([
-        ...(authorRl.write ?? []).map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u),
-        ...(authorRl.httpWrite ?? []).map((u) => normalizeHttpRelayUrl(u) || u).filter((u): u is string => !!u)
-      ])
-    }
-
-    let authorReadSet = new Set<string>()
-    for (let i = 1; i < lists.length; i++) {
-      const list = lists[i]
-      if (!list) continue
-      for (const u of list.read ?? []) {
-        const n = normalizeUrl(u) || u
-        if (n) authorReadSet.add(n)
-      }
-      for (const u of list.httpRead ?? []) {
-        const n = normalizeHttpRelayUrl(u) || u
-        if (n) authorReadSet.add(n)
-      }
-    }
-    authorReadSet = new Set(filterContextAuthorReadRelaysForPublish([...authorReadSet]))
-
-    const favSet = new Set(
-      favoriteRelayUrls.map((f) => normalizeUrl(f) || f).filter((u): u is string => !!u)
-    )
-    const fastWSet = new Set(
-      FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u)
-    )
-    const fastRSet = new Set(
-      FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u)
-    )
-
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-    const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-
-    const t0: string[] = []
-    const t1: string[] = []
-    const t2: string[] = []
-    const t3: string[] = []
-    const t4: string[] = []
-    const t5: string[] = []
-    for (const u of relayUrls) {
-      const n = normalizeAnyRelayUrl(u) || u
-      if (!n) continue
-      if (userWriteSet.has(n)) t0.push(n)
-      else if (authorReadSet.has(n)) t1.push(n)
-      else if (favSet.has(n)) t2.push(n)
-      else if (fastWSet.has(n)) t3.push(n)
-      else if (fastRSet.has(n)) t4.push(n)
-      else t5.push(n)
-    }
-    return dedupeNormalizeRelayUrlsOrdered([...t0, ...t1, ...t2, ...t3, ...t4, ...t5])
-      .filter((url) => {
-        const n = normalizeAnyRelayUrl(url) || url
-        if (readOnlySet.has(n)) return false
-        if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
-        return true
-      })
-      .slice(0, MAX_PUBLISH_RELAYS)
-  }
-
   /**
-   * Same ordering as {@link prioritizePublishUrlList} but bounded so relay-list / inbox fetches
-   * cannot block publishing indefinitely. Used from {@link determineTargetRelays} (before
-   * {@link publishEvent}) and from {@link capPublishRelayUrlsForPublish}.
+   * Cap/filter only — {@link determineTargetRelays} already ordered relays.
    */
-  private async prioritizePublishUrlListWithTimeout(
+  private capPublishRelayUrlsForPublish(
     relayUrls: string[],
     event: NEvent,
-    favoriteRelayUrls: string[] = []
+    _favoriteRelayUrls: string[] = []
   ): Promise<string[]> {
-    const fallbackOrder = (): string[] =>
-      this.filterPublishingRelays(dedupeNormalizeRelayUrlsOrdered(relayUrls), event).slice(0, MAX_PUBLISH_RELAYS)
-
-    return await Promise.race([
-      this.prioritizePublishUrlList(relayUrls, event, favoriteRelayUrls),
-      new Promise<string[]>((resolve) =>
-        setTimeout(() => {
-          logger.warn('[PublishEvent] prioritizePublishUrlList timed out; using deduped relay order without inbox fetch', {
-            kind: event.kind,
-            relayCount: relayUrls.length
-          })
-          resolve(fallbackOrder())
-        }, PUBLISH_PRIORITIZE_RELAY_ORDER_TIMEOUT_MS)
-      )
-    ])
-  }
-
-  private async capPublishRelayUrlsForPublish(
-    relayUrls: string[],
-    event: NEvent,
-    favoriteRelayUrls: string[] = []
-  ): Promise<string[]> {
-    return this.prioritizePublishUrlListWithTimeout(relayUrls, event, favoriteRelayUrls)
+    const filtered = this.filterPublishingRelays(dedupeNormalizeRelayUrlsOrdered(relayUrls), event)
+    return Promise.resolve(filtered.slice(0, MAX_PUBLISH_RELAYS))
   }
 
   private emptyRelayListForPublish(): TRelayList {
@@ -1021,6 +930,12 @@ class ClientService extends EventTarget {
   /** Bounded wait so NIP-65 fetch cannot block publishing (reactions, replies without relay picker, etc.). */
   private async fetchRelayListWithPublishTimeout(pubkey: string): Promise<TRelayList> {
     const empty = this.emptyRelayListForPublish()
+    try {
+      const peeked = await this.peekRelayListFromStorage(pubkey)
+      if (this.relayListHasWriteUrls(peeked)) return peeked
+    } catch {
+      /* network */
+    }
     try {
       return await Promise.race([
         this.fetchRelayList(pubkey),
@@ -1048,27 +963,45 @@ class ClientService extends EventTarget {
 
   private async fetchRelayListsWithPublishTimeout(pubkeys: string[]): Promise<TRelayList[]> {
     if (pubkeys.length === 0) return []
+    const peeked = await Promise.all(
+      pubkeys.map((pk) =>
+        this.peekRelayListFromStorage(pk).catch(() => this.emptyRelayListForPublish())
+      )
+    )
+    const missingPubkeys = pubkeys.filter((_, i) => !this.relayListUsableForInboxOrdering(peeked[i]))
+    if (missingPubkeys.length === 0) return peeked
+
+    const mergeFetchedIntoPeeked = (fetched: TRelayList[]): TRelayList[] => {
+      const byPk = new Map(missingPubkeys.map((pk, i) => [pk, fetched[i]]))
+      return pubkeys.map((pk, i) => {
+        if (this.relayListUsableForInboxOrdering(peeked[i])) return peeked[i]
+        return byPk.get(pk) ?? peeked[i]
+      })
+    }
+
     try {
-      return await Promise.race([
-        this.fetchRelayLists(pubkeys),
+      const fetched = await Promise.race([
+        this.fetchRelayLists(missingPubkeys),
         new Promise<TRelayList[]>((resolve) =>
           setTimeout(() => {
             logger.warn('[DetermineTargetRelays] fetchRelayLists timed out; using IndexedDB / default merge', {
-              pubkeyCount: pubkeys.length
+              pubkeyCount: missingPubkeys.length
             })
-            void Promise.all(pubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
+            void Promise.all(missingPubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
               .then(resolve)
-              .catch(() => resolve(pubkeys.map(() => this.emptyRelayListForPublish())))
+              .catch(() => resolve(missingPubkeys.map(() => this.emptyRelayListForPublish())))
           }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
         )
       ])
+      return mergeFetchedIntoPeeked(fetched)
     } catch (err) {
       logger.warn('[DetermineTargetRelays] fetchRelayLists failed', {
-        pubkeyCount: pubkeys.length,
+        pubkeyCount: missingPubkeys.length,
         error: err instanceof Error ? err.message : String(err)
       })
       try {
-        return await Promise.all(pubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
+        const fetched = await Promise.all(missingPubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
+        return mergeFetchedIntoPeeked(fetched)
       } catch {
         return pubkeys.map(() => this.emptyRelayListForPublish())
       }
