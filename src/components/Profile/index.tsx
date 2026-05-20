@@ -37,6 +37,7 @@ import {
   Ellipsis,
   ExternalLink,
   Calendar,
+  Flag,
   MapPin,
   Pencil,
   SatelliteDish,
@@ -62,14 +63,9 @@ import logger from '@/lib/logger'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import NotFound from '../NotFound'
 import FollowedBy from './FollowedBy'
-import ProfileFeedWithPins from './ProfileFeedWithPins'
-import ProfileLikedFeed from './ProfileLikedFeed'
-import ProfileMediaFeed from './ProfileMediaFeed'
-import ProfilePublicationsFeed from './ProfilePublicationsFeed'
-import ProfileReportsFeed from './ProfileReportsFeed'
-import ProfileWallFeed from './ProfileWallFeed'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { TNoteListRef } from '@/components/NoteList'
+import ProfileBadges from './ProfileBadges'
+import ProfileFeed from './ProfileFeed'
+import ProfileReportsDialog from './ProfileReportsDialog'
 import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
@@ -101,7 +97,7 @@ export default function Profile({
   alexandriaNotFoundHref = null
 }: {
   id?: string
-  /** When set, exposes {@link ProfileFeedWithPins} `refresh` for titlebars / parent pages. */
+  /** When set, exposes {@link ProfileFeed} `refresh` for titlebars / parent pages. */
   feedRef?: Ref<{ refresh: () => void }>
   /** When profile lookup fails, link to Alexandria with the same identifier (search / deep link). */
   alexandriaNotFoundHref?: string | null
@@ -111,17 +107,8 @@ export default function Profile({
   const { navigate: navigatePrimary } = usePrimaryPage()
   const internalFeedRef = useRef<{ refresh: () => void }>(null)
   const profileFeedRef = feedRef ?? internalFeedRef
-  const postsFeedRef = useRef<{ refresh: () => void }>(null)
-  const mediaFeedRef = useRef<TNoteListRef>(null)
-  const publicationsFeedRef = useRef<{ refresh: () => void }>(null)
-  const reportsFeedRef = useRef<{ refresh: () => void }>(null)
-  const wallFeedRef = useRef<{ refresh: () => void }>(null)
-  const likedFeedRef = useRef<{ refresh: () => void }>(null)
-  const [profileFeedTab, setProfileFeedTab] = useState<
-    'posts' | 'media' | 'publications' | 'reports' | 'wall' | 'liked'
-  >('posts')
   const profilePubkeyRef = useRef<string | null>(null)
-  const pendingReportsRefreshRef = useRef(false)
+  const [openReportsDialog, setOpenReportsDialog] = useState(false)
 
   const { profile, isFetching } = useFetchProfile(id)
   profilePubkeyRef.current = profile?.pubkey ?? null
@@ -309,17 +296,8 @@ export default function Profile({
     const m = r as MutableRefObject<{ refresh: () => void } | null>
     m.current = {
       refresh: () => {
-        postsFeedRef.current?.refresh()
-        mediaFeedRef.current?.refresh()
-        publicationsFeedRef.current?.refresh()
-        wallFeedRef.current?.refresh()
-        likedFeedRef.current?.refresh()
+        internalFeedRef.current?.refresh()
         const pk = profilePubkeyRef.current
-        if (reportsFeedRef.current) {
-          reportsFeedRef.current.refresh()
-        } else {
-          pendingReportsRefreshRef.current = true
-        }
         if (pk) {
           void refreshAuthorReplaceables(pk)
         }
@@ -329,39 +307,6 @@ export default function Profile({
       m.current = null
     }
   }, [refreshAuthorReplaceables])
-
-  useEffect(() => {
-    if (!profile?.pubkey) return
-    setProfileFeedTab('posts')
-  }, [profile?.pubkey])
-
-  useEffect(() => {
-    if (!isSelf && profileFeedTab === 'liked') {
-      setProfileFeedTab('posts')
-    }
-  }, [isSelf, profileFeedTab])
-
-  /**
-   * Radix {@link TabsContent} unmounts inactive panels, so media / publications / liked feeds can miss the same
-   * warm-up window as Posts or show a frozen first paint. Re-run their refresh path when the tab becomes active
-   * (after refs attach — {@link useLayoutEffect}).
-   */
-  useLayoutEffect(() => {
-    if (profileFeedTab === 'media') {
-      mediaFeedRef.current?.refresh()
-    } else if (profileFeedTab === 'publications') {
-      publicationsFeedRef.current?.refresh()
-    } else if (profileFeedTab === 'reports') {
-      if (pendingReportsRefreshRef.current) {
-        pendingReportsRefreshRef.current = false
-      }
-      reportsFeedRef.current?.refresh()
-    } else if (profileFeedTab === 'wall') {
-      wallFeedRef.current?.refresh()
-    } else if (profileFeedTab === 'liked') {
-      likedFeedRef.current?.refresh()
-    }
-  }, [profileFeedTab])
 
   if (!profile && isFetching) {
     return (
@@ -452,13 +397,14 @@ export default function Profile({
           <div className="flex flex-wrap justify-end gap-2 items-center min-w-0">
             <ProfileOptions
               pubkey={pubkey}
-              profileEvent={profileEvent}
+              profileEvent={effectiveProfileEvent}
               onSendPublicMessage={!isSelf ? () => setOpenPublicMessageTo(pubkey) : undefined}
               onSendCallInvite={
                 !isSelf
                   ? (url) => setOpenCallInviteTo({ pubkey, url })
                   : undefined
               }
+              onSeeReports={() => setOpenReportsDialog(true)}
             />
             {isSelf ? (
               <DropdownMenu>
@@ -516,6 +462,10 @@ export default function Profile({
                   >
                     <Network />
                     {t('Interactions map')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOpenReportsDialog(true)}>
+                    <Flag />
+                    {t('See reports')}
                   </DropdownMenuItem>
                   {nostrArchivesProfileUrl ? (
                     <DropdownMenuItem onClick={() => openExternalUrl(nostrArchivesProfileUrl)}>
@@ -666,75 +616,16 @@ export default function Profile({
               </div>
               {!isSelf && <FollowedBy pubkey={pubkey} />}
             </div>
+            <ProfileBadges pubkey={pubkey} profileEventId={effectiveProfileEvent?.id} />
           </div>
         </div>
       </div>
-      <Tabs
-        value={profileFeedTab}
-        onValueChange={(v) => {
-          if (
-            v === 'posts' ||
-            v === 'media' ||
-            v === 'publications' ||
-            v === 'reports' ||
-            v === 'wall' ||
-            (isSelf && v === 'liked')
-          ) {
-            setProfileFeedTab(v)
-          }
-        }}
-        className="min-w-0 pt-4"
-      >
-        <TabsList className="mb-2 ml-1 h-auto min-h-9 w-full max-w-full justify-start flex-wrap gap-1 md:ml-4">
-          <TabsTrigger value="posts" className="shrink-0">
-            {t('Posts')}
-          </TabsTrigger>
-          <TabsTrigger value="media" className="shrink-0">
-            {t('Media')}
-          </TabsTrigger>
-          <TabsTrigger
-            value="publications"
-            className="shrink whitespace-normal text-center leading-tight max-sm:px-2 max-sm:text-xs"
-          >
-            {t('Articles and Publications')}
-          </TabsTrigger>
-          <TabsTrigger value="reports" className="shrink-0">
-            {t('Reports')}
-          </TabsTrigger>
-          <TabsTrigger value="wall" className="shrink-0">
-            {t('Wall')}
-          </TabsTrigger>
-          {isSelf && (
-            <TabsTrigger value="liked" className="shrink-0">
-              {t('Liked')}
-            </TabsTrigger>
-          )}
-        </TabsList>
-        <TabsContent value="posts" className="min-w-0 focus-visible:outline-none">
-          <ProfileFeedWithPins ref={postsFeedRef} pubkey={pubkey} />
-        </TabsContent>
-        <TabsContent value="media" className="min-w-0 focus-visible:outline-none">
-          <ProfileMediaFeed ref={mediaFeedRef} pubkey={pubkey} />
-        </TabsContent>
-        <TabsContent value="publications" className="min-w-0 focus-visible:outline-none">
-          <ProfilePublicationsFeed ref={publicationsFeedRef} pubkey={pubkey} />
-        </TabsContent>
-        <TabsContent value="reports" className="min-w-0 focus-visible:outline-none">
-          {profileFeedTab === 'reports' ? (
-            <ProfileReportsFeed ref={reportsFeedRef} pubkey={pubkey} />
-          ) : null}
-        </TabsContent>
-        <TabsContent value="wall" className="min-w-0 focus-visible:outline-none">
-          {profileFeedTab === 'wall' ? (
-            <ProfileWallFeed ref={wallFeedRef} pubkey={pubkey} profileEventId={profileEvent?.id} />
-          ) : null}
-        </TabsContent>
-        {isSelf && (
-          <TabsContent value="liked" className="min-w-0 focus-visible:outline-none">
-            <ProfileLikedFeed ref={likedFeedRef} pubkey={pubkey} />
-          </TabsContent>
-        )}
-      </Tabs>
+      <ProfileFeed ref={profileFeedRef} pubkey={pubkey} />
+      <ProfileReportsDialog
+        open={openReportsDialog}
+        onOpenChange={setOpenReportsDialog}
+        pubkey={pubkey}
+      />
       {openPublicMessageTo && (
         <PostEditor
           open={!!openPublicMessageTo}

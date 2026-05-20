@@ -3,7 +3,7 @@ import NoteCard from '@/components/NoteCard'
 import KindFilter from '@/components/KindFilter'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExtendedKind, PROFILE_POSTS_TAB_KINDS } from '@/constants'
+import { ExtendedKind, PROFILE_FEED_KINDS, PROFILE_TIMELINE_REQ_LIMIT } from '@/constants'
 import { useProfileAuthorFeedSubRequests } from '@/hooks/useProfileAuthorFeedSubRequests'
 import { useProfilePins } from '@/hooks/useProfilePins'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -13,7 +13,9 @@ import { nip19, kinds } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ pubkey }, ref) => {
+const profileFeedKinds = [...PROFILE_FEED_KINDS]
+
+const ProfileFeed = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ pubkey }, ref) => {
   const { t } = useTranslation()
   const { isEventDeleted } = useDeletedEvent()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
@@ -32,13 +34,11 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
 
   const { pinEvents, loadingPins, refreshPins } = useProfilePins(pubkey)
 
-  const postsTabKinds = useMemo(() => [...PROFILE_POSTS_TAB_KINDS], [])
-
   const { subRequests, followingFeedDeltaSubRequests, feedSubscriptionKey, refresh: refreshAuthorRelayLayers } =
     useProfileAuthorFeedSubRequests({
       pubkey,
-      kinds: postsTabKinds,
-      limit: 200
+      kinds: profileFeedKinds,
+      limit: PROFILE_TIMELINE_REQ_LIMIT
     })
 
   const pinnedEventIds = useMemo(
@@ -146,6 +146,6 @@ const ProfileFeedWithPins = forwardRef<{ refresh: () => void }, { pubkey: string
   )
 })
 
-ProfileFeedWithPins.displayName = 'ProfileFeedWithPins'
+ProfileFeed.displayName = 'ProfileFeed'
 
-export default ProfileFeedWithPins
+export default ProfileFeed

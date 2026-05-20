@@ -920,6 +920,9 @@ export const PROFILE_FEED_KINDS = SUPPORTED_KINDS.filter(
     k !== ExtendedKind.APPLICATION_HANDLER_INFO
 )
 
+/** REQ `limit` for profile page timelines (single feed; narrow with kind filter or 🔍 search). */
+export const PROFILE_TIMELINE_REQ_LIMIT = 500
+
 /** Long-form, wiki, and publication index events for the profile "Articles and Publications" tab. */
 export const PROFILE_PUBLICATIONS_TAB_KINDS: readonly number[] = [
   kinds.LongFormArticle,

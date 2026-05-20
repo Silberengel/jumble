@@ -27,8 +27,8 @@ describe('getProfileAuthorWarmupSpec', () => {
   })
 
   it('detects profile feed subscription keys', () => {
+    expect(isProfileTimelineSubscriptionKey('profile-feed-abc-1-500')).toBe(true)
     expect(isProfileTimelineSubscriptionKey('profile-posts-abc-1-200')).toBe(true)
-    expect(isProfileTimelineSubscriptionKey('profile-media-abc')).toBe(true)
     expect(isProfileTimelineSubscriptionKey('home-all-favorites')).toBe(false)
     expect(isProfileTimelineSubscriptionKey(null)).toBe(false)
   })

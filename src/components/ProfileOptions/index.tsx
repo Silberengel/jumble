@@ -28,6 +28,7 @@ import {
   Copy,
   Ellipsis,
   ExternalLink,
+  Flag,
   ThumbsUp,
   MessageCircle,
   Network,
@@ -47,7 +48,8 @@ export default function ProfileOptions({
   pubkey,
   profileEvent,
   onSendPublicMessage,
-  onSendCallInvite
+  onSendCallInvite,
+  onSeeReports
 }: {
   pubkey: string
   /** Optional profile event (kind 0): reply / like, republish to relays, view JSON */
@@ -56,6 +58,8 @@ export default function ProfileOptions({
   onSendPublicMessage?: () => void
   /** Opens the post editor to send the call invite URL as a public message to this profile. */
   onSendCallInvite?: (url: string) => void
+  /** Opens the profile reports modal. */
+  onSeeReports?: () => void
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
@@ -257,6 +261,12 @@ export default function ProfileOptions({
           <Network />
           {t('Interactions map')}
         </DropdownMenuItem>
+        {onSeeReports && (
+          <DropdownMenuItem onClick={onSeeReports}>
+            <Flag />
+            {t('See reports')}
+          </DropdownMenuItem>
+        )}
         {nostrArchivesProfileUrl && (
           <DropdownMenuItem onClick={() => openExternalUrl(nostrArchivesProfileUrl)}>
             <ExternalLink />

@@ -118,7 +118,7 @@ export function useProfileAuthorFeedSubRequests({
   const followingFeedDeltaSubRequests = useMemo(() => [] as TFeedSubRequest[], [])
 
   const feedSubscriptionKey = useMemo(() => {
-    return `profile-posts-${authorHex}-${kindsKey}-${limit}`
+    return `profile-feed-${authorHex}-${kindsKey}-${limit}`
   }, [authorHex, kindsKey, limit])
 
   const refresh = useCallback(() => {

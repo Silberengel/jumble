@@ -131,6 +131,8 @@ export default {
     "Open in wallet": "Open in wallet",
     "Open in {{name}}": "Open in {{name}}",
     "Open with": "Open with",
+    "See reports": "See reports",
+    "Profile reports dialog description": "Reports received by and submitted from this profile.",
     "Raw profile event": "Raw profile event",
     "Full profile event": "Full profile event",
     "Event (JSON)": "Event (JSON)",
