@@ -13,7 +13,8 @@ describe('public-message-publish-relays', () => {
         read: ['wss://sender-in.example/'],
         httpWrite: ['https://sender-http.example/'],
         httpRead: ['https://sender-http-in.example/'],
-        originalRelays: []
+        originalRelays: [],
+        httpOriginalRelays: []
       })
     ).toEqual(['https://sender-http.example/', 'wss://sender-out.example/'])
 
@@ -23,7 +24,8 @@ describe('public-message-publish-relays', () => {
         read: ['wss://recipient-in.example/'],
         httpWrite: [],
         httpRead: ['https://recipient-http-in.example/'],
-        originalRelays: []
+        originalRelays: [],
+        httpOriginalRelays: []
       })
     ).toEqual(['https://recipient-http-in.example/', 'wss://recipient-in.example/'])
   })

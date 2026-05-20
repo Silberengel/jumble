@@ -2865,7 +2865,8 @@ class ClientService extends EventTarget {
        */
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
       relayReqLog,
-      relayAuthoritativeTimeline = false
+      relayAuthoritativeTimeline = false,
+      connectionSlotPriority
     }: {
       startLogin?: () => void
       needSort?: boolean
