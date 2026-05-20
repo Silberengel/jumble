@@ -86,11 +86,11 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import {
-  getAlternativePaymentMethods,
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
   sortMergedPaymentMethods
 } from '@/lib/merge-payment-methods'
+import { isLightningPaytoType } from '@/lib/payto'
 
 export default function Profile({
   id,
@@ -118,6 +118,7 @@ export default function Profile({
     'posts' | 'media' | 'publications' | 'reports' | 'wall' | 'liked'
   >('posts')
   const profilePubkeyRef = useRef<string | null>(null)
+  const pendingReportsRefreshRef = useRef(false)
 
   const { profile, isFetching } = useFetchProfile(id)
   profilePubkeyRef.current = profile?.pubkey ?? null
@@ -125,6 +126,7 @@ export default function Profile({
   const [paymentInfo, setPaymentInfo] = useState<ReturnType<typeof getPaymentInfoFromEvent> | null>(null)
   const [profileEvent, setProfileEvent] = useState<NostrEvent | undefined>(undefined)
   const [openZapDialog, setOpenZapDialog] = useState(false)
+  const [zapLightningDefault, setZapLightningDefault] = useState<string | null>(null)
   const [openPublicMessageTo, setOpenPublicMessageTo] = useState<string | null>(null)
   const [openCallInviteTo, setOpenCallInviteTo] = useState<{ pubkey: string; url: string } | null>(null)
   const [openScheduleOwnCall, setOpenScheduleOwnCall] = useState(false)
@@ -145,13 +147,8 @@ export default function Profile({
     [mergedPaymentMethods]
   )
 
-  const alternativePaymentGroups = useMemo(() => {
-    const alts = getAlternativePaymentMethods(mergedPaymentMethods, profile?.lightningAddress)
-    return groupPaymentMethodsByDisplayType(alts)
-  }, [mergedPaymentMethods, profile?.lightningAddress])
-
   const hasLightningForZap = useMemo(
-    () => paymentMethodsByType.some((g) => g.methods.some((m) => m.type === 'lightning')),
+    () => paymentMethodsByType.some((g) => g.methods.some((m) => isLightningPaytoType(m.type))),
     [paymentMethodsByType]
   )
 
@@ -176,6 +173,11 @@ export default function Profile({
     }
     void syncAuthorReplaceablesFromCache(profile.pubkey)
   }, [profile?.pubkey, syncAuthorReplaceablesFromCache])
+
+  const refreshAuthorReplaceables = useCallback(async (pubkey: string) => {
+    await client.forceRefreshProfileAndPaymentInfoCache(pubkey)
+    await syncAuthorReplaceablesFromCache(pubkey)
+  }, [syncAuthorReplaceablesFromCache])
 
   useEffect(() => {
     if (!profile?.pubkey) return
@@ -276,19 +278,23 @@ export default function Profile({
         postsFeedRef.current?.refresh()
         mediaFeedRef.current?.refresh()
         publicationsFeedRef.current?.refresh()
-        reportsFeedRef.current?.refresh()
         wallFeedRef.current?.refresh()
         likedFeedRef.current?.refresh()
         const pk = profilePubkeyRef.current
+        if (reportsFeedRef.current) {
+          reportsFeedRef.current.refresh()
+        } else {
+          pendingReportsRefreshRef.current = true
+        }
         if (pk) {
-          void client.refreshAuthorPublishedReplaceablesOnProfileView(pk)
+          void refreshAuthorReplaceables(pk)
         }
       }
     }
     return () => {
       m.current = null
     }
-  }, [])
+  }, [refreshAuthorReplaceables])
 
   useEffect(() => {
     if (!profile?.pubkey) return
@@ -312,6 +318,9 @@ export default function Profile({
     } else if (profileFeedTab === 'publications') {
       publicationsFeedRef.current?.refresh()
     } else if (profileFeedTab === 'reports') {
+      if (pendingReportsRefreshRef.current) {
+        pendingReportsRefreshRef.current = false
+      }
       reportsFeedRef.current?.refresh()
     } else if (profileFeedTab === 'wall') {
       wallFeedRef.current?.refresh()
@@ -514,7 +523,15 @@ export default function Profile({
             {!isSelf ? (
               <>
                 {hasLightningForZap && (
-                  <ProfileZapButton pubkey={pubkey} openZapDialog={openZapDialog} setOpenZapDialog={setOpenZapDialog} />
+                  <ProfileZapButton
+                    pubkey={pubkey}
+                    openZapDialog={openZapDialog}
+                    setOpenZapDialog={(open) => {
+                      if (open) setZapLightningDefault(null)
+                      setOpenZapDialog(open)
+                      if (!open) setZapLightningDefault(null)
+                    }}
+                  />
                 )}
                 <FollowButton pubkey={pubkey} />
               </>
@@ -577,15 +594,22 @@ export default function Profile({
               <PaymentMethodsSection
                 groups={paymentMethodsByType}
                 recipientPubkey={pubkey}
-                onOpenZap={() => setOpenZapDialog(true)}
+                onOpenZap={(lightningAuthority) => {
+                  setZapLightningDefault(lightningAuthority)
+                  setOpenZapDialog(true)
+                }}
                 className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0"
               />
             )}
             <ZapDialog
               open={openZapDialog}
-              setOpen={setOpenZapDialog}
+              setOpen={(next) => {
+                const willOpen = typeof next === 'function' ? next(openZapDialog) : next
+                setOpenZapDialog(willOpen)
+                if (!willOpen) setZapLightningDefault(null)
+              }}
               pubkey={pubkey}
-              alternativePaymentGroups={alternativePaymentGroups}
+              defaultLightningAddress={zapLightningDefault}
             />
             <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
               <div className="flex flex-wrap gap-4 items-center min-w-0">

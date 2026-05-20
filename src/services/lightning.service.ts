@@ -14,6 +14,7 @@ import client from './client.service'
 import storage from './local-storage.service'
 import { queryService, replaceableEventService } from './client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
+import { prioritizeZapLightningAddress } from '@/lib/merge-payment-methods'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
 import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
@@ -44,7 +45,8 @@ class LightningService {
     sats: number,
     comment: string,
     closeOuterModel?: () => void,
-    includePublicReceipt: boolean = storage.getIncludePublicZapReceipt()
+    includePublicReceipt: boolean = storage.getIncludePublicZapReceipt(),
+    zapLightning?: { address?: string; candidates?: string[] }
   ): Promise<{ preimage: string; invoice: string } | null> {
     if (!client.signer) {
       throw new Error('You need to be logged in to zap')
@@ -67,7 +69,7 @@ class LightningService {
     if (!profile) {
       throw new Error('Recipient not found')
     }
-    const zapEndpoint = await this.getZapEndpoint(profile)
+    const zapEndpoint = await this.getZapEndpoint(profile, zapLightning)
     if (!zapEndpoint) {
       throw new Error("Recipient's lightning address is invalid")
     }
@@ -216,11 +218,16 @@ class LightningService {
     return this.recentSupportersCache
   }
 
-  private async getZapEndpoint(profile: TProfile): Promise<null | {
+  private async getZapEndpoint(
+    profile: TProfile,
+    zapLightning?: { address?: string; candidates?: string[] }
+  ): Promise<null | {
     callback: string
     lnurl: string
   }> {
-    const candidates = this.lightningAddressCandidates(profile)
+    const candidates = zapLightning?.candidates?.length
+      ? prioritizeZapLightningAddress(zapLightning.candidates, zapLightning.address)
+      : this.lightningAddressCandidates(profile, zapLightning?.address)
     for (const addr of candidates) {
       const resolved = await this.fetchLnurlPayZapEndpoint(addr)
       if (resolved) return resolved
@@ -229,7 +236,7 @@ class LightningService {
   }
 
   /** Ordered lightning identifiers from kind 0 (lud16/lud06 + `w` lightning rows); de-duplicated. */
-  private lightningAddressCandidates(profile: TProfile): string[] {
+  private lightningAddressCandidates(profile: TProfile, preferredFirst?: string): string[] {
     const raw =
       profile.lightningAddressList?.length && profile.lightningAddressList.length > 0
         ? profile.lightningAddressList
@@ -246,7 +253,7 @@ class LightningService {
       seen.add(k)
       out.push(t)
     }
-    return out
+    return prioritizeZapLightningAddress(out, preferredFirst)
   }
 
   private async fetchLnurlPayZapEndpoint(lightningAddress: string): Promise<null | {

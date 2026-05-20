@@ -120,6 +120,8 @@ export function getPaytoIconChar(type: string): string | null {
   return getPaytoTypeRecord(type)?.symbol ?? null
 }
 
+/** LUD-16 lightning and BIP-353 DNS payment instructions (not on-chain Bitcoin). */
 export function isLightningPaytoType(type: string): boolean {
-  return getCanonicalPaytoType(type) === 'lightning'
+  const canonical = getCanonicalPaytoType(type)
+  return canonical === 'lightning' || canonical === 'bip353'
 }

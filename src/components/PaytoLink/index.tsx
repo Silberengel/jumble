@@ -32,7 +32,7 @@ export default function PaytoLink({
   authority?: string
   /** When set with lightning type, clicking can open Zap dialog via onOpenZap */
   pubkey?: string
-  onOpenZap?: (pubkey: string) => void
+  onOpenZap?: (pubkey: string, lightningAuthority: string) => void
   className?: string
   children?: React.ReactNode
   linkTitle?: string
@@ -64,7 +64,7 @@ export default function PaytoLink({
     e.preventDefault()
     e.stopPropagation()
     if (canZap) {
-      onOpenZap(pubkey!)
+      onOpenZap(pubkey!, authority)
       return
     }
     if (!known) {

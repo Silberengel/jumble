@@ -39,6 +39,7 @@ export default function App(): JSX.Element {
           <ScreenSizeProvider>
           <DeletedEventProvider>
             <NostrProvider>
+              <CacheBrowserProvider>
               <div className="flex min-h-[100dvh] flex-col">
                 <VersionUpdateBanner />
                 <StartupSessionBanner />
@@ -59,9 +60,7 @@ export default function App(): JSX.Element {
                                         <KindFilterProvider>
                                           <UserPreferencesProvider>
                                             <LiveActivitiesProvider>
-                                              <CacheBrowserProvider>
                                                 <PageManager />
-                                              </CacheBrowserProvider>
                                             </LiveActivitiesProvider>
                                             <ReadAloudPlayerModal />
                                             <PublishSuccessSubtleIndicator />
@@ -81,6 +80,7 @@ export default function App(): JSX.Element {
                   </ZapProvider>
                 </div>
               </div>
+              </CacheBrowserProvider>
             </NostrProvider>
             <Toaster />
           </DeletedEventProvider>

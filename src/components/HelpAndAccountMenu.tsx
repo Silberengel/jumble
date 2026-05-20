@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatPubkey, formatNpub, generateImageByPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import { useCacheBrowser } from '../contexts/cache-browser-context'
+import { useCacheBrowserOptional } from '../contexts/cache-browser-context'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
@@ -26,14 +26,15 @@ export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 
 function AccountDropdownItems({
   onSwitchAccount,
-  onLogoutClick
+  onLogoutClick,
+  onBrowseCache
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
+  onBrowseCache?: () => void
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
-  const { openBrowseCache } = useCacheBrowser()
 
   return (
     <>
@@ -45,14 +46,12 @@ function AccountDropdownItems({
         <Settings className="size-4" />
         {t('Settings')}
       </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => {
-          openBrowseCache()
-        }}
-      >
-        <Database className="size-4" />
-        {t('Browse Cache')}
-      </DropdownMenuItem>
+      {onBrowseCache ? (
+        <DropdownMenuItem onClick={onBrowseCache}>
+          <Database className="size-4" />
+          {t('Browse Cache')}
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={onSwitchAccount}>
         <ArrowDownUp className="size-4" />
@@ -68,10 +67,12 @@ function AccountDropdownItems({
 
 function SidebarAccountMenu({
   onSwitchAccount,
-  onLogoutClick
+  onLogoutClick,
+  onBrowseCache
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
+  onBrowseCache?: () => void
 }) {
   const { t } = useTranslation()
   const { account, profile } = useNostr()
@@ -118,7 +119,11 @@ function SidebarAccountMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="z-[220]">
-        <AccountDropdownItems onSwitchAccount={onSwitchAccount} onLogoutClick={onLogoutClick} />
+        <AccountDropdownItems
+          onSwitchAccount={onSwitchAccount}
+          onLogoutClick={onLogoutClick}
+          onBrowseCache={onBrowseCache}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -126,10 +131,12 @@ function SidebarAccountMenu({
 
 function TitlebarAccountMenu({
   onSwitchAccount,
-  onLogoutClick
+  onLogoutClick,
+  onBrowseCache
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
+  onBrowseCache?: () => void
 }) {
   const { t } = useTranslation()
   const { account, profile } = useNostr()
@@ -172,7 +179,11 @@ function TitlebarAccountMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="bottom" className="z-[220]">
-        <AccountDropdownItems onSwitchAccount={onSwitchAccount} onLogoutClick={onLogoutClick} />
+        <AccountDropdownItems
+          onSwitchAccount={onSwitchAccount}
+          onLogoutClick={onLogoutClick}
+          onBrowseCache={onBrowseCache}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -182,6 +193,7 @@ function TitlebarAccountMenu({
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
+  const onBrowseCache = useCacheBrowserOptional()?.openBrowseCache
   const [loginDialogOpen, setLoginDialogOpen] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
@@ -192,11 +204,13 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
         <SidebarAccountMenu
           onSwitchAccount={() => setLoginDialogOpen(true)}
           onLogoutClick={() => setLogoutDialogOpen(true)}
+          onBrowseCache={onBrowseCache}
         />
       ) : (
         <TitlebarAccountMenu
           onSwitchAccount={() => setLoginDialogOpen(true)}
           onLogoutClick={() => setLogoutDialogOpen(true)}
+          onBrowseCache={onBrowseCache}
         />
       )
   } else if (variant === 'sidebar') {

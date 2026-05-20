@@ -1,7 +1,14 @@
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
-import { buildPaytoUri, getCanonicalPaytoType, getPaytoEditorTypeLabel, getPaytoTypeInfo } from '@/lib/payto'
+import {
+  buildPaytoUri,
+  getCanonicalPaytoType,
+  getPaytoEditorTypeLabel,
+  getPaytoTypeInfo,
+  isLightningPaytoType
+} from '@/lib/payto'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import type { TProfile } from '@/types'
+import { kinds, type Event } from 'nostr-tools'
 
 export type MergedPaymentMethod = {
   type: string
@@ -16,6 +23,14 @@ export type MergedPaymentMethod = {
 export type PaymentMethodGroup = {
   displayType: string
   methods: MergedPaymentMethod[]
+  /** Zap dialog: emphasize on-chain Bitcoin when tip is ≥ 10k sats. */
+  highlighted?: boolean
+}
+
+export type ZapDialogAlternativePayments = {
+  groups: PaymentMethodGroup[]
+  /** Show banner when on-chain Bitcoin targets are listed (≥ 10k sats). */
+  showBitcoinOnChainHint: boolean
 }
 
 /** Normalize lightning/LUD-16 authority to a canonical form for deduplication. */
@@ -47,6 +62,65 @@ function resolveLightningAuthority(a: string, b?: string): string {
   return normalizeLightningAuthority(preferred) || preferred.trim()
 }
 
+/** Below this zap size, on-chain Bitcoin payto targets are hidden in the zap dialog. */
+export const ZAP_HIDE_BITCOIN_ALTS_MAX_SATS = 10_000
+
+/** On-chain Bitcoin family (not Lightning / Liquid layer types). */
+export function isBitcoinCategoryPaytoType(type: string): boolean {
+  return getPaytoTypeInfo(getCanonicalPaytoType(type))?.category === 'bitcoin'
+}
+
+/** Sort key for zap dialog “other payment” groups (lower = higher in list). */
+function zapAlternativeGroupSortRank(group: PaymentMethodGroup): number {
+  const types = group.methods.map((m) => getCanonicalPaytoType(m.type))
+  if (types.some((t) => isBitcoinCategoryPaytoType(t))) return -1000
+  if (types.some((t) => getPaytoTypeInfo(t)?.category === 'bitcoin-layer' || t === 'liquid' || t === 'lbtc')) {
+    return 0
+  }
+  if (types.some((t) => t === 'monero')) return 1
+  if (types.some((t) => t === 'usdt')) return 2
+  if (types.some((t) => t === 'usdc')) return 3
+  return 10
+}
+
+/** Filter, order, and annotate payto groups for the zap dialog “other payment methods” block. */
+export function prepareZapDialogAlternativePayments(
+  groups: PaymentMethodGroup[],
+  zapSats: number
+): ZapDialogAlternativePayments {
+  const showBitcoin = zapSats >= ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
+
+  const filtered = showBitcoin
+    ? groups
+    : groups
+        .map((group) => ({
+          ...group,
+          methods: group.methods.filter((m) => !isBitcoinCategoryPaytoType(m.type))
+        }))
+        .filter((group) => group.methods.length > 0)
+
+  const prepared = filtered
+    .map((group) => ({
+      ...group,
+      highlighted:
+        showBitcoin && group.methods.some((m) => isBitcoinCategoryPaytoType(m.type))
+    }))
+    .sort((a, b) => zapAlternativeGroupSortRank(a) - zapAlternativeGroupSortRank(b))
+
+  return {
+    groups: prepared,
+    showBitcoinOnChainHint: showBitcoin && prepared.some((g) => g.highlighted)
+  }
+}
+
+/** @deprecated Use {@link prepareZapDialogAlternativePayments} */
+export function filterPaymentMethodGroupsForZapAmount(
+  groups: PaymentMethodGroup[],
+  zapSats: number
+): PaymentMethodGroup[] {
+  return prepareZapDialogAlternativePayments(groups, zapSats).groups
+}
+
 /** Bitcoin-layer first, then on-chain Bitcoin family, then everything else. */
 export function paytoPaymentSortRank(type: string): number {
   const category = getPaytoTypeInfo(type)?.category
@@ -75,7 +149,7 @@ export function mergePaymentMethods(
     const key = `${normType}:${normalizePaymentAuthority(normType, authority)}`
     const existing = seen.get(key)
     if (existing) {
-      if (normType === 'lightning') {
+      if (isLightningPaytoType(normType)) {
         existing.authority = resolveLightningAuthority(existing.authority, authority.trim())
         existing.payto = buildPaytoUri(normType, existing.authority)
       }
@@ -83,7 +157,7 @@ export function mergePaymentMethods(
     }
     const trimmedAuthority = authority.trim()
     const resolvedAuthority =
-      normType === 'lightning'
+      isLightningPaytoType(normType)
         ? resolveLightningAuthority(trimmedAuthority)
         : normType === 'paypal'
           ? normalizePaypalAuthority(trimmedAuthority)
@@ -181,14 +255,60 @@ export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[])
   return order.map((key) => ({ displayType: key, methods: groups.get(key) ?? [] }))
 }
 
-/** Payment targets that differ from the lightning address used for zapping. */
-export function getAlternativePaymentMethods(
-  methods: MergedPaymentMethod[],
-  zapLightningAddress: string | undefined
-): MergedPaymentMethod[] {
-  const zapNorm = zapLightningAddress?.trim()
-    ? normalizePaymentAuthority('lightning', zapLightningAddress)
-    : null
-  if (!zapNorm) return methods
-  return methods.filter((m) => normalizePaymentAuthority(m.type, m.authority) !== zapNorm)
+/**
+ * Ordered Lightning targets for zaps: kind 0 `lud16` tags, then `w` (network lightning),
+ * then kind 10133 lightning methods. Optional `preferredAddress` is moved to the front.
+ */
+export function buildOrderedZapLightningAddresses(opts: {
+  profileEvent?: Event | null
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+  preferredAddress?: string | null
+}): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+
+  const add = (raw: string | undefined) => {
+    if (!raw?.trim()) return
+    const resolved = resolveLightningAuthority(raw.trim())
+    const key = normalizePaymentAuthority('lightning', resolved)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(resolved)
+  }
+
+  const ev = opts.profileEvent
+  if (ev?.kind === kinds.Metadata) {
+    for (const tag of ev.tags) {
+      if (tag[0] === 'lud16' && tag[1]) add(tag[1])
+    }
+    for (const tag of ev.tags) {
+      if (tag[0] === 'w' && tag[1] && tag[2] && String(tag[3]).toLowerCase() === 'lightning') {
+        add(tag[2])
+      }
+    }
+  }
+
+  const paymentMethods = mergePaymentMethods(opts.paymentInfo, null)
+  for (const m of paymentMethods) {
+    if (isLightningPaytoType(m.type)) add(m.authority)
+  }
+
+  return prioritizeZapLightningAddress(out, opts.preferredAddress ?? undefined)
+}
+
+/** Move `preferred` to the front when present; append if not already listed. */
+export function prioritizeZapLightningAddress(candidates: string[], preferred?: string): string[] {
+  if (!preferred?.trim()) return candidates
+  const norm = normalizePaymentAuthority('lightning', preferred)
+  const idx = candidates.findIndex((c) => normalizePaymentAuthority('lightning', c) === norm)
+  if (idx === -1) {
+    return [resolveLightningAuthority(preferred.trim()), ...candidates]
+  }
+  const rest = candidates.filter((_, i) => i !== idx)
+  return [candidates[idx], ...rest]
+}
+
+/** Non-Lightning payto targets for zap dialog “other payment methods” (Lightning has its own selector). */
+export function getAlternativePaymentMethods(methods: MergedPaymentMethod[]): MergedPaymentMethod[] {
+  return methods.filter((m) => !isLightningPaytoType(m.type))
 }

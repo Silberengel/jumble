@@ -3,7 +3,9 @@ import {
   getCanonicalPaytoType,
   getPaytoAuthorityFieldHelp,
   getPaytoLogoPath,
+  getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
+  isLightningPaytoType,
   isPaytoEditorCustomType,
   PAYTO_EDITOR_OTHER_OPTION,
   paytoEditorSelectTypes
@@ -44,11 +46,19 @@ describe('payto aliases', () => {
 })
 
 describe('bitcoin family types', () => {
-  it('uses bitcoin symbol and category for bolt12 and BIPs', () => {
+  it('uses bitcoin category for bolt12 and BIP-352 silent payments', () => {
     const help = getPaytoAuthorityFieldHelp('bolt12')
     expect(help.placeholder).toContain('lno1')
-    expect(getPaytoAuthorityFieldHelp('bip353').placeholder).toContain('@')
+    expect(getPaytoTypeInfo('bip352')?.category).toBe('bitcoin')
     expect(getPaytoAuthorityFieldHelp('bip352').placeholder).toContain('sp1')
+    expect(getPaytoEditorTypeLabel('bip352')).toBe('Silent Payments (BIP-352)')
+  })
+
+  it('treats BIP-353 as lightning-layer, not on-chain bitcoin', () => {
+    expect(getPaytoTypeInfo('bip353')?.category).toBe('bitcoin-layer')
+    expect(isLightningPaytoType('bip353')).toBe(true)
+    expect(getPaytoEditorTypeLabel('bip353')).toBe('DNS Payment Instructions (BIP-353)')
+    expect(getPaytoAuthorityFieldHelp('bip353').placeholder).toContain('@')
   })
 })
 

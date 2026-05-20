@@ -59,6 +59,7 @@
       "label": "Bitcoin",
       "symbol": "₿",
       "category": "bitcoin",
+      "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
       "authority": {
         "placeholder": "bc1q…",
         "hint": "On-chain Bitcoin address (Bech32 bc1… preferred)"
@@ -68,24 +69,26 @@
       "label": "Bolt 12",
       "symbol": "₿",
       "category": "bitcoin",
+      "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
       "authority": {
         "placeholder": "lno1…",
         "hint": "BOLT-12 offer (static offer string, e.g. lno1…)"
       }
     },
     "bip353": {
-      "label": "BIP-353",
-      "symbol": "₿",
-      "category": "bitcoin",
+      "label": "DNS Payment Instructions (BIP-353)",
+      "symbol": "⚡",
+      "category": "bitcoin-layer",
       "authority": {
-        "placeholder": "₿user@example.com",
-        "hint": "BIP-353 DNS payment address (human-readable name@domain)"
+        "placeholder": "user@example.com",
+        "hint": "BIP-353 DNS payment instructions (human-readable name@domain, resolves to Lightning)"
       }
     },
     "bip352": {
-      "label": "BIP-352",
+      "label": "Silent Payments (BIP-352)",
       "symbol": "₿",
       "category": "bitcoin",
+      "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
       "authority": {
         "placeholder": "sp1…",
         "hint": "BIP-352 silent payment address (sp1…)"

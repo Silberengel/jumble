@@ -7,23 +7,32 @@ import {
 } from '@/lib/merge-payment-methods'
 import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import client, { replaceableEventService } from '@/services/client.service'
-import { kinds } from 'nostr-tools'
+import { kinds, type Event } from 'nostr-tools'
 import { useEffect, useMemo, useState } from 'react'
 import type { TPaymentInfo } from '@/types'
 import type { TProfile } from '@/types'
 
+export type RecipientZapPaymentData = {
+  paymentInfo: TPaymentInfo | null
+  profile: TProfile | null
+  profileEvent: Event | null
+  alternativeGroups: PaymentMethodGroup[]
+}
+
 /** Kind 10133 + profile payto targets except the Lightning address used for zapping. */
-export function useRecipientAlternativePayments(
+export function useRecipientZapPaymentData(
   recipientPubkey: string | undefined,
   enabled: boolean
-): PaymentMethodGroup[] {
+): RecipientZapPaymentData {
   const [paymentInfo, setPaymentInfo] = useState<TPaymentInfo | null>(null)
   const [profile, setProfile] = useState<TProfile | null>(null)
+  const [profileEvent, setProfileEvent] = useState<Event | null>(null)
 
   useEffect(() => {
     if (!enabled || !recipientPubkey) {
       setPaymentInfo(null)
       setProfile(null)
+      setProfileEvent(null)
       return
     }
     let cancelled = false
@@ -35,11 +44,13 @@ export function useRecipientAlternativePayments(
         ])
         if (cancelled) return
         setPaymentInfo(paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null)
+        setProfileEvent(metaEvent ?? null)
         setProfile(metaEvent ? getProfileFromEvent(metaEvent) : null)
       } catch {
         if (!cancelled) {
           setPaymentInfo(null)
           setProfile(null)
+          setProfileEvent(null)
         }
       }
     })()
@@ -48,10 +59,20 @@ export function useRecipientAlternativePayments(
     }
   }, [recipientPubkey, enabled])
 
-  return useMemo(() => {
+  const alternativeGroups = useMemo(() => {
     if (!recipientPubkey) return []
     const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile))
-    const alts = getAlternativePaymentMethods(merged, profile?.lightningAddress)
+    const alts = getAlternativePaymentMethods(merged)
     return groupPaymentMethodsByDisplayType(alts)
   }, [recipientPubkey, paymentInfo, profile])
+
+  return { paymentInfo, profile, profileEvent, alternativeGroups }
+}
+
+/** @deprecated Use {@link useRecipientZapPaymentData} */
+export function useRecipientAlternativePayments(
+  recipientPubkey: string | undefined,
+  enabled: boolean
+): PaymentMethodGroup[] {
+  return useRecipientZapPaymentData(recipientPubkey, enabled).alternativeGroups
 }

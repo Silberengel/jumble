@@ -1124,6 +1124,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const [secondaryStack, setSecondaryStack] = useState<TStackItem[]>([])
   /** Latest stack for popstate / pop() — avoids stale length when history and React state race. */
   const secondaryStackRef = useRef<TStackItem[]>([])
+  /** Suppress duplicate pushSecondaryPage calls (e.g. React Strict Mode) within a short window. */
+  const recentSecondaryPushRef = useRef<{ url: string; at: number } | null>(null)
   useLayoutEffect(() => {
     secondaryStackRef.current = secondaryStack
   }, [secondaryStack])
@@ -1962,6 +1964,18 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   const pushSecondaryPage = (url: string, index?: number) => {
     logger.component('PageManager', 'pushSecondaryPage called', { url })
+
+    const now = Date.now()
+    const recent = recentSecondaryPushRef.current
+    if (recent?.url === url && now - recent.at < 400) {
+      logger.component('PageManager', 'pushSecondaryPage skipped (recent duplicate)', { url })
+      return
+    }
+    if (isCurrentPage(secondaryStackRef.current, url)) {
+      logger.component('PageManager', 'pushSecondaryPage skipped (already on stack)', { url })
+      return
+    }
+    recentSecondaryPushRef.current = { url, at: now }
 
     // Small screens render either the primary overlay OR the secondary stack — not both.
     // Clear overlays (e.g. full-screen note) so pushes from Seen-on, settings deep links, etc. show the target page.

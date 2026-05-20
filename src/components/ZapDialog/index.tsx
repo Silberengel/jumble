@@ -26,9 +26,19 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import type { PaymentMethodGroup } from '@/lib/merge-payment-methods'
+import {
+  buildOrderedZapLightningAddresses,
+  prepareZapDialogAlternativePayments
+} from '@/lib/merge-payment-methods'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
-import { useRecipientAlternativePayments } from '@/hooks/useRecipientAlternativePayments'
+import { useRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import TipPublicMessagePrompt from './TipPublicMessagePrompt'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
@@ -40,7 +50,7 @@ export default function ZapDialog({
   event,
   defaultAmount,
   defaultComment,
-  alternativePaymentGroups
+  defaultLightningAddress
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
@@ -48,15 +58,13 @@ export default function ZapDialog({
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
-  /** Non-Lightning (and non-zap-duplicate) payto targets from kind 10133 / profile. */
-  alternativePaymentGroups?: PaymentMethodGroup[]
+  /** Lightning address to pre-select (e.g. from a profile payto link click). */
+  defaultLightningAddress?: string | null
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const drawerContentRef = useRef<HTMLDivElement | null>(null)
   const { pubkey: selfPubkey } = useNostr()
-  const fetchedAlternativeGroups = useRecipientAlternativePayments(pubkey, open)
-  const effectiveAlternativeGroups = alternativePaymentGroups ?? fetchedAlternativeGroups
   const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
   const skipTipNoticeOnCloseRef = useRef(false)
 
@@ -131,7 +139,7 @@ export default function ZapDialog({
             event={event}
             defaultAmount={defaultAmount}
             defaultComment={defaultComment}
-            alternativePaymentGroups={effectiveAlternativeGroups}
+            defaultLightningAddress={defaultLightningAddress}
             onBeforeZapDialogClose={(withPublicReceipt) => {
               if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
             }}
@@ -165,7 +173,7 @@ export default function ZapDialog({
           event={event}
           defaultAmount={defaultAmount}
           defaultComment={defaultComment}
-          alternativePaymentGroups={effectiveAlternativeGroups}
+          defaultLightningAddress={defaultLightningAddress}
           onBeforeZapDialogClose={(withPublicReceipt) => {
             if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
           }}
@@ -182,12 +190,13 @@ export default function ZapDialog({
 }
 
 function ZapDialogContent({
+  open,
   setOpen,
   recipient,
   event,
   defaultAmount,
   defaultComment,
-  alternativePaymentGroups,
+  defaultLightningAddress,
   onBeforeZapDialogClose
 }: {
   open: boolean
@@ -196,7 +205,7 @@ function ZapDialogContent({
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
-  alternativePaymentGroups?: PaymentMethodGroup[]
+  defaultLightningAddress?: string | null
   /** Runs before the zap dialog closes (e.g. after payment); skip tip notice if a public receipt was sent. */
   onBeforeZapDialogClose?: (withPublicReceipt: boolean) => void
 }) {
@@ -207,6 +216,30 @@ function ZapDialogContent({
   const [sats, setSats] = useState(defaultAmount ?? defaultZapSats)
   const [comment, setComment] = useState(defaultComment ?? defaultZapComment)
   const [zapping, setZapping] = useState(false)
+  const [selectedLightning, setSelectedLightning] = useState('')
+
+  const { paymentInfo, profileEvent, alternativeGroups } = useRecipientZapPaymentData(recipient, open)
+
+  const lightningAddressOptions = useMemo(
+    () =>
+      buildOrderedZapLightningAddresses({
+        profileEvent,
+        paymentInfo,
+        preferredAddress: defaultLightningAddress
+      }),
+    [profileEvent, paymentInfo, defaultLightningAddress]
+  )
+
+  useEffect(() => {
+    if (!open) return
+    setSelectedLightning(lightningAddressOptions[0] ?? '')
+  }, [open, lightningAddressOptions])
+
+  const zapAlternativePayments = useMemo(
+    () => prepareZapDialogAlternativePayments(alternativeGroups, sats),
+    [alternativeGroups, sats]
+  )
+
   const presetAmounts = useMemo(() => {
     if (i18n.language.startsWith('zh')) {
       return [
@@ -257,7 +290,11 @@ function ZapDialogContent({
         sats,
         comment,
         closeZapDialog,
-        includePublicZapReceipt
+        includePublicZapReceipt,
+        {
+          address: selectedLightning || undefined,
+          candidates: lightningAddressOptions.length > 0 ? lightningAddressOptions : undefined
+        }
       )
       // user canceled
       if (!zapResult) {
@@ -340,21 +377,55 @@ function ZapDialogContent({
           />
         </div>
 
+        {lightningAddressOptions.length > 0 ? (
+          <div className="min-w-0 space-y-1.5">
+            <Label htmlFor="zap-lightning-address">{t('Lightning address for zap')}</Label>
+            <Select value={selectedLightning} onValueChange={setSelectedLightning}>
+              <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
+                <SelectValue placeholder={t('Select lightning address')}>
+                  {selectedLightning ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                        ⚡
+                      </span>
+                      <span className="min-w-0 truncate">{selectedLightning}</span>
+                    </span>
+                  ) : null}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {lightningAddressOptions.map((addr) => (
+                  <SelectItem key={addr} value={addr} className="break-all">
+                    <span className="flex items-start gap-2">
+                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                        ⚡
+                      </span>
+                      <span className="min-w-0 break-all">{addr}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
         <Button onClick={handleZap} className="w-full">
           {zapping && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}{' '}
           {t('Zap n sats', { n: sats })}
         </Button>
 
-        {alternativePaymentGroups && alternativePaymentGroups.length > 0 ? (
-          <div>
-            <PaymentMethodsSection
-              groups={alternativePaymentGroups}
-              recipientPubkey={recipient}
-              title={t('Other payment methods')}
-              className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
-            />
-            <p className="mt-2 text-xs text-muted-foreground">{t('Zap dialog other payment hint')}</p>
-          </div>
+        {zapAlternativePayments.groups.length > 0 ? (
+          <PaymentMethodsSection
+            groups={zapAlternativePayments.groups}
+            recipientPubkey={recipient}
+            title={t('Other payment methods')}
+            headerHelpText={
+              zapAlternativePayments.showBitcoinOnChainHint
+                ? t('Tips above 10k sats can use Bitcoin on-chain.')
+                : undefined
+            }
+            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+          />
         ) : null}
       </div>
     </div>

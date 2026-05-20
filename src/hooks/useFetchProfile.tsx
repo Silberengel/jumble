@@ -6,6 +6,7 @@ import { normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { eventService, replaceableEventService } from '@/services/client.service'
+import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import indexedDb from '@/services/indexed-db.service'
 import { TProfile } from '@/types'
 import { kinds } from 'nostr-tools'
@@ -676,6 +677,32 @@ export function useFetchProfile(id?: string, skipCache = false) {
     }
     effectRunCountRef.current.delete(targetPk)
   }, [currentAccountProfile, id, profile])
+
+  const profileRefreshCancelledRef = useRef(false)
+  useEffect(() => {
+    profileRefreshCancelledRef.current = false
+    return () => {
+      profileRefreshCancelledRef.current = true
+    }
+  }, [pkLowerResolved])
+
+  useEffect(() => {
+    if (!pkLowerResolved) return
+    const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
+      const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
+      if (detailPk !== pkLowerResolved) return
+      void checkProfile(pkLowerResolved, { current: profileRefreshCancelledRef.current })
+    }
+    window.addEventListener(
+      ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+      onAuthorReplaceablesRefreshed
+    )
+    return () =>
+      window.removeEventListener(
+        ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+        onAuthorReplaceablesRefreshed
+      )
+  }, [pkLowerResolved, checkProfile])
 
   return { isFetching, error, profile }
 }

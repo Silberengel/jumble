@@ -20,8 +20,12 @@ export function CacheBrowserProvider({ children }: { children: ReactNode }) {
   )
 }
 
+export function useCacheBrowserOptional(): CacheBrowserContextValue | undefined {
+  return useContext(CacheBrowserContext)
+}
+
 export function useCacheBrowser(): CacheBrowserContextValue {
-  const ctx = useContext(CacheBrowserContext)
+  const ctx = useCacheBrowserOptional()
   if (!ctx) {
     throw new Error('useCacheBrowser must be used within CacheBrowserProvider')
   }

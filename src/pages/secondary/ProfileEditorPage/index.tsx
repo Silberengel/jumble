@@ -153,15 +153,17 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const avatar = profileTags.find((t) => t[0] === 'picture')?.[1] ?? ''
   const banner = profileTags.find((t) => t[0] === 'banner')?.[1] ?? ''
 
-  // Rebuild tag list whenever the stored profile event changes.
+  // Rebuild tag list when the stored profile event changes — not while the user is editing.
   useEffect(() => {
+    if (hasChanged) return
     setProfileTags(buildTagListFromEvent(profileEvent ?? null))
-  }, [profileEvent])
+  }, [profileEvent, hasChanged])
 
-  // Sync full-event JSON editor.
+  // Sync full-event JSON editor (same guard as tag list).
   useEffect(() => {
+    if (hasChanged) return
     setProfileEventJson(profileEvent ? JSON.stringify(profileEvent, null, 2) : '')
-  }, [profileEvent])
+  }, [profileEvent, hasChanged])
 
   // Fetch payment info (kind 10133).
   useEffect(() => {
@@ -285,7 +287,12 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         client.fetchProfileEvent(account.pubkey),
         client.fetchPaymentInfoEvent(account.pubkey)
       ])
-      if (profileEvt) await updateProfileEvent(profileEvt)
+      if (profileEvt) {
+        await updateProfileEvent(profileEvt)
+        setProfileTags(buildTagListFromEvent(profileEvt))
+        setProfileEventJson(JSON.stringify(profileEvt, null, 2))
+        setHasChanged(false)
+      }
       setPaymentInfoEvent(paymentEvt ?? null)
       toast.success(t('Profile and payment cache refreshed'))
     } catch {

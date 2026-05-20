@@ -14,19 +14,29 @@ import {
   DrawerHeader,
   DrawerTitle
 } from '@/components/ui/drawer'
+import { Textarea } from '@/components/ui/textarea'
+import { ExtendedKind } from '@/constants'
 import { createPublicMessageDraftEvent } from '@/lib/draft-event'
+import { createFakeEvent } from '@/lib/event'
 import { showSimplePublishSuccess } from '@/lib/publishing-feedback'
+import { LoginRequiredError } from '@/lib/nostr-errors'
 import { pubkeyToNpub } from '@/lib/pubkey'
+import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { LoginRequiredError } from '@/lib/nostr-errors'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
 
 const TIP_NOTICE_DEFAULT_KEY = 'I just sent you a tip!'
+
+function defaultTipNoticeMessage(recipientPubkey: string, tipText: string): string {
+  const npub = pubkeyToNpub(recipientPubkey)
+  return `nostr:${npub} ${tipText}`
+}
 
 export default function TipPublicMessagePrompt({
   open,
@@ -41,22 +51,43 @@ export default function TipPublicMessagePrompt({
   const { isSmallScreen } = useScreenSize()
   const { publish, checkLogin, pubkey: selfPubkey } = useNostr()
   const [sending, setSending] = useState(false)
+  const [message, setMessage] = useState('')
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const tipText = t(TIP_NOTICE_DEFAULT_KEY)
-  const npub = recipientPubkey ? pubkeyToNpub(recipientPubkey) : null
-  const previewContent = npub ? `nostr:${npub} ${tipText}` : tipText
+
+  useEffect(() => {
+    if (!open || !recipientPubkey) return
+    setMessage(defaultTipNoticeMessage(recipientPubkey, tipText))
+  }, [open, recipientPubkey, tipText])
 
   useEffect(() => {
     if (!open) return
     const id = requestAnimationFrame(() => {
-      cancelRef.current?.focus()
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(
+        textareaRef.current.value.length,
+        textareaRef.current.value.length
+      )
     })
     return () => cancelAnimationFrame(id)
   }, [open])
 
+  const previewEvent = useMemo(() => {
+    if (!recipientPubkey) return null
+    return createFakeEvent({
+      kind: ExtendedKind.PUBLIC_MESSAGE,
+      pubkey: selfPubkey ?? '',
+      content: message,
+      tags: [['p', recipientPubkey]]
+    })
+  }, [message, recipientPubkey, selfPubkey])
+
   const handleSend = () => {
     if (!recipientPubkey) return
+    const trimmed = message.trim()
+    if (!trimmed) return
     checkLogin(async () => {
       if (selfPubkey === recipientPubkey) {
         onOpenChange(false)
@@ -64,7 +95,7 @@ export default function TipPublicMessagePrompt({
       }
       setSending(true)
       try {
-        const draft = await createPublicMessageDraftEvent(previewContent, [recipientPubkey], {
+        const draft = await createPublicMessageDraftEvent(trimmed, [recipientPubkey], {
           addClientTag: true
         })
         await publish(draft, { disableFallbacks: true })
@@ -84,11 +115,31 @@ export default function TipPublicMessagePrompt({
   }
 
   const body = (
-    <>
+    <div className="min-w-0">
       <p className="text-sm font-medium text-foreground">{t('Tip notice success only note')}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{t('Tip notice prompt description')}</p>
-      <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm break-words">{previewContent}</p>
-    </>
+      <Textarea
+        ref={textareaRef}
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        disabled={sending}
+        rows={6}
+        className="mt-3 min-h-[10rem] resize-y text-sm leading-relaxed"
+        aria-label={t('Tip notice prompt description')}
+      />
+      {previewEvent ? (
+        <div className="mt-4 min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">{t('Preview')}</p>
+          <div
+            className={cn(
+              'mt-1.5 max-h-56 min-w-0 overflow-y-auto overflow-x-hidden rounded-md border border-border',
+              'bg-muted/25 px-3 py-2'
+            )}
+          >
+            <MarkdownArticle event={previewEvent} hideMetadata lazyMedia={false} className="text-sm" />
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 
   const actions = (
@@ -106,7 +157,7 @@ export default function TipPublicMessagePrompt({
         type="button"
         variant="outline"
         onClick={handleSend}
-        disabled={sending || !recipientPubkey}
+        disabled={sending || !recipientPubkey || !message.trim()}
       >
         {t('Send')}
       </Button>
@@ -118,12 +169,12 @@ export default function TipPublicMessagePrompt({
   if (isSmallScreen) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-4 pb-6" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DrawerContent className="min-w-0 overflow-hidden px-4 pb-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DrawerHeader>
-            <DrawerTitle className="flex items-center gap-2">
-              {t('Tip notice prompt title')}
-              <UserAvatar size="small" userId={recipientPubkey} />
-              <Username userId={recipientPubkey} className="truncate" />
+            <DrawerTitle className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0">{t('Tip notice prompt title')}</span>
+              <UserAvatar size="small" userId={recipientPubkey} className="shrink-0" />
+              <Username userId={recipientPubkey} className="min-w-0 flex-1 truncate" />
             </DrawerTitle>
           </DrawerHeader>
           <div className="px-0 pb-4">{body}</div>
@@ -136,14 +187,14 @@ export default function TipPublicMessagePrompt({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md"
+        className="w-[calc(100vw-2rem)] max-w-lg min-w-0 overflow-hidden sm:max-w-lg"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {t('Tip notice prompt title')}
-            <UserAvatar size="small" userId={recipientPubkey} />
-            <Username userId={recipientPubkey} className="truncate" />
+        <DialogHeader className="min-w-0">
+          <DialogTitle className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0">{t('Tip notice prompt title')}</span>
+            <UserAvatar size="small" userId={recipientPubkey} className="shrink-0" />
+            <Username userId={recipientPubkey} className="min-w-0 flex-1 truncate" />
           </DialogTitle>
           <DialogDescription>{t('Tip notice prompt description')}</DialogDescription>
         </DialogHeader>
