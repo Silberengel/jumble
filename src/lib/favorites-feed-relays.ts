@@ -17,6 +17,7 @@ import {
 } from '@/lib/relay-url-priority'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
 
 const blockedSet = (blockedRelays: string[]) =>
@@ -258,9 +259,10 @@ export function buildProfilePageReadRelayUrls(
       ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
       : merged
   }
-  return pinFastReadForRemote
+  const merged = pinFastReadForRemote
     ? pinFastReadForRemoteProfileFeed(urls, fastReadLayer, blockedRelays, maxRelays)
     : urls
+  return relaySessionStrikes.filterReadHttpUrls(merged)
 }
 
 /**

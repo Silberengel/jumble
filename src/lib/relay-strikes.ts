@@ -175,7 +175,14 @@ class RelaySessionStrikes {
 
     if (!this.cacheRelayKeys.has(key)) {
       // HTTP index failures often arrive in parallel; count each so session skip engages quickly.
-      if (_source !== 'http' && now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
+      // Connection refused / unreachable: do not debounce — profile feeds open many relays at once.
+      if (
+        _source !== 'http' &&
+        _source !== 'connection' &&
+        now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS
+      ) {
+        return
+      }
       e.readLastStrikeIncrementAt = now
     }
 

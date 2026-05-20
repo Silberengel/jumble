@@ -16,6 +16,14 @@ function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[])
   return `${fav}\u0000${blk}`
 }
 
+function relayUrlListKey(urls: readonly string[]): string {
+  return [...urls]
+    .map((u) => normalizeAnyRelayUrl(u) || u)
+    .filter(Boolean)
+    .sort()
+    .join('\u0001')
+}
+
 const emptyAuthor = {
   read: [] as string[],
   write: [] as string[],
@@ -73,10 +81,12 @@ export function useProfileAuthorFeedSubRequests({
   /** Single emission per visit: provisional→full relay stacks used to restart NoteList and wipe rows mid-fetch. */
   const [relayUrls, setRelayUrls] = useState<string[] | null>(null)
   const relayUrlsPubkeyRef = useRef<string | null>(null)
+  const appliedRelayUrlsKeyRef = useRef('')
 
   useEffect(() => {
     if (relayUrlsPubkeyRef.current !== pubkey) {
       relayUrlsPubkeyRef.current = pubkey
+      appliedRelayUrlsKeyRef.current = ''
       setRelayUrls(null)
     }
   }, [pubkey])
@@ -95,9 +105,11 @@ export function useProfileAuthorFeedSubRequests({
         kinds,
         useGlobalRelayBootstrap
       )
-      if (urls.length > 0) {
-        setRelayUrls(urls)
-      }
+      if (urls.length === 0) return
+      const key = relayUrlListKey(urls)
+      if (key === appliedRelayUrlsKeyRef.current) return
+      appliedRelayUrlsKeyRef.current = key
+      setRelayUrls(urls)
     }
 
     // Bootstrap immediately (favorites + fast-read) so /users/… feeds are not stuck on "Nothing to load"
@@ -137,6 +149,7 @@ export function useProfileAuthorFeedSubRequests({
   }, [authorHex, kindsKey, limit])
 
   const refresh = useCallback(() => {
+    appliedRelayUrlsKeyRef.current = ''
     setRelayUrls(null)
     setRefreshToken((n) => n + 1)
   }, [])

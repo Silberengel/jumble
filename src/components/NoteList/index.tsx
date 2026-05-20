@@ -3151,6 +3151,7 @@ const NoteList = forwardRef(
             needSort: !areAlgoRelays,
             firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
             relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current,
+            connectionSlotPriority: isProfileTimelineFeed,
             onRelaySubscribeWaveComplete: (rows) => {
               if (!effectActive) return
               setFeedSubscribeRelayOutcomes(rows)

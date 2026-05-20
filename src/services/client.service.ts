@@ -2210,7 +2210,8 @@ class ClientService extends EventTarget {
       needSort = true,
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
       onRelaySubscribeWaveComplete,
-      relayAuthoritativeTimeline = false
+      relayAuthoritativeTimeline = false,
+      connectionSlotPriority = false
     }: {
       startLogin?: () => void
       needSort?: boolean
@@ -2223,6 +2224,8 @@ class ClientService extends EventTarget {
        * skip persisting this shard, and do not widen an empty shard to {@link FAST_READ_RELAY_URLS}.
        */
       relayAuthoritativeTimeline?: boolean
+      /** Jump the global {@link QueryService.acquireGlobalRelayConnectionSlot} queue (profile timelines). */
+      connectionSlotPriority?: boolean
     } = {}
   ) {
     const timelineBatchId = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
@@ -2366,6 +2369,7 @@ class ClientService extends EventTarget {
             needSort,
             firstRelayResultGraceMs,
             relayAuthoritativeTimeline,
+            connectionSlotPriority,
             relayReqLog: {
               groupId: `${timelineBatchId}:shard${shardIndex}`,
               onBatchEnd: onShardSubscribeBatchEnd
@@ -2870,6 +2874,8 @@ class ClientService extends EventTarget {
       relayReqLog?: { groupId: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void },
       /** See {@link ClientService.subscribeTimeline} third-arg `relayAuthoritativeTimeline`. */
       relayAuthoritativeTimeline?: boolean
+      /** See {@link ClientService.subscribeTimeline} third-arg `connectionSlotPriority`. */
+      connectionSlotPriority?: boolean
     } = {}
   ) {
     let relays = Array.from(new Set(urls))
@@ -3185,7 +3191,8 @@ class ClientService extends EventTarget {
       oneose: httpOnlyShard ? undefined : handleTimelineEose,
       onclose: onClose,
       connectionSlotPriority:
-        relayAuthoritativeTimeline && wsRelays.length === 1 && navigator.onLine
+        connectionSlotPriority === true ||
+        (relayAuthoritativeTimeline && wsRelays.length === 1 && navigator.onLine)
     },
     httpOnlyShard ? undefined : relayReqLog)
 
