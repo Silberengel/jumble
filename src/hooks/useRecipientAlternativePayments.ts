@@ -22,6 +22,48 @@ export type RecipientZapPaymentData = {
   canReceiveTip: boolean
 }
 
+export function buildRecipientZapPaymentData(
+  paymentInfo: TPaymentInfo | null,
+  profile: TProfile | null,
+  profileEvent: Event | null
+): RecipientZapPaymentData {
+  const canReceiveTip = recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent)
+  const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile, profileEvent))
+  const alts = getAlternativePaymentMethods(merged)
+  const alternativeGroups = groupPaymentMethodsByDisplayType(alts)
+  return { paymentInfo, profile, profileEvent, alternativeGroups, canReceiveTip }
+}
+
+/** Combine feed/profile snapshot with fresher relay data (dialog opens fast, then enriches). */
+export function mergeRecipientZapPaymentData(
+  partial: RecipientZapPaymentData | null | undefined,
+  fresh: RecipientZapPaymentData | null | undefined
+): RecipientZapPaymentData {
+  if (!partial) {
+    return fresh ?? buildRecipientZapPaymentData(null, null, null)
+  }
+  if (!fresh) return partial
+
+  const profileEvent = fresh.profileEvent ?? partial.profileEvent
+  const profile = profileEvent
+    ? (fresh.profile ?? partial.profile)
+    : (partial.profile ?? fresh.profile)
+  const paymentInfo = pickRicherPaymentInfo(partial.paymentInfo, fresh.paymentInfo)
+
+  return buildRecipientZapPaymentData(paymentInfo, profile ?? null, profileEvent)
+}
+
+function pickRicherPaymentInfo(
+  a: TPaymentInfo | null | undefined,
+  b: TPaymentInfo | null | undefined
+): TPaymentInfo | null {
+  const score = (p: TPaymentInfo | null | undefined) =>
+    p?.methods?.length ?? (p?.payto ? 1 : 0)
+  if (score(b) > score(a)) return b ?? null
+  if (score(a) > score(b)) return a ?? null
+  return b ?? a ?? null
+}
+
 /** Kind 10133 + profile payto targets except the Lightning address used for zapping. */
 export function useRecipientZapPaymentData(
   recipientPubkey: string | undefined,
@@ -62,19 +104,10 @@ export function useRecipientZapPaymentData(
     }
   }, [recipientPubkey, enabled])
 
-  const canReceiveTip = useMemo(
-    () => recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent),
+  return useMemo(
+    () => buildRecipientZapPaymentData(paymentInfo, profile, profileEvent),
     [paymentInfo, profile, profileEvent]
   )
-
-  const alternativeGroups = useMemo(() => {
-    if (!recipientPubkey) return []
-    const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile, profileEvent))
-    const alts = getAlternativePaymentMethods(merged)
-    return groupPaymentMethodsByDisplayType(alts)
-  }, [recipientPubkey, paymentInfo, profile, profileEvent])
-
-  return { paymentInfo, profile, profileEvent, alternativeGroups, canReceiveTip }
 }
 
 /** @deprecated Use {@link useRecipientZapPaymentData} */

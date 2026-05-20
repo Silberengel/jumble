@@ -85,6 +85,7 @@ import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
+import { buildRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import {
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
@@ -151,6 +152,14 @@ export default function Profile({
 
   const hasTipDialog = useMemo(
     () => recipientHasAnyPaymentOptions(paymentInfo, profile ?? null, profileEvent),
+    [paymentInfo, profile, profileEvent]
+  )
+
+  const prefetchedZapPayment = useMemo(
+    () =>
+      profile?.pubkey
+        ? buildRecipientZapPaymentData(paymentInfo, profile ?? null, profileEvent ?? null)
+        : null,
     [paymentInfo, profile, profileEvent]
   )
 
@@ -624,6 +633,7 @@ export default function Profile({
               }}
               pubkey={pubkey}
               defaultLightningAddress={zapLightningDefault}
+              prefetchedPayment={prefetchedZapPayment}
             />
             <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
               <div className="flex flex-wrap gap-4 items-center min-w-0">

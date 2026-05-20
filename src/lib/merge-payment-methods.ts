@@ -281,6 +281,8 @@ export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[])
  */
 export function buildOrderedZapLightningAddresses(opts: {
   profileEvent?: Event | null
+  /** Parsed kind 0 when the event is not loaded yet (e.g. feed profile row). */
+  profile?: TProfile | null
   paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
   preferredAddress?: string | null
 }): string[] {
@@ -297,7 +299,8 @@ export function buildOrderedZapLightningAddresses(opts: {
   }
 
   const ev = opts.profileEvent
-  const profile = ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : null
+  const profile =
+    ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : (opts.profile ?? null)
   if (ev?.kind === kinds.Metadata) {
     for (const tag of ev.tags) {
       if (tag[0] === 'lud16' && tag[1]) add(tag[1])

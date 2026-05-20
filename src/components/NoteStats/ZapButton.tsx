@@ -4,6 +4,11 @@ import {
   buildOrderedZapLightningAddresses,
   recipientHasAnyPaymentOptions
 } from '@/lib/merge-payment-methods'
+import {
+  buildRecipientZapPaymentData,
+  mergeRecipientZapPaymentData,
+  type RecipientZapPaymentData
+} from '@/hooks/useRecipientAlternativePayments'
 import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import { cn } from '@/lib/utils'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
@@ -53,6 +58,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
 
   const [disable, setDisable] = useState(true)
   const [canLightningZap, setCanLightningZap] = useState(false)
+  const [tipPaymentData, setTipPaymentData] = useState<RecipientZapPaymentData | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isLongPressRef = useRef(false)
 
@@ -60,33 +66,49 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     (
       profile: TProfile | null,
       profileEvent: Event | null | undefined,
-      paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+      paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
+      forDialogPrefetch: boolean
     ) => {
-      const canTip = recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent ?? null)
+      const event = profileEvent ?? null
+      const canTip = recipientHasAnyPaymentOptions(paymentInfo, profile, event)
       setDisable(!canTip)
       setCanLightningZap(
-        buildOrderedZapLightningAddresses({ profileEvent, paymentInfo }).length > 0
+        buildOrderedZapLightningAddresses({
+          profileEvent: event,
+          profile,
+          paymentInfo
+        }).length > 0
       )
+      if (forDialogPrefetch) {
+        setTipPaymentData((prev) =>
+          mergeRecipientZapPaymentData(
+            buildRecipientZapPaymentData(paymentInfo, profile, event),
+            prev
+          )
+        )
+      }
     },
     []
   )
 
-  /** Re-enable when the feed batch loads a real profile (not a placeholder row). */
+  /** Enable zap from feed profile; seed dialog prefetch from kind 0 JSON when available. */
   useEffect(() => {
     if (isSelf) return
     if (!feedProfile || feedProfile.batchPlaceholder) return
-    applyTipAvailability(feedProfile, null, null)
+    applyTipAvailability(feedProfile, null, null, true)
   }, [isSelf, feedProfile, feedProfiles?.version, applyTipAvailability])
 
   useEffect(() => {
     if (isSelf) {
       setDisable(true)
       setCanLightningZap(false)
+      setTipPaymentData(null)
       return
     }
 
     setDisable(true)
     setCanLightningZap(false)
+    setTipPaymentData(null)
     let cancelled = false
 
     void Promise.allSettled([
@@ -110,7 +132,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         null
       const paymentInfo = paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
 
-      applyTipAvailability(profile, profileEvent ?? null, paymentInfo)
+      applyTipAvailability(profile, profileEvent ?? null, paymentInfo, true)
     })
 
     return () => {
@@ -268,6 +290,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         }}
         pubkey={event.pubkey}
         event={event}
+        prefetchedPayment={tipPaymentData}
       />
       <TipPublicMessagePrompt
         open={tipNoticeOpen}

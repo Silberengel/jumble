@@ -20,6 +20,10 @@ import { Switch } from '@/components/ui/switch'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useZap } from '@/providers/ZapProvider'
+import { useBtcUsdRate } from '@/hooks/useBtcUsdRate'
+import { clampZapSats, formatSatsGrouped, shouldHighlightLeadingSatsGroups } from '@/lib/lightning'
+import { formatBtcFromSats, formatUsdFromSats } from '@/lib/sats-fiat'
+import { cn } from '@/lib/utils'
 import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
 import { NostrEvent } from 'nostr-tools'
@@ -33,6 +37,7 @@ import {
 } from '@/lib/merge-payment-methods'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import {
+  mergeRecipientZapPaymentData,
   useRecipientZapPaymentData,
   type RecipientZapPaymentData
 } from '@/hooks/useRecipientAlternativePayments'
@@ -44,6 +49,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import TipPublicMessagePrompt from './TipPublicMessagePrompt'
+import ZapSatsAmountInput from './ZapSatsAmountInput'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
 
@@ -54,7 +60,8 @@ export default function ZapDialog({
   event,
   defaultAmount,
   defaultComment,
-  defaultLightningAddress
+  defaultLightningAddress,
+  prefetchedPayment = null
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
@@ -64,6 +71,8 @@ export default function ZapDialog({
   defaultComment?: string
   /** Lightning address to pre-select (e.g. from a profile payto link click). */
   defaultLightningAddress?: string | null
+  /** Profile/feed snapshot shown immediately; relay fetch while open may enrich this. */
+  prefetchedPayment?: RecipientZapPaymentData | null
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -72,16 +81,22 @@ export default function ZapDialog({
   const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
   const skipTipNoticeOnCloseRef = useRef(false)
 
-  const recipientPayment = useRecipientZapPaymentData(pubkey, open)
+  const fetchedPayment = useRecipientZapPaymentData(pubkey, open)
+  const recipientPayment = useMemo(
+    () => mergeRecipientZapPaymentData(prefetchedPayment, fetchedPayment),
+    [prefetchedPayment, fetchedPayment]
+  )
   const lightningAddressOptions = useMemo(
     () =>
       buildOrderedZapLightningAddresses({
         profileEvent: recipientPayment.profileEvent,
+        profile: recipientPayment.profile,
         paymentInfo: recipientPayment.paymentInfo,
         preferredAddress: defaultLightningAddress
       }),
     [
       recipientPayment.profileEvent,
+      recipientPayment.profile,
       recipientPayment.paymentInfo,
       defaultLightningAddress
     ]
@@ -245,10 +260,15 @@ function ZapDialogContent({
   const { pubkey } = useNostr()
   const { defaultZapSats, defaultZapComment, includePublicZapReceipt, updateIncludePublicZapReceipt } =
     useZap()
-  const [sats, setSats] = useState(defaultAmount ?? defaultZapSats)
+  const [sats, setSats] = useState(() => clampZapSats(defaultAmount ?? defaultZapSats))
   const [comment, setComment] = useState(defaultComment ?? defaultZapComment)
   const [zapping, setZapping] = useState(false)
   const [selectedLightning, setSelectedLightning] = useState('')
+  const btcUsd = useBtcUsdRate()
+  const clampedSats = clampZapSats(sats)
+  const highlightLargeAmount = shouldHighlightLeadingSatsGroups(clampedSats)
+  const btcEquivalent = useMemo(() => formatBtcFromSats(clampedSats), [clampedSats])
+  const usdEquivalent = useMemo(() => formatUsdFromSats(clampedSats, btcUsd), [clampedSats, btcUsd])
 
   const { alternativeGroups } = recipientPayment
 
@@ -261,9 +281,9 @@ function ZapDialogContent({
     () =>
       prepareZapDialogAlternativePayments(
         alternativeGroups,
-        canLightningZap ? sats : ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
+        canLightningZap ? clampedSats : ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
       ),
-    [alternativeGroups, sats, canLightningZap]
+    [alternativeGroups, clampedSats, canLightningZap]
   )
 
   const hasAlternativePayments = zapAlternativePayments.groups.length > 0
@@ -315,7 +335,7 @@ function ZapDialogContent({
       const zapResult = await lightning.zap(
         pubkey,
         event ?? recipient,
-        sats,
+        clampedSats,
         comment,
         closeZapDialog,
         includePublicZapReceipt,
@@ -329,7 +349,7 @@ function ZapDialogContent({
         return
       }
       if (event) {
-        noteStatsService.addZap(pubkey, event.id, zapResult.invoice, sats, comment)
+        noteStatsService.addZap(pubkey, event.id, zapResult.invoice, clampedSats, comment)
       }
     } catch (error) {
       toast.error(`${t('Zap failed')}: ${(error as Error).message}`)
@@ -370,38 +390,35 @@ function ZapDialogContent({
       <div className="space-y-4">
         {/* Sats slider or input */}
         <div className="flex flex-col items-center px-4">
-          <div className="flex justify-center w-full max-w-xs">
-            <input
-              id="sats"
-              value={sats}
-              onChange={(e) => {
-                setSats((pre) => {
-                  if (e.target.value === '') {
-                    return 0
-                  }
-                  let num = parseInt(e.target.value, 10)
-                  if (isNaN(num) || num < 0) {
-                    num = pre
-                  }
-                  return num
-                })
-              }}
-              onFocus={(e) => {
-                requestAnimationFrame(() => {
-                  const val = e.target.value
-                  e.target.setSelectionRange(val.length, val.length)
-                })
-              }}
-              className="bg-transparent text-center w-full p-0 focus-visible:outline-none text-6xl font-bold"
-            />
+          <div
+            className="mb-1 flex min-h-[1.125rem] flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground tabular-nums"
+            aria-live="polite"
+          >
+            <span
+              className={cn(
+                highlightLargeAmount &&
+                  'rounded-md bg-yellow-400/25 px-2 py-0.5 font-semibold text-yellow-200 shadow-[0_0_12px_rgba(250,204,21,0.45)] ring-1 ring-yellow-400/70'
+              )}
+            >
+              {btcEquivalent}
+            </span>
+            {usdEquivalent != null ? (
+              <>
+                <span className="text-muted-foreground/40" aria-hidden>
+                  ·
+                </span>
+                <span>{usdEquivalent}</span>
+              </>
+            ) : null}
           </div>
+          <ZapSatsAmountInput sats={sats} onSatsChange={setSats} />
           <Label htmlFor="sats">{t('Sats')}</Label>
         </div>
 
         {/* Preset sats buttons */}
         <div className="grid grid-cols-6 gap-2 px-4">
           {presetAmounts.map(({ display, val }) => (
-            <Button variant="secondary" key={val} onClick={() => setSats(val)}>
+            <Button variant="secondary" key={val} onClick={() => setSats(clampZapSats(val))}>
               {display}
             </Button>
           ))}
@@ -433,38 +450,56 @@ function ZapDialogContent({
         </div>
 
         <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="zap-lightning-address">{t('Lightning address for zap')}</Label>
-          <Select value={selectedLightning} onValueChange={setSelectedLightning}>
-            <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
-              <SelectValue placeholder={t('Select lightning address')}>
-                {selectedLightning ? (
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
-                      ⚡
+          <Label
+            htmlFor={
+              lightningAddressOptions.length > 1 ? 'zap-lightning-address' : undefined
+            }
+          >
+            {t('Lightning address for zap')}
+          </Label>
+          {lightningAddressOptions.length === 1 ? (
+            <p
+              id="zap-lightning-address"
+              className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+            >
+              <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                ⚡
+              </span>
+              <span className="min-w-0 break-all">{lightningAddressOptions[0]}</span>
+            </p>
+          ) : (
+            <Select value={selectedLightning} onValueChange={setSelectedLightning}>
+              <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
+                <SelectValue placeholder={t('Select lightning address')}>
+                  {selectedLightning ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                        ⚡
+                      </span>
+                      <span className="min-w-0 truncate">{selectedLightning}</span>
                     </span>
-                    <span className="min-w-0 truncate">{selectedLightning}</span>
-                  </span>
-                ) : null}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {lightningAddressOptions.map((addr) => (
-                <SelectItem key={addr} value={addr} className="break-all">
-                  <span className="flex items-start gap-2">
-                    <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
-                      ⚡
+                  ) : null}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {lightningAddressOptions.map((addr) => (
+                  <SelectItem key={addr} value={addr} className="break-all">
+                    <span className="flex items-start gap-2">
+                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                        ⚡
+                      </span>
+                      <span className="min-w-0 break-all">{addr}</span>
                     </span>
-                    <span className="min-w-0 break-all">{addr}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <Button onClick={handleZap} className="w-full">
           {zapping && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}{' '}
-          {t('Zap n sats', { n: sats })}
+          {t('Zap n sats', { n: formatSatsGrouped(clampedSats) })}
         </Button>
 
         {hasAlternativePayments ? (
