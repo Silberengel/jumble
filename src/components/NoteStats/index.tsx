@@ -66,8 +66,6 @@ export default function NoteStats({
   const statsRelayFetchTier = isRssArticleRoot ? relayMergeTier : hintRelays.length > 0 ? 1 : 0
   const statsRelaysRef = useRef(statsRelays)
   statsRelaysRef.current = statsRelays
-  const isZapPoll = event.kind === ExtendedKind.ZAP_POLL
-
   const shouldDeferStatsFetch =
     deferFetchUntilNearViewport ?? (fetchIfNotExisting && !foregroundStats)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -110,7 +108,7 @@ export default function NoteStats({
         isReplyToDiscussion={isReplyToDiscussion}
         useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
       />
-      {!isRssArticleRoot && !isZapPoll && (
+      {!isRssArticleRoot && (
         <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
       )}
     </>

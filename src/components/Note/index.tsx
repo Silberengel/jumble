@@ -71,7 +71,6 @@ import MutedNote from './MutedNote'
 import NsfwNote from './NsfwNote'
 import PictureNote from './PictureNote'
 import Poll from './Poll'
-import ZapPoll from './ZapPoll'
 import NotificationEventCard from './NotificationEventCard'
 import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
@@ -224,7 +223,6 @@ export default function Note({
   /** From {@link MainNoteCard}: embedded cards need eager poll results (viewport IO often misses nested scrollers). */
   embedded,
   fullCalendarInvite,
-  zapPollVoteHighlightOption,
   nip84HighlightEvents,
   deferAuthorAvatar = false,
   pinned = false
@@ -241,8 +239,6 @@ export default function Note({
   pinned?: boolean
   /** When viewing a kind-24 invite, use this to replace the embedded calendar with the full card (RSVP) in content */
   fullCalendarInvite?: { event: Event; naddr: string }
-  /** Profile: highlight option when this row is from a zap vote receipt. */
-  zapPollVoteHighlightOption?: number
   /** Kind-9802 events that cite this note; when spans match {@link displayEvent.content}, render green marks (note page OP). */
   nip84HighlightEvents?: Event[]
   /** When true, defer remote profile avatars until near-viewport (dense lists e.g. merged NIP-50 search). */
@@ -531,17 +527,6 @@ export default function Note({
       <>
         {renderEventContent({ hideMetadata: true })}
         <Poll className="mt-2" event={displayEvent} eagerFetchResults={Boolean(embedded)} />
-      </>
-    )
-  } else if (event.kind === ExtendedKind.ZAP_POLL) {
-    content = (
-      <>
-        {renderEventContent({ hideMetadata: true })}
-        <ZapPoll
-          className="mt-2"
-          event={displayEvent}
-          voteHighlightOptionIndex={zapPollVoteHighlightOption}
-        />
       </>
     )
   } else if (event.kind === ExtendedKind.VOICE) {

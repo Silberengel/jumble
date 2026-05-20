@@ -21,7 +21,6 @@ const KIND_FILTER_OPTIONS = [
   { kindGroup: [kinds.LongFormArticle, ExtendedKind.WIKI_ARTICLE, ExtendedKind.WIKI_ARTICLE_MARKDOWN], label: 'Articles' },
   { kindGroup: [kinds.Highlights], label: 'Highlights' },
   { kindGroup: [ExtendedKind.POLL], label: 'Polls' },
-  { kindGroup: [ExtendedKind.ZAP_POLL], label: 'Zap polls' },
   { kindGroup: [ExtendedKind.VOICE, ExtendedKind.VOICE_COMMENT], label: 'Voice Posts' },
   { kindGroup: [ExtendedKind.PICTURE], label: 'Photo Posts' },
   { kindGroup: [...NIP71_VIDEO_KINDS], label: 'Video Posts' },

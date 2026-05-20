@@ -29,7 +29,6 @@ export type BuildThreadInteractionFiltersInput = {
  */
 export function buildThreadInteractionFilters(input: BuildThreadInteractionFiltersInput): Filter[] {
   const { root, opEventKind, limit } = input
-  const isZapPoll = opEventKind === ExtendedKind.ZAP_POLL
 
   const kindsNoteCommentVoiceZap = sortedUniqueKinds([
     kinds.ShortTextNote,
@@ -37,17 +36,12 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
     ExtendedKind.VOICE_COMMENT,
     kinds.Zap
   ])
-  const kindsNoteCommentVoice = sortedUniqueKinds([
-    kinds.ShortTextNote,
+  const kindsPrimaryThread = kindsNoteCommentVoiceZap
+  const kindsUpperEThread = sortedUniqueKinds([
     ExtendedKind.COMMENT,
-    ExtendedKind.VOICE_COMMENT
+    ExtendedKind.VOICE_COMMENT,
+    kinds.Zap
   ])
-  const kindsPrimaryThread = isZapPoll ? kindsNoteCommentVoice : kindsNoteCommentVoiceZap
-  const kindsUpperEThread = sortedUniqueKinds(
-    isZapPoll
-      ? [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT]
-      : [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT, kinds.Zap]
-  )
 
   const kindsOnETag = sortedUniqueKinds([
     ...kindsPrimaryThread,

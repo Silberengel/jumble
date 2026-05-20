@@ -21,7 +21,6 @@ export default function MainNoteCard({
   originalNoteId,
   pinned = false,
   hideParentNotePreview = false,
-  zapPollVoteHighlightOption,
   bottomNoteLabel,
   showFull = false,
   fetchNoteStatsIfMissing = true,
@@ -37,7 +36,6 @@ export default function MainNoteCard({
   pinned?: boolean
   /** Hide the parent note preview (e.g. when showing quotes of current note). */
   hideParentNotePreview?: boolean
-  zapPollVoteHighlightOption?: number
   bottomNoteLabel?: string
   showFull?: boolean
   /** When false, skip relay-backed stats prefetch (e.g. merged NIP-50 search lists). */
@@ -121,7 +119,6 @@ export default function MainNoteCard({
             originalNoteId={originalNoteId}
             disableClick={true}
             hideParentNotePreview={hideParentNotePreview}
-            zapPollVoteHighlightOption={zapPollVoteHighlightOption}
             showFull={showFull}
             deferAuthorAvatar={deferAuthorAvatar}
             pinned={pinned}

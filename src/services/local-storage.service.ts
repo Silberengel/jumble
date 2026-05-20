@@ -320,11 +320,6 @@ class LocalStorageService {
           }
         }
       }
-      if (showKindsVersion < 10) {
-        if (showKinds.includes(ExtendedKind.POLL) && !showKinds.includes(ExtendedKind.ZAP_POLL)) {
-          showKinds.push(ExtendedKind.ZAP_POLL)
-        }
-      }
       if (showKindsVersion < 11) {
         if (!showKinds.includes(ExtendedKind.GIT_RELEASE)) {
           showKinds.push(ExtendedKind.GIT_RELEASE)

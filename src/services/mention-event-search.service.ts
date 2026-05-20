@@ -26,7 +26,6 @@ export const NEVENT_KINDS = [
   ExtendedKind.PICTURE,
   ...NIP71_VIDEO_KINDS,
   ExtendedKind.POLL,
-  ExtendedKind.ZAP_POLL,
   ExtendedKind.COMMENT,
   ExtendedKind.VOICE,
   ExtendedKind.VOICE_COMMENT,

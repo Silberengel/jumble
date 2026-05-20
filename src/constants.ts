@@ -880,7 +880,6 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.SHORT_VIDEO,
   ExtendedKind.VIDEO_ADDRESSABLE,
   ExtendedKind.POLL,
-  ExtendedKind.ZAP_POLL,
   ExtendedKind.COMMENT,
   ExtendedKind.VOICE,
   ExtendedKind.VOICE_COMMENT,

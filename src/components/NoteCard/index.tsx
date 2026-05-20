@@ -15,7 +15,6 @@ const NoteCard = memo(function NoteCard({
   filterMutedNotes = true,
   pinned = false,
   hideParentNotePreview = false,
-  zapPollVoteHighlightOption,
   bottomNoteLabel,
   fetchNoteStatsIfMissing = true,
   deferAuthorAvatar = true,
@@ -27,7 +26,6 @@ const NoteCard = memo(function NoteCard({
   pinned?: boolean
   /** When true, hide the parent/root note preview (e.g. when showing quotes of the current note). */
   hideParentNotePreview?: boolean
-  zapPollVoteHighlightOption?: number
   /** Optional label rendered at the bottom of the card (e.g. why this event is in a composed feed). */
   bottomNoteLabel?: string
   fetchNoteStatsIfMissing?: boolean
@@ -68,7 +66,6 @@ const NoteCard = memo(function NoteCard({
       className={className}
       pinned={pinned}
       hideParentNotePreview={hideParentNotePreview}
-      zapPollVoteHighlightOption={zapPollVoteHighlightOption}
       bottomNoteLabel={bottomNoteLabel}
       fetchNoteStatsIfMissing={fetchNoteStatsIfMissing}
       deferAuthorAvatar={deferAuthorAvatar}
@@ -84,7 +81,6 @@ const NoteCard = memo(function NoteCard({
     prevProps.filterMutedNotes === nextProps.filterMutedNotes &&
     prevProps.pinned === nextProps.pinned &&
     prevProps.hideParentNotePreview === nextProps.hideParentNotePreview &&
-    prevProps.zapPollVoteHighlightOption === nextProps.zapPollVoteHighlightOption &&
     prevProps.bottomNoteLabel === nextProps.bottomNoteLabel &&
     prevProps.fetchNoteStatsIfMissing === nextProps.fetchNoteStatsIfMissing &&
     prevProps.deferAuthorAvatar === nextProps.deferAuthorAvatar &&

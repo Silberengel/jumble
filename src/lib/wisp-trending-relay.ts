@@ -22,7 +22,6 @@ export const WISP_TRENDING_FEED_KINDS: readonly number[] = [
   1,
   6,
   1068,
-  6969,
   30023,
   ExtendedKind.PICTURE,
   ExtendedKind.VIDEO,
