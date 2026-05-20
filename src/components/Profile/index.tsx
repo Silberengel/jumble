@@ -62,7 +62,6 @@ import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import NotFound from '../NotFound'
-import FollowedBy from './FollowedBy'
 import ProfileBadges from './ProfileBadges'
 import ProfileFeed from './ProfileFeed'
 import ProfileReportsDialog from './ProfileReportsDialog'
@@ -195,9 +194,14 @@ export default function Profile({
   }, [syncAuthorReplaceablesFromCache])
 
   useEffect(() => {
-    if (!profile?.pubkey) return
-    void client.refreshAuthorPublishedReplaceablesOnProfileView(profile.pubkey)
-  }, [profile?.pubkey])
+    if (!profile?.pubkey || profile.batchPlaceholder) return
+    const pk = profile.pubkey
+    // Defer wide replaceable refresh so initial kind-0 / feed relay setup can finish first.
+    const timer = window.setTimeout(() => {
+      void client.refreshAuthorPublishedReplaceablesOnProfileView(pk)
+    }, 2_000)
+    return () => clearTimeout(timer)
+  }, [profile?.pubkey, profile?.batchPlaceholder])
 
   useEffect(() => {
     if (!isSelf || !profile?.pubkey || !accountProfileEvent) return
@@ -213,7 +217,7 @@ export default function Profile({
     const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
       const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
       if (detailPk !== pk) return
-      void syncAuthorReplaceablesFromCache(profile.pubkey, { bustCache: true })
+      void syncAuthorReplaceablesFromCache(profile.pubkey)
     }
     window.addEventListener(
       ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
@@ -226,10 +230,6 @@ export default function Profile({
       )
   }, [profile?.pubkey, syncAuthorReplaceablesFromCache])
 
-  const isFollowingYou = useMemo(() => {
-    // This will be handled by the FollowedBy component
-    return false
-  }, [profile, accountPubkey])
   const defaultImage = useMemo(
     () => (profile?.pubkey ? generateImageByPubkey(profile?.pubkey) : ''),
     [profile]
@@ -524,13 +524,8 @@ export default function Profile({
           <div className="pt-2 pb-4 md:pl-56">
             <div className="flex flex-wrap gap-2 items-center min-w-0">
               <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
-              {isFollowingYou && (
-                <div className="text-muted-foreground rounded-full bg-muted text-xs h-fit px-2 shrink-0">
-                  {t('Follows you')}
-                </div>
-              )}
             </div>
-            <Nip05 pubkey={pubkey} />
+            <Nip05 pubkey={pubkey} nip05={profile.nip05} />
             {/* Display multiple NIP-05 values if available, with verification */}
             {nip05List && nip05List.length > 1 && (
               <Nip05List nip05List={nip05List.slice(1)} pubkey={pubkey} />
@@ -608,13 +603,10 @@ export default function Profile({
               defaultLightningAddress={zapLightningDefault}
               prefetchedPayment={prefetchedZapPayment}
             />
-            <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
-              <div className="flex flex-wrap gap-4 items-center min-w-0">
-                <SmartFollowings pubkey={pubkey} />
-                <SmartRelays pubkey={pubkey} />
-                {isSelf && <SmartMuteLink />}
-              </div>
-              {!isSelf && <FollowedBy pubkey={pubkey} />}
+            <div className="flex flex-wrap gap-4 items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
+              <SmartFollowings pubkey={pubkey} />
+              <SmartRelays pubkey={pubkey} />
+              {isSelf && <SmartMuteLink />}
             </div>
             <ProfileBadges pubkey={pubkey} profileEventId={effectiveProfileEvent?.id} />
           </div>

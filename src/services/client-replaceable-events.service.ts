@@ -87,6 +87,8 @@ export class ReplaceableEventService {
   })
   /** One in-flight profile replaceables pull per author (avoids stacked REQs when profile UI remounts). */
   private authorReplaceablesRefreshByPubkey = new Map<string, Promise<void>>()
+  /** Per-author cooldown after a successful profile-view replaceable sweep (avoids reopen loops). */
+  private authorProfileViewRefreshNotBeforeMs = new Map<string, number>()
   private replaceableEventFromBigRelaysDataloader: DataLoader<
     { pubkey: string; kind: number },
     NEvent | null,
@@ -1409,6 +1411,9 @@ export class ReplaceableEventService {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return
 
+    const notBefore = this.authorProfileViewRefreshNotBeforeMs.get(pk) ?? 0
+    if (Date.now() < notBefore) return
+
     const inFlight = this.authorReplaceablesRefreshByPubkey.get(pk)
     if (inFlight) return inFlight
 
@@ -1501,6 +1506,8 @@ export class ReplaceableEventService {
           }
         })
       )
+
+      this.authorProfileViewRefreshNotBeforeMs.set(pk, Date.now() + 90_000)
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(

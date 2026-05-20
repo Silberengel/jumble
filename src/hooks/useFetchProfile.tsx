@@ -691,6 +691,8 @@ export function useFetchProfile(id?: string, skipCache = false) {
     const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
       const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
       if (detailPk !== pkLowerResolved) return
+      // Background profile-view refresh already persisted kind 0 — avoid a second full fetchProfileEvent pass.
+      if (initializedPubkeysRef.current.has(pkLowerResolved)) return
       void checkProfile(pkLowerResolved, { current: profileRefreshCancelledRef.current })
     }
     window.addEventListener(

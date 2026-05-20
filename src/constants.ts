@@ -406,7 +406,7 @@ export const NIP66_DISCOVERY_RELAY_URLS = [
 
 // Relay with bookstr composite index support
 export const BOOKSTR_RELAY_URLS = [
-  'wss://orly-relay.imwald.eu'
+  'wss://thecitadel.nostr1.com'
 ]
 
 /**
@@ -469,7 +469,6 @@ export const FAST_READ_RELAY_URLS = [
   'wss://theforest.nostr1.com',
   'wss://nostr.land',
   'wss://nostr.wine',
-  'wss://orly-relay.imwald.eu',
   'wss://nostr21.com'
 ]
 

@@ -6,12 +6,19 @@ import { SecondaryPageLink } from '@/PageManager'
 import { BadgeAlert, BadgeCheck } from 'lucide-react'
 import { Favicon } from '../Favicon'
 
-export default function Nip05({ pubkey, append }: { pubkey: string; append?: string }) {
-  const { profile } = useFetchProfile(pubkey)
-  const { nip05IsVerified, nip05Name, nip05Domain, isFetching } = useFetchNip05(
-    profile?.nip05,
-    pubkey
-  )
+export default function Nip05({
+  pubkey,
+  nip05: nip05Prop,
+  append
+}: {
+  pubkey: string
+  /** When set (e.g. profile page), skip a second {@link useFetchProfile} network pass. */
+  nip05?: string
+  append?: string
+}) {
+  const { profile } = useFetchProfile(nip05Prop === undefined ? pubkey : undefined)
+  const resolvedNip05 = nip05Prop ?? profile?.nip05
+  const { nip05IsVerified, nip05Name, nip05Domain, isFetching } = useFetchNip05(resolvedNip05, pubkey)
 
   if (isFetching) {
     return (
@@ -21,7 +28,7 @@ export default function Nip05({ pubkey, append }: { pubkey: string; append?: str
     )
   }
 
-  if (!profile?.nip05 || !nip05Name || !nip05Domain) return null
+  if (!resolvedNip05 || !nip05Name || !nip05Domain) return null
 
   return (
     <div

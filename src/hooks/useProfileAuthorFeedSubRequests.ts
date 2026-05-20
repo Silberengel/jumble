@@ -88,21 +88,35 @@ export function useProfileAuthorFeedSubRequests({
     let cancelled = false
     const socialKinds = kinds.some(isSocialKindBlockedKind)
 
+    const applyRelayList = (authorRl: typeof emptyAuthor) => {
+      const urls = buildProfilePageReadRelayUrls(
+        favoriteRelays,
+        blockedRelays,
+        authorRl,
+        socialKinds,
+        includeAuthorLocalRelays,
+        kinds,
+        useGlobalRelayBootstrap
+      )
+      if (urls.length > 0) {
+        setRelayUrls(urls)
+      }
+    }
+
+    void client
+      .peekRelayListFromStorage(pubkey)
+      .then((cached) => {
+        if (cancelled) return
+        applyRelayList(cached)
+      })
+      .catch(() => {})
+
     void client
       .fetchRelayList(pubkey)
       .catch(() => emptyAuthor)
       .then((authorRl) => {
         if (cancelled) return
-        const urls = buildProfilePageReadRelayUrls(
-          favoriteRelays,
-          blockedRelays,
-          authorRl,
-          socialKinds,
-          includeAuthorLocalRelays,
-          kinds,
-          useGlobalRelayBootstrap
-        )
-        setRelayUrls(urls)
+        applyRelayList(authorRl)
       })
 
     return () => {
