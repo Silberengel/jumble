@@ -1,3 +1,5 @@
+import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import type { TSubRequestFilter } from '@/types'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import type { Filter } from 'nostr-tools'
@@ -61,4 +63,16 @@ export function getProfileAuthorWarmupRelayUrls(
     }
   }
   return out
+}
+
+/** Bounded relay stack for profile timeline fetch / fallback (shard URLs + fast-read + profile index). */
+export function getProfileTimelineFetchRelayUrls(
+  mapped: Array<{ urls: string[]; filter: TSubRequestFilter }>,
+  maxRelays = 24
+): string[] {
+  return dedupeNormalizeRelayUrlsOrdered([
+    ...getProfileAuthorWarmupRelayUrls(mapped),
+    ...FAST_READ_RELAY_URLS,
+    ...PROFILE_RELAY_URLS
+  ]).slice(0, maxRelays)
 }

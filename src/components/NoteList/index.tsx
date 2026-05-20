@@ -5,7 +5,6 @@ import {
   FAST_READ_RELAY_URLS,
   FIRST_RELAY_RESULT_GRACE_MS,
   PROFILE_MEDIA_TAB_KINDS,
-  PROFILE_RELAY_URLS,
   SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
   SINGLE_RELAY_KINDLESS_REQ_LIMIT
 } from '@/constants'
@@ -24,7 +23,6 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
-import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
@@ -81,8 +79,8 @@ import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/prov
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { buildFeedFullSearchRelayUrls } from '@/lib/feed-full-search-relays'
 import {
-  getProfileAuthorWarmupRelayUrls,
   getProfileAuthorWarmupSpec,
+  getProfileTimelineFetchRelayUrls,
   isProfileTimelineSubscriptionKey
 } from '@/lib/profile-author-warmup-spec'
 import type { TProfile } from '@/types'
@@ -1988,11 +1986,20 @@ const NoteList = forwardRef(
         feedTimelineScopePrevRef.current = undefined
       }
 
+      const profileRelayStackRefinement =
+        preserveTimelineOnSubRequestsChange &&
+        mergeTimelineWhenSubRequestFiltersMatch &&
+        !userPulledRefresh &&
+        !feedScopeChanged &&
+        prevSubKey != null &&
+        (isRelayUrlStrictSupersetIdentityKey(prevSubKey, subRequestsKey) ||
+          isSpellSubRequestsSameFiltersDifferentRelays(prevSubKey, subRequestsKey))
+
       const keepExistingTimelineEvents =
         preserveTimelineOnSubRequestsChange &&
         !userPulledRefresh &&
         !feedScopeChanged &&
-        eventsRef.current.length > 0 &&
+        (eventsRef.current.length > 0 || profileRelayStackRefinement) &&
         (prevSubKey === subRequestsKey ||
           isRelayUrlStrictSupersetIdentityKey(prevSubKey, subRequestsKey) ||
           (mergeTimelineWhenSubRequestFiltersMatch &&
@@ -2004,13 +2011,15 @@ const NoteList = forwardRef(
 
       async function init() {
         if (timelineEffectStale()) return undefined
-        timelineMergeBootstrapRef.current = null
-        feedPaintSessionPendingRef.current = false
-        feedPaintRelayPendingRef.current = false
-        feedPaintRelayMetaRef.current = null
-        feedPaintLiveRelayDoneRef.current = false
-        feedRelayReturnedAnyEventRef.current = false
-        singleRelayKindlessFallbackAttemptedRef.current = false
+        if (!profileRelayStackRefinement) {
+          timelineMergeBootstrapRef.current = null
+          feedPaintSessionPendingRef.current = false
+          feedPaintRelayPendingRef.current = false
+          feedPaintRelayMetaRef.current = null
+          feedPaintLiveRelayDoneRef.current = false
+          feedRelayReturnedAnyEventRef.current = false
+          singleRelayKindlessFallbackAttemptedRef.current = false
+        }
 
         // Re-subscribe with rows visible (e.g. relay URL expansion): don't flash global loading / skeleton.
         const keepRowsVisible =
@@ -2122,18 +2131,15 @@ const NoteList = forwardRef(
             ? ALGO_LIMIT
             : LIMIT
 
-        /** Manual refresh on profile feeds: bounded fetch in parallel with subscribe (don't wait for EOSE outcomes). */
-        if (userPulledRefresh && profileAuthorWarmSpecForRefresh && profileMappedForRefresh) {
+        /** Profile feeds: bounded fetch in parallel with subscribe (do not wait for EOSE / outcomes). */
+        const runProfileTimelineNetworkFetch = (variant: string) => {
+          if (!profileAuthorWarmSpecForRefresh || !profileMappedForRefresh) return
           publicReadFallbackAttemptedRef.current = true
-          const pullRefreshRelays = dedupeNormalizeRelayUrlsOrdered([
-            ...getProfileAuthorWarmupRelayUrls(profileMappedForRefresh),
-            ...FAST_READ_RELAY_URLS,
-            ...PROFILE_RELAY_URLS
-          ]).slice(0, 24)
+          const primeRelays = getProfileTimelineFetchRelayUrls(profileMappedForRefresh)
           void (async () => {
             try {
               const fetched = await client.fetchEvents(
-                pullRefreshRelays,
+                primeRelays,
                 {
                   authors: [profileAuthorWarmSpecForRefresh.author],
                   kinds: profileAuthorWarmSpecForRefresh.kinds,
@@ -2166,15 +2172,21 @@ const NoteList = forwardRef(
               setLoading(false)
               feedPaintRelayPendingRef.current = true
               feedPaintRelayMetaRef.current = {
-                variant: 'profile_pull_refresh',
+                variant,
                 mergedCount: narrowedFetch.length
               }
               setFeedEmptyToastGateTick((n) => n + 1)
               setFeedTimelineEmptyUiReady(true)
             } catch (e) {
-              logger.warn('[NoteList] Profile pull refresh network fetch failed', { error: e })
+              logger.warn('[NoteList] Profile timeline network fetch failed', { variant, error: e })
             }
           })()
+        }
+
+        if (isProfileTimelineFeed && profileAuthorWarmSpecForRefresh && profileMappedForRefresh) {
+          runProfileTimelineNetworkFetch(
+            userPulledRefresh ? 'profile_pull_refresh' : 'profile_initial_fetch'
+          )
         }
 
         const isSpellPageLocalWarmup =
@@ -2448,7 +2460,8 @@ const NoteList = forwardRef(
               if (
                 isProfileTimelineFeed &&
                 profileAuthorWarmSpec &&
-                !timelineEffectStale()
+                !timelineEffectStale() &&
+                !profileRelayStackRefinement
               ) {
                 const sessionScanLimit = Math.min(4000, Math.max(eventCapEarly * 4, 800))
                 const sessionHits = client.eventService.listSessionEventsAuthoredBy(
@@ -2523,7 +2536,7 @@ const NoteList = forwardRef(
                       setFeedTimelineEmptyUiReady(true)
                     }
 
-                    const relayUrls = getProfileAuthorWarmupRelayUrls(profileMapped)
+                    const relayUrls = getProfileTimelineFetchRelayUrls(profileMapped)
                     if (relayUrls.length > 0) {
                       const fetched = await client.fetchEvents(
                         relayUrls,
@@ -2566,12 +2579,14 @@ const NoteList = forwardRef(
                 })()
               }
             }
-            if (!primedFromDisk) {
+            if (!primedFromDisk && !profileRelayStackRefinement) {
               if (!keepRowsVisible) setLoading(true)
               timelineMergeBootstrapRef.current = []
               setEvents([])
               setNewEvents([])
               setShowCount(revealBatchSize ?? SHOW_COUNT)
+            } else if (!keepRowsVisible && !profileRelayStackRefinement) {
+              setLoading(true)
             }
           }
         } else if (!keepRowsVisible) {
@@ -3700,13 +3715,6 @@ const NoteList = forwardRef(
               mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
             )
           : null
-      const profileRelayUrls =
-        profileWarm != null
-          ? getProfileAuthorWarmupRelayUrls(
-              mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
-            )
-          : []
-
       /** EOSE with zero hits still counts as success; profile feeds need fallback until rows are visible. */
       if (!profileWarm && uiStatuses.some((s) => s.success)) return
       if (profileWarm && eventsRef.current.length > 0) return
@@ -3730,11 +3738,9 @@ const NoteList = forwardRef(
           : LIMIT
 
       const fallbackRelays = profileWarm
-        ? dedupeNormalizeRelayUrlsOrdered([
-            ...profileRelayUrls,
-            ...FAST_READ_RELAY_URLS,
-            ...PROFILE_RELAY_URLS
-          ]).slice(0, 24)
+        ? getProfileTimelineFetchRelayUrls(
+            mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
+          )
         : FAST_READ_RELAY_URLS
 
       void (async () => {

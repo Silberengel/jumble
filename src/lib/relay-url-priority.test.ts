@@ -92,7 +92,7 @@ describe('buildProfilePageReadRelayUrls', () => {
     syncViewerRelayStackNostrLandAggrEligible([])
   })
 
-  it('prioritizes viewed author write relays ahead of long read lists', () => {
+  it('prioritizes viewed author write relays ahead of long read lists on own profile', () => {
     syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
     const out = buildProfilePageReadRelayUrls(
       [],
@@ -101,11 +101,32 @@ describe('buildProfilePageReadRelayUrls', () => {
         read: Array.from({ length: 20 }, (_, i) => `wss://author-inbox-${i}.example/`),
         write: ['wss://author-outbox.example/']
       },
-      false
+      false,
+      true
     )
 
     expect(out[0]).toBe('wss://aggr.nostr.land/')
     expect(out[1]).toBe('wss://author-outbox.example/')
     syncViewerRelayStackNostrLandAggrEligible([])
+  })
+
+  it('pins fast-read for remote profile feeds when author NIP-65 would fill the cap', () => {
+    syncViewerRelayStackNostrLandAggrEligible([])
+    const out = buildProfilePageReadRelayUrls(
+      [],
+      [],
+      {
+        read: Array.from({ length: 12 }, (_, i) => `wss://author-inbox-${i}.example/`),
+        write: ['wss://author-outbox.example/']
+      },
+      true,
+      false,
+      [1],
+      true
+    )
+    const hasFastRead = out.some(
+      (u) => u.includes('nostr.land') || u.includes('theforest.nostr1.com') || u.includes('nostr.wine')
+    )
+    expect(hasFastRead).toBe(true)
   })
 })

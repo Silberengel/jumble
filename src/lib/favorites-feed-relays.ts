@@ -65,7 +65,10 @@ export function getFavoritesFeedRelayUrls(
 /**
  * Merge relay URL lists in order; first occurrence wins; drops blocked.
  */
-export function mergeRelayUrlLayers(layers: string[][], blockedRelays: string[]): string[] {
+export function mergeRelayUrlLayers(
+  layers: readonly (readonly string[])[],
+  blockedRelays: string[]
+): string[] {
   const blocked = blockedSet(blockedRelays)
   const seen = new Set<string>()
   const out: string[] = []
@@ -115,8 +118,25 @@ export function buildProfileAugmentedReadRelayUrls(
     useGlobalRelayBootstrap
       ? (FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[])
       : []
-  const merged = mergeRelayUrlLayers([authorRelayUrls, fastReadLayer], blockedRelays)
+  const merged = mergeRelayUrlLayers(
+    useGlobalRelayBootstrap ? [fastReadLayer, authorRelayUrls] : [authorRelayUrls, fastReadLayer],
+    blockedRelays
+  )
   return merged.slice(0, maxRelays)
+}
+
+/**
+ * Another user's NIP-65 read/write lists can fill {@link PROFILE_PAGE_FEED_MAX_RELAYS} before the fast-read
+ * tier is reached in {@link feedRelayPolicyUrls}, so kind 1 / 1111 REQs never hit relays that carry them.
+ */
+function pinFastReadForRemoteProfileFeed(
+  urls: string[],
+  fastReadLayer: readonly string[],
+  blockedRelays: string[],
+  maxRelays: number
+): string[] {
+  if (!fastReadLayer.length) return urls.slice(0, maxRelays)
+  return mergeRelayUrlLayers([fastReadLayer, urls], blockedRelays).slice(0, maxRelays)
 }
 
 export type ReadRelayPriorityOptions = {
@@ -218,17 +238,29 @@ export function buildProfilePageReadRelayUrls(
       allowThirdPartyLocalRelays: true
     }
   )
+  const pinFastReadForRemote = useGlobal && !includeAuthorLocalRelays
+
   /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
   if (authorHasNoNip65) {
     const profileSource = useGlobal ? PROFILE_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer()
     const profileFetchLayer = profileSource.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
-    return mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, maxRelays + 8)
+    const cap = maxRelays + 8
+    const merged = mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, cap)
+    return pinFastReadForRemote
+      ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
+      : merged
   }
   if (wantsDocumentLayer) {
     const docLayer = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
-    return mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, maxRelays + 6)
+    const cap = maxRelays + 6
+    const merged = mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, cap)
+    return pinFastReadForRemote
+      ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
+      : merged
   }
-  return urls
+  return pinFastReadForRemote
+    ? pinFastReadForRemoteProfileFeed(urls, fastReadLayer, blockedRelays, maxRelays)
+    : urls
 }
 
 /**

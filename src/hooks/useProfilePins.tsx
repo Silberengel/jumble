@@ -80,7 +80,7 @@ function blockedRelaysContentKey(blockedRelays: string[]): string {
 export function useProfilePins(pubkey: string | undefined) {
   const nostr = useNostrOptional()
   const { blockedRelays } = useFavoriteRelays()
-  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
+  const viewerUsesGlobalBootstrap = useGlobalRelayBootstrapDefaults()
   const blockedKey = useMemo(() => blockedRelaysContentKey(blockedRelays), [blockedRelays])
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
@@ -92,6 +92,7 @@ export function useProfilePins(pubkey: string | undefined) {
       return false
     }
   }, [nostr?.pubkey, pubkey])
+  const useGlobalRelayBootstrap = viewerUsesGlobalBootstrap || !includeAuthorLocalRelays
   const [pinEvents, setPinEvents] = useState<Event[]>([])
   const [loadingPins, setLoadingPins] = useState(false)
 

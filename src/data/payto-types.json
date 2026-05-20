@@ -3,6 +3,45 @@
     "logoAssetsDir": "src/assets/payto_logos",
     "logoAssetPathNote": "Repo-relative path to the logo file. The app bundles these via Vite and exposes them under /assets/ at runtime (see getPaytoLogoPath)."
   },
+  "walletApps": {
+    "cakewallet": {
+      "label": "Cake Wallet",
+      "mobileOnly": true,
+      "uriTemplate": "cakewallet:{coinScheme}?address={authority}"
+    },
+    "phoenix": {
+      "label": "Phoenix",
+      "mobileOnly": true,
+      "uriTemplate": "phoenix:pay?uri={coinScheme}:{authority}"
+    }
+  },
+  "kind0CryptocurrencyAddresses": {
+    "monero": "monero",
+    "xmr": "monero",
+    "bitcoin": "bitcoin",
+    "btc": "bitcoin",
+    "ethereum": "ethereum",
+    "eth": "ethereum",
+    "litecoin": "litecoin",
+    "ltc": "litecoin",
+    "dogecoin": "dogecoin",
+    "doge": "dogecoin",
+    "nano": "nano",
+    "xno": "nano",
+    "solana": "solana",
+    "sol": "solana",
+    "bitcoin-cash": "bitcoin-cash",
+    "bch": "bitcoin-cash"
+  },
+  "kind0RootPaymentFields": {
+    "monero": "monero",
+    "bitcoin": "bitcoin",
+    "ethereum": "ethereum",
+    "litecoin": "litecoin",
+    "dogecoin": "dogecoin",
+    "nano": "nano",
+    "solana": "solana"
+  },
   "editorOrder": [
     "lightning",
     "bitcoin",
@@ -60,6 +99,10 @@
       "symbol": "₿",
       "category": "bitcoin",
       "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
+      "walletOpen": {
+        "scheme": "bitcoin",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "bc1q…",
         "hint": "On-chain Bitcoin address (Bech32 bc1… preferred)"
@@ -70,15 +113,25 @@
       "symbol": "₿",
       "category": "bitcoin",
       "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
+      "walletOpen": {
+        "scheme": "bolt12",
+        "requirePrefix": "lno1",
+        "walletApps": ["phoenix"]
+      },
       "authority": {
         "placeholder": "lno1…",
-        "hint": "BOLT-12 offer (static offer string, e.g. lno1…)"
+        "hint": "BOLT-12 offer (static offer string, e.g. lno1…). Phoenix 2.3.1+ can pay offers; some legacy offers may be rejected."
       }
     },
     "bip353": {
       "label": "DNS Payment Instructions (BIP-353)",
       "symbol": "⚡",
       "category": "bitcoin-layer",
+      "walletOpen": {
+        "scheme": "lightning",
+        "requireAtSign": true,
+        "walletApps": ["phoenix"]
+      },
       "authority": {
         "placeholder": "user@example.com",
         "hint": "BIP-353 DNS payment instructions (human-readable name@domain, resolves to Lightning)"
@@ -89,6 +142,11 @@
       "symbol": "₿",
       "category": "bitcoin",
       "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
+      "walletOpen": {
+        "scheme": "bitcoin",
+        "requirePrefix": "sp1",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "sp1…",
         "hint": "BIP-352 silent payment address (sp1…)"
@@ -118,6 +176,11 @@
       "label": "Lightning Network",
       "symbol": "⚡",
       "category": "bitcoin-layer",
+      "walletOpen": {
+        "scheme": "lightning",
+        "requireAtSign": true,
+        "walletApps": ["phoenix"]
+      },
       "authority": {
         "placeholder": "user@getalby.com",
         "hint": "Lightning address (LUD-16): name@domain — not a BOLT11 invoice"
@@ -128,6 +191,10 @@
       "symbol": "Ξ",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/ethereum-eth-logo.svg",
+      "walletOpen": {
+        "scheme": "ethereum",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "0x…",
         "hint": "Ethereum address (0x + 40 hex characters)"
@@ -138,6 +205,10 @@
       "symbol": "ɱ",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/Monero.png",
+      "walletOpen": {
+        "scheme": "monero",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "4… or 8…",
         "hint": "Monero primary address (starts with 4 or 8)"
@@ -147,6 +218,10 @@
       "label": "Nano",
       "symbol": "Ӿ",
       "category": "crypto",
+      "walletOpen": {
+        "scheme": "nano",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "nano_…",
         "hint": "Nano account address (nano_ prefix)"
@@ -190,6 +265,10 @@
       "symbol": "₿",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/bitcoin-cash-bch-logo.svg",
+      "walletOpen": {
+        "scheme": "bitcoincash",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "bitcoincash:… or q…",
         "hint": "Bitcoin Cash address (CashAddr or legacy)"
@@ -200,6 +279,10 @@
       "symbol": "Ð",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/dogecoin-doge-logo.svg",
+      "walletOpen": {
+        "scheme": "dogecoin",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "D…",
         "hint": "Dogecoin address (usually starts with D)"
@@ -210,6 +293,10 @@
       "symbol": "Ł",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/Litecoin.png",
+      "walletOpen": {
+        "scheme": "litecoin",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "ltc1q… or L… or M…",
         "hint": "Litecoin address"
@@ -260,6 +347,10 @@
       "symbol": "◎",
       "category": "crypto",
       "logoAssetPath": "src/assets/payto_logos/solana.png",
+      "walletOpen": {
+        "scheme": "solana",
+        "walletApps": ["cakewallet"]
+      },
       "authority": {
         "placeholder": "Base58 pubkey…",
         "hint": "Solana wallet address (base58, 32–44 characters)"

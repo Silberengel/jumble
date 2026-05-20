@@ -1,6 +1,7 @@
 import {
   EmbeddedHashtagParser,
   EmbeddedMentionParser,
+  EmbeddedAboutCoinPaytoParser,
   EmbeddedPaytoParser,
   EmbeddedUrlParser,
   EmbeddedWebsocketUrlParser,
@@ -40,6 +41,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
 
     if (core) {
       const coreNodes = parseContent(core, [
+        EmbeddedAboutCoinPaytoParser,
         EmbeddedWebsocketUrlParser,
         EmbeddedUrlParser,
         EmbeddedPaytoParser,

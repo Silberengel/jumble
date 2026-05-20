@@ -11,6 +11,7 @@ import {
   EMOJI_SHORT_CODE_REGEX
 } from '@/lib/content-patterns'
 import { PAYTO_URI_REGEX } from '@/lib/payto'
+import { parseAboutContentWithCoinPayto } from '@/lib/payto-about-coin-lines'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
 import { isImage, isMedia, isHlsPlaylistUrl, isBlossomBudBlobUrl } from './url'
 import { isSpotifyOpenUrl } from './spotify-url'
@@ -83,6 +84,9 @@ export const EmbeddedPaytoParser: TContentParser = {
   type: 'payto',
   regex: PAYTO_URI_REGEX
 }
+
+/** `XMR: 4abc…` lines in profile about (catalog coin labels). */
+export const EmbeddedAboutCoinPaytoParser: TContentParser = parseAboutContentWithCoinPayto
 
 export const EmbeddedUrlParser: TContentParser = (content: string) => {
   const matches = content.matchAll(URL_REGEX)

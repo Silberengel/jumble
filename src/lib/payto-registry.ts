@@ -5,6 +5,7 @@
 
 import paytoTypesCatalog from '@/data/payto-types.json'
 import { resolvePaytoLogoAssetPath } from '@/lib/payto-logos'
+import { getPaytoPrimaryOpenUrl } from '@/lib/payto-wallet-open'
 import { resolvePaypalPaymentUrl } from '@/lib/payto-paypal-url'
 
 export type PaytoCategory = 'bitcoin' | 'bitcoin-layer' | 'crypto' | 'stablecoin' | 'fiat' | 'tip'
@@ -14,6 +15,16 @@ export type PaytoAuthorityHelp = {
   hint: string
 }
 
+export type PaytoWalletOpenRow = {
+  scheme?: string
+  style?: 'path' | 'query'
+  path?: string
+  query?: Record<string, string>
+  requireAtSign?: boolean
+  requirePrefix?: string
+  walletApps?: string[]
+}
+
 export type PaytoTypeRecord = {
   label: string
   symbol?: string
@@ -21,6 +32,8 @@ export type PaytoTypeRecord = {
   /** Repo-relative path, e.g. `src/assets/payto_logos/ethereum-eth-logo.svg`. */
   logoAssetPath?: string
   profileUrlTemplate?: string
+  /** Native wallet URI / app deep link (see {@link getPaytoPrimaryOpenUrl}). */
+  walletOpen?: PaytoWalletOpenRow
   authority?: PaytoAuthorityHelp
 }
 
@@ -110,6 +123,9 @@ export function getPaytoProfileUrl(type: string, authority: string): string | nu
   if (canonical === 'paypal') {
     return resolvePaypalPaymentUrl(authority)
   }
+
+  const fromWallet = getPaytoPrimaryOpenUrl(type, authority)
+  if (fromWallet) return fromWallet
 
   const template = getPaytoTypeRecord(type)?.profileUrlTemplate
   if (!template) return null

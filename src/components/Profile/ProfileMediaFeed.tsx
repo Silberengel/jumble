@@ -1,27 +1,17 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import { buildAuthorInboxOutboxRelayUrls } from '@/lib/favorites-feed-relays'
-import logger from '@/lib/logger'
 import { PROFILE_MEDIA_TAB_KINDS } from '@/constants'
 import { buildProfileMediaSubRequests } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
-import { normalizeUrl } from '@/lib/url'
+import { normalizeHexPubkey } from '@/lib/pubkey'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
-import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
+import { hexPubkeysEqual } from '@/lib/pubkey'
 import client from '@/services/client.service'
 import { forwardRef, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-
-function blockedRelaysContentKey(blockedRelays: string[]): string {
-  return [...blockedRelays].map((u) => normalizeUrl(u) || u).filter(Boolean).sort().join('\u0001')
-}
-
-const MEDIA_LOG = '[ProfileMedia]'
 
 const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey }, ref) => {
-  const { t } = useTranslation()
   const nostr = useNostrOptional()
   const { blockedRelays } = useFavoriteRelays()
-  const blockedKey = useMemo(() => blockedRelaysContentKey(blockedRelays), [blockedRelays])
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
     const pk = pubkey?.trim()
@@ -33,68 +23,31 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     }
   }, [nostr?.pubkey, pubkey])
 
-  /**
-   * Before NIP-65: empty author tier so REQ still uses read-only + fast-read; refine when
-   * {@link client.fetchRelayList} returns.
-   */
-  const provisionalAuthorRelayUrls = useMemo(() => {
-    if (!pubkey?.trim()) return [] as string[]
-    return buildAuthorInboxOutboxRelayUrls({ read: [], write: [] }, blockedRelays, includeAuthorLocalRelays)
-  }, [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays])
-
-  const [refinedAuthorRelayUrls, setRefinedAuthorRelayUrls] = useState<string[] | null>(null)
+  const [authorRelayUrls, setAuthorRelayUrls] = useState<string[] | null>(null)
 
   useEffect(() => {
     const pk = pubkey?.trim()
     if (!pk) {
-      logger.debug(`${MEDIA_LOG} empty pubkey — no relay resolution`)
-      setRefinedAuthorRelayUrls([])
+      setAuthorRelayUrls([])
       return
     }
     let cancelled = false
-    setRefinedAuthorRelayUrls(null)
-    void (async () => {
-      try {
-        const peeked = await client.peekRelayListFromStorage(pk)
-        if (!cancelled) {
-          setRefinedAuthorRelayUrls(
-            buildAuthorInboxOutboxRelayUrls(peeked, blockedRelays, includeAuthorLocalRelays)
-          )
-        }
-      } catch {
-        /* keep provisionalAuthorRelayUrls */
-      }
-      const authorRl = await client.fetchRelayList(pk).catch(() => ({
-        read: [] as string[],
-        write: [] as string[]
-      }))
-      if (cancelled) return
-      const authorStack = buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays)
-      const hexPk = normalizeHexPubkey(pk)
-      logger.debug(`${MEDIA_LOG} NIP-65 author relays resolved for media tab`, {
-        pubkey: hexPk.slice(0, 8),
-        authorReadCount: authorRl.read?.length ?? 0,
-        authorWriteCount: authorRl.write?.length ?? 0,
-        authorRelayCount: authorStack.length,
-        authorRelaysSample: authorStack.slice(0, 4)
+    setAuthorRelayUrls(null)
+    void client
+      .fetchRelayList(pk)
+      .catch(() => ({ read: [] as string[], write: [] as string[] }))
+      .then((authorRl) => {
+        if (cancelled) return
+        setAuthorRelayUrls(buildAuthorInboxOutboxRelayUrls(authorRl, blockedRelays, includeAuthorLocalRelays))
       })
-      logger.debug(`${MEDIA_LOG} author inbox/outbox relay list`, { authorRelays: authorStack })
-      setRefinedAuthorRelayUrls(authorStack)
-    })()
     return () => {
       cancelled = true
     }
-  }, [pubkey, blockedKey, blockedRelays, includeAuthorLocalRelays])
-
-  /** Empty NIP-65 stack is not “unknown” — fall back to provisional tier so augmented read relays still apply. */
-  const authorRelayUrls =
-    refinedAuthorRelayUrls != null && refinedAuthorRelayUrls.length > 0
-      ? refinedAuthorRelayUrls
-      : provisionalAuthorRelayUrls
+  }, [pubkey, blockedRelays, includeAuthorLocalRelays])
 
   const subRequests = useMemo(() => {
     const pk = pubkey?.trim()
-    if (!pk) return []
+    if (!pk || !authorRelayUrls?.length) return []
     return buildProfileMediaSubRequests(authorRelayUrls, blockedRelays, pk)
   }, [pubkey, authorRelayUrls, blockedRelays])
 
@@ -104,43 +57,19 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
     return `profile-media-${normalizeHexPubkey(pk)}`
   }, [pubkey])
 
-  useEffect(() => {
-    const pk = pubkey?.trim()
-    if (!pk) return
-    if (!subRequests.length) {
-      logger.debug(`${MEDIA_LOG} buildProfileMediaSubRequests returned no URLs (blocked or empty stacks)`, {
-        pubkey: normalizeHexPubkey(pk).slice(0, 8),
-        authorRelayCount: authorRelayUrls.length
-      })
-      return
-    }
-    const sr = subRequests[0]!
-    logger.debug(`${MEDIA_LOG} subRequests ready for NoteList`, {
-      pubkey: normalizeHexPubkey(pk).slice(0, 8),
-      feedSubscriptionKey,
-      relayCount: sr.urls.length,
-      filterAuthors: sr.filter.authors,
-      filterKinds: sr.filter.kinds,
-      filterLimit: sr.filter.limit
-    })
-    logger.debug(`${MEDIA_LOG} augmented relay URLs`, { urls: sr.urls })
-  }, [pubkey, authorRelayUrls, subRequests, feedSubscriptionKey, refinedAuthorRelayUrls])
-
   const showKinds = useMemo(() => [...PROFILE_MEDIA_TAB_KINDS], [])
 
-  if (!pubkey?.trim()) {
+  if (authorRelayUrls === null) {
     return (
-      <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-        {t('Nothing to load for this feed.')}
+      <div className="min-h-[min(40vh,320px)] min-w-0 px-2 py-8 text-center text-sm text-muted-foreground">
+        {/* Skeleton while author NIP-65 resolves — avoids provisional→refined subRequest churn */}
       </div>
     )
   }
 
   if (!subRequests.length) {
     return (
-      <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-        {t('Nothing to load for this feed.')}
-      </div>
+      <div className="min-h-[min(40vh,320px)] min-w-0 px-2 py-8 text-center text-sm text-muted-foreground" />
     )
   }
 
@@ -153,12 +82,8 @@ const ProfileMediaFeed = forwardRef<TNoteListRef, { pubkey: string }>(({ pubkey 
         hostPrimaryPageName="profile"
         showKinds={showKinds}
         useFilterAsIs
-        /**
-         * Provisional author tier (empty) then NIP-65 inbox/outbox refinement; REQ filter unchanged — merge rows.
-         */
         preserveTimelineOnSubRequestsChange
         mergeTimelineWhenSubRequestFiltersMatch
-        /** Same live {@link client.subscribeTimeline} path as {@link useProfileTimeline} on the Posts tab; filter is native media kinds only. */
         revealBatchSize={48}
         filterMutedNotes={false}
         showKind1OPs

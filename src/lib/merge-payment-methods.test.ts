@@ -134,6 +134,46 @@ describe('buildOrderedZapLightningAddresses', () => {
   })
 })
 
+describe('mergePaymentMethods kind 0 about coin lines', () => {
+  it('imports XMR from about text', () => {
+    const addr =
+      '84mAJEgdihyRHkz8fGeuqgbQ19SuGeFWbhokJG2uMNMwTkDyoyQ3H7BijQNwSriSp9hHfaRGZYpCuKvHJwTer8av845U9py'
+    const profileEvent = {
+      kind: kinds.Metadata,
+      pubkey: 'aa'.repeat(32),
+      created_at: 1,
+      tags: [] as string[][],
+      content: JSON.stringify({
+        about: `https://example.com\n\nXMR: ${addr}`
+      }),
+      id: 'bb'.repeat(64),
+      sig: 'cc'.repeat(128)
+    } as Event
+
+    const methods = mergePaymentMethods(null, null, profileEvent)
+    expect(methods.some((m) => m.type === 'monero' && m.authority === addr)).toBe(true)
+  })
+})
+
+describe('mergePaymentMethods kind 0 cryptocurrency_addresses', () => {
+  it('imports Garnet monero from profile JSON', () => {
+    const addr = '4AdUndXHHZ6cfufTMvppY6JwXNouMBzSkbLYfpAV5Usx3skxNgvYatVKtQNjUoNcknXV85jSp3wjUGpHbWfnqPm4WjwFGtW'
+    const profileEvent = {
+      kind: kinds.Metadata,
+      pubkey: 'aa'.repeat(32),
+      created_at: 1,
+      tags: [] as string[][],
+      content: JSON.stringify({ cryptocurrency_addresses: { monero: addr } }),
+      id: 'bb'.repeat(64),
+      sig: 'cc'.repeat(128)
+    } as Event
+
+    const methods = mergePaymentMethods(null, null, profileEvent)
+    expect(methods.some((m) => m.type === 'monero' && m.authority === addr)).toBe(true)
+    expect(methods.find((m) => m.type === 'monero')?.payto).toBe(`payto://monero/${addr}`)
+  })
+})
+
 describe('prepareZapDialogAlternativePayments', () => {
   const groups = [
     {

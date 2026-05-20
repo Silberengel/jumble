@@ -6,11 +6,14 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Copy } from 'lucide-react'
+import { Copy, ExternalLink, Wallet, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getPaytoTypeInfo, getPaytoProfileUrl } from '@/lib/payto'
-import { Zap, ExternalLink } from 'lucide-react'
+import {
+  filterPaytoPaymentOpenHandlersForDevice,
+  getPaytoPaymentOpenHandlers,
+  getPaytoTypeInfo
+} from '@/lib/payto'
 
 export default function PaytoDialog({
   open,
@@ -29,11 +32,13 @@ export default function PaytoDialog({
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
-  const profileUrl = getPaytoProfileUrl(type, authority)
+  const openHandlers = filterPaytoPaymentOpenHandlersForDevice(
+    getPaytoPaymentOpenHandlers(type, authority)
+  )
 
-  const handleCopy = (text: string, label?: string) => {
+  const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
-    toast.success(label ? t('Copied {{label}} address', { label }) : t('Copied to clipboard'))
+    toast.success(copyLabel ? t('Copied {{label}} address', { label: copyLabel }) : t('Copied to clipboard'))
     onOpenChange(false)
   }
 
@@ -51,21 +56,13 @@ export default function PaytoDialog({
               : t('Payment address – copy to use in your wallet or app')}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 pb-2">
+        <div className="space-y-4 pb-2">
           <div className="rounded-md bg-muted px-3 py-2 font-mono text-sm break-all select-text">
             {authority}
           </div>
           <div className="flex flex-wrap gap-2">
-            {profileUrl && (
-              <Button variant="default" size="sm" asChild className="gap-2">
-                <a href={profileUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="size-4" />
-                  {t('Open on website')}
-                </a>
-              </Button>
-            )}
             <Button
-              variant="secondary"
+              variant="default"
               size="sm"
               onClick={() => handleCopy(authority, label)}
               className="gap-2"
@@ -74,7 +71,7 @@ export default function PaytoDialog({
               {t('Copy address')}
             </Button>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => handleCopy(paytoUri)}
               className="gap-2"
@@ -83,6 +80,31 @@ export default function PaytoDialog({
               {t('Copy payto URI')}
             </Button>
           </div>
+          {openHandlers.length > 0 && (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-sm font-medium text-muted-foreground">{t('Open with')}</p>
+              <div className="flex flex-wrap gap-2">
+                {openHandlers.map((handler) => (
+                  <Button key={handler.id} variant="outline" size="sm" asChild className="gap-2">
+                    <a
+                      href={handler.href}
+                      {...(handler.isHttp
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {handler.isHttp ? (
+                        <ExternalLink className="size-4" />
+                      ) : (
+                        <Wallet className="size-4" />
+                      )}
+                      {t('Open in {{name}}', { name: handler.openTargetName })}
+                    </a>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -8,7 +8,6 @@ import {
   getPaytoTypeInfo,
   getPaytoIconChar,
   getPaytoLogoPath,
-  getPaytoProfileUrl,
   isKnownPaytoType,
   isLightningPaytoType,
   isZappableLightningPaytoType,
@@ -92,7 +91,6 @@ export default function PaytoLink({
   })()
   const logoPath = getPaytoLogoPath(type)
   const iconChar = getPaytoIconChar(type)
-  const profileUrl = getPaytoProfileUrl(type, authority)
   const childText = flattenPaytoLinkChildText(children)
   const useCompactDisplay =
     displayFormat === 'compact' &&
@@ -106,6 +104,11 @@ export default function PaytoLink({
   )
   const overrideTip = linkTitle?.trim()
   const fullAddressTip = `${displayLabel}: ${authority}`
+  const paymentOptionsTip = known
+    ? categoryLabel
+      ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}`
+      : `${displayLabel}: ${t('Click to open payment options')}`
+    : t('Click to copy address')
 
   const iconEl = (
     <span className="shrink-0 flex items-center justify-center w-4 h-4 text-[1rem] leading-none" aria-hidden>
@@ -124,33 +127,6 @@ export default function PaytoLink({
     </span>
   )
 
-  if (profileUrl) {
-    return (
-      <a
-        href={profileUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={cn(
-          URI_LINK_CLASS,
-          'cursor-pointer text-left inline-flex items-center gap-1.5',
-          className
-        )}
-        title={
-          overrideTip ||
-          (useCompactDisplay
-            ? fullAddressTip
-            : categoryLabel
-              ? `${displayLabel} (${categoryLabel}): ${t('Open on website')}`
-              : `${displayLabel}: ${t('Open on website')}`)
-        }
-        onClick={(e) => e.stopPropagation()}
-      >
-        {iconEl}
-        {content}
-      </a>
-    )
-  }
-
   return (
     <>
       <button
@@ -161,21 +137,12 @@ export default function PaytoLink({
           'cursor-pointer text-left inline-flex items-center gap-1.5',
           className
         )}
-        title={
-          overrideTip ||
-          (useCompactDisplay
-            ? fullAddressTip
-            : known && categoryLabel
-              ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}`
-              : known
-                ? `${displayLabel}: ${t('Click to open payment options')}`
-                : t('Click to copy address'))
-        }
+        title={overrideTip || (useCompactDisplay ? fullAddressTip : paymentOptionsTip)}
       >
         {iconEl}
         {content}
       </button>
-      {known && (
+      {known && !canZap && (
         <PaytoDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}

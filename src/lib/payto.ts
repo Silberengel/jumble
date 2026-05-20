@@ -23,8 +23,21 @@ export {
   PAYTO_EDITOR_TYPE_ORDER,
   PAYTO_KNOWN_TYPES,
   type PaytoAuthorityHelp,
-  type PaytoCategory
+  type PaytoCategory,
+  type PaytoWalletOpenRow
 } from '@/lib/payto-registry'
+
+export {
+  getPaytoPrimaryOpenUrl,
+  getPaytoPaymentOpenHandlers,
+  filterPaytoPaymentOpenHandlersForDevice,
+  getPaytoWalletOpenActions,
+  filterWalletOpenActionsForDevice,
+  isPaytoHttpOpenUrl,
+  isLikelyMobileWalletUserAgent,
+  type PaytoPaymentOpenHandler,
+  type PaytoWalletOpenAction
+} from '@/lib/payto-wallet-open'
 
 export const PAYTO_URI_REGEX = /payto:\/\/([a-z0-9-]+)\/([^\s\]\)\<\"']+)/gi
 
@@ -64,3 +77,11 @@ export {
   PAYTO_INLINE_DISPLAY_AUTHORITY_CHARS,
   truncatePaytoAuthority
 } from '@/lib/payto-display'
+
+export { extractKind0PaymentMethodsFromProfileJson, type Kind0ImportedPaymentMethod } from '@/lib/payto-kind0-import'
+
+export {
+  extractAboutCoinPaymentMethods,
+  parseAboutCoinLabelPaymentLines,
+  type AboutCoinLineMatch
+} from '@/lib/payto-about-coin-lines'

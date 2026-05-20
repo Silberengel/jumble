@@ -73,32 +73,20 @@ export function useProfileAuthorFeedSubRequests({
   }, [pubkey])
 
   const [refreshToken, setRefreshToken] = useState(0)
-  const [provisionalUrls, setProvisionalUrls] = useState<string[]>([])
-  const [fullUrls, setFullUrls] = useState<string[] | null>(null)
+  /** Single emission per visit: provisional→full relay stacks used to restart NoteList and wipe rows mid-fetch. */
+  const [relayUrls, setRelayUrls] = useState<string[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    setRelayUrls(null)
     const socialKinds = kinds.some(isSocialKindBlockedKind)
-    const provisional = buildProfilePageReadRelayUrls(
-      favoriteRelays,
-      blockedRelays,
-      emptyAuthor,
-      socialKinds,
-      includeAuthorLocalRelays,
-      kinds,
-      useGlobalRelayBootstrap
-    )
-    if (!cancelled) {
-      setProvisionalUrls(provisional)
-      setFullUrls(null)
-    }
 
     void client
       .fetchRelayList(pubkey)
       .catch(() => emptyAuthor)
       .then((authorRl) => {
         if (cancelled) return
-        const full = buildProfilePageReadRelayUrls(
+        const urls = buildProfilePageReadRelayUrls(
           favoriteRelays,
           blockedRelays,
           authorRl,
@@ -107,23 +95,18 @@ export function useProfileAuthorFeedSubRequests({
           kinds,
           useGlobalRelayBootstrap
         )
-        setFullUrls(full)
+        setRelayUrls(urls)
       })
 
     return () => {
       cancelled = true
     }
-    // `relayListsKey` already fingerprints `favoriteRelays` + `blockedRelays` by sorted URL content.
-    // Do not list those arrays here: the provider often hands new `[]` references each render and would
-    // retrigger this effect forever (setState → re-render → new refs → effect → …).
   }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays, useGlobalRelayBootstrap])
 
-  const activeUrls = fullUrls?.length ? fullUrls : provisionalUrls
-
   const subRequests = useMemo(() => {
-    if (!activeUrls.length) return [] as TFeedSubRequest[]
-    return buildProfileAuthorSubRequestsFromUrlGroups([activeUrls], authorHex, [...kinds], limit)
-  }, [activeUrls, authorHex, kinds, limit])
+    if (!relayUrls?.length) return [] as TFeedSubRequest[]
+    return buildProfileAuthorSubRequestsFromUrlGroups([relayUrls], authorHex, [...kinds], limit)
+  }, [relayUrls, authorHex, kinds, limit])
 
   const followingFeedDeltaSubRequests = useMemo(() => [] as TFeedSubRequest[], [])
 

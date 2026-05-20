@@ -4,9 +4,11 @@ import {
   getCanonicalPaytoType,
   getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
+  isKnownPaytoType,
   isLightningPaytoType,
   isZappableLightningPaytoType
 } from '@/lib/payto'
+import { extractKind0PaymentMethodsFromProfileJson } from '@/lib/payto-kind0-import'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import type { TProfile } from '@/types'
 import { kinds, type Event } from 'nostr-tools'
@@ -196,6 +198,25 @@ export function mergePaymentMethods(
       return
     }
 
+    const netCanonical = getCanonicalPaytoType(net)
+    if (
+      isKnownPaytoType(netCanonical) &&
+      !isLightningPaytoType(netCanonical) &&
+      netCanonical !== 'bitcoin' &&
+      netCanonical !== 'liquid' &&
+      netCanonical !== 'lbtc' &&
+      netCanonical !== 'usdt'
+    ) {
+      add(
+        netCanonical,
+        addr,
+        buildPaytoUri(netCanonical, addr),
+        getPaytoEditorTypeLabel(netCanonical),
+        { currency: w.currency }
+      )
+      return
+    }
+
     if (cur === 'usdt' || cur === 'usd₮' || cur === 'tether' || net === 'usdt') {
       add('usdt', addr, buildPaytoUri('usdt', addr), 'Tether (USDT)', { currency: w.currency || 'USDT' })
       return
@@ -235,6 +256,14 @@ export function mergePaymentMethods(
   }
 
   if (profileEvent?.kind === kinds.Metadata) {
+    try {
+      const profileJson = JSON.parse(profileEvent.content || '{}') as unknown
+      for (const m of extractKind0PaymentMethodsFromProfileJson(profileJson)) {
+        add(m.type, m.authority, m.payto, m.displayType)
+      }
+    } catch {
+      /* ignore invalid kind 0 JSON */
+    }
     for (const tag of profileEvent.tags) {
       if (tag[0] === 'payto' && tag[1] && tag[2]) {
         const type = String(tag[1]).toLowerCase()
