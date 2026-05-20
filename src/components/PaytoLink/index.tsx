@@ -11,11 +11,14 @@ import {
   getPaytoProfileUrl,
   isKnownPaytoType,
   isLightningPaytoType,
-  isZappableLightningPaytoType
+  isZappableLightningPaytoType,
+  flattenPaytoLinkChildText,
+  formatPaytoLinkDisplayText,
+  paytoLinkChildTextLooksLikeAuthority
 } from '@/lib/payto'
 import PaytoDialog from '@/components/PaytoDialog'
 import { HelpCircle } from 'lucide-react'
-import { PRIMARY_LINK_HOVER_CLASS, URI_LINK_CLASS } from '@/lib/link-styles'
+import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
 
 export default function PaytoLink({
@@ -26,6 +29,8 @@ export default function PaytoLink({
   onOpenZap,
   className,
   children,
+  /** `compact`: `47R4Npvudm... (Monero)` for notes/markup; `full`: show authority as-is (e.g. zap dialog). */
+  displayFormat = 'compact',
   /** When set (e.g. Markdown link title), used as the native `title` tooltip instead of the default payto hint. */
   linkTitle
 }: {
@@ -37,6 +42,7 @@ export default function PaytoLink({
   onOpenZap?: (pubkey: string, lightningAuthority: string) => void
   className?: string
   children?: React.ReactNode
+  displayFormat?: 'compact' | 'full'
   linkTitle?: string
 }) {
   const { t } = useTranslation()
@@ -87,8 +93,19 @@ export default function PaytoLink({
   const logoPath = getPaytoLogoPath(type)
   const iconChar = getPaytoIconChar(type)
   const profileUrl = getPaytoProfileUrl(type, authority)
-  const content = children ?? <span className="break-all">{authority}</span>
+  const childText = flattenPaytoLinkChildText(children)
+  const useCompactDisplay =
+    displayFormat === 'compact' &&
+    (!children || paytoLinkChildTextLooksLikeAuthority(childText, authority, raw))
+  const content = useCompactDisplay ? (
+    <span>{formatPaytoLinkDisplayText(type, authority)}</span>
+  ) : children != null && children !== false ? (
+    children
+  ) : (
+    <span className="break-all">{authority}</span>
+  )
   const overrideTip = linkTitle?.trim()
+  const fullAddressTip = `${displayLabel}: ${authority}`
 
   const iconEl = (
     <span className="shrink-0 flex items-center justify-center w-4 h-4 text-[1rem] leading-none" aria-hidden>
@@ -120,7 +137,11 @@ export default function PaytoLink({
         )}
         title={
           overrideTip ||
-          (categoryLabel ? `${displayLabel} (${categoryLabel}): ${t('Open on website')}` : `${displayLabel}: ${t('Open on website')}`)
+          (useCompactDisplay
+            ? fullAddressTip
+            : categoryLabel
+              ? `${displayLabel} (${categoryLabel}): ${t('Open on website')}`
+              : `${displayLabel}: ${t('Open on website')}`)
         }
         onClick={(e) => e.stopPropagation()}
       >
@@ -142,11 +163,13 @@ export default function PaytoLink({
         )}
         title={
           overrideTip ||
-          (known && categoryLabel
-            ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}`
-            : known
-              ? `${displayLabel}: ${t('Click to open payment options')}`
-              : t('Click to copy address'))
+          (useCompactDisplay
+            ? fullAddressTip
+            : known && categoryLabel
+              ? `${displayLabel} (${categoryLabel}): ${t('Click to open payment options')}`
+              : known
+                ? `${displayLabel}: ${t('Click to open payment options')}`
+                : t('Click to copy address'))
         }
       >
         {iconEl}

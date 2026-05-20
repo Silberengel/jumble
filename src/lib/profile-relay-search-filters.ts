@@ -1,6 +1,5 @@
 import { METADATA_CO_FETCH_KINDS } from '@/constants'
 import type { Filter } from 'nostr-tools'
-import { kinds } from 'nostr-tools'
 import { splitNip05Identifier } from '@/lib/nip05'
 import { normalizeProfileSearchQueryForMatch } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'

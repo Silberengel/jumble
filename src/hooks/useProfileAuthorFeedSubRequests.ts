@@ -42,7 +42,7 @@ export function useProfileAuthorFeedSubRequests({
 } {
   const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
+  const viewerUsesGlobalBootstrap = useGlobalRelayBootstrapDefaults()
 
   const includeAuthorLocalRelays = useMemo(() => {
     const me = nostr?.pubkey?.trim()
@@ -53,6 +53,9 @@ export function useProfileAuthorFeedSubRequests({
       return false
     }
   }, [nostr?.pubkey, pubkey])
+
+  /** Own profile: honor viewer relay prefs. Other profiles: always widen with FAST_READ / profile index relays. */
+  const useGlobalRelayBootstrap = viewerUsesGlobalBootstrap || !includeAuthorLocalRelays
 
   const relayListsKey = useMemo(
     () => relayListsContentKey(favoriteRelays, blockedRelays),

@@ -25,7 +25,6 @@ import MailboxRelay from '../MailboxSetting/MailboxRelay'
 import NewMailboxRelayInput from '../MailboxSetting/NewMailboxRelayInput'
 import RelayCountWarning from '../MailboxSetting/RelayCountWarning'
 import SaveButton from './SaveButton'
-import DiscoveredRelays from '../MailboxSetting/DiscoveredRelays'
 
 export default function HttpRelaysSetting() {
   const { t } = useTranslation()
@@ -120,15 +119,6 @@ export default function HttpRelaysSetting() {
     return null
   }
 
-  const handleAddDiscovered = (newRelays: TMailboxRelay[]) => {
-    const httpOnly = newRelays.filter((r) => isHttpRelayUrl(r.url))
-    const toAdd = httpOnly.filter((nr) => !relays.some((r) => r.url === nr.url))
-    if (toAdd.length > 0) {
-      setRelays([...relays, ...toAdd])
-      setHasChange(true)
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="text-xs text-muted-foreground space-y-1">
@@ -137,7 +127,6 @@ export default function HttpRelaysSetting() {
         <div>{t('write relays description')}</div>
         <div>{t('read & write relays notice')}</div>
       </div>
-      <DiscoveredRelays onAdd={handleAddDiscovered} />
       <RelayCountWarning relays={relays} />
       <SaveButton mailboxRelays={relays} hasChange={hasChange} setHasChange={setHasChange} />
       <DndContext

@@ -60,6 +60,7 @@ export default function PaymentMethodsSection({
                         type={method.type}
                         authority={method.authority}
                         paytoUri={method.payto}
+                        displayFormat="full"
                         pubkey={isZappableLightningPaytoType(method.type) ? recipientPubkey : undefined}
                         onOpenZap={
                           isZappableLightningPaytoType(method.type) && onOpenZap

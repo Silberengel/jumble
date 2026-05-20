@@ -5,6 +5,7 @@ import {
   FAST_READ_RELAY_URLS,
   FIRST_RELAY_RESULT_GRACE_MS,
   PROFILE_MEDIA_TAB_KINDS,
+  PROFILE_RELAY_URLS,
   SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
   SINGLE_RELAY_KINDLESS_REQ_LIMIT
 } from '@/constants'
@@ -23,6 +24,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
@@ -72,7 +74,7 @@ import { useTranslation } from 'react-i18next'
 import PullToRefresh from 'react-simple-pull-to-refresh'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
-import { formatPubkey, inviteInputToHexPubkey, normalizeHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import { formatPubkey, inviteInputToHexPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { usePrimaryPageOptional } from '@/contexts/primary-page-context'
 import type { TPrimaryPageName } from '@/PageManager'
 import { NoteFeedProfileContext, type NoteFeedProfileContextValue } from '@/providers/NoteFeedProfileContext'
@@ -908,6 +910,9 @@ const NoteList = forwardRef(
     const [feedSubscribeRelayOutcomes, setFeedSubscribeRelayOutcomes] = useState<RelayOpTerminalRow[]>([])
     /** One-shot per timeline init: after an all-failed relay wave, try {@link FAST_READ_RELAY_URLS}. */
     const publicReadFallbackAttemptedRef = useRef(false)
+    /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
+    const blankFeedVisibilityResumeRetryAtRef = useRef(0)
+    const refreshScheduleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const relayAuthoritativeFeedOnlyRef = useRef(relayAuthoritativeFeedOnly)
     relayAuthoritativeFeedOnlyRef.current = relayAuthoritativeFeedOnly
     /**
@@ -1048,7 +1053,7 @@ const NoteList = forwardRef(
       publicReadFallbackAttemptedRef.current = false
       setFeedTimelineEmptyUiReady(false)
       setFeedSubscribeRelayOutcomes([])
-    }, [timelineSubscriptionKey, refreshCount])
+    }, [timelineSubscriptionKey, subRequestsKey, refreshCount])
 
     useEffect(() => {
       feedProfileBatchGenRef.current += 1
@@ -1663,12 +1668,16 @@ const NoteList = forwardRef(
     }, [])
 
     const refresh = useCallback(() => {
+      if (refreshScheduleTimeoutRef.current) {
+        clearTimeout(refreshScheduleTimeoutRef.current)
+        refreshScheduleTimeoutRef.current = null
+      }
+      blankFeedVisibilityResumeRetryAtRef.current = 0
+      publicReadFallbackAttemptedRef.current = false
       scrollToTop()
-      // Short delay so scroll-to-top commits before tearing the timeline (avoids merge races); 500ms made
-      // refresh feel broken on slow tabs (e.g. Gallery) when users clicked again thinking nothing happened.
-      setTimeout(() => {
-        setRefreshCount((count) => count + 1)
-      }, 80)
+      setLoading(true)
+      setFeedTimelineEmptyUiReady(false)
+      setRefreshCount((count) => count + 1)
     }, [scrollToTop])
 
     const flushPendingNewEventsIntoTimeline = useCallback(() => {
@@ -2064,6 +2073,13 @@ const NoteList = forwardRef(
           hostPrimaryPageNameRef.current === 'profile' ||
           isProfileTimelineSubscriptionKey(timelineSubscriptionKey)
 
+        const profileMappedForRefresh = isProfileTimelineFeed
+          ? (mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>)
+          : null
+        const profileAuthorWarmSpecForRefresh = profileMappedForRefresh
+          ? getProfileAuthorWarmupSpec(profileMappedForRefresh)
+          : null
+
         /**
          * Relay kindless firehose: keep the full batch. Else when the kind picker applies, narrow like
          * {@link applyKindPickerInUi}. Remaining spell paths use kinds-only narrowing when client-side kind filter runs.
@@ -2105,6 +2121,61 @@ const NoteList = forwardRef(
           : areAlgoRelays
             ? ALGO_LIMIT
             : LIMIT
+
+        /** Manual refresh on profile feeds: bounded fetch in parallel with subscribe (don't wait for EOSE outcomes). */
+        if (userPulledRefresh && profileAuthorWarmSpecForRefresh && profileMappedForRefresh) {
+          publicReadFallbackAttemptedRef.current = true
+          const pullRefreshRelays = dedupeNormalizeRelayUrlsOrdered([
+            ...getProfileAuthorWarmupRelayUrls(profileMappedForRefresh),
+            ...FAST_READ_RELAY_URLS,
+            ...PROFILE_RELAY_URLS
+          ]).slice(0, 24)
+          void (async () => {
+            try {
+              const fetched = await client.fetchEvents(
+                pullRefreshRelays,
+                {
+                  authors: [profileAuthorWarmSpecForRefresh.author],
+                  kinds: profileAuthorWarmSpecForRefresh.kinds,
+                  limit: eventCapEarly
+                },
+                {
+                  cache: true,
+                  eoseTimeout: 3500,
+                  globalTimeout: 22_000,
+                  firstRelayResultGraceMs: false
+                }
+              )
+              if (!effectActive || timelineEffectStale()) return
+              if (fetched.length === 0) return
+              const narrowedFetch = narrowLiveBatch(fetched)
+              if (narrowedFetch.length === 0) return
+              setEvents((prev) => {
+                const merged = collapseDuplicateNip18RepostTimelineRows(
+                  mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
+                )
+                if (merged.length > 0) {
+                  timelineMergeBootstrapRef.current = merged.slice()
+                }
+                lastEventsForTimelinePrefetchRef.current = merged
+                return merged
+              })
+              setNewEvents([])
+              setShowCount(revealBatchSize ?? SHOW_COUNT)
+              feedRelayReturnedAnyEventRef.current = true
+              setLoading(false)
+              feedPaintRelayPendingRef.current = true
+              feedPaintRelayMetaRef.current = {
+                variant: 'profile_pull_refresh',
+                mergedCount: narrowedFetch.length
+              }
+              setFeedEmptyToastGateTick((n) => n + 1)
+              setFeedTimelineEmptyUiReady(true)
+            } catch (e) {
+              logger.warn('[NoteList] Profile pull refresh network fetch failed', { error: e })
+            }
+          })()
+        }
 
         const isSpellPageLocalWarmup =
           hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
@@ -2731,10 +2802,9 @@ const NoteList = forwardRef(
 
         const totalRelayUrls = mappedSubRequests.reduce((n, r) => n + r.urls.length, 0)
         // Many relays are opened under MAX_CONCURRENT_RELAY_CONNECTIONS; a short race aborts the whole feed.
-        const subscribeSetupRaceMs = Math.min(
-          300_000,
-          Math.max(90_000, 25_000 + totalRelayUrls * 2_500)
-        )
+        const subscribeSetupRaceMs = isProfileTimelineFeed
+          ? Math.min(45_000, Math.max(20_000, 12_000 + totalRelayUrls * 1_500))
+          : Math.min(300_000, Math.max(90_000, 25_000 + totalRelayUrls * 2_500))
 
         let closer: (() => void) | undefined
         let timelineKey: string | undefined
@@ -3517,8 +3587,6 @@ const NoteList = forwardRef(
     const hasMoreRef = useRef(hasMore)
     const timelineKeyRef = useRef(timelineKey)
     const blankFeedHiddenAtRef = useRef<number | null>(null)
-    /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
-    const blankFeedVisibilityResumeRetryAtRef = useRef(0)
     const lastNewNotesAutoFlushMsRef = useRef(0)
 
     useEffect(() => {
@@ -3609,8 +3677,6 @@ const NoteList = forwardRef(
       if (publicReadFallbackAttemptedRef.current) return
 
       const uiStatuses = relayOpTerminalRowsToTimelineRelayUiStatuses(feedSubscribeRelayOutcomes)
-      if (uiStatuses.some((s) => s.success)) return
-
       const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
       if (!mapped.length) return
 
@@ -3641,6 +3707,10 @@ const NoteList = forwardRef(
             )
           : []
 
+      /** EOSE with zero hits still counts as success; profile feeds need fallback until rows are visible. */
+      if (!profileWarm && uiStatuses.some((s) => s.success)) return
+      if (profileWarm && eventsRef.current.length > 0) return
+
       const filter: Filter = profileWarm
         ? {
             authors: [profileWarm.author],
@@ -3659,8 +3729,13 @@ const NoteList = forwardRef(
           ? ALGO_LIMIT
           : LIMIT
 
-      const fallbackRelays =
-        profileRelayUrls.length > 0 ? profileRelayUrls : FAST_READ_RELAY_URLS
+      const fallbackRelays = profileWarm
+        ? dedupeNormalizeRelayUrlsOrdered([
+            ...profileRelayUrls,
+            ...FAST_READ_RELAY_URLS,
+            ...PROFILE_RELAY_URLS
+          ]).slice(0, 24)
+        : FAST_READ_RELAY_URLS
 
       void (async () => {
         try {

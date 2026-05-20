@@ -56,3 +56,11 @@ export function buildPaytoUri(type: string, authority: string): string {
   const a = encodeURIComponent(authority.trim())
   return `payto://${t}/${a}`
 }
+
+export {
+  flattenPaytoLinkChildText,
+  formatPaytoLinkDisplayText,
+  paytoLinkChildTextLooksLikeAuthority,
+  PAYTO_INLINE_DISPLAY_AUTHORITY_CHARS,
+  truncatePaytoAuthority
+} from '@/lib/payto-display'
