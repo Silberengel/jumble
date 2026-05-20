@@ -28,10 +28,14 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
   buildOrderedZapLightningAddresses,
-  prepareZapDialogAlternativePayments
+  prepareZapDialogAlternativePayments,
+  ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
 } from '@/lib/merge-payment-methods'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
-import { useRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
+import {
+  useRecipientZapPaymentData,
+  type RecipientZapPaymentData
+} from '@/hooks/useRecipientAlternativePayments'
 import {
   Select,
   SelectContent,
@@ -67,6 +71,26 @@ export default function ZapDialog({
   const { pubkey: selfPubkey } = useNostr()
   const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
   const skipTipNoticeOnCloseRef = useRef(false)
+
+  const recipientPayment = useRecipientZapPaymentData(pubkey, open)
+  const lightningAddressOptions = useMemo(
+    () =>
+      buildOrderedZapLightningAddresses({
+        profileEvent: recipientPayment.profileEvent,
+        paymentInfo: recipientPayment.paymentInfo,
+        preferredAddress: defaultLightningAddress
+      }),
+    [
+      recipientPayment.profileEvent,
+      recipientPayment.paymentInfo,
+      defaultLightningAddress
+    ]
+  )
+  const canLightningZap = lightningAddressOptions.length > 0
+  const dialogTitlePrefix = canLightningZap ? t('Zap to') : t('Pay to')
+  const dialogDescription = canLightningZap
+    ? t('Send a Lightning payment to this user')
+    : t('Send a payment to this user')
 
   const maybeOfferTipNoticeOnClose = () => {
     if (skipTipNoticeOnCloseRef.current) return
@@ -126,11 +150,11 @@ export default function ZapDialog({
         >
           <DrawerHeader className="shrink-0 px-4">
             <DrawerTitle className="flex gap-2 items-center">
-              <div className="shrink-0">{t('Zap to')}</div>
+              <div className="shrink-0">{dialogTitlePrefix}</div>
               <UserAvatar size="small" userId={pubkey} />
               <Username userId={pubkey} className="truncate flex-1 w-0 text-start h-5" />
             </DrawerTitle>
-            <DialogDescription className="sr-only">{t('Send a Lightning payment to this user')}</DialogDescription>
+            <DialogDescription className="sr-only">{dialogDescription}</DialogDescription>
           </DrawerHeader>
           <ZapDialogContent
             open={open}
@@ -139,7 +163,9 @@ export default function ZapDialog({
             event={event}
             defaultAmount={defaultAmount}
             defaultComment={defaultComment}
-            defaultLightningAddress={defaultLightningAddress}
+            recipientPayment={recipientPayment}
+            lightningAddressOptions={lightningAddressOptions}
+            canLightningZap={canLightningZap}
             onBeforeZapDialogClose={(withPublicReceipt) => {
               if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
             }}
@@ -160,11 +186,11 @@ export default function ZapDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex gap-2 items-center">
-            <div className="shrink-0">{t('Zap to')}</div>
+            <div className="shrink-0">{dialogTitlePrefix}</div>
             <UserAvatar size="small" userId={pubkey} />
             <Username userId={pubkey} className="truncate flex-1 max-w-fit text-start h-5" />
           </DialogTitle>
-          <DialogDescription className="sr-only">{t('Send a Lightning payment to this user')}</DialogDescription>
+          <DialogDescription className="sr-only">{dialogDescription}</DialogDescription>
         </DialogHeader>
         <ZapDialogContent
           open={open}
@@ -173,7 +199,9 @@ export default function ZapDialog({
           event={event}
           defaultAmount={defaultAmount}
           defaultComment={defaultComment}
-          defaultLightningAddress={defaultLightningAddress}
+          recipientPayment={recipientPayment}
+          lightningAddressOptions={lightningAddressOptions}
+          canLightningZap={canLightningZap}
           onBeforeZapDialogClose={(withPublicReceipt) => {
             if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
           }}
@@ -196,7 +224,9 @@ function ZapDialogContent({
   event,
   defaultAmount,
   defaultComment,
-  defaultLightningAddress,
+  recipientPayment,
+  lightningAddressOptions,
+  canLightningZap,
   onBeforeZapDialogClose
 }: {
   open: boolean
@@ -205,7 +235,9 @@ function ZapDialogContent({
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
-  defaultLightningAddress?: string | null
+  recipientPayment: RecipientZapPaymentData
+  lightningAddressOptions: string[]
+  canLightningZap: boolean
   /** Runs before the zap dialog closes (e.g. after payment); skip tip notice if a public receipt was sent. */
   onBeforeZapDialogClose?: (withPublicReceipt: boolean) => void
 }) {
@@ -218,17 +250,7 @@ function ZapDialogContent({
   const [zapping, setZapping] = useState(false)
   const [selectedLightning, setSelectedLightning] = useState('')
 
-  const { paymentInfo, profileEvent, alternativeGroups } = useRecipientZapPaymentData(recipient, open)
-
-  const lightningAddressOptions = useMemo(
-    () =>
-      buildOrderedZapLightningAddresses({
-        profileEvent,
-        paymentInfo,
-        preferredAddress: defaultLightningAddress
-      }),
-    [profileEvent, paymentInfo, defaultLightningAddress]
-  )
+  const { alternativeGroups } = recipientPayment
 
   useEffect(() => {
     if (!open) return
@@ -236,9 +258,15 @@ function ZapDialogContent({
   }, [open, lightningAddressOptions])
 
   const zapAlternativePayments = useMemo(
-    () => prepareZapDialogAlternativePayments(alternativeGroups, sats),
-    [alternativeGroups, sats]
+    () =>
+      prepareZapDialogAlternativePayments(
+        alternativeGroups,
+        canLightningZap ? sats : ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
+      ),
+    [alternativeGroups, sats, canLightningZap]
   )
+
+  const hasAlternativePayments = zapAlternativePayments.groups.length > 0
 
   const presetAmounts = useMemo(() => {
     if (i18n.language.startsWith('zh')) {
@@ -310,6 +338,33 @@ function ZapDialogContent({
     }
   }
 
+  if (!canLightningZap) {
+    return (
+      <div
+        className="px-4 pb-4"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
+        {hasAlternativePayments ? (
+          <PaymentMethodsSection
+            groups={zapAlternativePayments.groups}
+            recipientPubkey={recipient}
+            title={t('Payment methods')}
+            headerHelpText={
+              zapAlternativePayments.showBitcoinOnChainHint
+                ? t('Tips above 10k sats can use Bitcoin on-chain.')
+                : undefined
+            }
+            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+          />
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t('No payment methods available for this profile')}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="space-y-4">
@@ -377,44 +432,42 @@ function ZapDialogContent({
           />
         </div>
 
-        {lightningAddressOptions.length > 0 ? (
-          <div className="min-w-0 space-y-1.5">
-            <Label htmlFor="zap-lightning-address">{t('Lightning address for zap')}</Label>
-            <Select value={selectedLightning} onValueChange={setSelectedLightning}>
-              <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
-                <SelectValue placeholder={t('Select lightning address')}>
-                  {selectedLightning ? (
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
-                        ⚡
-                      </span>
-                      <span className="min-w-0 truncate">{selectedLightning}</span>
+        <div className="min-w-0 space-y-1.5">
+          <Label htmlFor="zap-lightning-address">{t('Lightning address for zap')}</Label>
+          <Select value={selectedLightning} onValueChange={setSelectedLightning}>
+            <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
+              <SelectValue placeholder={t('Select lightning address')}>
+                {selectedLightning ? (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                      ⚡
                     </span>
-                  ) : null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {lightningAddressOptions.map((addr) => (
-                  <SelectItem key={addr} value={addr} className="break-all">
-                    <span className="flex items-start gap-2">
-                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
-                        ⚡
-                      </span>
-                      <span className="min-w-0 break-all">{addr}</span>
+                    <span className="min-w-0 truncate">{selectedLightning}</span>
+                  </span>
+                ) : null}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {lightningAddressOptions.map((addr) => (
+                <SelectItem key={addr} value={addr} className="break-all">
+                  <span className="flex items-start gap-2">
+                    <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                      ⚡
                     </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
+                    <span className="min-w-0 break-all">{addr}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <Button onClick={handleZap} className="w-full">
           {zapping && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}{' '}
           {t('Zap n sats', { n: sats })}
         </Button>
 
-        {zapAlternativePayments.groups.length > 0 ? (
+        {hasAlternativePayments ? (
           <PaymentMethodsSection
             groups={zapAlternativePayments.groups}
             recipientPubkey={recipient}

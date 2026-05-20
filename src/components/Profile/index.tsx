@@ -86,6 +86,7 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import {
+  getAlternativePaymentMethods,
   groupPaymentMethodsByDisplayType,
   mergePaymentMethods,
   sortMergedPaymentMethods
@@ -147,10 +148,11 @@ export default function Profile({
     [mergedPaymentMethods]
   )
 
-  const hasLightningForZap = useMemo(
-    () => paymentMethodsByType.some((g) => g.methods.some((m) => isLightningPaytoType(m.type))),
-    [paymentMethodsByType]
-  )
+  const hasTipDialog = useMemo(() => {
+    const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null))
+    if (merged.some((m) => isLightningPaytoType(m.type))) return true
+    return getAlternativePaymentMethods(merged).length > 0
+  }, [paymentInfo, profile])
 
   const syncAuthorReplaceablesFromCache = useCallback(async (pubkey: string) => {
     try {
@@ -522,7 +524,7 @@ export default function Profile({
             )}
             {!isSelf ? (
               <>
-                {hasLightningForZap && (
+                {hasTipDialog && (
                   <ProfileZapButton
                     pubkey={pubkey}
                     openZapDialog={openZapDialog}

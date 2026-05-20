@@ -39,20 +39,14 @@ export default function NoteInteractions({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
-        <div className="min-w-0 flex-1 basis-full sm:basis-0">
-          <div className="py-2 px-2 sm:px-4 md:px-6 font-semibold text-xs sm:text-sm md:text-base text-foreground">
-            {t('Replies')}
-          </div>
-        </div>
-        <Separator orientation="vertical" className="h-6" />
-        {isDiscussion && (
-          <>
+      <div className="flex items-center gap-2 min-w-0 px-2 sm:px-4 md:px-6 py-2">
+        <h2 className="min-w-0 flex-1 font-semibold text-xs sm:text-sm md:text-base text-foreground">
+          {t('Replies')}
+        </h2>
+        <div className="flex shrink-0 items-center gap-2">
+          {isDiscussion && (
             <ReplySort selectedSort={replySort} onSortChange={setReplySort} />
-            <Separator orientation="vertical" className="h-6" />
-          </>
-        )}
-        <div className="size-8 flex items-center justify-center shrink-0">
+          )}
           <HideUntrustedContentButton type="interactions" size="icon" />
         </div>
       </div>

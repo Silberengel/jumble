@@ -158,6 +158,8 @@ export default {
     "Failed to publish payment info": "Failed to publish payment info",
     "Invalid tags JSON": "Invalid tags JSON",
     "Payment methods": "Payment methods",
+    "Send a payment to this user": "Send a payment to this user",
+    "No payment methods available for this profile": "No payment methods available for this profile",
     "Other payment methods": "Other payment methods",
     "Lightning address for zap": "Lightning address for zap",
     "Select lightning address": "Select lightning address",

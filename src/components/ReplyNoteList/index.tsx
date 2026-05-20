@@ -1456,7 +1456,7 @@ function ReplyNoteList({
 
   return (
     <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
-    <div className="min-h-[80vh] pb-12">
+    <div className="pb-12">
       {loading && <LoadingBar />}
       <div>
         {displayRows.map((row, ri) => {

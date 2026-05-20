@@ -568,7 +568,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         />
       </div>
       <Separator className="mt-4" />
-      <div className="px-4 pb-4 w-full">
+      <div className="px-4 pb-12 w-full">
         <NoteInteractions
           key={`note-interactions-${finalEvent.id}`}
           pageIndex={index}

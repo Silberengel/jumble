@@ -41,6 +41,7 @@ import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } fro
 import type { Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toastPublishPromise } from '@/lib/publishing-feedback'
 import { toast } from 'sonner'
 
 /** Required tag fields: always exactly one row, cannot be deleted. */
@@ -126,6 +127,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   const [hasChanged, setHasChanged] = useState(false)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const mountedRef = useRef(true)
   const [uploadingBanner, setUploadingBanner] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [paymentInfoEvent, setPaymentInfoEvent] = useState<Event | null>(null)
@@ -153,17 +156,27 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const avatar = profileTags.find((t) => t[0] === 'picture')?.[1] ?? ''
   const banner = profileTags.find((t) => t[0] === 'banner')?.[1] ?? ''
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  /** Block profileEvent → form sync while editing or while publish is in flight. */
+  const profileFormSyncLocked = hasChanged || saving || savingFullProfile
+
   // Rebuild tag list when the stored profile event changes — not while the user is editing.
   useEffect(() => {
-    if (hasChanged) return
+    if (profileFormSyncLocked) return
     setProfileTags(buildTagListFromEvent(profileEvent ?? null))
-  }, [profileEvent, hasChanged])
+  }, [profileEvent, profileFormSyncLocked])
 
   // Sync full-event JSON editor (same guard as tag list).
   useEffect(() => {
-    if (hasChanged) return
+    if (profileFormSyncLocked) return
     setProfileEventJson(profileEvent ? JSON.stringify(profileEvent, null, 2) : '')
-  }, [profileEvent, hasChanged])
+  }, [profileEvent, profileFormSyncLocked])
 
   // Fetch payment info (kind 10133).
   useEffect(() => {
@@ -302,31 +315,36 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     }
   }, [account?.pubkey, relayList, requestAccountNetworkHydrate, updateProfileEvent, t])
 
+  const refreshCacheControl = (
+    <div className="pr-3 flex flex-wrap items-center justify-end gap-2 min-w-0">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={forceRefreshProfileAndPaymentCache}
+        disabled={refreshingCache}
+        className="gap-1.5 max-w-full"
+        title={t('profileEditorRefreshCacheHint', {
+          defaultValue:
+            'Full account sync from relays (like Settings → Cache), deletion tombstones, then profile and payment info.'
+        })}
+      >
+        {refreshingCache ? (
+          <Skeleton className="size-3.5 shrink-0 rounded-sm" aria-hidden />
+        ) : (
+          <RefreshCw className="h-3.5 w-3.5" />
+        )}
+        {t('Refresh cache')}
+      </Button>
+    </div>
+  )
+
   // ─── Guards ──────────────────────────────────────────────────────────────────
 
   if (!account) return null
 
   if (!profile) {
-    const loadingControls = (
-      <div className="pr-3 flex flex-wrap items-center justify-end gap-2 min-w-0">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={forceRefreshProfileAndPaymentCache}
-          disabled={refreshingCache}
-          className="gap-1.5 max-w-full"
-        >
-          {refreshingCache ? (
-            <Skeleton className="size-3.5 shrink-0 rounded-sm" aria-hidden />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
-          {t('Refresh cache')}
-        </Button>
-      </div>
-    )
     return (
-      <SecondaryPageLayout ref={ref} index={index} title="…" controls={loadingControls}>
+      <SecondaryPageLayout ref={ref} index={index} title="…" controls={refreshCacheControl}>
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground text-sm">
           <Skeleton className="h-4 w-48 rounded" />
           <p>
@@ -381,69 +399,82 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   // ─── Save ─────────────────────────────────────────────────────────────────────
 
-  const save = async () => {
+  const save = () => {
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
-    setHasChanged(false)
-    try {
-      // Strip empty/incomplete rows, trim whitespace.
-      const validTags = profileTags
-        .filter((t) => {
-          if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
-          const name = (t[0] ?? '').trim()
-          if (name === 'bot') return true
-          return t.length >= 2 && (t[1] ?? '').trim()
-        })
-        .map((t) => {
-          const name = (t[0] ?? '').trim()
-          const v1 = (t[1] ?? '').trim()
-          if (name === 'bot') {
-            if (t.length === 1 || !v1) return ['bot']
-            const low = v1.toLowerCase()
-            if (low === 'false') return ['bot', 'false']
-            if (low === 'true') return ['bot', 'true']
-            return ['bot', v1]
-          }
-          return [name, v1, ...t.slice(2)]
-        })
 
-      // Sort alphabetically by tag name (stable: same-name tags keep their relative order).
-      const sortedTags = [...validTags]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        // Enforce at-most-one uniqueness: keep only the first occurrence.
-        .filter((() => {
-          const seen = new Set<string>()
-          return (t: string[]) => {
-            if (!AT_MOST_ONE_NAMES.includes(t[0])) return true
-            if (seen.has(t[0])) return false
-            seen.add(t[0])
-            return true
-          }
-        })())
+    const savePromise = (async () => {
+      try {
+        // Strip empty/incomplete rows, trim whitespace.
+        const validTags = profileTags
+          .filter((t) => {
+            if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
+            const name = (t[0] ?? '').trim()
+            if (name === 'bot') return true
+            return t.length >= 2 && (t[1] ?? '').trim()
+          })
+          .map((t) => {
+            const name = (t[0] ?? '').trim()
+            const v1 = (t[1] ?? '').trim()
+            if (name === 'bot') {
+              if (t.length === 1 || !v1) return ['bot']
+              const low = v1.toLowerCase()
+              if (low === 'false') return ['bot', 'false']
+              if (low === 'true') return ['bot', 'true']
+              return ['bot', v1]
+            }
+            return [name, v1, ...t.slice(2)]
+          })
 
-      // Derive content JSON: first occurrence of each known field.
-      const content: Record<string, string> = {}
-      const seenContent = new Set<string>()
-      for (const tag of sortedTags) {
-        const name = tag[0]
-        if (name === 'bot') continue
-        if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
-          content[name] = tag[1]
-          seenContent.add(name)
+        // Sort alphabetically by tag name (stable: same-name tags keep their relative order).
+        const sortedTags = [...validTags]
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          // Enforce at-most-one uniqueness: keep only the first occurrence.
+          .filter((() => {
+            const seen = new Set<string>()
+            return (t: string[]) => {
+              if (!AT_MOST_ONE_NAMES.includes(t[0])) return true
+              if (seen.has(t[0])) return false
+              seen.add(t[0])
+              return true
+            }
+          })())
+
+        // Derive content JSON: first occurrence of each known field.
+        const content: Record<string, string> = {}
+        const seenContent = new Set<string>()
+        for (const tag of sortedTags) {
+          const name = tag[0]
+          if (name === 'bot') continue
+          if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
+            content[name] = tag[1]
+            seenContent.add(name)
+          }
         }
-      }
-      // Keep displayName alias for backward compatibility.
-      if (content['display_name']) content['displayName'] = content['display_name']
+        // Keep displayName alias for backward compatibility.
+        if (content['display_name']) content['displayName'] = content['display_name']
 
-      const draft = createProfileDraftEvent(JSON.stringify(content), sortedTags)
-      const published = await publish(draft)
-      await updateProfileEvent(published)
-      pop()
-    } catch {
-      toast.error(t('Failed to publish profile'))
-      setHasChanged(true)
-    } finally {
-      setSaving(false)
-    }
+        const draft = createProfileDraftEvent(JSON.stringify(content), sortedTags)
+        const published = await publish(draft)
+        await updateProfileEvent(published)
+        if (!mountedRef.current) return
+        setHasChanged(false)
+        pop()
+      } catch {
+        if (mountedRef.current) setHasChanged(true)
+        throw new Error(t('Failed to publish profile'))
+      } finally {
+        savingRef.current = false
+        if (mountedRef.current) setSaving(false)
+      }
+    })()
+
+    toastPublishPromise(savePromise, {
+      loading: t('Saving…'),
+      success: t('Profile updated'),
+      error: () => t('Failed to publish profile')
+    })
   }
 
   const saveFullProfile = async () => {
@@ -477,38 +508,10 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     }
   }
 
-  // ─── Controls ─────────────────────────────────────────────────────────────────
-
-  const controls = (
-    <div className="pr-3 flex flex-wrap items-center justify-end gap-2 min-w-0">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={forceRefreshProfileAndPaymentCache}
-        disabled={refreshingCache}
-        className="gap-1.5 max-w-full"
-        title={t('profileEditorRefreshCacheHint', {
-          defaultValue:
-            'Full account sync from relays (like Settings → Cache), deletion tombstones, then profile and payment info.'
-        })}
-      >
-        {refreshingCache ? (
-          <Skeleton className="size-3.5 shrink-0 rounded-sm" aria-hidden />
-        ) : (
-          <RefreshCw className="h-3.5 w-3.5" />
-        )}
-        {t('Refresh cache')}
-      </Button>
-      <Button className="min-w-16 shrink-0 rounded-full" onClick={save} disabled={saving || !hasChanged}>
-        {saving ? <Skeleton className="mx-auto h-4 w-12 rounded-md" aria-hidden /> : t('Save')}
-      </Button>
-    </div>
-  )
-
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <SecondaryPageLayout ref={ref} index={index} title={profile.username} controls={controls}>
+    <SecondaryPageLayout ref={ref} index={index} title={profile.username} controls={refreshCacheControl}>
       {/* Banner & avatar uploaders */}
       <div className="relative isolate mb-2 bg-cover bg-center">
         {/* Banner under avatar in stacking order; fetchPriority still loads the pic first. */}
@@ -577,7 +580,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         </Uploader>
       </div>
 
-      <div className="pt-14 px-4 flex flex-col gap-4">
+      <div className="pt-14 px-4 pb-16 flex flex-col gap-4 max-sm:pb-24">
         {/* ── Unified tag list ── */}
         <Item>
           <Label className="text-muted-foreground">{t('Tag list')}</Label>
@@ -702,6 +705,16 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             </div>
           </div>
         </Item>
+
+        <div className="pb-2">
+          <Button
+            className="w-full rounded-full"
+            onClick={save}
+            disabled={saving || !hasChanged}
+          >
+            {saving ? <Skeleton className="mx-auto h-4 w-12 rounded-md" aria-hidden /> : t('Save')}
+          </Button>
+        </div>
 
         {/* ── Full profile event JSON (collapsible) ── */}
         {profileEvent && (
