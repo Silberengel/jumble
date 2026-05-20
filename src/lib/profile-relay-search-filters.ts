@@ -1,3 +1,4 @@
+import { METADATA_CO_FETCH_KINDS } from '@/constants'
 import type { Filter } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 import { splitNip05Identifier } from '@/lib/nip05'
@@ -22,7 +23,7 @@ export function buildProfileKind0SearchFilters(opts: {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
   const time =
     typeof opts.until === 'number' && opts.until > 0 ? ({ until: opts.until } as Pick<Filter, 'until'>) : {}
-  const k = [kinds.Metadata] as number[]
+  const k = [...METADATA_CO_FETCH_KINDS] as number[]
 
   const pubkeyHex = decodeProfileSearchQueryToPubkeyHex(searchRaw)
   if (pubkeyHex) {

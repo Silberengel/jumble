@@ -1,5 +1,6 @@
 import {
   FAST_READ_RELAY_URLS,
+  METADATA_CO_FETCH_KINDS,
   ExtendedKind,
   FAST_WRITE_RELAY_URLS,
   DOCUMENT_RELAY_URLS,
@@ -3797,9 +3798,9 @@ class ClientService extends EventTarget {
               limit: limitCap,
               until: filter.until
             })
-            return built.length > 0 ? built : [{ ...filter, kinds: [kinds.Metadata] }]
+            return built.length > 0 ? built : [{ ...filter, kinds: [...METADATA_CO_FETCH_KINDS] }]
           })()
-        : { ...filter, kinds: [kinds.Metadata] }
+        : { ...filter, kinds: [...METADATA_CO_FETCH_KINDS] }
 
     /** NIP-50 text on many index relays: per-relay EOSE can be ~38s; global cap was 9s so subs were torn down early. */
     const filtersArr = Array.isArray(queryFilter) ? queryFilter : [queryFilter]
@@ -3819,6 +3820,10 @@ class ClientService extends EventTarget {
 
     const byPk = new Map<string, NEvent>()
     for (const e of events) {
+      if (e.kind === ExtendedKind.PAYMENT_INFO && !shouldDropEventOnIngest(e)) {
+        void this.replaceableEventService.updateReplaceableEventCache(e)
+        continue
+      }
       if (e.kind !== kinds.Metadata) continue
       const prev = byPk.get(e.pubkey)
       if (!prev || e.created_at > prev.created_at) {

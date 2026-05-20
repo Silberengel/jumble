@@ -227,6 +227,9 @@ export async function queryIndexRelay(
             status: res.status
           })
         }
+        if (res.status >= 500) {
+          throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+        }
         continue
       }
       const json = (await res.json()) as { data?: unknown }

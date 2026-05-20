@@ -613,6 +613,9 @@ export function isAuthorProfileMetadataPublishKind(kind: number): boolean {
  * Author-published replaceables refetched on profile-view refresh, profile editor “Refresh cache”,
  * settings “Refresh cache”, and {@link ReplaceableEventService.refreshAuthorPublishedReplaceablesFromRelays}.
  */
+/** Kinds requested in the same REQ whenever the app fetches author metadata (kind 0). */
+export const METADATA_CO_FETCH_KINDS: readonly number[] = [kinds.Metadata, ExtendedKind.PAYMENT_INFO]
+
 export const AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS: readonly number[] = [
   kinds.Metadata,
   kinds.Contacts,

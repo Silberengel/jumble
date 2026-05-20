@@ -80,7 +80,8 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { buildFeedFullSearchRelayUrls } from '@/lib/feed-full-search-relays'
 import {
   getProfileAuthorWarmupRelayUrls,
-  getProfileAuthorWarmupSpec
+  getProfileAuthorWarmupSpec,
+  isProfileTimelineSubscriptionKey
 } from '@/lib/profile-author-warmup-spec'
 import type { TProfile } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -1982,6 +1983,7 @@ const NoteList = forwardRef(
         preserveTimelineOnSubRequestsChange &&
         !userPulledRefresh &&
         !feedScopeChanged &&
+        eventsRef.current.length > 0 &&
         (prevSubKey === subRequestsKey ||
           isRelayUrlStrictSupersetIdentityKey(prevSubKey, subRequestsKey) ||
           (mergeTimelineWhenSubRequestFiltersMatch &&
@@ -2058,6 +2060,10 @@ const NoteList = forwardRef(
           return undefined
         }
 
+        const isProfileTimelineFeed =
+          hostPrimaryPageNameRef.current === 'profile' ||
+          isProfileTimelineSubscriptionKey(timelineSubscriptionKey)
+
         /**
          * Relay kindless firehose: keep the full batch. Else when the kind picker applies, narrow like
          * {@link applyKindPickerInUi}. Remaining spell paths use kinds-only narrowing when client-side kind filter runs.
@@ -2074,11 +2080,7 @@ const NoteList = forwardRef(
                 showKind1111Ref.current
               )
             )
-            if (
-              out.length > 0 ||
-              hostPrimaryPageNameRef.current !== 'profile' ||
-              mappedSubRequests.length === 0
-            ) {
+            if (out.length > 0 || !isProfileTimelineFeed || mappedSubRequests.length === 0) {
               return out
             }
             return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
@@ -2086,18 +2088,14 @@ const NoteList = forwardRef(
           if (!useFilterAsIsRef.current || !clientSideKindFilterRef.current) return evs
           if (!withKindFilterRef.current) return evs
           const byPicker = evs.filter((e) => effectiveShowKindsRef.current.includes(e.kind))
-          if (
-            byPicker.length > 0 ||
-            hostPrimaryPageNameRef.current !== 'profile' ||
-            mappedSubRequests.length === 0
-          ) {
+          if (byPicker.length > 0 || !isProfileTimelineFeed || mappedSubRequests.length === 0) {
             return byPicker
           }
           return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
         }
 
         const eventMatchesProfileTimelineRequest = (event: Event) =>
-          hostPrimaryPageNameRef.current === 'profile' &&
+          isProfileTimelineFeed &&
           mappedSubRequests.some(({ filter }) =>
             eventMatchesSubRequestFilterWithWindow(event, filter as Filter)
           )
@@ -2377,7 +2375,7 @@ const NoteList = forwardRef(
               }>
               const profileAuthorWarmSpec = getProfileAuthorWarmupSpec(profileMapped)
               if (
-                hostPrimaryPageName === 'profile' &&
+                isProfileTimelineFeed &&
                 profileAuthorWarmSpec &&
                 !timelineEffectStale()
               ) {
@@ -3235,7 +3233,8 @@ const NoteList = forwardRef(
       }
 
       const eventMatchesProfileDeltaRequest = (event: Event) =>
-        hostPrimaryPageNameRef.current === 'profile' &&
+        (hostPrimaryPageNameRef.current === 'profile' ||
+          isProfileTimelineSubscriptionKey(timelineSubscriptionKey)) &&
         mappedDelta.some(({ filter }) =>
           eventMatchesSubRequestFilterWithWindow(event, filter as Filter)
         )
@@ -3629,7 +3628,8 @@ const NoteList = forwardRef(
       publicReadFallbackAttemptedRef.current = true
 
       const profileWarm =
-        hostPrimaryPageNameRef.current === 'profile'
+        hostPrimaryPageNameRef.current === 'profile' ||
+        isProfileTimelineSubscriptionKey(timelineSubscriptionKey)
           ? getProfileAuthorWarmupSpec(
               mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
             )

@@ -2,6 +2,11 @@ import type { TSubRequestFilter } from '@/types'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import type { Filter } from 'nostr-tools'
 
+/** Profile Posts/Media tabs pass stable keys like `profile-posts-…` / `profile-media-…`. */
+export function isProfileTimelineSubscriptionKey(key: string | undefined | null): boolean {
+  return typeof key === 'string' && key.startsWith('profile-')
+}
+
 /**
  * Profile feeds may include calendar invite shards (`#p`) without `authors`. Local session/IDB
  * warmup and relay fallback only need the single-author + kinds REQ shards.

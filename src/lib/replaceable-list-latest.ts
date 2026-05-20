@@ -1,4 +1,5 @@
 import { ExtendedKind, METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS, METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS } from '@/constants'
+import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import client, { eventService } from '@/services/client.service'
@@ -48,11 +49,11 @@ export async function fetchLatestReplaceableListEvent(
 
   const rows = await client.fetchEvents(
     allUrls,
-    { authors: [pk], kinds: [kind], limit: 80 },
+    { authors: [pk], kinds: networkKindsForReplaceableFetch(kind), limit: 80 },
     replaceableListFetchQueryOpts(kind)
   )
 
-  return newestReplaceableEvent(rows)
+  return newestReplaceableEvent(rows.filter((e) => e.kind === kind))
 }
 
 /**

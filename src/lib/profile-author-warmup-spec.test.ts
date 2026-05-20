@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
-import { getProfileAuthorWarmupSpec } from './profile-author-warmup-spec'
+import {
+  getProfileAuthorWarmupSpec,
+  isProfileTimelineSubscriptionKey
+} from './profile-author-warmup-spec'
 
 describe('getProfileAuthorWarmupSpec', () => {
   const authorHex = 'a'.repeat(64)
@@ -21,6 +24,13 @@ describe('getProfileAuthorWarmupSpec', () => {
       }
     ])
     expect(spec).toEqual({ author: authorHex, kinds: [1] })
+  })
+
+  it('detects profile feed subscription keys', () => {
+    expect(isProfileTimelineSubscriptionKey('profile-posts-abc-1-200')).toBe(true)
+    expect(isProfileTimelineSubscriptionKey('profile-media-abc')).toBe(true)
+    expect(isProfileTimelineSubscriptionKey('home-all-favorites')).toBe(false)
+    expect(isProfileTimelineSubscriptionKey(null)).toBe(false)
   })
 
   it('returns null when no author shards', () => {

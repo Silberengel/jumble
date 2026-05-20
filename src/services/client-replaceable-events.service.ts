@@ -34,6 +34,7 @@ import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eli
 import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
+import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 
 export class ReplaceableEventService {
   /** Limits parallel Step 2/3 profile network work (relay list + wide metadata REQ). */
@@ -244,7 +245,7 @@ export class ReplaceableEventService {
           relayUrls,
           {
             authors: [pubkey],
-            kinds: [kind]
+            kinds: networkKindsForReplaceableFetch(kind)
           },
           undefined,
           {
@@ -253,7 +254,12 @@ export class ReplaceableEventService {
             globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
           }
         )
-        const sortedEvents = events.sort((a, b) => b.created_at - a.created_at)
+        if (kind === kinds.Metadata) {
+          this.ingestMetadataCoFetchSidecars(events)
+        }
+        const sortedEvents = events
+          .filter((e) => e.kind === kind)
+          .sort((a, b) => b.created_at - a.created_at)
         event = sortedEvents.length > 0 ? sortedEvents[0] : undefined
       } else {
         // Use DataLoader for batching (IndexedDB checks and network fetches are batched)
@@ -650,10 +656,13 @@ export class ReplaceableEventService {
               kind === kinds.Metadata ? false : !isSlowReplaceableBatch || !chunkMulti
             const evts = await this.queryService.query(
               relayUrls,
-              { authors: chunkPubkeys, kinds: [kind] },
+              { authors: chunkPubkeys, kinds: networkKindsForReplaceableFetch(kind) },
               undefined,
               { ...queryOpts, replaceableRace: chunkRace }
             )
+            if (kind === kinds.Metadata) {
+              this.ingestMetadataCoFetchSidecars(evts)
+            }
             merged.push(...evts)
           }
           events = merged
@@ -662,11 +671,14 @@ export class ReplaceableEventService {
             relayUrls,
             {
               authors: pubkeys,
-              kinds: [kind]
+              kinds: networkKindsForReplaceableFetch(kind)
             },
             undefined,
             queryOpts
           )
+          if (kind === kinds.Metadata) {
+            this.ingestMetadataCoFetchSidecars(events)
+          }
         }
 
         // CRITICAL: Limit the number of events processed to prevent memory issues during rapid scrolling
@@ -690,32 +702,12 @@ export class ReplaceableEventService {
           const limitedEvents = Array.from(eventsByPubkey.values()).slice(0, 500)
           // Use limited events for processing
           for (const event of limitedEvents) {
-            const key = `${event.pubkey}:${event.kind}`
-            const existing = eventsMap.get(key)
-            if (!existing || existing.created_at < event.created_at) {
-              eventsMap.set(key, event)
-              // Update results array for this event
-              const itemIndex = missingItems.findIndex(item => item.pubkey === event.pubkey)
-              if (itemIndex >= 0) {
-                const paramIndex = missingItems[itemIndex]!.index
-                results[paramIndex] = event
-              }
-            }
+            this.applyNetworkReplaceableEventToBatch(event, kind, missingItems, results, eventsMap)
           }
         } else {
           // Normal processing for smaller batches
           for (const event of events) {
-            const key = `${event.pubkey}:${event.kind}`
-            const existing = eventsMap.get(key)
-            if (!existing || existing.created_at < event.created_at) {
-              eventsMap.set(key, event)
-              // Update results array for this event
-              const itemIndex = missingItems.findIndex(item => item.pubkey === event.pubkey)
-              if (itemIndex >= 0) {
-                const paramIndex = missingItems[itemIndex]!.index
-                results[paramIndex] = event
-              }
-            }
+            this.applyNetworkReplaceableEventToBatch(event, kind, missingItems, results, eventsMap)
           }
         }
 
@@ -743,12 +735,8 @@ export class ReplaceableEventService {
     // Step 3: Persist hits only. Do not write negative cache rows (`value: null`) — optional kinds
     // (e.g. 10432 cache relays, 10001 pins) are missing for most pubkeys and would flood IndexedDB.
     await Promise.allSettled(
-      missingParams.map(async ({ pubkey, kind }) => {
-        const key = `${pubkey}:${kind}`
-        const event = eventsMap.get(key)
-        if (event) {
-          await indexedDb.putReplaceableEvent(event)
-        }
+      Array.from(eventsMap.values()).map(async (event) => {
+        await indexedDb.putReplaceableEvent(event)
       })
     )
 
@@ -812,6 +800,33 @@ export class ReplaceableEventService {
     })
   }
 
+  /** Persist kind 10133 rows returned alongside a kind-0 REQ (same filter, separate cache slots). */
+  private ingestMetadataCoFetchSidecars(events: readonly NEvent[]): void {
+    for (const event of events) {
+      if (event.kind !== ExtendedKind.PAYMENT_INFO || shouldDropEventOnIngest(event)) continue
+      void this.updateReplaceableEventFromBigRelaysCache(event)
+    }
+  }
+
+  private applyNetworkReplaceableEventToBatch(
+    event: NEvent,
+    requestedKind: number,
+    missingItems: { pubkey: string; index: number }[],
+    results: (NEvent | null)[],
+    eventsMap: Map<string, NEvent>
+  ): void {
+    const kindKey = `${event.pubkey}:${event.kind}`
+    const existing = eventsMap.get(kindKey)
+    if (!existing || existing.created_at < event.created_at) {
+      eventsMap.set(kindKey, event)
+    }
+    if (event.kind !== requestedKind) return
+    const itemIndex = missingItems.findIndex((item) => item.pubkey === event.pubkey)
+    if (itemIndex < 0) return
+    const paramIndex = missingItems[itemIndex]!.index
+    results[paramIndex] = event
+  }
+
   /**
    * Private: Update cache for replaceable event from big relays
    */
@@ -858,7 +873,7 @@ export class ReplaceableEventService {
     try {
       const events = await this.queryService.query(
         relays,
-        { authors: [pk], kinds: [kinds.Metadata], limit: 1 },
+        { authors: [pk], kinds: networkKindsForReplaceableFetch(kinds.Metadata), limit: 4 },
         undefined,
         {
           replaceableRace: false,
@@ -868,8 +883,10 @@ export class ReplaceableEventService {
           relayOpSource: 'ReplaceableEventService.fetchKind0FromProfileRelays'
         }
       )
-      if (events.length === 0) return undefined
-      const sorted = events.sort((a, b) => b.created_at - a.created_at)
+      this.ingestMetadataCoFetchSidecars(events)
+      const metadataRows = events.filter((e) => e.kind === kinds.Metadata)
+      if (metadataRows.length === 0) return undefined
+      const sorted = metadataRows.sort((a, b) => b.created_at - a.created_at)
       return sorted[0]
     } catch (error) {
       logger.warn('[ReplaceableEventService] fetchKind0FromProfileRelays failed', {
@@ -1038,7 +1055,7 @@ export class ReplaceableEventService {
           relaysForQuery,
           {
             authors: [pubkey],
-            kinds: [kinds.Metadata]
+            kinds: networkKindsForReplaceableFetch(kinds.Metadata)
           },
           undefined,
           {
@@ -1049,8 +1066,10 @@ export class ReplaceableEventService {
           }
         )
 
-        if (events.length > 0) {
-          const sortedEvents = events.sort((a, b) => b.created_at - a.created_at)
+        this.ingestMetadataCoFetchSidecars(events)
+        const metadataRows = events.filter((e) => e.kind === kinds.Metadata)
+        if (metadataRows.length > 0) {
+          const sortedEvents = metadataRows.sort((a, b) => b.created_at - a.created_at)
           const found = sortedEvents[0]!
           await this.indexProfile(found)
           return found
