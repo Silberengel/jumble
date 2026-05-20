@@ -1,10 +1,17 @@
-import { ExtendedKind } from '@/constants'
+import {
+  ExtendedKind,
+  METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+  METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
+} from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { getReplaceableCoordinate } from '@/lib/event'
 import {
+  fetchLegacyProfileBadgesListEvent,
+  fetchProfileBadgesListEvent
+} from '@/lib/nip58-profile-badges-list'
+import {
   isNip58ProfileBadgesListEvent,
-  LEGACY_PROFILE_BADGES_D_TAG,
   parseAddressableCoordinate,
   parseProfileBadgeEntries,
   resolveBadgeDisplayFromDefinition,
@@ -17,8 +24,55 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
 import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
+import indexedDb from '@/services/indexed-db.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds, type Filter } from 'nostr-tools'
+
+async function fetchBadgeDefinitionOnRelays(
+  coordinate: string,
+  relayUrls: string[]
+): Promise<Event | undefined> {
+  const parsed = parseAddressableCoordinate(coordinate)
+  if (!parsed || parsed.kind !== ExtendedKind.BADGE_DEFINITION) return undefined
+
+  try {
+    const disk = await indexedDb.getReplaceableEvent(parsed.pubkey, parsed.kind, parsed.d)
+    if (disk) return disk
+  } catch {
+    /* best-effort */
+  }
+
+  try {
+    const cached = await replaceableEventService.fetchReplaceableEvent(
+      parsed.pubkey,
+      parsed.kind,
+      parsed.d
+    )
+    if (cached) return cached
+  } catch {
+    /* best-effort */
+  }
+
+  if (!relayUrls.length) return undefined
+
+  const rows = await client.fetchEvents(
+    relayUrls,
+    {
+      authors: [parsed.pubkey],
+      kinds: [ExtendedKind.BADGE_DEFINITION],
+      '#d': [parsed.d],
+      limit: 20
+    },
+    {
+      replaceableRace: true,
+      eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
+    }
+  )
+  const matches = rows.filter((e) => e.kind === ExtendedKind.BADGE_DEFINITION)
+  if (!matches.length) return undefined
+  return matches.reduce((best, e) => (e.created_at > best.created_at ? e : best))
+}
 
 const CACHE_DURATION = 5 * 60 * 1000
 const wallCacheByKey = new Map<string, { badges: ResolvedProfileBadge[]; comments: Event[]; lastUpdated: number }>()
@@ -90,16 +144,10 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         useGlobalRelayBootstrapRef.current
       )
 
-      // --- Badges (NIP-58) ---
-      let listEvent =
-        (await replaceableEventService.fetchReplaceableEvent(pkNorm, ExtendedKind.PROFILE_BADGES_LIST)) ??
-        undefined
+      // --- Badges (NIP-58): IndexedDB + profile read relays (favorites / fast-read), not inbox-only ---
+      let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls)
       if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
-        const legacy = await replaceableEventService.fetchReplaceableEvent(
-          pkNorm,
-          ExtendedKind.PROFILE_BADGES,
-          LEGACY_PROFILE_BADGES_D_TAG
-        )
+        const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls)
         if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
       }
 
@@ -109,17 +157,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
 
       await Promise.all(
         defCoords.map(async (coord) => {
-          const parsed = parseAddressableCoordinate(coord)
-          if (!parsed || parsed.kind !== ExtendedKind.BADGE_DEFINITION) {
-            defByCoord.set(coord, undefined)
-            return
-          }
-          const defEvent = await replaceableEventService.fetchReplaceableEvent(
-            parsed.pubkey,
-            parsed.kind,
-            parsed.d
-          )
-          defByCoord.set(coord, defEvent)
+          defByCoord.set(coord, await fetchBadgeDefinitionOnRelays(coord, relayUrls))
         })
       )
 

@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/RefreshButton'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileWall } from '@/hooks/useProfileWall'
 import { useTranslation } from 'react-i18next'
@@ -10,7 +11,7 @@ export default function ProfileBadges({
   profileEventId?: string
 }) {
   const { t } = useTranslation()
-  const { badges, isLoading } = useProfileWall(pubkey, profileEventId)
+  const { badges, isLoading, refresh } = useProfileWall(pubkey, profileEventId)
 
   if (isLoading && badges.length === 0) {
     return (
@@ -25,6 +26,9 @@ export default function ProfileBadges({
 
   return (
     <section className="mt-3 min-w-0" aria-label={t('Badges')}>
+      <div className="mb-1 flex items-center justify-end gap-2">
+        <RefreshButton onClick={refresh} onLongPress={null} />
+      </div>
       <div className="flex flex-wrap gap-2">
         {badges.map((badge) => (
           <div

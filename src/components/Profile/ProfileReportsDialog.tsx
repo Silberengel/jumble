@@ -1,4 +1,5 @@
 import ReportCard from '@/components/ReportCard'
+import { RefreshButton } from '@/components/RefreshButton'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 export function ProfileReportsPanel({ pubkey }: { pubkey: string }) {
   const { t } = useTranslation()
   const relayUrlsBuilder = useProfileReportsRelayBuilder(pubkey)
-  const { received, made, isLoading } = useProfileReportsEvents({
+  const { received, made, isLoading, refresh } = useProfileReportsEvents({
     pubkey,
     relayUrlsBuilder
   })
@@ -25,6 +26,11 @@ export function ProfileReportsPanel({ pubkey }: { pubkey: string }) {
   useEffect(() => {
     if (!isLoading) setIsRefreshing(false)
   }, [isLoading])
+
+  const handleRefresh = () => {
+    setIsRefreshing(true)
+    refresh()
+  }
 
   if (isLoading && received.length === 0 && made.length === 0) {
     return (
@@ -38,6 +44,9 @@ export function ProfileReportsPanel({ pubkey }: { pubkey: string }) {
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <RefreshButton onClick={handleRefresh} onLongPress={null} />
+      </div>
       {isRefreshing && (
         <div
           className="flex items-center justify-center gap-2 py-2 text-center text-sm text-green-500"
@@ -104,7 +113,7 @@ export default function ProfileReportsDialog({
           <DialogDescription>{t('Profile reports dialog description')}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <ProfileReportsPanel pubkey={pubkey} />
+          {open ? <ProfileReportsPanel key={pubkey} pubkey={pubkey} /> : null}
         </div>
       </DialogContent>
     </Dialog>

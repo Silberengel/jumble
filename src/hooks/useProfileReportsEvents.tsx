@@ -1,7 +1,7 @@
 import { ExtendedKind } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import type { ProfileTimelineRelayUrlsBuilder } from '@/hooks/useProfileTimeline'
-import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
 import { isNip56ReportEvent } from '@/lib/event'
 import { isReportAuthoredBy, reportTargetsPubkey } from '@/lib/nip56-reports'
 import { normalizeHexPubkey } from '@/lib/pubkey'
@@ -123,19 +123,30 @@ export function useProfileReportsEvents({
       authorRelayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] },
       includeAuthorLocal: boolean
     ) => {
+      const blocked = blockedRelaysRef.current
+      const profileRead = buildProfilePageReadRelayUrls(
+        favoriteRelaysRef.current,
+        blocked,
+        authorRelayList,
+        false,
+        includeAuthorLocal,
+        [...REPORT_KINDS],
+        useGlobalRelayBootstrapRef.current
+      )
       const custom = relayUrlsBuilderRef.current
-      if (custom) {
-        return custom(
-          favoriteRelaysRef.current,
-          blockedRelaysRef.current,
-          authorRelayList,
-          includeAuthorLocal
-        )
-      }
+      const fromCustom = custom
+        ? custom(favoriteRelaysRef.current, blocked, authorRelayList, includeAuthorLocal)
+        : []
+      const merged = mergeRelayUrlLayers(
+        custom ? [fromCustom, profileRead] : [profileRead],
+        blocked
+      )
+      if (merged.length > 0) return merged
+      // NIP-65 still loading: favorites + fast-read only (same as profile feed).
       return buildProfilePageReadRelayUrls(
         favoriteRelaysRef.current,
-        blockedRelaysRef.current,
-        authorRelayList,
+        blocked,
+        { read: [], write: [], httpRead: [], httpWrite: [] },
         false,
         includeAuthorLocal,
         [...REPORT_KINDS],
