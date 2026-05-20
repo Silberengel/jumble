@@ -475,7 +475,7 @@ export class QueryService {
         urls
           .filter((u) => isHttpRelayUrl(u))
           .map((u) => normalizeHttpRelayUrl(u) || u)
-          .filter(Boolean)
+          .filter((u): u is string => Boolean(u) && !relaySessionStrikes.isReadHttpSkipped(u))
       )
     )
     const wsQueryUrls = urls.filter((u) => !isHttpRelayUrl(u))

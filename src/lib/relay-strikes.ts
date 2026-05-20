@@ -174,7 +174,8 @@ class RelaySessionStrikes {
     if (now < e.rateLimitUntil && !this.cacheRelayKeys.has(key)) return
 
     if (!this.cacheRelayKeys.has(key)) {
-      if (now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
+      // HTTP index failures often arrive in parallel; count each so session skip engages quickly.
+      if (_source !== 'http' && now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
       e.readLastStrikeIncrementAt = now
     }
 

@@ -79,6 +79,7 @@ function warnIndexRelayHttpThrottled(endpoint: string, message: string, meta: Re
 
 /** True when the relay cannot be reached (down, DNS, browser blocked, etc.). Not HTTP 4xx/5xx from a live server. */
 export function isIndexRelayTransportFailure(err: unknown): boolean {
+  if (err instanceof IndexRelayTransportError) return true
   if (err == null || typeof err !== 'object') return false
   const e = err as Error & { name?: string; cause?: unknown }
   if (e.name === 'AbortError') return false
@@ -105,6 +106,39 @@ function isDevViteIndexRelayProxyPath(endpoint: string): boolean {
     import.meta.env.DEV &&
     (endpoint.includes('/dev-index-relay') || endpoint.includes('/dev-cors-index-relay'))
   )
+}
+
+/**
+ * When the Vite `/dev-index-relay` proxy returns 5xx, skip further dev index HTTP fetches for this tab
+ * (same pattern as optional `/sites/` and translate proxies). Cleared on a successful filter response.
+ */
+let devIndexRelayUnavailableThisSession = false
+let devIndexRelaySkipLogged = false
+
+export function isDevIndexRelayUnavailableThisSession(): boolean {
+  return devIndexRelayUnavailableThisSession
+}
+
+export function clearDevIndexRelayUnavailableThisSession(): void {
+  devIndexRelayUnavailableThisSession = false
+  devIndexRelaySkipLogged = false
+}
+
+function markDevIndexRelayUnavailableFromHttpStatus(status: number, endpoint: string): void {
+  if (!isDevViteIndexRelayProxyPath(endpoint)) return
+  if (status < 500 || status > 599) return
+  if (devIndexRelayUnavailableThisSession) return
+  devIndexRelayUnavailableThisSession = true
+  if (!devIndexRelaySkipLogged) {
+    devIndexRelaySkipLogged = true
+    logger.debug(
+      `[IndexRelayHttp] Dev index relay returned HTTP ${status}; skipping further dev-index-relay fetches this session (other relays continue).`
+    )
+  }
+}
+
+function shouldSkipDevIndexRelayFetch(endpoint: string): boolean {
+  return import.meta.env.DEV && devIndexRelayUnavailableThisSession && isDevViteIndexRelayProxyPath(endpoint)
 }
 
 function maybeLogDevIndexRelayUnreachableHint(): void {
@@ -191,6 +225,9 @@ export async function queryIndexRelay(
   const filters = Array.isArray(filter) ? filter : [filter]
   const out: NEvent[] = []
   const seen = new Set<string>()
+  if (shouldSkipDevIndexRelayFetch(endpoint)) {
+    return out
+  }
   for (const f of filters) {
     const body = nostrFilterToIndexRelayBody(filterForIndexRelay(f))
     try {
@@ -213,6 +250,7 @@ export async function queryIndexRelay(
             /* ignore */
           }
           if (res.status >= 500 && res.status <= 599) {
+            markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
             maybeLogDevIndexRelayHttpErrorHint(res.status, detail || undefined)
           } else {
             logger.debug('[IndexRelayHttp] filter HTTP response', {
@@ -228,10 +266,12 @@ export async function queryIndexRelay(
           })
         }
         if (res.status >= 500) {
+          markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
           throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
         }
         continue
       }
+      clearDevIndexRelayUnavailableThisSession()
       const json = (await res.json()) as { data?: unknown }
       const data = json.data
       if (!Array.isArray(data)) continue
@@ -245,11 +285,12 @@ export async function queryIndexRelay(
       }
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e
+      if (e instanceof IndexRelayTransportError) throw e
       if (isIndexRelayTransportFailure(e)) {
         handleFilterTransportFailure(endpoint, e)
-      } else {
-        warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] filter request error', { endpoint, error: e })
+        throw new IndexRelayTransportError(e)
       }
+      warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] filter request error', { endpoint, error: e })
     }
   }
   return out

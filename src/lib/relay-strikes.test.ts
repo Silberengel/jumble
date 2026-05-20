@@ -43,6 +43,20 @@ describe('relaySessionStrikes.observeSubscribeBatch', () => {
   })
 })
 
+describe('relaySessionStrikes HTTP read failures', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+  })
+
+  it('session-skips after five parallel HTTP failures (no debounce)', () => {
+    const url = 'https://index.example.com/'
+    for (let i = 0; i < 5; i++) {
+      relaySessionStrikes.recordReadFailure(url, 'http')
+    }
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+  })
+})
+
 describe('relaySessionStrikes.clearKey', () => {
   beforeEach(() => {
     relaySessionStrikes.reset()
