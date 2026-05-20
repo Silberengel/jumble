@@ -562,8 +562,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         return controller
       }
       const sortedEvents = events.sort((a, b) => b.created_at - a.created_at)
-      const profileEvent = sortedEvents.find((e) => e.kind === kinds.Metadata)
-      const followListEvent = sortedEvents.find((e) => e.kind === kinds.Contacts)
+    const profileEvent = sortedEvents.find((e) => e.kind === kinds.Metadata)
+    const paymentInfoEvent = sortedEvents
+      .filter((e) => e.kind === ExtendedKind.PAYMENT_INFO)
+      .sort((a, b) => b.created_at - a.created_at)[0]
+    const followListEvent = sortedEvents.find((e) => e.kind === kinds.Contacts)
       const muteListEvent = sortedEvents.find((e) => e.kind === kinds.Mutelist)
       const bookmarkListEvent = sortedEvents.find((e) => e.kind === kinds.BookmarkList)
       const interestListEvent = sortedEvents.find((e) => e.kind === INTEREST_LIST_KIND)
@@ -585,6 +588,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
       const [
         resolvedProfilePut,
+        resolvedPaymentPut,
         resolvedFollowPut,
         resolvedMutePut,
         resolvedBookmarkPut,
@@ -594,6 +598,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         resolvedUserEmojiPut
       ] = await Promise.all([
         safePutReplaceable(profileEvent),
+        safePutReplaceable(paymentInfoEvent),
         safePutReplaceable(followListEvent),
         safePutReplaceable(muteListEvent),
         safePutReplaceable(bookmarkListEvent),
@@ -625,6 +630,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           npub: pubkeyToNpub(account.pubkey) ?? '',
           username: formatPubkey(account.pubkey)
         })
+      }
+      if (paymentInfoEvent) {
+        const resolvedPayment = resolvedPaymentPut ?? paymentInfoEvent
+        try {
+          await replaceableEventService.updateReplaceableEventCache(resolvedPayment)
+        } catch {
+          try {
+            await replaceableEventService.updateReplaceableEventCache(paymentInfoEvent)
+          } catch {}
+        }
       }
       if (followListEvent) {
         if (resolvedFollowPut && resolvedFollowPut.id === followListEvent.id) {

@@ -1373,6 +1373,14 @@ export class ReplaceableEventService {
     return await this.fetchReplaceableEvent(pubkey, ExtendedKind.PAYMENT_INFO)
   }
 
+  /** Drop in-memory kind 0 / 10133 loaders so the next read picks up IndexedDB after a profile-view refresh. */
+  clearAuthorViewPaymentAndMetadataLoaders(pubkey: string): void {
+    const pk = pubkey.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(pk)) return
+    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: kinds.Metadata })
+    this.replaceableEventFromBigRelaysDataloader.clear({ pubkey: pk, kind: ExtendedKind.PAYMENT_INFO })
+  }
+
   /**
    * Force refresh profile and payment info: clear in-memory loaders, pull from relays (incl. 10133), persist to IndexedDB.
    */

@@ -8,7 +8,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
 import type { TFeedSubRequest } from '@/types'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[]): string {
   const fav = [...favoriteRelays].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort().join('\u0001')
@@ -75,10 +75,17 @@ export function useProfileAuthorFeedSubRequests({
   const [refreshToken, setRefreshToken] = useState(0)
   /** Single emission per visit: provisional→full relay stacks used to restart NoteList and wipe rows mid-fetch. */
   const [relayUrls, setRelayUrls] = useState<string[] | null>(null)
+  const relayUrlsPubkeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (relayUrlsPubkeyRef.current !== pubkey) {
+      relayUrlsPubkeyRef.current = pubkey
+      setRelayUrls(null)
+    }
+  }, [pubkey])
 
   useEffect(() => {
     let cancelled = false
-    setRelayUrls(null)
     const socialKinds = kinds.some(isSocialKindBlockedKind)
 
     void client
@@ -115,6 +122,7 @@ export function useProfileAuthorFeedSubRequests({
   }, [authorHex, kindsKey, limit])
 
   const refresh = useCallback(() => {
+    setRelayUrls(null)
     setRefreshToken((n) => n + 1)
   }, [])
 

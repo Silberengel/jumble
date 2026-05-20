@@ -125,7 +125,7 @@ export default function Profile({
 
   const { profile, isFetching } = useFetchProfile(id)
   profilePubkeyRef.current = profile?.pubkey ?? null
-  const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
+  const { pubkey: accountPubkey, profileEvent: accountProfileEvent, publish, checkLogin } = useNostr()
   const [paymentInfo, setPaymentInfo] = useState<ReturnType<typeof getPaymentInfoFromEvent> | null>(null)
   const [profileEvent, setProfileEvent] = useState<NostrEvent | undefined>(undefined)
   const [openZapDialog, setOpenZapDialog] = useState(false)
@@ -140,9 +140,20 @@ export default function Profile({
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
 
+  const isSelf = accountPubkey === profile?.pubkey
+
+  const effectiveProfileEvent = useMemo(() => {
+    if (!isSelf || !accountProfileEvent) return profileEvent
+    if (!profileEvent) return accountProfileEvent
+    return accountProfileEvent.created_at >= profileEvent.created_at ? accountProfileEvent : profileEvent
+  }, [isSelf, profileEvent, accountProfileEvent])
+
   const mergedPaymentMethods = useMemo(
-    () => sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile ?? null, profileEvent)),
-    [paymentInfo, profile, profileEvent]
+    () =>
+      sortMergedPaymentMethods(
+        mergePaymentMethods(paymentInfo, profile ?? null, effectiveProfileEvent)
+      ),
+    [paymentInfo, profile, effectiveProfileEvent]
   )
 
   const paymentMethodsByType = useMemo(
@@ -151,30 +162,36 @@ export default function Profile({
   )
 
   const hasTipDialog = useMemo(
-    () => recipientHasAnyPaymentOptions(paymentInfo, profile ?? null, profileEvent),
-    [paymentInfo, profile, profileEvent]
+    () => recipientHasAnyPaymentOptions(paymentInfo, profile ?? null, effectiveProfileEvent),
+    [paymentInfo, profile, effectiveProfileEvent]
   )
 
   const prefetchedZapPayment = useMemo(
     () =>
       profile?.pubkey
-        ? buildRecipientZapPaymentData(paymentInfo, profile ?? null, profileEvent ?? null)
+        ? buildRecipientZapPaymentData(paymentInfo, profile ?? null, effectiveProfileEvent ?? null)
         : null,
-    [paymentInfo, profile, profileEvent]
+    [paymentInfo, profile, effectiveProfileEvent]
   )
 
-  const syncAuthorReplaceablesFromCache = useCallback(async (pubkey: string) => {
-    try {
-      const [paymentEvent, metaEvent] = await Promise.all([
-        client.fetchPaymentInfoEvent(pubkey),
-        replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Metadata)
-      ])
-      setPaymentInfo(paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null)
-      setProfileEvent(metaEvent ?? undefined)
-    } catch (error) {
-      logger.error('Failed to sync author replaceables from cache', { error, pubkey })
-    }
-  }, [])
+  const syncAuthorReplaceablesFromCache = useCallback(
+    async (pubkey: string, options?: { bustCache?: boolean }) => {
+      try {
+        if (options?.bustCache) {
+          replaceableEventService.clearAuthorViewPaymentAndMetadataLoaders(pubkey)
+        }
+        const [paymentEvent, metaEvent] = await Promise.all([
+          client.fetchPaymentInfoEvent(pubkey),
+          replaceableEventService.fetchReplaceableEvent(pubkey, kinds.Metadata)
+        ])
+        setPaymentInfo(paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null)
+        setProfileEvent(metaEvent ?? undefined)
+      } catch (error) {
+        logger.error('Failed to sync author replaceables from cache', { error, pubkey })
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     if (!profile?.pubkey) {
@@ -196,12 +213,20 @@ export default function Profile({
   }, [profile?.pubkey])
 
   useEffect(() => {
+    if (!isSelf || !profile?.pubkey || !accountProfileEvent) return
+    setProfileEvent((prev) =>
+      !prev || accountProfileEvent.created_at >= prev.created_at ? accountProfileEvent : prev
+    )
+    void syncAuthorReplaceablesFromCache(profile.pubkey, { bustCache: true })
+  }, [isSelf, accountProfileEvent, profile?.pubkey, syncAuthorReplaceablesFromCache])
+
+  useEffect(() => {
     if (!profile?.pubkey) return
     const pk = profile.pubkey.toLowerCase()
     const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
       const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
       if (detailPk !== pk) return
-      void syncAuthorReplaceablesFromCache(profile.pubkey)
+      void syncAuthorReplaceablesFromCache(profile.pubkey, { bustCache: true })
     }
     window.addEventListener(
       ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
@@ -222,8 +247,6 @@ export default function Profile({
     () => (profile?.pubkey ? generateImageByPubkey(profile?.pubkey) : ''),
     [profile]
   )
-  const isSelf = accountPubkey === profile?.pubkey
-
   /** All available relays: current feed, favorites, relay sets, defaults (FAST_READ, FAST_WRITE). */
   const allAvailableRelayUrls = useMemo(() => {
     const urls = [
