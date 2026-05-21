@@ -33,6 +33,11 @@ import {
 import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import {
+  isPubkeyAwaitingProfileBatch,
+  registerProfileBatchPubkeys,
+  unregisterProfileBatchPubkeys
+} from '@/lib/profile-batch-coordinator'
 import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
 import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 
@@ -975,6 +980,10 @@ export class ReplaceableEventService {
       return profileEvent
     }
 
+    if (isPubkeyAwaitingProfileBatch(pubkey)) {
+      return sessionFallback
+    }
+
     await ReplaceableEventService.acquireProfileFallbackNetworkSlot()
     try {
     // Step 2: Only after cache + default relays miss — NIP-65 relay list (timeout-capped), then hints + outbox/inbox + defaults.
@@ -1133,6 +1142,7 @@ export class ReplaceableEventService {
   async fetchProfilesForPubkeys(pubkeys: string[]): Promise<TProfile[]> {
     const deduped = Array.from(new Set(pubkeys.filter((p) => p && p.length === 64)))
     if (deduped.length === 0) return []
+    registerProfileBatchPubkeys(deduped)
     try {
       return await racePromiseWithTimeout(
         this.fetchProfilesForPubkeysBody(deduped),
@@ -1151,6 +1161,8 @@ export class ReplaceableEventService {
         })
       }
       return this.fetchProfilesForPubkeysLocalFallback(deduped)
+    } finally {
+      unregisterProfileBatchPubkeys(deduped)
     }
   }
 

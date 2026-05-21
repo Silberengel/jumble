@@ -42,6 +42,7 @@ import client, { eventService, queryService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
@@ -69,7 +70,7 @@ const SHOW_COUNT = 10
 /** Some relays cap `#e` array length; chunk parent-id batches for nested-thread REQs. */
 const MAX_PARENT_IDS_PER_NESTED_REQ = 64
 /** Short debounce so thread / detail headers populate avatars quickly after events arrive. */
-const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 400
+const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 120
 const THREAD_PROFILE_CHUNK = 80
 
 function partitionZapReceipts(items: NEvent[]) {
@@ -643,25 +644,7 @@ function ReplyNoteList({
   useEffect(() => {
     const handle = window.setTimeout(() => {
       const gen = threadProfileBatchGenRef.current
-      const candidates = new Set<string>()
-      const addPk = (p: string | undefined) => {
-        if (p && p.length === 64 && /^[0-9a-f]{64}$/i.test(p)) {
-          candidates.add(p.toLowerCase())
-        }
-      }
-      const addFromEvt = (e: NEvent) => {
-        addPk(e.pubkey)
-        let n = 0
-        for (const tag of e.tags) {
-          if (tag[0] === 'p' && tag[1]) {
-            addPk(tag[1])
-            n++
-            if (n >= 4) break
-          }
-        }
-      }
-      addFromEvt(event)
-      for (const e of mergedFeed) addFromEvt(e)
+      const candidates = new Set(collectProfilePubkeysFromEvents([event, ...mergedFeed]))
 
       const parentProfiles = parentNoteFeed?.profiles
       const parentPending = parentNoteFeed?.pendingPubkeys

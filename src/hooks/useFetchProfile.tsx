@@ -2,6 +2,7 @@ import { FEED_PROFILE_PENDING_BATCH_ESCAPE_MS, PROFILE_FETCH_PROMISE_TIMEOUT_MS 
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
+import { isPubkeyAwaitingProfileBatch } from '@/lib/profile-batch-coordinator'
 import { normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
@@ -354,7 +355,7 @@ export function useFetchProfile(id?: string, skipCache = false) {
         setIsFetching(false)
         setError(null)
       }
-      if (noteFeed.pendingPubkeys.has(pkL)) {
+      if (noteFeed.pendingPubkeys.has(pkL) || isPubkeyAwaitingProfileBatch(pkL)) {
         const sessionEv = eventService.getSessionMetadataForPubkey(pkL)
         if (sessionEv) {
           const quick = getProfileFromEvent(sessionEv)
@@ -447,6 +448,26 @@ export function useFetchProfile(id?: string, skipCache = false) {
         effectRunCountRef.current.delete(extractedPubkey)
         return
       }
+    }
+
+    if (extractedPubkey && !skipCache && isPubkeyAwaitingProfileBatch(extractedPubkey)) {
+      const pkL = extractedPubkey.toLowerCase()
+      const sessionEv = eventService.getSessionMetadataForPubkey(pkL)
+      if (sessionEv) {
+        const quick = getProfileFromEvent(sessionEv)
+        setProfile(quick)
+        setPubkey(extractedPubkey)
+        setIsFetching(false)
+        setError(null)
+        processingPubkeyRef.current = extractedPubkey
+        initializedPubkeysRef.current.add(extractedPubkey)
+        effectRunCountRef.current.delete(extractedPubkey)
+        return
+      }
+      setPubkey(extractedPubkey)
+      setIsFetching(false)
+      setError(null)
+      return
     }
 
     // Skip only when this pubkey already has an in-flight fetch (global dedupe + local flag).

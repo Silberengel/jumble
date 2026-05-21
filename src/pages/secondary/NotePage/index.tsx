@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils'
 import { Ellipsis } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useState, type MouseEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NOSTR_URI_NADDR_REGEX } from '@/lib/content-patterns'
 import {
@@ -51,6 +51,7 @@ import {
   updateMetaTag
 } from '@/lib/document-meta'
 import NotFound from './NotFound'
+import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
 
 // Helper function to get event type name (matching WebPreview)
 function getEventTypeName(kind: number): string {
@@ -217,10 +218,21 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
 
-  /** Resolve nostr embeds with the open note (parent relay hints), before embed cards mount. */
-  useLayoutEffect(() => {
+  /** Resolve nostr embeds after first paint — avoids competing with thread/profile batch on open. */
+  useEffect(() => {
     if (!finalEvent) return
-    client.prefetchEmbeddedEventsForParents([finalEvent])
+    const run = () => client.prefetchEmbeddedEventsForParents([finalEvent])
+    const idleId =
+      typeof requestIdleCallback === 'function'
+        ? requestIdleCallback(run, { timeout: 4_000 })
+        : window.setTimeout(run, 400)
+    return () => {
+      if (typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleId as number)
+      } else {
+        window.clearTimeout(idleId as number)
+      }
+    }
   }, [finalEvent?.id])
 
   const getNoteTypeTitle = (kind: number): string => {
@@ -503,6 +515,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   }
 
   return (
+    <ThreadProfileBatchProvider seedEvents={finalEvent ? [finalEvent] : []}>
     <SecondaryPageLayout
       ref={ref}
       index={index}
@@ -572,6 +585,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         />
       </div>
     </SecondaryPageLayout>
+    </ThreadProfileBatchProvider>
   )
 })
 NotePage.displayName = 'NotePage'
