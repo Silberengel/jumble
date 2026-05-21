@@ -11,6 +11,7 @@ import {
   type RecipientZapPaymentData
 } from '@/hooks/useRecipientAlternativePayments'
 import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
+import { shouldDeferPerPubkeyProfileNetwork } from '@/lib/profile-batch-coordinator'
 import { cn } from '@/lib/utils'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { useNostr } from '@/providers/NostrProvider'
@@ -38,6 +39,60 @@ function formatAmount(amount: number) {
   if (amount < 1000) return amount
   if (amount < 1000000) return `${Math.round(amount / 100) / 10}k`
   return `${Math.round(amount / 100000) / 10}M`
+}
+
+/** Avoid one metadata + payment REQ per visible note while feed profile batch runs. */
+async function resolveZapRecipientData(
+  authorPubkey: string,
+  feedProfile: TProfile | undefined | null
+): Promise<{
+  profile: TProfile | null
+  profileEvent: Event | undefined
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+}> {
+  const cachedFeed =
+    feedProfile && !feedProfile.batchPlaceholder ? feedProfile : null
+  const deferNetwork = shouldDeferPerPubkeyProfileNetwork(authorPubkey)
+
+  const paymentPromise = deferNetwork
+    ? replaceableEventService.getPaymentInfoFromIndexedDB(authorPubkey)
+    : client.fetchPaymentInfoEvent(authorPubkey)
+
+  if (cachedFeed) {
+    const paymentEvent = await paymentPromise.catch(() => undefined)
+    return {
+      profile: cachedFeed,
+      profileEvent: undefined,
+      paymentInfo: paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
+    }
+  }
+
+  const idbProfile = await replaceableEventService.getProfileFromIndexedDB(authorPubkey)
+
+  if (deferNetwork) {
+    const paymentEvent = await paymentPromise.catch(() => undefined)
+    return {
+      profile: idbProfile ?? null,
+      profileEvent: undefined,
+      paymentInfo: paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
+    }
+  }
+
+  const [profileRes, paymentRes] = await Promise.allSettled([
+    replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
+    paymentPromise
+  ])
+  const profileEvent =
+    profileRes.status === 'fulfilled' ? profileRes.value : undefined
+  const paymentEvent =
+    paymentRes.status === 'fulfilled' ? paymentRes.value : undefined
+  const profile =
+    (profileEvent ? getProfileFromEvent(profileEvent) : null) ?? idbProfile ?? null
+  return {
+    profile,
+    profileEvent,
+    paymentInfo: paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
+  }
 }
 
 /** Zap tally + payment-methods dialog when {@link ZAP_SENDING_ENABLED} is false. */
@@ -102,34 +157,17 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
     setTipPaymentData(null)
     let cancelled = false
 
-    void Promise.allSettled([
-      replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
-      client.fetchPaymentInfoEvent(authorPubkey),
-      replaceableEventService.getProfileFromIndexedDB(authorPubkey)
-    ]).then(([profileRes, paymentRes, idbRes]) => {
-      if (cancelled) return
-
-      const profileEvent =
-        profileRes.status === 'fulfilled' ? profileRes.value : undefined
-      const paymentEvent =
-        paymentRes.status === 'fulfilled' ? paymentRes.value : undefined
-      const idbProfile = idbRes.status === 'fulfilled' ? idbRes.value : undefined
-
-      const cachedFeed = feedProfileRef.current
-      const profile =
-        (profileEvent ? getProfileFromEvent(profileEvent) : null) ??
-        (cachedFeed && !cachedFeed.batchPlaceholder ? cachedFeed : null) ??
-        idbProfile ??
-        null
-      const paymentInfo = paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
-
-      applyTipAvailability(profile, profileEvent ?? null, paymentInfo)
-    })
+    void resolveZapRecipientData(authorPubkey, feedProfileRef.current).then(
+      ({ profile, profileEvent, paymentInfo }) => {
+        if (cancelled) return
+        applyTipAvailability(profile, profileEvent ?? null, paymentInfo)
+      }
+    )
 
     return () => {
       cancelled = true
     }
-  }, [authorPubkey, isSelf, applyTipAvailability])
+  }, [authorPubkey, isSelf, feedProfiles?.version, applyTipAvailability])
 
   const handleOpenPaymentMethods = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -266,34 +304,17 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     setTipPaymentData(null)
     let cancelled = false
 
-    void Promise.allSettled([
-      replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
-      client.fetchPaymentInfoEvent(authorPubkey),
-      replaceableEventService.getProfileFromIndexedDB(authorPubkey)
-    ]).then(([profileRes, paymentRes, idbRes]) => {
-      if (cancelled) return
-
-      const profileEvent =
-        profileRes.status === 'fulfilled' ? profileRes.value : undefined
-      const paymentEvent =
-        paymentRes.status === 'fulfilled' ? paymentRes.value : undefined
-      const idbProfile = idbRes.status === 'fulfilled' ? idbRes.value : undefined
-
-      const cachedFeed = feedProfileRef.current
-      const profile =
-        (profileEvent ? getProfileFromEvent(profileEvent) : null) ??
-        (cachedFeed && !cachedFeed.batchPlaceholder ? cachedFeed : null) ??
-        idbProfile ??
-        null
-      const paymentInfo = paymentEvent ? getPaymentInfoFromEvent(paymentEvent) : null
-
-      applyTipAvailability(profile, profileEvent ?? null, paymentInfo, true)
-    })
+    void resolveZapRecipientData(authorPubkey, feedProfileRef.current).then(
+      ({ profile, profileEvent, paymentInfo }) => {
+        if (cancelled) return
+        applyTipAvailability(profile, profileEvent ?? null, paymentInfo, true)
+      }
+    )
 
     return () => {
       cancelled = true
     }
-  }, [authorPubkey, isSelf, applyTipAvailability])
+  }, [authorPubkey, isSelf, feedProfiles?.version, applyTipAvailability])
 
   const handleZap = async () => {
     try {

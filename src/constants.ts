@@ -264,6 +264,12 @@ export const FEED_PROFILE_PENDING_BATCH_ESCAPE_MS = FEED_PROFILE_BATCH_FETCH_TIM
 export const PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS = 12_000
 
 /**
+ * After a feed/thread profile batch finishes, block per-row metadata/payment relay REQs so
+ * {@link ZapButton} and {@link useFetchProfile} do not fan out hundreds of parallel queries.
+ */
+export const PROFILE_BATCH_POST_COOLDOWN_MS = 45_000
+
+/**
  * Hex-id / replaceable-coordinate note lookup ({@link EventService.tryHarderToFetchEvent}, big-relays dataloader).
  */
 export const SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS = 5_000

@@ -2,7 +2,10 @@ import { FEED_PROFILE_PENDING_BATCH_ESCAPE_MS, PROFILE_FETCH_PROMISE_TIMEOUT_MS 
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { getSeededProfileForNavigation } from '@/lib/profile-navigation-seed'
-import { isPubkeyAwaitingProfileBatch } from '@/lib/profile-batch-coordinator'
+import {
+  isPubkeyAwaitingProfileBatch,
+  shouldDeferPerPubkeyProfileNetwork
+} from '@/lib/profile-batch-coordinator'
 import { normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
@@ -13,10 +16,6 @@ import { TProfile } from '@/types'
 import { kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '@/lib/logger'
-
-function feedProfileBatchRetryStaggerMs(pubkeyLower: string): number {
-  return (parseInt(pubkeyLower.slice(0, 8), 16) % 40) * 400
-}
 
 function tryHydrateProfileFromSessionOnly(pubkey: string, skipCache: boolean): TProfile | null {
   if (skipCache) return null
@@ -113,6 +112,22 @@ export function useFetchProfile(id?: string, skipCache = false) {
   // Memoize to prevent recreation on every render
   const checkProfile = useCallback(async (pubkey: string, cancelled: { current: boolean }): Promise<TProfile | null> => {
     if (cancelled.current) {
+      return null
+    }
+
+    if (shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+      const cachedDuringBatch = await tryHydrateProfileFromLocalCaches(pubkey, skipCache)
+      if (!cancelled.current && cachedDuringBatch) {
+        setProfile(cachedDuringBatch)
+        setIsFetching(false)
+        initializedPubkeysRef.current.add(pubkey)
+        if (checkIntervalRef.current) {
+          clearInterval(checkIntervalRef.current)
+          checkIntervalRef.current = null
+        }
+        effectRunCountRef.current.delete(pubkey)
+        return cachedDuringBatch
+      }
       return null
     }
 
@@ -413,14 +428,17 @@ export function useFetchProfile(id?: string, skipCache = false) {
       }
       if (fromBatch?.batchPlaceholder) {
         const placeholderCancelled = { current: false }
-        const staggerMs = feedProfileBatchRetryStaggerMs(pkL)
-        const placeholderTimer = window.setTimeout(() => {
-          if (placeholderCancelled.current) return
-          void checkProfile(extractedPubkey, placeholderCancelled)
-        }, staggerMs)
+        void tryHydrateProfileFromLocalCaches(pkL, false).then((quick) => {
+          if (placeholderCancelled.current || !quick) return
+          setProfile(quick)
+          setIsFetching(false)
+          setError(null)
+          processingPubkeyRef.current = extractedPubkey
+          initializedPubkeysRef.current.add(extractedPubkey)
+          effectRunCountRef.current.delete(extractedPubkey)
+        })
         return () => {
           placeholderCancelled.current = true
-          window.clearTimeout(placeholderTimer)
           if (processingPubkeyRef.current === extractedPubkey) {
             processingPubkeyRef.current = null
           }

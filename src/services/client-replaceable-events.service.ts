@@ -34,17 +34,47 @@ import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eli
 import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import {
-  isPubkeyAwaitingProfileBatch,
   registerProfileBatchPubkeys,
+  shouldDeferPerPubkeyProfileNetwork,
   unregisterProfileBatchPubkeys
 } from '@/lib/profile-batch-coordinator'
 import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
 import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 
 export class ReplaceableEventService {
+  /** Limits parallel {@link fetchKind0FromProfileRelays} (7-relay REQ per author). */
+  private static kind0ProfileRelaySlotsInUse = 0
+  private static kind0ProfileRelayWaitQueue: Array<() => void> = []
+  private static readonly MAX_CONCURRENT_KIND0_PROFILE_RELAY_REQS = 3
+
   /** Limits parallel Step 2/3 profile network work (relay list + wide metadata REQ). */
   private static profileFallbackSlotsInUse = 0
   private static profileFallbackWaitQueue: Array<() => void> = []
+
+  private static async acquireKind0ProfileRelaySlot(): Promise<void> {
+    if (
+      ReplaceableEventService.kind0ProfileRelaySlotsInUse <
+      ReplaceableEventService.MAX_CONCURRENT_KIND0_PROFILE_RELAY_REQS
+    ) {
+      ReplaceableEventService.kind0ProfileRelaySlotsInUse++
+      return
+    }
+    await new Promise<void>((resolve) => {
+      ReplaceableEventService.kind0ProfileRelayWaitQueue.push(() => {
+        ReplaceableEventService.kind0ProfileRelaySlotsInUse++
+        resolve()
+      })
+    })
+  }
+
+  private static releaseKind0ProfileRelaySlot(): void {
+    ReplaceableEventService.kind0ProfileRelaySlotsInUse = Math.max(
+      0,
+      ReplaceableEventService.kind0ProfileRelaySlotsInUse - 1
+    )
+    const next = ReplaceableEventService.kind0ProfileRelayWaitQueue.shift()
+    if (next) next()
+  }
 
   private static async acquireProfileFallbackNetworkSlot(): Promise<void> {
     if (ReplaceableEventService.profileFallbackSlotsInUse < MAX_CONCURRENT_RELAY_CONNECTIONS) {
@@ -867,7 +897,10 @@ export class ReplaceableEventService {
   private async fetchKind0FromProfileRelays(pubkey: string): Promise<NEvent | undefined> {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return undefined
+    if (shouldDeferPerPubkeyProfileNetwork(pk)) return undefined
 
+    await ReplaceableEventService.acquireKind0ProfileRelaySlot()
+    try {
     const relays = prependAggrNostrLandIfViewerEligible(
       stripLocalNetworkRelaysForWssReq(
         Array.from(
@@ -901,6 +934,9 @@ export class ReplaceableEventService {
         error: error instanceof Error ? error.message : String(error)
       })
       return undefined
+    }
+    } finally {
+      ReplaceableEventService.releaseKind0ProfileRelaySlot()
     }
   }
 
@@ -937,8 +973,7 @@ export class ReplaceableEventService {
       throw new Error('Invalid id')
     }
 
-    /** Used only when relay steps miss — UI should already show this from {@link useFetchProfile} IDB/session first. */
-    let sessionFallback: NEvent | undefined
+    // Local-first: session LRU, then IndexedDB — before any PROFILE_RELAY / DataLoader / wide relay pass.
     if (!_skipCache) {
       const sessionEv = client.eventService.getSessionMetadataForPubkey(pubkey)
       if (sessionEv && !shouldDropEventOnIngest(sessionEv)) {
@@ -948,14 +983,42 @@ export class ReplaceableEventService {
         )
         await this.indexProfile(sessionEv)
         void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
+        void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+        return sessionEv
+      }
+      try {
+        const idbEv = await indexedDb.getReplaceableEvent(pubkey, kinds.Metadata)
+        if (idbEv && !shouldDropEventOnIngest(idbEv)) {
+          this.replaceableEventFromBigRelaysDataloader.prime(
+            { pubkey, kind: kinds.Metadata },
+            Promise.resolve(idbEv)
+          )
+          await this.indexProfile(idbEv)
+          void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+          return idbEv
+        }
+      } catch {
+        /* ignore IDB read errors — fall through to network */
+      }
+    }
+
+    /** When batch or wide relay steps miss, return session row if we had one earlier in the call. */
+    let sessionFallback: NEvent | undefined
+    if (!_skipCache) {
+      const sessionEv = client.eventService.getSessionMetadataForPubkey(pubkey)
+      if (sessionEv && !shouldDropEventOnIngest(sessionEv)) {
         sessionFallback = sessionEv
       }
+    }
+
+    if (shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+      return sessionFallback
     }
 
     // Relay hints from bech32 (nprofile, etc.) — highest priority in later steps
     const relayHints = relays.length > 0 ? [...relays] : []
 
-    // Step 0: {@link PROFILE_RELAY_URLS} by `authors` — reliable for npub/hex; avoids batched DataLoader + abort races.
+    // Step 0: {@link PROFILE_RELAY_URLS} by `authors` — after local caches miss.
     const fromProfileRelays = await this.fetchKind0FromProfileRelays(pubkey)
     if (fromProfileRelays) {
       this.replaceableEventFromBigRelaysDataloader.prime(
@@ -978,10 +1041,6 @@ export class ReplaceableEventService {
     if (profileEvent) {
       await this.indexProfile(profileEvent)
       return profileEvent
-    }
-
-    if (isPubkeyAwaitingProfileBatch(pubkey)) {
-      return sessionFallback
     }
 
     await ReplaceableEventService.acquireProfileFallbackNetworkSlot()
@@ -1383,7 +1442,20 @@ export class ReplaceableEventService {
   /**
    * Fetch payment info event
    */
+  async getPaymentInfoFromIndexedDB(pubkey: string): Promise<NEvent | undefined> {
+    try {
+      const row = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.PAYMENT_INFO)
+      if (!row || row === null) return undefined
+      return row as NEvent
+    } catch {
+      return undefined
+    }
+  }
+
   async fetchPaymentInfoEvent(pubkey: string): Promise<NEvent | undefined> {
+    if (shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+      return this.getPaymentInfoFromIndexedDB(pubkey)
+    }
     return await this.fetchReplaceableEvent(pubkey, ExtendedKind.PAYMENT_INFO)
   }
 
