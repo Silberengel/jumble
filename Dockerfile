@@ -13,6 +13,13 @@ ENV VITE_LANGUAGE_TOOL_URL=${VITE_LANGUAGE_TOOL_URL}
 ARG VITE_TRANSLATE_URL
 ENV VITE_TRANSLATE_URL=${VITE_TRANSLATE_URL}
 
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME
+ENV APP_VERSION=${APP_VERSION}
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+
 WORKDIR /app
 
 # Copy package files first
@@ -21,12 +28,20 @@ RUN npm install
 
 # Copy the source code to prevent invaliding cache whenever there is a change in the code
 COPY . .
-RUN npm run build
+RUN npm run build \
+  && node scripts/write-build-version-json.mjs
 
 # Step 2: Final container with Nginx and embedded config
 FROM nginx:alpine
 
-RUN apk add --no-cache jq
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
+
+RUN apk add --no-cache jq wget
+
+LABEL org.opencontainers.image.title="imwald-jumble" \
+  org.opencontainers.image.version="${APP_VERSION}" \
+  org.opencontainers.image.revision="${GIT_COMMIT}"
 
 # Copy only the generated static files
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -39,6 +54,13 @@ RUN printf "server {\n\
     server_name localhost;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
+\n\
+    location = /health.json {\n\
+        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n\
+        add_header Pragma \"no-cache\";\n\
+        expires off;\n\
+        try_files \$uri =404;\n\
+    }\n\
 \n\
     # PWA: service worker + precache manifest must not be long-cached or browsers never see\n\
     # updates (VersionUpdateBanner stays hidden; About shows an old APP_VERSION from precache).\n\

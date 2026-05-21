@@ -35,12 +35,18 @@ READ_ALOUD_TTS_URL="${READ_ALOUD_TTS_URL:-/api/piper-tts}"
 LANGUAGE_TOOL_URL="${LANGUAGE_TOOL_URL-/api/languagetool}"
 TRANSLATE_URL="${TRANSLATE_URL-/api/translate}"
 
-echo "Building main app (version: $VERSION, VITE_PROXY_SERVER=$PROXY_ORIGIN, VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL, VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL, VITE_TRANSLATE_URL=$TRANSLATE_URL)"
+GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+echo "Building main app (version: $VERSION, commit: $GIT_COMMIT, VITE_PROXY_SERVER=$PROXY_ORIGIN, VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL, VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL, VITE_TRANSLATE_URL=$TRANSLATE_URL)"
 docker build \
   --build-arg "VITE_PROXY_SERVER=$PROXY_ORIGIN" \
   --build-arg "VITE_READ_ALOUD_TTS_URL=$READ_ALOUD_TTS_URL" \
   --build-arg "VITE_LANGUAGE_TOOL_URL=$LANGUAGE_TOOL_URL" \
   --build-arg "VITE_TRANSLATE_URL=$TRANSLATE_URL" \
+  --build-arg "APP_VERSION=$VERSION" \
+  --build-arg "GIT_COMMIT=$GIT_COMMIT" \
+  --build-arg "BUILD_TIME=$BUILD_TIME" \
   -t "$IMAGE_APP:latest" -t "$IMAGE_APP:$VERSION" .
 
 echo "Building NIP-66 monitor (version: $VERSION)"

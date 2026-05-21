@@ -75,9 +75,18 @@ Images default to `:latest`; to pin a version, set image tags in `docker-compose
 # Status
 docker compose -f docker-compose.prod.yml ps
 
+# Release running in the app container (JSON)
+curl -sS http://127.0.0.1:8089/health.json | jq .
+# Same via Docker healthcheck file:
+docker exec imwald-jumble wget -qO- http://127.0.0.1/health.json | jq .
+# Image labels (after pull; matches package.json at build time)
+docker inspect imwald-jumble --format 'version={{index .Config.Labels "org.opencontainers.image.version"}} commit={{index .Config.Labels "org.opencontainers.image.revision"}}'
+
 # Logs
 docker compose -f docker-compose.prod.yml logs -f
 
 # Stop
 docker compose -f docker-compose.prod.yml down
 ```
+
+`health.json` is baked into each app image build (`version`, `gitCommit`, `builtAt`). Public site: `https://<your-host>/health.json` if Apache proxies `/` to port 8089.
