@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import type { PaytoPaymentOpenHandler } from '@/lib/payto'
 import { ArrowRight, Copy, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { closeModal } from '@getalby/bitcoin-connect-react'
@@ -23,8 +22,9 @@ import { toast } from 'sonner'
 import { releaseBodyScrollLocks } from '@/lib/react-remove-scroll-body-cleanup'
 import {
   filterPaytoPaymentOpenHandlersForDevice,
-  getPaytoPaymentOpenHandlers,
-  getPaytoTypeInfo
+  getPaytoTypeInfo,
+  openPaytoPaymentTarget,
+  resolvePaytoPaymentOpenHandlers
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
@@ -76,7 +76,7 @@ export default function PaytoDialog({
   const openHandlers = useMemo(
     () =>
       filterPaytoPaymentOpenHandlersForDevice(
-        getPaytoPaymentOpenHandlers(type, authority, { bolt11Invoice })
+        resolvePaytoPaymentOpenHandlers(type, authority, { bolt11Invoice })
       ),
     [type, authority, bolt11Invoice]
   )
@@ -97,17 +97,6 @@ export default function PaytoDialog({
       openHandlers[0] ??
       null,
     [openHandlers, selectedOpenHandlerId]
-  )
-
-  const openSelectedHandler = useCallback(
-    (handler: PaytoPaymentOpenHandler) => {
-      if (handler.isHttp) {
-        window.open(handler.href, '_blank', 'noopener,noreferrer')
-        return
-      }
-      window.location.assign(handler.href)
-    },
-    []
   )
 
   const handleCopy = (text: string, copyLabel?: string) => {
@@ -241,7 +230,7 @@ export default function PaytoDialog({
                       : t('Open', { defaultValue: 'Open' })
                   }
                   onClick={() => {
-                    if (selectedOpenHandler) openSelectedHandler(selectedOpenHandler)
+                    if (selectedOpenHandler) openPaytoPaymentTarget(selectedOpenHandler)
                   }}
                 >
                   <ArrowRight className="size-5" aria-hidden />

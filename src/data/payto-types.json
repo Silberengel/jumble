@@ -7,7 +7,18 @@
     "bolt11Invoice": {
       "paytoType": "lightning",
       "coinScheme": "lightning",
-      "walletApps": ["phoenix", "zeus", "bluewallet"]
+      "walletApps": [
+        "phoenix",
+        "zeus",
+        "bluewallet",
+        "muun",
+        "walletofsatoshi",
+        "blink",
+        "breez",
+        "alby",
+        "bitkit",
+        "blockstream"
+      ]
     }
   },
   "walletApps": {
@@ -19,17 +30,62 @@
     "phoenix": {
       "label": "Phoenix",
       "mobileOnly": true,
-      "uriTemplate": "phoenix:{coinScheme}:{authority}"
+      "builder": "phoenix"
     },
     "zeus": {
       "label": "Zeus",
       "mobileOnly": true,
-      "uriTemplate": "zeusln:lightning:{authority}"
+      "builder": "zeus"
     },
     "bluewallet": {
       "label": "BlueWallet",
       "mobileOnly": true,
-      "uriTemplate": "bluewallet:lightning:{authority}"
+      "builder": "bluewallet"
+    },
+    "muun": {
+      "label": "Muun",
+      "mobileOnly": true,
+      "uriTemplate": "muun:lightning:{authority}"
+    },
+    "walletofsatoshi": {
+      "label": "Wallet of Satoshi",
+      "mobileOnly": true,
+      "uriTemplate": "walletofsatoshi:lightning:{authority}"
+    },
+    "blink": {
+      "label": "Blink",
+      "mobileOnly": true,
+      "uriTemplate": "blink:lightning:{authority}"
+    },
+    "breez": {
+      "label": "Breez",
+      "mobileOnly": true,
+      "uriTemplate": "breez:{authority}"
+    },
+    "alby": {
+      "label": "Alby",
+      "mobileOnly": true,
+      "uriTemplate": "alby:lightning:{authority}"
+    },
+    "bitkit": {
+      "label": "Bitkit",
+      "mobileOnly": true,
+      "uriTemplate": "bitkit:lightning:{authority}"
+    },
+    "blockstream": {
+      "label": "Blockstream Green",
+      "mobileOnly": true,
+      "uriTemplate": "blockstream:lightning:{authority}"
+    },
+    "blixt": {
+      "label": "Blixt",
+      "mobileOnly": false,
+      "uriTemplate": "blixtwallet:{authority}"
+    },
+    "ledger": {
+      "label": "Ledger Live",
+      "mobileOnly": false,
+      "builder": "ledger"
     }
   },
   "kind0CryptocurrencyAddresses": {
@@ -118,7 +174,7 @@
       "logoAssetPath": "src/assets/payto_logos/Bitcoin.svg",
       "walletOpen": {
         "scheme": "bitcoin",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "bc1q…",
@@ -133,7 +189,7 @@
       "walletOpen": {
         "scheme": "bolt12",
         "requirePrefix": "lno1",
-        "walletApps": ["phoenix", "zeus"]
+        "walletApps": ["phoenix", "zeus", "blixt"]
       },
       "authority": {
         "placeholder": "lno1…",
@@ -147,7 +203,7 @@
       "walletOpen": {
         "scheme": "lightning",
         "requireAtSign": true,
-        "walletApps": ["phoenix", "zeus"]
+        "walletApps": ["phoenix", "zeus", "muun", "blink", "walletofsatoshi", "breez", "alby", "bitkit"]
       },
       "authority": {
         "placeholder": "user@example.com",
@@ -162,7 +218,7 @@
       "walletOpen": {
         "scheme": "bitcoin",
         "requirePrefix": "sp1",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "sp1…",
@@ -210,7 +266,7 @@
       "logoAssetPath": "src/assets/payto_logos/ethereum-eth-logo.svg",
       "walletOpen": {
         "scheme": "ethereum",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "0x…",
@@ -224,7 +280,7 @@
       "logoAssetPath": "src/assets/payto_logos/Monero.png",
       "walletOpen": {
         "scheme": "monero",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "4… or 8…",
@@ -284,7 +340,7 @@
       "logoAssetPath": "src/assets/payto_logos/bitcoin-cash-bch-logo.svg",
       "walletOpen": {
         "scheme": "bitcoincash",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "bitcoincash:… or q…",
@@ -298,7 +354,7 @@
       "logoAssetPath": "src/assets/payto_logos/dogecoin-doge-logo.svg",
       "walletOpen": {
         "scheme": "dogecoin",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "D…",
@@ -312,7 +368,7 @@
       "logoAssetPath": "src/assets/payto_logos/Litecoin.png",
       "walletOpen": {
         "scheme": "litecoin",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "ltc1q… or L… or M…",
@@ -366,7 +422,7 @@
       "logoAssetPath": "src/assets/payto_logos/solana.png",
       "walletOpen": {
         "scheme": "solana",
-        "walletApps": ["cakewallet"]
+        "walletApps": ["cakewallet", "ledger"]
       },
       "authority": {
         "placeholder": "Base58 pubkey…",

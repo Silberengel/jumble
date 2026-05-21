@@ -1,6 +1,6 @@
 /**
- * payto: URI handling (RFC-8905 / NIP-A3)
- * Type metadata lives in {@link ../data/payto-types.json} via {@link ./payto-registry}.
+ * payto: URI handling (RFC-8905 / NIP-A3) and payment targets.
+ * Type metadata: {@link ./payto-registry}. Open / wallet URIs: {@link ./payto-targets}.
  */
 
 import { getCanonicalPaytoType } from '@/lib/payto-registry'
@@ -12,7 +12,6 @@ export {
   getPaytoIconChar,
   getPaytoLogoPath,
   getPaytoLogoUrl,
-  getPaytoProfileUrl,
   getPaytoTypeInfo,
   isKnownPaytoType,
   isLightningPaytoType,
@@ -28,24 +27,15 @@ export {
 } from '@/lib/payto-registry'
 
 export {
-  buildBlueWalletWalletHref,
-  buildPhoenixWalletHref,
-  buildZeusWalletHref,
-  getBlueWalletPaymentOpenHandler,
-  getLightningInvoiceWalletPaymentHandlers,
-  getPhoenixPaymentOpenHandler,
-  getZeusPaymentOpenHandler,
-  getPaytoPrimaryOpenUrl,
-  getPaytoPaymentOpenHandlers,
   filterPaytoPaymentOpenHandlersForDevice,
-  getPaytoWalletOpenActions,
-  filterWalletOpenActionsForDevice,
+  openPaytoPaymentTarget,
+  resolvePaytoPaymentOpenHandlers,
+  resolvePaytoProfileUrl,
   isPaytoHttpOpenUrl,
   isLikelyMobileWalletUserAgent,
   type PaytoPaymentOpenContext,
-  type PaytoPaymentOpenHandler,
-  type PaytoWalletOpenAction
-} from '@/lib/payto-wallet-open'
+  type PaytoPaymentOpenHandler
+} from '@/lib/payto-targets'
 
 export const PAYTO_URI_REGEX = /payto:\/\/([a-z0-9-]+)\/([^\s\]\)\<\"']+)/gi
 
@@ -55,9 +45,6 @@ export interface ParsedPayto {
   raw: string
 }
 
-/**
- * Parse a payto URI into type and authority. Returns null if invalid.
- */
 export function parsePaytoUri(uri: string): ParsedPayto | null {
   const trimmed = uri.trim()
   const m = /^payto:\/\/([a-z0-9-]+)\/(.+)$/i.exec(trimmed)
@@ -69,9 +56,6 @@ export function parsePaytoUri(uri: string): ParsedPayto | null {
   return { type, authority, raw: trimmed }
 }
 
-/**
- * Build payto URI from type and authority.
- */
 export function buildPaytoUri(type: string, authority: string): string {
   const t = type.toLowerCase().replace(/[^a-z0-9-]/g, '')
   const a = encodeURIComponent(authority.trim())
@@ -90,6 +74,6 @@ export { extractKind0PaymentMethodsFromProfileJson, type Kind0ImportedPaymentMet
 
 export {
   extractAboutCoinPaymentMethods,
-  parseAboutCoinLabelPaymentLines,
+  parseAboutContentWithCoinPayto,
   type AboutCoinLineMatch
 } from '@/lib/payto-about-coin-lines'
