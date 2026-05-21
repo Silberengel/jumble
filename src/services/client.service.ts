@@ -4105,8 +4105,12 @@ class ClientService extends EventTarget {
   }
 
   // Delegate to ReplaceableEventService
-  async fetchProfileEvent(id: string, skipCache: boolean = false): Promise<NEvent | undefined> {
-    return this.replaceableEventService.fetchProfileEvent(id, skipCache)
+  async fetchProfileEvent(
+    id: string,
+    skipCache: boolean = false,
+    options?: import('./client-replaceable-events.service').FetchProfileEventOptions
+  ): Promise<NEvent | undefined> {
+    return this.replaceableEventService.fetchProfileEvent(id, skipCache, options)
   }
 
   async fetchProfile(id: string, skipCache: boolean = false): Promise<TProfile | undefined> {

@@ -69,6 +69,8 @@ import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional } from
 
 /** Survives React StrictMode remount so initial URL → secondary stack is not built twice. */
 let historyLocationSeedApplied = false
+/** Dedupes note URL seed when React runs the history effect twice before state commits. */
+let historyNoteStackSeedUrl: string | null = null
 
 /** Lazy-loaded so PageManager does not synchronously import SpellsPage (avoids HMR cycle: SpellsPage → PrimaryPageLayout → PageManager → SpellsPage). */
 const SpellsPageLazy = lazy(() => import('./pages/primary/SpellsPage'))
@@ -1342,6 +1344,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           let primaryForNoteUrl: TPrimaryPageName = currentPrimaryPage
 
           const pushNoteUrlOnStack = (noteUrl: string) => {
+            if (historyNoteStackSeedUrl === noteUrl) return
+            historyNoteStackSeedUrl = noteUrl
             setSecondaryStack((prevStack) => {
               if (isCurrentPage(prevStack, noteUrl)) return prevStack
               const { newStack, newItem } = pushNewPageToStack(prevStack, noteUrl, maxStackSize)

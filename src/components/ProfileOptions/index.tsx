@@ -84,7 +84,9 @@ export default function ProfileOptions({
     const fetchEvent = async () => {
       try {
         // Use fetchProfileEvent which includes comprehensive relay search
-        const event = await replaceableEventService.fetchProfileEvent(pubkey, false)
+        const event = await replaceableEventService.fetchProfileEvent(pubkey, false, {
+          allowWideRelayFallback: true
+        })
         if (event) {
           setLocalProfileEvent(event)
         }

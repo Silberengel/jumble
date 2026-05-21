@@ -297,7 +297,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       await syncUserDeletionTombstones(account.pubkey, relayList)
       await client.forceRefreshProfileAndPaymentInfoCache(account.pubkey)
       const [profileEvt, paymentEvt] = await Promise.all([
-        client.fetchProfileEvent(account.pubkey),
+        client.fetchProfileEvent(account.pubkey, false, { allowWideRelayFallback: true }),
         client.fetchPaymentInfoEvent(account.pubkey)
       ])
       if (profileEvt) {

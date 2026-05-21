@@ -41,6 +41,14 @@ import {
 import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
 import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 
+export type FetchProfileEventOptions = {
+  /**
+   * When false (default), stop after batched profile relays / DataLoader — no per-author
+   * NIP-65 + expanded-relay REQ (avoids hundreds of parallel 7-relay queries on feed paint).
+   */
+  allowWideRelayFallback?: boolean
+}
+
 export class ReplaceableEventService {
   /** Limits parallel {@link fetchKind0FromProfileRelays} (7-relay REQ per author). */
   private static kind0ProfileRelaySlotsInUse = 0
@@ -249,7 +257,9 @@ export class ReplaceableEventService {
         if (pick) {
           this.replaceableEventFromBigRelaysDataloader.prime({ pubkey, kind }, Promise.resolve(pick))
           void indexedDb.putReplaceableEvent(pick).catch(() => {})
-          void this.refreshInBackground(pubkey, kind, d).catch(() => {})
+          if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+            void this.refreshInBackground(pubkey, kind, d).catch(() => {})
+          }
           return pick
         }
       }
@@ -333,6 +343,7 @@ export class ReplaceableEventService {
    * Refresh event in background (non-blocking)
    */
   private async refreshInBackground(pubkey: string, kind: number, d?: string): Promise<void> {
+    if (shouldDeferPerPubkeyProfileNetwork(pubkey)) return
     try {
       if (d) {
         await this.replaceableEventDataLoader.load({ pubkey, kind, d })
@@ -943,7 +954,12 @@ export class ReplaceableEventService {
   /**
    * Fetch profile event by id (hex, npub, nprofile)
    */
-  async fetchProfileEvent(id: string, _skipCache: boolean = false): Promise<NEvent | undefined> {
+  async fetchProfileEvent(
+    id: string,
+    _skipCache: boolean = false,
+    options: FetchProfileEventOptions = {}
+  ): Promise<NEvent | undefined> {
+    const allowWideRelayFallback = options.allowWideRelayFallback === true
     let pubkey: string | undefined
     let relays: string[] = []
     if (/^[0-9a-f]{64}$/.test(id)) {
@@ -983,7 +999,9 @@ export class ReplaceableEventService {
         )
         await this.indexProfile(sessionEv)
         void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
-        void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+        if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+          void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+        }
         return sessionEv
       }
       try {
@@ -994,7 +1012,9 @@ export class ReplaceableEventService {
             Promise.resolve(idbEv)
           )
           await this.indexProfile(idbEv)
-          void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+          if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
+            void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+          }
           return idbEv
         }
       } catch {
@@ -1015,19 +1035,20 @@ export class ReplaceableEventService {
       return sessionFallback
     }
 
-    // Relay hints from bech32 (nprofile, etc.) — highest priority in later steps
+    // Relay hints from bech32 (nprofile, etc.) — highest priority in wide fallback only
     const relayHints = relays.length > 0 ? [...relays] : []
 
-    // Step 0: {@link PROFILE_RELAY_URLS} by `authors` — after local caches miss.
-    const fromProfileRelays = await this.fetchKind0FromProfileRelays(pubkey)
-    if (fromProfileRelays) {
-      this.replaceableEventFromBigRelaysDataloader.prime(
-        { pubkey, kind: kinds.Metadata },
-        Promise.resolve(fromProfileRelays)
-      )
-      await this.indexProfile(fromProfileRelays)
-      void indexedDb.putReplaceableEvent(fromProfileRelays).catch(() => {})
-      return fromProfileRelays
+    if (allowWideRelayFallback) {
+      const fromProfileRelays = await this.fetchKind0FromProfileRelays(pubkey)
+      if (fromProfileRelays) {
+        this.replaceableEventFromBigRelaysDataloader.prime(
+          { pubkey, kind: kinds.Metadata },
+          Promise.resolve(fromProfileRelays)
+        )
+        await this.indexProfile(fromProfileRelays)
+        void indexedDb.putReplaceableEvent(fromProfileRelays).catch(() => {})
+        return fromProfileRelays
+      }
     }
 
     // Step 1: DataLoader (IndexedDB + batched profile relay stack)
@@ -1041,6 +1062,10 @@ export class ReplaceableEventService {
     if (profileEvent) {
       await this.indexProfile(profileEvent)
       return profileEvent
+    }
+
+    if (!allowWideRelayFallback) {
+      return sessionFallback
     }
 
     await ReplaceableEventService.acquireProfileFallbackNetworkSlot()

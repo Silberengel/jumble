@@ -54,12 +54,10 @@ async function resolveZapRecipientData(
     feedProfile && !feedProfile.batchPlaceholder ? feedProfile : null
   const deferNetwork = shouldDeferPerPubkeyProfileNetwork(authorPubkey)
 
-  const paymentPromise = deferNetwork
-    ? replaceableEventService.getPaymentInfoFromIndexedDB(authorPubkey)
-    : client.fetchPaymentInfoEvent(authorPubkey)
-
   if (cachedFeed) {
-    const paymentEvent = await paymentPromise.catch(() => undefined)
+    const paymentEvent = deferNetwork
+      ? await replaceableEventService.getPaymentInfoFromIndexedDB(authorPubkey).catch(() => undefined)
+      : await client.fetchPaymentInfoEvent(authorPubkey).catch(() => undefined)
     return {
       profile: cachedFeed,
       profileEvent: undefined,
@@ -70,7 +68,9 @@ async function resolveZapRecipientData(
   const idbProfile = await replaceableEventService.getProfileFromIndexedDB(authorPubkey)
 
   if (deferNetwork) {
-    const paymentEvent = await paymentPromise.catch(() => undefined)
+    const paymentEvent = await replaceableEventService
+      .getPaymentInfoFromIndexedDB(authorPubkey)
+      .catch(() => undefined)
     return {
       profile: idbProfile ?? null,
       profileEvent: undefined,
@@ -80,7 +80,7 @@ async function resolveZapRecipientData(
 
   const [profileRes, paymentRes] = await Promise.allSettled([
     replaceableEventService.fetchReplaceableEvent(authorPubkey, kinds.Metadata),
-    paymentPromise
+    client.fetchPaymentInfoEvent(authorPubkey)
   ])
   const profileEvent =
     profileRes.status === 'fulfilled' ? profileRes.value : undefined
