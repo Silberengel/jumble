@@ -132,6 +132,9 @@ export class ReplaceableEventService {
   private authorReplaceablesRefreshByPubkey = new Map<string, Promise<void>>()
   /** Per-author cooldown after a successful profile-view replaceable sweep (avoids reopen loops). */
   private authorProfileViewRefreshNotBeforeMs = new Map<string, number>()
+  /** Coalesce IDB-hit background refreshes so feed paint does not open one REQ per row per 100ms window. */
+  private backgroundRefreshByKey = new Map<string, { pubkey: string; kind: number; d?: string }>()
+  private backgroundRefreshFlushTimer: ReturnType<typeof setTimeout> | null = null
   private replaceableEventFromBigRelaysDataloader: DataLoader<
     { pubkey: string; kind: number },
     NEvent | null,
@@ -258,7 +261,7 @@ export class ReplaceableEventService {
           this.replaceableEventFromBigRelaysDataloader.prime({ pubkey, kind }, Promise.resolve(pick))
           void indexedDb.putReplaceableEvent(pick).catch(() => {})
           if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
-            void this.refreshInBackground(pubkey, kind, d).catch(() => {})
+            this.refreshInBackground(pubkey, kind, d)
           }
           return pick
         }
@@ -273,7 +276,7 @@ export class ReplaceableEventService {
           const indexedDbCached = await indexedDb.getReplaceableEvent(pubkey, kind, d)
           if (indexedDbCached) {
             // Refresh in background
-            this.refreshInBackground(pubkey, kind, d).catch(() => {})
+            this.refreshInBackground(pubkey, kind, d)
             return indexedDbCached
           }
         } catch (error) {
@@ -340,18 +343,49 @@ export class ReplaceableEventService {
   }
   
   /**
-   * Refresh event in background (non-blocking)
+   * Refresh event in background (non-blocking). Batched via {@link flushScheduledBackgroundRefresh}.
    */
-  private async refreshInBackground(pubkey: string, kind: number, d?: string): Promise<void> {
+  private refreshInBackground(pubkey: string, kind: number, d?: string): void {
     if (shouldDeferPerPubkeyProfileNetwork(pubkey)) return
-    try {
-      if (d) {
-        await this.replaceableEventDataLoader.load({ pubkey, kind, d })
-      } else {
-        await this.replaceableEventFromBigRelaysDataloader.load({ pubkey, kind })
+    const key = d ? `${pubkey}:${kind}:${d}` : `${pubkey}:${kind}`
+    if (!this.backgroundRefreshByKey.has(key)) {
+      this.backgroundRefreshByKey.set(key, { pubkey, kind, d })
+    }
+    if (this.backgroundRefreshFlushTimer != null) return
+    this.backgroundRefreshFlushTimer = setTimeout(() => {
+      this.backgroundRefreshFlushTimer = null
+      void this.flushScheduledBackgroundRefresh()
+    }, 250)
+  }
+
+  private async flushScheduledBackgroundRefresh(): Promise<void> {
+    const entries = [...this.backgroundRefreshByKey.values()]
+    this.backgroundRefreshByKey.clear()
+    if (entries.length === 0) return
+
+    const withoutD = entries.filter((e) => !e.d)
+    const withD = entries.filter((e) => e.d)
+
+    if (withoutD.length > 0) {
+      const eligible = withoutD.filter((e) => !shouldDeferPerPubkeyProfileNetwork(e.pubkey))
+      if (eligible.length > 0) {
+        try {
+          await this.replaceableEventFromBigRelaysDataloader.loadMany(
+            eligible.map((e) => ({ pubkey: e.pubkey, kind: e.kind }))
+          )
+        } catch {
+          /* ignore */
+        }
       }
-    } catch {
-      // Ignore errors in background refresh
+    }
+
+    for (const { pubkey, kind, d } of withD) {
+      if (shouldDeferPerPubkeyProfileNetwork(pubkey)) continue
+      try {
+        await this.replaceableEventDataLoader.load({ pubkey, kind, d })
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -523,7 +557,7 @@ export class ReplaceableEventService {
             if (event && event !== null) {
               results[index] = event
               eventsMap.set(`${pubkey}:${kind}`, event)
-              this.refreshInBackground(pubkey, kind).catch(() => {})
+              this.refreshInBackground(pubkey, kind)
             } else {
               missingParams.push({ pubkey, kind, index })
             }
@@ -1000,7 +1034,7 @@ export class ReplaceableEventService {
         await this.indexProfile(sessionEv)
         void indexedDb.putReplaceableEvent(sessionEv).catch(() => {})
         if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
-          void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+          this.refreshInBackground(pubkey, kinds.Metadata)
         }
         return sessionEv
       }
@@ -1013,7 +1047,7 @@ export class ReplaceableEventService {
           )
           await this.indexProfile(idbEv)
           if (!shouldDeferPerPubkeyProfileNetwork(pubkey)) {
-            void this.refreshInBackground(pubkey, kinds.Metadata).catch(() => {})
+            this.refreshInBackground(pubkey, kinds.Metadata)
           }
           return idbEv
         }

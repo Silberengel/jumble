@@ -41,15 +41,49 @@ function formatAmount(amount: number) {
   return `${Math.round(amount / 100000) / 10}M`
 }
 
+type ZapRecipientResolveResult = {
+  profile: TProfile | null
+  profileEvent: Event | undefined
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+}
+
+const zapRecipientResolveByPubkey = new Map<string, Promise<ZapRecipientResolveResult>>()
+
+function feedProfileRowSyncKey(
+  profile: TProfile | undefined | null,
+  pendingInFeed: boolean
+): string {
+  if (!profile) return pendingInFeed ? 'p:wait' : 'p:none'
+  return [
+    profile.batchPlaceholder ? 'ph' : 'ok',
+    profile.username ?? '',
+    profile.avatar ?? '',
+    profile.npub ?? ''
+  ].join('\x1e')
+}
+
 /** Avoid one metadata + payment REQ per visible note while feed profile batch runs. */
 async function resolveZapRecipientData(
   authorPubkey: string,
   feedProfile: TProfile | undefined | null
-): Promise<{
-  profile: TProfile | null
-  profileEvent: Event | undefined
-  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
-}> {
+): Promise<ZapRecipientResolveResult> {
+  const pk = authorPubkey.toLowerCase()
+  const inFlight = zapRecipientResolveByPubkey.get(pk)
+  if (inFlight) return inFlight
+
+  const run = resolveZapRecipientDataBody(pk, feedProfile).finally(() => {
+    if (zapRecipientResolveByPubkey.get(pk) === run) {
+      zapRecipientResolveByPubkey.delete(pk)
+    }
+  })
+  zapRecipientResolveByPubkey.set(pk, run)
+  return run
+}
+
+async function resolveZapRecipientDataBody(
+  authorPubkey: string,
+  feedProfile: TProfile | undefined | null
+): Promise<ZapRecipientResolveResult> {
   const cachedFeed =
     feedProfile && !feedProfile.batchPlaceholder ? feedProfile : null
   const deferNetwork = shouldDeferPerPubkeyProfileNetwork(authorPubkey)
@@ -114,6 +148,10 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
   const feedProfile = feedProfiles?.profiles.get(authorPubkey)
   const feedProfileRef = useRef(feedProfile)
   feedProfileRef.current = feedProfile
+  const feedProfileSyncKey = feedProfileRowSyncKey(
+    feedProfile,
+    Boolean(feedProfiles?.pendingPubkeys.has(authorPubkey))
+  )
 
   const [disable, setDisable] = useState(true)
   const [tipPaymentData, setTipPaymentData] = useState<RecipientZapPaymentData | null>(null)
@@ -144,7 +182,7 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
     if (isSelf) return
     if (!feedProfile || feedProfile.batchPlaceholder) return
     applyTipAvailability(feedProfile, null, null)
-  }, [isSelf, feedProfile, feedProfiles?.version, applyTipAvailability])
+  }, [isSelf, feedProfile, feedProfileSyncKey, applyTipAvailability])
 
   useEffect(() => {
     if (isSelf) {
@@ -167,7 +205,7 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
     return () => {
       cancelled = true
     }
-  }, [authorPubkey, isSelf, feedProfiles?.version, applyTipAvailability])
+  }, [authorPubkey, isSelf, feedProfileSyncKey, applyTipAvailability])
 
   const handleOpenPaymentMethods = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -248,6 +286,10 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const feedProfile = feedProfiles?.profiles.get(authorPubkey)
   const feedProfileRef = useRef(feedProfile)
   feedProfileRef.current = feedProfile
+  const feedProfileSyncKey = feedProfileRowSyncKey(
+    feedProfile,
+    Boolean(feedProfiles?.pendingPubkeys.has(authorPubkey))
+  )
 
   const [disable, setDisable] = useState(true)
   const [canLightningZap, setCanLightningZap] = useState(false)
@@ -289,7 +331,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     if (isSelf) return
     if (!feedProfile || feedProfile.batchPlaceholder) return
     applyTipAvailability(feedProfile, null, null, true)
-  }, [isSelf, feedProfile, feedProfiles?.version, applyTipAvailability])
+  }, [isSelf, feedProfile, feedProfileSyncKey, applyTipAvailability])
 
   useEffect(() => {
     if (isSelf) {
@@ -314,7 +356,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     return () => {
       cancelled = true
     }
-  }, [authorPubkey, isSelf, feedProfiles?.version, applyTipAvailability])
+  }, [authorPubkey, isSelf, feedProfileSyncKey, applyTipAvailability])
 
   const handleZap = async () => {
     try {

@@ -270,6 +270,13 @@ export const PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS = 12_000
 export const PROFILE_BATCH_POST_COOLDOWN_MS = 90_000
 
 /**
+ * While a note (or other heavy secondary panel) is open, block per-row metadata/payment relay REQs
+ * on the feed behind it — {@link ZapButton} must not re-fetch every author when thread batch bumps
+ * {@link NoteFeedProfileContext.version}.
+ */
+export const PROFILE_SECONDARY_PANEL_DEFER_MS = 120_000
+
+/**
  * Hex-id / replaceable-coordinate note lookup ({@link EventService.tryHarderToFetchEvent}, big-relays dataloader).
  */
 export const SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS = 5_000

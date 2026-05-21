@@ -1,5 +1,9 @@
+import { PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
 import client from '@/services/client.service'
-import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator'
+import {
+  collectProfilePubkeysFromEvents,
+  extendProfileNetworkDeferral
+} from '@/lib/profile-batch-coordinator'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import {
   NoteFeedProfileContext,
@@ -105,6 +109,7 @@ export function ThreadProfileBatchProvider({
   )
 
   useLayoutEffect(() => {
+    extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
     genRef.current += 1
     const gen = genRef.current
     loadedRef.current.clear()

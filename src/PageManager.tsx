@@ -14,6 +14,8 @@ import { NavigationService } from '@/services/navigation.service'
 import { ImwaldBrandBar } from '@/assets/Logo'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import NoteDrawer from '@/components/NoteDrawer'
+import { PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
+import { extendProfileNetworkDeferral } from '@/lib/profile-batch-coordinator'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
@@ -2172,6 +2174,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   useLayoutEffect(() => {
     noteStatsService.setBackgroundStatsPaused(primaryFrozen)
     if (primaryFrozen) {
+      extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
       client.interruptBackgroundQueries()
     }
   }, [primaryFrozen])

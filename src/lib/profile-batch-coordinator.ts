@@ -8,6 +8,8 @@ import { PROFILE_BATCH_POST_COOLDOWN_MS } from '@/constants'
 
 const awaitingBatch = new Set<string>()
 const batchCooldownUntil = new Map<string, number>()
+/** Blocks all per-pubkey metadata/payment relay traffic (e.g. while a note panel is open). */
+let globalProfileNetworkDeferUntil = 0
 
 function norm(pk: string): string {
   return pk.trim().toLowerCase()
@@ -47,8 +49,18 @@ export function isPubkeyInProfileBatchCooldown(pubkey: string): boolean {
   return true
 }
 
-/** True while batch is in flight or during the post-batch cooldown window. */
+/** Extend the global defer window (e.g. opening a note panel — avoids re-storming the whole feed). */
+export function extendProfileNetworkDeferral(durationMs: number): void {
+  if (durationMs <= 0) return
+  const until = Date.now() + durationMs
+  if (until > globalProfileNetworkDeferUntil) {
+    globalProfileNetworkDeferUntil = until
+  }
+}
+
+/** True while batch is in flight, post-batch cooldown, or a global defer window is active. */
 export function shouldDeferPerPubkeyProfileNetwork(pubkey: string): boolean {
+  if (Date.now() < globalProfileNetworkDeferUntil) return true
   return isPubkeyAwaitingProfileBatch(pubkey) || isPubkeyInProfileBatchCooldown(pubkey)
 }
 
