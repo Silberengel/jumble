@@ -247,6 +247,14 @@ describe('resolvePaytoPaymentOpenHandlers', () => {
     ).toEqual(['PayPal'])
   })
 
+  it('uses native bitcoincash: URI for Cake Wallet on BCH (not cakewallet:bitcoincash)', () => {
+    const addr = 'qzrvw7kxr6a2vwm6hjcpaym8znf8t4nlyd8y4f2f8k'
+    const handlers = resolvePaytoPaymentOpenHandlers('bitcoin-cash', addr)
+    const cake = handlers.find((h) => h.openTargetName === 'Cake Wallet')
+    expect(cake?.href).toBe(`bitcoincash:${addr}`)
+    expect(cake?.href).not.toMatch(/^cakewallet:/)
+  })
+
   it('never mixes fiat web links or lightning wallets across payto types', () => {
     const monero = resolvePaytoPaymentOpenHandlers(
       'monero',

@@ -126,6 +126,7 @@ export default {
     "Lightning payment address – copy to pay via your wallet": "Lightning payment address – copy to pay via your wallet",
     "Payment address": "Payment address",
     "Payment address – copy to use in your wallet or app": "Payment address – copy to use in your wallet or app",
+    "Open in your wallet app or copy the address below.": "Open in your wallet app or copy the address below.",
     "Click to open payment options": "Click to open payment options",
     "Click to copy address": "Click to copy address",
     "Open on website": "Open on website",

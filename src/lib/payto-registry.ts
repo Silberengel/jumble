@@ -33,6 +33,11 @@ export type PaytoWalletOpenRow = {
   requireAtSign?: boolean
   requirePrefix?: string
   walletApps?: string[]
+  /**
+   * Per-app URI template overrides (e.g. Cake Wallet needs native `bitcoincash:` for BCH
+   * because its wallet label is "bitcoin cash", not `bitcoincash`).
+   */
+  walletAppUriTemplates?: Record<string, string>
   /** When true, {@link walletApps} are hidden until PaytoDialog supplies a BOLT11 (see `_openWith.bolt11Invoice`). */
   deferWalletAppsUntilBolt11?: boolean
 }

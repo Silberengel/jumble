@@ -340,7 +340,10 @@
       "logoAssetPath": "src/assets/payto_logos/bitcoin-cash-bch-logo.svg",
       "walletOpen": {
         "scheme": "bitcoincash",
-        "walletApps": ["cakewallet", "ledger"]
+        "walletApps": ["cakewallet", "ledger"],
+        "walletAppUriTemplates": {
+          "cakewallet": "bitcoincash:{authority}"
+        }
       },
       "authority": {
         "placeholder": "bitcoincash:… or q…",

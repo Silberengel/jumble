@@ -29,6 +29,7 @@ export {
 export {
   filterPaytoPaymentOpenHandlersForDevice,
   openPaytoPaymentTarget,
+  openPaytoResolvedUrl,
   resolvePaytoPaymentOpenHandlers,
   resolvePaytoProfileUrl,
   isPaytoHttpOpenUrl,

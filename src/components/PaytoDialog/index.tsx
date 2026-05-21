@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { ArrowRight, Copy, Zap } from 'lucide-react'
+import { ArrowRight, Copy, Wallet, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { closeModal } from '@getalby/bitcoin-connect-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -23,8 +23,12 @@ import { releaseBodyScrollLocks } from '@/lib/react-remove-scroll-body-cleanup'
 import {
   filterPaytoPaymentOpenHandlersForDevice,
   getPaytoTypeInfo,
+  isLikelyMobileWalletUserAgent,
+  isPaytoHttpOpenUrl,
   openPaytoPaymentTarget,
-  resolvePaytoPaymentOpenHandlers
+  openPaytoResolvedUrl,
+  resolvePaytoPaymentOpenHandlers,
+  resolvePaytoProfileUrl
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
@@ -99,6 +103,19 @@ export default function PaytoDialog({
     [openHandlers, selectedOpenHandlerId]
   )
 
+  const walletOpenUri = useMemo(
+    () => (isLightning ? null : resolvePaytoProfileUrl(type, authority)),
+    [isLightning, type, authority]
+  )
+
+  const showPrimaryOpen = isLikelyMobileWalletUserAgent() && !!walletOpenUri
+
+  const handleOpenWallet = () => {
+    if (!walletOpenUri) return
+    openPaytoResolvedUrl(walletOpenUri)
+    closeForWalletFlow()
+  }
+
   const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
     toast.success(copyLabel ? t('Copied {{label}} address', { label: copyLabel }) : t('Copied to clipboard'))
@@ -145,7 +162,9 @@ export default function PaytoDialog({
           <DialogDescription className="text-left text-sm leading-relaxed sm:text-base">
             {isLightning
               ? t('Create a BOLT11 invoice from this Lightning address, then pay in your connected wallet or another app.')
-              : t('Payment address – copy to use in your wallet or app')}
+              : showPrimaryOpen
+                ? t('Open in your wallet app or copy the address below.')
+                : t('Payment address – copy to use in your wallet or app')}
           </DialogDescription>
         </DialogHeader>
 
@@ -166,23 +185,39 @@ export default function PaytoDialog({
                 </p>
                 <p className="break-all font-mono text-base leading-relaxed select-text sm:text-lg">{authority}</p>
               </div>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button
-                  variant="default"
-                  className="h-11 w-full min-w-0 gap-2 text-base"
-                  onClick={() => handleCopy(authority, label)}
-                >
-                  <Copy className="size-5 shrink-0" />
-                  <span className="truncate">{t('Copy address')}</span>
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="h-11 w-full min-w-0 gap-2 text-base"
-                  onClick={() => handleCopy(paytoUri)}
-                >
-                  <Copy className="size-5 shrink-0" />
-                  <span className="truncate">{t('Copy payto URI')}</span>
-                </Button>
+              <div className="flex min-w-0 flex-col gap-2">
+                {showPrimaryOpen && walletOpenUri ? (
+                  <Button
+                    variant="default"
+                    className="h-11 w-full min-w-0 gap-2 text-base"
+                    onClick={handleOpenWallet}
+                  >
+                    <Wallet className="size-5 shrink-0" />
+                    <span className="truncate">
+                      {isPaytoHttpOpenUrl(walletOpenUri)
+                        ? t('Open on website')
+                        : t('Open in wallet')}
+                    </span>
+                  </Button>
+                ) : null}
+                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button
+                    variant={showPrimaryOpen ? 'outline' : 'default'}
+                    className="h-11 w-full min-w-0 gap-2 text-base"
+                    onClick={() => handleCopy(authority, label)}
+                  >
+                    <Copy className="size-5 shrink-0" />
+                    <span className="truncate">{t('Copy address')}</span>
+                  </Button>
+                  <Button
+                    variant={showPrimaryOpen ? 'outline' : 'secondary'}
+                    className="h-11 w-full min-w-0 gap-2 text-base"
+                    onClick={() => handleCopy(paytoUri)}
+                  >
+                    <Copy className="size-5 shrink-0" />
+                    <span className="truncate">{t('Copy payto URI')}</span>
+                  </Button>
+                </div>
               </div>
             </>
           )}

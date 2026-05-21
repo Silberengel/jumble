@@ -155,12 +155,13 @@ export function resolveWalletAppHref(
     const build = WALLET_APP_BUILDERS[app.builder]
     if (build) return build(coinScheme, auth)
   }
-  if (!app.uriTemplate) return null
+  const template = walletOpen?.walletAppUriTemplates?.[appId] ?? app.uriTemplate
+  if (!template) return null
   const payload =
     coinScheme === 'lightning' || coinScheme === 'bolt12'
       ? auth.replace(/^lightning:/i, '')
       : auth
-  return substituteAuthority(app.uriTemplate.replace(/\{coinScheme\}/g, coinScheme), payload)
+  return substituteAuthority(template.replace(/\{coinScheme\}/g, coinScheme), payload)
 }
 
 /** Primary open URL: native wallet URI, then profile web template. */
@@ -314,11 +315,16 @@ export function filterPaytoPaymentOpenHandlersForDevice(
   return handlers.filter((h) => !h.mobileOnly)
 }
 
-/** Open a resolved handler (new tab for https, assign for wallet schemes). */
-export function openPaytoPaymentTarget(handler: PaytoPaymentOpenHandler): void {
-  if (handler.isHttp) {
-    window.open(handler.href, '_blank', 'noopener,noreferrer')
+/** Open a resolved payto / wallet URL (https in a new tab, coin schemes via assign). */
+export function openPaytoResolvedUrl(url: string): void {
+  if (isPaytoHttpOpenUrl(url)) {
+    window.open(url, '_blank', 'noopener,noreferrer')
     return
   }
-  window.location.assign(handler.href)
+  window.location.assign(url)
+}
+
+/** Open a resolved handler (new tab for https, assign for wallet schemes). */
+export function openPaytoPaymentTarget(handler: PaytoPaymentOpenHandler): void {
+  openPaytoResolvedUrl(handler.href)
 }
