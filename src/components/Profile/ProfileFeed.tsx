@@ -15,7 +15,10 @@ import { useTranslation } from 'react-i18next'
 
 const profileFeedKinds = [...PROFILE_FEED_KINDS]
 
-const ProfileFeed = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ pubkey }, ref) => {
+const ProfileFeed = forwardRef<
+  { refresh: () => void },
+  { pubkey: string; /** Payment methods, badges, and other author replaceables. */ onRefreshExtras?: () => void }
+>(({ pubkey, onRefreshExtras }, ref) => {
   const { t } = useTranslation()
   const { isEventDeleted } = useDeletedEvent()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
@@ -55,7 +58,8 @@ const ProfileFeed = forwardRef<{ refresh: () => void }, { pubkey: string }>(({ p
     refreshAuthorRelayLayers()
     noteListRef.current?.refresh()
     void client.fetchDeletionEventsForPubkey(pubkey)
-  }, [refreshPins, refreshAuthorRelayLayers, pubkey])
+    onRefreshExtras?.()
+  }, [refreshPins, refreshAuthorRelayLayers, pubkey, onRefreshExtras])
 
   useImperativeHandle(ref, () => ({ refresh: refreshAll }), [refreshAll])
 

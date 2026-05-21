@@ -8,7 +8,8 @@ import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
 import { getReplaceableCoordinate } from '@/lib/event'
 import {
   fetchLegacyProfileBadgesListEvent,
-  fetchProfileBadgesListEvent
+  fetchProfileBadgesListEvent,
+  hydrateProfileBadgesFromLocalCache
 } from '@/lib/nip58-profile-badges-list'
 import {
   isNip58ProfileBadgesListEvent,
@@ -23,6 +24,7 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
+import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import indexedDb from '@/services/indexed-db.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds, type Filter } from 'nostr-tools'
@@ -77,6 +79,22 @@ async function fetchBadgeDefinitionOnRelays(
 const CACHE_DURATION = 5 * 60 * 1000
 const wallCacheByKey = new Map<string, { badges: ResolvedProfileBadge[]; comments: Event[]; lastUpdated: number }>()
 
+const wallRefreshListenersByPubkey = new Map<string, Set<() => void>>()
+
+function normalizeWallRefreshPubkey(pubkey: string): string | null {
+  const pk = (userIdToPubkey(pubkey) || pubkey).trim().toLowerCase()
+  return /^[0-9a-f]{64}$/.test(pk) ? pk : null
+}
+
+/** Invalidate in-memory wall cache and schedule a badge re-fetch (avoids sync window events during React updates). */
+export function requestProfileWallRefresh(pubkey: string): void {
+  const pk = normalizeWallRefreshPubkey(pubkey)
+  if (!pk) return
+  const listeners = wallRefreshListenersByPubkey.get(pk)
+  if (!listeners?.size) return
+  for (const listener of listeners) listener()
+}
+
 function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[]): string {
   const fav = [...favoriteRelays].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort().join('\u0001')
   const blk = [...blockedRelays].map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean).sort().join('\u0001')
@@ -97,6 +115,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     cached.badges.length > 0 &&
     Date.now() - cached.lastUpdated < CACHE_DURATION
 
+  const pkNormForHydrate = useMemo(() => userIdToPubkey(pubkey) || pubkey, [pubkey])
   const [badges, setBadges] = useState<ResolvedProfileBadge[]>(
     hasUsefulWallCache ? cached!.badges : []
   )
@@ -115,6 +134,75 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
   useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
   const runGenRef = useRef(0)
+  const manualRefreshBumpScheduledRef = useRef(false)
+  const relayListsKeyRef = useRef(relayListsKey)
+
+  const bumpWallRefetch = useCallback(() => {
+    wallCacheByKey.delete(cacheKey)
+    queueMicrotask(() => {
+      setIsLoading(true)
+      setRefreshToken((t) => t + 1)
+    })
+  }, [cacheKey])
+
+  const scheduleManualWallRefetch = useCallback(() => {
+    if (manualRefreshBumpScheduledRef.current) return
+    manualRefreshBumpScheduledRef.current = true
+    wallCacheByKey.delete(cacheKey)
+    queueMicrotask(() => {
+      manualRefreshBumpScheduledRef.current = false
+      setIsLoading(true)
+      setRefreshToken((t) => t + 1)
+    })
+  }, [cacheKey])
+
+  useEffect(() => {
+    if (!isValidPubkey(pkNormForHydrate)) return
+    let cancelled = false
+    void hydrateProfileBadgesFromLocalCache(pkNormForHydrate).then((local) => {
+      if (cancelled || local.length === 0) return
+      setBadges((prev) => (prev.length > 0 ? prev : local))
+      setIsLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [pkNormForHydrate])
+
+  useEffect(() => {
+    const pk = normalizeWallRefreshPubkey(pkNormForHydrate)
+    if (!pk) return
+
+    const listeners = wallRefreshListenersByPubkey.get(pk) ?? new Set()
+    listeners.add(scheduleManualWallRefetch)
+    wallRefreshListenersByPubkey.set(pk, listeners)
+
+    const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
+      const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
+      if (detailPk !== pk) return
+      bumpWallRefetch()
+    }
+    window.addEventListener(
+      ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+      onAuthorReplaceablesRefreshed
+    )
+    return () => {
+      listeners.delete(scheduleManualWallRefetch)
+      if (listeners.size === 0) {
+        wallRefreshListenersByPubkey.delete(pk)
+      }
+      window.removeEventListener(
+        ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
+        onAuthorReplaceablesRefreshed
+      )
+    }
+  }, [pkNormForHydrate, scheduleManualWallRefetch, bumpWallRefetch])
+
+  useEffect(() => {
+    if (relayListsKeyRef.current === relayListsKey) return
+    relayListsKeyRef.current = relayListsKey
+    bumpWallRefetch()
+  }, [relayListsKey, bumpWallRefetch])
 
   useEffect(() => {
     let cancelled = false
@@ -129,16 +217,17 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         Date.now() - mem.lastUpdated < CACHE_DURATION &&
         refreshToken === 0
       ) {
-        setBadges(mem.badges)
-        setComments(mem.comments)
-        if (runGen === runGenRef.current) setIsLoading(false)
+        if (runGen === runGenRef.current) {
+          setBadges((prev) => (prev === mem.badges ? prev : mem.badges))
+          setComments((prev) => (prev === mem.comments ? prev : mem.comments))
+          setIsLoading((prev) => (prev ? false : prev))
+        }
         return
       }
       if (mem?.badges.length === 0) {
         wallCacheByKey.delete(cacheKey)
       }
 
-      setIsLoading(true)
       try {
         const pkNorm = userIdToPubkey(pubkey) || pubkey
         if (!isValidPubkey(pkNorm)) {
@@ -164,10 +253,23 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           useGlobalRelayBootstrapRef.current
         )
 
-        // --- Badges (NIP-58): IndexedDB + profile read relays (favorites / fast-read), not inbox-only ---
-        let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls, { foreground: true })
+        const localBadges = await hydrateProfileBadgesFromLocalCache(pkNorm)
+        if (!cancelled && localBadges.length > 0) {
+          setBadges(localBadges)
+          setIsLoading(false)
+        } else if (!cancelled) {
+          setIsLoading(true)
+        }
+
+        // --- Badges (NIP-58): show cache first; relay refresh may upgrade list/definitions ---
+        let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls, {
+          foreground: true,
+          cacheFirst: false
+        })
         if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
-          const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls)
+          const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls, {
+            cacheFirst: false
+          })
           if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
         }
 
@@ -185,7 +287,13 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           resolveBadgeDisplayFromDefinition(entry, defByCoord.get(entry.definitionCoordinate))
         )
 
-        // --- Wall comments (kind 1111 on profile kind 0) ---
+        if (cancelled) return
+        if (resolvedBadges.length > 0 || localBadges.length === 0) {
+          setBadges(resolvedBadges)
+        }
+        setIsLoading(false)
+
+        // --- Wall comments (kind 1111): after badges so payment UI is not blocked ---
         let wallComments: Event[] = []
         const profileId = profileEventId?.trim().toLowerCase()
         if (profileId && /^[0-9a-f]{64}$/.test(profileId) && relayUrls.length > 0) {
@@ -223,7 +331,6 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         }
 
         if (cancelled) return
-        setBadges(resolvedBadges)
         setComments(wallComments)
         if (resolvedBadges.length > 0 || wallComments.length > 0) {
           wallCacheByKey.set(cacheKey, {
@@ -244,13 +351,11 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     return () => {
       cancelled = true
     }
-  }, [pubkey, profileEventId, cacheKey, refreshToken, relayListsKey])
+  }, [pubkey, profileEventId, cacheKey, refreshToken])
 
   const refresh = useCallback(() => {
-    wallCacheByKey.delete(cacheKey)
-    setIsLoading(true)
-    setRefreshToken((t) => t + 1)
-  }, [cacheKey])
+    scheduleManualWallRefetch()
+  }, [scheduleManualWallRefetch])
 
   return { badges, comments, isLoading, refresh }
 }

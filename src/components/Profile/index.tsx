@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
+import { requestProfileWallRefresh } from '@/hooks/useProfileWall'
 import { kinds, type NostrEvent } from 'nostr-tools'
 import { createReactionDraftEvent } from '@/lib/draft-event'
 import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
@@ -80,6 +81,7 @@ import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import { buildRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
+import { loadAuthorReplaceablesFromLocalCache } from '@/lib/profile-author-replaceables-cache'
 import ZapDialog from '@/components/ZapDialog'
 import {
   groupPaymentMethodsByDisplayType,
@@ -184,13 +186,32 @@ export default function Profile({
       setProfileEvent(undefined)
       return
     }
+    let cancelled = false
+    void loadAuthorReplaceablesFromLocalCache(profile.pubkey).then(({ paymentInfo: pi, profileEvent: pe }) => {
+      if (cancelled) return
+      setPaymentInfo(pi)
+      setProfileEvent(pe)
+    })
     void syncAuthorReplaceablesFromCache(profile.pubkey)
+    return () => {
+      cancelled = true
+    }
   }, [profile?.pubkey, syncAuthorReplaceablesFromCache])
 
   const refreshAuthorReplaceables = useCallback(async (pubkey: string) => {
-    await client.forceRefreshProfileAndPaymentInfoCache(pubkey)
-    await syncAuthorReplaceablesFromCache(pubkey)
+    requestProfileWallRefresh(pubkey)
+    try {
+      await client.forceRefreshProfileAndPaymentInfoCache(pubkey)
+      await syncAuthorReplaceablesFromCache(pubkey, { bustCache: true })
+    } catch (error) {
+      logger.error('Failed to refresh author replaceables', { error, pubkey })
+    }
   }, [syncAuthorReplaceablesFromCache])
+
+  const refreshAuthorExtrasForCurrentProfile = useCallback(() => {
+    const pk = profilePubkeyRef.current
+    if (pk) void refreshAuthorReplaceables(pk)
+  }, [refreshAuthorReplaceables])
 
   useEffect(() => {
     if (!profile?.pubkey || profile.batchPlaceholder) return
@@ -216,7 +237,7 @@ export default function Profile({
     const onAuthorReplaceablesRefreshed: EventListener = (domEvt) => {
       const detailPk = (domEvt as CustomEvent<{ pubkey?: string }>).detail?.pubkey?.toLowerCase()
       if (detailPk !== pk) return
-      void syncAuthorReplaceablesFromCache(profile.pubkey)
+      void syncAuthorReplaceablesFromCache(profile.pubkey, { bustCache: true })
     }
     window.addEventListener(
       ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT,
@@ -294,18 +315,13 @@ export default function Profile({
     if (typeof r === 'function') return
     const m = r as MutableRefObject<{ refresh: () => void } | null>
     m.current = {
-      refresh: () => {
-        internalFeedRef.current?.refresh()
-        const pk = profilePubkeyRef.current
-        if (pk) {
-          void refreshAuthorReplaceables(pk)
-        }
-      }
+      // ProfileFeed.refresh already runs onRefreshExtras (payment + badges).
+      refresh: () => internalFeedRef.current?.refresh()
     }
     return () => {
       m.current = null
     }
-  }, [refreshAuthorReplaceables])
+  }, [])
 
   if (!profile && isFetching) {
     return (
@@ -596,11 +612,15 @@ export default function Profile({
               <SmartRelays pubkey={pubkey} />
               {isSelf && <SmartMuteLink />}
             </div>
-            <ProfileBadges pubkey={pubkey} profileEventId={effectiveProfileEvent?.id} />
+            <ProfileBadges
+              pubkey={pubkey}
+              profileEventId={effectiveProfileEvent?.id}
+              onRefresh={refreshAuthorExtrasForCurrentProfile}
+            />
           </div>
         </div>
       </div>
-      <ProfileFeed ref={profileFeedRef} pubkey={pubkey} />
+      <ProfileFeed ref={profileFeedRef} pubkey={pubkey} onRefreshExtras={refreshAuthorExtrasForCurrentProfile} />
       <ProfileReportsDialog
         open={openReportsDialog}
         onOpenChange={setOpenReportsDialog}

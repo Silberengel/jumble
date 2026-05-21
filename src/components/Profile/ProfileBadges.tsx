@@ -5,13 +5,23 @@ import { useTranslation } from 'react-i18next'
 
 export default function ProfileBadges({
   pubkey,
-  profileEventId
+  profileEventId,
+  onRefresh
 }: {
   pubkey: string
   profileEventId?: string
+  /** Full author replaceables refresh (profile, payment, badges from relays). */
+  onRefresh?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const { badges, isLoading, refresh } = useProfileWall(pubkey, profileEventId)
+  const handleRefresh = () => {
+    if (onRefresh) {
+      void onRefresh()
+      return
+    }
+    refresh()
+  }
 
   if (isLoading && badges.length === 0) {
     return (
@@ -27,7 +37,7 @@ export default function ProfileBadges({
   return (
     <section className="mt-3 min-w-0" aria-label={t('Badges')}>
       <div className="mb-1 flex items-center justify-end gap-2">
-        <RefreshButton onClick={refresh} onLongPress={null} />
+        <RefreshButton onClick={handleRefresh} onLongPress={null} />
       </div>
       <div className="flex flex-wrap gap-2">
         {badges.map((badge) => (

@@ -6,8 +6,11 @@ import {
 import {
   isNip58ProfileBadgesListEvent,
   LEGACY_PROFILE_BADGES_D_TAG,
+  parseAddressableCoordinate,
   parseProfileBadgeEntries,
-  type ProfileBadgeEntry
+  resolveBadgeDisplayFromDefinition,
+  type ProfileBadgeEntry,
+  type ResolvedProfileBadge
 } from '@/lib/nip58-profile-badges'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import { fetchLatestReplaceableListEvent } from '@/lib/replaceable-list-latest'
@@ -41,19 +44,78 @@ export function profileBadgeListTagsAfterRemovingEntry(
   return profileBadgeEntriesToTags(next)
 }
 
-export async function fetchProfileBadgesListEvent(
-  pubkeyHex: string,
-  relayUrls: string[],
-  options?: { foreground?: boolean }
-): Promise<Event | undefined> {
+async function loadProfileBadgesListFromLocalCache(pubkeyHex: string): Promise<Event | undefined> {
   const pk = normalizeHexPubkey(pubkeyHex)
-  const foreground = options?.foreground === true
   let cached: Event | undefined
   try {
     const disk = await indexedDb.getReplaceableEvent(pk, ExtendedKind.PROFILE_BADGES_LIST)
     if (disk) cached = disk
   } catch {
     cached = undefined
+  }
+  const sessionHits = client.eventService.listSessionEventsAuthoredBy(pk, {
+    kinds: [ExtendedKind.PROFILE_BADGES_LIST],
+    limit: 8
+  })
+  for (const ev of sessionHits) {
+    if (!isNip58ProfileBadgesListEvent(ev)) continue
+    if (!cached || ev.created_at >= cached.created_at) cached = ev
+  }
+  if (cached && isNip58ProfileBadgesListEvent(cached)) return cached
+
+  try {
+    const legacy =
+      (await indexedDb.getReplaceableEvent(pk, ExtendedKind.PROFILE_BADGES, LEGACY_PROFILE_BADGES_D_TAG)) ??
+      undefined
+    if (legacy && isNip58ProfileBadgesListEvent(legacy)) return legacy
+  } catch {
+    /* best-effort */
+  }
+  return undefined
+}
+
+async function loadBadgeDefinitionFromLocalCache(coordinate: string): Promise<Event | undefined> {
+  const parsed = parseAddressableCoordinate(coordinate)
+  if (!parsed || parsed.kind !== ExtendedKind.BADGE_DEFINITION) return undefined
+  try {
+    const disk = await indexedDb.getReplaceableEvent(parsed.pubkey, parsed.kind, parsed.d)
+    if (disk) return disk
+  } catch {
+    /* best-effort */
+  }
+  return undefined
+}
+
+/** Resolve NIP-58 badges from IndexedDB/session only (no relay REQ). */
+export async function hydrateProfileBadgesFromLocalCache(
+  pubkeyHex: string
+): Promise<ResolvedProfileBadge[]> {
+  let listEvent = await loadProfileBadgesListFromLocalCache(pubkeyHex)
+  if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) return []
+  const entries = parseProfileBadgeEntries(listEvent)
+  const defCoords = [...new Set(entries.map((e) => e.definitionCoordinate))]
+  const defByCoord = new Map<string, Event | undefined>()
+  await Promise.all(
+    defCoords.map(async (coord) => {
+      defByCoord.set(coord, await loadBadgeDefinitionFromLocalCache(coord))
+    })
+  )
+  return entries.map((entry) =>
+    resolveBadgeDisplayFromDefinition(entry, defByCoord.get(entry.definitionCoordinate))
+  )
+}
+
+export async function fetchProfileBadgesListEvent(
+  pubkeyHex: string,
+  relayUrls: string[],
+  options?: { foreground?: boolean; /** When true and local cache exists, return cache immediately and skip relay wait. */ cacheFirst?: boolean }
+): Promise<Event | undefined> {
+  const pk = normalizeHexPubkey(pubkeyHex)
+  const foreground = options?.foreground === true
+  const cacheFirst = options?.cacheFirst !== false
+  let cached = await loadProfileBadgesListFromLocalCache(pk)
+  if (cacheFirst && cached) {
+    return cached
   }
   try {
     const fromService =
@@ -77,20 +139,37 @@ export async function fetchProfileBadgesListEvent(
 /** Deprecated NIP-58 profile badges (kind 30008, d=profile_badges). */
 export async function fetchLegacyProfileBadgesListEvent(
   pubkeyHex: string,
-  relayUrls: string[]
+  relayUrls: string[],
+  options?: { cacheFirst?: boolean }
 ): Promise<Event | undefined> {
   const pk = normalizeHexPubkey(pubkeyHex)
+  const cacheFirst = options?.cacheFirst !== false
   let cached: Event | undefined
-  try {
-    cached =
-      (await replaceableEventService.fetchReplaceableEvent(
+  if (cacheFirst) {
+    try {
+      const legacyDisk = await indexedDb.getReplaceableEvent(
         pk,
         ExtendedKind.PROFILE_BADGES,
         LEGACY_PROFILE_BADGES_D_TAG
-      )) ?? undefined
-  } catch {
-    cached = undefined
+      )
+      if (legacyDisk && isNip58ProfileBadgesListEvent(legacyDisk)) cached = legacyDisk
+    } catch {
+      cached = undefined
+    }
   }
+  if (!cached) {
+    try {
+      cached =
+        (await replaceableEventService.fetchReplaceableEvent(
+          pk,
+          ExtendedKind.PROFILE_BADGES,
+          LEGACY_PROFILE_BADGES_D_TAG
+        )) ?? undefined
+    } catch {
+      cached = undefined
+    }
+  }
+  if (cacheFirst && cached) return cached
 
   const allUrls = [...new Set(relayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]
   if (!allUrls.length) return cached
