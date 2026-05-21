@@ -1,6 +1,6 @@
 {
   "name": "imwald",
-  "version": "23.13.3",
+  "version": "23.13.4",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",
@@ -14,7 +14,6 @@
   "homepage": "https://github.com/Silberengel/jumble",
   "scripts": {
     "dev": "vite --host",
-    "orly:relay": "bash scripts/start-orly-cache-relay.sh",
     "dev:all": "bash scripts/dev-all-local.sh",
     "stack:remote": "bash scripts/stack-remote.sh",
     "dev:refresh": "rm -rf node_modules/.vite && vite --host",

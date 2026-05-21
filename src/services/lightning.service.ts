@@ -8,6 +8,10 @@ import {
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { TProfile } from '@/types'
 import { init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
+import {
+  isNwcWalletServiceInfoError,
+  sendWebLNPaymentWithRetry
+} from '@/lib/webln-payment'
 import { Invoice } from '@getalby/lightning-tools'
 import { bech32 } from '@scure/base'
 import { WebLNProvider } from '@webbtc/webln-types'
@@ -124,9 +128,15 @@ class LightningService {
     }
 
     if (this.provider) {
-      const { preimage } = await this.provider.sendPayment(pr)
-      closeOuterModel?.()
-      return { preimage, invoice: pr }
+      try {
+        const { preimage } = await sendWebLNPaymentWithRetry(this.provider, pr)
+        closeOuterModel?.()
+        return { preimage, invoice: pr }
+      } catch (error) {
+        if (!isNwcWalletServiceInfoError(error)) {
+          throw error
+        }
+      }
     }
 
     return new Promise((resolve) => {
@@ -191,9 +201,15 @@ class LightningService {
     closeOuterModel?: () => void
   ): Promise<{ preimage: string; invoice: string } | null> {
     if (this.provider) {
-      const { preimage } = await this.provider.sendPayment(invoice)
-      closeOuterModel?.()
-      return { preimage, invoice: invoice }
+      try {
+        const { preimage } = await sendWebLNPaymentWithRetry(this.provider, invoice)
+        closeOuterModel?.()
+        return { preimage, invoice }
+      } catch (error) {
+        if (!isNwcWalletServiceInfoError(error)) {
+          throw error
+        }
+      }
     }
 
     return new Promise((resolve) => {

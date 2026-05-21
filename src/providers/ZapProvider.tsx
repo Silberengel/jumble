@@ -1,9 +1,12 @@
 import { LIGHTNING_WALLET_PAY_ENABLED } from '@/constants'
+import { prepareConnectedWebLNProvider } from '@/lib/webln-payment'
 import lightningService from '@/services/lightning.service'
 import storage from '@/services/local-storage.service'
-import { onConnected, onDisconnected } from '@getalby/bitcoin-connect-react'
+import { disconnect, onConnected, onDisconnected } from '@getalby/bitcoin-connect-react'
 import { GetInfoResponse, WebLNProvider } from '@webbtc/webln-types'
 import { createContext, useContext, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 type TZapContext = {
   isWalletConnected: boolean
@@ -32,6 +35,7 @@ export const useZap = () => {
 }
 
 export function ZapProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   const [defaultZapSats, setDefaultZapSats] = useState<number>(storage.getDefaultZapSats())
   const [defaultZapComment, setDefaultZapComment] = useState<string>(storage.getDefaultZapComment())
   const [quickZap, setQuickZap] = useState<boolean>(storage.getQuickZap())
@@ -47,11 +51,22 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
     if (!LIGHTNING_WALLET_PAY_ENABLED) return
 
     const unSubOnConnected = onConnected((provider) => {
-      setIsWalletConnected(true)
+      setIsWalletConnected(false)
       setWalletInfo(null)
-      setProvider(provider)
-      lightningService.provider = provider
-      provider.getInfo().then(setWalletInfo)
+      void prepareConnectedWebLNProvider(provider)
+        .then((info) => {
+          setProvider(provider)
+          lightningService.provider = provider
+          setWalletInfo(info)
+          setIsWalletConnected(true)
+        })
+        .catch((error) => {
+          setProvider(null)
+          lightningService.provider = null
+          setIsWalletConnected(false)
+          disconnect()
+          toast.error(`${t('Lightning payment failed')}: ${(error as Error).message}`)
+        })
     })
     const unSubOnDisconnected = onDisconnected(() => {
       setIsWalletConnected(false)

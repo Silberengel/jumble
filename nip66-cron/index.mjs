@@ -41,7 +41,6 @@ const MONITOR_BOT_TAG = ['bot', 'true']
 // Deduplicated list of default relays to monitor (normalized URLs, first occurrence preserved)
 const DEFAULT_RELAYS_TO_MONITOR = [
   'wss://theforest.nostr1.com',
-  'wss://orly-relay.imwald.eu',
   'wss://nostr.land',
   'wss://thecitadel.nostr1.com',
   'wss://relay.nostr.watch',

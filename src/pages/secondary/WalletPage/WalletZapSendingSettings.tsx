@@ -18,6 +18,7 @@ import DefaultZapAmountInput from './DefaultZapAmountInput'
 import DefaultZapCommentInput from './DefaultZapCommentInput'
 import QuickZapSwitch from './QuickZapSwitch'
 import IncludePublicZapReceiptSwitch from './IncludePublicZapReceiptSwitch'
+import WalletConnectionDetails from './WalletConnectionDetails'
 
 export default function WalletZapSendingSettings() {
   const { t } = useTranslation()
@@ -32,6 +33,7 @@ export default function WalletZapSendingSettings() {
               {t('Connected to')} <strong>{walletInfo.node.alias}</strong>
             </div>
           )}
+          <WalletConnectionDetails />
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive">{t('Disconnect Wallet')}</Button>
