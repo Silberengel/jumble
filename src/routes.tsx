@@ -59,27 +59,44 @@ function SR(C: LazyExoticComponent<ComponentType<any>>): ReactElement {
   )
 }
 
+const notePageElement = SR(NotePageLazy)
+const noteListPageElement = SR(NoteListPageLazy)
+const rssArticlePageElement = SR(RssArticlePageLazy)
+
+/** Primary segments used in contextual `/…/notes/:id` and `/…/rss-item/:key` routes. */
+const CONTEXTUAL_ROUTE_PREFIXES =
+  'discussions|search|profile|home|feed|spells|explore|rss|calendar'
+
+const contextualNotePathRe = new RegExp(
+  `^/(${CONTEXTUAL_ROUTE_PREFIXES})/notes/([^/?#]+)$`
+)
+const standardNotePathRe = /^\/notes\/([^/?#]+)$/
+const contextualRssItemPathRe = new RegExp(
+  `^/(${CONTEXTUAL_ROUTE_PREFIXES})/rss-item/([^/?#]+)$`
+)
+const standardRssItemPathRe = /^\/rss-item\/([^/?#]+)$/
+
 const ROUTES = [
-  { path: '/notes', element: SR(NoteListPageLazy) },
-  { path: '/notes/:id', element: SR(NotePageLazy) },
-  { path: '/discussions/notes/:id', element: SR(NotePageLazy) },
-  { path: '/search/notes/:id', element: SR(NotePageLazy) },
-  { path: '/profile/notes/:id', element: SR(NotePageLazy) },
-  { path: '/explore/notes/:id', element: SR(NotePageLazy) },
-  { path: '/home/notes/:id', element: SR(NotePageLazy) },
-  { path: '/feed/notes/:id', element: SR(NotePageLazy) },
-  { path: '/spells/notes/:id', element: SR(NotePageLazy) },
-  { path: '/rss/notes/:id', element: SR(NotePageLazy) },
-  { path: '/calendar/notes/:id', element: SR(NotePageLazy) },
+  { path: '/notes', element: noteListPageElement },
+  { path: '/notes/:id', element: notePageElement },
+  { path: '/discussions/notes/:id', element: notePageElement },
+  { path: '/search/notes/:id', element: notePageElement },
+  { path: '/profile/notes/:id', element: notePageElement },
+  { path: '/explore/notes/:id', element: notePageElement },
+  { path: '/home/notes/:id', element: notePageElement },
+  { path: '/feed/notes/:id', element: notePageElement },
+  { path: '/spells/notes/:id', element: notePageElement },
+  { path: '/rss/notes/:id', element: notePageElement },
+  { path: '/calendar/notes/:id', element: notePageElement },
   { path: '/calendar/day/:ymd', element: SR(CalendarDayEventsPageLazy) },
-  { path: '/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/rss/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/feed/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/search/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/profile/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/spells/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/explore/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
-  { path: '/home/rss-item/:articleKey', element: SR(RssArticlePageLazy) },
+  { path: '/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/rss/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/feed/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/search/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/profile/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/spells/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/explore/rss-item/:articleKey', element: rssArticlePageElement },
+  { path: '/home/rss-item/:articleKey', element: rssArticlePageElement },
   { path: '/users', element: SR(ProfileListPageLazy) },
   { path: '/users/:id/following', element: SR(FollowingListPageLazy) },
   { path: '/users/:id/relays', element: SR(OthersRelaySettingsPageLazy) },
@@ -116,3 +133,42 @@ export const routes = ROUTES.map(({ path, element }) => ({
   element: isValidElement(element) ? element : null,
   matcher: match(path)
 }))
+
+export type TMatchedAppRoute = {
+  element: ReactElement | null
+  params: Record<string, string>
+}
+
+/**
+ * Resolve secondary-panel routes without scanning the full table for common deep links
+ * (contextual note / RSS article URLs are tried first; everything else falls back to matchers).
+ */
+export function matchAppRoute(pathname: string): TMatchedAppRoute | null {
+  const path = pathname.split('?')[0].split('#')[0]
+
+  const ctxNote = contextualNotePathRe.exec(path)
+  if (ctxNote) {
+    return { element: notePageElement, params: { id: ctxNote[2]! } }
+  }
+  const stdNote = standardNotePathRe.exec(path)
+  if (stdNote) {
+    return { element: notePageElement, params: { id: stdNote[1]! } }
+  }
+
+  const ctxRss = contextualRssItemPathRe.exec(path)
+  if (ctxRss) {
+    return { element: rssArticlePageElement, params: { articleKey: ctxRss[2]! } }
+  }
+  const stdRss = standardRssItemPathRe.exec(path)
+  if (stdRss) {
+    return { element: rssArticlePageElement, params: { articleKey: stdRss[1]! } }
+  }
+
+  for (const { matcher, element } of routes) {
+    const m = matcher(path)
+    if (m) {
+      return { element, params: (m as { params: Record<string, string> }).params }
+    }
+  }
+  return null
+}

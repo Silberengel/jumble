@@ -45,6 +45,10 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
   const [carouselHiddenAddresses, setCarouselHiddenAddresses] = useState<ReadonlySet<string>>(() => new Set())
   const rawItemsRef = useRef<TLiveActivityItem[]>([])
   const hiddenCarouselRef = useRef<Set<string>>(new Set())
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const lastRefreshFinishedAtRef = useRef(0)
+  /** Collapse boot + session-prewarm + StrictMode into one network pass. */
+  const LIVE_ACTIVITIES_MIN_REFRESH_GAP_MS = 8_000
 
   const relayRead = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
   const relayWrite = relayList?.write ?? []
@@ -55,47 +59,70 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       setItems([])
       return
     }
-    const loggedIn = Boolean(pubkey)
-    const urls = buildLiveActivitiesRelayUrls({
-      loggedIn,
-      favoriteRelays,
-      blockedRelays,
-      relayListRead: relayRead,
-      relayListWrite: relayWrite,
-      includeGlobalFastRead: useGlobalBootstrap
-    })
-    if (urls.length === 0) {
-      rawItemsRef.current = []
-      setItems([])
+    const now = Date.now()
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current
+    }
+    if (now - lastRefreshFinishedAtRef.current < LIVE_ACTIVITIES_MIN_REFRESH_GAP_MS) {
       return
     }
-    setLoading(true)
-    try {
-      const events = await client.fetchEvents(
-        urls,
-        { kinds: [...LIVE_ACTIVITY_KINDS], limit: 500 },
-        { eoseTimeout: 6000, globalTimeout: 14_000 }
-      )
-      const parentByAddress = await resolveParentSpacesForLiveActivities(events, urls, (u, f, o) =>
-        client.fetchEvents(u, f, o)
-      )
-      const merged = mergeLiveActivityEvents(events, followings, parentByAddress)
-      const reachable = await filterLiveActivityItemsByReachableMedia(merged)
-      rawItemsRef.current = reachable
-      setItems(reachable.filter((i) => !hiddenCarouselRef.current.has(i.address)))
-      logger.debug('[LiveActivities] poll done', {
-        relayCount: urls.length,
-        raw: events.length,
-        merged: merged.length,
-        afterStreamProbe: reachable.length
+
+    const run = async () => {
+      const loggedIn = Boolean(pubkey)
+      const urls = buildLiveActivitiesRelayUrls({
+        loggedIn,
+        favoriteRelays,
+        blockedRelays,
+        relayListRead: relayRead,
+        relayListWrite: relayWrite,
+        includeGlobalFastRead: useGlobalBootstrap
       })
-    } catch (e) {
-      logger.warn('[LiveActivities] poll failed', { err: e })
-      rawItemsRef.current = []
-      setItems([])
-    } finally {
-      setLoading(false)
+      if (urls.length === 0) {
+        rawItemsRef.current = []
+        setItems([])
+        return
+      }
+      setLoading(true)
+      try {
+        const events = await client.fetchEvents(
+          urls,
+          { kinds: [...LIVE_ACTIVITY_KINDS], limit: 500 },
+          { eoseTimeout: 6000, globalTimeout: 14_000 }
+        )
+        const parentByAddress = await resolveParentSpacesForLiveActivities(events, urls, (u, f, o) =>
+          client.fetchEvents(u, f, o)
+        )
+        const merged = mergeLiveActivityEvents(events, followings, parentByAddress)
+        const visible = merged.filter((i) => !hiddenCarouselRef.current.has(i.address))
+        rawItemsRef.current = merged
+        setItems(visible)
+        lastRefreshFinishedAtRef.current = Date.now()
+        logger.debug('[LiveActivities] poll done', {
+          relayCount: urls.length,
+          raw: events.length,
+          merged: merged.length,
+          afterStreamProbe: visible.length
+        })
+        void filterLiveActivityItemsByReachableMedia(merged, { timeoutMs: 2500 })
+          .then((reachable) => {
+            rawItemsRef.current = reachable
+            setItems(reachable.filter((i) => !hiddenCarouselRef.current.has(i.address)))
+          })
+          .catch(() => {
+            /* keep visible list from merged */
+          })
+      } catch (e) {
+        logger.warn('[LiveActivities] poll failed', { err: e })
+        rawItemsRef.current = []
+        setItems([])
+      } finally {
+        setLoading(false)
+        refreshInFlightRef.current = null
+      }
     }
+
+    refreshInFlightRef.current = run()
+    return refreshInFlightRef.current
   }, [
     showLiveActivitiesBanner,
     pubkey,
@@ -150,7 +177,21 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
     }
     if (!isInitialized) return
     if (pubkey && isAccountSessionHydrating) return
-    void refresh()
+
+    const schedule = () => {
+      void refreshRef.current()
+    }
+    const idleId =
+      typeof requestIdleCallback === 'function'
+        ? requestIdleCallback(schedule, { timeout: 6_000 })
+        : window.setTimeout(schedule, 2_000)
+    return () => {
+      if (typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleId as number)
+      } else {
+        window.clearTimeout(idleId as number)
+      }
+    }
   }, [
     showLiveActivitiesBanner,
     isInitialized,

@@ -823,8 +823,9 @@ async function isInlinePlaybackUrlReachable(url: string, timeoutMs: number): Pro
  */
 export async function filterLiveActivityItemsByReachableMedia(
   items: TLiveActivityItem[],
-  timeoutMs = LIVE_ACTIVITIES_STREAM_PROBE_MS
+  options?: { timeoutMs?: number }
 ): Promise<TLiveActivityItem[]> {
+  const timeoutMs = options?.timeoutMs ?? LIVE_ACTIVITIES_STREAM_PROBE_MS
   const checked = await Promise.all(
     items.map(async (item) => {
       if (item.kind !== 30311) return item

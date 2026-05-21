@@ -217,12 +217,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
 
-  useEffect(() => {
-    const pk = finalEvent?.pubkey?.trim().toLowerCase()
-    if (!pk || !/^[0-9a-f]{64}$/.test(pk)) return
-    void client.fetchProfilesForPubkeys([pk])
-  }, [finalEvent?.id, finalEvent?.pubkey])
-
   /** Resolve nostr embeds with the open note (parent relay hints), before embed cards mount. */
   useLayoutEffect(() => {
     if (!finalEvent) return

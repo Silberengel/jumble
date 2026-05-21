@@ -56,7 +56,7 @@ import {
 import { normalizeUrl } from './lib/url'
 import modalManager from './services/modal-manager.service'
 import { decodeRssArticlePathSegment, encodeRssArticlePathSegment } from '@/lib/rss-article'
-import { routes } from './routes'
+import { matchAppRoute } from './routes'
 import { useScreenSize, useScreenSizeOptional } from './providers/ScreenSizeProvider'
 import { NoteDrawerContext, useNoteDrawer, useNoteDrawerOptional } from '@/contexts/note-drawer-context'
 import {
@@ -66,6 +66,9 @@ import {
   type TPrimaryOverlayViewType
 } from '@/contexts/primary-note-view-context'
 import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional } from '@/contexts/secondary-page-context'
+
+/** Survives React StrictMode remount so initial URL → secondary stack is not built twice. */
+let historyLocationSeedApplied = false
 
 /** Lazy-loaded so PageManager does not synchronously import SpellsPage (avoids HMR cycle: SpellsPage → PrimaryPageLayout → PageManager → SpellsPage). */
 const SpellsPageLazy = lazy(() => import('./pages/primary/SpellsPage'))
@@ -1235,8 +1238,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     // Don't clear noteId here — scheduled in the drawer-close effect after the sheet animation.
   }, [drawerOpen])
   const ignorePopStateRef = useRef(false)
-  /** Avoid duplicating history entries when drawer/mode deps re-run the PageManager effect. */
-  const historySeedDoneRef = useRef(false)
   /** When set before closing the note drawer, replaceState uses this URL instead of buildPrimaryPageUrl (popstate edge cases). */
   const pendingDrawerCloseUrlRef = useRef<string | null>(null)
 
@@ -1285,8 +1286,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }, [primaryNoteView, drawerOpen])
 
   useEffect(() => {
-    if (!historySeedDoneRef.current) {
-      historySeedDoneRef.current = true
+    if (historyLocationSeedApplied) return
+    historyLocationSeedApplied = true
     if (['/npub1', '/nprofile1'].some((prefix) => window.location.pathname.startsWith(prefix))) {
       window.history.replaceState(
         null,
@@ -1563,7 +1564,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         // If pathname doesn't match a primary page, it might be a secondary route
         // which is handled elsewhere
       }
-    }
     }
 
     const onPopState = (e: PopStateEvent) => {
@@ -2579,49 +2579,34 @@ function syncSecondaryStackWhenPopStateStateIsNull(pre: TStackItem[], locUrl: st
 
 function findAndCreateComponent(url: string, index: number) {
   const path = url.split('?')[0].split('#')[0]
-  logger.component('PageManager', 'findAndCreateComponent called', { url, path, routes: routes.length })
-  
-  for (const { matcher, element } of routes) {
-    const match = matcher(path)
-    logger.component('PageManager', 'Trying route matcher', { path, matchResult: !!match, matchParams: match ? (match as any).params : null })
-    if (!match) continue
-
-    if (!element) {
-      logger.component('PageManager', 'No element for this route', { path })
-      return {}
-    }
-    const ref = createRef<TPageRef>()
-    
-    // Decode URL parameters for relay pages
-    const params = { ...(match as any).params }
-    if (params.url && typeof params.url === 'string') {
-      params.url = decodeURIComponent(params.url)
-      logger.component('PageManager', 'Decoded URL parameter', { url: params.url })
-    }
-    
-    const noteRouteId = typeof params.id === 'string' ? params.id : undefined
-    const initialEvent = noteRouteId ? navigationEventStore.peekEvent(noteRouteId) : undefined
-    logger.component('PageManager', 'Creating component with params', {
-      params,
-      index,
-      hasInitialEvent: !!initialEvent
-    })
-    try {
-      const component = cloneSecondaryRouteElement(element, {
-        ...params,
-        index,
-        ref,
-        ...(initialEvent ? { initialEvent } : {})
-      })
-      logger.component('PageManager', 'Component created successfully', { hasComponent: !!component })
-      return { component, ref }
-    } catch (error) {
-      logger.error('PageManager', 'Error creating component', { error, params })
-      return {}
-    }
+  const matched = matchAppRoute(path)
+  if (!matched?.element) {
+    logger.component('PageManager', 'No matching route found', { path, url })
+    return {}
   }
-  logger.component('PageManager', 'No matching route found', { path, url })
-  return {}
+
+  const ref = createRef<TPageRef>()
+
+  // Decode URL parameters for relay pages
+  const params = { ...matched.params }
+  if (params.url && typeof params.url === 'string') {
+    params.url = decodeURIComponent(params.url)
+  }
+
+  const noteRouteId = typeof params.id === 'string' ? params.id : undefined
+  const initialEvent = noteRouteId ? navigationEventStore.peekEvent(noteRouteId) : undefined
+  try {
+    const component = cloneSecondaryRouteElement(matched.element, {
+      ...params,
+      index,
+      ref,
+      ...(initialEvent ? { initialEvent } : {})
+    })
+    return { component, ref }
+  } catch (error) {
+    logger.error('PageManager', 'Error creating component', { error, params })
+    return {}
+  }
 }
 
 function pushNewPageToStack(

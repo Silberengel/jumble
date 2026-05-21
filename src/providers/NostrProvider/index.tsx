@@ -72,6 +72,9 @@ import { NsecSigner } from './nsec.signer'
 export { useNostr } from '@/providers/nostr-context'
 export type { TNostrContext } from '@/providers/nostr-context'
 
+/** One session-restore pass per full page load (React StrictMode remount must not re-login). */
+let nostrSessionRestoreStarted = false
+
 /** Kind 10012 `relay` tags for publish / target-relay prioritization. */
 function favoriteRelayUrlsForPublish(
   favoriteRelaysEvent: Event | null,
@@ -176,6 +179,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }, [account])
 
   useEffect(() => {
+    if (nostrSessionRestoreStarted) return
+    nostrSessionRestoreStarted = true
     const init = async () => {
       logger.debug('[NostrProvider] Restoring session (login / first account)…')
       if (hasNostrLoginHash()) {
