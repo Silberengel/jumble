@@ -23,6 +23,8 @@ export type PaytoWalletOpenRow = {
   requireAtSign?: boolean
   requirePrefix?: string
   walletApps?: string[]
+  /** When true, {@link walletApps} are hidden until PaytoDialog has a BOLT11 (see catalog `_openWith.bolt11Invoice`). */
+  deferWalletAppsUntilBolt11?: boolean
 }
 
 export type PaytoTypeRecord = {
@@ -32,6 +34,8 @@ export type PaytoTypeRecord = {
   /** Repo-relative path, e.g. `src/assets/payto_logos/ethereum-eth-logo.svg`. */
   logoAssetPath?: string
   profileUrlTemplate?: string
+  /** PaytoDialog “Open with” mode; `paypal` uses the PayPal URL resolver only. */
+  paymentOpen?: 'paypal'
   /** Native wallet URI / app deep link (see {@link getPaytoPrimaryOpenUrl}). */
   walletOpen?: PaytoWalletOpenRow
   authority?: PaytoAuthorityHelp

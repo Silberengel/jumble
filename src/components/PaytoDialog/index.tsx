@@ -7,7 +7,15 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Copy, ExternalLink, Wallet, Zap } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import type { PaytoPaymentOpenHandler } from '@/lib/payto'
+import { ArrowRight, Copy, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { closeModal } from '@getalby/bitcoin-connect-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -16,7 +24,6 @@ import { releaseBodyScrollLocks } from '@/lib/react-remove-scroll-body-cleanup'
 import {
   filterPaytoPaymentOpenHandlersForDevice,
   getPaytoPaymentOpenHandlers,
-  getPhoenixPaymentOpenHandler,
   getPaytoTypeInfo
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
@@ -50,10 +57,12 @@ export default function PaytoDialog({
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
   const [bolt11Invoice, setBolt11Invoice] = useState<string | null>(null)
+  const [selectedOpenHandlerId, setSelectedOpenHandlerId] = useState('')
 
   useEffect(() => {
     if (!open) {
       setBolt11Invoice(null)
+      setSelectedOpenHandlerId('')
       closeModal()
       releaseBodyScrollLocks()
     }
@@ -64,14 +73,42 @@ export default function PaytoDialog({
     onOpenChange(false)
   }, [onOpenChange])
 
-  const openHandlers = useMemo(() => {
-    const handlers = getPaytoPaymentOpenHandlers(type, authority)
-    if (isLightning && bolt11Invoice) {
-      const phoenix = getPhoenixPaymentOpenHandler('lightning', bolt11Invoice)
-      if (phoenix) handlers.push(phoenix)
+  const openHandlers = useMemo(
+    () =>
+      filterPaytoPaymentOpenHandlersForDevice(
+        getPaytoPaymentOpenHandlers(type, authority, { bolt11Invoice })
+      ),
+    [type, authority, bolt11Invoice]
+  )
+
+  useEffect(() => {
+    if (openHandlers.length === 0) {
+      setSelectedOpenHandlerId('')
+      return
     }
-    return filterPaytoPaymentOpenHandlersForDevice(handlers)
-  }, [type, authority, isLightning, bolt11Invoice])
+    setSelectedOpenHandlerId((prev) =>
+      openHandlers.some((h) => h.id === prev) ? prev : openHandlers[0].id
+    )
+  }, [openHandlers])
+
+  const selectedOpenHandler = useMemo(
+    () =>
+      openHandlers.find((h) => h.id === selectedOpenHandlerId) ??
+      openHandlers[0] ??
+      null,
+    [openHandlers, selectedOpenHandlerId]
+  )
+
+  const openSelectedHandler = useCallback(
+    (handler: PaytoPaymentOpenHandler) => {
+      if (handler.isHttp) {
+        window.open(handler.href, '_blank', 'noopener,noreferrer')
+        return
+      }
+      window.location.assign(handler.href)
+    },
+    []
+  )
 
   const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
@@ -166,31 +203,49 @@ export default function PaytoDialog({
               <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground sm:text-base">
                 {t('Open with')}
               </p>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                {openHandlers.map((handler) => (
-                  <Button
-                    key={handler.id}
-                    variant="outline"
-                    className="h-11 w-full min-w-0 justify-start gap-2 px-3 text-base"
-                    asChild
+              <div className="flex min-w-0 items-stretch gap-2">
+                <Select
+                  value={selectedOpenHandlerId}
+                  onValueChange={setSelectedOpenHandlerId}
+                >
+                  <SelectTrigger
+                    className="h-11 min-w-0 flex-1 text-base"
+                    aria-label={t('Open with')}
                   >
-                    <a
-                      href={handler.href}
-                      className="flex min-w-0 items-center"
-                      {...(handler.isHttp
-                        ? { target: '_blank', rel: 'noopener noreferrer' }
-                        : {})}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {handler.isHttp ? (
-                        <ExternalLink className="size-5 shrink-0" />
-                      ) : (
-                        <Wallet className="size-5 shrink-0" />
-                      )}
-                      <span className="truncate">{t('Open in {{name}}', { name: handler.openTargetName })}</span>
-                    </a>
-                  </Button>
-                ))}
+                    <SelectValue
+                      placeholder={t('Choose app', { defaultValue: 'Choose app' })}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {openHandlers.map((handler) => (
+                      <SelectItem key={handler.id} value={handler.id} className="text-base">
+                        {handler.openTargetName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 shrink-0"
+                  disabled={!selectedOpenHandler}
+                  title={
+                    selectedOpenHandler
+                      ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
+                      : undefined
+                  }
+                  aria-label={
+                    selectedOpenHandler
+                      ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
+                      : t('Open', { defaultValue: 'Open' })
+                  }
+                  onClick={() => {
+                    if (selectedOpenHandler) openSelectedHandler(selectedOpenHandler)
+                  }}
+                >
+                  <ArrowRight className="size-5" aria-hidden />
+                </Button>
               </div>
             </div>
           )}

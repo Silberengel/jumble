@@ -6,10 +6,21 @@ import paytoTypesCatalog from '@/data/payto-types.json'
 import type { PaytoWalletOpenRow } from '@/lib/payto-registry'
 import { resolvePaypalPaymentUrl } from '@/lib/payto-paypal-url'
 
+type PaytoBolt11InvoiceOpenConfig = {
+  paytoType?: string
+  coinScheme?: string
+  walletApps: string[]
+}
+
 type PaytoTypeRecordWallet = {
   label?: string
   profileUrlTemplate?: string
+  paymentOpen?: 'paypal'
   walletOpen?: PaytoWalletOpenRow
+}
+
+type PaytoWalletCatalogOpenWith = {
+  bolt11Invoice?: PaytoBolt11InvoiceOpenConfig
 }
 
 /** Labeled “open in …” action shown inside {@link PaytoDialog}. */
@@ -38,6 +49,7 @@ type WalletAppRowJson = {
 }
 
 type PaytoWalletCatalogJson = {
+  _openWith?: PaytoWalletCatalogOpenWith
   aliases?: Record<string, string>
   types: Record<string, PaytoTypeRecordWallet>
   walletApps?: Record<string, WalletAppRowJson>
@@ -110,6 +122,62 @@ export function buildPhoenixWalletHref(coinScheme: string, authority: string): s
   return `phoenix:${scheme}:${payload}`
 }
 
+/**
+ * Zeus {@link https://github.com/ZeusLN/zeus/blob/master/utils/AddressUtils.ts processBIP21Uri}:
+ * strips `zeusln:` then parses `lightning:` / bare `lno1` / `lnbc` payloads via handleAnything.
+ */
+export function buildZeusWalletHref(coinScheme: string, authority: string): string | null {
+  const auth = trimAuthority(authority)
+  if (!auth) return null
+  const scheme = coinScheme.toLowerCase().trim()
+  if (!scheme) return null
+  const payload = auth.replace(/^lightning:/i, '')
+  if (scheme === 'bolt12' || /^lno1/i.test(payload)) {
+    return `zeusln:${payload}`
+  }
+  return `zeusln:lightning:${payload}`
+}
+
+/**
+ * BlueWallet wiki: wrap BOLT11 / lightning targets as `bluewallet:lightning:…`.
+ * @see https://github.com/BlueWallet/BlueWallet/wiki/Deeplinking
+ */
+export function buildBlueWalletWalletHref(authority: string): string | null {
+  const auth = trimAuthority(authority)
+  if (!auth) return null
+  const payload = auth.replace(/^lightning:/i, '')
+  if (!payload) return null
+  return `bluewallet:lightning:${payload}`
+}
+
+const WALLET_APP_BUILDERS: Record<
+  string,
+  (coinScheme: string, authority: string) => string | null
+> = {
+  phoenix: buildPhoenixWalletHref,
+  zeus: buildZeusWalletHref,
+  bluewallet: (_coinScheme, authority) => buildBlueWalletWalletHref(authority)
+}
+
+function walletAppMeta(appId: string): WalletAppRowJson | undefined {
+  return walletCatalog.walletApps?.[appId]
+}
+
+function paymentOpenHandlerFromHref(
+  appId: string,
+  coinScheme: string,
+  href: string
+): PaytoPaymentOpenHandler {
+  const app = walletAppMeta(appId)
+  return {
+    id: `${appId}-${coinScheme}`,
+    openTargetName: app?.label ?? appId,
+    href,
+    isHttp: false,
+    mobileOnly: app?.mobileOnly !== false
+  }
+}
+
 function resolveWalletAppUri(
   appId: string,
   paytoType: string,
@@ -121,8 +189,9 @@ function resolveWalletAppUri(
   const auth = trimAuthority(authority)
   if (!auth) return null
   const coinScheme = (row?.scheme ?? paytoType).toLowerCase()
-  if (appId === 'phoenix') {
-    return buildPhoenixWalletHref(coinScheme, auth)
+  const customBuild = WALLET_APP_BUILDERS[appId]
+  if (customBuild) {
+    return customBuild(coinScheme, auth)
   }
   const href = substituteAuthority(
     app.uriTemplate.replace(/\{coinScheme\}/g, coinScheme),
@@ -138,16 +207,92 @@ export function getPhoenixPaymentOpenHandler(
 ): PaytoPaymentOpenHandler | null {
   const href = buildPhoenixWalletHref(coinScheme, authority)
   if (!href) return null
+  return paymentOpenHandlerFromHref('phoenix', coinScheme, href)
+}
+
+export function getZeusPaymentOpenHandler(
+  coinScheme: string,
+  authority: string
+): PaytoPaymentOpenHandler | null {
+  const href = buildZeusWalletHref(coinScheme, authority)
+  if (!href) return null
+  return paymentOpenHandlerFromHref('zeus', coinScheme, href)
+}
+
+/** BlueWallet BOLT11 handler (invoice must already be resolved). */
+export function getBlueWalletPaymentOpenHandler(
+  coinScheme: string,
+  authority: string
+): PaytoPaymentOpenHandler | null {
+  const href = buildBlueWalletWalletHref(authority)
+  if (!href) return null
+  return paymentOpenHandlerFromHref('bluewallet', coinScheme, href)
+}
+
+function getBolt11InvoiceOpenConfig(): PaytoBolt11InvoiceOpenConfig | undefined {
+  const cfg = walletCatalog._openWith?.bolt11Invoice
+  if (!cfg?.walletApps?.length) return undefined
+  return cfg
+}
+
+/** Build “Open with” handlers from catalog `_openWith.bolt11Invoice.walletApps`. */
+function getBolt11InvoiceOpenHandlers(invoice: string): PaytoPaymentOpenHandler[] {
+  const cfg = getBolt11InvoiceOpenConfig()
+  if (!cfg) return []
+
+  const paytoType = getCanonicalPaytoType(cfg.paytoType ?? 'lightning')
+  const row = getPaytoTypeRecord(paytoType)?.walletOpen
+  const auth = trimAuthority(invoice)
+  if (!auth) return []
+
+  const handlers: PaytoPaymentOpenHandler[] = []
+  const seen = new Set<string>()
+  for (const appId of cfg.walletApps) {
+    const app = walletCatalog.walletApps?.[appId]
+    const href = resolveWalletAppUri(appId, paytoType, auth, row)
+    if (!app || !href || seen.has(href)) continue
+    seen.add(href)
+    handlers.push({
+      id: `${paytoType}-${appId}-bolt11`,
+      openTargetName: app.label,
+      href,
+      isHttp: false,
+      mobileOnly: app.mobileOnly !== false
+    })
+  }
+  return handlers
+}
+
+/** Handlers for a resolved BOLT11 shown after LNURL invoice creation (from {@link payto-types.json}). */
+export function getLightningInvoiceWalletPaymentHandlers(
+  authority: string
+): PaytoPaymentOpenHandler[] {
+  return getBolt11InvoiceOpenHandlers(authority)
+}
+
+export type PaytoPaymentOpenContext = {
+  /** LUD-16 lightning address resolved to BOLT11 in {@link PaytoDialog}. */
+  bolt11Invoice?: string | null
+}
+
+function walletActionToOpenHandler(action: PaytoWalletOpenAction): PaytoPaymentOpenHandler {
   return {
-    id: `phoenix-${coinScheme}`,
-    openTargetName: walletCatalog.walletApps?.phoenix?.label ?? 'Phoenix',
-    href,
-    isHttp: false,
-    mobileOnly: walletCatalog.walletApps?.phoenix?.mobileOnly !== false
+    id: action.id,
+    openTargetName: action.label,
+    href: action.href,
+    isHttp: isPaytoHttpOpenUrl(action.href),
+    mobileOnly: action.mobileOnly
   }
 }
 
-const PAYTO_TYPES_PHOENIX_REQUIRES_BOLT11 = new Set(['lightning'])
+function dedupePaymentOpenHandlers(handlers: PaytoPaymentOpenHandler[]): PaytoPaymentOpenHandler[] {
+  const seen = new Set<string>()
+  return handlers.filter((h) => {
+    if (seen.has(h.href)) return false
+    seen.add(h.href)
+    return true
+  })
+}
 
 /**
  * Primary browser/OS URL for this payto target (wallet URI or https).
@@ -213,56 +358,57 @@ export function filterWalletOpenActionsForDevice(
 }
 
 /**
- * Named app/site open targets for PaytoDialog (https + walletApps only).
- * Native coin schemes (monero:, bitcoin:, …) are omitted — users copy the payto URI instead.
+ * “Open with” targets for {@link PaytoDialog} — scoped to the active payto type only.
+ * Native coin schemes (monero:, bitcoin:, …) are omitted; users copy the payto URI instead.
  */
-export function getPaytoPaymentOpenHandlers(type: string, authority: string): PaytoPaymentOpenHandler[] {
+export function getPaytoPaymentOpenHandlers(
+  type: string,
+  authority: string,
+  context?: PaytoPaymentOpenContext
+): PaytoPaymentOpenHandler[] {
   const canonical = getCanonicalPaytoType(type)
   const record = getPaytoTypeRecord(canonical)
   const auth = trimAuthority(authority)
   if (!auth || !record) return []
 
   const handlers: PaytoPaymentOpenHandler[] = []
-  const seen = new Set<string>()
 
-  const add = (
-    id: string,
-    openTargetName: string,
-    href: string | null | undefined,
-    mobileOnly?: boolean
-  ) => {
-    if (!href || seen.has(href)) return
-    seen.add(href)
-    handlers.push({
-      id,
-      openTargetName,
-      href,
-      isHttp: isPaytoHttpOpenUrl(href),
-      mobileOnly
-    })
+  if (record.paymentOpen === 'paypal') {
+    const href = resolvePaypalPaymentUrl(auth)
+    if (href) {
+      handlers.push({
+        id: 'paypal',
+        openTargetName: record.label ?? 'PayPal',
+        href,
+        isHttp: true,
+        mobileOnly: false
+      })
+    }
+    return dedupePaymentOpenHandlers(handlers)
   }
 
-  if (canonical === 'paypal') {
-    add('paypal', 'PayPal', resolvePaypalPaymentUrl(auth))
-    return handlers
+  const walletRow = record.walletOpen
+  if (walletRow?.deferWalletAppsUntilBolt11) {
+    if (context?.bolt11Invoice) {
+      handlers.push(...getBolt11InvoiceOpenHandlers(context.bolt11Invoice))
+    }
+  } else if (walletRow?.walletApps?.length) {
+    for (const action of getPaytoWalletOpenActions(type, auth)) {
+      handlers.push(walletActionToOpenHandler(action))
+    }
   }
 
   if (record.profileUrlTemplate) {
-    add(
-      `${canonical}-web`,
-      record.label ?? canonical,
-      substituteAuthority(record.profileUrlTemplate, encodeURIComponent(auth))
-    )
+    handlers.push({
+      id: `${canonical}-web`,
+      openTargetName: record.label ?? canonical,
+      href: substituteAuthority(record.profileUrlTemplate, encodeURIComponent(auth)),
+      isHttp: true,
+      mobileOnly: false
+    })
   }
 
-  for (const app of getPaytoWalletOpenActions(type, auth)) {
-    if (app.label === 'Phoenix' && PAYTO_TYPES_PHOENIX_REQUIRES_BOLT11.has(canonical)) {
-      continue
-    }
-    add(app.id, app.label, app.href, app.mobileOnly)
-  }
-
-  return handlers
+  return dedupePaymentOpenHandlers(handlers)
 }
 
 export function filterPaytoPaymentOpenHandlersForDevice(

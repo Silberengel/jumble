@@ -28,8 +28,13 @@ export {
 } from '@/lib/payto-registry'
 
 export {
+  buildBlueWalletWalletHref,
   buildPhoenixWalletHref,
+  buildZeusWalletHref,
+  getBlueWalletPaymentOpenHandler,
+  getLightningInvoiceWalletPaymentHandlers,
   getPhoenixPaymentOpenHandler,
+  getZeusPaymentOpenHandler,
   getPaytoPrimaryOpenUrl,
   getPaytoPaymentOpenHandlers,
   filterPaytoPaymentOpenHandlersForDevice,
@@ -37,6 +42,7 @@ export {
   filterWalletOpenActionsForDevice,
   isPaytoHttpOpenUrl,
   isLikelyMobileWalletUserAgent,
+  type PaytoPaymentOpenContext,
   type PaytoPaymentOpenHandler,
   type PaytoWalletOpenAction
 } from '@/lib/payto-wallet-open'

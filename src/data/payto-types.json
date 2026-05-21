@@ -3,6 +3,13 @@
     "logoAssetsDir": "src/assets/payto_logos",
     "logoAssetPathNote": "Repo-relative path to the logo file. The app bundles these via Vite and exposes them under /assets/ at runtime (see getPaytoLogoPath)."
   },
+  "_openWith": {
+    "bolt11Invoice": {
+      "paytoType": "lightning",
+      "coinScheme": "lightning",
+      "walletApps": ["phoenix", "zeus", "bluewallet"]
+    }
+  },
   "walletApps": {
     "cakewallet": {
       "label": "Cake Wallet",
@@ -13,6 +20,16 @@
       "label": "Phoenix",
       "mobileOnly": true,
       "uriTemplate": "phoenix:{coinScheme}:{authority}"
+    },
+    "zeus": {
+      "label": "Zeus",
+      "mobileOnly": true,
+      "uriTemplate": "zeusln:lightning:{authority}"
+    },
+    "bluewallet": {
+      "label": "BlueWallet",
+      "mobileOnly": true,
+      "uriTemplate": "bluewallet:lightning:{authority}"
     }
   },
   "kind0CryptocurrencyAddresses": {
@@ -116,7 +133,7 @@
       "walletOpen": {
         "scheme": "bolt12",
         "requirePrefix": "lno1",
-        "walletApps": ["phoenix"]
+        "walletApps": ["phoenix", "zeus"]
       },
       "authority": {
         "placeholder": "lno1…",
@@ -130,7 +147,7 @@
       "walletOpen": {
         "scheme": "lightning",
         "requireAtSign": true,
-        "walletApps": ["phoenix"]
+        "walletApps": ["phoenix", "zeus"]
       },
       "authority": {
         "placeholder": "user@example.com",
@@ -179,7 +196,7 @@
       "walletOpen": {
         "scheme": "lightning",
         "requireAtSign": true,
-        "walletApps": ["phoenix"]
+        "deferWalletAppsUntilBolt11": true
       },
       "authority": {
         "placeholder": "user@getalby.com",
@@ -361,6 +378,7 @@
       "symbol": "💙",
       "category": "fiat",
       "logoAssetPath": "src/assets/payto_logos/paypal.webp",
+      "paymentOpen": "paypal",
       "profileUrlTemplate": "https://paypal.me/{authority}",
       "authority": {
         "placeholder": "username (not email)",
