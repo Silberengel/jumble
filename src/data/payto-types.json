@@ -12,7 +12,7 @@
     "phoenix": {
       "label": "Phoenix",
       "mobileOnly": true,
-      "uriTemplate": "phoenix:pay?uri={coinScheme}:{authority}"
+      "uriTemplate": "phoenix:{coinScheme}:{authority}"
     }
   },
   "kind0CryptocurrencyAddresses": {

@@ -97,6 +97,19 @@ function resolveWalletOpenRow(
   return `${scheme}:${pathPart}${auth}`
 }
 
+/**
+ * Phoenix strips a `phoenix:` prefix, then parses the remainder (e.g. `lightning:lnbc…`).
+ * Do not use `phoenix:pay?uri=…` — the app does not treat that as a payment request.
+ */
+export function buildPhoenixWalletHref(coinScheme: string, authority: string): string | null {
+  const auth = trimAuthority(authority)
+  if (!auth) return null
+  const scheme = coinScheme.toLowerCase().trim()
+  if (!scheme) return null
+  const payload = auth.replace(/^lightning:/i, '')
+  return `phoenix:${scheme}:${payload}`
+}
+
 function resolveWalletAppUri(
   appId: string,
   paytoType: string,
@@ -108,12 +121,33 @@ function resolveWalletAppUri(
   const auth = trimAuthority(authority)
   if (!auth) return null
   const coinScheme = (row?.scheme ?? paytoType).toLowerCase()
+  if (appId === 'phoenix') {
+    return buildPhoenixWalletHref(coinScheme, auth)
+  }
   const href = substituteAuthority(
     app.uriTemplate.replace(/\{coinScheme\}/g, coinScheme),
     auth
   )
   return href
 }
+
+/** Mobile Phoenix deep link for a concrete payment target (BOLT11, offer, lightning address, …). */
+export function getPhoenixPaymentOpenHandler(
+  coinScheme: string,
+  authority: string
+): PaytoPaymentOpenHandler | null {
+  const href = buildPhoenixWalletHref(coinScheme, authority)
+  if (!href) return null
+  return {
+    id: `phoenix-${coinScheme}`,
+    openTargetName: walletCatalog.walletApps?.phoenix?.label ?? 'Phoenix',
+    href,
+    isHttp: false,
+    mobileOnly: walletCatalog.walletApps?.phoenix?.mobileOnly !== false
+  }
+}
+
+const PAYTO_TYPES_PHOENIX_REQUIRES_BOLT11 = new Set(['lightning'])
 
 /**
  * Primary browser/OS URL for this payto target (wallet URI or https).
@@ -222,6 +256,9 @@ export function getPaytoPaymentOpenHandlers(type: string, authority: string): Pa
   }
 
   for (const app of getPaytoWalletOpenActions(type, auth)) {
+    if (app.label === 'Phoenix' && PAYTO_TYPES_PHOENIX_REQUIRES_BOLT11.has(canonical)) {
+      continue
+    }
     add(app.id, app.label, app.href, app.mobileOnly)
   }
 

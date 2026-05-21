@@ -9,11 +9,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Copy, ExternalLink, Wallet, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useRef, useState } from 'react'
+import { closeModal } from '@getalby/bitcoin-connect-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { releaseBodyScrollLocks } from '@/lib/react-remove-scroll-body-cleanup'
 import {
   filterPaytoPaymentOpenHandlersForDevice,
   getPaytoPaymentOpenHandlers,
+  getPhoenixPaymentOpenHandler,
   getPaytoTypeInfo
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
@@ -46,9 +49,29 @@ export default function PaytoDialog({
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
-  const openHandlers = filterPaytoPaymentOpenHandlersForDevice(
-    getPaytoPaymentOpenHandlers(type, authority)
-  )
+  const [bolt11Invoice, setBolt11Invoice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setBolt11Invoice(null)
+      closeModal()
+      releaseBodyScrollLocks()
+    }
+  }, [open])
+
+  const closeForWalletFlow = useCallback(() => {
+    skipTipNoticeOnCloseRef.current = true
+    onOpenChange(false)
+  }, [onOpenChange])
+
+  const openHandlers = useMemo(() => {
+    const handlers = getPaytoPaymentOpenHandlers(type, authority)
+    if (isLightning && bolt11Invoice) {
+      const phoenix = getPhoenixPaymentOpenHandler('lightning', bolt11Invoice)
+      if (phoenix) handlers.push(phoenix)
+    }
+    return filterPaytoPaymentOpenHandlersForDevice(handlers)
+  }, [type, authority, isLightning, bolt11Invoice])
 
   const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
@@ -56,12 +79,16 @@ export default function PaytoDialog({
     handleDialogOpenChange(false)
   }
 
-  const maybeOfferTipNoticeOnClose = () => {
+  const maybeOfferTipNotice = useCallback(() => {
     if (!offerTipNoticeOnClose) return
     if (!recipientPubkey) return
-    if (skipTipNoticeOnCloseRef.current) return
     if (selfPubkey && recipientPubkey === selfPubkey) return
     setTipNoticeOpen(true)
+  }, [offerTipNoticeOnClose, recipientPubkey, selfPubkey])
+
+  const maybeOfferTipNoticeOnClose = () => {
+    if (skipTipNoticeOnCloseRef.current) return
+    maybeOfferTipNotice()
   }
 
   const handleDialogOpenChange = (next: boolean) => {
@@ -97,9 +124,15 @@ export default function PaytoDialog({
         </DialogHeader>
 
         <div className="min-w-0 space-y-4 px-4 py-4 sm:px-5">
-          {isLightning ? (
-            <LightningInvoiceSection lightningAddress={authority} paytoUri={paytoUri} />
-          ) : (
+          {isLightning && open ? (
+            <LightningInvoiceSection
+              lightningAddress={authority}
+              paytoUri={paytoUri}
+              onBolt11InvoiceChange={setBolt11Invoice}
+              onRequestClose={closeForWalletFlow}
+              onPaymentSuccess={maybeOfferTipNotice}
+            />
+          ) : isLightning ? null : (
             <>
               <div className="min-w-0 rounded-lg bg-muted/40 px-3 py-2.5 ring-1 ring-border/50">
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">

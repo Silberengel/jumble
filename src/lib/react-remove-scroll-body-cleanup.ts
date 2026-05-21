@@ -5,7 +5,8 @@
  * that class is still present, the UI can paint on top but ignore all clicks (notably after closing
  * our Zap dialog from a secondary pane / sheet).
  */
-function stripReactRemoveScrollBodyLocks(): void {
+/** Remove stuck Radix `react-remove-scroll` body classes (restores clicks after nested modals). */
+export function releaseBodyScrollLocks(): void {
   if (typeof document === 'undefined') return
   const body = document.body
   const toRemove: string[] = []
@@ -31,7 +32,7 @@ export function runAfterReleasingRadixScrollLock(
   closeOuterModel?.()
   const ms = closeOuterModel != null ? MS_AFTER_RADIX_DIALOG_FOR_EXTERNAL_MODAL : 0
   window.setTimeout(() => {
-    stripReactRemoveScrollBodyLocks()
+    releaseBodyScrollLocks()
     fn()
   }, ms)
 }

@@ -28,6 +28,8 @@ export {
 } from '@/lib/payto-registry'
 
 export {
+  buildPhoenixWalletHref,
+  getPhoenixPaymentOpenHandler,
   getPaytoPrimaryOpenUrl,
   getPaytoPaymentOpenHandlers,
   filterPaytoPaymentOpenHandlersForDevice,

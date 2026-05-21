@@ -7,7 +7,7 @@ import {
 } from '@/constants'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { TProfile } from '@/types'
-import { init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
+import { closeModal, init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
 import {
   isNwcWalletServiceInfoError,
   sendWebLNPaymentWithRetry
@@ -141,6 +141,7 @@ class LightningService {
 
     return new Promise((resolve) => {
       runAfterReleasingRadixScrollLock(closeOuterModel, () => {
+        closeModal()
         let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
         let subCloser: SubCloser | undefined
         const { setPaid } = launchPaymentModal({
@@ -214,6 +215,7 @@ class LightningService {
 
     return new Promise((resolve) => {
       runAfterReleasingRadixScrollLock(closeOuterModel, () => {
+        closeModal()
         launchPaymentModal({
           invoice: invoice,
           onPaid: (response) => {

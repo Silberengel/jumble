@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getPaytoProfileUrl } from '@/lib/payto-registry'
 import {
+  buildPhoenixWalletHref,
   filterPaytoPaymentOpenHandlersForDevice,
   filterWalletOpenActionsForDevice,
   getPaytoPaymentOpenHandlers,
@@ -89,13 +90,29 @@ describe('getPaytoPaymentOpenHandlers', () => {
     const offer = 'lno1pg257enxv4ezqcneype82um50ynhxgrwdajx283qfwdpl28qqmc78ymlvhmxcsywdk5wrjnj36ryg488qwlrnzyjczs'
     const actions = getPaytoWalletOpenActions('bolt12', offer)
     expect(actions).toHaveLength(1)
-    expect(actions[0].href).toBe(`phoenix:pay?uri=bolt12:${offer}`)
+    expect(actions[0].href).toBe(`phoenix:bolt12:${offer}`)
     expect(actions[0].mobileOnly).toBe(true)
   })
 
-  it('includes Phoenix on mobile only', () => {
+  it('builds Phoenix lightning deep link without pay?uri query', () => {
+    expect(buildPhoenixWalletHref('lightning', 'user@example.com')).toBe(
+      'phoenix:lightning:user@example.com'
+    )
+    expect(buildPhoenixWalletHref('lightning', 'lnbc1p0example')).toBe('phoenix:lightning:lnbc1p0example')
+    expect(buildPhoenixWalletHref('lightning', 'lightning:lnbc1p0example')).toBe(
+      'phoenix:lightning:lnbc1p0example'
+    )
+  })
+
+  it('omits Phoenix for lightning address until BOLT11 is supplied separately', () => {
     const handlers = getPaytoPaymentOpenHandlers('lightning', 'user@example.com')
+    expect(handlers.some((h) => h.openTargetName === 'Phoenix')).toBe(false)
+  })
+
+  it('includes Phoenix on mobile only for bip353', () => {
+    const handlers = getPaytoPaymentOpenHandlers('bip353', 'user@example.com')
     const phoenix = handlers.find((h) => h.openTargetName === 'Phoenix')
+    expect(phoenix?.href).toBe('phoenix:lightning:user@example.com')
     expect(phoenix?.mobileOnly).toBe(true)
 
     const prev = navigator.userAgent

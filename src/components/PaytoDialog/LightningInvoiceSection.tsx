@@ -16,7 +16,9 @@ import { cn } from '@/lib/utils'
 import { useZap } from '@/providers/ZapProvider'
 import lightning from '@/services/lightning.service'
 import { Check, Copy, Wallet, Zap } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { closeModal } from '@getalby/bitcoin-connect-react'
+import { releaseBodyScrollLocks } from '@/lib/react-remove-scroll-body-cleanup'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -30,10 +32,19 @@ function invoiceQrPayload(pr: string): string {
 
 export default function LightningInvoiceSection({
   lightningAddress,
-  paytoUri
+  paytoUri,
+  onBolt11InvoiceChange,
+  onRequestClose,
+  onPaymentSuccess
 }: {
   lightningAddress: string
   paytoUri: string
+  /** Fired when a BOLT11 invoice is created or cleared (for Phoenix / external wallet links). */
+  onBolt11InvoiceChange?: (invoice: string | null) => void
+  /** Close the payto dialog before opening an external wallet / Bitcoin Connect UI. */
+  onRequestClose?: () => void
+  /** After a successful in-app or external wallet payment (kind-24 tip notice). */
+  onPaymentSuccess?: () => void
 }) {
   const { t } = useTranslation()
   const { defaultZapSats, isWalletConnected } = useZap()
@@ -47,6 +58,16 @@ export default function LightningInvoiceSection({
   const [invoiceDescription, setInvoiceDescription] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [paying, setPaying] = useState(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      closeModal()
+      releaseBodyScrollLocks()
+    }
+  }, [])
 
   useEffect(() => {
     setSats(clampZapSats(defaultZapSats))
@@ -57,7 +78,7 @@ export default function LightningInvoiceSection({
     setLnurlMetadataState('loading')
     let cancelled = false
     void lightning.getLnurlPayInvoiceOptions(lightningAddress).then((opts) => {
-      if (!cancelled) {
+      if (!cancelled && mountedRef.current) {
         if (opts) {
           setCommentMax(opts.commentAllowed)
           setLnurlMetadataState('ready')
@@ -76,6 +97,10 @@ export default function LightningInvoiceSection({
     setInvoice(null)
     setInvoiceDescription(null)
   }, [sats, description])
+
+  useEffect(() => {
+    onBolt11InvoiceChange?.(invoice)
+  }, [invoice, onBolt11InvoiceChange])
 
   const invoiceSats = useMemo(() => {
     if (!invoice) return null
@@ -98,12 +123,15 @@ export default function LightningInvoiceSection({
       const pr = await lightning.createLnurlInvoice(lightningAddress, sats, {
         description: trimmedDesc || undefined
       })
+      if (!mountedRef.current) return
       setInvoice(pr)
       setInvoiceDescription(trimmedDesc || null)
     } catch (error) {
-      toast.error(`${t('Failed to create invoice')}: ${(error as Error).message}`)
+      if (mountedRef.current) {
+        toast.error(`${t('Failed to create invoice')}: ${(error as Error).message}`)
+      }
     } finally {
-      setCreating(false)
+      if (mountedRef.current) setCreating(false)
     }
   }
 
@@ -111,16 +139,20 @@ export default function LightningInvoiceSection({
     if (!invoice) return
     try {
       setPaying(true)
-      const result = await lightning.payInvoice(invoice)
+      const result = await lightning.payInvoice(invoice, onRequestClose)
+      if (!mountedRef.current) return
       if (result) {
         toast.success(t('Payment sent'))
         setInvoice(null)
         setInvoiceDescription(null)
+        onPaymentSuccess?.()
       }
     } catch (error) {
-      toast.error(`${t('Lightning payment failed')}: ${(error as Error).message}`)
+      if (mountedRef.current) {
+        toast.error(`${t('Lightning payment failed')}: ${(error as Error).message}`)
+      }
     } finally {
-      setPaying(false)
+      if (mountedRef.current) setPaying(false)
     }
   }
 
