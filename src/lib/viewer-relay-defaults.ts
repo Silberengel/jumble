@@ -3,6 +3,7 @@ import {
   FAST_READ_RELAY_URLS,
   PROFILE_RELAY_URLS
 } from '@/constants'
+import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { normalizeUrl } from '@/lib/url'
 
 export type ViewerRelayListLike = {
@@ -16,11 +17,17 @@ export type ViewerRelayListLike = {
  * the user is not signed in, or when they are signed in but have configured neither favorite relays nor a NIP-65
  * (kind 10002 / HTTP index) relay list. Otherwise REQ/publish stacks should stay on their own relays.
  */
+/** Public read mirrors used when relay lists are empty; empty when metadata-only policy is on. */
+export function publicReadRelayFallbackUrls(): readonly string[] {
+  return isMetadataRelaysOnlyPolicyActive() ? [] : FAST_READ_RELAY_URLS
+}
+
 export function viewerUsesGlobalRelayDefaults(args: {
   viewerPubkey: string | null | undefined
   favoriteRelayUrls: readonly string[]
   relayList: ViewerRelayListLike
 }): boolean {
+  if (isMetadataRelaysOnlyPolicyActive()) return false
   if (!args.viewerPubkey?.trim()) return true
   const hasFavorites = args.favoriteRelayUrls.some((u) => typeof u === 'string' && u.trim().length > 0)
   const rl = args.relayList

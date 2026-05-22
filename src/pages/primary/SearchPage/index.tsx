@@ -8,10 +8,12 @@ import { useNostr } from '@/providers/NostrProvider'
 import { TPageRef, TSearchParams } from '@/types'
 import { BookOpen, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useBypassMetadataRelaysOnlyPolicy } from '@/hooks/useBypassMetadataRelaysOnlyPolicy'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SearchPage = forwardRef<TPageRef>((_props, ref) => {
+  useBypassMetadataRelaysOnlyPolicy()
   const { t } = useTranslation()
   const { current, display } = usePrimaryPage()
   const { pubkey, relayList } = useNostr()

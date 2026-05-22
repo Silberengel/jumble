@@ -1,3 +1,4 @@
+export * from './useBypassMetadataRelaysOnlyPolicy'
 export * from './useNearViewport'
 export * from './useFetchCalendarRsvps'
 export * from './useFetchEvent'

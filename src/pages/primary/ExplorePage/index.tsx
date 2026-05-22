@@ -3,6 +3,7 @@ import { buildExplorePopularRelayUrls } from '@/lib/explore-popular-relays'
 import { RefreshButton } from '@/components/RefreshButton'
 import PrimaryPageLayout from '@/layouts/PrimaryPageLayout'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
+import { useBypassMetadataRelaysOnlyPolicy } from '@/hooks/useBypassMetadataRelaysOnlyPolicy'
 import { useSmartRelayNavigation } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
@@ -61,6 +62,7 @@ function filterMonitoringRelaySuggestions(urls: string[], rawQuery: string): str
 }
 
 const ExplorePage = forwardRef<TPageRef>((_, ref) => {
+  useBypassMetadataRelaysOnlyPolicy()
   const { pubkey, relayList } = useNostr()
   const layoutRef = useRef<TPageRef>(null)
   const [contentRefreshKey, setContentRefreshKey] = useState(0)

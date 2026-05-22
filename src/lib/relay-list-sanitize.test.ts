@@ -23,7 +23,7 @@ describe('stripLocalRelaysFromThirdPartyHints', () => {
 
 describe('sanitizeRelayUrlsForFetch', () => {
   it('strips third-party locals and unlisted filter.nostr.wine', () => {
-    setViewerPersonalRelayKeys(new Set())
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
     const urls = ['wss://relay.example.com/', 'ws://127.0.0.1:7777/', 'wss://filter.nostr.wine/']
     expect(sanitizeRelayUrlsForFetch(urls)).toEqual(['wss://relay.example.com/'])
   })

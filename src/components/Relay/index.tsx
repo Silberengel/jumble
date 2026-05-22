@@ -2,7 +2,7 @@ import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import RelayInfo from '@/components/RelayInfo'
 import SearchInput from '@/components/SearchInput'
-import { useFetchRelayInfo } from '@/hooks'
+import { useBypassMetadataRelaysOnlyPolicy, useFetchRelayInfo } from '@/hooks'
 import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import { canonicalRelaySessionKey, isLocalNetworkUrl, normalizeRelayUrlForPage } from '@/lib/url'
@@ -31,6 +31,7 @@ const Relay = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
+  useBypassMetadataRelaysOnlyPolicy()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const { showKinds } = useKindFilterOrDefaults()
   const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])

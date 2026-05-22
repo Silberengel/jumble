@@ -42,6 +42,7 @@ import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
 import nip66Service from './nip66.service'
 import type { ISigner, TSignerType } from '@/types'
 
@@ -803,7 +804,7 @@ export class QueryService {
     if (relayFiltersUseCapitalLetterTagKeys(filters)) {
       relays = relayUrlsStripExtendedTagReqBlocked(relays)
       if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
       }
     }
     // WebSocket REQ only — drop https URLs (index relays use HTTP polling elsewhere).
@@ -1071,7 +1072,7 @@ export class QueryService {
     const originalDedupedRelays = Array.from(new Set(urls))
     let relays = originalDedupedRelays
     if (relays.length === 0) {
-      relays = [...FAST_READ_RELAY_URLS]
+      relays = [...publicReadRelayFallbackUrls()]
     }
     const filters = Array.isArray(filter) ? filter : [filter]
     const stripSocialBlockedRelays =
@@ -1082,16 +1083,16 @@ export class QueryService {
       const stripped = relays.filter((url) => !socialKindBlockedSet.has(normalizeUrl(url) || url))
       relays = relaysAfterSocialKindBlockedStrip(originalDedupedRelays, stripped)
       if (relays.length === 0) {
-        const fallback = [...FAST_READ_RELAY_URLS].filter(
+        const fallback = [...publicReadRelayFallbackUrls()].filter(
           (url) => !socialKindBlockedSet.has(normalizeUrl(url) || url)
         )
-        relays = fallback.length > 0 ? fallback : [...FAST_READ_RELAY_URLS]
+        relays = fallback.length > 0 ? fallback : [...publicReadRelayFallbackUrls()]
       }
     }
     if (relayFiltersUseCapitalLetterTagKeys(filters)) {
       relays = relayUrlsStripExtendedTagReqBlocked(relays)
       if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
       }
     }
     const { onevent, ...queryOpts } = options ?? {}

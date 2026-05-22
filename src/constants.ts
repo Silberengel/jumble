@@ -369,6 +369,8 @@ export const StorageKey = {
   SHOW_RSS_FEED: 'showRssFeed',
   PANE_MODE: 'paneMode',
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',
+  /** When `'true'`, only connect to relays on the viewer's NIP-65 / favorites / cache / HTTP lists. */
+  RESTRICT_RELAYS_TO_METADATA_LISTS: 'restrictRelaysToMetadataLists',
   /** When not `'false'`, show green Sonner toasts after successful publishes (default on). */
   SHOW_PUBLISH_SUCCESS_TOASTS: 'showPublishSuccessToasts',
   /** When not `'false'`, show NIP-53 live activity banner (default on). */

@@ -41,9 +41,15 @@ import {
   sanitizeRelayUrlsForFetch,
   isReadOnlyIndexerRelay,
   isReadOnlyRelayAllowedForViewer,
+  isRelayConnectionAllowedForViewer,
+  isMetadataRelaysOnlyPolicyActive,
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
-import { profileFetchRelayUrlsWithoutFastReadLayer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import {
+  profileFetchRelayUrlsWithoutFastReadLayer,
+  publicReadRelayFallbackUrls,
+  viewerUsesGlobalRelayDefaults
+} from '@/lib/viewer-relay-defaults'
 import {
   parseBlockedRelayUrlsFromEvent,
   setViewerBlockedRelayUrls
@@ -440,6 +446,9 @@ class ClientService extends EventTarget {
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
       }
+      if (!isRelayConnectionAllowedForViewer(url)) {
+        throw new Error(`[metadata-relays-only] skipping relay ${url}`)
+      }
       if (!isWebsocketUrl(url) && isKind10243HttpRelayTagUrl(url)) {
         throw new Error(`[http-index-relay] ${url} uses the HTTPS index API, not WebSocket`)
       }
@@ -618,7 +627,7 @@ class ClientService extends EventTarget {
     const pk = pubkey?.trim() || this.pubkey?.trim()
     if (!pk) {
       this.viewerHttpIndexRelayBases = []
-      setViewerPersonalRelayKeys(new Set())
+      setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
       syncViewerRelayStackNostrLandAggrEligible([])
       setViewerBlockedRelayUrls([])
       return
@@ -655,7 +664,7 @@ class ClientService extends EventTarget {
     } catch {
       // ignore
     }
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls))
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
     syncViewerRelayStackNostrLandAggrEligible(urls)
   }
 
@@ -2060,7 +2069,7 @@ class ClientService extends EventTarget {
       if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
         relays = relayUrlsStripExtendedTagReqBlocked(relays)
         if (relays.length === 0 && navigator.onLine) {
-          relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+          relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
         }
       }
       const key = this.generateTimelineKey(relays, filter as Filter)
@@ -2490,7 +2499,7 @@ class ClientService extends EventTarget {
     if (relayFiltersUseCapitalLetterTagKeys(filters)) {
       relays = relayUrlsStripExtendedTagReqBlocked(relays)
       if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
       }
     }
     relays = Array.from(new Set(relays))
@@ -2861,7 +2870,7 @@ class ClientService extends EventTarget {
     if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
       wsRelayUrls = relayUrlsStripExtendedTagReqBlocked(wsRelayUrls)
       if (wsRelayUrls.length === 0 && navigator.onLine && !relayAuthoritativeTimeline) {
-        wsRelayUrls = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+        wsRelayUrls = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
       }
     }
     const timelineUrls = originalDedupedRelays
@@ -3376,7 +3385,7 @@ class ClientService extends EventTarget {
     )
     let relays = [...wsOriginal]
     if (relays.length === 0 && httpRelayBases.length === 0) {
-      relays = [...FAST_READ_RELAY_URLS]
+      relays = [...publicReadRelayFallbackUrls()]
     }
     const filters = Array.isArray(filter) ? filter : [filter]
     relays = withDocumentRelayUrlsForFilters(relays, filters)
@@ -3392,7 +3401,7 @@ class ClientService extends EventTarget {
     let queryRelays = dedupeNormalizeRelayUrlsOrdered([...relays, ...httpRelayBases])
     /** If every candidate was filtered away, still hit public read mirrors so REQ does not no-op. */
     if (queryRelays.length === 0) {
-      queryRelays = dedupeNormalizeRelayUrlsOrdered([...FAST_READ_RELAY_URLS])
+      queryRelays = dedupeNormalizeRelayUrlsOrdered([...publicReadRelayFallbackUrls()])
     }
     const events = await this.queryService.query(queryRelays, filter, onevent, {
       eoseTimeout,
@@ -4507,8 +4516,8 @@ class ClientService extends EventTarget {
           write =
             stripped.write.length > 0 ? stripped.write : write.filter(urlIsNonLocalForRemoteViewer)
           if (read.length === 0 && write.length === 0) {
-            read = [...FAST_READ_RELAY_URLS]
-            write = [...FAST_WRITE_RELAY_URLS]
+            read = [...publicReadRelayFallbackUrls()]
+            write = isMetadataRelaysOnlyPolicyActive() ? [] : [...FAST_WRITE_RELAY_URLS]
           }
         }
         return mergeKind10243({
@@ -4944,10 +4953,12 @@ class ClientService extends EventTarget {
     // If many websocket connections are initiated simultaneously, it will be
     // very slow on Safari (for unknown reason)
     if (isSafari()) {
-      let urls = FAST_READ_RELAY_URLS
+      let urls = [...publicReadRelayFallbackUrls()]
       if (myPubkey) {
         const relayList = await this.fetchRelayList(myPubkey)
-        urls = relayList.read.concat(FAST_READ_RELAY_URLS).slice(0, 5)
+        urls = isMetadataRelaysOnlyPolicyActive()
+          ? relayList.read.slice(0, 5)
+          : relayList.read.concat([...publicReadRelayFallbackUrls()]).slice(0, 5)
       }
       return [{ urls, filter: { authors: pubkeys } }]
     }

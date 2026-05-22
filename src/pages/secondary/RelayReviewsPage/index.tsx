@@ -13,11 +13,13 @@ import { normalizeRelayUrlForPage, simplifyUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TFeedSubRequest } from '@/types'
+import { useBypassMetadataRelaysOnlyPolicy } from '@/hooks/useBypassMetadataRelaysOnlyPolicy'
 import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import NotFoundPage from '../NotFoundPage'
 
 const RelayReviewsPage = forwardRef(({ url, index, hideTitlebar = false }: { url?: string; index?: number; hideTitlebar?: boolean }, ref) => {
+  useBypassMetadataRelaysOnlyPolicy()
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const feedRef = useRef<TNoteListRef>(null)

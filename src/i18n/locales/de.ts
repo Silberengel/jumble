@@ -106,7 +106,10 @@ export default {
     "Please log in to view notifications.": "Please log in to view notifications.",
     "Follows you": "Folgt dir",
     "Relay Settings": "Relay-Einstellungen",
-    "Relays and Storage Settings": "Relays and Storage Settings",
+    "Relays and Storage Settings": "Relays und Speicher",
+    "Only my relay lists": "Nur meine Relay-Listen",
+    "When on, the app only connects to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. It will not open background connections to public mirrors, author outboxes, or other suggested relays.":
+      "Wenn aktiv, werden Feeds nicht mehr auf generische öffentliche Leserelays (FAST_READ) oder zufällige Autoren-/Hinweis-Relays erweitert. Deine Relay-Listen, Profil- und Suchindex-Relays, Dokument-Relays und aggr.nostr.land (mit Nostr Land) bleiben aktiv. Relay-Entdecken und Suche sind ausgenommen.",
     "Relay set name": "Relay-Set Name",
     "Add a new relay set": "Neues Relay-Set hinzufügen",
     Add: "Hinzufügen",

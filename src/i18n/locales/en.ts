@@ -112,6 +112,9 @@ export default {
     "Follows you": "Follows you",
     "Relay Settings": "Relays and Storage Settings",
     "Relays and Storage Settings": "Relays and Storage Settings",
+    "Only my relay lists": "Only my relay lists",
+    "When on, the app only connects to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. It will not open background connections to public mirrors, author outboxes, or other suggested relays.":
+      "When on, the app stops widening feeds to generic public read relays (FAST_READ) and random author or hint relays. Your relay lists, profile and search index relays, document relays, and aggr.nostr.land (with Nostr Land) still work. Relay explore and Search pages are exempt.",
     "Relay set name": "Relay set name",
     "Add a new relay set": "Add a new relay set",
     Add: "Add",

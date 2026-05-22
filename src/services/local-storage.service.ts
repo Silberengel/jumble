@@ -8,6 +8,7 @@ import {
 } from '@/constants'
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
+import { setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import { randomString } from '@/lib/random'
 import {
   TAccount,
@@ -82,7 +83,8 @@ const SETTINGS_KEYS = [
   StorageKey.RESPECT_QUIET_TAGS,
   StorageKey.GLOBAL_QUIET_MODE,
   StorageKey.SHOW_RSS_FEED,
-  StorageKey.PANE_MODE
+  StorageKey.PANE_MODE,
+  StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
 ] as const
 
 class LocalStorageService {
@@ -131,6 +133,7 @@ class LocalStorageService {
   private addRandomRelaysToPublish: boolean = false
   private showPublishSuccessToasts: boolean = true
   private showLiveActivitiesBanner: boolean = true
+  private restrictRelaysToMetadataLists: boolean = false
 
   constructor() {
     if (!LocalStorageService.instance) {
@@ -460,6 +463,12 @@ class LocalStorageService {
     const showLiveActivitiesStr = window.localStorage.getItem(StorageKey.SHOW_LIVE_ACTIVITIES_BANNER)
     this.showLiveActivitiesBanner = showLiveActivitiesStr !== 'false'
 
+    const restrictMetadataRelaysStr = window.localStorage.getItem(
+      StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
+    )
+    this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr === 'true'
+    setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
+
     // Clean up deprecated data
     window.localStorage.removeItem(StorageKey.ACCOUNT_PROFILE_EVENT_MAP)
     window.localStorage.removeItem(StorageKey.ACCOUNT_FOLLOW_LIST_EVENT_MAP)
@@ -660,6 +669,11 @@ class LocalStorageService {
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const paneStr = get(StorageKey.PANE_MODE)
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
+    const restrictMetadataRelaysStr = get(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
+    if (restrictMetadataRelaysStr != null) {
+      this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr === 'true'
+      setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
+    }
   }
 
   getRelaySets() {
@@ -1126,6 +1140,16 @@ class LocalStorageService {
   setPanelMode(mode: 'single' | 'double') {
     this.panelMode = mode
     this.persistSetting(StorageKey.PANE_MODE, mode)
+  }
+
+  getRestrictRelaysToMetadataLists(): boolean {
+    return this.restrictRelaysToMetadataLists
+  }
+
+  setRestrictRelaysToMetadataLists(restrict: boolean) {
+    this.restrictRelaysToMetadataLists = restrict
+    setRestrictConnectionsToMetadataRelaysOnly(restrict)
+    this.persistSetting(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS, restrict.toString())
   }
 
   getAccountNetworkHydrateAt(pubkey: string): number | undefined {

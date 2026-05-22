@@ -1,4 +1,5 @@
 import CacheRelaysSetting from '@/components/CacheRelaysSetting'
+import MetadataRelaysOnlySetting from '@/components/MetadataRelaysOnlySetting'
 import HttpRelaysSetting from '@/components/HttpRelaysSetting'
 import JsonViewDialog from '@/components/JsonViewDialog'
 import MailboxSetting from '@/components/MailboxSetting'
@@ -120,6 +121,9 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
       }
     >
       <JsonViewDialog value={jsonPayload} isOpen={jsonOpen} onClose={() => setJsonOpen(false)} />
+      <div className="px-4 pt-3">
+        <MetadataRelaysOnlySetting />
+      </div>
       <Tabs key={contentKey} value={tabValue} onValueChange={setTabValue} className="px-4 py-3 space-y-4">
         <TabsList className="flex-col sm:flex-row h-auto sm:h-9">
           <TabsTrigger value="favorite-relays" className="w-full sm:w-auto">{t('Favorite Relays')}</TabsTrigger>
