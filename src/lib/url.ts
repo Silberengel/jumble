@@ -118,6 +118,11 @@ export function normalizeAnyRelayUrl(url: string): string {
   return normalizeUrl(url)
 }
 
+/** Relay explore/detail routes accept WebSocket relays or kind-10243 HTTP index bases. */
+export function normalizeRelayUrlForPage(url: string): string {
+  return normalizeAnyRelayUrl(url) || normalizeHttpRelayUrl(url)
+}
+
 /** Stable key for per-relay session stats (scheme preserved; no https→wss aliasing). */
 export function canonicalRelaySessionKey(url: string): string {
   const trimmed = url.trim()
@@ -153,6 +158,32 @@ export function httpIndexRelayBasesInUrlBatch(
     if (configured.has(n.toLowerCase())) out.add(n)
   }
   return [...out]
+}
+
+/**
+ * HTTP index bases to poll for a REQ batch: explicit http(s) relay URLs in `urls`, plus any that
+ * match the viewer's kind-10243 list. Unlike {@link httpIndexRelayBasesInUrlBatch} alone, does not
+ * require configuration when the batch already names an HTTP index relay (e.g. relay detail page).
+ */
+export function httpIndexBasesForRelayQuery(
+  urls: readonly string[],
+  configuredHttpIndexBases: readonly string[] = []
+): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const add = (raw: string) => {
+    const n = normalizeHttpRelayUrl(raw)
+    if (!n || !isKind10243HttpRelayTagUrl(n)) return
+    const key = n.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(n)
+  }
+  for (const raw of urls) {
+    if (isHttpOrHttpsScheme(raw.trim())) add(raw)
+  }
+  for (const base of httpIndexRelayBasesInUrlBatch(urls, configuredHttpIndexBases)) add(base)
+  return out
 }
 
 export function urlMatchesConfiguredHttpIndexRelay(

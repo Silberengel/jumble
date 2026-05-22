@@ -5,7 +5,7 @@ import SearchInput from '@/components/SearchInput'
 import { useFetchRelayInfo } from '@/hooks'
 import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
+import { canonicalRelaySessionKey, isLocalNetworkUrl, normalizeRelayUrlForPage } from '@/lib/url'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import client from '@/services/client.service'
@@ -33,7 +33,7 @@ const Relay = forwardRef<
   const { t } = useTranslation()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const { showKinds } = useKindFilterOrDefaults()
-  const normalizedUrl = useMemo(() => (url ? normalizeAnyRelayUrl(url) : undefined), [url])
+  const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])
   const { relayInfo } = useFetchRelayInfo(normalizedUrl)
   const [searchInput, setSearchInput] = useState('')
   const [debouncedInput, setDebouncedInput] = useState(searchInput)
@@ -65,7 +65,7 @@ const Relay = forwardRef<
 
     const handleRelayRefresh = (event: CustomEvent) => {
       const { relayUrl } = event.detail
-      if (normalizeAnyRelayUrl(relayUrl) === normalizedUrl) {
+      if (canonicalRelaySessionKey(relayUrl) === canonicalRelaySessionKey(normalizedUrl)) {
         if (noteListRef && typeof noteListRef !== 'function') {
           noteListRef.current?.refresh()
         }
@@ -108,7 +108,7 @@ const Relay = forwardRef<
 
   /** When we know delivery relays, drop rows that never arrived from this feed’s relay (stale cache / mis-tagged). */
   const relaySeenMatchKey = useMemo(
-    () => (normalizedUrl ? (normalizeAnyRelayUrl(normalizedUrl) || normalizedUrl).toLowerCase() : ''),
+    () => (normalizedUrl ? canonicalRelaySessionKey(normalizedUrl) : ''),
     [normalizedUrl]
   )
   const shouldHideEventNotFromThisRelay = useCallback(
@@ -122,7 +122,7 @@ const Relay = forwardRef<
       if (normalizedUrl && isLocalNetworkUrl(normalizedUrl)) return false
       const seen = client.getSeenEventRelayUrls(ev.id)
       if (seen.length === 0) return false
-      return !seen.some((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase() === relaySeenMatchKey)
+      return !seen.some((u) => canonicalRelaySessionKey(u) === relaySeenMatchKey)
     },
     [relaySeenMatchKey, normalizedUrl, hostPrimaryPageName, allowKindlessRelayExplore]
   )

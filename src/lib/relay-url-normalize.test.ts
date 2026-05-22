@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   canonicalRelaySessionKey,
+  httpIndexBasesForRelayQuery,
   httpIndexRelayBasesInUrlBatch,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
+  normalizeRelayUrlForPage,
   normalizeUrl
 } from '@/lib/url'
 
@@ -12,6 +14,9 @@ describe('relay URL normalization', () => {
     expect(normalizeAnyRelayUrl('https://mercury-relay.imwald.eu/')).toBe('')
     expect(normalizeUrl('https://mercury-relay.imwald.eu/')).toBe('')
     expect(normalizeHttpRelayUrl('https://mercury-relay.imwald.eu/')).toMatch(
+      /^https:\/\/mercury-relay\.imwald\.eu\/?$/
+    )
+    expect(normalizeRelayUrlForPage('https://mercury-relay.imwald.eu/')).toMatch(
       /^https:\/\/mercury-relay\.imwald\.eu\/?$/
     )
   })
@@ -38,6 +43,14 @@ describe('relay URL normalization', () => {
       'https://mercury-relay.imwald.eu/'
     ])
     expect(httpIndexRelayBasesInUrlBatch(batch, [])).toEqual([])
+  })
+
+  it('httpIndexBasesForRelayQuery polls explicit https relays without kind-10243 config', () => {
+    const batch = ['https://mercury-relay.imwald.eu/']
+    expect(httpIndexBasesForRelayQuery(batch, [])).toEqual(['https://mercury-relay.imwald.eu/'])
+    expect(httpIndexBasesForRelayQuery(batch, ['https://other.example/'])).toEqual([
+      'https://mercury-relay.imwald.eu/'
+    ])
   })
 
   it('canonicalRelaySessionKey routes by scheme without cross-normalizing', () => {

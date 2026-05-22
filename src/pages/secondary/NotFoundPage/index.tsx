@@ -7,7 +7,7 @@ const NotFoundPage = forwardRef(({ index }: { index?: number }, ref) => {
   const [contentKey, setContentKey] = useState(0)
   const bump = useCallback(() => setContentKey((k) => k + 1), [])
   return (
-    <SecondaryPageLayout ref={ref} index={index} hideBackButton controls={<RefreshButton onClick={bump} />}>
+    <SecondaryPageLayout ref={ref} index={index} controls={<RefreshButton onClick={bump} />}>
       <div key={contentKey}>
         <NotFound />
       </div>

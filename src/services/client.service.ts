@@ -159,7 +159,7 @@ import {
 } from '@/lib/nostr-land-relay-eligibility'
 import {
   canonicalRelaySessionKey,
-  httpIndexRelayBasesInUrlBatch,
+  httpIndexBasesForRelayQuery,
   isKind10243HttpRelayTagUrl,
   isLocalNetworkUrl,
   isWebsocketUrl,
@@ -2449,7 +2449,7 @@ class ClientService extends EventTarget {
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
     const httpKeys = new Set(
-      httpIndexRelayBasesInUrlBatch(originalDedupedRelays, this.viewerHttpIndexRelayBases).map((u) =>
+      httpIndexBasesForRelayQuery(originalDedupedRelays, this.viewerHttpIndexRelayBases).map((u) =>
         canonicalRelaySessionKey(u)
       )
     )
@@ -2898,7 +2898,7 @@ class ClientService extends EventTarget {
     let eosedAt: number | null = null
     let eventIds = new Set<string>()
 
-    const httpTimelinePollBases = httpIndexRelayBasesInUrlBatch(relays, this.viewerHttpIndexRelayBases)
+    const httpTimelinePollBases = httpIndexBasesForRelayQuery(relays, this.viewerHttpIndexRelayBases)
     let httpPollIntervalId: ReturnType<typeof setInterval> | null = null
     let httpPollCursorUnix = 0
     const clearHttpTimelinePoll = () => {
@@ -3135,7 +3135,7 @@ class ClientService extends EventTarget {
 
     // HTTP index relays are handled via httpTimelinePollBases above — never pass them to the WS subscribe path.
     const httpPollKeys = new Set(
-      httpIndexRelayBasesInUrlBatch(relays, this.viewerHttpIndexRelayBases).map((u) =>
+      httpIndexBasesForRelayQuery(relays, this.viewerHttpIndexRelayBases).map((u) =>
         canonicalRelaySessionKey(u)
       )
     )
@@ -3364,7 +3364,7 @@ class ClientService extends EventTarget {
     } = {}
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
-    const httpRelayBases = httpIndexRelayBasesInUrlBatch(
+    const httpRelayBases = httpIndexBasesForRelayQuery(
       originalDedupedRelays,
       this.viewerHttpIndexRelayBases
     )

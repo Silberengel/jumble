@@ -135,9 +135,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [paymentInfoEvent, setPaymentInfoEvent] = useState<Event | null>(null)
   const [paymentInfoEditOpen, setPaymentInfoEditOpen] = useState(false)
-  const [paymentInfoEditContent, setPaymentInfoEditContent] = useState('')
   const [paymentInfoEditMethods, setPaymentInfoEditMethods] = useState<EditorPaymentMethodRow[]>([])
-  const [paymentInfoShowFullJson, setPaymentInfoShowFullJson] = useState(false)
+  /** Kind 10133 `content` preserved from the opened event; not edited in the UI (payto tags only). */
+  const paymentInfoDraftContentRef = useRef('{}')
   const [savingPaymentInfo, setSavingPaymentInfo] = useState(false)
   const savingPaymentInfoRef = useRef(false)
   const [profileEventJson, setProfileEventJson] = useState<string>('')
@@ -174,11 +174,11 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     setProfileTagRows(tagRowsFromTags(buildTagListFromEvent(profileEvent ?? null)))
   }, [profileEvent, profileFormSyncLocked])
 
-  // Sync full-event JSON editor (same guard as tag list).
+  // Live full-event JSON preview from the current tag list (reorder, edit, add, remove).
   useEffect(() => {
-    if (profileFormSyncLocked) return
-    setProfileEventJson(profileEvent ? JSON.stringify(profileEvent, null, 2) : '')
-  }, [profileEvent, profileFormSyncLocked])
+    if (!profileEvent) return
+    setProfileEventJson(buildProfileEventJsonFromTagRows(profileEvent, profileTagRows))
+  }, [profileTagRows, profileEvent])
 
   // Fetch payment info (kind 10133).
   useEffect(() => {
@@ -239,13 +239,25 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   // ─── Payment info ────────────────────────────────────────────────────────────
 
+  const paymentInfoPreviewJson = useMemo(
+    () =>
+      JSON.stringify(
+        createPaymentInfoDraftEvent(
+          paymentInfoDraftContentRef.current,
+          paymentMethodsToPaytoTags(paymentInfoEditMethods)
+        ),
+        null,
+        2
+      ),
+    [paymentInfoEditMethods, paymentInfoEditOpen]
+  )
+
   const openPaymentInfoEditor = useCallback(() => {
     if (paymentInfoEvent) {
-      setPaymentInfoEditContent(
+      paymentInfoDraftContentRef.current =
         typeof paymentInfoEvent.content === 'string'
           ? paymentInfoEvent.content
           : JSON.stringify(paymentInfoEvent.content ?? '', null, 2)
-      )
       const paytoTags = (paymentInfoEvent.tags ?? []).filter(
         (tag) => Array.isArray(tag) && tag[0] === 'payto' && tag[1] != null
       )
@@ -259,34 +271,19 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           : [{ id: newEditorId(), type: 'lightning', authority: '' }]
       )
     } else {
-      setPaymentInfoEditContent('{}')
+      paymentInfoDraftContentRef.current = '{}'
       setPaymentInfoEditMethods([{ id: newEditorId(), type: 'lightning', authority: '' }])
     }
-    setPaymentInfoShowFullJson(false)
     setPaymentInfoEditOpen(true)
   }, [paymentInfoEvent])
 
   const savePaymentInfo = useCallback(async () => {
     if (savingPaymentInfoRef.current) return
-    const tags: string[][] = paymentInfoEditMethods
-      .filter((m) => {
-        const type = m.type.trim()
-        return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
-      })
-      .map((m) => {
-        const type = m.type.trim().toLowerCase()
-        const authority =
-          type === 'paypal' ? normalizePaypalAuthority(m.authority) : m.authority.trim()
-        return ['payto', type, authority]
-      })
+    const tags = paymentMethodsToPaytoTags(paymentInfoEditMethods)
     savingPaymentInfoRef.current = true
     setSavingPaymentInfo(true)
     try {
-      const contentStr = paymentInfoEditContent.trim() || '{}'
-      try { JSON.parse(contentStr) } catch {
-        toast.error(t('Invalid content JSON'))
-        return
-      }
+      const contentStr = paymentInfoDraftContentRef.current.trim() || '{}'
       const draft = createPaymentInfoDraftEvent(contentStr, tags)
       const published = await publish(draft)
       await client.updatePaymentInfoCache(published)
@@ -299,7 +296,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       savingPaymentInfoRef.current = false
       setSavingPaymentInfo(false)
     }
-  }, [paymentInfoEditContent, paymentInfoEditMethods, publish, t])
+  }, [paymentInfoEditMethods, publish, t])
 
   // ─── Cache refresh ───────────────────────────────────────────────────────────
 
@@ -316,8 +313,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       ])
       if (profileEvt) {
         await updateProfileEvent(profileEvt)
-        setProfileTagRows(tagRowsFromTags(buildTagListFromEvent(profileEvt)))
-        setProfileEventJson(JSON.stringify(profileEvt, null, 2))
+        const refreshedRows = tagRowsFromTags(buildTagListFromEvent(profileEvt))
+        setProfileTagRows(refreshedRows)
+        setProfileEventJson(buildProfileEventJsonFromTagRows(profileEvt, refreshedRows))
         setHasChanged(false)
       }
       setPaymentInfoEvent(paymentEvt ?? null)
@@ -426,54 +424,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
     const savePromise = (async () => {
       try {
-        // Strip empty/incomplete rows, trim whitespace.
-        const validTags = profileTagRows
-          .map((row) => row.tag)
-          .filter((t) => {
-            if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
-            const name = (t[0] ?? '').trim()
-            if (name === 'bot') return true
-            return t.length >= 2 && (t[1] ?? '').trim()
-          })
-          .map((t) => {
-            const name = (t[0] ?? '').trim()
-            const v1 = (t[1] ?? '').trim()
-            if (name === 'bot') {
-              if (t.length === 1 || !v1) return ['bot']
-              const low = v1.toLowerCase()
-              if (low === 'false') return ['bot', 'false']
-              if (low === 'true') return ['bot', 'true']
-              return ['bot', v1]
-            }
-            return [name, v1, ...t.slice(2)]
-          })
-
-        const orderedTags = validTags
-          // Enforce at-most-one uniqueness: keep only the first occurrence.
-          .filter((() => {
-            const seen = new Set<string>()
-            return (t: string[]) => {
-              if (!AT_MOST_ONE_NAMES.includes(t[0])) return true
-              if (seen.has(t[0])) return false
-              seen.add(t[0])
-              return true
-            }
-          })())
-
-        const content: Record<string, string> = {}
-        const seenContent = new Set<string>()
-        for (const tag of orderedTags) {
-          const name = tag[0]
-          if (name === 'bot') continue
-          if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
-            content[name] = tag[1]
-            seenContent.add(name)
-          }
-        }
-        // Keep displayName alias for backward compatibility.
-        if (content['display_name']) content['displayName'] = content['display_name']
-
-        const draft = createProfileDraftEvent(JSON.stringify(content), orderedTags)
+        const { contentJson, orderedTags } = profileTagsToSavePayload(profileTagRows)
+        const draft = createProfileDraftEvent(contentJson, orderedTags)
         const published = await publish(draft)
         await updateProfileEvent(published)
         if (!mountedRef.current) return
@@ -886,50 +838,16 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               </div>
             </Item>
             <Item>
-              <Label htmlFor="payment-info-content">{t('Additional content (JSON)')}</Label>
-              <Input
-                id="payment-info-content"
-                className="font-mono text-sm"
-                value={paymentInfoEditContent}
-                onChange={(e) => setPaymentInfoEditContent(e.target.value)}
-                placeholder='{}'
-              />
-            </Item>
-            <Item>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1"
-                onClick={() => setPaymentInfoShowFullJson((v) => !v)}
-              >
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform ${paymentInfoShowFullJson ? 'rotate-180' : ''}`}
-                />
-                {t('Show full event JSON')}
-              </Button>
-              {paymentInfoShowFullJson && (
-                <pre className="mt-2 p-3 rounded-md bg-muted text-xs overflow-auto max-h-48 break-all whitespace-pre-wrap border">
-                  {JSON.stringify(
-                    createPaymentInfoDraftEvent(
-                      paymentInfoEditContent.trim() || '{}',
-                      paymentInfoEditMethods
-                        .filter((m) => {
-                          const type = m.type.trim()
-                          return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
-                        })
-                        .map((m) => {
-        const type = m.type.trim().toLowerCase()
-        const authority =
-          type === 'paypal' ? normalizePaypalAuthority(m.authority) : m.authority.trim()
-        return ['payto', type, authority]
-      })
-                    ),
-                    null,
-                    2
-                  )}
-                </pre>
-              )}
+              <Label className="text-muted-foreground">{t('Event (JSON)')}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t('paytoEditor.jsonPreviewHint', {
+                  defaultValue:
+                    'Live preview of the kind 10133 event that will be published. Payto tag order matches the list above.'
+                })}
+              </p>
+              <pre className="mt-2 p-3 rounded-md bg-muted text-xs overflow-auto max-h-64 break-all whitespace-pre-wrap border font-mono">
+                {paymentInfoPreviewJson}
+              </pre>
             </Item>
           </div>
           <DialogFooter>
@@ -960,6 +878,80 @@ function newEditorId(): string {
 
 function tagRowsFromTags(tags: string[][]): EditorTagRow[] {
   return tags.map((tag) => ({ id: newEditorId(), tag }))
+}
+
+/** Valid tags + content JSON from editor rows (tag list order is preserved). */
+function profileTagsToSavePayload(rows: EditorTagRow[]): {
+  contentJson: string
+  orderedTags: string[][]
+} {
+  const validTags = rows
+    .map((row) => row.tag)
+    .filter((t) => {
+      if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
+      const name = (t[0] ?? '').trim()
+      if (name === 'bot') return true
+      return t.length >= 2 && (t[1] ?? '').trim()
+    })
+    .map((t) => {
+      const name = (t[0] ?? '').trim()
+      const v1 = (t[1] ?? '').trim()
+      if (name === 'bot') {
+        if (t.length === 1 || !v1) return ['bot']
+        const low = v1.toLowerCase()
+        if (low === 'false') return ['bot', 'false']
+        if (low === 'true') return ['bot', 'true']
+        return ['bot', v1]
+      }
+      return [name, v1, ...t.slice(2)]
+    })
+
+  const orderedTags = validTags.filter((() => {
+    const seen = new Set<string>()
+    return (t: string[]) => {
+      if (!AT_MOST_ONE_NAMES.includes(t[0])) return true
+      if (seen.has(t[0])) return false
+      seen.add(t[0])
+      return true
+    }
+  })())
+
+  const content: Record<string, string> = {}
+  const seenContent = new Set<string>()
+  for (const tag of orderedTags) {
+    const name = tag[0]
+    if (name === 'bot') continue
+    if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
+      content[name] = tag[1]
+      seenContent.add(name)
+    }
+  }
+  if (content['display_name']) content['displayName'] = content['display_name']
+
+  return { contentJson: JSON.stringify(content), orderedTags }
+}
+
+function buildProfileEventJsonFromTagRows(baseEvent: Event, rows: EditorTagRow[]): string {
+  const { contentJson, orderedTags } = profileTagsToSavePayload(rows)
+  return JSON.stringify(
+    { ...baseEvent, content: contentJson, tags: orderedTags },
+    null,
+    2
+  )
+}
+
+function paymentMethodsToPaytoTags(methods: EditorPaymentMethodRow[]): string[][] {
+  return methods
+    .filter((m) => {
+      const type = m.type.trim()
+      return m.authority.trim() && type && type !== PAYTO_EDITOR_OTHER_OPTION
+    })
+    .map((m) => {
+      const type = m.type.trim().toLowerCase()
+      const authority =
+        type === 'paypal' ? normalizePaypalAuthority(m.authority) : m.authority.trim()
+      return ['payto', type, authority]
+    })
 }
 
 /**

@@ -3,12 +3,12 @@ import { RefreshButton } from '@/components/RefreshButton'
 import Relay from '@/components/Relay'
 import PrimaryPageLayout from '@/layouts/PrimaryPageLayout'
 import { TPageRef } from '@/types'
-import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
+import { normalizeRelayUrlForPage, simplifyUrl } from '@/lib/url'
 import { Server } from 'lucide-react'
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react'
 
 const RelayPage = forwardRef<TPageRef, { url?: string }>(({ url }, ref) => {
-  const normalizedUrl = useMemo(() => (url ? normalizeAnyRelayUrl(url) : undefined), [url])
+  const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])
   const layoutRef = useRef<TPageRef>(null)
   const feedRef = useRef<TNoteListRef>(null)
 

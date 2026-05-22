@@ -3,14 +3,14 @@ import Relay from '@/components/Relay'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
+import { normalizeRelayUrlForPage, simplifyUrl } from '@/lib/url'
 import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
 import NotFoundPage from '../NotFoundPage'
 
 const RelayPage = forwardRef(({ url, index, hideTitlebar = false }: { url?: string; index?: number; hideTitlebar?: boolean }, ref) => {
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const feedRef = useRef<TNoteListRef>(null)
-  const normalizedUrl = useMemo(() => (url ? normalizeAnyRelayUrl(url) : undefined), [url])
+  const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])
   const title = useMemo(() => (url ? simplifyUrl(url) : undefined), [url])
 
   const bumpFeed = useCallback(() => {

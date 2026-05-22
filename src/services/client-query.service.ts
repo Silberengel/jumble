@@ -31,7 +31,7 @@ import logger from '@/lib/logger'
 import { getViewerNostrLandAggrSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import {
   canonicalRelaySessionKey,
-  httpIndexRelayBasesInUrlBatch,
+  httpIndexBasesForRelayQuery,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
   normalizeUrl
@@ -479,7 +479,7 @@ export class QueryService {
             ? FIRST_RELAY_RESULT_GRACE_MS
             : null
 
-    const httpRelayBases = httpIndexRelayBasesInUrlBatch(urls, options?.httpIndexRelayBases ?? []).filter(
+    const httpRelayBases = httpIndexBasesForRelayQuery(urls, options?.httpIndexRelayBases ?? []).filter(
       (u) => !relaySessionStrikes.isReadHttpSkipped(u)
     )
     const httpKeys = new Set(httpRelayBases.map((u) => canonicalRelaySessionKey(u)))

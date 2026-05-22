@@ -9,7 +9,7 @@ import {
   userReadRelaysWithHttp
 } from '@/lib/favorites-feed-relays'
 import { relayReviewDTagsForRelayUrl, relayReviewsFeedSnapshotKey } from '@/lib/relay-review-feed'
-import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
+import { normalizeRelayUrlForPage, simplifyUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TFeedSubRequest } from '@/types'
@@ -34,7 +34,7 @@ const RelayReviewsPage = forwardRef(({ url, index, hideTitlebar = false }: { url
     return () => registerPrimaryPanelRefresh(null)
   }, [hideTitlebar, registerPrimaryPanelRefresh, bumpFeed])
 
-  const normalizedUrl = useMemo(() => (url ? normalizeAnyRelayUrl(url) : undefined), [url])
+  const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])
   /** `d` tag values vary by client (raw vs normalized URL); REQ must OR-match every variant. */
   const relayReviewDTags = useMemo(
     () => (url ? relayReviewDTagsForRelayUrl(url) : []),

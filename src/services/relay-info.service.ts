@@ -1,4 +1,9 @@
-import { devProxyLoopbackHttpRelayBase, normalizeHttpRelayUrl, simplifyUrl } from '@/lib/url'
+import {
+  devProxyCorsProblematicHttpsIndexRelayBase,
+  devProxyLoopbackHttpRelayBase,
+  normalizeHttpRelayUrl,
+  simplifyUrl
+} from '@/lib/url'
 import indexDb from '@/services/indexed-db.service'
 import { TAwesomeRelayCollection, TRelayInfo } from '@/types'
 import DataLoader from 'dataloader'
@@ -167,7 +172,9 @@ class RelayInfoService {
       // port and would return that relay's NIP-11 for any localhost WS relay (wrong data).
       // HTTP index relay URLs do use the proxy to avoid CORS.
       const isWsRelay = /^wss?:\/\//i.test(url.trim())
-      const fetchUrl = isWsRelay ? httpBase : devProxyLoopbackHttpRelayBase(httpBase)
+      const fetchUrl = isWsRelay
+        ? httpBase
+        : devProxyCorsProblematicHttpsIndexRelayBase(devProxyLoopbackHttpRelayBase(httpBase))
       logger.debug('[RelayInfo] Fetching NIP-11', { url, fetchUrl })
       const res = await fetchWithTimeout(fetchUrl, {
         headers: { Accept: 'application/nostr+json' },

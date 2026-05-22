@@ -1597,7 +1597,18 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
       // If the side panel has frames, this popstate is almost certainly stack navigation — do not let
       // modalManager steal it (history.forward + return), which leaves the URL changed and the panel stale.
+      const browserPathOnlyEarly = window.location.pathname.split('?')[0].split('#')[0]
       if (secondaryStackRef.current.length === 0) {
+        if (!isPrimaryOnlyPathname(browserPathOnlyEarly)) {
+          const locUrl =
+            window.location.pathname + window.location.search + window.location.hash
+          const synced = syncSecondaryStackWhenPopStateStateIsNull([], locUrl)
+          if (synced.length > 0) {
+            secondaryStackRef.current = synced
+            setSecondaryStack(synced)
+            return
+          }
+        }
         const closeModal = modalManager.pop()
         if (closeModal) {
           ignorePopStateRef.current = true
@@ -1718,6 +1729,14 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
         if (state.index === currentIndex && currentItem) {
           const historyState = state
+          const browserLoc =
+            window.location.pathname + window.location.search + window.location.hash
+          if (
+            !secondaryPanelUrlsMatch(currentItem.url, browserLoc) &&
+            !secondaryPanelUrlsMatch(currentItem.url, historyState.url)
+          ) {
+            return syncSecondaryStackWhenPopStateStateIsNull(pre, browserLoc)
+          }
           const urlMatches =
             currentItem.url === historyState.url ||
             secondaryPanelUrlsMatch(currentItem.url, historyState.url)
@@ -2145,7 +2164,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     openDrawer(noteId, navigationEventStore.peekEvent(noteId))
   }
 
+  /** UI-first back: sync stack / drawer immediately, then align browser history. */
   const popSecondaryPage = () => {
+    navigationCounterRef.current += 1
+    if (primaryNoteView) {
+      setPrimaryNoteView(null)
+    }
+
     const stackLen = secondaryStackRef.current.length
 
     // Mobile / single-pane: one code path — drawer + stack share the same close behavior
@@ -2153,9 +2178,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       if (stackLen > 1) {
         const next = popOneSecondaryStackFrame()
         syncDrawerToSecondaryStackTop(next)
+        ignorePopStateRef.current = true
         window.history.back()
       } else {
         hardCloseSecondaryPanel()
+        const pathOnly = window.location.pathname.split('?')[0].split('#')[0]
+        if (!isPrimaryOnlyPathname(pathOnly)) {
+          ignorePopStateRef.current = true
+          window.history.back()
+        }
       }
       return
     }
@@ -2184,9 +2215,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         }
       } else if (stackLen > 1) {
         popOneSecondaryStackFrame()
-        // Must use real history navigation: replaceState + slice desyncs URL from the session stack
-        // (e.g. note → highlight → Back: bar shows the article but the panel still shows the highlight).
-        // Eager stack pop above keeps the panel in sync even when popstate returns early (index === currentIndex).
+        ignorePopStateRef.current = true
         window.history.back()
       } else {
         // Stack empty but user hit back/close: align URL to primary without history.go(-1), which
@@ -2345,27 +2374,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               </div>
             ) : (
               <>
-                {!!secondaryStack.length &&
-                  secondaryStack.map((item, index) => {
-                    const isLast = index === secondaryStack.length - 1
-                    logger.component('PageManager', 'Rendering secondary stack item', { 
-                      index, 
-                      isLast, 
-                      url: item.url, 
-                      hasComponent: !!item.component,
-                      display: isLast ? 'block' : 'none'
-                    })
-                    return (
-                      <div
-                        key={item.index}
-                        style={{
-                          display: isLast ? 'block' : 'none'
-                        }}
-                      >
-                        {item.component}
-                      </div>
-                    )
-                  })}
+                {secondaryStack.length > 0 ? (
+                  <TopSecondaryStackPane item={secondaryStack[secondaryStack.length - 1]!} />
+                ) : null}
                 {secondaryStack.length === 0 ? (
                   <div className="block h-full min-h-0 min-w-0">
                     {renderActivePrimaryPageContent(primaryPages, currentPrimaryPage)}
@@ -2457,20 +2468,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                         {/* Right: secondary stack — max width so left pane keeps space on small desktops */}
                         <div className="flex h-full min-h-0 w-[min(1042px,50vw)] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/25">
                           {secondaryStack.length > 0 ? (
-                            secondaryStack.map((item, index) => {
-                              const isLast = index === secondaryStack.length - 1
-                              return (
-                                <div
-                                  key={item.index}
-                                  className={cn(
-                                    'h-full min-h-0 min-w-0 flex-col',
-                                    isLast ? 'flex' : 'hidden'
-                                  )}
-                                >
-                                  {item.component}
-                                </div>
-                              )
-                            })
+                            <TopSecondaryStackPane
+                              item={secondaryStack[secondaryStack.length - 1]!}
+                              className="flex h-full min-h-0 min-w-0 flex-col"
+                            />
                           ) : (
                             <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
                               <p>{t('doublePane.secondaryEmpty')}</p>
@@ -2637,6 +2638,21 @@ function secondaryPanelUrlsMatch(stackUrl: string, locationUrl: string): boolean
 }
 
 /** `/`, `/feed`, `/explore`, etc. — not `/notes/…`, `/feed/notes/…`, `/relays/…`. */
+/** Mount only the top secondary frame so Back unmounts feeds/relays under the previous page. */
+function TopSecondaryStackPane({
+  item,
+  className = 'block h-full min-h-0 min-w-0'
+}: {
+  item: TStackItem
+  className?: string
+}) {
+  return (
+    <div key={item.index} className={className}>
+      {item.component}
+    </div>
+  )
+}
+
 function isPrimaryOnlyPathname(pathname: string): boolean {
   const pathOnly = pathname.split('?')[0].split('#')[0]
   const segments = pathOnly.split('/').filter(Boolean)
