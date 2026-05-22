@@ -39,7 +39,7 @@ const RelayPage = forwardRef(({ url, index, hideTitlebar = false }: { url?: stri
       controls={hideTitlebar ? undefined : <RefreshButton onClick={bumpFeed} />}
       displayScrollToTopButton
     >
-      <Relay ref={feedRef} url={normalizedUrl} />
+      <Relay ref={feedRef} url={normalizedUrl} hostPrimaryPageName="relay" />
     </SecondaryPageLayout>
   )
 })

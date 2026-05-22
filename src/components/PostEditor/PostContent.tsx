@@ -1408,6 +1408,15 @@ export default function PostContent({
 
         if (parentEvent) {
           mergePublishedReplyIntoThread(cleanEvent, relayStatuses)
+        } else {
+          client.addEventToCache(cleanEvent)
+          if (openFrom?.length) {
+            for (const relayUrl of openFrom) {
+              window.dispatchEvent(
+                new CustomEvent('relay-refresh-needed', { detail: { relayUrl } })
+              )
+            }
+          }
         }
 
         onPublishSuccess?.()
@@ -1452,6 +1461,17 @@ export default function PostContent({
               const clean = { ...partialEvent }
               delete (clean as any).relayStatuses
               mergePublishedReplyIntoThread(clean, (error as any).relayStatuses)
+            } else if (partialEvent) {
+              const clean = { ...partialEvent }
+              delete (clean as any).relayStatuses
+              client.addEventToCache(clean)
+              if (openFrom?.length) {
+                for (const relayUrl of openFrom) {
+                  window.dispatchEvent(
+                    new CustomEvent('relay-refresh-needed', { detail: { relayUrl } })
+                  )
+                }
+              }
             }
             postEditorCache.clearPostCache({ kind: getDeterminedKind, defaultContent, parentEvent })
             if (isDiscussionThread && !parentEvent) {

@@ -2848,28 +2848,31 @@ class ClientService extends EventTarget {
       connectionSlotPriority?: boolean
     } = {}
   ) {
-    let relays = Array.from(new Set(urls))
+    const originalDedupedRelays = Array.from(new Set(urls))
+    let wsRelayUrls = originalDedupedRelays
     if (navigator.onLine) {
-      relays = stripLocalNetworkRelaysForWssReq(relays)
+      // HTTPS index relays are polled via HTTP API — never WebSocket REQ (see httpTimelinePollBases below).
+      wsRelayUrls = stripLocalNetworkRelaysForWssReq(originalDedupedRelays)
     } else {
       // While offline, strip non-local relays before any further processing so the
       // capital-letter-tag fallback below cannot re-introduce internet relays.
-      relays = relays.filter((url) => isLocalNetworkUrl(url))
+      wsRelayUrls = originalDedupedRelays.filter((url) => isLocalNetworkUrl(url))
     }
     if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
-      relays = relayUrlsStripExtendedTagReqBlocked(relays)
-      if (relays.length === 0 && navigator.onLine && !relayAuthoritativeTimeline) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
+      wsRelayUrls = relayUrlsStripExtendedTagReqBlocked(wsRelayUrls)
+      if (wsRelayUrls.length === 0 && navigator.onLine && !relayAuthoritativeTimeline) {
+        wsRelayUrls = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
       }
     }
-    const key = this.generateTimelineKey(relays, filter)
+    const timelineUrls = originalDedupedRelays
+    const key = this.generateTimelineKey(timelineUrls, filter)
     let timeline = this.timelines[key]
 
     if (!timeline || Array.isArray(timeline)) {
       this.timelines[key] = {
         refs: [],
         filter,
-        urls: relays,
+        urls: timelineUrls,
         ...(relayAuthoritativeTimeline ? { disablePersist: true as const } : {})
       }
       timeline = this.timelines[key]
@@ -2879,7 +2882,7 @@ class ClientService extends EventTarget {
       // relay sent a full `limit` batch whose newest row was still older than that head, `newRefs` became
       // empty and `tl.refs` was replaced with [] or failed to adopt fresh rows (feed looked permanently stale).
       timeline.filter = filter
-      timeline.urls = relays
+      timeline.urls = timelineUrls
       timeline.refs = []
       if (relayAuthoritativeTimeline) {
         timeline.disablePersist = true
@@ -2898,7 +2901,10 @@ class ClientService extends EventTarget {
     let eosedAt: number | null = null
     let eventIds = new Set<string>()
 
-    const httpTimelinePollBases = httpIndexBasesForRelayQuery(relays, this.viewerHttpIndexRelayBases)
+    const httpTimelinePollBases = httpIndexBasesForRelayQuery(
+      originalDedupedRelays,
+      this.viewerHttpIndexRelayBases
+    ).filter((u) => !relaySessionStrikes.isReadHttpSkipped(u))
     let httpPollIntervalId: ReturnType<typeof setInterval> | null = null
     let httpPollCursorUnix = 0
     const clearHttpTimelinePoll = () => {
@@ -3112,7 +3118,7 @@ class ClientService extends EventTarget {
         that.timelines[key] = {
           refs: events.map((evt) => [evt.id, evt.created_at]),
           filter,
-          urls: relays,
+          urls: timelineUrls,
           ...(relayAuthoritativeTimeline ? { disablePersist: true as const } : {})
         }
       } else if (tl.refs.length === 0) {
@@ -3134,12 +3140,8 @@ class ClientService extends EventTarget {
     }
 
     // HTTP index relays are handled via httpTimelinePollBases above — never pass them to the WS subscribe path.
-    const httpPollKeys = new Set(
-      httpIndexBasesForRelayQuery(relays, this.viewerHttpIndexRelayBases).map((u) =>
-        canonicalRelaySessionKey(u)
-      )
-    )
-    const wsRelays = relays.filter((u) => !httpPollKeys.has(canonicalRelaySessionKey(u)))
+    const httpPollKeys = new Set(httpTimelinePollBases.map((u) => canonicalRelaySessionKey(u)))
+    const wsRelays = wsRelayUrls.filter((u) => !httpPollKeys.has(canonicalRelaySessionKey(u)))
 
     // When there are HTTP relays but NO WS relays, subscribe([]) would fire oneose + onBatchEnd
     // immediately (via microtask) — before the HTTP initial poll returns any events. That causes:
