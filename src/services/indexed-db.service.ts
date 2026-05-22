@@ -1106,7 +1106,7 @@ class IndexedDbService {
     // PAYMENT_INFO (10133), RSS_FEED_LIST (10895), etc. are in the 10000-20000 range
     if (
       [kinds.Metadata, kinds.Contacts, ExtendedKind.PAYMENT_INFO].includes(event.kind) ||
-      (event.kind >= 10000 && event.kind < 20000 && event.kind !== ExtendedKind.PUBLICATION && event.kind !== ExtendedKind.PUBLICATION_CONTENT && event.kind !== ExtendedKind.WIKI_ARTICLE && event.kind !== ExtendedKind.WIKI_ARTICLE_MARKDOWN && event.kind !== kinds.LongFormArticle)
+      (event.kind >= 10000 && event.kind < 20000 && event.kind !== ExtendedKind.PUBLICATION && event.kind !== ExtendedKind.PUBLICATION_CONTENT && event.kind !== ExtendedKind.WIKI_ARTICLE && event.kind !== ExtendedKind.NOSTR_SPECIFICATION && event.kind !== kinds.LongFormArticle)
     ) {
       return this.getReplaceableEventKey(event.pubkey)
     }
@@ -1169,7 +1169,7 @@ class IndexedDbService {
       case ExtendedKind.PUBLICATION:
       case ExtendedKind.PUBLICATION_CONTENT:
       case ExtendedKind.WIKI_ARTICLE:
-      case ExtendedKind.WIKI_ARTICLE_MARKDOWN:
+      case ExtendedKind.NOSTR_SPECIFICATION:
       case kinds.LongFormArticle:
         return StoreNames.PUBLICATION_EVENTS
       case ExtendedKind.BADGE_DEFINITION:

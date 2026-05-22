@@ -54,8 +54,8 @@ function getEventTypeName(kind: number): string {
       return 'Publication Content'
     case ExtendedKind.WIKI_ARTICLE:
       return 'Wiki Article'
-    case ExtendedKind.WIKI_ARTICLE_MARKDOWN:
-      return 'Wiki Article'
+    case ExtendedKind.NOSTR_SPECIFICATION:
+      return 'Nostr Specification'
     case ExtendedKind.DISCUSSION:
       return 'Discussion'
     default:
@@ -509,7 +509,7 @@ export default function WebPreview({ url, className }: { url: string; className?
 
       // Determine which article component to use based on event kind
       const isAsciidocEvent = fetchedEvent && (fetchedEvent.kind === ExtendedKind.WIKI_ARTICLE || fetchedEvent.kind === ExtendedKind.PUBLICATION_CONTENT)
-      const isMarkdownEvent = fetchedEvent && (fetchedEvent.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN)
+      const isMarkdownEvent = fetchedEvent && (fetchedEvent.kind === ExtendedKind.NOSTR_SPECIFICATION)
       // Only show content preview if summary exists (exclude LongFormArticle - they should show summary instead)
       const showContentPreview = eventSummary && previewEvent && previewEvent.content && (isAsciidocEvent || isMarkdownEvent)
       

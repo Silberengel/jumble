@@ -189,7 +189,7 @@ const KINDS_WITH_METADATA_TITLE = new Set<number>([
   kinds.LongFormArticle,
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.WIKI_ARTICLE
 ])
 

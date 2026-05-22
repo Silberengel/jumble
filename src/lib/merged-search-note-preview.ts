@@ -7,7 +7,7 @@ import { kinds } from 'nostr-tools'
 const DOC_KINDS = new Set<number>([
   kinds.LongFormArticle,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT
 ])

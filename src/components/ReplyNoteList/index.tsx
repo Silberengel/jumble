@@ -309,7 +309,7 @@ function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   if (
     item.kind === kinds.LongFormArticle ||
     item.kind === ExtendedKind.WIKI_ARTICLE ||
-    item.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN ||
+    item.kind === ExtendedKind.NOSTR_SPECIFICATION ||
     item.kind === ExtendedKind.PUBLICATION_CONTENT
   ) {
     return t('cited in article')

@@ -285,7 +285,7 @@ export default function Highlight({
         ExtendedKind.PICTURE, // Has PictureNotePreview
         ExtendedKind.PUBLICATION, // Has PublicationCard
         ExtendedKind.WIKI_ARTICLE, // Has special card
-        ExtendedKind.WIKI_ARTICLE_MARKDOWN, // Has special card
+        ExtendedKind.NOSTR_SPECIFICATION, // Has special card
         ExtendedKind.VOICE, // Has special card
         ExtendedKind.VOICE_COMMENT, // Has special card
       ]

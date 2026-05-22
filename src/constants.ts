@@ -547,7 +547,8 @@ export const ExtendedKind = {
   ZAP_RECEIPT: 9735,
   PUBLICATION: 30040,
   WIKI_ARTICLE: 30818,
-  WIKI_ARTICLE_MARKDOWN: 30817,
+  /** NIP/spec document (Markdown) for relay publication instead of GitHub; kind 30817. */
+  NOSTR_SPECIFICATION: 30817,
   PUBLICATION_CONTENT: 30041,
   CITATION_INTERNAL: 30,
   CITATION_EXTERNAL: 31,
@@ -702,7 +703,7 @@ export const THREAD_BACKLINK_STREAM_KINDS: readonly number[] = [
   kinds.Highlights,
   kinds.LongFormArticle,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.PUBLICATION_CONTENT,
   kinds.Label,
   kinds.Report,
@@ -803,7 +804,7 @@ export function relayFilterIncludesSocialKindBlockedKind(filter: Filter): boolea
 const DOCUMENT_RELAY_KINDS: readonly number[] = [
   kinds.LongFormArticle, // 30023
   ExtendedKind.WIKI_ARTICLE, // 30818
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN, // 30817
+  ExtendedKind.NOSTR_SPECIFICATION, // 30817
   ExtendedKind.PUBLICATION_CONTENT, // 30041
   ExtendedKind.PUBLICATION // 30040
 ]
@@ -821,7 +822,7 @@ export function isDocumentRelayKind(kind: number): boolean {
  */
 export const NIP_SEARCH_DOCUMENT_KINDS: readonly number[] = [
   kinds.LongFormArticle,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.WIKI_ARTICLE,
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT
@@ -865,7 +866,7 @@ export const READ_ALOUD_KINDS: readonly number[] = [
   kinds.LongFormArticle,
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.WIKI_ARTICLE
 ]
 
@@ -910,7 +911,7 @@ export const SUPPORTED_KINDS = [
   kinds.LiveEvent,
   ExtendedKind.PUBLICATION,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   // ExtendedKind.PUBLICATION_CONTENT, // Excluded - publication content should only be embedded in publications
   // NIP-89 Application Handlers
   ExtendedKind.APPLICATION_HANDLER_RECOMMENDATION,
@@ -941,7 +942,7 @@ export const PROFILE_PUBLICATIONS_TAB_KINDS: readonly number[] = [
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN
+  ExtendedKind.NOSTR_SPECIFICATION
 ]
 
 const PROFILE_PUBLICATIONS_TAB_KIND_SET = new Set<number>(PROFILE_PUBLICATIONS_TAB_KINDS)

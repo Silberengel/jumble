@@ -53,6 +53,12 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AdvancedEventLabMarkupToolbar } from './AdvancedEventLabMarkupToolbar'
 import { AdvancedEventLabPreviewPane } from './AdvancedEventLabPreviewPane'
+import AdvancedEventLabTagsEditor, {
+  editableRowsToLabTags,
+  labTagsToEditableRows
+} from './AdvancedEventLabTagsEditor'
+import { newComposerTagRow, type ComposerExtraTagRow } from '@/lib/composer-extra-tags'
+import { stripImwaldAttributionTags } from '@/lib/draft-event'
 import customEmojiService from '@/services/custom-emoji.service'
 import postEditorCache from '@/services/post-editor-cache.service'
 import type { TEmoji } from '@/types'
@@ -182,8 +188,7 @@ export type AdvancedEventLabDialogProps = {
   formatToolbar?: ReactNode
   /**
    * When set, lab markup/tags are debounced to the post-editor draft store (same persistence as TipTap)
-   * so a **reload** can restore in-progress lab work. Closing without Apply (dismiss actions, including the cancel button, Escape, overlay)
-   * clears this draft so the next open is seeded from TipTap again.
+   * so a **reload** can restore in-progress lab work. The draft is kept on dismiss; clear happens on publish or composer Clear.
    */
   draftPersistenceKey?: string | null
   /** Lab preview: resolve custom `:shortcode:` from this author's NIP-30 inventory when tags do not define them. */
@@ -239,13 +244,12 @@ export default function AdvancedEventLabDialog({
   const labPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previewDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const schedulePreviewUpdateRef = useRef<(text: string) => void>(() => {})
-  /** When true, closing is from Apply (draft already cleared); skip discard cleanup. */
-  const skipClearLabDraftOnCloseRef = useRef(false)
   /** Debounce writes to the draft map; pagehide/beforeunload flush immediately to disk. */
   const LAB_DRAFT_DEBOUNCE_MS = 500
 
   const [previewDoc, setPreviewDoc] = useState('')
   const [labBodyTab, setLabBodyTab] = useState<'edit' | 'preview'>('edit')
+  const [labTagRows, setLabTagRows] = useState<ComposerExtraTagRow[]>(() => [newComposerTagRow()])
 
   /** Stable while payload matches; avoids remounting the editor when the parent passes a new `initial` object reference. */
   const labEditorMountFingerprint =
@@ -358,21 +362,14 @@ export default function AdvancedEventLabDialog({
   const handleDialogOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
-        if (!skipClearLabDraftOnCloseRef.current) {
-          if (labPersistTimerRef.current) {
-            clearTimeout(labPersistTimerRef.current)
-            labPersistTimerRef.current = null
-          }
-          const key = draftPersistenceKeyRef.current
-          if (key) {
-            postEditorCache.clearAdvancedLabDraft(key)
-          }
+        const key = draftPersistenceKeyRef.current
+        if (key) {
+          flushLabDraftNow(key, true)
         }
-        skipClearLabDraftOnCloseRef.current = false
       }
       onOpenChange(next)
     },
-    [onOpenChange]
+    [onOpenChange, flushLabDraftNow]
   )
 
   const scheduleLabDraftPersist = useCallback(() => {
@@ -395,6 +392,18 @@ export default function AdvancedEventLabDialog({
     }, LAB_DRAFT_DEBOUNCE_MS)
   }, [])
 
+  const syncLabTagsFromRows = useCallback(
+    (rows: ComposerExtraTagRow[]) => {
+      setLabTagRows(rows)
+      const s = sliceRef.current
+      if (!s) return
+      s.tags = editableRowsToLabTags(rows)
+      scheduleLabDraftPersist()
+      bumpUndoUi()
+    },
+    [scheduleLabDraftPersist, bumpUndoUi]
+  )
+
   const restoreSliceInEditor = useCallback(
     (slice: AdvancedEventLabSlice) => {
       const v = markupView.current
@@ -403,7 +412,13 @@ export default function AdvancedEventLabDialog({
         changes: { from: 0, to: v.state.doc.length, insert: slice.content },
         selection: EditorSelection.cursor(0)
       })
-      sliceRef.current = cloneLabSlice(slice)
+      const editable = stripImwaldAttributionTags(slice.tags)
+      sliceRef.current = {
+        kind: slice.kind,
+        content: slice.content,
+        tags: editable.map((row) => [...row])
+      }
+      setLabTagRows(labTagsToEditableRows(editable))
       setPreviewDoc(slice.content)
       scheduleLabDraftPersist()
       if (isLanguageToolConfigured()) requestAdvancedLabGrammarLint(v)
@@ -614,12 +629,14 @@ export default function AdvancedEventLabDialog({
 
       destroyEditors()
 
+      const editableTags = stripImwaldAttributionTags(initial.tags)
       const baseSlice: AdvancedEventLabSlice = {
         kind: initial.kind,
         content: initial.content,
-        tags: initial.tags.map((row) => [...row])
+        tags: editableTags.map((row) => [...row])
       }
       sliceRef.current = baseSlice
+      setLabTagRows(labTagsToEditableRows(editableTags))
       setPreviewDoc(baseSlice.content)
 
       const markupLang: Extension =
@@ -799,13 +816,14 @@ export default function AdvancedEventLabDialog({
     const payload: AdvancedEventLabSlice = {
       kind,
       content,
-      tags: s.tags.map((row) => [...row])
+      tags: editableRowsToLabTags(labTagRows)
     }
-    skipClearLabDraftOnCloseRef.current = true
+    const key = draftPersistenceKeyRef.current
+    if (key) {
+      postEditorCache.setAdvancedLabDraft(key, payload)
+      postEditorCache.flushPersist()
+    }
     onApply(payload)
-    if (draftPersistenceKeyRef.current) {
-      postEditorCache.clearAdvancedLabDraft(draftPersistenceKeyRef.current)
-    }
     if (undoSessionId) {
       clearLabCheckpointsSession(undoSessionId)
       labCheckpointsRef.current = []
@@ -947,7 +965,8 @@ export default function AdvancedEventLabDialog({
           <div className="mt-2 border-t bg-muted/20 px-2 py-2">{formatToolbar}</div>
         ) : null}
 
-          <div className="mt-2 border-t bg-background px-4 py-3">
+          <div className="mt-2 border-t bg-background px-4 py-3 space-y-3">
+            <AdvancedEventLabTagsEditor rows={labTagRows} onChange={syncLabTagsFromRows} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
                 {t('Advanced lab cancel undo')}

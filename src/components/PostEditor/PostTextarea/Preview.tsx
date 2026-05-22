@@ -47,6 +47,8 @@ export default function Preview({
     image?: string
     dTag?: string
     topics?: string[]
+    /** Kind 30817: each number becomes a `k` tag. */
+    affectedKinds?: number[]
   }
   /** Merged into the fake event (e.g. kind 11 discussion title / topic tags). */
   extraPreviewTags?: string[][]
@@ -138,7 +140,7 @@ export default function Preview({
       tags.push(...mediaImetaTags)
     }
     // Add article metadata tags for article kinds
-    if (articleMetadata && (kind === kinds.LongFormArticle || kind === ExtendedKind.WIKI_ARTICLE || kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN || kind === ExtendedKind.PUBLICATION_CONTENT)) {
+    if (articleMetadata && (kind === kinds.LongFormArticle || kind === ExtendedKind.WIKI_ARTICLE || kind === ExtendedKind.NOSTR_SPECIFICATION || kind === ExtendedKind.PUBLICATION_CONTENT)) {
       if (articleMetadata.dTag) {
         tags.push(['d', articleMetadata.dTag])
       }
@@ -148,8 +150,16 @@ export default function Preview({
       if (articleMetadata.summary) {
         tags.push(['summary', articleMetadata.summary])
       }
-      if (articleMetadata.image) {
+      if (kind !== ExtendedKind.NOSTR_SPECIFICATION && articleMetadata.image) {
         tags.push(['image', articleMetadata.image])
+      }
+      if (
+        kind === ExtendedKind.NOSTR_SPECIFICATION &&
+        articleMetadata.affectedKinds?.length
+      ) {
+        for (const k of articleMetadata.affectedKinds) {
+          tags.push(['k', String(k)])
+        }
       }
       if (articleMetadata.topics && articleMetadata.topics.length > 0) {
         const normalizedTopics = articleMetadata.topics
@@ -249,8 +259,8 @@ export default function Preview({
     )
   }
 
-  // For WikiArticleMarkdown, use MarkdownArticle
-  if (kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN) {
+  // Nostr Specification (30817) uses MarkdownArticle
+  if (kind === ExtendedKind.NOSTR_SPECIFICATION) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
         <MarkdownArticle event={fakeEvent} hideMetadata={true} lazyMedia={false} />

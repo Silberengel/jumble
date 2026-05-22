@@ -493,7 +493,7 @@ export function useMenuActions({
   const isArticleType = useMemo(() => {
     return event.kind === kinds.LongFormArticle ||
            event.kind === ExtendedKind.WIKI_ARTICLE ||
-           event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN ||
+           event.kind === ExtendedKind.NOSTR_SPECIFICATION ||
            event.kind === ExtendedKind.PUBLICATION ||
            event.kind === ExtendedKind.PUBLICATION_CONTENT
   }, [event.kind])
@@ -1067,7 +1067,7 @@ export function useMenuActions({
 
     // Add export options for article-type events
     if (isArticleType) {
-      const isMarkdownFormat = event.kind === kinds.LongFormArticle || event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN
+      const isMarkdownFormat = event.kind === kinds.LongFormArticle || event.kind === ExtendedKind.NOSTR_SPECIFICATION
       const isAsciidocFormat = event.kind === ExtendedKind.WIKI_ARTICLE || event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT
       
       if (isMarkdownFormat) {
@@ -1115,7 +1115,7 @@ export function useMenuActions({
         event.kind === ExtendedKind.PUBLICATION_CONTENT ||
         event.kind === ExtendedKind.PUBLICATION ||
         event.kind === ExtendedKind.WIKI_ARTICLE ||
-        event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN
+        event.kind === ExtendedKind.NOSTR_SPECIFICATION
       ) {
         // For 30041, 30040, 30818, 30817: Alexandria
         if (naddr) {

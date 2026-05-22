@@ -83,8 +83,8 @@ function getEventTypeName(kind: number): string {
       return 'Publication Content'
     case ExtendedKind.WIKI_ARTICLE:
       return 'Wiki Article'
-    case ExtendedKind.WIKI_ARTICLE_MARKDOWN:
-      return 'Wiki Article'
+    case ExtendedKind.NOSTR_SPECIFICATION:
+      return 'Nostr Specification'
     case ExtendedKind.DISCUSSION:
       return 'Discussion'
     case ExtendedKind.CALENDAR_EVENT_TIME:
@@ -245,8 +245,8 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         return 'Note: Publication'
       case 30041: // ExtendedKind.PUBLICATION_CONTENT
         return 'Note: Publication Content'
-      case 30817: // ExtendedKind.WIKI_ARTICLE_MARKDOWN
-        return 'Note: Wiki Article'
+      case 30817: // ExtendedKind.NOSTR_SPECIFICATION
+        return 'Note: Nostr Specification'
       case 30818: // ExtendedKind.WIKI_ARTICLE
         return 'Note: Wiki Article'
       case 20: // ExtendedKind.PICTURE
@@ -294,7 +294,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       kinds.LongFormArticle, // 30023
       ExtendedKind.PUBLICATION, // 30040
       ExtendedKind.PUBLICATION_CONTENT, // 30041
-      ExtendedKind.WIKI_ARTICLE_MARKDOWN, // 30817
+      ExtendedKind.NOSTR_SPECIFICATION, // 30817
       ExtendedKind.WIKI_ARTICLE // 30818
     ]
     if (articleKinds.includes(finalEvent.kind)) {

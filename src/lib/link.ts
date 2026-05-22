@@ -11,7 +11,7 @@ const ALEXANDRIA_PUBLICATION_NADDR_KINDS = new Set<number>([
   ExtendedKind.PUBLICATION,
   ExtendedKind.PUBLICATION_CONTENT,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN
+  ExtendedKind.NOSTR_SPECIFICATION
 ])
 
 /** NIP-19 `naddr` for article-like replaceable events (`d` tag required). */

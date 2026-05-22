@@ -42,8 +42,8 @@ export function getKindDescription(
       return { number: 30023, description: 'Long-form Article' }
     case ExtendedKind.WIKI_ARTICLE:
       return { number: 30818, description: 'Wiki Article (AsciiDoc)' }
-    case ExtendedKind.WIKI_ARTICLE_MARKDOWN:
-      return { number: 30817, description: 'Wiki Article (Markdown)' }
+    case ExtendedKind.NOSTR_SPECIFICATION:
+      return { number: 30817, description: 'Nostr Specification' }
     case ExtendedKind.PUBLICATION_CONTENT:
       return { number: 30041, description: 'Publication Content' }
     case ExtendedKind.CITATION_INTERNAL:

@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
@@ -18,7 +17,6 @@ import {
   Dispatch,
   forwardRef,
   SetStateAction,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -33,10 +31,6 @@ import mentionSuggestion from './Mention/suggestion'
 import Preview from './Preview'
 import { HighlightData } from '../HighlightEditor'
 import { getKindDescription } from '@/lib/kind-description'
-import { parseLabSlice } from '@/lib/advanced-event-lab-slice'
-
-/** Draft JSON uses relay fetches (e.g. thread root); cap wait so the Json tab cannot spin forever. */
-const DRAFT_JSON_PREVIEW_TIMEOUT_MS = 25_000
 
 export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
@@ -74,10 +68,6 @@ const PostTextarea = forwardRef<
     highlightData?: HighlightData
     pollCreateData?: import('@/types').TPollCreateData
     headerActions?: React.ReactNode
-    getDraftEventJson?: () => Promise<string>
-    /** When set with `onApplyComposerDraftJson`, the Json tab becomes editable with Apply. */
-    expectedDraftKind?: number
-    onApplyComposerDraftJson?: (rawJson: string) => boolean
     mediaImetaTags?: string[][]
     mediaUrl?: string
     articleMetadata?: {
@@ -86,6 +76,7 @@ const PostTextarea = forwardRef<
       image?: string
       dTag?: string
       topics?: string[]
+      affectedKinds?: number[]
     }
     extraPreviewTags?: string[][]
     addClientTag?: boolean
@@ -109,9 +100,6 @@ const PostTextarea = forwardRef<
       highlightData,
       pollCreateData,
       headerActions,
-      getDraftEventJson,
-      expectedDraftKind,
-      onApplyComposerDraftJson,
       mediaImetaTags,
       mediaUrl,
       articleMetadata,
@@ -128,72 +116,10 @@ const PostTextarea = forwardRef<
     const onUploadCompressProgressRef = useRef(onUploadCompressProgress)
     onUploadCompressProgressRef.current = onUploadCompressProgress
     const [activeTab, setActiveTab] = useState('preview')
-    const [draftEventJson, setDraftEventJson] = useState<string>('')
-    const [isLoadingJson, setIsLoadingJson] = useState(false)
-    const [jsonFieldValue, setJsonFieldValue] = useState('')
-    const [jsonReloadToken, setJsonReloadToken] = useState(0)
-    /** Bumps when preview tab is shown or a new JSON fetch starts; completions only apply if seq still matches. */
-    const jsonPanelFetchSeq = useRef(0)
     const editorRef = useRef<Editor | null>(null)
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
 
-    useEffect(() => {
-      if (activeTab === 'preview') {
-        jsonPanelFetchSeq.current += 1
-        setDraftEventJson('')
-        setIsLoadingJson(false)
-        return
-      }
-
-      if (activeTab !== 'json' || !getDraftEventJson) {
-        return
-      }
-
-      const seq = ++jsonPanelFetchSeq.current
-      setIsLoadingJson(true)
-
-      let timeoutId: number | undefined = window.setTimeout(() => {
-        timeoutId = undefined
-        if (seq !== jsonPanelFetchSeq.current) return
-        setDraftEventJson(
-          `Error generating JSON: Timed out after ${Math.round(DRAFT_JSON_PREVIEW_TIMEOUT_MS / 1000)}s (relays or network slow)`
-        )
-        setIsLoadingJson(false)
-      }, DRAFT_JSON_PREVIEW_TIMEOUT_MS)
-
-      const clearJsonTimeout = () => {
-        if (timeoutId !== undefined) {
-          clearTimeout(timeoutId)
-          timeoutId = undefined
-        }
-      }
-
-      void Promise.resolve(getDraftEventJson())
-        .then((json) => {
-          clearJsonTimeout()
-          if (seq !== jsonPanelFetchSeq.current) return
-          setDraftEventJson(json)
-          setIsLoadingJson(false)
-        })
-        .catch((error: unknown) => {
-          clearJsonTimeout()
-          if (seq !== jsonPanelFetchSeq.current) return
-          const msg = error instanceof Error ? error.message : String(error)
-          setDraftEventJson(`Error generating JSON: ${msg}`)
-          setIsLoadingJson(false)
-        })
-
-      // `text` is included so JSON refreshes when the parent memoizes `getDraftEventJson` too narrowly;
-      // `kind` catches compose-mode switches even if callback identity were ever stable across them.
-      // Use `jsonPanelFetchSeq` instead of an effect cleanup `cancelled` flag so a superseded fetch
-      // does not skip `setIsLoadingJson(false)` and leave the Json tab stuck on "Loading...".
-    }, [activeTab, getDraftEventJson, kind, text, jsonReloadToken])
-
-    useEffect(() => {
-      if (activeTab !== 'json' || isLoadingJson) return
-      setJsonFieldValue(draftEventJson)
-    }, [activeTab, isLoadingJson, draftEventJson])
     const editor = useEditor({
       // TipTap + Radix Dialog/Tabs: defer init so React 18 does not warn about flushSync in a lifecycle.
       immediatelyRender: false,
@@ -351,9 +277,6 @@ const PostTextarea = forwardRef<
             <TabsTrigger value="preview" title={t('Preview')}>
               {t('Preview')}
             </TabsTrigger>
-            <TabsTrigger value="json" title={t('Json')}>
-              {t('Json')}
-            </TabsTrigger>
           </TabsList>
           {headerActions && (
             <div className="flex gap-1 items-center flex-wrap">
@@ -361,7 +284,6 @@ const PostTextarea = forwardRef<
             </div>
           )}
         </div>
-        {/* Editor always visible (no Edit tab). Keep mounted; only Preview/Json swap panels below. */}
         <EditorContent className="tiptap" editor={editor} />
         <TabsContent value="preview">
           <div className="space-y-2">
@@ -381,78 +303,6 @@ const PostTextarea = forwardRef<
               addClientTag={addClientTag}
             />
           </div>
-        </TabsContent>
-        <TabsContent value="json" className="mt-2 flex flex-col gap-2 min-h-0">
-          {isLoadingJson ? (
-            <div className="text-muted-foreground text-sm">{t('Loading...')}</div>
-          ) : expectedDraftKind !== undefined && onApplyComposerDraftJson ? (
-            <>
-              <p className="text-xs text-muted-foreground">{t('Composer JSON tab hint')}</p>
-              <textarea
-                className="w-full min-h-[min(55dvh,32rem)] max-h-[min(70vh,40rem)] resize-y rounded-lg border bg-background p-3 font-mono text-xs leading-relaxed text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                spellCheck={false}
-                value={jsonFieldValue}
-                onChange={(e) => setJsonFieldValue(e.target.value)}
-                aria-label={t('Json')}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => {
-                    const parsed = parseLabSlice(jsonFieldValue.trim())
-                    if (!parsed.ok) {
-                      return
-                    }
-                    if (parsed.value.kind !== expectedDraftKind) {
-                      return
-                    }
-                    const ok = onApplyComposerDraftJson(jsonFieldValue)
-                    if (ok) setJsonReloadToken((n) => n + 1)
-                  }}
-                  disabled={
-                    !jsonFieldValue.trim() ||
-                    (() => {
-                      const p = parseLabSlice(jsonFieldValue.trim())
-                      if (!p.ok) return true
-                      if (p.value.kind !== expectedDraftKind) return true
-                      return false
-                    })()
-                  }
-                >
-                  {t('Composer JSON apply')}
-                </Button>
-                {(() => {
-                  const p = parseLabSlice(jsonFieldValue.trim())
-                  if (!jsonFieldValue.trim()) return null
-                  if (!p.ok) {
-                    return (
-                      <span className="text-xs text-destructive" role="alert">
-                        {p.error}
-                      </span>
-                    )
-                  }
-                  if (p.value.kind !== expectedDraftKind) {
-                    return (
-                      <span className="text-xs text-destructive" role="alert">
-                        {t('composerJsonKindMismatch', {
-                          expected: String(expectedDraftKind),
-                          got: String(p.value.kind)
-                        })}
-                      </span>
-                    )
-                  }
-                  return null
-                })()}
-              </div>
-            </>
-          ) : (
-            <div className="border rounded-lg p-3 bg-muted/40 max-h-[min(70vh,40rem)] overflow-auto select-text">
-              <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text">
-                {draftEventJson || t('No JSON available')}
-              </pre>
-            </div>
-          )}
         </TabsContent>
       </Tabs>
     )

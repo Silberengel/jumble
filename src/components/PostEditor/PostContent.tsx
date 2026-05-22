@@ -28,15 +28,15 @@ import {
   createVideoDraftEvent,
   createLongFormArticleDraftEvent,
   createWikiArticleDraftEvent,
-  createWikiArticleMarkdownDraftEvent,
+  createNostrSpecificationDraftEvent,
   createPublicationContentDraftEvent,
   createCitationInternalDraftEvent,
   createCitationExternalDraftEvent,
   createCitationHardcopyDraftEvent,
   createCitationPromptDraftEvent,
-  applyImwaldAttributionTags,
   collectUploadImetaTagsForContentUrls,
-  mergeUploadImetaTagsInto
+  mergeUploadImetaTagsInto,
+  stripImwaldAttributionTags
 } from '@/lib/draft-event'
 import {
   ExtendedKind,
@@ -58,6 +58,8 @@ import {
   Check,
   ChevronDown,
   ListTodo,
+  Plus,
+  Trash2,
   MessageCircle,
   MessagesSquare,
   X,
@@ -108,6 +110,11 @@ import PollEditor from './PollEditor'
 import PostOptions from './PostOptions'
 import PostRelaySelector from './PostRelaySelector'
 import PostTextarea, { TPostTextareaHandle } from './PostTextarea'
+import {
+  newNostrSpecAffectedKindRow,
+  parseNostrSpecAffectedKinds,
+  type NostrSpecAffectedKindRow
+} from '@/lib/nostr-spec-affected-kinds'
 import { NeventPickerProvider } from './PostTextarea/Mention/NeventNaddrPickerDialog'
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
@@ -119,7 +126,7 @@ import {
   PostEditorFormatToolbar,
   type PostEditorFormatToolbarUploadHandlers
 } from './PostEditorFormatToolbar'
-import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 
 /** Let the UI paint before heavy work. `requestAnimationFrame` alone can stall indefinitely in hidden or throttled documents. */
@@ -249,7 +256,6 @@ export default function PostContent({
   )
   const [text, setText] = useState('')
   const textareaRef = useRef<TPostTextareaHandle>(null)
-  const labTagOverrideRef = useRef<string[][] | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const advancedLabOpenRef = useRef(false)
   useEffect(() => {
@@ -323,8 +329,11 @@ export default function PostContent({
   const [mediaUrl, setMediaUrl] = useState<string>('')
   const [isLongFormArticle, setIsLongFormArticle] = useState(false)
   const [isWikiArticle, setIsWikiArticle] = useState(false)
-  const [isWikiArticleMarkdown, setIsWikiArticleMarkdown] = useState(false)
+  const [isNostrSpecification, setIsNostrSpecification] = useState(false)
   const [isPublicationContent, setIsPublicationContent] = useState(false)
+  const [nostrSpecAffectedKindRows, setNostrSpecAffectedKindRows] = useState<NostrSpecAffectedKindRow[]>(
+    () => [newNostrSpecAffectedKindRow()]
+  )
   const [articleTitle, setArticleTitle] = useState('')
   const [articleDTag, setArticleDTag] = useState('')
   const [articleImage, setArticleImage] = useState('')
@@ -385,11 +394,11 @@ export default function PostContent({
 
   useEffect(() => {
     const isArticle =
-      isLongFormArticle || isWikiArticle || isWikiArticleMarkdown || isPublicationContent
+      isLongFormArticle || isWikiArticle || isNostrSpecification || isPublicationContent
     if (!isArticle) {
       articleDTagFallbackRef.current = null
     }
-  }, [isLongFormArticle, isWikiArticle, isWikiArticleMarkdown, isPublicationContent])
+  }, [isLongFormArticle, isWikiArticle, isNostrSpecification, isPublicationContent])
 
   useEffect(() => {
     mediaNoteKindRef.current = mediaNoteKind
@@ -632,8 +641,8 @@ export default function PostContent({
       return kinds.LongFormArticle
     } else if (isWikiArticle) {
       return ExtendedKind.WIKI_ARTICLE
-    } else if (isWikiArticleMarkdown) {
-      return ExtendedKind.WIKI_ARTICLE_MARKDOWN
+    } else if (isNostrSpecification) {
+      return ExtendedKind.NOSTR_SPECIFICATION
     } else if (isPublicationContent) {
       return ExtendedKind.PUBLICATION_CONTENT
     } else if (isCitationInternal) {
@@ -659,7 +668,7 @@ export default function PostContent({
     isDiscussionThread,
     isLongFormArticle,
     isWikiArticle,
-    isWikiArticleMarkdown,
+    isNostrSpecification,
     isPublicationContent,
     isCitationInternal,
     isCitationExternal,
@@ -739,6 +748,48 @@ export default function PostContent({
     const c = canonicalizeRssArticleUrl(raw)
     return [['i', c], ['I', c]]
   }, [parentEvent])
+
+  const articlePreviewMetadata = useMemo(() => {
+    const isArticle =
+      isLongFormArticle || isWikiArticle || isNostrSpecification || isPublicationContent
+    if (!isArticle) return undefined
+    const topics = articleSubject.trim()
+      ? articleSubject.split(/[,\s]+/).filter((s) => s.trim())
+      : []
+    const base = {
+      dTag: articleDTag.trim() || undefined,
+      title: articleTitle.trim() || undefined,
+      summary: articleSummary.trim() || undefined,
+      topics: topics.length > 0 ? topics : undefined
+    }
+    if (isNostrSpecification) {
+      const affectedKinds = parseNostrSpecAffectedKinds(nostrSpecAffectedKindRows)
+      return {
+        ...base,
+        affectedKinds: affectedKinds.length > 0 ? affectedKinds : undefined
+      }
+    }
+    return { ...base, image: articleImage.trim() || undefined }
+  }, [
+    isLongFormArticle,
+    isWikiArticle,
+    isNostrSpecification,
+    isPublicationContent,
+    articleDTag,
+    articleTitle,
+    articleSummary,
+    articleImage,
+    articleSubject,
+    nostrSpecAffectedKindRows
+  ])
+
+  const mergedExtraPreviewTags = useMemo((): string[][] | undefined => {
+    const contextual =
+      isDiscussionThread && !parentEvent
+        ? discussionPreviewExtraTags ?? []
+        : rssReplyExtraPreviewTags ?? []
+    return contextual.length ? contextual : undefined
+  }, [isDiscussionThread, parentEvent, discussionPreviewExtraTags, rssReplyExtraPreviewTags])
 
   // Shared function to create draft event - used by both preview and posting
   const createDraftEvent = useCallback(async (cleanedText: string): Promise<any> => {
@@ -896,7 +947,7 @@ export default function PostContent({
 
     // Articles
     const isArticleDraft =
-      isLongFormArticle || isWikiArticle || isWikiArticleMarkdown || isPublicationContent
+      isLongFormArticle || isWikiArticle || isNostrSpecification || isPublicationContent
     let effectiveArticleDTag = ''
     if (isArticleDraft) {
       const trimmedDTag = articleDTag.trim()
@@ -907,8 +958,8 @@ export default function PostContent({
           ? 'longform-article'
           : isWikiArticle
             ? 'wiki-article'
-            : isWikiArticleMarkdown
-              ? 'wiki-markdown'
+            : isNostrSpecification
+              ? 'nostr-specification'
               : 'publication-content'
         const prev = articleDTagFallbackRef.current
         if (!prev || prev.slug !== slug) {
@@ -949,12 +1000,13 @@ export default function PostContent({
         addQuietTag,
         quietDays
       })
-    } else if (isWikiArticleMarkdown) {
-      return await createWikiArticleMarkdownDraftEvent(cleanedText, mentions, {
+    } else if (isNostrSpecification) {
+      const affectedKinds = parseNostrSpecAffectedKinds(nostrSpecAffectedKindRows)
+      return await createNostrSpecificationDraftEvent(cleanedText, mentions, {
         dTag: effectiveArticleDTag,
         title: articleTitle.trim() || undefined,
         summary: articleSummary.trim() || undefined,
-        image: articleImage.trim() || undefined,
+        affectedKinds: affectedKinds.length > 0 ? affectedKinds : undefined,
         topics: topics.length > 0 ? topics : undefined,
         addClientTag,
         isNsfw,
@@ -1125,7 +1177,7 @@ export default function PostContent({
     threadReadingSubject,
     isLongFormArticle,
     isWikiArticle,
-    isWikiArticleMarkdown,
+    isNostrSpecification,
     isPublicationContent,
     isCitationInternal,
     isCitationExternal,
@@ -1143,61 +1195,11 @@ export default function PostContent({
     articleTitle,
     articleImage,
     articleSubject,
+    nostrSpecAffectedKindRows,
     articleSummary,
     pubkey,
     t
   ])
-
-  const applyLabTagOverrideToDraft = useCallback((draft: TDraftEvent): TDraftEvent => {
-    if (!labTagOverrideRef.current) return draft
-    const tags = labTagOverrideRef.current.map((r) => [...r])
-    labTagOverrideRef.current = null
-    mergeUploadImetaTagsInto(tags, collectUploadImetaTagsForContentUrls(draft.content))
-    return { ...draft, tags }
-  }, [])
-
-  // Function to generate draft event JSON for preview
-  const getDraftEventJson = useCallback(async (): Promise<string> => {
-    if (!pubkey) {
-      return JSON.stringify({ error: 'Not logged in' }, null, 2)
-    }
-
-    try {
-      // Clean tracking parameters from URLs in the post content
-      const body = textareaRef.current?.getText() ?? text
-      const cleanedText = rewritePlainTextHttpUrls(body)
-
-      let draftEvent = await createDraftEvent(cleanedText)
-      draftEvent = applyLabTagOverrideToDraft(draftEvent)
-      return JSON.stringify(applyImwaldAttributionTags(draftEvent, { addClientTag }), null, 2)
-    } catch (error) {
-      return JSON.stringify({ error: error instanceof Error ? error.message : String(error) }, null, 2)
-    }
-  }, [text, pubkey, isDiscussionThread, createDraftEvent, addClientTag, applyLabTagOverrideToDraft])
-
-  const applyComposerDraftJson = useCallback(
-    (raw: string) => {
-      const parsed = parseLabSlice(raw.trim())
-      if (!parsed.ok) {
-        toast.error(parsed.error)
-        return false
-      }
-      if (parsed.value.kind !== getDeterminedKind) {
-        toast.error(
-          t('composerJsonKindMismatch', {
-            expected: String(getDeterminedKind),
-            got: String(parsed.value.kind)
-          })
-        )
-        return false
-      }
-      labTagOverrideRef.current = parsed.value.tags.map((r) => [...r])
-      textareaRef.current?.setDocumentFromPlainText(parsed.value.content)
-      toast.success(t('composerJsonApplySuccess'))
-      return true
-    },
-    [getDeterminedKind, t]
-  )
 
   const advancedLabPersistenceKey = useMemo(
     () =>
@@ -1207,6 +1209,26 @@ export default function PostContent({
         parentEvent
       }),
     [getDeterminedKind, defaultContent, parentEvent]
+  )
+
+  const applyPersistedLabTagsToDraft = useCallback(
+    (draft: TDraftEvent, labKey: string): TDraftEvent => {
+      const saved = postEditorCache.getAdvancedLabDraft(labKey)
+      if (!saved || saved.kind !== draft.kind) return draft
+      const tags = saved.tags.map((r) => [...r])
+      mergeUploadImetaTagsInto(tags, collectUploadImetaTagsForContentUrls(draft.content))
+      return { ...draft, tags }
+    },
+    []
+  )
+
+  const finalizeDraftEvent = useCallback(
+    async (cleanedText: string): Promise<TDraftEvent> => {
+      let draft = await createDraftEvent(cleanedText)
+      draft = applyPersistedLabTagsToDraft(draft, advancedLabPersistenceKey)
+      return draft
+    },
+    [createDraftEvent, applyPersistedLabTagsToDraft, advancedLabPersistenceKey]
   )
 
   const handleOpenAdvancedLab = useCallback(async () => {
@@ -1220,21 +1242,20 @@ export default function PostContent({
         await yieldForPaintBeforeHeavyWork()
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
-        let d = await createDraftEvent(cleanedText)
-        d = applyLabTagOverrideToDraft(d)
+        let d = await finalizeDraftEvent(cleanedText)
         const labKey = advancedLabPersistenceKey
         const saved = postEditorCache.getAdvancedLabDraft(labKey)
         if (saved && saved.kind === d.kind) {
           setAdvancedLabInitial({
             kind: saved.kind,
             content: saved.content,
-            tags: saved.tags.map((row: string[]) => [...row])
+            tags: stripImwaldAttributionTags(saved.tags).map((row: string[]) => [...row])
           })
         } else {
           setAdvancedLabInitial({
             kind: d.kind,
             content: d.content,
-            tags: (d.tags ?? []).map((row: string[]) => [...row])
+            tags: stripImwaldAttributionTags(d.tags ?? []).map((row: string[]) => [...row])
           })
         }
         setAdvancedLabOpen(true)
@@ -1246,8 +1267,7 @@ export default function PostContent({
     checkLogin,
     pubkey,
     text,
-    createDraftEvent,
-    applyLabTagOverrideToDraft,
+    finalizeDraftEvent,
     advancedLabPersistenceKey,
     t
   ])
@@ -1322,8 +1342,7 @@ export default function PostContent({
         }
 
         // Create draft event using shared function
-        draftEvent = await createDraftEvent(cleanedText)
-        draftEvent = applyLabTagOverrideToDraft(draftEvent)
+        draftEvent = await finalizeDraftEvent(cleanedText)
 
         const publishSuccessMessage = parentEvent
           ? t('Reply published')
@@ -1463,7 +1482,7 @@ export default function PostContent({
       setIsHighlight(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
-      setIsWikiArticleMarkdown(false)
+      setIsNostrSpecification(false)
       setIsPublicationContent(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
@@ -1487,7 +1506,7 @@ export default function PostContent({
       setIsHighlight(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
-      setIsWikiArticleMarkdown(false)
+      setIsNostrSpecification(false)
       setIsPublicationContent(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
@@ -1508,7 +1527,7 @@ export default function PostContent({
     setIsHighlight(false)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
-    setIsWikiArticleMarkdown(false)
+    setIsNostrSpecification(false)
     setIsPublicationContent(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
@@ -1598,7 +1617,7 @@ export default function PostContent({
     setIsHighlight(false)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
-    setIsWikiArticleMarkdown(false)
+    setIsNostrSpecification(false)
     setIsPublicationContent(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
@@ -1631,7 +1650,7 @@ export default function PostContent({
       !isHighlight &&
       !isLongFormArticle &&
       !isWikiArticle &&
-      !isWikiArticleMarkdown &&
+      !isNostrSpecification &&
       !isPublicationContent &&
       !isCitationInternal &&
       !isCitationExternal &&
@@ -1646,7 +1665,7 @@ export default function PostContent({
       isHighlight,
       isLongFormArticle,
       isWikiArticle,
-      isWikiArticleMarkdown,
+      isNostrSpecification,
       isPublicationContent,
       isCitationInternal,
       isCitationExternal,
@@ -1667,7 +1686,7 @@ export default function PostContent({
       setIsPublicMessage(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
-      setIsWikiArticleMarkdown(false)
+      setIsNostrSpecification(false)
       setIsPublicationContent(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
@@ -2107,7 +2126,7 @@ export default function PostContent({
     setIsHighlight(false)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
-    setIsWikiArticleMarkdown(false)
+    setIsNostrSpecification(false)
     setIsPublicationContent(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
@@ -2138,13 +2157,19 @@ export default function PostContent({
     ]
   )
 
-  const handleArticleToggle = (type: 'longform' | 'wiki' | 'wiki-markdown' | 'publication') => {
+  const handleArticleToggle = (type: 'longform' | 'wiki' | 'nostr-specification' | 'publication') => {
     if (parentEvent) return // Can't create articles as replies
     
     setIsLongFormArticle(type === 'longform')
     setIsWikiArticle(type === 'wiki')
-    setIsWikiArticleMarkdown(type === 'wiki-markdown')
+    setIsNostrSpecification(type === 'nostr-specification')
     setIsPublicationContent(type === 'publication')
+    if (type === 'nostr-specification') {
+      setArticleImage('')
+      setNostrSpecAffectedKindRows((rows) =>
+        rows.length > 0 ? rows : [newNostrSpecAffectedKindRow()]
+      )
+    }
     
     // Clear other types
     setIsPoll(false)
@@ -2168,7 +2193,7 @@ export default function PostContent({
     }
     
     // Clear article fields when toggling off
-    if (type === 'longform' || type === 'wiki' || type === 'wiki-markdown' || type === 'publication') {
+    if (type === 'longform' || type === 'wiki' || type === 'nostr-specification' || type === 'publication') {
       // Keep fields when switching between article types
     } else {
       setArticleTitle('')
@@ -2194,7 +2219,7 @@ export default function PostContent({
     setMediaNoteKind(null)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
-    setIsWikiArticleMarkdown(false)
+    setIsNostrSpecification(false)
     setIsPublicationContent(false)
     setIsDiscussionThread(false)
     
@@ -2224,7 +2249,7 @@ export default function PostContent({
     setIsHighlight(false)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
-    setIsWikiArticleMarkdown(false)
+    setIsNostrSpecification(false)
     setIsPublicationContent(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
@@ -2265,6 +2290,7 @@ export default function PostContent({
     setCitationVersion('')
     setCitationSummary('')
     setCitationPromptLlm('')
+    setNostrSpecAffectedKindRows([newNostrSpecAffectedKindRow()])
     setPollCreateData({
       isMultipleChoice: false,
       options: ['', ''],
@@ -2312,8 +2338,8 @@ export default function PostContent({
             return t('New Long-form Article')
           } else if (determinedKind === ExtendedKind.WIKI_ARTICLE) {
             return t('New Wiki Article')
-          } else if (determinedKind === ExtendedKind.WIKI_ARTICLE_MARKDOWN) {
-            return t('New Wiki Article (Markdown)')
+          } else if (determinedKind === ExtendedKind.NOSTR_SPECIFICATION) {
+            return t('New Nostr Specification')
           } else if (determinedKind === ExtendedKind.PUBLICATION_CONTENT) {
             return t('Take a note')
           } else if (determinedKind === ExtendedKind.CITATION_INTERNAL) {
@@ -2500,7 +2526,7 @@ export default function PostContent({
       )}
       
       {/* Article metadata fields */}
-      {(isLongFormArticle || isWikiArticle || isWikiArticleMarkdown || isPublicationContent) && (
+      {(isLongFormArticle || isWikiArticle || isNostrSpecification || isPublicationContent) && (
         <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
           <div className="space-y-2">
             <Label htmlFor="article-dtag" className="text-sm font-medium">
@@ -2527,20 +2553,73 @@ export default function PostContent({
             />
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="article-image" className="text-sm font-medium">
-              {t('Image URL')}
-            </Label>
-            <Input
-              id="article-image"
-              value={articleImage}
-              onChange={(e) => setArticleImage(e.target.value)}
-              placeholder={t('https://example.com/image.jpg')}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t('URL of the article cover image (optional)')}
-            </p>
-          </div>
+          {!isNostrSpecification && (
+            <div className="space-y-2">
+              <Label htmlFor="article-image" className="text-sm font-medium">
+                {t('Image URL')}
+              </Label>
+              <Input
+                id="article-image"
+                value={articleImage}
+                onChange={(e) => setArticleImage(e.target.value)}
+                placeholder={t('https://example.com/image.jpg')}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('URL of the article cover image (optional)')}
+              </p>
+            </div>
+          )}
+
+          {isNostrSpecification && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{t('nostrSpecAffectedKindLabel')}</Label>
+              <p className="text-xs text-muted-foreground">{t('nostrSpecAffectedKindHint')}</p>
+              <div className="space-y-2">
+                {nostrSpecAffectedKindRows.map((row, index) => (
+                  <div key={row.id} className="flex gap-2 items-center">
+                    <Input
+                      id={index === 0 ? 'nostr-spec-k-0' : undefined}
+                      value={row.value}
+                      inputMode="numeric"
+                      className="font-mono text-sm"
+                      placeholder={t('nostrSpecAffectedKindPlaceholder')}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setNostrSpecAffectedKindRows((rows) =>
+                          rows.map((r) => (r.id === row.id ? { ...r, value: v } : r))
+                        )
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      disabled={nostrSpecAffectedKindRows.length <= 1}
+                      onClick={() =>
+                        setNostrSpecAffectedKindRows((rows) => rows.filter((r) => r.id !== row.id))
+                      }
+                      aria-label={t('Remove')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() =>
+                  setNostrSpecAffectedKindRows((rows) => [...rows, newNostrSpecAffectedKindRow()])
+                }
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t('nostrSpecAffectedKindAdd')}
+              </Button>
+            </div>
+          )}
           
           <div className="space-y-2">
             <Label htmlFor="article-subject" className="text-sm font-medium">
@@ -2948,12 +3027,8 @@ export default function PostContent({
           kind={getDeterminedKind}
           highlightData={isHighlight ? highlightData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
-          getDraftEventJson={getDraftEventJson}
-          expectedDraftKind={pubkey ? getDeterminedKind : undefined}
-          onApplyComposerDraftJson={pubkey ? applyComposerDraftJson : undefined}
-          extraPreviewTags={
-            isDiscussionThread && !parentEvent ? discussionPreviewExtraTags : rssReplyExtraPreviewTags
-          }
+          extraPreviewTags={mergedExtraPreviewTags}
+          articleMetadata={articlePreviewMetadata}
           addClientTag={addClientTag}
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
@@ -2961,7 +3036,7 @@ export default function PostContent({
               const ActiveIcon =
                 isLongFormArticle ? FileText :
                 isWikiArticle ? FileText :
-                isWikiArticleMarkdown ? FileText :
+                isNostrSpecification ? FileText :
                 isPublicationContent ? Book :
                 isCitationInternal || isCitationExternal || isCitationHardcopy || isCitationPrompt ? Quote :
                 isHighlight ? Highlighter :
@@ -2973,7 +3048,7 @@ export default function PostContent({
               const activeLabel =
                 isLongFormArticle ? t('Long-form Article') :
                 isWikiArticle ? t('Wiki Article (AsciiDoc)') :
-                isWikiArticleMarkdown ? t('Wiki Article (Markdown)') :
+                isNostrSpecification ? t('Nostr Specification') :
                 isPublicationContent ? t('Publication Note') :
                 isCitationInternal ? t('Internal Citation') :
                 isCitationExternal ? t('External Citation') :
@@ -3097,13 +3172,15 @@ export default function PostContent({
                       </div>
                       {isWikiArticle && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleArticleToggle('wiki-markdown')} className="gap-3 py-2 cursor-pointer">
+                    <DropdownMenuItem onClick={() => handleArticleToggle('nostr-specification')} className="gap-3 py-2 cursor-pointer">
                       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="flex flex-col flex-1 min-w-0">
-                        <span className="font-medium leading-none">{t('Wiki Article (Markdown)')}</span>
-                        <span className="text-xs text-muted-foreground mt-0.5">{t('Markdown wiki contribution')}</span>
+                        <span className="font-medium leading-none">{t('Nostr Specification')}</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">
+                          {t('nostrSpecificationContribution')}
+                        </span>
                       </div>
-                      {isWikiArticleMarkdown && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      {isNostrSpecification && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                     {hasPrivateRelaysAvailable && (
                       <DropdownMenuItem onClick={() => handleArticleToggle('publication')} className="gap-3 py-2 cursor-pointer">
@@ -3570,7 +3647,12 @@ export default function PostContent({
           />
         }
         onApply={(payload) => {
-          labTagOverrideRef.current = payload.tags.map((r) => [...r])
+          postEditorCache.setAdvancedLabDraft(advancedLabPersistenceKey, {
+            kind: payload.kind,
+            content: payload.content,
+            tags: payload.tags.map((r) => [...r])
+          })
+          postEditorCache.flushPersist()
           textareaRef.current?.setDocumentFromPlainText(payload.content)
         }}
       />

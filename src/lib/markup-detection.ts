@@ -13,7 +13,7 @@ export function detectMarkupType(content: string, eventKind?: number): MarkupTyp
     return 'asciidoc'
   }
   
-  // Wiki articles (30817) use markdown
+  // Nostr specifications (30817) use markdown
   if (eventKind === 30817) {
     return 'advanced-markdown'
   }

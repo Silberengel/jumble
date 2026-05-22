@@ -103,7 +103,7 @@ function StaticEventPreview({ event, className }: { event: Event; className?: st
   if (k === ExtendedKind.WIKI_ARTICLE) {
     return wrap(<AsciidocArticle event={event} hideImagesAndInfo={false} />)
   }
-  if (k === ExtendedKind.WIKI_ARTICLE_MARKDOWN) {
+  if (k === ExtendedKind.NOSTR_SPECIFICATION) {
     return wrap(<MarkdownArticle event={event} hideMetadata />)
   }
   if (k === ExtendedKind.PUBLICATION_CONTENT) {
@@ -368,13 +368,23 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const openAdvancedLab = useCallback(() => {
     if (isCreate && parsedCreateKind === null) return
     const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
-    setAdvancedLabInitial({
-      kind: k,
-      content,
-      tags: normalizedTags.map((row) => [...row])
-    })
+    const key = advancedLabDraftPersistenceKey
+    const saved = key ? postEditorCache.getAdvancedLabDraft(key) : undefined
+    if (saved && saved.kind === k) {
+      setAdvancedLabInitial({
+        kind: saved.kind,
+        content: saved.content,
+        tags: saved.tags.map((row) => [...row])
+      })
+    } else {
+      setAdvancedLabInitial({
+        kind: k,
+        content,
+        tags: normalizedTags.map((row) => [...row])
+      })
+    }
     setAdvancedLabOpen(true)
-  }, [isCreate, parsedCreateKind, sourceEvent, content, normalizedTags])
+  }, [isCreate, parsedCreateKind, sourceEvent, content, normalizedTags, advancedLabDraftPersistenceKey])
 
   const labKind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent?.kind ?? 0
 
@@ -630,6 +640,14 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         advancedLabOpen && advancedLabDraftPersistenceKey ? advancedLabDraftPersistenceKey : null
       }
       onApply={(payload) => {
+        if (advancedLabDraftPersistenceKey) {
+          postEditorCache.setAdvancedLabDraft(advancedLabDraftPersistenceKey, {
+            kind: payload.kind,
+            content: payload.content,
+            tags: payload.tags.map((r) => [...r])
+          })
+          postEditorCache.flushPersist()
+        }
         setContent(payload.content)
         setTagRows(payload.tags.length > 0 ? payload.tags.map((r) => [...r]) : [['', '']])
         if (isCreate) {

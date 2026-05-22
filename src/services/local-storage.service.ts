@@ -326,13 +326,13 @@ class LocalStorageService {
         }
       }
       if (showKindsVersion < 12) {
-        // Add WIKI_ARTICLE_MARKDOWN (30817) for users who already have long-form articles (30023) or
+        // Add NOSTR_SPECIFICATION (30817) for users who already have long-form articles (30023) or
         // wiki articles (30818) enabled — it was omitted from the earlier v4 migration.
         if (
           (showKinds.includes(kinds.LongFormArticle) || showKinds.includes(ExtendedKind.WIKI_ARTICLE)) &&
-          !showKinds.includes(ExtendedKind.WIKI_ARTICLE_MARKDOWN)
+          !showKinds.includes(ExtendedKind.NOSTR_SPECIFICATION)
         ) {
-          showKinds.push(ExtendedKind.WIKI_ARTICLE_MARKDOWN)
+          showKinds.push(ExtendedKind.NOSTR_SPECIFICATION)
         }
       }
       if (showKindsVersion < 13) {

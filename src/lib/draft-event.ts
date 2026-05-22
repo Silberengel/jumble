@@ -2167,14 +2167,15 @@ export async function createWikiArticleDraftEvent(
   })
 }
 
-export async function createWikiArticleMarkdownDraftEvent(
+export async function createNostrSpecificationDraftEvent(
   content: string,
   mentions: string[],
   options: {
     dTag: string
     title?: string
     summary?: string
-    image?: string
+    /** NIP/kind numbers this specification applies to (each becomes a `k` tag). */
+    affectedKinds?: number[]
     topics?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
@@ -2195,8 +2196,10 @@ export async function createWikiArticleMarkdownDraftEvent(
   if (options.summary) {
     tags.push(['summary', options.summary])
   }
-  if (options.image) {
-    tags.push(['image', options.image])
+  if (options.affectedKinds?.length) {
+    for (const kindNum of options.affectedKinds) {
+      tags.push(['k', String(kindNum)])
+    }
   }
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
@@ -2222,7 +2225,7 @@ export async function createWikiArticleMarkdownDraftEvent(
   }
   
   return setDraftEventCache({
-    kind: ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+    kind: ExtendedKind.NOSTR_SPECIFICATION,
     content: transformedEmojisContent,
     tags
   })

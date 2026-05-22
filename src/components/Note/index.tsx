@@ -305,7 +305,7 @@ export default function Note({
     event.kind === kinds.ShortTextNote ||
     event.kind === kinds.LongFormArticle ||
     event.kind === ExtendedKind.WIKI_ARTICLE ||
-    event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN ||
+    event.kind === ExtendedKind.NOSTR_SPECIFICATION ||
     event.kind === ExtendedKind.PUBLICATION ||
     event.kind === ExtendedKind.PUBLICATION_CONTENT ||
     event.kind === ExtendedKind.DISCUSSION ||
@@ -458,7 +458,7 @@ export default function Note({
     ) : (
       <WikiCard className="mt-2" event={displayEvent} />
     )
-  } else if (event.kind === ExtendedKind.WIKI_ARTICLE_MARKDOWN) {
+  } else if (event.kind === ExtendedKind.NOSTR_SPECIFICATION) {
     content = showFull ? (
       renderEventContent()
     ) : (

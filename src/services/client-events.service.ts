@@ -111,7 +111,7 @@ const EMBEDDED_NOTE_PREFETCH_ON_INGEST_KINDS = new Set<number>([
   ExtendedKind.GENERIC_REPOST,
   ExtendedKind.PUBLICATION_CONTENT,
   ExtendedKind.WIKI_ARTICLE,
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN,
+  ExtendedKind.NOSTR_SPECIFICATION,
   ExtendedKind.COMMENT,
   ExtendedKind.VOICE_COMMENT,
   ExtendedKind.DISCUSSION

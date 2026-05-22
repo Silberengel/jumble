@@ -16,6 +16,10 @@ export function serializeLabSlice(slice: AdvancedEventLabSlice): string {
   )
 }
 
+/**
+ * Accepts lab slice JSON or a fuller draft/event object; ignores unknown top-level fields
+ * (`created_at`, `pubkey`, `id`, etc.).
+ */
 export function parseLabSlice(
   raw: string
 ): { ok: true; value: AdvancedEventLabSlice } | { ok: false; error: string } {

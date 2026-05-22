@@ -51,7 +51,7 @@ export const NADDR_KINDS = [
   ExtendedKind.CALENDAR_EVENT_TIME, 
   ExtendedKind.PUBLICATION, 
   ExtendedKind.WIKI_ARTICLE, 
-  ExtendedKind.WIKI_ARTICLE_MARKDOWN, 
+  ExtendedKind.NOSTR_SPECIFICATION, 
   ExtendedKind.PUBLICATION_CONTENT,
   kinds.LongFormArticle,
 ] as const
