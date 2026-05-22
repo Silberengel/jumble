@@ -17,6 +17,17 @@ function eventComposedPath(e: RadixOutsideEvent): EventTarget[] {
   return []
 }
 
+function pathIncludesPortaledOverlay(path: EventTarget[]): boolean {
+  return path.some((node) => {
+    if (!(node instanceof HTMLElement)) return false
+    if (node.tagName.toLowerCase() === 'bc-modal') return true
+    if (node.hasAttribute('data-radix-dialog-content')) return true
+    if (node.hasAttribute('data-radix-dialog-overlay')) return true
+    if (node.getAttribute('role') === 'dialog' && node.closest('[data-radix-portal]')) return true
+    return false
+  })
+}
+
 export function preventRadixSheetCloseForPortaledOverlay(e: RadixOutsideEvent): void {
   if (typeof document === 'undefined') return
   if (document.body.classList.contains('yarl__no_scroll')) {
@@ -24,10 +35,11 @@ export function preventRadixSheetCloseForPortaledOverlay(e: RadixOutsideEvent): 
     return
   }
   const path = eventComposedPath(e)
-  const inBitcoinConnectModal = path.some(
-    (node) => node instanceof HTMLElement && node.tagName.toLowerCase() === 'bc-modal'
-  )
-  if (inBitcoinConnectModal) {
+  if (pathIncludesPortaledOverlay(path)) {
+    e.preventDefault()
+    return
+  }
+  if (document.querySelector('[data-radix-dialog-content][data-state="open"]')) {
     e.preventDefault()
   }
 }

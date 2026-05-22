@@ -50,6 +50,9 @@ const SecondaryPageLayout = forwardRef(
       enabled: mobileSwipeActive
     })
 
+    const shouldRenderTitlebar =
+      titlebar != null || (title != null && title !== '') || !hideBackButton
+
     useImperativeHandle(
       ref,
       () => ({
@@ -99,15 +102,16 @@ const SecondaryPageLayout = forwardRef(
               paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
             }}
           >
-            {title && (
+            {shouldRenderTitlebar ? (
               <SecondaryPageTitlebar
                 title={title}
                 controls={controls}
                 hideBackButton={hideBackButton}
                 hideBottomBorder={hideTitlebarBottomBorder}
                 titlebar={titlebar}
+                sticky={isSmallScreen}
               />
-            )}
+            ) : null}
             {children}
           </div>
           {displayScrollToTopButton && <ScrollToTopButton />}
@@ -118,7 +122,7 @@ const SecondaryPageLayout = forwardRef(
     return (
       <DeepBrowsingProvider active={currentIndex === index} scrollAreaRef={scrollAreaRef}>
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          {title && (
+          {shouldRenderTitlebar ? (
             <SecondaryPageTitlebar
               title={title}
               controls={controls}
@@ -126,7 +130,7 @@ const SecondaryPageLayout = forwardRef(
               hideBottomBorder={hideTitlebarBottomBorder}
               titlebar={titlebar}
             />
-          )}
+          ) : null}
           <div
             ref={scrollAreaRef}
             tabIndex={-1}
@@ -149,23 +153,30 @@ function SecondaryPageTitlebar({
   controls,
   hideBackButton = false,
   hideBottomBorder = false,
-  titlebar
+  titlebar,
+  sticky = false
 }: {
   title?: React.ReactNode
   controls?: React.ReactNode
   hideBackButton?: boolean
   hideBottomBorder?: boolean
   titlebar?: React.ReactNode
+  /** Keep back visible while the page scrolls (mobile secondary stack). */
+  sticky?: boolean
 }): JSX.Element {
   const { isSmallScreen } = useScreenSize()
+  const { t } = useTranslation()
   const titlebarInset = isSmallScreen
     ? 'py-1 pl-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))]'
     : 'p-1'
+  const stickyClass = sticky
+    ? 'sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80'
+    : ''
 
   if (titlebar) {
     return (
       <Titlebar
-        className={cn('flex min-w-0 items-center gap-2', titlebarInset)}
+        className={cn('flex min-w-0 items-center gap-2', titlebarInset, stickyClass)}
         hideBottomBorder={hideBottomBorder}
       >
         <ReadOnlySessionIndicator variant="titlebar" />
@@ -176,18 +187,20 @@ function SecondaryPageTitlebar({
   }
   return (
     <Titlebar
-      className={cn('flex min-w-0 gap-1 items-center font-semibold', titlebarInset)}
+      className={cn('flex min-w-0 gap-1 items-center font-semibold', titlebarInset, stickyClass)}
       hideBottomBorder={hideBottomBorder}
     >
       <ReadOnlySessionIndicator variant="titlebar" />
       <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
         {hideBackButton ? (
-          <div className="app-chrome-title flex w-fit items-center gap-2 truncate pl-2">
-            {title}
-          </div>
+          title ? (
+            <div className="app-chrome-title flex w-fit items-center gap-2 truncate pl-2">
+              {title}
+            </div>
+          ) : null
         ) : (
           <div className="flex min-w-0 flex-1 items-center">
-            <BackButton>{title}</BackButton>
+            <BackButton>{title ?? t('back')}</BackButton>
           </div>
         )}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 min-w-0 max-w-[min(100%,14rem)] sm:max-w-none">

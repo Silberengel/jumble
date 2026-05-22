@@ -605,17 +605,7 @@ export function useSmartRelayNavigation() {
     // Build contextual URL based on current page
     const contextualUrl = buildRelayUrl(relayUrl, currentPrimaryPage)
     
-    if (isSmallScreen) {
-      // Use primary note view on mobile
-      window.history.pushState(null, '', contextualUrl)
-      setPrimaryNoteView(
-        suspensePrimaryPage(<SecondaryRelayPageLazy url={relayUrl} index={0} hideTitlebar={true} />),
-        'relay'
-      )
-    } else {
-      // Desktop: always use secondary routing (will be rendered in drawer in single-pane, side panel in double-pane)
-      pushSecondaryPage(contextualUrl)
-    }
+    pushSecondaryPage(contextualUrl)
   }
   
   return { navigateToRelay }
@@ -642,15 +632,7 @@ export function useSmartRelayNavigationOptional() {
       url.match(/\/relays\/(.+)$/)
     const relayUrl = relayUrlMatch ? decodeURIComponent(relayUrlMatch[relayUrlMatch.length - 1]) : decodeURIComponent(url.replace(/.*\/relays\//, ''))
     const contextualUrl = buildRelayUrl(relayUrl, currentPrimaryPage)
-    if (isSmallScreen) {
-      window.history.pushState(null, '', contextualUrl)
-      setPrimaryNoteView(
-        suspensePrimaryPage(<SecondaryRelayPageLazy url={relayUrl} index={0} hideTitlebar={true} />),
-        'relay'
-      )
-    } else {
-      pushSecondaryPage(contextualUrl)
-    }
+    pushSecondaryPage(contextualUrl)
   }
   return { navigateToRelay }
 }
@@ -1242,6 +1224,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   // Drawer handlers
   const [drawerInitialEvent, setDrawerInitialEvent] = useState<Event | null>(null)
   const openDrawer = useCallback((noteId: string, initialEvent?: Event) => {
+    noteStatsService.setBackgroundStatsPaused(true)
+    client.interruptBackgroundQueries()
     setDrawerNoteId(noteId)
     setDrawerInitialEvent(initialEvent ?? null)
     setDrawerOpen(true)
@@ -1990,6 +1974,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const navigatePrimaryPageStable = useEventCallback(navigatePrimaryPage)
 
   const goBack = () => {
+    if (primaryViewType === 'relay') {
+      setPrimaryNoteView(null)
+      return
+    }
     if (primaryViewType === 'settings-sub') {
       navigatePrimaryPage('settings')
       return
@@ -2049,6 +2037,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       return
     }
     recentSecondaryPushRef.current = { url, at: now }
+
+    noteStatsService.setBackgroundStatsPaused(true)
+    client.interruptBackgroundQueries()
 
     // Small screens render either the primary overlay OR the secondary stack — not both.
     // Clear overlays (e.g. full-screen note) so pushes from Seen-on, settings deep links, etc. show the target page.
@@ -2282,8 +2273,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     setSinglePaneSheetOpen(shouldBeOpen)
   }, [panelMode, isSmallScreen, secondaryStack.length, drawerOpen])
 
-  const primaryFrozen =
-    secondaryStack.length > 0 && (isSmallScreen || panelMode === 'double')
+  const primaryObscured =
+    secondaryStack.length > 0 || drawerOpen || primaryNoteView != null
+
+  const primaryFrozen = primaryObscured
 
   useLayoutEffect(() => {
     noteStatsService.setBackgroundStatsPaused(primaryFrozen)
@@ -2298,7 +2291,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       navigate: navigatePrimaryPageStable,
       current: currentPrimaryPage,
       currentPageProps,
-      display: isSmallScreen ? secondaryStack.length === 0 : true,
+      /** Double-pane keeps the feed visible (frozen); single-pane / mobile unmount primary while a panel is open. */
+      display: panelMode === 'double' || !primaryObscured,
       frozen: primaryFrozen
     }),
     [
@@ -2306,7 +2300,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       currentPrimaryPage,
       currentPageProps,
       isSmallScreen,
-      secondaryStack.length,
+      panelMode,
+      primaryObscured,
       primaryFrozen
     ]
   )

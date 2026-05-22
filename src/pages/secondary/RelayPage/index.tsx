@@ -35,6 +35,7 @@ const RelayPage = forwardRef(({ url, index, hideTitlebar = false }: { url?: stri
       ref={ref}
       index={index}
       title={hideTitlebar ? undefined : title}
+      hideBackButton={false}
       controls={hideTitlebar ? undefined : <RefreshButton onClick={bumpFeed} />}
       displayScrollToTopButton
     >

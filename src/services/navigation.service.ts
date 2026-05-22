@@ -119,7 +119,7 @@ export class ComponentFactory {
   }
 
   static createRelayPage(relayUrl: string): ReactNode {
-    return React.createElement(SecondaryRelayPage, { url: relayUrl, index: 0, hideTitlebar: true })
+    return React.createElement(SecondaryRelayPage, { url: relayUrl, index: 0 })
   }
 
   static createProfilePage(profileId: string): ReactNode {

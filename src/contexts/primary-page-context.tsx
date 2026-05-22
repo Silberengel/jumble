@@ -13,13 +13,13 @@ export type PrimaryPageContextValue = {
   /** Props passed to the current primary page (e.g. `{ spell: 'discussions' }` for spells). */
   currentPageProps: object | undefined
   /**
-   * False on small screens while the secondary stack is open (primary feed unmounted).
-   * True on desktop double-pane so the left column stays visible.
+   * False while a note drawer, secondary page, or mobile overlay covers the feed (primary unmounted).
+   * True on desktop double-pane so the left column stays visible (but {@link frozen} pauses it).
    */
   display: boolean
   /**
-   * True while a secondary panel is open: pause primary feed timelines / background stats
-   * and preserve scroll position until the panel closes.
+   * True while any secondary panel, note drawer, or mobile overlay is open: pause primary feed
+   * timelines / background stats and abort non-foreground relay queries.
    */
   frozen: boolean
 }
