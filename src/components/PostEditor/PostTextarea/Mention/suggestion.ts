@@ -7,7 +7,7 @@ import {
 import postEditor from '@/services/post-editor.service'
 import type { Editor } from '@tiptap/core'
 import { ReactRenderer } from '@tiptap/react'
-import { SuggestionKeyDownProps } from '@tiptap/suggestion'
+import { SuggestionKeyDownProps, type SuggestionProps } from '@tiptap/suggestion'
 import tippy, { GetReferenceClientRect, Instance, Props } from 'tippy.js'
 import MentionList, { MentionListHandle, MentionListProps, type MentionListItem } from './MentionList'
 import { NEVENT_NADDR_PICKER_ID } from './constants'
@@ -144,7 +144,7 @@ const suggestion = {
       },
       onStart: (props: { editor: Editor; clientRect?: (() => DOMRect | null) | null }) => {
         component = new ReactRenderer(MentionList, {
-          ...props,
+          props,
           editor: props.editor
         })
         
@@ -174,7 +174,7 @@ const suggestion = {
         })
       },
 
-      onUpdate(props: { clientRect?: (() => DOMRect | null) | null | undefined }) {
+      onUpdate(props: SuggestionProps<MentionListItem>) {
         component?.updateProps(props)
 
         if (!props.clientRect) {
