@@ -34,7 +34,9 @@ import {
 } from '@/components/ui/select'
 import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
+import { EditorSortableList, SortableEditorRow } from '@/components/EditorSortableList'
 import PaymentMethodRow from '@/components/ProfileEditor/PaymentMethodRow'
+import { arrayMove } from '@dnd-kit/sortable'
 import { PAYTO_EDITOR_OTHER_OPTION } from '@/lib/payto'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
 import { ChevronDown, Fingerprint, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
@@ -134,7 +136,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const [paymentInfoEvent, setPaymentInfoEvent] = useState<Event | null>(null)
   const [paymentInfoEditOpen, setPaymentInfoEditOpen] = useState(false)
   const [paymentInfoEditContent, setPaymentInfoEditContent] = useState('')
-  const [paymentInfoEditMethods, setPaymentInfoEditMethods] = useState<Array<{ type: string; authority: string }>>([])
+  const [paymentInfoEditMethods, setPaymentInfoEditMethods] = useState<EditorPaymentMethodRow[]>([])
   const [paymentInfoShowFullJson, setPaymentInfoShowFullJson] = useState(false)
   const [savingPaymentInfo, setSavingPaymentInfo] = useState(false)
   const savingPaymentInfoRef = useRef(false)
@@ -142,7 +144,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const [savingFullProfile, setSavingFullProfile] = useState(false)
   const [refreshingCache, setRefreshingCache] = useState(false)
   /** Single source of truth: all profile tags (excluding auto-managed client/alt). */
-  const [profileTags, setProfileTags] = useState<string[][]>([])
+  const [profileTagRows, setProfileTagRows] = useState<EditorTagRow[]>([])
   const [imageUrlField, setImageUrlField] = useState<'picture' | 'banner' | null>(null)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
   const [tagToAdd, setTagToAdd] = useState<string>(ADD_TAG_OPTIONS[0])
@@ -152,9 +154,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     [account]
   )
 
-  /** Derived from profileTags so uploaders and visual preview stay in sync. */
-  const avatar = profileTags.find((t) => t[0] === 'picture')?.[1] ?? ''
-  const banner = profileTags.find((t) => t[0] === 'banner')?.[1] ?? ''
+  /** Derived from profile tag rows so uploaders and visual preview stay in sync. */
+  const avatar = profileTagRows.find((r) => r.tag[0] === 'picture')?.tag[1] ?? ''
+  const banner = profileTagRows.find((r) => r.tag[0] === 'banner')?.tag[1] ?? ''
 
   useEffect(() => {
     mountedRef.current = true
@@ -169,7 +171,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   // Rebuild tag list when the stored profile event changes — not while the user is editing.
   useEffect(() => {
     if (profileFormSyncLocked) return
-    setProfileTags(buildTagListFromEvent(profileEvent ?? null))
+    setProfileTagRows(tagRowsFromTags(buildTagListFromEvent(profileEvent ?? null)))
   }, [profileEvent, profileFormSyncLocked])
 
   // Sync full-event JSON editor (same guard as tag list).
@@ -191,36 +193,47 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   // ─── Tag list helpers ────────────────────────────────────────────────────────
 
-  const updateTagValue = (idx: number, value: string) => {
-    setProfileTags((prev) => prev.map((t, i) => (i === idx ? [t[0], value, ...t.slice(2)] : t)))
+  const updateTagValue = (id: string, value: string) => {
+    setProfileTagRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, tag: [row.tag[0], value, ...row.tag.slice(2)] } : row
+      )
+    )
     setHasChanged(true)
   }
 
-  const updateTagName = (idx: number, name: string) => {
-    // Prevent renaming to a name that may only appear once and is already occupied.
+  const updateTagName = (id: string, name: string) => {
     if (AT_MOST_ONE_NAMES.includes(name)) {
-      const existingIdx = profileTags.findIndex((t) => t[0] === name)
-      if (existingIdx !== -1 && existingIdx !== idx) {
+      const existing = profileTagRows.find((row) => row.tag[0] === name)
+      if (existing && existing.id !== id) {
         toast.error(t('profileEditorDuplicateSingleton', { defaultValue: `"${name}" may only appear once` }))
         return
       }
     }
-    setProfileTags((prev) => prev.map((t, i) => (i === idx ? [name, t[1] ?? '', ...t.slice(2)] : t)))
+    setProfileTagRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, tag: [name, row.tag[1] ?? '', ...row.tag.slice(2)] } : row
+      )
+    )
     setHasChanged(true)
   }
 
-  const removeTag = (idx: number) => {
-    setProfileTags((prev) => prev.filter((_, i) => i !== idx))
+  const removeTag = (id: string) => {
+    setProfileTagRows((prev) => prev.filter((row) => row.id !== id))
+    setHasChanged(true)
+  }
+
+  const reorderProfileTagRows = (fromIndex: number, toIndex: number) => {
+    setProfileTagRows((prev) => arrayMove(prev, fromIndex, toIndex))
     setHasChanged(true)
   }
 
   const addTag = (name = '', value = '') => {
-    // Prevent adding a second row for any "at most one" tag.
-    if (name && AT_MOST_ONE_NAMES.includes(name) && profileTags.some((t) => t[0] === name)) {
+    if (name && AT_MOST_ONE_NAMES.includes(name) && profileTagRows.some((row) => row.tag[0] === name)) {
       toast.error(t('profileEditorDuplicateSingleton', { defaultValue: `"${name}" may only appear once` }))
       return
     }
-    setProfileTags((prev) => [...prev, [name, value]])
+    setProfileTagRows((prev) => [...prev, { id: newEditorId(), tag: [name, value] }])
     setHasChanged(true)
   }
 
@@ -239,14 +252,15 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       setPaymentInfoEditMethods(
         paytoTags.length > 0
           ? paytoTags.map((tag) => ({
+              id: newEditorId(),
               type: (tag[1] as string) || 'lightning',
               authority: (tag[2] as string) || ''
             }))
-          : [{ type: 'lightning', authority: '' }]
+          : [{ id: newEditorId(), type: 'lightning', authority: '' }]
       )
     } else {
       setPaymentInfoEditContent('{}')
-      setPaymentInfoEditMethods([{ type: 'lightning', authority: '' }])
+      setPaymentInfoEditMethods([{ id: newEditorId(), type: 'lightning', authority: '' }])
     }
     setPaymentInfoShowFullJson(false)
     setPaymentInfoEditOpen(true)
@@ -302,7 +316,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
       ])
       if (profileEvt) {
         await updateProfileEvent(profileEvt)
-        setProfileTags(buildTagListFromEvent(profileEvt))
+        setProfileTagRows(tagRowsFromTags(buildTagListFromEvent(profileEvt)))
         setProfileEventJson(JSON.stringify(profileEvt, null, 2))
         setHasChanged(false)
       }
@@ -361,38 +375,44 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
   const openImageUrlEditor = (field: 'picture' | 'banner') => {
     setImageUrlField(field)
-    setImageUrlDraft(profileTags.find((t) => t[0] === field)?.[1] ?? '')
+    setImageUrlDraft(profileTagRows.find((r) => r.tag[0] === field)?.tag[1] ?? '')
   }
 
   const applyImageUrlDraft = () => {
     if (!imageUrlField) return
     const v = imageUrlDraft.trim()
-    setProfileTags((prev) => {
-      const idx = prev.findIndex((t) => t[0] === imageUrlField)
+    setProfileTagRows((prev) => {
+      const idx = prev.findIndex((row) => row.tag[0] === imageUrlField)
       return idx >= 0
-        ? prev.map((t, i) => (i === idx ? [imageUrlField, v, ...t.slice(2)] : t))
-        : [...prev, [imageUrlField, v]]
+        ? prev.map((row, i) =>
+            i === idx ? { ...row, tag: [imageUrlField, v, ...row.tag.slice(2)] } : row
+          )
+        : [...prev, { id: newEditorId(), tag: [imageUrlField, v] }]
     })
     setHasChanged(true)
     setImageUrlField(null)
   }
 
   const onBannerUploadSuccess = ({ url }: { url: string }) => {
-    setProfileTags((prev) => {
-      const idx = prev.findIndex((t) => t[0] === 'banner')
+    setProfileTagRows((prev) => {
+      const idx = prev.findIndex((row) => row.tag[0] === 'banner')
       return idx >= 0
-        ? prev.map((t, i) => (i === idx ? ['banner', url, ...t.slice(2)] : t))
-        : [...prev, ['banner', url]]
+        ? prev.map((row, i) =>
+            i === idx ? { ...row, tag: ['banner', url, ...row.tag.slice(2)] } : row
+          )
+        : [...prev, { id: newEditorId(), tag: ['banner', url] }]
     })
     setHasChanged(true)
   }
 
   const onAvatarUploadSuccess = ({ url }: { url: string }) => {
-    setProfileTags((prev) => {
-      const idx = prev.findIndex((t) => t[0] === 'picture')
+    setProfileTagRows((prev) => {
+      const idx = prev.findIndex((row) => row.tag[0] === 'picture')
       return idx >= 0
-        ? prev.map((t, i) => (i === idx ? ['picture', url, ...t.slice(2)] : t))
-        : [...prev, ['picture', url]]
+        ? prev.map((row, i) =>
+            i === idx ? { ...row, tag: ['picture', url, ...row.tag.slice(2)] } : row
+          )
+        : [...prev, { id: newEditorId(), tag: ['picture', url] }]
     })
     setHasChanged(true)
   }
@@ -407,7 +427,8 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
     const savePromise = (async () => {
       try {
         // Strip empty/incomplete rows, trim whitespace.
-        const validTags = profileTags
+        const validTags = profileTagRows
+          .map((row) => row.tag)
           .filter((t) => {
             if (!Array.isArray(t) || !(t[0] ?? '').trim()) return false
             const name = (t[0] ?? '').trim()
@@ -427,9 +448,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             return [name, v1, ...t.slice(2)]
           })
 
-        // Sort alphabetically by tag name (stable: same-name tags keep their relative order).
-        const sortedTags = [...validTags]
-          .sort((a, b) => a[0].localeCompare(b[0]))
+        const orderedTags = validTags
           // Enforce at-most-one uniqueness: keep only the first occurrence.
           .filter((() => {
             const seen = new Set<string>()
@@ -441,10 +460,9 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             }
           })())
 
-        // Derive content JSON: first occurrence of each known field.
         const content: Record<string, string> = {}
         const seenContent = new Set<string>()
-        for (const tag of sortedTags) {
+        for (const tag of orderedTags) {
           const name = tag[0]
           if (name === 'bot') continue
           if (DISPLAY_ORDER.includes(name) && !seenContent.has(name)) {
@@ -455,7 +473,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
         // Keep displayName alias for backward compatibility.
         if (content['display_name']) content['displayName'] = content['display_name']
 
-        const draft = createProfileDraftEvent(JSON.stringify(content), sortedTags)
+        const draft = createProfileDraftEvent(JSON.stringify(content), orderedTags)
         const published = await publish(draft)
         await updateProfileEvent(published)
         if (!mountedRef.current) return
@@ -587,11 +605,16 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           <p className="text-xs text-muted-foreground">
             {t('profileEditorTagListHint', {
               defaultValue:
-                'All profile fields as tags. On save, tags are sorted by name; the first of each known field also populates the content JSON.'
+                'All profile fields as tags. Drag rows to reorder; tag order is saved on publish. The first of each known field also populates the content JSON.'
             })}
           </p>
-          <div className="space-y-1.5">
-            {profileTags.map((tag, idx) => {
+          <EditorSortableList
+            itemIds={profileTagRows.map((row) => row.id)}
+            onReorder={reorderProfileTagRows}
+            className="space-y-1.5"
+          >
+            {profileTagRows.map((row) => {
+              const tag = row.tag
               const name = tag[0] ?? ''
               const value = tag[1] ?? ''
               const isSingleton = SINGLETON_NAMES.includes(name)
@@ -601,78 +624,76 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
 
               if (isPic || isBan) {
                 return (
-                  <ProfileImageTagRow
-                    key={idx}
-                    tagName={name as 'picture' | 'banner'}
-                    value={value}
-                    onEdit={() => openImageUrlEditor(name as 'picture' | 'banner')}
-                    onInsertThumb={() => {
-                      const next = insertNostrBuildThumbUrl(value)
-                      if (next) {
-                        setProfileTags((prev) =>
-                          prev.map((t, i) => (i === idx ? [name, next, ...t.slice(2)] : t))
-                        )
-                        setHasChanged(true)
-                      }
-                    }}
-                    showThumbButton={isPic && canInsertNostrBuildThumb(value)}
-                    t={t}
-                  />
+                  <SortableEditorRow key={row.id} id={row.id}>
+                    <ProfileImageTagRow
+                      tagName={name as 'picture' | 'banner'}
+                      value={value}
+                      onEdit={() => openImageUrlEditor(name as 'picture' | 'banner')}
+                      onInsertThumb={() => {
+                        const next = insertNostrBuildThumbUrl(value)
+                        if (next) {
+                          updateTagValue(row.id, next)
+                        }
+                      }}
+                      showThumbButton={isPic && canInsertNostrBuildThumb(value)}
+                      t={t}
+                    />
+                  </SortableEditorRow>
                 )
               }
 
               return (
-                <div key={idx} className="flex flex-wrap gap-2 items-start min-w-0">
-                  {/* Tag name: fixed label for known, editable input for custom */}
-                  <div className="w-full shrink-0 sm:w-28 sm:flex-none">
-                    {isKnown ? (
-                      <p
-                        className="text-xs font-medium text-muted-foreground pt-2 truncate"
-                        title={TAG_LABELS[name] || name}
-                      >
-                        {TAG_LABELS[name] || name}
-                      </p>
+                <SortableEditorRow key={row.id} id={row.id}>
+                  <div className="flex flex-wrap gap-2 items-start min-w-0">
+                    <div className="w-full shrink-0 sm:w-28 sm:flex-none">
+                      {isKnown ? (
+                        <p
+                          className="text-xs font-medium text-muted-foreground pt-2 truncate"
+                          title={TAG_LABELS[name] || name}
+                        >
+                          {TAG_LABELS[name] || name}
+                        </p>
+                      ) : (
+                        <Input
+                          value={name}
+                          placeholder={t('Tag name')}
+                          className="font-mono text-xs h-8"
+                          onChange={(e) => updateTagName(row.id, e.target.value)}
+                        />
+                      )}
+                    </div>
+
+                    {name === 'about' ? (
+                      <Textarea
+                        className="flex-1 text-sm min-h-[5rem] resize-y"
+                        value={value}
+                        onChange={(e) => updateTagValue(row.id, e.target.value)}
+                      />
                     ) : (
                       <Input
-                        value={name}
-                        placeholder={t('Tag name')}
-                        className="font-mono text-xs h-8"
-                        onChange={(e) => updateTagName(idx, e.target.value)}
+                        className="flex-1 font-mono text-sm"
+                        value={value}
+                        onChange={(e) => updateTagValue(row.id, e.target.value)}
                       />
                     )}
+
+                    {!isSingleton && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
+                        onClick={() => removeTag(row.id)}
+                        aria-label={t('Remove')}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-
-                  {/* Value: textarea for bio, plain input for everything else */}
-                  {name === 'about' ? (
-                    <Textarea
-                      className="flex-1 text-sm min-h-[5rem] resize-y"
-                      value={value}
-                      onChange={(e) => updateTagValue(idx, e.target.value)}
-                    />
-                  ) : (
-                    <Input
-                      className="flex-1 font-mono text-sm"
-                      value={value}
-                      onChange={(e) => updateTagValue(idx, e.target.value)}
-                    />
-                  )}
-
-                  {/* Delete (singletons are permanent) */}
-                  {!isSingleton && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
-                      onClick={() => removeTag(idx)}
-                      aria-label={t('Remove')}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
+                </SortableEditorRow>
               )
             })}
+          </EditorSortableList>
 
             {/* Add-tag row: dropdown + single + button */}
             <div className="flex flex-wrap gap-2 pt-1 items-center min-w-0">
@@ -703,7 +724,6 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
-          </div>
         </Item>
 
         <div className="pb-2">
@@ -821,33 +841,42 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
               <p className="text-xs text-muted-foreground">
                 {t('paytoEditor.intro', {
                   defaultValue:
-                    'Choose a payment type, then enter the address or username shown in the hint below each field.'
+                    'Choose a payment type, then enter the address or username shown in the hint below each field. Drag rows to reorder payto tags on save.'
                 })}
               </p>
               <div className="space-y-3">
-                {paymentInfoEditMethods.map((row, idx) => (
-                  <PaymentMethodRow
-                    key={idx}
-                    row={row}
-                    onChange={(next) => {
-                      const methods = [...paymentInfoEditMethods]
-                      methods[idx] = next
-                      setPaymentInfoEditMethods(methods)
-                    }}
-                    onRemove={() =>
-                      setPaymentInfoEditMethods(paymentInfoEditMethods.filter((_, i) => i !== idx))
-                    }
-                  />
+              <EditorSortableList
+                itemIds={paymentInfoEditMethods.map((row) => row.id)}
+                onReorder={(from, to) => {
+                  setPaymentInfoEditMethods((prev) => arrayMove(prev, from, to))
+                }}
+                className="space-y-3"
+              >
+                {paymentInfoEditMethods.map((row) => (
+                  <SortableEditorRow key={row.id} id={row.id}>
+                    <PaymentMethodRow
+                      row={row}
+                      onChange={(next) => {
+                        setPaymentInfoEditMethods((prev) =>
+                          prev.map((m) => (m.id === row.id ? { ...m, ...next } : m))
+                        )
+                      }}
+                      onRemove={() =>
+                        setPaymentInfoEditMethods((prev) => prev.filter((m) => m.id !== row.id))
+                      }
+                    />
+                  </SortableEditorRow>
                 ))}
+              </EditorSortableList>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="gap-1"
                   onClick={() =>
-                    setPaymentInfoEditMethods([
-                      ...paymentInfoEditMethods,
-                      { type: 'lightning', authority: '' }
+                    setPaymentInfoEditMethods((prev) => [
+                      ...prev,
+                      { id: newEditorId(), type: 'lightning', authority: '' }
                     ])
                   }
                 >
@@ -922,17 +951,24 @@ export default ProfileEditorPage
 
 // ─── Pure helpers (no React) ──────────────────────────────────────────────────
 
+type EditorTagRow = { id: string; tag: string[] }
+type EditorPaymentMethodRow = { id: string; type: string; authority: string }
+
+function newEditorId(): string {
+  return crypto.randomUUID()
+}
+
+function tagRowsFromTags(tags: string[][]): EditorTagRow[] {
+  return tags.map((tag) => ({ id: newEditorId(), tag }))
+}
+
 /**
  * Build the unified tag list from a stored profile event.
  *
  * Merge strategy:
- *  1. Event `tags` (non-auto) in display order, then unknown tags alphabetically.
- *  2. Content JSON fields not already covered:
- *     - Singletons: added only if absent from tags (tags take precedence).
- *     - Multi-fields: added when the exact (name, value) pair is not yet present.
+ *  1. Event `tags` (non-auto) in event order (top to bottom).
+ *  2. Content JSON fields not already covered (DISPLAY_ORDER for known keys).
  *  3. Empty placeholder rows for any singleton still missing after steps 1–2.
- *  4. Final sort: known fields by DISPLAY_ORDER, unknown fields alphabetically.
- *     (Stable sort preserves relative order of same-name entries like multiple nip05.)
  */
 function buildTagListFromEvent(event: Event | null): string[][] {
   let content: Record<string, unknown> = {}
@@ -943,30 +979,16 @@ function buildTagListFromEvent(event: Event | null): string[][] {
   const normalizeTagName = (n: string) =>
     n === 'displayName' ? 'display_name' : n === 'username' ? 'name' : n
 
-  const eventTags = (event?.tags ?? [])
-    .filter((t) => Array.isArray(t) && !AUTO_NAMES.has((t as string[])[0]))
-    .map((t) => {
-      const norm = normalizeTagName((t as string[])[0])
-      return norm !== (t as string[])[0] ? [norm, ...(t as string[]).slice(1)] : [...(t as string[])]
-    }) as string[][]
-
-  // Group event tags by name for fast singleton-check.
-  const byName = new Map<string, string[][]>()
-  for (const tag of eventTags) {
-    const name = tag[0]
-    if (!byName.has(name)) byName.set(name, [])
-    byName.get(name)!.push([...tag])
-  }
-
   const result: string[][] = []
-  const dedup = new Set<string>() // "name\0value" for multi-fields; just "name" for singletons
+  const dedup = new Set<string>()
+  const singletonNamesFromTags = new Set<string>()
 
   const push = (tag: string[]) => {
     const name = tag[0]
-    // Singletons: only one row per name ever.
     if (SINGLETON_NAMES.includes(name)) {
       if (dedup.has(name)) return
       dedup.add(name)
+      singletonNamesFromTags.add(name)
     } else {
       const key = `${name}\0${tag[1] ?? ''}`
       if (dedup.has(key)) return
@@ -975,39 +997,32 @@ function buildTagListFromEvent(event: Event | null): string[][] {
     result.push([...tag])
   }
 
-  // 1a. Known tags in display order.
-  for (const name of DISPLAY_ORDER) {
-    for (const tag of byName.get(name) ?? []) push(tag)
-  }
-  // 1b. Unknown non-auto tags.
-  for (const tag of eventTags) {
-    if (!DISPLAY_ORDER.includes(tag[0])) push(tag)
+  for (const rawTag of event?.tags ?? []) {
+    if (!Array.isArray(rawTag) || AUTO_NAMES.has(rawTag[0])) continue
+    const norm = normalizeTagName(rawTag[0])
+    const tag =
+      norm !== rawTag[0] ? [norm, ...rawTag.slice(1)] : ([...rawTag] as string[])
+    push(tag)
   }
 
-  // 2. Merge content JSON fields.
+  for (const name of DISPLAY_ORDER) {
+    if (AUTO_NAMES.has(name) || name === 'bot') continue
+    const rawVal = content[name]
+    if (typeof rawVal !== 'string' || !rawVal.trim()) continue
+    if (SINGLETON_NAMES.includes(name) && singletonNamesFromTags.has(name)) continue
+    push([name, rawVal.trim()])
+  }
+
   for (const [rawKey, val] of Object.entries(content)) {
     if (typeof val !== 'string' || !val.trim()) continue
     const name = normalizeTagName(rawKey)
-    if (AUTO_NAMES.has(name)) continue
-    // For singletons: event tags take precedence; skip if already present.
-    if (SINGLETON_NAMES.includes(name) && byName.has(name)) continue
+    if (AUTO_NAMES.has(name) || DISPLAY_ORDER.includes(name)) continue
     push([name, val.trim()])
   }
 
-  // 3. Ensure all singletons have at least an empty placeholder.
   for (const name of SINGLETON_NAMES) {
     if (!result.some((t) => t[0] === name)) push([name, ''])
   }
-
-  // 4. Sort: known fields by DISPLAY_ORDER index, unknown alphabetically.
-  result.sort((a, b) => {
-    const ai = DISPLAY_ORDER.indexOf(a[0])
-    const bi = DISPLAY_ORDER.indexOf(b[0])
-    if (ai !== -1 && bi !== -1) return ai - bi
-    if (ai !== -1) return -1
-    if (bi !== -1) return 1
-    return a[0].localeCompare(b[0])
-  })
 
   return result
 }
