@@ -11,6 +11,7 @@ import {
   SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS,
   SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
+import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import logger from '@/lib/logger'
@@ -1195,7 +1196,7 @@ export class EventService {
         [...new Set(urls.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u)))]
       )
     if (extraRelayHints?.length) {
-      relays = normalizeRelayList(extraRelayHints)
+      relays = normalizeRelayList(prependAggrForEventLookupRelayUrls(extraRelayHints))
     }
 
     if (/^[0-9a-f]{64}$/i.test(id)) {

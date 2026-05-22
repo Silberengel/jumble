@@ -4,6 +4,7 @@ import {
   filterAggrNostrLandUnlessViewerEligible,
   getAggrAwareSearchRelayUrls,
   getViewerNostrLandAggrSearchRelayUrls,
+  prependAggrForEventLookupRelayUrls,
   prependAggrNostrLandIfViewerEligible,
   relayUrlsIncludeCanonicalNostrLandRelay,
   syncViewerRelayStackNostrLandAggrEligible
@@ -30,6 +31,13 @@ describe('nostr.land aggr eligibility', () => {
     expect(prependAggrNostrLandIfViewerEligible(['wss://inbox.example/'])).toEqual([
       'wss://inbox.example/'
     ])
+  })
+
+  it('prependAggrForEventLookupRelayUrls matches prependAggrNostrLandIfViewerEligible', () => {
+    syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
+    expect(prependAggrForEventLookupRelayUrls(['wss://inbox.example/'])[0]).toMatch(
+      /^wss:\/\/aggr\.nostr\.land\/?$/
+    )
   })
 
   it('getAggrAwareSearchRelayUrls prepends aggr when eligible', () => {

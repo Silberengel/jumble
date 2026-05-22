@@ -1,3 +1,4 @@
+import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -41,5 +42,11 @@ export async function buildThreadContextFetchRelayUrls(
     ...new Set([...tagHints, ...relayHintsFromEventTags(contextEvent)])
   ])
   const opAuthorPubkey = pubkeyFromThreadETag(targetTag)
-  return buildReplyReadRelayList(opAuthorPubkey, viewerPubkey, blockedRelays, threadRelayHints)
+  const relays = await buildReplyReadRelayList(
+    opAuthorPubkey,
+    viewerPubkey,
+    blockedRelays,
+    threadRelayHints
+  )
+  return prependAggrForEventLookupRelayUrls(relays)
 }

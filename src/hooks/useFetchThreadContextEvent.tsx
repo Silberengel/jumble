@@ -10,9 +10,36 @@ import { buildThreadContextFetchRelayUrls } from '@/lib/thread-context-relays'
 import client, { eventService } from '@/services/client.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import { Event } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 export type ThreadContextRole = 'parent' | 'root'
+
+/** First usable event from parallel fetches, or undefined after all settle or `timeoutMs`. */
+function raceThreadContextFetches(
+  tasks: Array<() => Promise<Event | undefined>>,
+  timeoutMs: number
+): Promise<Event | undefined> {
+  if (tasks.length === 0) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(undefined), timeoutMs)
+    let settled = 0
+    const finish = (ev: Event | undefined) => {
+      settled++
+      if (ev) {
+        window.clearTimeout(timer)
+        resolve(ev)
+        return
+      }
+      if (settled === tasks.length) {
+        window.clearTimeout(timer)
+        resolve(undefined)
+      }
+    }
+    for (const run of tasks) {
+      void run().then(finish).catch(() => finish(undefined))
+    }
+  })
+}
 
 export function useFetchThreadContextEvent(
   eventId: string | undefined,
@@ -28,10 +55,8 @@ export function useFetchThreadContextEvent(
   const [event, setEvent] = useState<Event | undefined>(initialEvent)
   const [isFetching, setIsFetching] = useState(!initialEvent)
   const [refetchToken, setRefetchToken] = useState(0)
-  const searchableAttemptedRef = useRef(false)
 
   const refetch = useCallback(() => {
-    searchableAttemptedRef.current = false
     setRefetchToken((n) => n + 1)
   }, [])
 
@@ -44,10 +69,6 @@ export function useFetchThreadContextEvent(
     () => [...blockedRelays].map((u) => u).sort().join('\0'),
     [blockedRelays]
   )
-
-  useEffect(() => {
-    searchableAttemptedRef.current = false
-  }, [eventId])
 
   useEffect(() => {
     let cancelled = false
@@ -111,34 +132,27 @@ export function useFetchThreadContextEvent(
           ? { relayHints: relayUrls, threadContext: true as const }
           : { threadContext: true as const }
 
-        const fetchParentOrRoot = async () => {
+        const fetchParentOrRoot = () => {
           if (skipShortcuts) {
             return eventService.fetchEventForceRetry(eventId, threadOpts)
           }
           return eventService.fetchEvent(eventId, threadOpts)
         }
 
-        let fetchedEvent = await Promise.race([
-          fetchParentOrRoot(),
-          new Promise<undefined>((resolve) => {
-            window.setTimeout(() => resolve(undefined), THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS)
+        const aggrAwareSearch = sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+        const tasks: Array<() => Promise<Event | undefined>> = [fetchParentOrRoot]
+        if (aggrAwareSearch.length > 0) {
+          tasks.push(async () => {
+            const ev = await client.fetchEventWithExternalRelays(eventId, aggrAwareSearch)
+            if (ev) client.addEventToCache(ev)
+            return ev
           })
-        ])
-
-        const aggrAwareSearch = getAggrAwareSearchRelayUrls()
-        if (!fetchedEvent && !searchableAttemptedRef.current && aggrAwareSearch.length > 0) {
-          searchableAttemptedRef.current = true
-          const searchable = sanitizeRelayUrlsForFetch(aggrAwareSearch)
-          fetchedEvent = await Promise.race([
-            client.fetchEventWithExternalRelays(eventId, searchable),
-            new Promise<undefined>((resolve) => {
-              window.setTimeout(() => resolve(undefined), THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS)
-            })
-          ])
-          if (fetchedEvent) {
-            client.addEventToCache(fetchedEvent)
-          }
         }
+
+        const fetchedEvent = await raceThreadContextFetches(
+          tasks,
+          THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS
+        )
 
         if (cancelled) return
         if (fetchedEvent && !isEventDeleted(fetchedEvent)) {

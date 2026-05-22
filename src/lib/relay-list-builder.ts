@@ -13,6 +13,7 @@ import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from 
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
+import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import {
   canonicalRelaySessionKey,
@@ -385,7 +386,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     }),
     personalKeys
   )
-  if (httpRelayUrls.length === 0) return ws
+  if (httpRelayUrls.length === 0) return prependAggrForEventLookupRelayUrls(ws)
   const seen = new Set(ws.map(relayKey))
   const out = [...ws]
   for (const u of httpRelayUrls) {
@@ -394,7 +395,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     seen.add(k)
     out.push(u)
   }
-  return out
+  return prependAggrForEventLookupRelayUrls(out)
 }
 
 /**
@@ -649,7 +650,7 @@ export async function buildReplyReadRelayList(
       includeProfileFetchRelays: false,
       blockedRelays
     })
-    return scoped
+    return prependAggrForEventLookupRelayUrls(scoped)
   }
 
   let useGlobal = true
@@ -682,5 +683,7 @@ export async function buildReplyReadRelayList(
     includeProfileFetchRelays: useGlobal,
     blockedRelays
   })
-  return mergeRelayUrlLayers([scoped, defaultFavoriteRelaysForViewer(useGlobal)], blockedRelays)
+  return prependAggrForEventLookupRelayUrls(
+    mergeRelayUrlLayers([scoped, defaultFavoriteRelaysForViewer(useGlobal)], blockedRelays)
+  )
 }

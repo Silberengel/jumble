@@ -108,6 +108,14 @@ export function urlsForViewerNostrLandAggrEligibilitySync(options: {
   ]
 }
 
+/**
+ * Prepend aggr for event-by-id lookups (threads, embeds, parent previews, comprehensive fetch).
+ * Home OP timelines must not use this — use {@link buildAllFavoritesFeedRelayUrls} / `nostrLandAggr: 'never'`.
+ */
+export function prependAggrForEventLookupRelayUrls(relayUrls: readonly string[]): string[] {
+  return prependAggrNostrLandIfViewerEligible(relayUrls)
+}
+
 /** Deduped prepend of aggr when the viewer opted into nostr.land relays (see sync…). */
 export function prependAggrNostrLandIfViewerEligible(relayUrls: readonly string[]): string[] {
   if (!viewerStackMentionsNostrLand) return [...relayUrls]
