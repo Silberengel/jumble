@@ -50,6 +50,7 @@ import { useTranslation } from 'react-i18next'
 import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
+import { canPublishWithContent } from '@/lib/publish-content-required'
 
 function normalizeTagRow(row: string[]): string[] | null {
   const trimmed = row.map((c) => c.trim())
@@ -162,6 +163,11 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   }, [isCreate, parsedCreateKind, sourceEvent, mode])
 
   const kind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent!.kind
+
+  const canPublishEvent = useMemo(
+    () => canPublishWithContent(kind, content),
+    [kind, content]
+  )
 
   useEffect(() => {
     if (open && !prevOpenRef.current) {
@@ -286,6 +292,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const handlePublish = async () => {
     await checkLogin(async () => {
       if (!pubkey) return
+      if (!canPublishWithContent(isCreate ? parseEventKindInput(createKindInput) ?? 0 : sourceEvent!.kind, content)) {
+        return
+      }
       if (isCreate) {
         const k = parseEventKindInput(createKindInput)
         if (k === null) {
@@ -616,7 +625,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
           <Button
             type="button"
             onClick={handlePublish}
-            disabled={publishing || !pubkey || (isCreate && parsedCreateKind === null)}
+            disabled={
+              publishing || !pubkey || (isCreate && parsedCreateKind === null) || !canPublishEvent
+            }
           >
             {publishing ? t('Loading...') : t('Publish')}
           </Button>

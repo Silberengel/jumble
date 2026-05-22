@@ -79,6 +79,7 @@ import { getMediaKindFromFile } from '@/lib/media-kind-detection'
 import { hasPrivateRelays, getPrivateRelayUrls } from '@/lib/private-relays'
 import mediaUpload from '@/services/media-upload.service'
 import type { TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
+import { canPublishWithContent, publishRequiresNonemptyContent } from '@/lib/publish-content-required'
 import { successfulPublishRelayUrls, type TRelayPublishStatus } from '@/lib/publish-relay-urls'
 import client, { eventService } from '@/services/client.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
@@ -479,70 +480,6 @@ export default function PostContent({
     if (isPoll) setRelayCapBlockInfo(null)
   }, [isPoll])
 
-  const canPost = useMemo(() => {
-    const discussionOk =
-      !isDiscussionThread ||
-      !!parentEvent ||
-      (!!threadTitle.trim() &&
-        threadTitle.length <= 100 &&
-        !!threadTopicResolved &&
-        !!text.trim() &&
-        text.length <= 5000 &&
-        additionalRelayUrls.length > 0 &&
-        (!threadIsReadingGroup || (!!threadReadingAuthor.trim() && !!threadReadingSubject.trim())))
-    const result = (
-      !!pubkey &&
-      !posting &&
-      !uploadProgresses.length &&
-      discussionOk &&
-      // For media notes, text is optional - just need media
-      ((mediaNoteKind !== null && mediaUrl) || !!text) &&
-      (!isPoll || pollCreateData.options.filter((option) => !!option.trim()).length >= 2) &&
-      (!isPublicMessage || extractedMentions.length > 0 || parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE) &&
-      (!isProtectedEvent || additionalRelayUrls.length > 0) &&
-      (!isHighlight || highlightData.sourceValue.trim() !== '') &&
-      // For citations, required fields must be filled
-      (!isCitationInternal || !!citationInternalCTag.trim()) &&
-      (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
-      (!isCitationHardcopy || !!citationAccessedOn.trim()) &&
-      (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim())) &&
-      relayCapBlockInfo === null
-    )
-    
-    return result
-  }, [
-    pubkey,
-    text,
-    posting,
-    uploadProgresses,
-    mediaNoteKind,
-    mediaUrl,
-    isPoll,
-    pollCreateData,
-    isPublicMessage,
-    extractedMentions,
-    parentEvent,
-    isProtectedEvent,
-    additionalRelayUrls,
-    isHighlight,
-    highlightData,
-    isCitationInternal,
-    citationInternalCTag,
-    isCitationExternal,
-    citationExternalUrl,
-    citationAccessedOn,
-    isCitationHardcopy,
-    isCitationPrompt,
-    citationPromptLlm,
-    isDiscussionThread,
-    threadTitle,
-    threadTopicResolved,
-    threadIsReadingGroup,
-    threadReadingAuthor,
-    threadReadingSubject,
-    relayCapBlockInfo
-  ])
-
   // Clear highlight data when initialHighlightData changes or is removed
   useEffect(() => {
     if (initialHighlightData) {
@@ -681,6 +618,72 @@ export default function PostContent({
     isPublicMessage,
     isPoll,
     parentEvent
+  ])
+
+  const canPost = useMemo(() => {
+    const discussionOk =
+      !isDiscussionThread ||
+      !!parentEvent ||
+      (!!threadTitle.trim() &&
+        threadTitle.length <= 100 &&
+        !!threadTopicResolved &&
+        !!text.trim() &&
+        text.length <= 5000 &&
+        additionalRelayUrls.length > 0 &&
+        (!threadIsReadingGroup || (!!threadReadingAuthor.trim() && !!threadReadingSubject.trim())))
+    const requiresNonemptyContent = publishRequiresNonemptyContent(getDeterminedKind)
+    const hasNonemptyContent = text.trim().length > 0
+    const contentOk = requiresNonemptyContent
+      ? hasNonemptyContent
+      : (mediaNoteKind !== null && mediaUrl) || hasNonemptyContent
+    return (
+      !!pubkey &&
+      !posting &&
+      !uploadProgresses.length &&
+      discussionOk &&
+      contentOk &&
+      (!isPoll || pollCreateData.options.filter((option) => !!option.trim()).length >= 2) &&
+      (!isPublicMessage || extractedMentions.length > 0 || parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE) &&
+      (!isProtectedEvent || additionalRelayUrls.length > 0) &&
+      (!isHighlight || highlightData.sourceValue.trim() !== '') &&
+      (!isCitationInternal || !!citationInternalCTag.trim()) &&
+      (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
+      (!isCitationHardcopy || !!citationAccessedOn.trim()) &&
+      (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim())) &&
+      relayCapBlockInfo === null
+    )
+  }, [
+    pubkey,
+    text,
+    getDeterminedKind,
+    posting,
+    uploadProgresses,
+    mediaNoteKind,
+    mediaUrl,
+    isPoll,
+    pollCreateData,
+    isPublicMessage,
+    extractedMentions,
+    parentEvent,
+    isProtectedEvent,
+    additionalRelayUrls,
+    isHighlight,
+    highlightData,
+    isCitationInternal,
+    citationInternalCTag,
+    isCitationExternal,
+    citationExternalUrl,
+    citationAccessedOn,
+    isCitationHardcopy,
+    isCitationPrompt,
+    citationPromptLlm,
+    isDiscussionThread,
+    threadTitle,
+    threadTopicResolved,
+    threadIsReadingGroup,
+    threadReadingAuthor,
+    threadReadingSubject,
+    relayCapBlockInfo
   ])
 
   const getDeterminedKindRef = useRef(getDeterminedKind)
@@ -1280,6 +1283,9 @@ export default function PostContent({
     checkLogin(async () => {
       if (!canPost) {
         logger.warn('Attempted to post while canPost is false')
+        return
+      }
+      if (!canPublishWithContent(getDeterminedKind, text)) {
         return
       }
 
