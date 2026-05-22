@@ -69,7 +69,7 @@ export default function WalletZapSendingSettings() {
   return (
     <div>
       <Button
-        className="bg-foreground hover:bg-foreground/90"
+        className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
         onClick={() => {
           launchModal()
         }}
