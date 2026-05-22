@@ -124,6 +124,10 @@ const NormalFeed = forwardRef<TNoteListRef, {
    * Single-relay explore: only events from that relay’s live REQ (no session/IDB prime, no prefetch to other relays).
    */
   relayAuthoritativeFeedOnly?: boolean
+  /** Home favorites Notes tab: favorites + trending relays for stats / “Seen on”. */
+  homeFeedSeenOnAllowlistOp?: string[]
+  /** Home favorites Replies / Gallery: adds NIP-65, cache, and HTTP index read relays. */
+  homeFeedSeenOnAllowlistReplies?: string[]
 }>(function NormalFeed(
   {
     subRequests,
@@ -160,7 +164,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
     oneShotMergedCap,
     timelinePublicReadFallback = false,
     alexandriaEmptyUrl = null,
-    relayAuthoritativeFeedOnly = false
+    relayAuthoritativeFeedOnly = false,
+    homeFeedSeenOnAllowlistOp,
+    homeFeedSeenOnAllowlistReplies
   },
   ref
 ) {
@@ -400,6 +406,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
           followingFeedDeltaSubRequests={followingFeedDeltaSubRequests}
           feedTimelineScopeKey={feedTimelineScopeKey}
           homeFeedListMode={isMainFeed ? listMode : undefined}
+          homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}
+          homeFeedSeenOnAllowlistReplies={homeFeedSeenOnAllowlistReplies}
           gridLayout={listMode === 'media'}
           revealBatchSize={listMode === 'media' && isMainFeed ? 96 : undefined}
           useFilterAsIs={listMode === 'media' ? true : useFilterAsIs}

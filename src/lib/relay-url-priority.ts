@@ -9,7 +9,7 @@ import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url
 
 export { MAX_REQ_RELAY_URLS }
 
-export function dedupeNormalizeRelayUrlsOrdered(urls: string[]): string[] {
+export function dedupeNormalizeRelayUrlsOrdered(urls: readonly string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const u of urls) {

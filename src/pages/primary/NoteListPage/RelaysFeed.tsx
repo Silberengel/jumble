@@ -117,6 +117,8 @@ const RelaysFeed = forwardRef<
       widenMainGalleryRelays={false}
       feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"
+      homeFeedSeenOnAllowlistOp={relayUrls}
+      homeFeedSeenOnAllowlistReplies={replyRelayUrls}
       showFeedClientFilter
       hostPrimaryPageName="feed"
     />

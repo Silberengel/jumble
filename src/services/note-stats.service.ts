@@ -22,7 +22,10 @@ import {
 } from '@/lib/rss-article'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
+import { filterRelaysToUserAllowlist, isRelayInUserAllowlist } from '@/lib/relay-allowlist'
+import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { buildComprehensiveRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import {
   getEmojiInfosFromEmojiTags,
@@ -86,6 +89,8 @@ class NoteStatsService {
   private deferredRequeueForeground = new Set<string>()
   /** Favorite relays passed from the last fetchNoteStats call per note (used in processSingleEvent). */
   private pendingFetchFavoriteRelays = new Map<string, string[] | null | undefined>()
+  /** Home feed: restrict stats REQs to favorites + trending (or reply widen stack) — no FAST_READ. */
+  private pendingFetchRelayAllowlist = new Map<string, readonly string[] | undefined>()
   /** Merged favorite URLs requested while this note was already in {@link processingCache}. */
   private inFlightDeferredFavoriteRelays = new Map<string, string[]>()
   private batchTimeout: NodeJS.Timeout | null = null
@@ -186,7 +191,7 @@ class NoteStatsService {
     event: Event,
     _pubkey?: string | null,
     favoriteRelays?: string[] | null,
-    opts?: { foreground?: boolean }
+    opts?: { foreground?: boolean; relayAllowlist?: readonly string[] | null }
   ) {
     const eventId = this.statsKey(event.id)
     const foreground = opts?.foreground === true
@@ -233,6 +238,11 @@ class NoteStatsService {
     }
 
     this.pendingFetchFavoriteRelays.set(eventId, favoriteRelays ?? null)
+    if (opts?.relayAllowlist?.length) {
+      this.pendingFetchRelayAllowlist.set(eventId, opts.relayAllowlist)
+    } else {
+      this.pendingFetchRelayAllowlist.delete(eventId)
+    }
     if (foreground) {
       this.pendingForeground.add(eventId)
     } else {
@@ -257,7 +267,7 @@ class NoteStatsService {
     _pubkey?: string | null,
     opts?: { foreground?: boolean; threadRootHexId?: string }
   ): Promise<void> {
-    const urls = (relayUrls ?? []).filter(Boolean)
+    const urls = prependAggrNostrLandIfViewerEligible((relayUrls ?? []).filter(Boolean))
     const hexReplies: Event[] = []
     const replaceableReplies: Event[] = []
     const oddIdReplies: Event[] = []
@@ -468,6 +478,8 @@ class NoteStatsService {
 
     const favoriteRelays = this.pendingFetchFavoriteRelays.get(eventId)
     this.pendingFetchFavoriteRelays.delete(eventId)
+    const relayAllowlist = this.pendingFetchRelayAllowlist.get(eventId)
+    this.pendingFetchRelayAllowlist.delete(eventId)
 
     let publishedStatsSnapshot = false
     const markStatsLoaded = (rawStatsKey: string) => {
@@ -514,7 +526,11 @@ class NoteStatsService {
         }
       }
 
-      const finalRelayUrls = await this.buildNoteStatsRelayList(resolvedEvent, favoriteRelays)
+      const finalRelayUrls = await this.buildNoteStatsRelayList(
+        resolvedEvent,
+        favoriteRelays,
+        relayAllowlist
+      )
 
       const replaceableCoordinate = isReplaceableEvent(resolvedEvent.kind)
         ? getReplaceableCoordinateFromEvent(resolvedEvent)
@@ -591,8 +607,17 @@ class NoteStatsService {
     }
   }
 
+  /** Stats REQs: dedupe, then prepend {@link AGGR_NOSTR_LAND_WSS} when the viewer lists `wss://nostr.land`. */
+  private finalizeNoteStatsRelayUrls(urls: readonly string[]): string[] {
+    return prependAggrNostrLandIfViewerEligible(dedupeNormalizeRelayUrlsOrdered(urls))
+  }
+
   /** {@link buildComprehensiveRelayList} for reactions/reposts/zaps on a note (thread hints, capped author NIP-65). */
-  private async buildNoteStatsRelayList(event: Event, favoriteRelays?: string[] | null): Promise<string[]> {
+  private async buildNoteStatsRelayList(
+    event: Event,
+    favoriteRelays?: string[] | null,
+    relayAllowlist?: readonly string[]
+  ): Promise<string[]> {
     const me = client.pubkey?.trim()
     const relayHints = [
       ...relayHintsFromEventTags(event),
@@ -600,6 +625,16 @@ class NoteStatsService {
       ...client.eventService.getSessionRelayHintsForHexTarget(event.id),
       ...(favoriteRelays ?? [])
     ]
+
+    if (relayAllowlist?.length) {
+      const onAllowlist = (u: string) => isRelayInUserAllowlist(u, relayAllowlist)
+      return this.finalizeNoteStatsRelayUrls(
+        filterRelaysToUserAllowlist(
+          [...relayAllowlist, ...relayHints.filter(onAllowlist)],
+          relayAllowlist
+        )
+      )
+    }
 
     let useGlobal = true
     if (me) {
@@ -618,7 +653,7 @@ class NoteStatsService {
       }
     }
 
-    return buildComprehensiveRelayList({
+    const comprehensive = await buildComprehensiveRelayList({
       authorPubkey: event.pubkey,
       userPubkey: me,
       relayHints,
@@ -631,6 +666,7 @@ class NoteStatsService {
       includeLocalRelays: true,
       includeViewerHttpIndexRelays: true
     })
+    return this.finalizeNoteStatsRelayUrls(comprehensive)
   }
 
   /**

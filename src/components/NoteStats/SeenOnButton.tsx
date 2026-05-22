@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { toRelay } from '@/lib/link'
+import { filterRelaysToUserAllowlist } from '@/lib/relay-allowlist'
 import { simplifyUrl } from '@/lib/url'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import client from '@/services/client.service'
@@ -19,7 +20,14 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
 
-export default function SeenOnButton({ event }: { event: Event }) {
+export default function SeenOnButton({
+  event,
+  /** When set (home favorites feed), only list relays from the feed allowlist. */
+  allowedRelays
+}: {
+  event: Event
+  allowedRelays?: readonly string[]
+}) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { push } = useSecondaryPage()
@@ -32,8 +40,10 @@ export default function SeenOnButton({ event }: { event: Event }) {
     const maxAttempts = 20
     const apply = () => {
       const seenOn = client.getSeenEventRelayUrls(event.id)
-      if (!cancelled) setRelays(seenOn)
-      return seenOn.length > 0
+      const visible =
+        allowedRelays?.length ? filterRelaysToUserAllowlist(seenOn, allowedRelays) : seenOn
+      if (!cancelled) setRelays(visible)
+      return visible.length > 0
     }
     if (apply()) return
     const id = setInterval(() => {
@@ -45,7 +55,7 @@ export default function SeenOnButton({ event }: { event: Event }) {
       cancelled = true
       clearInterval(id)
     }
-  }, [event.id])
+  }, [event.id, allowedRelays])
 
   const trigger = (
     <button

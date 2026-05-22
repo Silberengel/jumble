@@ -18,7 +18,8 @@ const NoteCard = memo(function NoteCard({
   bottomNoteLabel,
   fetchNoteStatsIfMissing = true,
   deferAuthorAvatar = true,
-  searchListPreview = false
+  searchListPreview = false,
+  seenOnAllowlist
 }: {
   event: Event
   className?: string
@@ -31,6 +32,7 @@ const NoteCard = memo(function NoteCard({
   fetchNoteStatsIfMissing?: boolean
   deferAuthorAvatar?: boolean
   searchListPreview?: boolean
+  seenOnAllowlist?: readonly string[]
 }) {
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
@@ -57,6 +59,7 @@ const NoteCard = memo(function NoteCard({
         pinned={pinned}
         bottomNoteLabel={bottomNoteLabel}
         deferAuthorAvatar={deferAuthorAvatar}
+        seenOnAllowlist={seenOnAllowlist}
       />
     )
   }
@@ -70,6 +73,7 @@ const NoteCard = memo(function NoteCard({
       fetchNoteStatsIfMissing={fetchNoteStatsIfMissing}
       deferAuthorAvatar={deferAuthorAvatar}
       searchListPreview={searchListPreview}
+      seenOnAllowlist={seenOnAllowlist}
     />
   )
 }, (prevProps, nextProps) => {
@@ -83,6 +87,7 @@ const NoteCard = memo(function NoteCard({
     prevProps.hideParentNotePreview === nextProps.hideParentNotePreview &&
     prevProps.bottomNoteLabel === nextProps.bottomNoteLabel &&
     prevProps.fetchNoteStatsIfMissing === nextProps.fetchNoteStatsIfMissing &&
+    prevProps.seenOnAllowlist === nextProps.seenOnAllowlist &&
     prevProps.deferAuthorAvatar === nextProps.deferAuthorAvatar &&
     prevProps.searchListPreview === nextProps.searchListPreview
   )

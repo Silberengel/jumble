@@ -25,7 +25,8 @@ export default function MainNoteCard({
   showFull = false,
   fetchNoteStatsIfMissing = true,
   deferAuthorAvatar = false,
-  searchListPreview = false
+  searchListPreview = false,
+  seenOnAllowlist
 }: {
   event: Event
   className?: string
@@ -44,6 +45,7 @@ export default function MainNoteCard({
   deferAuthorAvatar?: boolean
   /** Compact row: no stats bar, no separator, no boost badges (e.g. merged NIP-50 search). */
   searchListPreview?: boolean
+  seenOnAllowlist?: readonly string[]
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -130,6 +132,7 @@ export default function MainNoteCard({
             className={embedded ? 'mt-2 px-2 sm:px-3' : `mt-3 ${notePadX}`}
             event={event}
             fetchIfNotExisting={fetchNoteStatsIfMissing}
+            seenOnAllowlist={seenOnAllowlist}
           />
         ) : null}
         {!embedded && bottomNoteLabel ? (

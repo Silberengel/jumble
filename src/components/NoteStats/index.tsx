@@ -25,7 +25,9 @@ export default function NoteStats({
   fetchIfNotExisting = false,
   foregroundStats = false,
   deferFetchUntilNearViewport,
-  useIconOnlyLikeTrigger = false
+  useIconOnlyLikeTrigger = false,
+  /** Home feed: stats + “Seen on” only use these relays (favorites + trending, or reply widen stack). */
+  seenOnAllowlist
 }: {
   event: Event
   className?: string
@@ -44,6 +46,7 @@ export default function NoteStats({
    * Thread rows for kind-7 reactions: like control shows icon + total only (body already shows the reaction glyph).
    */
   useIconOnlyLikeTrigger?: boolean
+  seenOnAllowlist?: readonly string[]
 }) {
   const { pubkey } = useNostr()
   const noteStats = useNoteStatsById(event.id)
@@ -61,7 +64,11 @@ export default function NoteStats({
   /** Synthetic RSS article root: no boost/quote/zap bar entries that normal notes have. */
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
   /** Match {@link RssUrlThreadStatsBar}: inbox/favorites/fast-read merge — plain hints miss many #i indexers. */
-  const statsRelays = isRssArticleRoot ? rssUrlThreadRelays : hintRelays
+  const statsRelays = isRssArticleRoot
+    ? rssUrlThreadRelays
+    : seenOnAllowlist?.length
+      ? seenOnAllowlist
+      : hintRelays
   /** At most two background refetches per card: before vs after inbox/favorite hints hydrate. */
   const statsRelayFetchTier = isRssArticleRoot ? relayMergeTier : hintRelays.length > 0 ? 1 : 0
   const statsRelaysRef = useRef(statsRelays)
@@ -76,7 +83,10 @@ export default function NoteStats({
     if (shouldDeferStatsFetch && !isNearViewport) return
     setLoading(true)
     noteStatsService
-      .fetchNoteStats(event, pubkey, statsRelaysRef.current, { foreground: foregroundStats })
+      .fetchNoteStats(event, pubkey, statsRelaysRef.current, {
+        foreground: foregroundStats,
+        relayAllowlist: seenOnAllowlist?.length ? seenOnAllowlist : null
+      })
       .finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
     // id/sig/kind/created_at identify the note for refetch boundaries.
@@ -92,7 +102,8 @@ export default function NoteStats({
     isNearViewport,
     pubkey,
     statsRelayFetchTier,
-    currentRelaysKey
+    currentRelaysKey,
+    seenOnAllowlist
   ])
 
   const interactionButtons = (
@@ -138,7 +149,7 @@ export default function NoteStats({
         <div className="flex min-w-0 flex-wrap items-center">{interactionButtons}</div>
         <div className="flex shrink-0 flex-wrap items-center">
           {utilityButtons}
-          <SeenOnButton event={event} />
+          <SeenOnButton event={event} allowedRelays={seenOnAllowlist} />
         </div>
       </div>
     </div>

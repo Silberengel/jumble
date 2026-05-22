@@ -23,6 +23,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
+import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
@@ -671,6 +672,10 @@ const NoteList = forwardRef(
        * unrelated picker churn — stale grid + refresh feeling broken.
        */
       homeFeedListMode,
+      /** Home favorites: relays allowed for “Seen on” + stats on the Notes tab (favorites + trending). */
+      homeFeedSeenOnAllowlistOp,
+      /** Home favorites: wider stack for Replies / Gallery (adds NIP-65, cache, HTTP index). */
+      homeFeedSeenOnAllowlistReplies,
       /** Spells page: bumps when user picks a feed; used with {@link onSpellFeedFirstPaint}. */
       spellFeedInstrumentToken,
       /** Spells page: fired once when the filtered list first has rows after a picker change. */
@@ -788,6 +793,8 @@ const NoteList = forwardRef(
       followingFeedDeltaSubRequests?: TFeedSubRequest[]
       feedTimelineScopeKey?: string
       homeFeedListMode?: TNoteListMode
+      homeFeedSeenOnAllowlistOp?: string[]
+      homeFeedSeenOnAllowlistReplies?: string[]
       spellFeedInstrumentToken?: number
       onSpellFeedFirstPaint?: (detail: { eventCount: number; firstEventId: string }) => void
       timelineLoadingSafetyTimeoutMs?: number
@@ -1041,6 +1048,19 @@ const NoteList = forwardRef(
 
     const timelineSubscriptionKey = feedSubscriptionKey ?? subRequestsKey
 
+    const homeFeedActiveSeenOnAllowlist = useMemo(() => {
+      if (feedSubscriptionKey !== 'home-all-favorites') return undefined
+      if (homeFeedListMode === 'postsAndReplies' || homeFeedListMode === 'media') {
+        return homeFeedSeenOnAllowlistReplies?.length ? homeFeedSeenOnAllowlistReplies : undefined
+      }
+      return homeFeedSeenOnAllowlistOp?.length ? homeFeedSeenOnAllowlistOp : undefined
+    }, [
+      feedSubscriptionKey,
+      homeFeedListMode,
+      homeFeedSeenOnAllowlistOp,
+      homeFeedSeenOnAllowlistReplies
+    ])
+
     const prevSubRequestsKeyForTimelineRef = useRef<string | null>(null)
     const feedTimelineScopePrevRef = useRef<string | undefined>(undefined)
     /** Detect pull-to-refresh so preserve-mode feeds still clear; unrelated dep changes must not clear. */
@@ -1241,6 +1261,17 @@ const NoteList = forwardRef(
 
         if (extraShouldHideEvent?.(evt)) return true
 
+        if (
+          homeFeedActiveSeenOnAllowlist &&
+          homeFeedListMode === 'posts' &&
+          !eventSeenOnMatchesAllowlist(
+            client.getSeenEventRelayUrls(evt.id),
+            homeFeedActiveSeenOnAllowlist
+          )
+        ) {
+          return true
+        }
+
         return false
       },
       [
@@ -1252,7 +1283,9 @@ const NoteList = forwardRef(
         pinnedEventIds,
         isEventDeleted,
         zapReplyThreshold,
-        extraShouldHideEvent
+        extraShouldHideEvent,
+        homeFeedActiveSeenOnAllowlist,
+        homeFeedListMode
       ]
     )
 
@@ -4481,6 +4514,7 @@ const NoteList = forwardRef(
               filterMutedNotes={filterMutedNotes}
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
               deferAuthorAvatar
+              seenOnAllowlist={homeFeedActiveSeenOnAllowlist}
             />
           ))
         )}
