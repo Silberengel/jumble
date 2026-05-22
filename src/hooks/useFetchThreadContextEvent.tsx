@@ -1,4 +1,5 @@
-import { SEARCHABLE_RELAY_URLS, THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
+import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
+import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
@@ -124,13 +125,10 @@ export function useFetchThreadContextEvent(
           })
         ])
 
-        if (
-          !fetchedEvent &&
-          !searchableAttemptedRef.current &&
-          SEARCHABLE_RELAY_URLS.length > 0
-        ) {
+        const aggrAwareSearch = getAggrAwareSearchRelayUrls()
+        if (!fetchedEvent && !searchableAttemptedRef.current && aggrAwareSearch.length > 0) {
           searchableAttemptedRef.current = true
-          const searchable = sanitizeRelayUrlsForFetch([...SEARCHABLE_RELAY_URLS])
+          const searchable = sanitizeRelayUrlsForFetch(aggrAwareSearch)
           fetchedEvent = await Promise.race([
             client.fetchEventWithExternalRelays(eventId, searchable),
             new Promise<undefined>((resolve) => {

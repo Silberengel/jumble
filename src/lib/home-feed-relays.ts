@@ -2,33 +2,19 @@ import { MAX_REQ_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getHttpRelayListFromEvent, getRelayListReadFromEventNoFastFallback } from '@/lib/event-metadata'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { relayUrlIsAggrNostrLand } from '@/lib/nostr-land-relay-eligibility'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import type { Event } from 'nostr-tools'
 
-function relayUrlIsNostrLandAggr(url: string): boolean {
-  const raw = url.trim()
-  if (!raw) return false
-  const normalized = (normalizeAnyRelayUrl(raw) || raw).toLowerCase()
-  const aggrCanon = (normalizeAnyRelayUrl(AGGR_NOSTR_LAND_WSS) || AGGR_NOSTR_LAND_WSS).toLowerCase()
-  if (normalized === aggrCanon) return true
-  try {
-    const u = new URL(normalized)
-    return u.hostname.toLowerCase() === 'aggr.nostr.land'
-  } catch {
-    return /^wss:\/\/aggr\.nostr\.land\/?$/i.test(normalized)
-  }
-}
-
 /** Drop nostr.land aggregate from REQ stacks where it must not appear (e.g. home feeds). */
 export function stripNostrLandAggrFromRelayUrls(urls: readonly string[]): string[] {
-  return urls.filter((url) => !relayUrlIsNostrLandAggr(url))
+  return urls.filter((url) => !relayUrlIsAggrNostrLand(url))
 }
 
 /**
- * Home “Lieblings-Relays” feed must never open timeline REQs to nostr.land’s aggregate relay (reserved for
- * threads / profiles / spells). Strips aggr from every shard after mapping, including trailing-slash variants.
+ * Home timeline REQs (Notes, Replies, and Gallery tabs on `home-all-favorites`) must never hit aggr — only
+ * favorites + Wisp trending (+ widened read layers on Replies/Gallery without aggr). Side-panel threads,
+ * reply blurbs, backlinks, embeds, and profiles use {@link feedRelayPolicyUrls} / comprehensive lists instead.
  */
 export function stripNostrLandAggrFromTimelineSubRequests<T extends { urls: string[] }>(
   feedSubscriptionKey: string | undefined,

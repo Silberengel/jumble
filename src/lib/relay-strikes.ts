@@ -7,7 +7,7 @@ import {
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
-import { canonicalRelaySessionKey, isHttpRelayUrl } from '@/lib/url'
+import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch } from '@/lib/url'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 /** Conservative: 5 read/publish failures → skip until this many ms after last qualifying failure. */
@@ -189,7 +189,7 @@ class RelaySessionStrikes {
     e.readFailures += 1
     if (e.readFailures >= STRIKE_FAILURES_THRESHOLD) {
       e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.warn('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
+      logger.debug('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
     }
   }
 
@@ -301,9 +301,10 @@ class RelaySessionStrikes {
     return out.length > 0 ? out : [...urls]
   }
 
-  filterReadHttpUrls(urls: readonly string[]): string[] {
-    const ws = urls.filter((u) => !isHttpRelayUrl(u))
-    const http = urls.filter((u) => isHttpRelayUrl(u))
+  filterReadHttpUrls(urls: readonly string[], httpIndexBases: readonly string[] = []): string[] {
+    const http = httpIndexRelayBasesInUrlBatch(urls, httpIndexBases)
+    const httpKeys = new Set(http.map((u) => canonicalRelaySessionKey(u)))
+    const ws = urls.filter((u) => !httpKeys.has(canonicalRelaySessionKey(u)))
     const singleWsRelay = ws.length <= 1
     const wsOut = singleWsRelay ? [...ws] : ws.filter((u) => !this.isReadHttpSkipped(u))
     const httpOut = http.filter((u) => !this.isReadHttpSkipped(u))

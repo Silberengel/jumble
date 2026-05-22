@@ -162,6 +162,12 @@ export default defineConfig(({ mode }) => {
   /** gc_index_relay (or compatible) HTTP API; app POSTs to /api/events/filter. HTTP 500 in the browser means this process errored, not that Vite failed. */
   const devIndexRelayTarget =
     env.VITE_DEV_INDEX_RELAY_TARGET?.trim() || 'http://127.0.0.1:4000'
+  /** Target for `/dev-cors-index-relay` (allowlisted HTTPS index hosts in dev). */
+  const devCorsIndexRelayTarget =
+    env.VITE_DEV_CORS_INDEX_RELAY_TARGET?.trim()?.replace(/\/+$/, '') ||
+    (/^https:\/\//i.test(devIndexRelayTarget)
+      ? devIndexRelayTarget.replace(/\/+$/, '')
+      : 'https://mercury-relay.imwald.eu')
 
   /**
    * Desktop shell (`vite build --mode electron`): always bake public Imwald API origins into the bundle.
@@ -261,7 +267,7 @@ export default defineConfig(({ mode }) => {
          * Same-origin proxy only — allowlisted hosts in {@link devProxyCorsProblematicHttpsIndexRelayBase}.
          */
         '/dev-cors-index-relay': {
-          target: 'https://nos.lol',
+          target: devCorsIndexRelayTarget,
           changeOrigin: true,
           secure: true,
           rewrite: (p) => p.replace(/^\/dev-cors-index-relay/, '') || '/'

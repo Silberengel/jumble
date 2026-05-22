@@ -1,4 +1,4 @@
-import { isHttpRelayUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TMailboxRelay, TMailboxRelayScope, TRelayList } from '@/types'
 
 /** True if this URL is not loopback / LAN (safe to open from another user's browser as a REQ target). */
@@ -44,17 +44,21 @@ export function stripMailboxLocalUrlsForRemoteViewers(list: {
  * Still use when merging **another user's** 10002 so we never open their LAN relays.
  */
 export function stripLocalNetworkRelaysFromRelayList(list: TRelayList): TRelayList {
-  const keepUrl = (u: string): boolean => {
-    const n = isHttpRelayUrl(u) ? normalizeAnyRelayUrl(u) || u : normalizeUrl(u) || u
-    return Boolean(n && !isLocalNetworkUrl(isHttpRelayUrl(u) ? u : n))
+  const keepWsUrl = (u: string): boolean => {
+    const n = normalizeUrl(u) || u
+    return Boolean(n && !isLocalNetworkUrl(n))
+  }
+  const keepHttpIndexUrl = (u: string): boolean => {
+    const n = normalizeHttpRelayUrl(u) || u
+    return Boolean(n && !isLocalNetworkUrl(n))
   }
   return {
-    write: list.write.filter(keepUrl),
-    read: list.read.filter(keepUrl),
-    originalRelays: list.originalRelays.filter((r) => keepUrl(r.url)),
-    httpWrite: (list.httpWrite ?? []).filter(keepUrl),
-    httpRead: (list.httpRead ?? []).filter(keepUrl),
-    httpOriginalRelays: (list.httpOriginalRelays ?? []).filter((r) => keepUrl(r.url))
+    write: list.write.filter(keepWsUrl),
+    read: list.read.filter(keepWsUrl),
+    originalRelays: list.originalRelays.filter((r) => keepWsUrl(r.url)),
+    httpWrite: (list.httpWrite ?? []).filter(keepHttpIndexUrl),
+    httpRead: (list.httpRead ?? []).filter(keepHttpIndexUrl),
+    httpOriginalRelays: (list.httpOriginalRelays ?? []).filter((r) => keepHttpIndexUrl(r.url))
   }
 }
 
@@ -66,7 +70,7 @@ export function stripLocalNetworkRelaysForWssReq(urls: readonly string[]): strin
   const seen = new Set<string>()
   const out: string[] = []
   for (const raw of urls) {
-    if (isHttpRelayUrl(raw)) continue
+    if (/^https?:\/\//i.test(raw.trim())) continue
     const n = normalizeAnyRelayUrl(raw) || raw.trim()
     if (!n || isLocalNetworkUrl(n)) continue
     const key = (normalizeUrl(n) || n).toLowerCase()
@@ -80,7 +84,9 @@ export function stripLocalNetworkRelaysForWssReq(urls: readonly string[]): strin
 const normRelayKey = (u: string): string => {
   const t = typeof u === 'string' ? u.trim() : ''
   if (!t) return ''
-  return (isHttpRelayUrl(t) ? normalizeAnyRelayUrl(t) : normalizeUrl(t)) || t
+  if (/^wss?:\/\//i.test(t)) return normalizeUrl(t) || t
+  if (/^https?:\/\//i.test(t)) return normalizeHttpRelayUrl(t) || t
+  return normalizeUrl(t) || normalizeHttpRelayUrl(t) || t
 }
 
 /**

@@ -19,6 +19,7 @@ import {
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
+import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
 
 function isBlockedRelay(url: string, blockedRelays: string[]): boolean {
@@ -39,7 +40,7 @@ export function userReadRelaysWithHttp(
 ): string[] {
   const http = relayList?.httpRead ?? []
   const read = relayList?.read ?? []
-  return dedupeNormalizeRelayUrlsOrdered([...http, ...read])
+  return prependAggrNostrLandIfViewerEligible(dedupeNormalizeRelayUrlsOrdered([...http, ...read]))
 }
 
 export function getFavoritesFeedRelayUrls(

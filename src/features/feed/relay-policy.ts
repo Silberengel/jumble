@@ -11,7 +11,7 @@ import {
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl } from '@/lib/url'
 import type { TSubRequestFilter } from '@/types'
 
 export type FeedRelayOperation = 'read' | 'write' | 'publish-picker' | 'favorites-feed'
@@ -92,16 +92,17 @@ export type FeedRelayPolicyResult = {
   dropped: FeedRelayDrop[]
 }
 
-function canonicalRelayUrl(url: string | undefined | null): string {
-  return (normalizeAnyRelayUrl(url ?? '') || (url ?? '').trim()).toLowerCase()
+function canonicalRelayUrl(url: string | undefined | null, layerSource?: FeedRelayLayerSource | string): string {
+  return normalizedRelayUrl(url ?? '', layerSource).toLowerCase()
 }
 
-function normalizedRelayUrl(url: string): string {
+function normalizedRelayUrl(url: string, layerSource?: FeedRelayLayerSource | string): string {
+  if (layerSource === 'http-index') return normalizeHttpRelayUrl(url) || url.trim()
   return normalizeAnyRelayUrl(url) || url.trim()
 }
 
 function normalizedSet(urls: readonly string[] | undefined): Set<string> {
-  return new Set((urls ?? []).map(canonicalRelayUrl).filter(Boolean))
+  return new Set((urls ?? []).map((u) => canonicalRelayUrl(u)).filter(Boolean))
 }
 
 function shouldApplySocialFilter(ctx: FeedRelayPolicyContext): boolean {
@@ -172,8 +173,8 @@ export function applyFeedRelayPolicy(
 
   for (const layer of layers) {
     for (const raw of layer.urls) {
-      const normalized = normalizedRelayUrl(raw)
-      const key = canonicalRelayUrl(normalized)
+      const normalized = normalizedRelayUrl(raw, layer.source)
+      const key = canonicalRelayUrl(normalized, layer.source)
       if (!normalized || !key) {
         addDrop(dropped, raw, layer.source, 'invalid')
         continue

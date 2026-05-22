@@ -4,7 +4,7 @@ import {
   isRelayStrikeEntryActive,
   type RelayStrikeDebugSnapshot
 } from '@/lib/relay-strikes'
-import { isHttpRelayUrl } from '@/lib/url'
+import { isKind10243HttpRelayTagUrl } from '@/lib/url'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RefreshCw, CheckCircle2, Zap, AlertTriangle } from 'lucide-react'
@@ -145,16 +145,13 @@ export default function SessionRelaysTab() {
     for (const tag of httpRelayListEvent.tags) {
       if (tag[0] !== 'r' || !tag[1]) continue
       const raw = tag[1].trim()
-      if (!isHttpRelayUrl(raw)) continue
+      if (!isKind10243HttpRelayTagUrl(raw)) continue
       out.add(formatRelayAddress(raw).toLowerCase())
     }
     return out
   }, [httpRelayListEvent])
 
   const isHttpRelayEntry = (url: string): boolean => {
-    if (isHttpRelayUrl(url)) return true
-    const infoUrl = relayInfoByUrl[url]?.url
-    if (infoUrl && isHttpRelayUrl(infoUrl)) return true
     return configuredHttpRelayAddresses.has(formatRelayAddress(url).toLowerCase())
   }
 

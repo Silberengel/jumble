@@ -5,7 +5,7 @@ import { createFavoriteRelaysDraftEvent, createBlockedRelaysDraftEvent, createRe
 import { getReplaceableEventIdentifier } from '@/lib/event'
 import { getRelaySetFromEvent } from '@/lib/event-metadata'
 import { randomString } from '@/lib/random'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { TRelaySet } from '@/types'
@@ -200,7 +200,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
     async (relaySetName: string, relayUrls: string[] = []) => {
       const normalizedUrls = relayUrls
         .map((url) => normalizeAnyRelayUrl(url))
-        .filter((url) => isWebsocketUrl(url) || isHttpRelayUrl(url))
+        .filter((url) => isWebsocketUrl(url))
       const id = randomString()
       const relaySetDraftEvent = createRelaySetDraftEvent({
         id,

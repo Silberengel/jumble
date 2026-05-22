@@ -13,7 +13,14 @@ import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from 
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
-import { isHttpRelayUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import {
+  canonicalRelaySessionKey,
+  httpIndexRelayBasesInUrlBatch,
+  isKind10243HttpRelayTagUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  normalizeUrl
+} from '@/lib/url'
 import { buildPersonalRelayKeySet, sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrls } from './private-relays'
 import { defaultFavoriteRelaysForViewer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
@@ -25,7 +32,7 @@ import type { Event } from 'nostr-tools'
 export const AUTHOR_NIP65_RELAY_CAP = 2
 
 function relayKey(url: string): string {
-  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+  return canonicalRelaySessionKey(url)
 }
 
 /**
@@ -65,7 +72,7 @@ function dedupeNormalizedRelayUrls(urls: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const u of urls) {
-    if (isHttpRelayUrl(u)) continue
+    if (isKind10243HttpRelayTagUrl(u)) continue
     const n = normalizeAnyRelayUrl(u) || u.trim()
     if (!n || seen.has(n)) continue
     seen.add(n)
@@ -166,8 +173,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
 
   const addRelay = (url: string | undefined) => {
     if (!url) return
-    // This builder feeds WebSocket REQ/publish lists; keep HTTP relays separate.
-    if (isHttpRelayUrl(url)) return
+    // This builder feeds WebSocket REQ/publish lists; kind 10243 HTTP index relays use addHttpRelay.
+    if (isKind10243HttpRelayTagUrl(url)) return
     const normalized = normalizeAnyRelayUrl(url)
     if (!normalized) return
     // Filter blocked (case-insensitive comparison)
@@ -182,8 +189,8 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   }
 
   const addHttpRelay = (url: string | undefined) => {
-    if (!url || !isHttpRelayUrl(url)) return
-    const normalized = normalizeAnyRelayUrl(url) || url.trim()
+    if (!url) return
+    const normalized = normalizeHttpRelayUrl(url)
     if (!normalized || normalizedBlocked.has(normalized.toLowerCase())) return
     if (httpRelayUrls.some((u) => relayKey(u) === relayKey(normalized))) return
     httpRelayUrls.push(normalized)
@@ -424,8 +431,18 @@ export async function buildProfileAndUserRelayList(
     includeViewerHttpIndexRelays: true,
     blockedRelays
   })
-  const httpPart = userStack.filter((u) => isHttpRelayUrl(u))
-  const wsPart = userStack.filter((u) => !isHttpRelayUrl(u))
+  let httpBases: string[] = []
+  try {
+    const rl = await client.peekRelayListFromStorage(userPubkey)
+    httpBases = [...(rl?.httpRead ?? []), ...(rl?.httpWrite ?? [])]
+      .map((u) => normalizeHttpRelayUrl(u) || u)
+      .filter(Boolean)
+  } catch {
+    httpBases = []
+  }
+  const httpPart = httpIndexRelayBasesInUrlBatch(userStack, httpBases)
+  const httpKeys = new Set(httpPart.map((u) => relayKey(u)))
+  const wsPart = userStack.filter((u) => !httpKeys.has(relayKey(u)))
   const seen = new Set<string>()
   const mergedWs: string[] = []
   for (const u of [...profileWs, ...wsPart]) {
@@ -545,7 +562,7 @@ export async function buildPollResultsReadRelayUrls(options: {
 
   const pushLayer = (urls: string[]) => {
     for (const raw of urls) {
-      if (isHttpRelayUrl(raw)) continue
+      if (isKind10243HttpRelayTagUrl(raw)) continue
       const normalized = normalizeUrl(raw) || raw?.trim()
       if (!normalized || normalizedBlocked.has(normalized.toLowerCase())) continue
       if (seenNorm.has(normalized)) continue

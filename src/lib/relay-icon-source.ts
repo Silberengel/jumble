@@ -53,6 +53,17 @@ export function getRelayIconOverrideSrc(url: string | undefined): string | undef
   return undefined
 }
 
+/**
+ * Unicode fallback when NIP-11 / favicon is missing or failed to load (shown in {@link RelayIcon}).
+ * Sovbit hosts use {@link getRelayIconOverrideSrc} favicons instead; purplepag uses the purple circle.
+ */
+export function getRelayIconFallbackGlyph(url: string | undefined): string | undefined {
+  const host = parseRelayHostname(url ?? '')
+  if (!host) return undefined
+  if (host === 'purplepag.es') return '🟣'
+  return undefined
+}
+
 /** FNV-1a-ish fingerprint → HSL for a per-relay fallback swatch (no network). */
 export function relayUrlFingerprintColors(url: string | undefined): {
   background: string

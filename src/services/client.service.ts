@@ -150,13 +150,20 @@ import {
   urlIsNonLocalForRemoteViewer
 } from '@/lib/relay-list-sanitize'
 import {
+  getViewerNostrLandAggrSearchRelayUrls,
+  syncViewerRelayStackNostrLandAggrEligible
+} from '@/lib/nostr-land-relay-eligibility'
+import {
   canonicalRelaySessionKey,
-  isHttpRelayUrl,
+  httpIndexRelayBasesInUrlBatch,
+  isKind10243HttpRelayTagUrl,
   isLocalNetworkUrl,
+  isWebsocketUrl,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
   normalizeUrl,
-  simplifyUrl
+  simplifyUrl,
+  urlMatchesConfiguredHttpIndexRelay
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
 import { initRelayPoolIdle, touchRelayPoolActivity } from '@/lib/relay-pool-idle'
@@ -356,6 +363,8 @@ class ClientService extends EventTarget {
   /** Set with signer from NostrProvider; used to skip relay AUTH when read-only (e.g. npub). */
   signerType?: TSignerType
   pubkey?: string
+  /** Normalized kind **10243** index relay bases for the logged-in viewer (not arbitrary https URLs). */
+  private viewerHttpIndexRelayBases: string[] = []
   private pool: SimplePool
 
   // Sub-services (public for direct access)
@@ -427,8 +436,8 @@ class ClientService extends EventTarget {
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
       }
-      if (isHttpRelayUrl(url)) {
-        throw new Error(`[http-relay] ${url} uses the HTTPS index API, not WebSocket`)
+      if (!isWebsocketUrl(url) && isKind10243HttpRelayTagUrl(url)) {
+        throw new Error(`[http-index-relay] ${url} uses the HTTPS index API, not WebSocket`)
       }
       const n = normalizeUrl(url) || url
       const base = params?.connectionTimeout ?? RELAY_POOL_CONNECTION_TIMEOUT_MS
@@ -604,12 +613,17 @@ class ClientService extends EventTarget {
   async syncViewerPersonalRelayKeys(pubkey?: string): Promise<void> {
     const pk = pubkey?.trim() || this.pubkey?.trim()
     if (!pk) {
+      this.viewerHttpIndexRelayBases = []
       setViewerPersonalRelayKeys(new Set())
+      syncViewerRelayStackNostrLandAggrEligible([])
       return
     }
     const urls: string[] = []
     try {
       const rl = await this.peekRelayListFromStorage(pk)
+      this.viewerHttpIndexRelayBases = [...(rl.httpRead ?? []), ...(rl.httpWrite ?? [])]
+        .map((u) => normalizeHttpRelayUrl(u) || u)
+        .filter(Boolean)
       urls.push(
         ...(rl.read ?? []),
         ...(rl.write ?? []),
@@ -617,6 +631,7 @@ class ClientService extends EventTarget {
         ...(rl.httpWrite ?? [])
       )
     } catch {
+      this.viewerHttpIndexRelayBases = []
       // ignore
     }
     try {
@@ -630,6 +645,7 @@ class ClientService extends EventTarget {
       // ignore
     }
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls))
+    syncViewerRelayStackNostrLandAggrEligible(urls)
   }
 
   /** NIP-66: fetch relay discovery events (30166) in background to supplement search/NIP support. */
@@ -1707,9 +1723,9 @@ class ClientService extends EventTarget {
           }, connectionTimeout + publishAckBudgetMs + 2_000)
           
           try {
-            if (isHttpRelayUrl(url)) {
+            if (urlMatchesConfiguredHttpIndexRelay(url, this.viewerHttpIndexRelayBases)) {
               const base = normalizeHttpRelayUrl(url) || url
-              logger.debug(`[PublishEvent] Publishing to HTTP index relay`, { url: base })
+              logger.debug(`[PublishEvent] Publishing to kind 10243 HTTP index relay`, { url: base })
               await Promise.race([
                 publishEventToHttpRelay(base, event),
                 new Promise<never>((_, reject) =>
@@ -1846,7 +1862,7 @@ class ClientService extends EventTarget {
             }
           } catch (error) {
             const softHttpDown =
-              isHttpRelayUrl(url) &&
+              urlMatchesConfiguredHttpIndexRelay(url, this.viewerHttpIndexRelayBases) &&
               (error instanceof IndexRelayTransportError || isIndexRelayTransportFailure(error))
             if (softHttpDown) {
               logger.debug('[PublishEvent] HTTP index relay unreachable', {
@@ -2421,8 +2437,13 @@ class ClientService extends EventTarget {
     relayReqLog?: { groupId?: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
+    const httpKeys = new Set(
+      httpIndexRelayBasesInUrlBatch(originalDedupedRelays, this.viewerHttpIndexRelayBases).map((u) =>
+        canonicalRelaySessionKey(u)
+      )
+    )
     let relays = sanitizeRelayUrlsForFetch(
-      originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url)))
     )
     if (navigator.onLine) {
       relays = stripLocalNetworkRelaysForWssReq(relays)
@@ -2465,7 +2486,7 @@ class ClientService extends EventTarget {
 
     const wsRelayCountBeforeStrikes = relays.length
     if (wsRelayCountBeforeStrikes > 1) {
-      relays = relaySessionStrikes.filterReadHttpUrls(relays)
+      relays = relaySessionStrikes.filterReadHttpUrls(relays, this.viewerHttpIndexRelayBases)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -2481,6 +2502,7 @@ class ClientService extends EventTarget {
     }
     const searchableSet = new Set([
       ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+      ...getViewerNostrLandAggrSearchRelayUrls().map((u) => normalizeUrl(u) || u),
       ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
     ])
     const groupedRequests = Array.from(grouped.entries()).map(([url, f]) => {
@@ -2865,14 +2887,7 @@ class ClientService extends EventTarget {
     let eosedAt: number | null = null
     let eventIds = new Set<string>()
 
-    const httpTimelinePollBases = Array.from(
-      new Set(
-        relays
-          .filter((u) => isHttpRelayUrl(u))
-          .map((u) => normalizeHttpRelayUrl(u) || u)
-          .filter(Boolean)
-      )
-    )
+    const httpTimelinePollBases = httpIndexRelayBasesInUrlBatch(relays, this.viewerHttpIndexRelayBases)
     let httpPollIntervalId: ReturnType<typeof setInterval> | null = null
     let httpPollCursorUnix = 0
     const clearHttpTimelinePoll = () => {
@@ -3108,7 +3123,12 @@ class ClientService extends EventTarget {
     }
 
     // HTTP index relays are handled via httpTimelinePollBases above — never pass them to the WS subscribe path.
-    const wsRelays = relays.filter((u) => !isHttpRelayUrl(u))
+    const httpPollKeys = new Set(
+      httpIndexRelayBasesInUrlBatch(relays, this.viewerHttpIndexRelayBases).map((u) =>
+        canonicalRelaySessionKey(u)
+      )
+    )
+    const wsRelays = relays.filter((u) => !httpPollKeys.has(canonicalRelaySessionKey(u)))
 
     // When there are HTTP relays but NO WS relays, subscribe([]) would fire oneose + onBatchEnd
     // immediately (via microtask) — before the HTTP initial poll returns any events. That causes:
@@ -3300,7 +3320,10 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs?: number | false
     }
   ) {
-    return this.queryService.query(sanitizeRelayUrlsForFetch(urls), filter, onevent, options)
+    return this.queryService.query(sanitizeRelayUrlsForFetch(urls), filter, onevent, {
+      ...options,
+      httpIndexRelayBases: this.viewerHttpIndexRelayBases
+    })
   }
 
   // Legacy query implementation removed - now delegated to QueryService
@@ -3330,16 +3353,13 @@ class ClientService extends EventTarget {
     } = {}
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
-    const httpRelayBases = Array.from(
-      new Set(
-        originalDedupedRelays
-          .filter((u) => isHttpRelayUrl(u))
-          .map((u) => normalizeHttpRelayUrl(u) || u)
-          .filter(Boolean)
-      )
+    const httpRelayBases = httpIndexRelayBasesInUrlBatch(
+      originalDedupedRelays,
+      this.viewerHttpIndexRelayBases
     )
+    const httpKeys = new Set(httpRelayBases.map((u) => canonicalRelaySessionKey(u)))
     const wsOriginal = sanitizeRelayUrlsForFetch(
-      originalDedupedRelays.filter((url) => !isHttpRelayUrl(url))
+      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url)))
     )
     let relays = [...wsOriginal]
     if (relays.length === 0 && httpRelayBases.length === 0) {
@@ -3367,7 +3387,8 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs,
       replaceableRace,
       immediateReturn,
-      foreground
+      foreground,
+      httpIndexRelayBases: this.viewerHttpIndexRelayBases
     })
     if (cache) {
       events.forEach((evt) => {
@@ -3411,8 +3432,8 @@ class ClientService extends EventTarget {
       })
     }
 
-    if (isHttpRelayUrl(normalized)) {
-      // HTTP index relay: use HTTP API instead of WebSocket pool
+    if (urlMatchesConfiguredHttpIndexRelay(normalized, this.viewerHttpIndexRelayBases)) {
+      // Kind 10243 index relay: use HTTP API instead of WebSocket pool
       try {
         const events = await this.queryService.query([normalized], filter, undefined, queryOpts)
         return { events, connectionError: undefined }
@@ -3686,6 +3707,7 @@ class ClientService extends EventTarget {
     )
     const searchableSet = new Set([
       ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+      ...getViewerNostrLandAggrSearchRelayUrls().map((u) => normalizeUrl(u) || u),
       ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u),
       ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
     ])

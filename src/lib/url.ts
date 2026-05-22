@@ -16,10 +16,26 @@ export function isWebsocketUrl(url: string): boolean {
   return /^wss?:\/\/.+$/.test(url)
 }
 
-/** Nostr relay over HTTPS (index relay JSON API), not WebSocket. */
-export function isHttpRelayUrl(url: string): boolean {
+export function isWebSocketRelayScheme(url: string): boolean {
+  return /^wss?:\/\//i.test(url.trim())
+}
+
+export function isHttpOrHttpsScheme(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim())
+}
+
+/**
+ * Kind **10243** `r` tag values use http(s) for the index-relay JSON API.
+ * Do not use this to classify arbitrary https:// URLs (profile websites, etc.).
+ */
+export function isKind10243HttpRelayTagUrl(url: string): boolean {
   const u = url.trim()
   return /^https?:\/\/.+/i.test(u)
+}
+
+/** @deprecated Prefer {@link isKind10243HttpRelayTagUrl} only when parsing kind 10243. */
+export function isHttpRelayUrl(url: string): boolean {
+  return isKind10243HttpRelayTagUrl(url)
 }
 
 /**
@@ -54,11 +70,25 @@ export function devProxyLoopbackHttpRelayBase(normalizedBase: string): string {
  * In dev, `index-relay-http` rewrites the base to same-origin `/dev-cors-index-relay` (see `vite.config.ts`).
  * Keep this list tiny — each entry needs a matching Vite `proxy` target.
  */
-const DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS = new Set(['nos.lol'])
+const DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS = new Set(['nos.lol', 'mercury-relay.imwald.eu'])
+
+function devIndexRelayTargetHostname(): string | null {
+  const raw = import.meta.env.VITE_DEV_INDEX_RELAY_TARGET
+  if (typeof raw !== 'string' || !raw.trim()) return null
+  try {
+    const withScheme = /^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`
+    return new URL(withScheme).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
 
 /**
- * Rewrite `https://nos.lol/...` index relay bases to the Vite dev proxy so POST /api/events/filter works.
+ * Rewrite HTTPS index relay bases to a same-origin Vite proxy so POST /api/events/filter works in dev.
  * Chain after `devProxyLoopbackHttpRelayBase`: `devProxyCorsProblematicHttpsIndexRelayBase(devProxyLoopbackHttpRelayBase(url))`.
+ *
+ * - Host matching `VITE_DEV_INDEX_RELAY_TARGET` → `/dev-index-relay`
+ * - Allowlisted hosts (e.g. nos.lol, mercury-relay.imwald.eu) → `/dev-cors-index-relay`
  */
 export function devProxyCorsProblematicHttpsIndexRelayBase(normalizedBase: string): string {
   if (import.meta.env.PROD || typeof window === 'undefined') return normalizedBase
@@ -69,7 +99,12 @@ export function devProxyCorsProblematicHttpsIndexRelayBase(normalizedBase: strin
     return normalizedBase
   }
   if (u.protocol !== 'https:') return normalizedBase
-  if (!DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS.has(u.hostname.toLowerCase())) return normalizedBase
+  const host = u.hostname.toLowerCase()
+  const devTargetHost = devIndexRelayTargetHostname()
+  if (devTargetHost && host === devTargetHost) {
+    return `${window.location.origin}/dev-index-relay`
+  }
+  if (!DEV_HTTPS_INDEX_RELAY_CORS_PROXY_HOSTS.has(host)) return normalizedBase
   return `${window.location.origin}/dev-cors-index-relay`
 }
 
@@ -78,25 +113,59 @@ export function relayUrlHasExplicitScheme(url: string): boolean {
   return /^(https?|wss?):\/\//i.test(url.trim())
 }
 
-/**
- * Normalize a relay URL without changing its transport: `https://` stays HTTPS, `wss://` stays WebSocket.
- */
+/** Normalize WebSocket relay URLs (`ws:` / `wss:`) for REQ pools and feed layers. */
 export function normalizeAnyRelayUrl(url: string): string {
-  const trimmed = url.trim()
-  if (!trimmed) return ''
-  if (!relayUrlHasExplicitScheme(trimmed)) {
-    logger.warn('Relay URL requires http:, https:, ws:, or wss: prefix', { url: trimmed })
-    return ''
-  }
-  if (isHttpRelayUrl(trimmed)) return normalizeHttpRelayUrl(trimmed) || ''
-  if (isWebsocketUrl(trimmed)) return normalizeUrl(trimmed) || ''
-  logger.warn('Unsupported relay URL scheme', { url: trimmed })
-  return ''
+  return normalizeUrl(url)
 }
 
 /** Stable key for per-relay session stats (scheme preserved; no https→wss aliasing). */
 export function canonicalRelaySessionKey(url: string): string {
-  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (isWebSocketRelayScheme(trimmed)) {
+    return (normalizeUrl(trimmed) || trimmed).toLowerCase()
+  }
+  if (isHttpOrHttpsScheme(trimmed)) {
+    return (normalizeHttpRelayUrl(trimmed) || trimmed).toLowerCase()
+  }
+  return trimmed.toLowerCase()
+}
+
+/**
+ * HTTP index relay bases present in `urls` that are also listed in kind **10243** storage
+ * (`httpRead` / `httpWrite`). URLs with https scheme that are not configured are ignored.
+ */
+export function httpIndexRelayBasesInUrlBatch(
+  urls: readonly string[],
+  configuredHttpIndexBases: readonly string[]
+): string[] {
+  const configured = new Set(
+    configuredHttpIndexBases
+      .map((u) => normalizeHttpRelayUrl(u) || u.trim())
+      .filter(Boolean)
+      .map((u) => u.toLowerCase())
+  )
+  if (configured.size === 0) return []
+  const out = new Set<string>()
+  for (const raw of urls) {
+    const n = normalizeHttpRelayUrl(raw) || raw.trim()
+    if (!n) continue
+    if (configured.has(n.toLowerCase())) out.add(n)
+  }
+  return [...out]
+}
+
+export function urlMatchesConfiguredHttpIndexRelay(
+  url: string,
+  configuredHttpIndexBases: readonly string[]
+): boolean {
+  const n = normalizeHttpRelayUrl(url) || url.trim()
+  if (!n) return false
+  const key = n.toLowerCase()
+  return configuredHttpIndexBases.some((b) => {
+    const nb = normalizeHttpRelayUrl(b) || b.trim()
+    return nb && nb.toLowerCase() === key
+  })
 }
 
 // copy from nostr-tools/utils — WebSocket relays only (`ws:` / `wss:`); never rewrite http(s) schemes.
@@ -113,7 +182,6 @@ export function normalizeUrl(url: string): string {
     stripTrailingCommasFromHostname(p)
 
     if (p.protocol !== 'ws:' && p.protocol !== 'wss:') {
-      logger.warn('normalizeUrl expects ws: or wss: (use normalizeHttpRelayUrl for http(s))', { url: trimmed })
       return ''
     }
 
@@ -162,13 +230,12 @@ export function normalizeHttpUrl(url: string): string {
     const trimmed = url.trim()
     if (!trimmed) return ''
     if (!trimmed.includes('://')) {
-      logger.warn('HTTP relay URL requires http: or https: prefix', { url: trimmed })
+      logger.debug('HTTP URL requires http: or https: prefix', { url: trimmed })
       return ''
     }
     const p = new URL(trimmed)
     stripTrailingCommasFromHostname(p)
     if (p.protocol !== 'http:' && p.protocol !== 'https:') {
-      logger.warn('normalizeHttpUrl expects http: or https: (use normalizeUrl for ws(s))', { url: trimmed })
       return ''
     }
     p.pathname = p.pathname.replace(/\/+/g, '/')

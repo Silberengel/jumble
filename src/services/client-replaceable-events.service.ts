@@ -14,7 +14,7 @@ import {
 import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
+import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
 import { formatPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
@@ -194,7 +194,7 @@ export class ReplaceableEventService {
           ...profileStack,
           ...hintLayer
             .map((u) => normalizeAnyRelayUrl(u) || normalizeUrl(u) || u.trim())
-            .filter((u): u is string => !!u && !isHttpRelayUrl(u))
+            .filter((u): u is string => !!u && !/^https?:\/\//i.test(u))
         ])
       )
     }

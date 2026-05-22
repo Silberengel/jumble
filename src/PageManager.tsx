@@ -7,7 +7,12 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
-import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
+import {
+  MOBILE_SWIPE_BACK_DOMINANCE,
+  MOBILE_SWIPE_BACK_EDGE_PX,
+  MOBILE_SWIPE_BACK_MIN_PX,
+  useMobileSwipeBackOnElement
+} from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
 import { NavigationService } from '@/services/navigation.service'
@@ -42,7 +47,6 @@ import {
   useState
 } from 'react'
 import { useEventCallback } from '@/hooks/use-event-callback'
-import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { KeyboardShortcutsHelpProvider } from '@/components/KeyboardShortcutsHelp'
 import {
@@ -1151,7 +1155,11 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }, [currentPrimaryPage])
   const navigationCounterRef = useRef(0)
   const goBackRef = useRef<() => void>(() => {})
+  const drawerOpenRef = useRef(drawerOpen)
   const [mobilePrimarySwipeRoot, setMobilePrimarySwipeRoot] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    drawerOpenRef.current = drawerOpen
+  }, [drawerOpen])
   const primaryPanelRefreshRef = useRef<(() => void) | null>(null)
   const registerPrimaryPanelRefresh = useCallback((fn: (() => void) | null) => {
     primaryPanelRefreshRef.current = fn
@@ -1988,6 +1996,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       return
     }
     if (isCurrentPage(secondaryStackRef.current, url)) {
+      const top = secondaryStackRef.current[secondaryStackRef.current.length - 1]
+      if (isSmallScreen && top) {
+        window.history.pushState({ index: top.index, url }, '', url)
+      }
       logger.component('PageManager', 'pushSecondaryPage skipped (already on stack)', { url })
       return
     }
@@ -2032,8 +2044,11 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       }
       
       if (isCurrentPage(prevStack, url)) {
+        const top = prevStack[prevStack.length - 1]
+        if (isSmallScreen && top) {
+          window.history.pushState({ index: top.index, url }, '', url)
+        }
         logger.component('PageManager', 'Page already exists, not scrolling')
-        // NEVER scroll to top - maintain scroll position
         return prevStack
       }
 
@@ -2055,16 +2070,56 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     })
   }
 
+  const restorePrimaryTabAfterSecondaryClose = () => {
+    const page = currentPrimaryPageRef.current
+    const savedFeedState = savedFeedStateRef.current.get(page)
+    if (savedFeedState?.tab) {
+      window.dispatchEvent(
+        new CustomEvent('restorePageTab', {
+          detail: { page, tab: savedFeedState.tab }
+        })
+      )
+      currentTabStateRef.current.set(page, savedFeedState.tab)
+    }
+  }
+
+  const hardCloseSecondaryPanel = () => {
+    if (secondaryStackRef.current.length === 0 && !drawerOpenRef.current) {
+      return
+    }
+    if (drawerOpenRef.current) setDrawerOpen(false)
+    setSinglePaneSheetOpen(false)
+    secondaryStackRef.current = []
+    queueMicrotask(() => {
+      setSecondaryStack([])
+    })
+    replaceHistoryWithPrimaryPageUrl(
+      currentPrimaryPageRef.current,
+      primaryPagePropsRef.current.get(currentPrimaryPageRef.current) as { spell?: string } | undefined
+    )
+    restorePrimaryTabAfterSecondaryClose()
+  }
+
   const popSecondaryPage = () => {
     const stackLen = secondaryStackRef.current.length
+
+    // Mobile / single-pane: one code path — drawer + stack share the same close behavior
+    if (isSmallScreen || panelMode === 'single') {
+      if (stackLen > 1) {
+        window.history.back()
+      } else {
+        hardCloseSecondaryPanel()
+      }
+      return
+    }
 
     // In double-pane mode, never open drawer - just pop from stack
     if (panelMode === 'double' && !isSmallScreen) {
       if (stackLen === 1) {
-        flushSync(() => {
+        secondaryStackRef.current = []
+        queueMicrotask(() => {
           setSecondaryStack([])
         })
-        secondaryStackRef.current = []
         replaceHistoryWithPrimaryPageUrl(
           currentPrimaryPage,
           primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
@@ -2095,83 +2150,51 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       }
       return
     }
-    
-    // Single-pane mode or mobile: check if drawer is open and stack is empty - close drawer instead
-    if (drawerOpen && stackLen === 0) {
-      // Close drawer and reveal the background page
-      setDrawerOpen(false)
-      return
-    }
-    
-    // On mobile or single-pane: if stack has 1 item and drawer is open, close drawer and clear stack
-    if ((isSmallScreen || panelMode === 'single') && stackLen === 1 && drawerOpen) {
-      setDrawerOpen(false)
-      flushSync(() => {
-        setSecondaryStack([])
-      })
-      secondaryStackRef.current = []
-      replaceHistoryWithPrimaryPageUrl(
-        currentPrimaryPage,
-        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
-      )
-
-      const savedFeedState = savedFeedStateRef.current.get(currentPrimaryPage)
-
-      if (savedFeedState?.tab) {
-        logger.info('PageManager: Mobile/Single-pane - Restoring tab state', { page: currentPrimaryPage, tab: savedFeedState.tab })
-        window.dispatchEvent(new CustomEvent('restorePageTab', { 
-          detail: { page: currentPrimaryPage, tab: savedFeedState.tab } 
-        }))
-        currentTabStateRef.current.set(currentPrimaryPage, savedFeedState.tab)
-      }
-      return
-    }
-    
-    if (stackLen === 1) {
-      flushSync(() => {
-        setSecondaryStack([])
-      })
-      secondaryStackRef.current = []
-      replaceHistoryWithPrimaryPageUrl(
-        currentPrimaryPage,
-        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
-      )
-
-      const savedFeedState = savedFeedStateRef.current.get(currentPrimaryPage)
-
-      if (savedFeedState?.tab) {
-        logger.info('PageManager: Desktop - Restoring tab state', { page: currentPrimaryPage, tab: savedFeedState.tab })
-        window.dispatchEvent(new CustomEvent('restorePageTab', { 
-          detail: { page: currentPrimaryPage, tab: savedFeedState.tab } 
-        }))
-        currentTabStateRef.current.set(currentPrimaryPage, savedFeedState.tab)
-      }
-    } else if (stackLen > 1) {
-      // Same as double-pane: let popstate shrink the stack so it matches history.
-      window.history.back()
-    } else {
-      replaceHistoryWithPrimaryPageUrl(
-        currentPrimaryPage,
-        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
-      )
-    }
   }
-
-  const hardCloseSecondaryPanel = useCallback(() => {
-    if (drawerOpen) setDrawerOpen(false)
-    setSinglePaneSheetOpen(false)
-    setSecondaryStack((prev) => (prev.length ? [] : prev))
-    secondaryStackRef.current = []
-    const page = currentPrimaryPageRef.current
-    replaceHistoryWithPrimaryPageUrl(
-      page,
-      primaryPagePropsRef.current.get(page) as { spell?: string } | undefined
-    )
-  }, [drawerOpen])
 
   const clearSecondaryPages = () => {
     hardCloseSecondaryPanel()
   }
+
+  const mobileSecondaryOpen = isSmallScreen && (drawerOpen || secondaryStack.length > 0)
+  useEffect(() => {
+    if (!mobileSecondaryOpen) return
+
+    let grab: { x: number; y: number; pointerId: number } | null = null
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 || e.clientX > MOBILE_SWIPE_BACK_EDGE_PX) return
+      grab = { x: e.clientX, y: e.clientY, pointerId: e.pointerId }
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!grab || grab.pointerId !== e.pointerId) return
+      const dx = e.clientX - grab.x
+      const dy = e.clientY - grab.y
+      grab = null
+      const ax = Math.abs(dx)
+      const ay = Math.abs(dy)
+      if (dx < MOBILE_SWIPE_BACK_MIN_PX || ax < ay * MOBILE_SWIPE_BACK_DOMINANCE) return
+      if (secondaryStackRef.current.length > 1) {
+        window.history.back()
+      } else {
+        hardCloseSecondaryPanel()
+      }
+    }
+
+    const onPointerCancel = () => {
+      grab = null
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, { capture: true })
+    document.addEventListener('pointerup', onPointerUp, { capture: true })
+    document.addEventListener('pointercancel', onPointerCancel, { capture: true })
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      document.removeEventListener('pointerup', onPointerUp, { capture: true })
+      document.removeEventListener('pointercancel', onPointerCancel, { capture: true })
+    }
+  }, [mobileSecondaryOpen])
 
   useEffect(() => {
     const shouldBeOpen =
@@ -2312,7 +2335,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                     setDrawerOpen(true)
                     return
                   }
-                  popSecondaryPage()
+                  hardCloseSecondaryPanel()
                 }}
                 noteId={drawerNoteId}
               />

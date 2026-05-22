@@ -1,11 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import ExternalLink from '@/components/ExternalLink'
-import {
-  FAST_READ_RELAY_URLS,
-  PROFILE_RELAY_URLS,
-  SEARCHABLE_RELAY_URLS,
-  ExtendedKind
-} from '@/constants'
+import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, ExtendedKind } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isCalendarEventKind } from '@/lib/calendar-event'
@@ -19,6 +14,11 @@ import nip66Service from '@/services/nip66.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import { useViewerInboxRelayUrls } from '@/hooks/useViewerInboxRelayUrls'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import {
+  getAggrAwareSearchRelayUrls,
+  syncViewerRelayStackNostrLandAggrEligible,
+  urlsForViewerNostrLandAggrEligibilitySync
+} from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
@@ -234,6 +234,15 @@ function EmbeddedNoteFetched({
         .filter((url): url is string => Boolean(url)),
     [favoriteRelays, blockedRelays]
   )
+  useEffect(() => {
+    syncViewerRelayStackNostrLandAggrEligible(
+      urlsForViewerNostrLandAggrEligibilitySync({
+        favoriteRelayUrls: favoriteRelays,
+        relayListRead: inboxRelayUrls
+      })
+    )
+  }, [favoriteRelays, inboxRelayUrls])
+
   const wideRelaysStatic = useMemo(
     () =>
       buildEmbedWideRelayUrlsStatic(
@@ -303,27 +312,31 @@ function EmbeddedNoteFetched({
     }
 
     const runParallelFetch = async () => {
-      const { fetchRelayOpts: opts } = embedFetchCtxRef.current
+      const { fetchRelayOpts: opts, wideRelaysStatic: wideUrls } = embedFetchCtxRef.current
       const hex = hexEventIdFromNoteId(noteKey)
       const isUsable = (e: Event) =>
         !isEventDeletedRef.current(e) && !shouldDropEventOnIngest(e)
-      const chosen = await firstResolvedUsableEmbedEvent(
-        [
-          () => client.fetchEvent(noteKey, opts),
-          () =>
-            hex && /^[0-9a-f]{64}$/i.test(hex)
-              ? indexedDb
-                  .getEventFromPublicationStore(hex.toLowerCase())
-                  .catch(() => undefined)
-              : Promise.resolve(undefined)
-        ],
-        isUsable
-      )
-      if (cancelled) return
-      if (chosen) {
-        resolve(chosen)
+      try {
+        const chosen = await firstResolvedUsableEmbedEvent(
+          [
+            () => promiseWithTimeout(client.fetchEvent(noteKey, opts), 12_000),
+            () =>
+              hex && /^[0-9a-f]{64}$/i.test(hex)
+                ? indexedDb
+                    .getEventFromPublicationStore(hex.toLowerCase())
+                    .catch(() => undefined)
+                : Promise.resolve(undefined),
+            () => runWidePass(wideUrls)
+          ],
+          isUsable
+        )
+        if (cancelled) return
+        if (chosen) {
+          resolve(chosen)
+        }
+      } finally {
+        if (!cancelled) setIsFetching(false)
       }
-      setIsFetching(false)
     }
 
     if (tryShortcuts()) {
@@ -348,6 +361,7 @@ function EmbeddedNoteFetched({
       )
       if (cancelled || !ev) return
       resolve(ev)
+      if (!cancelled) setIsFetching(false)
     })()
 
     if (eventRef.current) {
@@ -543,10 +557,10 @@ function buildEmbedWideRelayUrlsStatic(
           source: 'fallback',
           urls: preferPublicIndexRelaysFirst(
             dedupeRelayUrls([
+              ...getAggrAwareSearchRelayUrls(),
               ...relayHintsFromParent,
               ...viewerInboxRelayUrls,
               ...nip66Service.getSearchableRelayUrls(),
-              ...SEARCHABLE_RELAY_URLS,
               ...FAST_READ_RELAY_URLS,
               ...PROFILE_RELAY_URLS,
               ...menuRelayUrls
@@ -624,6 +638,15 @@ async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event)
     hintRelays.push(...client.getSeenEventRelayUrls(resolvedHexId))
   }
   return dedupeRelayUrls(hintRelays)
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([
+    promise.catch(() => undefined),
+    new Promise<undefined>((resolve) => {
+      setTimeout(() => resolve(undefined), ms)
+    })
+  ])
 }
 
 /** Resolve as soon as any fetch path returns a usable event (do not wait for slow wide-relay fan-out). */

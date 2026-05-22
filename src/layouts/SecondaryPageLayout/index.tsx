@@ -44,7 +44,8 @@ const SecondaryPageLayout = forwardRef(
     const { isSmallScreen } = useScreenSize()
     const { currentIndex, pop } = useSecondaryPage()
     const [mobileSwipeRoot, setMobileSwipeRoot] = useState<HTMLElement | null>(null)
-    const mobileSwipeActive = isSmallScreen && currentIndex === index
+    const mobileSwipeActive =
+      isSmallScreen && (index === undefined || currentIndex === index)
     useMobileSwipeBackOnElement(mobileSwipeActive ? mobileSwipeRoot : null, pop, {
       enabled: mobileSwipeActive
     })

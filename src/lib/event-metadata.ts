@@ -7,7 +7,14 @@ import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightnin
 import { formatPubkey, pubkeyToNpub } from './pubkey'
 import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeHttpUrl, normalizeUrl } from './url'
+import {
+  isKind10243HttpRelayTagUrl,
+  isWebsocketUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  normalizeHttpUrl,
+  normalizeUrl
+} from './url'
 import { isTorBrowser } from './utils'
 import logger from '@/lib/logger'
 import { buildPaytoUri } from '@/lib/payto'
@@ -168,7 +175,7 @@ export function getHttpRelayListFromEvent(event?: Event | null, blockedRelays?: 
   const torBrowserDetected = isTorBrowser()
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
     if (!url || typeof url !== 'string' || url.trim() === '') return
-    if (!isHttpRelayUrl(url)) return
+    if (!isKind10243HttpRelayTagUrl(url)) return
 
     const normalizedUrl = normalizeHttpRelayUrl(url)
     if (!normalizedUrl) return

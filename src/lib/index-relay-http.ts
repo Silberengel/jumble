@@ -174,7 +174,8 @@ function handleFilterTransportFailure(endpoint: string, err?: unknown): void {
     maybeLogDevIndexRelayUnreachableHint()
     return
   }
-  warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] filter request error', {
+  // CORS / offline index relays are optional; strikes will skip after repeated failures.
+  logger.debug('[IndexRelayHttp] filter transport failure', {
     endpoint,
     error: err ?? 'unreachable'
   })

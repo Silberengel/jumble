@@ -9,7 +9,13 @@ import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
-import { normalizeAnyRelayUrl, isLocalNetworkUrl } from '@/lib/url'
+import {
+  canonicalRelaySessionKey,
+  isHttpOrHttpsScheme,
+  isLocalNetworkUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl
+} from '@/lib/url'
 import { TRelaySet, TRelayList } from '@/types'
 import logger from '@/lib/logger'
 import indexedDb from '@/services/indexed-db.service'
@@ -123,7 +129,9 @@ class RelaySelectionService {
       )
       const relayTypes: Record<string, RelaySourceType> = {}
       const httpSet = new Set(
-        (userHttpWriteRelays ?? []).map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
+        (userHttpWriteRelays ?? [])
+          .map((u) => canonicalRelaySessionKey(u))
+          .filter(Boolean)
       )
       filtered.forEach((url) => {
         relayTypes[url] = httpSet.has(url) ? 'http_relay_list' : 'relay_list'
@@ -136,9 +144,12 @@ class RelaySelectionService {
 
     const addRelay = (url: string, type: RelaySourceType) => {
       if (!url) return
-      const normalized = normalizeAnyRelayUrl(url)
-      if (normalized && !seen.has(normalized)) {
-        seen.add(normalized)
+      const normalized = isHttpOrHttpsScheme(url)
+        ? normalizeHttpRelayUrl(url)
+        : normalizeAnyRelayUrl(url)
+      const key = normalized ? canonicalRelaySessionKey(normalized) : ''
+      if (key && !seen.has(key)) {
+        seen.add(key)
         order.push({ url: normalized, type })
       } else if (!normalized) {
         logger.warn('Skipping invalid relay URL', { url })

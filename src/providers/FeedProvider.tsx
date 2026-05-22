@@ -3,7 +3,10 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
-import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
+import {
+  syncViewerRelayStackNostrLandAggrEligible,
+  urlsForViewerNostrLandAggrEligibilitySync
+} from '@/lib/nostr-land-relay-eligibility'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
@@ -133,14 +136,15 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   /** Keeps {@link getViewerRelayStackNostrLandAggrEligible} in sync for non-home reads (threads, profiles, etc.). */
   useEffect(() => {
-    const urls = [
-      ...favoriteFeedRelayUrls,
-      ...replyExtraRelayLayers.inboxRelayUrls,
-      ...replyExtraRelayLayers.outboxRelayUrls,
-      ...replyExtraRelayLayers.cacheRelayUrls,
-      ...replyExtraRelayLayers.httpRelayUrls
-    ]
-    syncViewerRelayStackNostrLandAggrEligible(urls)
+    syncViewerRelayStackNostrLandAggrEligible(
+      urlsForViewerNostrLandAggrEligibilitySync({
+        favoriteRelayUrls: favoriteFeedRelayUrls,
+        relayListRead: replyExtraRelayLayers.inboxRelayUrls,
+        relayListWrite: replyExtraRelayLayers.outboxRelayUrls,
+        cacheRelayRead: replyExtraRelayLayers.cacheRelayUrls,
+        httpRelayRead: replyExtraRelayLayers.httpRelayUrls
+      })
+    )
   }, [favoriteFeedRelayUrls, replyExtraRelayLayers])
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })

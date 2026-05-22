@@ -28,9 +28,10 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
+import { getViewerNostrLandAggrSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import {
   canonicalRelaySessionKey,
-  isHttpRelayUrl,
+  httpIndexRelayBasesInUrlBatch,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
   normalizeUrl
@@ -230,6 +231,8 @@ export interface QueryOptions {
   firstRelayResultGraceMs?: number | false
   /** Label for {@link RelaySubscribeOpBatch} when this query opens REQs. */
   relayOpSource?: string
+  /** Kind 10243 HTTP index bases; only matching URLs in `urls` use the index JSON API. */
+  httpIndexRelayBases?: readonly string[]
   /**
    * When aborted (e.g. React effect cleanup / HMR), closes WS + HTTP index work promptly instead of waiting for
    * {@link globalTimeout}. Prevents overlapping NIP-50 shards from stacking until the tab OOMs.
@@ -476,15 +479,11 @@ export class QueryService {
             ? FIRST_RELAY_RESULT_GRACE_MS
             : null
 
-    const httpRelayBases = Array.from(
-      new Set(
-        urls
-          .filter((u) => isHttpRelayUrl(u))
-          .map((u) => normalizeHttpRelayUrl(u) || u)
-          .filter((u): u is string => Boolean(u) && !relaySessionStrikes.isReadHttpSkipped(u))
-      )
+    const httpRelayBases = httpIndexRelayBasesInUrlBatch(urls, options?.httpIndexRelayBases ?? []).filter(
+      (u) => !relaySessionStrikes.isReadHttpSkipped(u)
     )
-    const wsQueryUrls = urls.filter((u) => !isHttpRelayUrl(u))
+    const httpKeys = new Set(httpRelayBases.map((u) => canonicalRelaySessionKey(u)))
+    const wsQueryUrls = urls.filter((u) => !httpKeys.has(canonicalRelaySessionKey(u)))
 
     const reqId = ++queryReqSeq
     const source = options?.relayOpSource ?? 'QueryService.query'
@@ -807,11 +806,12 @@ export class QueryService {
         relays = relayUrlsStripExtendedTagReqBlocked([...FAST_READ_RELAY_URLS])
       }
     }
-    relays = relays.filter((url) => !isHttpRelayUrl(url))
+    // WebSocket REQ only — drop https URLs (index relays use HTTP polling elsewhere).
+    relays = relays.filter((url) => !/^https?:\/\//i.test(url.trim()))
 
     const wsCountBeforeStrikes = relays.length
     if (wsCountBeforeStrikes > 1) {
-      relays = relaySessionStrikes.filterReadHttpUrls(relays)
+      relays = relaySessionStrikes.filterReadHttpUrls(relays, [])
     }
 
     if (relays.length === 0) {
@@ -830,10 +830,11 @@ export class QueryService {
     const searchableSet = new Set(
       [
         ...SEARCHABLE_RELAY_URLS,
+        ...getViewerNostrLandAggrSearchRelayUrls(),
         ...nip66Service.getSearchableRelayUrls(),
         ...PROFILE_RELAY_URLS
       ]
-        .map((u) => canonicalRelaySessionKey(normalizeUrl(u) || String(u).trim()))
+        .map((u) => canonicalRelaySessionKey(String(u).trim()))
         .filter((k): k is string => k.length > 0)
     )
 

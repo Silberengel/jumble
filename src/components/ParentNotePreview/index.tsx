@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
 import { useFetchEvent } from '@/hooks'
+import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
 import { useTranslation } from 'react-i18next'
@@ -42,7 +43,10 @@ export default function ParentNotePreview({
 
     setIsFetchingFallback(true)
     try {
-      const foundEvent = await client.fetchEventWithExternalRelays(eventId, SEARCHABLE_RELAY_URLS)
+      const foundEvent = await client.fetchEventWithExternalRelays(
+        eventId,
+        sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+      )
       if (foundEvent) {
         client.addEventToCache(foundEvent)
         setFallbackEvent(foundEvent)

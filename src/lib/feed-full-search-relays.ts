@@ -1,10 +1,10 @@
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import {
   getFavoritesFeedRelayUrls,
   mergeRelayUrlLayers
 } from '@/lib/favorites-feed-relays'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
+import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { normalizeUrl } from '@/lib/url'
 
 /**
@@ -23,8 +23,7 @@ export async function buildFeedFullSearchRelayUrls(options: {
   const blocked = blockedRelays ?? []
   const layers: string[][] = []
 
-  const searchable = SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-  layers.push(searchable)
+  layers.push(getAggrAwareSearchRelayUrls().map((u) => normalizeUrl(u) || u).filter(Boolean))
 
   layers.push(getFavoritesFeedRelayUrls(favoriteRelays ?? [], blocked))
 

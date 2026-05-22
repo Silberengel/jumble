@@ -1,4 +1,4 @@
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { canonicalRelaySessionKey, normalizeAnyRelayUrl } from '@/lib/url'
 import type { TFeedSubRequest, TSubRequestFilter } from '@/types'
 import type { Filter } from 'nostr-tools'
 
@@ -92,12 +92,7 @@ export function canonicalFeedFilter(filter: Omit<Filter, 'since' | 'until'> | TS
 
 export function canonicalRelayUrls(urls: readonly string[]): string[] {
   return Array.from(
-    new Set(
-      urls
-        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-        .filter(Boolean)
-        .map((u) => u.toLowerCase())
-    )
+    new Set(urls.map((u) => canonicalRelaySessionKey(u)).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b))
 }
 

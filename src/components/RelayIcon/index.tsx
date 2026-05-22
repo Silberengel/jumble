@@ -1,6 +1,10 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useFetchRelayInfo } from '@/hooks'
-import { getRelayIconOverrideSrc, relayUrlFingerprintColors } from '@/lib/relay-icon-source'
+import {
+  getRelayIconFallbackGlyph,
+  getRelayIconOverrideSrc,
+  relayUrlFingerprintColors
+} from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
 import type { TRelayInfo } from '@/types'
 import { Server } from 'lucide-react'
@@ -72,6 +76,7 @@ export default function RelayIcon({
   }, [url, relayInfo])
 
   const fallbackColors = useMemo(() => relayUrlFingerprintColors(url), [url])
+  const fallbackGlyph = useMemo(() => getRelayIconFallbackGlyph(url), [url])
 
   return (
     <Avatar className={cn('w-6 h-6', className)}>
@@ -86,7 +91,17 @@ export default function RelayIcon({
         className="bg-transparent"
         style={{ backgroundColor: fallbackColors.background, color: fallbackColors.color }}
       >
-        <Server size={iconSize} className="opacity-95" aria-hidden />
+        {fallbackGlyph ? (
+          <span
+            className="leading-none select-none"
+            style={{ fontSize: Math.max(12, iconSize + 4) }}
+            aria-hidden
+          >
+            {fallbackGlyph}
+          </span>
+        ) : (
+          <Server size={iconSize} className="opacity-95" aria-hidden />
+        )}
       </AvatarFallback>
     </Avatar>
   )

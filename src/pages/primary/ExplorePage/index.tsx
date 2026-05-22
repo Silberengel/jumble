@@ -25,7 +25,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toRelay } from '@/lib/link'
 import { cn } from '@/lib/utils'
-import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
+import {
+  isKind10243HttpRelayTagUrl,
+  isWebsocketUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  simplifyUrl
+} from '@/lib/url'
 
 const RELAY_SUGGESTION_LIMIT = 20
 
@@ -177,8 +183,8 @@ function ExploreRelaySearchSection({
   const tryOpenRelay = () => {
     const trimmed = listFilter.trim()
     if (!trimmed) return
-    const normalized = normalizeAnyRelayUrl(trimmed)
-    if (!normalized || (!isHttpRelayUrl(normalized) && !isWebsocketUrl(normalized))) {
+    const normalized = normalizeAnyRelayUrl(trimmed) || normalizeHttpRelayUrl(trimmed)
+    if (!normalized || (!isWebsocketUrl(normalized) && !isKind10243HttpRelayTagUrl(normalized))) {
       toast.error(t('invalid relay URL'))
       return
     }

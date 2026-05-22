@@ -1,4 +1,5 @@
 import { READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS } from '@/constants'
+import { filterAggrNostrLandUnlessViewerEligible } from '@/lib/nostr-land-relay-eligibility'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 
@@ -81,5 +82,7 @@ export function sanitizeRelayUrlsForFetch(
     const key = relayUrlKey(u)
     return key.length > 0 && keys.has(key)
   })
-  return filterReadOnlyRelaysUnlessPersonal(withoutThirdPartyLocals, keys)
+  return filterAggrNostrLandUnlessViewerEligible(
+    filterReadOnlyRelaysUnlessPersonal(withoutThirdPartyLocals, keys)
+  )
 }
