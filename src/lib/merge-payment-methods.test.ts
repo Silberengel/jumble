@@ -5,6 +5,7 @@ import { kinds, type Event } from 'nostr-tools'
 import {
   buildOrderedZapLightningAddresses,
   getAlternativePaymentMethods,
+  groupPaymentMethodsByDisplayType,
   prepareZapDialogAlternativePayments,
   mergePaymentMethods,
   normalizeLightningAuthority,
@@ -152,6 +153,92 @@ describe('mergePaymentMethods kind 0 about coin lines', () => {
 
     const methods = mergePaymentMethods(null, null, profileEvent)
     expect(methods.some((m) => m.type === 'monero' && m.authority === addr)).toBe(true)
+  })
+})
+
+describe('mergePaymentMethods ordering', () => {
+  it('lists profile then payment lightning addresses within Lightning Network', () => {
+    const profileEvent = {
+      kind: kinds.Metadata,
+      pubkey: 'aa'.repeat(32),
+      created_at: 1,
+      tags: [
+        ['lud16', 'profile-first@example.com'],
+        ['lud16', 'profile-second@example.com']
+      ] as string[][],
+      content: '{}',
+      id: 'bb'.repeat(64),
+      sig: 'cc'.repeat(128)
+    } as Event
+
+    const methods = mergePaymentMethods(
+      {
+        methods: [
+          {
+            type: 'lightning',
+            authority: 'profile-second@example.com',
+            payto: 'payto://lightning/profile-second@example.com',
+            displayType: 'Lightning Network'
+          },
+          {
+            type: 'lightning',
+            authority: 'payment-only@example.com',
+            payto: 'payto://lightning/payment-only@example.com',
+            displayType: 'Lightning Network'
+          }
+        ]
+      },
+      getProfileFromEvent(profileEvent),
+      profileEvent
+    )
+
+    const lightning = groupPaymentMethodsByDisplayType(methods).find(
+      (g) => g.displayType === 'Lightning Network'
+    )?.methods
+
+    expect(lightning?.map((m) => m.authority)).toEqual([
+      'profile-first@example.com',
+      'profile-second@example.com',
+      'payment-only@example.com'
+    ])
+  })
+
+  it('keeps distinct profile and payment targets across categories', () => {
+    const profileEvent = {
+      kind: kinds.Metadata,
+      pubkey: 'aa'.repeat(32),
+      created_at: 1,
+      tags: [['payto', 'monero', '4profilemonero']] as string[][],
+      content: '{}',
+      id: 'bb'.repeat(64),
+      sig: 'cc'.repeat(128)
+    } as Event
+
+    const methods = mergePaymentMethods(
+      {
+        methods: [
+          {
+            type: 'lightning',
+            authority: 'zap@example.com',
+            payto: 'payto://lightning/zap@example.com',
+            displayType: 'Lightning Network'
+          },
+          {
+            type: 'bip353',
+            authority: 'dns@example.com',
+            payto: 'payto://bip353/dns@example.com',
+            displayType: 'DNS Payment Instructions (BIP-353)'
+          }
+        ]
+      },
+      null,
+      profileEvent
+    )
+
+    expect(methods).toHaveLength(3)
+    expect(methods.some((m) => m.type === 'monero')).toBe(true)
+    expect(methods.some((m) => m.type === 'lightning')).toBe(true)
+    expect(methods.some((m) => m.type === 'bip353')).toBe(true)
   })
 })
 

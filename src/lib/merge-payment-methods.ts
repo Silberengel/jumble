@@ -21,6 +21,20 @@ export type MergedPaymentMethod = {
   currency?: string
   minAmount?: number
   maxAmount?: number
+  /** Position in the profile (kind 0) event, for within-category ordering. */
+  profileOrder?: number
+  /** Position in the payment (kind 10133) event, for within-category ordering. */
+  paymentOrder?: number
+}
+
+type PaymentMethodInput = {
+  type: string
+  authority: string
+  payto?: string
+  displayType?: string
+  currency?: string
+  minAmount?: number
+  maxAmount?: number
 }
 
 export type PaymentMethodGroup = {
@@ -132,147 +146,351 @@ export function paytoPaymentSortRank(type: string): number {
   return 2
 }
 
-/** Merge payment methods from kind 10133 and profile (kind 0: JSON + tags), normalized and deduplicated. */
+const LIGHTNING_NETWORK_LABEL = 'Lightning Network'
+
+/** Map a kind 0 `w` tag to a payto-shaped row (tag order preserved by the caller). */
+function paymentMethodInputFromWTag(tag: string[]): PaymentMethodInput | null {
+  if (tag[0] !== 'w' || !tag[1] || !tag[2]) return null
+
+  const addr = String(tag[2]).trim()
+  if (!addr) return null
+
+  let currency = String(tag[1]).trim()
+  let network = tag[3] ? String(tag[3]).trim().toLowerCase() : ''
+
+  if (!network && currency.toLowerCase() === 'lightning') {
+    network = 'lightning'
+    currency = ''
+  }
+
+  if (!network) return null
+
+  const cur = currency.toLowerCase()
+  const net = network.toLowerCase()
+
+  if (net === 'lightning') {
+    return { type: 'lightning', authority: addr, displayType: LIGHTNING_NETWORK_LABEL }
+  }
+
+  if (net === 'bitcoin') {
+    return {
+      type: 'bitcoin',
+      authority: addr,
+      payto: buildPaytoUri('bitcoin', addr),
+      displayType: 'Bitcoin',
+      currency: currency || undefined
+    }
+  }
+
+  const netCanonical = getCanonicalPaytoType(net)
+  if (
+    isKnownPaytoType(netCanonical) &&
+    !isLightningPaytoType(netCanonical) &&
+    netCanonical !== 'bitcoin' &&
+    netCanonical !== 'liquid' &&
+    netCanonical !== 'lbtc' &&
+    netCanonical !== 'usdt'
+  ) {
+    return {
+      type: netCanonical,
+      authority: addr,
+      payto: buildPaytoUri(netCanonical, addr),
+      displayType: getPaytoEditorTypeLabel(netCanonical),
+      currency: currency || undefined
+    }
+  }
+
+  if (cur === 'usdt' || cur === 'usd₮' || cur === 'tether' || net === 'usdt') {
+    return {
+      type: 'usdt',
+      authority: addr,
+      payto: buildPaytoUri('usdt', addr),
+      displayType: 'Tether (USDT)',
+      currency: currency || 'USDT'
+    }
+  }
+
+  if (net === 'liquid') {
+    if (cur === 'lbtc' || cur === 'l-btc' || cur === 'liquid btc') {
+      return {
+        type: 'lbtc',
+        authority: addr,
+        payto: buildPaytoUri('lbtc', addr),
+        displayType: 'Liquid Bitcoin (LBTC)',
+        currency: currency || undefined
+      }
+    }
+    return {
+      type: 'liquid',
+      authority: addr,
+      payto: buildPaytoUri('liquid', addr),
+      displayType: cur ? `Liquid (${currency})` : 'Liquid',
+      currency: currency || undefined
+    }
+  }
+
+  if (cur === 'lbtc' || cur === 'l-btc') {
+    return {
+      type: 'lbtc',
+      authority: addr,
+      payto: buildPaytoUri('lbtc', addr),
+      displayType: 'Liquid Bitcoin (LBTC)',
+      currency: currency || undefined
+    }
+  }
+
+  return null
+}
+
+/**
+ * Payment targets from a kind 0 event in document order: tags top-to-bottom, then JSON content.
+ */
+export function extractProfileEventPaymentMethodsInOrder(
+  profileEvent: Event | null | undefined
+): PaymentMethodInput[] {
+  if (!profileEvent || profileEvent.kind !== kinds.Metadata) return []
+
+  const out: PaymentMethodInput[] = []
+
+  for (const tag of profileEvent.tags) {
+    const name = tag[0]
+    if (name === 'lud16' && tag[1]) {
+      out.push({
+        type: 'lightning',
+        authority: String(tag[1]),
+        displayType: LIGHTNING_NETWORK_LABEL
+      })
+      continue
+    }
+    if (name === 'lud06' && tag[1]) {
+      out.push({
+        type: 'lightning',
+        authority: String(tag[1]),
+        displayType: LIGHTNING_NETWORK_LABEL
+      })
+      continue
+    }
+    if (name === 'w') {
+      const row = paymentMethodInputFromWTag(tag)
+      if (row) out.push(row)
+      continue
+    }
+    if (name === 'payto' && tag[1] && tag[2]) {
+      const type = String(tag[1]).toLowerCase()
+      const authority = String(tag[2])
+      out.push({
+        type,
+        authority,
+        payto: buildPaytoUri(getCanonicalPaytoType(type), authority)
+      })
+    }
+  }
+
+  try {
+    const profileJson = JSON.parse(profileEvent.content || '{}') as Record<string, unknown>
+    const lud16 = profileJson.lud16
+    if (typeof lud16 === 'string' && lud16.trim()) {
+      out.push({
+        type: 'lightning',
+        authority: lud16.trim(),
+        displayType: LIGHTNING_NETWORK_LABEL
+      })
+    }
+    const lud06 = profileJson.lud06
+    if (typeof lud06 === 'string' && lud06.trim()) {
+      out.push({
+        type: 'lightning',
+        authority: lud06.trim(),
+        displayType: LIGHTNING_NETWORK_LABEL
+      })
+    }
+    for (const m of extractKind0PaymentMethodsFromProfileJson(profileJson)) {
+      out.push({
+        type: m.type,
+        authority: m.authority,
+        payto: m.payto,
+        displayType: m.displayType
+      })
+    }
+  } catch {
+    /* ignore invalid kind 0 JSON */
+  }
+
+  return out
+}
+
+function paymentMethodInputKey(input: PaymentMethodInput): string {
+  const normType = getCanonicalPaytoType(input.type)
+  return `${normType}:${normalizePaymentAuthority(normType, input.authority)}`
+}
+
+/** Append inputs from `extra` that are not already in `primary` (same type + authority). */
+function appendUniquePaymentInputs(
+  primary: PaymentMethodInput[],
+  extra: PaymentMethodInput[]
+): PaymentMethodInput[] {
+  const keys = new Set(primary.map(paymentMethodInputKey))
+  const out = [...primary]
+  for (const input of extra) {
+    const key = paymentMethodInputKey(input)
+    if (keys.has(key)) continue
+    keys.add(key)
+    out.push(input)
+  }
+  return out
+}
+
+/** Fallback when only parsed profile is available (no kind 0 event loaded). */
+function extractParsedProfilePaymentMethodsInOrder(profile: TProfile | null): PaymentMethodInput[] {
+  if (!profile) return []
+
+  const out: PaymentMethodInput[] = []
+  const lightningList = profile.lightningAddressList?.length
+    ? profile.lightningAddressList
+    : profile.lightningAddress
+      ? [profile.lightningAddress]
+      : []
+
+  for (const addr of lightningList) {
+    if (addr?.trim()) {
+      out.push({
+        type: 'lightning',
+        authority: addr,
+        displayType: LIGHTNING_NETWORK_LABEL
+      })
+    }
+  }
+
+  profile.wWalletTags?.forEach((w) => {
+    const row = paymentMethodInputFromWTag(['w', w.currency, w.address, w.network])
+    if (row) out.push(row)
+  })
+
+  return out
+}
+
+/**
+ * Payment targets from kind 10133 in document order (payto tags, or JSON methods fallback).
+ */
+export function extractPaymentEventMethodsInOrder(
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+): PaymentMethodInput[] {
+  if (!paymentInfo) return []
+
+  if (paymentInfo.methods?.length) {
+    return paymentInfo.methods.map((m) => {
+      const type = (m.type || 'lightning').toLowerCase()
+      const authority = m.authority || m.address || ''
+      return {
+        type,
+        authority,
+        payto: m.payto,
+        displayType: m.displayType,
+        currency: m.currency,
+        minAmount: m.minAmount,
+        maxAmount: m.maxAmount
+      }
+    })
+  }
+
+  if (paymentInfo.payto) {
+    const type = (paymentInfo.type || 'lightning').toLowerCase()
+    const authority =
+      paymentInfo.authority || paymentInfo.payto.replace(/^payto:\/\/[^/]+\//, '') || ''
+    return [
+      {
+        type,
+        authority,
+        payto: paymentInfo.payto,
+        displayType:
+          type === 'lightning' ? LIGHTNING_NETWORK_LABEL : paymentInfo.type || 'Payment'
+      }
+    ]
+  }
+
+  return []
+}
+
+function normalizePaymentMethodInput(input: PaymentMethodInput): MergedPaymentMethod | null {
+  const authority = input.authority?.trim()
+  if (!authority) return null
+
+  const normType = getCanonicalPaytoType(input.type)
+  const resolvedAuthority = isLightningPaytoType(normType)
+    ? resolveLightningAuthority(authority)
+    : normType === 'paypal'
+      ? normalizePaypalAuthority(authority)
+      : authority
+
+  return {
+    type: normType,
+    authority: resolvedAuthority,
+    payto:
+      input.payto ||
+      (normType && resolvedAuthority ? buildPaytoUri(normType, resolvedAuthority) : undefined),
+    displayType: input.displayType || getPaytoEditorTypeLabel(normType),
+    currency: input.currency,
+    minAmount: input.minAmount,
+    maxAmount: input.maxAmount
+  }
+}
+
+function mergeOrderedPaymentMethodLists(
+  profileInputs: PaymentMethodInput[],
+  paymentInputs: PaymentMethodInput[]
+): MergedPaymentMethod[] {
+  const seen = new Map<string, MergedPaymentMethod>()
+  const out: MergedPaymentMethod[] = []
+
+  const ingest = (inputs: PaymentMethodInput[], source: 'profile' | 'payment') => {
+    inputs.forEach((input, index) => {
+      const normalized = normalizePaymentMethodInput(input)
+      if (!normalized) return
+
+      const key = `${normalized.type}:${normalizePaymentAuthority(normalized.type, normalized.authority)}`
+      const existing = seen.get(key)
+      if (existing) {
+        if (isLightningPaytoType(normalized.type)) {
+          existing.authority = resolveLightningAuthority(existing.authority, normalized.authority)
+          existing.payto = buildPaytoUri(normalized.type, existing.authority)
+        }
+        return
+      }
+
+      const entry: MergedPaymentMethod = {
+        ...normalized,
+        ...(source === 'profile' ? { profileOrder: index } : { paymentOrder: index })
+      }
+      seen.set(key, entry)
+      out.push(entry)
+    })
+  }
+
+  ingest(profileInputs, 'profile')
+  ingest(paymentInputs, 'payment')
+  return out
+}
+
+/** Merge payment methods: profile (kind 0) event order, then payment (kind 10133) event order; deduplicated. */
 export function mergePaymentMethods(
   paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
   profile: TProfile | null,
   profileEvent?: Event | null
 ): MergedPaymentMethod[] {
-  const seen = new Map<string, MergedPaymentMethod>()
-  const out: MergedPaymentMethod[] = []
+  let profileInputs = profileEvent
+    ? extractProfileEventPaymentMethodsInOrder(profileEvent)
+    : extractParsedProfilePaymentMethodsInOrder(profile)
 
-  const add = (
-    type: string,
-    authority: string,
-    payto?: string,
-    displayType?: string,
-    extra?: { currency?: string; minAmount?: number; maxAmount?: number }
-  ) => {
-    if (!authority?.trim()) return
-    const normType = getCanonicalPaytoType(type)
-    const key = `${normType}:${normalizePaymentAuthority(normType, authority)}`
-    const existing = seen.get(key)
-    if (existing) {
-      if (isLightningPaytoType(normType)) {
-        existing.authority = resolveLightningAuthority(existing.authority, authority.trim())
-        existing.payto = buildPaytoUri(normType, existing.authority)
-      }
-      return
-    }
-    const trimmedAuthority = authority.trim()
-    const resolvedAuthority =
-      isLightningPaytoType(normType)
-        ? resolveLightningAuthority(trimmedAuthority)
-        : normType === 'paypal'
-          ? normalizePaypalAuthority(trimmedAuthority)
-          : trimmedAuthority
-    const entry: MergedPaymentMethod = {
-      type: normType,
-      authority: resolvedAuthority,
-      payto: payto || (normType && resolvedAuthority ? buildPaytoUri(normType, resolvedAuthority) : undefined),
-      displayType: displayType || getPaytoEditorTypeLabel(normType),
-      ...extra
-    }
-    seen.set(key, entry)
-    out.push(entry)
+  // Include parsed profile targets not represented in the raw event walk (e.g. cached profile row).
+  if (profileEvent && profile) {
+    profileInputs = appendUniquePaymentInputs(
+      profileInputs,
+      extractParsedProfilePaymentMethodsInOrder(profile)
+    )
   }
 
-  const fromProfile = profile?.lightningAddressList?.length
-    ? profile.lightningAddressList
-    : profile?.lightningAddress
-      ? [profile.lightningAddress]
-      : []
-  fromProfile.forEach((addr) => {
-    if (addr) add('lightning', addr, `payto://lightning/${addr}`, 'Lightning Network')
-  })
-
-  profile?.wWalletTags?.forEach((w) => {
-    const net = w.network.toLowerCase()
-    if (net === 'lightning') return
-    const addr = w.address?.trim()
-    if (!addr) return
-    const cur = (w.currency || '').trim().toLowerCase()
-
-    if (net === 'bitcoin') {
-      add('bitcoin', addr, buildPaytoUri('bitcoin', addr), 'Bitcoin', { currency: w.currency })
-      return
-    }
-
-    const netCanonical = getCanonicalPaytoType(net)
-    if (
-      isKnownPaytoType(netCanonical) &&
-      !isLightningPaytoType(netCanonical) &&
-      netCanonical !== 'bitcoin' &&
-      netCanonical !== 'liquid' &&
-      netCanonical !== 'lbtc' &&
-      netCanonical !== 'usdt'
-    ) {
-      add(
-        netCanonical,
-        addr,
-        buildPaytoUri(netCanonical, addr),
-        getPaytoEditorTypeLabel(netCanonical),
-        { currency: w.currency }
-      )
-      return
-    }
-
-    if (cur === 'usdt' || cur === 'usd₮' || cur === 'tether' || net === 'usdt') {
-      add('usdt', addr, buildPaytoUri('usdt', addr), 'Tether (USDT)', { currency: w.currency || 'USDT' })
-      return
-    }
-
-    if (net === 'liquid') {
-      if (cur === 'lbtc' || cur === 'l-btc' || cur === 'liquid btc') {
-        add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
-      } else {
-        add('liquid', addr, buildPaytoUri('liquid', addr), cur ? `Liquid (${w.currency})` : 'Liquid', {
-          currency: w.currency
-        })
-      }
-      return
-    }
-
-    if (cur === 'lbtc' || cur === 'l-btc') {
-      add('lbtc', addr, buildPaytoUri('lbtc', addr), 'Liquid Bitcoin (LBTC)', { currency: w.currency })
-    }
-  })
-
-  if (paymentInfo?.methods?.length) {
-    paymentInfo.methods.forEach((m) => {
-      const authority = m.authority || m.address || ''
-      add(
-        (m.type || 'lightning').toLowerCase(),
-        authority,
-        m.payto,
-        m.displayType,
-        { currency: m.currency, minAmount: m.minAmount, maxAmount: m.maxAmount }
-      )
-    })
-  } else if (paymentInfo?.payto) {
-    const type = (paymentInfo.type || 'lightning').toLowerCase()
-    const authority = paymentInfo.authority || paymentInfo.payto.replace(/^payto:\/\/[^/]+\//, '') || ''
-    add(type, authority, paymentInfo.payto, type === 'lightning' ? 'Lightning Network' : paymentInfo.type || 'Payment')
-  }
-
-  if (profileEvent?.kind === kinds.Metadata) {
-    try {
-      const profileJson = JSON.parse(profileEvent.content || '{}') as unknown
-      for (const m of extractKind0PaymentMethodsFromProfileJson(profileJson)) {
-        add(m.type, m.authority, m.payto, m.displayType)
-      }
-    } catch {
-      /* ignore invalid kind 0 JSON */
-    }
-    for (const tag of profileEvent.tags) {
-      if (tag[0] === 'payto' && tag[1] && tag[2]) {
-        const type = String(tag[1]).toLowerCase()
-        add(type, String(tag[2]), buildPaytoUri(getCanonicalPaytoType(type), String(tag[2])))
-      }
-    }
-  }
-
-  return out
+  const paymentInputs = extractPaymentEventMethodsInOrder(paymentInfo)
+  return mergeOrderedPaymentMethodLists(profileInputs, paymentInputs)
 }
 
 /** True when the recipient has any payto / Lightning target (kind 0 or 10133). */
@@ -288,6 +506,15 @@ export function sortMergedPaymentMethods(methods: MergedPaymentMethod[]): Merged
   return [...methods].sort((a, b) => paytoPaymentSortRank(a.type) - paytoPaymentSortRank(b.type))
 }
 
+function compareMethodsWithinCategory(a: MergedPaymentMethod, b: MergedPaymentMethod): number {
+  const aFromProfile = a.profileOrder != null
+  const bFromProfile = b.profileOrder != null
+  if (aFromProfile && bFromProfile) return a.profileOrder! - b.profileOrder!
+  if (aFromProfile) return -1
+  if (bFromProfile) return 1
+  return (a.paymentOrder ?? 0) - (b.paymentOrder ?? 0)
+}
+
 /** Group payment methods by displayType (same headings as profile payment section). */
 export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[]): PaymentMethodGroup[] {
   const groups = new Map<string, MergedPaymentMethod[]>()
@@ -295,6 +522,9 @@ export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[])
     const key = method.displayType || method.type
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(method)
+  }
+  for (const groupMethods of groups.values()) {
+    groupMethods.sort(compareMethodsWithinCategory)
   }
   const order = Array.from(groups.keys()).sort((a, b) => {
     const typeA = groups.get(a)?.[0]?.type ?? ''
@@ -305,8 +535,8 @@ export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[])
 }
 
 /**
- * Ordered Lightning targets for zaps: kind 0 `lud16` tags, then `w` (network lightning),
- * then kind 10133 lightning methods. Optional `preferredAddress` is moved to the front.
+ * Ordered Lightning targets for zaps: profile (kind 0) event order, then payment (kind 10133).
+ * Optional `preferredAddress` is moved to the front.
  */
 export function buildOrderedZapLightningAddresses(opts: {
   profileEvent?: Event | null
@@ -315,42 +545,15 @@ export function buildOrderedZapLightningAddresses(opts: {
   paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
   preferredAddress?: string | null
 }): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-
-  const add = (raw: string | undefined) => {
-    if (!raw?.trim()) return
-    const resolved = resolveLightningAuthority(raw.trim())
-    const key = normalizePaymentAuthority('lightning', resolved)
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push(resolved)
-  }
-
   const ev = opts.profileEvent
   const profile =
     ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : (opts.profile ?? null)
-  if (ev?.kind === kinds.Metadata) {
-    for (const tag of ev.tags) {
-      if (tag[0] === 'lud16' && tag[1]) add(tag[1])
-      if (tag[0] === 'lud06' && tag[1]) add(tag[1])
-    }
-    for (const tag of ev.tags) {
-      if (tag[0] !== 'w' || !tag[1] || !tag[2]) continue
-      if (tag[3] && String(tag[3]).toLowerCase() === 'lightning') {
-        add(tag[2])
-      } else if (!tag[3] && String(tag[1]).toLowerCase() === 'lightning') {
-        add(tag[2])
-      }
-    }
-  }
 
-  const paymentMethods = mergePaymentMethods(opts.paymentInfo, profile, ev)
-  for (const m of paymentMethods) {
-    if (isZappableLightningPaytoType(m.type)) add(m.authority)
-  }
+  const addrs = mergePaymentMethods(opts.paymentInfo, profile, ev)
+    .filter((m) => isZappableLightningPaytoType(m.type))
+    .map((m) => m.authority)
 
-  return prioritizeZapLightningAddress(out, opts.preferredAddress ?? undefined)
+  return prioritizeZapLightningAddress(addrs, opts.preferredAddress ?? undefined)
 }
 
 /** Move `preferred` to the front when present; append if not already listed. */
