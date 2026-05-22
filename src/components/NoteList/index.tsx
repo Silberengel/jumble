@@ -944,6 +944,9 @@ const NoteList = forwardRef(
     }>(() => ({ profiles: new Map(), pending: new Set(), version: 0 }))
     const feedProfileLoadedRef = useRef<Set<string>>(new Set())
     const feedProfileBatchGenRef = useRef(0)
+    /** Dedupes layout-time pending sync so a new `events` array reference alone cannot loop setState. */
+    const lastProfilePrefetchPubkeysKeyRef = useRef('')
+    const clientFilteredVisibleCountRef = useRef(0)
 
     const noteFeedProfileContextValue = useMemo<NoteFeedProfileContextValue>(
       () => ({
@@ -1074,13 +1077,16 @@ const NoteList = forwardRef(
 
     useLayoutEffect(() => {
       publicReadFallbackAttemptedRef.current = false
-      setFeedTimelineEmptyUiReady(false)
-      setFeedSubscribeRelayOutcomes([])
-    }, [timelineSubscriptionKey, subRequestsKey, refreshCount])
+      if (!pauseTimelineForPrimaryFreeze) {
+        setFeedTimelineEmptyUiReady(false)
+        setFeedSubscribeRelayOutcomes([])
+      }
+    }, [timelineSubscriptionKey, subRequestsKey, refreshCount, pauseTimelineForPrimaryFreeze])
 
     useEffect(() => {
       feedProfileBatchGenRef.current += 1
       feedProfileLoadedRef.current.clear()
+      lastProfilePrefetchPubkeysKeyRef.current = ''
       setFeedProfileBatch({ profiles: new Map(), pending: new Set(), version: 0 })
     }, [timelineSubscriptionKey, refreshCount])
 
@@ -1093,22 +1099,30 @@ const NoteList = forwardRef(
       for (const e of newEvents) {
         collectProfilePrefetchPubkeysFromEvent(e, candidates)
       }
+      const pubkeysKey = [...candidates].sort().join('\n')
+      if (pubkeysKey === lastProfilePrefetchPubkeysKeyRef.current) return
+      lastProfilePrefetchPubkeysKeyRef.current = pubkeysKey
 
       setFeedProfileBatch((prev) => {
         const pending = new Set(prev.pending)
         let changed = false
         for (const pk of candidates) {
-          if (!prev.profiles.has(pk) && !pending.has(pk)) {
-            pending.add(pk)
-            changed = true
+          if (
+            prev.profiles.has(pk) ||
+            pending.has(pk) ||
+            feedProfileLoadedRef.current.has(pk)
+          ) {
+            continue
           }
+          pending.add(pk)
+          changed = true
         }
         if (!changed) return prev
         // Do not bump `version` here — only the debounced batch + profile merges should notify
         // `useFetchProfile` (via profiles map / pending membership), not every pending-key sync.
         return { ...prev, pending }
       })
-    }, [timelineEventsForFilter, newEvents])
+    })
 
     const subRequestsRef = useRef(subRequests)
     subRequestsRef.current = subRequests
@@ -1507,6 +1521,10 @@ const NoteList = forwardRef(
         showFeedClientFilter ? applyClientFeedFilter(filteredEvents) : filteredEvents,
       [showFeedClientFilter, applyClientFeedFilter, filteredEvents]
     )
+
+    useEffect(() => {
+      clientFilteredVisibleCountRef.current = clientFilteredEvents.length
+    }, [clientFilteredEvents.length])
 
     const visibleNoteIdsForStatsPrefetchKey = useMemo(
       () =>
@@ -1929,6 +1947,10 @@ const NoteList = forwardRef(
       timelineEstablishedCloserRef.current = null
 
       if (pauseTimelineForPrimaryFreeze) {
+        setLoading(false)
+        if (eventsRef.current.length > 0) {
+          setFeedTimelineEmptyUiReady(true)
+        }
         return () => {}
       }
 
@@ -3896,11 +3918,15 @@ const NoteList = forwardRef(
           const remaining = currentEvents.length - currentShowCount
           const step = revealBatchSize ?? REVEAL_BATCH_STEP
           const increment = Math.min(step, remaining)
-          setShowCount((prev) => prev + increment)
+          const exhausted = bufferExhaustedForVisibleQuotaRef.current
+          const noVisibleRowsYet = clientFilteredVisibleCountRef.current === 0
+          // Revealing more raw buffer rows cannot surface visible cards (aggressive filters / seen-on gate).
+          if (!(exhausted && noVisibleRowsYet)) {
+            setShowCount((prev) => prev + increment)
+          }
           // `showCount` is a *visible-row quota*, not an offset into the raw merged timeline. Skipping relay
           // fetch when `events.length - showCount` is large breaks sparse feeds (e.g. only zap receipts): the
           // buffer can hold many raw events while every visible row is already shown — we must still REQ.
-          const exhausted = bufferExhaustedForVisibleQuotaRef.current
           if (
             !exhausted &&
             currentEvents.length >= 50 &&
@@ -4188,6 +4214,14 @@ const NoteList = forwardRef(
         const ev = eventsRef.current
         const sc = showCountRef.current
         if (sc < ev.length || hasMoreRef.current) {
+          if (
+            sc < ev.length &&
+            !hasMoreRef.current &&
+            bufferExhaustedForVisibleQuotaRef.current &&
+            clientFilteredVisibleCountRef.current === 0
+          ) {
+            return
+          }
           loadMore()
         }
       }, options)

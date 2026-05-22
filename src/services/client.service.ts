@@ -3294,6 +3294,11 @@ class ClientService extends EventTarget {
     return [...new Set(out)].sort((a, b) => a.localeCompare(b))
   }
 
+  /** Kind 10243 HTTP index bases for the logged-in viewer (read + write). */
+  getViewerHttpIndexRelayBases(): readonly string[] {
+    return this.viewerHttpIndexRelayBases
+  }
+
   trackEventSeenOn(eventId: string, relay: AbstractRelay) {
     const key = canonicalSeenOnEventId(eventId)
     let set = this.pool.seenOn.get(key)

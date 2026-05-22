@@ -2277,9 +2277,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     noteStatsService.setBackgroundStatsPaused(primaryFrozen)
     if (primaryFrozen) {
       extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
-      client.interruptBackgroundQueries()
+      // Double-pane: keep the left feed's in-flight REQ alive; interrupt only when primary is hidden.
+      if (isSmallScreen || panelMode === 'single') {
+        client.interruptBackgroundQueries()
+      }
     }
-  }, [primaryFrozen])
+  }, [primaryFrozen, isSmallScreen, panelMode])
 
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({

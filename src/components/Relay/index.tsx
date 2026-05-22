@@ -15,6 +15,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'r
 import { useTranslation } from 'react-i18next'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import { buildAlexandriaEventsSearchUrlFromNotesQuery } from '@/lib/alexandria-events-search-url'
+import { stableFeedKindKey } from '@/features/feed/descriptor'
 import NotFound from '../NotFound'
 
 const Relay = forwardRef<
@@ -81,9 +82,10 @@ const Relay = forwardRef<
   }, [normalizedUrl, noteListRef])
 
   /** Default browse: explicit kinds (many strfry / small relays never return a useful kindless global REQ). */
+  const relayBrowseKindsKey = useMemo(() => stableFeedKindKey(showKinds), [showKinds])
   const relayBrowseKinds = useMemo(
     () => (showKinds.length > 0 ? showKinds : [kinds.ShortTextNote]),
-    [showKinds]
+    [relayBrowseKindsKey, showKinds]
   )
 
   const relayFeedSubRequests = useMemo<TFeedSubRequest[]>(() => {
@@ -103,7 +105,7 @@ const Relay = forwardRef<
         filter: { kinds: [...relayBrowseKinds], limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
       }
     ]
-  }, [normalizedUrl, debouncedInput, relayBrowseKinds])
+  }, [normalizedUrl, debouncedInput, relayBrowseKindsKey])
 
   const allowKindlessRelayExplore = debouncedInput.trim().length > 0
 
