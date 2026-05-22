@@ -56,18 +56,6 @@ export async function collectLocalEventsForTextSearch(
     }
   }
 
-  const idbOpts =
-    params.archiveScanMaxMs !== undefined ? { archiveScanMaxMs: params.archiveScanMaxMs } : undefined
-  const fromPubArchive = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(
-    q,
-    params.idbMergedLimit,
-    kindsArr,
-    idbOpts
-  )
-  for (const ev of fromPubArchive) {
-    push(ev)
-  }
-
   if (params.includeOtherStoresFullText) {
     const cap = params.fullTextStoreHitCap ?? 260
     try {
@@ -78,6 +66,18 @@ export async function collectLocalEventsForTextSearch(
     } catch {
       /* optional cross-store scan */
     }
+  }
+
+  const idbOpts =
+    params.archiveScanMaxMs !== undefined ? { archiveScanMaxMs: params.archiveScanMaxMs } : undefined
+  const fromPubArchive = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(
+    q,
+    params.idbMergedLimit,
+    kindsArr,
+    idbOpts
+  )
+  for (const ev of fromPubArchive) {
+    push(ev)
   }
 
   out.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))

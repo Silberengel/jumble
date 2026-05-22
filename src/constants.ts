@@ -505,6 +505,12 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr-pub.wellorder.net',
 ]
 
+/**
+ * Wait after the last keystroke before profile / mention / picker search hits the network
+ * ({@link useSearchProfiles}, @-mention dropdown, event picker, etc.).
+ */
+export const SEARCH_QUERY_DEBOUNCE_MS = 550
+
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://purplepag.es',

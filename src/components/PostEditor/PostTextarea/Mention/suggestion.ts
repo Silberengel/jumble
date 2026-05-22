@@ -1,3 +1,4 @@
+import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import {
   MENTION_NPUB_DROPDOWN_LIMIT,
   searchNpubsForMention,
@@ -22,6 +23,8 @@ export const OPEN_NEVENT_PICKER_EVENT = 'open-nevent-picker'
 let currentComponent: ReactRenderer<MentionListHandle, MentionListProps> | undefined
 let currentQuery = ''
 let backgroundSearchController: AbortController | null = null
+let mentionSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let mentionSearchGeneration = 0
 
 /** Extend range.to to include any trailing word chars (handle, NIP-05) so the full @handle is replaced. Exported for nevent picker. */
 export function extendMentionRangeToEndOfWord(editor: Editor, range: { from: number; to: number }): number {
@@ -83,29 +86,34 @@ const suggestion = {
       return [{ id: NEVENT_NADDR_PICKER_ID, mode }]
     }
     
-    // Abort previous background search if query changed
-    if (currentQuery !== q && backgroundSearchController) {
-      backgroundSearchController.abort()
-      backgroundSearchController = null
-    }
-    currentQuery = q
-    
-    // Update component as results arrive (incremental updates)
-    const updateComponent = (npubs: string[]) => {
-      if (currentComponent && currentQuery === q) {
-        const items: MentionListItem[] = npubs
-        currentComponent.updateProps({ items })
-      }
-    }
-    
-    // Start search with callback - returns cached results immediately, then updates with relay results
-    backgroundSearchController = new AbortController()
-    try {
-      const results = await searchNpubsForMention(query, MENTION_NPUB_DROPDOWN_LIMIT, updateComponent)
-      return results ?? []
-    } catch {
-      return []
-    }
+    if (mentionSearchDebounceTimer) clearTimeout(mentionSearchDebounceTimer)
+    const generation = ++mentionSearchGeneration
+
+    return new Promise<MentionListItem[]>((resolve) => {
+      mentionSearchDebounceTimer = setTimeout(async () => {
+        if (generation !== mentionSearchGeneration) return
+
+        if (currentQuery !== q && backgroundSearchController) {
+          backgroundSearchController.abort()
+          backgroundSearchController = null
+        }
+        currentQuery = q
+
+        const updateComponent = (npubs: string[]) => {
+          if (currentComponent && currentQuery === q && generation === mentionSearchGeneration) {
+            currentComponent.updateProps({ items: npubs })
+          }
+        }
+
+        backgroundSearchController = new AbortController()
+        try {
+          const results = await searchNpubsForMention(query, MENTION_NPUB_DROPDOWN_LIMIT, updateComponent)
+          if (generation === mentionSearchGeneration) resolve(results ?? [])
+        } catch {
+          if (generation === mentionSearchGeneration) resolve([])
+        }
+      }, SEARCH_QUERY_DEBOUNCE_MS)
+    })
   },
 
   render: () => {

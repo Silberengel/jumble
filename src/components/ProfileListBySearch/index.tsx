@@ -38,6 +38,7 @@ export function ProfileListBySearch({
 
   /** Initial page: must not read `pubkeySet` from state — it is still the previous search until the next paint. */
   useEffect(() => {
+    const ac = new AbortController()
     let cancelled = false
     const untilStart = dayjs().unix()
 
@@ -52,14 +53,28 @@ export function ProfileListBySearch({
         const seen = new Set<string>()
         const batch: string[] = []
 
-        const cached = await client.searchProfilesFromIndexedDBCache(search, LIMIT)
-        if (cancelled) return
-        for (const p of cached) {
-          const pk = p.pubkey.toLowerCase()
-          if (seen.has(pk)) continue
-          seen.add(pk)
-          batch.push(p.pubkey)
+        const mergeProfiles = (profiles: Awaited<ReturnType<typeof client.searchProfilesStaged>>) => {
+          for (const profile of profiles) {
+            const pk = profile.pubkey.toLowerCase()
+            if (seen.has(pk)) continue
+            seen.add(pk)
+            batch.push(profile.pubkey)
+          }
         }
+
+        const staged = await client.searchProfilesStaged(
+          search,
+          LIMIT,
+          (partial) => {
+            if (cancelled) return
+            mergeProfiles(partial)
+            setPubkeys([...batch])
+            if (partial.length > 0) setPhase('ready')
+          },
+          ac.signal
+        )
+        if (cancelled) return
+        mergeProfiles(staged)
 
         const directPk = decodeProfileSearchQueryToPubkeyHex(search)
         if (directPk && !seen.has(directPk)) {
@@ -68,32 +83,15 @@ export function ProfileListBySearch({
           void client.fetchProfileEvent(directPk).catch(() => {})
         }
 
-        const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
-          search,
-          until: untilStart,
-          limit: LIMIT
-        })
-        if (cancelled) return
-
-        for (const profile of relayProfiles) {
-          const pk = profile.pubkey.toLowerCase()
-          if (seen.has(pk)) continue
-          seen.add(pk)
-          batch.push(profile.pubkey)
-        }
-
         let nextUntil = untilStart
-        if (relayProfiles.length > 0) {
-          const last = relayProfiles[relayProfiles.length - 1]!
-          const ca = last.created_at
-          if (typeof ca === 'number' && ca > 0) {
-            nextUntil = ca - 1
-          }
+        for (const p of staged) {
+          const ca = p.created_at
+          if (typeof ca === 'number' && ca > 0 && ca < nextUntil) nextUntil = ca - 1
         }
 
         setPubkeys(batch)
         setUntil(nextUntil)
-        setHasMore(relayProfiles.length >= LIMIT)
+        setHasMore(staged.length >= LIMIT)
         setEmpty(batch.length === 0)
         setPhase('ready')
       } catch {
@@ -107,6 +105,7 @@ export function ProfileListBySearch({
 
     return () => {
       cancelled = true
+      ac.abort()
     }
   }, [search])
 
@@ -114,11 +113,15 @@ export function ProfileListBySearch({
     if (loadMoreInFlight.current || !hasMore) return
     loadMoreInFlight.current = true
     try {
-      const relayProfiles = await client.searchProfiles(PROFILE_SEARCH_RELAY_URLS, {
-        search,
-        until: untilRef.current,
-        limit: LIMIT
-      })
+      const relayProfiles = await client.searchProfiles(
+        PROFILE_SEARCH_RELAY_URLS,
+        {
+          search,
+          until: untilRef.current,
+          limit: LIMIT
+        },
+        { relaysOnly: true, includeTagFilters: false, eoseTimeout: 6_000, globalTimeout: 9_000 }
+      )
 
       if (relayProfiles.length === 0) {
         setHasMore(false)

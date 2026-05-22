@@ -15,7 +15,13 @@ export function buildProfileKind0SearchFilters(opts: {
   search: string
   limit: number
   until?: number
+  /**
+   * When false, only NIP-50 `search` (and pubkey `authors`) — avoids `#name` / `#nip05` REQ
+   * that many profile relays reject as "unrecognised filter item".
+   */
+  includeTagFilters?: boolean
 }): Filter[] {
+  const includeTagFilters = opts.includeTagFilters !== false
   const searchRaw = opts.search.trim()
   if (!searchRaw) return []
 
@@ -45,7 +51,7 @@ export function buildProfileKind0SearchFilters(opts: {
     add({ kinds: k, search: searchNorm, limit, ...time })
   }
 
-  if (searchRaw.includes('@')) {
+  if (includeTagFilters && searchRaw.includes('@')) {
     const firstToken = (searchRaw.split(/\s+/)[0] ?? searchRaw).trim()
     const nipVariants = new Set<string>()
     if (firstToken) {
@@ -66,6 +72,7 @@ export function buildProfileKind0SearchFilters(opts: {
 
   const token = searchRaw.startsWith('@') ? searchRaw.slice(1).trim() : searchRaw.trim()
   if (
+    includeTagFilters &&
     token &&
     !/\s/.test(token) &&
     token.length <= 80 &&

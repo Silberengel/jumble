@@ -4,13 +4,12 @@ import { inviteInputToHexPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SimpleUserAvatar } from '../UserAvatar'
 import { SimpleUsername } from '../Username'
 import Nip05 from '../Nip05'
 
-const SEARCH_DEBOUNCE_MS = 300
 const SEARCH_LIMIT = 10
 
 export function InviteePicker({
@@ -32,14 +31,7 @@ export function InviteePicker({
   const { t } = useTranslation()
   const { pubkey: myPubkey } = useNostr()
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(id)
-  }, [search])
-
-  const { profiles, isFetching } = useSearchProfiles(debouncedSearch, SEARCH_LIMIT)
+  const { profiles, isFetching } = useSearchProfiles(search, SEARCH_LIMIT)
   const selectedSet = new Set(value)
   const atLimit = max != null && value.length >= max
   const filteredProfiles = profiles.filter((p) => !selectedSet.has(p.pubkey) && p.pubkey !== myPubkey)
@@ -70,7 +62,12 @@ export function InviteePicker({
               key={pubkey}
               className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-sm"
             >
-              <SimpleUserAvatar userId={pubkey} className="size-5 shrink-0" />
+              <SimpleUserAvatar
+                userId={pubkey}
+                prefetchedProfile={profiles.find((p) => p.pubkey === pubkey)}
+                deferRemoteAvatar={false}
+                className="size-5 shrink-0"
+              />
               <SimpleUsername userId={pubkey} className="max-w-[120px] truncate" />
               <button
                 type="button"
@@ -119,7 +116,12 @@ export function InviteePicker({
                       className="flex w-full cursor-pointer items-center gap-2 p-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
                       onClick={() => addInvitee(profile.pubkey)}
                     >
-                      <SimpleUserAvatar userId={profile.pubkey} className="size-8 shrink-0" />
+                      <SimpleUserAvatar
+                        userId={profile.pubkey}
+                        prefetchedProfile={profile}
+                        deferRemoteAvatar={false}
+                        className="size-8 shrink-0"
+                      />
                       <div className="min-w-0 flex-1">
                         <SimpleUsername userId={profile.pubkey} className="font-medium truncate" />
                         <Nip05 pubkey={profile.pubkey} />

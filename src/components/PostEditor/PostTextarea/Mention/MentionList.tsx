@@ -125,7 +125,7 @@ const MentionList = forwardRef<MentionListHandle, MentionListProps>((props, ref)
               </span>
             ) : (
               <>
-                <SimpleUserAvatar userId={getItemId(item)} />
+                <SimpleUserAvatar userId={getItemId(item)} deferRemoteAvatar={false} />
                 <div className="flex-1 w-0">
                   <SimpleUsername userId={getItemId(item)} className="font-semibold truncate" />
                   <Nip05 pubkey={userIdToPubkey(getItemId(item))} />

@@ -1,3 +1,4 @@
+import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import { Input } from '@/components/ui/input'
 import { Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,7 +24,7 @@ export default function ProfileSearchBar({
   useEffect(() => {
     const timer = setTimeout(() => {
       onSearch(query)
-    }, 300)
+    }, SEARCH_QUERY_DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
   }, [query, onSearch])

@@ -6,13 +6,11 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { SimpleUsername } from '@/components/Username'
-import {
-  MENTION_NPUB_DROPDOWN_LIMIT,
-  searchNpubsForMention
-} from '@/services/mention-event-search.service'
+import UserItem, { UserItemSkeleton } from '@/components/UserItem'
+import { useSearchProfiles } from '@/hooks'
+import { MENTION_NPUB_DROPDOWN_LIMIT } from '@/services/mention-event-search.service'
 import { AtSign, FileSearch } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNeventPicker } from './useNeventPicker'
 
@@ -33,34 +31,12 @@ export function MentionAndEventToolbarButtons({
   const neventPicker = useNeventPicker()
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
-  const [mentionResults, setMentionResults] = useState<string[]>([])
-  const [mentionLoading, setMentionLoading] = useState(false)
-  const mentionDebounceRef = useRef<ReturnType<typeof setTimeout>>()
-
-  useEffect(() => {
-    if (!mentionOpen) return
-    const q = mentionQuery.trim()
-    if (!q) {
-      setMentionResults([])
-      return
-    }
-    mentionDebounceRef.current = setTimeout(() => {
-      setMentionLoading(true)
-      searchNpubsForMention(q, MENTION_NPUB_DROPDOWN_LIMIT)
-        .then((list) => {
-          setMentionResults(list ?? [])
-        })
-        .finally(() => setMentionLoading(false))
-    }, 200)
-    return () => {
-      if (mentionDebounceRef.current) clearTimeout(mentionDebounceRef.current)
-    }
-  }, [mentionOpen, mentionQuery])
+  const { profiles, isFetching: mentionLoading, debouncedSearch: debouncedMentionQuery } =
+    useSearchProfiles(mentionOpen ? mentionQuery : '', MENTION_NPUB_DROPDOWN_LIMIT)
 
   const closeMention = useCallback(() => {
     setMentionOpen(false)
     setMentionQuery('')
-    setMentionResults([])
   }, [])
 
   const selectNpub = useCallback(
@@ -97,24 +73,33 @@ export function MentionAndEventToolbarButtons({
             autoFocus
           />
           <div className="max-h-60 overflow-y-auto space-y-0.5">
-            {mentionLoading && (
-              <div className="py-4 text-center text-sm text-muted-foreground">{t('Searching…')}</div>
+            {mentionLoading && profiles.length === 0 && (
+              <div className="px-1 py-2 space-y-1">
+                <UserItemSkeleton hideFollowButton />
+                <UserItemSkeleton hideFollowButton />
+              </div>
             )}
-            {!mentionLoading && mentionQuery.trim() && mentionResults.length === 0 && (
+            {!mentionLoading && debouncedMentionQuery && profiles.length === 0 && (
               <div className="py-4 text-center text-sm text-muted-foreground">{t('No users found')}</div>
             )}
-            {!mentionLoading &&
-              mentionResults.map((npub) => (
-                <Button
-                  key={npub}
-                  type="button"
-                  variant="ghost"
-                  className="w-full justify-start text-left h-auto py-2 font-normal"
-                  onClick={() => selectNpub(npub)}
-                >
-                  <SimpleUsername userId={npub} className="text-sm truncate" />
-                </Button>
-              ))}
+            {profiles.map((profile) => (
+              <Button
+                key={profile.pubkey}
+                type="button"
+                variant="ghost"
+                className="w-full justify-start text-left h-auto py-1 px-1 font-normal"
+                onClick={() => selectNpub(profile.npub)}
+              >
+                <UserItem
+                  pubkey={profile.pubkey}
+                  hideFollowButton
+                  hideNip05
+                  prefetchedProfile={profile}
+                  deferRemoteAvatar={false}
+                  className="pointer-events-none w-full"
+                />
+              </Button>
+            ))}
           </div>
         </PopoverContent>
       </Popover>

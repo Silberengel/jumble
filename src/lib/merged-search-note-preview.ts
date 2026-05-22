@@ -20,6 +20,7 @@ export function mergedSearchNoteHasPreviewBody(ev: Event): boolean {
   const k = ev.kind
   if (k === kinds.ShortTextNote || k === ExtendedKind.COMMENT) {
     if (ev.tags.some((t) => t[0] === 'subject' && String(t[1] ?? '').trim().length > 0)) return true
+    if (ev.tags.some((t) => t[0] === 't' && String(t[1] ?? '').trim().length > 0)) return true
     return Boolean(ev.content?.trim().length)
   }
   if (k === kinds.Metadata) {

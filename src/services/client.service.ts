@@ -3661,7 +3661,18 @@ class ClientService extends EventTarget {
 
   /** =========== Profile =========== */
 
-  async searchProfiles(relayUrls: string[], filter: Filter): Promise<TProfile[]> {
+  async searchProfiles(
+    relayUrls: string[],
+    filter: Filter,
+    options?: {
+      relaysOnly?: boolean
+      includeTagFilters?: boolean
+      signal?: AbortSignal
+      /** Override query timeouts (profile-relay step uses shorter budgets). */
+      eoseTimeout?: number
+      globalTimeout?: number
+    }
+  ): Promise<TProfile[]> {
     void this.ensureProfileSearchIndexFromIdb()
     const searchStr = typeof filter.search === 'string' ? filter.search.trim() : ''
     const normalizedAll = dedupeNormalizeRelayUrlsOrdered(
@@ -3676,7 +3687,7 @@ class ClientService extends EventTarget {
       ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
     ])
     let urls = normalizedAll
-    if (searchStr.length > 0) {
+    if (searchStr.length > 0 && !options?.relaysOnly) {
       const searchCapable = normalizedAll.filter(
         (u) => searchableSet.has(u) || nip66Service.isRelaySearchable(u)
       )
@@ -3693,7 +3704,8 @@ class ClientService extends EventTarget {
             const built = buildProfileKind0SearchFilters({
               search: searchStr,
               limit: limitCap,
-              until: filter.until
+              until: filter.until,
+              includeTagFilters: options?.includeTagFilters
             })
             return built.length > 0 ? built : [{ ...filter, kinds: [...METADATA_CO_FETCH_KINDS] }]
           })()
@@ -3705,14 +3717,18 @@ class ClientService extends EventTarget {
       (f) => typeof f.search === 'string' && f.search.trim().length > 0
     )
     const usesAuthorsLookup = filtersArr.some((f) => (f.authors?.length ?? 0) > 0)
+    if (options?.signal?.aborted) return []
+
     const events = await this.queryService.query(urls, queryFilter, undefined, {
       replaceableRace: false,
-      eoseTimeout: usesNip50TextSearch ? 10_000 : 4500,
-      globalTimeout: usesNip50TextSearch
-        ? NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000
-        : 9000,
+      eoseTimeout:
+        options?.eoseTimeout ?? (usesNip50TextSearch ? 10_000 : 4500),
+      globalTimeout:
+        options?.globalTimeout ??
+        (usesNip50TextSearch ? NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000 : 9000),
       relayOpSource: 'ClientService.searchProfiles',
-      foreground: usesNip50TextSearch || usesAuthorsLookup
+      foreground: usesNip50TextSearch || usesAuthorsLookup,
+      signal: options?.signal
     })
 
     const byPk = new Map<string, NEvent>()
@@ -3731,6 +3747,106 @@ class ClientService extends EventTarget {
     await Promise.allSettled(profileEvents.map((profile) => this.addUsernameToIndex(profile)))
     profileEvents.forEach((profile) => this.updateProfileEventCache(profile))
     return profileEvents.map((profileEvent) => getProfileFromEvent(profileEvent))
+  }
+
+  private profileRelaySearchUrls(): string[] {
+    return dedupeNormalizeRelayUrlsOrdered(
+      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    )
+  }
+
+  private nip50ProfileIndexRelayUrls(): string[] {
+    return dedupeNormalizeRelayUrlsOrdered([
+      ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
+      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
+    ])
+  }
+
+  private profileSearchStagedGeneration = 0
+  private profileSearchStagedAbort: AbortController | null = null
+
+  /**
+   * Staged profile discovery: local cache/DB → profile relays only → NIP-50 index relays
+   * only when the first two stages returned nothing. Calls `onUpdate` after each stage.
+   * Aborts the previous in-flight staged search when a new query starts.
+   */
+  async searchProfilesStaged(
+    query: string,
+    limit: number = 50,
+    onUpdate?: (profiles: TProfile[]) => void,
+    externalSignal?: AbortSignal
+  ): Promise<TProfile[]> {
+    const q = query.trim()
+    if (!q || limit <= 0) return []
+
+    this.profileSearchStagedAbort?.abort()
+    const runAbort = new AbortController()
+    this.profileSearchStagedAbort = runAbort
+    const generation = ++this.profileSearchStagedGeneration
+
+    const isStale = () =>
+      generation !== this.profileSearchStagedGeneration ||
+      runAbort.signal.aborted ||
+      externalSignal?.aborted === true
+
+    const seen = new Set<string>()
+    const out: TProfile[] = []
+
+    const merge = (batch: TProfile[]) => {
+      for (const p of batch) {
+        const pk = p.pubkey.toLowerCase()
+        if (seen.has(pk)) continue
+        seen.add(pk)
+        out.push(p)
+        if (out.length >= limit) break
+      }
+    }
+
+    const emit = () => {
+      if (!isStale() && onUpdate) onUpdate(out.slice(0, limit))
+    }
+
+    const relaySignal = externalSignal
+      ? AbortSignal.any([runAbort.signal, externalSignal])
+      : runAbort.signal
+
+    merge(await this.searchProfilesFromLocal(q, limit))
+    if (isStale()) return out.slice(0, limit)
+    emit()
+    if (out.length >= limit) return out.slice(0, limit)
+
+    const needAfterLocal = limit - out.length
+    merge(
+      await this.searchProfiles(
+        this.profileRelaySearchUrls(),
+        { search: q, limit: needAfterLocal },
+        {
+          relaysOnly: true,
+          includeTagFilters: false,
+          signal: relaySignal,
+          eoseTimeout: 6_000,
+          globalTimeout: 9_000
+        }
+      )
+    )
+    if (isStale()) return out.slice(0, limit)
+    emit()
+    if (out.length >= limit) return out.slice(0, limit)
+    if (out.length > 0) return out.slice(0, limit)
+
+    const indexUrls = this.nip50ProfileIndexRelayUrls()
+    if (indexUrls.length > 0) {
+      merge(
+        await this.searchProfiles(
+          indexUrls,
+          { search: q, limit },
+          { signal: relaySignal, includeTagFilters: true }
+        )
+      )
+      if (!isStale()) emit()
+    }
+
+    return out.slice(0, limit)
   }
 
   async searchNpubsFromLocal(query: string, limit: number = 100) {
@@ -3891,18 +4007,6 @@ class ClientService extends EventTarget {
       if (np) addNpub(np)
     }
 
-    // Relay query starts immediately so it can run in parallel with local + follow work (slow relays).
-    const profileSearchRelayUrls = dedupeNormalizeRelayUrlsOrdered(
-      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    )
-    const relayTask =
-      q.length >= 1
-        ? this.searchProfiles(profileSearchRelayUrls, {
-            search: q,
-            limit
-          }).catch(() => [] as TProfile[])
-        : Promise.resolve([] as TProfile[])
-
     // 1. Local index first (FlexSearch + session) — fills the @-mention list immediately.
     //    Cap how many local hits we take so we never fill `limit` here alone; otherwise we returned
     //    early and skipped relay search entirely (bad for handle search beyond the local index).
@@ -3989,30 +4093,41 @@ class ClientService extends EventTarget {
       return out
     }
 
-    // 3. Relay search — merge after local + follow so ordering stays local → follows → wider index.
-    //    relayTask was started at the beginning; do not await before return (first paint stays fast).
-    if (q.length >= 1) {
-      relayTask
-        .then((relayProfiles) => {
-          for (const p of relayProfiles) {
+    // 3. Profile relays only (purplepag.es, profiles.nostr1.com, …) — not NIP-50 index relays.
+    if (q.length >= 1 && out.length < limit) {
+      try {
+        const relayProfiles = await this.searchProfiles(
+          this.profileRelaySearchUrls(),
+          { search: q, limit: limit - out.length },
+          { relaysOnly: true, includeTagFilters: false, eoseTimeout: 6_000, globalTimeout: 9_000 }
+        )
+        for (const p of relayProfiles) {
+          const npub = pubkeyToNpub(p.pubkey)
+          if (!npub) continue
+          if (addNpub(npub)) updateIfNeeded()
+          if (out.length >= limit) break
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    // 4. NIP-50 index relays only when local + profile relays found nothing.
+    if (q.length >= 1 && out.length === 0) {
+      const indexUrls = this.nip50ProfileIndexRelayUrls()
+      if (indexUrls.length > 0) {
+        try {
+          const indexProfiles = await this.searchProfiles(indexUrls, { search: q, limit })
+          for (const p of indexProfiles) {
             const npub = pubkeyToNpub(p.pubkey)
             if (!npub) continue
-            if (addNpub(npub)) {
-              updateIfNeeded()
-            }
+            if (addNpub(npub)) updateIfNeeded()
             if (out.length >= limit) break
           }
-
-          relayProfiles.forEach((p) => {
-            const npub = pubkeyToNpub(p.pubkey)
-            if (npub) {
-              this.replaceableEventService.fetchProfileEvent(npub).catch(() => {})
-            }
-          })
-        })
-        .catch(() => {
-          // relay search is best-effort
-        })
+        } catch {
+          /* best-effort */
+        }
+      }
     }
 
     // Prime profile cache for cached results

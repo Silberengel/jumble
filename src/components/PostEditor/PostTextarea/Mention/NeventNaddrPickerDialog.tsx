@@ -1,5 +1,7 @@
 import * as React from 'react'
+import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import { getNoteBech32Id } from '@/lib/event'
+import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
 import client from '@/services/client.service'
 import {
   searchEventsForPicker,
@@ -42,18 +44,20 @@ function NeventNaddrPickerDialog({
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [events, setEvents] = useState<NEvent[]>([])
   const [loading, setLoading] = useState(false)
+  const [relayPending, setRelayPending] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setQuery('')
     setDebouncedQuery('')
     setEvents([])
+    setRelayPending(false)
     if (initialMode !== undefined) setMode(initialMode)
   }, [open, initialMode])
 
   useEffect(() => {
     if (!open) return
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300)
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_QUERY_DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [open, query])
 
@@ -61,17 +65,28 @@ function NeventNaddrPickerDialog({
     if (!open || !debouncedQuery) {
       setEvents([])
       setLoading(false)
+      setRelayPending(false)
       return
     }
     let cancelled = false
     setLoading(true)
-    searchEventsForPicker(debouncedQuery, 20, mode, undefined)
+    setRelayPending(true)
+    setEvents([])
+    searchEventsForPicker(debouncedQuery, 20, mode, undefined, (partial) => {
+      if (cancelled) return
+      const visible = partial.filter(mergedSearchNoteHasPreviewBody).slice(0, 15) as NEvent[]
+      setEvents(visible)
+      if (visible.length > 0) setLoading(false)
+    })
       .then((list) => {
         if (cancelled) return
-        setEvents(list.slice(0, 15) as NEvent[])
+        setEvents(list.filter(mergedSearchNoteHasPreviewBody).slice(0, 15) as NEvent[])
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setRelayPending(false)
+        }
       })
     return () => {
       cancelled = true
@@ -136,20 +151,22 @@ function NeventNaddrPickerDialog({
         </div>
         <div className="min-h-[200px] max-h-[50vh] border rounded-md overflow-y-auto overflow-x-hidden">
           <div className="p-2 space-y-1">
-            {loading && (
+            {loading && events.length === 0 && (
               <div className="space-y-2 p-2" role="status" aria-busy="true" aria-live="polite">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Skeleton key={i} className="h-14 w-full rounded-md" />
                 ))}
               </div>
             )}
-            {!loading && debouncedQuery && events.length === 0 && (
+            {relayPending && events.length > 0 && (
+              <p className="text-xs text-muted-foreground text-center py-1">{t('Searching…')}</p>
+            )}
+            {!loading && !relayPending && debouncedQuery && events.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-6">
                 {t('No events found')}
               </p>
             )}
-            {!loading &&
-              events.map((ev: NEvent) => (
+            {events.map((ev: NEvent) => (
                 <Button
                   key={ev.id}
                   variant="ghost"

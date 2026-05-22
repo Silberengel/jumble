@@ -39,9 +39,11 @@ const SearchBar = forwardRef<
   const { navigateToNote } = useSmartNoteNavigation()
   const { navigateToHashtag } = useSmartHashtagNavigation()
   const { isSmallScreen } = useScreenSize()
-  const [debouncedInput, setDebouncedInput] = useState(input)
-  const { profiles, isFetching: isFetchingProfiles } = useSearchProfiles(debouncedInput, 5)
   const [searching, setSearching] = useState(false)
+  const { profiles, isFetching: isFetchingProfiles, debouncedSearch } = useSearchProfiles(
+    searching ? input : '',
+    5
+  )
   const [displayList, setDisplayList] = useState(false)
   const [selectableOptions, setSelectableOptions] = useState<TSearchParams[]>([])
   const [selectedIndex, setSelectedIndex] = useState(-1)
@@ -77,16 +79,6 @@ const SearchBar = forwardRef<
       onSearch(null)
     }
     setSelectedIndex(-1)
-  }, [input])
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedInput(input)
-    }, 500)
-
-    return () => {
-      clearTimeout(handler)
-    }
   }, [input])
 
   const blur = () => {
@@ -179,7 +171,7 @@ const SearchBar = forwardRef<
         profile
       }))
     ] as TSearchParams[])
-  }, [input, debouncedInput, profiles])
+  }, [input, debouncedSearch, profiles])
 
   const list = useMemo(() => {
     if (selectableOptions.length <= 0) {
@@ -542,8 +534,10 @@ function ProfileItem({
       <UserItem
         pubkey={userId}
         hideFollowButton
+        hideNip05
         className="pointer-events-none"
         prefetchedProfile={prefetchedProfile}
+        deferRemoteAvatar={false}
       />
     </div>
   )

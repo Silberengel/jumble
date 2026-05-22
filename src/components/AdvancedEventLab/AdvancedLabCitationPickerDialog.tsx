@@ -1,3 +1,4 @@
+import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -62,7 +63,7 @@ export function AdvancedLabCitationPickerDialog({
 
   useEffect(() => {
     if (!open) return
-    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300)
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_QUERY_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [open, query])
 

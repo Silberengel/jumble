@@ -791,7 +791,8 @@ export class EventService {
     const buf: NEvent[] = []
     let scanned = 0
 
-    for (const [, event] of this.sessionEventCache.entries()) {
+    // LRU order: most recently seen / published first (Map insertion order is not recency).
+    for (const event of this.sessionEventCache.values()) {
       if (++scanned > SESSION_SEARCH_MAX_SCAN) break
       if (shouldDropEventOnIngest(event)) continue
       if (kindSet && !kindSet.has(event.kind)) continue
