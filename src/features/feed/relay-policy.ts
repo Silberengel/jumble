@@ -10,6 +10,7 @@ import {
   relayFiltersUseCapitalLetterTagKeys,
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import type { TSubRequestFilter } from '@/types'
 
@@ -158,7 +159,6 @@ export function applyFeedRelayPolicy(
   inputLayers: readonly FeedRelayLayer[],
   context: FeedRelayPolicyContext
 ): FeedRelayPolicyResult {
-  const blocked = normalizedSet(context.blockedRelays)
   const socialExempt = normalizedSet(context.socialKindBlockedExemptRelays)
   const socialFilter = shouldApplySocialFilter(context)
   const extendedFilter = shouldApplyExtendedTagFilter(context)
@@ -182,7 +182,7 @@ export function applyFeedRelayPolicy(
         addDrop(dropped, normalized, layer.source, 'duplicate')
         continue
       }
-      if (blocked.has(key)) {
+      if (isRelayBlockedByUser(normalized, context.blockedRelays)) {
         addDrop(dropped, normalized, layer.source, 'user-blocked')
         continue
       }

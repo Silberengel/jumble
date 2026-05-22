@@ -1,4 +1,4 @@
-import { normalizeUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +18,7 @@ export default function AddBlockedRelay() {
 
   const saveRelay = async () => {
     if (!input || isLoading) return
-    const normalizedUrl = normalizeUrl(input)
+    const normalizedUrl = normalizeAnyRelayUrl(input)
     if (!normalizedUrl) {
       setErrorMsg(t('Invalid URL'))
       setSuccessMsg('')

@@ -28,7 +28,13 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
-import { canonicalRelaySessionKey, isHttpRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import {
+  canonicalRelaySessionKey,
+  isHttpRelayUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  normalizeUrl
+} from '@/lib/url'
 import { RelaySubscribeOpBatch, type RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import type { Filter, Event as NEvent } from 'nostr-tools'
@@ -92,8 +98,8 @@ function logQueryReqConsolidatedEnd(
   }
 
   const relayTotal = new Set([
-    ...inputRelays.map((u) => normalizeUrl(u) || u),
-    ...httpBases.map((u) => normalizeUrl(u) || u)
+    ...inputRelays.map((u) => normalizeAnyRelayUrl(u) || u),
+    ...httpBases.map((u) => normalizeHttpRelayUrl(u) || u)
   ]).size
 
   let relaysWithHits = 0
@@ -101,7 +107,7 @@ function logQueryReqConsolidatedEnd(
     const hitUrls = new Set<string>()
     for (const e of events) {
       for (const u of getSeenForEvent(e.id)) {
-        hitUrls.add(normalizeUrl(u) || u)
+        hitUrls.add(normalizeAnyRelayUrl(u) || u)
       }
     }
     relaysWithHits = hitUrls.size
@@ -482,7 +488,9 @@ export class QueryService {
 
     const reqId = ++queryReqSeq
     const source = options?.relayOpSource ?? 'QueryService.query'
-    const inputRelaysOrdered = Array.from(new Set(urls.map((u) => normalizeUrl(u) || u).filter(Boolean)))
+    const inputRelaysOrdered = Array.from(
+      new Set(urls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))
+    )
 
     const foreground = options?.foreground === true
 

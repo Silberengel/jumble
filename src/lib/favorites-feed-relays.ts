@@ -7,6 +7,7 @@ import {
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
 import type { TFeedSubRequest } from '@/types'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import {
   buildPrioritizedReadRelayUrls,
@@ -20,8 +21,9 @@ import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
 
-const blockedSet = (blockedRelays: string[]) =>
-  new Set(blockedRelays.map((b) => normalizeAnyRelayUrl(b) || b))
+function isBlockedRelay(url: string, blockedRelays: string[]): boolean {
+  return isRelayBlockedByUser(url, blockedRelays)
+}
 
 /**
  * Logged-in user’s favorite relays (kind 10012 `relay` tags via {@link useFavoriteRelays}, plus bootstrap defaults
@@ -45,10 +47,9 @@ export function getFavoritesFeedRelayUrls(
   blockedRelays: string[],
   useGlobalFavoriteDefaults = true
 ): string[] {
-  const blocked = blockedSet(blockedRelays)
   const visible = favoriteRelays.filter((r) => {
     const k = normalizeAnyRelayUrl(r) || r
-    return k && !blocked.has(k)
+    return k && !isBlockedRelay(r, blockedRelays)
   })
   const base = visible.length > 0 ? visible : useGlobalFavoriteDefaults ? DEFAULT_FAVORITE_RELAYS : []
   return feedRelayPolicyUrls(
@@ -70,13 +71,12 @@ export function mergeRelayUrlLayers(
   layers: readonly (readonly string[])[],
   blockedRelays: string[]
 ): string[] {
-  const blocked = blockedSet(blockedRelays)
   const seen = new Set<string>()
   const out: string[] = []
   for (const layer of layers) {
     for (const u of layer) {
       const k = normalizeAnyRelayUrl(u) || u
-      if (!k || blocked.has(k) || seen.has(k)) continue
+      if (!k || isBlockedRelay(u, blockedRelays) || seen.has(k)) continue
       seen.add(k)
       out.push(k)
     }

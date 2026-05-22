@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { normalizeUrl, isLocalNetworkUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeHttpRelayUrl } from '@/lib/url'
 import { useNostr } from '@/providers/NostrProvider'
 import { TMailboxRelay, TMailboxRelayScope } from '@/types'
 import { useEffect, useState } from 'react'
@@ -98,7 +98,7 @@ export default function MailboxSetting() {
 
   const saveNewMailboxRelay = (url: string) => {
     if (url === '') return null
-    const normalizedUrl = normalizeUrl(url)
+    const normalizedUrl = normalizeHttpRelayUrl(url)
     if (!normalizedUrl) {
       return t('Invalid relay URL')
     }

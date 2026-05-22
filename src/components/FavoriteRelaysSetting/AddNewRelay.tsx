@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { normalizeUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,7 +15,7 @@ export default function AddNewRelay() {
 
   const saveRelay = async () => {
     if (!input || isLoading) return
-    const normalizedUrl = normalizeUrl(input)
+    const normalizedUrl = normalizeAnyRelayUrl(input)
     if (!normalizedUrl) {
       setErrorMsg(t('Invalid URL'))
       return

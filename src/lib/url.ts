@@ -73,70 +73,61 @@ export function devProxyCorsProblematicHttpsIndexRelayBase(normalizedBase: strin
   return `${window.location.origin}/dev-cors-index-relay`
 }
 
+/** Relay URLs must include an explicit `http:`, `https:`, `ws:`, or `wss:` scheme (no bare hostnames). */
+export function relayUrlHasExplicitScheme(url: string): boolean {
+  return /^(https?|wss?):\/\//i.test(url.trim())
+}
+
 /**
- * Normalize relay URL for deduplication: WebSocket URLs via {@link normalizeUrl}, HTTPS index relays via {@link normalizeHttpRelayUrl}.
+ * Normalize a relay URL without changing its transport: `https://` stays HTTPS, `wss://` stays WebSocket.
  */
 export function normalizeAnyRelayUrl(url: string): string {
-  if (isHttpRelayUrl(url)) return normalizeHttpRelayUrl(url) || ''
-  return normalizeUrl(url) || ''
-}
-
-/**
- * Stable key for per-relay session stats: HTTP NIP-86 bases map to the same host’s
- * `wss://…` URL so `https://nos.lol` and `wss://nos.lol` share one bucket.
- */
-export function canonicalRelaySessionKey(url: string): string {
-  const stepped = (normalizeAnyRelayUrl(url) || url.trim()).trim()
-  if (!stepped) return ''
-  if (isHttpRelayUrl(stepped)) {
-    const base = normalizeHttpRelayUrl(stepped) || stepped
-    try {
-      const u = new URL(base)
-      const host = u.hostname + (u.port ? `:${u.port}` : '')
-      return normalizeUrl(`wss://${host}`) || normalizeAnyRelayUrl(stepped) || base
-    } catch {
-      return normalizeAnyRelayUrl(stepped) || stepped
-    }
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (!relayUrlHasExplicitScheme(trimmed)) {
+    logger.warn('Relay URL requires http:, https:, ws:, or wss: prefix', { url: trimmed })
+    return ''
   }
-  return stepped
+  if (isHttpRelayUrl(trimmed)) return normalizeHttpRelayUrl(trimmed) || ''
+  if (isWebsocketUrl(trimmed)) return normalizeUrl(trimmed) || ''
+  logger.warn('Unsupported relay URL scheme', { url: trimmed })
+  return ''
 }
 
-// copy from nostr-tools/utils
+/** Stable key for per-relay session stats (scheme preserved; no https→wss aliasing). */
+export function canonicalRelaySessionKey(url: string): string {
+  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+}
+
+// copy from nostr-tools/utils — WebSocket relays only (`ws:` / `wss:`); never rewrite http(s) schemes.
 export function normalizeUrl(url: string): string {
   try {
-    if (url.indexOf('://') === -1) {
-      if (url.startsWith('localhost:') || url.startsWith('localhost/')) {
-        url = 'ws://' + url
-      } else {
-        url = 'wss://' + url
-      }
-    }
-    
-    // Parse the URL first to validate it
-    const p = new URL(url)
-    stripTrailingCommasFromHostname(p)
-
-    // Check if URL has hash fragments (these are not valid for relay URLs)
-    // Note: Query parameters are allowed (e.g., filter.nostr.wine uses ?broadcast=true/false)
-    const hasHashFragment = url.includes('#')
-    
-    // Block URLs with hash fragments (these are not valid for relays)
-    if (hasHashFragment) {
-      logger.warn('Skipping URL with hash fragment (not a relay)', { url })
+    const trimmed = url.trim()
+    if (!trimmed) return ''
+    if (!trimmed.includes('://')) {
+      logger.warn('WebSocket relay URL requires ws: or wss: prefix', { url: trimmed })
       return ''
     }
-    
+
+    const p = new URL(trimmed)
+    stripTrailingCommasFromHostname(p)
+
+    if (p.protocol !== 'ws:' && p.protocol !== 'wss:') {
+      logger.warn('normalizeUrl expects ws: or wss: (use normalizeHttpRelayUrl for http(s))', { url: trimmed })
+      return ''
+    }
+
+    const hasHashFragment = trimmed.includes('#')
+    if (hasHashFragment) {
+      logger.warn('Skipping URL with hash fragment (not a relay)', { url: trimmed })
+      return ''
+    }
+
     p.pathname = p.pathname.replace(/\/+/g, '/')
     if (p.pathname.endsWith('/')) p.pathname = p.pathname.slice(0, -1)
-    if (p.protocol === 'https:') {
-      p.protocol = 'wss:'
-    } else if (p.protocol === 'http:') {
-      p.protocol = 'ws:'
-    }
-    
-    // After protocol normalization, validate it's actually a websocket URL
+
     if (!isWebsocketUrl(p.toString())) {
-      logger.warn('Skipping non-websocket URL', { url })
+      logger.warn('Skipping non-websocket URL', { url: trimmed })
       return ''
     }
     
@@ -168,16 +159,20 @@ export function normalizeUrl(url: string): string {
 
 export function normalizeHttpUrl(url: string): string {
   try {
-    if (url.indexOf('://') === -1) url = 'https://' + url
-    const p = new URL(url)
+    const trimmed = url.trim()
+    if (!trimmed) return ''
+    if (!trimmed.includes('://')) {
+      logger.warn('HTTP relay URL requires http: or https: prefix', { url: trimmed })
+      return ''
+    }
+    const p = new URL(trimmed)
     stripTrailingCommasFromHostname(p)
+    if (p.protocol !== 'http:' && p.protocol !== 'https:') {
+      logger.warn('normalizeHttpUrl expects http: or https: (use normalizeUrl for ws(s))', { url: trimmed })
+      return ''
+    }
     p.pathname = p.pathname.replace(/\/+/g, '/')
     if (p.pathname.endsWith('/')) p.pathname = p.pathname.slice(0, -1)
-    if (p.protocol === 'wss:') {
-      p.protocol = 'https:'
-    } else if (p.protocol === 'ws:') {
-      p.protocol = 'http:'
-    }
     if (
       (p.port === '80' && p.protocol === 'http:') ||
       (p.port === '443' && p.protocol === 'https:')

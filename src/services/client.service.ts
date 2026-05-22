@@ -427,6 +427,9 @@ class ClientService extends EventTarget {
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
       }
+      if (isHttpRelayUrl(url)) {
+        throw new Error(`[http-relay] ${url} uses the HTTPS index API, not WebSocket`)
+      }
       const n = normalizeUrl(url) || url
       const base = params?.connectionTimeout ?? RELAY_POOL_CONNECTION_TIMEOUT_MS
       const connectionTimeout = READ_ONLY_RELAY_CONNECT_BOOST_URLS.has(n)

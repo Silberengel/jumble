@@ -14,12 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatPubkey, formatNpub, generateImageByPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import { useCacheBrowser } from '@/contexts/cache-browser-context'
+import { openBrowseCacheFromRegistry } from '@/contexts/cache-browser-context'
+import { toCacheSettings } from '@/lib/link'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
+import { useSmartSettingsNavigation } from '@/PageManager'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
@@ -191,7 +193,12 @@ function TitlebarAccountMenu({
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
-  const { openBrowseCache } = useCacheBrowser()
+  const { navigateToSettings } = useSmartSettingsNavigation()
+  const onBrowseCache = useCallback(() => {
+    if (!openBrowseCacheFromRegistry()) {
+      navigateToSettings(toCacheSettings())
+    }
+  }, [navigateToSettings])
   const [loginDialogOpen, setLoginDialogOpen] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
@@ -202,13 +209,13 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
         <SidebarAccountMenu
           onSwitchAccount={() => setLoginDialogOpen(true)}
           onLogoutClick={() => setLogoutDialogOpen(true)}
-          onBrowseCache={openBrowseCache}
+          onBrowseCache={onBrowseCache}
         />
       ) : (
         <TitlebarAccountMenu
           onSwitchAccount={() => setLoginDialogOpen(true)}
           onLogoutClick={() => setLogoutDialogOpen(true)}
-          onBrowseCache={openBrowseCache}
+          onBrowseCache={onBrowseCache}
         />
       )
   } else if (variant === 'sidebar') {

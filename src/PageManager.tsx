@@ -7,6 +7,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
+import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
 import { NavigationService } from '@/services/navigation.service'
@@ -1149,6 +1150,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     currentPrimaryPageRef.current = currentPrimaryPage
   }, [currentPrimaryPage])
   const navigationCounterRef = useRef(0)
+  const goBackRef = useRef<() => void>(() => {})
+  const [mobilePrimarySwipeRoot, setMobilePrimarySwipeRoot] = useState<HTMLElement | null>(null)
   const primaryPanelRefreshRef = useRef<(() => void) | null>(null)
   const registerPrimaryPanelRefresh = useCallback((fn: (() => void) | null) => {
     primaryPanelRefreshRef.current = fn
@@ -1967,6 +1970,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     window.history.back()
   }
+  goBackRef.current = goBack
+
+  useMobileSwipeBackOnElement(
+    isSmallScreen && primaryNoteView ? mobilePrimarySwipeRoot : null,
+    () => goBackRef.current(),
+    { enabled: Boolean(isSmallScreen && primaryNoteView) }
+  )
 
   const pushSecondaryPage = (url: string, index?: number) => {
     logger.component('PageManager', 'pushSecondaryPage called', { url })
@@ -2100,6 +2110,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         setSecondaryStack([])
       })
       secondaryStackRef.current = []
+      replaceHistoryWithPrimaryPageUrl(
+        currentPrimaryPage,
+        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
+      )
 
       const savedFeedState = savedFeedStateRef.current.get(currentPrimaryPage)
 
@@ -2228,7 +2242,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             <LiveActivitiesStrip placement="mobile" />
             {primaryNoteView ? (
               // Show primary note view with back button on mobile
-              <div className="flex min-h-0 flex-1 flex-col h-full w-full">
+              <div
+                ref={setMobilePrimarySwipeRoot}
+                className="flex min-h-0 flex-1 flex-col h-full w-full touch-pan-y"
+              >
                 <ImwaldBrandBar />
                 <div className="flex gap-1 border-b border-border p-1 items-center justify-between font-semibold">
                   <div className="flex min-w-0 flex-1 items-center">
@@ -2290,7 +2307,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               <NoteDrawer
                 open={drawerOpen}
                 initialEvent={drawerInitialEvent}
-                onOpenChange={setDrawerOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setDrawerOpen(true)
+                    return
+                  }
+                  popSecondaryPage()
+                }}
                 noteId={drawerNoteId}
               />
             )}

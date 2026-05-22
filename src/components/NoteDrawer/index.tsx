@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import NotePage from '@/pages/secondary/NotePage'
@@ -13,9 +14,12 @@ interface NoteDrawerProps {
 }
 
 export default function NoteDrawer({ open, onOpenChange, noteId, initialEvent }: NoteDrawerProps) {
-  const { currentIndex } = useSecondaryPage()
+  const { currentIndex, pop } = useSecondaryPage()
   const [displayNoteId, setDisplayNoteId] = useState<string | null>(noteId)
+  const [swipeRoot, setSwipeRoot] = useState<HTMLElement | null>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  useMobileSwipeBackOnElement(open ? swipeRoot : null, pop, { enabled: open })
 
   useEffect(() => {
     // Clear any pending timeout
@@ -57,7 +61,7 @@ export default function NoteDrawer({ open, onOpenChange, noteId, initialEvent }:
         onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
         onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
       >
-        <div className="min-h-full">
+        <div ref={setSwipeRoot} className="min-h-full touch-pan-y">
           <NotePage
             id={displayNoteId}
             index={currentIndex}

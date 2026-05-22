@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toRelay } from '@/lib/link'
-import { isWebsocketUrl, normalizeUrl } from '@/lib/url'
+import { isWebsocketUrl, normalizeAnyRelayUrl } from '@/lib/url'
 import { useSecondaryPage } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { CircleX } from 'lucide-react'
@@ -36,7 +36,7 @@ export default function RelayUrls({ relaySetId }: { relaySetId: string }) {
 
   const saveNewRelayUrl = async () => {
     if (newRelayUrl === '' || isLoading) return
-    const normalizedUrl = normalizeUrl(newRelayUrl)
+    const normalizedUrl = normalizeAnyRelayUrl(newRelayUrl)
     if (!normalizedUrl) {
       return setNewRelayUrlError(t('Invalid relay URL'))
     }

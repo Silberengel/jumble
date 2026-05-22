@@ -25,7 +25,7 @@ import type { Event } from 'nostr-tools'
 export const AUTHOR_NIP65_RELAY_CAP = 2
 
 function relayKey(url: string): string {
-  return (normalizeUrl(url) || normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
 }
 
 /**
@@ -159,10 +159,9 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     personalRelayUrls.push(url)
   }
   const normalizedBlocked = new Set(
-    (blockedRelays || []).map(url => {
-      const normalized = normalizeUrl(url) || url
-      return normalized.toLowerCase()
-    }).filter((url): url is string => !!url)
+    (blockedRelays || [])
+      .map((url) => (normalizeAnyRelayUrl(url) || url).toLowerCase())
+      .filter(Boolean)
   )
 
   const addRelay = (url: string | undefined) => {
@@ -537,7 +536,7 @@ export async function buildPollResultsReadRelayUrls(options: {
 
   const normalizedBlocked = new Set(
     blockedRelays
-      .map((url) => (normalizeUrl(url) || url).toLowerCase())
+      .map((url) => (normalizeAnyRelayUrl(url) || url).toLowerCase())
       .filter(Boolean)
   )
 

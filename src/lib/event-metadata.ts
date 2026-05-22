@@ -6,6 +6,7 @@ import { getLatestEvent, getReplaceableEventIdentifier } from './event'
 import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightning'
 import { formatPubkey, pubkeyToNpub } from './pubkey'
 import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { isHttpRelayUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeHttpUrl, normalizeUrl } from './url'
 import { isTorBrowser } from './utils'
 import logger from '@/lib/logger'
@@ -72,9 +73,6 @@ export function getRelayListFromEvent(
   const torBrowserDetected = isTorBrowser()
   const relayList = { write: [], read: [], originalRelays: [] } as Pick<TRelayList, 'write' | 'read' | 'originalRelays'>
   
-  // Normalize blocked relays for comparison
-  const normalizedBlockedRelays = (blockedRelays || []).map(url => normalizeUrl(url) || url)
-  
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
     // Filter out empty, invalid, or malformed URLs
     if (!url || typeof url !== 'string' || url.trim() === '' || url === 'ws://' || url === 'wss://') return
@@ -83,8 +81,7 @@ export function getRelayListFromEvent(
     const normalizedUrl = normalizeUrl(url)
     if (!normalizedUrl) return
     
-    // Filter out blocked relays
-    if (normalizedBlockedRelays.includes(normalizedUrl)) return
+    if (isRelayBlockedByUser(normalizedUrl, blockedRelays)) return
 
     const scope = type === 'read' ? 'read' : type === 'write' ? 'write' : 'both'
     relayList.originalRelays.push({ url: normalizedUrl, scope })
@@ -135,7 +132,6 @@ export function getRelayListReadFromEventNoFastFallback(
   if (!event) return []
 
   const torBrowserDetected = isTorBrowser()
-  const normalizedBlockedRelays = (blockedRelays || []).map((url) => normalizeUrl(url) || url)
   const read: string[] = []
 
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
@@ -144,7 +140,7 @@ export function getRelayListReadFromEventNoFastFallback(
 
     const normalizedUrl = normalizeUrl(url)
     if (!normalizedUrl) return
-    if (normalizedBlockedRelays.includes(normalizedUrl)) return
+    if (isRelayBlockedByUser(normalizedUrl, blockedRelays)) return
     if (normalizedUrl.endsWith('.onion/') && !torBrowserDetected) return
 
     if (type === 'write') return
@@ -170,8 +166,6 @@ export function getHttpRelayListFromEvent(event?: Event | null, blockedRelays?: 
   if (!event) return out
 
   const torBrowserDetected = isTorBrowser()
-  const normalizedBlockedRelays = (blockedRelays || []).map((url) => normalizeUrl(url) || url)
-
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
     if (!url || typeof url !== 'string' || url.trim() === '') return
     if (!isHttpRelayUrl(url)) return
@@ -179,9 +173,7 @@ export function getHttpRelayListFromEvent(event?: Event | null, blockedRelays?: 
     const normalizedUrl = normalizeHttpRelayUrl(url)
     if (!normalizedUrl) return
 
-    const asWs = normalizeUrl(url)
-    if (asWs && normalizedBlockedRelays.includes(asWs)) return
-    if (normalizedBlockedRelays.includes(normalizedUrl)) return
+    if (isRelayBlockedByUser(normalizedUrl, blockedRelays)) return
 
     const scope = type === 'read' ? 'read' : type === 'write' ? 'write' : 'both'
     out.httpOriginalRelays.push({ url: normalizedUrl, scope })
@@ -450,15 +442,12 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
 export function getRelaySetFromEvent(event: Event, blockedRelays?: string[]): TRelaySet {
   const id = getReplaceableEventIdentifier(event)
   
-  // Normalize blocked relays for comparison
-  const normalizedBlockedRelays = (blockedRelays || []).map(url => normalizeUrl(url) || url)
-  
   const relayUrls = event.tags
     .filter(tagNameEquals('relay'))
     .map((tag) => tag[1])
     .filter((url) => url && isWebsocketUrl(url))
     .map((url) => normalizeUrl(url))
-    .filter((url) => !normalizedBlockedRelays.includes(url)) // Filter out blocked relays
+    .filter((url): url is string => !!url && !isRelayBlockedByUser(url, blockedRelays))
 
   let name = event.tags.find(tagNameEquals('title'))?.[1]
   if (!name) {
