@@ -45,35 +45,50 @@ function fullReloadOnProvidersAndPages(): Plugin {
   }
 }
 
-/**
- * `http-proxy` logs `Error: connect ECONNREFUSED …` via `console.error`, bypassing Vite's `logger.error`.
- */
-function isOptionalDevProxyConnRefusedNoise(args: unknown[]): boolean {
-  const blob = args
+/** Loopback targets in `server.proxy` — optional in dev; see PROXY_SETUP.md. */
+const OPTIONAL_DEV_PROXY_LOOPBACK_PORTS = [4000, 5000, 8010, 8090, 9876] as const
+
+function blobFromLogArgs(args: unknown[]): string {
+  return args
     .map((a) => {
       if (typeof a === 'string') return a
       if (a instanceof Error) return `${a.message}\n${a.stack ?? ''}`
       return ''
     })
     .join('\n')
+}
+
+/**
+ * `http-proxy` logs `Error: connect ECONNREFUSED …` via `console.error`, bypassing Vite's `logger.error`.
+ */
+function isOptionalDevProxyConnRefusedNoise(args: unknown[]): boolean {
+  const blob = blobFromLogArgs(args)
   if (!blob.includes('ECONNREFUSED')) return false
-  return (
-    blob.includes('127.0.0.1:5000') ||
-    blob.includes('127.0.0.1:8090') ||
-    /\b:5000\b/.test(blob) ||
-    /\b:8090\b/.test(blob)
-  )
+  if (blob.includes('127.0.0.1:') || blob.includes('localhost:')) return true
+  return OPTIONAL_DEV_PROXY_LOOPBACK_PORTS.some((port) => new RegExp(`\\b:${port}\\b`).test(blob))
+}
+
+function isOptionalDevProxyHttpError(text: string): boolean {
+  if (!text.includes('http proxy error')) return false
+  if (!text.includes('ECONNREFUSED')) return false
+  if (
+    text.includes('/api/languagetool') ||
+    text.includes('/v2/') ||
+    text.includes('/api/piper-tts') ||
+    text.includes('/api/translate') ||
+    text.includes('/sites') ||
+    text.includes('/dev-index-relay') ||
+    text.includes('/api/events')
+  ) {
+    return true
+  }
+  return OPTIONAL_DEV_PROXY_LOOPBACK_PORTS.some((port) => text.includes(`127.0.0.1:${port}`))
 }
 
 /**
  * When optional localhost backends are down, `http-proxy` otherwise logs a multiline stack per request.
- * Throttle to one hint per category (cooldown), matching paths only — real misconfigurations still log.
  */
-function quietOptionalDevProxyErrors(devIndexRelayTarget: string): Plugin {
-  let lastIndexRelaySuppressed = 0
-  let lastTranslateSitesSuppressed = 0
-  const COOLDOWN_MS = 60_000
-
+function quietOptionalDevProxyErrors(): Plugin {
   return {
     name: 'quiet-optional-dev-proxy-errors',
     apply: 'serve',
@@ -91,31 +106,27 @@ function quietOptionalDevProxyErrors(devIndexRelayTarget: string): Plugin {
       const prevError = config.logger.error.bind(config.logger)
       config.logger.error = (msg, options) => {
         const text = typeof msg === 'string' ? msg : ''
-        if (text.includes('http proxy error') && text.includes('ECONNREFUSED')) {
-          if (text.includes('/api/events') || text.includes('/dev-index-relay')) {
-            const now = Date.now()
-            if (now - lastIndexRelaySuppressed >= COOLDOWN_MS) {
-              lastIndexRelaySuppressed = now
-              config.logger.warn(
-                `[vite] Dev index relay not reachable (${devIndexRelayTarget}). Start it or set VITE_DEV_INDEX_RELAY_TARGET. Suppressing duplicate proxy errors for ${COOLDOWN_MS / 1000}s.`
-              )
-            }
-            return
-          }
-          if (text.includes('/api/translate') || text.includes('/sites')) {
-            const now = Date.now()
-            if (now - lastTranslateSitesSuppressed >= COOLDOWN_MS) {
-              lastTranslateSitesSuppressed = now
-              config.logger.warn(
-                `[vite] Optional dev proxies unreachable (LibreTranslate /api/translate → :5000, OG /sites → :8090). Start them or ignore — see PROXY_SETUP.md. Suppressing duplicate proxy errors for ${COOLDOWN_MS / 1000}s.`
-              )
-            }
-            return
-          }
-        }
+        if (isOptionalDevProxyHttpError(text)) return
         prevError(msg, options)
       }
     }
+  }
+}
+
+function jsonProxyErrorHandler(status: number, body: Record<string, unknown>) {
+  return (proxy: { on: (event: string, handler: (...args: unknown[]) => void) => void }) => {
+    proxy.on('error', (_err, _req, res) => {
+      const r = res as {
+        headersSent?: boolean
+        writeHead?: (c: number, h: Record<string, string>) => void
+        end?: (b: string) => void
+      }
+      if (r.headersSent) return
+      if (typeof r?.writeHead === 'function' && typeof r?.end === 'function') {
+        r.writeHead(status, { 'Content-Type': 'application/json' })
+        r.end(JSON.stringify(body))
+      }
+    })
   }
 }
 
@@ -202,52 +213,41 @@ export default defineConfig(({ mode }) => {
         // Read-aloud Piper: same path as production Apache → aitherboard (avoid cross-origin CORS in dev).
         '/api/piper-tts': {
           target: 'http://127.0.0.1:9876',
-          changeOrigin: true
+          changeOrigin: true,
+          configure: jsonProxyErrorHandler(503, {
+            ok: false,
+            error: 'piper_proxy_unreachable',
+            hint: 'Start Piper TTS on :9876 — see PROXY_SETUP.md'
+          })
         },
         '/api/languagetool': {
           target: 'http://127.0.0.1:8010',
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/languagetool/u, '') || '/'
+          rewrite: (p) => p.replace(/^\/api\/languagetool/u, '') || '/',
+          configure: jsonProxyErrorHandler(503, {
+            ok: false,
+            error: 'languagetool_proxy_unreachable',
+            hint: 'Start LanguageTool on :8010 — see PROXY_SETUP.md'
+          })
         },
         '/api/translate': {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/api\/translate/u, '') || '/',
-          /** Match `/sites`: when LibreTranslate is not running, return JSON instead of a broken proxy response. */
-          configure(proxy) {
-            proxy.on('error', (_err, _req, res) => {
-              const r = res as {
-                headersSent?: boolean
-                writeHead?: (c: number, h: Record<string, string>) => void
-                end?: (b: string) => void
-              }
-              if (r.headersSent) return
-              if (typeof r?.writeHead === 'function' && typeof r?.end === 'function') {
-                r.writeHead(503, { 'Content-Type': 'application/json' })
-                r.end(
-                  JSON.stringify({
-                    ok: false,
-                    error: 'translate_proxy_unreachable',
-                    hint: 'Start LibreTranslate (or compatible API) on :5000 — see PROXY_SETUP.md'
-                  })
-                )
-              }
-            })
-          }
+          configure: jsonProxyErrorHandler(503, {
+            ok: false,
+            error: 'translate_proxy_unreachable',
+            hint: 'Start LibreTranslate (or compatible API) on :5000 — see PROXY_SETUP.md'
+          })
         },
         '/sites': {
           target: 'http://127.0.0.1:8090',
           changeOrigin: true,
-          /** Without OG proxy on :8090, Node was returning 500 HTML; return JSON so callers fail softly in dev. */
-          configure(proxy) {
-            proxy.on('error', (_err, _req, res) => {
-              const r = res as { writeHead?: (c: number, h: Record<string, string>) => void; end?: (b: string) => void }
-              if (typeof r?.writeHead === 'function' && typeof r?.end === 'function') {
-                r.writeHead(502, { 'Content-Type': 'application/json' })
-                r.end(JSON.stringify({ ok: false, error: 'og_proxy_unreachable', hint: 'Start OG scraper on :8090 (see PROXY_SETUP.md)' }))
-              }
-            })
-          }
+          configure: jsonProxyErrorHandler(502, {
+            ok: false,
+            error: 'og_proxy_unreachable',
+            hint: 'Start OG scraper on :8090 (see PROXY_SETUP.md)'
+          })
         },
         // Loopback HTTP index relay: `import.meta.env.DEV` rewrites kind 10243 URLs through this path.
         '/dev-index-relay': {
@@ -437,7 +437,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     fullReloadOnProvidersAndPages(),
-    quietOptionalDevProxyErrors(devIndexRelayTarget),
+    quietOptionalDevProxyErrors(),
     VitePWA({
       // Prompt mode + virtual:pwa-register (main bundle) — do not auto-activate; VersionUpdateBanner calls updateSW().
       registerType: 'prompt',

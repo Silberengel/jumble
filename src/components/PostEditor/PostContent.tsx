@@ -383,6 +383,9 @@ export default function PostContent({
   /** Accumulates imeta tags across uploads (short note or multi-attachment) so files are not dropped. */
   const composerImetaTagsRef = useRef<string[][]>([])
   const mediaNoteKindRef = useRef<number | null>(null)
+  /** True when the hidden uploader was opened from Note type → Media Note (not toolbar paste/drop). */
+  const mediaNoteUploaderIntentRef = useRef(false)
+  const [mediaNoteUploadPending, setMediaNoteUploadPending] = useState(false)
   /** Stable auto d-tag when the field is left empty; `{ slug, value }` resets when article subtype changes. */
   const articleDTagFallbackRef = useRef<{ slug: string; value: string } | null>(null)
 
@@ -1520,8 +1523,14 @@ export default function PostContent({
     }
   }
 
-  const handlePlainNoteMode = () => {
-    if (parentEvent) return
+  const clearMediaNoteUploadIntent = useCallback(() => {
+    mediaNoteUploaderIntentRef.current = false
+    setMediaNoteUploadPending(false)
+  }, [])
+
+  const isMediaNoteComposerMode = mediaNoteKind !== null || mediaNoteUploadPending
+
+  const clearNonMediaNoteComposerModes = () => {
     setIsPoll(false)
     setIsPublicMessage(false)
     setIsHighlight(false)
@@ -1534,6 +1543,21 @@ export default function PostContent({
     setIsCitationHardcopy(false)
     setIsCitationPrompt(false)
     setIsDiscussionThread(false)
+  }
+
+  const beginMediaNoteUpload = () => {
+    if (parentEvent) return
+    clearNonMediaNoteComposerModes()
+    clearMediaNoteUploadIntent()
+    setMediaNoteUploadPending(true)
+    mediaNoteUploaderIntentRef.current = true
+    mediaUploaderBtnRef.current?.click()
+  }
+
+  const handlePlainNoteMode = () => {
+    if (parentEvent) return
+    clearNonMediaNoteComposerModes()
+    clearMediaNoteUploadIntent()
     // Short note (kind 1) still supports NIP-94 imeta; only Clear should drop uploads/tags.
     setMediaNoteKind(null)
   }
@@ -1657,7 +1681,7 @@ export default function PostContent({
       !isCitationHardcopy &&
       !isCitationPrompt &&
       !isDiscussionThread &&
-      mediaNoteKind === null,
+      !isMediaNoteComposerMode,
     [
       parentEvent,
       isPoll,
@@ -1672,7 +1696,7 @@ export default function PostContent({
       isCitationHardcopy,
       isCitationPrompt,
       isDiscussionThread,
-      mediaNoteKind
+      isMediaNoteComposerMode
     ]
   )
 
@@ -1888,6 +1912,7 @@ export default function PostContent({
     selectedKind?: number,
     opts?: { skipComposerUrlAppend?: boolean }
   ) => {
+    const fromMediaNoteMenu = mediaNoteUploaderIntentRef.current
     try {
       let resolvedKind: number
       if (selectedKind !== undefined) {
@@ -1896,8 +1921,11 @@ export default function PostContent({
         resolvedKind = await getMediaKindFromFile(uploadingFile, false)
       }
 
-      // New-post composer: images stay kind 1 (short text + imeta + URL), not kind 20 picture notes.
-      if (resolvedKind === ExtendedKind.PICTURE) {
+      // Toolbar/drop: images stay kind 1 (short text + imeta). Media Note menu: use NIP-94 media kinds (20/21/22/1222).
+      if (fromMediaNoteMenu) {
+        setMediaNoteKind(resolvedKind)
+        setMediaUrl(url)
+      } else if (resolvedKind === ExtendedKind.PICTURE) {
         setMediaNoteKind(null)
         setMediaUrl('')
       } else {
@@ -1964,6 +1992,11 @@ export default function PostContent({
       if (mediaNoteKindRef.current !== null) {
         setMediaUrl((prev) => prev || url)
       }
+    } finally {
+      if (fromMediaNoteMenu) {
+        mediaNoteUploaderIntentRef.current = false
+        setMediaNoteUploadPending(false)
+      }
     }
   }
 
@@ -1992,6 +2025,10 @@ export default function PostContent({
       }
       if (!uploadingFile) {
         logger.warn('Media upload succeeded but file not found')
+        if (mediaNoteUploaderIntentRef.current) {
+          mediaNoteUploaderIntentRef.current = false
+          setMediaNoteUploadPending(false)
+        }
         return
       }
 
@@ -2120,19 +2157,9 @@ export default function PostContent({
       // Don't throw - just log the error so the upload doesn't fail completely
     }
     
-    // Clear other note types when media is selected
-    setIsPoll(false)
-    setIsPublicMessage(false)
-    setIsHighlight(false)
-    setIsLongFormArticle(false)
-    setIsWikiArticle(false)
-    setIsNostrSpecification(false)
-    setIsPublicationContent(false)
-    setIsCitationInternal(false)
-    setIsCitationExternal(false)
-    setIsCitationHardcopy(false)
-    setIsCitationPrompt(false)
-    setIsDiscussionThread(false)
+    if (!mediaNoteUploaderIntentRef.current) {
+      clearNonMediaNoteComposerModes()
+    }
 
     // Clear uploaded file map (upload finished). Keep composerImetaTagsRef in sync with mediaImetaTags — do not wipe here.
     uploadedMediaFileMap.current.clear()
@@ -2241,6 +2268,7 @@ export default function PostContent({
     setText('')
     setMediaNoteKind(null)
     setMediaUrl('')
+    clearMediaNoteUploadIntent()
     setMediaImetaTags([])
     setMentions([])
     setExtractedMentions([])
@@ -3043,7 +3071,7 @@ export default function PostContent({
                 isPublicMessage ? MessageCircle :
                 isPoll ? ListTodo :
                 isDiscussionThread ? MessagesSquare :
-                mediaNoteKind !== null ? Upload :
+                isMediaNoteComposerMode ? Upload :
                 StickyNote
               const activeLabel =
                 isLongFormArticle ? t('Long-form Article') :
@@ -3058,7 +3086,7 @@ export default function PostContent({
                 isPublicMessage ? t('Public Message') :
                 isPoll ? t('Poll') :
                 isDiscussionThread ? t('Thread') :
-                mediaNoteKind !== null ? t('Media Note') :
+                isMediaNoteComposerMode ? t('Media Note') :
                 t('Short Note')
               return (
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -3111,13 +3139,13 @@ export default function PostContent({
                       </div>
                       {isPlainShortNoteToolbar && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => mediaUploaderBtnRef.current?.click()} className="gap-3 py-2 cursor-pointer">
+                    <DropdownMenuItem onClick={beginMediaNoteUpload} className="gap-3 py-2 cursor-pointer">
                       <Upload className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="flex flex-col flex-1 min-w-0">
                         <span className="font-medium leading-none">{t('Media Note')}</span>
                         <span className="text-xs text-muted-foreground mt-0.5">{t('Attach image, audio, or video')}</span>
                       </div>
-                      {mediaNoteKind !== null && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      {isMediaNoteComposerMode && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleHighlightToggle} className="gap-3 py-2 cursor-pointer">

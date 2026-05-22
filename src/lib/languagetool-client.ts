@@ -2,6 +2,14 @@ import { LANGUAGE_TOOL_URL } from '@/constants'
 import { electronAwareFetch } from '@/lib/electron-aware-fetch'
 import logger from '@/lib/logger'
 
+/** After proxy/backend 502/503/504, skip further grammar HTTP this tab (optional dev proxy). */
+let languageToolBackendGoneThisSession = false
+let languageToolOptionalLogged = false
+
+export function isLanguageToolBackendUnreachableThisSession(): boolean {
+  return languageToolBackendGoneThisSession
+}
+
 export type LanguageToolMatch = {
   offset: number
   length: number
@@ -28,7 +36,7 @@ export async function languageToolCheck(
   signal?: AbortSignal
 ): Promise<LanguageToolCheckResponse> {
   const url = checkUrl()
-  if (!url) {
+  if (!url || languageToolBackendGoneThisSession) {
     return { matches: [] }
   }
   const body = new URLSearchParams()
@@ -44,6 +52,17 @@ export async function languageToolCheck(
   })
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
+    if ([502, 503, 504].includes(res.status)) {
+      languageToolBackendGoneThisSession = true
+      if (import.meta.env.DEV && !languageToolOptionalLogged) {
+        languageToolOptionalLogged = true
+        logger.debug(
+          '[LanguageTool] Optional grammar proxy offline; skipping further checks this session.',
+          { status: res.status, errText: errText.slice(0, 120) }
+        )
+      }
+      return { matches: [] }
+    }
     logger.warn('[LanguageTool] HTTP error', { status: res.status, errText: errText.slice(0, 200) })
     throw new Error(`LanguageTool: ${res.status}`)
   }

@@ -44,6 +44,68 @@ function isExpectedFaviconNetworkNoise(message: string): boolean {
   )
 }
 
+/** Expected dev-only noise: optional proxies, profile cache misses, wallet timeouts, editor quirks. */
+function isExpectedDevAppNoise(message: string): boolean {
+  if (
+    message.includes('[ReplaceableEventService] Profile batch network load timed out') ||
+    message.includes('[ReplaceableEventService] fetchProfilesForPubkeys exceeded wall timeout')
+  ) {
+    return true
+  }
+  if (
+    message.includes('[LanguageTool] HTTP error') ||
+    message.includes('LanguageTool: 5') ||
+    message.includes('[Translate] Optional translate proxy offline') ||
+    message.includes('[Translate] /languages skipped') ||
+    message.includes('[Optional proxy] Sites proxy returned')
+  ) {
+    return true
+  }
+  if (
+    message.includes('Failed to request get_info') ||
+    message.includes('Using minimal getInfo') ||
+    message.includes('reply timeout: event')
+  ) {
+    return true
+  }
+  if (message.includes('NIP-04 encryption is about to be deprecated')) {
+    return true
+  }
+  if (
+    message.includes('TextSelection endpoint not pointing into a node with inline content') ||
+    message.includes('scroll-verknüpften Positionierungseffekt') ||
+    message.includes('scroll-linked positioning effect')
+  ) {
+    return true
+  }
+  if (
+    message.includes('Cookie') &&
+    (message.includes('abgelehnt') || message.includes('rejected')) &&
+    message.includes('SameSite')
+  ) {
+    return true
+  }
+  if (
+    message.includes('Cross-Origin-Resource-Policy') ||
+    (message.includes('CORP') && message.includes('blockiert'))
+  ) {
+    return true
+  }
+  if (
+    message.includes('[QueryService] req_end') ||
+    message.includes('[relay-req]') ||
+    message.includes('[FeedPaint]') ||
+    message.includes('[LiveActivities] poll done') ||
+    message.includes('[RelayPoolIdle]')
+  ) {
+    return true
+  }
+  if (message.includes('[vite]') && (message.includes('connected') || message.includes('connecting'))) {
+    return true
+  }
+  return false
+}
+
 function isExpectedRelayWebSocketNoise(message: string): boolean {
   if (message.includes('WebSocket connection to') || message.includes('Close received after close')) {
     return true
@@ -89,6 +151,10 @@ function suppressExpectedErrors() {
     }
 
     if (isExpectedRelayWebSocketNoise(message)) {
+      return
+    }
+
+    if (import.meta.env.DEV && isExpectedDevAppNoise(message)) {
       return
     }
 
@@ -241,6 +307,10 @@ function suppressExpectedErrors() {
     if (isExpectedRelayWebSocketNoise(message)) {
       return
     }
+
+    if (import.meta.env.DEV && isExpectedDevAppNoise(message)) {
+      return
+    }
     
     // Suppress invalid URI / failed media resource (e.g. empty img src)
     if (message.includes('Ungültige URI') ||
@@ -353,6 +423,10 @@ function suppressExpectedErrors() {
     const message = formatConsoleArgs(args)
 
     if (isExpectedFaviconNetworkNoise(message) || isExpectedRelayWebSocketNoise(message)) {
+      return
+    }
+
+    if (import.meta.env.DEV && isExpectedDevAppNoise(message)) {
       return
     }
     

@@ -2,8 +2,8 @@
  * Centralized logging utility.
  *
  * Level matrix:
- *   dev (default)     → debug / info / warn / error  (full formatted output; `logger.debug` on)
- *   dev + opt-out     → info / warn / error          (set `imwald-debug` or `jumble-debug` to `false`)
+ *   dev (default)     → info / warn / error          (quiet console; relay/query traces off)
+ *   dev + opt-in      → debug / info / warn / error  (`imwald-debug` / `jumble-debug` `true`, or `VITE_DEBUG=true`)
  *   production        → warn / error only            (bare console — no timestamp string built)
  *
  * Opt out of debug in dev: `localStorage.setItem('imwald-debug', 'false')` then reload.
@@ -27,8 +27,8 @@ class Logger {
       localStorage.getItem('imwald-debug') === 'true' ||
       localStorage.getItem('jumble-debug') === 'true' ||
       import.meta.env.VITE_DEBUG === 'true'
-    // `npm run dev`: debug on by default so relay/query/cache traces are visible without localStorage.
-    this.enableDebug = this.isDev && (explicitOn || !explicitOff)
+    // `npm run dev`: quiet by default; opt in via localStorage / `VITE_DEBUG` / `imwaldDebug.enable()`.
+    this.enableDebug = this.isDev && explicitOn && !explicitOff
 
     // In production only warn/error reach the console — info is noise for end-users.
     this.minLevel = this.enableDebug ? 'debug' : this.isDev ? 'info' : 'warn'
