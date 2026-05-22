@@ -8,14 +8,17 @@ import {
   sanitizeRelayUrlsForFetch,
   setViewerPersonalRelayKeys
 } from './read-only-relay-personal'
+import { setViewerBlockedRelayUrls } from './viewer-blocked-relays'
 
 describe('read-only-relay-personal', () => {
   beforeEach(() => {
     setViewerPersonalRelayKeys(new Set())
+    setViewerBlockedRelayUrls([])
     syncViewerRelayStackNostrLandAggrEligible([])
   })
 
   afterEach(() => {
+    setViewerBlockedRelayUrls([])
     syncViewerRelayStackNostrLandAggrEligible([])
   })
 
@@ -48,6 +51,13 @@ describe('read-only-relay-personal', () => {
       'wss://aggr.nostr.land',
       'wss://search.nos.today'
     ])
+  })
+
+  it('sanitizeRelayUrlsForFetch drops user-blocked relays', () => {
+    setViewerBlockedRelayUrls(['wss://freelay.sovbit.host/'])
+    expect(
+      sanitizeRelayUrlsForFetch(['wss://relay.damus.io/', 'wss://freelay.sovbit.host/'])
+    ).toEqual(['wss://relay.damus.io/'])
   })
 
   it('keeps filter.nostr.wine when on the viewer personal list', () => {

@@ -20,6 +20,14 @@ type TVerifyNip05Result = {
 /** Bumps when verification rules change so LRU does not serve stale false negatives. */
 const VERIFY_CACHE_SCHEMA = 4
 
+/** Per-domain `nostr.json` (or negative `null`) so feeds do not re-fetch every NIP-05 on the same host. */
+const wellKnownJsonByDomain = new LRUCache<string, Record<string, unknown> | null>({ max: 512 })
+const wellKnownDomainInFlight = new Map<string, Promise<Record<string, unknown> | null>>()
+
+function normalizeNip05Domain(domain: string): string {
+  return domain.trim().toLowerCase().replace(/\.$/, '')
+}
+
 function asNip05LookupString(value: unknown): string {
   if (typeof value === 'string') return value
   if (value == null) return ''
@@ -215,8 +223,11 @@ async function fetchWellKnownNostrJsonOnce(
   }
 }
 
-/** Fetch `/.well-known/nostr.json` (with optional `?name=`). Retries without `name` if the entry is missing. */
-async function fetchWellKnownNostrJson(domain: string, name?: string): Promise<Record<string, unknown> | null> {
+/** Uncached network: optional `?name=` then full document. */
+async function fetchWellKnownNostrJsonNetwork(
+  domain: string,
+  name?: string
+): Promise<Record<string, unknown> | null> {
   const trimmedName = typeof name === 'string' ? name.trim() : ''
   const withQuery =
     trimmedName.length > 0 ? await fetchWellKnownNostrJsonOnce(domain, trimmedName) : null
@@ -232,6 +243,34 @@ async function fetchWellKnownNostrJson(domain: string, name?: string): Promise<R
     }
   }
   return withQuery ?? full
+}
+
+async function getOrFetchWellKnownJsonForDomain(
+  domain: string,
+  nameHint?: string
+): Promise<Record<string, unknown> | null> {
+  const key = normalizeNip05Domain(domain)
+  if (!key) return null
+  if (wellKnownJsonByDomain.has(key)) {
+    return wellKnownJsonByDomain.get(key) ?? null
+  }
+  let inflight = wellKnownDomainInFlight.get(key)
+  if (!inflight) {
+    inflight = fetchWellKnownNostrJsonNetwork(key, nameHint).then((json) => {
+      wellKnownJsonByDomain.set(key, json)
+      wellKnownDomainInFlight.delete(key)
+      return json
+    })
+    wellKnownDomainInFlight.set(key, inflight)
+  }
+  return inflight
+}
+
+/** Fetch `/.well-known/nostr.json` (with optional `?name=`). Retries without `name` if the entry is missing. */
+async function fetchWellKnownNostrJson(domain: string, name?: string): Promise<Record<string, unknown> | null> {
+  const trimmedName = typeof name === 'string' ? name.trim() : ''
+  const hint = trimmedName.length > 0 ? trimmedName : undefined
+  return getOrFetchWellKnownJsonForDomain(domain, hint)
 }
 
 export async function fetchPubkeysFromDomain(domain: string): Promise<string[]> {

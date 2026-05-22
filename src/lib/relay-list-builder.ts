@@ -12,6 +12,7 @@
 import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import {
   canonicalRelaySessionKey,
@@ -165,20 +166,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   const trackPersonal = (url: string) => {
     personalRelayUrls.push(url)
   }
-  const normalizedBlocked = new Set(
-    (blockedRelays || [])
-      .map((url) => (normalizeAnyRelayUrl(url) || url).toLowerCase())
-      .filter(Boolean)
-  )
-
   const addRelay = (url: string | undefined) => {
     if (!url) return
     // This builder feeds WebSocket REQ/publish lists; kind 10243 HTTP index relays use addHttpRelay.
     if (isKind10243HttpRelayTagUrl(url)) return
     const normalized = normalizeAnyRelayUrl(url)
     if (!normalized) return
-    // Filter blocked (case-insensitive comparison)
-    if (normalizedBlocked.has(normalized.toLowerCase())) return
+    if (isRelayBlockedByUser(normalized, blockedRelays)) return
     relayUrls.add(normalized)
   }
 
@@ -191,7 +185,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   const addHttpRelay = (url: string | undefined) => {
     if (!url) return
     const normalized = normalizeHttpRelayUrl(url)
-    if (!normalized || normalizedBlocked.has(normalized.toLowerCase())) return
+    if (!normalized || isRelayBlockedByUser(normalized, blockedRelays)) return
     if (httpRelayUrls.some((u) => relayKey(u) === relayKey(normalized))) return
     httpRelayUrls.push(normalized)
   }

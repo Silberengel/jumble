@@ -44,6 +44,10 @@ import {
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 import { profileFetchRelayUrlsWithoutFastReadLayer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import {
+  parseBlockedRelayUrlsFromEvent,
+  setViewerBlockedRelayUrls
+} from '@/lib/viewer-blocked-relays'
 
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */
 function filterForRelay(f: Filter, relaySupportsSearch: boolean): Filter {
@@ -616,7 +620,14 @@ class ClientService extends EventTarget {
       this.viewerHttpIndexRelayBases = []
       setViewerPersonalRelayKeys(new Set())
       syncViewerRelayStackNostrLandAggrEligible([])
+      setViewerBlockedRelayUrls([])
       return
+    }
+    try {
+      const blockedEvt = await indexedDb.getReplaceableEvent(pk, ExtendedKind.BLOCKED_RELAYS)
+      setViewerBlockedRelayUrls(parseBlockedRelayUrlsFromEvent(blockedEvt ?? null))
+    } catch {
+      setViewerBlockedRelayUrls([])
     }
     const urls: string[] = []
     try {

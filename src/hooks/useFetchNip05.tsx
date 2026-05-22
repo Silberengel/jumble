@@ -12,12 +12,18 @@ export function useFetchNip05(nip05?: string, pubkey?: string) {
       setIsFetching(false)
       return
     }
+    let cancelled = false
+    setIsFetching(true)
     verifyNip05(nip05, pubkey).then(({ isVerified, nip05Name, nip05Domain }) => {
+      if (cancelled) return
       setNip05IsVerified(isVerified)
       setNip05Name(nip05Name)
       setNip05Domain(nip05Domain)
       setIsFetching(false)
     })
+    return () => {
+      cancelled = true
+    }
   }, [nip05, pubkey])
 
   return { nip05IsVerified, nip05Name, nip05Domain, isFetching }

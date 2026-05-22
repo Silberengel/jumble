@@ -1,6 +1,6 @@
 import { isFaviconLoadFailed, markFaviconLoadFailed, normalizeFaviconDomain } from '@/lib/favicon-fail-cache'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export function Favicon({
   domain,
@@ -12,9 +12,21 @@ export function Favicon({
   fallback?: React.ReactNode
 }) {
   const host = normalizeFaviconDomain(domain)
-  const knownFailed = host ? isFaviconLoadFailed(host) : true
-  const [loading, setLoading] = useState(!knownFailed)
-  const [error, setError] = useState(knownFailed)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const loadingRef = useRef(loading)
+  loadingRef.current = loading
+
+  useEffect(() => {
+    const knownFailed = !host || isFaviconLoadFailed(host)
+    setError(knownFailed)
+    setLoading(!knownFailed)
+    if (!host || knownFailed) return
+    return () => {
+      if (loadingRef.current) markFaviconLoadFailed(host)
+    }
+  }, [host])
+
   if (error || !host) return fallback
 
   return (
@@ -28,7 +40,10 @@ export function Favicon({
           markFaviconLoadFailed(host)
           setError(true)
         }}
-        onLoad={() => setLoading(false)}
+        onLoad={() => {
+          loadingRef.current = false
+          setLoading(false)
+        }}
       />
     </div>
   )

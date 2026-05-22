@@ -32,6 +32,8 @@ import {
   getNip25ReactionTargetHexFromTags,
   tagNameEquals
 } from '@/lib/tag'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { getViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
 import client, { eventService } from '@/services/client.service'
 import { TEmoji } from '@/types'
 import dayjs from 'dayjs'
@@ -607,9 +609,11 @@ class NoteStatsService {
     }
   }
 
-  /** Stats REQs: dedupe, then prepend {@link AGGR_NOSTR_LAND_WSS} when the viewer lists `wss://nostr.land`. */
+  /** Stats REQs: dedupe, user-blocked strip, then prepend {@link AGGR_NOSTR_LAND_WSS} when eligible. */
   private finalizeNoteStatsRelayUrls(urls: readonly string[]): string[] {
-    return prependAggrNostrLandIfViewerEligible(dedupeNormalizeRelayUrlsOrdered(urls))
+    return prependAggrNostrLandIfViewerEligible(
+      sanitizeRelayUrlsForFetch(dedupeNormalizeRelayUrlsOrdered(urls))
+    )
   }
 
   /** {@link buildComprehensiveRelayList} for reactions/reposts/zaps on a note (thread hints, capped author NIP-65). */
@@ -657,6 +661,7 @@ class NoteStatsService {
       authorPubkey: event.pubkey,
       userPubkey: me,
       relayHints,
+      blockedRelays: [...getViewerBlockedRelayUrls()],
       includeUserOwnRelays: Boolean(me),
       includeFavoriteRelays: Boolean(me),
       includeFastReadRelays: useGlobal,

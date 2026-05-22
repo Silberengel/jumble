@@ -31,6 +31,10 @@ import {
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import {
+  parseBlockedRelayUrlsFromEvent,
+  setViewerBlockedRelayUrls
+} from '@/lib/viewer-blocked-relays'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
@@ -106,15 +110,7 @@ function favoriteRelayUrlsForPublish(
 }
 
 function blockedRelayUrlsFromEvent(blockedRelaysEvent: Event | null): string[] {
-  const out: string[] = []
-  if (!blockedRelaysEvent) return out
-  blockedRelaysEvent.tags.forEach(([tagName, tagValue]) => {
-    if (tagName === 'relay' && tagValue) {
-      const n = normalizeAnyRelayUrl(tagValue)
-      if (n && !out.includes(n)) out.push(n)
-    }
-  })
-  return out
+  return parseBlockedRelayUrlsFromEvent(blockedRelaysEvent)
 }
 
 const NIP07_SIGNER_PUBKEY_MISMATCH_MSG = 'Signer pubkey does not match current account'
@@ -325,20 +321,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.HTTP_RELAY_LIST)
       ])
       
-      // Extract blocked relays from event
-      const blockedRelays: string[] = []
-      if (storedBlockedRelaysEvent) {
-        storedBlockedRelaysEvent.tags.forEach(([tagName, tagValue]) => {
-          if (tagName === 'relay' && tagValue) {
-            const normalizedUrl = normalizeUrl(tagValue)
-            if (normalizedUrl && !blockedRelays.includes(normalizedUrl)) {
-              blockedRelays.push(normalizedUrl)
-            }
-          }
-        })
-        if (!userForcedAccountNetworkHydrate) {
-          setBlockedRelaysEvent(storedBlockedRelaysEvent)
-        }
+      // Extract blocked relays from event (sync to fetch layer before feed REQs)
+      const blockedRelays = parseBlockedRelayUrlsFromEvent(storedBlockedRelaysEvent ?? null)
+      setViewerBlockedRelayUrls(blockedRelays)
+      if (storedBlockedRelaysEvent && !userForcedAccountNetworkHydrate) {
+        setBlockedRelaysEvent(storedBlockedRelaysEvent)
       }
       
       // Set initial relay list from stored events (will be updated with merged list later)
