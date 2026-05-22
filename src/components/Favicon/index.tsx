@@ -1,3 +1,4 @@
+import { isFaviconLoadFailed, markFaviconLoadFailed, normalizeFaviconDomain } from '@/lib/favicon-fail-cache'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
@@ -10,19 +11,23 @@ export function Favicon({
   className?: string
   fallback?: React.ReactNode
 }) {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const trimmed = domain?.trim() ?? ''
-  if (error || !trimmed) return fallback
+  const host = normalizeFaviconDomain(domain)
+  const knownFailed = host ? isFaviconLoadFailed(host) : true
+  const [loading, setLoading] = useState(!knownFailed)
+  const [error, setError] = useState(knownFailed)
+  if (error || !host) return fallback
 
   return (
     <div className={cn('relative', className)}>
       {loading && <div className={cn('absolute inset-0', className)}>{fallback}</div>}
       <img
-        src={`https://${trimmed}/favicon.ico`}
-        alt={trimmed}
+        src={`https://${host}/favicon.ico`}
+        alt={host}
         className={cn('absolute inset-0', loading && 'opacity-0', className)}
-        onError={() => setError(true)}
+        onError={() => {
+          markFaviconLoadFailed(host)
+          setError(true)
+        }}
         onLoad={() => setLoading(false)}
       />
     </div>
