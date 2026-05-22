@@ -115,7 +115,7 @@ const PostTextarea = forwardRef<
     onUploadCompressPhaseRef.current = onUploadCompressPhase
     const onUploadCompressProgressRef = useRef(onUploadCompressProgress)
     onUploadCompressProgressRef.current = onUploadCompressProgress
-    const [activeTab, setActiveTab] = useState('preview')
+    const [activeTab, setActiveTab] = useState('edit')
     const editorRef = useRef<Editor | null>(null)
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
@@ -274,6 +274,9 @@ const PostTextarea = forwardRef<
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <TabsList className="w-auto justify-start">
+            <TabsTrigger value="edit" title={t('Edit')}>
+              {t('Edit')}
+            </TabsTrigger>
             <TabsTrigger value="preview" title={t('Preview')}>
               {t('Preview')}
             </TabsTrigger>
@@ -284,8 +287,17 @@ const PostTextarea = forwardRef<
             </div>
           )}
         </div>
-        <EditorContent className="tiptap" editor={editor} />
-        <TabsContent value="preview">
+        <TabsContent
+          value="edit"
+          forceMount
+          className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
+          <EditorContent className="tiptap" editor={editor} />
+        </TabsContent>
+        <TabsContent
+          value="preview"
+          className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
           <div className="space-y-2">
             <div className="text-xs text-muted-foreground">
               kind {kindDescription.number}: {kindDescription.description}

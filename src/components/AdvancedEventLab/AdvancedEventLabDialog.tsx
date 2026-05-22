@@ -25,7 +25,11 @@ import {
 } from '@/lib/language-display-meta'
 import { LanguageSelectOptionLines } from '@/lib/language-select-option-lines'
 import { buildLabLanguageToolPreferenceList } from '@/lib/trinity-languages'
-import { parseLabSlice, type AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
+import {
+  parseLabSlice,
+  serializePublishPreviewLabJson,
+  type AdvancedEventLabSlice
+} from '@/lib/advanced-event-lab-slice'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
   warmTranslateLanguagesOnce,
@@ -195,6 +199,8 @@ export type AdvancedEventLabDialogProps = {
   previewAuthorPubkey?: string | null
   /** Lab preview: `emoji` tags on the fake event (e.g. copied from the event being edited). */
   previewEmojiTags?: string[][]
+  /** When true (default), JSON preview includes the Imwald `client` tag like publish. */
+  addClientTag?: boolean
 }
 
 function useDarkModeFlag(): boolean {
@@ -227,7 +233,8 @@ export default function AdvancedEventLabDialog({
   formatToolbar,
   draftPersistenceKey = null,
   previewAuthorPubkey = null,
-  previewEmojiTags
+  previewEmojiTags,
+  addClientTag = true
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   /** `useTranslation().t` can change identity every render; never list it as a layout-effect dep (editor remount loop). */
@@ -248,7 +255,11 @@ export default function AdvancedEventLabDialog({
   const LAB_DRAFT_DEBOUNCE_MS = 500
 
   const [previewDoc, setPreviewDoc] = useState('')
-  const [labBodyTab, setLabBodyTab] = useState<'edit' | 'preview'>('edit')
+  const [labBodyTab, setLabBodyTab] = useState<'edit' | 'preview' | 'json'>('edit')
+  const labBodyTabRef = useRef(labBodyTab)
+  labBodyTabRef.current = labBodyTab
+  const [labJsonPreview, setLabJsonPreview] = useState('')
+  const refreshLabJsonPreviewRef = useRef<() => void>(() => {})
   const [labTagRows, setLabTagRows] = useState<ComposerExtraTagRow[]>(() => [newComposerTagRow()])
 
   /** Stable while payload matches; avoids remounting the editor when the parent passes a new `initial` object reference. */
@@ -289,6 +300,30 @@ export default function AdvancedEventLabDialog({
     const doc = markupView.current?.state.doc.toString() ?? sliceRef.current?.content ?? ''
     setPreviewDoc(doc)
   }, [])
+
+  const refreshLabJsonPreview = useCallback(() => {
+    const s = sliceRef.current
+    if (!s) {
+      setLabJsonPreview('{}')
+      return
+    }
+    const content = markupView.current?.state.doc.toString() ?? s.content
+    const kind = kindEditable ? s.kind : (initial?.kind ?? s.kind)
+    setLabJsonPreview(
+      serializePublishPreviewLabJson(
+        {
+          kind,
+          content,
+          tags: editableRowsToLabTags(labTagRows)
+        },
+        { addClientTag }
+      )
+    )
+  }, [kindEditable, initial, labTagRows, addClientTag])
+
+  useEffect(() => {
+    refreshLabJsonPreviewRef.current = refreshLabJsonPreview
+  }, [refreshLabJsonPreview])
 
   useEffect(() => {
     schedulePreviewUpdateRef.current = schedulePreviewUpdate
@@ -354,10 +389,16 @@ export default function AdvancedEventLabDialog({
         previewDebounceTimerRef.current = null
       }
       setPreviewDoc('')
+      setLabJsonPreview('')
     } else {
       setLabBodyTab('edit')
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || labBodyTab !== 'json') return
+    refreshLabJsonPreview()
+  }, [open, labBodyTab, labTagRows, refreshLabJsonPreview])
 
   const handleDialogOpenChange = useCallback(
     (next: boolean) => {
@@ -400,6 +441,7 @@ export default function AdvancedEventLabDialog({
       s.tags = editableRowsToLabTags(rows)
       scheduleLabDraftPersist()
       bumpUndoUi()
+      if (labBodyTabRef.current === 'json') refreshLabJsonPreviewRef.current()
     },
     [scheduleLabDraftPersist, bumpUndoUi]
   )
@@ -686,6 +728,7 @@ export default function AdvancedEventLabDialog({
           s.content = content
           schedulePreviewUpdateRef.current(content)
           scheduleLabDraftPersist()
+          if (labBodyTabRef.current === 'json') refreshLabJsonPreviewRef.current()
         })
       ]
       if (isLanguageToolConfigured()) {
@@ -914,8 +957,9 @@ export default function AdvancedEventLabDialog({
             <Tabs
             value={labBodyTab}
             onValueChange={(v) => {
-              const next = v as 'edit' | 'preview'
+              const next = v as 'edit' | 'preview' | 'json'
               if (next === 'preview') flushPreviewDocNow()
+              if (next === 'json') refreshLabJsonPreview()
               setLabBodyTab(next)
             }}
             className="flex flex-col gap-2"
@@ -930,6 +974,9 @@ export default function AdvancedEventLabDialog({
               </TabsTrigger>
               <TabsTrigger value="preview" className="shrink-0">
                 {t('Advanced lab preview')}
+              </TabsTrigger>
+              <TabsTrigger value="json" className="shrink-0">
+                {t('Advanced lab json preview')}
               </TabsTrigger>
             </TabsList>
 
@@ -956,6 +1003,20 @@ export default function AdvancedEventLabDialog({
                   previewAuthorPubkey={previewAuthorPubkey}
                   previewEmojiTags={mergedLabPreviewEmojiTags}
                 />
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="json"
+              className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <p className="text-xs text-muted-foreground mb-2">
+                {t('Advanced lab json preview hint')}
+              </p>
+              <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-auto rounded-md border border-border bg-muted/20 p-3">
+                <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text text-foreground">
+                  {labJsonPreview || '{}'}
+                </pre>
               </div>
             </TabsContent>
           </Tabs>

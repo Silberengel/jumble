@@ -1065,6 +1065,9 @@ export default {
     "Advanced lab markup label asciidoc": "AsciiDoc",
     "Advanced lab preview": "Preview",
     "Advanced lab preview empty": "Nothing to preview yet.",
+    "Advanced lab json preview": "JSON preview",
+    "Advanced lab json preview hint":
+      "Read-only publish draft: `kind`, `content`, `created_at`, and `tags` (including `imeta` from URLs in the body and the Imwald `client` tag when enabled in post options). `pubkey`, `id`, and `sig` are set at publish.",
     "Advanced lab markup placeholder markdown": "Note body (Markdown)",
     "Advanced lab markup placeholder asciidoc": "Note body (AsciiDoc)",
     "Advanced lab tags JSON": "Kind, content, and tags (JSON)",
@@ -1094,17 +1097,6 @@ export default {
     "Advanced lab translate done": "Translation inserted into the editor.",
     "Advanced lab use translation read aloud": "Use body for read-aloud (this note)",
     "Advanced lab read aloud buffer set": "The next read-aloud for this note will use the current body text (translated if you translated first).",
-    "Composer JSON tab hint": "Edit the draft as JSON (`kind`, `content`, `tags` only). `kind` must match the note type selected above. Other fields are set when you publish.",
-    "Composer JSON apply": "Apply JSON",
-    composerJsonKindMismatch: "JSON kind {{got}} does not match the composer (expected {{expected}}). Change the note type or fix `kind` in JSON.",
-    composerJsonApplySuccess: "Draft updated from JSON.",
-    composerExtraTagsTitle: "Additional tags",
-    composerExtraTagsHint:
-      "Optional Nostr tags appended when you publish (after the tags this composer adds automatically). Use one value per line for multi-value tags.",
-    composerExtraTagsEmpty: "No extra tags yet.",
-    composerExtraTagValues: "Values",
-    composerExtraTagValuesPlaceholder: "One value per line",
-    composerExtraTagsAdd: "Add tag",
     advancedLabTagsTitle: "Event tags",
     advancedLabTagsCount: "{{count}} tags",
     advancedLabTagsHint:

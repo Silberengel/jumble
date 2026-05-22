@@ -1,7 +1,45 @@
+import {
+  applyImwaldAttributionTags,
+  collectUploadImetaTagsForContentUrls,
+  mergeUploadImetaTagsInto
+} from '@/lib/draft-event'
+import type { TDraftEvent } from '@/types'
+
 export type AdvancedEventLabSlice = {
   kind: number
   content: string
   tags: string[][]
+}
+
+/**
+ * JSON shaped like the draft passed to publish: merges `imeta` from content URLs,
+ * then applies Imwald `client` (and strips duplicate client/attribution tags) like {@link applyImwaldAttributionTags}.
+ */
+export function serializePublishPreviewLabJson(
+  slice: AdvancedEventLabSlice,
+  options?: { addClientTag?: boolean }
+): string {
+  const tags = slice.tags.map((row) => [...row])
+  mergeUploadImetaTagsInto(tags, collectUploadImetaTagsForContentUrls(slice.content))
+  const draft: TDraftEvent = {
+    kind: slice.kind,
+    content: slice.content,
+    created_at: Math.floor(Date.now() / 1000),
+    tags
+  }
+  const withAttribution = applyImwaldAttributionTags(draft, {
+    addClientTag: options?.addClientTag
+  })
+  return JSON.stringify(
+    {
+      kind: withAttribution.kind,
+      content: withAttribution.content,
+      created_at: withAttribution.created_at,
+      tags: withAttribution.tags
+    },
+    null,
+    2
+  )
 }
 
 export function serializeLabSlice(slice: AdvancedEventLabSlice): string {

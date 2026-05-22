@@ -3616,6 +3616,7 @@ export default function PostContent({
         i18nLanguage={i18n.language}
         contextEventId={parentEvent?.id ?? null}
         previewAuthorPubkey={pubkey ?? null}
+        addClientTag={addClientTag}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
         formatToolbar={

@@ -636,6 +636,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       contextEventId={!isCreate && sourceEvent ? sourceEvent.id : null}
       previewAuthorPubkey={pubkey ?? null}
       previewEmojiTags={labPreviewEmojiTags}
+      addClientTag={storage.getAddClientTag()}
       draftPersistenceKey={
         advancedLabOpen && advancedLabDraftPersistenceKey ? advancedLabDraftPersistenceKey : null
       }
