@@ -1,5 +1,4 @@
 import {
-  FAST_READ_RELAY_URLS,
   FEED_FIRST_RELAY_RESULT_GRACE_MIN_LIMIT,
   FIRST_RELAY_RESULT_GRACE_MS,
   relayFilterIncludesSocialKindBlockedKind,

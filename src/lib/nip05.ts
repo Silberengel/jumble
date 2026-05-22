@@ -20,8 +20,10 @@ type TVerifyNip05Result = {
 /** Bumps when verification rules change so LRU does not serve stale false negatives. */
 const VERIFY_CACHE_SCHEMA = 4
 
+type WellKnownCacheEntry = { json: Record<string, unknown> | null }
+
 /** Per-domain `nostr.json` (or negative `null`) so feeds do not re-fetch every NIP-05 on the same host. */
-const wellKnownJsonByDomain = new LRUCache<string, Record<string, unknown> | null>({ max: 512 })
+const wellKnownJsonByDomain = new LRUCache<string, WellKnownCacheEntry>({ max: 512 })
 const wellKnownDomainInFlight = new Map<string, Promise<Record<string, unknown> | null>>()
 
 function normalizeNip05Domain(domain: string): string {
@@ -252,12 +254,12 @@ async function getOrFetchWellKnownJsonForDomain(
   const key = normalizeNip05Domain(domain)
   if (!key) return null
   if (wellKnownJsonByDomain.has(key)) {
-    return wellKnownJsonByDomain.get(key) ?? null
+    return wellKnownJsonByDomain.get(key)!.json
   }
   let inflight = wellKnownDomainInFlight.get(key)
   if (!inflight) {
     inflight = fetchWellKnownNostrJsonNetwork(key, nameHint).then((json) => {
-      wellKnownJsonByDomain.set(key, json)
+      wellKnownJsonByDomain.set(key, { json })
       wellKnownDomainInFlight.delete(key)
       return json
     })

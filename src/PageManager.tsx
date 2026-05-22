@@ -129,7 +129,6 @@ const PrimaryProfileBadgesListPageLazy = lazy(() => import('@/pages/secondary/Pr
 const PrimaryInterestListPageLazy = lazy(() => import('@/pages/secondary/InterestListPage'))
 const PrimaryUserEmojiListPageLazy = lazy(() => import('@/pages/secondary/UserEmojiListPage'))
 const PrimaryOthersRelaySettingsPageLazy = lazy(() => import('@/pages/secondary/OthersRelaySettingsPage'))
-const SecondaryRelayPageLazy = lazy(() => import('@/pages/secondary/RelayPage'))
 
 function suspensePrimaryPage(page: ReactElement) {
   return <Suspense fallback={primaryPageLazyFallback}>{page}</Suspense>
@@ -588,9 +587,7 @@ export function useSmartNoteNavigationOptional() {
 
 // Fixed: Relay navigation now uses primary note view on mobile, secondary routing (drawer in single-pane, side panel in double-pane) on desktop
 export function useSmartRelayNavigation() {
-  const { setPrimaryNoteView } = usePrimaryNoteView()
   const { push: pushSecondaryPage } = useSecondaryPage()
-  const { isSmallScreen } = useScreenSize()
   const { current: currentPrimaryPage } = usePrimaryPage()
   
   const navigateToRelay = (url: string) => {
@@ -620,9 +617,7 @@ export function useSmartRelayNavigationOptional() {
   if (!primaryNoteView || !secondaryPage || !screenSize || !primaryPage) {
     return { navigateToRelay: (url: string) => { window.location.href = url } }
   }
-  const { setPrimaryNoteView } = primaryNoteView
   const { push: pushSecondaryPage } = secondaryPage
-  const { isSmallScreen } = screenSize
   const { current: currentPrimaryPage } = primaryPage
   const navigateToRelay = (url: string) => {
     const relayUrlMatch =
