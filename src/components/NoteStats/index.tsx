@@ -8,6 +8,7 @@ import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
 import { shouldHideInteractions } from '@/lib/event-filtering'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState } from 'react'
 import BookmarkButton from '../BookmarkButton'
@@ -73,6 +74,15 @@ export default function NoteStats({
   const statsRelayFetchTier = isRssArticleRoot ? relayMergeTier : hintRelays.length > 0 ? 1 : 0
   const statsRelaysRef = useRef(statsRelays)
   statsRelaysRef.current = statsRelays
+  const seenOnAllowlistRef = useRef(seenOnAllowlist)
+  seenOnAllowlistRef.current = seenOnAllowlist
+  const seenOnAllowlistKey = seenOnAllowlist?.length
+    ? [...seenOnAllowlist]
+        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+        .filter(Boolean)
+        .sort()
+        .join('|')
+    : ''
   const shouldDeferStatsFetch =
     deferFetchUntilNearViewport ?? (fetchIfNotExisting && !foregroundStats)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -85,12 +95,13 @@ export default function NoteStats({
     noteStatsService
       .fetchNoteStats(event, pubkey, statsRelaysRef.current, {
         foreground: foregroundStats,
-        relayAllowlist: seenOnAllowlist?.length ? seenOnAllowlist : null
+        relayAllowlist: seenOnAllowlistRef.current?.length ? seenOnAllowlistRef.current : null
       })
       .finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
     // id/sig/kind/created_at identify the note for refetch boundaries.
     // `statsRelayFetchTier` (not full sorted relay key) avoids a REQ storm when favorites/current relays hydrate.
+    // `seenOnAllowlistKey` (not the array ref) avoids refetch loops when parents pass a new [] each render.
   }, [
     event.id,
     event.kind,
@@ -103,7 +114,7 @@ export default function NoteStats({
     pubkey,
     statsRelayFetchTier,
     currentRelaysKey,
-    seenOnAllowlist
+    seenOnAllowlistKey
   ])
 
   const interactionButtons = (

@@ -1260,6 +1260,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     const useDrawer = isSmallScreen || panelMode === 'single'
     if (!useDrawer || drawerOpen || !drawerNoteId) return
 
+    // Drawer close runs replaceState to the primary URL but used to leave the secondary stack populated,
+    // which re-opens the single-pane sheet (URL is / while the note panel stays visible).
+    secondaryStackRef.current = []
+    setSecondaryStack([])
+    setSinglePaneSheetOpen(false)
+
     const timer = window.setTimeout(() => {
       const pending = pendingDrawerCloseUrlRef.current
       pendingDrawerCloseUrlRef.current = null
@@ -1600,10 +1606,30 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         }
       }
 
+      const browserPathOnly = window.location.pathname.split('?')[0].split('#')[0]
+      if (
+        isPrimaryOnlyPathname(browserPathOnly) &&
+        (secondaryStackRef.current.length > 0 || drawerOpenRef.current)
+      ) {
+        if (drawerOpenRef.current) {
+          setDrawerOpen(false)
+          setDrawerNoteId(null)
+          setDrawerInitialEvent(null)
+        }
+        setSinglePaneSheetOpen(false)
+        secondaryStackRef.current = []
+        setSecondaryStack([])
+        restorePrimaryTabAfterSecondaryClose()
+        return
+      }
+
       let state = e.state as { index: number; url: string } | null
       
-      // Use state.url if available, otherwise fall back to current pathname
-      const urlToCheck = state?.url || window.location.pathname
+      // Prefer the live address bar when history.state.url is stale after replaceState.
+      const urlToCheck =
+        state?.url && !isPrimaryOnlyPathname(browserPathOnly)
+          ? state.url
+          : window.location.pathname + window.location.search + window.location.hash
       
       // Check if it's a note URL (we'll update drawer after stack is synced)
       const noteUrlMatch = urlToCheck.match(/\/(discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/) || 
@@ -2100,12 +2126,33 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     restorePrimaryTabAfterSecondaryClose()
   }
 
+  /** Pop one secondary frame in React state before history.back (popstate can no-op when indices match). */
+  const popOneSecondaryStackFrame = () => {
+    const pre = secondaryStackRef.current
+    if (pre.length <= 1) return pre
+    const next = pre.slice(0, -1)
+    secondaryStackRef.current = next
+    setSecondaryStack(next)
+    return next
+  }
+
+  const syncDrawerToSecondaryStackTop = (stack: TStackItem[]) => {
+    if (!(isSmallScreen || panelMode === 'single')) return
+    const top = stack[stack.length - 1]
+    if (!top) return
+    const noteId = noteHexIdFromSecondaryNoteUrl(top.url)
+    if (!noteId) return
+    openDrawer(noteId, navigationEventStore.peekEvent(noteId))
+  }
+
   const popSecondaryPage = () => {
     const stackLen = secondaryStackRef.current.length
 
     // Mobile / single-pane: one code path — drawer + stack share the same close behavior
     if (isSmallScreen || panelMode === 'single') {
       if (stackLen > 1) {
+        const next = popOneSecondaryStackFrame()
+        syncDrawerToSecondaryStackTop(next)
         window.history.back()
       } else {
         hardCloseSecondaryPanel()
@@ -2136,9 +2183,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           currentTabStateRef.current.set(currentPrimaryPage, savedFeedState.tab)
         }
       } else if (stackLen > 1) {
+        popOneSecondaryStackFrame()
         // Must use real history navigation: replaceState + slice desyncs URL from the session stack
         // (e.g. note → highlight → Back: bar shows the article but the panel still shows the highlight).
-        // popstate applies {@link onPopState} so stack and URL stay aligned with pushState indices.
+        // Eager stack pop above keeps the panel in sync even when popstate returns early (index === currentIndex).
         window.history.back()
       } else {
         // Stack empty but user hit back/close: align URL to primary without history.go(-1), which
@@ -2454,7 +2502,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               <NoteDrawer
                 open={drawerOpen}
                 initialEvent={drawerInitialEvent}
-                onOpenChange={setDrawerOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setDrawerOpen(true)
+                    return
+                  }
+                  hardCloseSecondaryPanel()
+                }}
                 noteId={drawerNoteId}
               />
             )}
@@ -2582,23 +2636,29 @@ function secondaryPanelUrlsMatch(stackUrl: string, locationUrl: string): boolean
   return Boolean(idA && idB && idA === idB)
 }
 
-/**
- * When popstate has no history state (e.g. after pushState(null, …) on load), the URL still updates
- * but we must realign the secondary stack; otherwise the panel shows a stale page.
- */
-function syncSecondaryStackWhenPopStateStateIsNull(pre: TStackItem[], locUrl: string): TStackItem[] {
-  const pathOnly = locUrl.split('?')[0].split('#')[0]
+/** `/`, `/feed`, `/explore`, etc. — not `/notes/…`, `/feed/notes/…`, `/relays/…`. */
+function isPrimaryOnlyPathname(pathname: string): boolean {
+  const pathOnly = pathname.split('?')[0].split('#')[0]
   const segments = pathOnly.split('/').filter(Boolean)
   const firstSeg = segments[0] ?? ''
   const primaryMap = getPrimaryPageMap()
-  const isPrimaryOnly =
+  return (
     segments.length === 0 ||
     (segments.length === 1 &&
       (firstSeg === 'discussions' ||
         firstSeg === 'home' ||
         firstSeg === 'explore' ||
         firstSeg in primaryMap))
-  if (isPrimaryOnly) {
+  )
+}
+
+/**
+ * When popstate has no history state (e.g. after pushState(null, …) on load), the URL still updates
+ * but we must realign the secondary stack; otherwise the panel shows a stale page.
+ */
+function syncSecondaryStackWhenPopStateStateIsNull(pre: TStackItem[], locUrl: string): TStackItem[] {
+  const pathOnly = locUrl.split('?')[0].split('#')[0]
+  if (isPrimaryOnlyPathname(pathOnly)) {
     return []
   }
 

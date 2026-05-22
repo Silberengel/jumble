@@ -11,12 +11,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toRelay } from '@/lib/link'
 import { filterRelaysToUserAllowlist } from '@/lib/relay-allowlist'
-import { simplifyUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import client from '@/services/client.service'
 import { Server } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
 
@@ -33,6 +33,15 @@ export default function SeenOnButton({
   const { push } = useSecondaryPage()
   const [relays, setRelays] = useState<string[]>([])
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const allowedRelaysRef = useRef(allowedRelays)
+  allowedRelaysRef.current = allowedRelays
+  const allowedRelaysKey = allowedRelays?.length
+    ? [...allowedRelays]
+        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+        .filter(Boolean)
+        .sort()
+        .join('|')
+    : ''
 
   useEffect(() => {
     let cancelled = false
@@ -40,8 +49,9 @@ export default function SeenOnButton({
     const maxAttempts = 20
     const apply = () => {
       const seenOn = client.getSeenEventRelayUrls(event.id)
+      const allowlist = allowedRelaysRef.current
       const visible =
-        allowedRelays?.length ? filterRelaysToUserAllowlist(seenOn, allowedRelays) : seenOn
+        allowlist?.length ? filterRelaysToUserAllowlist(seenOn, allowlist) : seenOn
       if (!cancelled) setRelays(visible)
       return visible.length > 0
     }
@@ -55,7 +65,7 @@ export default function SeenOnButton({
       cancelled = true
       clearInterval(id)
     }
-  }, [event.id, allowedRelays])
+  }, [event.id, allowedRelaysKey])
 
   const trigger = (
     <button

@@ -1482,8 +1482,7 @@ function ReplyNoteList({
                     highlightReply(parentEventHexId)
                   }}
                   onClickReply={belongsToSameThread ? (replyEvent) => {
-                    const replyNoteUrl = toNote(replyEvent)
-                    window.history.pushState(null, '', replyNoteUrl)
+                    // Highlight only — do not push history (null pushState desynced stack vs URL on Back).
                     const replyIndex = mergedFeed.findIndex((r) => r.id === replyEvent.id)
                     if (replyIndex >= 0 && replyIndex >= showCount) {
                       setShowCount(replyIndex + 1)

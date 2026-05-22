@@ -120,14 +120,14 @@ class NoteStatsService {
   }
 
   /** Merge extra relay URLs into the pending fetch context for this note (deduped). */
-  private mergeFavoriteRelaysIntoPending(eventId: string, extra: string[] | null | undefined) {
+  private mergeFavoriteRelaysIntoPending(eventId: string, extra: readonly string[] | null | undefined) {
     if (!extra?.length) return
     const cur = this.pendingFetchFavoriteRelays.get(eventId)
     const merged = new Set<string>([...(cur ?? []), ...extra])
     this.pendingFetchFavoriteRelays.set(eventId, [...merged])
   }
 
-  private mergeFavoriteRelaysIntoDeferred(eventId: string, extra: string[] | null | undefined) {
+  private mergeFavoriteRelaysIntoDeferred(eventId: string, extra: readonly string[] | null | undefined) {
     if (!extra?.length) return
     const cur = this.inFlightDeferredFavoriteRelays.get(eventId)
     const merged = new Set<string>([...(cur ?? []), ...extra])
@@ -190,7 +190,7 @@ class NoteStatsService {
   async fetchNoteStats(
     event: Event,
     _pubkey?: string | null,
-    favoriteRelays?: string[] | null,
+    favoriteRelays?: readonly string[] | null,
     opts?: { foreground?: boolean; relayAllowlist?: readonly string[] | null }
   ) {
     const eventId = this.statsKey(event.id)
@@ -237,7 +237,7 @@ class NoteStatsService {
       return
     }
 
-    this.pendingFetchFavoriteRelays.set(eventId, favoriteRelays ?? null)
+    this.pendingFetchFavoriteRelays.set(eventId, favoriteRelays?.length ? [...favoriteRelays] : null)
     if (opts?.relayAllowlist?.length) {
       this.pendingFetchRelayAllowlist.set(eventId, opts.relayAllowlist)
     } else {
@@ -615,7 +615,7 @@ class NoteStatsService {
   /** {@link buildComprehensiveRelayList} for reactions/reposts/zaps on a note (thread hints, capped author NIP-65). */
   private async buildNoteStatsRelayList(
     event: Event,
-    favoriteRelays?: string[] | null,
+    favoriteRelays?: readonly string[] | null,
     relayAllowlist?: readonly string[]
   ): Promise<string[]> {
     const me = client.pubkey?.trim()
