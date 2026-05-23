@@ -16,13 +16,17 @@ import logger from '@/lib/logger'
 export default function RawEventDialog({
   event,
   isOpen,
-  onClose
+  onClose,
+  title
 }: {
   event: Event
   isOpen: boolean
   onClose: () => void
+  /** Dialog title; defaults to “Raw Event”. */
+  title?: string
 }) {
   const { t } = useTranslation()
+  const dialogTitle = title ?? t('Raw Event')
   const [wordWrapEnabled, setWordWrapEnabled] = useState(true)
   const [copied, setCopied] = useState(false)
 
@@ -37,12 +41,12 @@ export default function RawEventDialog({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="h-[60vh] w-[95vw] max-w-[400px] sm:w-[90vw] sm:max-w-[600px] md:w-[85vw] md:max-w-[800px] lg:w-[80vw] lg:max-w-[1000px] xl:w-[75vw] xl:max-w-[1200px] 2xl:w-[70vw] 2xl:max-w-[1400px] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0 pr-8">
           <div className="flex items-center justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <DialogTitle>Raw Event</DialogTitle>
+              <DialogTitle>{dialogTitle}</DialogTitle>
               <DialogDescription className="sr-only">View the raw event data</DialogDescription>
             </div>
             <div className="flex items-center gap-1 shrink-0">

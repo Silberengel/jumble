@@ -7,6 +7,7 @@ import {
   getSuperchatPaytoType,
   getSuperchatReferenceFetchId,
   isProfileWallPaymentNotification,
+  isProfileWallZapReceipt,
   partitionAttestedSuperchats
 } from '@/lib/superchat'
 import { parsePaytoTagType } from '@/lib/payto'
@@ -118,6 +119,35 @@ describe('partitionAttestedSuperchats', () => {
     expect(superchats.map((e) => e.id)).toEqual([payment.id, zapAttested.id])
     expect(rest).toEqual([comment])
   })
+
+  it('includes attested zaps below the reply threshold at the top', () => {
+    const attested = new Set([ZAP_ID])
+    const microZap = fakeEvent({
+      id: ZAP_ID,
+      kind: kinds.Zap,
+      tags: [
+        ['P', SENDER],
+        ['p', RECIPIENT],
+        ['bolt11', 'lnbc1n1p0fake'],
+        [
+          'description',
+          JSON.stringify({
+            pubkey: SENDER,
+            content: 'tiny',
+            tags: [['p', RECIPIENT], ['amount', '1000']]
+          })
+        ]
+      ]
+    })
+    const comment = fakeEvent({
+      id: '1'.repeat(64),
+      kind: ExtendedKind.COMMENT,
+      tags: [['e', '2'.repeat(64)]]
+    })
+    const { superchats, rest } = partitionAttestedSuperchats([microZap, comment], attested, 21)
+    expect(superchats.map((e) => e.id)).toEqual([ZAP_ID])
+    expect(rest).toEqual([comment])
+  })
 })
 
 describe('getPaymentNotificationInfo', () => {
@@ -225,5 +255,56 @@ describe('profile wall payment notifications', () => {
     const out = filterAttestedProfileWallSuperchats([payment], [attestation], RECIPIENT)
     expect(out).toHaveLength(1)
     expect(out[0]!.id).toBe(paymentId)
+  })
+
+  it('accepts profile-only zap receipt without thread reference', () => {
+    const evt = fakeEvent({
+      kind: kinds.Zap,
+      tags: [
+        ['P', SENDER],
+        ['p', RECIPIENT],
+        ['bolt11', 'lnbc210n1p0fake'],
+        [
+          'description',
+          JSON.stringify({
+            pubkey: SENDER,
+            content: 'Zap!',
+            tags: [['p', RECIPIENT], ['amount', '21000']]
+          })
+        ]
+      ]
+    })
+    expect(isProfileWallZapReceipt(evt, RECIPIENT)).toBe(true)
+  })
+
+  it('filters to attested profile wall zap receipts', () => {
+    const zap = fakeEvent({
+      id: ZAP_ID,
+      kind: kinds.Zap,
+      tags: [
+        ['P', SENDER],
+        ['p', RECIPIENT],
+        ['bolt11', 'lnbc210n1p0fake'],
+        [
+          'description',
+          JSON.stringify({
+            pubkey: SENDER,
+            content: 'Wall zap',
+            tags: [['p', RECIPIENT], ['amount', '21000']]
+          })
+        ]
+      ]
+    })
+    const attestation = fakeEvent({
+      kind: ExtendedKind.PAYMENT_ATTESTATION,
+      pubkey: RECIPIENT,
+      tags: [
+        ['e', ZAP_ID],
+        ['k', '9735']
+      ]
+    })
+    const out = filterAttestedProfileWallSuperchats([zap], [attestation], RECIPIENT)
+    expect(out).toHaveLength(1)
+    expect(out[0]!.id).toBe(ZAP_ID)
   })
 })

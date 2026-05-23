@@ -2,15 +2,13 @@ import { ZAP_SENDING_ENABLED } from '@/constants'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import PaytoTypeIcon from '@/components/PaytoTypeIcon'
 import {
   parsePaytoUri,
   buildPaytoUri,
   getCanonicalPaytoType,
   getPaytoTypeInfo,
-  getPaytoIconChar,
-  getPaytoLogoPath,
   isKnownPaytoType,
-  isLightningPaytoType,
   isZappableLightningPaytoType,
   flattenPaytoLinkChildText,
   formatPaytoLinkDisplayText,
@@ -18,7 +16,6 @@ import {
 } from '@/lib/payto'
 import { NostrEvent } from 'nostr-tools'
 import PaytoDialog from '@/components/PaytoDialog'
-import { HelpCircle } from 'lucide-react'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
 import type { PostPaymentContext } from '@/lib/post-payment-context'
@@ -76,7 +73,6 @@ export default function PaytoLink({
   const { type, authority, raw } = parsed
   const info = getPaytoTypeInfo(type)
   const known = isKnownPaytoType(type)
-  const isLightning = isLightningPaytoType(type)
   const canZap =
     ZAP_SENDING_ENABLED && isZappableLightningPaytoType(type) && !!pubkey && !!onOpenZap
 
@@ -102,8 +98,6 @@ export default function PaytoLink({
     if (c === 'bitcoin-layer') return 'Bitcoin layer'
     return c.charAt(0).toUpperCase() + c.slice(1)
   })()
-  const logoPath = getPaytoLogoPath(type)
-  const iconChar = getPaytoIconChar(type)
   const childText = flattenPaytoLinkChildText(children)
   const useCompactDisplay =
     displayFormat === 'compact' &&
@@ -123,22 +117,7 @@ export default function PaytoLink({
       : `${displayLabel}: ${t('Click to open payment options')}`
     : t('Click to copy address')
 
-  const iconEl = (
-    <span className="shrink-0 flex items-center justify-center w-4 h-4 text-[1rem] leading-none" aria-hidden>
-      {logoPath ? (
-        <img src={logoPath} alt="" className="size-4 object-contain" />
-      ) : iconChar != null ? (
-        <span className={cn(
-          'inline-flex items-center justify-center',
-          isLightning && 'text-yellow-400'
-        )}>
-          {iconChar}
-        </span>
-      ) : (
-        <HelpCircle className="size-3.5 text-muted-foreground" />
-      )}
-    </span>
-  )
+  const iconEl = <PaytoTypeIcon type={type} className="w-4 h-4 text-[1rem]" />
 
   return (
     <>

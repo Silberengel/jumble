@@ -48,6 +48,7 @@ import {
   Pin,
   SatelliteDish,
   Send,
+  Sparkles,
   Trash2,
   TriangleAlert,
   Video,
@@ -118,6 +119,8 @@ interface UseMenuActionsProps {
   onOpenEditOrClone?: (mode: TEditOrCloneMode) => void
   /** When the feed already marks this note pinned (e.g. profile pin section). */
   pinned?: boolean
+  /** Opens JSON viewer for the kind 9741 attestation of this payment or zap receipt. */
+  onViewAttestation?: () => void
 }
 
 export function useMenuActions({
@@ -130,7 +133,8 @@ export function useMenuActions({
   onOpenPublicMessage,
   onOpenCallInvite,
   onOpenEditOrClone,
-  pinned: pinnedInFeed = false
+  pinned: pinnedInFeed = false,
+  onViewAttestation
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
   // Use useContext directly to avoid error if provider is not available
@@ -1062,8 +1066,20 @@ export function useMenuActions({
         closeDrawer()
         setIsRawEventDialogOpen(true)
       },
-      separator: true
+      separator: !onViewAttestation
     })
+
+    if (onViewAttestation) {
+      actions.push({
+        icon: Sparkles,
+        label: t('View attestation'),
+        onClick: () => {
+          closeDrawer()
+          onViewAttestation()
+        },
+        separator: true
+      })
+    }
 
     // Add export options for article-type events
     if (isArticleType) {
@@ -1258,7 +1274,8 @@ export function useMenuActions({
     canSignEvents,
     profile,
     noteTranslationFromMenu,
-    translateMenuOptions
+    translateMenuOptions,
+    onViewAttestation
   ])
 
   return menuActions

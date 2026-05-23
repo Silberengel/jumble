@@ -1,7 +1,12 @@
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Ellipsis } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
+import { hexPubkeysEqual } from '@/lib/pubkey'
+import { isAttestableSuperchatPayment } from '@/lib/superchat'
+import { useNostr } from '@/providers/NostrProvider'
 import { DesktopMenu } from './DesktopMenu'
 import EditOrCloneEventDialog, { type TEditOrCloneMode } from './EditOrCloneEventDialog'
 import { MobileMenu } from './MobileMenu'
@@ -41,8 +46,11 @@ export default function NoteOptions({
   /** Default content when opening the editor (e.g. call invite URL). */
   initialDefaultContent?: string | null
 }) {
+  const { t } = useTranslation()
+  const { pubkey } = useNostr()
   const { isSmallScreen } = useScreenSize()
   const [isRawEventDialogOpen, setIsRawEventDialogOpen] = useState(false)
+  const [isAttestationDialogOpen, setIsAttestationDialogOpen] = useState(false)
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false)
   const [editCloneOpen, setEditCloneOpen] = useState(false)
   const [editCloneMode, setEditCloneMode] = useState<TEditOrCloneMode>('clone')
@@ -74,6 +82,15 @@ export default function NoteOptions({
     setShowSubMenu(true)
   }
 
+  const attestableEvent = isAttestableSuperchatPayment(event) ? event : undefined
+  const { attested, attestationEvent, recipientPubkey } = usePaymentAttestationStatus(attestableEvent)
+  const canViewAttestation =
+    attested &&
+    attestationEvent != null &&
+    pubkey != null &&
+    recipientPubkey != null &&
+    hexPubkeysEqual(pubkey, recipientPubkey)
+
   const menuActions = useMenuActions({
     event,
     closeDrawer,
@@ -87,7 +104,12 @@ export default function NoteOptions({
       setEditCloneMode(mode)
       setEditCloneOpen(true)
     },
-    pinned
+    pinned,
+    onViewAttestation: canViewAttestation
+      ? () => {
+          queueMicrotask(() => setIsAttestationDialogOpen(true))
+        }
+      : undefined
   })
 
   const trigger = useMemo(
@@ -126,6 +148,14 @@ export default function NoteOptions({
         isOpen={isRawEventDialogOpen}
         onClose={() => setIsRawEventDialogOpen(false)}
       />
+      {attestationEvent ? (
+        <RawEventDialog
+          event={attestationEvent}
+          isOpen={isAttestationDialogOpen}
+          onClose={() => setIsAttestationDialogOpen(false)}
+          title={t('Payment attestation')}
+        />
+      ) : null}
       <ReportDialog
         event={event}
         isOpen={isReportDialogOpen}

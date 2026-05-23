@@ -1,6 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import {
-  buildAttestedPaymentIdSet,
+  findPaymentAttestationForTarget,
   getPaymentAttestationTargetId,
   getSuperchatPaymentRecipientPubkey
 } from '@/lib/superchat'
@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 
 export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined) {
   const [attested, setAttested] = useState(false)
+  const [attestationEvent, setAttestationEvent] = useState<NostrEvent | null>(null)
   const [checking, setChecking] = useState(false)
 
   const recipientPubkey = targetEvent ? getSuperchatPaymentRecipientPubkey(targetEvent) : null
@@ -17,6 +18,7 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
 
   useEffect(() => {
     setAttested(false)
+    setAttestationEvent(null)
     if (!targetEvent?.id || !recipientPubkey) return
 
     let cancelled = false
@@ -35,8 +37,9 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
       )
       .then((attestations) => {
         if (cancelled) return
-        const ids = buildAttestedPaymentIdSet(attestations, recipientPubkey)
-        setAttested(ids.has(targetEvent.id.toLowerCase()))
+        const match = findPaymentAttestationForTarget(attestations, targetEvent.id, recipientPubkey)
+        setAttestationEvent(match ?? null)
+        setAttested(Boolean(match))
       })
       .catch(() => {
         /* optional */
@@ -60,6 +63,7 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
       const attestedId = getPaymentAttestationTargetId(evt)
       if (attestedId?.toLowerCase() === targetEvent.id.toLowerCase()) {
         setAttested(true)
+        setAttestationEvent(evt)
       }
     }
 
@@ -67,5 +71,5 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
     return () => client.removeEventListener('newEvent', handleAttestation)
   }, [targetEvent?.id, recipientPubkey])
 
-  return { attested, checking, recipientPubkey }
+  return { attested, attestationEvent, checking, recipientPubkey }
 }

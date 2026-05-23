@@ -70,32 +70,39 @@ export default function Superchat({
   }
 
   if (variant === 'compact') {
+    const hasMetaLine =
+      (recipientPubkey && recipientPubkey !== senderPubkey) || hasTarget
+
     return (
       <div className={cn('text-sm text-muted-foreground', className)}>
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <SuperchatPaymentMethodLabel paytoType={paytoType} />
-          <span className="text-xs font-medium text-yellow-400/90">{t('Superchat')}</span>
-          {recipientPubkey && recipientPubkey !== senderPubkey ? (
-            <span className="text-xs">
-              <span>{t('to')}</span>{' '}
-              <Username
-                userId={recipientPubkey}
-                className="inline font-medium text-foreground/85 hover:text-foreground"
-              />
-            </span>
-          ) : null}
-          {hasTarget ? (
-            <button
-              type="button"
-              onClick={openTarget}
-              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
-            </button>
-          ) : null}
+          <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
         </div>
+        {hasMetaLine ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+            {recipientPubkey && recipientPubkey !== senderPubkey ? (
+              <span>
+                <span>{t('to')}</span>{' '}
+                <Username
+                  userId={recipientPubkey}
+                  className="inline font-medium text-foreground/85 hover:text-foreground"
+                />
+              </span>
+            ) : null}
+            {hasTarget ? (
+              <button
+                type="button"
+                onClick={openTarget}
+                className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {comment ? (
-          <p className="mt-1.5 text-sm leading-snug text-foreground/90 whitespace-pre-wrap break-words">
+          <p className="mt-2 text-base font-medium leading-snug text-foreground whitespace-pre-wrap break-words">
             {comment}
           </p>
         ) : null}
@@ -122,27 +129,27 @@ export default function Superchat({
 
       <div className="flex items-start gap-3 pb-10 pr-2 sm:pr-36">
         <div className="mt-1 shrink-0">
-          <SuperchatPaymentMethodLabel paytoType={paytoType} className="text-sm" />
+          <SuperchatPaymentMethodLabel paytoType={paytoType} className="text-base" />
         </div>
         <div className="min-w-0 flex-1">
           {!omitSenderHeading && (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <UserAvatar userId={senderPubkey} size="small" />
               <Username userId={senderPubkey} className="font-semibold text-foreground" />
-              <span className="text-sm font-medium text-yellow-400/90">{t('Superchat')}</span>
+              <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
               {recipientPubkey && recipientPubkey !== senderPubkey && (
-                <>
-                  <span className="text-sm text-muted-foreground">{t('to')}</span>
+                <span className="w-full basis-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>{t('to')}</span>
                   <UserAvatar userId={recipientPubkey} size="small" />
                   <Username userId={recipientPubkey} className="font-semibold text-foreground" />
-                </>
+                </span>
               )}
             </div>
           )}
 
           {comment ? (
             <div className="rounded-r-md border-l-[3px] border-yellow-400 bg-muted/40 py-2.5 pl-3 pr-2 dark:bg-muted/25">
-              <p className="text-lg font-semibold leading-snug tracking-tight text-foreground whitespace-pre-wrap break-words">
+              <p className="text-xl font-semibold leading-snug tracking-tight text-foreground whitespace-pre-wrap break-words">
                 {comment}
               </p>
             </div>

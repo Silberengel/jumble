@@ -1,4 +1,6 @@
 import Superchat from '@/components/Note/Superchat'
+import Zap from '@/components/Note/Zap'
+import { ExtendedKind } from '@/constants'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
@@ -28,9 +30,13 @@ export default function ProfileWallSuperchats({
         {t('Superchats')}
       </h3>
       <div className="space-y-2">
-        {superchats.map((event) => (
-          <Superchat key={event.id} event={event} variant="compact" />
-        ))}
+        {superchats.map((event) =>
+          event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
+            <Superchat key={event.id} event={event} variant="compact" />
+          ) : (
+            <Zap key={event.id} event={event} variant="compact" />
+          )
+        )}
       </div>
     </section>
   )

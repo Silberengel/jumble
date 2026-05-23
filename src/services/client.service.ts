@@ -138,6 +138,7 @@ import { collectNip05ValuesFromKind0 } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
+import { getPaymentAttestationTargetId } from '@/lib/superchat'
 import {
   buildPublicMessagePublishRelayUrls,
   collectRecipientInboxUrls,
@@ -1257,6 +1258,48 @@ class ClientService extends EventTarget {
       return pubRelays
     }
 
+    // Payment attestations (9741): attester outbox + attester read inboxes (profile wall REQ) +
+    // payment sender inboxes + relays that carried the attested payment.
+    if (event.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+      const targetEventId = getPaymentAttestationTargetId(event)
+      const paymentSenderPubkey = event.tags.find(([name]) => name === 'e')?.[3]?.trim()
+      const senderPubkeys =
+        paymentSenderPubkey && isValidPubkey(paymentSenderPubkey) ? [paymentSenderPubkey] : []
+      const [authorRelayList, senderRelayLists] = await Promise.all([
+        this.fetchRelayListWithPublishTimeout(event.pubkey),
+        senderPubkeys.length > 0
+          ? this.fetchRelayListsWithPublishTimeout(senderPubkeys)
+          : Promise.resolve([] as TRelayList[])
+      ])
+      const authorWrite = collectSenderOutboxUrls(authorRelayList)
+      const authorRead = collectRecipientInboxUrls(authorRelayList)
+      const senderInboxes = dedupeNormalizeRelayUrlsOrdered(
+        senderRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
+      )
+      const seenRelays = targetEventId ? this.getSeenEventRelayUrls(targetEventId) : []
+      const attestationRelays = this.filterPublishingRelays(
+        buildPrioritizedWriteRelayUrls({
+          userWriteRelays: authorWrite,
+          authorReadRelays: dedupeNormalizeRelayUrlsOrdered([...authorRead, ...senderInboxes]),
+          favoriteRelays: favoriteRelayUrls ?? [],
+          extraRelays: seenRelays,
+          maxRelays: MAX_PUBLISH_RELAYS,
+          includeGlobalFastWriteReadTails: useGlobalRelayDefaults,
+          ...writeRelayPubOpts
+        }),
+        event
+      )
+      logger.debug('[DetermineTargetRelays] Payment attestation: outbox + inboxes + seen relays', {
+        kind: event.kind,
+        relayCount: attestationRelays.length,
+        authorWriteCount: authorWrite.length,
+        authorReadCount: authorRead.length,
+        senderInboxCount: senderInboxes.length,
+        seenRelayCount: seenRelays.length
+      })
+      return attestationRelays
+    }
+
     let relays: string[]
     if (specifiedRelayUrls?.length) {
       relays = specifiedRelayUrls
@@ -2224,18 +2267,22 @@ class ClientService extends EventTarget {
 
     add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
 
-    const [timelineRows, archiveRows, publicationRows] = await Promise.all([
+    const [timelineRows, archiveRows, publicationRows, paymentSuperchatRows] = await Promise.all([
       this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[]),
       indexedDb
         .scanEventArchiveByFilters(filters, { maxRowsScanned, maxMatches })
         .catch(() => [] as NEvent[]),
       indexedDb
         .scanPublicationEventsByFilters(filters, { maxRowsScanned: Math.min(maxRowsScanned, 16_000), maxMatches })
+        .catch(() => [] as NEvent[]),
+      indexedDb
+        .getPaymentSuperchatEventsMatchingFilters(filters, maxMatches)
         .catch(() => [] as NEvent[])
     ])
     add(timelineRows)
     add(archiveRows)
     add(publicationRows)
+    add(paymentSuperchatRows)
 
     return [...byId.values()]
       .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))

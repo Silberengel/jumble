@@ -17,11 +17,10 @@ export default function ProfileBadges({
   const { t } = useTranslation()
   const { badges, superchats, isLoading, refresh } = useProfileWall(pubkey, profileEventId)
   const handleRefresh = () => {
+    refresh()
     if (onRefresh) {
       void onRefresh()
-      return
     }
-    refresh()
   }
 
   if (isLoading && badges.length === 0 && superchats.length === 0) {
@@ -37,11 +36,13 @@ export default function ProfileBadges({
 
   return (
     <div className="mt-3 min-w-0">
+      {badges.length > 0 || superchats.length > 0 ? (
+        <div className="mb-1 flex items-center justify-end gap-2">
+          <RefreshButton onClick={handleRefresh} onLongPress={null} />
+        </div>
+      ) : null}
       {badges.length > 0 ? (
         <section className="min-w-0" aria-label={t('Badges')}>
-          <div className="mb-1 flex items-center justify-end gap-2">
-            <RefreshButton onClick={handleRefresh} onLongPress={null} />
-          </div>
           <div className="flex flex-wrap gap-2">
             {badges.map((badge) => (
               <div

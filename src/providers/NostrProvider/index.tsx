@@ -1653,6 +1653,20 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             logger.warn('[Publish] Calendar RSVP IndexedDB persist failed', { err })
           }
         }
+        if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+          try {
+            await indexedDb.putPaymentNotificationRow(event)
+          } catch (err) {
+            logger.warn('[Publish] Payment notification IndexedDB persist failed', { err })
+          }
+        }
+        if (event.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+          try {
+            await indexedDb.putPaymentAttestationRow(event)
+          } catch (err) {
+            logger.warn('[Publish] Payment attestation IndexedDB persist failed', { err })
+          }
+        }
         client.emitNewEvent(event)
         // Replaceable list events (pins, cache relays, …) must hit IndexedDB + DataLoader, not only RAM
         void replaceableEventService.updateReplaceableEventCache(event).catch(() => {})

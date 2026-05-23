@@ -209,8 +209,12 @@ export function getParentETag(event?: Event) {
     return event.tags.find(tagNameEquals('e')) ?? event.tags.find(tagNameEquals('E'))
   }
 
-  // Kind 9735: zapped note id is on `e` / `E` (or addressable target on `a` / `A`)
-  if (event.kind === kinds.Zap) {
+  // Kind 9735 / 9740: referenced note id is on `e` / `E` (or addressable target on `a` / `A`).
+  if (
+    event.kind === kinds.Zap ||
+    event.kind === ExtendedKind.ZAP_RECEIPT ||
+    event.kind === ExtendedKind.PAYMENT_NOTIFICATION
+  ) {
     const firstHex = getFirstHexEventIdFromETags(event.tags)
     if (firstHex) {
       return (
@@ -242,7 +246,11 @@ export function getParentETag(event?: Event) {
 
 export function getParentATag(event?: Event) {
   if (!event) return undefined
-  if (event.kind === kinds.Zap) {
+  if (
+    event.kind === kinds.Zap ||
+    event.kind === ExtendedKind.ZAP_RECEIPT ||
+    event.kind === ExtendedKind.PAYMENT_NOTIFICATION
+  ) {
     return event.tags.find(tagNameEquals('a')) ?? event.tags.find(tagNameEquals('A'))
   }
   if (

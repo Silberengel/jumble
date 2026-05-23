@@ -55,7 +55,7 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
-import type { TProfile } from '@/types'
+import type { TProfile, TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -77,6 +77,77 @@ const MAX_PARENT_IDS_PER_NESTED_REQ = 64
 /** Short debounce so thread / detail headers populate avatars quickly after events arrive. */
 const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 120
 const THREAD_PROFILE_CHUNK = 80
+
+async function hydrateAttestedSuperchatTargets(
+  attestedIds: ReadonlySet<string>,
+  relayUrls: string[]
+): Promise<NEvent[]> {
+  const ids = [...attestedIds].filter((id) => /^[0-9a-f]{64}$/i.test(id))
+  if (ids.length === 0) return []
+
+  const byId = new Map<string, NEvent>()
+  try {
+    const local = await client.getLocalFeedEvents(
+      [{ urls: [], filter: { ids, limit: ids.length } }],
+      { maxMatches: ids.length }
+    )
+    for (const e of local) byId.set(e.id.toLowerCase(), e)
+  } catch {
+    /* optional */
+  }
+
+  const missing = ids.filter((id) => !byId.has(id.toLowerCase()))
+  if (missing.length > 0 && relayUrls.length > 0) {
+    try {
+      const fetched = await client.fetchEvents(
+        relayUrls,
+        { ids: missing, limit: missing.length },
+        { cache: true, eoseTimeout: 4500, globalTimeout: 12_000 }
+      )
+      for (const e of fetched) byId.set(e.id.toLowerCase(), e)
+    } catch {
+      /* optional */
+    }
+  }
+
+  return [...byId.values()]
+}
+
+async function fetchPaymentAttestationsForRecipient(
+  recipientPubkey: string,
+  relayUrls: string[],
+  options: { foreground?: boolean } = {}
+): Promise<NEvent[]> {
+  const filter: Filter = {
+    kinds: [ExtendedKind.PAYMENT_ATTESTATION],
+    authors: [recipientPubkey],
+    limit: 500
+  }
+  const byId = new Map<string, NEvent>()
+  try {
+    const local = await client.getLocalFeedEvents(
+      [{ urls: [], filter: filter as TSubRequestFilter }],
+      { maxMatches: 500 }
+    )
+    for (const e of local) byId.set(e.id, e)
+  } catch {
+    /* optional */
+  }
+  if (relayUrls.length > 0) {
+    try {
+      const rows = await client.fetchEvents(relayUrls, filter, {
+        cache: true,
+        eoseTimeout: 4500,
+        globalTimeout: 12_000,
+        foreground: options.foreground
+      })
+      for (const e of rows) byId.set(e.id, e)
+    } catch {
+      /* optional */
+    }
+  }
+  return [...byId.values()]
+}
 
 function replyFeedZapsFirst(sortedNonZapReplies: NEvent[], superchats: NEvent[]) {
   return replyFeedSuperchatsFirst(sortedNonZapReplies, superchats)
@@ -354,6 +425,7 @@ function ReplyNoteList({
   const { pubkey: userPubkey } = useNostr()
   const { zapReplyThreshold } = useZap()
   const [attestedPaymentIds, setAttestedPaymentIds] = useState<Set<string>>(() => new Set())
+  const threadRelayUrlsRef = useRef<string[]>([])
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const relayAuthoritativeRead =
@@ -386,10 +458,18 @@ function ReplyNoteList({
         next.add(targetId)
         return next
       })
+      void client
+        .fetchEvent(targetId, { relayHints: threadRelayUrlsRef.current })
+        .then((target) => {
+          if (target) addReplies([target])
+        })
+        .catch(() => {
+          /* optional */
+        })
     }
     client.addEventListener('newEvent', handleAttestation)
     return () => client.removeEventListener('newEvent', handleAttestation)
-  }, [event.pubkey])
+  }, [event.pubkey, addReplies])
 
   const replies = useMemo(() => {
     const replyIdSet = new Set<string>()
@@ -1163,25 +1243,21 @@ function ReplyNoteList({
           addReplies(mergedForUi)
 
           const recipientPubkey = event.pubkey
-          if (recipientPubkey && relayUrlsForThreadReq.length > 0) {
-            void client
-              .fetchEvents(
-                relayUrlsForThreadReq,
-                {
-                  kinds: [ExtendedKind.PAYMENT_ATTESTATION],
-                  authors: [recipientPubkey],
-                  limit: 500
-                },
-                {
-                  cache: true,
-                  eoseTimeout: 4500,
-                  globalTimeout: 12_000,
-                  foreground: statsForeground
-                }
-              )
-              .then((attestations) => {
+          threadRelayUrlsRef.current = relayUrlsForThreadReq
+          if (recipientPubkey) {
+            void fetchPaymentAttestationsForRecipient(recipientPubkey, relayUrlsForThreadReq, {
+              foreground: statsForeground
+            })
+              .then(async (attestations) => {
                 if (fetchGeneration !== replyFetchGenRef.current) return
-                setAttestedPaymentIds(buildAttestedPaymentIdSet(attestations, recipientPubkey))
+                const attestedIds = buildAttestedPaymentIdSet(attestations, recipientPubkey)
+                setAttestedPaymentIds(attestedIds)
+                const targets = await hydrateAttestedSuperchatTargets(
+                  attestedIds,
+                  relayUrlsForThreadReq
+                )
+                if (fetchGeneration !== replyFetchGenRef.current) return
+                if (targets.length > 0) addReplies(targets)
               })
               .catch(() => {
                 /* attestations optional */

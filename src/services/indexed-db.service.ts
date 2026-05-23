@@ -28,6 +28,12 @@ import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
+import {
+  paymentAttestationIdbRowFromEvent,
+  paymentNotificationIdbRowFromEvent,
+  type PaymentAttestationIdbRow,
+  type PaymentNotificationIdbRow
+} from '@/lib/payment-superchat-idb'
 import type { Filter } from 'nostr-tools'
 
 /** Hot archive row in {@link StoreNames.EVENT_ARCHIVE}. */
@@ -138,7 +144,11 @@ export const StoreNames = {
   /** NIP-52 calendar notes (31922/31923). Key: {@link replaceableEventDedupeKey}. Index: `occurrenceStartMs`. */
   CALENDAR_EVENTS: 'calendarEvents',
   /** NIP-52 calendar RSVPs (31925). Key: event id. Index: `parentCoordinate` (`a` tag). */
-  CALENDAR_RSVP_EVENTS: 'calendarRsvpEvents'
+  CALENDAR_RSVP_EVENTS: 'calendarRsvpEvents',
+  /** Kind 9740 payment notifications. Key: event id. Indexes: recipient, referenced event/coordinate. */
+  PAYMENT_NOTIFICATION_EVENTS: 'paymentNotificationEvents',
+  /** Kind 9741 payment attestations. Key: event id. Indexes: author (attester), target payment id. */
+  PAYMENT_ATTESTATION_EVENTS: 'paymentAttestationEvents'
 }
 
 /** Row shape for {@link StoreNames.CALENDAR_EVENTS}. */
@@ -173,7 +183,9 @@ const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set(
   StoreNames.MUTE_DECRYPTED_TAGS,
   StoreNames.FAVORITE_RELAYS,
   StoreNames.CALENDAR_EVENTS,
-  StoreNames.CALENDAR_RSVP_EVENTS
+  StoreNames.CALENDAR_RSVP_EVENTS,
+  StoreNames.PAYMENT_NOTIFICATION_EVENTS,
+  StoreNames.PAYMENT_ATTESTATION_EVENTS
 ])
 
 /**
@@ -214,7 +226,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 38
+const DB_VERSION = 39
 
 /** Hint age for profile/payment reads (stale rows still returned; background refresh). */
 const PROFILE_AND_PAYMENT_STALE_READ_MS = 5 * 60 * 1000
@@ -247,6 +259,15 @@ function ensureMissingObjectStores(db: IDBDatabase): void {
     } else if (storeName === StoreNames.CALENDAR_RSVP_EVENTS) {
       const rsvp = db.createObjectStore(storeName, { keyPath: 'key' })
       rsvp.createIndex('parentCoordinate', 'parentCoordinate', { unique: false })
+    } else if (storeName === StoreNames.PAYMENT_NOTIFICATION_EVENTS) {
+      const pn = db.createObjectStore(storeName, { keyPath: 'key' })
+      pn.createIndex('recipientPubkey', 'recipientPubkey', { unique: false })
+      pn.createIndex('referencedEventId', 'referencedEventId', { unique: false })
+      pn.createIndex('referencedCoordinate', 'referencedCoordinate', { unique: false })
+    } else if (storeName === StoreNames.PAYMENT_ATTESTATION_EVENTS) {
+      const pa = db.createObjectStore(storeName, { keyPath: 'key' })
+      pa.createIndex('authorPubkey', 'authorPubkey', { unique: false })
+      pa.createIndex('targetEventId', 'targetEventId', { unique: false })
     } else {
       db.createObjectStore(storeName, { keyPath: 'key' })
     }
@@ -473,6 +494,19 @@ class IndexedDbService {
           }
           if (event.oldVersion < 37) {
             // v37: drop legacy object stores; calendar notes purged from EVENT_ARCHIVE post-open
+          }
+          if (event.oldVersion < 39) {
+            if (!db.objectStoreNames.contains(StoreNames.PAYMENT_NOTIFICATION_EVENTS)) {
+              const pn = db.createObjectStore(StoreNames.PAYMENT_NOTIFICATION_EVENTS, { keyPath: 'key' })
+              pn.createIndex('recipientPubkey', 'recipientPubkey', { unique: false })
+              pn.createIndex('referencedEventId', 'referencedEventId', { unique: false })
+              pn.createIndex('referencedCoordinate', 'referencedCoordinate', { unique: false })
+            }
+            if (!db.objectStoreNames.contains(StoreNames.PAYMENT_ATTESTATION_EVENTS)) {
+              const pa = db.createObjectStore(StoreNames.PAYMENT_ATTESTATION_EVENTS, { keyPath: 'key' })
+              pa.createIndex('authorPubkey', 'authorPubkey', { unique: false })
+              pa.createIndex('targetEventId', 'targetEventId', { unique: false })
+            }
           }
           ensureMissingObjectStores(db)
         }
@@ -3846,6 +3880,219 @@ class IndexedDbService {
         resolve(events.slice(0, limit))
       }
     })
+  }
+
+  async putPaymentNotificationRow(ev: Event): Promise<void> {
+    const row = paymentNotificationIdbRowFromEvent(ev)
+    if (!row) return
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.PAYMENT_NOTIFICATION_EVENTS)) return
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.PAYMENT_NOTIFICATION_EVENTS, 'readwrite')
+      const store = tx.objectStore(StoreNames.PAYMENT_NOTIFICATION_EVENTS)
+      const getReq = store.get(row.key)
+      getReq.onerror = (e) => reject(idbEventToError(e))
+      getReq.onsuccess = () => {
+        const prev = getReq.result as PaymentNotificationIdbRow | undefined
+        if (prev?.value?.created_at != null && prev.value.created_at > ev.created_at) {
+          resolve()
+          return
+        }
+        const putReq = store.put(row)
+        putReq.onerror = (e) => reject(idbEventToError(e))
+        putReq.onsuccess = () => resolve()
+      }
+    })
+  }
+
+  async putPaymentAttestationRow(ev: Event): Promise<void> {
+    const row = paymentAttestationIdbRowFromEvent(ev)
+    if (!row) return
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.PAYMENT_ATTESTATION_EVENTS)) return
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.PAYMENT_ATTESTATION_EVENTS, 'readwrite')
+      const store = tx.objectStore(StoreNames.PAYMENT_ATTESTATION_EVENTS)
+      const getReq = store.get(row.key)
+      getReq.onerror = (e) => reject(idbEventToError(e))
+      getReq.onsuccess = () => {
+        const prev = getReq.result as PaymentAttestationIdbRow | undefined
+        if (prev?.value?.created_at != null && prev.value.created_at > ev.created_at) {
+          resolve()
+          return
+        }
+        const putReq = store.put(row)
+        putReq.onerror = (e) => reject(idbEventToError(e))
+        putReq.onsuccess = () => resolve()
+      }
+    })
+  }
+
+  private async getIndexedEventsByField(
+    storeName: string,
+    indexName: string,
+    fieldValue: string,
+    limit: number
+  ): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(storeName)) return []
+    const key = fieldValue.trim().toLowerCase()
+    if (!key) return []
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(storeName, 'readonly')
+      const store = tx.objectStore(storeName)
+      let index: IDBIndex
+      try {
+        index = store.index(indexName)
+      } catch {
+        resolve([])
+        return
+      }
+      const req = index.getAll(IDBKeyRange.only(key))
+      req.onerror = (e) => reject(idbEventToError(e))
+      req.onsuccess = () => {
+        const rows = (req.result as { value: Event }[]) ?? []
+        const events = rows.map((r) => r.value).filter(Boolean)
+        events.sort((a, b) => b.created_at - a.created_at)
+        resolve(events.slice(0, limit))
+      }
+    })
+  }
+
+  async getPaymentNotificationsForRecipient(recipientPubkey: string, limit = 200): Promise<Event[]> {
+    return this.getIndexedEventsByField(
+      StoreNames.PAYMENT_NOTIFICATION_EVENTS,
+      'recipientPubkey',
+      recipientPubkey,
+      limit
+    )
+  }
+
+  async getPaymentNotificationsForReferencedEvent(eventId: string, limit = 200): Promise<Event[]> {
+    return this.getIndexedEventsByField(
+      StoreNames.PAYMENT_NOTIFICATION_EVENTS,
+      'referencedEventId',
+      eventId,
+      limit
+    )
+  }
+
+  async getPaymentNotificationsForReferencedCoordinate(coordinate: string, limit = 200): Promise<Event[]> {
+    const norm = normalizeReplaceableCoordinateString(coordinate.trim())
+    if (!norm) return []
+    return this.getIndexedEventsByField(
+      StoreNames.PAYMENT_NOTIFICATION_EVENTS,
+      'referencedCoordinate',
+      norm,
+      limit
+    )
+  }
+
+  async getPaymentAttestationsForAuthor(authorPubkey: string, limit = 500): Promise<Event[]> {
+    return this.getIndexedEventsByField(
+      StoreNames.PAYMENT_ATTESTATION_EVENTS,
+      'authorPubkey',
+      authorPubkey,
+      limit
+    )
+  }
+
+  async getPaymentAttestationsForTargetEvent(targetEventId: string, limit = 20): Promise<Event[]> {
+    return this.getIndexedEventsByField(
+      StoreNames.PAYMENT_ATTESTATION_EVENTS,
+      'targetEventId',
+      targetEventId,
+      limit
+    )
+  }
+
+  async getPaymentSuperchatEventsMatchingFilters(filters: Filter[], maxMatches: number): Promise<Event[]> {
+    const out: Event[] = []
+    const seen = new Set<string>()
+    const push = (events: Event[]) => {
+      for (const ev of events) {
+        if (shouldDropEventOnIngest(ev)) continue
+        if (seen.has(ev.id)) continue
+        seen.add(ev.id)
+        out.push(ev)
+      }
+    }
+
+    for (const filter of filters) {
+      const kindsList = filter.kinds
+      const want9740 =
+        !kindsList?.length ||
+        kindsList.includes(ExtendedKind.PAYMENT_NOTIFICATION)
+      const want9741 = !kindsList?.length || kindsList.includes(ExtendedKind.PAYMENT_ATTESTATION)
+      const limit = Math.min(filter.limit ?? maxMatches, maxMatches)
+
+      if (want9740) {
+        const pTags = filter['#p']
+        if (Array.isArray(pTags)) {
+          for (const p of pTags) {
+            if (typeof p !== 'string') continue
+            push(await this.getPaymentNotificationsForRecipient(p, limit))
+          }
+        }
+        const eTags = filter['#e']
+        if (Array.isArray(eTags)) {
+          for (const eid of eTags) {
+            if (typeof eid !== 'string') continue
+            push(await this.getPaymentNotificationsForReferencedEvent(eid, limit))
+          }
+        }
+        const aTags = filter['#a']
+        if (Array.isArray(aTags)) {
+          for (const coord of aTags) {
+            if (typeof coord !== 'string') continue
+            push(await this.getPaymentNotificationsForReferencedCoordinate(coord, limit))
+          }
+        }
+      }
+
+      if (want9741 && Array.isArray(filter.authors)) {
+        for (const author of filter.authors) {
+          if (typeof author !== 'string') continue
+          push(await this.getPaymentAttestationsForAuthor(author, limit))
+        }
+      }
+
+      if (Array.isArray(filter.ids)) {
+        await this.initPromise
+        for (const id of filter.ids) {
+          if (typeof id !== 'string' || !/^[0-9a-f]{64}$/i.test(id)) continue
+          const hex = id.toLowerCase()
+          if (this.db?.objectStoreNames.contains(StoreNames.PAYMENT_NOTIFICATION_EVENTS)) {
+            const ev = await new Promise<Event | undefined>((resolve) => {
+              const tx = this.db!.transaction(StoreNames.PAYMENT_NOTIFICATION_EVENTS, 'readonly')
+              const req = tx.objectStore(StoreNames.PAYMENT_NOTIFICATION_EVENTS).get(hex)
+              req.onsuccess = () => resolve((req.result as PaymentNotificationIdbRow | undefined)?.value)
+              req.onerror = () => resolve(undefined)
+            })
+            if (ev) push([ev])
+          }
+          if (this.db?.objectStoreNames.contains(StoreNames.PAYMENT_ATTESTATION_EVENTS)) {
+            const ev = await new Promise<Event | undefined>((resolve) => {
+              const tx = this.db!.transaction(StoreNames.PAYMENT_ATTESTATION_EVENTS, 'readonly')
+              const req = tx.objectStore(StoreNames.PAYMENT_ATTESTATION_EVENTS).get(hex)
+              req.onsuccess = () => resolve((req.result as PaymentAttestationIdbRow | undefined)?.value)
+              req.onerror = () => resolve(undefined)
+            })
+            if (ev) push([ev])
+          }
+        }
+      }
+
+      if (out.length >= maxMatches) break
+    }
+
+    return out
+      .filter((ev) => eventMatchesAnyLocalFeedFilter(ev, filters))
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, maxMatches)
   }
 }
 

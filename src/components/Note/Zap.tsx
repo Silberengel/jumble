@@ -2,9 +2,9 @@ import { useFetchEvent } from '@/hooks'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { shouldHideInteractions } from '@/lib/event-filtering'
 import { formatAmount } from '@/lib/lightning'
+import { getSuperchatPaytoType } from '@/lib/superchat'
 import { toNote, toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
-import { Zap as ZapIcon } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { useMemo, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -77,6 +77,7 @@ export default function Zap({
   }, [isEventZap, isProfileZap, targetEvent, zapInfo?.recipientPubkey])
 
   const { senderPubkey, recipientPubkey, amount, comment } = zapInfo
+  const paytoType = useMemo(() => getSuperchatPaytoType(event), [event])
 
   const openZapTarget = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
@@ -92,36 +93,43 @@ export default function Zap({
   }
 
   if (variant === 'compact') {
+    const hasMetaLine =
+      (recipientPubkey && recipientPubkey !== senderPubkey) || isEventZap || isProfileZap
+
     return (
       <div className={cn('text-sm text-muted-foreground', className)}>
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <SuperchatPaymentMethodLabel paytoType="lightning" />
-          <span className="text-xs font-medium text-yellow-400/90">{t('Superchat')}</span>
-          {recipientPubkey && recipientPubkey !== senderPubkey && (
-            <span className="text-xs">
-              <span>{t('zapped')}</span>{' '}
-              <Username
-                userId={recipientPubkey}
-                className="inline font-medium text-foreground/85 hover:text-foreground"
-              />
-            </span>
-          )}
-          {(isEventZap || isProfileZap) && (
-            <button
-              type="button"
-              onClick={openZapTarget}
-              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {isEventZap
-                ? t('Zapped note')
-                : isProfileZap && actualRecipientPubkey
-                  ? t('Zapped profile')
-                  : t('Zap')}
-            </button>
-          )}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <SuperchatPaymentMethodLabel paytoType={paytoType} />
+          <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
         </div>
+        {hasMetaLine ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+            {recipientPubkey && recipientPubkey !== senderPubkey && (
+              <span>
+                <span>{t('zapped')}</span>{' '}
+                <Username
+                  userId={recipientPubkey}
+                  className="inline font-medium text-foreground/85 hover:text-foreground"
+                />
+              </span>
+            )}
+            {(isEventZap || isProfileZap) && (
+              <button
+                type="button"
+                onClick={openZapTarget}
+                className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {isEventZap
+                  ? t('Zapped note')
+                  : isProfileZap && actualRecipientPubkey
+                    ? t('Zapped profile')
+                    : t('Zap')}
+              </button>
+            )}
+          </div>
+        ) : null}
         {comment ? (
-          <p className="mt-1.5 text-sm leading-snug text-foreground/90 whitespace-pre-wrap break-words">
+          <p className="mt-2 text-base font-medium leading-snug text-foreground whitespace-pre-wrap break-words">
             {comment}
           </p>
         ) : null}
@@ -156,25 +164,28 @@ export default function Zap({
       </button>
 
       <div className="flex items-start gap-3 pb-10 pr-2 sm:pr-36">
-        <ZapIcon size={28} className="mt-0.5 shrink-0 text-primary" strokeWidth={2} />
+        <div className="mt-1 shrink-0">
+          <SuperchatPaymentMethodLabel paytoType={paytoType} className="text-base" />
+        </div>
         <div className="min-w-0 flex-1">
           {!omitSenderHeading && (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <UserAvatar userId={senderPubkey} size="small" />
               <Username userId={senderPubkey} className="font-semibold text-foreground" />
-              <span className="text-sm text-muted-foreground">{t('zapped')}</span>
+              <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
               {recipientPubkey && recipientPubkey !== senderPubkey && (
-                <>
+                <span className="w-full basis-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>{t('zapped')}</span>
                   <UserAvatar userId={recipientPubkey} size="small" />
                   <Username userId={recipientPubkey} className="font-semibold text-foreground" />
-                </>
+                </span>
               )}
             </div>
           )}
 
           {comment ? (
             <div className="mb-3 rounded-r-md border-l-[3px] border-primary bg-muted/40 py-2.5 pl-3 pr-2 dark:bg-muted/25">
-              <p className="text-lg font-semibold leading-snug tracking-tight text-foreground whitespace-pre-wrap break-words">
+              <p className="text-xl font-semibold leading-snug tracking-tight text-foreground whitespace-pre-wrap break-words">
                 {comment}
               </p>
             </div>

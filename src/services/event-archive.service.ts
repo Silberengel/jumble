@@ -48,6 +48,12 @@ function archiveTierForEvent(ev: Event): number {
 function shouldSkipArchiving(ev: Event): boolean {
   if (shouldDropEventOnIngest(ev)) return true
   if (isNip52CalendarCardKind(ev.kind) || ev.kind === ExtendedKind.CALENDAR_EVENT_RSVP) return true
+  if (
+    ev.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+    ev.kind === ExtendedKind.PAYMENT_ATTESTATION
+  ) {
+    return true
+  }
   if (isReplaceableEvent(ev.kind) && indexedDb.hasReplaceableEventStoreForKind(ev.kind)) {
     return true
   }

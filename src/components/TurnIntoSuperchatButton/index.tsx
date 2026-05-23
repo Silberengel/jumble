@@ -4,9 +4,12 @@ import { LoginRequiredError } from '@/lib/nostr-errors'
 import { showSimplePublishSuccess } from '@/lib/publishing-feedback'
 import {
   getSuperchatAttestationTargetKindValue,
-  isAttestableSuperchatPayment
+  getSuperchatPaymentRecipientPubkey,
+  isAttestableSuperchatPayment,
+  isIncomingPaymentNotificationOrZapReceipt
 } from '@/lib/superchat'
 import { cn } from '@/lib/utils'
+import { requestProfileWallRefresh } from '@/hooks/useProfileWall'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
 import { useNostr } from '@/providers/NostrProvider'
 import { Sparkles } from 'lucide-react'
@@ -25,17 +28,41 @@ export default function TurnIntoSuperchatButton({
   /** Full-width call-to-action styling for note cards. */
   prominent?: boolean
 }) {
+  const { pubkey } = useNostr()
+
+  if (
+    !isAttestableSuperchatPayment(event) ||
+    !getSuperchatAttestationTargetKindValue(event) ||
+    !pubkey ||
+    !isIncomingPaymentNotificationOrZapReceipt(event, pubkey)
+  ) {
+    return null
+  }
+
+  return (
+    <TurnIntoSuperchatButtonInner event={event} className={className} prominent={prominent} />
+  )
+}
+
+function TurnIntoSuperchatButtonInner({
+  event,
+  className,
+  prominent = false
+}: {
+  event: Event
+  className?: string
+  prominent?: boolean
+}) {
   const { t } = useTranslation()
-  const { pubkey, publish, checkLogin } = useNostr()
-  const { attested, checking, recipientPubkey } = usePaymentAttestationStatus(event)
+  const { publish, checkLogin } = useNostr()
+  const recipientPubkey = getSuperchatPaymentRecipientPubkey(event)
+  const { attested, checking } = usePaymentAttestationStatus(event)
   const [publishing, setPublishing] = useState(false)
 
-  if (!isAttestableSuperchatPayment(event) || !getSuperchatAttestationTargetKindValue(event)) {
+  if (!recipientPubkey) {
     return null
   }
-  if (!pubkey || !recipientPubkey || recipientPubkey.toLowerCase() !== pubkey.toLowerCase()) {
-    return null
-  }
+
   if (attested) {
     return (
       <p
@@ -56,6 +83,7 @@ export default function TurnIntoSuperchatButton({
       try {
         const draft = await createPaymentAttestationDraftEvent(event, { addClientTag: true })
         await publish(draft, { disableFallbacks: true })
+        requestProfileWallRefresh(recipientPubkey)
         showSimplePublishSuccess(t('Superchat attested'))
       } catch (error) {
         if (error instanceof LoginRequiredError) return

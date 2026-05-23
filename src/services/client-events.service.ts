@@ -730,6 +730,26 @@ export class EventService {
         })
       })
     }
+    if (cleanEvent.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+      void indexedDb.putPaymentNotificationRow(cleanEvent as NEvent).catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logger.debug('[EventService] Payment notification IndexedDB persist failed', {
+          kind: cleanEvent.kind,
+          eventId: id,
+          errorMessage: err.message
+        })
+      })
+    }
+    if (cleanEvent.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+      void indexedDb.putPaymentAttestationRow(cleanEvent as NEvent).catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logger.debug('[EventService] Payment attestation IndexedDB persist failed', {
+          kind: cleanEvent.kind,
+          eventId: id,
+          errorMessage: err.message
+        })
+      })
+    }
   }
 
   /** Apply {@link StorageKey.SESSION_EVENT_LRU_MAX} without reload (copies entries into a new LRU). */

@@ -19,10 +19,11 @@ import {
   type ResolvedProfileBadge
 } from '@/lib/nip58-profile-badges'
 import { isDirectProfileWallComment } from '@/lib/profile-wall-comments'
-import { filterAttestedProfileWallSuperchats, isProfileWallPaymentNotification } from '@/lib/superchat'
+import { filterAttestedProfileWallSuperchats, getPaymentAttestationTargetId } from '@/lib/superchat'
 import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import type { TSubRequestFilter } from '@/types'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
 import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
@@ -90,10 +91,15 @@ function normalizeWallRefreshPubkey(pubkey: string): string | null {
   return /^[0-9a-f]{64}$/.test(pk) ? pk : null
 }
 
-/** Invalidate in-memory wall cache and schedule a badge re-fetch (avoids sync window events during React updates). */
+/** Invalidate in-memory wall cache and schedule a re-fetch when a profile wall hook is mounted. */
 export function requestProfileWallRefresh(pubkey: string): void {
   const pk = normalizeWallRefreshPubkey(pubkey)
   if (!pk) return
+  for (const key of wallCacheByKey.keys()) {
+    if (key.startsWith(`${pk}-`) || key.startsWith(`${pubkey.trim().toLowerCase()}-`)) {
+      wallCacheByKey.delete(key)
+    }
+  }
   const listeners = wallRefreshListenersByPubkey.get(pk)
   if (!listeners?.size) return
   for (const listener of listeners) listener()
@@ -116,7 +122,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   const cached = wallCacheByKey.get(cacheKey)
   const hasUsefulWallCache =
     !!cached &&
-    cached.badges.length > 0 &&
+    (cached.badges.length > 0 || (cached.superchats?.length ?? 0) > 0) &&
     Date.now() - cached.lastUpdated < CACHE_DURATION
 
   const pkNormForHydrate = useMemo(() => userIdToPubkey(pubkey) || pubkey, [pubkey])
@@ -178,6 +184,23 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     const pk = normalizeWallRefreshPubkey(pkNormForHydrate)
     if (!pk) return
 
+    const onWallPaymentEvent = (data: globalThis.Event) => {
+      const evt = (data as CustomEvent<Event>).detail
+      if (!evt) return
+      if (evt.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+        if (evt.pubkey.toLowerCase() !== pk) return
+        if (!getPaymentAttestationTargetId(evt)) return
+      } else if (evt.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+        const recipient = evt.tags.find((t) => t[0] === 'p')?.[1]
+        if (!recipient || recipient.toLowerCase() !== pk) return
+      } else {
+        return
+      }
+      bumpWallRefetch()
+    }
+
+    client.addEventListener('newEvent', onWallPaymentEvent)
+
     const listeners = wallRefreshListenersByPubkey.get(pk) ?? new Set()
     listeners.add(scheduleManualWallRefetch)
     wallRefreshListenersByPubkey.set(pk, listeners)
@@ -192,6 +215,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       onAuthorReplaceablesRefreshed
     )
     return () => {
+      client.removeEventListener('newEvent', onWallPaymentEvent)
       listeners.delete(scheduleManualWallRefetch)
       if (listeners.size === 0) {
         wallRefreshListenersByPubkey.delete(pk)
@@ -218,7 +242,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       // Do not reuse empty cache (transient abort when secondary panel opens used to cache [] for 5m).
       if (
         mem &&
-        mem.badges.length > 0 &&
+        (mem.badges.length > 0 || (mem.superchats?.length ?? 0) > 0) &&
         Date.now() - mem.lastUpdated < CACHE_DURATION &&
         refreshToken === 0
       ) {
@@ -299,21 +323,41 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         }
         setIsLoading(false)
 
-        // --- Wall comments (kind 1111) and attested superchats (kind 9740) ---
+        // --- Wall comments (kind 1111) and attested superchats (9735 / 9740 + 9741) ---
         let wallComments: Event[] = []
         let wallSuperchats: Event[] = []
-        const profileId = profileEventId?.trim().toLowerCase()
-        if (profileId && /^[0-9a-f]{64}$/.test(profileId) && relayUrls.length > 0) {
+        const profileId =
+          profileEventId?.trim().toLowerCase() && /^[0-9a-f]{64}$/.test(profileEventId.trim())
+            ? profileEventId.trim().toLowerCase()
+            : undefined
+        if (relayUrls.length > 0) {
           const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
           const filters: Filter[] = [
-            { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
-            { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 },
             { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#p': [pkNorm], limit: 200 },
-            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
-            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
+            { kinds: [kinds.Zap], '#p': [pkNorm], limit: 200 },
             { kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pkNorm], limit: 500 }
           ]
+          if (profileId) {
+            filters.unshift(
+              { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
+              { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
+            )
+            filters.push(
+              { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
+              { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
+              { kinds: [kinds.Zap], '#e': [profileId], limit: 200 }
+            )
+          }
           const pool = new Map<string, Event>()
+          try {
+            const localMatches = await client.getLocalFeedEvents(
+              filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
+              { maxMatches: 800 }
+            )
+            for (const e of localMatches) pool.set(e.id, e)
+          } catch {
+            /* ignore */
+          }
           try {
             const rows = await Promise.all(
               filters.map((filter) =>
@@ -332,26 +376,29 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
             /* ignore */
           }
 
-          wallComments = [...pool.values()]
-            .filter(
-              (e) =>
-                e.kind === ExtendedKind.COMMENT &&
-                !isEventDeletedRef.current(e) &&
-                isDirectProfileWallComment(e, profileId, pkNorm)
-            )
-            .sort((a, b) => b.created_at - a.created_at)
+          if (profileId) {
+            wallComments = [...pool.values()]
+              .filter(
+                (e) =>
+                  e.kind === ExtendedKind.COMMENT &&
+                  !isEventDeletedRef.current(e) &&
+                  isDirectProfileWallComment(e, profileId, pkNorm)
+              )
+              .sort((a, b) => b.created_at - a.created_at)
+          }
 
-          const paymentNotifications = [...pool.values()].filter(
+          const paymentEvents = [...pool.values()].filter(
             (e) =>
-              e.kind === ExtendedKind.PAYMENT_NOTIFICATION &&
-              !isEventDeletedRef.current(e) &&
-              isProfileWallPaymentNotification(e, pkNorm, profileId)
+              (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+                e.kind === kinds.Zap ||
+                e.kind === ExtendedKind.ZAP_RECEIPT) &&
+              !isEventDeletedRef.current(e)
           )
           const attestations = [...pool.values()].filter(
             (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
           )
           wallSuperchats = filterAttestedProfileWallSuperchats(
-            paymentNotifications,
+            paymentEvents,
             attestations,
             pkNorm,
             profileId

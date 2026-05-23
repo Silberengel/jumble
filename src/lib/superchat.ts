@@ -62,6 +62,24 @@ export function buildAttestedPaymentIdSet(
   return out
 }
 
+/** Kind 9741 attestation from `recipientPubkey` for payment event `targetEventId`, if any. */
+export function findPaymentAttestationForTarget(
+  attestations: Event[],
+  targetEventId: string,
+  recipientPubkey: string
+): Event | undefined {
+  const target = targetEventId.trim().toLowerCase()
+  const recipient = recipientPubkey.trim().toLowerCase()
+  for (const attestation of attestations) {
+    if (attestation.pubkey.toLowerCase() !== recipient) continue
+    const attestedId = getPaymentAttestationTargetId(attestation)
+    const targetKind = getPaymentAttestationTargetKind(attestation)
+    if (!attestedId || !targetKind) continue
+    if (attestedId.toLowerCase() === target) return attestation
+  }
+  return undefined
+}
+
 export function getPaymentNotificationInfo(event: Event): PaymentNotificationInfo | null {
   if (event.kind !== ExtendedKind.PAYMENT_NOTIFICATION) return null
 
@@ -170,18 +188,14 @@ export function sortSuperchatsByAmountDesc(events: Event[]): Event[] {
 export function partitionAttestedSuperchats(
   items: Event[],
   attestedIds: Set<string>,
-  zapReplyThreshold: number
+  _zapReplyThreshold: number
 ): { superchats: Event[]; rest: Event[] } {
   const superchats: Event[] = []
   const rest: Event[] = []
 
   for (const e of items) {
-    if (e.kind === kinds.Zap) {
-      if (
-        isAttestedSuperchat(e, attestedIds) &&
-        getZapInfoFromEvent(e) &&
-        getSuperchatAmountSats(e) >= zapReplyThreshold
-      ) {
+    if (e.kind === kinds.Zap || e.kind === ExtendedKind.ZAP_RECEIPT) {
+      if (isAttestedSuperchat(e, attestedIds) && getZapInfoFromEvent(e)) {
         superchats.push(e)
       }
       continue
@@ -202,27 +216,23 @@ export function replyFeedSuperchatsFirst(sortedNonSuperchatReplies: Event[], sup
   return [...superchats, ...sortedNonSuperchatReplies]
 }
 
-/** Kind 9740 on a profile wall: `p` is the profile owner and there is no note/thread reference. */
-export function isProfileWallPaymentNotification(
-  event: Event,
+function isProfileWallThreadReference(
+  referencedEventId: string | undefined,
+  referencedCoordinate: string | undefined,
   profilePubkey: string,
   profileEventId?: string
 ): boolean {
-  if (event.kind !== ExtendedKind.PAYMENT_NOTIFICATION) return false
-  const info = getPaymentNotificationInfo(event)
-  if (!info || info.recipientPubkey.toLowerCase() !== profilePubkey.toLowerCase()) return false
-
-  if (info.referencedEventId) {
+  if (referencedEventId) {
     const profileId = profileEventId?.trim().toLowerCase()
-    if (profileId && info.referencedEventId === profileId) return true
+    if (profileId && referencedEventId.toLowerCase() === profileId) return true
     return false
   }
 
-  if (info.referencedCoordinate) {
+  if (referencedCoordinate) {
     const profileCoord = normalizeReplaceableCoordinateString(
       getReplaceableCoordinate(kinds.Metadata, profilePubkey, '')
     )
-    if (normalizeReplaceableCoordinateString(info.referencedCoordinate) === profileCoord) {
+    if (normalizeReplaceableCoordinateString(referencedCoordinate) === profileCoord) {
       return true
     }
     return false
@@ -231,18 +241,62 @@ export function isProfileWallPaymentNotification(
   return true
 }
 
+/** Kind 9740 on a profile wall: `p` is the profile owner and there is no note/thread reference. */
+export function isProfileWallPaymentNotification(
+  event: Event,
+  profilePubkey: string,
+  profileEventId?: string
+): boolean {
+  if (event.kind !== ExtendedKind.PAYMENT_NOTIFICATION) return false
+  const info = getPaymentNotificationInfo(event)
+  if (!info || !hexPubkeysEqual(info.recipientPubkey, profilePubkey)) return false
+
+  return isProfileWallThreadReference(
+    info.referencedEventId,
+    info.referencedCoordinate,
+    profilePubkey,
+    profileEventId
+  )
+}
+
+/** Kind 9735 profile zap on a wall: `p` is the profile owner and there is no note/thread reference. */
+export function isProfileWallZapReceipt(
+  event: Event,
+  profilePubkey: string,
+  profileEventId?: string
+): boolean {
+  if (event.kind !== kinds.Zap && event.kind !== ExtendedKind.ZAP_RECEIPT) return false
+  const zapInfo = getZapInfoFromEvent(event)
+  if (!zapInfo?.recipientPubkey || !hexPubkeysEqual(zapInfo.recipientPubkey, profilePubkey)) {
+    return false
+  }
+
+  const referencedEventId = zapInfo.originalEventId?.trim().toLowerCase()
+  return isProfileWallThreadReference(referencedEventId, undefined, profilePubkey, profileEventId)
+}
+
 export function filterAttestedProfileWallSuperchats(
-  paymentNotifications: Event[],
+  paymentEvents: Event[],
   attestations: Event[],
   profilePubkey: string,
   profileEventId?: string
 ): Event[] {
   const attestedIds = buildAttestedPaymentIdSet(attestations, profilePubkey)
   return sortSuperchatsByAmountDesc(
-    paymentNotifications.filter(
-      (e) =>
-        isProfileWallPaymentNotification(e, profilePubkey, profileEventId) &&
-        isAttestedSuperchat(e, attestedIds)
-    )
+    paymentEvents.filter((e) => {
+      if (e.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+        return (
+          isProfileWallPaymentNotification(e, profilePubkey, profileEventId) &&
+          isAttestedSuperchat(e, attestedIds)
+        )
+      }
+      if (e.kind === kinds.Zap || e.kind === ExtendedKind.ZAP_RECEIPT) {
+        return (
+          isProfileWallZapReceipt(e, profilePubkey, profileEventId) &&
+          attestedIds.has(e.id.toLowerCase())
+        )
+      }
+      return false
+    })
   )
 }
