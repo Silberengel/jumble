@@ -10,6 +10,7 @@ import { useSmartNoteNavigationOptional, useSecondaryPageOptional } from '@/Page
 import Username from '../Username'
 import UserAvatar from '../UserAvatar'
 import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
+import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
 
 export default function Superchat({
   event,
@@ -148,6 +149,7 @@ export default function Superchat({
           ) : null}
         </div>
       </div>
+      <TurnIntoSuperchatButton event={event} prominent className="mt-4" />
     </div>
   )
 }

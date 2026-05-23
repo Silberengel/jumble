@@ -4,6 +4,7 @@ import {
   getReplaceableCoordinate,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
+import { hexPubkeysEqual } from '@/lib/pubkey'
 import { parsePaytoTagType } from '@/lib/payto'
 import { generateBech32IdFromATag } from '@/lib/tag'
 import { Event, kinds } from 'nostr-tools'
@@ -115,6 +116,41 @@ export function getSuperchatAmountSats(event: Event): number {
 
 export function isSuperchatKind(kind: number): boolean {
   return kind === kinds.Zap || kind === ExtendedKind.PAYMENT_NOTIFICATION
+}
+
+/** Recipient pubkey for a kind 9735 or 9740 payment the user may attest to. */
+export function getSuperchatPaymentRecipientPubkey(event: Event): string | null {
+  if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+    return getPaymentNotificationInfo(event)?.recipientPubkey ?? null
+  }
+  if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
+    return getZapInfoFromEvent(event)?.recipientPubkey ?? null
+  }
+  return null
+}
+
+/** Target `k` tag value for a kind 9741 attestation pointing at this event. */
+export function getSuperchatAttestationTargetKindValue(event: Event): string | null {
+  if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+    return String(ExtendedKind.PAYMENT_NOTIFICATION)
+  }
+  if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
+    return String(ExtendedKind.ZAP_RECEIPT)
+  }
+  return null
+}
+
+export function isAttestableSuperchatPayment(event: Event): boolean {
+  return getSuperchatAttestationTargetKindValue(event) != null
+}
+
+/** Incoming payment notification or zap receipt addressed to `userPubkey`. */
+export function isIncomingPaymentNotificationOrZapReceipt(
+  event: Event,
+  userPubkey: string
+): boolean {
+  const recipient = getSuperchatPaymentRecipientPubkey(event)
+  return recipient != null && hexPubkeysEqual(recipient, userPubkey)
 }
 
 export function isAttestedSuperchat(event: Event, attestedIds: Set<string>): boolean {

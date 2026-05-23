@@ -581,12 +581,41 @@ export async function createPaymentNotificationDraftEvent(
     } else {
       tags.push(buildETag(options.referencedEvent.id, options.referencedEvent.pubkey))
     }
+    tags.push(['P', options.referencedEvent.pubkey])
     tags.push(['k', String(options.referencedEvent.kind)])
   }
 
   const baseDraft = {
     kind: ExtendedKind.PAYMENT_NOTIFICATION,
     content: transformedEmojisContent,
+    tags
+  }
+
+  return setDraftEventCache(baseDraft)
+}
+
+export async function createPaymentAttestationDraftEvent(
+  targetEvent: Event,
+  _options: { addClientTag?: boolean } = {}
+): Promise<TDraftEvent> {
+  const targetKind =
+    targetEvent.kind === ExtendedKind.PAYMENT_NOTIFICATION
+      ? String(ExtendedKind.PAYMENT_NOTIFICATION)
+      : targetEvent.kind === kinds.Zap || targetEvent.kind === ExtendedKind.ZAP_RECEIPT
+        ? String(ExtendedKind.ZAP_RECEIPT)
+        : null
+  if (!targetKind) {
+    throw new Error('Only zap receipts and payment notifications can be attested')
+  }
+
+  const tags: string[][] = [
+    buildETag(targetEvent.id, targetEvent.pubkey),
+    ['k', targetKind]
+  ]
+
+  const baseDraft = {
+    kind: ExtendedKind.PAYMENT_ATTESTATION,
+    content: '',
     tags
   }
 

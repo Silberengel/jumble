@@ -13,7 +13,7 @@ export type PostPaymentContext = {
   referencedEvent?: NostrEvent
 }
 
-export function buildPostPaymentContext(params: {
+type BuildPostPaymentContextParams = {
   recipientPubkey: string
   amountMsat?: number
   /** Preformatted kind-9740 payto tag value. */
@@ -22,7 +22,9 @@ export function buildPostPaymentContext(params: {
   paytoType?: string
   paytoAuthority?: string
   referencedEvent?: NostrEvent
-}): PostPaymentContext {
+}
+
+export function buildPostPaymentContext(params: BuildPostPaymentContextParams): PostPaymentContext {
   const payto =
     params.payto ??
     (params.paytoUri != null
@@ -39,6 +41,22 @@ export function buildPostPaymentContext(params: {
   }
 }
 
+/**
+ * Merge payment details with a default thread reference.
+ * Profile tips omit `referencedEvent` so kind 9740 defaults to the profile wall.
+ */
+export function mergePostPaymentContext(
+  base: Pick<BuildPostPaymentContextParams, 'recipientPubkey' | 'referencedEvent'>,
+  partial?: Partial<BuildPostPaymentContextParams> | null
+): PostPaymentContext {
+  return buildPostPaymentContext({
+    ...partial,
+    recipientPubkey: partial?.recipientPubkey ?? base.recipientPubkey,
+    referencedEvent: partial?.referencedEvent ?? base.referencedEvent
+  })
+}
+
+/** Kind 9740 thread tags: `e` or `a`, referenced kind (`k`), and author pubkey (`P` or in `e`). */
 export function paymentNotificationReferenceTags(
   referencedEvent?: NostrEvent
 ): string[][] {
@@ -50,6 +68,7 @@ export function paymentNotificationReferenceTags(
   } else {
     tags.push(buildETag(referencedEvent.id, referencedEvent.pubkey))
   }
+  tags.push(['P', referencedEvent.pubkey])
   tags.push(['k', String(referencedEvent.kind)])
   return tags
 }

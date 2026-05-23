@@ -116,11 +116,16 @@ export default function SuperchatRequestForm({
           </div>
         </div>
       ) : null}
-      <DialogFooter className="mt-4 gap-2 sm:justify-end">
-        <Button type="button" variant="outline" onClick={onBack} disabled={sending}>
+      <DialogFooter className="mt-4 flex w-full min-w-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button type="button" variant="outline" className="w-full min-w-0 sm:w-auto" onClick={onBack} disabled={sending}>
           {t('Back')}
         </Button>
-        <Button type="button" onClick={handleSend} disabled={sending || !message.trim()}>
+        <Button
+          type="button"
+          className="w-full min-w-0 sm:w-auto"
+          onClick={handleSend}
+          disabled={sending || !message.trim()}
+        >
           {t('Send superchat request')}
         </Button>
       </DialogFooter>

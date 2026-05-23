@@ -28,7 +28,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
 import PostPaymentMessagePrompt from '../ZapDialog/PostPaymentMessagePrompt'
-import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 
 type ZapButtonProps = {
   event: Event
@@ -156,6 +156,19 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
 
   const [disable, setDisable] = useState(true)
   const [tipPaymentData, setTipPaymentData] = useState<RecipientZapPaymentData | null>(null)
+  const [postPaymentOpen, setPostPaymentOpen] = useState(false)
+  const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
+
+  const handlePostPaymentRequest = useCallback(
+    (context: PostPaymentContext) => {
+      if (event.pubkey === pubkey) return
+      setPostPaymentContext(
+        mergePostPaymentContext({ recipientPubkey: event.pubkey, referencedEvent: event }, context)
+      )
+      setPostPaymentOpen(true)
+    },
+    [event, pubkey]
+  )
 
   const applyTipAvailability = useCallback(
     (
@@ -256,6 +269,13 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
         pubkey={event.pubkey}
         event={event}
         prefetchedPayment={tipPaymentData}
+        onPostPaymentRequest={handlePostPaymentRequest}
+      />
+      <PostPaymentMessagePrompt
+        open={postPaymentOpen}
+        onOpenChange={setPostPaymentOpen}
+        recipientPubkey={event.pubkey}
+        paymentContext={postPaymentContext}
       />
     </>
   )
@@ -274,6 +294,17 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const [postPaymentOpen, setPostPaymentOpen] = useState(false)
   const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
   const [zapping, setZapping] = useState(false)
+
+  const handlePostPaymentRequest = useCallback(
+    (context: PostPaymentContext) => {
+      if (event.pubkey === pubkey) return
+      setPostPaymentContext(
+        mergePostPaymentContext({ recipientPubkey: event.pubkey, referencedEvent: event }, context)
+      )
+      setPostPaymentOpen(true)
+    },
+    [event, pubkey]
+  )
   const statsLoaded = noteStats?.updatedAt != null
   const { zapAmount, hasZapped } = useMemo(() => {
     return {
@@ -376,15 +407,12 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         defaultZapComment,
         undefined,
         () => {
-          if (event.pubkey === pubkey) return
-          setPostPaymentContext(
-            buildPostPaymentContext({
-              recipientPubkey: event.pubkey,
-              amountMsat: paymentDetails.amountMsat,
-              referencedEvent: event
-            })
+          handlePostPaymentRequest(
+            mergePostPaymentContext(
+              { recipientPubkey: event.pubkey, referencedEvent: event },
+              { amountMsat: paymentDetails.amountMsat }
+            )
           )
-          setPostPaymentOpen(true)
         }
       )
       if (!zapResult) {
@@ -518,6 +546,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         pubkey={event.pubkey}
         event={event}
         prefetchedPayment={tipPaymentData}
+        onPostPaymentRequest={handlePostPaymentRequest}
       />
       <PostPaymentMessagePrompt
         open={postPaymentOpen}

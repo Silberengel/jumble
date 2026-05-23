@@ -72,7 +72,7 @@ export default function PaymentMethodsSection({
                         authority={method.authority}
                         paytoUri={method.payto}
                         displayFormat="full"
-                        pubkey={isZappableLightningPaytoType(method.type) ? recipientPubkey : undefined}
+                        pubkey={recipientPubkey}
                         onOpenZap={
                           isZappableLightningPaytoType(method.type) && onOpenZap
                             ? (_pk, authority) => onOpenZap(authority)

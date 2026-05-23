@@ -35,16 +35,13 @@ export default function LightningInvoiceSection({
   lightningAddress,
   paytoUri,
   onBolt11InvoiceChange,
-  onRequestClose,
   onPaymentFlowComplete
 }: {
   lightningAddress: string
   paytoUri: string
   /** Fired when a BOLT11 invoice is created or cleared (for Phoenix / external wallet links). */
   onBolt11InvoiceChange?: (invoice: string | null) => void
-  /** Close the payto dialog before opening an external wallet / Bitcoin Connect UI. */
-  onRequestClose?: () => void
-  /** After the payment modal closes (success or cancel). */
+  /** After a wallet payment succeeds (dialog stays open for the user to choose next steps). */
   onPaymentFlowComplete?: (details?: { amountMsat: number; payto: string }) => void
 }) {
   const { t } = useTranslation()
@@ -148,11 +145,9 @@ export default function LightningInvoiceSection({
     if (!invoice) return
     try {
       setPaying(true)
-      const result = await lightning.payInvoice(
-        invoice,
-        onRequestClose,
-        () => onPaymentFlowComplete?.(paymentDetails)
-      )
+      const result = await lightning.payInvoice(invoice, undefined, (flowResult) => {
+        if (flowResult) onPaymentFlowComplete?.(paymentDetails)
+      })
       if (!mountedRef.current) return
       if (result) {
         toast.success(t('Payment sent'))
@@ -312,7 +307,9 @@ export default function LightningInvoiceSection({
             role="img"
             aria-label={t('Scan to pay with a Lightning wallet')}
           >
-            <QrCode value={invoiceQrValue} size={240} />
+            <div className="w-full max-w-[min(100%,240px)]">
+              <QrCode value={invoiceQrValue} size={240} />
+            </div>
             <p className="text-center text-sm text-muted-foreground sm:text-base">
               {t('Scan to pay with a Lightning wallet')}
             </p>

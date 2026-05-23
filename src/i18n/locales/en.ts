@@ -195,6 +195,7 @@ export default {
     "Zap dialog other payment hint": "Tap a link to open PayPal or copy an address. Lightning tips use the button below.",
     "Tip notice prompt title": "Let them know?",
     "Send them a message": "Send them a message",
+    "Send a message": "Send a message",
     "Post payment prompt label": "If you have successfully completed a payment, you can:",
     "Send them a public message": "Send them a public message",
     "Post payment public message hint":
@@ -213,6 +214,9 @@ export default {
     "Superchats": "Superchats",
     "Profile wall superchats": "Profile wall superchats",
     "Invalid superchat": "Invalid superchat",
+    "Turn this into a superchat!": "Turn this into a superchat!",
+    "Superchat attested": "Superchat attested",
+    "Failed to attest superchat": "Failed to attest superchat: {{error}}",
     "Superchat thread": "View thread",
     "Superchat profile": "View profile",
     "View thread": "View thread",

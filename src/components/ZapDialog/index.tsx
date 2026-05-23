@@ -30,7 +30,7 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 import { buildPaytoUri } from '@/lib/payto'
 import {
   buildOrderedZapLightningAddresses,
@@ -66,11 +66,13 @@ export default function ZapDialog({
   defaultAmount,
   defaultComment,
   defaultLightningAddress,
-  prefetchedPayment = null
+  prefetchedPayment = null,
+  onPostPaymentRequest
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
   pubkey: string
+  /** When set, kind 9740 superchats reference this note (e/a + k + author). Omit for profile tips. */
   event?: NostrEvent
   defaultAmount?: number
   defaultComment?: string
@@ -78,6 +80,8 @@ export default function ZapDialog({
   defaultLightningAddress?: string | null
   /** Profile/feed snapshot shown immediately; relay fetch while open may enrich this. */
   prefetchedPayment?: RecipientZapPaymentData | null
+  /** Parent-owned post-payment prompt (e.g. note ZapButton). Skips internal prompt when set. */
+  onPostPaymentRequest?: (context: PostPaymentContext) => void
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -88,7 +92,16 @@ export default function ZapDialog({
 
   const openPostPaymentPrompt = (context?: PostPaymentContext | null) => {
     if (selfPubkey && pubkey === selfPubkey) return
-    setPostPaymentContext(context ?? buildPostPaymentContext({ recipientPubkey: pubkey, referencedEvent: event }))
+    const built = mergePostPaymentContext(
+      { recipientPubkey: pubkey, referencedEvent: event },
+      context ?? undefined
+    )
+    if (onPostPaymentRequest) {
+      onPostPaymentRequest(built)
+      setOpen(false)
+      return
+    }
+    setPostPaymentContext(built)
     setPostPaymentOpen(true)
     setOpen(false)
   }
@@ -187,23 +200,26 @@ export default function ZapDialog({
             canLightningZap={canLightningZap}
             onPaymentFlowComplete={(_result, paymentDetails) => {
               openPostPaymentPrompt(
-                buildPostPaymentContext({
-                  recipientPubkey: pubkey,
-                  amountMsat: paymentDetails?.amountMsat,
-                  paytoUri: paymentDetails?.paytoUri,
-                  referencedEvent: event
-                })
+                mergePostPaymentContext(
+                  { recipientPubkey: pubkey, referencedEvent: event },
+                  {
+                    amountMsat: paymentDetails?.amountMsat,
+                    paytoUri: paymentDetails?.paytoUri
+                  }
+                )
               )
             }}
             onPostPaymentRequest={openPostPaymentPrompt}
           />
         </DrawerContent>
-        <PostPaymentMessagePrompt
-          open={postPaymentOpen}
-          onOpenChange={setPostPaymentOpen}
-          recipientPubkey={pubkey}
-          paymentContext={postPaymentContext}
-        />
+        {!onPostPaymentRequest ? (
+          <PostPaymentMessagePrompt
+            open={postPaymentOpen}
+            onOpenChange={setPostPaymentOpen}
+            recipientPubkey={pubkey}
+            paymentContext={postPaymentContext}
+          />
+        ) : null}
       </Drawer>
     )
   }
@@ -232,24 +248,27 @@ export default function ZapDialog({
           canLightningZap={canLightningZap}
           onPaymentFlowComplete={(_result, paymentDetails) => {
             openPostPaymentPrompt(
-              buildPostPaymentContext({
-                recipientPubkey: pubkey,
-                amountMsat: paymentDetails?.amountMsat,
-                paytoUri: paymentDetails?.paytoUri,
-                referencedEvent: event
-              })
+              mergePostPaymentContext(
+                { recipientPubkey: pubkey, referencedEvent: event },
+                {
+                  amountMsat: paymentDetails?.amountMsat,
+                  paytoUri: paymentDetails?.paytoUri
+                }
+              )
             )
           }}
           onPostPaymentRequest={openPostPaymentPrompt}
         />
       </DialogContent>
     </Dialog>
-    <PostPaymentMessagePrompt
-      open={postPaymentOpen}
-      onOpenChange={setPostPaymentOpen}
-      recipientPubkey={pubkey}
-      paymentContext={postPaymentContext}
-    />
+    {!onPostPaymentRequest ? (
+      <PostPaymentMessagePrompt
+        open={postPaymentOpen}
+        onOpenChange={setPostPaymentOpen}
+        recipientPubkey={pubkey}
+        paymentContext={postPaymentContext}
+      />
+    ) : null}
     </>
   )
 }

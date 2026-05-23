@@ -111,6 +111,7 @@ export function isNotificationThreadInteractionEvent(event: Event): boolean {
       (t) => t[0] === 'e' || t[0] === 'E' || t[0] === 'a' || t[0] === 'A'
     )
   }
+  if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) return true
   if (event.kind === ExtendedKind.COMMENT || event.kind === ExtendedKind.VOICE_COMMENT) return true
   if (event.kind === ExtendedKind.POLL_RESPONSE) return true
   if (event.kind === kinds.Highlights) return true

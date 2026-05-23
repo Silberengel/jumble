@@ -3,6 +3,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
@@ -32,7 +33,7 @@ import {
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 import { NostrEvent } from 'nostr-tools'
 import LightningInvoiceSection from './LightningInvoiceSection'
 
@@ -52,7 +53,7 @@ export default function PaytoDialog({
   type: string
   authority: string
   paytoUri: string
-  /** When set, closing the dialog offers a post-payment message prompt to this pubkey. */
+  /** When set, the dialog offers a post-payment message prompt to this pubkey. */
   recipientPubkey?: string
   /** Note or profile context for superchat placement (kind 9740). */
   referencedEvent?: NostrEvent
@@ -63,41 +64,54 @@ export default function PaytoDialog({
 }) {
   const { t } = useTranslation()
   const { pubkey: selfPubkey } = useNostr()
+  const sendMessageRef = useRef<HTMLButtonElement>(null)
   const [postPaymentOpen, setPostPaymentOpen] = useState(false)
   const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
-  const skipPostPaymentOnCloseRef = useRef(false)
+  const [completedPaymentDetails, setCompletedPaymentDetails] = useState<
+    Partial<Pick<PostPaymentContext, 'amountMsat' | 'payto'>> | null
+  >(null)
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
   const [bolt11Invoice, setBolt11Invoice] = useState<string | null>(null)
   const [selectedOpenHandlerId, setSelectedOpenHandlerId] = useState('')
 
+  const canOfferPostPayment =
+    !!recipientPubkey && (!selfPubkey || recipientPubkey !== selfPubkey)
+
   useEffect(() => {
     if (!open) {
       setBolt11Invoice(null)
       setSelectedOpenHandlerId('')
+      setCompletedPaymentDetails(null)
       closeModal()
       releaseBodyScrollLocks()
     }
   }, [open])
 
+  useEffect(() => {
+    if (!open || !canOfferPostPayment) return
+    const id = requestAnimationFrame(() => sendMessageRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [open, canOfferPostPayment])
+
   const closeForWalletFlow = useCallback(() => {
-    skipPostPaymentOnCloseRef.current = true
     onOpenChange(false)
   }, [onOpenChange])
 
   const openPostPaymentPrompt = useCallback(
     (context?: Partial<PostPaymentContext>) => {
-      if (!recipientPubkey) return
-      if (selfPubkey && recipientPubkey === selfPubkey) return
-      const built = buildPostPaymentContext({
-        recipientPubkey,
-        paytoUri,
-        paytoType: type,
-        paytoAuthority: authority,
-        referencedEvent,
-        ...context
-      })
+      if (!canOfferPostPayment) return
+      const built = mergePostPaymentContext(
+        { recipientPubkey: recipientPubkey!, referencedEvent },
+        {
+          paytoUri,
+          paytoType: type,
+          paytoAuthority: authority,
+          ...completedPaymentDetails,
+          ...context
+        }
+      )
       if (onPostPaymentRequest) {
         onPostPaymentRequest(built)
         return
@@ -107,26 +121,22 @@ export default function PaytoDialog({
       setPostPaymentOpen(true)
     },
     [
+      canOfferPostPayment,
       offerTipNoticeOnClose,
       onPostPaymentRequest,
       recipientPubkey,
-      selfPubkey,
       paytoUri,
       type,
       authority,
-      referencedEvent
+      referencedEvent,
+      completedPaymentDetails
     ]
   )
 
-  /** Run after the payto dialog has closed so nested modals (e.g. inside ZapDialog) do not dismiss the prompt. */
-  const schedulePostPaymentPrompt = useCallback(
-    (context?: Partial<PostPaymentContext>) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => openPostPaymentPrompt(context))
-      })
-    },
-    [openPostPaymentPrompt]
-  )
+  const handleSendMessage = () => {
+    onOpenChange(false)
+    requestAnimationFrame(() => openPostPaymentPrompt())
+  }
 
   const openHandlers = useMemo(
     () =>
@@ -170,174 +180,185 @@ export default function PaytoDialog({
   const handleCopy = (text: string, copyLabel?: string) => {
     navigator.clipboard.writeText(text)
     toast.success(copyLabel ? t('Copied {{label}} address', { label: copyLabel }) : t('Copied to clipboard'))
-    handleDialogOpenChange(false)
-  }
-
-  const maybeOfferPostPaymentOnClose = () => {
-    if (skipPostPaymentOnCloseRef.current) return
-    schedulePostPaymentPrompt()
-  }
-
-  const handleDialogOpenChange = (next: boolean) => {
-    if (!next) {
-      const skipped = skipPostPaymentOnCloseRef.current
-      skipPostPaymentOnCloseRef.current = false
-      onOpenChange(next)
-      if (!skipped) {
-        maybeOfferPostPaymentOnClose()
-      }
-    } else {
-      skipPostPaymentOnCloseRef.current = false
-      onOpenChange(next)
-    }
   }
 
   return (
     <>
-    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent
-        className={cn(
-          'left-[50%] top-[50%] flex w-[calc(100vw-1.25rem)] max-w-md translate-x-[-50%] translate-y-[-50%] flex-col gap-0',
-          'max-h-[min(92dvh,720px)] overflow-x-hidden overflow-y-auto p-0 sm:max-w-md sm:p-0',
-          'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
-        )}
-      >
-        <DialogHeader className="shrink-0 space-y-1 border-b border-border/60 px-4 pb-3 pt-4 text-left sm:px-5 sm:pt-5">
-          <DialogTitle className="flex min-w-0 items-center gap-2 pr-8 text-lg sm:text-xl">
-            {isLightning && <Zap className="size-6 shrink-0 text-yellow-400" />}
-            <span className="truncate">{label}</span>
-          </DialogTitle>
-          <DialogDescription className="text-left text-sm leading-relaxed sm:text-base">
-            {isLightning
-              ? t('Create a BOLT11 invoice from this Lightning address, then pay in your connected wallet or another app.')
-              : showPrimaryOpen
-                ? t('Open in your wallet app or copy the address below.')
-                : t('Payment address – copy to use in your wallet or app')}
-          </DialogDescription>
-        </DialogHeader>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className={cn(
+            'left-[50%] top-[50%] flex w-[calc(100vw-1.25rem)] max-w-md translate-x-[-50%] translate-y-[-50%] flex-col gap-0',
+            'max-h-[min(92dvh,720px)] overflow-x-hidden overflow-y-auto p-0 sm:max-w-md sm:p-0',
+            'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+          )}
+        >
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border/60 px-4 pb-3 pt-4 text-left sm:px-5 sm:pt-5">
+            <DialogTitle className="flex min-w-0 items-center gap-2 pr-8 text-lg sm:text-xl">
+              {isLightning && <Zap className="size-6 shrink-0 text-yellow-400" />}
+              <span className="truncate">{label}</span>
+            </DialogTitle>
+            <DialogDescription className="text-left text-sm leading-relaxed sm:text-base">
+              {isLightning
+                ? t('Create a BOLT11 invoice from this Lightning address, then pay in your connected wallet or another app.')
+                : showPrimaryOpen
+                  ? t('Open in your wallet app or copy the address below.')
+                  : t('Payment address – copy to use in your wallet or app')}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="min-w-0 space-y-4 px-4 py-4 sm:px-5">
-          {isLightning && open ? (
-            <LightningInvoiceSection
-              lightningAddress={authority}
-              paytoUri={paytoUri}
-              onBolt11InvoiceChange={setBolt11Invoice}
-              onRequestClose={closeForWalletFlow}
-              onPaymentFlowComplete={(details) => {
-                onOpenChange(false)
-                schedulePostPaymentPrompt({
-                  amountMsat: details?.amountMsat,
-                  payto: details?.payto
-                })
-              }}
-            />
-          ) : isLightning ? null : (
-            <>
-              <div className="min-w-0 rounded-lg bg-muted/40 px-3 py-2.5 ring-1 ring-border/50">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {t('Payment address')}
+          <div className="min-w-0 space-y-4 px-4 py-4 sm:px-5">
+            {isLightning && open ? (
+              <LightningInvoiceSection
+                lightningAddress={authority}
+                paytoUri={paytoUri}
+                onBolt11InvoiceChange={setBolt11Invoice}
+                onPaymentFlowComplete={(details) => {
+                  setCompletedPaymentDetails({
+                    amountMsat: details?.amountMsat,
+                    payto: details?.payto
+                  })
+                }}
+              />
+            ) : isLightning ? null : (
+              <>
+                <div className="min-w-0 rounded-lg bg-muted/40 px-3 py-2.5 ring-1 ring-border/50">
+                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    {t('Payment address')}
+                  </p>
+                  <p className="break-all font-mono text-base leading-relaxed select-text sm:text-lg">{authority}</p>
+                </div>
+                <div className="flex min-w-0 flex-col gap-2">
+                  {showPrimaryOpen && walletOpenUri ? (
+                    <Button
+                      variant="default"
+                      className="h-11 w-full min-w-0 gap-2 text-base"
+                      onClick={handleOpenWallet}
+                    >
+                      <Wallet className="size-5 shrink-0" />
+                      <span className="truncate">
+                        {isPaytoHttpOpenUrl(walletOpenUri)
+                          ? t('Open on website')
+                          : t('Open in wallet')}
+                      </span>
+                    </Button>
+                  ) : null}
+                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button
+                      variant={showPrimaryOpen ? 'outline' : 'default'}
+                      className="h-11 w-full min-w-0 gap-2 text-base"
+                      onClick={() => handleCopy(authority, label)}
+                    >
+                      <Copy className="size-5 shrink-0" />
+                      <span className="truncate">{t('Copy address')}</span>
+                    </Button>
+                    <Button
+                      variant={showPrimaryOpen ? 'outline' : 'secondary'}
+                      className="h-11 w-full min-w-0 gap-2 text-base"
+                      onClick={() => handleCopy(paytoUri)}
+                    >
+                      <Copy className="size-5 shrink-0" />
+                      <span className="truncate">{t('Copy payto URI')}</span>
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {openHandlers.length > 0 && (
+              <div className="min-w-0 space-y-2.5 border-t border-border/60 pt-4">
+                <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground sm:text-base">
+                  {t('Open with')}
                 </p>
-                <p className="break-all font-mono text-base leading-relaxed select-text sm:text-lg">{authority}</p>
-              </div>
-              <div className="flex min-w-0 flex-col gap-2">
-                {showPrimaryOpen && walletOpenUri ? (
-                  <Button
-                    variant="default"
-                    className="h-11 w-full min-w-0 gap-2 text-base"
-                    onClick={handleOpenWallet}
+                <div className="flex min-w-0 items-stretch gap-2">
+                  <Select
+                    value={selectedOpenHandlerId}
+                    onValueChange={setSelectedOpenHandlerId}
                   >
-                    <Wallet className="size-5 shrink-0" />
-                    <span className="truncate">
-                      {isPaytoHttpOpenUrl(walletOpenUri)
-                        ? t('Open on website')
-                        : t('Open in wallet')}
-                    </span>
-                  </Button>
-                ) : null}
-                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                    <SelectTrigger
+                      className="h-11 min-w-0 flex-1 text-base"
+                      aria-label={t('Open with')}
+                    >
+                      <SelectValue
+                        placeholder={t('Choose app', { defaultValue: 'Choose app' })}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {openHandlers.map((handler) => (
+                        <SelectItem key={handler.id} value={handler.id} className="text-base">
+                          {handler.openTargetName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
-                    variant={showPrimaryOpen ? 'outline' : 'default'}
-                    className="h-11 w-full min-w-0 gap-2 text-base"
-                    onClick={() => handleCopy(authority, label)}
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-11 w-11 shrink-0"
+                    disabled={!selectedOpenHandler}
+                    title={
+                      selectedOpenHandler
+                        ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
+                        : undefined
+                    }
+                    aria-label={
+                      selectedOpenHandler
+                        ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
+                        : t('Open', { defaultValue: 'Open' })
+                    }
+                    onClick={() => {
+                      if (selectedOpenHandler) openPaytoPaymentTarget(selectedOpenHandler)
+                    }}
                   >
-                    <Copy className="size-5 shrink-0" />
-                    <span className="truncate">{t('Copy address')}</span>
-                  </Button>
-                  <Button
-                    variant={showPrimaryOpen ? 'outline' : 'secondary'}
-                    className="h-11 w-full min-w-0 gap-2 text-base"
-                    onClick={() => handleCopy(paytoUri)}
-                  >
-                    <Copy className="size-5 shrink-0" />
-                    <span className="truncate">{t('Copy payto URI')}</span>
+                    <ArrowRight className="size-5" aria-hidden />
                   </Button>
                 </div>
               </div>
-            </>
-          )}
+            )}
+          </div>
 
-          {openHandlers.length > 0 && (
-            <div className="min-w-0 space-y-2.5 border-t border-border/60 pt-4">
-              <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground sm:text-base">
-                {t('Open with')}
-              </p>
-              <div className="flex min-w-0 items-stretch gap-2">
-                <Select
-                  value={selectedOpenHandlerId}
-                  onValueChange={setSelectedOpenHandlerId}
-                >
-                  <SelectTrigger
-                    className="h-11 min-w-0 flex-1 text-base"
-                    aria-label={t('Open with')}
-                  >
-                    <SelectValue
-                      placeholder={t('Choose app', { defaultValue: 'Choose app' })}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {openHandlers.map((handler) => (
-                      <SelectItem key={handler.id} value={handler.id} className="text-base">
-                        {handler.openTargetName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-11 w-11 shrink-0"
-                  disabled={!selectedOpenHandler}
-                  title={
-                    selectedOpenHandler
-                      ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
-                      : undefined
-                  }
-                  aria-label={
-                    selectedOpenHandler
-                      ? t('Open in {{name}}', { name: selectedOpenHandler.openTargetName })
-                      : t('Open', { defaultValue: 'Open' })
-                  }
-                  onClick={() => {
-                    if (selectedOpenHandler) openPaytoPaymentTarget(selectedOpenHandler)
-                  }}
-                >
-                  <ArrowRight className="size-5" aria-hidden />
-                </Button>
-              </div>
-            </div>
+          {canOfferPostPayment ? (
+            <DialogFooter className="flex shrink-0 flex-col-reverse gap-2 border-t border-border/60 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full min-w-0 sm:w-auto"
+                onClick={() => onOpenChange(false)}
+              >
+                {t('Close')}
+              </Button>
+              <Button
+                ref={sendMessageRef}
+                type="button"
+                variant="default"
+                className="w-full min-w-0 sm:w-auto"
+                onClick={handleSendMessage}
+              >
+                {t('Send a message')}
+              </Button>
+            </DialogFooter>
+          ) : (
+            <DialogFooter className="shrink-0 border-t border-border/60 px-4 py-3 sm:px-5">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full min-w-0 sm:ml-auto sm:w-auto"
+                onClick={() => onOpenChange(false)}
+              >
+                {t('Close')}
+              </Button>
+            </DialogFooter>
           )}
-        </div>
-      </DialogContent>
-    </Dialog>
-    {recipientPubkey && !onPostPaymentRequest ? (
-      <PostPaymentMessagePrompt
-        open={postPaymentOpen}
-        onOpenChange={setPostPaymentOpen}
-        recipientPubkey={recipientPubkey}
-        paymentContext={postPaymentContext}
-      />
-    ) : null}
+        </DialogContent>
+      </Dialog>
+      {recipientPubkey && !onPostPaymentRequest ? (
+        <PostPaymentMessagePrompt
+          open={postPaymentOpen}
+          onOpenChange={setPostPaymentOpen}
+          recipientPubkey={recipientPubkey}
+          paymentContext={postPaymentContext}
+        />
+      ) : null}
     </>
   )
 }
