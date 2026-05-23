@@ -32,8 +32,7 @@ function rowTitle(url: string, connected: boolean, t: (k: string) => string) {
 }
 
 /**
- * Desktop sidebar: relay avatars for favorites, inbox, cache, HTTP index, and defaults;
- * muted when the WebSocket is down (HTTP index relays count as active when configured).
+ * Desktop sidebar: relay avatars for relays with an open WebSocket in the pool.
  */
 export function ConnectedRelaysSidebarStrip({ className }: { className?: string }) {
   const { t } = useTranslation()

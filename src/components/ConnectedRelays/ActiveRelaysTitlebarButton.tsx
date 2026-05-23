@@ -30,8 +30,7 @@ function rowTitle(url: string, connected: boolean, t: (k: string) => string) {
 }
 
 /**
- * Same interaction pattern as {@link SeenOnButton}: Server + counts, menu lists relays with {@link RelayIcon}.
- * Shows favorites + default/inbox relays; disconnected relays are muted.
+ * Server icon + menu listing relays with an open WebSocket in the pool.
  */
 export function ActiveRelaysTitlebarButton() {
   const { t } = useTranslation()

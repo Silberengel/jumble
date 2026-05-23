@@ -95,15 +95,10 @@ export function isRelayAllowedUnderMetadataOnlyPolicy(url: string): boolean {
   return false
 }
 
-/** Block WebSocket (and other) pool connects when metadata-only policy is on. */
+/** Block read-side pool connects / HTTP index fetches when metadata-only policy is on. */
 export function isRelayConnectionAllowedForViewer(url: string): boolean {
   if (!isMetadataRelaysOnlyPolicyActive()) return true
   return isRelayAllowedUnderMetadataOnlyPolicy(url)
-}
-
-function filterToViewerMetadataRelaysOnly(urls: readonly string[]): string[] {
-  if (!isMetadataRelaysOnlyPolicyActive()) return [...urls]
-  return urls.filter((u) => isRelayAllowedUnderMetadataOnlyPolicy(u))
 }
 
 export function relayUrlKey(url: string): string {
@@ -183,11 +178,9 @@ export function sanitizeRelayUrlsForFetch(
     const key = relayUrlKey(u)
     return key.length > 0 && keys.has(key)
   })
-  return filterToViewerMetadataRelaysOnly(
-    filterViewerBlockedRelaysForFetch(
-      filterAggrNostrLandUnlessViewerEligible(
-        filterReadOnlyRelaysUnlessPersonal(withoutThirdPartyLocals, keys)
-      )
+  return filterViewerBlockedRelaysForFetch(
+    filterAggrNostrLandUnlessViewerEligible(
+      filterReadOnlyRelaysUnlessPersonal(withoutThirdPartyLocals, keys)
     )
   )
 }

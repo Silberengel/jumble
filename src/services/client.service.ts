@@ -42,7 +42,6 @@ import {
   isReadOnlyIndexerRelay,
   isReadOnlyRelayAllowedForViewer,
   isRelayConnectionAllowedForViewer,
-  isMetadataRelaysOnlyPolicyActive,
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 import {
@@ -438,7 +437,7 @@ class ClientService extends EventTarget {
     const rawEnsureRelay = this.pool.ensureRelay.bind(this.pool)
     this.pool.ensureRelay = async (
       url: string,
-      params?: { connectionTimeout?: number; abort?: AbortSignal }
+      params?: { connectionTimeout?: number; abort?: AbortSignal; purpose?: 'read' | 'write' }
     ) => {
       // While offline, skip any relay that isn't on the local network.
       // This prevents a flood of failed WebSocket/HTTP connection attempts across
@@ -446,7 +445,7 @@ class ClientService extends EventTarget {
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
       }
-      if (!isRelayConnectionAllowedForViewer(url)) {
+      if (params?.purpose !== 'write' && !isRelayConnectionAllowedForViewer(url)) {
         throw new Error(`[metadata-relays-only] skipping relay ${url}`)
       }
       if (!isWebsocketUrl(url) && isKind10243HttpRelayTagUrl(url)) {
@@ -1772,7 +1771,7 @@ class ClientService extends EventTarget {
                   wsAttempt
                 })
 
-                const ensureOpts = { connectionTimeout }
+                const ensureOpts = { connectionTimeout, purpose: 'write' as const }
                 const connectionPromise = isLocal
                   ? Promise.race([
                       this.pool.ensureRelay(url, ensureOpts),
@@ -4522,7 +4521,7 @@ class ClientService extends EventTarget {
             stripped.write.length > 0 ? stripped.write : write.filter(urlIsNonLocalForRemoteViewer)
           if (read.length === 0 && write.length === 0) {
             read = [...publicReadRelayFallbackUrls()]
-            write = isMetadataRelaysOnlyPolicyActive() ? [] : [...FAST_WRITE_RELAY_URLS]
+            write = [...FAST_WRITE_RELAY_URLS]
           }
         }
         return mergeKind10243({
@@ -4961,9 +4960,7 @@ class ClientService extends EventTarget {
       let urls = [...publicReadRelayFallbackUrls()]
       if (myPubkey) {
         const relayList = await this.fetchRelayList(myPubkey)
-        urls = isMetadataRelaysOnlyPolicyActive()
-          ? relayList.read.slice(0, 5)
-          : relayList.read.concat([...publicReadRelayFallbackUrls()]).slice(0, 5)
+        urls = relayList.read.concat([...publicReadRelayFallbackUrls()]).slice(0, 5)
       }
       return [{ urls, filter: { authors: pubkeys } }]
     }

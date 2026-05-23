@@ -73,7 +73,7 @@ describe('read-only-relay-personal', () => {
     expect(filterReadOnlyRelaysUnlessPersonal(urls)).toEqual(urls)
   })
 
-  it('metadata-only policy blocks ad-hoc and FAST_READ bootstrap relays, keeps profile relays', () => {
+  it('metadata-only policy blocks ad-hoc reads at network level, not in sanitizeRelayUrlsForFetch', () => {
     setRestrictConnectionsToMetadataRelaysOnly(true)
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://relay.example.com/']), { viewerActive: true })
     const urls = [
@@ -82,10 +82,7 @@ describe('read-only-relay-personal', () => {
       'wss://theforest.nostr1.com/',
       'wss://nostr.wirednet.jp/'
     ]
-    expect(sanitizeRelayUrlsForFetch(urls)).toEqual([
-      'wss://relay.example.com/',
-      'wss://profiles.nostr1.com/'
-    ])
+    expect(sanitizeRelayUrlsForFetch(urls)).toEqual(urls)
     expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
@@ -99,6 +96,7 @@ describe('read-only-relay-personal', () => {
     expect(sanitizeRelayUrlsForFetch(urls).map((u) => u.replace(/\/$/, ''))).toEqual([
       'wss://nostr.land',
       'wss://aggr.nostr.land',
+      'wss://nostr.wirednet.jp'
     ])
     expect(isRelayConnectionAllowedForViewer(AGGR_NOSTR_LAND_WSS)).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
