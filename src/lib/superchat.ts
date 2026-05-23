@@ -69,13 +69,11 @@ export function findPaymentAttestationForTarget(
   recipientPubkey: string
 ): Event | undefined {
   const target = targetEventId.trim().toLowerCase()
-  const recipient = recipientPubkey.trim().toLowerCase()
   for (const attestation of attestations) {
-    if (attestation.pubkey.toLowerCase() !== recipient) continue
+    if (!hexPubkeysEqual(attestation.pubkey, recipientPubkey)) continue
     const attestedId = getPaymentAttestationTargetId(attestation)
-    const targetKind = getPaymentAttestationTargetKind(attestation)
-    if (!attestedId || !targetKind) continue
-    if (attestedId.toLowerCase() === target) return attestation
+    if (!attestedId || attestedId.toLowerCase() !== target) continue
+    return attestation
   }
   return undefined
 }

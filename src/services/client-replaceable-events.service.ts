@@ -1,5 +1,6 @@
 import {
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
+  DOCUMENT_RELAY_URLS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
@@ -9,7 +10,8 @@ import {
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
   PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
   PROFILE_RELAY_URLS,
-  RECOMMENDED_BLOSSOM_SERVERS
+  RECOMMENDED_BLOSSOM_SERVERS,
+  isDocumentRelayKind
 } from '@/constants'
 import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
@@ -831,38 +833,74 @@ export class ReplaceableEventService {
   private async replaceableEventBatchLoadFn(
     params: readonly { pubkey: string; kind: number; d?: string }[]
   ): Promise<(NEvent | null)[]> {
-    const groups = new Map<string, { pubkey: string; kind: number; d?: string }[]>()
-    params.forEach(({ pubkey, kind, d }) => {
-      const key = `${kind}:${d ?? ''}`
-      if (!groups.has(key)) {
-        groups.set(key, [])
-      }
-      groups.get(key)!.push({ pubkey, kind, d })
-    })
+    const results: (NEvent | null)[] = new Array(params.length).fill(null)
+    const missing: { pubkey: string; kind: number; d: string; index: number }[] = []
+
+    await Promise.allSettled(
+      params.map(async ({ pubkey, kind, d }, index) => {
+        if (!d) {
+          results[index] = null
+          return
+        }
+        try {
+          const idb = await indexedDb.getReplaceableEvent(pubkey, kind, d)
+          if (idb && idb.kind === kind && !shouldDropEventOnIngest(idb)) {
+            results[index] = idb
+            return
+          }
+        } catch {
+          /* optional */
+        }
+        const session = client.eventService.findSessionReplaceableByNaddr({
+          pubkey,
+          kind,
+          identifier: d
+        })
+        if (session && session.kind === kind && !shouldDropEventOnIngest(session)) {
+          results[index] = session
+          return
+        }
+        missing.push({ pubkey, kind, d, index })
+      })
+    )
+
+    if (missing.length === 0) {
+      return results
+    }
 
     const eventsMap = new Map<string, NEvent>()
+    const groups = new Map<string, typeof missing>()
+    for (const item of missing) {
+      const key = `${item.kind}:${item.d}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(item)
+    }
+
     await Promise.allSettled(
-      Array.from(groups.entries()).map(async ([, items]) => {
+      Array.from(groups.values()).map(async (items) => {
         const { kind, d } = items[0]!
-        const pubkeys = items.map(item => item.pubkey)
-        const relayUrls = FAST_READ_RELAY_URLS
+        const pubkeys = items.map((item) => item.pubkey)
+        const relayUrls = stripLocalNetworkRelaysForWssReq(
+          isDocumentRelayKind(kind)
+            ? [...new Set([...FAST_READ_RELAY_URLS, ...DOCUMENT_RELAY_URLS])]
+            : [...FAST_READ_RELAY_URLS]
+        )
 
         const filter: Filter = {
           authors: pubkeys,
-          kinds: [kind]
-        }
-        if (d) {
-          filter['#d'] = [d]
+          kinds: [kind],
+          '#d': [d]
         }
 
         const events = await this.queryService.query(relayUrls, filter, undefined, {
           replaceableRace: true,
-          eoseTimeout: 100, // Reduced from 200ms for faster early returns
-          globalTimeout: 2000 // Reduced from 3000ms to prevent long waits when many relays are slow
+          eoseTimeout: isDocumentRelayKind(kind) ? 2500 : 100,
+          globalTimeout: isDocumentRelayKind(kind) ? 8000 : 2000
         })
 
         for (const event of events) {
-          const eventKey = `${event.pubkey}:${event.kind}:${d ?? ''}`
+          if (event.kind !== kind || shouldDropEventOnIngest(event)) continue
+          const eventKey = `${event.pubkey}:${event.kind}:${d}`
           const existing = eventsMap.get(eventKey)
           if (!existing || existing.created_at < event.created_at) {
             eventsMap.set(eventKey, event)
@@ -871,15 +909,16 @@ export class ReplaceableEventService {
       })
     )
 
-    return params.map(({ pubkey, kind, d }) => {
-      const eventKey = `${pubkey}:${kind}:${d ?? ''}`
+    for (const { pubkey, kind, d, index } of missing) {
+      const eventKey = `${pubkey}:${kind}:${d}`
       const event = eventsMap.get(eventKey)
       if (event) {
+        results[index] = event
         void indexedDb.putReplaceableEvent(event)
-        return event
       }
-      return null
-    })
+    }
+
+    return results
   }
 
   /** Persist kind 10133 rows returned alongside a kind-0 REQ (same filter, separate cache slots). */

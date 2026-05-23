@@ -34,7 +34,7 @@ export function eventMatchesLocalFeedFilter(event: Event, filter: Filter): boole
     if (!Array.isArray(values) || values.length === 0) continue
     const tagName = key.slice(1)
     const eventValues = event.tags
-      .filter((tag) => tag[0] === tagName && typeof tag[1] === 'string')
+      .filter((tag) => tag[0]?.toLowerCase() === tagName.toLowerCase() && typeof tag[1] === 'string')
       .map((tag) => tag[1] as string)
     if (eventValues.length === 0) return false
     if (!valuesMatchTag(tagName, eventValues, values)) return false

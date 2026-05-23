@@ -3,8 +3,12 @@ import {
   getPaymentAttestationTargetId,
   getSuperchatPaymentRecipientPubkey
 } from '@/lib/superchat'
+import { hexPubkeysEqual } from '@/lib/pubkey'
 import {
+  hydrateAttestationsForAuthor,
+  isLocallyMarkedAttested,
   loadPaymentAttestationLocal,
+  markLocalAttestationTarget,
   peekCachedPaymentAttestation,
   refreshPaymentAttestationFromRelays,
   rememberPaymentAttestationFromPublish
@@ -17,8 +21,23 @@ function attestationFilter(recipientPubkey: string, targetEventId: string) {
   return {
     kinds: [ExtendedKind.PAYMENT_ATTESTATION],
     authors: [recipientPubkey],
-    '#e': [targetEventId],
+    '#e': [targetEventId.trim().toLowerCase()],
     limit: 5
+  }
+}
+
+function readAttestedFromLocalSources(
+  targetEventId: string | undefined,
+  recipientPubkey: string | null
+): { attested: boolean; attestationEvent: NostrEvent | null } {
+  if (!targetEventId || !recipientPubkey) {
+    return { attested: false, attestationEvent: null }
+  }
+  const hit = peekCachedPaymentAttestation(targetEventId, recipientPubkey)
+  const locallyMarked = isLocallyMarkedAttested(recipientPubkey, targetEventId)
+  return {
+    attested: Boolean(hit) || locallyMarked,
+    attestationEvent: hit ?? null
   }
 }
 
@@ -34,16 +53,15 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
     [targetEvent?.id, recipientPubkey]
   )
 
-  const cached = useMemo(
-    () =>
-      targetEvent?.id && recipientPubkey
-        ? peekCachedPaymentAttestation(targetEvent.id, recipientPubkey)
-        : undefined,
+  const localSnapshot = useMemo(
+    () => readAttestedFromLocalSources(targetEvent?.id, recipientPubkey),
     [targetEvent?.id, recipientPubkey, targetId]
   )
 
-  const [attested, setAttested] = useState(Boolean(cached))
-  const [attestationEvent, setAttestationEvent] = useState<NostrEvent | null>(cached ?? null)
+  const [attested, setAttested] = useState(localSnapshot.attested)
+  const [attestationEvent, setAttestationEvent] = useState<NostrEvent | null>(
+    localSnapshot.attestationEvent
+  )
   const [checking, setChecking] = useState(false)
 
   const applyMatch = useCallback((match: NostrEvent | undefined) => {
@@ -55,10 +73,14 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
   const markAttested = useCallback(
     (attestation: NostrEvent) => {
       if (!targetEvent?.id || !recipientPubkey) return
-      if (attestation.kind !== ExtendedKind.PAYMENT_ATTESTATION) return
-      if (attestation.pubkey.toLowerCase() !== recipientPubkey.toLowerCase()) return
+      markLocalAttestationTarget(recipientPubkey, targetEvent.id)
+      if (attestation.kind !== ExtendedKind.PAYMENT_ATTESTATION) {
+        setAttested(true)
+        return
+      }
+      if (!hexPubkeysEqual(attestation.pubkey, recipientPubkey)) return
       const attestedId = getPaymentAttestationTargetId(attestation)
-      if (attestedId?.toLowerCase() !== targetEvent.id.toLowerCase()) return
+      if (!attestedId || attestedId.toLowerCase() !== targetEvent.id.toLowerCase()) return
       rememberPaymentAttestationFromPublish(attestation)
       applyMatch(attestation)
     },
@@ -66,20 +88,22 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
   )
 
   useLayoutEffect(() => {
-    if (!targetEvent?.id || !recipientPubkey) {
-      setAttested(false)
-      setAttestationEvent(null)
-      return
-    }
-    const hit = peekCachedPaymentAttestation(targetEvent.id, recipientPubkey)
-    if (hit) {
-      setAttestationEvent(hit)
-      setAttested(true)
-    }
-  }, [recipientPubkey, targetEvent?.id])
+    const next = readAttestedFromLocalSources(targetEvent?.id, recipientPubkey)
+    setAttestationEvent(next.attestationEvent)
+    setAttested(next.attested)
+  }, [recipientPubkey, targetEvent?.id, targetId])
+
+  useEffect(() => {
+    if (!recipientPubkey) return
+    void hydrateAttestationsForAuthor(recipientPubkey)
+  }, [recipientPubkey])
 
   useEffect(() => {
     if (!targetEvent?.id || !recipientPubkey || !filter) return
+
+    if (isLocallyMarkedAttested(recipientPubkey, targetEvent.id)) {
+      setAttested(true)
+    }
 
     let cancelled = false
     setChecking(true)
@@ -90,6 +114,10 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
         if (cancelled) return
         if (local) {
           applyMatch(local)
+          return
+        }
+        if (isLocallyMarkedAttested(recipientPubkey, targetEvent.id)) {
+          setAttested(true)
           return
         }
         const relay = await refreshPaymentAttestationFromRelays(

@@ -18,7 +18,6 @@ import {
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import {
-  buildAttestedPaymentIdSet,
   getPaymentAttestationTargetId,
   partitionAttestedSuperchats,
   replyFeedSuperchatsFirst
@@ -50,7 +49,11 @@ import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
-import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
+import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } from '@/lib/thread-interaction-req'
+import {
+  readKnownAttestedPaymentTargetsSync,
+  resolveAttestedPaymentIdSet
+} from '@/lib/payment-attestation-cache'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
@@ -58,7 +61,7 @@ import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from
 import type { TProfile, TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { LoadingBar } from '../LoadingBar'
@@ -440,9 +443,37 @@ function ReplyNoteList({
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
 
+  useLayoutEffect(() => {
+    const pk = event.pubkey
+    if (!pk) return
+    const syncIds = readKnownAttestedPaymentTargetsSync(pk)
+    if (syncIds.size === 0) return
+    setAttestedPaymentIds((prev) => {
+      const next = new Set(prev)
+      for (const id of syncIds) next.add(id)
+      return next.size === prev.size ? prev : next
+    })
+  }, [event.pubkey, event.id])
+
   useEffect(() => {
-    setAttestedPaymentIds(new Set())
-  }, [event.id])
+    const pk = event.pubkey
+    if (!pk) return
+    let cancelled = false
+    void (async () => {
+      const ids = await resolveAttestedPaymentIdSet(pk)
+      if (cancelled) return
+      setAttestedPaymentIds(ids)
+      const relayHints = threadRelayUrlsRef.current.length
+        ? threadRelayUrlsRef.current
+        : browsingRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
+      const targets = await hydrateAttestedSuperchatTargets(ids, relayHints)
+      if (cancelled) return
+      if (targets.length > 0) addReplies(targets)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [event.pubkey, event.id, addReplies, browsingRelayUrls])
 
   useEffect(() => {
     const handleAttestation = (data: Event) => {
@@ -1184,6 +1215,8 @@ function ReplyNoteList({
               allowThirdPartyLocalRelays: false
             })
           )
+          threadRelayUrlsRef.current = relayUrlsForThreadReq
+          const recipientPubkey = event.pubkey
 
           // Stream replies as relays return them (aggr is first in the list) instead of waiting for full EOSE.
           const streamThreadReply = (evt: NEvent) => {
@@ -1197,13 +1230,41 @@ function ReplyNoteList({
             if (!hasCache) setLoading(false)
           }
 
-          const allReplies = await queryService.fetchEvents(relayUrlsForThreadReq, filters, {
-            onevent: streamThreadReply,
-            foreground: true,
-            firstRelayResultGraceMs: 900,
-            globalTimeout: 12_000,
-            relayOpSource: 'ReplyNoteList.thread'
+          const superchatFilters = buildThreadSuperchatPriorityFilters({
+            root: rootInfo,
+            opEventKind: event.kind,
+            limit: LIMIT
           })
+          if (superchatFilters.length > 0) {
+            void queryService
+              .fetchEvents(relayUrlsForThreadReq, superchatFilters, {
+                onevent: streamThreadReply,
+                foreground: true,
+                firstRelayResultGraceMs: 400,
+                globalTimeout: 8000,
+                relayOpSource: 'ReplyNoteList.threadSuperchats'
+              })
+              .catch(() => {
+                /* optional early wave */
+              })
+          }
+
+          const attestationTask = recipientPubkey
+            ? fetchPaymentAttestationsForRecipient(recipientPubkey, relayUrlsForThreadReq, {
+                foreground: statsForeground
+              })
+            : Promise.resolve([] as NEvent[])
+
+          const [allReplies, relayAttestations] = await Promise.all([
+            queryService.fetchEvents(relayUrlsForThreadReq, filters, {
+              onevent: streamThreadReply,
+              foreground: true,
+              firstRelayResultGraceMs: 900,
+              globalTimeout: 12_000,
+              relayOpSource: 'ReplyNoteList.thread'
+            }),
+            attestationTask
+          ])
 
           if (fetchGeneration !== replyFetchGenRef.current) return
 
@@ -1242,15 +1303,10 @@ function ReplyNoteList({
           const repliesForStatsPrime = mergedForUi
           addReplies(mergedForUi)
 
-          const recipientPubkey = event.pubkey
-          threadRelayUrlsRef.current = relayUrlsForThreadReq
           if (recipientPubkey) {
-            void fetchPaymentAttestationsForRecipient(recipientPubkey, relayUrlsForThreadReq, {
-              foreground: statsForeground
-            })
-              .then(async (attestations) => {
+            void resolveAttestedPaymentIdSet(recipientPubkey, relayAttestations)
+              .then(async (attestedIds) => {
                 if (fetchGeneration !== replyFetchGenRef.current) return
-                const attestedIds = buildAttestedPaymentIdSet(attestations, recipientPubkey)
                 setAttestedPaymentIds(attestedIds)
                 const targets = await hydrateAttestedSuperchatTargets(
                   attestedIds,

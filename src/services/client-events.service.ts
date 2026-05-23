@@ -200,6 +200,14 @@ export class EventService {
    * Session cache is keyed by event `id` (hex). `fetchEvent("naddr1…")` has no hex until a REQ returns;
    * scan for a replaceable whose `kind`/`pubkey`/`d` matches the naddr (e.g. live 30311 already loaded from ticker/embed).
    */
+  findSessionReplaceableByNaddr(data: {
+    pubkey: string
+    kind: number
+    identifier: string
+  }): NEvent | undefined {
+    return this.getSessionEventIfMatchingNaddr(data)
+  }
+
   private getSessionEventIfMatchingNaddr(data: {
     pubkey: string
     kind: number
@@ -376,12 +384,26 @@ export class EventService {
             pointerHasFetchHints = Boolean(data.author || data.relays?.length)
             break
           case 'naddr': {
+            const ident = data.identifier ?? ''
             const fromSession = this.getSessionEventIfMatchingNaddr({
               pubkey: data.pubkey,
               kind: data.kind,
-              identifier: data.identifier ?? ''
+              identifier: ident
             })
             if (fromSession) return fromSession
+            try {
+              const fromIdb = await indexedDb.getReplaceableEvent(
+                data.pubkey.toLowerCase(),
+                data.kind,
+                ident
+              )
+              if (fromIdb && fromIdb.kind === data.kind && !shouldDropEventOnIngest(fromIdb)) {
+                this.addEventToCache(fromIdb)
+                return fromIdb
+              }
+            } catch {
+              /* optional */
+            }
             break
           }
         }
@@ -1283,6 +1305,28 @@ export class EventService {
           relays = normalizeRelayList([...relays, ...eventRelayHints])
         }
         return cached
+      }
+    }
+
+    if (
+      filter.authors?.length === 1 &&
+      filter.kinds?.length === 1 &&
+      Array.isArray(filter['#d']) &&
+      filter['#d'].length >= 1
+    ) {
+      const pk = filter.authors[0]!.trim().toLowerCase()
+      const kind = filter.kinds[0]!
+      const dTag = String(filter['#d'][0] ?? '').trim()
+      if (pk && dTag) {
+        try {
+          const cached = await indexedDb.getReplaceableEvent(pk, kind, dTag)
+          if (cached && cached.kind === kind && !shouldDropEventOnIngest(cached, ingestOpts)) {
+            this.addEventToCache(cached, ingestOpts)
+            return cached
+          }
+        } catch {
+          /* optional */
+        }
       }
     }
 

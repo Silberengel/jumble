@@ -43,6 +43,14 @@ describe('eventMatchesLocalFeedFilter', () => {
     ).toBe(true)
   })
 
+  it('matches uppercase E tags when filter uses #e', () => {
+    expect(
+      eventMatchesLocalFeedFilter(event({ tags: [['E', 'e'.repeat(64)]] }), {
+        '#e': ['e'.repeat(64)]
+      })
+    ).toBe(true)
+  })
+
   it('rejects events outside any filter constraint', () => {
     expect(eventMatchesLocalFeedFilter(event({ kind: 6 }), { kinds: [1] })).toBe(false)
     expect(eventMatchesLocalFeedFilter(event(), { since: 1001 })).toBe(false)

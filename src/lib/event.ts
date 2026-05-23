@@ -1,4 +1,5 @@
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
+import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
 import { cleanUrl, normalizeUrl } from '@/lib/url'
@@ -293,11 +294,22 @@ export function getRootETag(event?: Event) {
   // Kind 9735: thread root for note zaps is the zapped event id on `e` / `E`
   if (event.kind === kinds.Zap) {
     const firstHex = getFirstHexEventIdFromETags(event.tags)
-    if (!firstHex) return undefined
-    return (
-      event.tags.find((t) => t[0] === 'e' && t[1] === firstHex) ??
-      event.tags.find((t) => t[0] === 'E' && t[1] === firstHex)
-    )
+    if (firstHex) {
+      return (
+        event.tags.find((t) => t[0] === 'e' && t[1] === firstHex) ??
+        event.tags.find((t) => t[0] === 'E' && t[1] === firstHex)
+      )
+    }
+    const zapped = getZapInfoFromEvent(event)?.originalEventId
+    if (zapped && /^[0-9a-f]{64}$/i.test(zapped)) {
+      const hex = zapped.toLowerCase()
+      return (
+        event.tags.find((t) => t[0] === 'e' && t[1]?.toLowerCase() === hex) ??
+        event.tags.find((t) => t[0] === 'E' && t[1]?.toLowerCase() === hex) ??
+        ['e', hex]
+      )
+    }
+    return undefined
   }
 
   if (event.kind !== kinds.ShortTextNote) return undefined

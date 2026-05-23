@@ -668,6 +668,12 @@ class IndexedDbService {
           // This prevents the "no profile" state when cache exists but is just old
         }
         transaction.commit()
+        if (!row.value) {
+          return resolve(undefined)
+        }
+        if (row.value.kind !== kind) {
+          return resolve(undefined)
+        }
         resolve(row.value)
       }
 

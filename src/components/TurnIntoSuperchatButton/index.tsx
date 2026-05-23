@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils'
 import { requestProfileWallRefresh } from '@/hooks/useProfileWall'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
+import { markLocalAttestationTarget } from '@/lib/payment-attestation-cache'
 import { useNostr } from '@/providers/NostrProvider'
 import { Sparkles } from 'lucide-react'
 import { Event } from 'nostr-tools'
@@ -84,8 +85,11 @@ function TurnIntoSuperchatButtonInner({
       try {
         const draft = await createPaymentAttestationDraftEvent(event, { addClientTag: true })
         const published = await publish(draft, { disableFallbacks: true })
+        markLocalAttestationTarget(recipientPubkey, event.id)
         if (published) {
           markAttested(published)
+        } else {
+          markAttested({ ...draft, id: event.id, pubkey: recipientPubkey, sig: '' } as Event)
         }
         requestProfileWallRefresh(recipientPubkey)
         showSimplePublishSuccess(t('Superchat attested'))

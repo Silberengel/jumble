@@ -92,3 +92,17 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
   }
   return filters
 }
+
+/** Zap / payment filters only — run first so paid thread replies appear before regular replies. */
+export function buildThreadSuperchatPriorityFilters(
+  input: BuildThreadInteractionFiltersInput
+): Filter[] {
+  const superchatKinds = new Set<number>([kinds.Zap, ExtendedKind.PAYMENT_NOTIFICATION])
+  const out: Filter[] = []
+  for (const filter of buildThreadInteractionFilters(input)) {
+    const kindsList = filter.kinds?.filter((k) => superchatKinds.has(k))
+    if (!kindsList?.length) continue
+    out.push({ ...filter, kinds: kindsList })
+  }
+  return out
+}
