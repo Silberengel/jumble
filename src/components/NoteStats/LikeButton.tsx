@@ -35,6 +35,7 @@ import logger from '@/lib/logger'
 import { useTranslation } from 'react-i18next'
 import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
 import EmojiPicker, { EMOJI_PICKER_REACTIONS } from '../EmojiPicker'
+import { DiscussionVoteCountHover, ReactionCountHover } from './NoteStatsCountHover'
 import {
   type RelayStatus,
   showPublishingError,
@@ -42,6 +43,7 @@ import {
   showSimplePublishSuccess
 } from '@/lib/publishing-feedback'
 import { LoginRequiredError } from '@/lib/nostr-errors'
+import { cn } from '@/lib/utils'
 import { WEB_EXTERNAL_REACTION_PUBLISHED_EVENT } from '@/lib/rss-web-feed'
 
 type LikeButtonProps = {
@@ -237,44 +239,40 @@ export function LikeButtonWithStats({
     })
   }
 
-  const trigger = (
+  const openReactionPicker = () => {
+    if (myLastEmoji && !isEmojiReactionsOpen) {
+      like(myLastEmoji)
+      return
+    }
+    setIsEmojiReactionsOpen(true)
+  }
+
+  const likeIconButton = (
     <button
-      className="flex items-center enabled:hover:text-primary gap-1 px-3 h-full text-muted-foreground"
+      type="button"
+      className="flex h-full items-center gap-1 pl-3 pr-1 text-muted-foreground enabled:hover:text-primary"
       title={t('Like')}
       disabled={liking}
-      onClick={() => {
-        // If user has already reacted, clicking the button again should toggle it off
-        if (myLastEmoji && !isEmojiReactionsOpen) {
-          like(myLastEmoji)
-          return
-        }
-        
-        // Otherwise, open the emoji picker
-        setIsEmojiReactionsOpen(true)
-      }}
+      onClick={openReactionPicker}
     >
       {liking ? (
         <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
       ) : myLastEmoji && !useIconOnlyLikeTrigger ? (
-        <>
-          <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
-          {showLikeCount && (
-            <div className="text-sm tabular-nums">
-              {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
-            </div>
-          )}
-        </>
+        <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
       ) : (
-        <>
-          <SmilePlus />
-          {showLikeCount && (
-            <div className="text-sm tabular-nums">
-              {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
-            </div>
-          )}
-        </>
+        <SmilePlus />
       )}
     </button>
+  )
+
+  const likeCountLabel = showLikeCount ? (
+    <ReactionCountHover noteStats={noteStats}>
+      <div className="pr-3 text-sm tabular-nums">
+        {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
+      </div>
+    </ReactionCountHover>
+  ) : (
+    <span className="pr-3" aria-hidden />
   )
 
   // Discussions (kind 11) and kind 1111 under a discussion: only +/- vote reactions
@@ -287,32 +285,38 @@ export function LikeButtonWithStats({
           const count = index === 0 ? upVoteCount : downVoteCount
           const arrow = index === 0 ? DISCUSSION_UPVOTE_DISPLAY : DISCUSSION_DOWNVOTE_DISPLAY
           return (
-            <button
+            <div
               key={emoji}
-              className={`flex items-center enabled:hover:text-primary gap-1 px-2 h-full text-muted-foreground rounded ${
-                isSelected ? 'text-primary bg-muted' : ''
-              }`}
-              title={emoji === '+' ? t('Upvote') : t('Downvote')}
-              disabled={liking}
-              onClick={() => {
-                like(emoji)
-              }}
+              className={cn(
+                'flex h-full items-center rounded',
+                isSelected ? 'bg-muted text-primary' : 'text-muted-foreground'
+              )}
             >
-              {liking ? (
-                <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
-              ) : (
-                <>
+              <button
+                type="button"
+                className="flex h-full items-center px-2 enabled:hover:text-primary"
+                title={emoji === '+' ? t('Upvote') : t('Downvote')}
+                disabled={liking}
+                onClick={() => {
+                  like(emoji)
+                }}
+              >
+                {liking ? (
+                  <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+                ) : (
                   <span className="text-base leading-none" aria-hidden>
                     {arrow}
                   </span>
-                  {!hideCount && (noteStats?.updatedAt != null || count > 0) && (
-                    <div className="text-sm tabular-nums">
-                      {count >= 100 ? '99+' : count}
-                    </div>
-                  )}
-                </>
-              )}
-            </button>
+                )}
+              </button>
+              {!hideCount && (noteStats?.updatedAt != null || count > 0) ? (
+                <DiscussionVoteCountHover noteStats={noteStats} vote={index === 0 ? 'up' : 'down'}>
+                  <div className="pr-2 text-sm tabular-nums">
+                    {count >= 100 ? '99+' : count}
+                  </div>
+                </DiscussionVoteCountHover>
+              ) : null}
+            </div>
           )
         })}
       </div>
@@ -335,7 +339,10 @@ export function LikeButtonWithStats({
   if (isSmallScreen) {
     return (
       <>
-        {trigger}
+        <div className="flex h-full min-w-0 items-center">
+          {likeIconButton}
+          {likeCountLabel}
+        </div>
         <Drawer handleOnly open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
           <DrawerContent
             dragHandle="vaul"
@@ -356,12 +363,15 @@ export function LikeButtonWithStats({
   }
 
   return (
-    <DropdownMenu open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent side="top" className="p-0 w-fit">
-        {likeEmojiPicker}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex h-full min-w-0 items-center">
+      <DropdownMenu open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
+        <DropdownMenuTrigger asChild>{likeIconButton}</DropdownMenuTrigger>
+        <DropdownMenuContent side="top" className="p-0 w-fit">
+          {likeEmojiPicker}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {likeCountLabel}
+    </div>
   )
 }
 

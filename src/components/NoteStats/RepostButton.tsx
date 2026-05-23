@@ -24,6 +24,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 import PostEditor from '../PostEditor'
+import { BoostCountHover } from './NoteStatsCountHover'
 import { formatCount } from './utils'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
 
@@ -102,10 +103,11 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
     })
   }
 
-  const trigger = (
+  const iconButton = (
     <button
+      type="button"
       className={cn(
-        'flex gap-1 items-center enabled:hover:text-lime-500 px-3 h-full',
+        'flex h-full items-center enabled:hover:text-lime-500 pl-3 pr-1',
         hasReposted ? 'text-lime-500' : 'text-muted-foreground'
       )}
       title={t('Boost')}
@@ -116,8 +118,15 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
       }}
     >
       {reposting ? <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden /> : <Repeat />}
-      {showRepostCount && <div className="text-sm tabular-nums">{formatCount(repostCount ?? 0)}</div>}
     </button>
+  )
+
+  const countLabel = showRepostCount ? (
+    <BoostCountHover noteStats={noteStats}>
+      <div className="pr-3 text-sm tabular-nums">{formatCount(repostCount ?? 0)}</div>
+    </BoostCountHover>
+  ) : (
+    <span className="pr-3" aria-hidden />
   )
 
   const postEditor = (
@@ -131,7 +140,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
   if (isSmallScreen) {
     return (
       <>
-        {trigger}
+        <div className="flex h-full min-w-0 items-center">
+          {iconButton}
+          {countLabel}
+        </div>
         <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <DrawerOverlay onClick={() => setIsDrawerOpen(false)} />
           <DrawerContent hideOverlay>
@@ -174,9 +186,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        <DropdownMenuContent>
+      <div className="flex h-full min-w-0 items-center">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{iconButton}</DropdownMenuTrigger>
+          <DropdownMenuContent>
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
@@ -196,8 +209,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
           >
             <PencilLine /> {t('Quote')}
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {countLabel}
+      </div>
       {postEditor}
     </>
   )

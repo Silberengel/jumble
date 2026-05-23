@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
 import PostPaymentMessagePrompt from '../ZapDialog/PostPaymentMessagePrompt'
 import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { ZapCountHover } from './NoteStatsCountHover'
 
 type ZapButtonProps = {
   event: Event
@@ -230,39 +231,45 @@ function ZapPaymentMethodsButton({ event, hideCount = false, noteStats }: ZapBut
 
   return (
     <>
-      <button
-        type="button"
-        className={cn(
-          'group flex items-center gap-1 select-none px-3 h-full',
-          disable ? 'cursor-not-allowed' : 'cursor-pointer'
-        )}
-        title={disable ? t('Zaps') : t('Payment methods')}
-        aria-label={disable ? t('Zaps') : t('Payment methods')}
-        disabled={disable}
-        onClick={handleOpenPaymentMethods}
-      >
-        <Zap
+      <div className="flex h-full min-w-0 select-none items-center">
+        <button
+          type="button"
           className={cn(
-            hasZapped && 'fill-yellow-400',
-            disable
-              ? 'text-muted-foreground/40'
-              : cn(
-                  'text-muted-foreground group-hover:text-yellow-400',
-                  hasZapped && 'text-yellow-400'
-                )
+            'group flex h-full items-center pl-3 pr-1',
+            disable ? 'cursor-not-allowed' : 'cursor-pointer'
           )}
-        />
-        {showZapAmount && (
-          <div
+          title={disable ? t('Zaps') : t('Payment methods')}
+          aria-label={disable ? t('Zaps') : t('Payment methods')}
+          disabled={disable}
+          onClick={handleOpenPaymentMethods}
+        >
+          <Zap
             className={cn(
-              'text-sm tabular-nums',
-              hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+              hasZapped && 'fill-yellow-400',
+              disable
+                ? 'text-muted-foreground/40'
+                : cn(
+                    'text-muted-foreground group-hover:text-yellow-400',
+                    hasZapped && 'text-yellow-400'
+                  )
             )}
-          >
-            {formatAmount(zapAmount ?? 0)}
-          </div>
+          />
+        </button>
+        {showZapAmount ? (
+          <ZapCountHover noteStats={noteStats}>
+            <div
+              className={cn(
+                'pr-3 text-sm tabular-nums',
+                hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+              )}
+            >
+              {formatAmount(zapAmount ?? 0)}
+            </div>
+          </ZapCountHover>
+        ) : (
+          <span className="pr-3" aria-hidden />
         )}
-      </button>
+      </div>
       <ZapDialog
         open={openPaymentDialog}
         setOpen={setOpenPaymentDialog}
@@ -498,45 +505,52 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
 
   return (
     <>
-      <button
-        className={cn(
-          'group flex items-center gap-1 select-none px-3 h-full',
-          disable ? 'cursor-not-allowed' : 'cursor-pointer'
-        )}
-        title={t('Zap')}
-        disabled={disable || zapping}
-        onMouseDown={handleClickStart}
-        onMouseUp={handleClickEnd}
-        onMouseLeave={handleMouseLeave}
-        onTouchStart={handleClickStart}
-        onTouchEnd={handleClickEnd}
-      >
-        {zapping ? (
-          <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+      <div className="flex h-full min-w-0 select-none items-center">
+        <button
+          type="button"
+          className={cn(
+            'group flex h-full items-center pl-3 pr-1',
+            disable ? 'cursor-not-allowed' : 'cursor-pointer'
+          )}
+          title={t('Zap')}
+          disabled={disable || zapping}
+          onMouseDown={handleClickStart}
+          onMouseUp={handleClickEnd}
+          onMouseLeave={handleMouseLeave}
+          onTouchStart={handleClickStart}
+          onTouchEnd={handleClickEnd}
+        >
+          {zapping ? (
+            <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+          ) : (
+            <Zap
+              className={cn(
+                hasZapped && 'fill-yellow-400',
+                disable
+                  ? 'text-muted-foreground/40'
+                  : cn(
+                      'text-muted-foreground group-hover:text-yellow-400',
+                      hasZapped && 'text-yellow-400'
+                    )
+              )}
+            />
+          )}
+        </button>
+        {showZapAmount ? (
+          <ZapCountHover noteStats={noteStats}>
+            <div
+              className={cn(
+                'pr-3 text-sm tabular-nums',
+                hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+              )}
+            >
+              {formatAmount(zapAmount ?? 0)}
+            </div>
+          </ZapCountHover>
         ) : (
-          <Zap
-            className={cn(
-              hasZapped && 'fill-yellow-400',
-              disable
-                ? 'text-muted-foreground/40'
-                : cn(
-                    'text-muted-foreground group-hover:text-yellow-400',
-                    hasZapped && 'text-yellow-400'
-                  )
-            )}
-          />
+          <span className="pr-3" aria-hidden />
         )}
-        {showZapAmount && (
-          <div
-            className={cn(
-              'text-sm tabular-nums',
-              hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
-            )}
-          >
-            {formatAmount(zapAmount ?? 0)}
-          </div>
-        )}
-      </button>
+      </div>
       <ZapDialog
         open={openZapDialog}
         setOpen={(open) => {
