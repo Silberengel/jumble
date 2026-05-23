@@ -17,6 +17,8 @@ import {
   isReplyNoteEvent,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
+import { collectReactionAuthorPubkeysForEmojiPrefetch } from '@/lib/reaction-display'
+import { prefetchAuthorNip30EmojisForPubkeys } from '@/lib/nip30-author-emojis'
 import { shouldFilterEvent } from '@/lib/event-filtering'
 import {
   isRelayUrlStrictSupersetIdentityKey,
@@ -1112,11 +1114,17 @@ const NoteList = forwardRef(
     /** Pending pubkeys sync with rows so useFetchProfile skips per-note fetches before the debounced batch. */
     useLayoutEffect(() => {
       const candidates = new Set<string>()
+      const emojiAuthors = new Set<string>()
       for (const e of timelineEventsForFilter) {
         collectProfilePrefetchPubkeysFromEvent(e, candidates)
+        collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
       }
       for (const e of newEvents) {
         collectProfilePrefetchPubkeysFromEvent(e, candidates)
+        collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
+      }
+      if (emojiAuthors.size > 0) {
+        prefetchAuthorNip30EmojisForPubkeys([...emojiAuthors])
       }
       const pubkeysKey = [...candidates].sort().join('\n')
       if (pubkeysKey === lastProfilePrefetchPubkeysKeyRef.current) return
@@ -1712,14 +1720,21 @@ const NoteList = forwardRef(
     useEffect(() => {
       const handle = window.setTimeout(() => {
         const candidates = new Set<string>()
+        const emojiAuthors = new Set<string>()
         for (const e of timelineEventsForFilter) {
           collectProfilePrefetchPubkeysFromEvent(e, candidates)
+          collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
         }
         for (const e of newEvents) {
           collectProfilePrefetchPubkeysFromEvent(e, candidates)
+          collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
         }
         for (const e of clientFilteredEvents.slice(0, Math.min(120, Math.max(showCount + 64, 64)))) {
           collectProfilePrefetchPubkeysFromNoteStats(noteStatsService.getNoteStats(e.id), candidates)
+        }
+
+        if (emojiAuthors.size > 0) {
+          prefetchAuthorNip30EmojisForPubkeys([...emojiAuthors])
         }
 
         const need = [...candidates].filter((pk) => !feedProfileLoadedRef.current.has(pk))

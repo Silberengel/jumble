@@ -50,13 +50,11 @@ export function buildAttestedPaymentIdSet(
   attestations: Event[],
   recipientPubkey: string
 ): Set<string> {
-  const recipient = recipientPubkey.trim().toLowerCase()
   const out = new Set<string>()
   for (const attestation of attestations) {
-    if (attestation.pubkey.toLowerCase() !== recipient) continue
+    if (!hexPubkeysEqual(attestation.pubkey, recipientPubkey)) continue
     const targetId = getPaymentAttestationTargetId(attestation)
-    const targetKind = getPaymentAttestationTargetKind(attestation)
-    if (!targetId || !targetKind) continue
+    if (!targetId) continue
     out.add(targetId)
   }
   return out
@@ -169,7 +167,7 @@ export function isIncomingPaymentNotificationOrZapReceipt(
   return recipient != null && hexPubkeysEqual(recipient, userPubkey)
 }
 
-export function isAttestedSuperchat(event: Event, attestedIds: Set<string>): boolean {
+export function isAttestedSuperchat(event: Event, attestedIds: ReadonlySet<string>): boolean {
   if (!isSuperchatKind(event.kind)) return false
   return attestedIds.has(event.id.toLowerCase())
 }
@@ -277,9 +275,10 @@ export function filterAttestedProfileWallSuperchats(
   paymentEvents: Event[],
   attestations: Event[],
   profilePubkey: string,
-  profileEventId?: string
+  profileEventId?: string,
+  attestedIdsOverride?: ReadonlySet<string>
 ): Event[] {
-  const attestedIds = buildAttestedPaymentIdSet(attestations, profilePubkey)
+  const attestedIds = attestedIdsOverride ?? buildAttestedPaymentIdSet(attestations, profilePubkey)
   return sortSuperchatsByAmountDesc(
     paymentEvents.filter((e) => {
       if (e.kind === ExtendedKind.PAYMENT_NOTIFICATION) {

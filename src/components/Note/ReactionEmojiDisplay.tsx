@@ -1,11 +1,17 @@
 import Emoji from '@/components/Emoji'
 import { ExtendedKind } from '@/constants'
-import { fetchAuthorNip30EmojiInfos } from '@/lib/nip30-author-emojis'
-import { resolveReactionEmojiSync } from '@/lib/reaction-display'
+import {
+  EMPTY_AUTHOR_NIP30_EMOJIS,
+  fetchAuthorNip30EmojiInfos,
+  fetchAuthorNip30EmojiInfosFromIndexedDb,
+  getAuthorNip30EmojiCache,
+  subscribeAuthorNip30EmojiCache
+} from '@/lib/nip30-author-emojis'
+import { resolveAuthorEmojiForReactionShortcode, resolveReactionEmojiSync } from '@/lib/reaction-display'
 import { cn } from '@/lib/utils'
 import { TEmoji } from '@/types'
 import { Event, kinds } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 
 /**
  * Renders a reaction glyph (Unicode, standard :shortcode:, or NIP-30 custom image from reactor profile).
@@ -28,28 +34,32 @@ export default function ReactionEmojiDisplay({
     [event, maxRawLength]
   )
 
-  const initial: TEmoji | string =
-    sync.mode === 'display' ? sync.value : sync.placeholder
+  const reactorPubkey = event.pubkey?.trim().toLowerCase() ?? ''
+  const needsAuthorLookup = sync.mode === 'profile'
 
-  const [value, setValue] = useState<TEmoji | string>(initial)
+  const authorEmojis = useSyncExternalStore(
+    (onStoreChange) =>
+      needsAuthorLookup && /^[0-9a-f]{64}$/.test(reactorPubkey)
+        ? subscribeAuthorNip30EmojiCache(reactorPubkey, onStoreChange)
+        : () => {},
+    () =>
+      needsAuthorLookup && /^[0-9a-f]{64}$/.test(reactorPubkey)
+        ? getAuthorNip30EmojiCache(reactorPubkey)
+        : EMPTY_AUTHOR_NIP30_EMOJIS,
+    () => EMPTY_AUTHOR_NIP30_EMOJIS
+  )
 
   useEffect(() => {
-    setValue(initial)
-  }, [initial, event.id])
+    if (!needsAuthorLookup || !/^[0-9a-f]{64}$/.test(reactorPubkey)) return
+    void fetchAuthorNip30EmojiInfosFromIndexedDb(reactorPubkey)
+    void fetchAuthorNip30EmojiInfos(reactorPubkey)
+  }, [needsAuthorLookup, reactorPubkey])
 
-  useEffect(() => {
-    if (sync.mode !== 'profile' || (event.kind !== kinds.Reaction && event.kind !== ExtendedKind.EXTERNAL_REACTION))
-      return
-    let cancelled = false
-    void fetchAuthorNip30EmojiInfos(event.pubkey).then((infos) => {
-      if (cancelled) return
-      const hit = infos.find((i) => i.shortcode === sync.shortcode)
-      if (hit) setValue(hit)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [event.pubkey, event.kind, sync])
+  const value: TEmoji | string = useMemo(() => {
+    if (sync.mode === 'display') return sync.value
+    const hit = resolveAuthorEmojiForReactionShortcode(authorEmojis, sync.shortcode)
+    return hit ?? sync.placeholder
+  }, [sync, authorEmojis])
 
   if (
     (event.kind !== kinds.Reaction && event.kind !== ExtendedKind.EXTERNAL_REACTION) ||

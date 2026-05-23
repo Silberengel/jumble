@@ -13,16 +13,22 @@ import Username from '../Username'
 import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
 import SuperchatCommentMarkdown from './SuperchatCommentMarkdown'
 import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
+import UserAvatar from '../UserAvatar'
+
+export type SuperchatLayoutVariant = 'notification' | 'profileWall' | 'thread'
 
 export default function Superchat({
   event,
   className,
-  showAttestationAction = false
+  showAttestationAction = false,
+  variant = 'thread'
 }: {
   event: Event
   className?: string
   /** Notifications feed only — attest incoming payments. */
   showAttestationAction?: boolean
+  /** `notification`: recipient + view links; `profileWall`: sender row; `thread`: body only. */
+  variant?: SuperchatLayoutVariant
 }) {
   const { t } = useTranslation()
   const info = useMemo(() => getPaymentNotificationInfo(event), [event])
@@ -56,9 +62,12 @@ export default function Superchat({
 
   const { senderPubkey, recipientPubkey, comment } = info
   const hasThreadTarget = Boolean(targetEvent || referencedFetchId)
-  const hasTarget = hasThreadTarget || Boolean(recipientPubkey)
+  const isNotification = variant === 'notification'
+  const isProfileWall = variant === 'profileWall'
+  const hasTarget = isNotification && (hasThreadTarget || Boolean(recipientPubkey))
   const hasMetaLine =
-    (recipientPubkey && recipientPubkey !== senderPubkey) || hasTarget
+    isProfileWall ||
+    (isNotification && ((recipientPubkey && recipientPubkey !== senderPubkey) || hasTarget))
 
   const openTarget = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
@@ -73,24 +82,37 @@ export default function Superchat({
     <div className={cn('text-sm text-muted-foreground', className)}>
       {hasMetaLine ? (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-          {recipientPubkey && recipientPubkey !== senderPubkey ? (
-            <span>
-              <span>{t('to')}</span>{' '}
+          {isProfileWall ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <UserAvatar userId={senderPubkey} size="small" className="shrink-0" />
               <Username
-                userId={recipientPubkey}
-                className="inline font-medium text-foreground/85 hover:text-foreground"
+                userId={senderPubkey}
+                showAt
+                className="min-w-0 font-medium text-foreground/85 hover:text-foreground"
               />
-            </span>
-          ) : null}
-          {hasTarget ? (
-            <button
-              type="button"
-              onClick={openTarget}
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
-            </button>
-          ) : null}
+            </div>
+          ) : (
+            <>
+              {recipientPubkey && recipientPubkey !== senderPubkey ? (
+                <span>
+                  <span>{t('to')}</span>{' '}
+                  <Username
+                    userId={recipientPubkey}
+                    className="inline font-medium text-foreground/85 hover:text-foreground"
+                  />
+                </span>
+              ) : null}
+              {hasTarget ? (
+                <button
+                  type="button"
+                  onClick={openTarget}
+                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       <div

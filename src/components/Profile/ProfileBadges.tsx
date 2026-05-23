@@ -25,14 +25,17 @@ export default function ProfileBadges({
 
   if (isLoading && badges.length === 0 && superchats.length === 0) {
     return (
-      <div className="mt-3 flex flex-wrap gap-2" aria-hidden>
-        <Skeleton className="h-14 w-14 rounded-lg" />
-        <Skeleton className="h-14 w-14 rounded-lg" />
+      <div className="mt-3 min-w-0" aria-hidden>
+        <div className="flex flex-wrap gap-2">
+          <Skeleton className="h-14 w-14 rounded-lg" />
+          <Skeleton className="h-14 w-14 rounded-lg" />
+        </div>
+        <ProfileWallSuperchats superchats={[]} isLoading />
       </div>
     )
   }
 
-  if (badges.length === 0 && superchats.length === 0) return null
+  if (badges.length === 0 && superchats.length === 0 && !isLoading) return null
 
   return (
     <div className="mt-3 min-w-0">

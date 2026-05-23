@@ -12,6 +12,28 @@ export type TReactionEmojiSync =
   | { mode: 'display'; value: TEmoji | string }
   | { mode: 'profile'; shortcode: string; placeholder: string }
 
+function findEmojiByShortcode(infos: readonly TEmoji[], shortcode: string): TEmoji | undefined {
+  const lower = shortcode.toLowerCase()
+  return infos.find((e) => e.shortcode === shortcode || e.shortcode.toLowerCase() === lower)
+}
+
+/** True when the reaction glyph must be resolved from the reactor’s NIP-30 inventory. */
+export function reactionNeedsAuthorEmojiLookup(event: Event): boolean {
+  return resolveReactionEmojiSync(event, 64).mode === 'profile'
+}
+
+/** Collect reactor pubkeys whose custom reaction emoji should be prefetched for feed/notification rows. */
+export function collectReactionAuthorPubkeysForEmojiPrefetch(
+  events: readonly Event[],
+  candidates: Set<string>
+): void {
+  for (const e of events) {
+    if (!reactionNeedsAuthorEmojiLookup(e)) continue
+    const pk = e.pubkey?.trim().toLowerCase()
+    if (pk && /^[0-9a-f]{64}$/.test(pk)) candidates.add(pk)
+  }
+}
+
 /**
  * Resolve reaction display without network: emoji tags on the reaction, standard :shortcode: → Unicode,
  * or defer to profile (reactor kind 0) for custom shortcodes.
@@ -32,10 +54,19 @@ export function resolveReactionEmojiSync(event: Event, maxRawLength: number): TR
   const fromReactionTags = getEmojiInfosFromEmojiTags(event.tags)
   const customShortcodes = fromReactionTags.map((e) => e.shortcode)
 
+  if (/^https?:\/\//i.test(raw)) {
+    const hit = fromReactionTags.find((e) => e.url === raw)
+    if (hit) return { mode: 'display', value: hit }
+  }
+
+  if (fromReactionTags.length === 1 && raw === fromReactionTags[0].shortcode) {
+    return { mode: 'display', value: fromReactionTags[0] }
+  }
+
   const whole = raw.match(WHOLE_SHORTCODE)
   if (whole) {
     const shortcode = whole[1]
-    const hit = fromReactionTags.find((e) => e.shortcode === shortcode)
+    const hit = findEmojiByShortcode(fromReactionTags, shortcode)
     if (hit) {
       return { mode: 'display', value: hit }
     }
@@ -51,4 +82,12 @@ export function resolveReactionEmojiSync(event: Event, maxRawLength: number): TR
   }
 
   return { mode: 'display', value: raw }
+}
+
+/** Match a custom shortcode from a loaded author NIP-30 inventory. */
+export function resolveAuthorEmojiForReactionShortcode(
+  infos: readonly TEmoji[],
+  shortcode: string
+): TEmoji | undefined {
+  return findEmojiByShortcode(infos, shortcode)
 }

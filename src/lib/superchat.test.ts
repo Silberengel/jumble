@@ -63,6 +63,15 @@ describe('buildAttestedPaymentIdSet', () => {
     expect(ids.has(PAYMENT_ID)).toBe(true)
     expect(ids.size).toBe(2)
   })
+
+  it('collects attested ids without a k tag', () => {
+    const attestation = fakeEvent({
+      kind: ExtendedKind.PAYMENT_ATTESTATION,
+      pubkey: RECIPIENT,
+      tags: [['e', PAYMENT_ID]]
+    })
+    expect(buildAttestedPaymentIdSet([attestation], RECIPIENT).has(PAYMENT_ID)).toBe(true)
+  })
 })
 
 describe('partitionAttestedSuperchats', () => {
@@ -231,6 +240,29 @@ describe('profile wall payment notifications', () => {
     })
     expect(isProfileWallPaymentNotification(evt, RECIPIENT)).toBe(true)
     expect(getPaymentNotificationInfo(evt)?.amountSats).toBe(50)
+  })
+
+  it('rejects 9740 with a thread reference on the profile wall', () => {
+    const evt = fakeEvent({
+      id: PAYMENT_ID,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [
+        ['p', RECIPIENT],
+        ['e', 'f'.repeat(64)],
+        ['amount', '50000']
+      ]
+    })
+    const attestation = fakeEvent({
+      kind: ExtendedKind.PAYMENT_ATTESTATION,
+      pubkey: RECIPIENT,
+      tags: [
+        ['e', PAYMENT_ID],
+        ['k', '9740']
+      ]
+    })
+    expect(isProfileWallPaymentNotification(evt, RECIPIENT)).toBe(false)
+    const out = filterAttestedProfileWallSuperchats([evt], [attestation], RECIPIENT)
+    expect(out).toHaveLength(0)
   })
 
   it('filters to attested profile wall superchats', () => {

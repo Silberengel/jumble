@@ -204,9 +204,9 @@ export default function ReplyNote({
                   )}
                 </div>
               ) : event.kind === kinds.Zap ? (
-                <Zap className="mt-1.5" event={event} />
+                <Zap className="mt-1.5" event={event} variant="thread" />
               ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
-                <Superchat className="mt-1.5" event={event} />
+                <Superchat className="mt-1.5" event={event} variant="thread" />
               ) : isNip18RepostKind(event.kind) ? null : (
                 <MarkdownArticle
                   className="mt-2"

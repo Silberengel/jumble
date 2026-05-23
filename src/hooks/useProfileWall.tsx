@@ -20,6 +20,7 @@ import {
 } from '@/lib/nip58-profile-badges'
 import { isDirectProfileWallComment } from '@/lib/profile-wall-comments'
 import { filterAttestedProfileWallSuperchats, getPaymentAttestationTargetId } from '@/lib/superchat'
+import { resolveAttestedPaymentIdSet } from '@/lib/payment-attestation-cache'
 import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -79,6 +80,53 @@ async function fetchBadgeDefinitionOnRelays(
 }
 
 const CACHE_DURATION = 5 * 60 * 1000
+
+async function hydrateProfileWallSuperchatTargets(
+  attestedIds: ReadonlySet<string>,
+  relayUrls: string[]
+): Promise<Event[]> {
+  const ids = [...attestedIds].filter((id) => /^[0-9a-f]{64}$/i.test(id))
+  if (ids.length === 0) return []
+
+  const byId = new Map<string, Event>()
+  try {
+    const local = await client.getLocalFeedEvents(
+      [{ urls: [], filter: { ids, limit: ids.length } }],
+      { maxMatches: ids.length }
+    )
+    for (const e of local) byId.set(e.id.toLowerCase(), e)
+  } catch {
+    /* optional */
+  }
+
+  for (const id of ids) {
+    const key = id.toLowerCase()
+    if (byId.has(key)) continue
+    try {
+      const fromPublication = await indexedDb.getEventFromPublicationStore(id)
+      if (fromPublication) byId.set(fromPublication.id.toLowerCase(), fromPublication)
+    } catch {
+      /* optional */
+    }
+  }
+
+  const missing = ids.filter((id) => !byId.has(id.toLowerCase()))
+  if (missing.length > 0 && relayUrls.length > 0) {
+    try {
+      const fetched = await client.fetchEvents(
+        relayUrls,
+        { ids: missing, limit: missing.length },
+        { cache: true, eoseTimeout: 4500, globalTimeout: 12_000, foreground: true }
+      )
+      for (const e of fetched) byId.set(e.id.toLowerCase(), e)
+    } catch {
+      /* optional */
+    }
+  }
+
+  return [...byId.values()]
+}
+
 const wallCacheByKey = new Map<
   string,
   { badges: ResolvedProfileBadge[]; comments: Event[]; superchats: Event[]; lastUpdated: number }
@@ -350,6 +398,12 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           }
           const pool = new Map<string, Event>()
           try {
+            const idbPayments = await indexedDb.getPaymentNotificationsForRecipient(pkNorm, 200)
+            for (const e of idbPayments) pool.set(e.id, e)
+          } catch {
+            /* optional */
+          }
+          try {
             const localMatches = await client.getLocalFeedEvents(
               filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
               { maxMatches: 800 }
@@ -376,6 +430,13 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
             /* ignore */
           }
 
+          const attestations = [...pool.values()].filter(
+            (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
+          )
+          const attestedIds = await resolveAttestedPaymentIdSet(pkNorm, attestations)
+          const hydratedTargets = await hydrateProfileWallSuperchatTargets(attestedIds, relayUrls)
+          for (const e of hydratedTargets) pool.set(e.id, e)
+
           if (profileId) {
             wallComments = [...pool.values()]
               .filter(
@@ -394,14 +455,12 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
                 e.kind === ExtendedKind.ZAP_RECEIPT) &&
               !isEventDeletedRef.current(e)
           )
-          const attestations = [...pool.values()].filter(
-            (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
-          )
           wallSuperchats = filterAttestedProfileWallSuperchats(
             paymentEvents,
             attestations,
             pkNorm,
-            profileId
+            profileId,
+            attestedIds
           )
         }
 

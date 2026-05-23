@@ -32,9 +32,9 @@ export default function ProfileWallSuperchats({
       <div className="space-y-2">
         {superchats.map((event) =>
           event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
-            <Superchat key={event.id} event={event} />
+            <Superchat key={event.id} event={event} variant="profileWall" />
           ) : (
-            <Zap key={event.id} event={event} />
+            <Zap key={event.id} event={event} variant="profileWall" />
           )
         )}
       </div>

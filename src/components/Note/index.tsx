@@ -574,7 +574,12 @@ export default function Note({
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {
     content = (
-      <Zap className="mt-2" event={displayEvent} showAttestationAction={showPaymentAttestationAction} />
+      <Zap
+        className="mt-2"
+        event={displayEvent}
+        showAttestationAction={showPaymentAttestationAction}
+        variant={showPaymentAttestationAction ? 'notification' : 'thread'}
+      />
     )
   } else if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     content = (
@@ -582,6 +587,7 @@ export default function Note({
         className="mt-2"
         event={displayEvent}
         showAttestationAction={showPaymentAttestationAction}
+        variant={showPaymentAttestationAction ? 'notification' : 'thread'}
       />
     )
   } else if (event.kind === ExtendedKind.FOLLOW_PACK) {

@@ -15,15 +15,19 @@ import Username from '../Username'
 import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
 import SuperchatCommentMarkdown from './SuperchatCommentMarkdown'
 import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
+import UserAvatar from '../UserAvatar'
+import type { SuperchatLayoutVariant } from './Superchat'
 
 export default function Zap({
   event,
   className,
-  showAttestationAction = false
+  showAttestationAction = false,
+  variant = 'thread'
 }: {
   event: Event
   className?: string
   showAttestationAction?: boolean
+  variant?: SuperchatLayoutVariant
 }) {
   const { t } = useTranslation()
   const zapInfo = useMemo(() => getZapInfoFromEvent(event), [event])
@@ -77,34 +81,51 @@ export default function Zap({
     }
   }
 
+  const isNotification = variant === 'notification'
+  const isProfileWall = variant === 'profileWall'
   const hasMetaLine =
-    (recipientPubkey && recipientPubkey !== senderPubkey) || isEventZap || isProfileZap
+    isProfileWall ||
+    (isNotification &&
+      ((recipientPubkey && recipientPubkey !== senderPubkey) || isEventZap || isProfileZap))
 
   return (
     <div className={cn('text-sm text-muted-foreground', className)}>
       {hasMetaLine ? (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-          {recipientPubkey && recipientPubkey !== senderPubkey && (
-            <span>
-              <span>{t('zapped')}</span>{' '}
+          {isProfileWall ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <UserAvatar userId={senderPubkey} size="small" className="shrink-0" />
               <Username
-                userId={recipientPubkey}
-                className="inline font-medium text-foreground/85 hover:text-foreground"
+                userId={senderPubkey}
+                showAt
+                className="min-w-0 font-medium text-foreground/85 hover:text-foreground"
               />
-            </span>
-          )}
-          {(isEventZap || isProfileZap) && (
-            <button
-              type="button"
-              onClick={openZapTarget}
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {isEventZap
-                ? t('Zapped note')
-                : isProfileZap && actualRecipientPubkey
-                  ? t('Zapped profile')
-                  : t('Zap')}
-            </button>
+            </div>
+          ) : (
+            <>
+              {recipientPubkey && recipientPubkey !== senderPubkey && (
+                <span>
+                  <span>{t('zapped')}</span>{' '}
+                  <Username
+                    userId={recipientPubkey}
+                    className="inline font-medium text-foreground/85 hover:text-foreground"
+                  />
+                </span>
+              )}
+              {(isNotification && (isEventZap || isProfileZap)) && (
+                <button
+                  type="button"
+                  onClick={openZapTarget}
+                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {isEventZap
+                    ? t('Zapped note')
+                    : isProfileZap && actualRecipientPubkey
+                      ? t('Zapped profile')
+                      : t('Zap')}
+                </button>
+              )}
+            </>
           )}
         </div>
       ) : null}
