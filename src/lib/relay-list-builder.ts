@@ -213,7 +213,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       try {
         const fav =
           includeFavoriteRelays && userPubkey
-            ? await client.fetchFavoriteRelays(userPubkey).catch(() => [] as string[])
+            ? await client.fetchFavoriteRelaysFromStorage(userPubkey).catch(() => [] as string[])
             : []
         effectiveIncludeFastRead = viewerUsesGlobalRelayDefaults({
           viewerPubkey: userPubkey,
@@ -295,7 +295,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       // Include favorite relays (kind 10012) if requested
       if (includeFavoriteRelays) {
         try {
-          const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
+          const favoriteRelays = await client.fetchFavoriteRelaysFromStorage(userPubkey)
           favoriteRelays.forEach((u) => {
             trackPersonal(u)
             addRelay(u)
@@ -330,7 +330,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
       // Menu / feed “favorite relays” (kind 10012) — same list as the sidebar; not part of NIP-65 alone.
       if (includeFavoriteRelays) {
         try {
-          const favoriteRelays = await client.fetchFavoriteRelays(userPubkey)
+          const favoriteRelays = await client.fetchFavoriteRelaysFromStorage(userPubkey)
           favoriteRelays.forEach((u) => {
             trackPersonal(u)
             addRelay(u)
@@ -657,7 +657,7 @@ export async function buildReplyReadRelayList(
   if (userPubkey) {
     try {
       const [fav, rl] = await Promise.all([
-        client.fetchFavoriteRelays(userPubkey).catch(() => [] as string[]),
+        client.fetchFavoriteRelaysFromStorage(userPubkey).catch(() => [] as string[]),
         client.peekRelayListFromStorage(userPubkey)
       ])
       useGlobal = viewerUsesGlobalRelayDefaults({

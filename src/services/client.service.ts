@@ -719,8 +719,8 @@ class ClientService extends EventTarget {
     return { all, httpIndexBases, cacheRelayEvent }
   }
 
-  /** Kind 10012 + embedded NIP-51 relay sets from IndexedDB only. */
-  private async fetchFavoriteRelaysFromStorage(pubkey: string): Promise<string[]> {
+  /** Kind 10012 + embedded NIP-51 relay sets from IndexedDB only (no network). */
+  async fetchFavoriteRelaysFromStorage(pubkey: string): Promise<string[]> {
     try {
       const favoriteRelaysEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.FAVORITE_RELAYS)
       if (!favoriteRelaysEvent) return []

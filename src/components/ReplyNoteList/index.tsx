@@ -1079,25 +1079,23 @@ function ReplyNoteList({
             })
           )
 
-          // For URL threads: stream events as they arrive from each relay so replies appear
-          // immediately, rather than waiting up to 10 s for all relays to EOSE.
-          const urlThreadRootInfo = rootInfo.type === 'I' ? rootInfo : null
-          const urlThreadOnevent = urlThreadRootInfo
-            ? (evt: NEvent) => {
-                if (fetchGeneration !== replyFetchGenRef.current) return
-                if (isPollVoteKind(evt)) return
-                if (!isRssArticleUrlThreadInteraction(evt, urlThreadRootInfo.id)) return
-                if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
-                  return
-                addReplies([evt])
-                if (!hasCache) setLoading(false)
-              }
-            : undefined
+          // Stream replies as relays return them (aggr is first in the list) instead of waiting for full EOSE.
+          const streamThreadReply = (evt: NEvent) => {
+            if (fetchGeneration !== replyFetchGenRef.current) return
+            if (isPollVoteKind(evt)) return
+            if (rootInfo.type === 'I') {
+              if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) return
+            }
+            if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) return
+            addReplies([evt])
+            if (!hasCache) setLoading(false)
+          }
 
-          // Use fetchEvents instead of subscribeTimeline for one-time fetching
           const allReplies = await queryService.fetchEvents(relayUrlsForThreadReq, filters, {
-            ...(urlThreadOnevent ? { onevent: urlThreadOnevent } : {}),
-            foreground: statsForeground,
+            onevent: streamThreadReply,
+            foreground: true,
+            firstRelayResultGraceMs: 900,
+            globalTimeout: 12_000,
             relayOpSource: 'ReplyNoteList.thread'
           })
 
@@ -1112,7 +1110,6 @@ function ReplyNoteList({
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
             if (isPollVoteKind(evt)) return false
- false
             const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromBatch)
             if (!match) return false
             return !shouldHideThreadResponseEvent(
