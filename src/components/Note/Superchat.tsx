@@ -1,4 +1,5 @@
 import { useFetchEvent } from '@/hooks'
+import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
 import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
 import { parsePaytoTagType } from '@/lib/payto'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -20,17 +21,17 @@ export type SuperchatLayoutVariant = 'notification' | 'profileWall' | 'thread'
 export default function Superchat({
   event,
   className,
-  showAttestationAction = false,
   variant = 'thread'
 }: {
   event: Event
   className?: string
-  /** Notifications feed only — attest incoming payments. */
+  /** @deprecated Attestation button is shown automatically for payment recipients. */
   showAttestationAction?: boolean
   /** `notification`: recipient + view links; `profileWall`: sender row; `thread`: body only. */
   variant?: SuperchatLayoutVariant
 }) {
   const { t } = useTranslation()
+  const { attested } = usePaymentAttestationStatus(event)
   const info = useMemo(() => getPaymentNotificationInfo(event), [event])
   const paytoType = useMemo(
     () => (info?.payto ? parsePaytoTagType(info.payto) : 'unknown'),
@@ -64,6 +65,7 @@ export default function Superchat({
   const hasThreadTarget = Boolean(targetEvent || referencedFetchId)
   const isNotification = variant === 'notification'
   const isProfileWall = variant === 'profileWall'
+  const showAsSuperchat = isProfileWall || attested
   const hasTarget = isNotification && (hasThreadTarget || Boolean(recipientPubkey))
   const hasMetaLine =
     isProfileWall ||
@@ -128,19 +130,29 @@ export default function Superchat({
             hasMetaLine && 'mt-1'
           )}
         >
-          <SuperchatPaymentMethodLabel
-            paytoType={paytoType}
-            className="px-2.5 py-1.5 text-lg"
-            imgClassName="size-5"
-          />
-          <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+          {showAsSuperchat ? (
+            <>
+              <SuperchatPaymentMethodLabel
+                paytoType={paytoType}
+                className="px-2.5 py-1.5 text-lg"
+                imgClassName="size-5"
+              />
+              <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+            </>
+          ) : (
+            <SuperchatPaymentMethodLabel
+              paytoType={paytoType}
+              className="px-2.5 py-1.5 text-lg"
+              imgClassName="size-5"
+            />
+          )}
         </div>
       ) : null}
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
-      {showAttestationAction ? (
-        <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      {!isProfileWall ? (
+        <TurnIntoSuperchatButton event={event} prominent={isNotification} className="mt-3" />
       ) : null}
     </div>
   )

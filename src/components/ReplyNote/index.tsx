@@ -203,7 +203,7 @@ export default function ReplyNote({
                     <span className="text-sm text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
                   )}
                 </div>
-              ) : event.kind === kinds.Zap ? (
+              ) : event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT ? (
                 <Zap className="mt-1.5" event={event} variant="thread" />
               ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
                 <Superchat className="mt-1.5" event={event} variant="thread" />

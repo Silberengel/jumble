@@ -101,7 +101,7 @@ export function getPaymentNotificationInfo(event: Event): PaymentNotificationInf
 
 /** Payment category for superchat display (9735 → lightning). */
 export function getSuperchatPaytoType(event: Event): string {
-  if (event.kind === kinds.Zap) return 'lightning'
+  if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) return 'lightning'
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     const payto = getPaymentNotificationInfo(event)?.payto
     return payto ? parsePaytoTagType(payto) : 'unknown'
@@ -119,7 +119,7 @@ export function getSuperchatReferenceFetchId(info: PaymentNotificationInfo): str
 }
 
 export function getSuperchatAmountSats(event: Event): number {
-  if (event.kind === kinds.Zap) {
+  if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
     return getZapInfoFromEvent(event)?.amount ?? 0
   }
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
@@ -129,7 +129,7 @@ export function getSuperchatAmountSats(event: Event): number {
 }
 
 export function isSuperchatKind(kind: number): boolean {
-  return kind === kinds.Zap || kind === ExtendedKind.PAYMENT_NOTIFICATION
+  return kind === kinds.Zap || kind === ExtendedKind.ZAP_RECEIPT || kind === ExtendedKind.PAYMENT_NOTIFICATION
 }
 
 /** Recipient pubkey for a kind 9735 or 9740 payment the user may attest to. */

@@ -1,4 +1,5 @@
 import { useFetchEvent } from '@/hooks'
+import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { shouldHideInteractions } from '@/lib/event-filtering'
 import { formatAmount } from '@/lib/lightning'
@@ -8,6 +9,7 @@ import { getSuperchatPaytoType } from '@/lib/superchat'
 import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
+import { Zap as ZapIcon } from 'lucide-react'
 import { useMemo, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSmartNoteNavigationOptional, useSecondaryPageOptional } from '@/PageManager'
@@ -21,11 +23,11 @@ import type { SuperchatLayoutVariant } from './Superchat'
 export default function Zap({
   event,
   className,
-  showAttestationAction = false,
   variant = 'thread'
 }: {
   event: Event
   className?: string
+  /** @deprecated Attestation button is shown automatically for payment recipients. */
   showAttestationAction?: boolean
   variant?: SuperchatLayoutVariant
 }) {
@@ -52,6 +54,7 @@ export default function Zap({
   }, [isEventZap, isProfileZap, targetEvent, zapInfo?.recipientPubkey])
 
   const paytoType = useMemo(() => getSuperchatPaytoType(event), [event])
+  const { attested } = usePaymentAttestationStatus(event)
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
@@ -83,6 +86,7 @@ export default function Zap({
 
   const isNotification = variant === 'notification'
   const isProfileWall = variant === 'profileWall'
+  const showAsSuperchat = isProfileWall || attested
   const hasMetaLine =
     isProfileWall ||
     (isNotification &&
@@ -147,24 +151,38 @@ export default function Zap({
             hasMetaLine && 'mt-1'
           )}
         >
-          <SuperchatPaymentMethodLabel
-            paytoType={paytoType}
-            className="px-2.5 py-1.5 text-lg"
-            imgClassName="size-5"
-          />
-          <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
-          {amount != null ? (
-            <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
-              {formatAmount(amount)} {t('sats')}
-            </span>
-          ) : null}
+          {showAsSuperchat ? (
+            <>
+              <SuperchatPaymentMethodLabel
+                paytoType={paytoType}
+                className="px-2.5 py-1.5 text-lg"
+                imgClassName="size-5"
+              />
+              <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+              {amount != null ? (
+                <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
+                  {formatAmount(amount)} {t('sats')}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <ZapIcon className="size-5 shrink-0 text-primary" aria-hidden />
+              <span className="text-lg font-semibold text-foreground">{t('Zap')}</span>
+              {amount != null ? (
+                <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
+                  {formatAmount(amount)} {t('sats')}
+                </span>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
-      {showAttestationAction ? (
-        <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      {!isProfileWall ? (
+        <TurnIntoSuperchatButton event={event} prominent={isNotification} className="mt-3" />
       ) : null}
     </div>
   )

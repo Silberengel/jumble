@@ -465,7 +465,13 @@ export function getRelaySetFromEvent(event: Event, blockedRelays?: string[]): TR
 }
 
 export function getZapInfoFromEvent(receiptEvent: Event) {
-  if (receiptEvent.kind !== kinds.Zap && receiptEvent.kind !== ExtendedKind.ZAP_REQUEST) return null
+  if (
+    receiptEvent.kind !== kinds.Zap &&
+    receiptEvent.kind !== ExtendedKind.ZAP_RECEIPT &&
+    receiptEvent.kind !== ExtendedKind.ZAP_REQUEST
+  ) {
+    return null
+  }
 
   // Kind 9734 — zap request: all data is directly on the event (no bolt11, no description wrapper).
   if (receiptEvent.kind === ExtendedKind.ZAP_REQUEST) {
