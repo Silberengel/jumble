@@ -23,6 +23,7 @@ import { useZap } from '@/providers/ZapProvider'
 import { useBtcUsdRate } from '@/hooks/useBtcUsdRate'
 import { clampZapSats, formatSatsGrouped, shouldHighlightLeadingSatsGroups } from '@/lib/lightning'
 import { formatBtcFromSats, formatUsdFromSats } from '@/lib/sats-fiat'
+import { superchatAmountHighlightClass, superchatLightningAccentClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
@@ -482,8 +483,7 @@ function ZapDialogContent({
           >
             <span
               className={cn(
-                highlightLargeAmount &&
-                  'rounded-md bg-yellow-400/25 px-2 py-0.5 font-semibold text-yellow-200 shadow-[0_0_12px_rgba(250,204,21,0.45)] ring-1 ring-yellow-400/70'
+                highlightLargeAmount && superchatAmountHighlightClass
               )}
             >
               {btcEquivalent}
@@ -537,7 +537,7 @@ function ZapDialogContent({
               id="zap-lightning-address"
               className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
             >
-              <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+              <span className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)} aria-hidden>
                 ⚡
               </span>
               <span className="min-w-0 break-all">{lightningAddressOptions[0]}</span>
@@ -548,7 +548,10 @@ function ZapDialogContent({
                 <SelectValue placeholder={t('Select lightning address')}>
                   {selectedLightning ? (
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                      <span
+                        className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)}
+                        aria-hidden
+                      >
                         ⚡
                       </span>
                       <span className="min-w-0 truncate">{selectedLightning}</span>
@@ -560,7 +563,10 @@ function ZapDialogContent({
                 {lightningAddressOptions.map((addr) => (
                   <SelectItem key={addr} value={addr} className="break-all">
                     <span className="flex items-start gap-2">
-                      <span className="shrink-0 text-lg leading-none text-yellow-400" aria-hidden>
+                      <span
+                        className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)}
+                        aria-hidden
+                      >
                         ⚡
                       </span>
                       <span className="min-w-0 break-all">{addr}</span>

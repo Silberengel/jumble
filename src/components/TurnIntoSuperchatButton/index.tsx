@@ -8,6 +8,11 @@ import {
   getSuperchatPaymentRecipientPubkey,
   isAttestableSuperchatPayment
 } from '@/lib/superchat'
+import {
+  superchatConfirmedBoxClass,
+  superchatConfirmedTextClass,
+  superchatProminentButtonClass
+} from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { requestProfileWallRefresh } from '@/hooks/useProfileWall'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
@@ -78,8 +83,8 @@ function TurnIntoSuperchatButtonInner({
     return (
       <p
         className={cn(
-          'text-sm font-medium text-yellow-400/90',
-          prominent && 'rounded-md border border-yellow-400/40 bg-yellow-400/10 px-3 py-2 text-center',
+          superchatConfirmedTextClass,
+          prominent && superchatConfirmedBoxClass,
           className
         )}
       >
@@ -120,8 +125,7 @@ function TurnIntoSuperchatButtonInner({
       type="button"
       variant={prominent ? 'default' : 'secondary'}
       className={cn(
-        prominent &&
-          'h-auto min-h-11 w-full gap-2 border-yellow-400/50 bg-yellow-400/20 py-2.5 text-base font-semibold text-yellow-100 shadow-[0_0_16px_rgba(250,204,21,0.25)] hover:bg-yellow-400/30',
+        prominent && superchatProminentButtonClass,
         className
       )}
       disabled={checking || publishing}

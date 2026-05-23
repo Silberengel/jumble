@@ -6,6 +6,7 @@ import { formatAmount } from '@/lib/lightning'
 import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getSuperchatPaytoType } from '@/lib/superchat'
+import { superchatTitleClass } from '@/lib/superchat-ui'
 import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
@@ -161,7 +162,7 @@ export default function Zap({
                 className="px-2.5 py-1.5 text-lg"
                 imgClassName="size-5"
               />
-              <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+              <span className={cn('text-xl', superchatTitleClass)}>{t('Superchat')}</span>
               {amount != null ? (
                 <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
                   {formatAmount(amount)} {t('sats')}

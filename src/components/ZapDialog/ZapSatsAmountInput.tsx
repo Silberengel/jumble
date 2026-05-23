@@ -5,6 +5,7 @@ import {
   shouldHighlightLeadingSatsGroups,
   splitSatsGroupedParts
 } from '@/lib/lightning'
+import { superchatSatsLeadingHighlightClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 
 const inputTypography =
@@ -35,7 +36,7 @@ export default function ZapSatsAmountInput({
         {parts.map((part, index) => (
           <span
             key={`${index}-${part}`}
-            className={cn(index === 0 && highlightLeading && 'text-yellow-400')}
+            className={cn(index === 0 && highlightLeading && superchatSatsLeadingHighlightClass)}
           >
             {part}
           </span>

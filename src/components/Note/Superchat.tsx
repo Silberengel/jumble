@@ -4,6 +4,7 @@ import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
 import { parsePaytoTagType } from '@/lib/payto'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getPaymentNotificationInfo, getSuperchatReferenceFetchId } from '@/lib/superchat'
+import { superchatTitleClass } from '@/lib/superchat-ui'
 import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
@@ -137,7 +138,7 @@ export default function Superchat({
                 className="px-2.5 py-1.5 text-lg"
                 imgClassName="size-5"
               />
-              <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+              <span className={cn('text-xl', superchatTitleClass)}>{t('Superchat')}</span>
             </>
           ) : (
             <SuperchatPaymentMethodLabel

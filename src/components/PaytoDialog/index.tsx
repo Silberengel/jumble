@@ -31,6 +31,7 @@ import {
   resolvePaytoPaymentOpenHandlers,
   resolvePaytoProfileUrl
 } from '@/lib/payto'
+import { superchatLightningAccentClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
@@ -194,7 +195,7 @@ export default function PaytoDialog({
         >
           <DialogHeader className="shrink-0 space-y-1 border-b border-border/60 px-4 pb-3 pt-4 text-left sm:px-5 sm:pt-5">
             <DialogTitle className="flex min-w-0 items-center gap-2 pr-8 text-lg sm:text-xl">
-              {isLightning && <Zap className="size-6 shrink-0 text-yellow-400" />}
+              {isLightning && <Zap className={cn('size-6 shrink-0', superchatLightningAccentClass)} />}
               <span className="truncate">{label}</span>
             </DialogTitle>
             <DialogDescription className="text-left text-sm leading-relaxed sm:text-base">

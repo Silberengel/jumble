@@ -4,6 +4,7 @@ import {
   getPaytoLogoPath,
   isLightningPaytoType
 } from '@/lib/payto'
+import { superchatLightningAccentClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { HelpCircle, Zap as ZapIcon } from 'lucide-react'
 
@@ -27,7 +28,10 @@ export default function PaytoTypeIcon({
       aria-hidden
     >
       {isLightning ? (
-        <ZapIcon className={cn('size-4 shrink-0 text-yellow-400', imgClassName)} strokeWidth={2} />
+        <ZapIcon
+          className={cn('size-4 shrink-0', superchatLightningAccentClass, imgClassName)}
+          strokeWidth={2}
+        />
       ) : logoPath ? (
         <img src={logoPath} alt="" className={cn('size-4 object-contain', imgClassName)} />
       ) : iconChar != null ? (

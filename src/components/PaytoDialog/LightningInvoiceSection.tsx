@@ -13,6 +13,7 @@ import {
   parseGroupedIntegerInput
 } from '@/lib/lightning'
 import { buildPaytoUri, formatPaytoTagValue } from '@/lib/payto'
+import { superchatLightningAccentClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { useZap } from '@/providers/ZapProvider'
 import lightning from '@/services/lightning.service'
@@ -211,7 +212,7 @@ export default function LightningInvoiceSection({
                 size="default"
                 className={cn(
                   'h-10 min-w-0 px-1.5 text-sm tabular-nums sm:text-base',
-                  active && 'ring-1 ring-yellow-400/50'
+                  active && 'ring-1 ring-amber-600/45 dark:ring-yellow-400/50'
                 )}
                 onClick={() => setSats(preset)}
               >
@@ -268,7 +269,7 @@ export default function LightningInvoiceSection({
           {creating ? (
             <Skeleton className="size-5 shrink-0 rounded-full" aria-hidden />
           ) : (
-            <Zap className="size-5 shrink-0 text-yellow-400" />
+            <Zap className={cn('size-5 shrink-0', superchatLightningAccentClass)} />
           )}
           {t('Create invoice')}
         </Button>

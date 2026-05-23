@@ -1,6 +1,7 @@
 import Superchat from '@/components/Note/Superchat'
 import Zap from '@/components/Note/Zap'
 import { ExtendedKind } from '@/constants'
+import { superchatSectionHeadingClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Event } from 'nostr-tools'
@@ -34,7 +35,7 @@ export default function ProfileWallSuperchats({
 
   return (
     <section className="mt-4 min-w-0" aria-label={t('Profile wall superchats')}>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-yellow-400/90">
+      <h3 className={cn('mb-2', superchatSectionHeadingClass)}>
         {t('Superchats')}
       </h3>
       <div
