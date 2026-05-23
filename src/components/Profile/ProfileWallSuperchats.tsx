@@ -1,9 +1,15 @@
 import Superchat from '@/components/Note/Superchat'
 import Zap from '@/components/Note/Zap'
 import { ExtendedKind } from '@/constants'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
+
+/** Roughly five profile-wall superchat rows before scrolling. */
+const PROFILE_WALL_SUPERCHAT_SCROLL_MAX_HEIGHT = 'max-h-[28rem]'
+
+const PROFILE_WALL_SUPERCHAT_VISIBLE_CAP = 5
 
 export default function ProfileWallSuperchats({
   superchats,
@@ -24,12 +30,20 @@ export default function ProfileWallSuperchats({
 
   if (superchats.length === 0) return null
 
+  const scrollable = superchats.length > PROFILE_WALL_SUPERCHAT_VISIBLE_CAP
+
   return (
     <section className="mt-4 min-w-0" aria-label={t('Profile wall superchats')}>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-yellow-400/90">
         {t('Superchats')}
       </h3>
-      <div className="space-y-2">
+      <div
+        className={cn(
+          'space-y-2',
+          scrollable &&
+            cn(PROFILE_WALL_SUPERCHAT_SCROLL_MAX_HEIGHT, 'overflow-y-auto overscroll-y-contain pr-1')
+        )}
+      >
         {superchats.map((event) =>
           event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
             <Superchat key={event.id} event={event} variant="profileWall" />

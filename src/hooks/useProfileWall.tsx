@@ -127,6 +127,130 @@ async function hydrateProfileWallSuperchatTargets(
   return [...byId.values()]
 }
 
+function normalizeProfileEventId(profileEventId: string | undefined): string | undefined {
+  const id = profileEventId?.trim().toLowerCase()
+  return id && /^[0-9a-f]{64}$/.test(id) ? id : undefined
+}
+
+function buildProfileWallSuperchatFilters(pkNorm: string, profileId: string | undefined): Filter[] {
+  const filters: Filter[] = [
+    { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#p': [pkNorm], limit: 200 },
+    { kinds: [kinds.Zap], '#p': [pkNorm], limit: 200 },
+    { kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pkNorm], limit: 500 }
+  ]
+  if (profileId) {
+    const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
+    filters.unshift(
+      { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
+      { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
+    )
+    filters.push(
+      { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
+      { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
+      { kinds: [kinds.Zap], '#e': [profileId], limit: 200 }
+    )
+  }
+  return filters
+}
+
+/** IndexedDB + session only — no relay REQ (profile wall must paint immediately when cached). */
+async function hydrateProfileWallSuperchatsFromLocalCache(
+  pkNorm: string,
+  profileEventId: string | undefined,
+  isEventDeleted: (event: Event) => boolean
+): Promise<Event[]> {
+  if (!isValidPubkey(pkNorm)) return []
+
+  const profileId = normalizeProfileEventId(profileEventId)
+  const pool = new Map<string, Event>()
+
+  try {
+    for (const e of await indexedDb.getPaymentNotificationsForRecipient(pkNorm, 200)) {
+      pool.set(e.id, e)
+    }
+  } catch {
+    /* optional */
+  }
+
+  if (profileId) {
+    try {
+      for (const e of await indexedDb.getPaymentNotificationsForReferencedEvent(profileId, 200)) {
+        pool.set(e.id, e)
+      }
+    } catch {
+      /* optional */
+    }
+    try {
+      const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
+      for (const e of await indexedDb.getPaymentNotificationsForReferencedCoordinate(profileCoord, 200)) {
+        pool.set(e.id, e)
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  try {
+    for (const e of await indexedDb.getPaymentAttestationsForAuthor(pkNorm, 500)) {
+      pool.set(e.id, e)
+    }
+  } catch {
+    /* optional */
+  }
+
+  const filters = buildProfileWallSuperchatFilters(pkNorm, profileId)
+  try {
+    for (const e of await indexedDb.getPaymentSuperchatEventsMatchingFilters(filters, 800)) {
+      pool.set(e.id, e)
+    }
+  } catch {
+    /* optional */
+  }
+  try {
+    const localMatches = await client.getLocalFeedEvents(
+      filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
+      { maxMatches: 800 }
+    )
+    for (const e of localMatches) pool.set(e.id, e)
+  } catch {
+    /* optional */
+  }
+
+  const attestations = [...pool.values()].filter((e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION)
+  const attestedIds = await resolveAttestedPaymentIdSet(pkNorm, attestations)
+  for (const e of await hydrateProfileWallSuperchatTargets(attestedIds, [])) {
+    pool.set(e.id, e)
+  }
+
+  const paymentEvents = [...pool.values()].filter(
+    (e) =>
+      (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+        e.kind === kinds.Zap ||
+        e.kind === ExtendedKind.ZAP_RECEIPT) &&
+      !isEventDeleted(e)
+  )
+
+  return filterAttestedProfileWallSuperchats(
+    paymentEvents,
+    attestations,
+    pkNorm,
+    profileId,
+    attestedIds
+  )
+}
+
+async function hydrateProfileWallFromLocalCache(
+  pkNorm: string,
+  profileEventId: string | undefined,
+  isEventDeleted: (event: Event) => boolean
+): Promise<{ badges: ResolvedProfileBadge[]; superchats: Event[] }> {
+  const [badges, superchats] = await Promise.all([
+    hydrateProfileBadgesFromLocalCache(pkNorm),
+    hydrateProfileWallSuperchatsFromLocalCache(pkNorm, profileEventId, isEventDeleted)
+  ])
+  return { badges, superchats }
+}
+
 const wallCacheByKey = new Map<
   string,
   { badges: ResolvedProfileBadge[]; comments: Event[]; superchats: Event[]; lastUpdated: number }
@@ -181,6 +305,29 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   const [superchats, setSuperchats] = useState<Event[]>(hasUsefulWallCache ? (cached!.superchats ?? []) : [])
   const [isLoading, setIsLoading] = useState(!hasUsefulWallCache)
   const [refreshToken, setRefreshToken] = useState(0)
+  const badgesRef = useRef(badges)
+  const superchatsRef = useRef(superchats)
+  badgesRef.current = badges
+  superchatsRef.current = superchats
+
+  const setLoadingUnlessWallVisible = useCallback(() => {
+    setIsLoading(badgesRef.current.length === 0 && superchatsRef.current.length === 0)
+  }, [])
+
+  const applyLocalWallHydrate = useCallback(
+    (local: { badges: ResolvedProfileBadge[]; superchats: Event[] }) => {
+      if (local.badges.length > 0) {
+        setBadges((prev) => (prev.length > 0 ? prev : local.badges))
+      }
+      if (local.superchats.length > 0) {
+        setSuperchats((prev) => (prev.length > 0 ? prev : local.superchats))
+      }
+      if (local.badges.length > 0 || local.superchats.length > 0) {
+        setIsLoading(false)
+      }
+    },
+    []
+  )
 
   const relayListsKey = useMemo(
     () => relayListsContentKey(favoriteRelays, blockedRelays),
@@ -199,10 +346,10 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   const bumpWallRefetch = useCallback(() => {
     wallCacheByKey.delete(cacheKey)
     queueMicrotask(() => {
-      setIsLoading(true)
+      setLoadingUnlessWallVisible()
       setRefreshToken((t) => t + 1)
     })
-  }, [cacheKey])
+  }, [cacheKey, setLoadingUnlessWallVisible])
 
   const scheduleManualWallRefetch = useCallback(() => {
     if (manualRefreshBumpScheduledRef.current) return
@@ -210,23 +357,26 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     wallCacheByKey.delete(cacheKey)
     queueMicrotask(() => {
       manualRefreshBumpScheduledRef.current = false
-      setIsLoading(true)
+      setLoadingUnlessWallVisible()
       setRefreshToken((t) => t + 1)
     })
-  }, [cacheKey])
+  }, [cacheKey, setLoadingUnlessWallVisible])
 
   useEffect(() => {
     if (!isValidPubkey(pkNormForHydrate)) return
     let cancelled = false
-    void hydrateProfileBadgesFromLocalCache(pkNormForHydrate).then((local) => {
-      if (cancelled || local.length === 0) return
-      setBadges((prev) => (prev.length > 0 ? prev : local))
-      setIsLoading(false)
+    void hydrateProfileWallFromLocalCache(
+      pkNormForHydrate,
+      profileEventId,
+      isEventDeletedRef.current
+    ).then((local) => {
+      if (cancelled) return
+      applyLocalWallHydrate(local)
     })
     return () => {
       cancelled = true
     }
-  }, [pkNormForHydrate])
+  }, [pkNormForHydrate, profileEventId, applyLocalWallHydrate])
 
   useEffect(() => {
     const pk = normalizeWallRefreshPubkey(pkNormForHydrate)
@@ -309,6 +459,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
       try {
         const pkNorm = userIdToPubkey(pubkey) || pubkey
         if (!isValidPubkey(pkNorm)) {
+          if (!cancelled && runGen === runGenRef.current) setIsLoading(false)
           return
         }
 
@@ -331,22 +482,26 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           useGlobalRelayBootstrapRef.current
         )
 
-        const localBadges = await hydrateProfileBadgesFromLocalCache(pkNorm)
-        if (!cancelled && localBadges.length > 0) {
-          setBadges(localBadges)
-          setIsLoading(false)
-        } else if (!cancelled) {
-          setIsLoading(true)
+        const localWall = await hydrateProfileWallFromLocalCache(
+          pkNorm,
+          profileEventId,
+          isEventDeletedRef.current
+        )
+        if (!cancelled) {
+          applyLocalWallHydrate(localWall)
+          if (localWall.badges.length === 0 && localWall.superchats.length === 0) {
+            setIsLoading(true)
+          }
         }
 
-        // --- Badges (NIP-58): show cache first; relay refresh may upgrade list/definitions ---
+        // --- Badges (NIP-58): IndexedDB first; relay refresh may upgrade list/definitions ---
         let listEvent = await fetchProfileBadgesListEvent(pkNorm, relayUrls, {
           foreground: true,
-          cacheFirst: false
+          cacheFirst: true
         })
         if (!listEvent || !isNip58ProfileBadgesListEvent(listEvent)) {
           const legacy = await fetchLegacyProfileBadgesListEvent(pkNorm, relayUrls, {
-            cacheFirst: false
+            cacheFirst: true
           })
           if (legacy && isNip58ProfileBadgesListEvent(legacy)) listEvent = legacy
         }
@@ -366,52 +521,50 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         )
 
         if (cancelled) return
-        if (resolvedBadges.length > 0 || localBadges.length === 0) {
+        if (resolvedBadges.length > 0 || localWall.badges.length === 0) {
           setBadges(resolvedBadges)
         }
-        setIsLoading(false)
 
         // --- Wall comments (kind 1111) and attested superchats (9735 / 9740 + 9741) ---
         let wallComments: Event[] = []
-        let wallSuperchats: Event[] = []
-        const profileId =
-          profileEventId?.trim().toLowerCase() && /^[0-9a-f]{64}$/.test(profileEventId.trim())
-            ? profileEventId.trim().toLowerCase()
-            : undefined
+        let wallSuperchats: Event[] = localWall.superchats
+        const profileId = normalizeProfileEventId(profileEventId)
+        const filters = buildProfileWallSuperchatFilters(pkNorm, profileId)
+        const pool = new Map<string, Event>()
+
+        for (const e of localWall.superchats) pool.set(e.id, e)
+        try {
+          for (const e of await indexedDb.getPaymentNotificationsForRecipient(pkNorm, 200)) {
+            pool.set(e.id, e)
+          }
+        } catch {
+          /* optional */
+        }
+        try {
+          for (const e of await indexedDb.getPaymentAttestationsForAuthor(pkNorm, 500)) {
+            pool.set(e.id, e)
+          }
+        } catch {
+          /* optional */
+        }
+        try {
+          for (const e of await indexedDb.getPaymentSuperchatEventsMatchingFilters(filters, 800)) {
+            pool.set(e.id, e)
+          }
+        } catch {
+          /* optional */
+        }
+        try {
+          const localMatches = await client.getLocalFeedEvents(
+            filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
+            { maxMatches: 800 }
+          )
+          for (const e of localMatches) pool.set(e.id, e)
+        } catch {
+          /* optional */
+        }
+
         if (relayUrls.length > 0) {
-          const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
-          const filters: Filter[] = [
-            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#p': [pkNorm], limit: 200 },
-            { kinds: [kinds.Zap], '#p': [pkNorm], limit: 200 },
-            { kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pkNorm], limit: 500 }
-          ]
-          if (profileId) {
-            filters.unshift(
-              { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
-              { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
-            )
-            filters.push(
-              { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
-              { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
-              { kinds: [kinds.Zap], '#e': [profileId], limit: 200 }
-            )
-          }
-          const pool = new Map<string, Event>()
-          try {
-            const idbPayments = await indexedDb.getPaymentNotificationsForRecipient(pkNorm, 200)
-            for (const e of idbPayments) pool.set(e.id, e)
-          } catch {
-            /* optional */
-          }
-          try {
-            const localMatches = await client.getLocalFeedEvents(
-              filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
-              { maxMatches: 800 }
-            )
-            for (const e of localMatches) pool.set(e.id, e)
-          } catch {
-            /* ignore */
-          }
           try {
             const rows = await Promise.all(
               filters.map((filter) =>
@@ -427,42 +580,43 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
               for (const e of batch) pool.set(e.id, e)
             }
           } catch {
-            /* ignore */
+            /* optional */
           }
-
-          const attestations = [...pool.values()].filter(
-            (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
-          )
-          const attestedIds = await resolveAttestedPaymentIdSet(pkNorm, attestations)
-          const hydratedTargets = await hydrateProfileWallSuperchatTargets(attestedIds, relayUrls)
-          for (const e of hydratedTargets) pool.set(e.id, e)
-
-          if (profileId) {
-            wallComments = [...pool.values()]
-              .filter(
-                (e) =>
-                  e.kind === ExtendedKind.COMMENT &&
-                  !isEventDeletedRef.current(e) &&
-                  isDirectProfileWallComment(e, profileId, pkNorm)
-              )
-              .sort((a, b) => b.created_at - a.created_at)
-          }
-
-          const paymentEvents = [...pool.values()].filter(
-            (e) =>
-              (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
-                e.kind === kinds.Zap ||
-                e.kind === ExtendedKind.ZAP_RECEIPT) &&
-              !isEventDeletedRef.current(e)
-          )
-          wallSuperchats = filterAttestedProfileWallSuperchats(
-            paymentEvents,
-            attestations,
-            pkNorm,
-            profileId,
-            attestedIds
-          )
         }
+
+        const attestations = [...pool.values()].filter(
+          (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
+        )
+        const attestedIds = await resolveAttestedPaymentIdSet(pkNorm, attestations)
+        for (const e of await hydrateProfileWallSuperchatTargets(attestedIds, relayUrls)) {
+          pool.set(e.id, e)
+        }
+
+        if (profileId) {
+          wallComments = [...pool.values()]
+            .filter(
+              (e) =>
+                e.kind === ExtendedKind.COMMENT &&
+                !isEventDeletedRef.current(e) &&
+                isDirectProfileWallComment(e, profileId, pkNorm)
+            )
+            .sort((a, b) => b.created_at - a.created_at)
+        }
+
+        const paymentEvents = [...pool.values()].filter(
+          (e) =>
+            (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+              e.kind === kinds.Zap ||
+              e.kind === ExtendedKind.ZAP_RECEIPT) &&
+            !isEventDeletedRef.current(e)
+        )
+        wallSuperchats = filterAttestedProfileWallSuperchats(
+          paymentEvents,
+          attestations,
+          pkNorm,
+          profileId,
+          attestedIds
+        )
 
         if (cancelled) return
         setComments(wallComments)
@@ -487,7 +641,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     return () => {
       cancelled = true
     }
-  }, [pubkey, profileEventId, cacheKey, refreshToken])
+  }, [pubkey, profileEventId, cacheKey, refreshToken, applyLocalWallHydrate])
 
   const refresh = useCallback(() => {
     scheduleManualWallRefetch()

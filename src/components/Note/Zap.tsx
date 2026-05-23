@@ -100,6 +100,17 @@ export default function Zap({
                 showAt
                 className="min-w-0 font-medium text-foreground/85 hover:text-foreground"
               />
+              {amount != null ? (
+                <span className="shrink-0 text-sm font-bold tabular-nums tracking-tight text-foreground">
+                  {formatAmount(amount)} {t('sats')}
+                </span>
+              ) : null}
+              <SuperchatPaymentMethodLabel
+                paytoType={paytoType}
+                iconOnly
+                className="shrink-0"
+                imgClassName="size-5"
+              />
             </div>
           ) : (
             <>
@@ -129,24 +140,26 @@ export default function Zap({
           )}
         </div>
       ) : null}
-      <div
-        className={cn(
-          'flex flex-wrap items-center gap-x-2 gap-y-1',
-          hasMetaLine && 'mt-1'
-        )}
-      >
-        <SuperchatPaymentMethodLabel
-          paytoType={paytoType}
-          className="px-2.5 py-1.5 text-lg"
-          imgClassName="size-5"
-        />
-        <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
-        {amount != null ? (
-          <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
-            {formatAmount(amount)} {t('sats')}
-          </span>
-        ) : null}
-      </div>
+      {!isProfileWall ? (
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-x-2 gap-y-1',
+            hasMetaLine && 'mt-1'
+          )}
+        >
+          <SuperchatPaymentMethodLabel
+            paytoType={paytoType}
+            className="px-2.5 py-1.5 text-lg"
+            imgClassName="size-5"
+          />
+          <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
+          {amount != null ? (
+            <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
+              {formatAmount(amount)} {t('sats')}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}

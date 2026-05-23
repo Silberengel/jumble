@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { ExtendedKind } from '@/constants'
 import { createPaymentNotificationDraftEvent } from '@/lib/draft-event'
@@ -30,6 +32,7 @@ export default function SuperchatRequestForm({
   const { t } = useTranslation()
   const { publish, checkLogin, pubkey: selfPubkey } = useNostr()
   const [message, setMessage] = useState('')
+  const [minPow, setMinPow] = useState(0)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -67,7 +70,7 @@ export default function SuperchatRequestForm({
           referencedEvent: paymentContext?.referencedEvent,
           addClientTag: true
         })
-        await publish(draft, { disableFallbacks: true })
+        await publish(draft, { disableFallbacks: true, minPow })
         showSimplePublishSuccess(t('Superchat request sent'))
         onDone()
       } catch (error) {
@@ -103,6 +106,17 @@ export default function SuperchatRequestForm({
         aria-label={t('Superchat message')}
         placeholder={t('Superchat message placeholder')}
       />
+      <div className="mt-4 grid gap-2">
+        <Label htmlFor="superchat-pow">{t('Proof of Work (difficulty {{minPow}})', { minPow })}</Label>
+        <Slider
+          id="superchat-pow"
+          value={[minPow]}
+          onValueChange={([pow]) => setMinPow(pow)}
+          max={28}
+          step={1}
+          disabled={sending}
+        />
+      </div>
       {previewEvent && message.trim() ? (
         <div className="mt-4 min-w-0">
           <p className="text-xs font-medium text-muted-foreground">{t('Preview')}</p>

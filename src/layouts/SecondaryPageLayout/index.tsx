@@ -176,37 +176,41 @@ function SecondaryPageTitlebar({
   if (titlebar) {
     return (
       <Titlebar
-        className={cn('flex min-w-0 items-center gap-2', titlebarInset, stickyClass)}
+        className={cn(titlebarInset, stickyClass)}
         hideBottomBorder={hideBottomBorder}
       >
-        <ReadOnlySessionIndicator variant="titlebar" />
-        <div className="min-w-0 flex-1">{titlebar}</div>
-        {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
+        <div className="flex w-full min-w-0 items-center gap-2">
+          <ReadOnlySessionIndicator variant="titlebar" />
+          <div className="min-w-0 flex-1">{titlebar}</div>
+          {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
+        </div>
       </Titlebar>
     )
   }
   return (
     <Titlebar
-      className={cn('flex min-w-0 gap-1 items-center font-semibold', titlebarInset, stickyClass)}
+      className={cn(titlebarInset, stickyClass)}
       hideBottomBorder={hideBottomBorder}
     >
-      <ReadOnlySessionIndicator variant="titlebar" />
-      <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
-        {hideBackButton ? (
-          title ? (
-            <div className="app-chrome-title flex w-fit items-center gap-2 truncate pl-2">
-              {title}
+      <div className="flex w-full min-w-0 items-center gap-2 font-semibold">
+        <ReadOnlySessionIndicator variant="titlebar" />
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+          {hideBackButton ? (
+            title ? (
+              <div className="app-chrome-title flex w-fit items-center gap-2 truncate pl-2">
+                {title}
+              </div>
+            ) : null
+          ) : (
+            <div className="flex min-w-0 items-center">
+              <BackButton>{title ?? t('back')}</BackButton>
             </div>
-          ) : null
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center">
-            <BackButton>{title ?? t('back')}</BackButton>
+          )}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 min-w-0 max-w-[min(100%,14rem)] sm:max-w-none">
+            {controls}
           </div>
-        )}
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 min-w-0 max-w-[min(100%,14rem)] sm:max-w-none">
-          {controls}
-          {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
         </div>
+        {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
       </div>
     </Titlebar>
   )
