@@ -915,6 +915,8 @@ const NoteList = forwardRef(
     const [feedSubscribeRelayOutcomes, setFeedSubscribeRelayOutcomes] = useState<RelayOpTerminalRow[]>([])
     /** One-shot per timeline init: after an all-failed relay wave, try {@link FAST_READ_RELAY_URLS}. */
     const publicReadFallbackAttemptedRef = useRef(false)
+    /** Profile feeds: defer empty-state paint until session / IndexedDB priming finishes (incl. relay-stack refinement). */
+    const profileLocalPrimingPendingRef = useRef(false)
     /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
     const blankFeedVisibilityResumeRetryAtRef = useRef(0)
     const refreshScheduleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2209,7 +2211,8 @@ const NoteList = forwardRef(
                   cache: true,
                   eoseTimeout: 3500,
                   globalTimeout: 22_000,
-                  firstRelayResultGraceMs: false
+                  firstRelayResultGraceMs: false,
+                  foreground: true
                 }
               )
               if (!effectActive || timelineEffectStale()) return
@@ -2517,12 +2520,8 @@ const NoteList = forwardRef(
                 filter: TSubRequestFilter
               }>
               const profileAuthorWarmSpec = getProfileAuthorWarmupSpec(profileMapped)
-              if (
-                isProfileTimelineFeed &&
-                profileAuthorWarmSpec &&
-                !timelineEffectStale() &&
-                !profileRelayStackRefinement
-              ) {
+              if (isProfileTimelineFeed && profileAuthorWarmSpec && !timelineEffectStale()) {
+                profileLocalPrimingPendingRef.current = true
                 const sessionScanLimit = Math.min(4000, Math.max(eventCapEarly * 4, 800))
                 const sessionHits = client.eventService.listSessionEventsAuthoredBy(
                   profileAuthorWarmSpec.author,
@@ -2555,45 +2554,51 @@ const NoteList = forwardRef(
                   try {
                     const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
                     const archiveCap = Math.min(2000, Math.max(eventCapEarly, 150))
-                    const [fromArchive, diskSnap] = await Promise.all([
+                    const [fromArchive, diskSnap, fromLocalFeed] = await Promise.all([
                       indexedDb.scanEventArchiveByAuthorPubkey(profileAuthorWarmSpec.author, {
                         kinds: profileAuthorWarmSpec.kinds,
                         maxRowsScanned: 16_000,
                         maxMatches: archiveCap
                       }),
-                      client.getTimelineDiskSnapshotEvents(diskReq)
+                      client.getTimelineDiskSnapshotEvents(diskReq),
+                      client.getLocalFeedEvents(diskReq, {
+                        maxRowsScanned: 16_000,
+                        maxMatches: archiveCap
+                      })
                     ])
                     if (!effectActive || timelineEffectStale()) return
                     const premerged = mergeEventBatchesById(
                       [],
-                      [...(fromArchive as Event[]), ...(diskSnap as Event[])],
+                      [...(fromArchive as Event[]), ...(diskSnap as Event[]), ...(fromLocalFeed as Event[])],
                       archiveCap,
                       areAlgoRelays
                     )
-                    if (premerged.length === 0) return
-                    const narrowed = narrowLiveBatch(premerged)
-                    if (narrowed.length === 0) return
-                    setEvents((prev) => {
-                      const merged = collapseDuplicateNip18RepostTimelineRows(
-                        mergeEventBatchesById(prev, narrowed, eventCapEarly, areAlgoRelays)
-                      )
-                      if (merged.length > 0) {
-                        timelineMergeBootstrapRef.current = merged.slice()
+                    if (premerged.length > 0) {
+                      const narrowed = narrowLiveBatch(premerged)
+                      if (narrowed.length > 0) {
+                        setEvents((prev) => {
+                          const merged = collapseDuplicateNip18RepostTimelineRows(
+                            mergeEventBatchesById(prev, narrowed, eventCapEarly, areAlgoRelays)
+                          )
+                          if (merged.length > 0) {
+                            timelineMergeBootstrapRef.current = merged.slice()
+                          }
+                          lastEventsForTimelinePrefetchRef.current = merged
+                          return merged
+                        })
+                        setNewEvents([])
+                        setShowCount(revealBatchSize ?? SHOW_COUNT)
+                        if (!feedPaintLiveRelayDoneRef.current) {
+                          setLoading(false)
+                          feedPaintRelayPendingRef.current = true
+                          feedPaintRelayMetaRef.current = {
+                            variant: 'profile_local_archive',
+                            mergedCount: narrowed.length
+                          }
+                          setFeedEmptyToastGateTick((n) => n + 1)
+                          setFeedTimelineEmptyUiReady(true)
+                        }
                       }
-                      lastEventsForTimelinePrefetchRef.current = merged
-                      return merged
-                    })
-                    setNewEvents([])
-                    setShowCount(revealBatchSize ?? SHOW_COUNT)
-                    if (!feedPaintLiveRelayDoneRef.current) {
-                      setLoading(false)
-                      feedPaintRelayPendingRef.current = true
-                      feedPaintRelayMetaRef.current = {
-                        variant: 'profile_local_archive',
-                        mergedCount: narrowed.length
-                      }
-                      setFeedEmptyToastGateTick((n) => n + 1)
-                      setFeedTimelineEmptyUiReady(true)
                     }
 
                     const relayUrls = getProfileTimelineFetchRelayUrls(profileMapped)
@@ -2609,32 +2614,44 @@ const NoteList = forwardRef(
                           cache: true,
                           eoseTimeout: 4500,
                           globalTimeout: 18_000,
-                          replaceableRace: true
+                          replaceableRace: true,
+                          foreground: true
                         }
                       )
                       if (!effectActive || timelineEffectStale()) return
-                      if (fetched.length === 0) return
-                      const narrowedFetch = narrowLiveBatch(fetched)
-                      if (narrowedFetch.length === 0) return
-                      setEvents((prev) => {
-                        const merged = collapseDuplicateNip18RepostTimelineRows(
-                          mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
-                        )
-                        if (merged.length > 0) {
-                          timelineMergeBootstrapRef.current = merged.slice()
+                      if (fetched.length > 0) {
+                        const narrowedFetch = narrowLiveBatch(fetched)
+                        if (narrowedFetch.length > 0) {
+                          setEvents((prev) => {
+                            const merged = collapseDuplicateNip18RepostTimelineRows(
+                              mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
+                            )
+                            if (merged.length > 0) {
+                              timelineMergeBootstrapRef.current = merged.slice()
+                            }
+                            lastEventsForTimelinePrefetchRef.current = merged
+                            return merged
+                          })
+                          feedRelayReturnedAnyEventRef.current = true
+                          if (!feedPaintLiveRelayDoneRef.current) {
+                            setLoading(false)
+                            setFeedEmptyToastGateTick((n) => n + 1)
+                            setFeedTimelineEmptyUiReady(true)
+                          }
                         }
-                        lastEventsForTimelinePrefetchRef.current = merged
-                        return merged
-                      })
-                      feedRelayReturnedAnyEventRef.current = true
-                      if (!feedPaintLiveRelayDoneRef.current) {
-                        setLoading(false)
-                        setFeedEmptyToastGateTick((n) => n + 1)
-                        setFeedTimelineEmptyUiReady(true)
                       }
                     }
                   } catch {
                     /* profile local archive is best-effort */
+                  } finally {
+                    profileLocalPrimingPendingRef.current = false
+                    if (!effectActive || timelineEffectStale()) return
+                    if (!feedPaintLiveRelayDoneRef.current) {
+                      feedPaintLiveRelayDoneRef.current = true
+                      setLoading(false)
+                      setFeedEmptyToastGateTick((n) => n + 1)
+                      setFeedTimelineEmptyUiReady(true)
+                    }
                   }
                 })()
               }
@@ -2987,7 +3004,10 @@ const NoteList = forwardRef(
                       batchIncoming: batch.length,
                       eosed
                     }
-                  } else if (eosed) {
+                  } else if (
+                    eosed &&
+                    !(isProfileTimelineFeed && profileLocalPrimingPendingRef.current)
+                  ) {
                     feedPaintLiveRelayDoneRef.current = true
                     feedPaintRelayPendingRef.current = true
                     feedPaintRelayMetaRef.current = {
@@ -3257,6 +3277,7 @@ const NoteList = forwardRef(
       const snapshotKeyForCleanup = sessionSnapshotIdentityKey
       return () => {
         effectActive = false
+        profileLocalPrimingPendingRef.current = false
         timelineMergeBootstrapRef.current = null
         setProgressiveLayersSearching(false)
         followingFeedDeltaCloserRef.current?.()
@@ -3408,7 +3429,14 @@ const NoteList = forwardRef(
                       batchIncoming: batch.length,
                       eosed
                     }
-                  } else if (eosed) {
+                  } else if (
+                    eosed &&
+                    !(
+                      (hostPrimaryPageNameRef.current === 'profile' ||
+                        isProfileTimelineSubscriptionKey(timelineSubscriptionKey)) &&
+                      profileLocalPrimingPendingRef.current
+                    )
+                  ) {
                     feedPaintLiveRelayDoneRef.current = true
                     feedPaintRelayPendingRef.current = true
                     feedPaintRelayMetaRef.current = {
@@ -3637,6 +3665,13 @@ const NoteList = forwardRef(
         if (eventsRef.current.length === 0) {
           setHasMore(false)
         }
+        const profileFeedWaitingOnLocalPrime =
+          profileLocalPrimingPendingRef.current &&
+          (hostPrimaryPageNameRef.current === 'profile' ||
+            isProfileTimelineSubscriptionKey(timelineSubscriptionKey))
+        if (profileFeedWaitingOnLocalPrime) {
+          return
+        }
         // Main feed skeleton also requires `feedTimelineEmptyUiReady` (first onEvents or EOSE). If
         // subscribe never wires that path (wedged setup, relay pool churn), `loading` alone going
         // false still leaves an infinite skeleton — hard-refresh “fixes” by resetting connections.
@@ -3810,7 +3845,8 @@ const NoteList = forwardRef(
             cache: true,
             globalTimeout: 22_000,
             eoseTimeout: 3500,
-            firstRelayResultGraceMs: false
+            firstRelayResultGraceMs: false,
+            foreground: true
           })
           if (raw.length === 0) return
 
