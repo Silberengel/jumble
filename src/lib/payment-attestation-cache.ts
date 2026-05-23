@@ -58,6 +58,117 @@ export function readKnownAttestedPaymentTargetsSync(recipientPubkey: string): Se
   return new Set(readLocalAttestedIds(recipientPubkey))
 }
 
+export function mergeAttestedPaymentIdSets(
+  base: ReadonlySet<string>,
+  incoming: ReadonlySet<string>
+): Set<string> {
+  const next = new Set(base)
+  for (const id of incoming) next.add(id)
+  return next
+}
+
+function listInMemoryAttestationsForAuthor(recipientPubkey: string): NostrEvent[] {
+  const pk = normalizeHexPubkey(recipientPubkey)
+  if (!/^[0-9a-f]{64}$/.test(pk)) return []
+  const suffix = `:${pk}`
+  const out: NostrEvent[] = []
+  for (const [key, attestation] of attestationByTargetKey) {
+    if (key.endsWith(suffix)) out.push(attestation)
+  }
+  return out
+}
+
+/**
+ * Attested payment target ids without awaiting IndexedDB (memory cache, session, verified local marks).
+ * Use for first paint; follow with {@link resolveAttestedPaymentIdSet} for a complete set.
+ */
+export function resolveAttestedPaymentIdSetSync(recipientPubkey: string): Set<string> {
+  const pk = normalizeHexPubkey(recipientPubkey)
+  if (!/^[0-9a-f]{64}$/.test(pk)) return new Set()
+
+  const attestations: NostrEvent[] = [...listInMemoryAttestationsForAuthor(pk)]
+  const seen = new Set(attestations.map((a) => a.id))
+  for (const attestation of client.eventService.getSessionEventsMatchingFilters(
+    [{ kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pk], limit: 500 }],
+    500
+  )) {
+    if (seen.has(attestation.id)) continue
+    seen.add(attestation.id)
+    attestations.push(attestation)
+  }
+
+  const out = buildAttestedPaymentIdSet(attestations, pk)
+  for (const id of readLocalAttestedIds(pk)) {
+    if (out.has(id)) continue
+    const cached = peekCachedPaymentAttestation(id, pk)
+    if (cached?.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+      out.add(id)
+    }
+  }
+  return out
+}
+
+/** Kind 9735 / 9740 events already in the session LRU (no network). */
+export function peekAttestedSuperchatTargetEvents(attestedIds: ReadonlySet<string>): NostrEvent[] {
+  const out: NostrEvent[] = []
+  const seen = new Set<string>()
+  for (const id of attestedIds) {
+    const hex = id.trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(hex)) continue
+    const ev = client.peekSessionCachedEvent(hex)
+    if (!ev || seen.has(ev.id)) continue
+    seen.add(ev.id)
+    out.push(ev)
+  }
+  return out
+}
+
+/** Load attested superchat target events: session → local feed → relay (short timeouts when foreground). */
+export async function hydrateAttestedSuperchatTargetEvents(
+  attestedIds: ReadonlySet<string>,
+  relayUrls: string[],
+  options: { foreground?: boolean } = {}
+): Promise<NostrEvent[]> {
+  const ids = [...attestedIds].filter((id) => /^[0-9a-f]{64}$/i.test(id))
+  if (ids.length === 0) return []
+
+  const byId = new Map<string, NostrEvent>()
+  for (const e of peekAttestedSuperchatTargetEvents(attestedIds)) {
+    byId.set(e.id.toLowerCase(), e)
+  }
+
+  try {
+    const local = await client.getLocalFeedEvents(
+      [{ urls: [], filter: { ids, limit: ids.length } }],
+      { maxMatches: ids.length }
+    )
+    for (const e of local) byId.set(e.id.toLowerCase(), e)
+  } catch {
+    /* optional */
+  }
+
+  const missing = ids.filter((id) => !byId.has(id.toLowerCase()))
+  if (missing.length > 0 && relayUrls.length > 0) {
+    try {
+      const fetched = await client.fetchEvents(
+        relayUrls,
+        { ids: missing, limit: missing.length },
+        {
+          cache: true,
+          foreground: options.foreground,
+          eoseTimeout: options.foreground ? 1600 : 4500,
+          globalTimeout: options.foreground ? 5000 : 12_000
+        }
+      )
+      for (const e of fetched) byId.set(e.id.toLowerCase(), e)
+    } catch {
+      /* optional */
+    }
+  }
+
+  return [...byId.values()]
+}
+
 /** Drop durable local marks that are not backed by a cached kind 9741 attestation. */
 export function pruneUnverifiedLocalAttestationMarks(recipientPubkey: string): void {
   const pk = normalizeHexPubkey(recipientPubkey)

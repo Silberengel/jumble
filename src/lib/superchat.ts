@@ -45,6 +45,16 @@ export function getPaymentAttestationTargetKind(attestation: Event): string | un
   return k && PAYMENT_ATTESTATION_TARGET_KINDS.has(k) ? k : undefined
 }
 
+/** Kind 9741 from the payment recipient with a valid `e` (and `k` when present). */
+export function isValidPaymentAttestation(attestation: Event, recipientPubkey: string): boolean {
+  if (attestation.kind !== ExtendedKind.PAYMENT_ATTESTATION) return false
+  if (!hexPubkeysEqual(attestation.pubkey, recipientPubkey)) return false
+  if (!getPaymentAttestationTargetId(attestation)) return false
+  const hasKTag = attestation.tags.some(([name]) => name === 'k' || name === 'K')
+  if (hasKTag && !getPaymentAttestationTargetKind(attestation)) return false
+  return true
+}
+
 /** Event ids (lowercase hex) the recipient has attested as received payment. */
 export function buildAttestedPaymentIdSet(
   attestations: Event[],
@@ -52,10 +62,9 @@ export function buildAttestedPaymentIdSet(
 ): Set<string> {
   const out = new Set<string>()
   for (const attestation of attestations) {
-    if (!hexPubkeysEqual(attestation.pubkey, recipientPubkey)) continue
+    if (!isValidPaymentAttestation(attestation, recipientPubkey)) continue
     const targetId = getPaymentAttestationTargetId(attestation)
-    if (!targetId) continue
-    out.add(targetId)
+    if (targetId) out.add(targetId)
   }
   return out
 }
@@ -202,6 +211,31 @@ export function sortSuperchatsByAmountDesc(events: Event[]): Event[] {
     if (sb !== sa) return sb - sa
     return b.created_at - a.created_at
   })
+}
+
+/**
+ * Attested kind 9735 / 9740 events already in `repliesMap` that the thread BFS may not reach
+ * (e.g. keyed only under a parent id, or hydrated after the walk).
+ */
+export function collectAttestedSuperchatsFromRepliesMap(
+  repliesMap: ReadonlyMap<string, { events: Event[] }>,
+  attestedIds: ReadonlySet<string>,
+  alreadySeen: ReadonlySet<string>,
+  includeEvent: (event: Event) => boolean
+): Event[] {
+  const out: Event[] = []
+  const seen = new Set(alreadySeen)
+  for (const { events } of repliesMap.values()) {
+    for (const evt of events) {
+      if (seen.has(evt.id)) continue
+      if (!isSuperchatKind(evt.kind)) continue
+      if (!isAttestedSuperchat(evt, attestedIds)) continue
+      if (!includeEvent(evt)) continue
+      seen.add(evt.id)
+      out.push(evt)
+    }
+  }
+  return out
 }
 
 export function partitionAttestedSuperchats(

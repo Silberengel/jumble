@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildAttestedPaymentIdSet,
+  collectAttestedSuperchatsFromRepliesMap,
+  isValidPaymentAttestation,
   filterAttestedProfileWallSuperchats,
   getPaymentNotificationInfo,
   getSuperchatPaytoType,
@@ -107,6 +109,39 @@ describe('buildAttestedPaymentIdSet', () => {
       tags: [['e', PAYMENT_ID]]
     })
     expect(buildAttestedPaymentIdSet([attestation], RECIPIENT).has(PAYMENT_ID)).toBe(true)
+  })
+
+  it('ignores attestations with an invalid k tag', () => {
+    const attestation = fakeEvent({
+      kind: ExtendedKind.PAYMENT_ATTESTATION,
+      pubkey: RECIPIENT,
+      tags: [
+        ['e', PAYMENT_ID],
+        ['k', '1']
+      ]
+    })
+    expect(isValidPaymentAttestation(attestation, RECIPIENT)).toBe(false)
+    expect(buildAttestedPaymentIdSet([attestation], RECIPIENT).size).toBe(0)
+  })
+})
+
+describe('collectAttestedSuperchatsFromRepliesMap', () => {
+  it('returns attested superchats not already in the BFS set', () => {
+    const payment = fakeEvent({
+      id: PAYMENT_ID,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [['p', RECIPIENT], ['e', '2'.repeat(64)]]
+    })
+    const repliesMap = new Map([
+      ['2'.repeat(64), { events: [payment], eventIdSet: new Set([PAYMENT_ID]) }]
+    ])
+    const found = collectAttestedSuperchatsFromRepliesMap(
+      repliesMap,
+      new Set([PAYMENT_ID]),
+      new Set<string>(),
+      () => true
+    )
+    expect(found.map((e) => e.id)).toEqual([PAYMENT_ID])
   })
 })
 

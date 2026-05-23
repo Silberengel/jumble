@@ -1,25 +1,9 @@
-import {
-  canonicalizeRssArticleUrl,
-  getArticleUrlFromCommentITags,
-  getHighlightSourceHttpUrl
-} from '@/lib/rss-article'
-import {
-  getParentATag,
-  getParentETag,
-  getQuotedReferenceFromQTags,
-  getRootATag,
-  getRootETag,
-  isNip18RepostKind,
-  isNip25ReactionKind,
-  resolveDeclaredThreadRootEventHex
-} from '@/lib/event'
-import { getFirstHexEventIdFromETags } from '@/lib/tag'
-import client from '@/services/client.service'
-import { Event, kinds } from 'nostr-tools'
+import { mergeRepliesIntoMap, type TRepliesMap } from '@/lib/reply-index'
+import type { Event } from 'nostr-tools'
 import { createContext, useCallback, useContext, useState } from 'react'
 
 type TReplyContext = {
-  repliesMap: Map<string, { events: Event[]; eventIdSet: Set<string> }>
+  repliesMap: TRepliesMap
   addReplies: (replies: Event[]) => void
 }
 
@@ -34,101 +18,11 @@ export const useReply = () => {
 }
 
 export function ReplyProvider({ children }: { children: React.ReactNode }) {
-  const [repliesMap, setRepliesMap] = useState<
-    Map<string, { events: Event[]; eventIdSet: Set<string> }>
-  >(new Map())
+  const [repliesMap, setRepliesMap] = useState<TRepliesMap>(() => new Map())
 
   const addReplies = useCallback((replies: Event[]) => {
-    const newReplyIdSet = new Set<string>()
-    const newReplyEventMap = new Map<string, Event[]>()
-    replies.forEach((reply) => {
-      if (newReplyIdSet.has(reply.id)) return
-      // NIP-18 kind 6 / 16 — stats + OP booster strip only, not thread reply map keys.
-      if (isNip18RepostKind(reply.kind)) {
-        client.addEventToCache(reply)
-        return
-      }
-      if (isNip25ReactionKind(reply.kind)) {
-        newReplyIdSet.add(reply.id)
-        client.addEventToCache(reply)
-        const targetHex = getFirstHexEventIdFromETags(reply.tags)
-        if (targetHex && /^[0-9a-f]{64}$/i.test(targetHex)) {
-          const key = targetHex.toLowerCase()
-          newReplyEventMap.set(key, [...(newReplyEventMap.get(key) || []), reply])
-        }
-        return
-      }
-      newReplyIdSet.add(reply.id)
-      client.addEventToCache(reply)
-
-      let rootId: string | undefined
-      const rootETag = getRootETag(reply)
-      if (rootETag) {
-        const raw = rootETag[1]?.toLowerCase?.() ?? rootETag[1]
-        rootId =
-          raw && /^[0-9a-f]{64}$/i.test(raw) ? resolveDeclaredThreadRootEventHex(raw) : raw
-      } else {
-        const rootATag = getRootATag(reply)
-        if (rootATag) {
-          rootId = rootATag[1]
-        } else {
-          const articleUrl = getArticleUrlFromCommentITags(reply)
-          if (articleUrl) {
-            rootId = canonicalizeRssArticleUrl(articleUrl)
-          } else if (reply.kind === kinds.Highlights) {
-            const hu = getHighlightSourceHttpUrl(reply)
-            if (hu) rootId = canonicalizeRssArticleUrl(hu)
-          }
-        }
-      }
-      if (rootId) {
-        newReplyEventMap.set(rootId, [...(newReplyEventMap.get(rootId) || []), reply])
-      }
-
-      let parentId: string | undefined
-      const parentETag = getParentETag(reply)
-      if (parentETag) {
-        parentId = parentETag[1]?.toLowerCase?.() ?? parentETag[1]
-      } else {
-        const parentATag = getParentATag(reply)
-        if (parentATag) {
-          parentId = parentATag[1]
-        }
-      }
-      if (parentId && parentId !== rootId) {
-        newReplyEventMap.set(parentId, [...(newReplyEventMap.get(parentId) || []), reply])
-      }
-
-      // Quote-only notes (#q, no e-tags): index under quoted hex id and/or replaceable coordinate.
-      if (!rootId && !parentId) {
-        const qref = getQuotedReferenceFromQTags(reply)
-        const keys = new Set([qref?.hexId, qref?.coordinate].filter(Boolean) as string[])
-        for (const key of keys) {
-          newReplyEventMap.set(key, [...(newReplyEventMap.get(key) || []), reply])
-        }
-      }
-    })
-    if (newReplyEventMap.size === 0) return
-
-    setRepliesMap((prev) => {
-      const next = new Map(prev)
-      for (const [id, newReplyEvents] of newReplyEventMap.entries()) {
-        const existing = next.get(id)
-        const events = existing ? [...existing.events] : []
-        const eventIdSet = existing ? new Set(existing.eventIdSet) : new Set<string>()
-        newReplyEvents.forEach((reply) => {
-          const existingIdx = events.findIndex((e) => e.id === reply.id)
-          if (existingIdx >= 0) {
-            events[existingIdx] = reply
-          } else {
-            events.push(reply)
-          }
-          eventIdSet.add(reply.id)
-        })
-        next.set(id, { events, eventIdSet })
-      }
-      return next
-    })
+    if (replies.length === 0) return
+    setRepliesMap((prev) => mergeRepliesIntoMap(prev, replies))
   }, [])
 
   return (

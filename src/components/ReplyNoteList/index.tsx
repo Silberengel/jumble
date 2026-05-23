@@ -1,4 +1,4 @@
-import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
+import { ExtendedKind } from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
   canonicalizeRssArticleUrl,
@@ -7,19 +7,15 @@ import {
 import {
   getParentETag,
   getReplaceableCoordinateFromEvent,
-  getRootATag,
-  getRootETag,
-  isNip56ReportEvent,
   isMentioningMutedUsers,
   isNip18RepostKind,
-  isReplaceableEvent,
-  kind1QuotesThreadRoot,
-  resolveDeclaredThreadRootEventHex
+  isReplaceableEvent
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import {
-  getPaymentAttestationTargetId,
+  collectAttestedSuperchatsFromRepliesMap,
   isNestedThreadReplyParentKind,
+  isSuperchatKind,
   partitionAttestedSuperchats,
   replyFeedSuperchatsFirst
 } from '@/lib/superchat'
@@ -29,12 +25,12 @@ import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { generateBech32IdFromETag } from '@/lib/tag'
-import { useSmartNoteNavigation, useSecondaryPage } from '@/PageManager'
+import { useSmartNoteNavigation } from '@/PageManager'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useZap } from '@/providers/ZapProvider'
-import { useReply } from '@/providers/ReplyProvider'
+import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -51,351 +47,44 @@ import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } from '@/lib/thread-interaction-req'
-import {
-  resolveAttestedPaymentIdSet
-} from '@/lib/payment-attestation-cache'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
-import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
-import type { TProfile, TSubRequestFilter } from '@/types'
+import type { TProfile } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { LoadingBar } from '../LoadingBar'
 import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
 import ThreadQuoteBacklink, { BacklinkAvatarStrip } from './ThreadQuoteBacklink'
-
-type TRootInfo =
-  | { type: 'E'; id: string; pubkey: string }
-  | { type: 'A'; id: string; eventId: string; pubkey: string; relay?: string }
-  | { type: 'I'; id: string }
-
-const LIMIT = 200
-const SHOW_COUNT = 10
-/** Some relays cap `#e` array length; chunk parent-id batches for nested-thread REQs. */
-const MAX_PARENT_IDS_PER_NESTED_REQ = 64
-/** Short debounce so thread / detail headers populate avatars quickly after events arrive. */
-const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 120
-const THREAD_PROFILE_CHUNK = 80
-
-async function hydrateAttestedSuperchatTargets(
-  attestedIds: ReadonlySet<string>,
-  relayUrls: string[]
-): Promise<NEvent[]> {
-  const ids = [...attestedIds].filter((id) => /^[0-9a-f]{64}$/i.test(id))
-  if (ids.length === 0) return []
-
-  const byId = new Map<string, NEvent>()
-  try {
-    const local = await client.getLocalFeedEvents(
-      [{ urls: [], filter: { ids, limit: ids.length } }],
-      { maxMatches: ids.length }
-    )
-    for (const e of local) byId.set(e.id.toLowerCase(), e)
-  } catch {
-    /* optional */
-  }
-
-  const missing = ids.filter((id) => !byId.has(id.toLowerCase()))
-  if (missing.length > 0 && relayUrls.length > 0) {
-    try {
-      const fetched = await client.fetchEvents(
-        relayUrls,
-        { ids: missing, limit: missing.length },
-        { cache: true, eoseTimeout: 4500, globalTimeout: 12_000 }
-      )
-      for (const e of fetched) byId.set(e.id.toLowerCase(), e)
-    } catch {
-      /* optional */
-    }
-  }
-
-  return [...byId.values()]
-}
-
-async function fetchPaymentAttestationsForRecipient(
-  recipientPubkey: string,
-  relayUrls: string[],
-  options: { foreground?: boolean } = {}
-): Promise<NEvent[]> {
-  const filter: Filter = {
-    kinds: [ExtendedKind.PAYMENT_ATTESTATION],
-    authors: [recipientPubkey],
-    limit: 500
-  }
-  const byId = new Map<string, NEvent>()
-  try {
-    const local = await client.getLocalFeedEvents(
-      [{ urls: [], filter: filter as TSubRequestFilter }],
-      { maxMatches: 500 }
-    )
-    for (const e of local) byId.set(e.id, e)
-  } catch {
-    /* optional */
-  }
-  if (relayUrls.length > 0) {
-    try {
-      const rows = await client.fetchEvents(relayUrls, filter, {
-        cache: true,
-        eoseTimeout: 4500,
-        globalTimeout: 12_000,
-        foreground: options.foreground
-      })
-      for (const e of rows) byId.set(e.id, e)
-    } catch {
-      /* optional */
-    }
-  }
-  return [...byId.values()]
-}
-
-function replyFeedZapsFirst(sortedNonZapReplies: NEvent[], superchats: NEvent[]) {
-  return replyFeedSuperchatsFirst(sortedNonZapReplies, superchats)
-}
-
-type TBacklinkSubsection = 'primary' | 'bookmark' | 'list' | 'report'
-
-function sortWithinBacklinkGroup(events: NEvent[]): NEvent[] {
-  return [...events].sort((a, b) => b.created_at - a.created_at)
-}
-
-function backlinkTailSubsection(item: NEvent): TBacklinkSubsection {
-  if (isNip56ReportEvent(item)) return 'report'
-  if (item.kind === kinds.BookmarkList) return 'bookmark'
-  if (
-    item.kind === kinds.Pinlist ||
-    item.kind === kinds.Genericlists ||
-    item.kind === kinds.Bookmarksets ||
-    item.kind === kinds.Curationsets
-  ) {
-    return 'list'
-  }
-  return 'primary'
-}
-
-/** Quotes/highlights/citations → bookmarks → lists → reports; newest first within each group. */
-function partitionAndSortBacklinkTail(tail: NEvent[]): NEvent[] {
-  const primary: NEvent[] = []
-  const bookmarks: NEvent[] = []
-  const lists: NEvent[] = []
-  const reports: NEvent[] = []
-  for (const e of tail) {
-    const sub = backlinkTailSubsection(e)
-    if (sub === 'report') reports.push(e)
-    else if (sub === 'bookmark') bookmarks.push(e)
-    else if (sub === 'list') lists.push(e)
-    else primary.push(e)
-  }
-  return [
-    ...sortWithinBacklinkGroup(primary),
-    ...sortWithinBacklinkGroup(bookmarks),
-    ...sortWithinBacklinkGroup(lists),
-    ...sortWithinBacklinkGroup(reports)
-  ]
-}
-
-type TBacklinkDisplayRow =
-  | { type: 'reply'; event: NEvent }
-  | { type: 'backlink-run'; subsection: TBacklinkSubsection; events: NEvent[] }
-
-function buildVisibleBacklinkRows(
-  visibleFeed: NEvent[],
-  quoteUiIdSet: Set<string>
-): TBacklinkDisplayRow[] {
-  const rows: TBacklinkDisplayRow[] = []
-  let i = 0
-  while (i < visibleFeed.length) {
-    const item = visibleFeed[i]
-    if (!quoteUiIdSet.has(item.id)) {
-      rows.push({ type: 'reply', event: item })
-      i++
-      continue
-    }
-    const sub = backlinkTailSubsection(item)
-    const run: NEvent[] = []
-    while (
-      i < visibleFeed.length &&
-      quoteUiIdSet.has(visibleFeed[i].id) &&
-      backlinkTailSubsection(visibleFeed[i]) === sub
-    ) {
-      run.push(visibleFeed[i])
-      i++
-    }
-    if (run.length > 0) {
-      rows.push({ type: 'backlink-run', subsection: sub, events: run })
-    }
-  }
-  return rows
-}
-
-function backlinkRunSectionClass(
-  subsection: TBacklinkSubsection,
-  prev: TBacklinkDisplayRow | undefined
-): string {
-  if (!prev) {
-    return subsection === 'report'
-      ? 'mb-3 pt-1'
-      : 'mb-3 pt-1'
-  }
-  if (prev.type === 'reply') {
-    return subsection === 'report'
-      ? 'mt-8 mb-3 border-t border-amber-500/40 pt-6 dark:border-amber-400/30'
-      : 'mt-8 mb-3 border-t border-border/60 pt-6'
-  }
-  return subsection === 'report'
-    ? 'mt-6 mb-3 border-t border-amber-500/40 pt-4 dark:border-amber-400/30'
-    : 'mt-6 mb-3 border-t border-border/60 pt-4'
-}
-
-/** Preserve order except NIP-56 reports move to the end (after all non-reports). */
-function moveReportsToEndPreserveOrder(events: NEvent[]): NEvent[] {
-  const non = events.filter((e) => !isNip56ReportEvent(e))
-  const rep = events.filter((e) => isNip56ReportEvent(e))
-  return [...non, ...rep]
-}
-
-/** Shown after thread replies for E/A roots (quote stream + kind 1 #q-only); matches {@link NOTE_STATS_OP_REFERENCE_KINDS}. */
-const EA_THREAD_TAIL_REFERENCE_KINDS = new Set<number>(NOTE_STATS_OP_REFERENCE_KINDS)
-
-function isWebThreadTailKind(kind: number): boolean {
-  return EA_THREAD_TAIL_REFERENCE_KINDS.has(kind)
-}
-
-/** Kind 1111 / 1244 that includes the thread root id on an e/E tag (common on relays; stricter root-tag walks may miss these). */
-function commentReferencesThreadRootEventHex(evt: NEvent, rootHexLower: string): boolean {
-  if (evt.kind !== ExtendedKind.COMMENT && evt.kind !== ExtendedKind.VOICE_COMMENT) return false
-  const h = rootHexLower.trim().toLowerCase()
-  if (!/^[0-9a-f]{64}$/.test(h)) return false
-  return evt.tags.some(
-    (t) => (t[0] === 'e' || t[0] === 'E') && typeof t[1] === 'string' && t[1].toLowerCase() === h
-  )
-}
-
-function replyIdPresentInRepliesMap(
-  map: Map<string, { events: NEvent[]; eventIdSet: Set<string> }>,
-  replyId: string
-): boolean {
-  for (const { events } of map.values()) {
-    if (events.some((e) => e.id === replyId)) return true
-  }
-  return false
-}
-
-/** NIP-25 reaction: any `e` / `E` tag value equals this hex id (lowercased). */
-function noteReactionEtagEqualsHex(ev: NEvent, hexLower: string): boolean {
-  const h = hexLower.trim().toLowerCase()
-  if (!/^[0-9a-f]{64}$/i.test(h)) return false
-  for (const t of ev.tags) {
-    if ((t[0] === 'e' || t[0] === 'E') && typeof t[1] === 'string' && t[1].toLowerCase() === h) return true
-  }
-  return false
-}
-
-/**
- * Thread REQ may still omit some kind-7 rows; merge reactions that tag the root hex so OP stats stay warm.
- * Reactions are not listed under “Antworten”; this merge keeps OP stats warm when the thread REQ omits kind 7.
- */
-function mergeFetchedKind7ReactionsIntoRootNoteStats(all: NEvent[], rootInfo: TRootInfo) {
-  if (rootInfo.type === 'E') {
-    const rootHex = rootInfo.id.trim().toLowerCase()
-    const hits = all.filter((ev) => ev.kind === kinds.Reaction && noteReactionEtagEqualsHex(ev, rootHex))
-    if (hits.length > 0) {
-      noteStatsService.updateNoteStatsByEvents(hits, undefined, { interactionTargetNoteId: rootInfo.id })
-    }
-  } else if (rootInfo.type === 'A') {
-    const idHex = rootInfo.eventId?.trim().toLowerCase()
-    if (idHex && /^[0-9a-f]{64}$/i.test(idHex)) {
-      const hits = all.filter((ev) => ev.kind === kinds.Reaction && noteReactionEtagEqualsHex(ev, idHex))
-      if (hits.length > 0) {
-        noteStatsService.updateNoteStatsByEvents(hits, undefined, { interactionTargetNoteId: rootInfo.eventId })
-      }
-    }
-  }
-}
-
-function replyMatchesThreadForList(
-  evt: NEvent,
-  opEvent: NEvent,
-  rootInfo: TRootInfo,
-  isDiscussionRoot: boolean,
-  /** Events from the current relay batch (parent walk may not be in session LRU yet). */
-  threadWalkLocal?: ReadonlyMap<string, NEvent>
-): boolean {
-  if (rootInfo.type === 'I') {
-    return isRssArticleUrlThreadInteraction(evt, rootInfo.id)
-  }
-  if (
-    isDiscussionRoot &&
-    rootInfo.type === 'E' &&
-    commentReferencesThreadRootEventHex(evt, rootInfo.id)
-  ) {
-    return true
-  }
-  if (replyBelongsToNoteThread(evt, opEvent, rootInfo, threadWalkLocal)) return true
-  if (
-    evt.kind === kinds.Zap &&
-    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
-    eventReferencesThreadTarget(evt, rootInfo)
-  ) {
-    return true
-  }
-  if (
-    evt.kind === ExtendedKind.PAYMENT_NOTIFICATION &&
-    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
-    eventReferencesThreadTarget(evt, rootInfo)
-  ) {
-    return true
-  }
-  if (
-    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
-    evt.kind !== kinds.ShortTextNote &&
-    NOTE_STATS_OP_REFERENCE_KINDS.includes(evt.kind) &&
-    eventReferencesThreadTarget(evt, rootInfo)
-  ) {
-    return true
-  }
-  return false
-}
-
-/** NIP-69 poll responses (kind 1018): aggregated in the poll UI, not as thread rows under “Antworten”. */
-function isPollVoteKind(evt: Pick<NEvent, 'kind'>): boolean {
-  return evt.kind === ExtendedKind.POLL_RESPONSE
-}
-
-function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
-  if (item.kind === kinds.Highlights) return t('highlighted this note')
-  if (item.kind === kinds.ShortTextNote) return t('quoted this note')
-  if (
-    item.kind === kinds.LongFormArticle ||
-    item.kind === ExtendedKind.WIKI_ARTICLE ||
-    item.kind === ExtendedKind.NOSTR_SPECIFICATION ||
-    item.kind === ExtendedKind.PUBLICATION_CONTENT
-  ) {
-    return t('cited in article')
-  }
-  if (item.kind === kinds.Label) return t('labeled this note')
-  if (isNip56ReportEvent(item)) return t('reported this note')
-  if (item.kind === kinds.BookmarkList) return t('bookmarked this note')
-  if (item.kind === kinds.Pinlist) return t('pinned this note')
-  if (item.kind === kinds.Genericlists) return t('listed this note')
-  if (item.kind === kinds.Bookmarksets) return t('bookmark set reference')
-  if (item.kind === kinds.Curationsets) return t('curated this note')
-  if (item.kind === kinds.BadgeAward) return t('badge award for this note')
-  return t('referenced this note')
-}
-
-/** E/A roots: kind-1 #q quotes + op-reference kinds belong in backlinks tail, not the chronological middle. */
-function isEaThreadTailBacklinkCandidate(evt: NEvent, root: TRootInfo): boolean {
-  if (root.type !== 'E' && root.type !== 'A') return false
-  if (evt.kind === kinds.ShortTextNote && kind1QuotesThreadRoot(evt, root)) return true
-  return EA_THREAD_TAIL_REFERENCE_KINDS.has(evt.kind)
-}
+import {
+  MAX_PARENT_IDS_PER_NESTED_REQ,
+  THREAD_PROFILE_BATCH_DEBOUNCE_MS,
+  THREAD_PROFILE_CHUNK,
+  THREAD_REPLY_LIMIT,
+  THREAD_REPLY_SHOW_COUNT
+} from './types'
+import {
+  backlinkRunSectionClass,
+  buildVisibleBacklinkRows,
+  EA_THREAD_TAIL_REFERENCE_KINDS,
+  fetchPaymentAttestationsForRecipient,
+  isEaThreadTailBacklinkCandidate,
+  isPollVoteKind,
+  isWebThreadTailKind,
+  mergeFetchedKind7ReactionsIntoRootNoteStats,
+  moveReportsToEndPreserveOrder,
+  partitionAndSortBacklinkTail,
+  replyFeedZapsFirst,
+  replyIdPresentInRepliesMap,
+  replyMatchesThreadForList,
+  threadBacklinkRelationLabel
+} from './reply-list-utils'
+import { useThreadRootInfo } from './useThreadRootInfo'
+import { useThreadAttestedPayments } from './useThreadAttestedPayments'
 
 function ReplyNoteList({
-  index,
+  index: _pageIndex,
   event,
   sort = 'oldest',
   showQuotes = true,
@@ -420,22 +109,28 @@ function ReplyNoteList({
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
-  const { currentIndex } = useSecondaryPage()
   const { hideUntrustedInteractions, isUserTrusted, isTrustLoaded } = useUserTrust()
   const noteStats = useNoteStatsById(event.id)
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
   const { pubkey: userPubkey } = useNostr()
   const { zapReplyThreshold } = useZap()
-  const [attestedPaymentIds, setAttestedPaymentIds] = useState<Set<string>>(() => new Set())
-  const threadRelayUrlsRef = useRef<string[]>([])
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const relayAuthoritativeRead =
     singleRelayAuthoritativeRead ?? browsingRelayUrls.length === 1
-  const [rootInfo, setRootInfo] = useState<TRootInfo | undefined>(undefined)
-  const { repliesMap, addReplies } = useReply()
+  const rootInfo = useThreadRootInfo(event)
+  const { repliesMap, addReplies } = useReplyIngress()
   const isDiscussionRoot = event.kind === ExtendedKind.DISCUSSION
+  const threadRelayUrlsRef = useRef<string[]>([])
+  const replyFetchGenRef = useRef(0)
+  const { attestedPaymentIds, applyAttestedSuperchatWave } = useThreadAttestedPayments(
+    event.pubkey,
+    addReplies,
+    threadRelayUrlsRef,
+    browsingRelayUrls,
+    replyFetchGenRef
+  )
 
   const replyDuplicateWebPreviewHints = useMemo(() => {
     const out: string[] = [...(duplicateWebPreviewCleanedUrlHints ?? [])]
@@ -443,54 +138,7 @@ function ReplyNoteList({
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
 
-  useEffect(() => {
-    const pk = event.pubkey
-    if (!pk) return
-    let cancelled = false
-    void (async () => {
-      const ids = await resolveAttestedPaymentIdSet(pk)
-      if (cancelled) return
-      setAttestedPaymentIds(ids)
-      const relayHints = threadRelayUrlsRef.current.length
-        ? threadRelayUrlsRef.current
-        : browsingRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean)
-      const targets = await hydrateAttestedSuperchatTargets(ids, relayHints)
-      if (cancelled) return
-      if (targets.length > 0) addReplies(targets)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [event.pubkey, event.id, addReplies, browsingRelayUrls])
-
-  useEffect(() => {
-    const handleAttestation = (data: Event) => {
-      const ce = data as CustomEvent<NEvent>
-      const evt = ce.detail
-      if (!evt || evt.kind !== ExtendedKind.PAYMENT_ATTESTATION) return
-      if (evt.pubkey.toLowerCase() !== event.pubkey.toLowerCase()) return
-      const targetId = getPaymentAttestationTargetId(evt)
-      if (!targetId) return
-      setAttestedPaymentIds((prev) => {
-        if (prev.has(targetId)) return prev
-        const next = new Set(prev)
-        next.add(targetId)
-        return next
-      })
-      void client
-        .fetchEvent(targetId, { relayHints: threadRelayUrlsRef.current })
-        .then((target) => {
-          if (target) addReplies([target])
-        })
-        .catch(() => {
-          /* optional */
-        })
-    }
-    client.addEventListener('newEvent', handleAttestation)
-    return () => client.removeEventListener('newEvent', handleAttestation)
-  }, [event.pubkey, addReplies])
-
-  const replies = useMemo(() => {
+  const replies: NEvent[] = useMemo(() => {
     const replyIdSet = new Set<string>()
     const replyEvents: NEvent[] = []
     const currentEventKey = isReplaceableEvent(event.kind)
@@ -564,8 +212,33 @@ function ReplyNoteList({
     if (iterationCount >= MAX_ITERATIONS) {
       logger.warn('ReplyNoteList: Maximum iterations reached, possible circular reference in replies')
     }
-    
 
+    const includeThreadReply = (evt: NEvent) => {
+      if (isPollVoteKind(evt)) return false
+      if (
+        shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+      ) {
+        return false
+      }
+      if (
+        rootInfo &&
+        !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromRepliesMap)
+      ) {
+        return false
+      }
+      return true
+    }
+
+    for (const evt of collectAttestedSuperchatsFromRepliesMap(
+      repliesMap,
+      attestedPaymentIds,
+      replyIdSet,
+      includeThreadReply
+    )) {
+      replyIdSet.add(evt.id)
+      replyEvents.push(evt)
+      threadWalkFromRepliesMap.set(evt.id.toLowerCase(), evt)
+    }
 
     const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
       replyEvents,
@@ -860,82 +533,10 @@ function ReplyNoteList({
   ])
 
   const [loading, setLoading] = useState<boolean>(false)
-  const [showCount, setShowCount] = useState(SHOW_COUNT)
+  const [showCount, setShowCount] = useState(THREAD_REPLY_SHOW_COUNT)
   const [highlightReplyId, setHighlightReplyId] = useState<string | undefined>(undefined)
   const replyRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const fetchRootEvent = async () => {
-      if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
-        const url = getArticleUrlFromCommentITags(event)
-        if (url) {
-          setRootInfo({ type: 'I', id: canonicalizeRssArticleUrl(url) })
-        }
-        return
-      }
-
-      let root: TRootInfo
-
-      if (isReplaceableEvent(event.kind)) {
-        root = {
-          type: 'A',
-          id: getReplaceableCoordinateFromEvent(event),
-          eventId: event.id,
-          pubkey: event.pubkey,
-          relay: client.getEventHint(event.id)
-        }
-      } else {
-        const eid = event.id
-        root = {
-          type: 'E',
-          id: /^[0-9a-f]{64}$/i.test(eid) ? eid.toLowerCase() : eid,
-          pubkey: event.pubkey
-        }
-      }
-      
-      const rootETag = getRootETag(event)
-      if (rootETag) {
-        const [, rootEventHexId, , , rootEventPubkey] = rootETag
-        if (rootEventHexId && rootEventPubkey) {
-          const hid = resolveDeclaredThreadRootEventHex(rootEventHexId)
-          const resolvedRootEvent = client.peekSessionCachedEvent(hid)
-          root = {
-            type: 'E',
-            id: /^[0-9a-f]{64}$/i.test(hid) ? hid.toLowerCase() : hid,
-            pubkey: resolvedRootEvent?.pubkey ?? rootEventPubkey
-          }
-        } else {
-          const rootEventId = generateBech32IdFromETag(rootETag)
-          if (rootEventId) {
-            const rootEvent = await eventService.fetchEvent(rootEventId)
-            if (rootEvent) {
-              const rid = resolveDeclaredThreadRootEventHex(rootEvent.id)
-              const resolvedRootEvent = client.peekSessionCachedEvent(rid) ?? rootEvent
-              root = {
-                type: 'E',
-                id: /^[0-9a-f]{64}$/i.test(rid) ? rid.toLowerCase() : rid,
-                pubkey: resolvedRootEvent.pubkey
-              }
-            }
-          }
-        }
-      } else if (event.kind === ExtendedKind.COMMENT) {
-        const rootATag = getRootATag(event)
-        if (rootATag) {
-          const [, coordinate, relay] = rootATag
-          const [, pubkey] = coordinate.split(':')
-          root = { type: 'A', id: coordinate, eventId: event.id, pubkey, relay }
-        }
-        const rootArticleUrl = getArticleUrlFromCommentITags(event)
-        if (rootArticleUrl) {
-          root = { type: 'I', id: canonicalizeRssArticleUrl(rootArticleUrl) }
-        }
-      }
-      setRootInfo(root)
-    }
-    fetchRootEvent()
-  }, [event])
 
   /** When stats saw a URL-thread reply on relays we didn't REQ in the reply list, fetch by id so count matches list. */
   const rssStatsHydratedReplyIdsRef = useRef<Set<string>>(new Set())
@@ -1121,14 +722,8 @@ function ReplyNoteList({
     }
   }, [rootInfo, event, onNewReply, isDiscussionRoot])
 
-  const replyFetchGenRef = useRef(0)
-
   useEffect(() => {
     if (!rootInfo) return
-    // Hidden stack pages pass a numeric index that differs from the top panel's currentIndex.
-    // When index is omitted (edge routes), still fetch so replies are not stuck empty.
-    if (index !== undefined && currentIndex !== index) return
-
     const fetchGeneration = ++replyFetchGenRef.current
 
     const init = async () => {
@@ -1204,7 +799,7 @@ function ReplyNoteList({
           const filters = buildThreadInteractionFilters({
             root: rootInfo,
             opEventKind: event.kind,
-            limit: LIMIT
+            limit: THREAD_REPLY_LIMIT
           })
 
           const relayUrlsForThreadReq = sanitizeRelayUrlsForFetch(
@@ -1233,7 +828,7 @@ function ReplyNoteList({
           const superchatFilters = buildThreadSuperchatPriorityFilters({
             root: rootInfo,
             opEventKind: event.kind,
-            limit: LIMIT
+            limit: THREAD_REPLY_LIMIT
           })
           if (superchatFilters.length > 0) {
             void queryService
@@ -1251,20 +846,27 @@ function ReplyNoteList({
 
           const attestationTask = recipientPubkey
             ? fetchPaymentAttestationsForRecipient(recipientPubkey, relayUrlsForThreadReq, {
-                foreground: statsForeground
+                foreground: true
               })
             : Promise.resolve([] as NEvent[])
 
-          const [allReplies, relayAttestations] = await Promise.all([
-            queryService.fetchEvents(relayUrlsForThreadReq, filters, {
-              onevent: streamThreadReply,
-              foreground: true,
-              firstRelayResultGraceMs: 900,
-              globalTimeout: 12_000,
-              relayOpSource: 'ReplyNoteList.thread'
-            }),
-            attestationTask
-          ])
+          void attestationTask.then((relayAttestations) => {
+            if (fetchGeneration !== replyFetchGenRef.current) return
+            void applyAttestedSuperchatWave(
+              relayAttestations,
+              relayUrlsForThreadReq,
+              fetchGeneration,
+              true
+            )
+          })
+
+          const allReplies = await queryService.fetchEvents(relayUrlsForThreadReq, filters, {
+            onevent: streamThreadReply,
+            foreground: true,
+            firstRelayResultGraceMs: 900,
+            globalTimeout: 12_000,
+            relayOpSource: 'ReplyNoteList.thread'
+          })
 
           if (fetchGeneration !== replyFetchGenRef.current) return
 
@@ -1302,23 +904,6 @@ function ReplyNoteList({
           }
           const repliesForStatsPrime = mergedForUi
           addReplies(mergedForUi)
-
-          if (recipientPubkey) {
-            void resolveAttestedPaymentIdSet(recipientPubkey, relayAttestations)
-              .then(async (attestedIds) => {
-                if (fetchGeneration !== replyFetchGenRef.current) return
-                setAttestedPaymentIds(attestedIds)
-                const targets = await hydrateAttestedSuperchatTargets(
-                  attestedIds,
-                  relayUrlsForThreadReq
-                )
-                if (fetchGeneration !== replyFetchGenRef.current) return
-                if (targets.length > 0) addReplies(targets)
-              })
-              .catch(() => {
-                /* attestations optional */
-              })
-          }
 
           const statsBatch = mergedCachedReplies !== null && mergedCachedReplies.length > 0 ? mergedCachedReplies : regularReplies
           if (statsBatch.length > 0) {
@@ -1373,7 +958,7 @@ function ReplyNoteList({
               for (let off = 0; off < parentIds.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
                 const idChunk = parentIds.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
                 const nestedFilters: Filter[] = [
-                  { '#e': idChunk, kinds: commentKinds, limit: LIMIT }
+                  { '#e': idChunk, kinds: commentKinds, limit: THREAD_REPLY_LIMIT }
                 ]
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
@@ -1440,11 +1025,11 @@ function ReplyNoteList({
               for (let off = 0; off < parentIdsNested.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
                 const idChunk = parentIdsNested.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
                 const nestedFilters: Filter[] = [
-                  { '#e': idChunk, kinds: commentKindsNested, limit: LIMIT },
+                  { '#e': idChunk, kinds: commentKindsNested, limit: THREAD_REPLY_LIMIT },
                   {
                     '#E': idChunk,
                     kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
-                    limit: LIMIT
+                    limit: THREAD_REPLY_LIMIT
                   }
                 ]
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
@@ -1490,8 +1075,6 @@ function ReplyNoteList({
     init()
   }, [
     rootInfo,
-    currentIndex,
-    index,
     userPubkey,
     event.id,
     event.kind,
@@ -1503,7 +1086,8 @@ function ReplyNoteList({
     mutePubkeySet,
     hideContentMentioningMutedUsers,
     isDiscussionRoot,
-    statsForeground
+    statsForeground,
+    applyAttestedSuperchatWave
   ])
 
   useEffect(() => {
@@ -1515,7 +1099,7 @@ function ReplyNoteList({
 
     const observerInstance = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && showCount < mergedFeed.length) {
-        setShowCount((prev) => prev + SHOW_COUNT)
+        setShowCount((prev) => prev + THREAD_REPLY_SHOW_COUNT)
       }
     }, options)
 
@@ -1567,7 +1151,7 @@ function ReplyNoteList({
       }
       const isQuote = quoteUiIdSet.has(item.id)
       // Attested superchats are public payment records — always show when they passed mute filters.
-      if (item.kind === kinds.Zap || item.kind === ExtendedKind.PAYMENT_NOTIFICATION) return true
+      if (isSuperchatKind(item.kind)) return true
       // Backlink rows (quotes, highlights, …): show even when author is not in the trust list.
       if (isQuote) return true
       if (isTrustLoaded && hideUntrustedInteractions && !isUserTrusted(item.pubkey)) {

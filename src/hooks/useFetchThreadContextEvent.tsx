@@ -4,7 +4,7 @@ import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
-import { useReply } from '@/providers/ReplyProvider'
+import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { getNoteBech32Id, getParentETag, getRootETag } from '@/lib/event'
 import { buildThreadContextFetchRelayUrls } from '@/lib/thread-context-relays'
 import client, { eventService } from '@/services/client.service'
@@ -50,7 +50,7 @@ export function useFetchThreadContextEvent(
   const { pubkey: viewerPubkey } = useNostr()
   const { blockedRelays } = useFavoriteRelays()
   const { isEventDeleted } = useDeletedEvent()
-  const { addReplies } = useReply()
+  const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
   const [event, setEvent] = useState<Event | undefined>(initialEvent)
   const [isFetching, setIsFetching] = useState(!initialEvent)

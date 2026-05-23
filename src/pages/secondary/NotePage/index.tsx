@@ -52,6 +52,7 @@ import {
 } from '@/lib/document-meta'
 import NotFound from './NotFound'
 import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
+import { ThreadReplyProvider } from '@/providers/ThreadReplyProvider'
 
 // Helper function to get event type name (matching WebPreview)
 function getEventTypeName(kind: number): string {
@@ -515,7 +516,8 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   }
 
   return (
-    <ThreadProfileBatchProvider seedEvents={finalEvent ? [finalEvent] : []}>
+    <ThreadReplyProvider threadKey={finalEvent.id}>
+    <ThreadProfileBatchProvider seedEvents={[finalEvent]}>
     <SecondaryPageLayout
       ref={ref}
       index={index}
@@ -586,6 +588,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       </div>
     </SecondaryPageLayout>
     </ThreadProfileBatchProvider>
+    </ThreadReplyProvider>
   )
 })
 NotePage.displayName = 'NotePage'

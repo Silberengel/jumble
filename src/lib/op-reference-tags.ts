@@ -5,11 +5,11 @@ import {
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
+import { isSuperchatKind } from '@/lib/superchat'
 import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import type { Event } from 'nostr-tools'
-import { kinds } from 'nostr-tools'
 
 const REF_TAG_NAMES = new Set(['e', 'E', 'a', 'A', 'q', 'Q'])
 
@@ -35,7 +35,7 @@ export function eventReferencesThreadTarget(evt: Event, root: TThreadRootRef): b
         if (normalizeReplaceableCoordinateString(v) === coordNorm) return true
       }
     }
-    if (evt.kind === kinds.Zap) {
+    if (isSuperchatKind(evt.kind) && evt.kind !== ExtendedKind.PAYMENT_NOTIFICATION) {
       const zapped = getZapInfoFromEvent(evt)?.originalEventId
       if (zapped && /^[0-9a-f]{64}$/i.test(zapped) && zapped.toLowerCase() === eventHex) return true
       const coord = getZapInfoFromEvent(evt)?.eventId
@@ -52,7 +52,7 @@ export function eventReferencesThreadTarget(evt: Event, root: TThreadRootRef): b
     if (!v) continue
     if (/^[0-9a-f]{64}$/i.test(v) && v.toLowerCase() === hex) return true
   }
-  if (evt.kind === kinds.Zap) {
+  if (isSuperchatKind(evt.kind) && evt.kind !== ExtendedKind.PAYMENT_NOTIFICATION) {
     const zapped = getZapInfoFromEvent(evt)?.originalEventId
     if (zapped && /^[0-9a-f]{64}$/i.test(zapped) && zapped.toLowerCase() === hex) return true
   }
