@@ -60,7 +60,7 @@ import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from
 import type { TProfile, TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { LoadingBar } from '../LoadingBar'
