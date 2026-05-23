@@ -7,7 +7,7 @@ import client from '@/services/client.service'
 import { TImetaInfo } from '@/types'
 import { LRUCache } from 'lru-cache'
 import { Event, getEventHash, kinds, nip19, UnsignedEvent } from 'nostr-tools'
-import { getPow } from 'nostr-tools/nip13'
+import { minePow as nip13MinePow } from 'nostr-tools/nip13'
 import { hexPubkeysEqual, normalizeHexPubkey } from './pubkey'
 import {
   generateBech32IdFromATag,
@@ -727,44 +727,27 @@ export function createFakeEvent(event: Partial<Event>): Event {
   }
 }
 
+function cloneUnsignedEvent(unsigned: UnsignedEvent): UnsignedEvent {
+  return {
+    kind: unsigned.kind,
+    content: unsigned.content,
+    tags: unsigned.tags.map((tag) => [...tag]),
+    created_at: unsigned.created_at,
+    pubkey: unsigned.pubkey
+  }
+}
+
+/** NIP-13 PoW via {@link nip13MinePow}; clones input so draft tags are not mutated. */
 export async function minePow(
   unsigned: UnsignedEvent,
   difficulty: number
 ): Promise<Omit<Event, 'sig'>> {
-  let count = 0
-
-  const event = unsigned as Omit<Event, 'sig'>
-  const tag = ['nonce', count.toString(), difficulty.toString()]
-
-  event.tags.push(tag)
-
+  const draft = cloneUnsignedEvent(unsigned)
   return new Promise((resolve) => {
-    const mine = () => {
-      let iterations = 0
-
-      while (iterations < 1000) {
-        const now = Math.floor(new Date().getTime() / 1000)
-
-        if (now !== event.created_at) {
-          count = 0
-          event.created_at = now
-        }
-
-        tag[1] = (++count).toString()
-        event.id = getEventHash(event)
-
-        if (getPow(event.id) >= difficulty) {
-          resolve(event)
-          return
-        }
-
-        iterations++
-      }
-
-      setTimeout(mine, 0)
-    }
-
-    mine()
+    // Yield once so posting UI can paint before the synchronous mine loop runs.
+    setTimeout(() => {
+      resolve(nip13MinePow(draft, difficulty))
+    }, 0)
   })
 }
 
