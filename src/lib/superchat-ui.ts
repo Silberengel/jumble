@@ -32,11 +32,18 @@ export const superchatLightningAccentClass = 'text-amber-600 dark:text-yellow-40
 
 /**
  * Superchat / zap comment body (thread + profile wall).
- * MarkdownArticle uses `div[role="paragraph"]`, not `<p>`; sizes must not inherit parent `text-sm`.
+ * Left border carries emphasis; body matches normal note text (MarkdownArticle uses `role="paragraph"`).
  */
 export const superchatCommentBodyClass =
   'border-l-[3px] border-amber-700 pl-3.5 dark:border-amber-300 ' +
-  'max-w-none text-[1.3125rem] font-medium leading-snug text-foreground ' +
-  '[&_[role=paragraph]]:text-[1.3125rem] [&_[role=paragraph]]:font-medium [&_[role=paragraph]]:leading-snug ' +
-  '[&_p]:text-[1.3125rem] [&_p]:font-medium [&_p]:leading-snug ' +
-  'prose-p:text-[1.3125rem] prose-p:font-medium prose-p:leading-snug'
+  'max-w-none text-base font-normal leading-relaxed text-foreground ' +
+  '[&_[role=paragraph]]:text-base [&_[role=paragraph]]:font-normal [&_[role=paragraph]]:leading-relaxed ' +
+  '[&_p]:text-base [&_p]:font-normal [&_p]:leading-relaxed ' +
+  'prose-p:text-base prose-p:font-normal prose-p:leading-relaxed'
+
+/** Payment method chip + “Superchat” label row (inline with `text-sm` meta). */
+export const superchatChromeRowClass = 'text-sm'
+
+export const superchatChromePaymentChipClass = 'shrink-0 px-1.5 py-0.5'
+
+export const superchatChromePaymentIconClass = 'size-4'

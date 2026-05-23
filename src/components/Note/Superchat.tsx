@@ -5,7 +5,12 @@ import { formatAmount } from '@/lib/lightning'
 import { parsePaytoTagType } from '@/lib/payto'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getPaymentNotificationInfo, getSuperchatReferenceFetchId } from '@/lib/superchat'
-import { superchatTitleClass } from '@/lib/superchat-ui'
+import {
+  superchatChromePaymentChipClass,
+  superchatChromePaymentIconClass,
+  superchatChromeRowClass,
+  superchatTitleClass
+} from '@/lib/superchat-ui'
 import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
@@ -137,12 +142,12 @@ export default function Superchat({
             <>
               <SuperchatPaymentMethodLabel
                 paytoType={paytoType}
-                className="px-2.5 py-1.5 text-lg"
-                imgClassName="size-5"
+                className={superchatChromePaymentChipClass}
+                imgClassName={superchatChromePaymentIconClass}
               />
-              <span className={cn('text-xl', superchatTitleClass)}>{t('Superchat')}</span>
+              <span className={cn(superchatChromeRowClass, superchatTitleClass)}>{t('Superchat')}</span>
               {showAmount ? (
-                <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
+                <span className="text-sm font-bold tabular-nums tracking-tight text-foreground">
                   {formatAmount(amountSats)} {t('sats')}
                 </span>
               ) : null}
@@ -151,11 +156,11 @@ export default function Superchat({
             <>
               <SuperchatPaymentMethodLabel
                 paytoType={paytoType}
-                className="px-2.5 py-1.5 text-lg"
-                imgClassName="size-5"
+                className={superchatChromePaymentChipClass}
+                imgClassName={superchatChromePaymentIconClass}
               />
               {showAmount ? (
-                <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
+                <span className="text-sm font-bold tabular-nums tracking-tight text-foreground">
                   {formatAmount(amountSats)} {t('sats')}
                 </span>
               ) : null}
