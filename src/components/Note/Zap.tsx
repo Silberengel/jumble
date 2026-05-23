@@ -183,10 +183,10 @@ export default function Zap({
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
-      {!isProfileWall ? (
+      {isNotification ? (
         <TurnIntoSuperchatButton
           event={event}
-          prominent={isNotification}
+          prominent
           attestationRecipientPubkey={attestationRecipientPubkey}
           className="mt-3"
         />

@@ -2267,22 +2267,25 @@ class ClientService extends EventTarget {
 
     add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
 
-    const [timelineRows, archiveRows, publicationRows, paymentSuperchatRows] = await Promise.all([
+    const [timelineRows, paymentSuperchatRows] = await Promise.all([
       this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[]),
-      indexedDb
-        .scanEventArchiveByFilters(filters, { maxRowsScanned, maxMatches })
-        .catch(() => [] as NEvent[]),
-      indexedDb
-        .scanPublicationEventsByFilters(filters, { maxRowsScanned: Math.min(maxRowsScanned, 16_000), maxMatches })
-        .catch(() => [] as NEvent[]),
       indexedDb
         .getPaymentSuperchatEventsMatchingFilters(filters, maxMatches)
         .catch(() => [] as NEvent[])
     ])
     add(timelineRows)
+    add(paymentSuperchatRows)
+
+    const [archiveRows, publicationRows] = await Promise.all([
+      indexedDb
+        .scanEventArchiveByFilters(filters, { maxRowsScanned, maxMatches })
+        .catch(() => [] as NEvent[]),
+      indexedDb
+        .scanPublicationEventsByFilters(filters, { maxRowsScanned: Math.min(maxRowsScanned, 16_000), maxMatches })
+        .catch(() => [] as NEvent[])
+    ])
     add(archiveRows)
     add(publicationRows)
-    add(paymentSuperchatRows)
 
     return [...byId.values()]
       .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))

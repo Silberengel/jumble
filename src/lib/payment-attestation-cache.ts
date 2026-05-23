@@ -192,10 +192,6 @@ export async function refreshPaymentAttestationFromRelays(
   const cached = peekCachedPaymentAttestation(targetEventId, recipientPubkey)
   if (cached) return cached
 
-  if (isLocallyMarkedAttested(recipientPubkey, targetEventId)) {
-    return undefined
-  }
-
   const key = paymentAttestationCacheKey(targetEventId, recipientPubkey)
   let inflight = relayFetchByTargetKey.get(key)
   if (!inflight) {

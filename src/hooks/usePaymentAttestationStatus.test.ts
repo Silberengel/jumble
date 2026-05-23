@@ -1,6 +1,10 @@
 import { ExtendedKind } from '@/constants'
+import {
+  markLocalAttestationTarget,
+  rememberPaymentAttestation
+} from '@/lib/payment-attestation-cache'
 import { describe, expect, it } from 'vitest'
-import { isPaymentAttestationForTarget } from './usePaymentAttestationStatus'
+import { isPaymentAttestationForTarget, readAttestedFromLocalSources } from './usePaymentAttestationStatus'
 import type { Event } from 'nostr-tools'
 
 const recipient = 'a'.repeat(64)
@@ -18,6 +22,24 @@ function attestationEvent(overrides: Partial<Event> = {}): Event {
     ...overrides
   }
 }
+
+describe('readAttestedFromLocalSources', () => {
+  it('returns attested when the in-memory cache has a match', () => {
+    const attestation = attestationEvent()
+    rememberPaymentAttestation(targetId, recipient, attestation)
+    const result = readAttestedFromLocalSources(targetId, recipient)
+    expect(result.attested).toBe(true)
+    expect(result.attestationEvent?.id).toBe(attestation.id)
+  })
+
+  it('returns attested when durable local storage marks the target', () => {
+    const otherTargetId = 'd'.repeat(64)
+    markLocalAttestationTarget(recipient, otherTargetId)
+    const result = readAttestedFromLocalSources(otherTargetId, recipient)
+    expect(result.attested).toBe(true)
+    expect(result.attestationEvent).toBeNull()
+  })
+})
 
 describe('isPaymentAttestationForTarget', () => {
   it('accepts a matching kind 9741 attestation', () => {

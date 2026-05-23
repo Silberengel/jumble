@@ -221,6 +221,7 @@ export default {
     "Invalid superchat": "Invalid superchat",
     "Turn this into a superchat!": "Turn this into a superchat!",
     "Superchat attested": "Superchat attested",
+    "Confirmed by recipient": "Confirmed by recipient",
     "Failed to attest superchat": "Failed to attest superchat: {{error}}",
     "Superchat thread": "View thread",
     "Superchat profile": "View profile",

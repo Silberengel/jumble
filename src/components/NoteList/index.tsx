@@ -602,6 +602,21 @@ function tightestSinceFromSpellFilters(shardFilters: Filter[]): number | undefin
   return sinceCandidates.length > 0 ? Math.max(...sinceCandidates) : undefined
 }
 
+/** `#p` mention filters (notifications spell) — used for fast IndexedDB payment-notification warm-up. */
+function recipientPubkeysFromSpellFilters(shardFilters: Filter[]): string[] {
+  const out = new Set<string>()
+  for (const f of shardFilters) {
+    const pTags = f['#p']
+    if (!Array.isArray(pTags)) continue
+    for (const pk of pTags) {
+      if (typeof pk !== 'string') continue
+      const norm = pk.trim().toLowerCase()
+      if (/^[0-9a-f]{64}$/.test(norm)) out.add(norm)
+    }
+  }
+  return [...out]
+}
+
 /** Union of `filter.kinds` across mapped REQ shards; empty if any shard omits kinds (caller should not use fallback). */
 function filterEvsToMappedTimelineReqKinds(
   evs: Event[],
@@ -2571,6 +2586,44 @@ const NoteList = forwardRef(
                     urls: string[]
                     filter: TSubRequestFilter
                   }>
+
+                  const mergeSpellLocalDiskLayer = (incoming: Event[], variant: string) => {
+                    if (!effectActive || timelineEffectStale()) return
+                    const narrowed = narrowLiveBatch(incoming)
+                    if (narrowed.length === 0) return
+                    const merged = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById(spellLocalMergeBase, narrowed, eventCapEarly, areAlgoRelays)
+                    )
+                    if (merged.length === 0) return
+                    spellLocalMergeBase = merged
+                    timelineMergeBootstrapRef.current = merged.slice()
+                    setEvents(merged)
+                    lastEventsForTimelinePrefetchRef.current = merged
+                    setNewEvents([])
+                    setShowCount(revealBatchSize ?? SHOW_COUNT)
+                    setLoading(false)
+                    feedPaintRelayPendingRef.current = true
+                    feedPaintRelayMetaRef.current = { variant, mergedCount: merged.length }
+                    setFeedEmptyToastGateTick((n) => n + 1)
+                    setFeedTimelineEmptyUiReady(true)
+                  }
+
+                  const mentionRecipients = recipientPubkeysFromSpellFilters(shardFilters)
+                  if (mentionRecipients.length === 1) {
+                    try {
+                      const paymentNotifications = await indexedDb.getPaymentNotificationsForRecipient(
+                        mentionRecipients[0]!,
+                        localLayerCap
+                      )
+                      mergeSpellLocalDiskLayer(
+                        paymentNotifications.filter(matchesSpellLocal),
+                        'spell_payment_notifications_idb'
+                      )
+                    } catch {
+                      /* best-effort */
+                    }
+                  }
+
                   const [diskRaw, filterAwareLocalRaw, fromPub, fromArch] = await Promise.all([
                     client.getTimelineDiskSnapshotEvents(filterAwareDiskReq),
                     client.getLocalFeedEvents(filterAwareDiskReq, {

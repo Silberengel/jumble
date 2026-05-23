@@ -84,7 +84,7 @@ function TurnIntoSuperchatButtonInner({
           className
         )}
       >
-        {t('Superchat attested')}
+        {t('Confirmed by recipient')}
       </p>
     )
   }
