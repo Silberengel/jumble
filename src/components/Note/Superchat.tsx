@@ -1,6 +1,7 @@
 import { useFetchEvent } from '@/hooks'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
 import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
+import { formatAmount } from '@/lib/lightning'
 import { parsePaytoTagType } from '@/lib/payto'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getPaymentNotificationInfo, getSuperchatReferenceFetchId } from '@/lib/superchat'
@@ -61,11 +62,12 @@ export default function Superchat({
     )
   }
 
-  const { senderPubkey, recipientPubkey, comment } = info
+  const { senderPubkey, recipientPubkey, comment, amountSats } = info
   const { attested } = usePaymentAttestationStatus(event, recipientPubkey)
   const hasThreadTarget = Boolean(targetEvent || referencedFetchId)
   const isNotification = variant === 'notification'
   const isProfileWall = variant === 'profileWall'
+  const showAmount = isNotification && amountSats > 0
   const showAsSuperchat = isProfileWall || attested
   const hasTarget = isNotification && (hasThreadTarget || Boolean(recipientPubkey))
   const hasMetaLine =
@@ -82,7 +84,8 @@ export default function Superchat({
   }
 
   return (
-    <div className={cn('text-sm text-muted-foreground', className)}>
+    <div className={cn('min-w-0', className)}>
+      <div className="text-sm text-muted-foreground">
       {hasMetaLine ? (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           {isProfileWall ? (
@@ -95,7 +98,6 @@ export default function Superchat({
               />
               <SuperchatPaymentMethodLabel
                 paytoType={paytoType}
-                iconOnly
                 className="shrink-0"
                 imgClassName="size-5"
               />
@@ -139,26 +141,41 @@ export default function Superchat({
                 imgClassName="size-5"
               />
               <span className={cn('text-xl', superchatTitleClass)}>{t('Superchat')}</span>
+              {showAmount ? (
+                <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
+                  {formatAmount(amountSats)} {t('sats')}
+                </span>
+              ) : null}
             </>
           ) : (
-            <SuperchatPaymentMethodLabel
-              paytoType={paytoType}
-              className="px-2.5 py-1.5 text-lg"
-              imgClassName="size-5"
-            />
+            <>
+              <SuperchatPaymentMethodLabel
+                paytoType={paytoType}
+                className="px-2.5 py-1.5 text-lg"
+                imgClassName="size-5"
+              />
+              {showAmount ? (
+                <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
+                  {formatAmount(amountSats)} {t('sats')}
+                </span>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
+      </div>
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
       {isNotification ? (
-        <TurnIntoSuperchatButton
-          event={event}
-          prominent
-          attestationRecipientPubkey={recipientPubkey}
-          className="mt-3"
-        />
+        <div className="text-sm text-muted-foreground">
+          <TurnIntoSuperchatButton
+            event={event}
+            prominent
+            attestationRecipientPubkey={recipientPubkey}
+            className="mt-3"
+          />
+        </div>
       ) : null}
     </div>
   )

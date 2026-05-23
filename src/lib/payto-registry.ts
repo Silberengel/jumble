@@ -156,6 +156,15 @@ export function getPaytoIconChar(type: string): string | null {
   return getPaytoTypeRecord(type)?.symbol ?? null
 }
 
+/** True when {@link PaytoTypeIcon} renders lightning, logo, or symbol — not the unknown fallback. */
+export function paytoTypeHasDisplayIcon(type: string): boolean {
+  const canonical = getCanonicalPaytoType(type)
+  if (isLightningPaytoType(canonical)) return true
+  if (getPaytoLogoPath(canonical)) return true
+  if (getPaytoIconChar(canonical) != null) return true
+  return false
+}
+
 export function isLightningPaytoType(type: string): boolean {
   const canonical = getCanonicalPaytoType(type)
   return canonical === 'lightning' || canonical === 'bip353'

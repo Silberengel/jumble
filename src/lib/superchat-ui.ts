@@ -29,3 +29,14 @@ export const superchatSatsLeadingHighlightClass = 'text-amber-600 dark:text-yell
 
 /** Lightning bolt accent (zap address rows, payto icons). */
 export const superchatLightningAccentClass = 'text-amber-600 dark:text-yellow-400'
+
+/**
+ * Superchat / zap comment body (thread + profile wall).
+ * MarkdownArticle uses `div[role="paragraph"]`, not `<p>`; sizes must not inherit parent `text-sm`.
+ */
+export const superchatCommentBodyClass =
+  'border-l-[3px] border-amber-700 pl-3.5 dark:border-amber-300 ' +
+  'max-w-none text-[1.3125rem] font-medium leading-snug text-foreground ' +
+  '[&_[role=paragraph]]:text-[1.3125rem] [&_[role=paragraph]]:font-medium [&_[role=paragraph]]:leading-snug ' +
+  '[&_p]:text-[1.3125rem] [&_p]:font-medium [&_p]:leading-snug ' +
+  'prose-p:text-[1.3125rem] prose-p:font-medium prose-p:leading-snug'

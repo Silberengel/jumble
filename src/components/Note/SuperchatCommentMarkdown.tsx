@@ -1,7 +1,8 @@
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
+import { superchatCommentBodyClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
+import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 
 export default function SuperchatCommentMarkdown({
   event,
@@ -23,8 +24,7 @@ export default function SuperchatCommentMarkdown({
       hideMetadata
       lazyMedia={false}
       className={cn(
-        'prose-xl max-w-none text-foreground',
-        '[&_p]:text-[1.6875rem] [&_p]:font-semibold [&_p]:leading-snug [&_p]:text-foreground',
+        superchatCommentBodyClass,
         '[&_a]:text-[hsl(var(--uri-link))] [&_a:hover]:text-[hsl(var(--primary))]',
         '[&_strong]:text-foreground [&_em]:text-foreground',
         className

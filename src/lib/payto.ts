@@ -11,6 +11,7 @@ export {
   getPaytoEditorTypeLabel,
   getPaytoIconChar,
   getPaytoLogoPath,
+  paytoTypeHasDisplayIcon,
   getPaytoLogoUrl,
   getPaytoTypeInfo,
   isKnownPaytoType,

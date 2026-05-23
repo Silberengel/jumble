@@ -90,6 +90,7 @@ export default function Zap({
 
   const isNotification = variant === 'notification'
   const isProfileWall = variant === 'profileWall'
+  const showAmount = isNotification && amount != null && amount > 0
   const showAsSuperchat = isProfileWall || attested
   const hasMetaLine =
     isProfileWall ||
@@ -97,7 +98,8 @@ export default function Zap({
       ((recipientPubkey && recipientPubkey !== senderPubkey) || isEventZap || isProfileZap))
 
   return (
-    <div className={cn('text-sm text-muted-foreground', className)}>
+    <div className={cn('min-w-0', className)}>
+      <div className="text-sm text-muted-foreground">
       {hasMetaLine ? (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           {isProfileWall ? (
@@ -108,14 +110,8 @@ export default function Zap({
                 showAt
                 className="min-w-0 font-medium text-foreground/85 hover:text-foreground"
               />
-              {amount != null ? (
-                <span className="shrink-0 text-sm font-bold tabular-nums tracking-tight text-foreground">
-                  {formatAmount(amount)} {t('sats')}
-                </span>
-              ) : null}
               <SuperchatPaymentMethodLabel
                 paytoType={paytoType}
-                iconOnly
                 className="shrink-0"
                 imgClassName="size-5"
               />
@@ -163,7 +159,7 @@ export default function Zap({
                 imgClassName="size-5"
               />
               <span className={cn('text-xl', superchatTitleClass)}>{t('Superchat')}</span>
-              {amount != null ? (
+              {showAmount ? (
                 <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
                   {formatAmount(amount)} {t('sats')}
                 </span>
@@ -173,7 +169,7 @@ export default function Zap({
             <>
               <ZapIcon className="size-5 shrink-0 text-primary" aria-hidden />
               <span className="text-lg font-semibold text-foreground">{t('Zap')}</span>
-              {amount != null ? (
+              {showAmount ? (
                 <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
                   {formatAmount(amount)} {t('sats')}
                 </span>
@@ -182,16 +178,19 @@ export default function Zap({
           )}
         </div>
       ) : null}
+      </div>
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
       {isNotification ? (
-        <TurnIntoSuperchatButton
-          event={event}
-          prominent
-          attestationRecipientPubkey={attestationRecipientPubkey}
-          className="mt-3"
-        />
+        <div className="text-sm text-muted-foreground">
+          <TurnIntoSuperchatButton
+            event={event}
+            prominent
+            attestationRecipientPubkey={attestationRecipientPubkey}
+            className="mt-3"
+          />
+        </div>
       ) : null}
     </div>
   )
