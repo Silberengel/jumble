@@ -1,10 +1,7 @@
 import {
-  DEFAULT_FAVORITE_RELAYS,
-  FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
   READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS
 } from '@/constants'
-import { isMetadataPolicyCuratedRelay } from '@/lib/metadata-policy-curated-relays'
+import { isMetadataPolicyProfileRelay } from '@/lib/metadata-policy-curated-relays'
 import {
   filterAggrNostrLandUnlessViewerEligible,
   getViewerRelayStackNostrLandAggrEligible,
@@ -47,29 +44,7 @@ export function isMetadataRelaysOnlyBypassActive(): boolean {
   return metadataRelaysOnlyBypassDepth > 0
 }
 
-let metadataPolicyBootstrapBlockedKeys: ReadonlySet<string> | null = null
-
-function getMetadataPolicyBootstrapBlockedKeys(): ReadonlySet<string> {
-  if (!metadataPolicyBootstrapBlockedKeys) {
-    const out = new Set<string>()
-    for (const list of [FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, DEFAULT_FAVORITE_RELAYS]) {
-      for (const u of list) {
-        const key = relayUrlKey(u)
-        if (key) out.add(key)
-      }
-    }
-    metadataPolicyBootstrapBlockedKeys = out
-  }
-  return metadataPolicyBootstrapBlockedKeys
-}
-
-/** True when URL is only a generic bootstrap mirror (FAST_READ / FAST_WRITE / default favorites). */
-export function isMetadataPolicyBootstrapRelay(url: string): boolean {
-  const key = relayUrlKey(url)
-  return key.length > 0 && getMetadataPolicyBootstrapBlockedKeys().has(key)
-}
-
-/** Logged-in viewer with metadata-only mode: block FAST_READ widening, keep curated stacks. */
+/** Logged-in viewer with metadata-only mode: only connect reads to the viewer's relay lists. */
 export function isMetadataRelaysOnlyPolicyActive(): boolean {
   return (
     restrictConnectionsToMetadataRelaysOnly &&
@@ -84,14 +59,13 @@ export function isRelayUrlInViewerMetadataLists(url: string): boolean {
 }
 
 /**
- * Under metadata-only policy: viewer lists, Nostr Land aggr, and {@link isMetadataPolicyCuratedRelay}
- * (profile / read-only / searchable / document stacks). Blocks ad-hoc relays and FAST_READ bootstrap only.
+ * Under metadata-only policy: viewer NIP-65 / favorites / cache / HTTP lists, plus aggr.nostr.land when
+ * wss://nostr.land is listed, plus {@link PROFILE_RELAY_URLS} for kind-0 / profile hydration.
  */
 export function isRelayAllowedUnderMetadataOnlyPolicy(url: string): boolean {
   if (isRelayUrlInViewerMetadataLists(url)) return true
   if (getViewerRelayStackNostrLandAggrEligible() && relayUrlIsAggrNostrLand(url)) return true
-  if (isMetadataPolicyCuratedRelay(url)) return true
-  if (isMetadataPolicyBootstrapRelay(url)) return false
+  if (isMetadataPolicyProfileRelay(url)) return true
   return false
 }
 

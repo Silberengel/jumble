@@ -17,6 +17,14 @@
     --bc-color-brand-button-text-dark: hsl(var(--primary-foreground));
   }
 
+  @media (min-width: 769px) {
+    html,
+    body,
+    #root {
+      height: 100%;
+    }
+  }
+
   input,
   textarea,
   button {

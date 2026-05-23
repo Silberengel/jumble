@@ -1054,8 +1054,8 @@ function MainContentArea({
   
   // flex + min-h-0 + min-w-0 so primary pages get a real height in flex parents and can shrink horizontally (double-pane).
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col w-full pr-2 py-2">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col w-full px-2 pt-3 pb-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg border border-border bg-card shadow-lg">
         {primaryNoteView ? (
           // Show note view with back button
           <div className="flex h-full min-h-0 min-w-0 w-full flex-col">
@@ -2432,12 +2432,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               }}
             >
             <NoteDrawerContext.Provider value={{ openDrawer, closeDrawer, isDrawerOpen: drawerOpen, drawerNoteId, drawerInitialEvent }}>
-            <div className="flex flex-col items-center bg-content-canvas">
+            <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-content-canvas">
               <div
-                className="flex h-[var(--vh)] w-full bg-content-canvas"
-                style={{
-                  maxWidth: '1920px'
-                }}
+                className="mx-auto flex h-full min-h-0 w-full max-w-[1920px] flex-1 bg-content-canvas"
               >
                 <Suspense fallback={null}>
                   <SidebarLazy />
@@ -2459,7 +2456,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                           />
                         </div>
                         {/* Right: secondary stack — max width so left pane keeps space on small desktops */}
-                        <div className="flex h-full min-h-0 w-[min(1042px,50vw)] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/25">
+                        <div className="flex h-full min-h-0 w-[min(1042px,50vw)] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/25 px-2 pt-3 pb-2">
                           {secondaryStack.length > 0 ? (
                             <TopSecondaryStackPane
                               item={secondaryStack[secondaryStack.length - 1]!}

@@ -42,6 +42,8 @@ import {
   isReadOnlyIndexerRelay,
   isReadOnlyRelayAllowedForViewer,
   isRelayConnectionAllowedForViewer,
+  isMetadataRelaysOnlyPolicyActive,
+  isRestrictConnectionsToMetadataRelaysOnly,
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 import {
@@ -631,6 +633,10 @@ class ClientService extends EventTarget {
       setViewerBlockedRelayUrls([])
       return
     }
+    /** Engage policy before any await so session hydrate cannot open PROFILE/FAST_WRITE stacks first. */
+    if (isRestrictConnectionsToMetadataRelaysOnly()) {
+      setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
+    }
     try {
       const blockedEvt = await indexedDb.getReplaceableEvent(pk, ExtendedKind.BLOCKED_RELAYS)
       setViewerBlockedRelayUrls(parseBlockedRelayUrlsFromEvent(blockedEvt ?? null))
@@ -665,10 +671,25 @@ class ClientService extends EventTarget {
     }
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
     syncViewerRelayStackNostrLandAggrEligible(urls)
+    this.closeMetadataPolicyDisallowedRelayConnections()
+  }
+
+  /** Drop pooled WebSocket connections that violate the metadata-only read policy. */
+  closeMetadataPolicyDisallowedRelayConnections(): void {
+    if (!isMetadataRelaysOnlyPolicyActive()) return
+    try {
+      const toClose = [...this.pool.listConnectionStatus().keys()].filter(
+        (url) => !isRelayConnectionAllowedForViewer(url)
+      )
+      if (toClose.length > 0) this.pool.close(toClose)
+    } catch {
+      // ignore
+    }
   }
 
   /** NIP-66: fetch relay discovery events (30166) in background to supplement search/NIP support. */
   private async fetchNip66RelayDiscovery(): Promise<void> {
+    if (isMetadataRelaysOnlyPolicyActive()) return
     try {
       const discoveryRelays = Array.from(new Set([...FAST_READ_RELAY_URLS, ...NIP66_DISCOVERY_RELAY_URLS]))
       const events = await this.queryService.query(

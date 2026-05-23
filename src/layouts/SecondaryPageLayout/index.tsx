@@ -180,7 +180,7 @@ function SecondaryPageTitlebar({
         hideBottomBorder={hideBottomBorder}
       >
         <ReadOnlySessionIndicator variant="titlebar" />
-        <div className="min-h-0 min-w-0 flex-1 h-full">{titlebar}</div>
+        <div className="min-w-0 flex-1">{titlebar}</div>
         {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
       </Titlebar>
     )

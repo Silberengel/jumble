@@ -21,6 +21,7 @@ export default function MetadataRelaysOnlySetting() {
     storage.setRestrictRelaysToMetadataLists(checked)
     setRestrictConnectionsToMetadataRelaysOnly(checked)
     client.interruptBackgroundQueries({ closePooledRelayConnections: true })
+    client.closeMetadataPolicyDisallowedRelayConnections()
   }
 
   return (
@@ -31,7 +32,7 @@ export default function MetadataRelaysOnlySetting() {
       </div>
       <div className="text-muted-foreground text-xs max-w-xl">
         {t(
-          'When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists (plus profile and search index relays). Publishing is unchanged. Relay explore and Search pages are exempt.'
+          'When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. Publishing is unchanged. Relay explore and Search pages are exempt.'
         )}
       </div>
     </div>

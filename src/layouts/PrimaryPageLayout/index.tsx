@@ -161,7 +161,7 @@ const PrimaryPageLayout = forwardRef(
         active={current === pageName && display && !frozen}
         scrollAreaRef={scrollAreaRef}
       >
-        <div className="relative flex h-full min-h-0 min-w-0 flex-col">
+        <div className="flex h-full min-h-0 min-w-0 flex-col">
           {hasTitlebarRow ? (
             <PrimaryPageTitlebar
               hideBottomBorder={hideTitlebarBottomBorder}
@@ -176,13 +176,7 @@ const PrimaryPageLayout = forwardRef(
           <div
             ref={scrollAreaRef}
             tabIndex={-1}
-            className={
-              subHeader
-                ? 'min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-auto'
-                : hasTitlebarRow
-                  ? 'absolute bottom-0 left-0 right-0 top-12 min-w-0 overflow-y-auto overflow-x-auto'
-                  : 'absolute bottom-0 left-0 right-0 top-0 min-w-0 overflow-y-auto overflow-x-auto'
-            }
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-auto"
           >
             {children}
             <div className="h-4" />
@@ -216,14 +210,13 @@ function PrimaryPageTitlebar({
   return (
     <Titlebar
       className={cn(
-        'py-1',
         isSmallScreen ? 'pl-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))]' : 'px-1'
       )}
       hideBottomBorder={hideBottomBorder}
     >
-      <div className="flex h-full w-full min-w-0 items-center gap-2">
+      <div className="flex w-full min-w-0 items-center gap-2">
         <ReadOnlySessionIndicator variant="titlebar" />
-        <div className="relative min-h-0 min-w-0 flex-1 h-full">{children}</div>
+        <div className="relative min-w-0 flex-1">{children}</div>
         {showTrailingActiveRelays ? <ActiveRelaysTitlebarButton /> : null}
       </div>
     </Titlebar>

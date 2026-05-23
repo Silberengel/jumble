@@ -50,7 +50,28 @@ export function isMetadataPolicyCuratedRelay(url: string): boolean {
   return key.length > 0 && getCuratedRelayKeySet().has(key)
 }
 
+let profileRelayKeySet: ReadonlySet<string> | null = null
+
+function getProfileRelayKeySet(): ReadonlySet<string> {
+  if (!profileRelayKeySet) {
+    const out = new Set<string>()
+    for (const u of PROFILE_RELAY_URLS) {
+      const key = relayKeyForCuratedSet(u)
+      if (key) out.add(key)
+    }
+    profileRelayKeySet = out
+  }
+  return profileRelayKeySet
+}
+
+/** {@link PROFILE_RELAY_URLS} — kind-0 / profile hydration mirrors allowed under metadata-only reads. */
+export function isMetadataPolicyProfileRelay(url: string): boolean {
+  const key = relayKeyForCuratedSet(url)
+  return key.length > 0 && getProfileRelayKeySet().has(key)
+}
+
 /** For tests: reset lazy-built key set after constant changes. */
 export function resetMetadataPolicyCuratedRelayKeysForTests(): void {
   curatedRelayKeySet = null
+  profileRelayKeySet = null
 }

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { syncViewportHeightCssVar } from '@/lib/viewport-height'
 import storage from '@/services/local-storage.service'
 import { TFontSize } from '@/types'
 
@@ -38,6 +39,7 @@ export function FontSizeProvider({ children }: { children: React.ReactNode }) {
     }
     
     root.style.setProperty('--content-font-size', sizes[fontSize])
+    requestAnimationFrame(() => syncViewportHeightCssVar())
   }, [fontSize])
 
   const setFontSize = (newFontSize: TFontSize) => {

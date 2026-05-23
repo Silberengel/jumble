@@ -14,22 +14,17 @@ import { initI18n } from './i18n'
 import { restoreSessionFeedSnapshotsAfterHardRefresh } from './services/session-feed-snapshot.service'
 import { installStaleBuildChunkRecovery } from './lib/stale-chunk-recovery'
 import { initPwaUpdate } from './lib/pwa-update'
+import { installViewportHeightListeners } from './lib/viewport-height'
 
 installStaleBuildChunkRecovery()
 initPwaUpdate()
+installViewportHeightListeners()
 
 declare global {
   interface Window {
     __RUNTIME_CONFIG__?: { NIP66_MONITOR_NPUB?: string; DESKTOP_DOWNLOAD_URL?: string }
   }
 }
-
-const setVh = () => {
-  document.documentElement.style.setProperty('--vh', `${window.innerHeight}px`)
-}
-window.addEventListener('resize', setVh)
-window.addEventListener('orientationchange', setVh)
-setVh()
 
 const SESSION_STORAGE_KEY = 'jumble:session'
 

@@ -67,7 +67,7 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   const subHeader = (
     <>
       {isSmallScreen ? <FavoriteRelaysActiveStripMobileBar /> : null}
-      <div className="w-full min-w-0 border-b border-border/80 bg-background px-3 py-2 sm:px-4">
+      <div className="w-full min-w-0 border-b border-border/80 bg-background px-3 py-2.5 sm:px-4 sm:py-3">
         <h1 className="app-chrome-title leading-tight tracking-tight">{feedPageTitle}</h1>
       </div>
       {homeSubHeader}

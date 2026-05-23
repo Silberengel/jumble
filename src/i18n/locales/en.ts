@@ -113,8 +113,8 @@ export default {
     "Relay Settings": "Relays and Storage Settings",
     "Relays and Storage Settings": "Relays and Storage Settings",
     "Only my relay lists": "Only my relay lists",
-    "When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists (plus profile and search index relays). Publishing is unchanged. Relay explore and Search pages are exempt.":
-      "When on, the app stops widening feeds to generic public read relays (FAST_READ) and random author or hint relays. Your relay lists, profile and search index relays, document relays, and aggr.nostr.land (with Nostr Land) still work. Publishing is unchanged. Relay explore and Search pages are exempt.",
+    "When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. Publishing is unchanged. Relay explore and Search pages are exempt.":
+      "When on, read connections stay on your relay lists plus the built-in profile index relays (profiles.nostr1.com, relay.damus.io, etc.). Other relays used for feeds, threads, or search are not contacted unless listed. Publishing is unchanged. Relay explore and Search pages are exempt.",
     "Relay set name": "Relay set name",
     "Add a new relay set": "Add a new relay set",
     Add: "Add",
