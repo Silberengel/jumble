@@ -6,7 +6,6 @@ import {
 } from '@/lib/event'
 import {
   getMoneroTipInfo,
-  getMoneroTipReferenceFetchId,
   getMoneroTipSortAmount,
   isMoneroTipKind
 } from '@/lib/monero-tip'
