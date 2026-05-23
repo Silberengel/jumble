@@ -31,7 +31,6 @@ export default function Superchat({
   variant?: SuperchatLayoutVariant
 }) {
   const { t } = useTranslation()
-  const { attested } = usePaymentAttestationStatus(event)
   const info = useMemo(() => getPaymentNotificationInfo(event), [event])
   const paytoType = useMemo(
     () => (info?.payto ? parsePaytoTagType(info.payto) : 'unknown'),
@@ -62,6 +61,7 @@ export default function Superchat({
   }
 
   const { senderPubkey, recipientPubkey, comment } = info
+  const { attested } = usePaymentAttestationStatus(event, recipientPubkey)
   const hasThreadTarget = Boolean(targetEvent || referencedFetchId)
   const isNotification = variant === 'notification'
   const isProfileWall = variant === 'profileWall'

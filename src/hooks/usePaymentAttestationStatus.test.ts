@@ -1,8 +1,5 @@
 import { ExtendedKind } from '@/constants'
-import {
-  markLocalAttestationTarget,
-  rememberPaymentAttestation
-} from '@/lib/payment-attestation-cache'
+import { rememberPaymentAttestation } from '@/lib/payment-attestation-cache'
 import { describe, expect, it } from 'vitest'
 import { isPaymentAttestationForTarget, readAttestedFromLocalSources } from './usePaymentAttestationStatus'
 import type { Event } from 'nostr-tools'
@@ -32,11 +29,10 @@ describe('readAttestedFromLocalSources', () => {
     expect(result.attestationEvent?.id).toBe(attestation.id)
   })
 
-  it('returns attested when durable local storage marks the target', () => {
+  it('does not treat durable local storage alone as verified attestation', () => {
     const otherTargetId = 'd'.repeat(64)
-    markLocalAttestationTarget(recipient, otherTargetId)
     const result = readAttestedFromLocalSources(otherTargetId, recipient)
-    expect(result.attested).toBe(true)
+    expect(result.attested).toBe(false)
     expect(result.attestationEvent).toBeNull()
   })
 })

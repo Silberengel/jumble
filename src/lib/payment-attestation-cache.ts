@@ -58,6 +58,27 @@ export function readKnownAttestedPaymentTargetsSync(recipientPubkey: string): Se
   return new Set(readLocalAttestedIds(recipientPubkey))
 }
 
+/** Drop durable local marks that are not backed by a cached kind 9741 attestation. */
+export function pruneUnverifiedLocalAttestationMarks(recipientPubkey: string): void {
+  const pk = normalizeHexPubkey(recipientPubkey)
+  if (!/^[0-9a-f]{64}$/.test(pk)) return
+  const local = readLocalAttestedIds(pk)
+  if (local.size === 0) return
+  const verified: string[] = []
+  for (const id of local) {
+    const cached = peekCachedPaymentAttestation(id, pk)
+    if (cached?.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+      verified.push(id)
+    }
+  }
+  if (verified.length === local.size) return
+  try {
+    localStorage.setItem(`${LOCAL_ATTESTED_KEY_PREFIX}${pk}`, JSON.stringify(verified))
+  } catch {
+    /* quota */
+  }
+}
+
 /** Attested payment target ids from local storage, IndexedDB, session, and optional relay batch. */
 export async function resolveAttestedPaymentIdSet(
   recipientPubkey: string,
@@ -66,7 +87,7 @@ export async function resolveAttestedPaymentIdSet(
   const pk = normalizeHexPubkey(recipientPubkey)
   if (!/^[0-9a-f]{64}$/.test(pk)) return new Set()
 
-  const out = new Set(readLocalAttestedIds(pk))
+  const out = new Set<string>()
   await hydrateAttestationsForAuthor(pk)
 
   const attestations: NostrEvent[] = []
@@ -93,6 +114,16 @@ export async function resolveAttestedPaymentIdSet(
   for (const id of buildAttestedPaymentIdSet(attestations, pk)) {
     out.add(id)
   }
+
+  // Keep durable local marks only when they match a verified attestation target.
+  for (const id of readLocalAttestedIds(pk)) {
+    if (out.has(id)) continue
+    const cached = peekCachedPaymentAttestation(id, pk)
+    if (cached && cached.kind === ExtendedKind.PAYMENT_ATTESTATION) {
+      out.add(id)
+    }
+  }
+
   return out
 }
 
@@ -147,6 +178,7 @@ export async function hydrateAttestationsForAuthor(authorPubkey: string): Promis
       for (const attestation of sessionHits) {
         rememberPaymentAttestationFromPublish(attestation)
       }
+      pruneUnverifiedLocalAttestationMarks(pk)
     })().finally(() => {
       if (authorHydrateByPubkey.get(pk) === inflight) {
         authorHydrateByPubkey.delete(pk)

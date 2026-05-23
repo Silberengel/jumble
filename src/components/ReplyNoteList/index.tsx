@@ -51,7 +51,6 @@ import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-li
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } from '@/lib/thread-interaction-req'
 import {
-  readKnownAttestedPaymentTargetsSync,
   resolveAttestedPaymentIdSet
 } from '@/lib/payment-attestation-cache'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
@@ -442,18 +441,6 @@ function ReplyNoteList({
     if (rootInfo?.type === 'I') out.push(rootInfo.id)
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
-
-  useLayoutEffect(() => {
-    const pk = event.pubkey
-    if (!pk) return
-    const syncIds = readKnownAttestedPaymentTargetsSync(pk)
-    if (syncIds.size === 0) return
-    setAttestedPaymentIds((prev) => {
-      const next = new Set(prev)
-      for (const id of syncIds) next.add(id)
-      return next.size === prev.size ? prev : next
-    })
-  }, [event.pubkey, event.id])
 
   useEffect(() => {
     const pk = event.pubkey

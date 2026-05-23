@@ -54,7 +54,6 @@ export default function Zap({
   }, [isEventZap, isProfileZap, targetEvent, zapInfo?.recipientPubkey])
 
   const paytoType = useMemo(() => getSuperchatPaytoType(event), [event])
-  const { attested } = usePaymentAttestationStatus(event)
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
@@ -76,6 +75,8 @@ export default function Zap({
   const { senderPubkey, recipientPubkey, amount, comment } = zapInfo
 
   const attestationRecipientPubkey = actualRecipientPubkey ?? recipientPubkey ?? null
+
+  const { attested } = usePaymentAttestationStatus(event, attestationRecipientPubkey)
 
   const openZapTarget = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
