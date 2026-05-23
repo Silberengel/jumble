@@ -30,7 +30,7 @@ export default function EventPowLabel({
       title={t('Proof of Work')}
     >
       <Pickaxe className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
-      {t('POW: difficulty {{difficulty}}', { difficulty })}
+      {t('POW {{difficulty}}', { difficulty })}
     </span>
   )
 }

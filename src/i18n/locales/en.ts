@@ -1368,7 +1368,7 @@ export default {
     "Submit Relay": "Submit Relay",
     Homepage: "Homepage",
     "Proof of Work (difficulty {{minPow}})": "Proof of Work (difficulty {{minPow}})",
-    "POW: difficulty {{difficulty}}": "POW: difficulty {{difficulty}}",
+    "POW {{difficulty}}": "POW {{difficulty}}",
     "via {{client}}": "via {{client}}",
     "Auto-load media": "Auto-load media",
     Always: "Always",

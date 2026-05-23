@@ -28,7 +28,7 @@ import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { Button } from '@/components/ui/button'
 
 /** Global calendar REQ: relays often cap; larger limit reduces “missing” older-published rows for this week. */
-const FETCH_LIMIT = 1200
+const FETCH_LIMIT = 400
 /** Supplementary `authors` REQ: community calls (e.g. Edufeed) may not appear in the global slice. */
 const FOLLOWING_CALENDAR_AUTHORS_CAP = 200
 const FOLLOWING_CALENDAR_AUTHORS_CHUNK = 80
@@ -37,7 +37,7 @@ const FOLLOWING_CALENDAR_CHUNK_LIMIT = 350
 const LIST_MAX_HEIGHT_PX = 240
 const SIDEBAR_CALENDAR_MAX_RELAYS = 24
 /** Merge session cache so events already loaded in feeds (but missed by this REQ) still appear. */
-const SESSION_CALENDAR_MERGE_CAP = 5000
+const SESSION_CALENDAR_MERGE_CAP = 1200
 
 export default function SidebarCalendarWeekWidget() {
   const { t } = useTranslation()

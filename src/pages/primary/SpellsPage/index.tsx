@@ -1108,6 +1108,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                   hideUntrustedNotes={
                     selectedFauxSpell === 'notifications' ? hideUntrustedNotifications : false
                   }
+                  showPaymentAttestationAction={selectedFauxSpell === 'notifications'}
                 />
               </div>
             </>

@@ -129,7 +129,7 @@ if (import.meta.env.DEV && import.meta.hot) {
 }
 const SHOW_COUNT = 36 // Initial visible-row quota (filtered); higher = more rows on first paint
 /** Extra visible-row quota each time the user reaches the bottom while draining an already-loaded timeline. */
-const REVEAL_BATCH_STEP = 96
+const REVEAL_BATCH_STEP = 64
 /**
  * One “load more” chains relay pages until at least this many **new** events (after kind filter + id de-dupe) are
  * collected, so sparse kind filters do not feel stuck at ~10 rows per scroll.
@@ -154,6 +154,8 @@ const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
 const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180
 /** When the scroll container is within this many px of the top, auto-merge pending live notes (see {@link NewNotesButton}). */
 const AUTO_MERGE_NEW_EVENTS_TOP_PX = 280
+/** Coalesce live `onNew` timeline updates to one React commit per frame burst. */
+const LIVE_ON_NEW_FLUSH_MS = 72
 
 function getNearestScrollableAncestor(node: HTMLElement | null): HTMLElement | null {
   if (!node) return null
@@ -761,7 +763,9 @@ const NoteList = forwardRef(
        * When set and the timeline is empty (after relays finish), show a link to Alexandria with a matching query
        * (hashtag / d-tag browse from {@link NormalFeed}).
        */
-      alexandriaEmptyUrl = null
+      alexandriaEmptyUrl = null,
+      /** Notifications feed: show attest-superchat bar on incoming payment cards. */
+      showPaymentAttestationAction = false
     }: {
       subRequests: TFeedSubRequest[]
       showKinds: number[]
@@ -824,6 +828,7 @@ const NoteList = forwardRef(
       relayAuthoritativeFeedOnly?: boolean
       /** Optional Alexandria `/events` URL when this feed’s timeline is empty (search / tag browse). */
       alexandriaEmptyUrl?: string | null
+      showPaymentAttestationAction?: boolean
     },
     ref
   ) => {
@@ -949,6 +954,18 @@ const NoteList = forwardRef(
     /** Dedupes layout-time pending sync so a new `events` array reference alone cannot loop setState. */
     const lastProfilePrefetchPubkeysKeyRef = useRef('')
     const clientFilteredVisibleCountRef = useRef(0)
+    const liveOnNewPendingRef = useRef<
+      Array<{ event: Event; route: 'profile' | 'home' | 'pending' }>
+    >([])
+    const liveOnNewFlushTimerRef = useRef<number | null>(null)
+    const liveOnNewFlushRef = useRef<() => void>(() => {})
+    const scheduleLiveOnNewFlush = useCallback(() => {
+      if (liveOnNewFlushTimerRef.current != null) return
+      liveOnNewFlushTimerRef.current = window.setTimeout(() => {
+        liveOnNewFlushTimerRef.current = null
+        liveOnNewFlushRef.current()
+      }, LIVE_ON_NEW_FLUSH_MS)
+    }, [])
 
     const noteFeedProfileContextValue = useMemo<NoteFeedProfileContextValue>(
       () => ({
@@ -2187,6 +2204,96 @@ const NoteList = forwardRef(
             eventMatchesSubRequestFilterWithWindow(event, filter as Filter)
           )
 
+        liveOnNewFlushRef.current = () => {
+          if (!effectActive) return
+          const batch = liveOnNewPendingRef.current.splice(0)
+          if (batch.length === 0) return
+
+          const profileBatch = batch.filter((row) => row.route === 'profile').map((row) => row.event)
+          const homeBatch = batch.filter((row) => row.route === 'home').map((row) => row.event)
+          const pendingBatch = batch.filter((row) => row.route === 'pending').map((row) => row.event)
+
+          if (profileBatch.length > 0 || homeBatch.length > 0) {
+            setEvents((oldEvents) => {
+              let base = timelineMergeBootstrapRef.current ?? oldEvents
+              let changed = false
+              const statsOnly: Event[] = []
+
+              for (const event of profileBatch) {
+                if (base.some((e) => e.id === event.id)) continue
+                if (
+                  isNip18RepostKind(event.kind) &&
+                  feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
+                ) {
+                  statsOnly.push(event)
+                  continue
+                }
+                if (timelineMergeBootstrapRef.current !== null) {
+                  timelineMergeBootstrapRef.current = null
+                }
+                base = [event, ...base]
+                changed = true
+              }
+
+              for (const event of homeBatch) {
+                if (base.some((e) => e.id === event.id)) continue
+                if (
+                  isNip18RepostKind(event.kind) &&
+                  feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
+                ) {
+                  statsOnly.push(event)
+                  continue
+                }
+                if (timelineMergeBootstrapRef.current !== null) {
+                  timelineMergeBootstrapRef.current = null
+                }
+                const cap = allowKindlessRelayExploreRef.current
+                  ? RELAY_EXPLORE_LIMIT
+                  : areAlgoRelays
+                    ? ALGO_LIMIT
+                    : LIMIT
+                base = collapseDuplicateNip18RepostTimelineRows(
+                  mergeEventBatchesById(base, [event], cap, areAlgoRelays)
+                )
+                changed = true
+              }
+
+              if (statsOnly.length > 0) {
+                noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
+              }
+              if (!changed) {
+                return timelineMergeBootstrapRef.current !== null ? base : oldEvents
+              }
+              lastEventsForTimelinePrefetchRef.current = base
+              return base
+            })
+          }
+
+          if (pendingBatch.length > 0) {
+            setNewEvents((oldEvents) => {
+              const pool: Event[] = [...eventsRef.current, ...oldEvents]
+              const statsOnly: Event[] = []
+              const kept: Event[] = []
+              for (const ev of pendingBatch) {
+                if (
+                  isNip18RepostKind(ev.kind) &&
+                  feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(ev), pool)
+                ) {
+                  statsOnly.push(ev)
+                  continue
+                }
+                kept.push(ev)
+                pool.push(ev)
+              }
+              if (statsOnly.length > 0) {
+                noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
+              }
+              if (kept.length === 0) return oldEvents
+              return [...kept, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
+            })
+          }
+        }
+
         const eventCapEarly = allowKindlessRelayExplore
           ? RELAY_EXPLORE_LIMIT
           : areAlgoRelays
@@ -3157,68 +3264,14 @@ const NoteList = forwardRef(
                 }
               }
               if (shouldHideEventRef.current(event)) return
-              if ((pubkey && event.pubkey === pubkey) || eventMatchesProfileTimelineRequest(event)) {
-                setEvents((oldEvents) => {
-                  const boot = timelineMergeBootstrapRef.current
-                  const base = boot !== null ? boot : oldEvents
-                  if (base.some((e) => e.id === event.id)) {
-                    return boot !== null ? base : oldEvents
-                  }
-                  if (
-                    isNip18RepostKind(event.kind) &&
-                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
-                  ) {
-                    noteStatsService.updateNoteStatsByEvents([event], undefined)
-                    return boot !== null ? base : oldEvents
-                  }
-                  if (boot !== null) {
-                    timelineMergeBootstrapRef.current = null
-                  }
-                  return [event, ...base]
-                })
-              } else if (hostPrimaryPageNameRef.current === 'feed') {
-                // Primary home relay feeds: merge live EVENTs into the timeline immediately. The generic path
-                // buffered everyone else's notes in `newEvents` until scroll-to-top — that felt like no streaming.
-                setEvents((oldEvents) => {
-                  const boot = timelineMergeBootstrapRef.current
-                  const base = boot !== null ? boot : oldEvents
-                  if (base.some((e) => e.id === event.id)) {
-                    return boot !== null ? base : oldEvents
-                  }
-                  if (
-                    isNip18RepostKind(event.kind) &&
-                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), base)
-                  ) {
-                    noteStatsService.updateNoteStatsByEvents([event], undefined)
-                    return boot !== null ? base : oldEvents
-                  }
-                  if (boot !== null) {
-                    timelineMergeBootstrapRef.current = null
-                  }
-                  const cap = allowKindlessRelayExploreRef.current
-                    ? RELAY_EXPLORE_LIMIT
-                    : areAlgoRelays
-                      ? ALGO_LIMIT
-                      : LIMIT
-                  const next = collapseDuplicateNip18RepostTimelineRows(
-                    mergeEventBatchesById(base, [event], cap, areAlgoRelays)
-                  )
-                  lastEventsForTimelinePrefetchRef.current = next
-                  return next
-                })
-              } else {
-                setNewEvents((oldEvents) => {
-                  const pool = [...eventsRef.current, ...oldEvents]
-                  if (
-                    isNip18RepostKind(event.kind) &&
-                    feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), pool)
-                  ) {
-                    noteStatsService.updateNoteStatsByEvents([event], undefined)
-                    return oldEvents
-                  }
-                  return [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
-                })
-              }
+              const route: 'profile' | 'home' | 'pending' =
+                (pubkey && event.pubkey === pubkey) || eventMatchesProfileTimelineRequest(event)
+                  ? 'profile'
+                  : hostPrimaryPageNameRef.current === 'feed'
+                    ? 'home'
+                    : 'pending'
+              liveOnNewPendingRef.current.push({ event, route })
+              scheduleLiveOnNewFlush()
             },
           },
           {
@@ -3277,6 +3330,11 @@ const NoteList = forwardRef(
       const snapshotKeyForCleanup = sessionSnapshotIdentityKey
       return () => {
         effectActive = false
+        if (liveOnNewFlushTimerRef.current != null) {
+          clearTimeout(liveOnNewFlushTimerRef.current)
+          liveOnNewFlushTimerRef.current = null
+        }
+        liveOnNewPendingRef.current = []
         profileLocalPrimingPendingRef.current = false
         timelineMergeBootstrapRef.current = null
         setProgressiveLayersSearching(false)
@@ -3519,47 +3577,14 @@ const NoteList = forwardRef(
                   }
                 }
                 if (shouldHideEventRef.current(event)) return
-                if ((pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)) {
-                  setEvents((oldEvents) => {
-                    if (oldEvents.some((e) => e.id === event.id)) return oldEvents
-                    if (
-                      isNip18RepostKind(event.kind) &&
-                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
-                    ) {
-                      noteStatsService.updateNoteStatsByEvents([event], undefined)
-                      return oldEvents
-                    }
-                    return [event, ...oldEvents]
-                  })
-                } else if (hostPrimaryPageNameRef.current === 'feed') {
-                  setEvents((oldEvents) => {
-                    if (oldEvents.some((e) => e.id === event.id)) return oldEvents
-                    if (
-                      isNip18RepostKind(event.kind) &&
-                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), oldEvents)
-                    ) {
-                      noteStatsService.updateNoteStatsByEvents([event], undefined)
-                      return oldEvents
-                    }
-                    const next = collapseDuplicateNip18RepostTimelineRows(
-                      mergeEventBatchesById(oldEvents, [event], eventCapDelta, areAlgoRelays)
-                    )
-                    lastEventsForTimelinePrefetchRef.current = next
-                    return next
-                  })
-                } else {
-                  setNewEvents((oldEvents) => {
-                    const pool = [...eventsRef.current, ...oldEvents]
-                    if (
-                      isNip18RepostKind(event.kind) &&
-                      feedTimelineAlreadyRepresentsNip18Target(getNip18RepostTargetId(event), pool)
-                    ) {
-                      noteStatsService.updateNoteStatsByEvents([event], undefined)
-                      return oldEvents
-                    }
-                    return [event, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
-                  })
-                }
+                const route: 'profile' | 'home' | 'pending' =
+                  (pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)
+                    ? 'profile'
+                    : hostPrimaryPageNameRef.current === 'feed'
+                      ? 'home'
+                      : 'pending'
+                liveOnNewPendingRef.current.push({ event, route })
+                scheduleLiveOnNewFlush()
               }
             },
             {
@@ -4536,7 +4561,8 @@ const NoteList = forwardRef(
       const reqs = subRequestsRef.current.filter((req) => req.reasonLabel && req.reasonLabel.trim().length > 0)
       if (!reqs.length || !clientFilteredEvents.length) return new Map<string, string>()
       const map = new Map<string, string>()
-      for (const event of clientFilteredEvents) {
+      const labelEvents = clientFilteredEvents.slice(0, Math.min(showCount + 24, clientFilteredEvents.length))
+      for (const event of labelEvents) {
         const labels: string[] = []
         for (const req of reqs) {
           if (!eventMatchesSubRequestFilter(event, req.filter as Filter)) continue
@@ -4554,7 +4580,7 @@ const NoteList = forwardRef(
         }
       }
       return map
-    }, [clientFilteredEvents, subRequestsKey, feedReasonLabelsTick])
+    }, [clientFilteredEvents, subRequestsKey, feedReasonLabelsTick, showCount])
 
     const list = (
       <div className="min-h-0 w-full">
@@ -4585,6 +4611,7 @@ const NoteList = forwardRef(
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
               deferAuthorAvatar
               seenOnAllowlist={homeFeedActiveSeenOnAllowlist}
+              showPaymentAttestationAction={showPaymentAttestationAction}
             />
           ))
         )}

@@ -4,11 +4,13 @@ import { cn } from '@/lib/utils'
 
 export default function SuperchatPaymentMethodLabel({
   paytoType,
-  className
+  className,
+  imgClassName
 }: {
   /** Canonical or alias payto type (`lightning`, `monero`, `geyser`, …). */
   paytoType: string
   className?: string
+  imgClassName?: string
 }) {
   const canonical = getCanonicalPaytoType(paytoType)
   const label = getPaytoEditorTypeLabel(canonical)
@@ -21,7 +23,7 @@ export default function SuperchatPaymentMethodLabel({
         className
       )}
     >
-      <PaytoTypeIcon type={paytoType} />
+      <PaytoTypeIcon type={paytoType} imgClassName={imgClassName} />
       <span className="truncate">{label}</span>
     </span>
   )

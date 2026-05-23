@@ -16,10 +16,13 @@ import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
 
 export default function Superchat({
   event,
-  className
+  className,
+  showAttestationAction = false
 }: {
   event: Event
   className?: string
+  /** Notifications feed only — attest incoming payments. */
+  showAttestationAction?: boolean
 }) {
   const { t } = useTranslation()
   const info = useMemo(() => getPaymentNotificationInfo(event), [event])
@@ -96,13 +99,19 @@ export default function Superchat({
           hasMetaLine && 'mt-1'
         )}
       >
-        <SuperchatPaymentMethodLabel paytoType={paytoType} />
-        <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
+        <SuperchatPaymentMethodLabel
+          paytoType={paytoType}
+          className="px-2.5 py-1.5 text-lg"
+          imgClassName="size-5"
+        />
+        <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
       </div>
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
-      <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      {showAttestationAction ? (
+        <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      ) : null}
     </div>
   )
 }

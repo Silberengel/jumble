@@ -227,6 +227,9 @@ export default function Note({
   fullCalendarInvite,
   nip84HighlightEvents,
   deferAuthorAvatar = false,
+  /** When true, parent list already prefetches embeds — skip per-row duplicate fetches. */
+  skipEmbedPrefetch = false,
+  showPaymentAttestationAction = false,
   pinned = false
 }: {
   event: Event
@@ -245,6 +248,10 @@ export default function Note({
   nip84HighlightEvents?: Event[]
   /** When true, defer remote profile avatars until near-viewport (dense lists e.g. merged NIP-50 search). */
   deferAuthorAvatar?: boolean
+  /** Skip embedded-note prefetch when the feed list handles it in batch. */
+  skipEmbedPrefetch?: boolean
+  /** Notifications feed: show attest-superchat action on incoming payments. */
+  showPaymentAttestationAction?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -278,8 +285,9 @@ export default function Note({
   const displayEvent = useMemo(() => mergeTranslatedNote(event, noteTranslation), [event, noteTranslation])
 
   useLayoutEffect(() => {
+    if (skipEmbedPrefetch) return
     client.prefetchEmbeddedEventsForParents([event])
-  }, [event.id])
+  }, [event.id, skipEmbedPrefetch])
 
   const reactionDisplay = useNotificationReactionDisplay(event)
   const webReactionParentUrl = useMemo(
@@ -565,9 +573,17 @@ export default function Note({
   } else if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {
-    content = <Zap className="mt-2" event={displayEvent} />
+    content = (
+      <Zap className="mt-2" event={displayEvent} showAttestationAction={showPaymentAttestationAction} />
+    )
   } else if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
-    content = <Superchat className="mt-2" event={displayEvent} />
+    content = (
+      <Superchat
+        className="mt-2"
+        event={displayEvent}
+        showAttestationAction={showPaymentAttestationAction}
+      />
+    )
   } else if (event.kind === ExtendedKind.FOLLOW_PACK) {
     content = <FollowPackPreview className="mt-2" event={displayEvent} />
   } else if (

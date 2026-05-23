@@ -281,6 +281,27 @@ export class QueryService {
    * feed / prefetch / replaceable fetches yield to search and publish.
    */
   private backgroundInterruptController = new AbortController()
+  /** Coalesce identical read-only REQs (no per-event callback) for a few seconds. */
+  private queryInFlightByKey = new Map<string, Promise<NEvent[]>>()
+
+  private buildReadQueryDedupKey(
+    relayUrls: readonly string[],
+    filters: readonly Filter[],
+    opts?: { globalTimeout?: number; eoseTimeout?: number }
+  ): string {
+    const relays = relayUrls
+      .map((u) => normalizeUrl(u) || u.trim())
+      .filter(Boolean)
+      .sort()
+      .join('|')
+    const filterKey = JSON.stringify(
+      filters.map((filter) => {
+        const entries = Object.entries(filter).sort(([a], [b]) => a.localeCompare(b))
+        return Object.fromEntries(entries)
+      })
+    )
+    return `${relays}::${filterKey}::${opts?.globalTimeout ?? 0}::${opts?.eoseTimeout ?? 0}`
+  }
 
   /**
    * Best-effort: abort in-flight {@link query} calls that did not pass `foreground: true`, then reset the token so
@@ -493,7 +514,19 @@ export class QueryService {
 
     const foreground = options?.foreground === true
 
-    return await new Promise<NEvent[]>((resolve) => {
+    const dedupKey =
+      !onevent && !foreground && !immediateReturn && !options?.signal?.aborted
+        ? this.buildReadQueryDedupKey([...wsQueryUrls, ...httpRelayBases], sanitizedFilters, {
+            globalTimeout,
+            eoseTimeout
+          })
+        : null
+    if (dedupKey) {
+      const inflight = this.queryInFlightByKey.get(dedupKey)
+      if (inflight) return inflight
+    }
+
+    const resultPromise = new Promise<NEvent[]>((resolve) => {
       const events: NEvent[] = []
       const cancelAbortRegistrations: Array<() => void> = []
       const abortHttp = new AbortController()
@@ -767,6 +800,17 @@ export class QueryService {
 
       globalTimeoutId = setTimeout(() => resolveWithEvents(), globalTimeout)
     })
+
+    if (dedupKey) {
+      this.queryInFlightByKey.set(dedupKey, resultPromise)
+      void resultPromise.finally(() => {
+        if (this.queryInFlightByKey.get(dedupKey) === resultPromise) {
+          this.queryInFlightByKey.delete(dedupKey)
+        }
+      })
+    }
+
+    return resultPromise
   }
 
   /**

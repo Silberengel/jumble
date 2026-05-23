@@ -19,7 +19,8 @@ const NoteCard = memo(function NoteCard({
   fetchNoteStatsIfMissing = true,
   deferAuthorAvatar = true,
   searchListPreview = false,
-  seenOnAllowlist
+  seenOnAllowlist,
+  showPaymentAttestationAction = false
 }: {
   event: Event
   className?: string
@@ -33,6 +34,7 @@ const NoteCard = memo(function NoteCard({
   deferAuthorAvatar?: boolean
   searchListPreview?: boolean
   seenOnAllowlist?: readonly string[]
+  showPaymentAttestationAction?: boolean
 }) {
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
@@ -74,6 +76,7 @@ const NoteCard = memo(function NoteCard({
       deferAuthorAvatar={deferAuthorAvatar}
       searchListPreview={searchListPreview}
       seenOnAllowlist={seenOnAllowlist}
+      showPaymentAttestationAction={showPaymentAttestationAction}
     />
   )
 }, (prevProps, nextProps) => {
@@ -89,7 +92,8 @@ const NoteCard = memo(function NoteCard({
     prevProps.fetchNoteStatsIfMissing === nextProps.fetchNoteStatsIfMissing &&
     prevProps.seenOnAllowlist === nextProps.seenOnAllowlist &&
     prevProps.deferAuthorAvatar === nextProps.deferAuthorAvatar &&
-    prevProps.searchListPreview === nextProps.searchListPreview
+    prevProps.searchListPreview === nextProps.searchListPreview &&
+    prevProps.showPaymentAttestationAction === nextProps.showPaymentAttestationAction
   )
 })
 

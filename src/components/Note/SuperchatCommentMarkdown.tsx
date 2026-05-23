@@ -23,7 +23,7 @@ export default function SuperchatCommentMarkdown({
       hideMetadata
       lazyMedia={false}
       className={cn(
-        'prose-lg max-w-none text-foreground [&_p]:text-xl [&_p]:font-semibold [&_p]:leading-snug',
+        'prose-xl max-w-none text-foreground [&_p]:text-[1.6875rem] [&_p]:font-semibold [&_p]:leading-snug',
         className
       )}
     />

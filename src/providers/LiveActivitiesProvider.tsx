@@ -86,8 +86,8 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
       try {
         const events = await client.fetchEvents(
           urls,
-          { kinds: [...LIVE_ACTIVITY_KINDS], limit: 500 },
-          { eoseTimeout: 6000, globalTimeout: 14_000 }
+          { kinds: [...LIVE_ACTIVITY_KINDS], limit: 120 },
+          { eoseTimeout: 5000, globalTimeout: 10_000 }
         )
         const parentByAddress = await resolveParentSpacesForLiveActivities(events, urls, (u, f, o) =>
           client.fetchEvents(u, f, o)

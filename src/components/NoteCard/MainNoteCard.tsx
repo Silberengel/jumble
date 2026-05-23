@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { Separator } from '@/components/ui/separator'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
@@ -13,7 +14,27 @@ import Note from '../Note'
 import NoteStats from '../NoteStats'
 import RepostDescription from './RepostDescription'
 
-export default function MainNoteCard({
+export default memo(MainNoteCard, (prev, next) => {
+  return (
+    prev.event.id === next.event.id &&
+    prev.event.created_at === next.event.created_at &&
+    prev.className === next.className &&
+    prev.reposter === next.reposter &&
+    prev.embedded === next.embedded &&
+    prev.originalNoteId === next.originalNoteId &&
+    prev.pinned === next.pinned &&
+    prev.hideParentNotePreview === next.hideParentNotePreview &&
+    prev.bottomNoteLabel === next.bottomNoteLabel &&
+    prev.showFull === next.showFull &&
+    prev.fetchNoteStatsIfMissing === next.fetchNoteStatsIfMissing &&
+    prev.deferAuthorAvatar === next.deferAuthorAvatar &&
+    prev.searchListPreview === next.searchListPreview &&
+    prev.seenOnAllowlist === next.seenOnAllowlist &&
+    prev.showPaymentAttestationAction === next.showPaymentAttestationAction
+  )
+})
+
+function MainNoteCard({
   event,
   className,
   reposter,
@@ -26,7 +47,8 @@ export default function MainNoteCard({
   fetchNoteStatsIfMissing = true,
   deferAuthorAvatar = false,
   searchListPreview = false,
-  seenOnAllowlist
+  seenOnAllowlist,
+  showPaymentAttestationAction = false
 }: {
   event: Event
   className?: string
@@ -46,6 +68,7 @@ export default function MainNoteCard({
   /** Compact row: no stats bar, no separator, no boost badges (e.g. merged NIP-50 search). */
   searchListPreview?: boolean
   seenOnAllowlist?: readonly string[]
+  showPaymentAttestationAction?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -123,6 +146,8 @@ export default function MainNoteCard({
             hideParentNotePreview={hideParentNotePreview}
             showFull={showFull}
             deferAuthorAvatar={deferAuthorAvatar}
+            skipEmbedPrefetch={deferAuthorAvatar}
+            showPaymentAttestationAction={showPaymentAttestationAction}
             pinned={pinned}
           />
         </Collapsible>

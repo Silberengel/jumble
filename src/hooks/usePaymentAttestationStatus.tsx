@@ -1,11 +1,15 @@
 import { ExtendedKind } from '@/constants'
 import {
-  findPaymentAttestationForTarget,
   getPaymentAttestationTargetId,
   getSuperchatPaymentRecipientPubkey
 } from '@/lib/superchat'
+import {
+  loadPaymentAttestationLocal,
+  peekCachedPaymentAttestation,
+  refreshPaymentAttestationFromRelays,
+  rememberPaymentAttestationFromPublish
+} from '@/lib/payment-attestation-cache'
 import client from '@/services/client.service'
-import indexedDb from '@/services/indexed-db.service'
 import { Event as NostrEvent } from 'nostr-tools'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
@@ -18,19 +22,7 @@ function attestationFilter(recipientPubkey: string, targetEventId: string) {
   }
 }
 
-function resolveAttestationMatch(
-  attestations: NostrEvent[],
-  targetEventId: string,
-  recipientPubkey: string
-): NostrEvent | undefined {
-  return findPaymentAttestationForTarget(attestations, targetEventId, recipientPubkey)
-}
-
 export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined) {
-  const [attested, setAttested] = useState(false)
-  const [attestationEvent, setAttestationEvent] = useState<NostrEvent | null>(null)
-  const [checking, setChecking] = useState(false)
-
   const recipientPubkey = targetEvent ? getSuperchatPaymentRecipientPubkey(targetEvent) : null
   const targetId = targetEvent?.id?.toLowerCase()
 
@@ -41,6 +33,18 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
         : null,
     [targetEvent?.id, recipientPubkey]
   )
+
+  const cached = useMemo(
+    () =>
+      targetEvent?.id && recipientPubkey
+        ? peekCachedPaymentAttestation(targetEvent.id, recipientPubkey)
+        : undefined,
+    [targetEvent?.id, recipientPubkey, targetId]
+  )
+
+  const [attested, setAttested] = useState(Boolean(cached))
+  const [attestationEvent, setAttestationEvent] = useState<NostrEvent | null>(cached ?? null)
+  const [checking, setChecking] = useState(false)
 
   const applyMatch = useCallback((match: NostrEvent | undefined) => {
     if (!match) return
@@ -55,19 +59,24 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
       if (attestation.pubkey.toLowerCase() !== recipientPubkey.toLowerCase()) return
       const attestedId = getPaymentAttestationTargetId(attestation)
       if (attestedId?.toLowerCase() !== targetEvent.id.toLowerCase()) return
+      rememberPaymentAttestationFromPublish(attestation)
       applyMatch(attestation)
     },
     [applyMatch, recipientPubkey, targetEvent?.id]
   )
 
   useLayoutEffect(() => {
-    setAttested(false)
-    setAttestationEvent(null)
-    if (!targetEvent?.id || !recipientPubkey || !filter) return
-
-    const sessionHits = client.eventService.getSessionEventsMatchingFilters([filter], 5)
-    applyMatch(resolveAttestationMatch(sessionHits, targetEvent.id, recipientPubkey))
-  }, [applyMatch, filter, recipientPubkey, targetEvent?.id])
+    if (!targetEvent?.id || !recipientPubkey) {
+      setAttested(false)
+      setAttestationEvent(null)
+      return
+    }
+    const hit = peekCachedPaymentAttestation(targetEvent.id, recipientPubkey)
+    if (hit) {
+      setAttestationEvent(hit)
+      setAttested(true)
+    }
+  }, [recipientPubkey, targetEvent?.id])
 
   useEffect(() => {
     if (!targetEvent?.id || !recipientPubkey || !filter) return
@@ -77,20 +86,18 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
 
     void (async () => {
       try {
-        const [idbAttestations, localFeedAttestations, relayAttestations] = await Promise.all([
-          indexedDb.getPaymentAttestationsForTargetEvent(targetEvent.id, 20),
-          client.getLocalFeedEvents([{ urls: [], filter }], { maxMatches: 5 }),
-          client.fetchEvents([], filter, {
-            cache: true,
-            eoseTimeout: 4000,
-            globalTimeout: 10_000
-          })
-        ])
-
+        const local = await loadPaymentAttestationLocal(targetEvent.id, recipientPubkey, filter)
         if (cancelled) return
-
-        const merged = [...idbAttestations, ...localFeedAttestations, ...relayAttestations]
-        applyMatch(resolveAttestationMatch(merged, targetEvent.id, recipientPubkey))
+        if (local) {
+          applyMatch(local)
+          return
+        }
+        const relay = await refreshPaymentAttestationFromRelays(
+          targetEvent.id,
+          recipientPubkey,
+          filter
+        )
+        if (!cancelled) applyMatch(relay)
       } catch {
         /* optional */
       } finally {

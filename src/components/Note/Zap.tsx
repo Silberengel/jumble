@@ -18,10 +18,12 @@ import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
 
 export default function Zap({
   event,
-  className
+  className,
+  showAttestationAction = false
 }: {
   event: Event
   className?: string
+  showAttestationAction?: boolean
 }) {
   const { t } = useTranslation()
   const zapInfo = useMemo(() => getZapInfoFromEvent(event), [event])
@@ -112,10 +114,14 @@ export default function Zap({
           hasMetaLine && 'mt-1'
         )}
       >
-        <SuperchatPaymentMethodLabel paytoType={paytoType} />
-        <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
+        <SuperchatPaymentMethodLabel
+          paytoType={paytoType}
+          className="px-2.5 py-1.5 text-lg"
+          imgClassName="size-5"
+        />
+        <span className="text-xl font-semibold text-yellow-400/90">{t('Superchat')}</span>
         {amount != null ? (
-          <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
+          <span className="text-xl font-bold tabular-nums tracking-tight text-foreground">
             {formatAmount(amount)} {t('sats')}
           </span>
         ) : null}
@@ -123,7 +129,9 @@ export default function Zap({
       {comment ? (
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
-      <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      {showAttestationAction ? (
+        <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
+      ) : null}
     </div>
   )
 }
