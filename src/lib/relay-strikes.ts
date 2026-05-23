@@ -7,11 +7,15 @@ import {
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
-import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch } from '@/lib/url'
+import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch, isLocalNetworkUrl } from '@/lib/url'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 /** Conservative: 5 read/publish failures → skip until this many ms after last qualifying failure. */
 const STRIKE_FAILURES_THRESHOLD = 5
+/** Kind 10432 cache relays (often localhost): skip after fewer failures — no point hammering a dead socket. */
+const CACHE_RELAY_STRIKE_FAILURES_THRESHOLD = 2
+/** LAN / loopback WS: same fast skip on connection refused. */
+const LOCAL_NETWORK_STRIKE_FAILURES_THRESHOLD = 2
 const STRIKE_COOLDOWN_MS = 3 * 60 * 1000
 
 /** Rate-limit style NOTICE / overload → cool down without incrementing strike counter. */
@@ -160,13 +164,17 @@ class RelaySessionStrikes {
   }
 
   /** WS connect failure, HTTP transport failure, etc. */
-  recordReadFailure(url: string, _source: 'connection' | 'notice' | 'http'): void {
+  recordReadFailure(url: string, source: 'connection' | 'notice' | 'http'): void {
     const key = sessionKey(url)
     if (!key) return
-    this.recordReadFailureKey(key, _source)
+    this.recordReadFailureKey(key, source, url)
   }
 
-  private recordReadFailureKey(key: string, _source: 'connection' | 'notice' | 'http'): void {
+  private recordReadFailureKey(
+    key: string,
+    source: 'connection' | 'notice' | 'http',
+    urlForLocalCheck?: string
+  ): void {
     const now = Date.now()
     const e = this.getEntry(key)
     // During rate-limit cooldown, do not add strikes for normal relays (relay can catch up).
@@ -177,8 +185,8 @@ class RelaySessionStrikes {
       // HTTP index failures often arrive in parallel; count each so session skip engages quickly.
       // Connection refused / unreachable: do not debounce — profile feeds open many relays at once.
       if (
-        _source !== 'http' &&
-        _source !== 'connection' &&
+        source !== 'http' &&
+        source !== 'connection' &&
         now - e.readLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS
       ) {
         return
@@ -187,10 +195,23 @@ class RelaySessionStrikes {
     }
 
     e.readFailures += 1
-    if (e.readFailures >= STRIKE_FAILURES_THRESHOLD) {
+    const threshold = this.readStrikeThresholdForKey(key, source, urlForLocalCheck)
+    if (e.readFailures >= threshold) {
       e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.debug('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures })
+      logger.debug('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures, threshold })
     }
+  }
+
+  private readStrikeThresholdForKey(
+    key: string,
+    source: 'connection' | 'notice' | 'http',
+    urlForLocalCheck?: string
+  ): number {
+    if (this.cacheRelayKeys.has(key)) return CACHE_RELAY_STRIKE_FAILURES_THRESHOLD
+    if (source === 'connection' && urlForLocalCheck && isLocalNetworkUrl(urlForLocalCheck)) {
+      return LOCAL_NETWORK_STRIKE_FAILURES_THRESHOLD
+    }
+    return STRIKE_FAILURES_THRESHOLD
   }
 
   recordReadSuccess(url: string): void {
@@ -238,7 +259,7 @@ class RelaySessionStrikes {
       if (timedOut || slowEose) {
         const parked = this.recordSlowSignalKey(key, now)
         if (parked) socketsToClose.push(row.relayUrl)
-        if (timedOut) this.recordReadFailureKey(key, 'connection')
+        if (timedOut) this.recordReadFailureKey(key, 'connection', row.relayUrl)
         continue
       }
 
@@ -305,8 +326,7 @@ class RelaySessionStrikes {
     const http = httpIndexRelayBasesInUrlBatch(urls, httpIndexBases)
     const httpKeys = new Set(http.map((u) => canonicalRelaySessionKey(u)))
     const ws = urls.filter((u) => !httpKeys.has(canonicalRelaySessionKey(u)))
-    const singleWsRelay = ws.length <= 1
-    const wsOut = singleWsRelay ? [...ws] : ws.filter((u) => !this.isReadHttpSkipped(u))
+    const wsOut = ws.filter((u) => !this.isReadHttpSkipped(u))
     const httpOut = http.filter((u) => !this.isReadHttpSkipped(u))
     const merged = [...wsOut, ...httpOut]
     return merged.length > 0 ? merged : [...urls]

@@ -518,8 +518,7 @@ export const PROFILE_RELAY_URLS = [
   'wss://purplepag.es',
   'wss://profiles.nostrver.se/',
   'wss://indexer.coracle.social/',
-  'wss://relay.primal.net',
-  'wss://relay.damus.io'
+  'wss://thecitadel.nostr1.com'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

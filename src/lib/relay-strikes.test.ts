@@ -57,6 +57,29 @@ describe('relaySessionStrikes HTTP read failures', () => {
   })
 })
 
+describe('relaySessionStrikes cache and localhost', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+  })
+
+  it('session-skips cache relay after two connection failures', () => {
+    const url = 'ws://localhost:4869/'
+    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432({
+      kind: 10432,
+      tags: [['relay', url]],
+      content: '',
+      created_at: 1,
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      sig: 'c'.repeat(128)
+    })
+    relaySessionStrikes.recordReadFailure(url, 'connection')
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+    relaySessionStrikes.recordReadFailure(url, 'connection')
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+  })
+})
+
 describe('relaySessionStrikes.clearKey', () => {
   beforeEach(() => {
     relaySessionStrikes.reset()

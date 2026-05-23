@@ -84,7 +84,7 @@ describe('read-only-relay-personal', () => {
     ]
     expect(sanitizeRelayUrlsForFetch(urls)).toEqual(urls)
     expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
-    expect(isRelayConnectionAllowedForViewer('wss://relay.damus.io/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://relay.example.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
@@ -107,8 +107,23 @@ describe('read-only-relay-personal', () => {
   it('metadata-only policy allows profile bootstrap relays at connect time', () => {
     setRestrictConnectionsToMetadataRelaysOnly(true)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
-    expect(isRelayConnectionAllowedForViewer('wss://relay.damus.io/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
+  })
+
+  it('metadata-only policy allows viewer cache and HTTP index relays', () => {
+    setRestrictConnectionsToMetadataRelaysOnly(true)
+    setViewerPersonalRelayKeys(
+      buildPersonalRelayKeySet([
+        'ws://localhost:4869/',
+        'https://index.example.com/',
+        'wss://nostr.land/'
+      ]),
+      { viewerActive: true }
+    )
+    expect(isRelayConnectionAllowedForViewer('ws://localhost:4869/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('https://index.example.com/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
   })
 
   it('metadata-only bypass allows relays outside personal lists', () => {

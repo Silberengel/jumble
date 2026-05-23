@@ -450,6 +450,9 @@ class ClientService extends EventTarget {
       if (params?.purpose !== 'write' && !isRelayConnectionAllowedForViewer(url)) {
         throw new Error(`[metadata-relays-only] skipping relay ${url}`)
       }
+      if (params?.purpose !== 'write' && relaySessionStrikes.isReadHttpSkipped(url)) {
+        throw new Error(`[relay-strike] skipping unresponsive relay ${url}`)
+      }
       if (!isWebsocketUrl(url) && isKind10243HttpRelayTagUrl(url)) {
         throw new Error(`[http-index-relay] ${url} uses the HTTPS index API, not WebSocket`)
       }
@@ -458,10 +461,25 @@ class ClientService extends EventTarget {
       const connectionTimeout = READ_ONLY_RELAY_CONNECT_BOOST_URLS.has(n)
         ? Math.max(base, RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS)
         : base
-      const relay = await rawEnsureRelay(url, {
-        ...params,
-        connectionTimeout
-      })
+      let relay
+      try {
+        relay = await rawEnsureRelay(url, {
+          ...params,
+          connectionTimeout
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (
+          params?.purpose !== 'write' &&
+          !msg.includes('[metadata-relays-only]') &&
+          !msg.includes('[relay-strike]') &&
+          !msg.includes('[offline]') &&
+          !msg.includes('[http-index-relay]')
+        ) {
+          relaySessionStrikes.recordReadFailure(url, 'connection')
+        }
+        throw err
+      }
       patchPoolRelayAuthRaceAndFeedback(relay)
       applyRelayNip42AckTimeout(relay)
       touchRelayPoolActivity(url)
@@ -631,22 +649,50 @@ class ClientService extends EventTarget {
       setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
       syncViewerRelayStackNostrLandAggrEligible([])
       setViewerBlockedRelayUrls([])
+      relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(null)
       return
     }
-    /** Engage policy before any await so session hydrate cannot open PROFILE/FAST_WRITE stacks first. */
-    if (isRestrictConnectionsToMetadataRelaysOnly()) {
-      setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
-    }
+
+    /** IndexedDB-first: personal lists (incl. cache + HTTP) before policy or network so locals stay allowed. */
+    const storageUrls = await this.collectViewerPersonalRelayUrlsFromStorage(pk)
+    this.viewerHttpIndexRelayBases = storageUrls.httpIndexBases
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), {
+      viewerActive: isRestrictConnectionsToMetadataRelaysOnly()
+    })
+    syncViewerRelayStackNostrLandAggrEligible(storageUrls.all)
+    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(storageUrls.cacheRelayEvent)
+    this.closeMetadataPolicyDisallowedRelayConnections()
+
     try {
       const blockedEvt = await indexedDb.getReplaceableEvent(pk, ExtendedKind.BLOCKED_RELAYS)
       setViewerBlockedRelayUrls(parseBlockedRelayUrlsFromEvent(blockedEvt ?? null))
     } catch {
       setViewerBlockedRelayUrls([])
     }
-    const urls: string[] = []
+
+    const urls = [...storageUrls.all]
     try {
-      const rl = await this.peekRelayListFromStorage(pk)
-      this.viewerHttpIndexRelayBases = [...(rl.httpRead ?? []), ...(rl.httpWrite ?? [])]
+      urls.push(...(await this.fetchFavoriteRelays(pk)))
+    } catch {
+      // ignore
+    }
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
+    syncViewerRelayStackNostrLandAggrEligible(urls)
+    this.closeMetadataPolicyDisallowedRelayConnections()
+  }
+
+  /** NIP-65 / 10243 / 10432 / favorites (10012) from IndexedDB only — no network. */
+  private async collectViewerPersonalRelayUrlsFromStorage(pubkey: string): Promise<{
+    all: string[]
+    httpIndexBases: string[]
+    cacheRelayEvent: NEvent | undefined
+  }> {
+    const urls: string[] = []
+    let httpIndexBases: string[] = []
+    let cacheRelayEvent: NEvent | undefined
+    try {
+      const rl = await this.peekRelayListFromStorage(pubkey)
+      httpIndexBases = [...(rl.httpRead ?? []), ...(rl.httpWrite ?? [])]
         .map((u) => normalizeHttpRelayUrl(u) || u)
         .filter(Boolean)
       urls.push(
@@ -656,22 +702,32 @@ class ClientService extends EventTarget {
         ...(rl.httpWrite ?? [])
       )
     } catch {
-      this.viewerHttpIndexRelayBases = []
-      // ignore
+      httpIndexBases = []
     }
     try {
-      urls.push(...(await this.fetchFavoriteRelays(pk)))
+      urls.push(...(await this.fetchFavoriteRelaysFromStorage(pubkey)))
     } catch {
       // ignore
     }
     try {
-      urls.push(...(await getCacheRelayUrls(pk)))
+      cacheRelayEvent = (await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)) ?? undefined
+      urls.push(...(await getCacheRelayUrls(pubkey)))
     } catch {
-      // ignore
+      cacheRelayEvent = undefined
     }
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
-    syncViewerRelayStackNostrLandAggrEligible(urls)
-    this.closeMetadataPolicyDisallowedRelayConnections()
+    const all = Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean)))
+    return { all, httpIndexBases, cacheRelayEvent }
+  }
+
+  /** Kind 10012 + embedded NIP-51 relay sets from IndexedDB only. */
+  private async fetchFavoriteRelaysFromStorage(pubkey: string): Promise<string[]> {
+    try {
+      const favoriteRelaysEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.FAVORITE_RELAYS)
+      if (!favoriteRelaysEvent) return []
+      return await this.expandFavoriteRelayUrlsFromEvent(pubkey, favoriteRelaysEvent)
+    } catch {
+      return []
+    }
   }
 
   /** Drop pooled WebSocket connections that violate the metadata-only read policy. */
@@ -3565,49 +3621,57 @@ class ClientService extends EventTarget {
 
   async fetchFavoriteRelays(pubkey: string): Promise<string[]> {
     try {
-      const favoriteRelaysEvent = await this.replaceableEventService.fetchReplaceableEvent(pubkey, ExtendedKind.FAVORITE_RELAYS)
+      const favoriteRelaysEvent = await this.replaceableEventService.fetchReplaceableEvent(
+        pubkey,
+        ExtendedKind.FAVORITE_RELAYS
+      )
       if (!favoriteRelaysEvent) return []
-
-      const relays: string[] = []
-      const relaySetIds: string[] = []
-      favoriteRelaysEvent.tags.forEach(([tagName, tagValue]) => {
-        if (tagName === 'relay' && tagValue) {
-          const normalized = normalizeUrl(tagValue)
-          if (normalized) {
-            relays.push(normalized)
-          }
-        } else if (tagName === 'a' && tagValue) {
-          const [kindStr, author, d] = tagValue.split(':')
-          if (
-            kindStr === String(kinds.Relaysets) &&
-            author === pubkey &&
-            d &&
-            !relaySetIds.includes(d)
-          ) {
-            relaySetIds.push(d)
-          }
-        }
-      })
-
-      // NIP-51 relay sets on kind 10012: same expansion as {@link FavoriteRelaysProvider} (not only `relay` tags).
-      for (const id of relaySetIds) {
-        try {
-          const ev = await indexedDb.getReplaceableEvent(pubkey, kinds.Relaysets, id)
-          if (!ev || shouldDropEventOnIngest(ev)) continue
-          const set = getRelaySetFromEvent(ev)
-          for (const u of set.relayUrls) {
-            const n = normalizeUrl(u) || normalizeAnyRelayUrl(u)
-            if (n && !relays.includes(n)) relays.push(n)
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      return Array.from(new Set(relays))
+      return await this.expandFavoriteRelayUrlsFromEvent(pubkey, favoriteRelaysEvent)
     } catch {
       return []
     }
+  }
+
+  private async expandFavoriteRelayUrlsFromEvent(
+    pubkey: string,
+    favoriteRelaysEvent: NEvent
+  ): Promise<string[]> {
+    const relays: string[] = []
+    const relaySetIds: string[] = []
+    favoriteRelaysEvent.tags.forEach(([tagName, tagValue]) => {
+      if (tagName === 'relay' && tagValue) {
+        const normalized = normalizeUrl(tagValue)
+        if (normalized) {
+          relays.push(normalized)
+        }
+      } else if (tagName === 'a' && tagValue) {
+        const [kindStr, author, d] = tagValue.split(':')
+        if (
+          kindStr === String(kinds.Relaysets) &&
+          author === pubkey &&
+          d &&
+          !relaySetIds.includes(d)
+        ) {
+          relaySetIds.push(d)
+        }
+      }
+    })
+
+    for (const id of relaySetIds) {
+      try {
+        const ev = await indexedDb.getReplaceableEvent(pubkey, kinds.Relaysets, id)
+        if (!ev || shouldDropEventOnIngest(ev)) continue
+        const set = getRelaySetFromEvent(ev)
+        for (const u of set.relayUrls) {
+          const n = normalizeUrl(u) || normalizeAnyRelayUrl(u)
+          if (n && !relays.includes(n)) relays.push(n)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return Array.from(new Set(relays))
   }
 
 
