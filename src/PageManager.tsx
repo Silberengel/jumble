@@ -8,9 +8,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import {
-  MOBILE_SWIPE_BACK_DOMINANCE,
   MOBILE_SWIPE_BACK_EDGE_PX,
-  MOBILE_SWIPE_BACK_MIN_PX,
+  tryMobileSwipeBackFromGesture,
   useMobileSwipeBackOnElement
 } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
@@ -1132,8 +1131,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }, [currentPrimaryPage])
   const navigationCounterRef = useRef(0)
   const goBackRef = useRef<() => void>(() => {})
+  const popSecondaryPageRef = useRef<() => void>(() => {})
   const drawerOpenRef = useRef(drawerOpen)
   const [mobilePrimarySwipeRoot, setMobilePrimarySwipeRoot] = useState<HTMLElement | null>(null)
+  const [mobileSecondarySwipeRoot, setMobileSecondarySwipeRoot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => {
     drawerOpenRef.current = drawerOpen
   }, [drawerOpen])
@@ -2219,6 +2220,16 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     hardCloseSecondaryPanel()
   }
 
+  popSecondaryPageRef.current = popSecondaryPage
+
+  const mobileSecondaryPanelOpen =
+    isSmallScreen && secondaryStack.length > 0 && !primaryNoteView
+  useMobileSwipeBackOnElement(mobileSecondaryPanelOpen ? mobileSecondarySwipeRoot : null, () =>
+    popSecondaryPageRef.current()
+  , {
+    enabled: mobileSecondaryPanelOpen
+  })
+
   const mobileSecondaryOpen = isSmallScreen && (drawerOpen || secondaryStack.length > 0)
   useEffect(() => {
     if (!mobileSecondaryOpen) return
@@ -2226,36 +2237,30 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     let grab: { x: number; y: number; pointerId: number } | null = null
 
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0 || e.clientX > MOBILE_SWIPE_BACK_EDGE_PX) return
+      if ((e.button !== 0 && e.button !== -1) || e.clientX > MOBILE_SWIPE_BACK_EDGE_PX) return
       grab = { x: e.clientX, y: e.clientY, pointerId: e.pointerId }
     }
 
     const onPointerUp = (e: PointerEvent) => {
       if (!grab || grab.pointerId !== e.pointerId) return
-      const dx = e.clientX - grab.x
-      const dy = e.clientY - grab.y
+      tryMobileSwipeBackFromGesture(grab, e.clientX, e.clientY, e.pointerId, () =>
+        popSecondaryPageRef.current()
+      )
       grab = null
-      const ax = Math.abs(dx)
-      const ay = Math.abs(dy)
-      if (dx < MOBILE_SWIPE_BACK_MIN_PX || ax < ay * MOBILE_SWIPE_BACK_DOMINANCE) return
-      if (secondaryStackRef.current.length > 1) {
-        window.history.back()
-      } else {
-        hardCloseSecondaryPanel()
-      }
     }
 
     const onPointerCancel = () => {
       grab = null
     }
 
-    document.addEventListener('pointerdown', onPointerDown, { capture: true })
-    document.addEventListener('pointerup', onPointerUp, { capture: true })
-    document.addEventListener('pointercancel', onPointerCancel, { capture: true })
+    const capture = { capture: true } as const
+    document.addEventListener('pointerdown', onPointerDown, capture)
+    document.addEventListener('pointerup', onPointerUp, capture)
+    document.addEventListener('pointercancel', onPointerCancel, capture)
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown, { capture: true })
-      document.removeEventListener('pointerup', onPointerUp, { capture: true })
-      document.removeEventListener('pointercancel', onPointerCancel, { capture: true })
+      document.removeEventListener('pointerdown', onPointerDown, capture)
+      document.removeEventListener('pointerup', onPointerUp, capture)
+      document.removeEventListener('pointercancel', onPointerCancel, capture)
     }
   }, [mobileSecondaryOpen])
 
@@ -2368,7 +2373,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             ) : (
               <>
                 {secondaryStack.length > 0 ? (
-                  <TopSecondaryStackPane item={secondaryStack[secondaryStack.length - 1]!} />
+                  <div
+                    ref={setMobileSecondarySwipeRoot}
+                    className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
+                  >
+                    <TopSecondaryStackPane item={secondaryStack[secondaryStack.length - 1]!} />
+                  </div>
                 ) : null}
                 {secondaryStack.length === 0 ? (
                   <div className="block h-full min-h-0 min-w-0">

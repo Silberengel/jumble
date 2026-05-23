@@ -5,9 +5,39 @@ export const MOBILE_SWIPE_BACK_EDGE_PX = 28
 export const MOBILE_SWIPE_BACK_MIN_PX = 56
 export const MOBILE_SWIPE_BACK_DOMINANCE = 1.25
 
+const SWIPE_BACK_DEBOUNCE_MS = 400
+
+let lastSwipeBackAt = 0
+
 export type UseMobileSwipeBackOnElementOptions = {
   enabled?: boolean
   edgePx?: number
+}
+
+type Grab = { x: number; y: number; pointerId: number }
+
+function isPrimaryPointerButton(button: number): boolean {
+  return button === 0 || button === -1
+}
+
+export function tryMobileSwipeBackFromGesture(
+  grab: Grab | null,
+  clientX: number,
+  clientY: number,
+  pointerId: number,
+  onBack: () => void
+): boolean {
+  if (!grab || grab.pointerId !== pointerId) return false
+  const dx = clientX - grab.x
+  const dy = clientY - grab.y
+  const ax = Math.abs(dx)
+  const ay = Math.abs(dy)
+  if (dx < MOBILE_SWIPE_BACK_MIN_PX || ax < ay * MOBILE_SWIPE_BACK_DOMINANCE) return false
+  const now = Date.now()
+  if (now - lastSwipeBackAt < SWIPE_BACK_DEBOUNCE_MS) return true
+  lastSwipeBackAt = now
+  onBack()
+  return true
 }
 
 /**
@@ -22,9 +52,10 @@ export function useMobileSwipeBackOnElement(
   const { enabled = true, edgePx = MOBILE_SWIPE_BACK_EDGE_PX } = options
   const onBackRef = useRef(onBack)
   onBackRef.current = onBack
-  const grabRef = useRef<{ x: number; y: number; pointerId: number } | null>(null)
+  const grabRef = useRef<Grab | null>(null)
 
   const releaseCapture = (el: HTMLElement, pointerId: number) => {
+    if (pointerId < 0) return
     try {
       if (el.hasPointerCapture?.(pointerId)) el.releasePointerCapture(pointerId)
     } catch {
@@ -32,24 +63,27 @@ export function useMobileSwipeBackOnElement(
     }
   }
 
-  const finishSwipe = useCallback((clientX: number, clientY: number, pointerId: number, el: HTMLElement) => {
-    const grab = grabRef.current
-    grabRef.current = null
-    releaseCapture(el, pointerId)
-    if (!grab || grab.pointerId !== pointerId) return
-    const dx = clientX - grab.x
-    const dy = clientY - grab.y
-    const ax = Math.abs(dx)
-    const ay = Math.abs(dy)
-    if (dx < MOBILE_SWIPE_BACK_MIN_PX || ax < ay * MOBILE_SWIPE_BACK_DOMINANCE) return
-    onBackRef.current()
-  }, [])
+  const finishSwipe = useCallback(
+    (clientX: number, clientY: number, pointerId: number, el: HTMLElement) => {
+      const handled = tryMobileSwipeBackFromGesture(
+        grabRef.current,
+        clientX,
+        clientY,
+        pointerId,
+        () => onBackRef.current()
+      )
+      grabRef.current = null
+      releaseCapture(el, pointerId)
+      return handled
+    },
+    []
+  )
 
   useEffect(() => {
     if (!element || !enabled) return
 
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0 || e.clientX > edgePx) return
+      if (!isPrimaryPointerButton(e.button) || e.clientX > edgePx) return
       grabRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId }
       try {
         element.setPointerCapture(e.pointerId)
@@ -67,13 +101,37 @@ export function useMobileSwipeBackOnElement(
       releaseCapture(element, e.pointerId)
     }
 
-    element.addEventListener('pointerdown', onPointerDown)
-    element.addEventListener('pointerup', onPointerUp)
-    element.addEventListener('pointercancel', onPointerCancel)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      const touch = e.touches[0]
+      if (touch.clientX > edgePx) return
+      grabRef.current = { x: touch.clientX, y: touch.clientY, pointerId: touch.identifier }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0]
+      if (!touch) return
+      finishSwipe(touch.clientX, touch.clientY, touch.identifier, element)
+    }
+
+    const onTouchCancel = () => {
+      grabRef.current = null
+    }
+
+    const capture = { capture: true } as const
+    element.addEventListener('pointerdown', onPointerDown, capture)
+    element.addEventListener('pointerup', onPointerUp, capture)
+    element.addEventListener('pointercancel', onPointerCancel, capture)
+    element.addEventListener('touchstart', onTouchStart, { ...capture, passive: true })
+    element.addEventListener('touchend', onTouchEnd, capture)
+    element.addEventListener('touchcancel', onTouchCancel, capture)
     return () => {
-      element.removeEventListener('pointerdown', onPointerDown)
-      element.removeEventListener('pointerup', onPointerUp)
-      element.removeEventListener('pointercancel', onPointerCancel)
+      element.removeEventListener('pointerdown', onPointerDown, capture)
+      element.removeEventListener('pointerup', onPointerUp, capture)
+      element.removeEventListener('pointercancel', onPointerCancel, capture)
+      element.removeEventListener('touchstart', onTouchStart, capture)
+      element.removeEventListener('touchend', onTouchEnd, capture)
+      element.removeEventListener('touchcancel', onTouchCancel, capture)
     }
   }, [element, enabled, edgePx, finishSwipe])
 }

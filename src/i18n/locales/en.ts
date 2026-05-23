@@ -210,6 +210,8 @@ export default {
       "Publish a payment notification (kind 9740). The recipient can attest to receiving your payment so this message may appear as a superchat.",
     "Superchat message": "Superchat message",
     "Superchat message placeholder": "Thank you for this post!",
+    "Superchat estimated amount (sats)": "Estimated payment amount (sats)",
+    "Superchat estimated amount hint": "Optional. Stored on the event as millisats (sats × 1000).",
     "Send superchat request": "Send superchat request",
     "Superchat request sent": "Superchat request sent",
     "Failed to send superchat request": "Failed to send superchat request: {{error}}",

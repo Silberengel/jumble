@@ -98,6 +98,7 @@ const SecondaryPageLayout = forwardRef(
         <DeepBrowsingProvider active={currentIndex === index}>
           <div
             ref={setMobileSwipeRoot}
+            className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
             style={{
               paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
             }}

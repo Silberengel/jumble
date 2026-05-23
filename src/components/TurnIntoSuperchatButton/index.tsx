@@ -3,10 +3,10 @@ import { createPaymentAttestationDraftEvent } from '@/lib/draft-event'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { showSimplePublishSuccess } from '@/lib/publishing-feedback'
 import {
+  canUserAttestSuperchatPayment,
   getSuperchatAttestationTargetKindValue,
   getSuperchatPaymentRecipientPubkey,
-  isAttestableSuperchatPayment,
-  isIncomingPaymentNotificationOrZapReceipt
+  isAttestableSuperchatPayment
 } from '@/lib/superchat'
 import { cn } from '@/lib/utils'
 import { requestProfileWallRefresh } from '@/hooks/useProfileWall'
@@ -22,47 +22,58 @@ import { toast } from 'sonner'
 export default function TurnIntoSuperchatButton({
   event,
   className,
-  prominent = false
+  prominent = false,
+  attestationRecipientPubkey: attestationRecipientPubkeyProp
 }: {
   event: Event
   className?: string
-  /** Full-width call-to-action styling for note cards. */
+  /** Full-width call-to-action styling for note cards (notifications feed). */
   prominent?: boolean
+  /** Note author for note zaps; defaults to payment `p` / zap metadata. */
+  attestationRecipientPubkey?: string | null
 }) {
   const { pubkey } = useNostr()
+  const attestationRecipientPubkey =
+    attestationRecipientPubkeyProp ?? getSuperchatPaymentRecipientPubkey(event)
 
   if (
     !isAttestableSuperchatPayment(event) ||
     !getSuperchatAttestationTargetKindValue(event) ||
     !pubkey ||
-    !isIncomingPaymentNotificationOrZapReceipt(event, pubkey)
+    !attestationRecipientPubkey ||
+    !canUserAttestSuperchatPayment(event, pubkey, attestationRecipientPubkey)
   ) {
     return null
   }
 
   return (
-    <TurnIntoSuperchatButtonInner event={event} className={className} prominent={prominent} />
+    <TurnIntoSuperchatButtonInner
+      event={event}
+      attestationRecipientPubkey={attestationRecipientPubkey}
+      className={className}
+      prominent={prominent}
+    />
   )
 }
 
 function TurnIntoSuperchatButtonInner({
   event,
+  attestationRecipientPubkey,
   className,
   prominent = false
 }: {
   event: Event
+  attestationRecipientPubkey: string
   className?: string
   prominent?: boolean
 }) {
   const { t } = useTranslation()
   const { publish, checkLogin } = useNostr()
-  const recipientPubkey = getSuperchatPaymentRecipientPubkey(event)
-  const { attested, checking, markAttested } = usePaymentAttestationStatus(event)
+  const { attested, checking, markAttested } = usePaymentAttestationStatus(
+    event,
+    attestationRecipientPubkey
+  )
   const [publishing, setPublishing] = useState(false)
-
-  if (!recipientPubkey) {
-    return null
-  }
 
   if (attested) {
     return (
@@ -85,13 +96,13 @@ function TurnIntoSuperchatButtonInner({
       try {
         const draft = await createPaymentAttestationDraftEvent(event, { addClientTag: true })
         const published = await publish(draft, { disableFallbacks: true })
-        markLocalAttestationTarget(recipientPubkey, event.id)
+        markLocalAttestationTarget(attestationRecipientPubkey, event.id)
         if (published) {
           markAttested(published)
         } else {
-          markAttested({ ...draft, id: event.id, pubkey: recipientPubkey, sig: '' } as Event)
+          markAttested({ ...draft, id: event.id, pubkey: attestationRecipientPubkey, sig: '' } as Event)
         }
-        requestProfileWallRefresh(recipientPubkey)
+        requestProfileWallRefresh(attestationRecipientPubkey)
         showSimplePublishSuccess(t('Superchat attested'))
       } catch (error) {
         if (error instanceof LoginRequiredError) return

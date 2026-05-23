@@ -152,7 +152,12 @@ export default function Superchat({
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
       {!isProfileWall ? (
-        <TurnIntoSuperchatButton event={event} prominent={isNotification} className="mt-3" />
+        <TurnIntoSuperchatButton
+          event={event}
+          prominent={isNotification}
+          attestationRecipientPubkey={recipientPubkey}
+          className="mt-3"
+        />
       ) : null}
     </div>
   )

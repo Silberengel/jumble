@@ -1,11 +1,13 @@
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { ExtendedKind } from '@/constants'
 import { createPaymentNotificationDraftEvent } from '@/lib/draft-event'
 import { createFakeEvent } from '@/lib/event'
+import { clampZapSats, formatSatsGrouped, parseGroupedIntegerInput } from '@/lib/lightning'
 import { parsePaytoTagType } from '@/lib/payto'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { paymentNotificationReferenceTags, type PostPaymentContext } from '@/lib/post-payment-context'
@@ -32,9 +34,14 @@ export default function SuperchatRequestForm({
   const { t } = useTranslation()
   const { publish, checkLogin, pubkey: selfPubkey } = useNostr()
   const [message, setMessage] = useState('')
+  const [amountSats, setAmountSats] = useState(() =>
+    paymentContext?.amountMsat ? clampZapSats(Math.floor(paymentContext.amountMsat / 1000)) : 0
+  )
   const [minPow, setMinPow] = useState(0)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const amountMsat = amountSats > 0 ? clampZapSats(amountSats) * 1000 : undefined
 
   useEffect(() => {
     const id = requestAnimationFrame(() => textareaRef.current?.focus())
@@ -43,8 +50,8 @@ export default function SuperchatRequestForm({
 
   const previewEvent = useMemo(() => {
     const tags: string[][] = [['p', recipientPubkey]]
-    if (paymentContext?.amountMsat) {
-      tags.push(['amount', String(paymentContext.amountMsat)])
+    if (amountMsat) {
+      tags.push(['amount', String(amountMsat)])
     }
     if (paymentContext?.payto) {
       tags.push(['payto', paymentContext.payto])
@@ -56,7 +63,7 @@ export default function SuperchatRequestForm({
       content: message,
       tags
     })
-  }, [message, paymentContext, recipientPubkey, selfPubkey])
+  }, [amountMsat, message, paymentContext, recipientPubkey, selfPubkey])
 
   const handleSend = () => {
     const trimmed = message.trim()
@@ -65,7 +72,7 @@ export default function SuperchatRequestForm({
       setSending(true)
       try {
         const draft = await createPaymentNotificationDraftEvent(trimmed, recipientPubkey, {
-          amountMsat: paymentContext?.amountMsat,
+          amountMsat,
           payto: paymentContext?.payto,
           referencedEvent: paymentContext?.referencedEvent,
           addClientTag: true
@@ -96,6 +103,25 @@ export default function SuperchatRequestForm({
           <SuperchatPaymentMethodLabel paytoType={paytoType} />
         </div>
       ) : null}
+      <div className="mt-3 grid gap-2">
+        <Label htmlFor="superchat-amount">{t('Superchat estimated amount (sats)')}</Label>
+        <div className="flex min-w-0 items-center gap-2">
+          <Input
+            id="superchat-amount"
+            inputMode="numeric"
+            value={amountSats > 0 ? formatSatsGrouped(amountSats) : ''}
+            onChange={(e) => setAmountSats(parseGroupedIntegerInput(e.target.value))}
+            placeholder="0"
+            disabled={sending}
+            className="min-w-0 flex-1 tabular-nums"
+            aria-describedby="superchat-amount-hint"
+          />
+          <span className="shrink-0 text-sm text-muted-foreground">{t('sats')}</span>
+        </div>
+        <p id="superchat-amount-hint" className="text-xs text-muted-foreground">
+          {t('Superchat estimated amount hint')}
+        </p>
+      </div>
       <Textarea
         ref={textareaRef}
         value={message}

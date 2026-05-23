@@ -572,12 +572,15 @@ export default function Note({
     )
   } else if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
     content = renderEventContent({ hideMetadata: true })
-  } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {
+  } else if (
+    event.kind === ExtendedKind.ZAP_REQUEST ||
+    event.kind === ExtendedKind.ZAP_RECEIPT ||
+    event.kind === kinds.Zap
+  ) {
     content = (
       <Zap
         className="mt-2"
         event={displayEvent}
-        showAttestationAction={showPaymentAttestationAction}
         variant={showPaymentAttestationAction ? 'notification' : 'thread'}
       />
     )
@@ -586,7 +589,6 @@ export default function Note({
       <Superchat
         className="mt-2"
         event={displayEvent}
-        showAttestationAction={showPaymentAttestationAction}
         variant={showPaymentAttestationAction ? 'notification' : 'thread'}
       />
     )

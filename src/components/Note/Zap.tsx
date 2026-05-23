@@ -75,6 +75,8 @@ export default function Zap({
 
   const { senderPubkey, recipientPubkey, amount, comment } = zapInfo
 
+  const attestationRecipientPubkey = actualRecipientPubkey ?? recipientPubkey ?? null
+
   const openZapTarget = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     if (isEventZap && zapInfo?.eventId) {
@@ -182,7 +184,12 @@ export default function Zap({
         <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
       ) : null}
       {!isProfileWall ? (
-        <TurnIntoSuperchatButton event={event} prominent={isNotification} className="mt-3" />
+        <TurnIntoSuperchatButton
+          event={event}
+          prominent={isNotification}
+          attestationRecipientPubkey={attestationRecipientPubkey}
+          className="mt-3"
+        />
       ) : null}
     </div>
   )

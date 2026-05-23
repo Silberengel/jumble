@@ -49,8 +49,13 @@ function readAttestedFromLocalSources(
   }
 }
 
-export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined) {
-  const recipientPubkey = targetEvent ? getSuperchatPaymentRecipientPubkey(targetEvent) : null
+export function usePaymentAttestationStatus(
+  targetEvent: NostrEvent | undefined,
+  recipientPubkeyOverride?: string | null
+) {
+  const recipientPubkey = targetEvent
+    ? recipientPubkeyOverride ?? getSuperchatPaymentRecipientPubkey(targetEvent)
+    : null
   const targetId = targetEvent?.id?.toLowerCase()
 
   const filter = useMemo(

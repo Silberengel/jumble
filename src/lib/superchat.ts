@@ -138,9 +138,31 @@ export function getSuperchatPaymentRecipientPubkey(event: Event): string | null 
     return getPaymentNotificationInfo(event)?.recipientPubkey ?? null
   }
   if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
-    return getZapInfoFromEvent(event)?.recipientPubkey ?? null
+    return getZapInfoFromEvent(event)?.recipientPubkey ?? firstTagValue(event.tags, ['p']) ?? null
   }
   return null
+}
+
+/** True when `userPubkey` may publish a kind 9741 attestation for this payment. */
+export function canUserAttestSuperchatPayment(
+  event: Event,
+  userPubkey: string,
+  attestationRecipientPubkey?: string | null
+): boolean {
+  if (!isAttestableSuperchatPayment(event)) return false
+  const resolved = attestationRecipientPubkey ?? getSuperchatPaymentRecipientPubkey(event)
+  if (resolved && hexPubkeysEqual(resolved, userPubkey)) return true
+  const pTag = firstTagValue(event.tags, ['p'])
+  return Boolean(pTag && hexPubkeysEqual(pTag, userPubkey))
+}
+
+/** Incoming payment notification or zap receipt addressed to `userPubkey`. */
+export function isIncomingPaymentNotificationOrZapReceipt(
+  event: Event,
+  userPubkey: string,
+  attestationRecipientPubkey?: string | null
+): boolean {
+  return canUserAttestSuperchatPayment(event, userPubkey, attestationRecipientPubkey)
 }
 
 /** Target `k` tag value for a kind 9741 attestation pointing at this event. */
@@ -156,15 +178,6 @@ export function getSuperchatAttestationTargetKindValue(event: Event): string | n
 
 export function isAttestableSuperchatPayment(event: Event): boolean {
   return getSuperchatAttestationTargetKindValue(event) != null
-}
-
-/** Incoming payment notification or zap receipt addressed to `userPubkey`. */
-export function isIncomingPaymentNotificationOrZapReceipt(
-  event: Event,
-  userPubkey: string
-): boolean {
-  const recipient = getSuperchatPaymentRecipientPubkey(event)
-  return recipient != null && hexPubkeysEqual(recipient, userPubkey)
 }
 
 export function isAttestedSuperchat(event: Event, attestedIds: ReadonlySet<string>): boolean {

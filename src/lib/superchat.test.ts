@@ -6,6 +6,7 @@ import {
   getPaymentNotificationInfo,
   getSuperchatPaytoType,
   getSuperchatReferenceFetchId,
+  canUserAttestSuperchatPayment,
   isProfileWallPaymentNotification,
   isProfileWallZapReceipt,
   partitionAttestedSuperchats
@@ -29,6 +30,40 @@ function fakeEvent(partial: Partial<Event> & Pick<Event, 'kind' | 'tags'>): Even
     sig: partial.sig ?? ''
   }
 }
+
+describe('canUserAttestSuperchatPayment', () => {
+  it('accepts payment notification recipient via p tag', () => {
+    const event = fakeEvent({
+      id: PAYMENT_ID,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [['p', RECIPIENT], ['amount', '1000']]
+    })
+    expect(canUserAttestSuperchatPayment(event, RECIPIENT)).toBe(true)
+  })
+
+  it('accepts zap receipt recipient via p tag when bolt11 metadata is missing', () => {
+    const event = fakeEvent({
+      id: ZAP_ID,
+      kind: ExtendedKind.ZAP_RECEIPT,
+      tags: [['p', RECIPIENT], ['e', 'f'.repeat(64)]]
+    })
+    expect(canUserAttestSuperchatPayment(event, RECIPIENT)).toBe(true)
+  })
+
+  it('accepts note author override for note zaps', () => {
+    const noteAuthor = RECIPIENT
+    const payer = SENDER
+    const event = fakeEvent({
+      id: ZAP_ID,
+      kind: ExtendedKind.ZAP_RECEIPT,
+      pubkey: payer,
+      tags: [['p', payer], ['e', 'f'.repeat(64)]]
+    })
+    expect(canUserAttestSuperchatPayment(event, noteAuthor, noteAuthor)).toBe(true)
+    expect(canUserAttestSuperchatPayment(event, payer)).toBe(true)
+    expect(canUserAttestSuperchatPayment(event, 'c'.repeat(64))).toBe(false)
+  })
+})
 
 describe('buildAttestedPaymentIdSet', () => {
   it('collects attested zap and payment notification ids from recipient', () => {
