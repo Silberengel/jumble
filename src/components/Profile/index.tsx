@@ -547,6 +547,7 @@ export default function Profile({
             </div>
             <ProfileAbout
               about={about}
+              profilePubkey={pubkey}
               className="text-wrap break-words whitespace-pre-wrap mt-2 select-text"
             />
             {/* Display websites - show first one prominently, others below */}

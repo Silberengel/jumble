@@ -163,7 +163,10 @@ export default function ReplyNote({
               <div className="mt-1.5 not-prose max-w-full" data-parent-note-preview>
                 <WebPreview url={webReactionParentUrl} className="w-full" />
               </div>
-            ) : parentEventId ? (
+            ) : parentEventId &&
+              event.kind !== kinds.Zap &&
+              event.kind !== ExtendedKind.PAYMENT_NOTIFICATION &&
+              event.kind !== ExtendedKind.ZAP_RECEIPT ? (
               <ParentNotePreview
                 appearance="subtle"
                 className="mt-1.5"
@@ -201,9 +204,9 @@ export default function ReplyNote({
                   )}
                 </div>
               ) : event.kind === kinds.Zap ? (
-                <Zap className="mt-1.5" event={event} omitSenderHeading variant="compact" />
+                <Zap className="mt-1.5" event={event} />
               ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
-                <Superchat className="mt-1.5" event={event} omitSenderHeading variant="compact" />
+                <Superchat className="mt-1.5" event={event} />
               ) : isNip18RepostKind(event.kind) ? null : (
                 <MarkdownArticle
                   className="mt-2"

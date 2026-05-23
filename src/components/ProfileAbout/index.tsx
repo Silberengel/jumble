@@ -18,7 +18,16 @@ import {
   EmbeddedWebsocketUrl
 } from '../Embedded'
 
-export default function ProfileAbout({ about, className }: { about?: string; className?: string }) {
+export default function ProfileAbout({
+  about,
+  className,
+  profilePubkey
+}: {
+  about?: string
+  className?: string
+  /** Profile owner pubkey — enables post-payment / message flow on payto links. */
+  profilePubkey?: string
+}) {
   const normalized = replaceStandardEmojiShortcodesInContent(about ?? '', [])
   if (!normalized.trim()) return null
 
@@ -56,7 +65,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
         }
         if (node.type === 'payto') {
           return (
-            <PaytoLink key={`${keyPrefix}-payto-${index}`} paytoUri={node.data} />
+            <PaytoLink key={`${keyPrefix}-payto-${index}`} paytoUri={node.data} pubkey={profilePubkey} />
           )
         }
         if (node.type === 'hashtag') {
@@ -119,7 +128,7 @@ export default function ProfileAbout({ about, className }: { about?: string; cla
         const label = String(token.text ?? href)
         if (href.startsWith('payto://')) {
           out.push(
-            <PaytoLink key={`${key}-payto-link`} paytoUri={href}>
+            <PaytoLink key={`${key}-payto-link`} paytoUri={href} pubkey={profilePubkey}>
               {label}
             </PaytoLink>
           )

@@ -56,7 +56,7 @@ function TurnIntoSuperchatButtonInner({
   const { t } = useTranslation()
   const { publish, checkLogin } = useNostr()
   const recipientPubkey = getSuperchatPaymentRecipientPubkey(event)
-  const { attested, checking } = usePaymentAttestationStatus(event)
+  const { attested, checking, markAttested } = usePaymentAttestationStatus(event)
   const [publishing, setPublishing] = useState(false)
 
   if (!recipientPubkey) {
@@ -78,11 +78,15 @@ function TurnIntoSuperchatButtonInner({
   }
 
   const handleAttest = () => {
+    if (attested || checking || publishing) return
     checkLogin(async () => {
       setPublishing(true)
       try {
         const draft = await createPaymentAttestationDraftEvent(event, { addClientTag: true })
-        await publish(draft, { disableFallbacks: true })
+        const published = await publish(draft, { disableFallbacks: true })
+        if (published) {
+          markAttested(published)
+        }
         requestProfileWallRefresh(recipientPubkey)
         showSimplePublishSuccess(t('Superchat attested'))
       } catch (error) {

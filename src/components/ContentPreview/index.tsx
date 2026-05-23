@@ -315,7 +315,7 @@ export default function ContentPreview({
     if (previewDensity === 'compact') {
       return (
         <div className={cn('min-w-0', previewOuter)}>
-          <Zap event={previewEvent} variant="compact" omitSenderHeading className={previewBody} />
+          <Zap event={previewEvent} className={previewBody} />
         </div>
       )
     }

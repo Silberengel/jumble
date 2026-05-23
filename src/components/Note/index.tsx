@@ -250,10 +250,17 @@ export default function Note({
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
-  const parentEventId = useMemo(
-    () => (hideParentNotePreview ? undefined : getParentBech32Id(event)),
-    [event, hideParentNotePreview]
-  )
+  const parentEventId = useMemo(() => {
+    if (hideParentNotePreview) return undefined
+    if (
+      event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+      event.kind === ExtendedKind.ZAP_RECEIPT ||
+      event.kind === ExtendedKind.ZAP_REQUEST
+    ) {
+      return undefined
+    }
+    return getParentBech32Id(event)
+  }, [event, hideParentNotePreview])
   const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const contentPolicy = useContentPolicyOptional()
   const defaultShowNsfw = contentPolicy?.defaultShowNsfw ?? true
@@ -683,24 +690,43 @@ export default function Note({
                   maxFileSizeKb={showFull ? 2048 : 500}
                   deferRemoteAvatar={deferAuthorAvatar}
                 />
-                <div className="flex-1 w-0">
-                  <div className="flex gap-2 items-center">
+                {showFull ? (
+                  <div className="flex-1 w-0">
+                    <div className="flex gap-2 items-center">
+                      <Username
+                        userId={event.pubkey}
+                        className={`font-semibold flex truncate ${size === 'small' ? 'text-sm' : ''}`}
+                        skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
+                      />
+                      <ClientTag event={event} />
+                    </div>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Nip05 pubkey={event.pubkey} append="·" />
+                      <FormattedTimestamp
+                        timestamp={event.created_at}
+                        className="shrink-0"
+                        short={isSmallScreen}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden">
                     <Username
                       userId={event.pubkey}
-                      className={`font-semibold flex truncate ${size === 'small' ? 'text-sm' : ''}`}
+                      className={`max-w-[min(12rem,40vw)] shrink font-semibold truncate ${size === 'small' ? 'text-sm' : ''}`}
                       skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
                     />
                     <ClientTag event={event} />
+                    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0 text-sm text-muted-foreground">
+                      <Nip05 pubkey={event.pubkey} append="·" />
+                      <FormattedTimestamp
+                        timestamp={event.created_at}
+                        className="shrink-0"
+                        short={isSmallScreen}
+                      />
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Nip05 pubkey={event.pubkey} append="·" />
-                    <FormattedTimestamp
-                      timestamp={event.created_at}
-                      className="shrink-0"
-                      short={isSmallScreen}
-                    />
-                  </div>
-                </div>
+                )}
               </>
             )}
           </div>

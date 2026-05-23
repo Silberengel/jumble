@@ -15,8 +15,9 @@ function valuesMatchTag(tagName: string, eventValues: string[], filterValues: un
 
 export function eventMatchesLocalFeedFilter(event: Event, filter: Filter): boolean {
   if (Array.isArray(filter.ids) && filter.ids.length > 0 && !filter.ids.includes(event.id)) return false
-  if (Array.isArray(filter.authors) && filter.authors.length > 0 && !filter.authors.includes(event.pubkey)) {
-    return false
+  if (Array.isArray(filter.authors) && filter.authors.length > 0) {
+    const allowedAuthors = new Set(filter.authors.map((author) => author.toLowerCase()))
+    if (!allowedAuthors.has(event.pubkey.toLowerCase())) return false
   }
   if (Array.isArray(filter.kinds) && filter.kinds.length > 0 && !filter.kinds.includes(event.kind)) return false
   if (typeof filter.since === 'number' && event.created_at < filter.since) return false

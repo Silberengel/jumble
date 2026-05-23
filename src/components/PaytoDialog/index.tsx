@@ -188,7 +188,7 @@ export default function PaytoDialog({
         <DialogContent
           className={cn(
             'left-[50%] top-[50%] flex w-[calc(100vw-1.25rem)] max-w-md translate-x-[-50%] translate-y-[-50%] flex-col gap-0',
-            'max-h-[min(92dvh,720px)] overflow-x-hidden overflow-y-auto p-0 sm:max-w-md sm:p-0',
+            'max-h-[min(92dvh,720px)] overflow-hidden p-0 sm:max-w-md sm:p-0',
             'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
           )}
         >
@@ -206,7 +206,8 @@ export default function PaytoDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-w-0 space-y-4 px-4 py-4 sm:px-5">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+            <div className="min-w-0 space-y-4 px-4 py-4 sm:px-5">
             {isLightning && open ? (
               <LightningInvoiceSection
                 lightningAddress={authority}
@@ -315,18 +316,11 @@ export default function PaytoDialog({
                 </div>
               </div>
             )}
+            </div>
           </div>
 
           {canOfferPostPayment ? (
-            <DialogFooter className="flex shrink-0 flex-col-reverse gap-2 border-t border-border/60 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full min-w-0 sm:w-auto"
-                onClick={() => onOpenChange(false)}
-              >
-                {t('Close')}
-              </Button>
+            <DialogFooter className="flex shrink-0 flex-col gap-2 border-t border-border/60 bg-background px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
               <Button
                 ref={sendMessageRef}
                 type="button"
@@ -335,6 +329,14 @@ export default function PaytoDialog({
                 onClick={handleSendMessage}
               >
                 {t('Send a message')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full min-w-0 sm:w-auto"
+                onClick={() => onOpenChange(false)}
+              >
+                {t('Close')}
               </Button>
             </DialogFooter>
           ) : (

@@ -5,8 +5,26 @@ import {
   getSuperchatPaymentRecipientPubkey
 } from '@/lib/superchat'
 import client from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import { Event as NostrEvent } from 'nostr-tools'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+
+function attestationFilter(recipientPubkey: string, targetEventId: string) {
+  return {
+    kinds: [ExtendedKind.PAYMENT_ATTESTATION],
+    authors: [recipientPubkey],
+    '#e': [targetEventId],
+    limit: 5
+  }
+}
+
+function resolveAttestationMatch(
+  attestations: NostrEvent[],
+  targetEventId: string,
+  recipientPubkey: string
+): NostrEvent | undefined {
+  return findPaymentAttestationForTarget(attestations, targetEventId, recipientPubkey)
+}
 
 export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined) {
   const [attested, setAttested] = useState(false)
@@ -16,60 +34,85 @@ export function usePaymentAttestationStatus(targetEvent: NostrEvent | undefined)
   const recipientPubkey = targetEvent ? getSuperchatPaymentRecipientPubkey(targetEvent) : null
   const targetId = targetEvent?.id?.toLowerCase()
 
-  useEffect(() => {
+  const filter = useMemo(
+    () =>
+      targetEvent?.id && recipientPubkey
+        ? attestationFilter(recipientPubkey, targetEvent.id)
+        : null,
+    [targetEvent?.id, recipientPubkey]
+  )
+
+  const applyMatch = useCallback((match: NostrEvent | undefined) => {
+    if (!match) return
+    setAttestationEvent(match)
+    setAttested(true)
+  }, [])
+
+  const markAttested = useCallback(
+    (attestation: NostrEvent) => {
+      if (!targetEvent?.id || !recipientPubkey) return
+      if (attestation.kind !== ExtendedKind.PAYMENT_ATTESTATION) return
+      if (attestation.pubkey.toLowerCase() !== recipientPubkey.toLowerCase()) return
+      const attestedId = getPaymentAttestationTargetId(attestation)
+      if (attestedId?.toLowerCase() !== targetEvent.id.toLowerCase()) return
+      applyMatch(attestation)
+    },
+    [applyMatch, recipientPubkey, targetEvent?.id]
+  )
+
+  useLayoutEffect(() => {
     setAttested(false)
     setAttestationEvent(null)
-    if (!targetEvent?.id || !recipientPubkey) return
+    if (!targetEvent?.id || !recipientPubkey || !filter) return
+
+    const sessionHits = client.eventService.getSessionEventsMatchingFilters([filter], 5)
+    applyMatch(resolveAttestationMatch(sessionHits, targetEvent.id, recipientPubkey))
+  }, [applyMatch, filter, recipientPubkey, targetEvent?.id])
+
+  useEffect(() => {
+    if (!targetEvent?.id || !recipientPubkey || !filter) return
 
     let cancelled = false
     setChecking(true)
 
-    void client
-      .fetchEvents(
-        [],
-        {
-          kinds: [ExtendedKind.PAYMENT_ATTESTATION],
-          authors: [recipientPubkey],
-          '#e': [targetEvent.id],
-          limit: 5
-        },
-        { cache: true, eoseTimeout: 4000, globalTimeout: 10_000 }
-      )
-      .then((attestations) => {
+    void (async () => {
+      try {
+        const [idbAttestations, localFeedAttestations, relayAttestations] = await Promise.all([
+          indexedDb.getPaymentAttestationsForTargetEvent(targetEvent.id, 20),
+          client.getLocalFeedEvents([{ urls: [], filter }], { maxMatches: 5 }),
+          client.fetchEvents([], filter, {
+            cache: true,
+            eoseTimeout: 4000,
+            globalTimeout: 10_000
+          })
+        ])
+
         if (cancelled) return
-        const match = findPaymentAttestationForTarget(attestations, targetEvent.id, recipientPubkey)
-        setAttestationEvent(match ?? null)
-        setAttested(Boolean(match))
-      })
-      .catch(() => {
+
+        const merged = [...idbAttestations, ...localFeedAttestations, ...relayAttestations]
+        applyMatch(resolveAttestationMatch(merged, targetEvent.id, recipientPubkey))
+      } catch {
         /* optional */
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setChecking(false)
-      })
+      }
+    })()
 
     return () => {
       cancelled = true
     }
-  }, [targetEvent, recipientPubkey, targetId])
+  }, [applyMatch, filter, recipientPubkey, targetEvent?.id, targetId])
 
   useEffect(() => {
     if (!targetEvent?.id || !recipientPubkey) return
 
     const handleAttestation = (data: globalThis.Event) => {
-      const evt = (data as CustomEvent<NostrEvent>).detail
-      if (!evt || evt.kind !== ExtendedKind.PAYMENT_ATTESTATION) return
-      if (evt.pubkey.toLowerCase() !== recipientPubkey.toLowerCase()) return
-      const attestedId = getPaymentAttestationTargetId(evt)
-      if (attestedId?.toLowerCase() === targetEvent.id.toLowerCase()) {
-        setAttested(true)
-        setAttestationEvent(evt)
-      }
+      markAttested((data as CustomEvent<NostrEvent>).detail)
     }
 
     client.addEventListener('newEvent', handleAttestation)
     return () => client.removeEventListener('newEvent', handleAttestation)
-  }, [targetEvent?.id, recipientPubkey])
+  }, [markAttested, targetEvent?.id, recipientPubkey])
 
-  return { attested, attestationEvent, checking, recipientPubkey }
+  return { attested, attestationEvent, checking, recipientPubkey, markAttested }
 }

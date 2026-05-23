@@ -1,27 +1,25 @@
 import { useFetchEvent } from '@/hooks'
+import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
 import { parsePaytoTagType } from '@/lib/payto'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { getPaymentNotificationInfo, getSuperchatReferenceFetchId } from '@/lib/superchat'
-import { toNote, toProfile } from '@/lib/link'
+import { toProfile } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSmartNoteNavigationOptional, useSecondaryPageOptional } from '@/PageManager'
 import Username from '../Username'
-import UserAvatar from '../UserAvatar'
 import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
+import SuperchatCommentMarkdown from './SuperchatCommentMarkdown'
 import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
 
 export default function Superchat({
   event,
-  className,
-  omitSenderHeading,
-  variant = 'default'
+  className
 }: {
   event: Event
   className?: string
-  omitSenderHeading?: boolean
-  variant?: 'default' | 'compact'
 }) {
   const { t } = useTranslation()
   const info = useMemo(() => getPaymentNotificationInfo(event), [event])
@@ -38,17 +36,16 @@ export default function Superchat({
     [info]
   )
 
-  const { event: targetEvent } = useFetchEvent(referencedFetchId)
+  const threadRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
+  const threadFetchOpts = useMemo(
+    () => (threadRelayHints.length ? { relayHints: threadRelayHints } : undefined),
+    [threadRelayHints]
+  )
+  const { event: targetEvent } = useFetchEvent(referencedFetchId, undefined, threadFetchOpts)
 
   if (!info) {
     return (
-      <div
-        className={cn(
-          'text-sm text-muted-foreground',
-          variant === 'compact' ? 'py-0.5' : 'rounded-lg border border-border bg-muted/20 p-4',
-          className
-        )}
-      >
+      <div className={cn('py-0.5 text-sm text-muted-foreground', className)}>
         [{t('Invalid superchat')}]
       </div>
     )
@@ -57,106 +54,55 @@ export default function Superchat({
   const { senderPubkey, recipientPubkey, comment } = info
   const hasThreadTarget = Boolean(targetEvent || referencedFetchId)
   const hasTarget = hasThreadTarget || Boolean(recipientPubkey)
+  const hasMetaLine =
+    (recipientPubkey && recipientPubkey !== senderPubkey) || hasTarget
 
   const openTarget = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
-    if (targetEvent) {
-      navigateToNote(toNote(targetEvent), targetEvent)
-    } else if (referencedFetchId) {
-      navigateToNote(toNote(referencedFetchId))
+    if (referencedFetchId) {
+      openNoteFromFetchOrCache(navigateToNote, referencedFetchId, targetEvent)
     } else if (recipientPubkey) {
       push(toProfile(recipientPubkey))
     }
   }
 
-  if (variant === 'compact') {
-    const hasMetaLine =
-      (recipientPubkey && recipientPubkey !== senderPubkey) || hasTarget
-
-    return (
-      <div className={cn('text-sm text-muted-foreground', className)}>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <SuperchatPaymentMethodLabel paytoType={paytoType} />
-          <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
-        </div>
-        {hasMetaLine ? (
-          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-            {recipientPubkey && recipientPubkey !== senderPubkey ? (
-              <span>
-                <span>{t('to')}</span>{' '}
-                <Username
-                  userId={recipientPubkey}
-                  className="inline font-medium text-foreground/85 hover:text-foreground"
-                />
-              </span>
-            ) : null}
-            {hasTarget ? (
-              <button
-                type="button"
-                onClick={openTarget}
-                className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {comment ? (
-          <p className="mt-2 text-base font-medium leading-snug text-foreground whitespace-pre-wrap break-words">
-            {comment}
-          </p>
-        ) : null}
-      </div>
-    )
-  }
-
   return (
-    <div
-      className={cn(
-        'relative rounded-lg border border-yellow-400/35 bg-yellow-400/5 p-4 text-card-foreground shadow-sm',
-        className
-      )}
-    >
-      {hasTarget ? (
-        <button
-          type="button"
-          onClick={openTarget}
-          className="absolute bottom-3 right-3 flex items-center gap-2 rounded-md border border-border bg-secondary/80 px-2.5 py-1.5 text-xs font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary"
-        >
-          {hasThreadTarget ? t('View thread') : t('View profile')}
-        </button>
-      ) : null}
-
-      <div className="flex items-start gap-3 pb-10 pr-2 sm:pr-36">
-        <div className="mt-1 shrink-0">
-          <SuperchatPaymentMethodLabel paytoType={paytoType} className="text-base" />
-        </div>
-        <div className="min-w-0 flex-1">
-          {!omitSenderHeading && (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <UserAvatar userId={senderPubkey} size="small" />
-              <Username userId={senderPubkey} className="font-semibold text-foreground" />
-              <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
-              {recipientPubkey && recipientPubkey !== senderPubkey && (
-                <span className="w-full basis-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span>{t('to')}</span>
-                  <UserAvatar userId={recipientPubkey} size="small" />
-                  <Username userId={recipientPubkey} className="font-semibold text-foreground" />
-                </span>
-              )}
-            </div>
-          )}
-
-          {comment ? (
-            <div className="rounded-r-md border-l-[3px] border-yellow-400 bg-muted/40 py-2.5 pl-3 pr-2 dark:bg-muted/25">
-              <p className="text-xl font-semibold leading-snug tracking-tight text-foreground whitespace-pre-wrap break-words">
-                {comment}
-              </p>
-            </div>
+    <div className={cn('text-sm text-muted-foreground', className)}>
+      {hasMetaLine ? (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+          {recipientPubkey && recipientPubkey !== senderPubkey ? (
+            <span>
+              <span>{t('to')}</span>{' '}
+              <Username
+                userId={recipientPubkey}
+                className="inline font-medium text-foreground/85 hover:text-foreground"
+              />
+            </span>
+          ) : null}
+          {hasTarget ? (
+            <button
+              type="button"
+              onClick={openTarget}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {hasThreadTarget ? t('Superchat thread') : t('Superchat profile')}
+            </button>
           ) : null}
         </div>
+      ) : null}
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-x-2 gap-y-1',
+          hasMetaLine && 'mt-1'
+        )}
+      >
+        <SuperchatPaymentMethodLabel paytoType={paytoType} />
+        <span className="text-base font-semibold text-yellow-400/90">{t('Superchat')}</span>
       </div>
-      <TurnIntoSuperchatButton event={event} prominent className="mt-4" />
+      {comment ? (
+        <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
+      ) : null}
+      <TurnIntoSuperchatButton event={event} prominent className="mt-3" />
     </div>
   )
 }
