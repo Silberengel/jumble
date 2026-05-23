@@ -43,6 +43,7 @@ import {
 import { getRelaysForSpell, spellEventToFilter } from '@/services/spell.service'
 import type { TFeedSubRequest } from '@/types'
 import { isFollowFeedFauxSpellId } from './fauxSpellConfig'
+import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 
 /** `fetchReplaceableEvent(kind 3)` / relay-list hydration can hang; never block the Following spell on it. */
@@ -405,9 +406,10 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
 
     if (selectedFauxSpell === 'notifications') {
       if (!notificationsFeedPubkey || !feedUrls.length) return []
-      const base = buildNotificationsSpellSubRequests(feedUrls, notificationsFeedPubkey)
+      const notificationUrls = appendMoneroNostrRelays(feedUrls)
+      const base = buildNotificationsSpellSubRequests(notificationUrls, notificationsFeedPubkey)
       const extra = buildNotificationsFollowedThreadSubRequests(
-        feedUrls,
+        notificationUrls,
         notificationEventsIFollowListEvent ?? null
       )
       return [...base, ...extra]

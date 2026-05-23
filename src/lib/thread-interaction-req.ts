@@ -35,7 +35,9 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
     ExtendedKind.COMMENT,
     ExtendedKind.VOICE_COMMENT,
     kinds.Zap,
-    ExtendedKind.PAYMENT_NOTIFICATION
+    ExtendedKind.PAYMENT_NOTIFICATION,
+    ExtendedKind.MONERO_TIP_DISCLOSURE,
+    ExtendedKind.MONERO_TIP_RECEIPT
   ])
   const kindsPrimaryThread = kindsNoteCommentVoiceZap
   const kindsUpperEThread = sortedUniqueKinds([
@@ -97,7 +99,12 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
 export function buildThreadSuperchatPriorityFilters(
   input: BuildThreadInteractionFiltersInput
 ): Filter[] {
-  const superchatKinds = new Set<number>([kinds.Zap, ExtendedKind.PAYMENT_NOTIFICATION])
+  const superchatKinds = new Set<number>([
+    kinds.Zap,
+    ExtendedKind.PAYMENT_NOTIFICATION,
+    ExtendedKind.MONERO_TIP_DISCLOSURE,
+    ExtendedKind.MONERO_TIP_RECEIPT
+  ])
   const out: Filter[] = []
   for (const filter of buildThreadInteractionFilters(input)) {
     const kindsList = filter.kinds?.filter((k) => superchatKinds.has(k))

@@ -16,6 +16,8 @@ const RENDERABLE_NOTE_KINDS = new Set<number>([
   ExtendedKind.PUBLIC_MESSAGE,
   ExtendedKind.ZAP_REQUEST,
   ExtendedKind.ZAP_RECEIPT,
+  ExtendedKind.MONERO_TIP_DISCLOSURE,
+  ExtendedKind.MONERO_TIP_RECEIPT,
   ExtendedKind.PAYMENT_NOTIFICATION,
   ExtendedKind.PUBLICATION_CONTENT,
   ExtendedKind.FOLLOW_PACK,

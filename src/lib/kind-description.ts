@@ -82,6 +82,10 @@ export function getKindDescription(
       return { number: 9734, description: 'Zap request' }
     case ExtendedKind.ZAP_RECEIPT:
       return { number: 9735, description: 'Zap receipt' }
+    case ExtendedKind.MONERO_TIP_DISCLOSURE:
+      return { number: 9736, description: 'Monero tip' }
+    case ExtendedKind.MONERO_TIP_RECEIPT:
+      return { number: 1814, description: 'Monero tip' }
     case ExtendedKind.PAYMENT_NOTIFICATION:
       return { number: 9740, description: 'Payment notification' }
     case ExtendedKind.PAYMENT_ATTESTATION:

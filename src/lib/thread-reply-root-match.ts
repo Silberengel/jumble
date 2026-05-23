@@ -85,6 +85,12 @@ function replyParentIsSuperchatToThreadHex(
     return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower, localByHex)
   }
 
+  if (parentEv.kind === ExtendedKind.MONERO_TIP_DISCLOSURE || parentEv.kind === ExtendedKind.MONERO_TIP_RECEIPT) {
+    const tipped = parentEv.tags.find((t) => t[0] === 'e' || t[0] === 'E')?.[1]
+    if (!tipped || !/^[0-9a-f]{64}$/i.test(tipped)) return false
+    return hexNoteParticipatesInThread(tipped.toLowerCase(), rootHexLower, localByHex)
+  }
+
   const ref = getPaymentNotificationInfo(parentEv)?.referencedEventId
   if (!ref || !/^[0-9a-f]{64}$/i.test(ref)) return false
   return hexNoteParticipatesInThread(ref.toLowerCase(), rootHexLower, localByHex)

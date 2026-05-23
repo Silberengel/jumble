@@ -39,6 +39,7 @@ import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
 import NoteKindLabel from '../Note/NoteKindLabel'
 import EventPowLabel from '../EventPowLabel'
 import Zap from '../Note/Zap'
+import MoneroTip from '../Note/MoneroTip'
 import GitRepublicEventCard from '../Note/GitRepublicEventCard'
 
 /** Inert event so hooks can run before `event` is defined. */
@@ -303,7 +304,33 @@ export default function ContentPreview({
     return withKindRow(<ZapPreview event={previewEvent} />)
   }
 
-  if (event.kind === ExtendedKind.ZAP_RECEIPT || event.kind === kinds.Zap) {
+  if (
+    event.kind === ExtendedKind.ZAP_RECEIPT ||
+    event.kind === kinds.Zap ||
+    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+    event.kind === ExtendedKind.MONERO_TIP_RECEIPT
+  ) {
+    if (
+      event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+      event.kind === ExtendedKind.MONERO_TIP_RECEIPT
+    ) {
+      if (forParentReplyBlurb) {
+        const line = getParentReplyBlurbDisplayText(previewEvent)
+        return (
+          <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+            <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line || t('Monero tip')}</div>
+          </div>
+        )
+      }
+      if (previewDensity === 'compact') {
+        return (
+          <div className={cn('min-w-0', previewOuter)}>
+            <MoneroTip event={previewEvent} className={previewBody} />
+          </div>
+        )
+      }
+      return withKindRow(<MoneroTip event={previewEvent} variant="thread" />)
+    }
     if (forParentReplyBlurb) {
       const line = getParentReplyBlurbDisplayText(previewEvent)
       return (

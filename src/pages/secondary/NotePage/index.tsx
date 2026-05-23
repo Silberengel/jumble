@@ -270,6 +270,9 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         return 'Note: Calendar Event'
       case 9735: // ExtendedKind.ZAP_RECEIPT
         return 'Note: Zap Receipt'
+      case 9736: // ExtendedKind.MONERO_TIP_DISCLOSURE
+      case 1814: // ExtendedKind.MONERO_TIP_RECEIPT
+        return 'Note: Monero Tip'
       case 6: // kinds.Repost (Nostr boost)
       case 16: // ExtendedKind.GENERIC_REPOST (NIP-18)
         return 'Note: Boost'

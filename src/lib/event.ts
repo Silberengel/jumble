@@ -214,7 +214,9 @@ export function getParentETag(event?: Event) {
   if (
     event.kind === kinds.Zap ||
     event.kind === ExtendedKind.ZAP_RECEIPT ||
-    event.kind === ExtendedKind.PAYMENT_NOTIFICATION
+    event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+    event.kind === ExtendedKind.MONERO_TIP_RECEIPT
   ) {
     const firstHex = getFirstHexEventIdFromETags(event.tags)
     if (firstHex) {
@@ -250,7 +252,9 @@ export function getParentATag(event?: Event) {
   if (
     event.kind === kinds.Zap ||
     event.kind === ExtendedKind.ZAP_RECEIPT ||
-    event.kind === ExtendedKind.PAYMENT_NOTIFICATION
+    event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+    event.kind === ExtendedKind.MONERO_TIP_RECEIPT
   ) {
     return event.tags.find(tagNameEquals('a')) ?? event.tags.find(tagNameEquals('A'))
   }
@@ -291,8 +295,13 @@ export function getRootETag(event?: Event) {
     return event.tags.find(tagNameEquals('E'))
   }
 
-  // Kind 9735: thread root for note zaps is the zapped event id on `e` / `E`
-  if (event.kind === kinds.Zap) {
+  // Kind 9735 / 9736 / 1814: thread root for note tips is the referenced event id on `e` / `E`
+  if (
+    event.kind === kinds.Zap ||
+    event.kind === ExtendedKind.ZAP_RECEIPT ||
+    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+    event.kind === ExtendedKind.MONERO_TIP_RECEIPT
+  ) {
     const firstHex = getFirstHexEventIdFromETags(event.tags)
     if (firstHex) {
       return (
@@ -300,14 +309,16 @@ export function getRootETag(event?: Event) {
         event.tags.find((t) => t[0] === 'E' && t[1] === firstHex)
       )
     }
-    const zapped = getZapInfoFromEvent(event)?.originalEventId
-    if (zapped && /^[0-9a-f]{64}$/i.test(zapped)) {
-      const hex = zapped.toLowerCase()
-      return (
-        event.tags.find((t) => t[0] === 'e' && t[1]?.toLowerCase() === hex) ??
-        event.tags.find((t) => t[0] === 'E' && t[1]?.toLowerCase() === hex) ??
-        ['e', hex]
-      )
+    if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
+      const zapped = getZapInfoFromEvent(event)?.originalEventId
+      if (zapped && /^[0-9a-f]{64}$/i.test(zapped)) {
+        const hex = zapped.toLowerCase()
+        return (
+          event.tags.find((t) => t[0] === 'e' && t[1]?.toLowerCase() === hex) ??
+          event.tags.find((t) => t[0] === 'E' && t[1]?.toLowerCase() === hex) ??
+          ['e', hex]
+        )
+      }
     }
     return undefined
   }

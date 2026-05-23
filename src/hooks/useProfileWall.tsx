@@ -5,6 +5,7 @@ import {
 } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { getReplaceableCoordinate } from '@/lib/event'
 import {
   fetchLegacyProfileBadgesListEvent,
@@ -99,6 +100,8 @@ function buildProfileWallSuperchatFilters(pkNorm: string, profileId: string | un
   const filters: Filter[] = [
     { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#p': [pkNorm], limit: 200 },
     { kinds: [kinds.Zap], '#p': [pkNorm], limit: 200 },
+    { kinds: [ExtendedKind.MONERO_TIP_DISCLOSURE], '#p': [pkNorm], limit: 200 },
+    { kinds: [ExtendedKind.MONERO_TIP_RECEIPT], '#p': [pkNorm], limit: 200 },
     { kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pkNorm], limit: 500 }
   ]
   if (profileId) {
@@ -110,7 +113,9 @@ function buildProfileWallSuperchatFilters(pkNorm: string, profileId: string | un
     filters.push(
       { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
       { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
-      { kinds: [kinds.Zap], '#e': [profileId], limit: 200 }
+      { kinds: [kinds.Zap], '#e': [profileId], limit: 200 },
+      { kinds: [ExtendedKind.MONERO_TIP_DISCLOSURE], '#e': [profileId], limit: 200 },
+      { kinds: [ExtendedKind.MONERO_TIP_RECEIPT], '#e': [profileId], limit: 200 }
     )
   }
   return filters
@@ -196,7 +201,9 @@ async function hydrateProfileWallSuperchatsFromLocalCache(
     (e) =>
       (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
         e.kind === kinds.Zap ||
-        e.kind === ExtendedKind.ZAP_RECEIPT) &&
+        e.kind === ExtendedKind.ZAP_RECEIPT ||
+        e.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+        e.kind === ExtendedKind.MONERO_TIP_RECEIPT) &&
       !isEventDeleted(e)
   )
 
@@ -442,14 +449,24 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         const authorRl = await client.peekRelayListFromStorage(pubkey).catch(() => emptyAuthor)
         if (cancelled) return
 
-        const relayUrls = buildProfilePageReadRelayUrls(
-          favoriteRelaysRef.current,
-          blockedRelaysRef.current,
-          authorRl,
-          false,
-          false,
-          [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION, ExtendedKind.PAYMENT_NOTIFICATION, ExtendedKind.PAYMENT_ATTESTATION],
-          useGlobalRelayBootstrapRef.current
+        const relayUrls = appendMoneroNostrRelays(
+          buildProfilePageReadRelayUrls(
+            favoriteRelaysRef.current,
+            blockedRelaysRef.current,
+            authorRl,
+            false,
+            false,
+            [
+              ExtendedKind.COMMENT,
+              ExtendedKind.PROFILE_BADGES_LIST,
+              ExtendedKind.BADGE_DEFINITION,
+              ExtendedKind.PAYMENT_NOTIFICATION,
+              ExtendedKind.PAYMENT_ATTESTATION,
+              ExtendedKind.MONERO_TIP_DISCLOSURE,
+              ExtendedKind.MONERO_TIP_RECEIPT
+            ],
+            useGlobalRelayBootstrapRef.current
+          )
         )
 
         const localWall = await hydrateProfileWallFromLocalCache(
@@ -588,7 +605,9 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           (e) =>
             (e.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
               e.kind === kinds.Zap ||
-              e.kind === ExtendedKind.ZAP_RECEIPT) &&
+              e.kind === ExtendedKind.ZAP_RECEIPT ||
+              e.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+              e.kind === ExtendedKind.MONERO_TIP_RECEIPT) &&
             !isEventDeletedRef.current(e)
         )
         wallSuperchats = filterAttestedProfileWallSuperchats(

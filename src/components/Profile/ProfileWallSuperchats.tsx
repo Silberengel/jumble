@@ -1,6 +1,8 @@
 import Superchat from '@/components/Note/Superchat'
 import Zap from '@/components/Note/Zap'
+import MoneroTip from '@/components/Note/MoneroTip'
 import { ExtendedKind } from '@/constants'
+import { isMoneroTipKind } from '@/lib/monero-tip'
 import { superchatSectionHeadingClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -48,6 +50,8 @@ export default function ProfileWallSuperchats({
         {superchats.map((event) =>
           event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
             <Superchat key={event.id} event={event} variant="profileWall" />
+          ) : isMoneroTipKind(event.kind) ? (
+            <MoneroTip key={event.id} event={event} variant="profileWall" />
           ) : (
             <Zap key={event.id} event={event} variant="profileWall" />
           )

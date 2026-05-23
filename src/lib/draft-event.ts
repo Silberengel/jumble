@@ -601,11 +601,15 @@ export async function createPaymentAttestationDraftEvent(
   const targetKind =
     targetEvent.kind === ExtendedKind.PAYMENT_NOTIFICATION
       ? String(ExtendedKind.PAYMENT_NOTIFICATION)
-      : targetEvent.kind === kinds.Zap || targetEvent.kind === ExtendedKind.ZAP_RECEIPT
-        ? String(ExtendedKind.ZAP_RECEIPT)
-        : null
+      : targetEvent.kind === ExtendedKind.MONERO_TIP_DISCLOSURE
+        ? String(ExtendedKind.MONERO_TIP_DISCLOSURE)
+        : targetEvent.kind === ExtendedKind.MONERO_TIP_RECEIPT
+          ? String(ExtendedKind.MONERO_TIP_RECEIPT)
+          : targetEvent.kind === kinds.Zap || targetEvent.kind === ExtendedKind.ZAP_RECEIPT
+            ? String(ExtendedKind.ZAP_RECEIPT)
+            : null
   if (!targetKind) {
-    throw new Error('Only zap receipts and payment notifications can be attested')
+    throw new Error('Only zap receipts, Monero tips, and payment notifications can be attested')
   }
 
   const tags: string[][] = [

@@ -490,6 +490,18 @@ export const FAST_WRITE_RELAY_URLS = [
   'wss://nos.lol'
 ]
 
+/**
+ * Paid Monero Nostr relays (PMNR) and Nosmero tip-disclosure relay.
+ * @see https://pmnr.xmr.rocks/
+ */
+export const MONERO_NOSTR_RELAY_URLS = [
+  'wss://xmr.usenostr.org',
+  'wss://nostr.xmr.rocks',
+  'wss://nerostr.xmr.rocks',
+  'wss://xmr.ithurtswhenip.ee',
+  'wss://nosmero.com/nip78-relay'
+] as const
+
 /** Relays used for NIP-94 file metadata (kind 1063) / GIF discovery and publish.
  *  Publish to all of these so GIFs are discoverable across clients; some may be temporarily down. */
 export const GIF_RELAY_URLS = [
@@ -556,6 +568,10 @@ export const ExtendedKind = {
   PAYMENT_NOTIFICATION: 9740,
   /** Payment Superchats: recipient attests receipt of kind 9740 or 9735 (kind 9741). */
   PAYMENT_ATTESTATION: 9741,
+  /** Nosmero Monero tip disclosure (custom). */
+  MONERO_TIP_DISCLOSURE: 9736,
+  /** Garnet Monero tip receipt with on-chain proof in JSON content. */
+  MONERO_TIP_RECEIPT: 1814,
   PUBLICATION: 30040,
   WIKI_ARTICLE: 30818,
   /** NIP/spec document (Markdown) for relay publication instead of GitHub; kind 30817. */

@@ -4,12 +4,18 @@ import {
   getReplaceableCoordinate,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
+import {
+  getMoneroTipInfo,
+  getMoneroTipReferenceFetchId,
+  getMoneroTipSortAmount,
+  isMoneroTipKind
+} from '@/lib/monero-tip'
 import { hexPubkeysEqual } from '@/lib/pubkey'
 import { parsePaytoTagType } from '@/lib/payto'
 import { generateBech32IdFromATag } from '@/lib/tag'
 import { Event, kinds } from 'nostr-tools'
 
-export const PAYMENT_ATTESTATION_TARGET_KINDS = new Set(['9735', '9740'])
+export const PAYMENT_ATTESTATION_TARGET_KINDS = new Set(['9735', '9740', '9736', '1814'])
 
 export type PaymentNotificationInfo = {
   senderPubkey: string
@@ -111,6 +117,7 @@ export function getPaymentNotificationInfo(event: Event): PaymentNotificationInf
 /** Payment category for superchat display (9735 → lightning). */
 export function getSuperchatPaytoType(event: Event): string {
   if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) return 'lightning'
+  if (isMoneroTipKind(event.kind)) return 'monero'
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     const payto = getPaymentNotificationInfo(event)?.payto
     return payto ? parsePaytoTagType(payto) : 'unknown'
@@ -137,8 +144,20 @@ export function getSuperchatAmountSats(event: Event): number {
   return 0
 }
 
+/** Comparable sort weight for mixed lightning / monero superchats. */
+export function getSuperchatSortAmount(event: Event): number {
+  const sats = getSuperchatAmountSats(event)
+  if (sats > 0) return sats
+  return getMoneroTipSortAmount(event)
+}
+
 export function isSuperchatKind(kind: number): boolean {
-  return kind === kinds.Zap || kind === ExtendedKind.ZAP_RECEIPT || kind === ExtendedKind.PAYMENT_NOTIFICATION
+  return (
+    kind === kinds.Zap ||
+    kind === ExtendedKind.ZAP_RECEIPT ||
+    kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+    isMoneroTipKind(kind)
+  )
 }
 
 /** Kinds that may be `#e` parents in the thread nested-reply relay pass (replies to zaps were missing). */
@@ -151,10 +170,13 @@ export function isNestedThreadReplyParentKind(kind: number): boolean {
   )
 }
 
-/** Recipient pubkey for a kind 9735 or 9740 payment the user may attest to. */
+/** Recipient pubkey for a kind 9735, 9740, 9736, or 1814 payment the user may attest to. */
 export function getSuperchatPaymentRecipientPubkey(event: Event): string | null {
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     return getPaymentNotificationInfo(event)?.recipientPubkey ?? null
+  }
+  if (isMoneroTipKind(event.kind)) {
+    return getMoneroTipInfo(event)?.recipientPubkey ?? firstTagValue(event.tags, ['p']) ?? null
   }
   if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
     return getZapInfoFromEvent(event)?.recipientPubkey ?? firstTagValue(event.tags, ['p']) ?? null
@@ -189,6 +211,12 @@ export function getSuperchatAttestationTargetKindValue(event: Event): string | n
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     return String(ExtendedKind.PAYMENT_NOTIFICATION)
   }
+  if (event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE) {
+    return String(ExtendedKind.MONERO_TIP_DISCLOSURE)
+  }
+  if (event.kind === ExtendedKind.MONERO_TIP_RECEIPT) {
+    return String(ExtendedKind.MONERO_TIP_RECEIPT)
+  }
   if (event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT) {
     return String(ExtendedKind.ZAP_RECEIPT)
   }
@@ -206,8 +234,8 @@ export function isAttestedSuperchat(event: Event, attestedIds: ReadonlySet<strin
 
 export function sortSuperchatsByAmountDesc(events: Event[]): Event[] {
   return [...events].sort((a, b) => {
-    const sa = getSuperchatAmountSats(a)
-    const sb = getSuperchatAmountSats(b)
+    const sa = getSuperchatSortAmount(a)
+    const sb = getSuperchatSortAmount(b)
     if (sb !== sa) return sb - sa
     return b.created_at - a.created_at
   })
@@ -249,6 +277,12 @@ export function partitionAttestedSuperchats(
   for (const e of items) {
     if (e.kind === kinds.Zap || e.kind === ExtendedKind.ZAP_RECEIPT) {
       if (isAttestedSuperchat(e, attestedIds) && getZapInfoFromEvent(e)) {
+        superchats.push(e)
+      }
+      continue
+    }
+    if (isMoneroTipKind(e.kind)) {
+      if (isAttestedSuperchat(e, attestedIds) && getMoneroTipInfo(e)) {
         superchats.push(e)
       }
       continue
@@ -312,6 +346,22 @@ export function isProfileWallPaymentNotification(
   )
 }
 
+/** Kind 9736 / 1814 profile tip on a wall: `p` is the profile owner and there is no note/thread reference. */
+export function isProfileWallMoneroTip(event: Event, profilePubkey: string, profileEventId?: string): boolean {
+  if (!isMoneroTipKind(event.kind)) return false
+  const info = getMoneroTipInfo(event)
+  if (!info?.recipientPubkey || !hexPubkeysEqual(info.recipientPubkey, profilePubkey)) {
+    return false
+  }
+  const referencedEventId = event.tags.find((t) => t[0] === 'e' || t[0] === 'E')?.[1]?.trim().toLowerCase()
+  return isProfileWallThreadReference(
+    referencedEventId,
+    info.referencedCoordinate,
+    profilePubkey,
+    profileEventId
+  )
+}
+
 /** Kind 9735 profile zap on a wall: `p` is the profile owner and there is no note/thread reference. */
 export function isProfileWallZapReceipt(
   event: Event,
@@ -347,6 +397,12 @@ export function filterAttestedProfileWallSuperchats(
       if (e.kind === kinds.Zap || e.kind === ExtendedKind.ZAP_RECEIPT) {
         return (
           isProfileWallZapReceipt(e, profilePubkey, profileEventId) &&
+          attestedIds.has(e.id.toLowerCase())
+        )
+      }
+      if (isMoneroTipKind(e.kind)) {
+        return (
+          isProfileWallMoneroTip(e, profilePubkey, profileEventId) &&
           attestedIds.has(e.id.toLowerCase())
         )
       }

@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { useSmartNoteNavigationOptional, useSecondaryPageOptional } from '@/PageManager'
 import Username from '../Username'
 import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
-import SuperchatCommentMarkdown from './SuperchatCommentMarkdown'
+import SuperchatMessageArea from './SuperchatMessageArea'
 import TurnIntoSuperchatButton from '../TurnIntoSuperchatButton'
 import UserAvatar from '../UserAvatar'
 import type { SuperchatLayoutVariant } from './Superchat'
@@ -184,9 +184,11 @@ export default function Zap({
         </div>
       ) : null}
       </div>
-      {comment ? (
-        <SuperchatCommentMarkdown event={event} comment={comment} className="mt-2" />
-      ) : null}
+      <SuperchatMessageArea
+        event={event}
+        comment={comment}
+        showEmptyFallback={showAsSuperchat}
+      />
       {isNotification ? (
         <div className="text-sm text-muted-foreground">
           <TurnIntoSuperchatButton

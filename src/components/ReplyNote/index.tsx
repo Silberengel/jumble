@@ -12,6 +12,7 @@ import {
   DISCUSSION_UPVOTE_DISPLAY
 } from '@/lib/discussion-votes'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
+import { getMoneroTipInfo } from '@/lib/monero-tip'
 import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
 import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -40,6 +41,7 @@ import Username from '../Username'
 import NoteKindLabel from '../Note/NoteKindLabel'
 import Superchat from '../Note/Superchat'
 import Zap from '../Note/Zap'
+import MoneroTip from '../Note/MoneroTip'
 
 export default function ReplyNote({
   event,
@@ -72,9 +74,18 @@ export default function ReplyNote({
   )
   const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const headerUserId = useMemo(() => {
-    if (event.kind !== kinds.Zap) return event.pubkey
-    const info = getZapInfoFromEvent(event)
-    return info?.senderPubkey ?? event.pubkey
+    if (event.kind === kinds.Zap) {
+      const info = getZapInfoFromEvent(event)
+      return info?.senderPubkey ?? event.pubkey
+    }
+    if (
+      event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+      event.kind === ExtendedKind.MONERO_TIP_RECEIPT
+    ) {
+      const info = getMoneroTipInfo(event)
+      return info?.senderPubkey ?? event.pubkey
+    }
+    return event.pubkey
   }, [event])
 
   const show = useMemo(() => {
@@ -153,7 +164,9 @@ export default function ReplyNote({
                 className={cn(
                   (isNip25ReactionKind(event.kind) ||
                     event.kind === kinds.Zap ||
-                    event.kind === ExtendedKind.PAYMENT_NOTIFICATION) &&
+                    event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+                    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+                    event.kind === ExtendedKind.MONERO_TIP_RECEIPT) &&
                     'opacity-60'
                 )}
               />
@@ -166,7 +179,9 @@ export default function ReplyNote({
             ) : parentEventId &&
               event.kind !== kinds.Zap &&
               event.kind !== ExtendedKind.PAYMENT_NOTIFICATION &&
-              event.kind !== ExtendedKind.ZAP_RECEIPT ? (
+              event.kind !== ExtendedKind.ZAP_RECEIPT &&
+              event.kind !== ExtendedKind.MONERO_TIP_DISCLOSURE &&
+              event.kind !== ExtendedKind.MONERO_TIP_RECEIPT ? (
               <ParentNotePreview
                 appearance="subtle"
                 className="mt-1.5"
@@ -205,6 +220,9 @@ export default function ReplyNote({
                 </div>
               ) : event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT ? (
                 <Zap className="mt-1.5" event={event} variant="thread" />
+              ) : event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+                event.kind === ExtendedKind.MONERO_TIP_RECEIPT ? (
+                <MoneroTip className="mt-1.5" event={event} variant="thread" />
               ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
                 <Superchat className="mt-1.5" event={event} variant="thread" />
               ) : isNip18RepostKind(event.kind) ? null : (

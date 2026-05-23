@@ -81,6 +81,7 @@ import VideoNote from './VideoNote'
 import RelayReview from './RelayReview'
 import Superchat from './Superchat'
 import Zap from './Zap'
+import MoneroTip from './MoneroTip'
 import CitationCard from '@/components/CitationCard'
 import FollowPackPreview from '../ContentPreview/FollowPackPreview'
 import CalendarEventContent from '../CalendarEventContent'
@@ -262,7 +263,9 @@ export default function Note({
     if (
       event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
       event.kind === ExtendedKind.ZAP_RECEIPT ||
-      event.kind === ExtendedKind.ZAP_REQUEST
+      event.kind === ExtendedKind.ZAP_REQUEST ||
+      event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+      event.kind === ExtendedKind.MONERO_TIP_RECEIPT
     ) {
       return undefined
     }
@@ -587,6 +590,17 @@ export default function Note({
   } else if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
     content = (
       <Superchat
+        className="mt-2"
+        event={displayEvent}
+        variant={showPaymentAttestationAction ? 'notification' : 'thread'}
+      />
+    )
+  } else if (
+    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+    event.kind === ExtendedKind.MONERO_TIP_RECEIPT
+  ) {
+    content = (
+      <MoneroTip
         className="mt-2"
         event={displayEvent}
         variant={showPaymentAttestationAction ? 'notification' : 'thread'}

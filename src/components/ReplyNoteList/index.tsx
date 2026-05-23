@@ -46,6 +46,7 @@ import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } from '@/lib/thread-interaction-req'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
@@ -803,12 +804,14 @@ function ReplyNoteList({
           })
 
           const relayUrlsForThreadReq = sanitizeRelayUrlsForFetch(
-            feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
-              operation: 'read',
-              blockedRelays: replyBlockedRelays,
-              applySocialKindBlockedFilter: false,
-              allowThirdPartyLocalRelays: false
-            })
+            appendMoneroNostrRelays(
+              feedRelayPolicyUrls([{ source: 'fallback', urls: finalRelayUrls }], {
+                operation: 'read',
+                blockedRelays: replyBlockedRelays,
+                applySocialKindBlockedFilter: false,
+                allowThirdPartyLocalRelays: false
+              })
+            )
           )
           threadRelayUrlsRef.current = relayUrlsForThreadReq
           const recipientPubkey = event.pubkey

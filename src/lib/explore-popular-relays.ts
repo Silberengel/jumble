@@ -1,4 +1,4 @@
-import { DEFAULT_FAVORITE_RELAYS, FAST_READ_RELAY_URLS } from '@/constants'
+import { DEFAULT_FAVORITE_RELAYS, FAST_READ_RELAY_URLS, MONERO_NOSTR_RELAY_URLS } from '@/constants'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { ViewerRelayListLike } from '@/lib/viewer-relay-defaults'
@@ -43,6 +43,7 @@ export function buildExplorePopularRelayUrls(options: BuildExplorePopularRelayUr
   for (const u of options.favoriteRelays) bump(u)
   for (const u of DEFAULT_FAVORITE_RELAYS) bump(u)
   for (const u of FAST_READ_RELAY_URLS) bump(u)
+  for (const u of MONERO_NOSTR_RELAY_URLS) bump(u)
   for (const u of options.nip66CachedUrls ?? []) bump(u)
 
   const ranked = [...counts.entries()]
