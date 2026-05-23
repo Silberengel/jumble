@@ -16,10 +16,12 @@ import {
   formatPaytoLinkDisplayText,
   paytoLinkChildTextLooksLikeAuthority
 } from '@/lib/payto'
+import { NostrEvent } from 'nostr-tools'
 import PaytoDialog from '@/components/PaytoDialog'
 import { HelpCircle } from 'lucide-react'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
+import type { PostPaymentContext } from '@/lib/post-payment-context'
 
 export default function PaytoLink({
   paytoUri,
@@ -28,6 +30,8 @@ export default function PaytoLink({
   pubkey,
   onOpenZap,
   offerTipNoticeOnClose = true,
+  onPostPaymentRequest,
+  referencedEvent,
   className,
   children,
   /** `compact`: `47R4Npvudm... (Monero)` for notes/markup; `full`: show authority as-is (e.g. zap dialog). */
@@ -41,8 +45,12 @@ export default function PaytoLink({
   /** When set with lightning type, clicking can open Zap dialog via onOpenZap */
   pubkey?: string
   onOpenZap?: (pubkey: string, lightningAuthority: string) => void
-  /** Passed to PaytoDialog; set false when a parent already offers the tip notice on close. */
+  /** Passed to PaytoDialog; set false when a parent already offers the post-payment prompt. */
   offerTipNoticeOnClose?: boolean
+  /** Parent-owned post-payment prompt (e.g. ZapDialog). */
+  onPostPaymentRequest?: (context: PostPaymentContext) => void
+  /** Thread context for superchat requests (kind 9740). */
+  referencedEvent?: NostrEvent
   className?: string
   children?: React.ReactNode
   displayFormat?: 'compact' | 'full'
@@ -156,6 +164,8 @@ export default function PaytoLink({
           paytoUri={raw}
           recipientPubkey={pubkey}
           offerTipNoticeOnClose={offerTipNoticeOnClose}
+          onPostPaymentRequest={onPostPaymentRequest}
+          referencedEvent={referencedEvent}
         />
       )}
     </>

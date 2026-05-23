@@ -17,7 +17,12 @@ import {
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import logger from '@/lib/logger'
-import { getZapInfoFromEvent, shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
+import {
+  buildAttestedPaymentIdSet,
+  getPaymentAttestationTargetId,
+  partitionAttestedSuperchats,
+  replyFeedSuperchatsFirst
+} from '@/lib/superchat'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
@@ -73,32 +78,8 @@ const MAX_PARENT_IDS_PER_NESTED_REQ = 64
 const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 120
 const THREAD_PROFILE_CHUNK = 80
 
-function partitionZapReceipts(items: NEvent[]) {
-  const zaps: NEvent[] = []
-  const nonZaps: NEvent[] = []
-  for (const e of items) {
-    if (e.kind === kinds.Zap) zaps.push(e)
-    else nonZaps.push(e)
-  }
-  return { zaps, nonZaps }
-}
-
-function filterZapReceiptsByReplyThreshold(zaps: NEvent[], thresholdSats: number): NEvent[] {
-  return zaps.filter((z) => shouldIncludeZapReceiptAtReplyThreshold(z, thresholdSats))
-}
-
-/** Zap receipts (9735) at top of reply feeds: largest sats first */
-function sortZapReceiptsBySatsDesc(zaps: NEvent[]) {
-  return [...zaps].sort((a, b) => {
-    const sa = getZapInfoFromEvent(a)?.amount ?? 0
-    const sb = getZapInfoFromEvent(b)?.amount ?? 0
-    if (sb !== sa) return sb - sa
-    return b.created_at - a.created_at
-  })
-}
-
-function replyFeedZapsFirst(sortedNonZapReplies: NEvent[], zaps: NEvent[]) {
-  return [...sortZapReceiptsBySatsDesc(zaps), ...sortedNonZapReplies]
+function replyFeedZapsFirst(sortedNonZapReplies: NEvent[], superchats: NEvent[]) {
+  return replyFeedSuperchatsFirst(sortedNonZapReplies, superchats)
 }
 
 type TBacklinkSubsection = 'primary' | 'bookmark' | 'list' | 'report'
@@ -288,6 +269,13 @@ function replyMatchesThreadForList(
     return true
   }
   if (
+    evt.kind === ExtendedKind.PAYMENT_NOTIFICATION &&
+    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
+    eventReferencesThreadTarget(evt, rootInfo)
+  ) {
+    return true
+  }
+  if (
     (rootInfo.type === 'E' || rootInfo.type === 'A') &&
     evt.kind !== kinds.ShortTextNote &&
     NOTE_STATS_OP_REFERENCE_KINDS.includes(evt.kind) &&
@@ -365,6 +353,7 @@ function ReplyNoteList({
   const { hideContentMentioningMutedUsers } = useContentPolicy()
   const { pubkey: userPubkey } = useNostr()
   const { zapReplyThreshold } = useZap()
+  const [attestedPaymentIds, setAttestedPaymentIds] = useState<Set<string>>(() => new Set())
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const relayAuthoritativeRead =
@@ -378,6 +367,29 @@ function ReplyNoteList({
     if (rootInfo?.type === 'I') out.push(rootInfo.id)
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
+
+  useEffect(() => {
+    setAttestedPaymentIds(new Set())
+  }, [event.id])
+
+  useEffect(() => {
+    const handleAttestation = (data: Event) => {
+      const ce = data as CustomEvent<NEvent>
+      const evt = ce.detail
+      if (!evt || evt.kind !== ExtendedKind.PAYMENT_ATTESTATION) return
+      if (evt.pubkey.toLowerCase() !== event.pubkey.toLowerCase()) return
+      const targetId = getPaymentAttestationTargetId(evt)
+      if (!targetId) return
+      setAttestedPaymentIds((prev) => {
+        if (prev.has(targetId)) return prev
+        const next = new Set(prev)
+        next.add(targetId)
+        return next
+      })
+    }
+    client.addEventListener('newEvent', handleAttestation)
+    return () => client.removeEventListener('newEvent', handleAttestation)
+  }, [event.pubkey])
 
   const replies = useMemo(() => {
     const replyIdSet = new Set<string>()
@@ -444,8 +456,12 @@ function ReplyNoteList({
     
 
 
-    const { zaps: zapsPartitioned, nonZaps } = partitionZapReceipts(replyEvents)
-    const zaps = filterZapReceiptsByReplyThreshold(zapsPartitioned, zapReplyThreshold)
+    const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
+      replyEvents,
+      attestedPaymentIds,
+      zapReplyThreshold
+    )
+    const zaps = superchats
     const replyScoreById =
       sort === 'top' || sort === 'controversial' || sort === 'most-zapped'
         ? new Map(
@@ -536,6 +552,7 @@ function ReplyNoteList({
     hideContentMentioningMutedUsers,
     sort,
     zapReplyThreshold,
+    attestedPaymentIds,
     isDiscussionRoot,
     event.kind
   ])
@@ -559,20 +576,26 @@ function ReplyNoteList({
   const mergedFeed = useMemo(() => {
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
-      const { zaps, nonZaps } = partitionZapReceipts(merged)
-      const zapsShown = zaps
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
+        merged,
+        attestedPaymentIds,
+        zapReplyThreshold
+      )
       const sortedNon = [...nonZaps].sort((a, b) =>
         direction === 'asc' ? a.created_at - b.created_at : b.created_at - a.created_at
       )
-      return moveReportsToEndPreserveOrder(replyFeedZapsFirst(sortedNon, zapsShown))
+      return moveReportsToEndPreserveOrder(replyFeedSuperchatsFirst(sortedNon, superchats))
     }
 
     if (!showQuotes) return replies
 
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
-      const { zaps, nonZaps } = partitionZapReceipts(replies)
-      const zapsShown = zaps
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
+        replies,
+        attestedPaymentIds,
+        zapReplyThreshold
+      )
       const middle = nonZaps.filter((e) => !isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailFromReplies = nonZaps.filter((e) => isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailSeen = new Set<string>()
@@ -584,13 +607,16 @@ function ReplyNoteList({
       }
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedZapsFirst(middle, zapsShown), ...tailSorted]
+      return [...replyFeedSuperchatsFirst(middle, superchats), ...tailSorted]
     }
 
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
     if (rootInfo?.type === 'I') {
-      const { zaps, nonZaps } = partitionZapReceipts(replies)
-      const zapsShownI = zaps
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
+        replies,
+        attestedPaymentIds,
+        zapReplyThreshold
+      )
       const middle = nonZaps.filter((e) => !isWebThreadTailKind(e.kind))
       const tailFromReplies = nonZaps.filter((e) => isWebThreadTailKind(e.kind))
       const tailSeen = new Set<string>()
@@ -602,7 +628,7 @@ function ReplyNoteList({
       }
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedZapsFirst(middle, zapsShownI), ...tailSorted]
+      return [...replyFeedSuperchatsFirst(middle, superchats), ...tailSorted]
     }
 
     const merged = [...replies]
@@ -612,7 +638,7 @@ function ReplyNoteList({
       return [...replies]
     }
     return zapsThenTimeSorted(merged, 'desc')
-  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind])
+  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, zapReplyThreshold])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -1136,6 +1162,32 @@ function ReplyNoteList({
           const repliesForStatsPrime = mergedForUi
           addReplies(mergedForUi)
 
+          const recipientPubkey = event.pubkey
+          if (recipientPubkey && relayUrlsForThreadReq.length > 0) {
+            void client
+              .fetchEvents(
+                relayUrlsForThreadReq,
+                {
+                  kinds: [ExtendedKind.PAYMENT_ATTESTATION],
+                  authors: [recipientPubkey],
+                  limit: 500
+                },
+                {
+                  cache: true,
+                  eoseTimeout: 4500,
+                  globalTimeout: 12_000,
+                  foreground: statsForeground
+                }
+              )
+              .then((attestations) => {
+                if (fetchGeneration !== replyFetchGenRef.current) return
+                setAttestedPaymentIds(buildAttestedPaymentIdSet(attestations, recipientPubkey))
+              })
+              .catch(() => {
+                /* attestations optional */
+              })
+          }
+
           const statsBatch = mergedCachedReplies !== null && mergedCachedReplies.length > 0 ? mergedCachedReplies : regularReplies
           if (statsBatch.length > 0) {
             noteStatsService.updateNoteStatsByEvents(statsBatch, event.pubkey, {
@@ -1382,8 +1434,8 @@ function ReplyNoteList({
         return false
       }
       const isQuote = quoteUiIdSet.has(item.id)
-      // Zap receipts are public payment records — always show when they passed mute filters.
-      if (item.kind === kinds.Zap) return true
+      // Attested superchats are public payment records — always show when they passed mute filters.
+      if (item.kind === kinds.Zap || item.kind === ExtendedKind.PAYMENT_NOTIFICATION) return true
       // Backlink rows (quotes, highlights, …): show even when author is not in the trust list.
       if (isQuote) return true
       if (isTrustLoaded && hideUntrustedInteractions && !isUserTrusted(item.pubkey)) {

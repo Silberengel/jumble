@@ -1,4 +1,4 @@
-import TipPublicMessagePrompt from '@/components/ZapDialog/TipPublicMessagePrompt'
+import PostPaymentMessagePrompt from '@/components/ZapDialog/PostPaymentMessagePrompt'
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,8 @@ import {
 } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
+import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { NostrEvent } from 'nostr-tools'
 import LightningInvoiceSection from './LightningInvoiceSection'
 
 export default function PaytoDialog({
@@ -41,22 +43,29 @@ export default function PaytoDialog({
   authority,
   paytoUri,
   recipientPubkey,
-  offerTipNoticeOnClose = true
+  referencedEvent,
+  offerTipNoticeOnClose = true,
+  onPostPaymentRequest
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   type: string
   authority: string
   paytoUri: string
-  /** When set, closing the dialog offers a kind-24 tip notice to this pubkey. */
+  /** When set, closing the dialog offers a post-payment message prompt to this pubkey. */
   recipientPubkey?: string
-  /** When false, a parent (e.g. ZapDialog) will offer the tip notice on its own close. */
+  /** Note or profile context for superchat placement (kind 9740). */
+  referencedEvent?: NostrEvent
+  /** When false, a parent handles the post-payment prompt itself. */
   offerTipNoticeOnClose?: boolean
+  /** Parent-owned post-payment UI (e.g. ZapDialog). When set, internal prompt is skipped. */
+  onPostPaymentRequest?: (context: PostPaymentContext) => void
 }) {
   const { t } = useTranslation()
   const { pubkey: selfPubkey } = useNostr()
-  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
-  const skipTipNoticeOnCloseRef = useRef(false)
+  const [postPaymentOpen, setPostPaymentOpen] = useState(false)
+  const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
+  const skipPostPaymentOnCloseRef = useRef(false)
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
   const isLightning = type.toLowerCase() === 'lightning'
@@ -73,9 +82,51 @@ export default function PaytoDialog({
   }, [open])
 
   const closeForWalletFlow = useCallback(() => {
-    skipTipNoticeOnCloseRef.current = true
+    skipPostPaymentOnCloseRef.current = true
     onOpenChange(false)
   }, [onOpenChange])
+
+  const openPostPaymentPrompt = useCallback(
+    (context?: Partial<PostPaymentContext>) => {
+      if (!recipientPubkey) return
+      if (selfPubkey && recipientPubkey === selfPubkey) return
+      const built = buildPostPaymentContext({
+        recipientPubkey,
+        paytoUri,
+        paytoType: type,
+        paytoAuthority: authority,
+        referencedEvent,
+        ...context
+      })
+      if (onPostPaymentRequest) {
+        onPostPaymentRequest(built)
+        return
+      }
+      if (!offerTipNoticeOnClose) return
+      setPostPaymentContext(built)
+      setPostPaymentOpen(true)
+    },
+    [
+      offerTipNoticeOnClose,
+      onPostPaymentRequest,
+      recipientPubkey,
+      selfPubkey,
+      paytoUri,
+      type,
+      authority,
+      referencedEvent
+    ]
+  )
+
+  /** Run after the payto dialog has closed so nested modals (e.g. inside ZapDialog) do not dismiss the prompt. */
+  const schedulePostPaymentPrompt = useCallback(
+    (context?: Partial<PostPaymentContext>) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => openPostPaymentPrompt(context))
+      })
+    },
+    [openPostPaymentPrompt]
+  )
 
   const openHandlers = useMemo(
     () =>
@@ -122,26 +173,23 @@ export default function PaytoDialog({
     handleDialogOpenChange(false)
   }
 
-  const maybeOfferTipNotice = useCallback(() => {
-    if (!offerTipNoticeOnClose) return
-    if (!recipientPubkey) return
-    if (selfPubkey && recipientPubkey === selfPubkey) return
-    setTipNoticeOpen(true)
-  }, [offerTipNoticeOnClose, recipientPubkey, selfPubkey])
-
-  const maybeOfferTipNoticeOnClose = () => {
-    if (skipTipNoticeOnCloseRef.current) return
-    maybeOfferTipNotice()
+  const maybeOfferPostPaymentOnClose = () => {
+    if (skipPostPaymentOnCloseRef.current) return
+    schedulePostPaymentPrompt()
   }
 
   const handleDialogOpenChange = (next: boolean) => {
     if (!next) {
-      maybeOfferTipNoticeOnClose()
-      skipTipNoticeOnCloseRef.current = false
+      const skipped = skipPostPaymentOnCloseRef.current
+      skipPostPaymentOnCloseRef.current = false
+      onOpenChange(next)
+      if (!skipped) {
+        maybeOfferPostPaymentOnClose()
+      }
     } else {
-      skipTipNoticeOnCloseRef.current = false
+      skipPostPaymentOnCloseRef.current = false
+      onOpenChange(next)
     }
-    onOpenChange(next)
   }
 
   return (
@@ -175,7 +223,13 @@ export default function PaytoDialog({
               paytoUri={paytoUri}
               onBolt11InvoiceChange={setBolt11Invoice}
               onRequestClose={closeForWalletFlow}
-              onPaymentSuccess={maybeOfferTipNotice}
+              onPaymentFlowComplete={(details) => {
+                onOpenChange(false)
+                schedulePostPaymentPrompt({
+                  amountMsat: details?.amountMsat,
+                  payto: details?.payto
+                })
+              }}
             />
           ) : isLightning ? null : (
             <>
@@ -276,11 +330,12 @@ export default function PaytoDialog({
         </div>
       </DialogContent>
     </Dialog>
-    {recipientPubkey ? (
-      <TipPublicMessagePrompt
-        open={tipNoticeOpen}
-        onOpenChange={setTipNoticeOpen}
+    {recipientPubkey && !onPostPaymentRequest ? (
+      <PostPaymentMessagePrompt
+        open={postPaymentOpen}
+        onOpenChange={setPostPaymentOpen}
         recipientPubkey={recipientPubkey}
+        paymentContext={postPaymentContext}
       />
     ) : null}
     </>

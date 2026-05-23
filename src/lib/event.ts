@@ -6,7 +6,7 @@ import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import client from '@/services/client.service'
 import { TImetaInfo } from '@/types'
 import { LRUCache } from 'lru-cache'
-import { Event, getEventHash, kinds, nip19, UnsignedEvent } from 'nostr-tools'
+import { Event, kinds, nip19, UnsignedEvent } from 'nostr-tools'
 import { minePow as nip13MinePow } from 'nostr-tools/nip13'
 import { hexPubkeysEqual, normalizeHexPubkey } from './pubkey'
 import {
@@ -135,9 +135,9 @@ export function isReplyNoteEvent(event: Event) {
     return true
   }
 
-  // Zap receipts are considered replies if they have an 'e' tag (zapping a note) or 'a' tag (zapping an addressable event)
-  if (event.kind === kinds.Zap) {
-    return event.tags.some(tag => tag[0] === 'e' || tag[0] === 'a')
+  // Zap receipts and payment notifications are thread replies when they reference a note or addressable event.
+  if (event.kind === kinds.Zap || event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+    return event.tags.some((tag) => tag[0] === 'e' || tag[0] === 'a')
   }
 
   if (event.kind !== kinds.ShortTextNote) return false

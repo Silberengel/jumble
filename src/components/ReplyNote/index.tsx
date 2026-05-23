@@ -25,6 +25,7 @@ import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ClientTag from '../ClientTag'
+import EventPowLabel from '../EventPowLabel'
 import Collapsible from '../Collapsible'
 import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
@@ -37,6 +38,7 @@ import WebPreview from '../WebPreview'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
 import NoteKindLabel from '../Note/NoteKindLabel'
+import Superchat from '../Note/Superchat'
 import Zap from '../Note/Zap'
 
 export default function ReplyNote({
@@ -143,15 +145,20 @@ export default function ReplyNote({
                 <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
               </div>
             </div>
-            <NoteKindLabel
-              kind={event.kind}
-              event={event}
-              size="small"
-              className={cn(
-                'mt-0.5',
-                (isNip25ReactionKind(event.kind) || event.kind === kinds.Zap) && 'opacity-60'
-              )}
-            />
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <NoteKindLabel
+                kind={event.kind}
+                event={event}
+                size="small"
+                className={cn(
+                  (isNip25ReactionKind(event.kind) ||
+                    event.kind === kinds.Zap ||
+                    event.kind === ExtendedKind.PAYMENT_NOTIFICATION) &&
+                    'opacity-60'
+                )}
+              />
+              <EventPowLabel event={event} />
+            </div>
             {webReactionParentUrl ? (
               <div className="mt-1.5 not-prose max-w-full" data-parent-note-preview>
                 <WebPreview url={webReactionParentUrl} className="w-full" />
@@ -195,6 +202,8 @@ export default function ReplyNote({
                 </div>
               ) : event.kind === kinds.Zap ? (
                 <Zap className="mt-1.5" event={event} omitSenderHeading variant="compact" />
+              ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
+                <Superchat className="mt-1.5" event={event} omitSenderHeading variant="compact" />
               ) : isNip18RepostKind(event.kind) ? null : (
                 <MarkdownArticle
                   className="mt-2"

@@ -551,6 +551,48 @@ export async function createPublicMessageDraftEvent(
   return setDraftEventCache(baseDraft)
 }
 
+export async function createPaymentNotificationDraftEvent(
+  content: string,
+  recipientPubkey: string,
+  options: {
+    amountMsat?: number
+    payto?: string
+    referencedEvent?: Event
+    addClientTag?: boolean
+  } = {}
+): Promise<TDraftEvent> {
+  const trimmed = content.trim()
+  const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(trimmed)
+  const hashtags = extractHashtags(transformedEmojisContent)
+
+  const tags = emojiTags.concat(hashtags.map((hashtag) => buildTTag(hashtag)))
+  tags.push(buildPTag(recipientPubkey))
+
+  if (options.amountMsat != null && options.amountMsat > 0) {
+    tags.push(['amount', String(Math.round(options.amountMsat))])
+  }
+  if (options.payto?.trim()) {
+    tags.push(['payto', options.payto.trim()])
+  }
+
+  if (options.referencedEvent) {
+    if (isReplaceableEvent(options.referencedEvent.kind)) {
+      tags.push(buildATag(options.referencedEvent))
+    } else {
+      tags.push(buildETag(options.referencedEvent.id, options.referencedEvent.pubkey))
+    }
+    tags.push(['k', String(options.referencedEvent.kind)])
+  }
+
+  const baseDraft = {
+    kind: ExtendedKind.PAYMENT_NOTIFICATION,
+    content: transformedEmojisContent,
+    tags
+  }
+
+  return setDraftEventCache(baseDraft)
+}
+
 const SECONDS_PER_DAY = 86400
 
 /**

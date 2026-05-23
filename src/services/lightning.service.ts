@@ -20,8 +20,8 @@ import { Filter, kinds, NostrEvent } from 'nostr-tools'
 import { SubCloser } from 'nostr-tools/abstract-pool'
 import { makeZapRequest } from 'nostr-tools/nip57'
 import { utf8Decoder } from 'nostr-tools/utils'
+
 import client from './client.service'
-import storage from './local-storage.service'
 import { queryService, replaceableEventService } from './client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { clampZapSats } from '@/lib/lightning'
@@ -32,6 +32,8 @@ import logger from '@/lib/logger'
 import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
 
 export type TRecentSupporter = { pubkey: string; amount: number; comment?: string }
+
+export type PaymentFlowResult = { preimage: string; invoice: string } | null
 
 /** LNURL-pay limits from the recipient’s `.well-known/lnurlp` metadata. */
 export type LnurlPayInvoiceOptions = {
@@ -69,9 +71,9 @@ class LightningService {
     sats: number,
     comment: string,
     closeOuterModel?: () => void,
-    includePublicReceipt: boolean = storage.getIncludePublicZapReceipt(),
+    onPaymentFlowComplete?: (result: PaymentFlowResult) => void,
     zapLightning?: { address?: string; candidates?: string[] }
-  ): Promise<{ preimage: string; invoice: string } | null> {
+  ): Promise<PaymentFlowResult> {
     if (!ZAP_SENDING_ENABLED) {
       throw new Error('NIP-57 zaps are disabled; use LNURL-pay invoices instead')
     }
@@ -102,13 +104,10 @@ class LightningService {
     }
     const { callback, lnurl } = zapEndpoint
     const amount = sats * 1000
-    const zapRelays = includePublicReceipt
-      ? senderRelayList.write.slice(0, 4).concat(FAST_READ_RELAY_URLS)
-      : []
     const zapRequestDraft = makeZapRequest({
       ...(event ? { event } : { pubkey: recipient }),
       amount,
-      relays: zapRelays,
+      relays: [],
       comment
     })
     const zapRequest = await client.signer.signEvent(zapRequestDraft)
@@ -131,7 +130,9 @@ class LightningService {
       try {
         const { preimage } = await sendWebLNPaymentWithRetry(this.provider, pr)
         closeOuterModel?.()
-        return { preimage, invoice: pr }
+        const result = { preimage, invoice: pr }
+        onPaymentFlowComplete?.(result)
+        return result
       } catch (error) {
         if (!isNwcWalletServiceInfoError(error)) {
           throw error
@@ -144,17 +145,19 @@ class LightningService {
         closeModal()
         let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
         let subCloser: SubCloser | undefined
+        const finish = (result: PaymentFlowResult) => {
+          clearInterval(checkPaymentInterval)
+          subCloser?.close()
+          onPaymentFlowComplete?.(result)
+          resolve(result)
+        }
         const { setPaid } = launchPaymentModal({
           invoice: pr,
           onPaid: (response) => {
-            clearInterval(checkPaymentInterval)
-            subCloser?.close()
-            resolve({ preimage: response.preimage, invoice: pr })
+            finish({ preimage: response.preimage, invoice: pr })
           },
           onCancelled: () => {
-            clearInterval(checkPaymentInterval)
-            subCloser?.close()
-            resolve(null)
+            finish(null)
           }
         })
 
@@ -199,13 +202,16 @@ class LightningService {
 
   async payInvoice(
     invoice: string,
-    closeOuterModel?: () => void
-  ): Promise<{ preimage: string; invoice: string } | null> {
+    closeOuterModel?: () => void,
+    onPaymentFlowComplete?: (result: PaymentFlowResult) => void
+  ): Promise<PaymentFlowResult> {
     if (this.provider) {
       try {
         const { preimage } = await sendWebLNPaymentWithRetry(this.provider, invoice)
         closeOuterModel?.()
-        return { preimage, invoice }
+        const result = { preimage, invoice }
+        onPaymentFlowComplete?.(result)
+        return result
       } catch (error) {
         if (!isNwcWalletServiceInfoError(error)) {
           throw error
@@ -219,9 +225,12 @@ class LightningService {
         launchPaymentModal({
           invoice: invoice,
           onPaid: (response) => {
-            resolve({ preimage: response.preimage, invoice: invoice })
+            const result = { preimage: response.preimage, invoice: invoice }
+            onPaymentFlowComplete?.(result)
+            resolve(result)
           },
           onCancelled: () => {
+            onPaymentFlowComplete?.(null)
             resolve(null)
           }
         })

@@ -48,6 +48,7 @@ import SelectionHighlightTrigger from './SelectionHighlightTrigger'
 import AudioPlayer from '../AudioPlayer'
 import WebPreview from '../WebPreview'
 import ClientTag from '../ClientTag'
+import EventPowLabel from '../EventPowLabel'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import Nip05 from '../Nip05'
 import NoteOptions from '../NoteOptions'
@@ -78,6 +79,7 @@ import NoteKindLabel from './NoteKindLabel'
 import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
 import RelayReview from './RelayReview'
+import Superchat from './Superchat'
 import Zap from './Zap'
 import CitationCard from '@/components/CitationCard'
 import FollowPackPreview from '../ContentPreview/FollowPackPreview'
@@ -557,6 +559,8 @@ export default function Note({
     content = renderEventContent({ hideMetadata: true })
   } else if (event.kind === ExtendedKind.ZAP_REQUEST || event.kind === ExtendedKind.ZAP_RECEIPT) {
     content = <Zap className="mt-2" event={displayEvent} />
+  } else if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+    content = <Superchat className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.FOLLOW_PACK) {
     content = <FollowPackPreview className="mt-2" event={displayEvent} />
   } else if (
@@ -742,7 +746,10 @@ export default function Note({
             )}
           </div>
         </div>
-        <NoteKindLabel kind={event.kind} event={event} size={size} className="mt-1" />
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <NoteKindLabel kind={event.kind} event={event} size={size} />
+          <EventPowLabel event={event} />
+        </div>
         {webReactionParentUrl ? (
           <div className="mt-2 not-prose max-w-full" data-parent-note-preview>
             <WebPreview url={webReactionParentUrl} className="w-full" />

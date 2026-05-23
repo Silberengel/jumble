@@ -552,6 +552,10 @@ export const ExtendedKind = {
   FOLLOW_SET: 30000,
   ZAP_REQUEST: 9734,
   ZAP_RECEIPT: 9735,
+  /** Payment Superchats: sender notifies recipient of a payto/zap payment (kind 9740). */
+  PAYMENT_NOTIFICATION: 9740,
+  /** Payment Superchats: recipient attests receipt of kind 9740 or 9735 (kind 9741). */
+  PAYMENT_ATTESTATION: 9741,
   PUBLICATION: 30040,
   WIKI_ARTICLE: 30818,
   /** NIP/spec document (Markdown) for relay publication instead of GitHub; kind 30817. */

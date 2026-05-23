@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useSmartNoteNavigationOptional, useSecondaryPageOptional } from '@/PageManager'
 import Username from '../Username'
 import UserAvatar from '../UserAvatar'
+import SuperchatPaymentMethodLabel from './SuperchatPaymentMethodLabel'
 
 export default function Zap({
   event,
@@ -42,7 +43,7 @@ export default function Zap({
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
 
-  if (!zapInfo || !zapInfo.senderPubkey || !zapInfo.amount) {
+  if (!zapInfo || !zapInfo.senderPubkey || (variant === 'default' && !zapInfo.amount)) {
     return (
       <div
         className={cn(
@@ -93,9 +94,8 @@ export default function Zap({
     return (
       <div className={cn('text-sm text-muted-foreground', className)}>
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <ZapIcon className="size-3.5 shrink-0 opacity-70" strokeWidth={2} aria-hidden />
-          <span className="tabular-nums font-medium text-foreground/90">{formatAmount(amount)}</span>
-          <span>{t('sats')}</span>
+          <SuperchatPaymentMethodLabel paytoType="lightning" />
+          <span className="text-xs font-medium text-yellow-400/90">{t('Superchat')}</span>
           {recipientPubkey && recipientPubkey !== senderPubkey && (
             <span className="text-xs">
               <span>{t('zapped')}</span>{' '}
@@ -120,7 +120,7 @@ export default function Zap({
           )}
         </div>
         {comment ? (
-          <p className="mt-1.5 pl-5 text-sm leading-snug text-muted-foreground whitespace-pre-wrap break-words">
+          <p className="mt-1.5 text-sm leading-snug text-foreground/90 whitespace-pre-wrap break-words">
             {comment}
           </p>
         ) : null}

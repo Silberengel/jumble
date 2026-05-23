@@ -7,6 +7,7 @@ import { ExtendedKind } from '@/constants'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { getKindDescription } from '@/lib/kind-description'
 import NoteKindLabel from './NoteKindLabel'
+import EventPowLabel from '../EventPowLabel'
 import { useMemo, useState } from 'react'
 import EventViewer from './EventViewer'
 import { Button } from '@/components/ui/button'
@@ -34,8 +35,8 @@ const ELEVATED_TAG_NAMES = new Set([
   'pubkey'
 ])
 
-/** e / p / q / a: thread & pubkey refs — noisy in preview; show under Technical details only. */
-const TECHNICAL_ONLY_TAG_NAMES = new Set(['e', 'p', 'q', 'a'])
+/** e / p / q / a / nonce: thread refs & PoW — noisy in preview; show under Technical details only. */
+const TECHNICAL_ONLY_TAG_NAMES = new Set(['e', 'p', 'q', 'a', 'nonce'])
 
 function truncatePreview(text: string, max: number): string {
   const t = text.trim()
@@ -241,7 +242,10 @@ export default function UnknownNote({
         <div>
           <h3 className="text-sm font-semibold leading-tight text-foreground">{headline}</h3>
           {!omitKindLabel ? (
-            <NoteKindLabel kind={event.kind} event={event} size="small" className="mt-0.5" />
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <NoteKindLabel kind={event.kind} event={event} size="small" />
+              <EventPowLabel event={event} />
+            </div>
           ) : null}
           {elevated.title?.trim() && !omitKindLabel ? (
             <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">

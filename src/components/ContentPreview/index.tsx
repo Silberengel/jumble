@@ -37,6 +37,7 @@ import ApplicationHandlerRecommendation from '../ApplicationHandlerRecommendatio
 import FollowPackPreview from './FollowPackPreview'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
 import NoteKindLabel from '../Note/NoteKindLabel'
+import EventPowLabel from '../EventPowLabel'
 import Zap from '../Note/Zap'
 import GitRepublicEventCard from '../Note/GitRepublicEventCard'
 
@@ -123,7 +124,10 @@ export default function ContentPreview({
 
   const withKindRow = (node: React.ReactNode) => (
     <div className={cn('flex min-w-0 flex-col gap-1', previewOuter)}>
-      <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
+        <EventPowLabel event={previewEvent} />
+      </div>
       <div className={cn('min-w-0', previewBody)}>{node}</div>
     </div>
   )
@@ -164,7 +168,10 @@ export default function ContentPreview({
     }
     return (
       <div className={cn('flex min-w-0 flex-col gap-1', previewOuter)}>
-        <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
+          <EventPowLabel event={previewEvent} />
+        </div>
         <div className={cn('min-w-0', previewBody)}>
           <DiscussionNote event={previewEvent} size="small" />
         </div>

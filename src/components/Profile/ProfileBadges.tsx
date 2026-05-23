@@ -2,6 +2,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileWall } from '@/hooks/useProfileWall'
 import { useTranslation } from 'react-i18next'
+import ProfileWallSuperchats from './ProfileWallSuperchats'
 
 export default function ProfileBadges({
   pubkey,
@@ -14,7 +15,7 @@ export default function ProfileBadges({
   onRefresh?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
-  const { badges, isLoading, refresh } = useProfileWall(pubkey, profileEventId)
+  const { badges, superchats, isLoading, refresh } = useProfileWall(pubkey, profileEventId)
   const handleRefresh = () => {
     if (onRefresh) {
       void onRefresh()
@@ -23,7 +24,7 @@ export default function ProfileBadges({
     refresh()
   }
 
-  if (isLoading && badges.length === 0) {
+  if (isLoading && badges.length === 0 && superchats.length === 0) {
     return (
       <div className="mt-3 flex flex-wrap gap-2" aria-hidden>
         <Skeleton className="h-14 w-14 rounded-lg" />
@@ -32,39 +33,46 @@ export default function ProfileBadges({
     )
   }
 
-  if (badges.length === 0) return null
+  if (badges.length === 0 && superchats.length === 0) return null
 
   return (
-    <section className="mt-3 min-w-0" aria-label={t('Badges')}>
-      <div className="mb-1 flex items-center justify-end gap-2">
-        <RefreshButton onClick={handleRefresh} onLongPress={null} />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {badges.map((badge) => (
-          <div
-            key={`${badge.definitionCoordinate}:${badge.awardEventId}`}
-            className="flex max-w-[5.5rem] flex-col items-center gap-0.5"
-            title={badge.description ?? badge.name}
-          >
-            {badge.imageUrl ? (
-              <img
-                src={badge.imageUrl}
-                alt={badge.name}
-                className="h-14 w-14 rounded-lg border border-border object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-lg border border-border bg-muted px-1 text-center text-[10px] font-medium leading-tight"
-                aria-hidden
-              >
-                {badge.name}
-              </div>
-            )}
-            <span className="w-full truncate text-center text-[10px] text-muted-foreground">{badge.name}</span>
+    <div className="mt-3 min-w-0">
+      {badges.length > 0 ? (
+        <section className="min-w-0" aria-label={t('Badges')}>
+          <div className="mb-1 flex items-center justify-end gap-2">
+            <RefreshButton onClick={handleRefresh} onLongPress={null} />
           </div>
-        ))}
-      </div>
-    </section>
+          <div className="flex flex-wrap gap-2">
+            {badges.map((badge) => (
+              <div
+                key={`${badge.definitionCoordinate}:${badge.awardEventId}`}
+                className="flex max-w-[5.5rem] flex-col items-center gap-0.5"
+                title={badge.description ?? badge.name}
+              >
+                {badge.imageUrl ? (
+                  <img
+                    src={badge.imageUrl}
+                    alt={badge.name}
+                    className="h-14 w-14 rounded-lg border border-border object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div
+                    className="flex h-14 w-14 items-center justify-center rounded-lg border border-border bg-muted px-1 text-center text-[10px] font-medium leading-tight"
+                    aria-hidden
+                  >
+                    {badge.name}
+                  </div>
+                )}
+                <span className="w-full truncate text-center text-[10px] text-muted-foreground">
+                  {badge.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <ProfileWallSuperchats superchats={superchats} isLoading={isLoading && superchats.length === 0} />
+    </div>
   )
 }

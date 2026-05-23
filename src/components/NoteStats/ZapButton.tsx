@@ -27,7 +27,8 @@ import { MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useSta
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import ZapDialog from '../ZapDialog'
-import TipPublicMessagePrompt from '../ZapDialog/TipPublicMessagePrompt'
+import PostPaymentMessagePrompt from '../ZapDialog/PostPaymentMessagePrompt'
+import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 
 type ZapButtonProps = {
   event: Event
@@ -267,10 +268,11 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
 
   const { t } = useTranslation()
   const { checkLogin, pubkey } = useNostr()
-  const { defaultZapSats, defaultZapComment, quickZap, includePublicZapReceipt } = useZap()
+  const { defaultZapSats, defaultZapComment, quickZap } = useZap()
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null)
   const [openZapDialog, setOpenZapDialog] = useState(false)
-  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
+  const [postPaymentOpen, setPostPaymentOpen] = useState(false)
+  const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
   const [zapping, setZapping] = useState(false)
   const statsLoaded = noteStats?.updatedAt != null
   const { zapAmount, hasZapped } = useMemo(() => {
@@ -366,15 +368,25 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
       if (zapping) return
 
       setZapping(true)
+      const paymentDetails = { amountMsat: defaultZapSats * 1000 }
       const zapResult = await lightning.zap(
         pubkey,
         event,
         defaultZapSats,
         defaultZapComment,
         undefined,
-        includePublicZapReceipt
+        () => {
+          if (event.pubkey === pubkey) return
+          setPostPaymentContext(
+            buildPostPaymentContext({
+              recipientPubkey: event.pubkey,
+              amountMsat: paymentDetails.amountMsat,
+              referencedEvent: event
+            })
+          )
+          setPostPaymentOpen(true)
+        }
       )
-      // user canceled
       if (!zapResult) {
         return
       }
@@ -385,9 +397,6 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         defaultZapSats,
         defaultZapComment
       )
-      if (event.pubkey !== pubkey && !includePublicZapReceipt) {
-        setTipNoticeOpen(true)
-      }
     } catch (error) {
       toast.error(`${t('Zap failed')}: ${(error as Error).message}`)
     } finally {
@@ -510,10 +519,11 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         event={event}
         prefetchedPayment={tipPaymentData}
       />
-      <TipPublicMessagePrompt
-        open={tipNoticeOpen}
-        onOpenChange={setTipNoticeOpen}
+      <PostPaymentMessagePrompt
+        open={postPaymentOpen}
+        onOpenChange={setPostPaymentOpen}
         recipientPubkey={event.pubkey}
+        paymentContext={postPaymentContext}
       />
     </>
   )

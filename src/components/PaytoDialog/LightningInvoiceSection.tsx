@@ -12,6 +12,7 @@ import {
   getAmountFromInvoice,
   parseGroupedIntegerInput
 } from '@/lib/lightning'
+import { buildPaytoUri, formatPaytoTagValue } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { useZap } from '@/providers/ZapProvider'
 import lightning from '@/services/lightning.service'
@@ -35,7 +36,7 @@ export default function LightningInvoiceSection({
   paytoUri,
   onBolt11InvoiceChange,
   onRequestClose,
-  onPaymentSuccess
+  onPaymentFlowComplete
 }: {
   lightningAddress: string
   paytoUri: string
@@ -43,8 +44,8 @@ export default function LightningInvoiceSection({
   onBolt11InvoiceChange?: (invoice: string | null) => void
   /** Close the payto dialog before opening an external wallet / Bitcoin Connect UI. */
   onRequestClose?: () => void
-  /** After a successful in-app or external wallet payment (kind-24 tip notice). */
-  onPaymentSuccess?: () => void
+  /** After the payment modal closes (success or cancel). */
+  onPaymentFlowComplete?: (details?: { amountMsat: number; payto: string }) => void
 }) {
   const { t } = useTranslation()
   const { defaultZapSats, isWalletConnected } = useZap()
@@ -135,17 +136,28 @@ export default function LightningInvoiceSection({
     }
   }
 
+  const paymentDetails = useMemo(
+    () => ({
+      amountMsat: clampZapSats(sats) * 1000,
+      payto: formatPaytoTagValue(buildPaytoUri('lightning', lightningAddress))
+    }),
+    [sats, lightningAddress]
+  )
+
   const handlePay = async () => {
     if (!invoice) return
     try {
       setPaying(true)
-      const result = await lightning.payInvoice(invoice, onRequestClose)
+      const result = await lightning.payInvoice(
+        invoice,
+        onRequestClose,
+        () => onPaymentFlowComplete?.(paymentDetails)
+      )
       if (!mountedRef.current) return
       if (result) {
         toast.success(t('Payment sent'))
         setInvoice(null)
         setInvoiceDescription(null)
-        onPaymentSuccess?.()
       }
     } catch (error) {
       if (mountedRef.current) {

@@ -7,11 +7,16 @@ import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { NostrEvent } from 'nostr-tools'
+import type { PostPaymentContext } from '@/lib/post-payment-context'
+
 export default function PaymentMethodsSection({
   groups,
   recipientPubkey,
   onOpenZap,
+  referencedEvent,
   offerTipNoticeOnClose = true,
+  onPostPaymentRequest,
   title,
   className,
   headerHelpText
@@ -20,8 +25,11 @@ export default function PaymentMethodsSection({
   recipientPubkey?: string
   /** When set, lightning rows open the zap flow with that address as the default. */
   onOpenZap?: (lightningAuthority: string) => void
-  /** When false, PaytoDialog defer tip notice to parent (e.g. ZapDialog). */
+  /** Thread context passed to PaytoDialog for superchat requests. */
+  referencedEvent?: NostrEvent
+  /** When false, PaytoDialog defer post-payment prompt to parent. */
   offerTipNoticeOnClose?: boolean
+  onPostPaymentRequest?: (context: PostPaymentContext) => void
   title?: string
   className?: string
   /** Prominent note above the list (e.g. on-chain Bitcoin eligibility in zap dialog). */
@@ -71,6 +79,8 @@ export default function PaymentMethodsSection({
                             : undefined
                         }
                         offerTipNoticeOnClose={offerTipNoticeOnClose}
+                        onPostPaymentRequest={onPostPaymentRequest}
+                        referencedEvent={referencedEvent}
                         className={cn(PRIMARY_LINK_HOVER_CLASS, 'break-all min-w-0 flex-1')}
                       >
                         {method.authority}

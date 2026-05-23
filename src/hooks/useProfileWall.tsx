@@ -19,6 +19,7 @@ import {
   type ResolvedProfileBadge
 } from '@/lib/nip58-profile-badges'
 import { isDirectProfileWallComment } from '@/lib/profile-wall-comments'
+import { filterAttestedProfileWallSuperchats, isProfileWallPaymentNotification } from '@/lib/superchat'
 import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -77,7 +78,10 @@ async function fetchBadgeDefinitionOnRelays(
 }
 
 const CACHE_DURATION = 5 * 60 * 1000
-const wallCacheByKey = new Map<string, { badges: ResolvedProfileBadge[]; comments: Event[]; lastUpdated: number }>()
+const wallCacheByKey = new Map<
+  string,
+  { badges: ResolvedProfileBadge[]; comments: Event[]; superchats: Event[]; lastUpdated: number }
+>()
 
 const wallRefreshListenersByPubkey = new Map<string, Set<() => void>>()
 
@@ -120,6 +124,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     hasUsefulWallCache ? cached!.badges : []
   )
   const [comments, setComments] = useState<Event[]>(hasUsefulWallCache ? cached!.comments : [])
+  const [superchats, setSuperchats] = useState<Event[]>(hasUsefulWallCache ? (cached!.superchats ?? []) : [])
   const [isLoading, setIsLoading] = useState(!hasUsefulWallCache)
   const [refreshToken, setRefreshToken] = useState(0)
 
@@ -220,6 +225,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         if (runGen === runGenRef.current) {
           setBadges((prev) => (prev === mem.badges ? prev : mem.badges))
           setComments((prev) => (prev === mem.comments ? prev : mem.comments))
+          setSuperchats((prev) => (prev === (mem.superchats ?? []) ? prev : (mem.superchats ?? [])))
           setIsLoading((prev) => (prev ? false : prev))
         }
         return
@@ -249,7 +255,7 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           authorRl,
           false,
           false,
-          [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION],
+          [ExtendedKind.COMMENT, ExtendedKind.PROFILE_BADGES_LIST, ExtendedKind.BADGE_DEFINITION, ExtendedKind.PAYMENT_NOTIFICATION, ExtendedKind.PAYMENT_ATTESTATION],
           useGlobalRelayBootstrapRef.current
         )
 
@@ -293,14 +299,19 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
         }
         setIsLoading(false)
 
-        // --- Wall comments (kind 1111): after badges so payment UI is not blocked ---
+        // --- Wall comments (kind 1111) and attested superchats (kind 9740) ---
         let wallComments: Event[] = []
+        let wallSuperchats: Event[] = []
         const profileId = profileEventId?.trim().toLowerCase()
         if (profileId && /^[0-9a-f]{64}$/.test(profileId) && relayUrls.length > 0) {
           const profileCoord = getReplaceableCoordinate(kinds.Metadata, pkNorm, '')
           const filters: Filter[] = [
             { kinds: [ExtendedKind.COMMENT], '#e': [profileId], limit: 200 },
-            { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 }
+            { kinds: [ExtendedKind.COMMENT], '#a': [profileCoord], limit: 200 },
+            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#p': [pkNorm], limit: 200 },
+            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#e': [profileId], limit: 200 },
+            { kinds: [ExtendedKind.PAYMENT_NOTIFICATION], '#a': [profileCoord], limit: 200 },
+            { kinds: [ExtendedKind.PAYMENT_ATTESTATION], authors: [pkNorm], limit: 500 }
           ]
           const pool = new Map<string, Event>()
           try {
@@ -324,18 +335,37 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
           wallComments = [...pool.values()]
             .filter(
               (e) =>
+                e.kind === ExtendedKind.COMMENT &&
                 !isEventDeletedRef.current(e) &&
                 isDirectProfileWallComment(e, profileId, pkNorm)
             )
             .sort((a, b) => b.created_at - a.created_at)
+
+          const paymentNotifications = [...pool.values()].filter(
+            (e) =>
+              e.kind === ExtendedKind.PAYMENT_NOTIFICATION &&
+              !isEventDeletedRef.current(e) &&
+              isProfileWallPaymentNotification(e, pkNorm, profileId)
+          )
+          const attestations = [...pool.values()].filter(
+            (e) => e.kind === ExtendedKind.PAYMENT_ATTESTATION
+          )
+          wallSuperchats = filterAttestedProfileWallSuperchats(
+            paymentNotifications,
+            attestations,
+            pkNorm,
+            profileId
+          )
         }
 
         if (cancelled) return
         setComments(wallComments)
-        if (resolvedBadges.length > 0 || wallComments.length > 0) {
+        setSuperchats(wallSuperchats)
+        if (resolvedBadges.length > 0 || wallComments.length > 0 || wallSuperchats.length > 0) {
           wallCacheByKey.set(cacheKey, {
             badges: resolvedBadges,
             comments: wallComments,
+            superchats: wallSuperchats,
             lastUpdated: Date.now()
           })
         } else {
@@ -357,5 +387,5 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
     scheduleManualWallRefetch()
   }, [scheduleManualWallRefetch])
 
-  return { badges, comments, isLoading, refresh }
+  return { badges, comments, superchats, isLoading, refresh }
 }

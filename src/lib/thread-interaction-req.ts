@@ -34,13 +34,15 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
     kinds.ShortTextNote,
     ExtendedKind.COMMENT,
     ExtendedKind.VOICE_COMMENT,
-    kinds.Zap
+    kinds.Zap,
+    ExtendedKind.PAYMENT_NOTIFICATION
   ])
   const kindsPrimaryThread = kindsNoteCommentVoiceZap
   const kindsUpperEThread = sortedUniqueKinds([
     ExtendedKind.COMMENT,
     ExtendedKind.VOICE_COMMENT,
-    kinds.Zap
+    kinds.Zap,
+    ExtendedKind.PAYMENT_NOTIFICATION
   ])
 
   const kindsOnETag = sortedUniqueKinds([

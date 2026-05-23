@@ -17,7 +17,6 @@ import { useTranslation } from 'react-i18next'
 import DefaultZapAmountInput from './DefaultZapAmountInput'
 import DefaultZapCommentInput from './DefaultZapCommentInput'
 import QuickZapSwitch from './QuickZapSwitch'
-import IncludePublicZapReceiptSwitch from './IncludePublicZapReceiptSwitch'
 import WalletConnectionDetails from './WalletConnectionDetails'
 
 export default function WalletZapSendingSettings() {
@@ -59,7 +58,9 @@ export default function WalletZapSendingSettings() {
           <>
             <DefaultZapCommentInput />
             <QuickZapSwitch />
-            <IncludePublicZapReceiptSwitch />
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {t('Zap superchat wallet hint')}
+            </p>
           </>
         ) : null}
       </>

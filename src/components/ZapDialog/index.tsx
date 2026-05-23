@@ -17,7 +17,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useZap } from '@/providers/ZapProvider'
@@ -31,6 +30,8 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { buildPostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
+import { buildPaytoUri } from '@/lib/payto'
 import {
   buildOrderedZapLightningAddresses,
   groupPaymentMethodsByDisplayType,
@@ -52,7 +53,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import TipPublicMessagePrompt from './TipPublicMessagePrompt'
+import PostPaymentMessagePrompt from './PostPaymentMessagePrompt'
 import ZapSatsAmountInput from './ZapSatsAmountInput'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
@@ -82,8 +83,15 @@ export default function ZapDialog({
   const { isSmallScreen } = useScreenSize()
   const drawerContentRef = useRef<HTMLDivElement | null>(null)
   const { pubkey: selfPubkey } = useNostr()
-  const [tipNoticeOpen, setTipNoticeOpen] = useState(false)
-  const skipTipNoticeOnCloseRef = useRef(false)
+  const [postPaymentOpen, setPostPaymentOpen] = useState(false)
+  const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
+
+  const openPostPaymentPrompt = (context?: PostPaymentContext | null) => {
+    if (selfPubkey && pubkey === selfPubkey) return
+    setPostPaymentContext(context ?? buildPostPaymentContext({ recipientPubkey: pubkey, referencedEvent: event }))
+    setPostPaymentOpen(true)
+    setOpen(false)
+  }
 
   const fetchedPayment = useRecipientZapPaymentData(pubkey, open)
   const recipientPayment = useMemo(
@@ -118,22 +126,7 @@ export default function ZapDialog({
       ? t('Send a Lightning payment to this user')
       : t('Send a payment to this user')
 
-  const maybeOfferTipNoticeOnClose = () => {
-    if (skipTipNoticeOnCloseRef.current) return
-    if (selfPubkey && pubkey === selfPubkey) return
-    setTipNoticeOpen(true)
-  }
-
-  const handleZapDialogOpenChange: Dispatch<SetStateAction<boolean>> = (next) => {
-    const willOpen = typeof next === 'function' ? next(open) : next
-    if (!willOpen) {
-      maybeOfferTipNoticeOnClose()
-      skipTipNoticeOnCloseRef.current = false
-    } else {
-      skipTipNoticeOnCloseRef.current = false
-    }
-    setOpen(next)
-  }
+  const handleZapDialogOpenChange: Dispatch<SetStateAction<boolean>> = setOpen
 
   useEffect(() => {
     const handleResize = () => {
@@ -192,19 +185,24 @@ export default function ZapDialog({
             recipientPayment={recipientPayment}
             lightningAddressOptions={lightningAddressOptions}
             canLightningZap={canLightningZap}
-            onBeforeZapDialogClose={
-              paymentsOnly
-                ? undefined
-                : (withPublicReceipt) => {
-                    if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
-                  }
-            }
+            onPaymentFlowComplete={(_result, paymentDetails) => {
+              openPostPaymentPrompt(
+                buildPostPaymentContext({
+                  recipientPubkey: pubkey,
+                  amountMsat: paymentDetails?.amountMsat,
+                  paytoUri: paymentDetails?.paytoUri,
+                  referencedEvent: event
+                })
+              )
+            }}
+            onPostPaymentRequest={openPostPaymentPrompt}
           />
         </DrawerContent>
-        <TipPublicMessagePrompt
-          open={tipNoticeOpen}
-          onOpenChange={setTipNoticeOpen}
+        <PostPaymentMessagePrompt
+          open={postPaymentOpen}
+          onOpenChange={setPostPaymentOpen}
           recipientPubkey={pubkey}
+          paymentContext={postPaymentContext}
         />
       </Drawer>
     )
@@ -232,20 +230,25 @@ export default function ZapDialog({
           recipientPayment={recipientPayment}
           lightningAddressOptions={lightningAddressOptions}
           canLightningZap={canLightningZap}
-          onBeforeZapDialogClose={
-            paymentsOnly
-              ? undefined
-              : (withPublicReceipt) => {
-                  if (withPublicReceipt) skipTipNoticeOnCloseRef.current = true
-                }
-          }
+          onPaymentFlowComplete={(_result, paymentDetails) => {
+            openPostPaymentPrompt(
+              buildPostPaymentContext({
+                recipientPubkey: pubkey,
+                amountMsat: paymentDetails?.amountMsat,
+                paytoUri: paymentDetails?.paytoUri,
+                referencedEvent: event
+              })
+            )
+          }}
+          onPostPaymentRequest={openPostPaymentPrompt}
         />
       </DialogContent>
     </Dialog>
-    <TipPublicMessagePrompt
-      open={tipNoticeOpen}
-      onOpenChange={setTipNoticeOpen}
+    <PostPaymentMessagePrompt
+      open={postPaymentOpen}
+      onOpenChange={setPostPaymentOpen}
       recipientPubkey={pubkey}
+      paymentContext={postPaymentContext}
     />
     </>
   )
@@ -261,7 +264,8 @@ function ZapDialogContent({
   recipientPayment,
   lightningAddressOptions,
   canLightningZap,
-  onBeforeZapDialogClose
+  onPaymentFlowComplete,
+  onPostPaymentRequest
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
@@ -272,14 +276,16 @@ function ZapDialogContent({
   recipientPayment: RecipientZapPaymentData
   lightningAddressOptions: string[]
   canLightningZap: boolean
-  /** Runs before the zap dialog closes (e.g. after payment); skip tip notice if a public receipt was sent. */
-  onBeforeZapDialogClose?: (withPublicReceipt: boolean) => void
+  onPaymentFlowComplete?: (
+    result: import('@/services/lightning.service').PaymentFlowResult,
+    paymentDetails?: { amountMsat?: number; paytoUri?: string }
+  ) => void
+  onPostPaymentRequest?: (context: PostPaymentContext) => void
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey } = useNostr()
   const paymentsOnly = !ZAP_SENDING_ENABLED
-  const { defaultZapSats, defaultZapComment, includePublicZapReceipt, updateIncludePublicZapReceipt } =
-    useZap()
+  const { defaultZapSats, defaultZapComment } = useZap()
 
   const allPaymentGroups = useMemo(() => {
     if (!paymentsOnly) return []
@@ -303,7 +309,9 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={allPaymentGroups}
             recipientPubkey={recipient}
+            referencedEvent={event}
             offerTipNoticeOnClose={false}
+            onPostPaymentRequest={onPostPaymentRequest}
             title={t('Payment methods')}
             className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
           />
@@ -383,23 +391,24 @@ function ZapDialogContent({
         throw new Error('You need to be logged in to zap')
       }
       setZapping(true)
-      const closeZapDialog = () => {
-        onBeforeZapDialogClose?.(includePublicZapReceipt)
-        setOpen(false)
+      const paytoUri = selectedLightning ? buildPaytoUri('lightning', selectedLightning) : undefined
+      const paymentDetails = {
+        amountMsat: clampedSats * 1000,
+        paytoUri
       }
+      const closeZapDialog = () => setOpen(false)
       const zapResult = await lightning.zap(
         pubkey,
         event ?? recipient,
         clampedSats,
         comment,
         closeZapDialog,
-        includePublicZapReceipt,
+        (result) => onPaymentFlowComplete?.(result, paymentDetails),
         {
           address: selectedLightning || undefined,
           candidates: lightningAddressOptions.length > 0 ? lightningAddressOptions : undefined
         }
       )
-      // user canceled
       if (!zapResult) {
         return
       }
@@ -423,7 +432,9 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={zapAlternativePayments.groups}
             recipientPubkey={recipient}
+            referencedEvent={event}
             offerTipNoticeOnClose={false}
+            onPostPaymentRequest={onPostPaymentRequest}
             title={t('Payment methods')}
             headerHelpText={
               zapAlternativePayments.showBitcoinOnChainHint
@@ -482,8 +493,9 @@ function ZapDialogContent({
 
         {/* Comment input */}
         <div className="px-4">
-          <Label htmlFor="comment">{t('zapComment')}</Label>
+          <Label htmlFor="comment">{t('Zap lnurl comment label')}</Label>
           <Input id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
+          <p className="mt-1 text-xs text-muted-foreground">{t('Zap lnurl comment hint')}</p>
         </div>
       </div>
 
@@ -491,19 +503,7 @@ function ZapDialogContent({
         className="space-y-3 border-t border-border bg-background px-4 pt-3"
         style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       >
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="zap-include-receipt" className="flex-1 cursor-pointer">
-            <div className="text-sm font-medium">{t('Include public zap receipt')}</div>
-            <div className="text-xs text-muted-foreground font-normal">
-              {t('When off, your zap may still succeed but a public receipt may not be published to relays')}
-            </div>
-          </Label>
-          <Switch
-            id="zap-include-receipt"
-            checked={includePublicZapReceipt}
-            onCheckedChange={updateIncludePublicZapReceipt}
-          />
-        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('Zap superchat flow hint')}</p>
 
         <div className="min-w-0 space-y-1.5">
           <Label
@@ -562,7 +562,9 @@ function ZapDialogContent({
           <PaymentMethodsSection
             groups={zapAlternativePayments.groups}
             recipientPubkey={recipient}
+            referencedEvent={event}
             offerTipNoticeOnClose={false}
+            onPostPaymentRequest={onPostPaymentRequest}
             title={t('Other payment methods')}
             headerHelpText={
               zapAlternativePayments.showBitcoinOnChainHint

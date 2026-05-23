@@ -63,6 +63,19 @@ export function buildPaytoUri(type: string, authority: string): string {
   return `payto://${t}/${a}`
 }
 
+/** Kind 9740 `payto` tag: scheme prefix stripped (e.g. `lightning/user%40domain`). */
+export function formatPaytoTagValue(paytoUriOrPath: string): string {
+  return paytoUriOrPath.trim().replace(/^payto:\/\//i, '')
+}
+
+/** Payto type from a kind-9740 `payto` tag value (segment before the first `/`). */
+export function parsePaytoTagType(paytoTagValue: string): string {
+  const trimmed = paytoTagValue.trim()
+  const slash = trimmed.indexOf('/')
+  const raw = slash <= 0 ? trimmed : trimmed.slice(0, slash)
+  return getCanonicalPaytoType(raw)
+}
+
 export {
   flattenPaytoLinkChildText,
   formatPaytoLinkDisplayText,
