@@ -19,6 +19,7 @@ import {
 import logger from '@/lib/logger'
 import {
   getPaymentAttestationTargetId,
+  isNestedThreadReplyParentKind,
   partitionAttestedSuperchats,
   replyFeedSuperchatsFirst
 } from '@/lib/superchat'
@@ -516,7 +517,13 @@ function ReplyNoteList({
     const processedEventIds = new Set<string>() // Prevent infinite loops
     let iterationCount = 0
     const MAX_ITERATIONS = 10 // Prevent infinite loops
-    
+    const threadWalkFromRepliesMap = new Map<string, NEvent>()
+    for (const { events: bucket } of repliesMap.values()) {
+      for (const e of bucket) {
+        threadWalkFromRepliesMap.set(e.id.toLowerCase(), e)
+      }
+    }
+
     while (parentEventKeys.length > 0 && iterationCount < MAX_ITERATIONS) {
       iterationCount++
       const events = parentEventKeys.flatMap((id) => repliesMap.get(id)?.events || [])
@@ -533,12 +540,18 @@ function ReplyNoteList({
         ) {
           return
         }
-        if (rootInfo && !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)) return
+        if (
+          rootInfo &&
+          !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromRepliesMap)
+        ) {
+          return
+        }
 
         replyIdSet.add(evt.id)
         replyEvents.push(evt)
+        threadWalkFromRepliesMap.set(evt.id.toLowerCase(), evt)
       })
-      
+
       // Include reactions (and every other kind) so BFS can find notes keyed under reaction / zap ids.
       const newParentEventKeys = events
         .map((evt) => evt.id)
@@ -1353,7 +1366,7 @@ function ReplyNoteList({
               kinds.ShortTextNote
             ]
             const parentIds = regularReplies
-              .filter((evt) => commentKinds.includes(evt.kind))
+              .filter((evt) => isNestedThreadReplyParentKind(evt.kind))
               .map((evt) => evt.id)
             if (parentIds.length > 0) {
               const nestedAccum: NEvent[] = []
@@ -1414,7 +1427,7 @@ function ReplyNoteList({
                 [
                   focusedParentId,
                   ...regularReplies
-                    .filter((evt) => commentKindsNested.includes(evt.kind))
+                    .filter((evt) => isNestedThreadReplyParentKind(evt.kind))
                     .map((evt) => evt.id)
                 ].filter(Boolean) as string[]
               )

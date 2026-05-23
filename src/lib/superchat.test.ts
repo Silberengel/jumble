@@ -9,6 +9,7 @@ import {
   canUserAttestSuperchatPayment,
   isProfileWallPaymentNotification,
   isProfileWallZapReceipt,
+  isNestedThreadReplyParentKind,
   partitionAttestedSuperchats
 } from '@/lib/superchat'
 import { parsePaytoTagType } from '@/lib/payto'
@@ -106,6 +107,16 @@ describe('buildAttestedPaymentIdSet', () => {
       tags: [['e', PAYMENT_ID]]
     })
     expect(buildAttestedPaymentIdSet([attestation], RECIPIENT).has(PAYMENT_ID)).toBe(true)
+  })
+})
+
+describe('isNestedThreadReplyParentKind', () => {
+  it('includes zaps and payment notifications for nested thread fetch', () => {
+    expect(isNestedThreadReplyParentKind(kinds.Zap)).toBe(true)
+    expect(isNestedThreadReplyParentKind(ExtendedKind.ZAP_RECEIPT)).toBe(true)
+    expect(isNestedThreadReplyParentKind(ExtendedKind.PAYMENT_NOTIFICATION)).toBe(true)
+    expect(isNestedThreadReplyParentKind(kinds.ShortTextNote)).toBe(true)
+    expect(isNestedThreadReplyParentKind(kinds.Reaction)).toBe(false)
   })
 })
 

@@ -8,6 +8,8 @@ import {
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
+import { getPaymentNotificationInfo, isSuperchatKind } from '@/lib/superchat'
+import { ExtendedKind } from '@/constants'
 import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import {
   canonicalizeRssArticleUrl,
@@ -64,8 +66,8 @@ function hexNoteParticipatesInThread(
   return false
 }
 
-/** Reply whose direct parent is a zap receipt whose zapped note is in this thread (OP or nested under OP). */
-function replyParentIsZapToThreadHex(
+/** Reply whose direct parent is a zap / superchat whose target note is in this thread. */
+function replyParentIsSuperchatToThreadHex(
   reply: Event,
   rootHexLower: string,
   localByHex?: ReadonlyMap<string, Event>
@@ -75,10 +77,17 @@ function replyParentIsZapToThreadHex(
   const pl = parentHex.toLowerCase()
   if (pl === rootHexLower) return false
   const parentEv = peekThreadEvent(pl, localByHex)
-  if (!parentEv || parentEv.kind !== kinds.Zap) return false
-  const zapped = getZapInfoFromEvent(parentEv)?.originalEventId
-  if (!zapped || !/^[0-9a-f]{64}$/i.test(zapped)) return false
-  return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower, localByHex)
+  if (!parentEv || !isSuperchatKind(parentEv.kind)) return false
+
+  if (parentEv.kind === kinds.Zap || parentEv.kind === ExtendedKind.ZAP_RECEIPT) {
+    const zapped = getZapInfoFromEvent(parentEv)?.originalEventId
+    if (!zapped || !/^[0-9a-f]{64}$/i.test(zapped)) return false
+    return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower, localByHex)
+  }
+
+  const ref = getPaymentNotificationInfo(parentEv)?.referencedEventId
+  if (!ref || !/^[0-9a-f]{64}$/i.test(ref)) return false
+  return hexNoteParticipatesInThread(ref.toLowerCase(), rootHexLower, localByHex)
 }
 
 function reactionTargetNoteHex(reaction: Event): string | undefined {
@@ -160,7 +169,7 @@ export function eventReplyMatchesThreadRoot(
   if (evtRootHex && resolveDeclaredThreadRootEventHex(evtRootHex) === rid) return true
   const parentHex = getParentEventHexId(evt)?.toLowerCase()
   if (parentHex && hexNoteParticipatesInThread(parentHex, rid, localByHex)) return true
-  if (replyParentIsZapToThreadHex(evt, rid, localByHex)) return true
+  if (replyParentIsSuperchatToThreadHex(evt, rid, localByHex)) return true
   if (replyParentIsReactionToThreadHex(evt, rid, localByHex)) return true
   return kind1QuotesThreadRoot(evt, root)
 }

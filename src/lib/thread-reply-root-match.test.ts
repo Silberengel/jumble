@@ -1,5 +1,7 @@
+import { ExtendedKind } from '@/constants'
 import { describe, expect, it, vi } from 'vitest'
 import type { Event } from 'nostr-tools'
+import { kinds } from 'nostr-tools'
 
 const { peekSessionCachedEvent } = vi.hoisted(() => ({
   peekSessionCachedEvent: vi.fn()
@@ -53,5 +55,60 @@ describe('eventReplyMatchesThreadRoot', () => {
     })
 
     expect(eventReplyMatchesThreadRoot(child, { type: 'E', id: rootId, pubkey: author })).toBe(true)
+  })
+
+  it('accepts a reply whose parent is a zap receipt on the thread root', () => {
+    const zapId = '3'.repeat(64)
+    const zapReceipt = event({
+      id: zapId,
+      kind: kinds.Zap,
+      tags: [
+        ['e', rootId],
+        ['p', author]
+      ]
+    })
+    const replyToZap = event({
+      id: childId,
+      tags: [
+        ['e', zapId, '', 'reply'],
+        ['p', author]
+      ]
+    })
+
+    peekSessionCachedEvent.mockImplementation((id: string) => {
+      if (id === zapId) return zapReceipt
+      return undefined
+    })
+
+    expect(eventReplyMatchesThreadRoot(replyToZap, { type: 'E', id: rootId, pubkey: author })).toBe(true)
+  })
+
+  it('accepts a reply whose parent is a kind 9740 superchat on the thread root', () => {
+    const superchatId = '4'.repeat(64)
+    const superchat = event({
+      id: superchatId,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [
+        ['e', rootId],
+        ['p', author],
+        ['amount', '333000']
+      ]
+    })
+    const replyToSuperchat = event({
+      id: childId,
+      tags: [
+        ['e', superchatId, '', 'reply'],
+        ['p', author]
+      ]
+    })
+
+    peekSessionCachedEvent.mockImplementation((id: string) => {
+      if (id === superchatId) return superchat
+      return undefined
+    })
+
+    expect(eventReplyMatchesThreadRoot(replyToSuperchat, { type: 'E', id: rootId, pubkey: author })).toBe(
+      true
+    )
   })
 })

@@ -132,6 +132,16 @@ export function isSuperchatKind(kind: number): boolean {
   return kind === kinds.Zap || kind === ExtendedKind.ZAP_RECEIPT || kind === ExtendedKind.PAYMENT_NOTIFICATION
 }
 
+/** Kinds that may be `#e` parents in the thread nested-reply relay pass (replies to zaps were missing). */
+export function isNestedThreadReplyParentKind(kind: number): boolean {
+  return (
+    kind === kinds.ShortTextNote ||
+    kind === ExtendedKind.COMMENT ||
+    kind === ExtendedKind.VOICE_COMMENT ||
+    isSuperchatKind(kind)
+  )
+}
+
 /** Recipient pubkey for a kind 9735 or 9740 payment the user may attest to. */
 export function getSuperchatPaymentRecipientPubkey(event: Event): string | null {
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
