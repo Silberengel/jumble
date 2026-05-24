@@ -8,6 +8,7 @@ import {
 } from '@/constants'
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
+import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import { randomString } from '@/lib/random'
 import {
@@ -97,7 +98,7 @@ class LocalStorageService {
   private accounts: TAccount[] = []
   private currentAccount: TAccount | null = null
   private noteListMode: TNoteListMode = 'posts'
-  private defaultZapSats: number = 21
+  private defaultZapSats: number = DEFAULT_ZAP_SATS
   private defaultZapComment: string = 'Zap!'
   private quickZap: boolean = false
   private includePublicZapReceipt: boolean = true

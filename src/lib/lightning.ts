@@ -13,10 +13,20 @@ export function formatAmount(amount: number) {
   return `${Math.round(amount / 100000) / 10}M`
 }
 
-const SAT_GROUP_SEPARATOR = '\u2009'
+/** Thin space between digit groups in sats display (must match input string). */
+export const SAT_GROUP_SEPARATOR = '\u2009'
 
 /** Max sats digits in the zap amount field (9 999 999). */
 export const MAX_ZAP_SATS = 9_999_999
+
+/** Minimum sats on the Lightning invoice amount picker (preset floor). */
+export const MIN_ZAP_SATS = 210
+
+/** Default zap amount in wallet settings when the user has not set one. */
+export const DEFAULT_ZAP_SATS = 420
+
+/** Quick-pick amounts on the Lightning invoice page. */
+export const LN_INVOICE_PRESET_SATS = [210, 420, 2100, 4200, 21_000, 42_000] as const
 
 /** Leading digit group + BTC hint styling above this amount (exclusive). */
 export const ZAP_SATS_HIGHLIGHT_ABOVE = 999_999

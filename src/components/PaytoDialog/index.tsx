@@ -238,8 +238,8 @@ export default function PaytoDialog({
                   role="img"
                   aria-label={t('Scan to pay with your wallet')}
                 >
-                  <div className="w-full max-w-[min(100%,240px)]">
-                    <QrCode value={qrPayload} size={240} />
+                  <div className="w-full max-w-[min(100%,280px)]">
+                    <QrCode value={qrPayload} fill />
                   </div>
                   <p className="text-center text-sm text-muted-foreground sm:text-base">
                     {t('Scan to pay with your wallet')}

@@ -1,7 +1,7 @@
+import GroupedSatsInput from '@/components/GroupedSatsInput'
 import QrCode from '@/components/QrCode'
 import SatsAmountEquivalents from '@/components/SatsAmountEquivalents'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,7 +11,8 @@ import {
   formatAmount,
   formatSatsGrouped,
   getAmountFromInvoice,
-  parseGroupedIntegerInput
+  LN_INVOICE_PRESET_SATS,
+  MIN_ZAP_SATS,
 } from '@/lib/lightning'
 import { buildPaytoUri, formatPaytoTagValue } from '@/lib/payto'
 import { superchatLightningAccentClass } from '@/lib/superchat-ui'
@@ -25,7 +26,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-const PRESET_SATS = [21, 210, 420, 1000, 2100, 10_000, 21_000]
+function normalizeInvoiceZapSats(amount: number): number {
+  const clamped = clampZapSats(amount)
+  return clamped > 0 && clamped < MIN_ZAP_SATS ? MIN_ZAP_SATS : clamped
+}
 
 function invoiceQrPayload(pr: string): string {
   const trimmed = pr.trim()
@@ -48,7 +52,7 @@ export default function LightningInvoiceSection({
 }) {
   const { t } = useTranslation()
   const { defaultZapSats, isWalletConnected } = useZap()
-  const [sats, setSats] = useState(() => clampZapSats(defaultZapSats))
+  const [sats, setSats] = useState(() => normalizeInvoiceZapSats(defaultZapSats))
   const [description, setDescription] = useState('')
   const [commentMax, setCommentMax] = useState<number | null>(null)
   const [lnurlMetadataState, setLnurlMetadataState] = useState<'loading' | 'ready' | 'error'>(
@@ -70,7 +74,7 @@ export default function LightningInvoiceSection({
   }, [])
 
   useEffect(() => {
-    setSats(clampZapSats(defaultZapSats))
+    setSats(normalizeInvoiceZapSats(defaultZapSats))
     setDescription('')
     setInvoice(null)
     setInvoiceDescription(null)
@@ -188,32 +192,32 @@ export default function LightningInvoiceSection({
         </Label>
         <SatsAmountEquivalents sats={sats} id="ln-invoice-sats-equiv" />
         <div className="flex min-w-0 items-center gap-3">
-          <Input
+          <GroupedSatsInput
             id="ln-invoice-sats"
-            inputMode="numeric"
-            value={sats === 0 ? '' : formatSatsGrouped(sats)}
-            onChange={(e) => setSats(parseGroupedIntegerInput(e.target.value))}
-            className="h-12 min-w-0 flex-1 text-xl font-semibold tabular-nums sm:h-14 sm:text-2xl"
+            sats={sats}
+            onSatsChange={setSats}
+            className="min-w-0 flex-1"
+            inputClassName="h-12 sm:h-14"
             aria-describedby="ln-invoice-sats-equiv ln-invoice-preset-hint"
           />
           <span className="shrink-0 text-base font-medium text-muted-foreground sm:text-lg">{t('sats')}</span>
         </div>
         <div
           id="ln-invoice-preset-hint"
-          className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-6"
+          className="grid min-w-0 grid-cols-6 gap-1"
           role="group"
           aria-label={t('Amount (sats)')}
         >
-          {PRESET_SATS.map((preset) => {
+          {LN_INVOICE_PRESET_SATS.map((preset) => {
             const active = sats === preset
             return (
               <Button
                 key={preset}
                 type="button"
                 variant={active ? 'default' : 'outline'}
-                size="default"
+                size="sm"
                 className={cn(
-                  'h-10 min-w-0 px-1.5 text-sm tabular-nums sm:text-base',
+                  'h-8 min-w-0 px-0.5 text-xs tabular-nums sm:h-9 sm:px-1 sm:text-sm',
                   active && 'ring-1 ring-amber-600/45 dark:ring-yellow-400/50'
                 )}
                 onClick={() => setSats(preset)}
@@ -265,7 +269,7 @@ export default function LightningInvoiceSection({
         <Button
           type="button"
           className="h-12 w-full gap-2 text-base sm:h-14 sm:text-lg"
-          disabled={creating || sats < 1}
+          disabled={creating || sats < MIN_ZAP_SATS}
           onClick={() => void handleCreateInvoice()}
         >
           {creating ? (
@@ -310,8 +314,8 @@ export default function LightningInvoiceSection({
             role="img"
             aria-label={t('Scan to pay with a Lightning wallet')}
           >
-            <div className="w-full max-w-[min(100%,240px)]">
-              <QrCode value={invoiceQrValue} size={240} />
+            <div className="w-full max-w-[min(100%,280px)]">
+              <QrCode value={invoiceQrValue} fill />
             </div>
             <p className="text-center text-sm text-muted-foreground sm:text-base">
               {t('Scan to pay with a Lightning wallet')}
