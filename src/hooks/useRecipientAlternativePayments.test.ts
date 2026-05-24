@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { buildRecipientZapPaymentData, mergeRecipientZapPaymentData } from './useRecipientAlternativePayments'
+import { buildRecipientPaymentData, mergeRecipientPaymentData } from './useRecipientAlternativePayments'
 import type { TProfile } from '@/types'
 
-describe('mergeRecipientZapPaymentData', () => {
+describe('mergeRecipientPaymentData', () => {
   it('keeps lightning from feed profile when relay fetch is still empty', () => {
     const feedProfile = {
       pubkey: 'aa'.repeat(32),
       lightningAddress: 'user@example.com'
     } as TProfile
-    const partial = buildRecipientZapPaymentData(null, feedProfile, null)
-    const empty = buildRecipientZapPaymentData(null, null, null)
-    const merged = mergeRecipientZapPaymentData(partial, empty)
+    const partial = buildRecipientPaymentData(null, feedProfile, null)
+    const empty = buildRecipientPaymentData(null, null, null)
+    const merged = mergeRecipientPaymentData(partial, empty)
     expect(merged.canReceiveTip).toBe(true)
-    expect(
-      merged.alternativeGroups.length + (partial.canReceiveTip ? 1 : 0)
-    ).toBeGreaterThan(0)
+    expect(merged.profile?.lightningAddress).toBe('user@example.com')
   })
 })

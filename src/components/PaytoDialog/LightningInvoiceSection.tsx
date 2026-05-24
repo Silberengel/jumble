@@ -1,4 +1,5 @@
 import QrCode from '@/components/QrCode'
+import SatsAmountEquivalents from '@/components/SatsAmountEquivalents'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -185,6 +186,7 @@ export default function LightningInvoiceSection({
         <Label htmlFor="ln-invoice-sats" className="text-sm font-medium text-muted-foreground sm:text-base">
           {t('Amount (sats)')}
         </Label>
+        <SatsAmountEquivalents sats={sats} id="ln-invoice-sats-equiv" />
         <div className="flex min-w-0 items-center gap-3">
           <Input
             id="ln-invoice-sats"
@@ -192,7 +194,7 @@ export default function LightningInvoiceSection({
             value={sats === 0 ? '' : formatSatsGrouped(sats)}
             onChange={(e) => setSats(parseGroupedIntegerInput(e.target.value))}
             className="h-12 min-w-0 flex-1 text-xl font-semibold tabular-nums sm:h-14 sm:text-2xl"
-            aria-describedby="ln-invoice-preset-hint"
+            aria-describedby="ln-invoice-sats-equiv ln-invoice-preset-hint"
           />
           <span className="shrink-0 text-base font-medium text-muted-foreground sm:text-lg">{t('sats')}</span>
         </div>

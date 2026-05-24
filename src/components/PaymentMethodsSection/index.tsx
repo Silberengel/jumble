@@ -1,7 +1,6 @@
 import PaytoLink from '@/components/PaytoLink'
 import type { PaymentMethodGroup } from '@/lib/merge-payment-methods'
 import { PRIMARY_LINK_HOVER_CLASS } from '@/lib/link-styles'
-import { isZappableLightningPaytoType } from '@/lib/payto'
 import { cn } from '@/lib/utils'
 import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -13,18 +12,14 @@ import type { PostPaymentContext } from '@/lib/post-payment-context'
 export default function PaymentMethodsSection({
   groups,
   recipientPubkey,
-  onOpenZap,
   referencedEvent,
   offerTipNoticeOnClose = true,
   onPostPaymentRequest,
   title,
-  className,
-  headerHelpText
+  className
 }: {
   groups: PaymentMethodGroup[]
   recipientPubkey?: string
-  /** When set, lightning rows open the zap flow with that address as the default. */
-  onOpenZap?: (lightningAuthority: string) => void
   /** Thread context passed to PaytoDialog for superchat requests. */
   referencedEvent?: NostrEvent
   /** When false, PaytoDialog defer post-payment prompt to parent. */
@@ -32,8 +27,6 @@ export default function PaymentMethodsSection({
   onPostPaymentRequest?: (context: PostPaymentContext) => void
   title?: string
   className?: string
-  /** Prominent note above the list (e.g. on-chain Bitcoin eligibility in zap dialog). */
-  headerHelpText?: string
 }) {
   const { t } = useTranslation()
 
@@ -44,24 +37,10 @@ export default function PaymentMethodsSection({
       <div className="text-xs font-semibold text-muted-foreground mb-2">
         {title ?? t('Payment Methods')}
       </div>
-      {headerHelpText ? (
-        <p className="mb-3 text-xs leading-snug text-muted-foreground" role="note">
-          {headerHelpText}
-        </p>
-      ) : null}
       <div className="space-y-3 min-w-0">
         {groups.map((group, groupIdx) => (
-          <div
-            key={groupIdx}
-            className={cn(
-              'text-sm min-w-0',
-              group.highlighted &&
-                'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-2'
-            )}
-          >
-            <div className={cn('font-medium', group.highlighted && 'text-foreground')}>
-              {group.displayType}
-            </div>
+          <div key={groupIdx} className="text-sm min-w-0">
+            <div className="font-medium">{group.displayType}</div>
             <div className="space-y-1.5 mt-1">
               {group.methods.map((method, idx) => (
                 <div key={idx} className="min-w-0">
@@ -73,11 +52,6 @@ export default function PaymentMethodsSection({
                         paytoUri={method.payto}
                         displayFormat="full"
                         pubkey={recipientPubkey}
-                        onOpenZap={
-                          isZappableLightningPaytoType(method.type) && onOpenZap
-                            ? (_pk, authority) => onOpenZap(authority)
-                            : undefined
-                        }
                         offerTipNoticeOnClose={offerTipNoticeOnClose}
                         onPostPaymentRequest={onPostPaymentRequest}
                         referencedEvent={referencedEvent}

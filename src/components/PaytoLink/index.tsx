@@ -1,4 +1,3 @@
-import { ZAP_SENDING_ENABLED } from '@/constants'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -9,7 +8,6 @@ import {
   getCanonicalPaytoType,
   getPaytoTypeInfo,
   isKnownPaytoType,
-  isZappableLightningPaytoType,
   flattenPaytoLinkChildText,
   formatPaytoLinkDisplayText,
   paytoLinkChildTextLooksLikeAuthority
@@ -25,7 +23,6 @@ export default function PaytoLink({
   type: typeProp,
   authority: authorityProp,
   pubkey,
-  onOpenZap,
   offerTipNoticeOnClose = true,
   onPostPaymentRequest,
   referencedEvent,
@@ -39,9 +36,7 @@ export default function PaytoLink({
   paytoUri?: string
   type?: string
   authority?: string
-  /** When set with lightning type, clicking can open Zap dialog via onOpenZap */
   pubkey?: string
-  onOpenZap?: (pubkey: string, lightningAuthority: string) => void
   /** Passed to PaytoDialog; set false when a parent already offers the post-payment prompt. */
   offerTipNoticeOnClose?: boolean
   /** Parent-owned post-payment prompt (e.g. ZapDialog). */
@@ -73,16 +68,10 @@ export default function PaytoLink({
   const { type, authority, raw } = parsed
   const info = getPaytoTypeInfo(type)
   const known = isKnownPaytoType(type)
-  const canZap =
-    ZAP_SENDING_ENABLED && isZappableLightningPaytoType(type) && !!pubkey && !!onOpenZap
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (canZap) {
-      onOpenZap(pubkey!, authority)
-      return
-    }
     if (!known) {
       navigator.clipboard.writeText(raw)
       toast.success(t('Copied payto address'))
@@ -134,7 +123,7 @@ export default function PaytoLink({
         {iconEl}
         {content}
       </button>
-      {known && !canZap && (
+      {known && (
         <PaytoDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}

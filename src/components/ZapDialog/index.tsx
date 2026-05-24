@@ -1,5 +1,3 @@
-import { ZAP_SENDING_ENABLED } from '@/constants'
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -14,59 +12,33 @@ import {
   DrawerOverlay,
   DrawerTitle
 } from '@/components/ui/drawer'
-import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Label } from '@/components/ui/label'
+import PaymentMethodsSection from '@/components/PaymentMethodsSection'
+import UserAvatar from '@/components/UserAvatar'
+import Username from '@/components/Username'
+import { useSenderPaytoTypes } from '@/hooks/useSenderPaytoTypes'
+import {
+  mergeRecipientPaymentData,
+  useRecipientPaymentData,
+  type RecipientPaymentData
+} from '@/hooks/useRecipientAlternativePayments'
+import {
+  groupPaymentMethodsForDisplay,
+  mergePaymentMethods,
+  sortMergedPaymentMethods
+} from '@/lib/merge-payment-methods'
+import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { useZap } from '@/providers/ZapProvider'
-import { useBtcUsdRate } from '@/hooks/useBtcUsdRate'
-import { clampZapSats, formatSatsGrouped, shouldHighlightLeadingSatsGroups } from '@/lib/lightning'
-import { formatBtcFromSats, formatUsdFromSats } from '@/lib/sats-fiat'
-import { superchatAmountHighlightClass, superchatLightningAccentClass } from '@/lib/superchat-ui'
-import { cn } from '@/lib/utils'
-import lightning from '@/services/lightning.service'
-import noteStatsService from '@/services/note-stats.service'
 import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
-import { buildPaytoUri } from '@/lib/payto'
-import {
-  buildOrderedZapLightningAddresses,
-  groupPaymentMethodsByDisplayType,
-  mergePaymentMethods,
-  prepareZapDialogAlternativePayments,
-  sortMergedPaymentMethods,
-  ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
-} from '@/lib/merge-payment-methods'
-import PaymentMethodsSection from '@/components/PaymentMethodsSection'
-import {
-  mergeRecipientZapPaymentData,
-  useRecipientZapPaymentData,
-  type RecipientZapPaymentData
-} from '@/hooks/useRecipientAlternativePayments'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
 import PostPaymentMessagePrompt from './PostPaymentMessagePrompt'
-import ZapSatsAmountInput from './ZapSatsAmountInput'
-import UserAvatar from '../UserAvatar'
-import Username from '../Username'
 
 export default function ZapDialog({
   open,
   setOpen,
   pubkey,
   event,
-  defaultAmount,
-  defaultComment,
-  defaultLightningAddress,
   prefetchedPayment = null,
   onPostPaymentRequest
 }: {
@@ -75,12 +47,8 @@ export default function ZapDialog({
   pubkey: string
   /** When set, kind 9740 superchats reference this note (e/a + k + author). Omit for profile tips. */
   event?: NostrEvent
-  defaultAmount?: number
-  defaultComment?: string
-  /** Lightning address to pre-select (e.g. from a profile payto link click). */
-  defaultLightningAddress?: string | null
   /** Profile/feed snapshot shown immediately; relay fetch while open may enrich this. */
-  prefetchedPayment?: RecipientZapPaymentData | null
+  prefetchedPayment?: RecipientPaymentData | null
   /** Parent-owned post-payment prompt (e.g. note ZapButton). Skips internal prompt when set. */
   onPostPaymentRequest?: (context: PostPaymentContext) => void
 }) {
@@ -107,57 +75,72 @@ export default function ZapDialog({
     setOpen(false)
   }
 
-  const fetchedPayment = useRecipientZapPaymentData(pubkey, open)
+  const fetchedPayment = useRecipientPaymentData(pubkey, open)
   const recipientPayment = useMemo(
-    () => mergeRecipientZapPaymentData(prefetchedPayment, fetchedPayment),
+    () => mergeRecipientPaymentData(prefetchedPayment, fetchedPayment),
     [prefetchedPayment, fetchedPayment]
   )
-  const lightningAddressOptions = useMemo(
-    () =>
-      buildOrderedZapLightningAddresses({
-        profileEvent: recipientPayment.profileEvent,
-        profile: recipientPayment.profile,
-        paymentInfo: recipientPayment.paymentInfo,
-        preferredAddress: defaultLightningAddress
-      }),
-    [
-      recipientPayment.profileEvent,
-      recipientPayment.profile,
-      recipientPayment.paymentInfo,
-      defaultLightningAddress
-    ]
-  )
-  const canLightningZap = lightningAddressOptions.length > 0
-  const paymentsOnly = !ZAP_SENDING_ENABLED
-  const dialogTitlePrefix = paymentsOnly
-    ? t('Payment methods')
-    : canLightningZap
-      ? t('Zap to')
-      : t('Pay to')
-  const dialogDescription = paymentsOnly
-    ? t('Payment methods')
-    : canLightningZap
-      ? t('Send a Lightning payment to this user')
-      : t('Send a payment to this user')
+  const senderPaytoTypes = useSenderPaytoTypes(open)
 
-  const handleZapDialogOpenChange: Dispatch<SetStateAction<boolean>> = setOpen
+  const paymentGroups = useMemo(() => {
+    const merged = sortMergedPaymentMethods(
+      mergePaymentMethods(
+        recipientPayment.paymentInfo,
+        recipientPayment.profile,
+        recipientPayment.profileEvent
+      )
+    )
+    return groupPaymentMethodsForDisplay(merged, senderPaytoTypes)
+  }, [recipientPayment, senderPaytoTypes])
+
+  const dialogTitle = t('Payment methods')
+  const body =
+    paymentGroups.length > 0 ? (
+      <PaymentMethodsSection
+        groups={paymentGroups}
+        recipientPubkey={pubkey}
+        referencedEvent={event}
+        offerTipNoticeOnClose={false}
+        onPostPaymentRequest={openPostPaymentPrompt}
+        title={t('Payment methods')}
+        className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+      />
+    ) : (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        {t('No payment methods available for this profile')}
+      </p>
+    )
+
+  const content = (
+    <div
+      className="px-4 pb-4"
+      style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+    >
+      {body}
+    </div>
+  )
+
+  const postPaymentPrompt = !onPostPaymentRequest ? (
+    <PostPaymentMessagePrompt
+      open={postPaymentOpen}
+      onOpenChange={setPostPaymentOpen}
+      recipientPubkey={pubkey}
+      paymentContext={postPaymentContext}
+    />
+  ) : null
 
   useEffect(() => {
     const handleResize = () => {
       if (drawerContentRef.current) {
-        // Use visual viewport height to ensure proper positioning when keyboard/emoji picker opens
         const viewportHeight = window.visualViewport?.height || window.innerHeight
-        
-        // Ensure drawer doesn't go above the viewport, but don't override bottom positioning
-        const maxHeight = viewportHeight - 100 // Leave some space at top
+        const maxHeight = viewportHeight - 100
         drawerContentRef.current.style.setProperty('max-height', `${maxHeight}px`)
-        // Don't set bottom position here - let the drawer handle it naturally
       }
     }
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleResize)
-      handleResize() // Initial call in case the keyboard is already open
+      handleResize()
     }
 
     return () => {
@@ -169,437 +152,51 @@ export default function ZapDialog({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={handleZapDialogOpenChange}>
-        <DrawerOverlay onClick={() => handleZapDialogOpenChange(false)} />
-        <DrawerContent
-          hideOverlay
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          ref={drawerContentRef}
-          className="flex max-h-[80vh] flex-col overflow-y-auto overscroll-contain"
-          style={{
-            maxHeight: 'calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
-            paddingBottom: '0' // Remove default padding since we handle it in the button container
-          }}
-        >
-          <DrawerHeader className="shrink-0 px-4">
-            <DrawerTitle className="flex gap-2 items-center">
-              <div className="shrink-0">{dialogTitlePrefix}</div>
-              <UserAvatar size="small" userId={pubkey} />
-              <Username userId={pubkey} className="truncate flex-1 w-0 text-start h-5" />
-            </DrawerTitle>
-            <DialogDescription className="sr-only">{dialogDescription}</DialogDescription>
-          </DrawerHeader>
-          <ZapDialogContent
-            open={open}
-            setOpen={handleZapDialogOpenChange}
-            recipient={pubkey}
-            event={event}
-            defaultAmount={defaultAmount}
-            defaultComment={defaultComment}
-            recipientPayment={recipientPayment}
-            lightningAddressOptions={lightningAddressOptions}
-            canLightningZap={canLightningZap}
-            onPaymentFlowComplete={(_result, paymentDetails) => {
-              openPostPaymentPrompt(
-                mergePostPaymentContext(
-                  { recipientPubkey: pubkey, referencedEvent: event },
-                  {
-                    amountMsat: paymentDetails?.amountMsat,
-                    paytoUri: paymentDetails?.paytoUri
-                  }
-                )
-              )
+      <>
+        <Drawer open={open} onOpenChange={setOpen}>
+          <DrawerOverlay onClick={() => setOpen(false)} />
+          <DrawerContent
+            hideOverlay
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            ref={drawerContentRef}
+            className="flex max-h-[80vh] flex-col overflow-y-auto overscroll-contain"
+            style={{
+              maxHeight: 'calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
+              paddingBottom: '0'
             }}
-            onPostPaymentRequest={openPostPaymentPrompt}
-          />
-        </DrawerContent>
-        {!onPostPaymentRequest ? (
-          <PostPaymentMessagePrompt
-            open={postPaymentOpen}
-            onOpenChange={setPostPaymentOpen}
-            recipientPubkey={pubkey}
-            paymentContext={postPaymentContext}
-          />
-        ) : null}
-      </Drawer>
+          >
+            <DrawerHeader className="shrink-0 px-4">
+              <DrawerTitle className="flex items-center gap-2">
+                <div className="shrink-0">{dialogTitle}</div>
+                <UserAvatar size="small" userId={pubkey} />
+                <Username userId={pubkey} className="h-5 w-0 flex-1 truncate text-start" />
+              </DrawerTitle>
+              <DialogDescription className="sr-only">{dialogTitle}</DialogDescription>
+            </DrawerHeader>
+            {content}
+          </DrawerContent>
+        </Drawer>
+        {postPaymentPrompt}
+      </>
     )
   }
 
   return (
     <>
-    <Dialog open={open} onOpenChange={handleZapDialogOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex gap-2 items-center">
-            <div className="shrink-0">{dialogTitlePrefix}</div>
-            <UserAvatar size="small" userId={pubkey} />
-            <Username userId={pubkey} className="truncate flex-1 max-w-fit text-start h-5" />
-          </DialogTitle>
-          <DialogDescription className="sr-only">{dialogDescription}</DialogDescription>
-        </DialogHeader>
-        <ZapDialogContent
-          open={open}
-          setOpen={handleZapDialogOpenChange}
-          recipient={pubkey}
-          event={event}
-          defaultAmount={defaultAmount}
-          defaultComment={defaultComment}
-          recipientPayment={recipientPayment}
-          lightningAddressOptions={lightningAddressOptions}
-          canLightningZap={canLightningZap}
-          onPaymentFlowComplete={(_result, paymentDetails) => {
-            openPostPaymentPrompt(
-              mergePostPaymentContext(
-                { recipientPubkey: pubkey, referencedEvent: event },
-                {
-                  amountMsat: paymentDetails?.amountMsat,
-                  paytoUri: paymentDetails?.paytoUri
-                }
-              )
-            )
-          }}
-          onPostPaymentRequest={openPostPaymentPrompt}
-        />
-      </DialogContent>
-    </Dialog>
-    {!onPostPaymentRequest ? (
-      <PostPaymentMessagePrompt
-        open={postPaymentOpen}
-        onOpenChange={setPostPaymentOpen}
-        recipientPubkey={pubkey}
-        paymentContext={postPaymentContext}
-      />
-    ) : null}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="shrink-0">{dialogTitle}</div>
+              <UserAvatar size="small" userId={pubkey} />
+              <Username userId={pubkey} className="h-5 max-w-fit flex-1 truncate text-start" />
+            </DialogTitle>
+            <DialogDescription className="sr-only">{dialogTitle}</DialogDescription>
+          </DialogHeader>
+          {content}
+        </DialogContent>
+      </Dialog>
+      {postPaymentPrompt}
     </>
-  )
-}
-
-function ZapDialogContent({
-  open,
-  setOpen,
-  recipient,
-  event,
-  defaultAmount,
-  defaultComment,
-  recipientPayment,
-  lightningAddressOptions,
-  canLightningZap,
-  onPaymentFlowComplete,
-  onPostPaymentRequest
-}: {
-  open: boolean
-  setOpen: Dispatch<SetStateAction<boolean>>
-  recipient: string
-  event?: NostrEvent
-  defaultAmount?: number
-  defaultComment?: string
-  recipientPayment: RecipientZapPaymentData
-  lightningAddressOptions: string[]
-  canLightningZap: boolean
-  onPaymentFlowComplete?: (
-    result: import('@/services/lightning.service').PaymentFlowResult,
-    paymentDetails?: { amountMsat?: number; paytoUri?: string }
-  ) => void
-  onPostPaymentRequest?: (context: PostPaymentContext) => void
-}) {
-  const { t, i18n } = useTranslation()
-  const { pubkey } = useNostr()
-  const paymentsOnly = !ZAP_SENDING_ENABLED
-  const { defaultZapSats, defaultZapComment } = useZap()
-
-  const allPaymentGroups = useMemo(() => {
-    if (!paymentsOnly) return []
-    const merged = sortMergedPaymentMethods(
-      mergePaymentMethods(
-        recipientPayment.paymentInfo,
-        recipientPayment.profile,
-        recipientPayment.profileEvent
-      )
-    )
-    return groupPaymentMethodsByDisplayType(merged)
-  }, [paymentsOnly, recipientPayment])
-
-  if (paymentsOnly) {
-    return (
-      <div
-        className="px-4 pb-4"
-        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-      >
-        {allPaymentGroups.length > 0 ? (
-          <PaymentMethodsSection
-            groups={allPaymentGroups}
-            recipientPubkey={recipient}
-            referencedEvent={event}
-            offerTipNoticeOnClose={false}
-            onPostPaymentRequest={onPostPaymentRequest}
-            title={t('Payment methods')}
-            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
-          />
-        ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {t('No payment methods available for this profile')}
-          </p>
-        )}
-      </div>
-    )
-  }
-  const [sats, setSats] = useState(() => clampZapSats(defaultAmount ?? defaultZapSats))
-  const [comment, setComment] = useState(defaultComment ?? defaultZapComment)
-  const [zapping, setZapping] = useState(false)
-  const [selectedLightning, setSelectedLightning] = useState('')
-  const btcUsd = useBtcUsdRate()
-  const clampedSats = clampZapSats(sats)
-  const highlightLargeAmount = shouldHighlightLeadingSatsGroups(clampedSats)
-  const btcEquivalent = useMemo(() => formatBtcFromSats(clampedSats), [clampedSats])
-  const usdEquivalent = useMemo(() => formatUsdFromSats(clampedSats, btcUsd), [clampedSats, btcUsd])
-
-  const { alternativeGroups } = recipientPayment
-
-  useEffect(() => {
-    if (!open) return
-    setSelectedLightning(lightningAddressOptions[0] ?? '')
-  }, [open, lightningAddressOptions])
-
-  const zapAlternativePayments = useMemo(
-    () =>
-      prepareZapDialogAlternativePayments(
-        alternativeGroups,
-        canLightningZap ? clampedSats : ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
-      ),
-    [alternativeGroups, clampedSats, canLightningZap]
-  )
-
-  const hasAlternativePayments = zapAlternativePayments.groups.length > 0
-
-  const presetAmounts = useMemo(() => {
-    if (i18n.language.startsWith('zh')) {
-      return [
-        { display: '21', val: 21 },
-        { display: '66', val: 66 },
-        { display: '210', val: 210 },
-        { display: '666', val: 666 },
-        { display: '1k', val: 1000 },
-        { display: '2.1k', val: 2100 },
-        { display: '6.6k', val: 6666 },
-        { display: '10k', val: 10000 },
-        { display: '21k', val: 21000 },
-        { display: '66k', val: 66666 },
-        { display: '100k', val: 100000 },
-        { display: '210k', val: 210000 }
-      ]
-    }
-
-    return [
-      { display: '21', val: 21 },
-      { display: '42', val: 42 },
-      { display: '210', val: 210 },
-      { display: '420', val: 420 },
-      { display: '1k', val: 1000 },
-      { display: '2.1k', val: 2100 },
-      { display: '4.2k', val: 4200 },
-      { display: '10k', val: 10000 },
-      { display: '21k', val: 21000 },
-      { display: '42k', val: 42000 },
-      { display: '100k', val: 100000 },
-      { display: '210k', val: 210000 }
-    ]
-  }, [i18n.language])
-
-  const handleZap = async () => {
-    try {
-      if (!pubkey) {
-        throw new Error('You need to be logged in to zap')
-      }
-      setZapping(true)
-      const paytoUri = selectedLightning ? buildPaytoUri('lightning', selectedLightning) : undefined
-      const paymentDetails = {
-        amountMsat: clampedSats * 1000,
-        paytoUri
-      }
-      const closeZapDialog = () => setOpen(false)
-      const zapResult = await lightning.zap(
-        pubkey,
-        event ?? recipient,
-        clampedSats,
-        comment,
-        closeZapDialog,
-        (result) => onPaymentFlowComplete?.(result, paymentDetails),
-        {
-          address: selectedLightning || undefined,
-          candidates: lightningAddressOptions.length > 0 ? lightningAddressOptions : undefined
-        }
-      )
-      if (!zapResult) {
-        return
-      }
-      if (event) {
-        noteStatsService.addZap(pubkey, event.id, zapResult.invoice, clampedSats, comment)
-      }
-    } catch (error) {
-      toast.error(`${t('Zap failed')}: ${(error as Error).message}`)
-    } finally {
-      setZapping(false)
-    }
-  }
-
-  if (!canLightningZap) {
-    return (
-      <div
-        className="px-4 pb-4"
-        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-      >
-        {hasAlternativePayments ? (
-          <PaymentMethodsSection
-            groups={zapAlternativePayments.groups}
-            recipientPubkey={recipient}
-            referencedEvent={event}
-            offerTipNoticeOnClose={false}
-            onPostPaymentRequest={onPostPaymentRequest}
-            title={t('Payment methods')}
-            headerHelpText={
-              zapAlternativePayments.showBitcoinOnChainHint
-                ? t('Tips above 10k sats can use Bitcoin on-chain.')
-                : undefined
-            }
-            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
-          />
-        ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {t('No payment methods available for this profile')}
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="space-y-4">
-        {/* Sats slider or input */}
-        <div className="flex flex-col items-center px-4">
-          <div
-            className="mb-1 flex min-h-[1.125rem] flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground tabular-nums"
-            aria-live="polite"
-          >
-            <span
-              className={cn(
-                highlightLargeAmount && superchatAmountHighlightClass
-              )}
-            >
-              {btcEquivalent}
-            </span>
-            {usdEquivalent != null ? (
-              <>
-                <span className="text-muted-foreground/40" aria-hidden>
-                  ·
-                </span>
-                <span>{usdEquivalent}</span>
-              </>
-            ) : null}
-          </div>
-          <ZapSatsAmountInput sats={sats} onSatsChange={setSats} />
-          <Label htmlFor="sats">{t('Sats')}</Label>
-        </div>
-
-        {/* Preset sats buttons */}
-        <div className="grid grid-cols-6 gap-2 px-4">
-          {presetAmounts.map(({ display, val }) => (
-            <Button variant="secondary" key={val} onClick={() => setSats(clampZapSats(val))}>
-              {display}
-            </Button>
-          ))}
-        </div>
-
-        {/* Comment input */}
-        <div className="px-4">
-          <Label htmlFor="comment">{t('Zap lnurl comment label')}</Label>
-          <Input id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
-          <p className="mt-1 text-xs text-muted-foreground">{t('Zap lnurl comment hint')}</p>
-        </div>
-      </div>
-
-      <div
-        className="space-y-3 border-t border-border bg-background px-4 pt-3"
-        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-      >
-        <p className="text-xs leading-relaxed text-muted-foreground">{t('Zap superchat flow hint')}</p>
-
-        <div className="min-w-0 space-y-1.5">
-          <Label
-            htmlFor={
-              lightningAddressOptions.length > 1 ? 'zap-lightning-address' : undefined
-            }
-          >
-            {t('Lightning address for zap')}
-          </Label>
-          {lightningAddressOptions.length === 1 ? (
-            <p
-              id="zap-lightning-address"
-              className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
-            >
-              <span className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)} aria-hidden>
-                ⚡
-              </span>
-              <span className="min-w-0 break-all">{lightningAddressOptions[0]}</span>
-            </p>
-          ) : (
-            <Select value={selectedLightning} onValueChange={setSelectedLightning}>
-              <SelectTrigger id="zap-lightning-address" className="min-w-0 gap-2">
-                <SelectValue placeholder={t('Select lightning address')}>
-                  {selectedLightning ? (
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)}
-                        aria-hidden
-                      >
-                        ⚡
-                      </span>
-                      <span className="min-w-0 truncate">{selectedLightning}</span>
-                    </span>
-                  ) : null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {lightningAddressOptions.map((addr) => (
-                  <SelectItem key={addr} value={addr} className="break-all">
-                    <span className="flex items-start gap-2">
-                      <span
-                        className={cn('shrink-0 text-lg leading-none', superchatLightningAccentClass)}
-                        aria-hidden
-                      >
-                        ⚡
-                      </span>
-                      <span className="min-w-0 break-all">{addr}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-
-        <Button onClick={handleZap} className="w-full">
-          {zapping && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}{' '}
-          {t('Zap n sats', { n: formatSatsGrouped(clampedSats) })}
-        </Button>
-
-        {hasAlternativePayments ? (
-          <PaymentMethodsSection
-            groups={zapAlternativePayments.groups}
-            recipientPubkey={recipient}
-            referencedEvent={event}
-            offerTipNoticeOnClose={false}
-            onPostPaymentRequest={onPostPaymentRequest}
-            title={t('Other payment methods')}
-            headerHelpText={
-              zapAlternativePayments.showBitcoinOnChainHint
-                ? t('Tips above 10k sats can use Bitcoin on-chain.')
-                : undefined
-            }
-            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
-          />
-        ) : null}
-      </div>
-    </div>
   )
 }

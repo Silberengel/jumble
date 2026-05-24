@@ -1,11 +1,4 @@
-import {
-  getAlternativePaymentMethods,
-  groupPaymentMethodsByDisplayType,
-  mergePaymentMethods,
-  recipientHasAnyPaymentOptions,
-  sortMergedPaymentMethods,
-  type PaymentMethodGroup
-} from '@/lib/merge-payment-methods'
+import { recipientHasAnyPaymentOptions } from '@/lib/merge-payment-methods'
 import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import client, { replaceableEventService } from '@/services/client.service'
 import { kinds, type Event } from 'nostr-tools'
@@ -13,34 +6,39 @@ import { useEffect, useMemo, useState } from 'react'
 import type { TPaymentInfo } from '@/types'
 import type { TProfile } from '@/types'
 
-export type RecipientZapPaymentData = {
+export type RecipientPaymentData = {
   paymentInfo: TPaymentInfo | null
   profile: TProfile | null
   profileEvent: Event | null
-  alternativeGroups: PaymentMethodGroup[]
-  /** Any payto / Lightning target on kind 0 or 10133 — used to enable zap UI. */
+  /** Any payto / Lightning target on kind 0 or 10133. */
   canReceiveTip: boolean
 }
 
-export function buildRecipientZapPaymentData(
+/** @deprecated Use {@link RecipientPaymentData} */
+export type RecipientZapPaymentData = RecipientPaymentData
+
+export function buildRecipientPaymentData(
   paymentInfo: TPaymentInfo | null,
   profile: TProfile | null,
   profileEvent: Event | null
-): RecipientZapPaymentData {
-  const canReceiveTip = recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent)
-  const merged = sortMergedPaymentMethods(mergePaymentMethods(paymentInfo, profile, profileEvent))
-  const alts = getAlternativePaymentMethods(merged)
-  const alternativeGroups = groupPaymentMethodsByDisplayType(alts)
-  return { paymentInfo, profile, profileEvent, alternativeGroups, canReceiveTip }
+): RecipientPaymentData {
+  return {
+    paymentInfo,
+    profile,
+    profileEvent,
+    canReceiveTip: recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent)
+  }
 }
 
-/** Combine feed/profile snapshot with fresher relay data (dialog opens fast, then enriches). */
-export function mergeRecipientZapPaymentData(
-  partial: RecipientZapPaymentData | null | undefined,
-  fresh: RecipientZapPaymentData | null | undefined
-): RecipientZapPaymentData {
+/** @deprecated Use {@link buildRecipientPaymentData} */
+export const buildRecipientZapPaymentData = buildRecipientPaymentData
+
+export function mergeRecipientPaymentData(
+  partial: RecipientPaymentData | null | undefined,
+  fresh: RecipientPaymentData | null | undefined
+): RecipientPaymentData {
   if (!partial) {
-    return fresh ?? buildRecipientZapPaymentData(null, null, null)
+    return fresh ?? buildRecipientPaymentData(null, null, null)
   }
   if (!fresh) return partial
 
@@ -50,8 +48,11 @@ export function mergeRecipientZapPaymentData(
     : (partial.profile ?? fresh.profile)
   const paymentInfo = pickRicherPaymentInfo(partial.paymentInfo, fresh.paymentInfo)
 
-  return buildRecipientZapPaymentData(paymentInfo, profile ?? null, profileEvent)
+  return buildRecipientPaymentData(paymentInfo, profile ?? null, profileEvent)
 }
+
+/** @deprecated Use {@link mergeRecipientPaymentData} */
+export const mergeRecipientZapPaymentData = mergeRecipientPaymentData
 
 function pickRicherPaymentInfo(
   a: TPaymentInfo | null | undefined,
@@ -64,11 +65,10 @@ function pickRicherPaymentInfo(
   return b ?? a ?? null
 }
 
-/** Kind 10133 + profile payto targets except the Lightning address used for zapping. */
-export function useRecipientZapPaymentData(
+export function useRecipientPaymentData(
   recipientPubkey: string | undefined,
   enabled: boolean
-): RecipientZapPaymentData {
+): RecipientPaymentData {
   const [paymentInfo, setPaymentInfo] = useState<TPaymentInfo | null>(null)
   const [profile, setProfile] = useState<TProfile | null>(null)
   const [profileEvent, setProfileEvent] = useState<Event | null>(null)
@@ -105,15 +105,10 @@ export function useRecipientZapPaymentData(
   }, [recipientPubkey, enabled])
 
   return useMemo(
-    () => buildRecipientZapPaymentData(paymentInfo, profile, profileEvent),
+    () => buildRecipientPaymentData(paymentInfo, profile, profileEvent),
     [paymentInfo, profile, profileEvent]
   )
 }
 
-/** @deprecated Use {@link useRecipientZapPaymentData} */
-export function useRecipientAlternativePayments(
-  recipientPubkey: string | undefined,
-  enabled: boolean
-): PaymentMethodGroup[] {
-  return useRecipientZapPaymentData(recipientPubkey, enabled).alternativeGroups
-}
+/** @deprecated Use {@link useRecipientPaymentData} */
+export const useRecipientZapPaymentData = useRecipientPaymentData

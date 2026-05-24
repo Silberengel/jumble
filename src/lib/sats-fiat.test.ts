@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { formatBtcFromSats, formatUsdFromSats, satsToBtc, satsToUsd } from './sats-fiat'
+import {
+  formatBtcFromSats,
+  formatUsdFromSats,
+  formatXmrFromSats,
+  formatSatsEquivalentsParts,
+  satsToBtc,
+  satsToUsd,
+  satsToXmr
+} from './sats-fiat'
 
 describe('sats-fiat', () => {
   it('converts sats to btc', () => {
@@ -18,5 +26,18 @@ describe('sats-fiat', () => {
     const usd = formatUsdFromSats(100_000_000, 100_000)
     expect(usd).toMatch(/\$|USD/)
     expect(satsToUsd(100_000_000, 100_000)).toBe(100_000)
+  })
+
+  it('formats xmr from sats using btc and xmr usd rates', () => {
+    expect(formatXmrFromSats(100_000_000, 100_000, null)).toBeNull()
+    expect(formatXmrFromSats(100_000_000, 100_000, 200)).toContain('XMR')
+    expect(satsToXmr(100_000_000, 100_000, 200)).toBe(500)
+  })
+
+  it('builds equivalent parts in usd btc xmr order', () => {
+    const parts = formatSatsEquivalentsParts(21_000, 100_000, 200)
+    expect(parts.btc).toContain('BTC')
+    expect(parts.usd).toMatch(/\$|USD/)
+    expect(parts.xmr).toContain('XMR')
   })
 })

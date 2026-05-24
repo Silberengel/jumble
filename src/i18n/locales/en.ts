@@ -151,6 +151,7 @@ export default {
     'Copy invoice': 'Copy invoice',
     'Failed to create invoice': 'Failed to create invoice',
     'Amount (sats)': 'Amount (sats)',
+    'Approximate equivalent:': 'Approximate equivalent:',
     'Pay with connected wallet': 'Pay with connected wallet',
     'Payment sent': 'Payment sent',
     'Pay via a BOLT11 invoice or copy the Lightning address':

@@ -80,15 +80,16 @@ import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import { nip66Service } from '@/services/nip66.service'
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
-import { buildRecipientZapPaymentData } from '@/hooks/useRecipientAlternativePayments'
+import { buildRecipientPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import { loadAuthorReplaceablesFromLocalCache } from '@/lib/profile-author-replaceables-cache'
 import ZapDialog from '@/components/ZapDialog'
 import {
-  groupPaymentMethodsByDisplayType,
+  groupPaymentMethodsForDisplay,
   mergePaymentMethods,
   recipientHasAnyPaymentOptions,
   sortMergedPaymentMethods
 } from '@/lib/merge-payment-methods'
+import { useSenderPaytoTypes } from '@/hooks/useSenderPaytoTypes'
 import { PRIMARY_LINK_HOVER_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
 
@@ -135,6 +136,8 @@ export default function Profile({
     return accountProfileEvent.created_at >= profileEvent.created_at ? accountProfileEvent : profileEvent
   }, [isSelf, profileEvent, accountProfileEvent])
 
+  const senderPaytoTypes = useSenderPaytoTypes(!!accountPubkey && !isSelf)
+
   const mergedPaymentMethods = useMemo(
     () =>
       sortMergedPaymentMethods(
@@ -144,8 +147,8 @@ export default function Profile({
   )
 
   const paymentMethodsByType = useMemo(
-    () => groupPaymentMethodsByDisplayType(mergedPaymentMethods),
-    [mergedPaymentMethods]
+    () => groupPaymentMethodsForDisplay(mergedPaymentMethods, senderPaytoTypes),
+    [mergedPaymentMethods, senderPaytoTypes]
   )
 
   const hasPaymentMethods = useMemo(
@@ -156,7 +159,7 @@ export default function Profile({
   const prefetchedPaymentData = useMemo(
     () =>
       profile?.pubkey
-        ? buildRecipientZapPaymentData(paymentInfo, profile ?? null, effectiveProfileEvent ?? null)
+        ? buildRecipientPaymentData(paymentInfo, profile ?? null, effectiveProfileEvent ?? null)
         : null,
     [paymentInfo, profile, effectiveProfileEvent]
   )

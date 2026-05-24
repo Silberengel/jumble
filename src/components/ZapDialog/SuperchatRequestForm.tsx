@@ -17,6 +17,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import SatsAmountEquivalents from '@/components/SatsAmountEquivalents'
 import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
 import SuperchatPaymentMethodLabel from '../Note/SuperchatPaymentMethodLabel'
 
@@ -105,6 +106,7 @@ export default function SuperchatRequestForm({
       ) : null}
       <div className="mt-3 grid gap-2">
         <Label htmlFor="superchat-amount">{t('Superchat estimated amount (sats)')}</Label>
+        <SatsAmountEquivalents sats={amountSats} id="superchat-amount-equiv" />
         <div className="flex min-w-0 items-center gap-2">
           <Input
             id="superchat-amount"
@@ -114,7 +116,7 @@ export default function SuperchatRequestForm({
             placeholder="0"
             disabled={sending}
             className="min-w-0 flex-1 tabular-nums"
-            aria-describedby="superchat-amount-hint"
+            aria-describedby="superchat-amount-equiv superchat-amount-hint"
           />
           <span className="shrink-0 text-sm text-muted-foreground">{t('sats')}</span>
         </div>

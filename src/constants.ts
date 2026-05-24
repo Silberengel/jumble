@@ -638,9 +638,6 @@ export const ExtendedKind = {
   EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
 }
 
-/** NIP-57 send flow (zap dialog, note zap button, public zap receipts). Payment targets stay visible when false. */
-export const ZAP_SENDING_ENABLED = false
-
 /** WebLN wallet connect + pay BOLT11 from LNURL-pay invoices (no NIP-57 zaps). */
 export const LIGHTNING_WALLET_PAY_ENABLED = true
 

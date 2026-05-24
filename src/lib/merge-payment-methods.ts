@@ -1,12 +1,11 @@
-import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
+import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
 import {
   buildPaytoUri,
   getCanonicalPaytoType,
   getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
   isKnownPaytoType,
-  isLightningPaytoType,
-  isZappableLightningPaytoType
+  isLightningPaytoType
 } from '@/lib/payto'
 import { extractKind0PaymentMethodsFromProfileJson } from '@/lib/payto-kind0-import'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
@@ -40,14 +39,6 @@ type PaymentMethodInput = {
 export type PaymentMethodGroup = {
   displayType: string
   methods: MergedPaymentMethod[]
-  /** Zap dialog: emphasize on-chain Bitcoin when tip is ≥ 10k sats. */
-  highlighted?: boolean
-}
-
-export type ZapDialogAlternativePayments = {
-  groups: PaymentMethodGroup[]
-  /** Show banner when on-chain Bitcoin targets are listed (≥ 10k sats). */
-  showBitcoinOnChainHint: boolean
 }
 
 /** Normalize lightning/LUD-16 authority to a canonical form for deduplication. */
@@ -79,63 +70,94 @@ function resolveLightningAuthority(a: string, b?: string): string {
   return normalizeLightningAuthority(preferred) || preferred.trim()
 }
 
-/** Below this zap size, on-chain Bitcoin payto targets are hidden in the zap dialog. */
-export const ZAP_HIDE_BITCOIN_ALTS_MAX_SATS = 10_000
+/** Preferred group order when sorting payment targets (by payto “family”). */
+const PREFERRED_PAYMENT_GROUP_FAMILIES = ['lightning', 'monero', 'bitcoin', 'geyser'] as const
 
-/** On-chain Bitcoin family (not Lightning / Liquid layer types). */
-export function isBitcoinCategoryPaytoType(type: string): boolean {
-  return getPaytoTypeInfo(getCanonicalPaytoType(type))?.category === 'bitcoin'
+/** Map payto types to a family for sender/recipient overlap (e.g. BIP-353 → lightning). */
+export function paytoTypeFamily(type: string): string {
+  const canonical = getCanonicalPaytoType(type)
+  if (isLightningPaytoType(canonical)) return 'lightning'
+  return canonical
 }
 
-/** Sort key for zap dialog “other payment” groups (lower = higher in list). */
-function zapAlternativeGroupSortRank(group: PaymentMethodGroup): number {
-  const types = group.methods.map((m) => getCanonicalPaytoType(m.type))
-  if (types.some((t) => isBitcoinCategoryPaytoType(t))) return -1000
-  if (types.some((t) => getPaytoTypeInfo(t)?.category === 'bitcoin-layer' || t === 'liquid' || t === 'lbtc')) {
-    return 0
+export function collectPaytoTypeFamilies(methods: MergedPaymentMethod[]): Set<string> {
+  return new Set(methods.map((m) => paytoTypeFamily(m.type)))
+}
+
+export function collectPaytoTypeFamiliesFromProfile(
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null,
+  profile: TProfile | null,
+  profileEvent?: Event | null
+): Set<string> {
+  return collectPaytoTypeFamilies(mergePaymentMethods(paymentInfo, profile, profileEvent))
+}
+
+function paymentMethodGroupFamilies(group: PaymentMethodGroup): string[] {
+  return [...new Set(group.methods.map((m) => paytoTypeFamily(m.type)))]
+}
+
+function groupSharesSenderPaytoFamily(group: PaymentMethodGroup, senderFamilies: Set<string>): boolean {
+  if (senderFamilies.size === 0) return false
+  return paymentMethodGroupFamilies(group).some((family) => senderFamilies.has(family))
+}
+
+function groupPreferenceRank(group: PaymentMethodGroup): number {
+  let best: number = PREFERRED_PAYMENT_GROUP_FAMILIES.length
+  for (const family of paymentMethodGroupFamilies(group)) {
+    const idx = PREFERRED_PAYMENT_GROUP_FAMILIES.indexOf(
+      family as (typeof PREFERRED_PAYMENT_GROUP_FAMILIES)[number]
+    )
+    if (idx >= 0 && idx < best) best = idx
   }
-  if (types.some((t) => t === 'monero')) return 1
-  if (types.some((t) => t === 'usdt')) return 2
-  if (types.some((t) => t === 'usdc')) return 3
-  return 10
+  return best
 }
 
-/** Filter, order, and annotate payto groups for the zap dialog “other payment methods” block. */
-export function prepareZapDialogAlternativePayments(
-  groups: PaymentMethodGroup[],
-  zapSats: number
-): ZapDialogAlternativePayments {
-  const showBitcoin = zapSats >= ZAP_HIDE_BITCOIN_ALTS_MAX_SATS
+function comparePaymentMethodGroups(a: PaymentMethodGroup, b: PaymentMethodGroup): number {
+  const rankA = groupPreferenceRank(a)
+  const rankB = groupPreferenceRank(b)
+  if (rankA !== rankB) return rankA - rankB
 
-  const filtered = showBitcoin
-    ? groups
-    : groups
-        .map((group) => ({
-          ...group,
-          methods: group.methods.filter((m) => !isBitcoinCategoryPaytoType(m.type))
-        }))
-        .filter((group) => group.methods.length > 0)
+  const primaryA = a.methods[0]?.type ?? ''
+  const primaryB = b.methods[0]?.type ?? ''
+  const subA = paytoPaymentSortRank(primaryA)
+  const subB = paytoPaymentSortRank(primaryB)
+  if (subA !== subB) return subA - subB
 
-  const prepared = filtered
-    .map((group) => ({
-      ...group,
-      highlighted:
-        showBitcoin && group.methods.some((m) => isBitcoinCategoryPaytoType(m.type))
-    }))
-    .sort((a, b) => zapAlternativeGroupSortRank(a) - zapAlternativeGroupSortRank(b))
-
-  return {
-    groups: prepared,
-    showBitcoinOnChainHint: showBitcoin && prepared.some((g) => g.highlighted)
-  }
+  return a.displayType.localeCompare(b.displayType, undefined, { sensitivity: 'base' })
 }
 
-/** @deprecated Use {@link prepareZapDialogAlternativePayments} */
-export function filterPaymentMethodGroupsForZapAmount(
+/** Sort groups: lightning → monero → bitcoin → geyser → alphabetical (within bitcoin-layer etc.). */
+export function sortPaymentMethodGroupsByPreference(groups: PaymentMethodGroup[]): PaymentMethodGroup[] {
+  return [...groups].sort(comparePaymentMethodGroups)
+}
+
+/**
+ * When the viewer shares payto families with the recipient, list those groups first;
+ * then apply {@link sortPaymentMethodGroupsByPreference} within each section.
+ */
+export function sortPaymentMethodGroupsForSender(
   groups: PaymentMethodGroup[],
-  zapSats: number
+  senderPaytoFamilies?: Iterable<string> | null
 ): PaymentMethodGroup[] {
-  return prepareZapDialogAlternativePayments(groups, zapSats).groups
+  const senderSet = senderPaytoFamilies
+    ? new Set([...senderPaytoFamilies].map((t) => paytoTypeFamily(t)))
+    : null
+
+  if (!senderSet || senderSet.size === 0) {
+    return sortPaymentMethodGroupsByPreference(groups)
+  }
+
+  const shared: PaymentMethodGroup[] = []
+  const other: PaymentMethodGroup[] = []
+  for (const group of groups) {
+    if (groupSharesSenderPaytoFamily(group, senderSet)) shared.push(group)
+    else other.push(group)
+  }
+
+  return [
+    ...sortPaymentMethodGroupsByPreference(shared),
+    ...sortPaymentMethodGroupsByPreference(other)
+  ]
 }
 
 /** Bitcoin-layer first, then on-chain Bitcoin family, then everything else. */
@@ -534,41 +556,14 @@ export function groupPaymentMethodsByDisplayType(methods: MergedPaymentMethod[])
   return order.map((key) => ({ displayType: key, methods: groups.get(key) ?? [] }))
 }
 
-/**
- * Ordered Lightning targets for zaps: profile (kind 0) event order, then payment (kind 10133).
- * Optional `preferredAddress` is moved to the front.
- */
-export function buildOrderedZapLightningAddresses(opts: {
-  profileEvent?: Event | null
-  /** Parsed kind 0 when the event is not loaded yet (e.g. feed profile row). */
-  profile?: TProfile | null
-  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
-  preferredAddress?: string | null
-}): string[] {
-  const ev = opts.profileEvent
-  const profile =
-    ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : (opts.profile ?? null)
-
-  const addrs = mergePaymentMethods(opts.paymentInfo, profile, ev)
-    .filter((m) => isZappableLightningPaytoType(m.type))
-    .map((m) => m.authority)
-
-  return prioritizeZapLightningAddress(addrs, opts.preferredAddress ?? undefined)
+/** Group by display type, then sort for display (shared types with sender first when provided). */
+export function groupPaymentMethodsForDisplay(
+  methods: MergedPaymentMethod[],
+  senderPaytoFamilies?: Iterable<string> | null
+): PaymentMethodGroup[] {
+  return sortPaymentMethodGroupsForSender(
+    groupPaymentMethodsByDisplayType(methods),
+    senderPaytoFamilies
+  )
 }
 
-/** Move `preferred` to the front when present; append if not already listed. */
-export function prioritizeZapLightningAddress(candidates: string[], preferred?: string): string[] {
-  if (!preferred?.trim()) return candidates
-  const norm = normalizePaymentAuthority('lightning', preferred)
-  const idx = candidates.findIndex((c) => normalizePaymentAuthority('lightning', c) === norm)
-  if (idx === -1) {
-    return [resolveLightningAuthority(preferred.trim()), ...candidates]
-  }
-  const rest = candidates.filter((_, i) => i !== idx)
-  return [candidates[idx], ...rest]
-}
-
-/** Non-zap payto targets for zap dialog “other payment methods” (LUD-16 uses the Lightning selector). */
-export function getAlternativePaymentMethods(methods: MergedPaymentMethod[]): MergedPaymentMethod[] {
-  return methods.filter((m) => !isZappableLightningPaytoType(m.type))
-}
