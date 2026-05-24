@@ -30,7 +30,8 @@ import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
-import { shouldIncludeZapReceiptAtReplyThreshold } from '@/lib/event-metadata'
+import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds'
+import { shouldIncludePaymentInFeed } from '@/lib/superchat'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useDeletedEvent } from '@/providers/DeletedEventProvider'
@@ -38,7 +39,6 @@ import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
 import { useUserTrust } from '@/contexts/user-trust-context'
-import { useZap } from '@/providers/ZapProvider'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -859,7 +859,6 @@ const NoteList = forwardRef(
       contentPolicy?.isOffline ??
       (!navigator.onLine || (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'none')
     const { isEventDeleted } = useDeletedEvent()
-    const { zapReplyThreshold } = useZap()
     const { favoriteRelays, blockedRelays } = useFavoriteRelays()
     const [events, setEvents] = useState<Event[]>([])
     const eventsRef = useRef<Event[]>([])
@@ -995,6 +994,19 @@ const NoteList = forwardRef(
     
     // Memoize subRequests serialization to avoid expensive JSON.stringify on every render
     const subRequestsKey = useMemo(() => legacyFeedSubscriptionKey(subRequests), [subRequests])
+
+    const feedRelayUrls = useMemo(() => {
+      const urls = new Set<string>()
+      for (const req of subRequests) {
+        for (const url of req.urls ?? []) {
+          const trimmed = url.trim()
+          if (trimmed) urls.add(trimmed)
+        }
+      }
+      return [...urls]
+    }, [subRequestsKey])
+
+    const feedAttestedSuperchatIds = useFeedAttestedSuperchatIds(feedRelayUrls)
 
     const followingFeedDeltaSubRequestsKey = useMemo(
       () =>
@@ -1310,8 +1322,8 @@ const NoteList = forwardRef(
         // Filter out expired events
         if (shouldFilterEvent(evt)) return true
 
-        // Filter out zap receipts below the zap-reply threshold (same rule as thread replies)
-        if (evt.kind === ExtendedKind.ZAP_RECEIPT && !shouldIncludeZapReceiptAtReplyThreshold(evt, zapReplyThreshold)) {
+        // Attested superchats only (9741), same as threads / profile walls.
+        if (!shouldIncludePaymentInFeed(evt, feedAttestedSuperchatIds)) {
           return true
         }
 
@@ -1338,7 +1350,7 @@ const NoteList = forwardRef(
         mutePubkeySet,
         pinnedEventIds,
         isEventDeleted,
-        zapReplyThreshold,
+        feedAttestedSuperchatIds,
         extraShouldHideEvent,
         homeFeedActiveSeenOnAllowlist,
         homeFeedListMode
@@ -3327,7 +3339,6 @@ const NoteList = forwardRef(
                       if (!isReply && !showKind1OPsRef.current) return
                     }
                     if (event.kind === ExtendedKind.COMMENT && !showKind1111Ref.current) return
-                    if (event.kind === ExtendedKind.GIT_RELEASE && !showKind1OPsRef.current) return
                   }
                 }
               }
@@ -3640,7 +3651,6 @@ const NoteList = forwardRef(
                         if (!isReply && !showKind1OPsRef.current) return
                       }
                       if (event.kind === ExtendedKind.COMMENT && !showKind1111Ref.current) return
-                      if (event.kind === ExtendedKind.GIT_RELEASE && !showKind1OPsRef.current) return
                     }
                   }
                 }

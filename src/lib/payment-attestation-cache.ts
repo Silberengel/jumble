@@ -11,6 +11,14 @@ const authorHydrateByPubkey = new Map<string, Promise<void>>()
 
 const LOCAL_ATTESTED_KEY_PREFIX = 'jumble:attested-payment-ids:'
 
+/** Kind 9741 events already in the session LRU (for feed attestation index). */
+export function collectPaymentAttestationsFromSession(limit = 2000): NostrEvent[] {
+  return client.eventService.getSessionEventsMatchingFilters(
+    [{ kinds: [ExtendedKind.PAYMENT_ATTESTATION], limit }],
+    limit
+  )
+}
+
 export function paymentAttestationCacheKey(targetEventId: string, recipientPubkey: string): string {
   return `${targetEventId.trim().toLowerCase()}:${recipientPubkey.trim().toLowerCase()}`
 }

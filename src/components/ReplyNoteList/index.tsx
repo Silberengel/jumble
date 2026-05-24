@@ -29,7 +29,6 @@ import { useSmartNoteNavigation } from '@/PageManager'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
-import { useZap } from '@/providers/ZapProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
@@ -115,7 +114,6 @@ function ReplyNoteList({
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
   const { pubkey: userPubkey } = useNostr()
-  const { zapReplyThreshold } = useZap()
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const relayAuthoritativeRead =
@@ -241,11 +239,7 @@ function ReplyNoteList({
       threadWalkFromRepliesMap.set(evt.id.toLowerCase(), evt)
     }
 
-    const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
-      replyEvents,
-      attestedPaymentIds,
-      zapReplyThreshold
-    )
+    const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replyEvents, attestedPaymentIds)
     const zaps = superchats
     const replyScoreById =
       sort === 'top' || sort === 'controversial' || sort === 'most-zapped'
@@ -336,7 +330,6 @@ function ReplyNoteList({
     mutePubkeySet,
     hideContentMentioningMutedUsers,
     sort,
-    zapReplyThreshold,
     attestedPaymentIds,
     isDiscussionRoot,
     event.kind
@@ -361,11 +354,7 @@ function ReplyNoteList({
   const mergedFeed = useMemo(() => {
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
-        merged,
-        attestedPaymentIds,
-        zapReplyThreshold
-      )
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(merged, attestedPaymentIds)
       const sortedNon = [...nonZaps].sort((a, b) =>
         direction === 'asc' ? a.created_at - b.created_at : b.created_at - a.created_at
       )
@@ -376,11 +365,7 @@ function ReplyNoteList({
 
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
-        replies,
-        attestedPaymentIds,
-        zapReplyThreshold
-      )
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replies, attestedPaymentIds)
       const middle = nonZaps.filter((e) => !isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailFromReplies = nonZaps.filter((e) => isEaThreadTailBacklinkCandidate(e, rootInfo))
       const tailSeen = new Set<string>()
@@ -397,11 +382,7 @@ function ReplyNoteList({
 
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
     if (rootInfo?.type === 'I') {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(
-        replies,
-        attestedPaymentIds,
-        zapReplyThreshold
-      )
+      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replies, attestedPaymentIds)
       const middle = nonZaps.filter((e) => !isWebThreadTailKind(e.kind))
       const tailFromReplies = nonZaps.filter((e) => isWebThreadTailKind(e.kind))
       const tailSeen = new Set<string>()
@@ -423,7 +404,7 @@ function ReplyNoteList({
       return [...replies]
     }
     return zapsThenTimeSorted(merged, 'desc')
-  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, zapReplyThreshold])
+  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())

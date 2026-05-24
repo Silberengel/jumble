@@ -618,19 +618,6 @@ export function getZapInfoFromEvent(receiptEvent: Event) {
   }
 }
 
-/**
- * Kind 9735: include in timelines and reply lists only when amount (sats) is known and at least `thresholdSats`.
- * Matches {@link NoteList} zap filtering.
- */
-export function shouldIncludeZapReceiptAtReplyThreshold(receipt: Event, thresholdSats: number): boolean {
-  if (receipt.kind !== kinds.Zap) return true
-  const zapInfo = getZapInfoFromEvent(receipt)
-  if (!zapInfo || zapInfo.amount === undefined || zapInfo.amount === 0 || zapInfo.amount < thresholdSats) {
-    return false
-  }
-  return true
-}
-
 // Helper function to convert d-tag to title case
 export function dTagToTitleCase(dTag: string): string {
   return dTag

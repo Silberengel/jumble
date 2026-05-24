@@ -12,7 +12,9 @@ import {
   isProfileWallPaymentNotification,
   isProfileWallZapReceipt,
   isNestedThreadReplyParentKind,
-  partitionAttestedSuperchats
+  buildGlobalAttestedSuperchatIdSet,
+  partitionAttestedSuperchats,
+  shouldIncludePaymentInFeed
 } from '@/lib/superchat'
 import { parsePaytoTagType } from '@/lib/payto'
 import { kinds, type Event } from 'nostr-tools'
@@ -202,15 +204,14 @@ describe('partitionAttestedSuperchats', () => {
 
     const { superchats, rest } = partitionAttestedSuperchats(
       [zapAttested, zapUnattested, payment, comment],
-      attested,
-      1
+      attested
     )
 
     expect(superchats.map((e) => e.id)).toEqual([payment.id, zapAttested.id])
     expect(rest).toEqual([comment])
   })
 
-  it('includes attested zaps below the reply threshold at the top', () => {
+  it('includes attested micro zaps in threads (feed threshold does not apply)', () => {
     const attested = new Set([ZAP_ID])
     const microZap = fakeEvent({
       id: ZAP_ID,
@@ -234,9 +235,59 @@ describe('partitionAttestedSuperchats', () => {
       kind: ExtendedKind.COMMENT,
       tags: [['e', '2'.repeat(64)]]
     })
-    const { superchats, rest } = partitionAttestedSuperchats([microZap, comment], attested, 21)
+    const { superchats, rest } = partitionAttestedSuperchats([microZap, comment], attested)
     expect(superchats.map((e) => e.id)).toEqual([ZAP_ID])
     expect(rest).toEqual([comment])
+  })
+})
+
+describe('buildGlobalAttestedSuperchatIdSet', () => {
+  it('collects attested target ids from valid kind 9741 events', () => {
+    const paymentId = PAYMENT_ID
+    const attestation = fakeEvent({
+      id: 'a'.repeat(64),
+      kind: ExtendedKind.PAYMENT_ATTESTATION,
+      pubkey: RECIPIENT,
+      tags: [
+        ['e', paymentId],
+        ['k', String(ExtendedKind.PAYMENT_NOTIFICATION)]
+      ]
+    })
+    expect(buildGlobalAttestedSuperchatIdSet([attestation]).has(paymentId)).toBe(true)
+  })
+})
+
+describe('shouldIncludePaymentInFeed', () => {
+  it('requires attestation for superchat kinds only', () => {
+    const zap = fakeEvent({
+      id: ZAP_ID,
+      kind: kinds.Zap,
+      tags: [
+        ['P', SENDER],
+        ['p', RECIPIENT],
+        ['bolt11', 'lnbc210n1p0fake'],
+        [
+          'description',
+          JSON.stringify({
+            pubkey: SENDER,
+            content: 'Zap!',
+            tags: [['p', RECIPIENT], ['amount', '21000']]
+          })
+        ]
+      ]
+    })
+    const payment = fakeEvent({
+      id: PAYMENT_ID,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [['p', RECIPIENT], ['amount', '100000']]
+    })
+    const note = fakeEvent({ id: '1'.repeat(64), kind: kinds.ShortTextNote, content: 'hi', tags: [] })
+    const attested = new Set([ZAP_ID, PAYMENT_ID])
+
+    expect(shouldIncludePaymentInFeed(zap, attested)).toBe(true)
+    expect(shouldIncludePaymentInFeed(payment, attested)).toBe(true)
+    expect(shouldIncludePaymentInFeed(zap, new Set())).toBe(false)
+    expect(shouldIncludePaymentInFeed(note, attested)).toBe(true)
   })
 })
 

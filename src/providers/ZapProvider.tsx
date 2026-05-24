@@ -18,8 +18,6 @@ type TZapContext = {
   updateDefaultComment: (comment: string) => void
   quickZap: boolean
   updateQuickZap: (quickZap: boolean) => void
-  zapReplyThreshold: number
-  updateZapReplyThreshold: (sats: number) => void
   includePublicZapReceipt: boolean
   updateIncludePublicZapReceipt: (include: boolean) => void
 }
@@ -39,7 +37,6 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
   const [defaultZapSats, setDefaultZapSats] = useState<number>(storage.getDefaultZapSats())
   const [defaultZapComment, setDefaultZapComment] = useState<string>(storage.getDefaultZapComment())
   const [quickZap, setQuickZap] = useState<boolean>(storage.getQuickZap())
-  const [zapReplyThreshold, setZapReplyThreshold] = useState<number>(storage.getZapReplyThreshold())
   const [includePublicZapReceipt, setIncludePublicZapReceipt] = useState<boolean>(
     storage.getIncludePublicZapReceipt()
   )
@@ -95,11 +92,6 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
     setQuickZap(quickZap)
   }
 
-  const updateZapReplyThreshold = (sats: number) => {
-    storage.setZapReplyThreshold(sats)
-    setZapReplyThreshold(sats)
-  }
-
   const updateIncludePublicZapReceipt = (include: boolean) => {
     setIncludePublicZapReceipt(include)
     void storage.setIncludePublicZapReceiptAsync(include)
@@ -117,8 +109,6 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
         updateDefaultComment,
         quickZap,
         updateQuickZap,
-        zapReplyThreshold,
-        updateZapReplyThreshold,
         includePublicZapReceipt,
         updateIncludePublicZapReceipt
       }}

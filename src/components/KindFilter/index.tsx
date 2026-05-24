@@ -5,6 +5,17 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ExtendedKind, NIP71_VIDEO_KINDS, PROFILE_FEED_KINDS } from '@/constants'
+import {
+  applyFeedGitGroupToggle,
+  applyFeedPostsGroupToggle,
+  applyFeedRepliesGroupToggle,
+  FEED_GIT_GROUP_KINDS,
+  FEED_POSTS_GROUP_KINDS,
+  FEED_REPLIES_GROUP_KINDS,
+  isFeedGitGroupEnabled,
+  isFeedPostsGroupEnabled,
+  isFeedRepliesGroupEnabled
+} from '@/lib/feed-kind-filter'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -19,26 +30,11 @@ const KIND_1111 = ExtendedKind.COMMENT
 
 const KIND_FILTER_OPTIONS = [
   { kindGroup: [kinds.LongFormArticle, ExtendedKind.WIKI_ARTICLE, ExtendedKind.NOSTR_SPECIFICATION], label: 'Articles' },
-  { kindGroup: [kinds.Highlights], label: 'Highlights' },
   { kindGroup: [ExtendedKind.POLL], label: 'Polls' },
-  { kindGroup: [ExtendedKind.VOICE, ExtendedKind.VOICE_COMMENT], label: 'Voice Posts' },
-  { kindGroup: [ExtendedKind.PICTURE], label: 'Photo Posts' },
   { kindGroup: [...NIP71_VIDEO_KINDS], label: 'Video Posts' },
-  { kindGroup: [ExtendedKind.DISCUSSION], label: 'Discussions' },
   { kindGroup: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME], label: 'Calendar Events' },
   { kindGroup: [...LIVE_ACTIVITY_KINDS], label: 'Live streams' },
-  {
-    kindGroup: [
-      ExtendedKind.ZAP_RECEIPT,
-      ExtendedKind.MONERO_TIP_DISCLOSURE,
-      ExtendedKind.MONERO_TIP_RECEIPT
-    ],
-    label: 'Zaps'
-  },
-  { kindGroup: [kinds.Repost, ExtendedKind.GENERIC_REPOST], label: 'Boosts' },
-  { kindGroup: [ExtendedKind.GIT_REPO_ANNOUNCEMENT], label: 'Git repositories' },
-  { kindGroup: [ExtendedKind.GIT_ISSUE], label: 'Git issues' },
-  { kindGroup: [ExtendedKind.GIT_RELEASE], label: 'Git releases' }
+  { kindGroup: [kinds.Repost, ExtendedKind.GENERIC_REPOST], label: 'Boosts' }
 ]
 
 function buildShowKindsFromOptions(
@@ -134,6 +130,14 @@ export default function KindFilter({
   )
   const canApply = temporarySeeAllEvents || appliedShowKinds.length > 0
 
+  const postsGroupEnabled = isFeedPostsGroupEnabled(temporaryShowKind1OPs, temporaryShowKinds)
+  const repliesGroupEnabled = isFeedRepliesGroupEnabled(
+    temporaryShowKind1Replies,
+    temporaryShowKind1111,
+    temporaryShowKinds
+  )
+  const gitGroupEnabled = isFeedGitGroupEnabled(temporaryShowKinds)
+
   const handleApply = () => {
     if (!canApply) return
 
@@ -196,38 +200,64 @@ export default function KindFilter({
         {temporarySeeAllEvents ? t('See all events hint') : t('Use filter hint')}
       </p>
       <div className={cn('grid grid-cols-2 gap-2', temporarySeeAllEvents && 'opacity-50')}>
-        {/* Posts (OPs) - kind 1 top-level only */}
         <div
           className={cn(
             'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
-            temporaryShowKind1OPs ? 'border-primary/60 bg-primary/5' : 'clickable'
+            postsGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
-          onClick={() => setTemporaryShowKind1OPs((prev) => !prev)}
+          onClick={() => {
+            const next = !postsGroupEnabled
+            const { showKinds: nextKinds, showKind1OPs } = applyFeedPostsGroupToggle(
+              temporaryShowKinds,
+              next
+            )
+            setTemporaryShowKinds(nextKinds)
+            setTemporaryShowKind1OPs(showKind1OPs)
+          }}
         >
-          <p className="leading-none font-medium">{t('Posts (OPs)')}</p>
-          <p className="text-muted-foreground text-xs">kind {KIND_1}</p>
+          <p className="leading-none font-medium">{t('Posts')}</p>
+          <p className="text-muted-foreground text-xs">
+            {t('Feed filter posts group kinds', {
+              kinds: [KIND_1, ...FEED_POSTS_GROUP_KINDS].join(', ')
+            })}
+          </p>
         </div>
-        {/* Kind 1 replies - kind 1 that are replies */}
         <div
           className={cn(
             'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
-            temporaryShowKind1Replies ? 'border-primary/60 bg-primary/5' : 'clickable'
+            repliesGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
-          onClick={() => setTemporaryShowKind1Replies((prev) => !prev)}
+          onClick={() => {
+            const next = !repliesGroupEnabled
+            const { showKinds: nextKinds, showKind1Replies, showKind1111 } = applyFeedRepliesGroupToggle(
+              temporaryShowKinds,
+              next
+            )
+            setTemporaryShowKinds(nextKinds)
+            setTemporaryShowKind1Replies(showKind1Replies)
+            setTemporaryShowKind1111(showKind1111)
+          }}
         >
-          <p className="leading-none font-medium">{t('Kind 1 replies')}</p>
-          <p className="text-muted-foreground text-xs">kind {KIND_1}</p>
+          <p className="leading-none font-medium">{t('Replies')}</p>
+          <p className="text-muted-foreground text-xs">
+            {t('Feed filter replies group kinds', {
+              kinds: [KIND_1, KIND_1111, ...FEED_REPLIES_GROUP_KINDS].join(', ')
+            })}
+          </p>
         </div>
-        {/* Comments - kind 1111 */}
         <div
           className={cn(
             'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
-            temporaryShowKind1111 ? 'border-primary/60 bg-primary/5' : 'clickable'
+            gitGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
-          onClick={() => setTemporaryShowKind1111((prev) => !prev)}
+          onClick={() => {
+            setTemporaryShowKinds(applyFeedGitGroupToggle(temporaryShowKinds, !gitGroupEnabled))
+          }}
         >
-          <p className="leading-none font-medium">{t('Comments')}</p>
-          <p className="text-muted-foreground text-xs">kind {KIND_1111}</p>
+          <p className="leading-none font-medium">{t('Git')}</p>
+          <p className="text-muted-foreground text-xs">
+            {t('Feed filter git group kinds', { kinds: FEED_GIT_GROUP_KINDS.join(', ') })}
+          </p>
         </div>
         {KIND_FILTER_OPTIONS.map(({ kindGroup, label }) => {
           /** `some` not `every`: saved kinds may include e.g. only 30311 while the row lists 30311–30313; `every` made the box look off while 30311 still matched the feed. */
@@ -259,7 +289,14 @@ export default function KindFilter({
           variant="secondary"
           onClick={() => {
             setTemporaryShowKinds(
-              PROFILE_FEED_KINDS.filter((k) => k !== KIND_1 && k !== KIND_1111)
+              Array.from(
+                new Set([
+                  ...PROFILE_FEED_KINDS.filter((k) => k !== KIND_1 && k !== KIND_1111),
+                  ...FEED_POSTS_GROUP_KINDS,
+                  ...FEED_REPLIES_GROUP_KINDS,
+                  ...FEED_GIT_GROUP_KINDS
+                ])
+              )
             )
             setTemporaryShowKind1OPs(true)
             setTemporaryShowKind1Replies(true)

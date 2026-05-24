@@ -16,6 +16,19 @@ import { Event, kinds } from 'nostr-tools'
 
 export const PAYMENT_ATTESTATION_TARGET_KINDS = new Set(['9735', '9740', '9736', '1814'])
 
+/** Payment kinds shown in feeds only when attested (kind 9741); excludes lightning zap receipts. */
+export const FEED_SUPERCHAT_KINDS: readonly number[] = [
+  ExtendedKind.PAYMENT_NOTIFICATION,
+  ExtendedKind.MONERO_TIP_DISCLOSURE,
+  ExtendedKind.MONERO_TIP_RECEIPT
+]
+
+const FEED_SUPERCHAT_KIND_SET = new Set(FEED_SUPERCHAT_KINDS)
+
+export function isFeedSuperchatKind(kind: number): boolean {
+  return FEED_SUPERCHAT_KIND_SET.has(kind)
+}
+
 export type PaymentNotificationInfo = {
   senderPubkey: string
   recipientPubkey: string
@@ -267,8 +280,7 @@ export function collectAttestedSuperchatsFromRepliesMap(
 
 export function partitionAttestedSuperchats(
   items: Event[],
-  attestedIds: Set<string>,
-  _zapReplyThreshold: number
+  attestedIds: Set<string>
 ): { superchats: Event[]; rest: Event[] } {
   const superchats: Event[] = []
   const rest: Event[] = []
@@ -296,6 +308,29 @@ export function partitionAttestedSuperchats(
   }
 
   return { superchats: sortSuperchatsByAmountDesc(superchats), rest }
+}
+
+/** Target payment ids from any valid kind 9741 (feeds are not scoped to one recipient). */
+export function buildGlobalAttestedSuperchatIdSet(attestations: Event[]): Set<string> {
+  const out = new Set<string>()
+  for (const attestation of attestations) {
+    if (!isValidPaymentAttestation(attestation, attestation.pubkey)) continue
+    const targetId = getPaymentAttestationTargetId(attestation)
+    if (targetId) out.add(targetId.toLowerCase())
+  }
+  return out
+}
+
+/**
+ * Feeds: kind 9735 / 9740 / 9736 / 1814 only when attested (9741).
+ * Same attestation rule as threads and profile walls.
+ */
+export function shouldIncludePaymentInFeed(
+  event: Event,
+  attestedIds: ReadonlySet<string>
+): boolean {
+  if (!isSuperchatKind(event.kind)) return true
+  return isAttestedSuperchat(event, attestedIds)
 }
 
 export function replyFeedSuperchatsFirst(sortedNonSuperchatReplies: Event[], superchats: Event[]) {

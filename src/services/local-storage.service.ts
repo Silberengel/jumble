@@ -54,7 +54,6 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_ZAP_COMMENT,
   StorageKey.QUICK_ZAP,
   StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT,
-  StorageKey.ZAP_REPLY_THRESHOLD,
   StorageKey.AUTOPLAY,
   StorageKey.HIDE_UNTRUSTED_INTERACTIONS,
   StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS,
@@ -102,7 +101,6 @@ class LocalStorageService {
   private defaultZapComment: string = 'Zap!'
   private quickZap: boolean = false
   private includePublicZapReceipt: boolean = true
-  private zapReplyThreshold: number = 1
   private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
   private autoplay: boolean = true
   private hideUntrustedInteractions: boolean = false
@@ -203,14 +201,6 @@ class LocalStorageService {
     const includeReceiptStr = window.localStorage.getItem(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
     if (includeReceiptStr != null) {
       this.includePublicZapReceipt = includeReceiptStr !== 'false'
-    }
-
-    const zapReplyThresholdStr = window.localStorage.getItem(StorageKey.ZAP_REPLY_THRESHOLD)
-    if (zapReplyThresholdStr) {
-      const num = parseInt(zapReplyThresholdStr)
-      if (!isNaN(num)) {
-        this.zapReplyThreshold = num
-      }
     }
 
     // deprecated
@@ -609,11 +599,6 @@ class LocalStorageService {
     if (quickZapStr != null) this.quickZap = quickZapStr === 'true'
     const includeReceiptStr = get(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
     if (includeReceiptStr != null) this.includePublicZapReceipt = includeReceiptStr !== 'false'
-    const zapReplyStr = get(StorageKey.ZAP_REPLY_THRESHOLD)
-    if (zapReplyStr != null) {
-      const num = parseInt(zapReplyStr)
-      if (!isNaN(num)) this.zapReplyThreshold = num
-    }
     this.autoplay = get(StorageKey.AUTOPLAY) !== 'false'
     const hideInteractions = get(StorageKey.HIDE_UNTRUSTED_INTERACTIONS)
     if (hideInteractions != null) this.hideUntrustedInteractions = hideInteractions === 'true'
@@ -839,15 +824,6 @@ class LocalStorageService {
   async setIncludePublicZapReceiptAsync(include: boolean): Promise<void> {
     this.includePublicZapReceipt = include
     await this.persistSettingToIndexedDb(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT, include.toString())
-  }
-
-  getZapReplyThreshold() {
-    return this.zapReplyThreshold
-  }
-
-  setZapReplyThreshold(sats: number) {
-    this.zapReplyThreshold = sats
-    this.persistSetting(StorageKey.ZAP_REPLY_THRESHOLD, sats.toString())
   }
 
   getAutoplay() {
