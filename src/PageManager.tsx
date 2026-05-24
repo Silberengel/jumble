@@ -7,11 +7,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
-import {
-  MOBILE_SWIPE_BACK_EDGE_PX,
-  tryMobileSwipeBackFromGesture,
-  useMobileSwipeBackOnElement
-} from '@/lib/mobile-swipe-back'
+import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
 import { NavigationService } from '@/services/navigation.service'
@@ -2132,6 +2128,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     restorePrimaryTabAfterSecondaryClose()
   }
 
+  let lastPopSecondaryPageAt = 0
+  const POP_SECONDARY_PAGE_DEBOUNCE_MS = 400
+
   /** Pop one secondary frame in React state before history.back (popstate can no-op when indices match). */
   const popOneSecondaryStackFrame = () => {
     const pre = secondaryStackRef.current
@@ -2153,6 +2152,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   /** UI-first back: sync stack / drawer immediately, then align browser history. */
   const popSecondaryPage = () => {
+    const now = Date.now()
+    if (now - lastPopSecondaryPageAt < POP_SECONDARY_PAGE_DEBOUNCE_MS) return
+    lastPopSecondaryPageAt = now
+
     navigationCounterRef.current += 1
     if (primaryNoteView) {
       setPrimaryNoteView(null)
@@ -2168,12 +2171,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         ignorePopStateRef.current = true
         window.history.back()
       } else {
+        // replaceState in hardClose already points at the primary URL — do not history.back()
+        // afterward or the browser returns to the note entry and popstate/sync reopens the panel.
         hardCloseSecondaryPanel()
-        const pathOnly = window.location.pathname.split('?')[0].split('#')[0]
-        if (!isPrimaryOnlyPathname(pathOnly)) {
-          ignorePopStateRef.current = true
-          window.history.back()
-        }
       }
       return
     }
@@ -2229,40 +2229,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   , {
     enabled: mobileSecondaryPanelOpen
   })
-
-  const mobileSecondaryOpen = isSmallScreen && (drawerOpen || secondaryStack.length > 0)
-  useEffect(() => {
-    if (!mobileSecondaryOpen) return
-
-    let grab: { x: number; y: number; pointerId: number } | null = null
-
-    const onPointerDown = (e: PointerEvent) => {
-      if ((e.button !== 0 && e.button !== -1) || e.clientX > MOBILE_SWIPE_BACK_EDGE_PX) return
-      grab = { x: e.clientX, y: e.clientY, pointerId: e.pointerId }
-    }
-
-    const onPointerUp = (e: PointerEvent) => {
-      if (!grab || grab.pointerId !== e.pointerId) return
-      tryMobileSwipeBackFromGesture(grab, e.clientX, e.clientY, e.pointerId, () =>
-        popSecondaryPageRef.current()
-      )
-      grab = null
-    }
-
-    const onPointerCancel = () => {
-      grab = null
-    }
-
-    const capture = { capture: true } as const
-    document.addEventListener('pointerdown', onPointerDown, capture)
-    document.addEventListener('pointerup', onPointerUp, capture)
-    document.addEventListener('pointercancel', onPointerCancel, capture)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, capture)
-      document.removeEventListener('pointerup', onPointerUp, capture)
-      document.removeEventListener('pointercancel', onPointerCancel, capture)
-    }
-  }, [mobileSecondaryOpen])
 
   useEffect(() => {
     const shouldBeOpen =

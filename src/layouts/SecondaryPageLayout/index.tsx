@@ -8,13 +8,12 @@ import {
   isRadixDialogOpen,
   shouldIgnoreKeyboardShortcutEvent
 } from '@/lib/keyboard-shortcuts'
-import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { useSecondaryPage } from '@/PageManager'
 import { DeepBrowsingProvider } from '@/providers/DeepBrowsingProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { cn } from '@/lib/utils'
 import { ChevronLeft } from 'lucide-react'
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SecondaryPageLayout = forwardRef(
@@ -42,13 +41,7 @@ const SecondaryPageLayout = forwardRef(
   ) => {
     const scrollAreaRef = useRef<HTMLDivElement>(null)
     const { isSmallScreen } = useScreenSize()
-    const { currentIndex, pop } = useSecondaryPage()
-    const [mobileSwipeRoot, setMobileSwipeRoot] = useState<HTMLElement | null>(null)
-    const mobileSwipeActive =
-      isSmallScreen && (index === undefined || currentIndex === index)
-    useMobileSwipeBackOnElement(mobileSwipeActive ? mobileSwipeRoot : null, pop, {
-      enabled: mobileSwipeActive
-    })
+    const { currentIndex } = useSecondaryPage()
 
     const shouldRenderTitlebar =
       titlebar != null || (title != null && title !== '') || !hideBackButton
@@ -97,7 +90,6 @@ const SecondaryPageLayout = forwardRef(
       return (
         <DeepBrowsingProvider active={currentIndex === index}>
           <div
-            ref={setMobileSwipeRoot}
             className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
             style={{
               paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
