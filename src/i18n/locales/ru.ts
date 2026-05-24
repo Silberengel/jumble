@@ -671,6 +671,18 @@ export default {
     'Default zap comment': 'Стандартный комментарий для зап',
     'Lightning Address (or LNURL)': 'Lightning-адрес (или LNURL)',
     'Quick zap': 'Быстрый зап',
+    'Preferred payto category': 'Предпочитаемая категория payto',
+    'Show this category expanded on payment method lists; other categories collapse behind an accordion.':
+      'Показывать эту категорию развёрнутой в списках способов оплаты; остальные сворачиваются в аккордеон.',
+    'Show all categories': 'Показать все категории',
+    'Other payment categories ({{count}})': 'Другие категории оплаты ({{count}})',
+    'paytoCategory.bitcoin': 'Bitcoin',
+    'paytoCategory.bitcoin-layer': 'Слой Bitcoin',
+    'paytoCategory.monero': 'Monero',
+    'paytoCategory.crypto': 'Крипто',
+    'paytoCategory.stablecoin': 'Стейблкоин',
+    'paytoCategory.fiat': 'Фиат',
+    'paytoCategory.tip': 'Чаевые',
     'If enabled, you can zap with a single click. Click and hold for custom amounts':
       'Если включено, вы можете отправить зап одним нажатием. Нажмите и удерживайте для выбора суммы',
     'Include public zap receipt': 'Include public zap receipt',

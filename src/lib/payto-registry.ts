@@ -7,7 +7,14 @@ import paytoTypesCatalog from '@/data/payto-types.json'
 import { resolvePaytoLogoAssetPath } from '@/lib/payto-logos'
 import { resolvePaypalPaymentUrl } from '@/lib/payto-paypal-url'
 
-export type PaytoCategory = 'bitcoin' | 'bitcoin-layer' | 'crypto' | 'stablecoin' | 'fiat' | 'tip'
+export type PaytoCategory =
+  | 'bitcoin'
+  | 'bitcoin-layer'
+  | 'monero'
+  | 'crypto'
+  | 'stablecoin'
+  | 'fiat'
+  | 'tip'
 
 export type PaytoAuthorityHelp = {
   placeholder: string

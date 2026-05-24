@@ -667,6 +667,18 @@ export default {
     'Default zap comment': 'Default zap comment',
     'Lightning Address (or LNURL)': 'Lightning Address (or LNURL)',
     'Quick zap': 'Quick zap',
+    'Preferred payto category': 'Preferred payto category',
+    'Show this category expanded on payment method lists; other categories collapse behind an accordion.':
+      'Show this category expanded on payment method lists; other categories collapse behind an accordion.',
+    'Show all categories': 'Show all categories',
+    'Other payment categories ({{count}})': 'Other payment categories ({{count}})',
+    'paytoCategory.bitcoin': 'Bitcoin',
+    'paytoCategory.bitcoin-layer': 'Bitcoin layer',
+    'paytoCategory.monero': 'Monero',
+    'paytoCategory.crypto': 'Crypto',
+    'paytoCategory.stablecoin': 'Stablecoin',
+    'paytoCategory.fiat': 'Fiat',
+    'paytoCategory.tip': 'Tip',
     'If enabled, you can zap with a single click. Click and hold for custom amounts':
       'If enabled, you can zap with a single click. Click and hold for custom amounts',
     'Include public zap receipt': 'Include public zap receipt',

@@ -9,6 +9,8 @@ import {
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
+import { isPaytoCategory } from '@/lib/payto-category-display'
+import type { PaytoCategory } from '@/lib/payto-registry'
 import { setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import { randomString } from '@/lib/random'
 import {
@@ -53,6 +55,7 @@ const SETTINGS_KEYS = [
   StorageKey.CURRENT_ACCOUNT,
   StorageKey.DEFAULT_ZAP_SATS,
   StorageKey.DEFAULT_ZAP_COMMENT,
+  StorageKey.PREFERRED_PAYTO_CATEGORY,
   StorageKey.QUICK_ZAP,
   StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT,
   StorageKey.AUTOPLAY,
@@ -100,6 +103,7 @@ class LocalStorageService {
   private noteListMode: TNoteListMode = 'posts'
   private defaultZapSats: number = DEFAULT_ZAP_SATS
   private defaultZapComment: string = 'Zap!'
+  private preferredPaytoCategory: PaytoCategory | null = null
   private quickZap: boolean = false
   private includePublicZapReceipt: boolean = true
   private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
@@ -198,6 +202,11 @@ class LocalStorageService {
       }
     }
     this.defaultZapComment = window.localStorage.getItem(StorageKey.DEFAULT_ZAP_COMMENT) ?? 'Zap!'
+    const preferredPaytoCategoryStr = window.localStorage.getItem(StorageKey.PREFERRED_PAYTO_CATEGORY)
+    this.preferredPaytoCategory =
+      preferredPaytoCategoryStr && isPaytoCategory(preferredPaytoCategoryStr)
+        ? preferredPaytoCategoryStr
+        : null
     this.quickZap = window.localStorage.getItem(StorageKey.QUICK_ZAP) === 'true'
     const includeReceiptStr = window.localStorage.getItem(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
     if (includeReceiptStr != null) {
@@ -596,6 +605,13 @@ class LocalStorageService {
     }
     const defaultZapCommentStr = get(StorageKey.DEFAULT_ZAP_COMMENT)
     if (defaultZapCommentStr != null) this.defaultZapComment = defaultZapCommentStr
+    const preferredPaytoCategoryStr = get(StorageKey.PREFERRED_PAYTO_CATEGORY)
+    if (preferredPaytoCategoryStr != null) {
+      this.preferredPaytoCategory =
+        preferredPaytoCategoryStr && isPaytoCategory(preferredPaytoCategoryStr)
+          ? preferredPaytoCategoryStr
+          : null
+    }
     const quickZapStr = get(StorageKey.QUICK_ZAP)
     if (quickZapStr != null) this.quickZap = quickZapStr === 'true'
     const includeReceiptStr = get(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
@@ -801,6 +817,20 @@ class LocalStorageService {
   setDefaultZapComment(comment: string) {
     this.defaultZapComment = comment
     this.persistSetting(StorageKey.DEFAULT_ZAP_COMMENT, comment)
+  }
+
+  getPreferredPaytoCategory(): PaytoCategory | null {
+    return this.preferredPaytoCategory
+  }
+
+  setPreferredPaytoCategory(category: PaytoCategory | null) {
+    this.preferredPaytoCategory = category
+    if (category) {
+      this.persistSetting(StorageKey.PREFERRED_PAYTO_CATEGORY, category)
+    } else {
+      window.localStorage.removeItem(StorageKey.PREFERRED_PAYTO_CATEGORY)
+      void this.persistSettingToIndexedDb(StorageKey.PREFERRED_PAYTO_CATEGORY, '')
+    }
   }
 
   getQuickZap() {

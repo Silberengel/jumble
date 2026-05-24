@@ -667,6 +667,18 @@ export default {
     'Default zap comment': '默认打闪附言',
     'Lightning Address (or LNURL)': '闪电地址 (或 LNURL)',
     'Quick zap': '快速打闪',
+    'Preferred payto category': '首选 payto 类别',
+    'Show this category expanded on payment method lists; other categories collapse behind an accordion.':
+      '在支付方式列表中展开此类别；其他类别折叠在手风琴中。',
+    'Show all categories': '显示所有类别',
+    'Other payment categories ({{count}})': '其他支付类别 ({{count}})',
+    'paytoCategory.bitcoin': '比特币',
+    'paytoCategory.bitcoin-layer': '比特币二层',
+    'paytoCategory.monero': '门罗币',
+    'paytoCategory.crypto': '加密货币',
+    'paytoCategory.stablecoin': '稳定币',
+    'paytoCategory.fiat': '法币',
+    'paytoCategory.tip': '打赏',
     'If enabled, you can zap with a single click. Click and hold for custom amounts':
       '如果启用，您单击即可打闪。长按以设置自定义金额',
     'Include public zap receipt': 'Include public zap receipt',

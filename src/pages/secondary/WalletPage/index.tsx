@@ -5,6 +5,7 @@ import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { forwardRef, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import LightningAddressInput from './LightningAddressInput'
+import PreferredPaytoCategorySelect from './PreferredPaytoCategorySelect'
 import WalletZapSendingSettings from './WalletZapSendingSettings'
 
 const WalletPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
@@ -32,6 +33,7 @@ const WalletPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
       <div key={contentKey} className="px-4 pt-3 space-y-4">
         {LIGHTNING_WALLET_PAY_ENABLED ? <WalletZapSendingSettings /> : null}
         <LightningAddressInput />
+        <PreferredPaytoCategorySelect />
       </div>
     </SecondaryPageLayout>
   )

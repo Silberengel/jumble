@@ -334,6 +334,8 @@ export const StorageKey = {
   NOTIFICATION_TYPE: 'notificationType',
   DEFAULT_ZAP_SATS: 'defaultZapSats',
   DEFAULT_ZAP_COMMENT: 'defaultZapComment',
+  /** Expanded payto category on payment method lists; empty = show all. */
+  PREFERRED_PAYTO_CATEGORY: 'preferredPaytoCategory',
   QUICK_ZAP: 'quickZap',
   INCLUDE_PUBLIC_ZAP_RECEIPT: 'includePublicZapReceipt',
   /** Per-pubkey ms timestamps: last full network hydrate (see ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS). */
