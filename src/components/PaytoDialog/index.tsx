@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
 import { NostrEvent } from 'nostr-tools'
+import QrCode from '@/components/QrCode'
 import LightningInvoiceSection from './LightningInvoiceSection'
 
 export default function PaytoDialog({
@@ -170,6 +171,9 @@ export default function PaytoDialog({
     [isLightning, type, authority]
   )
 
+  /** Wallet deep link (`bitcoin:…`) or funding page URL — not the payto:// URI. */
+  const qrPayload = walletOpenUri ?? authority
+
   const showPrimaryOpen = isLikelyMobileWalletUserAgent() && !!walletOpenUri
 
   const handleOpenWallet = () => {
@@ -228,6 +232,18 @@ export default function PaytoDialog({
                     {t('Payment address')}
                   </p>
                   <p className="break-all font-mono text-base leading-relaxed select-text sm:text-lg">{authority}</p>
+                </div>
+                <div
+                  className="flex min-w-0 flex-col items-center gap-2"
+                  role="img"
+                  aria-label={t('Scan to pay with your wallet')}
+                >
+                  <div className="w-full max-w-[min(100%,240px)]">
+                    <QrCode value={qrPayload} size={240} />
+                  </div>
+                  <p className="text-center text-sm text-muted-foreground sm:text-base">
+                    {t('Scan to pay with your wallet')}
+                  </p>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
                   {showPrimaryOpen && walletOpenUri ? (

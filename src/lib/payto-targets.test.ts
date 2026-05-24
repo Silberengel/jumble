@@ -26,6 +26,15 @@ describe('resolveNativeWalletUri', () => {
         walletApps: ['cakewallet']
       })
     ).toBe('bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh')
+    expect(
+      resolvePaytoProfileUrl('bitcoin', 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh')
+    ).toBe('bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh')
+  })
+
+  it('builds full HTTPS URL for Geyser and similar tip platforms', () => {
+    expect(resolvePaytoProfileUrl('geyser', 'my-project')).toBe(
+      'https://geyser.fund/project/my-project'
+    )
   })
 
   it('maps BIP-353 to lightning: URI', () => {
