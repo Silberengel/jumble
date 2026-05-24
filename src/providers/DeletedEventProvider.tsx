@@ -15,12 +15,24 @@ type TDeletedEventContext = {
 
 const DeletedEventContext = createContext<TDeletedEventContext | undefined>(undefined)
 
+const noopIsEventDeleted = () => false
+
+/** Returns undefined outside provider (e.g. Asciidoc `createRoot` embeds before wrappers mount). */
+export function useDeletedEventOptional(): TDeletedEventContext | undefined {
+  return useContext(DeletedEventContext)
+}
+
 export const useDeletedEvent = () => {
-  const context = useContext(DeletedEventContext)
+  const context = useDeletedEventOptional()
   if (!context) {
     throw new Error('useDeletedEvent must be used within a DeletedEventProvider')
   }
   return context
+}
+
+/** Safe for hooks used inside optional provider trees (embedded notes, etc.). */
+export function useIsEventDeleted(): (event: NostrEvent) => boolean {
+  return useDeletedEventOptional()?.isEventDeleted ?? noopIsEventDeleted
 }
 
 export function DeletedEventProvider({ children }: { children: React.ReactNode }) {

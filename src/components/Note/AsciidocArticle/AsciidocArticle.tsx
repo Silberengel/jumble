@@ -28,6 +28,7 @@ import EmbeddedCitation from '@/components/EmbeddedCitation'
 import { parsePaytoUri } from '@/lib/payto'
 import PaytoLink from '@/components/PaytoLink'
 import { URI_LINK_CLASS, URI_LINK_INLINE_HTML_CLASS } from '@/lib/link-styles'
+import EmbeddedNoteProviders from '@/components/Embedded/EmbeddedNoteProviders'
 import { DeletedEventProvider } from '@/providers/DeletedEventProvider'
 import { ReplyProvider } from '@/providers/ReplyProvider'
 import Wikilink from '@/components/UniversalContent/Wikilink'
@@ -1080,7 +1081,11 @@ export default function AsciidocArticle({
       // Use React to render the component, with error handling
       try {
         const root = createRoot(container)
-        root.render(<EmbeddedNote noteId={bech32Id} />)
+        root.render(
+          <EmbeddedNoteProviders>
+            <EmbeddedNote noteId={bech32Id} />
+          </EmbeddedNoteProviders>
+        )
         reactRootsRef.current.set(container, root)
       } catch (error) {
         logger.error('Failed to render nostr note', { bech32Id, error })

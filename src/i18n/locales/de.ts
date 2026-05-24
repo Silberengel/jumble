@@ -46,6 +46,7 @@ export default {
     'Liked by:': 'Liked by:',
     'Disliked by:': 'Disliked by:',
     'n more interactors': '{{count}} more',
+    'noteStats.longPressForDetails': 'Gedrückt halten für Details',
     'Thumbs up': 'Thumbs up',
     'Thumbs down': 'Thumbs down',
     'Arrow up': 'Arrow up',

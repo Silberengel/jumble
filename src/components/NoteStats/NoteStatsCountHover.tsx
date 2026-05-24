@@ -1,5 +1,8 @@
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Emoji from '@/components/Emoji'
+import { useLongPressAction } from '@/hooks/use-long-press-action'
+import { useNoteStatsDetailOpenMode } from '@/hooks/use-note-stats-detail-open-mode'
 import Username from '@/components/Username'
 import {
   DISCUSSION_DOWNVOTE_DISPLAY,
@@ -20,7 +23,7 @@ import type { TNoteStats } from '@/services/note-stats.service'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { useUserTrust } from '@/contexts/user-trust-context'
 import { TEmoji } from '@/types'
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type PointerEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 function formatZapLineAmount(amount: number) {
@@ -130,6 +133,13 @@ function ReactionGroupsList({
   )
 }
 
+const statsCountTriggerClass =
+  'underline decoration-dotted decoration-muted-foreground/45 underline-offset-2'
+
+function stopTriggerBubble(e: { stopPropagation: () => void }) {
+  e.stopPropagation()
+}
+
 export function NoteStatsCountHover({
   enabled,
   children,
@@ -141,33 +151,82 @@ export function NoteStatsCountHover({
   content: ReactNode
   className?: string
 }) {
+  const { t } = useTranslation()
+  const openMode = useNoteStatsDetailOpenMode()
+  const [popoverOpen, setPopoverOpen] = useState(false)
+  const longPress = useLongPressAction(() => setPopoverOpen(true), {
+    enabled: enabled && openMode === 'longPress'
+  })
+
   if (!enabled) {
     return <>{children}</>
   }
 
+  const trigger = (
+    <span
+      className={cn(
+        statsCountTriggerClass,
+        openMode === 'hover' ? 'cursor-help' : 'cursor-default touch-manipulation',
+        className
+      )}
+      title={openMode === 'longPress' ? t('noteStats.longPressForDetails') : undefined}
+      onClick={(e) => {
+        stopTriggerBubble(e)
+        if (longPress.consumeIfLongPress()) return
+      }}
+      onMouseDown={stopTriggerBubble}
+      onTouchStart={stopTriggerBubble}
+      {...(openMode === 'longPress'
+        ? {
+            onPointerDown: (e: PointerEvent<HTMLSpanElement>) => {
+              stopTriggerBubble(e)
+              longPress.onPointerDown()
+            },
+            onPointerUp: (e: PointerEvent<HTMLSpanElement>) => {
+              stopTriggerBubble(e)
+              longPress.onPointerUp()
+            },
+            onPointerLeave: (e: PointerEvent<HTMLSpanElement>) => {
+              stopTriggerBubble(e)
+              longPress.onPointerLeave()
+            },
+            onPointerCancel: (e: PointerEvent<HTMLSpanElement>) => {
+              stopTriggerBubble(e)
+              longPress.onPointerCancel()
+            }
+          }
+        : {})}
+    >
+      {children}
+    </span>
+  )
+
+  const panel = (
+    <div
+      className="min-w-0"
+      onPointerDown={stopTriggerBubble}
+      onClick={stopTriggerBubble}
+    >
+      {content}
+    </div>
+  )
+
+  if (openMode === 'longPress') {
+    return (
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+        <PopoverContent side="top" align="center" className="z-[100] w-72 p-3">
+          {panel}
+        </PopoverContent>
+      </Popover>
+    )
+  }
+
   return (
     <HoverCard openDelay={220} closeDelay={80}>
-      <HoverCardTrigger asChild>
-        <span
-          className={cn(
-            'cursor-help underline decoration-dotted decoration-muted-foreground/45 underline-offset-2',
-            className
-          )}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          {children}
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent
-        side="top"
-        align="center"
-        className="z-[100] w-72 p-3"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {content}
+      <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
+      <HoverCardContent side="top" align="center" className="z-[100] w-72 p-3">
+        {panel}
       </HoverCardContent>
     </HoverCard>
   )

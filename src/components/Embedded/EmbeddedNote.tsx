@@ -21,7 +21,7 @@ import {
 } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -213,7 +213,7 @@ function EmbeddedNoteFetched({
   allowLiveEmbeds: boolean
 }) {
   const { t } = useTranslation()
-  const { isEventDeleted } = useDeletedEvent()
+  const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReply()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { inboxRelayUrls } = useViewerInboxRelayUrls()

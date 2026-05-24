@@ -1,5 +1,5 @@
 import { getNoteBech32Id } from '@/lib/event'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { eventService } from '@/services/client.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
@@ -11,7 +11,7 @@ export function useFetchEvent(
   initialEvent?: Event,
   fetchOpts?: { relayHints?: string[] }
 ) {
-  const { isEventDeleted } = useDeletedEvent()
+  const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
   const [event, setEvent] = useState<Event | undefined>(initialEvent)

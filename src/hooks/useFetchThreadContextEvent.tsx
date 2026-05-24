@@ -2,7 +2,7 @@ import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { getNoteBech32Id, getParentETag, getRootETag } from '@/lib/event'
@@ -49,7 +49,7 @@ export function useFetchThreadContextEvent(
 ) {
   const { pubkey: viewerPubkey } = useNostr()
   const { blockedRelays } = useFavoriteRelays()
-  const { isEventDeleted } = useDeletedEvent()
+  const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
   const [event, setEvent] = useState<Event | undefined>(initialEvent)
