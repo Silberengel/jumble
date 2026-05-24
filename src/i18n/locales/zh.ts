@@ -673,7 +673,7 @@ export default {
     'Show all categories': '显示所有类别',
     'Other payment categories ({{count}})': '其他支付类别 ({{count}})',
     'paytoCategory.bitcoin': '比特币',
-    'paytoCategory.bitcoin-layer': '比特币二层',
+    'paytoCategory.bitcoin-layer': '比特币二层 (Lightning)',
     'paytoCategory.monero': '门罗币',
     'paytoCategory.crypto': '加密货币',
     'paytoCategory.stablecoin': '稳定币',

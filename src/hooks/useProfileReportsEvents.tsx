@@ -7,7 +7,7 @@ import { isReportAuthoredBy, reportTargetsPubkey } from '@/lib/nip56-reports'
 import { normalizeHexPubkey } from '@/lib/pubkey'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostrOptional } from '@/providers/nostr-context'
 import client from '@/services/client.service'
@@ -80,7 +80,7 @@ export function useProfileReportsEvents({
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const nostr = useNostrOptional()
-  const { isEventDeleted, tombstoneEpoch } = useDeletedEvent()
+  const { isEventDeleted, tombstoneEpoch } = useDeletedEventSafe()
   const isEventDeletedRef = useRef(isEventDeleted)
   isEventDeletedRef.current = isEventDeleted
 

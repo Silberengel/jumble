@@ -84,7 +84,7 @@ export default function PaytoLink({
   const categoryLabel = (() => {
     const c = info?.category
     if (!c) return ''
-    if (c === 'bitcoin-layer') return 'Bitcoin layer'
+    if (c === 'bitcoin-layer') return 'Bitcoin layer (Lightning)'
     return c.charAt(0).toUpperCase() + c.slice(1)
   })()
   const childText = flattenPaytoLinkChildText(children)

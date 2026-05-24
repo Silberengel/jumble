@@ -677,7 +677,7 @@ export default {
     'Show all categories': 'Показать все категории',
     'Other payment categories ({{count}})': 'Другие категории оплаты ({{count}})',
     'paytoCategory.bitcoin': 'Bitcoin',
-    'paytoCategory.bitcoin-layer': 'Слой Bitcoin',
+    'paytoCategory.bitcoin-layer': 'Слой Bitcoin (Lightning)',
     'paytoCategory.monero': 'Monero',
     'paytoCategory.crypto': 'Крипто',
     'paytoCategory.stablecoin': 'Стейблкоин',

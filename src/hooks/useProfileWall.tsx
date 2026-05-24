@@ -35,7 +35,7 @@ import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import type { TSubRequestFilter } from '@/types'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
 import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -263,7 +263,7 @@ function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[])
 export function useProfileWall(pubkey: string, profileEventId: string | undefined) {
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
-  const { isEventDeleted } = useDeletedEvent()
+  const { isEventDeleted } = useDeletedEventSafe()
   const isEventDeletedRef = useRef(isEventDeleted)
   isEventDeletedRef.current = isEventDeleted
 

@@ -16,10 +16,24 @@ type TDeletedEventContext = {
 const DeletedEventContext = createContext<TDeletedEventContext | undefined>(undefined)
 
 const noopIsEventDeleted = () => false
+const noopAddDeletedEvent = () => {}
+const noopAddDeletedEventId = () => {}
+
+const DELETED_EVENT_CONTEXT_FALLBACK: TDeletedEventContext = {
+  addDeletedEvent: noopAddDeletedEvent,
+  addDeletedEventId: noopAddDeletedEventId,
+  isEventDeleted: noopIsEventDeleted,
+  tombstoneEpoch: 0
+}
 
 /** Returns undefined outside provider (e.g. Asciidoc `createRoot` embeds before wrappers mount). */
 export function useDeletedEventOptional(): TDeletedEventContext | undefined {
   return useContext(DeletedEventContext)
+}
+
+/** Non-throwing; use in feeds/lists that only filter tombstones (survives HMR context splits). */
+export function useDeletedEventSafe(): TDeletedEventContext {
+  return useDeletedEventOptional() ?? DELETED_EVENT_CONTEXT_FALLBACK
 }
 
 export const useDeletedEvent = () => {

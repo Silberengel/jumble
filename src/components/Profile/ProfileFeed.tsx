@@ -7,7 +7,7 @@ import { ExtendedKind, PROFILE_FEED_KINDS, PROFILE_TIMELINE_REQ_LIMIT } from '@/
 import { useProfileAuthorFeedSubRequests } from '@/hooks/useProfileAuthorFeedSubRequests'
 import { useProfilePins } from '@/hooks/useProfilePins'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
 import { nip19, kinds } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
@@ -20,7 +20,7 @@ const ProfileFeed = forwardRef<
   { pubkey: string; /** Payment methods, badges, and other author replaceables. */ onRefreshExtras?: () => void }
 >(({ pubkey, onRefreshExtras }, ref) => {
   const { t } = useTranslation()
-  const { isEventDeleted } = useDeletedEvent()
+  const { isEventDeleted } = useDeletedEventSafe()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
     useKindFilterOrDefaults()
   const profileTimelineShowKinds = useMemo(() => {

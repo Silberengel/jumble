@@ -674,7 +674,7 @@ export default {
     'Show all categories': 'Pokaż wszystkie kategorie',
     'Other payment categories ({{count}})': 'Inne kategorie płatności ({{count}})',
     'paytoCategory.bitcoin': 'Bitcoin',
-    'paytoCategory.bitcoin-layer': 'Warstwa Bitcoin',
+    'paytoCategory.bitcoin-layer': 'Warstwa Bitcoin (Lightning)',
     'paytoCategory.monero': 'Monero',
     'paytoCategory.crypto': 'Krypto',
     'paytoCategory.stablecoin': 'Stablecoin',

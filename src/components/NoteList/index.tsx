@@ -34,7 +34,7 @@ import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds
 import { shouldIncludePaymentInFeed } from '@/lib/superchat'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
@@ -858,7 +858,7 @@ const NoteList = forwardRef(
     const isOffline =
       contentPolicy?.isOffline ??
       (!navigator.onLine || (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'none')
-    const { isEventDeleted } = useDeletedEvent()
+    const { isEventDeleted } = useDeletedEventSafe()
     const { favoriteRelays, blockedRelays } = useFavoriteRelays()
     const [events, setEvents] = useState<Event[]>([])
     const eventsRef = useRef<Event[]>([])

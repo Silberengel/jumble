@@ -1,4 +1,4 @@
-import { useDeletedEvent } from '@/providers/DeletedEventProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client, { eventService } from '@/services/client.service'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds as nostrKinds, type Filter } from 'nostr-tools'
@@ -158,7 +158,7 @@ export function useProfileTimeline({
     () => relayListsContentKey(favoriteRelays, blockedRelays),
     [favoriteRelays, blockedRelays]
   )
-  const { isEventDeleted, tombstoneEpoch } = useDeletedEvent()
+  const { isEventDeleted, tombstoneEpoch } = useDeletedEventSafe()
   const isEventDeletedRef = useRef(isEventDeleted)
   isEventDeletedRef.current = isEventDeleted
 
