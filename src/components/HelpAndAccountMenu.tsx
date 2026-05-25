@@ -20,20 +20,27 @@ import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartSettingsNavigation } from '@/PageManager'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
+import { ActiveRelaysDropdownSection } from '@/components/ConnectedRelays/ActiveRelaysDropdownSection'
+import { useRelayConnectionRows } from '@/hooks/useRelayConnectionRows'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+
+const titlebarAccountMenuContentClassName =
+  'z-[220] max-h-[min(85dvh,32rem)] w-72 overflow-y-auto overscroll-contain'
 
 export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 
 function AccountDropdownItems({
   onSwitchAccount,
   onLogoutClick,
-  onBrowseCache
+  onBrowseCache,
+  showActiveRelays = false
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
   onBrowseCache: () => void
+  showActiveRelays?: boolean
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
@@ -52,6 +59,7 @@ function AccountDropdownItems({
         <Database className="size-4" />
         {t('Browse Cache')}
       </DropdownMenuItem>
+      {showActiveRelays ? <ActiveRelaysDropdownSection /> : null}
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={onSwitchAccount}>
         <ArrowDownUp className="size-4" />
@@ -178,12 +186,43 @@ function TitlebarAccountMenu({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="bottom" className="z-[220]">
+      <DropdownMenuContent align="end" side="bottom" className={titlebarAccountMenuContentClassName}>
         <AccountDropdownItems
           onSwitchAccount={onSwitchAccount}
           onLogoutClick={onLogoutClick}
           onBrowseCache={onBrowseCache}
+          showActiveRelays
         />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function LoggedOutTitlebarMenu({ onLogin }: { onLogin: () => void }) {
+  const { t } = useTranslation()
+  const { rows } = useRelayConnectionRows()
+
+  if (rows.length === 0) {
+    return (
+      <Button variant="ghost" size="titlebar-icon" onClick={onLogin} title={t('Login')}>
+        <UserRound />
+      </Button>
+    )
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="titlebar-icon" title={t('Login')} aria-label={t('Login')}>
+          <UserRound />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="bottom" className={titlebarAccountMenuContentClassName}>
+        <DropdownMenuItem onClick={onLogin}>
+          <LogIn className="size-4" />
+          {t('Login')}
+        </DropdownMenuItem>
+        <ActiveRelaysDropdownSection />
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -191,7 +230,6 @@ function TitlebarAccountMenu({
 
 /** Sidebar: account / login stack. Titlebar (mobile): compact account or login control. */
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
-  const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
   const { navigateToSettings } = useSmartSettingsNavigation()
   const onBrowseCache = useCallback(() => {
@@ -218,17 +256,13 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
           onBrowseCache={onBrowseCache}
         />
       )
-  } else if (variant === 'sidebar') {
+  } else if (variant === 'titlebar') {
+    account = <LoggedOutTitlebarMenu onLogin={() => checkLogin()} />
+  } else {
     account = (
       <SidebarItem onClick={() => checkLogin()} title="Login">
         <LogIn strokeWidth={3} />
       </SidebarItem>
-    )
-  } else {
-    account = (
-      <Button variant="ghost" size="titlebar-icon" onClick={() => checkLogin()} title={t('Login')}>
-        <UserRound />
-      </Button>
     )
   }
 

@@ -63,9 +63,16 @@ export default function NoteOptions({
   const [activeSubMenu, setActiveSubMenu] = useState<SubMenuAction[]>([])
   const [subMenuTitle, setSubMenuTitle] = useState('')
   const [subMenuSearchable, setSubMenuSearchable] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const closeDrawer = () => {
     setIsDrawerOpen(false)
+    setShowSubMenu(false)
+    setSubMenuSearchable(false)
+  }
+
+  const closeDesktopMenu = () => {
+    setMenuOpen(false)
     setShowSubMenu(false)
     setSubMenuSearchable(false)
   }
@@ -128,17 +135,15 @@ export default function NoteOptions({
     []
   )
 
-  const menuHeader = useMemo(
-    () => (
+  const menuHeader =
+    isDrawerOpen || menuOpen ? (
       <NoteOptionsMetaHeader
         event={event}
         allowedRelays={seenOnAllowlist}
-        onNavigate={closeDrawer}
+        onNavigate={isSmallScreen ? closeDrawer : closeDesktopMenu}
         inDropdown={!isSmallScreen}
       />
-    ),
-    [event, seenOnAllowlist, isSmallScreen]
-  )
+    ) : null
 
   return (
     <div className={className} onClick={(e) => e.stopPropagation()}>
@@ -157,7 +162,13 @@ export default function NoteOptions({
           goBackToMainMenu={goBackToMainMenu}
         />
       ) : (
-        <DesktopMenu menuActions={menuActions} trigger={trigger} header={menuHeader} />
+        <DesktopMenu
+          menuActions={menuActions}
+          trigger={trigger}
+          header={menuHeader}
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+        />
       )}
 
       <RawEventDialog

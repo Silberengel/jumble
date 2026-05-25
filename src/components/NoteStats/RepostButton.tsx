@@ -1,5 +1,10 @@
 import storage from '@/services/local-storage.service'
 import { Button } from '@/components/ui/button'
+import {
+  drawerMenuButtonClassName,
+  drawerMenuContentClassName,
+  drawerMenuScrollClassName
+} from '@/components/DrawerMenuItem'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerOverlay } from '@/components/ui/drawer'
 import {
@@ -142,11 +147,11 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
         </div>
         <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <DrawerOverlay onClick={() => setIsDrawerOpen(false)} />
-          <DrawerContent hideOverlay>
+          <DrawerContent hideOverlay className={drawerMenuContentClassName}>
             <DrawerHeader className="sr-only">
               <DrawerTitle>{t('Boost')}</DrawerTitle>
             </DrawerHeader>
-            <div className="py-2">
+            <div className={drawerMenuScrollClassName}>
               <Button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -154,10 +159,11 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                   repost()
                 }}
                 disabled={!canRepost}
-                className="w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5"
+                className={drawerMenuButtonClassName}
                 variant="ghost"
               >
-                <Repeat /> {t('Boost')}
+                <Repeat />
+                <span className="min-w-0 flex-1 text-left">{t('Boost')}</span>
               </Button>
               <Button
                 onClick={(e) => {
@@ -167,10 +173,11 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                     setIsPostDialogOpen(true)
                   })
                 }}
-                className="w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5"
+                className={drawerMenuButtonClassName}
                 variant="ghost"
               >
-                <PencilLine /> {t('Quote')}
+                <PencilLine />
+                <span className="min-w-0 flex-1 text-left">{t('Quote')}</span>
               </Button>
             </div>
           </DrawerContent>

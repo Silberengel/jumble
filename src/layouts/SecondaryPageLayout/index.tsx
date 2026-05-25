@@ -1,4 +1,4 @@
-import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
+import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
 import ScrollToTopButton from '@/components/ScrollToTopButton'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { Titlebar } from '@/components/Titlebar'
@@ -175,7 +175,7 @@ function SecondaryPageTitlebar({
         <div className="flex w-full min-w-0 items-center gap-2">
           <ReadOnlySessionIndicator variant="titlebar" />
           <div className="min-w-0 flex-1">{titlebar}</div>
-          {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
+          {isSmallScreen ? <HelpAndAccountMenu variant="titlebar" /> : null}
         </div>
       </Titlebar>
     )
@@ -203,7 +203,7 @@ function SecondaryPageTitlebar({
             {controls}
           </div>
         </div>
-        {isSmallScreen ? <ActiveRelaysTitlebarButton /> : null}
+        {isSmallScreen ? <HelpAndAccountMenu variant="titlebar" /> : null}
       </div>
     </Titlebar>
   )

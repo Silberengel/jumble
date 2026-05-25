@@ -2,14 +2,11 @@ import { MAX_REQ_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getHttpRelayListFromEvent, getRelayListReadFromEventNoFastFallback } from '@/lib/event-metadata'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { relayUrlIsAggrNostrLand } from '@/lib/nostr-land-relay-eligibility'
+import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import type { Event } from 'nostr-tools'
 
-/** Drop nostr.land aggregate from REQ stacks where it must not appear (e.g. home feeds). */
-export function stripNostrLandAggrFromRelayUrls(urls: readonly string[]): string[] {
-  return urls.filter((url) => !relayUrlIsAggrNostrLand(url))
-}
+export { stripNostrLandAggrFromRelayUrls }
 
 /**
  * Home timeline REQs (Notes, Replies, and Gallery tabs on `home-all-favorites`) must never hit aggr — only

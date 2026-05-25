@@ -18,6 +18,8 @@ interface DesktopMenuProps {
   menuActions: MenuAction[]
   trigger: React.ReactNode
   header?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 function filterSubMenuRows(
@@ -137,10 +139,16 @@ const MenuContent = memo(
 )
 MenuContent.displayName = 'MenuContent'
 
-export function DesktopMenu({ menuActions, trigger, header }: DesktopMenuProps) {
+export function DesktopMenu({ menuActions, trigger, header, open, onOpenChange }: DesktopMenuProps) {
   const [subMenuFilter, setSubMenuFilter] = useState('')
   return (
-    <DropdownMenu onOpenChange={(open) => !open && setSubMenuFilter('')}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        onOpenChange?.(nextOpen)
+        if (!nextOpen) setSubMenuFilter('')
+      }}
+    >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent className="max-h-[50vh] overflow-y-auto p-0">
         {header}

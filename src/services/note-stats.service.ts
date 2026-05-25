@@ -23,7 +23,10 @@ import {
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { filterRelaysToUserAllowlist, isRelayInUserAllowlist } from '@/lib/relay-allowlist'
-import { prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
+import {
+  prependAggrNostrLandIfViewerEligible,
+  stripNostrLandAggrFromRelayUrls
+} from '@/lib/nostr-land-relay-eligibility'
 import { buildComprehensiveRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
@@ -227,6 +230,11 @@ class NoteStatsService {
         this.pendingForeground.add(eventId)
       }
       this.maybeFlushStatsBatch(foreground)
+      return
+    }
+
+    /** Background feed cards: one relay wave per note — effect re-runs must not stack REQs. */
+    if (!foreground && this.noteStatsMap.get(eventId)?.updatedAt != null) {
       return
     }
 
@@ -632,10 +640,15 @@ class NoteStatsService {
 
     if (relayAllowlist?.length) {
       const onAllowlist = (u: string) => isRelayInUserAllowlist(u, relayAllowlist)
-      return this.finalizeNoteStatsRelayUrls(
-        filterRelaysToUserAllowlist(
-          [...relayAllowlist, ...relayHints.filter(onAllowlist)],
-          relayAllowlist
+      // Match home feed timeline policy: allowlisted stats must not hit aggr.nostr.land.
+      return stripNostrLandAggrFromRelayUrls(
+        sanitizeRelayUrlsForFetch(
+          dedupeNormalizeRelayUrlsOrdered(
+            filterRelaysToUserAllowlist(
+              [...relayAllowlist, ...relayHints.filter(onAllowlist)],
+              relayAllowlist
+            )
+          )
         )
       )
     }

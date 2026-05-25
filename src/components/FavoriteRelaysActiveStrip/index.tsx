@@ -1,50 +1,25 @@
 import { cn } from '@/lib/utils'
 import { useFavoriteRelaysActivity } from '@/providers/favorite-relays-activity-context'
 import { RelayPulseActiveNpubsOpenButton } from './RelayPulseActiveNpubsSheet'
-import type { TFunction } from 'i18next'
-import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-function relativePastPhrase(timestampMs: number, t: TFunction): string {
-  const sec = Math.floor((Date.now() - timestampMs) / 1000)
-  if (sec < 45) return t('just now')
-  const min = Math.floor(sec / 60)
-  if (min < 60) return t('n minutes ago', { n: min })
-  const h = Math.floor(min / 60)
-  if (h < 48) return t('n hours ago', { n: h })
-  const d = Math.floor(h / 24)
-  return t('n days ago', { n: d })
-}
+export { relativePastPhrase, useRelativePastPhrase } from './relay-pulse-relative-time'
 
-function useRelativePastPhrase(timestampMs: number | null, t: TFunction): string {
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    if (timestampMs == null) return
-    const id = window.setInterval(() => setTick((x) => x + 1), 30_000)
-    return () => clearInterval(id)
-  }, [timestampMs])
-  return useMemo(() => {
-    if (timestampMs == null) return ''
-    return relativePastPhrase(timestampMs, t)
-  }, [timestampMs, t, tick])
-}
-
-/** Home feed / mobile: full label above the page title */
+/** Home feed / mobile: compact row above the page title (no section label — opens sheet for detail). */
 export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
-
-  const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
+  const { totalCount, loading, relayActivityReady } = useFavoriteRelaysActivity()
 
   if (!relayActivityReady && !loading) {
     return (
       <div
         className={cn(
-          'w-full min-w-0 max-w-full border-b border-border/60 bg-muted/15 px-3 py-2 sm:px-4 animate-pulse',
+          'w-full min-w-0 max-w-full border-b border-border/60 bg-muted/15 px-3 py-1.5 sm:px-4 animate-pulse',
           className
         )}
+        aria-hidden
       >
-        <p className="text-xs font-medium text-foreground">{t('Relay pulse')}</p>
+        <div className="ml-auto h-7 w-28 rounded-md bg-muted/50" />
       </div>
     )
   }
@@ -53,19 +28,11 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
     return (
       <div
         className={cn(
-          'w-full min-w-0 max-w-full border-b border-border/60 bg-muted/20 px-3 py-2 sm:px-4',
+          'w-full min-w-0 max-w-full border-b border-border/60 bg-muted/20 px-3 py-1.5 sm:px-4',
           className
         )}
       >
-        <p className="text-xs font-medium text-foreground">{t('Relay pulse')}</p>
-        {lastFetchedAtMs != null && relativeLabel ? (
-          <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
-            {t('Relay pulse updated', { relative: relativeLabel })}
-          </p>
-        ) : null}
-        <p className="mt-1 text-xs text-muted-foreground leading-snug">
-          {t('Relay pulse empty')}
-        </p>
+        <p className="text-xs text-muted-foreground leading-snug">{t('Relay pulse empty')}</p>
       </div>
     )
   }
@@ -73,24 +40,12 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
   return (
     <div
       className={cn(
-        'w-full min-w-0 max-w-full border-b border-border/60 bg-muted/15 px-3 py-2 sm:px-4',
+        'flex w-full min-w-0 max-w-full items-center justify-end border-b border-border/60 bg-muted/15 px-3 py-1.5 sm:px-4',
         loading && 'animate-pulse',
         className
       )}
     >
-      <div className="flex w-full min-w-0 flex-col gap-1.5">
-        <div className="flex min-w-0 max-w-full items-center justify-between gap-2">
-          <div className="flex min-w-0 shrink items-center gap-2">
-            <p className="text-xs font-medium leading-tight text-foreground">{t('Relay pulse')}</p>
-            <RelayPulseActiveNpubsOpenButton size="sm" variant="outline" className="h-7 shrink-0" />
-          </div>
-          {lastFetchedAtMs != null && relativeLabel ? (
-            <p className="shrink-0 text-[0.65rem] text-muted-foreground tabular-nums">
-              {t('Relay pulse updated', { relative: relativeLabel })}
-            </p>
-          ) : null}
-        </div>
-      </div>
+      <RelayPulseActiveNpubsOpenButton size="sm" variant="outline" className="h-7 shrink-0 max-w-full" />
     </div>
   )
 }
@@ -98,21 +53,12 @@ export function FavoriteRelaysActiveStripMobileBar({ className }: { className?: 
 /** Desktop sidebar: compact row under nav */
 export function FavoriteRelaysActiveStripSidebar({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { totalCount, loading, relayActivityReady, lastFetchedAtMs } = useFavoriteRelaysActivity()
-
-  const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
+  const { totalCount, loading, relayActivityReady } = useFavoriteRelaysActivity()
 
   if (!relayActivityReady && !loading) {
     return (
-      <div
-        className={cn(
-          'px-1 py-2 xl:px-0 animate-pulse',
-          className
-        )}
-      >
-        <p className="text-[0.65rem] font-medium leading-snug text-foreground">
-          {t('Relay pulse')}
-        </p>
+      <div className={cn('px-1 py-2 xl:px-0 animate-pulse', className)}>
+        <p className="text-[0.65rem] font-medium leading-snug text-foreground">{t('Relay pulse')}</p>
         <div className="mt-0.5 h-4 w-16 rounded bg-muted/50" aria-hidden />
       </div>
     )
@@ -125,11 +71,6 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
           <p className="text-[0.65rem] font-medium leading-snug text-foreground">{t('Relay pulse')}</p>
           <RelayPulseActiveNpubsOpenButton size="icon" variant="ghost" className="size-7 shrink-0" />
         </div>
-        {lastFetchedAtMs != null && relativeLabel ? (
-          <p className="mt-0.5 px-1 text-[0.6rem] text-muted-foreground tabular-nums">
-            {t('Relay pulse updated', { relative: relativeLabel })}
-          </p>
-        ) : null}
         <p className="mt-1 px-1 text-[0.65rem] leading-snug text-muted-foreground">
           {t('Relay pulse empty')}
         </p>
@@ -138,13 +79,7 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
   }
 
   return (
-    <div
-      className={cn(
-        'px-1 py-2 xl:px-0',
-        loading && 'animate-pulse',
-        className
-      )}
-    >
+    <div className={cn('px-1 py-2 xl:px-0', loading && 'animate-pulse', className)}>
       <div className="max-xl:hidden mb-0.5 flex flex-wrap items-center gap-1 px-1">
         <p className="min-w-0 flex-1 text-[0.65rem] font-medium leading-snug text-foreground">
           {t('Relay pulse')}
@@ -153,11 +88,6 @@ export function FavoriteRelaysActiveStripSidebar({ className }: { className?: st
           <RelayPulseActiveNpubsOpenButton size="icon" variant="ghost" className="size-7 shrink-0" />
         </div>
       </div>
-      {lastFetchedAtMs != null && relativeLabel ? (
-        <p className="max-xl:hidden mb-1.5 px-1 text-[0.6rem] text-muted-foreground tabular-nums">
-          {t('Relay pulse updated', { relative: relativeLabel })}
-        </p>
-      ) : null}
       <div className="mb-1 flex justify-center gap-0.5 xl:hidden">
         <RelayPulseActiveNpubsOpenButton size="icon" variant="ghost" className="size-8 shrink-0" />
       </div>

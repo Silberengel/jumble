@@ -18,6 +18,7 @@ import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useFavoriteRelaysActivity } from '@/providers/favorite-relays-activity-context'
 import { SecondaryPageLink } from '@/PageManager'
+import { useRelativePastPhrase } from '@/components/FavoriteRelaysActiveStrip/relay-pulse-relative-time'
 import type { Event } from 'nostr-tools'
 import { Users } from 'lucide-react'
 import { useMemo } from 'react'
@@ -124,8 +125,11 @@ export function RelayPulseActiveNpubsSheet() {
     followPubkeys,
     otherPubkeys,
     profileKind0ByPubkey,
-    profilesLoading
+    profilesLoading,
+    lastFetchedAtMs
   } = useFavoriteRelaysActivity()
+
+  const relativeLabel = useRelativePastPhrase(lastFetchedAtMs, t)
 
   const followWithProfile = useMemo(
     () =>
@@ -148,8 +152,13 @@ export function RelayPulseActiveNpubsSheet() {
         side="right"
         className="flex h-full max-h-[100dvh] w-full flex-col overflow-hidden sm:max-w-md"
       >
-        <SheetHeader className="shrink-0 text-left">
+        <SheetHeader className="shrink-0 space-y-1 text-left">
           <SheetTitle>{t('Relay pulse active npubs')}</SheetTitle>
+          {lastFetchedAtMs != null && relativeLabel ? (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {t('Relay pulse updated', { relative: relativeLabel })}
+            </p>
+          ) : null}
           <SheetDescription>{t('Relay pulse active npubs hint')}</SheetDescription>
         </SheetHeader>
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-3">

@@ -66,11 +66,6 @@ export default function NoteStats({
       ? seenOnAllowlist
       : hintRelays
   /** At most two background refetches per card: before vs after inbox/favorite hints hydrate. */
-  const statsRelayFetchTier = isRssArticleRoot ? relayMergeTier : hintRelays.length > 0 ? 1 : 0
-  const statsRelaysRef = useRef(statsRelays)
-  statsRelaysRef.current = statsRelays
-  const seenOnAllowlistRef = useRef(seenOnAllowlist)
-  seenOnAllowlistRef.current = seenOnAllowlist
   const seenOnAllowlistKey = seenOnAllowlist?.length
     ? [...seenOnAllowlist]
         .map((u) => normalizeAnyRelayUrl(u) || u.trim())
@@ -78,6 +73,22 @@ export default function NoteStats({
         .sort()
         .join('|')
     : ''
+  /** Home favorites feed: stats are scoped to the feed allowlist — ignore hint/current-relay churn. */
+  const usesFeedStatsAllowlist = Boolean(seenOnAllowlistKey)
+  const statsRelayFetchTier = isRssArticleRoot
+    ? relayMergeTier
+    : usesFeedStatsAllowlist
+      ? 0
+      : hintRelays.length > 0
+        ? 1
+        : 0
+  const statsFetchRelayScopeKey = usesFeedStatsAllowlist
+    ? seenOnAllowlistKey
+    : `${statsRelayFetchTier}|${currentRelaysKey}`
+  const statsRelaysRef = useRef(statsRelays)
+  statsRelaysRef.current = statsRelays
+  const seenOnAllowlistRef = useRef(seenOnAllowlist)
+  seenOnAllowlistRef.current = seenOnAllowlist
   const shouldDeferStatsFetch =
     deferFetchUntilNearViewport ?? (fetchIfNotExisting && !foregroundStats)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -95,8 +106,7 @@ export default function NoteStats({
       .finally(() => setLoading(false))
     // Intentionally omit `event` object: parent feeds often pass new references each render;
     // id/sig/kind/created_at identify the note for refetch boundaries.
-    // `statsRelayFetchTier` (not full sorted relay key) avoids a REQ storm when favorites/current relays hydrate.
-    // `seenOnAllowlistKey` (not the array ref) avoids refetch loops when parents pass a new [] each render.
+    // `statsFetchRelayScopeKey` bundles tier + current relays, or feed allowlist only on home favorites.
   }, [
     event.id,
     event.kind,
@@ -107,9 +117,7 @@ export default function NoteStats({
     shouldDeferStatsFetch,
     isNearViewport,
     pubkey,
-    statsRelayFetchTier,
-    currentRelaysKey,
-    seenOnAllowlistKey
+    statsFetchRelayScopeKey
   ])
 
   const interactionButtons = (

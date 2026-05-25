@@ -1,4 +1,4 @@
-import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
+import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
 import ScrollToTopButton from '@/components/ScrollToTopButton'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { Titlebar } from '@/components/Titlebar'
@@ -26,8 +26,7 @@ const PrimaryPageLayout = forwardRef(
       pageName,
       displayScrollToTopButton = false,
       hideTitlebarBottomBorder = false,
-      subHeader,
-      suppressMobileDefaultActiveRelaysButton = false
+      subHeader
     }: {
       children?: React.ReactNode
       titlebar: React.ReactNode
@@ -36,11 +35,6 @@ const PrimaryPageLayout = forwardRef(
       hideTitlebarBottomBorder?: boolean
       /** Rendered between titlebar and scroll area; not in scroll flow so it never overlaps content */
       subHeader?: React.ReactNode
-      /**
-       * When true on small screens, omit the trailing {@link ActiveRelaysTitlebarButton} so the page can
-       * place it next to the account control (e.g. feed titlebar).
-       */
-      suppressMobileDefaultActiveRelaysButton?: boolean
     },
     ref
   ) => {
@@ -140,10 +134,7 @@ const PrimaryPageLayout = forwardRef(
             }}
           >
             {hasTitlebarRow ? (
-              <PrimaryPageTitlebar
-                hideBottomBorder={hideTitlebarBottomBorder}
-                suppressMobileActiveRelays={suppressMobileDefaultActiveRelaysButton}
-              >
+              <PrimaryPageTitlebar hideBottomBorder={hideTitlebarBottomBorder}>
                 {titlebar}
               </PrimaryPageTitlebar>
             ) : null}
@@ -164,10 +155,7 @@ const PrimaryPageLayout = forwardRef(
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
           {hasTitlebarRow ? (
-            <PrimaryPageTitlebar
-              hideBottomBorder={hideTitlebarBottomBorder}
-              suppressMobileActiveRelays={false}
-            >
+            <PrimaryPageTitlebar hideBottomBorder={hideTitlebarBottomBorder}>
               {titlebar}
             </PrimaryPageTitlebar>
           ) : null}
@@ -197,16 +185,12 @@ export type TPrimaryPageLayoutRef = {
 
 function PrimaryPageTitlebar({
   children,
-  hideBottomBorder = false,
-  suppressMobileActiveRelays = false
+  hideBottomBorder = false
 }: {
   children?: React.ReactNode
   hideBottomBorder?: boolean
-  suppressMobileActiveRelays?: boolean
 }) {
   const { isSmallScreen } = useScreenSize()
-  /** Desktop: relay strip lives in the sidebar only. Narrow screens: titlebar control (or inline on feed). */
-  const showTrailingActiveRelays = isSmallScreen && !suppressMobileActiveRelays
 
   return (
     <Titlebar
@@ -218,7 +202,7 @@ function PrimaryPageTitlebar({
       <div className="flex w-full min-w-0 items-center gap-2">
         <ReadOnlySessionIndicator variant="titlebar" />
         <div className="relative min-w-0 flex-1">{children}</div>
-        {showTrailingActiveRelays ? <ActiveRelaysTitlebarButton /> : null}
+        {isSmallScreen ? <HelpAndAccountMenu variant="titlebar" /> : null}
       </div>
     </Titlebar>
   )

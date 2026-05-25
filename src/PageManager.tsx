@@ -502,10 +502,8 @@ export function useSmartNoteNavigation() {
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
     
     if (isSmallScreen) {
-      // Mobile: always push to secondary stack AND update drawer
-      // This ensures back button works when clicking embedded events
+      // Mobile: full-screen secondary stack (no sheet drawer — overlay hid the stack and showed black).
       pushSecondaryPage(contextualUrl)
-      openDrawer(noteId, event)
     } else {
       // Desktop: check panel mode
       const currentPanelMode = storage.getPanelMode()
@@ -567,7 +565,6 @@ export function useSmartNoteNavigationOptional() {
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
     if (isSmallScreen) {
       push(contextualUrl)
-      openDrawer(noteId, event)
     } else {
       const currentPanelMode = storage.getPanelMode()
       if (currentPanelMode === 'single') {
@@ -1217,12 +1214,14 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   // Drawer handlers
   const [drawerInitialEvent, setDrawerInitialEvent] = useState<Event | null>(null)
   const openDrawer = useCallback((noteId: string, initialEvent?: Event) => {
+    // Mobile uses the full-screen secondary stack; the sheet drawer only applies to desktop single-pane.
+    if (isSmallScreen || panelMode !== 'single') return
     noteStatsService.setBackgroundStatsPaused(true)
     client.interruptBackgroundQueries()
     setDrawerNoteId(noteId)
     setDrawerInitialEvent(initialEvent ?? null)
     setDrawerOpen(true)
-  }, [])
+  }, [isSmallScreen, panelMode])
 
   const closeDrawer = useCallback(() => {
     if (!drawerOpen) return // Already closed
@@ -1361,9 +1360,11 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               // Open drawer immediately, then load background page asynchronously
               // This prevents the background page loading from blocking the drawer
               if (isSmallScreen || panelMode === 'single') {
-                // Seed stack so in-drawer navigation (e.g. quotes → back) can pop to this note
+                // Seed stack so in-note navigation (e.g. quotes → back) can pop to this note
                 pushNoteUrlOnStack(buildNoteUrl(noteId, resolved.name))
-                openDrawer(noteId)
+                if (!isSmallScreen) {
+                  openDrawer(noteId)
+                }
 
                 setTimeout(() => {
                   setCurrentPrimaryPage(resolved.name)
@@ -1384,7 +1385,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
           if (isSmallScreen || panelMode === 'single') {
             pushNoteUrlOnStack(contextualUrl)
-            openDrawer(noteId)
+            if (!isSmallScreen) {
+              openDrawer(noteId)
+            }
             return
           } else {
             pushNoteUrlOnStack(contextualUrl)
@@ -1672,7 +1675,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             window.location.pathname + window.location.search + window.location.hash
           if (locUrl !== '/' && locUrl !== '') {
             const synced = syncSecondaryStackWhenPopStateStateIsNull(pre, locUrl)
-            if ((isSmallScreen || panelMode === 'single') && drawerOpen && drawerNoteId && synced.length > 0) {
+            if ((panelMode === 'single' && !isSmallScreen) && drawerOpen && drawerNoteId && synced.length > 0) {
               const topItemUrl = synced[synced.length - 1]?.url
               if (topItemUrl) {
                 const topNoteUrlMatch =
@@ -1787,8 +1790,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             const noteId = noteUrlMatch[noteUrlMatch.length - 1].split('?')[0].split('#')[0]
             if (noteId) {
               if (isSmallScreen || panelMode === 'single') {
-                // Single-pane / mobile: align stack with history (returning `pre` left stale UI).
-                openDrawer(noteId)
+                if (!isSmallScreen) {
+                  openDrawer(noteId)
+                }
                 const built = findAndCreateComponent(state.url, state.index)
                 if (built.component) {
                   return [
@@ -1834,7 +1838,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         } else if (newStack.length > 0) {
           // Stack still has items - update drawer to show the top item's note (for mobile/single-pane)
           // Only update drawer if drawer is currently open (not in the process of closing)
-          if ((isSmallScreen || panelMode === 'single') && drawerOpen && drawerNoteId) {
+          if (panelMode === 'single' && !isSmallScreen && drawerOpen && drawerNoteId) {
             // Extract noteId from top item's URL or from state.url
             const topItemUrl = newStack[newStack.length - 1]?.url || state?.url
             if (topItemUrl) {
@@ -2153,7 +2157,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }
 
   const syncDrawerToSecondaryStackTop = (stack: TStackItem[]) => {
-    if (!(isSmallScreen || panelMode === 'single')) return
+    if (isSmallScreen || panelMode !== 'single') return
     const top = stack[stack.length - 1]
     if (!top) return
     const noteId = noteHexIdFromSecondaryNoteUrl(top.url)
@@ -2234,10 +2238,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   popSecondaryPageRef.current = popSecondaryPage
 
   const mobileSecondaryPanelOpen =
-    isSmallScreen &&
-    secondaryStack.length > 0 &&
-    !primaryNoteView &&
-    !(drawerOpen && drawerNoteId)
+    isSmallScreen && secondaryStack.length > 0 && !primaryNoteView
   useMobileSwipeBackOnElement(mobileSecondaryPanelOpen ? mobileSecondarySwipeRoot : null, () =>
     popSecondaryPageRef.current()
   , {
@@ -2352,7 +2353,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               </div>
             ) : (
               <>
-                {secondaryStack.length > 0 && !(drawerOpen && drawerNoteId) ? (
+                {secondaryStack.length > 0 ? (
                   <div
                     ref={setMobileSecondarySwipeRoot}
                     className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
@@ -2368,20 +2369,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               </>
             )}
             </div>
-            {drawerNoteId && (
-              <NoteDrawer
-                open={drawerOpen}
-                initialEvent={drawerInitialEvent}
-                onOpenChange={(open) => {
-                  if (open) {
-                    setDrawerOpen(true)
-                    return
-                  }
-                  hardCloseSecondaryPanel()
-                }}
-                noteId={drawerNoteId}
-              />
-            )}
             <Suspense fallback={null}>
               <BottomNavigationBarLazy />
             </Suspense>

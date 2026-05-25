@@ -19,6 +19,11 @@ export function relayUrlIsAggrNostrLand(url: string): boolean {
   }
 }
 
+/** Drop `wss://aggr.nostr.land` from REQ stacks where it must not appear (e.g. home feeds). */
+export function stripNostrLandAggrFromRelayUrls(urls: readonly string[]): string[] {
+  return urls.filter((url) => !relayUrlIsAggrNostrLand(url))
+}
+
 /**
  * True when any URL is the canonical nostr.land **inbox** relay (`wss://nostr.land`), i.e. host `nostr.land`
  * exactly — not `aggr.nostr.land`, `hist.nostr.land`, or other subdomains.

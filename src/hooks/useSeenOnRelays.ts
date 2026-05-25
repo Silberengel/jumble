@@ -3,6 +3,10 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { useEffect, useRef, useState } from 'react'
 
+function relayListsEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((url, i) => url === b[i])
+}
+
 export function useSeenOnRelays(
   eventId: string,
   allowedRelays?: readonly string[]
@@ -27,7 +31,9 @@ export function useSeenOnRelays(
       const allowlist = allowedRelaysRef.current
       const visible =
         allowlist?.length ? filterRelaysToUserAllowlist(seenOn, allowlist) : seenOn
-      if (!cancelled) setRelays(visible)
+      if (!cancelled) {
+        setRelays((prev) => (relayListsEqual(prev, visible) ? prev : visible))
+      }
       return visible.length > 0
     }
     if (apply()) return

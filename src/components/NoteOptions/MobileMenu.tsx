@@ -1,5 +1,10 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  drawerMenuButtonClassName,
+  drawerMenuContentClassName,
+  drawerMenuScrollClassName
+} from '@/components/DrawerMenuItem'
 import { cn } from '@/lib/utils'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerOverlay } from '@/components/ui/drawer'
 import { ArrowLeft } from 'lucide-react'
@@ -31,6 +36,29 @@ function filterSubMenuRows(
   return items.filter((s) => !s.filterHaystack || s.filterHaystack.includes(q))
 }
 
+function MobileMenuActionButton({
+  icon: Icon,
+  label,
+  className,
+  onClick
+}: {
+  icon: MenuAction['icon']
+  label: React.ReactNode
+  className?: string
+  onClick?: () => void
+}) {
+  return (
+    <Button
+      onClick={() => onClick?.()}
+      className={cn(drawerMenuButtonClassName, className)}
+      variant="ghost"
+    >
+      <Icon />
+      <span className="min-w-0 flex-1 text-left">{label}</span>
+    </Button>
+  )
+}
+
 export function MobileMenu({
   menuActions,
   trigger,
@@ -59,39 +87,38 @@ export function MobileMenu({
       {trigger}
       <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
         <DrawerOverlay onClick={closeDrawer} />
-        <DrawerContent hideOverlay className="max-h-[80vh]">
+        <DrawerContent hideOverlay className={drawerMenuContentClassName}>
           <DrawerHeader className="sr-only">
             <DrawerTitle>Options</DrawerTitle>
           </DrawerHeader>
-          <div className="overflow-y-auto overscroll-contain py-2" style={{ touchAction: 'pan-y' }}>
+          <div
+            className={drawerMenuScrollClassName}
+            style={{ touchAction: 'pan-y' }}
+          >
             {!showSubMenu ? (
               <>
                 {header}
                 {menuActions.map((action, index) => {
                   const Icon = action.icon
                   return (
-                    <Button
+                    <MobileMenuActionButton
                       key={index}
+                      icon={Icon}
+                      label={action.label}
+                      className={action.className}
                       onClick={action.onClick}
-                      className={`w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5 ${action.className || ''}`}
-                      variant="ghost"
-                    >
-                      <Icon />
-                      {action.label}
-                    </Button>
+                    />
                   )
                 })}
               </>
             ) : (
               <>
-                <Button
+                <MobileMenuActionButton
+                  icon={ArrowLeft}
+                  label={subMenuTitle}
+                  className="mb-2"
                   onClick={goBackToMainMenu}
-                  className="w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5 mb-2"
-                  variant="ghost"
-                >
-                  <ArrowLeft />
-                  {subMenuTitle}
-                </Button>
+                />
                 <div className="border-t border-border mb-2" />
                 {subMenuSearchable ? (
                   <div className="px-3 pb-2">
@@ -114,13 +141,10 @@ export function MobileMenu({
                     <Button
                       key={index}
                       onClick={subAction.onClick}
-                      className={cn(
-                        'w-full justify-start gap-2 px-4 py-3 h-auto min-h-0 text-left whitespace-normal',
-                        subAction.className
-                      )}
+                      className={cn(drawerMenuButtonClassName, subAction.className)}
                       variant="ghost"
                     >
-                      {subAction.label}
+                      <span className="min-w-0 flex-1 text-left">{subAction.label}</span>
                     </Button>
                   ))
                 )}

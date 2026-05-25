@@ -18,8 +18,6 @@ import React, {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FavoriteRelaysActiveStripMobileBar } from '@/components/FavoriteRelaysActiveStrip'
-import { ActiveRelaysTitlebarButton } from '@/components/ConnectedRelays/ActiveRelaysTitlebarButton'
-import HelpAndAccountMenu from '@/components/HelpAndAccountMenu'
 import Logo from '@/assets/Logo'
 import RelaysFeed from './RelaysFeed'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
@@ -81,7 +79,6 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
     <PrimaryPageLayout
       pageName="feed"
       ref={layoutRef}
-      suppressMobileDefaultActiveRelaysButton
       titlebar={
         showNoteListTitlebar ? (
           <NoteListPageTitlebar onFeedRefresh={runFeedRefresh} showTitlebarRefresh={false} />
@@ -205,8 +202,6 @@ function NoteListPageTitlebar({
       </div>
       <div className="flex min-h-0 min-w-0 items-center justify-end gap-0.5 overflow-x-auto overflow-y-hidden scrollbar-hide sm:gap-1">
         {showTitlebarRefresh ? <RefreshButton onClick={onFeedRefresh} /> : null}
-        <ActiveRelaysTitlebarButton />
-        <HelpAndAccountMenu variant="titlebar" />
       </div>
     </div>
   )
