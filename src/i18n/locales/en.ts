@@ -2616,6 +2616,9 @@ export default {
     'Feed filter kind hint': 'Feed filter kind hint',
     'Feed filter kind invalid': 'Feed filter kind invalid',
     'Feed filter kind placeholder': 'Feed filter kind placeholder',
+    'Feed filter d-tag': 'Repository id (d-tag)',
+    'Feed filter d-tag hint': 'Substring match on the d tag of addressable events.',
+    'Feed filter d-tag placeholder': 'Filter by d-tag…',
     'Invalid event fields': 'Invalid event fields',
     'Kind must be an integer from 0 to {{maxSigned}}, or from {{unsignedMin}} to {{unsignedMax}} (unsigned experiment).':
       'Kind must be an integer from 0 to {{maxSigned}}, or from {{unsignedMin}} to {{unsignedMax}} (unsigned experiment).',

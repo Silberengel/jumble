@@ -460,8 +460,25 @@ function timelineFilterHasNonKindScope(f: Filter): boolean {
     (Array.isArray(f.ids) && f.ids.length > 0) ||
     (Array.isArray(f['#p']) && f['#p']!.length > 0) ||
     (Array.isArray(f['#e']) && f['#e']!.length > 0) ||
+    (Array.isArray(f['#d']) && f['#d']!.length > 0) ||
     (typeof search === 'string' && search.trim().length > 0)
   )
+}
+
+/** Show d-tag filter when the feed REQ or loaded rows include NIP-33 addressable kinds. */
+function feedIncludesAddressableKinds(
+  subRequests: readonly TFeedSubRequest[],
+  showKindsList: readonly number[],
+  loadedEvents: readonly Event[]
+): boolean {
+  for (const req of subRequests) {
+    const reqKinds = req.filter?.kinds
+    if (Array.isArray(reqKinds) && reqKinds.some((k) => kinds.isAddressableKind(k))) {
+      return true
+    }
+  }
+  if (showKindsList.some((k) => kinds.isAddressableKind(k))) return true
+  return loadedEvents.some((e) => kinds.isAddressableKind(e.kind))
 }
 
 /** REQ filter for the first subrequest, matching {@link NoteList} timeline mapping (for full relay search). */
@@ -876,6 +893,7 @@ const NoteList = forwardRef(
     const [feedClientAuthorMode, setFeedClientAuthorMode] = useState<TFeedClientAuthorMode>('everyone')
     const [feedClientAuthorNpubInput, setFeedClientAuthorNpubInput] = useState('')
     const [feedClientKindInput, setFeedClientKindInput] = useState('')
+    const [feedClientDTagInput, setFeedClientDTagInput] = useState('')
     const [feedClientTimeAmount, setFeedClientTimeAmount] = useState('')
     const [feedClientTimeUnit, setFeedClientTimeUnit] = useState<TFeedClientTimeUnit>('day')
     const supportTouch = useMemo(() => isTouchDevice(), [])
@@ -1541,6 +1559,11 @@ const NoteList = forwardRef(
       return parsed
     }, [feedClientKindInput])
 
+    const showFeedDTagFilter = useMemo(
+      () => feedIncludesAddressableKinds(subRequests, effectiveShowKinds, timelineEventsForFilter),
+      [subRequests, effectiveShowKinds, timelineEventsForFilter]
+    )
+
     const applyClientFeedFilter = useCallback(
       (evts: Event[]) => {
         let rows = evts
@@ -1579,6 +1602,12 @@ const NoteList = forwardRef(
             return false
           })
         }
+        const dTagQuery = feedClientDTagInput.trim().toLowerCase()
+        if (dTagQuery) {
+          rows = rows.filter((e) =>
+            eventTagValues(e, 'd').some((d) => d.toLowerCase().includes(dTagQuery))
+          )
+        }
         return rows
       },
       [
@@ -1587,7 +1616,8 @@ const NoteList = forwardRef(
         pubkey,
         feedClientMinCreatedAt,
         feedClientKindFilter,
-        feedClientSearch
+        feedClientSearch,
+        feedClientDTagInput
       ]
     )
 
@@ -1732,6 +1762,7 @@ const NoteList = forwardRef(
             (feedClientAuthorMode === 'me' && !!pubkey) ||
             (feedClientAuthorMode === 'npub' && feedClientAuthorNpubInput.trim() !== '') ||
             feedClientKindInput.trim() !== '' ||
+            feedClientDTagInput.trim() !== '' ||
             feedClientMinCreatedAt !== null)
         ),
       [
@@ -1740,6 +1771,7 @@ const NoteList = forwardRef(
         feedClientAuthorMode,
         feedClientAuthorNpubInput,
         feedClientKindInput,
+        feedClientDTagInput,
         pubkey,
         feedClientMinCreatedAt
       ]
@@ -1878,6 +1910,7 @@ const NoteList = forwardRef(
         return
       }
       const hasSearch = feedClientSearch.trim().length > 0
+      const hasDTag = feedClientDTagInput.trim().length > 0
       const hasTime = feedClientMinCreatedAt !== null
       const hasKind = typeof feedClientKindFilter === 'number'
       let hasAuthor = false
@@ -1893,7 +1926,7 @@ const NoteList = forwardRef(
         )
         return
       }
-      if (!hasSearch && !hasTime && !hasAuthor && !hasKind) {
+      if (!hasSearch && !hasTime && !hasAuthor && !hasKind && !hasDTag) {
         toast.error(t('Feed full search need constraint'))
         return
       }
@@ -1929,6 +1962,9 @@ const NoteList = forwardRef(
       }
       if (hasKind) {
         finalFilter.kinds = [feedClientKindFilter]
+      }
+      if (hasDTag) {
+        finalFilter['#d'] = [feedClientDTagInput.trim()]
       }
 
       const hasRelayScope =
@@ -1993,6 +2029,7 @@ const NoteList = forwardRef(
     }, [
       showFeedClientFilter,
       feedClientSearch,
+      feedClientDTagInput,
       feedClientMinCreatedAt,
       feedClientKindFilter,
       feedClientAuthorMode,
@@ -4507,6 +4544,26 @@ const NoteList = forwardRef(
                 })}
               </p>
             </div>
+            {showFeedDTagFilter ? (
+              <div className={feedClientFilterSectionClass}>
+                <Label htmlFor="feed-client-d-tag" className="text-sm font-medium">
+                  {t('Feed filter d-tag', { defaultValue: 'Repository id (d-tag)' })}
+                </Label>
+                <Input
+                  id="feed-client-d-tag"
+                  value={feedClientDTagInput}
+                  onChange={(e) => setFeedClientDTagInput(e.target.value)}
+                  placeholder={t('Feed filter d-tag placeholder', { defaultValue: 'Filter by d-tag…' })}
+                  autoComplete="off"
+                  className="w-full"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('Feed filter d-tag hint', {
+                    defaultValue: 'Substring match on the d tag of addressable events.'
+                  })}
+                </p>
+              </div>
+            ) : null}
             <div className={feedClientFilterSectionClass}>
               <Label className="text-sm font-medium">{t('Feed filter author')}</Label>
               <RadioGroup
