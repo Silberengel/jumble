@@ -10,8 +10,15 @@ const MAX_ENTRIES = 1000
 const buffer: ConsoleLogEntry[] = []
 const listeners = new Set<() => void>()
 let initialized = false
+/** Same reference between mutations so `useSyncExternalStore` does not loop (React #185). */
+let snapshot: readonly ConsoleLogEntry[] = buffer
+
+function refreshSnapshot() {
+  snapshot = buffer.length === 0 ? buffer : [...buffer]
+}
 
 function notifyListeners() {
+  refreshSnapshot()
   for (const listener of listeners) {
     listener()
   }
@@ -79,8 +86,8 @@ function captureLog(type: string, ...args: unknown[]) {
 }
 
 /** Ring buffer of recent console output (installed at app startup). */
-export function getConsoleLogBuffer(): ConsoleLogEntry[] {
-  return [...buffer]
+export function getConsoleLogBuffer(): readonly ConsoleLogEntry[] {
+  return snapshot
 }
 
 export function clearConsoleLogBuffer() {

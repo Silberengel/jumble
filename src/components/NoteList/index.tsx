@@ -911,8 +911,6 @@ const NoteList = forwardRef(
     const timelineEstablishedCloserRef = useRef<(() => void) | null>(null)
     /** Bumps on each timeline effect run so Strict Mode / fast remount does not stack subscribeTimeline waves. */
     const timelineEffectGenerationRef = useRef(0)
-    /** Skip closing/reopening the live REQ when effect deps churn but subscription shape is unchanged. */
-    const lastTimelineLiveIdentityKeyRef = useRef('')
     /** Session snapshot was written to state; log once after commit (see feed-paint layout effect). */
     const feedPaintSessionPendingRef = useRef(false)
     /** Relay / one-shot data was written to state; log once after commit. */
@@ -1041,6 +1039,8 @@ const NoteList = forwardRef(
         useFilterAsIs
       ]
     )
+    const mapLiveSubRequestsForTimelineRef = useRef(mapLiveSubRequestsForTimeline)
+    mapLiveSubRequestsForTimelineRef.current = mapLiveSubRequestsForTimeline
 
     /** Feed identity for scoping client filter state (timeline key minus unrelated churn where possible). */
     const feedClientFilterScopeKey = useMemo(
@@ -2021,35 +2021,48 @@ const NoteList = forwardRef(
 
     useImperativeHandle(ref, () => ({ scrollToTop, refresh }), [scrollToTop, refresh])
 
-    useEffect(() => {
-      const timelineLiveIdentityKey = [
-        pauseTimelineForPrimaryFreeze ? 'frozen' : 'live',
+    /** Single key for live timeline REQ identity — effect deps must not exceed this or subscriptions churn. */
+    const timelineLiveIdentityKey = useMemo(
+      () =>
+        [
+          pauseTimelineForPrimaryFreeze ? 'frozen' : 'live',
+          timelineSubscriptionKey,
+          feedSubscriptionKey ?? '',
+          sessionSnapshotIdentityKey,
+          subRequestsKey,
+          timelineResubscribeKindKey,
+          seeAllFeedEvents ? '1' : '0',
+          useFilterAsIs ? '1' : '0',
+          areAlgoRelays ? '1' : '0',
+          allowKindlessRelayExplore ? '1' : '0',
+          clientSideKindFilter ? '1' : '0',
+          showAllKinds ? '1' : '0',
+          withKindFilter ? '1' : '0',
+          feedTimelineScopeKey ?? '',
+          String(refreshCount),
+          relayCapabilityReady ? '1' : '0'
+        ].join('\x1e'),
+      [
+        pauseTimelineForPrimaryFreeze,
         timelineSubscriptionKey,
-        feedSubscriptionKey ?? '',
+        feedSubscriptionKey,
         sessionSnapshotIdentityKey,
         subRequestsKey,
         timelineResubscribeKindKey,
-        seeAllFeedEvents ? '1' : '0',
-        useFilterAsIs ? '1' : '0',
-        areAlgoRelays ? '1' : '0',
-        allowKindlessRelayExplore ? '1' : '0',
-        clientSideKindFilter ? '1' : '0',
-        showAllKinds ? '1' : '0',
-        withKindFilter ? '1' : '0',
-        feedTimelineScopeKey ?? '',
-        String(refreshCount),
-        relayCapabilityReady ? '1' : '0'
-      ].join('\x1e')
+        seeAllFeedEvents,
+        useFilterAsIs,
+        areAlgoRelays,
+        allowKindlessRelayExplore,
+        clientSideKindFilter,
+        showAllKinds,
+        withKindFilter,
+        feedTimelineScopeKey,
+        refreshCount,
+        relayCapabilityReady
+      ]
+    )
 
-      if (
-        !pauseTimelineForPrimaryFreeze &&
-        lastTimelineLiveIdentityKeyRef.current === timelineLiveIdentityKey &&
-        timelineEstablishedCloserRef.current
-      ) {
-        return () => {}
-      }
-      lastTimelineLiveIdentityKeyRef.current = timelineLiveIdentityKey
-
+    useEffect(() => {
       const effectGen = ++timelineEffectGenerationRef.current
       const timelineEffectStale = () => effectGen !== timelineEffectGenerationRef.current
 
@@ -2108,7 +2121,7 @@ const NoteList = forwardRef(
           try {
             const mapped = stripNostrLandAggrFromTimelineSubRequests(
               feedSubscriptionKey,
-              mapLiveSubRequestsForTimeline(subRequestsRef.current)
+              mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
             )
               .map((req) =>
                 isOfflineRef.current
@@ -2201,7 +2214,7 @@ const NoteList = forwardRef(
 
         const mappedSubRequests = stripNostrLandAggrFromTimelineSubRequests(
           feedSubscriptionKey,
-          mapLiveSubRequestsForTimeline(subRequestsRef.current)
+          mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
         )
           .map((req) =>
             isOfflineRef.current
@@ -3457,7 +3470,6 @@ const NoteList = forwardRef(
       const promise = init()
       const snapshotKeyForCleanup = sessionSnapshotIdentityKey
       return () => {
-        lastTimelineLiveIdentityKeyRef.current = ''
         effectActive = false
         if (liveOnNewFlushTimerRef.current != null) {
           clearTimeout(liveOnNewFlushTimerRef.current)
@@ -3490,38 +3502,25 @@ const NoteList = forwardRef(
           }
         })
       }
-    }, [
-      timelineSubscriptionKey,
-      feedSubscriptionKey,
-      sessionSnapshotIdentityKey,
-      subRequestsKey,
-      preserveTimelineOnSubRequestsChange,
-      mergeTimelineWhenSubRequestFiltersMatch,
-      feedTimelineScopeKey,
-      refreshCount,
-      timelineResubscribeKindKey,
-      seeAllFeedEvents,
-      useFilterAsIs,
-      areAlgoRelays,
-      relayCapabilityReady,
-      oneShotFetch,
-      oneShotMergedCap,
-      revealBatchSize,
-      oneShotDebugLabel,
-      oneShotGlobalTimeoutMs,
-      oneShotEoseTimeoutMs,
-      oneShotFirstRelayGraceMs,
-      clientSideKindFilter,
-      allowKindlessRelayExplore,
-      showAllKinds,
-      withKindFilter,
-      onSingleRelayKindlessEmpty,
-      mapLiveSubRequestsForTimeline,
-      progressiveWarmupQuery,
-      hostPrimaryPageName,
-      relayAuthoritativeFeedOnly,
-      pauseTimelineForPrimaryFreeze
-    ])
+    }, [timelineLiveIdentityKey, pauseTimelineForPrimaryFreeze, oneShotFetch])
+
+    const followingFeedDeltaIdentityKey = useMemo(
+      () =>
+        [
+          followingFeedDeltaSubRequestsKey,
+          timelineKey ?? '',
+          feedSubscriptionKey ?? '',
+          areAlgoRelays ? '1' : '0',
+          pauseTimelineForPrimaryFreeze ? 'frozen' : 'live'
+        ].join('\x1e'),
+      [
+        followingFeedDeltaSubRequestsKey,
+        timelineKey,
+        feedSubscriptionKey,
+        areAlgoRelays,
+        pauseTimelineForPrimaryFreeze
+      ]
+    )
 
     useEffect(() => {
       if (oneShotFetch) return
@@ -3542,7 +3541,7 @@ const NoteList = forwardRef(
       let deltaActive = true
       const mappedDelta = stripNostrLandAggrFromTimelineSubRequests(
         feedSubscriptionKey,
-        mapLiveSubRequestsForTimeline(deltas)
+        mapLiveSubRequestsForTimelineRef.current(deltas)
       )
       const seeAllNoSpellDelta = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
       const filterMissingKindsDelta = (f: Filter) => !f.kinds || f.kinds.length === 0
@@ -3745,24 +3744,7 @@ const NoteList = forwardRef(
         followingFeedDeltaCloserRef.current?.()
         followingFeedDeltaCloserRef.current = null
       }
-    }, [
-      followingFeedDeltaSubRequestsKey,
-      timelineKey,
-      oneShotFetch,
-      feedSubscriptionKey,
-      mapLiveSubRequestsForTimeline,
-      areAlgoRelays,
-      allowKindlessRelayExplore,
-      useFilterAsIs,
-      clientSideKindFilter,
-      startLogin,
-      pubkey,
-      effectiveShowKinds,
-      showKind1OPs,
-      showKind1Replies,
-      showKind1111,
-      pauseTimelineForPrimaryFreeze
-    ])
+    }, [followingFeedDeltaIdentityKey, oneShotFetch])
 
     const oneShotDebugPrevLoadingRef = useRef(false)
     useEffect(() => {
@@ -3941,7 +3923,7 @@ const NoteList = forwardRef(
       if (publicReadFallbackAttemptedRef.current) return
 
       const uiStatuses = relayOpTerminalRowsToTimelineRelayUiStatuses(feedSubscribeRelayOutcomes)
-      const mapped = mapLiveSubRequestsForTimeline(subRequestsRef.current)
+      const mapped = mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
       if (!mapped.length) return
 
       // Skip fallback for d-tag / layered warmup feeds where the live REQ has no NIP-50 `search`
@@ -4038,7 +4020,6 @@ const NoteList = forwardRef(
       progressiveWarmupQuery,
       feedFullSearchEvents,
       feedSubscribeRelayOutcomes,
-      mapLiveSubRequestsForTimeline,
       effectiveShowKinds,
       allowKindlessRelayExplore,
       timelineSubscriptionKey,

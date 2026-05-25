@@ -28,8 +28,7 @@ RUN npm install
 
 # Copy the source code to prevent invaliding cache whenever there is a change in the code
 COPY . .
-RUN npm run build \
-  && node scripts/write-build-version-json.mjs
+RUN npm run build
 
 # Step 2: Final container with Nginx and embedded config
 FROM nginx:alpine

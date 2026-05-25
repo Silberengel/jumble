@@ -20,6 +20,7 @@ const RelaysFeed = forwardRef<
   const { relayUrls, replyRelayUrls } = useFeed()
   const { showKinds } = useKindFilterOrDefaults()
   const [areAlgoRelays, setAreAlgoRelays] = useState(false)
+  const [relayCapabilityReady, setRelayCapabilityReady] = useState(false)
 
   const relayUrlsKey = useMemo(
     () =>
@@ -39,15 +40,19 @@ const RelaysFeed = forwardRef<
         .join('|'),
     [replyRelayUrls]
   )
-  const homeFeedSeenOnAllowlistOp = useMemo(() => relayUrls, [relayUrlsKey])
-  const homeFeedSeenOnAllowlistReplies = useMemo(() => replyRelayUrls, [replyRelayUrlsKey])
+  const stableRelayUrls = useMemo(() => relayUrls, [relayUrlsKey])
+  const stableReplyRelayUrls = useMemo(() => replyRelayUrls, [replyRelayUrlsKey])
+  const homeFeedSeenOnAllowlistOp = useMemo(() => stableRelayUrls, [relayUrlsKey])
+  const homeFeedSeenOnAllowlistReplies = useMemo(() => stableReplyRelayUrls, [replyRelayUrlsKey])
 
   useEffect(() => {
     if (relayUrls.length === 0) {
       setAreAlgoRelays(false)
+      setRelayCapabilityReady(false)
       return
     }
     let cancelled = false
+    setRelayCapabilityReady(false)
 
     const init = async () => {
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -66,6 +71,8 @@ const RelaysFeed = forwardRef<
         setAreAlgoRelays(areAlgo)
       } catch {
         if (!cancelled) setAreAlgoRelays(false)
+      } finally {
+        if (!cancelled) setRelayCapabilityReady(true)
       }
     }
 
@@ -82,6 +89,7 @@ const RelaysFeed = forwardRef<
     if (showKinds.length > 0) return showKinds
     return fallbackNoteKinds
   }, [kindsOverride, showKinds, fallbackNoteKinds])
+  const defaultKindsKey = useMemo(() => JSON.stringify(defaultKinds), [defaultKinds])
 
   const canRenderFeed = relayUrls.length > 0
 
@@ -90,24 +98,32 @@ const RelaysFeed = forwardRef<
     if (!canRenderFeed) return []
     return [
       {
-        urls: relayUrls,
+        urls: stableRelayUrls,
         filter: {
           kinds: defaultKinds
         }
       }
     ]
-  }, [canRenderFeed, relayUrlsKey, relayUrls, defaultKinds])
+  }, [canRenderFeed, relayUrlsKey, stableRelayUrls, defaultKindsKey, defaultKinds])
   const repliesSubRequests = useMemo(() => {
     if (!canRenderFeed) return []
     return [
       {
-        urls: replyRelayUrls.length > 0 ? replyRelayUrls : relayUrls,
+        urls: stableReplyRelayUrls.length > 0 ? stableReplyRelayUrls : stableRelayUrls,
         filter: {
           kinds: defaultKinds
         }
       }
     ]
-  }, [canRenderFeed, replyRelayUrlsKey, replyRelayUrls, relayUrlsKey, relayUrls, defaultKinds])
+  }, [
+    canRenderFeed,
+    replyRelayUrlsKey,
+    stableReplyRelayUrls,
+    relayUrlsKey,
+    stableRelayUrls,
+    defaultKindsKey,
+    defaultKinds
+  ])
 
   if (!canRenderFeed) {
     return null
@@ -119,12 +135,13 @@ const RelaysFeed = forwardRef<
       ref={ref}
       subRequests={subRequests}
       areAlgoRelays={areAlgoRelays}
+      relayCapabilityReady={relayCapabilityReady}
       isMainFeed
       setSubHeader={setSubHeader}
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
       repliesSubRequests={repliesSubRequests}
-      mainFeedGalleryRelayUrls={replyRelayUrls}
+      mainFeedGalleryRelayUrls={stableReplyRelayUrls}
       widenMainGalleryRelays={false}
       feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"

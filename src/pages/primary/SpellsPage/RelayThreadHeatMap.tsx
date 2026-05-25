@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
@@ -547,6 +548,9 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
               {layoutRows.map((row) => {
                 const intensity = Math.min(1, row.heat / maxHeat)
                 const size = Math.min(200, Math.max(76, 52 + Math.sqrt(row.heat) * 9))
+                const innerPct = 22 + intensity * 48
+                const innerSizePx = Math.max(28, Math.round((size * innerPct) / 100))
+                const authorPubkey = row.authorPubkey ?? row.rootEvent?.pubkey
                 const statsLine = t('heatMapBubbleStats', {
                   posts: row.postCount,
                   people: row.uniqueAuthors,
@@ -577,15 +581,30 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
                         onClick={() => navigateToNote(toNote(row.rootId), row.rootEvent)}
                         aria-label={ariaLabel}
                       >
-                        <span
-                          className="rounded-full bg-primary/25 ring-2 ring-primary/35 transition-[width,height,opacity] group-hover:bg-primary/35"
-                          style={{
-                            width: `${22 + intensity * 48}%`,
-                            height: `${22 + intensity * 48}%`,
-                            opacity: 0.55 + intensity * 0.45
-                          }}
-                          aria-hidden
-                        />
+                        {authorPubkey ? (
+                          <div
+                            className="pointer-events-none overflow-hidden rounded-full ring-2 ring-primary/35"
+                            style={{ width: innerSizePx, height: innerSizePx }}
+                            aria-hidden
+                          >
+                            <SimpleUserAvatar
+                              userId={authorPubkey}
+                              deferRemoteAvatar={false}
+                              maxFileSizeKb={500}
+                              className="!size-full max-w-none"
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="rounded-full bg-primary/25 ring-2 ring-primary/35 transition-[width,height,opacity] group-hover:bg-primary/35"
+                            style={{
+                              width: `${innerPct}%`,
+                              height: `${innerPct}%`,
+                              opacity: 0.55 + intensity * 0.45
+                            }}
+                            aria-hidden
+                          />
+                        )}
                       </button>
                     </HoverCardTrigger>
                     <HoverCardContent

@@ -100,12 +100,10 @@ export default function ReplyNote({
     return true
   }, [showMuted, mutePubkeySet, event, hideContentMentioningMutedUsers])
 
-
   return (
     <div
-      className={`pb-3 border-b transition-colors duration-500 clickable ${highlight ? 'bg-primary/50' : ''}`}
+      className={`clickable border-b pb-3 transition-colors duration-500 ${highlight ? 'bg-primary/50' : ''}`}
       onClick={(e) => {
-        // Don't navigate if clicking on interactive elements
         const target = e.target as HTMLElement
         if (target.closest('button') || target.closest('[role="button"]') || target.closest('a') || target.closest('[data-parent-note-preview]')) {
           return
@@ -118,26 +116,21 @@ export default function ReplyNote({
       }}
     >
       <Collapsible>
-        <div className="flex space-x-2 items-start px-4 pt-3">
-          <UserAvatar
-            userId={headerUserId}
-            size="medium"
-            className="shrink-0 mt-0.5"
-            maxFileSizeKb={2048}
-            deferRemoteAvatar={false}
-          />
-          <div
-            className={cn(
-              'w-full min-w-0',
-              isNip25ReactionKind(event.kind) ? 'overflow-visible' : 'overflow-x-hidden'
-            )}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 w-0">
-                <div className="flex gap-1 items-center">
+        <div className="px-4 pt-3">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-start gap-2">
+              <UserAvatar
+                userId={headerUserId}
+                size="medium"
+                className="mt-0.5 shrink-0"
+                maxFileSizeKb={2048}
+                deferRemoteAvatar={false}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
                   <Username
                     userId={headerUserId}
-                    className="text-sm font-semibold text-muted-foreground hover:text-foreground truncate"
+                    className="truncate text-sm font-semibold text-muted-foreground hover:text-foreground"
                     skeletonClassName="h-3"
                   />
                   <ClientTag event={event} />
@@ -151,98 +144,94 @@ export default function ReplyNote({
                   />
                 </div>
               </div>
-              <div className="flex items-center shrink-0">
-                <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
-              </div>
             </div>
-            <EventPowLabel event={event} className="mt-0.5" />
-            {webReactionParentUrl ? (
-              <div className="mt-1.5 not-prose max-w-full" data-parent-note-preview>
-                <WebPreview url={webReactionParentUrl} className="w-full" />
-              </div>
-            ) : parentEventId &&
-              event.kind !== kinds.Zap &&
-              event.kind !== ExtendedKind.PAYMENT_NOTIFICATION &&
-              event.kind !== ExtendedKind.ZAP_RECEIPT &&
-              event.kind !== ExtendedKind.MONERO_TIP_DISCLOSURE &&
-              event.kind !== ExtendedKind.MONERO_TIP_RECEIPT ? (
-              <ParentNotePreview
-                appearance="subtle"
-                className="mt-1.5"
-                eventId={parentEventId}
-                relayHints={parentFetchRelayHints}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClickParent()
-                }}
-              />
-            ) : null}
-            {show ? (
-              isNip25ReactionKind(event.kind) ? (
-                <div
-                  className={cn(
-                    'mt-2 flex min-h-0 min-w-0 flex-wrap items-end gap-x-2 gap-y-1 overflow-visible pb-1.5',
-                    reactionDisplay.status === 'default'
-                      ? 'text-foreground'
-                      : 'text-muted-foreground text-sm'
-                  )}
-                >
-                  {reactionDisplay.status === 'vote_up' ? (
-                    <span className="text-sm leading-none opacity-90" aria-hidden>
-                      {DISCUSSION_UPVOTE_DISPLAY}
-                    </span>
-                  ) : reactionDisplay.status === 'vote_down' ? (
-                    <span className="text-sm leading-none opacity-90" aria-hidden>
-                      {DISCUSSION_DOWNVOTE_DISPLAY}
-                    </span>
-                  ) : (
-                    <ReactionEmojiDisplay event={event} variant="thread" maxRawLength={64} />
-                  )}
-                  {reactionDisplay.status !== 'default' && (
-                    <span className="text-sm text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
-                  )}
-                </div>
-              ) : event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT ? (
-                <Zap className="mt-1.5" event={event} variant="thread" />
-              ) : event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
-                event.kind === ExtendedKind.MONERO_TIP_RECEIPT ? (
-                <MoneroTip className="mt-1.5" event={event} variant="thread" />
-              ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
-                <Superchat className="mt-1.5" event={event} variant="thread" />
-              ) : isNip18RepostKind(event.kind) ? null : (
-                <MarkdownArticle
-                  className="mt-2"
-                  event={event}
-                  hideMetadata={true}
-                  lazyMedia={false}
-                  duplicateWebPreviewCleanedUrlHints={duplicateWebPreviewCleanedUrlHints}
-                />
-              )
-            ) : (
-              <Button
-                variant="outline"
-                className="text-muted-foreground font-medium mt-2"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowMuted(true)
-                }}
-              >
-                {t('Temporarily display this reply')}
-              </Button>
-            )}
+            <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
           </div>
+          <EventPowLabel event={event} className="mt-0.5" />
+          {webReactionParentUrl ? (
+            <div className="not-prose mt-1.5 max-w-full" data-parent-note-preview>
+              <WebPreview url={webReactionParentUrl} className="w-full" />
+            </div>
+          ) : parentEventId &&
+            event.kind !== kinds.Zap &&
+            event.kind !== ExtendedKind.PAYMENT_NOTIFICATION &&
+            event.kind !== ExtendedKind.ZAP_RECEIPT &&
+            event.kind !== ExtendedKind.MONERO_TIP_DISCLOSURE &&
+            event.kind !== ExtendedKind.MONERO_TIP_RECEIPT ? (
+            <ParentNotePreview
+              appearance="subtle"
+              className="mt-1.5"
+              eventId={parentEventId}
+              relayHints={parentFetchRelayHints}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClickParent()
+              }}
+            />
+          ) : null}
+          {show ? (
+            isNip25ReactionKind(event.kind) ? (
+              <div
+                className={cn(
+                  'mt-2 flex min-h-0 min-w-0 flex-wrap items-end gap-x-2 gap-y-1 overflow-visible pb-1.5',
+                  reactionDisplay.status === 'default'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground text-sm'
+                )}
+              >
+                {reactionDisplay.status === 'vote_up' ? (
+                  <span className="text-sm leading-none opacity-90" aria-hidden>
+                    {DISCUSSION_UPVOTE_DISPLAY}
+                  </span>
+                ) : reactionDisplay.status === 'vote_down' ? (
+                  <span className="text-sm leading-none opacity-90" aria-hidden>
+                    {DISCUSSION_DOWNVOTE_DISPLAY}
+                  </span>
+                ) : (
+                  <ReactionEmojiDisplay event={event} variant="thread" maxRawLength={64} />
+                )}
+                {reactionDisplay.status !== 'default' && (
+                  <span className="text-sm text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
+                )}
+              </div>
+            ) : event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT ? (
+              <Zap className="mt-1.5" event={event} variant="thread" />
+            ) : event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+              event.kind === ExtendedKind.MONERO_TIP_RECEIPT ? (
+              <MoneroTip className="mt-1.5" event={event} variant="thread" />
+            ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
+              <Superchat className="mt-1.5" event={event} variant="thread" />
+            ) : isNip18RepostKind(event.kind) ? null : (
+              <MarkdownArticle
+                className="mt-2"
+                event={event}
+                hideMetadata={true}
+                lazyMedia={false}
+                duplicateWebPreviewCleanedUrlHints={duplicateWebPreviewCleanedUrlHints}
+              />
+            )
+          ) : (
+            <Button
+              variant="outline"
+              className="mt-2 font-medium text-muted-foreground"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowMuted(true)
+              }}
+            >
+              {t('Temporarily display this reply')}
+            </Button>
+          )}
         </div>
       </Collapsible>
       {show && !isNip18RepostKind(event.kind) && (
-        <>
-          <NoteStats
-            className="ml-14 pl-1 mr-4 mt-2"
-            event={event}
-            fetchIfNotExisting
-            foregroundStats={foregroundStats}
-            useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
-          />
-        </>
+        <NoteStats
+          className="mt-2 px-4"
+          event={event}
+          fetchIfNotExisting
+          foregroundStats={foregroundStats}
+          useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
+        />
       )}
     </div>
   )
@@ -250,19 +239,16 @@ export default function ReplyNote({
 
 export function ReplyNoteSkeleton() {
   return (
-    <div className="px-4 py-3 flex items-start space-x-2 w-full">
-      <Skeleton className="w-9 h-9 rounded-full shrink-0 mt-0.5" />
-      <div className="w-full">
-        <div className="py-1">
+    <div className="w-full px-4 py-3">
+      <div className="flex items-start gap-2">
+        <Skeleton className="mt-0.5 h-9 w-9 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1">
           <Skeleton className="h-3 w-16" />
-        </div>
-        <div className="my-1">
-          <Skeleton className="w-full h-4 my-1 mt-2" />
-        </div>
-        <div className="my-1">
-          <Skeleton className="w-2/3 h-4 my-1" />
+          <Skeleton className="mt-2 h-3 w-24" />
         </div>
       </div>
+      <Skeleton className="mt-3 h-4 w-full" />
+      <Skeleton className="mt-2 h-4 w-2/3" />
     </div>
   )
 }

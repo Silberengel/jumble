@@ -18,6 +18,8 @@ export type TRelayThreadHeatBubble = {
   snippet: string
   lastActivity: number
   rootEvent?: Event
+  /** Thread OP author (for bubble avatar); prefers root note, else top-level kind 1. */
+  authorPubkey?: string
 }
 
 /** Undirected link between thread roots (cross-refs, OP-anchor refs, or shared `a`/`A` coordinates). */
@@ -120,7 +122,8 @@ export function buildRelayThreadHeatBubbles(
       followAuthorsInThread,
       snippet: collapseRelayThreadHeatSnippet(snippetSource),
       lastActivity,
-      rootEvent
+      rootEvent,
+      authorPubkey: opForSnippet?.pubkey?.trim().toLowerCase() || rootEvent?.pubkey?.trim().toLowerCase()
     })
   }
 
