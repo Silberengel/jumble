@@ -1,11 +1,12 @@
-import { getPaymentInfoFromEvent } from '@/lib/event-metadata'
+import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import {
   buildPaytoUri,
   getCanonicalPaytoType,
   getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
   isKnownPaytoType,
-  isLightningPaytoType
+  isLightningPaytoType,
+  isZappableLightningPaytoType
 } from '@/lib/payto'
 import { extractKind0PaymentMethodsFromProfileJson } from '@/lib/payto-kind0-import'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
@@ -565,5 +566,35 @@ export function groupPaymentMethodsForDisplay(
     groupPaymentMethodsByDisplayType(methods),
     senderPaytoFamilies
   )
+}
+
+/** Lightning payto authorities from kind 0 / 10133 in merge order (NIP-57 candidates). */
+export function buildOrderedZapLightningAddresses(opts: {
+  profileEvent?: Event | null
+  profile?: TProfile | null
+  paymentInfo: ReturnType<typeof getPaymentInfoFromEvent> | null
+  preferredAddress?: string | null
+}): string[] {
+  const ev = opts.profileEvent
+  const profile =
+    ev?.kind === kinds.Metadata ? getProfileFromEvent(ev) : (opts.profile ?? null)
+
+  const addrs = mergePaymentMethods(opts.paymentInfo, profile, ev)
+    .filter((m) => isZappableLightningPaytoType(m.type))
+    .map((m) => m.authority)
+
+  return prioritizeZapLightningAddress(addrs, opts.preferredAddress ?? undefined)
+}
+
+/** Move `preferred` to the front when present; append if not already listed. */
+export function prioritizeZapLightningAddress(candidates: string[], preferred?: string): string[] {
+  if (!preferred?.trim()) return candidates
+  const norm = normalizePaymentAuthority('lightning', preferred)
+  const idx = candidates.findIndex((c) => normalizePaymentAuthority('lightning', c) === norm)
+  if (idx === -1) {
+    return [resolveLightningAuthority(preferred.trim()), ...candidates]
+  }
+  const rest = candidates.filter((_, i) => i !== idx)
+  return [candidates[idx], ...rest]
 }
 

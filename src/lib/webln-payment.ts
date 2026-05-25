@@ -11,12 +11,40 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+type NwcClientLike = {
+  getInfo?: () => Promise<{ lud16?: string; lud06?: string }>
+}
+
+/** NIP-47 `get_info` may expose the wallet’s lud16; WebLN `getInfo()` often omits it. */
+export async function resolveWalletLightningAddress(
+  provider: WebLNProvider,
+  info?: GetInfoResponse | null
+): Promise<string | null> {
+  const extended = (info ?? null) as (GetInfoResponse & { lud16?: string; lud06?: string }) | null
+  if (extended?.lud16?.trim()) return extended.lud16.trim()
+  if (extended?.lud06?.trim()) return extended.lud06.trim()
+
+  const client = (provider as WebLNProvider & { client?: NwcClientLike }).client
+  if (!client?.getInfo) return null
+
+  try {
+    const nip47 = await client.getInfo()
+    if (nip47.lud16?.trim()) return nip47.lud16.trim()
+    if (nip47.lud06?.trim()) return nip47.lud06.trim()
+  } catch {
+    /* wallet did not report a receive address */
+  }
+  return null
+}
+
 /** Enable WebLN and load wallet info so NWC encryption is negotiated before paying. */
 export async function prepareConnectedWebLNProvider(
   provider: WebLNProvider
-): Promise<GetInfoResponse> {
+): Promise<{ info: GetInfoResponse; walletLightningAddress: string | null }> {
   await provider.enable()
-  return provider.getInfo()
+  const info = await provider.getInfo()
+  const walletLightningAddress = await resolveWalletLightningAddress(provider, info)
+  return { info, walletLightningAddress }
 }
 
 export async function sendWebLNPaymentWithRetry(

@@ -12,6 +12,8 @@ type TZapContext = {
   isWalletConnected: boolean
   provider: WebLNProvider | null
   walletInfo: GetInfoResponse | null
+  /** lud16/lud06 reported by the connected NWC wallet, when available. */
+  walletLightningAddress: string | null
   defaultZapSats: number
   updateDefaultSats: (sats: number) => void
   defaultZapComment: string
@@ -43,6 +45,7 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
   const [isWalletConnected, setIsWalletConnected] = useState(false)
   const [provider, setProvider] = useState<WebLNProvider | null>(null)
   const [walletInfo, setWalletInfo] = useState<GetInfoResponse | null>(null)
+  const [walletLightningAddress, setWalletLightningAddress] = useState<string | null>(null)
 
   useEffect(() => {
     if (!LIGHTNING_WALLET_PAY_ENABLED) return
@@ -50,11 +53,13 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
     const unSubOnConnected = onConnected((provider) => {
       setIsWalletConnected(false)
       setWalletInfo(null)
+      setWalletLightningAddress(null)
       void prepareConnectedWebLNProvider(provider)
-        .then((info) => {
+        .then(({ info, walletLightningAddress }) => {
           setProvider(provider)
           lightningService.provider = provider
           setWalletInfo(info)
+          setWalletLightningAddress(walletLightningAddress)
           setIsWalletConnected(true)
         })
         .catch((error) => {
@@ -68,6 +73,8 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
     const unSubOnDisconnected = onDisconnected(() => {
       setIsWalletConnected(false)
       setProvider(null)
+      setWalletInfo(null)
+      setWalletLightningAddress(null)
       lightningService.provider = null
     })
 
@@ -103,6 +110,7 @@ export function ZapProvider({ children }: { children: React.ReactNode }) {
         isWalletConnected,
         provider,
         walletInfo,
+        walletLightningAddress,
         defaultZapSats,
         updateDefaultSats,
         defaultZapComment,

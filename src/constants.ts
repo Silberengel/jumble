@@ -639,7 +639,7 @@ export const ExtendedKind = {
   EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
 }
 
-/** WebLN wallet connect + pay BOLT11 from LNURL-pay invoices (no NIP-57 zaps). */
+/** WebLN wallet connect + pay BOLT11; NIP-57 zaps when LNURL-pay supports nostr. */
 export const LIGHTNING_WALLET_PAY_ENABLED = true
 
 /** Kind 0 + NIP-A3 payment: publish to profile mirrors, full outbox (NIP-65 + HTTP + cache), and IndexedDB. */

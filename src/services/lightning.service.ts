@@ -1,26 +1,33 @@
 import {
   CODY_PUBKEY,
   FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
   IMWALD_MAINTAINER_PUBKEY
 } from '@/constants'
-import { getZapInfoFromEvent } from '@/lib/event-metadata'
+import { getProfileFromEvent, getZapInfoFromEvent } from '@/lib/event-metadata'
 import { closeModal, init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
 import {
   isNwcWalletServiceInfoError,
   sendWebLNPaymentWithRetry
 } from '@/lib/webln-payment'
+import { Invoice } from '@getalby/lightning-tools'
 import { bech32 } from '@scure/base'
 import { WebLNProvider } from '@webbtc/webln-types'
 import dayjs from 'dayjs'
-import { kinds, NostrEvent } from 'nostr-tools'
+import { Filter, kinds, NostrEvent } from 'nostr-tools'
+import { SubCloser } from 'nostr-tools/abstract-pool'
 import { utf8Decoder } from 'nostr-tools/utils'
 
-import { queryService } from './client.service'
+import client, { queryService, replaceableEventService } from './client.service'
 import { clampZapSats } from '@/lib/lightning'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import { buildLnurlPayCallbackUrl, parseLnurlCommentAllowed } from '@/lib/lnurl-pay'
+import { buildZapRequestDraft, encodeLnurlBech32 } from '@/lib/nip57-zap'
+import { prioritizeZapLightningAddress } from '@/lib/merge-payment-methods'
 import logger from '@/lib/logger'
 import { runAfterReleasingRadixScrollLock } from '@/lib/react-remove-scroll-body-cleanup'
+import storage from '@/services/local-storage.service'
+import { TProfile } from '@/types'
 
 export type TRecentSupporter = { pubkey: string; amount: number; comment?: string }
 
@@ -65,14 +72,143 @@ class LightningService {
     onPaymentFlowComplete?: (result: PaymentFlowResult) => void,
     zapLightning?: { address?: string; candidates?: string[] }
   ): Promise<PaymentFlowResult> {
-    void sender
-    void recipientOrEvent
-    void sats
-    void comment
-    void closeOuterModel
-    void onPaymentFlowComplete
-    void zapLightning
-    throw new Error('NIP-57 zaps are not supported; use payment targets or LNURL-pay invoices')
+    if (!client.signer) {
+      throw new Error('You need to be logged in to zap')
+    }
+    const clampedSats = clampZapSats(sats)
+    if (clampedSats < 1) {
+      throw new Error('Amount must be at least 1 sat')
+    }
+
+    const { recipient, event } =
+      typeof recipientOrEvent === 'string'
+        ? { recipient: recipientOrEvent }
+        : { recipient: recipientOrEvent.pubkey, event: recipientOrEvent }
+
+    const [profile, senderRelayList] = await Promise.all([
+      (async () => {
+        const profileEvent = await replaceableEventService.fetchReplaceableEvent(recipient, kinds.Metadata)
+        return profileEvent ? getProfileFromEvent(profileEvent) : undefined
+      })(),
+      sender
+        ? client.fetchRelayList(sender)
+        : Promise.resolve({ read: FAST_READ_RELAY_URLS, write: FAST_WRITE_RELAY_URLS })
+    ])
+    if (!profile) {
+      throw new Error('Recipient not found')
+    }
+
+    const zapEndpoint = await this.getZapEndpoint(profile, zapLightning)
+    if (!zapEndpoint) {
+      throw new Error("Recipient's lightning address does not support NIP-57 zaps")
+    }
+    const { callback, lnurlBech32 } = zapEndpoint
+    const amount = clampedSats * 1000
+    const relays = storage.getIncludePublicZapReceipt()
+      ? senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 8)
+      : []
+
+    const zapRequestDraft = buildZapRequestDraft({
+      target: event ? { pubkey: recipient, event } : { pubkey: recipient },
+      amountMsat: amount,
+      lnurlBech32,
+      relays,
+      comment
+    })
+    const zapRequest = await client.signer.signEvent(zapRequestDraft)
+    const zapRequestUrl = buildLnurlPayCallbackUrl(callback, {
+      amount: String(amount),
+      nostr: JSON.stringify(zapRequest),
+      lnurl: lnurlBech32
+    })
+    const zapRequestRes = await fetchWithTimeout(zapRequestUrl, { timeoutMs: 25_000 })
+    const zapRequestResBody = (await zapRequestRes.json()) as {
+      pr?: string
+      verify?: string
+      reason?: string
+      error?: string
+      message?: string
+    }
+    if (zapRequestResBody.error) {
+      throw new Error(zapRequestResBody.message ?? String(zapRequestResBody.error))
+    }
+    const { pr, verify, reason } = zapRequestResBody
+    if (!pr) {
+      throw new Error(reason ?? 'Failed to create invoice')
+    }
+
+    if (this.provider) {
+      try {
+        const { preimage } = await sendWebLNPaymentWithRetry(this.provider, pr)
+        closeOuterModel?.()
+        const result = { preimage, invoice: pr }
+        onPaymentFlowComplete?.(result)
+        return result
+      } catch (error) {
+        if (!isNwcWalletServiceInfoError(error)) {
+          throw error
+        }
+      }
+    }
+
+    return new Promise((resolve) => {
+      runAfterReleasingRadixScrollLock(closeOuterModel, () => {
+        closeModal()
+        let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
+        let subCloser: SubCloser | undefined
+        const finish = (result: PaymentFlowResult) => {
+          clearInterval(checkPaymentInterval)
+          subCloser?.close()
+          onPaymentFlowComplete?.(result)
+          resolve(result)
+        }
+        const { setPaid } = launchPaymentModal({
+          invoice: pr,
+          onPaid: (response) => {
+            finish({ preimage: response.preimage, invoice: pr })
+          },
+          onCancelled: () => {
+            finish(null)
+          }
+        })
+
+        if (verify) {
+          checkPaymentInterval = setInterval(async () => {
+            const invoice = new Invoice({ pr, verify })
+            const paid = await invoice.verifyPayment()
+
+            if (paid && invoice.preimage) {
+              setPaid({
+                preimage: invoice.preimage
+              })
+            }
+          }, 1000)
+        } else {
+          const filter: Filter = {
+            kinds: [kinds.Zap],
+            '#p': [recipient],
+            since: dayjs().subtract(1, 'minute').unix()
+          }
+          if (event) {
+            filter['#e'] = [event.id]
+          }
+          subCloser = client.subscribe(
+            senderRelayList.write.concat(FAST_READ_RELAY_URLS).slice(0, 4),
+            filter,
+            {
+              onevent: (evt) => {
+                const info = getZapInfoFromEvent(evt)
+                if (!info) return
+
+                if (info.invoice === pr) {
+                  setPaid({ preimage: info.preimage ?? '' })
+                }
+              }
+            }
+          )
+        }
+      })
+    })
   }
 
   async payInvoice(
@@ -207,6 +343,57 @@ class LightningService {
       throw new Error(body.reason ?? 'Failed to create invoice')
     }
     return body.pr
+  }
+
+  private async getZapEndpoint(
+    profile: TProfile,
+    zapLightning?: { address?: string; candidates?: string[] }
+  ): Promise<null | {
+    callback: string
+    lnurlBech32: string
+  }> {
+    const candidates = zapLightning?.candidates?.length
+      ? prioritizeZapLightningAddress(zapLightning.candidates, zapLightning.address)
+      : this.lightningAddressCandidates(profile, zapLightning?.address)
+    for (const addr of candidates) {
+      const resolved = await this.fetchLnurlPayZapEndpoint(addr)
+      if (resolved) return resolved
+    }
+    return null
+  }
+
+  /** Ordered lightning identifiers from kind 0 (lud16/lud06 + `w` lightning rows); de-duplicated. */
+  private lightningAddressCandidates(profile: TProfile, preferredFirst?: string): string[] {
+    const raw =
+      profile.lightningAddressList?.length && profile.lightningAddressList.length > 0
+        ? profile.lightningAddressList
+        : profile.lightningAddress
+          ? [profile.lightningAddress]
+          : []
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const a of raw) {
+      const t = a?.trim()
+      if (!t) continue
+      const k = t.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(t)
+    }
+    return prioritizeZapLightningAddress(out, preferredFirst)
+  }
+
+  private async fetchLnurlPayZapEndpoint(lightningAddress: string): Promise<null | {
+    callback: string
+    lnurlBech32: string
+  }> {
+    const meta = await this.resolveLnurlPayMetadata(lightningAddress)
+    if (!meta?.allowsNostr || !meta.nostrPubkey) return null
+    const trimmed = lightningAddress.trim()
+    const lnurlBech32 = trimmed.toLowerCase().startsWith('lnurl')
+      ? trimmed
+      : encodeLnurlBech32(meta.lnurl)
+    return { callback: meta.callback, lnurlBech32 }
   }
 
   private async resolveLnurlPayMetadata(lightningAddress: string): Promise<null | {

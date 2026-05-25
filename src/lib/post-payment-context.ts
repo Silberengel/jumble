@@ -9,6 +9,8 @@ export type PostPaymentContext = {
   amountMsat?: number
   /** payto tag value without the `payto://` prefix. */
   payto?: string
+  /** Pre-fill kind 9740 message (e.g. LNURL-pay invoice description). */
+  messageDraft?: string
   /** Thread or wall reference for superchat placement. */
   referencedEvent?: NostrEvent
 }
@@ -21,6 +23,7 @@ type BuildPostPaymentContextParams = {
   paytoUri?: string
   paytoType?: string
   paytoAuthority?: string
+  messageDraft?: string
   referencedEvent?: NostrEvent
 }
 
@@ -37,6 +40,7 @@ export function buildPostPaymentContext(params: BuildPostPaymentContextParams): 
     recipientPubkey: params.recipientPubkey,
     amountMsat: params.amountMsat,
     payto,
+    messageDraft: params.messageDraft?.trim() || undefined,
     referencedEvent: params.referencedEvent
   }
 }

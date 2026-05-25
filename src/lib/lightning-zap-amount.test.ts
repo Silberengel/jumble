@@ -20,10 +20,10 @@ function groupedDisplayString(amount: number): string {
 
 describe('lightning zap amounts', () => {
   describe('LN invoice presets and defaults', () => {
-    it('defines min, default, and six preset buttons', () => {
+    it('defines min, default, and five preset buttons', () => {
       expect(MIN_ZAP_SATS).toBe(210)
       expect(DEFAULT_ZAP_SATS).toBe(420)
-      expect([...LN_INVOICE_PRESET_SATS]).toEqual([210, 420, 2100, 4200, 21_000, 42_000])
+      expect([...LN_INVOICE_PRESET_SATS]).toEqual([210, 420, 2100, 4200, 21_000])
       expect(LN_INVOICE_PRESET_SATS[0]).toBe(MIN_ZAP_SATS)
       expect(LN_INVOICE_PRESET_SATS).toContain(DEFAULT_ZAP_SATS)
     })

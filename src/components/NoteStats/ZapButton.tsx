@@ -1,4 +1,6 @@
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
+import { useLongPressAction } from '@/hooks/use-long-press-action'
+import { useNip57QuickZap } from '@/hooks/useNip57QuickZap'
 import { recipientHasAnyPaymentOptions } from '@/lib/merge-payment-methods'
 import {
   buildRecipientPaymentData,
@@ -16,6 +18,7 @@ import { kinds, type Event } from 'nostr-tools'
 import { Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Skeleton } from '@/components/ui/skeleton'
 import ZapDialog from '../ZapDialog'
 import PostPaymentMessagePrompt from '../ZapDialog/PostPaymentMessagePrompt'
 import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
@@ -210,12 +213,42 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     }
   }, [authorPubkey, isSelf, feedProfileSyncKey, applyTipAvailability])
 
+  const recipientPaymentForZap = useMemo(
+    () =>
+      tipPaymentData ??
+      buildRecipientPaymentData(
+        null,
+        feedProfile && !feedProfile.batchPlaceholder ? feedProfile : null,
+        null
+      ),
+    [tipPaymentData, feedProfile]
+  )
+
+  const { canQuickNip57Zap, sendQuickZap, zapping } = useNip57QuickZap({
+    recipientPubkey: event.pubkey,
+    referencedEvent: event,
+    recipientPayment: recipientPaymentForZap,
+    onPostPaymentRequest: handlePostPaymentRequest,
+    onZapDialogClose: () => setOpenPaymentDialog(false)
+  })
+
+  const longPressZap = useLongPressAction(() => sendQuickZap(), {
+    enabled: canQuickNip57Zap && !disable
+  })
+
   const handleOpenPaymentMethods = (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
+    if (longPressZap.consumeIfLongPress()) return
     if (disable) return
     setOpenPaymentDialog(true)
   }
+
+  const zapButtonTitle = disable
+    ? t('Zaps')
+    : canQuickNip57Zap
+      ? t('Payment methods — long-press to zap')
+      : t('Payment methods')
 
   return (
     <>
@@ -224,14 +257,21 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
           type="button"
           className={cn(
             'group flex h-full items-center pl-3 pr-1',
-            disable ? 'cursor-not-allowed' : 'cursor-pointer'
+            disable || zapping ? 'cursor-not-allowed' : 'cursor-pointer'
           )}
-          title={disable ? t('Zaps') : t('Payment methods')}
-          aria-label={disable ? t('Zaps') : t('Payment methods')}
-          disabled={disable}
+          title={zapButtonTitle}
+          aria-label={zapButtonTitle}
+          disabled={disable || zapping}
           onClick={handleOpenPaymentMethods}
+          onPointerDown={longPressZap.onPointerDown}
+          onPointerUp={longPressZap.onPointerUp}
+          onPointerLeave={longPressZap.onPointerLeave}
+          onPointerCancel={longPressZap.onPointerCancel}
         >
-          <Zap
+          {zapping ? (
+            <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+          ) : (
+            <Zap
             className={cn(
               hasZapped && 'fill-yellow-400',
               disable
@@ -242,6 +282,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
                   )
             )}
           />
+          )}
         </button>
         {showZapAmount ? (
           <ZapCountHover noteStats={noteStats}>

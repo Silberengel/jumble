@@ -28,6 +28,11 @@ type Step = 'choice' | 'public-message' | 'superchat'
 
 const footerButtonClass = 'w-full min-w-0 sm:w-auto'
 
+function postPaymentInitialStep(context?: PostPaymentContext | null): Step {
+  if (context?.amountMsat != null && context.payto) return 'superchat'
+  return 'choice'
+}
+
 export default function PostPaymentMessagePrompt({
   open,
   onOpenChange,
@@ -46,9 +51,9 @@ export default function PostPaymentMessagePrompt({
 
   useEffect(() => {
     if (open) {
-      setStep('choice')
+      setStep(postPaymentInitialStep(paymentContext))
     }
-  }, [open, recipientPubkey])
+  }, [open, recipientPubkey, paymentContext?.amountMsat, paymentContext?.payto, paymentContext?.messageDraft])
 
   useEffect(() => {
     if (!open || step !== 'choice') return

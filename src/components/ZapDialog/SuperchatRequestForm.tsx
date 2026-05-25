@@ -35,12 +35,17 @@ export default function SuperchatRequestForm({
   const { t } = useTranslation()
   const { publish, checkLogin, pubkey: selfPubkey } = useNostr()
   const [message, setMessage] = useState('')
-  const [amountSats, setAmountSats] = useState(() =>
-    paymentContext?.amountMsat ? clampZapSats(Math.floor(paymentContext.amountMsat / 1000)) : 0
-  )
+  const [amountSats, setAmountSats] = useState(0)
   const [minPow, setMinPow] = useState(0)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setMessage(paymentContext?.messageDraft ?? '')
+    setAmountSats(
+      paymentContext?.amountMsat ? clampZapSats(Math.floor(paymentContext.amountMsat / 1000)) : 0
+    )
+  }, [paymentContext?.messageDraft, paymentContext?.amountMsat])
 
   const amountMsat = amountSats > 0 ? clampZapSats(amountSats) * 1000 : undefined
 

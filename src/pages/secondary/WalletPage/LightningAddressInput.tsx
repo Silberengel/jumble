@@ -52,7 +52,7 @@ export default function LightningAddressInput() {
 
   return (
     <div className="w-full space-y-1">
-      <Label htmlFor="ln-address">{t('Lightning Address (or LNURL)')}</Label>
+      <Label htmlFor="ln-address">{t('Lightning address you will receive zaps at.')}</Label>
       <div className="flex w-full items-center gap-2">
         <Input
           id="ln-address"

@@ -70,7 +70,7 @@ export default function PaytoDialog({
   const [postPaymentOpen, setPostPaymentOpen] = useState(false)
   const [postPaymentContext, setPostPaymentContext] = useState<PostPaymentContext | null>(null)
   const [completedPaymentDetails, setCompletedPaymentDetails] = useState<
-    Partial<Pick<PostPaymentContext, 'amountMsat' | 'payto'>> | null
+    Partial<Pick<PostPaymentContext, 'amountMsat' | 'payto' | 'messageDraft'>> | null
   >(null)
   const info = getPaytoTypeInfo(type)
   const label = info?.label ?? type
@@ -116,9 +116,11 @@ export default function PaytoDialog({
       )
       if (onPostPaymentRequest) {
         onPostPaymentRequest(built)
+        onOpenChange(false)
         return
       }
       if (!offerTipNoticeOnClose) return
+      onOpenChange(false)
       setPostPaymentContext(built)
       setPostPaymentOpen(true)
     },
@@ -219,10 +221,11 @@ export default function PaytoDialog({
                 paytoUri={paytoUri}
                 onBolt11InvoiceChange={setBolt11Invoice}
                 onPaymentFlowComplete={(details) => {
-                  setCompletedPaymentDetails({
-                    amountMsat: details?.amountMsat,
-                    payto: details?.payto
-                  })
+                  if (!details) return
+                  setCompletedPaymentDetails(details)
+                  if (canOfferPostPayment) {
+                    requestAnimationFrame(() => openPostPaymentPrompt(details))
+                  }
                 }}
               />
             ) : isLightning ? null : (

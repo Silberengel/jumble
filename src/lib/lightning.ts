@@ -26,7 +26,10 @@ export const MIN_ZAP_SATS = 210
 export const DEFAULT_ZAP_SATS = 420
 
 /** Quick-pick amounts on the Lightning invoice page. */
-export const LN_INVOICE_PRESET_SATS = [210, 420, 2100, 4200, 21_000, 42_000] as const
+export const LN_INVOICE_PRESET_SATS = [210, 420, 2100, 4200, 21_000] as const
+
+/** Invoice quick-pick with coffee tip affordance (wider preset button). */
+export const LN_INVOICE_COFFEE_PRESET_SATS = 4200
 
 /** Leading digit group + BTC hint styling above this amount (exclusive). */
 export const ZAP_SATS_HIGHLIGHT_ABOVE = 999_999

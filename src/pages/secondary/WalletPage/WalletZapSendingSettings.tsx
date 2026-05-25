@@ -14,6 +14,8 @@ import { useZap } from '@/providers/ZapProvider'
 import { disconnect, launchModal } from '@getalby/bitcoin-connect-react'
 import { useTranslation } from 'react-i18next'
 import DefaultZapAmountInput from './DefaultZapAmountInput'
+import DefaultZapCommentInput from './DefaultZapCommentInput'
+import IncludePublicZapReceiptSwitch from './IncludePublicZapReceiptSwitch'
 import WalletConnectionDetails from './WalletConnectionDetails'
 
 export default function WalletZapSendingSettings() {
@@ -51,6 +53,8 @@ export default function WalletZapSendingSettings() {
           </AlertDialog>
         </div>
         <DefaultZapAmountInput />
+        <DefaultZapCommentInput />
+        <IncludePublicZapReceiptSwitch />
       </>
     )
   }

@@ -15,6 +15,7 @@ import {
 import PaymentMethodsSection from '@/components/PaymentMethodsSection'
 import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
+import { useNip57QuickZap } from '@/hooks/useNip57QuickZap'
 import { useSenderPaytoTypes } from '@/hooks/useSenderPaytoTypes'
 import {
   mergeRecipientPaymentData,
@@ -33,6 +34,7 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PostPaymentMessagePrompt from './PostPaymentMessagePrompt'
+import Nip57QuickZapButton from './Nip57QuickZapButton'
 
 export default function ZapDialog({
   open,
@@ -93,18 +95,33 @@ export default function ZapDialog({
     return groupPaymentMethodsForDisplay(merged, senderPaytoTypes)
   }, [recipientPayment, senderPaytoTypes])
 
+  const { canQuickNip57Zap, quickZapLabel, sendQuickZap, zapping } = useNip57QuickZap({
+    recipientPubkey: pubkey,
+    referencedEvent: event,
+    recipientPayment,
+    onPostPaymentRequest: openPostPaymentPrompt,
+    onZapDialogClose: () => setOpen(false)
+  })
+
   const dialogTitle = t('Payment methods')
   const body =
-    paymentGroups.length > 0 ? (
-      <PaymentMethodsSection
-        groups={paymentGroups}
-        recipientPubkey={pubkey}
-        referencedEvent={event}
-        offerTipNoticeOnClose={false}
-        onPostPaymentRequest={openPostPaymentPrompt}
-        title={t('Payment methods')}
-        className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
-      />
+    paymentGroups.length > 0 || canQuickNip57Zap ? (
+      <>
+        {canQuickNip57Zap ? (
+          <Nip57QuickZapButton label={quickZapLabel} zapping={zapping} onClick={sendQuickZap} />
+        ) : null}
+        {paymentGroups.length > 0 ? (
+          <PaymentMethodsSection
+            groups={paymentGroups}
+            recipientPubkey={pubkey}
+            referencedEvent={event}
+            offerTipNoticeOnClose={false}
+            onPostPaymentRequest={openPostPaymentPrompt}
+            title={t('Payment methods')}
+            className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
+          />
+        ) : null}
+      </>
     ) : (
       <p className="py-8 text-center text-sm text-muted-foreground">
         {t('No payment methods available for this profile')}

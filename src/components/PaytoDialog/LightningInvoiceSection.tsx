@@ -11,6 +11,7 @@ import {
   formatAmount,
   formatSatsGrouped,
   getAmountFromInvoice,
+  LN_INVOICE_COFFEE_PRESET_SATS,
   LN_INVOICE_PRESET_SATS,
   MIN_ZAP_SATS,
 } from '@/lib/lightning'
@@ -48,7 +49,11 @@ export default function LightningInvoiceSection({
   /** Fired when a BOLT11 invoice is created or cleared (for Phoenix / external wallet links). */
   onBolt11InvoiceChange?: (invoice: string | null) => void
   /** After a wallet payment succeeds (dialog stays open for the user to choose next steps). */
-  onPaymentFlowComplete?: (details?: { amountMsat: number; payto: string }) => void
+  onPaymentFlowComplete?: (details?: {
+    amountMsat: number
+    payto: string
+    messageDraft?: string
+  }) => void
 }) {
   const { t } = useTranslation()
   const { defaultZapSats, isWalletConnected } = useZap()
@@ -139,24 +144,29 @@ export default function LightningInvoiceSection({
     }
   }
 
-  const paymentDetails = useMemo(
-    () => ({
-      amountMsat: clampZapSats(sats) * 1000,
-      payto: formatPaytoTagValue(buildPaytoUri('lightning', lightningAddress))
-    }),
-    [sats, lightningAddress]
-  )
+  const buildPaymentDetails = (pr: string) => {
+    let amountMsat = clampZapSats(sats) * 1000
+    try {
+      amountMsat = getAmountFromInvoice(pr) * 1000
+    } catch {
+      /* use form amount */
+    }
+    return {
+      amountMsat,
+      payto: formatPaytoTagValue(buildPaytoUri('lightning', lightningAddress)),
+      messageDraft: invoiceDescription?.trim() || description.trim() || undefined
+    }
+  }
 
   const handlePay = async () => {
     if (!invoice) return
     try {
       setPaying(true)
-      const result = await lightning.payInvoice(invoice, undefined, (flowResult) => {
-        if (flowResult) onPaymentFlowComplete?.(paymentDetails)
-      })
+      const result = await lightning.payInvoice(invoice, undefined)
       if (!mountedRef.current) return
       if (result) {
         toast.success(t('Payment sent'))
+        onPaymentFlowComplete?.(buildPaymentDetails(invoice))
         setInvoice(null)
         setInvoiceDescription(null)
       }
@@ -210,19 +220,23 @@ export default function LightningInvoiceSection({
         >
           {LN_INVOICE_PRESET_SATS.map((preset) => {
             const active = sats === preset
+            const isCoffeePreset = preset === LN_INVOICE_COFFEE_PRESET_SATS
             return (
               <Button
                 key={preset}
                 type="button"
                 variant={active ? 'default' : 'outline'}
                 size="sm"
+                title={isCoffeePreset ? t('Buy them a coffee.') : undefined}
                 className={cn(
                   'h-8 min-w-0 px-0.5 text-xs tabular-nums sm:h-9 sm:px-1 sm:text-sm',
+                  isCoffeePreset && 'col-span-2 gap-1',
                   active && 'ring-1 ring-amber-600/45 dark:ring-yellow-400/50'
                 )}
                 onClick={() => setSats(preset)}
               >
                 {formatAmount(preset)}
+                {isCoffeePreset ? <span aria-hidden>☕</span> : null}
               </Button>
             )
           })}
