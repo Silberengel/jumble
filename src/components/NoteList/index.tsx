@@ -798,7 +798,9 @@ const NoteList = forwardRef(
        */
       alexandriaEmptyUrl = null,
       /** Notifications feed: show attest-superchat bar on incoming payment cards. */
-      showPaymentAttestationAction = false
+      showPaymentAttestationAction = false,
+      /** Notifications feed: show unattested kind 9734 / 9735 / 9740 / 9736 / 1814 addressed to this pubkey. */
+      incomingPaymentRecipientPubkey = null
     }: {
       subRequests: TFeedSubRequest[]
       showKinds: number[]
@@ -861,6 +863,7 @@ const NoteList = forwardRef(
       /** Optional Alexandria `/events` URL when this feed’s timeline is empty (search / tag browse). */
       alexandriaEmptyUrl?: string | null
       showPaymentAttestationAction?: boolean
+      incomingPaymentRecipientPubkey?: string | null
     },
     ref
   ) => {
@@ -1363,8 +1366,14 @@ const NoteList = forwardRef(
         // Filter out expired events
         if (shouldFilterEvent(evt)) return true
 
-        // Attested superchats only (9741), same as threads / profile walls.
-        if (!shouldIncludePaymentInFeed(evt, feedAttestedSuperchatIds)) {
+        // Attested superchats only (9741), except incoming payments in notifications.
+        if (
+          !shouldIncludePaymentInFeed(
+            evt,
+            feedAttestedSuperchatIds,
+            incomingPaymentRecipientPubkey
+          )
+        ) {
           return true
         }
 
@@ -1395,6 +1404,7 @@ const NoteList = forwardRef(
         pinnedEventIds,
         isEventDeleted,
         feedAttestedSuperchatIds,
+        incomingPaymentRecipientPubkey,
         extraShouldHideEvent,
         homeFeedActiveSeenOnAllowlist,
         homeFeedListMode

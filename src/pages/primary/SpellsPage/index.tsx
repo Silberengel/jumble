@@ -1102,6 +1102,9 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                       : undefined
                   }
                   showPaymentAttestationAction={selectedFauxSpell === 'notifications'}
+                  incomingPaymentRecipientPubkey={
+                    selectedFauxSpell === 'notifications' ? notificationsFeedPubkey : null
+                  }
                 />
               </div>
             </>

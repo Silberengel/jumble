@@ -9,6 +9,7 @@ import {
   getSuperchatPaytoType,
   getSuperchatReferenceFetchId,
   canUserAttestSuperchatPayment,
+  isIncomingNotificationsPaymentEvent,
   isProfileWallPaymentNotification,
   isProfileWallZapReceipt,
   isNestedThreadReplyParentKind,
@@ -288,6 +289,96 @@ describe('shouldIncludePaymentInFeed', () => {
     expect(shouldIncludePaymentInFeed(payment, attested)).toBe(true)
     expect(shouldIncludePaymentInFeed(zap, new Set())).toBe(false)
     expect(shouldIncludePaymentInFeed(note, attested)).toBe(true)
+  })
+
+  it('includes unattested incoming payments for the notifications recipient only', () => {
+    const zap = fakeEvent({
+      id: ZAP_ID,
+      kind: kinds.Zap,
+      tags: [
+        ['P', SENDER],
+        ['p', RECIPIENT],
+        ['bolt11', 'lnbc210n1p0fake'],
+        [
+          'description',
+          JSON.stringify({
+            pubkey: SENDER,
+            content: 'Zap!',
+            tags: [['p', RECIPIENT], ['amount', '21000']]
+          })
+        ]
+      ]
+    })
+    const payment = fakeEvent({
+      id: PAYMENT_ID,
+      kind: ExtendedKind.PAYMENT_NOTIFICATION,
+      tags: [['p', RECIPIENT], ['amount', '100000']]
+    })
+    const moneroDisclosure = fakeEvent({
+      id: 'a'.repeat(64),
+      kind: ExtendedKind.MONERO_TIP_DISCLOSURE,
+      tags: [['p', RECIPIENT], ['amount', '0.01']]
+    })
+    const moneroReceipt = fakeEvent({
+      id: 'b'.repeat(64),
+      kind: ExtendedKind.MONERO_TIP_RECEIPT,
+      tags: [['p', SENDER], ['p', RECIPIENT]],
+      content: JSON.stringify({ txid: 'abc', message: 'tip' })
+    })
+    const zapRequest = fakeEvent({
+      id: 'c'.repeat(64),
+      kind: ExtendedKind.ZAP_REQUEST,
+      pubkey: SENDER,
+      tags: [['p', RECIPIENT], ['amount', '21000']]
+    })
+    const empty = new Set<string>()
+
+    expect(shouldIncludePaymentInFeed(zap, empty, RECIPIENT)).toBe(true)
+    expect(shouldIncludePaymentInFeed(payment, empty, RECIPIENT)).toBe(true)
+    expect(shouldIncludePaymentInFeed(moneroDisclosure, empty, RECIPIENT)).toBe(true)
+    expect(shouldIncludePaymentInFeed(moneroReceipt, empty, RECIPIENT)).toBe(true)
+    expect(shouldIncludePaymentInFeed(zapRequest, empty, RECIPIENT)).toBe(true)
+    expect(shouldIncludePaymentInFeed(zap, empty, SENDER)).toBe(false)
+    expect(shouldIncludePaymentInFeed(zap, empty)).toBe(false)
+  })
+})
+
+describe('isIncomingNotificationsPaymentEvent', () => {
+  it('matches all payment kinds addressed to the recipient', () => {
+    expect(
+      isIncomingNotificationsPaymentEvent(
+        fakeEvent({
+          kind: ExtendedKind.ZAP_REQUEST,
+          tags: [['p', RECIPIENT], ['amount', '21000']]
+        }),
+        RECIPIENT
+      )
+    ).toBe(true)
+    expect(
+      isIncomingNotificationsPaymentEvent(
+        fakeEvent({
+          kind: ExtendedKind.MONERO_TIP_DISCLOSURE,
+          tags: [['p', RECIPIENT], ['amount', '0.01']]
+        }),
+        RECIPIENT
+      )
+    ).toBe(true)
+    expect(
+      isIncomingNotificationsPaymentEvent(
+        fakeEvent({
+          kind: ExtendedKind.MONERO_TIP_RECEIPT,
+          tags: [['p', SENDER], ['p', RECIPIENT]],
+          content: '{}'
+        }),
+        RECIPIENT
+      )
+    ).toBe(true)
+    expect(
+      isIncomingNotificationsPaymentEvent(
+        fakeEvent({ kind: kinds.ShortTextNote, tags: [['p', RECIPIENT]] }),
+        RECIPIENT
+      )
+    ).toBe(false)
   })
 })
 

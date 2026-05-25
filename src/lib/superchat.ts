@@ -205,17 +205,46 @@ export function canUserAttestSuperchatPayment(
   if (!isAttestableSuperchatPayment(event)) return false
   const resolved = attestationRecipientPubkey ?? getSuperchatPaymentRecipientPubkey(event)
   if (resolved && hexPubkeysEqual(resolved, userPubkey)) return true
-  const pTag = firstTagValue(event.tags, ['p'])
-  return Boolean(pTag && hexPubkeysEqual(pTag, userPubkey))
+  return event.tags.some((t) => t[0] === 'p' && t[1] && hexPubkeysEqual(t[1], userPubkey))
 }
 
-/** Incoming payment notification or zap receipt addressed to `userPubkey`. */
+/** Payment / tip kinds that may appear in the notifications feed (9734–9736, 1814, 9740). */
+export function isIncomingNotificationsPaymentKind(kind: number): boolean {
+  return (
+    kind === ExtendedKind.ZAP_REQUEST ||
+    kind === kinds.Zap ||
+    kind === ExtendedKind.ZAP_RECEIPT ||
+    kind === ExtendedKind.PAYMENT_NOTIFICATION ||
+    isMoneroTipKind(kind)
+  )
+}
+
+/**
+ * Incoming payment or tip addressed to `userPubkey` — shown unattested in notifications only.
+ * Covers kind 9734 (zap request), 9735, 9740, 9736, and 1814.
+ */
+export function isIncomingNotificationsPaymentEvent(
+  event: Event,
+  userPubkey: string,
+  attestationRecipientPubkey?: string | null
+): boolean {
+  if (!isIncomingNotificationsPaymentKind(event.kind)) return false
+  if (event.kind === ExtendedKind.ZAP_REQUEST) {
+    return event.tags.some((t) => t[0] === 'p' && t[1] && hexPubkeysEqual(t[1], userPubkey))
+  }
+  if (isAttestableSuperchatPayment(event)) {
+    return canUserAttestSuperchatPayment(event, userPubkey, attestationRecipientPubkey)
+  }
+  return false
+}
+
+/** @deprecated Use {@link isIncomingNotificationsPaymentEvent}. */
 export function isIncomingPaymentNotificationOrZapReceipt(
   event: Event,
   userPubkey: string,
   attestationRecipientPubkey?: string | null
 ): boolean {
-  return canUserAttestSuperchatPayment(event, userPubkey, attestationRecipientPubkey)
+  return isIncomingNotificationsPaymentEvent(event, userPubkey, attestationRecipientPubkey)
 }
 
 /** Target `k` tag value for a kind 9741 attestation pointing at this event. */
@@ -324,13 +353,25 @@ export function buildGlobalAttestedSuperchatIdSet(attestations: Event[]): Set<st
 /**
  * Feeds: kind 9735 / 9740 / 9736 / 1814 only when attested (9741).
  * Same attestation rule as threads and profile walls.
+ *
+ * When `incomingPaymentRecipientPubkey` is set (notifications feed), unattested kind
+ * 9734 / 9735 / 9740 / 9736 / 1814 addressed to that pubkey are included so the recipient
+ * can publish kind 9741 from the card (9734 is shown but not attestable).
  */
 export function shouldIncludePaymentInFeed(
   event: Event,
-  attestedIds: ReadonlySet<string>
+  attestedIds: ReadonlySet<string>,
+  incomingPaymentRecipientPubkey?: string | null
 ): boolean {
   if (!isSuperchatKind(event.kind)) return true
-  return isAttestedSuperchat(event, attestedIds)
+  if (isAttestedSuperchat(event, attestedIds)) return true
+  if (
+    incomingPaymentRecipientPubkey &&
+    isIncomingNotificationsPaymentEvent(event, incomingPaymentRecipientPubkey)
+  ) {
+    return true
+  }
+  return false
 }
 
 export function replyFeedSuperchatsFirst(sortedNonSuperchatReplies: Event[], superchats: Event[]) {

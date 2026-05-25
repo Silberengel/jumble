@@ -1,15 +1,9 @@
 import { ExtendedKind } from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
-  canonicalizeRssArticleUrl,
-  getArticleUrlFromCommentITags
-} from '@/lib/rss-article'
-import {
   getParentETag,
-  getReplaceableCoordinateFromEvent,
   isMentioningMutedUsers,
-  isNip18RepostKind,
-  isReplaceableEvent
+  isNip18RepostKind
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import {

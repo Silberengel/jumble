@@ -17,6 +17,7 @@ import {
   parseThreadWatchListRefs,
   threadWatchMatchesRefs
 } from '@/lib/notification-thread-watch'
+import { isIncomingNotificationsPaymentEvent } from '@/lib/superchat'
 import {
   decodeFollowSetSpellId,
   getFollowSetDTag,
@@ -599,6 +600,8 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       ) {
         return true
       }
+
+      if (isIncomingNotificationsPaymentEvent(evt, pk)) return false
 
       if (isUserInEventMentions(evt, pk)) return false
 
