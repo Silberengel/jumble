@@ -2671,6 +2671,7 @@ class IndexedDbService {
       url: string
       fallbackUrl?: string
       sourceKind?: number
+      description?: string
       eventId: string
       pubkey: string
       createdAt: number
@@ -2693,6 +2694,7 @@ class IndexedDbService {
               url: string
               fallbackUrl?: string
               sourceKind?: number
+              description?: string
               eventId: string
               pubkey: string
               createdAt: number
@@ -2715,6 +2717,7 @@ class IndexedDbService {
       url: string
       fallbackUrl?: string
       sourceKind?: number
+      description?: string
       eventId: string
       pubkey: string
       createdAt: number

@@ -243,6 +243,11 @@ export interface QueryOptions {
    * AbortController, or other foreground work that must not be tied to the global background token).
    */
   foreground?: boolean
+  /**
+   * When true, ignore {@link QueryService.interruptBackgroundQueries} without treating the query as feed-foreground
+   * (e.g. session-start GIF cache preload).
+   */
+  backgroundInterruptImmune?: boolean
 }
 
 export interface SubscribeCallbacks {
@@ -791,7 +796,7 @@ export class QueryService {
           sig.removeEventListener('abort', onAbortQuery)
         })
       }
-      if (!foreground) {
+      if (!foreground && !options?.backgroundInterruptImmune) {
         registerQueryAbort(this.backgroundInterruptController.signal)
       }
       if (options?.signal) {

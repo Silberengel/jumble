@@ -805,6 +805,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         if (storedRelayListEvent) {
           client.updateRelayListCache(storedRelayListEvent)
         }
+        void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })
         if (!storedFollowListEvent) {
           const trySetFollowListSkip = (evt: Event) => {
             if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) return

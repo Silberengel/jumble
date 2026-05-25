@@ -209,6 +209,7 @@ import {
 } from 'nostr-tools'
 import { AbstractRelay } from 'nostr-tools/abstract-relay'
 import indexedDb from './indexed-db.service'
+import { preloadGifsIntoIdbCache } from './gif.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
 import { notifySessionInteractivePrewarmComplete } from './session-interactive-prewarm-bridge'
 import nip66Service from './nip66.service'
@@ -422,6 +423,8 @@ class ClientService extends EventTarget {
   private profileSearchIndexWarmed = false
   /** Deferred follow-graph prefetch; cancelled on new session prewarm. */
   private followingIndexPrefetchTimer: ReturnType<typeof setTimeout> | null = null
+  /** Deferred kind 1063 GIF preload from viewer outboxes; cancelled on new session prewarm. */
+  private gifOutboxPreloadTimer: ReturnType<typeof setTimeout> | null = null
   /** Per-pubkey cooldown for {@link prefetchAuthorCoreReplaceables} from feed ingest (avoid REQ storms). */
   private authorCorePrefetchCooldownUntilMs = new Map<string, number>()
   private static readonly AUTHOR_CORE_PREFETCH_COOLDOWN_MS = 6 * 60 * 1000
@@ -585,6 +588,20 @@ class ClientService extends EventTarget {
     /** Unblock sidebar/widgets immediately — no IndexedDB scan or NIP-66 at startup. */
     notifySessionInteractivePrewarmComplete()
 
+    if (this.gifOutboxPreloadTimer != null) {
+      clearTimeout(this.gifOutboxPreloadTimer)
+    }
+    /** GIF relays + viewer mailbox → IndexedDB; not tied to hydrate AbortSignal (that aborts on account switch). */
+    this.gifOutboxPreloadTimer = setTimeout(() => {
+      this.gifOutboxPreloadTimer = null
+      void this.runGifCachePreload(options.pubkey).catch((err) => {
+        logger.debug('[client] Prewarm: GIF cache preload failed', {
+          pubkeySlice: options.pubkey?.slice(0, 12) ?? null,
+          err: err instanceof Error ? err.message : String(err)
+        })
+      })
+    }, 2_000)
+
     if (options.pubkey) {
       const pk = options.pubkey
       if (this.followingIndexPrefetchTimer != null) {
@@ -602,6 +619,21 @@ class ClientService extends EventTarget {
         })
       }, 60_000)
     }
+  }
+
+  /** {@link runSessionPrewarm} — background fetch into GIF IndexedDB cache. */
+  private async runGifCachePreload(pubkey: string | null): Promise<void> {
+    const extra: string[] = []
+    if (pubkey) {
+      const rl = await this.peekRelayListFromStorage(pubkey)
+      extra.push(
+        ...(rl.read ?? []),
+        ...(rl.write ?? []),
+        ...(rl.httpRead ?? []),
+        ...(rl.httpWrite ?? [])
+      )
+    }
+    await preloadGifsIntoIdbCache(pubkey, extra)
   }
 
   /** NIP-66 discovery for Explore / publish hints — call when the user opens Explore, not at boot. */

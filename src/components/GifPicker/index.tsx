@@ -17,9 +17,11 @@ import { cn } from '@/lib/utils'
 import { normalizeUrl } from '@/lib/url'
 import {
   fetchGifs,
-  getCachedGifs,
-  searchGifs,
+  getAllCachedGifsForSearch,
+  gifMetadataMatchesSearch,
   gifShouldOfferNip94Archive,
+  buildKind1063GifPublishDraft,
+  appendGifDescriptionTo1063Tags,
   type GifMetadata
 } from '@/services/gif.service'
 import mediaUpload from '@/services/media-upload.service'
@@ -50,11 +52,13 @@ export default function GifPicker({
   const { isSmallScreen } = useScreenSize()
   const { publish, pubkey, relayList } = useNostr()
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
   // Initialise from the module-level session cache so re-opens are instant
   const [gifs, setGifsState] = useState<GifMetadata[]>(() => _sessionGifs)
   const gifsRef = useRef<GifMetadata[]>(_sessionGifs)
+  const gifPoolRef = useRef<GifMetadata[]>([])
+  const searchInputRef = useRef(searchInput)
+  searchInputRef.current = searchInput
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -63,7 +67,6 @@ export default function GifPicker({
   const [publishingPaste, setPublishingPaste] = useState(false)
   const [archivingEventId, setArchivingEventId] = useState<string | null>(null)
   const [publishDescription, setPublishDescription] = useState('')
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const gifbuddyPopupRef = useRef<Window | null>(null)
 
@@ -106,88 +109,87 @@ export default function GifPicker({
     setGifsState(newGifs)
   }, [])
 
-  const loadGifs = useCallback(async (q: string, forceRefresh = false) => {
-    setError(null)
-    const isSearch = q.trim() !== ''
+  /** Apply search filter to the in-memory GIF pool (instant, no network). */
+  const applyLocalFilter = useCallback(
+    (q: string) => {
+      const trimmed = q.trim()
+      const pool = gifPoolRef.current
+      const filtered = trimmed
+        ? pool.filter((g) => gifMetadataMatchesSearch(g, trimmed))
+        : pool.slice(0, 50)
+      setGifs(filtered, trimmed.length > 0)
+    },
+    [setGifs]
+  )
 
-    // For a search or a forced refresh with no data: clear and show skeleton immediately.
-    if (isSearch) {
-      gifsRef.current = []
-      setGifsState([])
-      setLoading(true)
-    } else if (gifsRef.current.length === 0) {
-      // No data yet — try the IDB cache first so we can show something instantly.
-      try {
-        const cached = await getCachedGifs(pubkey ?? null)
-        if (cached.length > 0) {
-          setGifs(cached)
+  const refreshGifPoolFromIdb = useCallback(async () => {
+    const pool = await getAllCachedGifsForSearch(pubkey ?? null)
+    gifPoolRef.current = pool
+    return pool
+  }, [pubkey])
+
+  const loadGifs = useCallback(
+    async (forceRefresh = false) => {
+      setError(null)
+
+      if (gifPoolRef.current.length === 0) {
+        try {
+          const cached = await refreshGifPoolFromIdb()
+          if (cached.length > 0) {
+            applyLocalFilter(searchInputRef.current)
+          }
+        } catch {
+          /* ignore */
         }
-      } catch { /* ignore */ }
-      // If still empty after the cache read, show the skeleton while we wait for relays.
-      if (gifsRef.current.length === 0) setLoading(true)
-    }
-    // If we already have data (session cache or IDB seed above): no skeleton —
-    // results will update silently when the relay fetch completes.
-
-    try {
-      const results = isSearch
-        ? await searchGifs(q.trim(), 50, forceRefresh, userReadRelays, pubkey ?? null)
-        : await fetchGifs(undefined, 50, forceRefresh, userReadRelays, pubkey ?? null)
-      setGifs(results, isSearch)
-      if (results.length === 0 && !isSearch) {
-        setError(
-          t(
-            'No GIFs found. Try searching or add your own. GIFs come from Nostr kind 1063 (NIP-94) events on GIF relays.'
-          )
-        )
+        if (gifPoolRef.current.length === 0) setLoading(true)
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load GIFs')
-      if (gifsRef.current.length === 0) setGifsState([])
-    } finally {
-      setLoading(false)
-    }
-  }, [t, userReadRelays, pubkey, setGifs])
+
+      try {
+        await fetchGifs(50, forceRefresh, userReadRelays, pubkey ?? null)
+        await refreshGifPoolFromIdb()
+        applyLocalFilter(searchInputRef.current)
+        if (gifPoolRef.current.length === 0 && !searchInput.trim()) {
+          setError(
+            t(
+              'No GIFs found. Try searching or add your own. GIFs come from Nostr kind 1063 (NIP-94) events on GIF relays.'
+            )
+          )
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load GIFs')
+        if (gifPoolRef.current.length === 0) setGifsState([])
+      } finally {
+        setLoading(false)
+      }
+    },
+    [t, userReadRelays, pubkey, applyLocalFilter, refreshGifPoolFromIdb]
+  )
 
   useEffect(() => {
     if (!open) return
-    loadGifs(query)
-  }, [open, query, loadGifs])
+    applyLocalFilter(searchInput)
+  }, [searchInput, open, applyLocalFilter])
 
   useEffect(() => {
     if (!open) return
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    searchTimeoutRef.current = setTimeout(() => {
-      setQuery(searchInput)
-    }, 300)
-    return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    }
-  }, [searchInput, open])
+    void loadGifs()
+  }, [open, loadGifs])
 
   const handleSelect = useCallback(
     (gif: GifMetadata) => {
       const url = (gif.fallbackUrl?.trim() || gif.url).trim()
       if (!url) return
+      const desc = publishDescription.trim()
       onSelect?.(url)
       setOpen(false)
       if (!pubkey || !/^https?:\/\//i.test(url)) return
       // Fire-and-forget: waiting on every relay can freeze the UI when relays are down.
-      void publish(
-        {
-          kind: ExtendedKind.FILE_METADATA,
-          content: '',
-          tags: [
-            ['url', url],
-            ['m', 'image/gif'],
-            ['t', 'gif']
-          ],
-          created_at: Math.floor(Date.now() / 1000)
-        },
-        { specifiedRelayUrls: gifSelectPublishRelayUrls }
-      ).catch(() => {})
+      void publish(buildKind1063GifPublishDraft(url, desc), {
+        specifiedRelayUrls: gifSelectPublishRelayUrls
+      }).catch(() => {})
+      if (desc) setPublishDescription('')
     },
-    [pubkey, onSelect, publish, gifSelectPublishRelayUrls]
+    [pubkey, onSelect, publish, gifSelectPublishRelayUrls, publishDescription]
   )
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -201,21 +203,24 @@ export default function GifPicker({
         return
       }
       const { url } = await mediaUpload.upload(file)
+      const desc = publishDescription.trim()
+      const tags: string[][] = [
+        ['file', url, file.type || 'image/gif', `size ${file.size}`],
+        ['url', url],
+        ['m', file.type || 'image/gif'],
+        ['t', 'gif']
+      ]
+      appendGifDescriptionTo1063Tags(tags, desc)
       const draft = {
         kind: ExtendedKind.FILE_METADATA,
-        content: publishDescription.trim(),
-        tags: [
-          ['file', url, file.type || 'image/gif', `size ${file.size}`],
-          ['url', url],
-          ['m', file.type || 'image/gif'],
-          ['t', 'gif']
-        ],
+        content: desc,
+        tags,
         created_at: Math.floor(Date.now() / 1000)
       }
       await publish(draft, { specifiedRelayUrls: gifPublishRelayUrls })
       setPublishDescription('')
-      setQuery('')
-      await loadGifs('', true)
+      setSearchInput('')
+      await loadGifs(true)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -267,17 +272,9 @@ export default function GifPicker({
     if (pubkey) {
       setPublishingPaste(true)
       try {
-        const draft = {
-          kind: ExtendedKind.FILE_METADATA,
-          content: descriptionForPublish,
-          tags: [
-            ['url', url],
-            ['m', 'image/gif'],
-            ['t', 'gif']
-          ],
-          created_at: Math.floor(Date.now() / 1000)
-        }
-        await publish(draft, { specifiedRelayUrls: gifPublishRelayUrls })
+        await publish(buildKind1063GifPublishDraft(url, descriptionForPublish), {
+          specifiedRelayUrls: gifPublishRelayUrls
+        })
         setPublishDescription('')
       } catch {
         // ignore; URL was still inserted
@@ -295,27 +292,21 @@ export default function GifPicker({
       if (!pubkey) return
       const url = (gif.fallbackUrl?.trim() || gif.url).trim()
       if (!url || !/^https?:\/\//i.test(url)) return
+      const desc = publishDescription.trim()
       setArchivingEventId(gif.eventId)
       onSelect?.(url)
       setOpen(false)
-      void loadGifs(query, true)
-      void publish(
-        {
-          kind: ExtendedKind.FILE_METADATA,
-          content: '',
-          tags: [
-            ['url', url],
-            ['m', 'image/gif'],
-            ['t', 'gif']
-          ],
-          created_at: Math.floor(Date.now() / 1000)
-        },
-        { specifiedRelayUrls: gifSelectPublishRelayUrls }
-      )
+      void loadGifs(true)
+      void publish(buildKind1063GifPublishDraft(url, desc), {
+        specifiedRelayUrls: gifSelectPublishRelayUrls
+      })
         .catch(() => {})
-        .finally(() => setArchivingEventId(null))
+        .finally(() => {
+          setArchivingEventId(null)
+          if (desc) setPublishDescription('')
+        })
     },
-    [pubkey, publish, gifSelectPublishRelayUrls, onSelect, loadGifs, query]
+    [pubkey, publish, gifSelectPublishRelayUrls, onSelect, loadGifs, publishDescription]
   )
 
   const gifSourceKindTitle = useCallback(

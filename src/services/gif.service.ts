@@ -3,7 +3,12 @@
  * Same approach as aitherboard for 1063; for 1/1111 we parse content and tags for .gif URLs.
  */
 
-import { ExtendedKind, FAST_READ_RELAY_URLS, GIF_RELAY_URLS } from '@/constants'
+import {
+  ExtendedKind,
+  FAST_READ_RELAY_URLS,
+  GIF_RELAY_URLS
+} from '@/constants'
+import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { normalizeUrl } from '@/lib/url'
 import { kinds } from 'nostr-tools'
 import type { Event as NEvent } from 'nostr-tools'
@@ -17,6 +22,8 @@ export interface GifMetadata {
   mimeType?: string
   width?: number
   height?: number
+  /** Human-readable label from kind 1063 `content`, `alt`, or extra `#t` tags (for search / cache). */
+  description?: string
   /** Nostr kind of the event this row was parsed from (1063 vs note vs comment). */
   sourceKind: number
   eventId: string
@@ -76,6 +83,59 @@ const GIF_PRIORITY = {
   OTHER_EVENT: 1,
   NON_EVENT: 0
 } as const
+
+/** `#t` tokens derived from a user description (always includes literal `gif` separately). */
+function topicTagsFromGifDescription(description: string): string[] {
+  const seen = new Set<string>(['gif'])
+  const out: string[] = []
+  for (const raw of description.split(/[\s,]+/)) {
+    const token = raw.replace(/^#+/, '').trim().toLowerCase()
+    if (token.length >= 2 && !seen.has(token)) {
+      seen.add(token)
+      out.push(token)
+    }
+  }
+  return out
+}
+
+/** Append NIP-94 `alt` + searchable `#t` tags for a GIF description onto kind 1063 tag lists. */
+export function appendGifDescriptionTo1063Tags(tags: string[][], description?: string): void {
+  const desc = description?.trim() ?? ''
+  if (!desc) return
+  tags.push(['alt', desc])
+  for (const topic of topicTagsFromGifDescription(desc)) {
+    tags.push(['t', topic])
+  }
+}
+
+/** Kind 1063 publish draft for a remote GIF URL (grid pick, paste, archive). */
+export function buildKind1063GifPublishDraft(url: string, description?: string) {
+  const desc = description?.trim() ?? ''
+  const tags: string[][] = [
+    ['url', url],
+    ['m', 'image/gif'],
+    ['t', 'gif']
+  ]
+  appendGifDescriptionTo1063Tags(tags, desc)
+  return {
+    kind: ExtendedKind.FILE_METADATA,
+    content: desc,
+    tags,
+    created_at: Math.floor(Date.now() / 1000)
+  }
+}
+
+function descriptionFromGifEvent(event: NEvent): string | undefined {
+  const alt = event.tags.find((t) => t[0] === 'alt' && t[1]?.trim())?.[1]?.trim()
+  if (alt) return alt
+  const content = event.content?.trim()
+  if (content && !/^https?:\/\//i.test(content)) return content
+  const topics = event.tags
+    .filter((t) => t[0] === 't' && t[1]?.trim() && t[1].trim().toLowerCase() !== 'gif')
+    .map((t) => t[1]!.trim())
+  if (topics.length > 0) return topics.join(' ')
+  return undefined
+}
 
 function parseGifFromEvent(event: NEvent): GifMetadata | null {
   let url: string | undefined
@@ -202,6 +262,7 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
   sha256 = sha256Tag?.[1]
   const fallbackTag = event.tags.find((t) => t[0] === 'fallback' && t[1])
   fallbackUrl = fallbackTag?.[1]
+  const description = descriptionFromGifEvent(event)
 
   return {
     url,
@@ -210,6 +271,7 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
     mimeType: mimeType || 'image/gif',
     width,
     height,
+    description,
     sourceKind: event.kind,
     eventId: event.id,
     pubkey: event.pubkey,
@@ -219,48 +281,37 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
 
 const CACHE_MAX_AGE_MS = 60 * 60 * 1000 // 1 hour; short enough to stay fresh, long enough to survive browser restarts
 const MIN_GIF_CACHE_ENTRIES = 8
+const GIF_CACHE_CAP = 80
+
+/**
+ * High `limit` values otherwise trigger implicit feed first-relay grace (~2s) and return before
+ * GIF-heavy relays (e.g. thecitadel) finish. Picker loads must also be foreground so navigation
+ * does not abort them via {@link QueryService.interruptBackgroundQueries}.
+ */
+const GIF_FETCH_OPTS = {
+  eoseTimeout: 20_000,
+  globalTimeout: 28_000,
+  firstRelayResultGraceMs: false as const,
+  foreground: true as const
+}
+
+/** Session-start cache preload — low priority but must finish (not aborted on navigation). */
+const GIF_PRELOAD_FETCH_OPTS = {
+  eoseTimeout: 18_000,
+  globalTimeout: 26_000,
+  firstRelayResultGraceMs: false as const,
+  backgroundInterruptImmune: true as const
+}
+
+let gifOutboxPreloadInFlight: Promise<void> | null = null
 
 /** Ensured on the kind 1063 (NIP-94) relay set even if absent from merged read lists. */
 const THECITADEL_FOR_GIF_METADATA =
   normalizeUrl('wss://thecitadel.nostr1.com') || 'wss://thecitadel.nostr1.com'
 
-/**
- * Fetch GIFs from Nostr kind 1063 (NIP-94) events on GIF relays.
- * Deduplicates by normalized URL; when the same GIF appears from multiple sources,
- * keeps: 1) user's own events, 2) other users' events, 3) non-event sources.
- * @param extraReadRelayUrls - Logged-in user's read relays (inboxes) and local relays to include when fetching.
- * @param userPubkey - Current user's pubkey; entries from this pubkey get highest priority when deduping.
- */
-export async function fetchGifs(
-  searchQuery?: string,
-  limit: number = 50,
-  forceRefresh: boolean = false,
-  extraReadRelayUrls: string[] = [],
-  userPubkey: string | null = null
-): Promise<GifMetadata[]> {
-  if (!forceRefresh && !searchQuery) {
-    const cached = await indexedDb.getGifCache()
-    const cacheHasSourceKind =
-      cached?.gifs.length &&
-      cached.gifs.every((g) => typeof (g as GifMetadata).sourceKind === 'number')
-    if (
-      cached &&
-      cacheHasSourceKind &&
-      cached.gifs.length >= MIN_GIF_CACHE_ENTRIES &&
-      Date.now() - cached.cachedAt < CACHE_MAX_AGE_MS
-    ) {
-      return sortGifsForPicker(cached.gifs as GifMetadata[], userPubkey).slice(0, limit)
-    }
-  }
-
-  // GIF-focused relays often fail (e.g. gifbuddy/damus down); merge fast read indexers so kind 1063 / GIF notes still resolve.
-  const readUrls = [
-    ...GIF_RELAY_URLS,
-    ...FAST_READ_RELAY_URLS,
-    ...extraReadRelayUrls.map((u) => normalizeUrl(u)).filter((u): u is string => !!u)
-  ]
+function dedupeRelayUrls(urls: readonly string[]): string[] {
   const seen = new Set<string>()
-  const dedupedUrls = readUrls
+  return urls
     .map((u) => normalizeUrl(u) || u)
     .filter(Boolean)
     .filter((u) => {
@@ -269,50 +320,57 @@ export async function fetchGifs(
       seen.add(n)
       return true
     })
+}
 
-  const fetchOpts = { eoseTimeout: 20000, globalTimeout: 28000 }
+function normalizeCachedGif(g: GifMetadata & { sourceKind?: number }): GifMetadata {
+  return {
+    ...g,
+    sourceKind:
+      typeof g.sourceKind === 'number' ? g.sourceKind : ExtendedKind.FILE_METADATA
+  }
+}
 
-  const limit1063 = Math.max(limit * 15, 400)
-  const limitNotes = Math.max(limit * 15, 500)
+export function gifMetadataMatchesSearch(gif: GifMetadata, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const haystack = [
+    gif.description,
+    gif.url,
+    gif.fallbackUrl,
+    gif.eventId,
+    gif.pubkey,
+    String(gif.sourceKind)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(q)
+}
 
-  const relays1063 = dedupedUrls.some(
-    (u) => (normalizeUrl(u) || u).toLowerCase() === THECITADEL_FOR_GIF_METADATA.toLowerCase()
-  )
-    ? dedupedUrls
-    : [...dedupedUrls, THECITADEL_FOR_GIF_METADATA]
+/** Full IndexedDB GIF pool for local search (up to {@link GIF_CACHE_CAP}). */
+export async function getAllCachedGifsForSearch(
+  userPubkey: string | null = null
+): Promise<GifMetadata[]> {
+  try {
+    const cached = await indexedDb.getGifCache()
+    if (!cached?.gifs?.length) return []
+    const normalized = cached.gifs.map((g) => normalizeCachedGif(g as GifMetadata))
+    return sortGifsForPicker(normalized, userPubkey)
+  } catch {
+    return []
+  }
+}
 
-  // Kind 1063 (incl. thecitadel) + kind 1/1111 on the broad list (thecitadel omitted for social kinds via SOCIAL_KIND_BLOCKED_RELAY_URLS).
-  const [events1063, eventsNotes] = await Promise.all([
-    queryService.fetchEvents(
-      relays1063,
-      { kinds: [ExtendedKind.FILE_METADATA], limit: limit1063 },
-      fetchOpts
-    ),
-    queryService.fetchEvents(
-      dedupedUrls,
-      {
-        kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT],
-        limit: limitNotes
-      },
-      fetchOpts
-    )
-  ])
-
-  const events = [...events1063, ...eventsNotes]
-
-  // Map: normalized URL -> { gif, priority }. Higher priority wins when same URL appears multiple times.
-  const byUrl = new Map<string, { gif: GifMetadata; priority: number }>()
-
+function mergeGifEventsIntoMap(
+  events: readonly NEvent[],
+  byUrl: Map<string, { gif: GifMetadata; priority: number }>,
+  searchQuery: string | undefined,
+  userPubkey: string | null
+): void {
   for (const event of events) {
     const gif = parseGifFromEvent(event)
     if (!gif) continue
-
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase().trim()
-      const content = event.content.toLowerCase()
-      const tags = event.tags.flat().join(' ').toLowerCase()
-      if (!content.includes(q) && !tags.includes(q)) continue
-    }
+    if (searchQuery && !eventMatchesNip50LocalFullTextQuery(event, searchQuery)) continue
 
     const key = normalizeGifUrl(gif.url)
     const priority =
@@ -322,12 +380,195 @@ export async function fetchGifs(
       byUrl.set(key, { gif, priority })
     }
   }
+}
 
-  const gifs = Array.from(byUrl.values()).map((v) => v.gif)
-  const result = sortGifsForPicker(gifs, userPubkey).slice(0, limit)
+export async function mergeGifsIntoIdbCache(incoming: GifMetadata[]): Promise<void> {
+  if (incoming.length === 0) return
+  const row = await indexedDb.getGifCache()
+  const byKey = new Map<string, GifMetadata>()
+  for (const g of row?.gifs ?? []) {
+    const meta = normalizeCachedGif(g as GifMetadata)
+    if (meta.url) byKey.set(normalizeGifUrl(meta.url), meta)
+  }
+  for (const g of incoming) {
+    if (g.url) byKey.set(normalizeGifUrl(g.url), g)
+  }
+  const merged = [...byKey.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, GIF_CACHE_CAP)
+  await indexedDb.setGifCache(merged, Date.now())
+}
 
-  if (result.length >= MIN_GIF_CACHE_ENTRIES && !searchQuery) {
-    await indexedDb.setGifCache(result, Date.now())
+function gifRelayUrlsForFetch(extraReadRelayUrls: readonly string[]): {
+  relays1063: string[]
+  relaysNotes: string[]
+} {
+  const dedupedUrls = dedupeRelayUrls([
+    ...GIF_RELAY_URLS,
+    ...FAST_READ_RELAY_URLS,
+    ...extraReadRelayUrls
+  ])
+  const relays1063 = dedupedUrls.some(
+    (u) => (normalizeUrl(u) || u).toLowerCase() === THECITADEL_FOR_GIF_METADATA.toLowerCase()
+  )
+    ? dedupedUrls
+    : [...dedupedUrls, THECITADEL_FOR_GIF_METADATA]
+  return { relays1063, relaysNotes: dedupedUrls }
+}
+
+function gifsFromEvents(
+  events1063: readonly NEvent[],
+  eventsNotes: readonly NEvent[],
+  userPubkey: string | null
+): GifMetadata[] {
+  const byUrl = new Map<string, { gif: GifMetadata; priority: number }>()
+  mergeGifEventsIntoMap(events1063, byUrl, undefined, userPubkey)
+  mergeGifEventsIntoMap(eventsNotes, byUrl, undefined, userPubkey)
+  return sortGifsForPicker(
+    Array.from(byUrl.values()).map((v) => v.gif),
+    userPubkey
+  )
+}
+
+/**
+ * Background session preload into IndexedDB: kind 1063 on GIF relays + thecitadel, kind 1/1111 on the
+ * broad list, merged with the viewer's inboxes/outboxes when provided.
+ */
+export async function preloadGifsIntoIdbCache(
+  userPubkey: string | null,
+  extraReadRelayUrls: readonly string[] = []
+): Promise<void> {
+  const cached = await indexedDb.getGifCache()
+  if (
+    cached &&
+    cached.gifs.length >= MIN_GIF_CACHE_ENTRIES &&
+    Date.now() - cached.cachedAt < CACHE_MAX_AGE_MS
+  ) {
+    return
+  }
+
+  if (gifOutboxPreloadInFlight) {
+    await gifOutboxPreloadInFlight
+    return
+  }
+
+  gifOutboxPreloadInFlight = (async () => {
+    const { relays1063, relaysNotes } = gifRelayUrlsForFetch(extraReadRelayUrls)
+
+    const [events1063, eventsNotes] = await Promise.all([
+      queryService.fetchEvents(
+        relays1063,
+        { kinds: [ExtendedKind.FILE_METADATA], limit: 400 },
+        GIF_PRELOAD_FETCH_OPTS
+      ),
+      queryService.fetchEvents(
+        relaysNotes,
+        {
+          kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT],
+          limit: 500
+        },
+        GIF_PRELOAD_FETCH_OPTS
+      )
+    ])
+
+    const gifs = gifsFromEvents(events1063, eventsNotes, userPubkey).slice(0, GIF_CACHE_CAP)
+    if (gifs.length > 0) {
+      await mergeGifsIntoIdbCache(gifs)
+    }
+  })()
+
+  try {
+    await gifOutboxPreloadInFlight
+  } finally {
+    gifOutboxPreloadInFlight = null
+  }
+}
+
+/** @deprecated Use {@link preloadGifsIntoIdbCache}. Kept for call-site compatibility. */
+export async function preloadGifsFromUserOutboxes(
+  outboxRelayUrls: readonly string[],
+  userPubkey: string | null,
+  _signal?: AbortSignal
+): Promise<void> {
+  return preloadGifsIntoIdbCache(userPubkey, outboxRelayUrls)
+}
+
+/**
+ * Fetch GIFs from Nostr kind 1063 (NIP-94) events on GIF relays.
+ * Deduplicates by normalized URL; when the same GIF appears from multiple sources,
+ * keeps: 1) user's own events, 2) other users' events, 3) non-event sources.
+ * @param extraReadRelayUrls - Logged-in user's read relays (inboxes) and local relays to include when fetching.
+ * @param userPubkey - Current user's pubkey; entries from this pubkey get highest priority when deduping.
+ */
+export async function fetchGifs(
+  limit: number = 50,
+  forceRefresh: boolean = false,
+  extraReadRelayUrls: string[] = [],
+  userPubkey: string | null = null
+): Promise<GifMetadata[]> {
+  if (!forceRefresh) {
+    const cached = await indexedDb.getGifCache()
+    if (
+      cached &&
+      cached.gifs.length >= MIN_GIF_CACHE_ENTRIES &&
+      Date.now() - cached.cachedAt < CACHE_MAX_AGE_MS
+    ) {
+      const normalized = cached.gifs.map((g) => normalizeCachedGif(g as GifMetadata))
+      return sortGifsForPicker(normalized, userPubkey).slice(0, limit)
+    }
+  }
+
+  let staleFallback: GifMetadata[] | null = null
+  const row = await indexedDb.getGifCache()
+  if (row?.gifs?.length) {
+    staleFallback = row.gifs.map((g) => normalizeCachedGif(g as GifMetadata))
+  }
+
+  const limit1063 = Math.max(limit * 15, 400)
+  const limitNotes = Math.max(limit * 15, 500)
+
+  const { relays1063, relaysNotes: dedupedUrls } = gifRelayUrlsForFetch(extraReadRelayUrls)
+
+  let events1063: NEvent[] = []
+  let eventsNotes: NEvent[] = []
+
+  try {
+    ;[events1063, eventsNotes] = await Promise.all([
+      queryService.fetchEvents(
+        relays1063,
+        { kinds: [ExtendedKind.FILE_METADATA], limit: limit1063 },
+        GIF_FETCH_OPTS
+      ),
+      queryService.fetchEvents(
+        dedupedUrls,
+        {
+          kinds: [kinds.ShortTextNote, ExtendedKind.COMMENT],
+          limit: limitNotes
+        },
+        GIF_FETCH_OPTS
+      )
+    ])
+  } catch (err) {
+    if (staleFallback?.length) {
+      return sortGifsForPicker(staleFallback, userPubkey).slice(0, limit)
+    }
+    throw err
+  }
+
+  const byUrl = new Map<string, { gif: GifMetadata; priority: number }>()
+  mergeGifEventsIntoMap(events1063, byUrl, undefined, userPubkey)
+  mergeGifEventsIntoMap(eventsNotes, byUrl, undefined, userPubkey)
+
+  const allGifs = sortGifsForPicker(
+    Array.from(byUrl.values()).map((v) => v.gif),
+    userPubkey
+  )
+  let result = allGifs.slice(0, limit)
+
+  if (result.length === 0 && staleFallback?.length) {
+    result = sortGifsForPicker(staleFallback, userPubkey).slice(0, limit)
+  }
+
+  if (allGifs.length > 0) {
+    await mergeGifsIntoIdbCache(allGifs.slice(0, GIF_CACHE_CAP))
   }
 
   return result
@@ -338,22 +579,20 @@ export async function fetchGifs(
  * Used to seed the picker immediately on open; the caller can then trigger a background refresh.
  */
 export async function getCachedGifs(userPubkey: string | null = null): Promise<GifMetadata[]> {
-  try {
-    const cached = await indexedDb.getGifCache()
-    if (!cached?.gifs?.length) return []
-    return sortGifsForPicker(cached.gifs as GifMetadata[], userPubkey).slice(0, 50)
-  } catch {
-    return []
-  }
+  const all = await getAllCachedGifsForSearch(userPubkey)
+  return all.slice(0, 50)
 }
 
-/** Search GIFs by query (same as fetchGifs with query). */
+/** Instant local search over the IndexedDB GIF cache (no relay round-trip). */
 export async function searchGifs(
   query: string,
   limit: number = 50,
-  forceRefresh: boolean = false,
-  extraReadRelayUrls: string[] = [],
+  _forceRefresh: boolean = false,
+  _extraReadRelayUrls: string[] = [],
   userPubkey: string | null = null
 ): Promise<GifMetadata[]> {
-  return fetchGifs(query, limit, forceRefresh, extraReadRelayUrls, userPubkey)
+  const q = query.trim()
+  if (!q) return getCachedGifs(userPubkey)
+  const pool = await getAllCachedGifsForSearch(userPubkey)
+  return pool.filter((g) => gifMetadataMatchesSearch(g, q)).slice(0, limit)
 }
