@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
 import { useFetchNip05 } from '@/hooks/useFetchNip05'
-import { toNoteList } from '@/lib/link'
+import { toProfileList } from '@/lib/link'
 import { SecondaryPageLink } from '@/PageManager'
 import { BadgeAlert, BadgeCheck } from 'lucide-react'
 import { Favicon } from '../Favicon'
@@ -48,7 +48,7 @@ export default function Nip05({
         <BadgeAlert className="text-muted-foreground" />
       )}
       <SecondaryPageLink
-        to={toNoteList({ domain: nip05Domain })}
+        to={toProfileList({ domain: nip05Domain })}
         className={`truncate text-sm hover:text-foreground hover:underline underline-offset-2 transition-colors ${nip05IsVerified ? 'text-primary' : 'text-muted-foreground'}`}
       >
         {nip05Domain}

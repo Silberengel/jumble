@@ -979,6 +979,7 @@ export default {
     Continue: 'Continue',
     'Successfully updated mute list': 'Successfully updated mute list',
     'No pubkeys found from {url}': 'No pubkeys found from {{url}}',
+    'No pubkeys found on NIP-05 domain': 'No pubkeys found on this NIP-05 domain',
     'Translating...': 'Translating...',
     Translate: 'Translate',
     'Show original': 'Show original',

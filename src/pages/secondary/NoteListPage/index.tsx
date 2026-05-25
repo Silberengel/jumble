@@ -1,4 +1,5 @@
 import { Favicon } from '@/components/Favicon'
+import Nip05DomainEmptyState from '@/components/Nip05DomainPanel/Nip05DomainEmptyState'
 import type { TNoteListRef } from '@/components/NoteList'
 import NormalFeed from '@/components/NormalFeed'
 import { RefreshButton } from '@/components/RefreshButton'
@@ -22,7 +23,7 @@ import {
   buildAlexandriaEventsUrlForHashtagParam
 } from '@/lib/alexandria-events-search-url'
 import { compareEventsForDTagQuery, eventMatchesDTagLooseQuery } from '@/lib/dtag-search'
-import { fetchPubkeysFromDomain, getWellKnownNip05Url } from '@/lib/nip05'
+import { fetchPubkeysFromDomain } from '@/lib/nip05'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useSecondaryPage } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -358,13 +359,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   let content: React.ReactNode = null
   if (data?.type === 'domain' && subRequests.length === 0) {
-    content = (
-      <div className="text-center w-full py-10">
-        <span className="text-muted-foreground">
-          {t('No pubkeys found from {url}', { url: getWellKnownNip05Url(data.domain) })}
-        </span>
-      </div>
-    )
+    content = <Nip05DomainEmptyState domain={data.domain} />
   } else if (data) {
     content =
       data.type === 'dtag' && data.dtag ? (

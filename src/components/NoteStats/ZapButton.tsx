@@ -228,7 +228,6 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     recipientPubkey: event.pubkey,
     referencedEvent: event,
     recipientPayment: recipientPaymentForZap,
-    onPostPaymentRequest: handlePostPaymentRequest,
     onZapDialogClose: () => setOpenPaymentDialog(false)
   })
 

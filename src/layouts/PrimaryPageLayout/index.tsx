@@ -11,6 +11,10 @@ import {
   isRadixDialogOpen,
   shouldIgnoreKeyboardShortcutEvent
 } from '@/lib/keyboard-shortcuts'
+import {
+  peekMobilePrimaryFeedScroll,
+  saveMobilePrimaryFeedScroll
+} from '@/lib/mobile-primary-feed-scroll'
 import { cn } from '@/lib/utils'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 
@@ -42,7 +46,6 @@ const PrimaryPageLayout = forwardRef(
   ) => {
     const scrollAreaRef = useRef<HTMLDivElement>(null)
     const smallScreenScrollAreaRef = useRef<HTMLDivElement>(null)
-    const smallScreenLastScrollTopRef = useRef(0)
     const { isSmallScreen } = useScreenSize()
     const { current, display, frozen } = usePrimaryPage()
     const savedScrollTopRef = useRef(0)
@@ -64,27 +67,25 @@ const PrimaryPageLayout = forwardRef(
     )
 
     useEffect(() => {
-      if (!isSmallScreen) return
+      if (!isSmallScreen || current !== pageName) return
 
-      const isVisible = () => {
-        return smallScreenScrollAreaRef.current?.checkVisibility
-          ? smallScreenScrollAreaRef.current?.checkVisibility()
-          : false
-      }
-
-      if (isVisible()) {
-        window.scrollTo({ top: smallScreenLastScrollTopRef.current, behavior: 'instant' })
-      }
       const handleScroll = () => {
-        if (isVisible()) {
-          smallScreenLastScrollTopRef.current = window.scrollY
-        }
+        saveMobilePrimaryFeedScroll(pageName, window.scrollY)
       }
-      window.addEventListener('scroll', handleScroll)
+      window.addEventListener('scroll', handleScroll, { passive: true })
       return () => {
+        handleScroll()
         window.removeEventListener('scroll', handleScroll)
       }
-    }, [current, isSmallScreen, display])
+    }, [current, isSmallScreen, pageName])
+
+    useEffect(() => {
+      if (!isSmallScreen || current !== pageName || !display) return
+      const top = peekMobilePrimaryFeedScroll(pageName)
+      requestAnimationFrame(() => {
+        window.scrollTo({ top, behavior: 'instant' })
+      })
+    }, [current, display, isSmallScreen, pageName])
 
     useEffect(() => {
       if (isSmallScreen) return

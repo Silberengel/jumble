@@ -1,6 +1,4 @@
 import { buildOrderedZapLightningAddresses } from '@/lib/merge-payment-methods'
-import { mergePostPaymentContext, type PostPaymentContext } from '@/lib/post-payment-context'
-import { buildPaytoUri } from '@/lib/payto'
 import { formatNpub, pubkeyToNpub } from '@/lib/pubkey'
 import { useNostr } from '@/providers/NostrProvider'
 import { useZap } from '@/providers/ZapProvider'
@@ -17,7 +15,6 @@ export function useNip57QuickZap(opts: {
   recipientPubkey: string
   referencedEvent?: NostrEvent
   recipientPayment: RecipientPaymentData
-  onPostPaymentRequest?: (context: PostPaymentContext) => void
   onZapDialogClose?: () => void
 }) {
   const { t } = useTranslation()
@@ -58,29 +55,13 @@ export function useNip57QuickZap(opts: {
       if (!pubkey) return
       try {
         setZapping(true)
-        const paymentDetails = {
-          amountMsat: defaultZapSats * 1000,
-          paytoUri: buildPaytoUri('lightning', lightningAddressOptions[0] ?? ''),
-          messageDraft: defaultZapComment.trim() || undefined
-        }
         const zapResult = await lightning.zap(
           pubkey,
           opts.referencedEvent ?? opts.recipientPubkey,
           defaultZapSats,
           defaultZapComment,
           opts.onZapDialogClose,
-          (result) => {
-            if (!result) return
-            opts.onPostPaymentRequest?.(
-              mergePostPaymentContext(
-                {
-                  recipientPubkey: opts.recipientPubkey,
-                  referencedEvent: opts.referencedEvent
-                },
-                paymentDetails
-              )
-            )
-          },
+          undefined,
           {
             address: lightningAddressOptions[0],
             candidates: lightningAddressOptions

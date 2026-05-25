@@ -348,7 +348,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           <div className="min-w-0 flex-1">{tabsElement}</div>
           <div
             ref={onFeedFilterTabRowSlotRef}
-            className="flex shrink-0 flex-col items-end justify-center self-center"
+            className="flex shrink-0 flex-col items-end self-start"
           />
         </div>
       )
@@ -375,7 +375,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
               <div className="min-w-0 flex-1">{tabsElement}</div>
               <div
                 ref={onFeedFilterTabRowSlotRef}
-                className="flex shrink-0 flex-col items-end justify-center self-center"
+                className="flex shrink-0 flex-col items-end self-start"
               />
             </div>
           </div>

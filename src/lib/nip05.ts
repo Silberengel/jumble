@@ -18,9 +18,12 @@ type TVerifyNip05Result = {
 }
 
 /** Bumps when verification rules change so LRU does not serve stale false negatives. */
-const VERIFY_CACHE_SCHEMA = 4
+const VERIFY_CACHE_SCHEMA = 5
 
-type WellKnownCacheEntry = { json: Record<string, unknown> | null }
+/** Bumps when well-known fetch/parse rules change so stale empty cache entries are not reused. */
+const WELL_KNOWN_CACHE_SCHEMA = 3
+
+type WellKnownCacheEntry = { json: Record<string, unknown> | null; schema: number }
 
 /** Per-domain `nostr.json` (or negative `null`) so feeds do not re-fetch every NIP-05 on the same host. */
 const wellKnownJsonByDomain = new LRUCache<string, WellKnownCacheEntry>({ max: 512 })
@@ -73,6 +76,86 @@ function pubkeyHexFromWellKnownNamesValue(v: unknown): string | null {
   return null
 }
 
+function npubFromHexPubkey(hex: string): string | null {
+  try {
+    return nip19.npubEncode(normalizeHexPubkey(hex))
+  } catch {
+    return null
+  }
+}
+
+export type TNip05NamePubkeyEntry = { name: string; pubkey: string }
+
+/**
+ * Parse one `names` row. Supports:
+ * - standard: `username` → hex or npub
+ * - inverted: hex or npub key → `username` label
+ */
+export function parseNip05NamePubkeyEntry(key: string, value: unknown): TNip05NamePubkeyEntry | null {
+  const hexFromValue = pubkeyHexFromWellKnownNamesValue(value)
+  if (hexFromValue) {
+    return { name: key, pubkey: hexFromValue }
+  }
+  const hexFromKey = pubkeyHexFromWellKnownNamesValue(key)
+  if (!hexFromKey) return null
+  const label = asNip05LookupString(value).trim()
+  if (!label || pubkeyHexFromWellKnownNamesValue(label)) return null
+  return { name: label, pubkey: hexFromKey }
+}
+
+function resolveNamesEntry(
+  names: Record<string, unknown>,
+  nip05Name: string,
+  userPubkeyHex?: string
+): TNip05NamePubkeyEntry | null {
+  const want = nip05Name.trim()
+  if (!want) return null
+
+  const direct = getNamesEntryRaw(names, want)
+  if (direct != null) {
+    const hex = pubkeyHexFromWellKnownNamesValue(direct)
+    if (hex) return { name: want, pubkey: hex }
+  }
+
+  for (const [key, v] of Object.entries(names)) {
+    const entry = parseNip05NamePubkeyEntry(key, v)
+    if (entry && entry.name.toLowerCase() === want.toLowerCase()) return entry
+  }
+
+  if (!userPubkeyHex || !isValidPubkey(userPubkeyHex)) return null
+  const user = normalizeHexPubkey(userPubkeyHex)
+  const userNpub = npubFromHexPubkey(user)
+  if (userNpub) {
+    for (const [key, v] of Object.entries(names)) {
+      if (key.toLowerCase() !== userNpub.toLowerCase()) continue
+      const entry = parseNip05NamePubkeyEntry(key, v)
+      if (entry && hexPubkeysEqual(entry.pubkey, user)) return entry
+      const hex = pubkeyHexFromWellKnownNamesValue(v)
+      if (hex && hexPubkeysEqual(hex, user)) return { name: want, pubkey: hex }
+    }
+  }
+
+  for (const [key, v] of Object.entries(names)) {
+    const entry = parseNip05NamePubkeyEntry(key, v)
+    if (entry && hexPubkeysEqual(entry.pubkey, user)) return entry
+  }
+
+  return null
+}
+
+function nip05LocalNameForPubkeyFromNames(
+  names: Record<string, unknown> | undefined,
+  userPubkeyHex: string
+): string | undefined {
+  if (!names || typeof names !== 'object') return undefined
+  const user = normalizeHexPubkey(userPubkeyHex)
+  for (const [key, v] of Object.entries(names)) {
+    const entry = parseNip05NamePubkeyEntry(key, v)
+    if (entry && hexPubkeysEqual(entry.pubkey, user)) return entry.name
+  }
+  return undefined
+}
+
 function getNamesEntryRaw(names: Record<string, unknown>, nip05Name: string): string | undefined {
   if (!nip05Name || typeof names !== 'object' || names == null) return undefined
   const asTrimmedString = (x: unknown): string | undefined =>
@@ -90,7 +173,8 @@ function pickRelayListForPubkey(
   relays: Record<string, unknown> | undefined,
   userPubkeyHex: string,
   listedRaw: string,
-  nip05LocalName: string
+  nip05LocalName: string,
+  names?: Record<string, unknown>
 ): unknown {
   if (!relays || typeof relays !== 'object') return undefined
   const user = normalizeHexPubkey(userPubkeyHex)
@@ -98,14 +182,13 @@ function pickRelayListForPubkey(
   keysToTry.add(user)
   keysToTry.add(userPubkeyHex.trim())
   keysToTry.add(listedRaw.trim())
+  const userNpub = npubFromHexPubkey(user)
+  if (userNpub) keysToTry.add(userNpub)
   const listedHex = pubkeyHexFromWellKnownNamesValue(listedRaw)
   if (listedHex) {
     keysToTry.add(listedHex)
-    try {
-      keysToTry.add(nip19.npubEncode(listedHex))
-    } catch {
-      /* ignore */
-    }
+    const listedNpub = npubFromHexPubkey(listedHex)
+    if (listedNpub) keysToTry.add(listedNpub)
   }
   for (const k of keysToTry) {
     if (!k) continue
@@ -118,8 +201,8 @@ function pickRelayListForPubkey(
       if (Array.isArray(v)) return v
     }
   }
-  /** Some hosts key `relays` by NIP-05 local part (non-standard); NIP recommends pubkey keys. */
-  const local = nip05LocalName.trim()
+  const local =
+    nip05LocalName.trim() || nip05LocalNameForPubkeyFromNames(names, userPubkeyHex) || ''
   if (local) {
     const want = local.toLowerCase()
     for (const k of Object.keys(relays)) {
@@ -157,14 +240,17 @@ async function _verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05
   const names = json.names as Record<string, unknown> | undefined
   if (!names || typeof names !== 'object') return result
 
-  const listedRaw = getNamesEntryRaw(names, nip05Name)
-  if (listedRaw == null) return result
-
-  const listedHex = pubkeyHexFromWellKnownNamesValue(listedRaw)
-  if (!listedHex || !hexPubkeysEqual(listedHex, userHex)) return result
+  const resolved = resolveNamesEntry(names, nip05Name, userHex)
+  if (!resolved || !hexPubkeysEqual(resolved.pubkey, userHex)) return result
 
   const relays = json.relays as Record<string, unknown> | undefined
-  const relayList = pickRelayListForPubkey(relays, userHex, listedRaw, nip05Name)
+  const relayList = pickRelayListForPubkey(
+    relays,
+    userHex,
+    resolved.pubkey,
+    resolved.name,
+    names
+  )
   return { ...result, isVerified: true, relays: Array.isArray(relayList) ? (relayList as string[]) : undefined }
 }
 
@@ -192,6 +278,64 @@ export function getWellKnownNip05Url(domain: string, name?: string): string {
   return url.toString()
 }
 
+function isWellKnownNostrJsonDocument(data: unknown): data is Record<string, unknown> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  const names = (data as Record<string, unknown>).names
+  return typeof names === 'object' && names != null && !Array.isArray(names)
+}
+
+async function readWellKnownNostrJsonResponse(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const data: unknown = await res.json()
+    return isWellKnownNostrJsonDocument(data) ? data : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchWellKnownNostrJsonDirect(targetUrl: string): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetchWithTimeout(targetUrl, {
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/nostr+json, application/json;q=0.9, text/plain;q=0.8, */*;q=0.1'
+      },
+      timeoutMs: 15_000,
+      mode: 'cors'
+    })
+    if (!res.ok) return null
+    return readWellKnownNostrJsonResponse(res)
+  } catch {
+    return null
+  }
+}
+
+async function fetchWellKnownNostrJsonViaProxy(
+  targetUrl: string,
+  proxyServer: string
+): Promise<Record<string, unknown> | null> {
+  const fetchUrl = buildViteProxySitesFetchUrl(targetUrl, proxyServer)
+  try {
+    const res = await fetchWithTimeout(fetchUrl, {
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/nostr+json, application/json;q=0.9, text/plain;q=0.8, */*;q=0.1'
+      },
+      timeoutMs: 15_000,
+      mode: 'cors'
+    })
+    if (!res.ok) {
+      if (!res.redirected) markSitesProxyUnavailableFromHttpStatus(res.status)
+      return null
+    }
+    const json = await readWellKnownNostrJsonResponse(res)
+    if (json) clearSitesProxyUnavailableThisSession()
+    return json
+  } catch {
+    return null
+  }
+}
+
 /**
  * Fetch `/.well-known/nostr.json` in the browser without tripping third-party CORS:
  * when `VITE_PROXY_SERVER` is set (production), use same-origin `/sites/?url=…` like OG preview.
@@ -203,26 +347,14 @@ async function fetchWellKnownNostrJsonOnce(
   const targetUrl = getWellKnownNip05Url(domain, nameInQuery)
   const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
   const useProxy = Boolean(proxyServer && !isSitesProxyUnavailableThisSession())
-  const fetchUrl = useProxy ? buildViteProxySitesFetchUrl(targetUrl, proxyServer!) : targetUrl
-  try {
-    const res = await fetchWithTimeout(fetchUrl, {
-      credentials: 'omit',
-      headers: {
-        Accept: 'application/nostr+json, application/json;q=0.9, text/plain;q=0.8, */*;q=0.1'
-      },
-      timeoutMs: 15_000
-    })
-    /** NIP-05: well-known MUST NOT redirect; following redirects can land on unrelated JSON. */
-    if (res.redirected || !res.ok) {
-      if (useProxy && !res.redirected) markSitesProxyUnavailableFromHttpStatus(res.status)
-      return null
-    }
-    if (useProxy) clearSitesProxyUnavailableThisSession()
-    const data: unknown = await res.json()
-    return data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null
-  } catch {
-    return null
+
+  if (useProxy) {
+    const viaProxy = await fetchWellKnownNostrJsonViaProxy(targetUrl, proxyServer!)
+    if (viaProxy) return viaProxy
+    return fetchWellKnownNostrJsonDirect(targetUrl)
   }
+
+  return fetchWellKnownNostrJsonDirect(targetUrl)
 }
 
 /** Uncached network: optional `?name=` then full document. */
@@ -234,13 +366,13 @@ async function fetchWellKnownNostrJsonNetwork(
   const withQuery =
     trimmedName.length > 0 ? await fetchWellKnownNostrJsonOnce(domain, trimmedName) : null
   if (withQuery && typeof withQuery.names === 'object' && withQuery.names != null) {
-    if (getNamesEntryRaw(withQuery.names as Record<string, unknown>, trimmedName) != null) {
+    if (resolveNamesEntry(withQuery.names as Record<string, unknown>, trimmedName) != null) {
       return withQuery
     }
   }
   const full = await fetchWellKnownNostrJsonOnce(domain, undefined)
   if (full && trimmedName && typeof full.names === 'object' && full.names != null) {
-    if (getNamesEntryRaw(full.names as Record<string, unknown>, trimmedName) != null) {
+    if (resolveNamesEntry(full.names as Record<string, unknown>, trimmedName) != null) {
       return full
     }
   }
@@ -254,13 +386,19 @@ async function getOrFetchWellKnownJsonForDomain(
   const key = normalizeNip05Domain(domain)
   if (!key) return null
   if (wellKnownJsonByDomain.has(key)) {
-    return wellKnownJsonByDomain.get(key)!.json
+    const cached = wellKnownJsonByDomain.get(key)!
+    if (cached.schema === WELL_KNOWN_CACHE_SCHEMA && cached.json && isWellKnownNostrJsonDocument(cached.json)) {
+      return cached.json
+    }
+    wellKnownJsonByDomain.delete(key)
   }
   let inflight = wellKnownDomainInFlight.get(key)
   if (!inflight) {
     inflight = fetchWellKnownNostrJsonNetwork(key, nameHint).then((json) => {
-      wellKnownJsonByDomain.set(key, { json })
       wellKnownDomainInFlight.delete(key)
+      if (isWellKnownNostrJsonDocument(json)) {
+        wellKnownJsonByDomain.set(key, { json, schema: WELL_KNOWN_CACHE_SCHEMA })
+      }
       return json
     })
     wellKnownDomainInFlight.set(key, inflight)
@@ -276,19 +414,36 @@ async function fetchWellKnownNostrJson(domain: string, name?: string): Promise<R
 }
 
 export async function fetchPubkeysFromDomain(domain: string): Promise<string[]> {
+  const entries = await fetchNip05NamePubkeysFromDomain(domain)
+  return entries.map((e) => e.pubkey)
+}
+
+export function parseNip05NamePubkeysFromWellKnownJson(
+  json: Record<string, unknown>
+): Array<{ name: string; pubkey: string }> {
+  const names = json.names as Record<string, unknown> | undefined
+  if (!names || typeof names !== 'object') return []
+  const out: Array<{ name: string; pubkey: string }> = []
+  const seen = new Set<string>()
+  for (const [key, v] of Object.entries(names)) {
+    const entry = parseNip05NamePubkeyEntry(key, v)
+    if (!entry || !isValidPubkey(entry.pubkey)) continue
+    const dedupe = `${entry.name}:${entry.pubkey}`
+    if (seen.has(dedupe)) continue
+    seen.add(dedupe)
+    out.push(entry)
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name))
+  return out
+}
+
+export async function fetchNip05NamePubkeysFromDomain(
+  domain: string
+): Promise<Array<{ name: string; pubkey: string }>> {
   try {
     const json = await fetchWellKnownNostrJson(domain)
     if (!json) return []
-    const pubkeySet = new Set<string>()
-    const out: string[] = []
-    for (const v of Object.values((json.names as Record<string, unknown>) || {})) {
-      const hex = pubkeyHexFromWellKnownNamesValue(v)
-      if (!hex || !isValidPubkey(hex)) continue
-      if (pubkeySet.has(hex)) continue
-      pubkeySet.add(hex)
-      out.push(hex)
-    }
-    return out
+    return parseNip05NamePubkeysFromWellKnownJson(json)
   } catch (error) {
     logger.error('Error fetching pubkeys from domain', { error, domain })
     return []

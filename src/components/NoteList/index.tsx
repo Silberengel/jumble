@@ -4407,31 +4407,32 @@ const NoteList = forwardRef(
     const useFeedFilterTabRowPortal =
       showFeedClientFilter && typeof feedClientFilterTabRowHost !== 'undefined'
 
-    const feedClientFilterPanelSurfaceClass =
+    const feedClientFilterPanelPortalMode =
       useFeedFilterTabRowPortal && feedClientFilterTabRowHost
-        ? 'mt-1 w-[min(100vw-1rem,28rem)] max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border border-border bg-background p-3 shadow-lg'
-        : 'space-y-3 border-t border-border/60 px-2 py-3'
+
+    const feedClientFilterPanelSurfaceClass = feedClientFilterPanelPortalMode
+      ? 'absolute top-full right-0 z-50 mt-1 w-[min(100vw-1rem,28rem)] max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border border-border bg-background p-3 shadow-lg'
+      : 'space-y-3 border-t border-border/60 px-2 py-3'
     const feedClientFilterSectionClass = 'space-y-2 rounded-md border border-border/60 bg-muted/25 p-2.5'
 
-    const feedClientFilterChrome = (
-      <>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-lg leading-none"
-            aria-expanded={feedClientFilterOpen}
-            aria-controls="feed-client-filter-panel"
-            aria-label={t('Feed filter')}
-            title={t('Feed filter')}
-            onClick={onToggleFeedClientFilterPanel}
-          >
-            <span aria-hidden>🔍</span>
-          </Button>
-        </div>
-        {feedClientFilterOpen ? (
-          <div id="feed-client-filter-panel" className={feedClientFilterPanelSurfaceClass}>
+    const feedClientFilterToggleButton = (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="shrink-0 text-lg leading-none"
+        aria-expanded={feedClientFilterOpen}
+        aria-controls="feed-client-filter-panel"
+        aria-label={t('Feed filter')}
+        title={t('Feed filter')}
+        onClick={onToggleFeedClientFilterPanel}
+      >
+        <span aria-hidden>🔍</span>
+      </Button>
+    )
+
+    const feedClientFilterPanel = feedClientFilterOpen ? (
+      <div id="feed-client-filter-panel" className={feedClientFilterPanelSurfaceClass}>
             <div className={feedClientFilterSectionClass}>
               <Label htmlFor="feed-client-search" className="text-sm font-medium">
                 {t('Search loaded posts')}
@@ -4560,19 +4561,25 @@ const NoteList = forwardRef(
             <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
               {t('Feed filter client-side hint')}
             </p>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <div className="flex flex-col gap-2 pt-0.5 sm:flex-row sm:flex-wrap sm:items-center">
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="h-8"
+                className="h-auto min-h-8 max-w-full whitespace-normal px-3 py-1.5 text-left sm:text-center"
                 disabled={feedFullSearchLoading}
                 onClick={() => void onPerformFeedFullSearch()}
               >
                 {feedFullSearchLoading ? t('Feed full search running') : t('Feed full search')}
               </Button>
               {feedFullSearchEvents !== null ? (
-                <Button type="button" variant="outline" size="sm" className="h-8" onClick={onClearFeedFullSearch}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-8 max-w-full whitespace-normal px-3 py-1.5 text-left sm:text-center"
+                  onClick={onClearFeedFullSearch}
+                >
                   {t('Feed full search clear')}
                 </Button>
               ) : null}
@@ -4581,7 +4588,17 @@ const NoteList = forwardRef(
               <p className="text-xs text-muted-foreground">{t('Feed full search active hint')}</p>
             ) : null}
           </div>
-        ) : null}
+    ) : null
+
+    const feedClientFilterChrome = feedClientFilterPanelPortalMode ? (
+      <div className="relative flex items-center gap-1">
+        {feedClientFilterToggleButton}
+        {feedClientFilterPanel}
+      </div>
+    ) : (
+      <>
+        <div className="flex items-center gap-1">{feedClientFilterToggleButton}</div>
+        {feedClientFilterPanel}
       </>
     )
 
@@ -4593,10 +4610,7 @@ const NoteList = forwardRef(
 
     const feedClientFilterBar =
       useFeedFilterTabRowPortal && feedClientFilterTabRowHost
-        ? createPortal(
-            <div className="flex flex-col items-end gap-0">{feedClientFilterChrome}</div>,
-            feedClientFilterTabRowHost
-          )
+        ? createPortal(feedClientFilterChrome, feedClientFilterTabRowHost)
         : useFeedFilterTabRowPortal && !feedClientFilterTabRowHost
           ? null
           : feedClientFilterBarEmbedded

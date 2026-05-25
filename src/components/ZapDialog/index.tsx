@@ -99,7 +99,6 @@ export default function ZapDialog({
     recipientPubkey: pubkey,
     referencedEvent: event,
     recipientPayment,
-    onPostPaymentRequest: openPostPaymentPrompt,
     onZapDialogClose: () => setOpen(false)
   })
 

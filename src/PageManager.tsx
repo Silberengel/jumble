@@ -7,6 +7,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
+import { captureMobilePrimaryFeedScrollFromWindow, peekMobilePrimaryFeedScroll } from '@/lib/mobile-primary-feed-scroll'
 import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
@@ -2033,6 +2034,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     noteStatsService.setBackgroundStatsPaused(true)
     client.interruptBackgroundQueries()
 
+    if (isSmallScreen && currentPrimaryPage) {
+      captureMobilePrimaryFeedScrollFromWindow(currentPrimaryPage)
+    }
+
     // Small screens render either the primary overlay OR the secondary stack — not both.
     // Clear overlays (e.g. full-screen note) so pushes from Seen-on, settings deep links, etc. show the target page.
     if (isSmallScreen && primaryNoteView) {
@@ -2108,6 +2113,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         })
       )
       currentTabStateRef.current.set(page, savedFeedState.tab)
+    }
+    if (isSmallScreen) {
+      const top = peekMobilePrimaryFeedScroll(page)
+      requestAnimationFrame(() => {
+        window.scrollTo({ top, behavior: 'instant' })
+      })
     }
   }
 
@@ -2223,7 +2234,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   popSecondaryPageRef.current = popSecondaryPage
 
   const mobileSecondaryPanelOpen =
-    isSmallScreen && secondaryStack.length > 0 && !primaryNoteView
+    isSmallScreen &&
+    secondaryStack.length > 0 &&
+    !primaryNoteView &&
+    !(drawerOpen && drawerNoteId)
   useMobileSwipeBackOnElement(mobileSecondaryPanelOpen ? mobileSecondarySwipeRoot : null, () =>
     popSecondaryPageRef.current()
   , {
@@ -2338,7 +2352,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               </div>
             ) : (
               <>
-                {secondaryStack.length > 0 ? (
+                {secondaryStack.length > 0 && !(drawerOpen && drawerNoteId) ? (
                   <div
                     ref={setMobileSecondarySwipeRoot}
                     className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"

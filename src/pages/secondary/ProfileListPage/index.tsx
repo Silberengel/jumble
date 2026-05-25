@@ -1,10 +1,9 @@
 import { Favicon } from '@/components/Favicon'
-import ProfileList from '@/components/ProfileList'
+import ProfileListByNip05Domain from '@/components/Nip05DomainPanel/ProfileListByNip05Domain'
 import { ProfileListBySearch } from '@/components/ProfileListBySearch'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
-import { fetchPubkeysFromDomain } from '@/lib/nip05'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -54,7 +53,7 @@ const ProfileListPage = forwardRef(({ index }: { index?: number }, ref) => {
       <ProfileListBySearch search={data.id} alexandriaEmptyHref={profileSearchAlexandriaHref} />
     )
   } else if (data?.type === 'domain') {
-    content = <ProfileListByDomain domain={data.id} />
+    content = <ProfileListByNip05Domain domain={data.id} />
   }
 
   return (
@@ -73,17 +72,3 @@ const ProfileListPage = forwardRef(({ index }: { index?: number }, ref) => {
 })
 ProfileListPage.displayName = 'ProfileListPage'
 export default ProfileListPage
-
-function ProfileListByDomain({ domain }: { domain: string }) {
-  const [pubkeys, setPubkeys] = useState<string[]>([])
-
-  useEffect(() => {
-    const init = async () => {
-      const _pubkeys = await fetchPubkeysFromDomain(domain)
-      setPubkeys(_pubkeys)
-    }
-    init()
-  }, [domain])
-
-  return <ProfileList pubkeys={pubkeys} />
-}
