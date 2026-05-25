@@ -96,13 +96,14 @@ export default function ZapDialog({
   }, [recipientPayment, senderPaytoTypes])
 
   const { canQuickNip57Zap, quickZapLabel, sendQuickZap, zapping } = useNip57QuickZap({
+    enabled: open,
     recipientPubkey: pubkey,
     referencedEvent: event,
     recipientPayment,
     onZapDialogClose: () => setOpen(false)
   })
 
-  const dialogTitle = t('Payment methods')
+  const dialogTitle = t('Leave a tip')
   const body =
     paymentGroups.length > 0 || canQuickNip57Zap ? (
       <>
@@ -116,14 +117,14 @@ export default function ZapDialog({
             referencedEvent={event}
             offerTipNoticeOnClose={false}
             onPostPaymentRequest={openPostPaymentPrompt}
-            title={t('Payment methods')}
+            title={t('Tip options')}
             className="rounded-lg border border-border bg-muted/40 p-3 min-w-0"
           />
         ) : null}
       </>
     ) : (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        {t('No payment methods available for this profile')}
+        {t('No payment targets on this profile')}
       </p>
     )
 

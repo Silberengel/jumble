@@ -6,12 +6,14 @@ import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { RecipientPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import { NostrEvent } from 'nostr-tools'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatSatsGrouped } from '@/lib/lightning'
 
 export function useNip57QuickZap(opts: {
+  /** Probe LNURL-pay only while the payment dialog is open (avoids feed-wide fetch storms). */
+  enabled?: boolean
   recipientPubkey: string
   referencedEvent?: NostrEvent
   recipientPayment: RecipientPaymentData
@@ -19,23 +21,55 @@ export function useNip57QuickZap(opts: {
 }) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
-  const { isWalletConnected, defaultZapSats, defaultZapComment } = useZap()
+  const { isWalletConnected, defaultZapSats, defaultZapComment, includePublicZapReceipt } = useZap()
   const [zapping, setZapping] = useState(false)
+  const enabled = opts.enabled ?? false
 
-  const lightningAddressOptions = useMemo(
+  const lightningAddressOptionsKey = useMemo(
     () =>
       buildOrderedZapLightningAddresses({
         profileEvent: opts.recipientPayment.profileEvent,
         profile: opts.recipientPayment.profile,
         paymentInfo: opts.recipientPayment.paymentInfo
-      }),
-    [opts.recipientPayment]
+      }).join('\u0001'),
+    [
+      opts.recipientPayment.profileEvent,
+      opts.recipientPayment.profile,
+      opts.recipientPayment.paymentInfo
+    ]
   )
 
+  const [nip57Addresses, setNip57Addresses] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    if (!enabled) {
+      setNip57Addresses(null)
+      return
+    }
+
+    let cancelled = false
+
+    if (!lightningAddressOptionsKey) {
+      setNip57Addresses([])
+      return
+    }
+
+    const candidates = lightningAddressOptionsKey.split('\u0001')
+    setNip57Addresses(null)
+    void lightning.filterNip57ZapEnabledAddresses(candidates).then((addrs) => {
+      if (!cancelled) setNip57Addresses(addrs)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, lightningAddressOptionsKey])
+
   const canQuickNip57Zap =
+    enabled &&
     isWalletConnected &&
     defaultZapSats >= 1 &&
-    lightningAddressOptions.length > 0 &&
+    nip57Addresses !== null &&
+    nip57Addresses.length > 0 &&
     !!pubkey &&
     pubkey !== opts.recipientPubkey
 
@@ -50,7 +84,7 @@ export function useNip57QuickZap(opts: {
   })
 
   const sendQuickZap = useCallback(() => {
-    if (!canQuickNip57Zap || zapping) return
+    if (!canQuickNip57Zap || zapping || !nip57Addresses?.length) return
     checkLogin(async () => {
       if (!pubkey) return
       try {
@@ -63,11 +97,18 @@ export function useNip57QuickZap(opts: {
           opts.onZapDialogClose,
           undefined,
           {
-            address: lightningAddressOptions[0],
-            candidates: lightningAddressOptions
+            address: nip57Addresses[0],
+            candidates: nip57Addresses
           }
         )
         if (!zapResult) return
+        if (includePublicZapReceipt && zapResult.zapReceipt === null) {
+          toast.warning(
+            t(
+              'Zap paid but no public receipt was published. The recipient may not use a NIP-57 zap wallet.'
+            )
+          )
+        }
         if (opts.referencedEvent) {
           noteStatsService.addZap(
             pubkey,
@@ -86,11 +127,12 @@ export function useNip57QuickZap(opts: {
   }, [
     canQuickNip57Zap,
     zapping,
+    nip57Addresses,
     checkLogin,
     pubkey,
     defaultZapSats,
     defaultZapComment,
-    lightningAddressOptions,
+    includePublicZapReceipt,
     opts,
     t
   ])

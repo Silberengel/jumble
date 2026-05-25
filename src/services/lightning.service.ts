@@ -31,7 +31,12 @@ import { TProfile } from '@/types'
 
 export type TRecentSupporter = { pubkey: string; amount: number; comment?: string }
 
-export type PaymentFlowResult = { preimage: string; invoice: string } | null
+export type PaymentFlowResult = {
+  preimage: string
+  invoice: string
+  /** Set when we waited for a kind 9735 receipt on relays (null = none seen in time). */
+  zapReceipt?: NostrEvent | null
+} | null
 
 /** LNURL-pay limits from the recipient’s `.well-known/lnurlp` metadata. */
 export type LnurlPayInvoiceOptions = {
@@ -49,8 +54,9 @@ class LightningService {
   private recentSupportersCache: TRecentSupporter[] | null = null
   private lnurlPayMetadataCache = new Map<
     string,
-    { fetchedAt: number; meta: NonNullable<Awaited<ReturnType<LightningService['resolveLnurlPayMetadata']>>> }
+    { fetchedAt: number; meta: Awaited<ReturnType<LightningService['resolveLnurlPayMetadata']>> }
   >()
+  private nip57EnabledAddressCache = new Map<string, { fetchedAt: number; addrs: string[] }>()
 
   constructor() {
     if (!LightningService.instance) {
@@ -141,7 +147,16 @@ class LightningService {
       try {
         const { preimage } = await sendWebLNPaymentWithRetry(this.provider, pr)
         closeOuterModel?.()
-        const result = { preimage, invoice: pr }
+        const zapReceipt =
+          relays.length > 0
+            ? await this.waitForZapReceipt({
+                recipient,
+                event,
+                invoice: pr,
+                relayUrls: relays
+              })
+            : undefined
+        const result: PaymentFlowResult = { preimage, invoice: pr, zapReceipt }
         onPaymentFlowComplete?.(result)
         return result
       } catch (error) {
@@ -156,19 +171,27 @@ class LightningService {
         closeModal()
         let checkPaymentInterval: ReturnType<typeof setInterval> | undefined
         let subCloser: SubCloser | undefined
-        const finish = (result: PaymentFlowResult) => {
+        const finish = async (result: PaymentFlowResult) => {
           clearInterval(checkPaymentInterval)
           subCloser?.close()
+          if (result && relays.length > 0 && result.zapReceipt === undefined) {
+            result.zapReceipt = await this.waitForZapReceipt({
+              recipient,
+              event,
+              invoice: result.invoice,
+              relayUrls: relays
+            })
+          }
           onPaymentFlowComplete?.(result)
           resolve(result)
         }
         const { setPaid } = launchPaymentModal({
           invoice: pr,
           onPaid: (response) => {
-            finish({ preimage: response.preimage, invoice: pr })
+            void finish({ preimage: response.preimage, invoice: pr })
           },
           onCancelled: () => {
-            finish(null)
+            void finish(null)
           }
         })
 
@@ -206,6 +229,67 @@ class LightningService {
               }
             }
           )
+        }
+      })
+    })
+  }
+
+  /** Lightning addresses whose LNURL-pay endpoint supports NIP-57 (`allowsNostr` + `nostrPubkey`). */
+  async filterNip57ZapEnabledAddresses(candidates: string[]): Promise<string[]> {
+    const key = candidates
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean)
+      .join('\u0001')
+    if (!key) return []
+
+    const cached = this.nip57EnabledAddressCache.get(key)
+    if (cached && Date.now() - cached.fetchedAt < 60_000) {
+      return cached.addrs
+    }
+
+    const enabled: string[] = []
+    for (const addr of candidates) {
+      const endpoint = await this.fetchLnurlPayZapEndpoint(addr)
+      if (endpoint) enabled.push(addr)
+    }
+    const addrs = prioritizeZapLightningAddress(enabled, candidates[0])
+    this.nip57EnabledAddressCache.set(key, { fetchedAt: Date.now(), addrs })
+    return addrs
+  }
+
+  private waitForZapReceipt(params: {
+    recipient: string
+    event?: NostrEvent
+    invoice: string
+    relayUrls: string[]
+    timeoutMs?: number
+  }): Promise<NostrEvent | null> {
+    const relayUrls = [...new Set([...params.relayUrls, ...FAST_READ_RELAY_URLS])].slice(0, 8)
+    if (relayUrls.length === 0) return Promise.resolve(null)
+
+    return new Promise((resolve) => {
+      let subCloser: SubCloser | undefined
+      const timeout = setTimeout(() => {
+        subCloser?.close()
+        resolve(null)
+      }, params.timeoutMs ?? 20_000)
+
+      const filter: Filter = {
+        kinds: [kinds.Zap],
+        '#p': [params.recipient],
+        since: dayjs().subtract(2, 'minute').unix()
+      }
+      if (params.event) {
+        filter['#e'] = [params.event.id]
+      }
+
+      subCloser = client.subscribe(relayUrls, filter, {
+        onevent: (evt) => {
+          const info = getZapInfoFromEvent(evt)
+          if (!info || info.invoice !== params.invoice) return
+          clearTimeout(timeout)
+          subCloser?.close()
+          resolve(evt)
         }
       })
     })
@@ -407,8 +491,15 @@ class LightningService {
   }> {
     const cacheKey = lightningAddress.trim().toLowerCase()
     const cached = this.lnurlPayMetadataCache.get(cacheKey)
-    if (cached && Date.now() - cached.fetchedAt < 30_000) {
+    if (cached && Date.now() - cached.fetchedAt < 60_000) {
       return cached.meta
+    }
+
+    const remember = (
+      meta: Awaited<ReturnType<LightningService['resolveLnurlPayMetadata']>>
+    ) => {
+      this.lnurlPayMetadataCache.set(cacheKey, { fetchedAt: Date.now(), meta })
+      return meta
     }
 
     try {
@@ -416,7 +507,7 @@ class LightningService {
 
       if (lightningAddress.includes('@')) {
         const [name, domain] = lightningAddress.split('@')
-        if (!name?.trim() || !domain?.trim()) return null
+        if (!name?.trim() || !domain?.trim()) return remember(null)
         lnurl = new URL(`/.well-known/lnurlp/${name}`, `https://${domain}`).toString()
       } else {
         const { words } = bech32.decode(lightningAddress as any, 1000)
@@ -432,7 +523,7 @@ class LightningService {
           lnurl,
           lightningAddress
         })
-        return null
+        return remember(null)
       }
 
       const text = await res.text()
@@ -452,10 +543,10 @@ class LightningService {
           lightningAddress,
           preview: text.slice(0, 160)
         })
-        return null
+        return remember(null)
       }
 
-      if (typeof body.callback !== 'string' || !body.callback) return null
+      if (typeof body.callback !== 'string' || !body.callback) return remember(null)
 
       const commentAllowed = parseLnurlCommentAllowed(body.commentAllowed)
 
@@ -468,8 +559,7 @@ class LightningService {
         minSendable: typeof body.minSendable === 'number' ? body.minSendable : undefined,
         maxSendable: typeof body.maxSendable === 'number' ? body.maxSendable : undefined
       }
-      this.lnurlPayMetadataCache.set(cacheKey, { fetchedAt: Date.now(), meta })
-      return meta
+      return remember(meta)
     } catch (err) {
       const failedFetch =
         err instanceof TypeError || (err instanceof Error && err.message === 'Failed to fetch')
@@ -481,7 +571,7 @@ class LightningService {
       })
     }
 
-    return null
+    return remember(null)
   }
 }
 

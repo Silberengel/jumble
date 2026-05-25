@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useRecipientPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import { useNostr } from '@/providers/NostrProvider'
-import { Zap } from 'lucide-react'
+import { Coins } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ZapDialog from '../ZapDialog'
@@ -22,7 +22,7 @@ export default function ProfileZapButton({
   const setOpen = setOpenZapDialog ?? setInternalOpen
   const recipientPayment = useRecipientPaymentData(pubkey, true)
 
-  const title = t('Payment methods')
+  const title = t('Leave a tip')
 
   return (
     <>
@@ -34,7 +34,7 @@ export default function ProfileZapButton({
         aria-label={title}
         onClick={() => checkLogin(() => setOpen(true))}
       >
-        <Zap className="text-yellow-400" />
+        <Coins className="text-yellow-400" />
       </Button>
       {!setOpenZapDialog && (
         <ZapDialog open={open} setOpen={setInternalOpen} pubkey={pubkey} prefetchedPayment={recipientPayment} />

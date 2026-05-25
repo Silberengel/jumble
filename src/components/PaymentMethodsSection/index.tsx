@@ -130,7 +130,7 @@ export default function PaymentMethodsSection({
   return (
     <div className={className}>
       <div className="text-xs font-semibold text-muted-foreground mb-2">
-        {title ?? t('Payment Methods')}
+        {title ?? t('Payment targets')}
       </div>
       <div className="space-y-3 min-w-0">
         <PaymentMethodGroupsList groups={preferredGroups} {...listProps} />

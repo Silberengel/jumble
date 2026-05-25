@@ -600,6 +600,7 @@ export default function Profile({
               <PaymentMethodsSection
                 groups={paymentMethodsByType}
                 recipientPubkey={pubkey}
+                title={t('Payment targets')}
                 className="mt-2 mb-4 p-3 pb-4 border rounded-lg bg-muted/50 min-w-0"
               />
             )}

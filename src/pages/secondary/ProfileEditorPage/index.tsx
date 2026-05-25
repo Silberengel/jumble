@@ -789,7 +789,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           </DialogHeader>
           <div className="flex-1 overflow-auto space-y-4 pb-6">
             <Item>
-              <Label className="text-muted-foreground">{t('Payment methods')}</Label>
+              <Label className="text-muted-foreground">{t('Payment targets')}</Label>
               <p className="text-xs text-muted-foreground">
                 {t('paytoEditor.intro', {
                   defaultValue:
@@ -833,7 +833,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
                   }
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {t('Add payment method')}
+                  {t('Add payment target')}
                 </Button>
               </div>
             </Item>

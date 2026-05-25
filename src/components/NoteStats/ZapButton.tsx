@@ -13,7 +13,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import client, { replaceableEventService } from '@/services/client.service'
 import type { TProfile } from '@/types'
 import { kinds, type Event } from 'nostr-tools'
-import { Zap } from 'lucide-react'
+import { Coins } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ZapDialog from '../ZapDialog'
@@ -217,7 +217,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
     setOpenPaymentDialog(true)
   }
 
-  const zapButtonTitle = disable ? t('Zaps') : t('Payment methods')
+  const zapButtonTitle = disable ? t('Tips') : t('Leave a tip')
 
   return (
     <>
@@ -233,9 +233,8 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
           disabled={disable}
           onClick={handleOpenPaymentMethods}
         >
-          <Zap
+          <Coins
             className={cn(
-              hasZapped && 'fill-yellow-400',
               disable
                 ? 'text-muted-foreground/40'
                 : cn(

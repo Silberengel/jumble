@@ -195,6 +195,11 @@ export default function LightningInvoiceSection({
         </p>
         <p className="break-all text-base font-medium leading-snug sm:text-lg">{lightningAddress}</p>
       </div>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {t(
+          'Plain Lightning payments do not create NIP-57 zap receipts on Nostr. Use the zap button when available.'
+        )}
+      </p>
 
       <div className="min-w-0 space-y-3">
         <Label htmlFor="ln-invoice-sats" className="text-sm font-medium text-muted-foreground sm:text-base">
