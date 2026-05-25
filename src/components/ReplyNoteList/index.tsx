@@ -68,9 +68,11 @@ import {
   buildVisibleBacklinkRows,
   EA_THREAD_TAIL_REFERENCE_KINDS,
   fetchPaymentAttestationsForRecipient,
+  hydrateThreadRepliesFromStats,
   isEaThreadTailBacklinkCandidate,
   isPollVoteKind,
   isWebThreadTailKind,
+  loadThreadRepliesFromLocalStores,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
   moveReportsToEndPreserveOrder,
   partitionAndSortBacklinkTail,
@@ -518,129 +520,56 @@ function ReplyNoteList({
   const replyRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  /** When stats saw a URL-thread reply on relays we didn't REQ in the reply list, fetch by id so count matches list. */
-  const rssStatsHydratedReplyIdsRef = useRef<Set<string>>(new Set())
+  /** When note-stats counted replies we did not REQ in the thread, fetch by id from archive/session. */
+  const statsHydratedReplyIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
-    rssStatsHydratedReplyIdsRef.current.clear()
+    statsHydratedReplyIdsRef.current.clear()
   }, [event.id])
 
   useEffect(() => {
-    if (event.kind !== ExtendedKind.RSS_THREAD_ROOT || rootInfo?.type !== 'I') return
+    if (!rootInfo) return
     const fromStats = noteStats?.replies
     if (!fromStats?.length) return
-
-    const urlKey = canonicalizeRssArticleUrl(rootInfo.id)
-    const inBucket = new Set((repliesMap.get(urlKey)?.events ?? []).map((e) => e.id))
-
-    const candidates = fromStats.filter(
-      (r) => !inBucket.has(r.id) && !rssStatsHydratedReplyIdsRef.current.has(r.id)
-    )
-    if (candidates.length === 0) return
-
-    let cancelled = false
-    ;(async () => {
-      const batch: NEvent[] = []
-      for (const { id } of candidates) {
-        rssStatsHydratedReplyIdsRef.current.add(id)
-        try {
-          const ev = await eventService.fetchEvent(id)
-          if (cancelled) return
-          if (ev && isRssArticleUrlThreadInteraction(ev, rootInfo.id)) {
-            batch.push(ev)
-          } else {
-            rssStatsHydratedReplyIdsRef.current.delete(id)
-          }
-        } catch {
-          rssStatsHydratedReplyIdsRef.current.delete(id)
-        }
-      }
-      if (!cancelled && batch.length > 0) {
-        const ok = batch.filter(
-          (e) =>
-            !shouldHideThreadResponseEvent(
-              e,
-              mutePubkeySet,
-              hideContentMentioningMutedUsers
-            )
-        )
-        if (ok.length > 0) addReplies(ok)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    event.kind,
-    event.id,
-    rootInfo,
-    noteStats?.replies,
-    noteStats?.updatedAt,
-    repliesMap,
-    addReplies,
-    mutePubkeySet,
-    hideContentMentioningMutedUsers
-  ])
-
-  /** When note-stats counted discussion replies we did not REQ in the thread, fetch by id (same idea as RSS threads). */
-  const discussionStatsHydratedReplyIdsRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    discussionStatsHydratedReplyIdsRef.current.clear()
-  }, [event.id])
-
-  useEffect(() => {
-    if (event.kind !== ExtendedKind.DISCUSSION || !rootInfo || rootInfo.type !== 'E') return
-    const fromStats = noteStats?.replies
-    if (!fromStats?.length) return
-    const threadRoot = rootInfo
 
     const candidates = fromStats.filter(
       (r) =>
         !replyIdPresentInRepliesMap(repliesMap, r.id) &&
-        !discussionStatsHydratedReplyIdsRef.current.has(r.id)
+        !statsHydratedReplyIdsRef.current.has(r.id)
     )
     if (candidates.length === 0) return
 
     let cancelled = false
     ;(async () => {
-      const batch: NEvent[] = []
+      for (const { id } of candidates) statsHydratedReplyIdsRef.current.add(id)
+      const batch = await hydrateThreadRepliesFromStats(
+        candidates,
+        rootInfo,
+        event,
+        isDiscussionRoot
+      )
+      if (cancelled) return
       for (const { id } of candidates) {
-        discussionStatsHydratedReplyIdsRef.current.add(id)
-        try {
-          const ev = await eventService.fetchEvent(id)
-          if (cancelled) return
-          if (ev && replyMatchesThreadForList(ev, event, threadRoot, true) && !isPollVoteKind(ev)) {
-            batch.push(ev)
-          } else {
-            discussionStatsHydratedReplyIdsRef.current.delete(id)
-          }
-        } catch {
-          discussionStatsHydratedReplyIdsRef.current.delete(id)
-        }
+        if (!batch.some((e) => e.id === id)) statsHydratedReplyIdsRef.current.delete(id)
       }
-      if (!cancelled && batch.length > 0) {
-        const ok = batch.filter(
-          (e) =>
-            !shouldHideThreadResponseEvent(
-              e,
-              mutePubkeySet,
-              hideContentMentioningMutedUsers
-            )
-        )
-        if (ok.length > 0) addReplies(ok)
-      }
+      const ok = batch.filter(
+        (e) =>
+          !shouldHideThreadResponseEvent(
+            e,
+            mutePubkeySet,
+            hideContentMentioningMutedUsers
+          )
+      )
+      if (ok.length > 0) addReplies(ok)
     })()
 
     return () => {
       cancelled = true
     }
   }, [
-    event.kind,
-    event.id,
     event,
     rootInfo,
+    isDiscussionRoot,
     noteStats?.replies,
     noteStats?.updatedAt,
     repliesMap,
@@ -724,6 +653,24 @@ function ReplyNoteList({
         setLoading(false)
       } else {
         setLoading(true)
+      }
+
+      try {
+        const localRows = await loadThreadRepliesFromLocalStores(
+          rootInfo,
+          event,
+          isDiscussionRoot,
+          mutePubkeySet,
+          hideContentMentioningMutedUsers
+        )
+        if (fetchGeneration !== replyFetchGenRef.current) return
+        if (localRows.length > 0) {
+          addReplies(localRows)
+          discussionFeedCache.setCachedReplies(rootInfo, localRows)
+          setLoading(false)
+        }
+      } catch (e) {
+        logger.debug('[ReplyNoteList] Local thread load failed', e)
       }
 
       // Always refetch soon so relays fill gaps; no artificial delay (was 2s and caused empty threads)

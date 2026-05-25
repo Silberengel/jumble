@@ -3,6 +3,7 @@ import { LIVE_ACTIVITIES_SLIDE_INTERVAL_MS } from '@/lib/live-activities'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSmartNoteNavigation } from '@/PageManager'
+import { useSecondaryPageOptional } from '@/contexts/secondary-page-context'
 import { useLiveActivitiesOptional } from '@/providers/useLiveActivities'
 import { useUserPreferencesOptional } from '@/providers/UserPreferencesProvider'
 import { ExternalLink } from 'lucide-react'
@@ -18,6 +19,7 @@ const SWIPE_NOTE_OPEN_SUPPRESS_MS = 400
 export default function LiveActivitiesStrip({ placement }: { placement: TPlacement }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
+  const secondaryPage = useSecondaryPageOptional()
   const userPrefs = useUserPreferencesOptional()
   const showLiveActivitiesBanner =
     userPrefs?.showLiveActivitiesBanner ?? storage.getShowLiveActivitiesBanner()
@@ -116,7 +118,7 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
     navigateToNote(toNote(ev), ev)
   }, [navigateToNote, itemAtSlide])
 
-  if (!showLiveActivitiesBanner || items.length === 0) {
+  if (!showLiveActivitiesBanner || items.length === 0 || secondaryPage?.isSidePanelOpen) {
     return null
   }
 

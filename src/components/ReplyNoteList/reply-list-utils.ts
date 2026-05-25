@@ -1,4 +1,19 @@
+import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
+import { isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
+import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
+import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
+import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
+import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
+import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
+import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
+import noteStatsService from '@/services/note-stats.service'
+import client, { eventService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
+import type { TSubRequestFilter } from '@/types'
+import { Filter, Event as NEvent, kinds } from 'nostr-tools'
+import type { TFunction } from 'i18next'
 import type { TRootInfo } from './types'
+import { THREAD_REPLY_LIMIT } from './types'
 
 export type { TRootInfo } from './types'
 export {
@@ -9,17 +24,81 @@ export {
   THREAD_PROFILE_CHUNK
 } from './types'
 
-import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
-import { isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
-import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
-import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
-import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
-import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
-import noteStatsService from '@/services/note-stats.service'
-import client from '@/services/client.service'
-import type { TSubRequestFilter } from '@/types'
-import { Filter, Event as NEvent, kinds } from 'nostr-tools'
-import type { TFunction } from 'i18next'
+/** Session LRU + publication store + archive: paint thread replies before relay round-trip. */
+export async function loadThreadRepliesFromLocalStores(
+  rootInfo: TRootInfo,
+  opEvent: NEvent,
+  isDiscussionRoot: boolean,
+  mutePubkeySet: Set<string>,
+  hideContentMentioningMutedUsers: boolean | undefined
+): Promise<NEvent[]> {
+  const filters = buildThreadInteractionFilters({
+    root: rootInfo,
+    opEventKind: opEvent.kind,
+    limit: THREAD_REPLY_LIMIT
+  })
+  if (!filters.length) return []
+
+  let local: NEvent[] = []
+  try {
+    local = await client.getLocalFeedEvents(
+      filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
+      { maxMatches: THREAD_REPLY_LIMIT, maxRowsScanned: 28_000 }
+    )
+  } catch {
+    return []
+  }
+
+  const threadWalk = new Map(local.map((e) => [e.id.toLowerCase(), e] as const))
+  return local.filter((evt) => {
+    if (isPollVoteKind(evt)) return false
+    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) return false
+    if (rootInfo.type === 'I') {
+      return isRssArticleUrlThreadInteraction(evt, rootInfo.id)
+    }
+    return replyMatchesThreadForList(evt, opEvent, rootInfo, isDiscussionRoot, threadWalk)
+  })
+}
+
+/** Resolve reply ids from note-stats via archive + session fetch, then thread-match filter. */
+export async function hydrateThreadRepliesFromStats(
+  candidates: ReadonlyArray<{ id: string }>,
+  rootInfo: TRootInfo,
+  opEvent: NEvent,
+  isDiscussionRoot: boolean
+): Promise<NEvent[]> {
+  if (!candidates.length) return []
+
+  const ids = candidates.map((c) => c.id)
+  const byId = new Map<string, NEvent>()
+  try {
+    const archived = await indexedDb.getArchivedEventsByIds(ids)
+    for (const e of archived) byId.set(e.id, e)
+  } catch {
+    /* optional */
+  }
+  for (const id of ids) {
+    if (byId.has(id)) continue
+    try {
+      const ev = await eventService.fetchEvent(id)
+      if (ev) byId.set(ev.id, ev)
+    } catch {
+      /* optional */
+    }
+  }
+
+  const batch: NEvent[] = []
+  for (const ev of byId.values()) {
+    if (isPollVoteKind(ev)) continue
+    if (rootInfo.type === 'I') {
+      if (!isRssArticleUrlThreadInteraction(ev, rootInfo.id)) continue
+    } else if (!replyMatchesThreadForList(ev, opEvent, rootInfo, isDiscussionRoot)) {
+      continue
+    }
+    batch.push(ev)
+  }
+  return batch
+}
 
 export async function fetchPaymentAttestationsForRecipient(
   recipientPubkey: string,

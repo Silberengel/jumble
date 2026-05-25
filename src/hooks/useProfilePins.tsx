@@ -9,6 +9,7 @@ import {
   METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
+import { PIN_LIST_UPDATED_EVENT, type PinListUpdatedDetail } from '@/lib/pin-list-events'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -296,6 +297,41 @@ export function useProfilePins(pubkey: string | undefined) {
       return
     }
     void loadPins(false)
+  }, [pubkey, loadPins])
+
+  useEffect(() => {
+    if (!pubkey) return
+
+    const handler = (raw: globalThis.Event) => {
+      const detail = (raw as CustomEvent<PinListUpdatedDetail>).detail
+      if (!detail) return
+      let profilePk: string
+      try {
+        profilePk = normalizeHexPubkey(pubkey).toLowerCase()
+      } catch {
+        return
+      }
+      if (detail.ownerPubkey !== profilePk) return
+
+      const cacheKey = `${pubkey}-pins-profile`
+      pinsCache.delete(cacheKey)
+
+      if (detail.toggledEvent && detail.pinned === false) {
+        const removedId = detail.toggledEvent.id.toLowerCase()
+        setPinEvents((prev) => {
+          const next = prev.filter((ev) => ev.id.toLowerCase() !== removedId)
+          if (next.length > 0) {
+            pinsCache.set(cacheKey, { events: next, lastUpdated: Date.now() })
+          }
+          return next
+        })
+      } else {
+        void loadPins(true)
+      }
+    }
+
+    window.addEventListener(PIN_LIST_UPDATED_EVENT, handler)
+    return () => window.removeEventListener(PIN_LIST_UPDATED_EVENT, handler)
   }, [pubkey, loadPins])
 
   const refreshPins = useCallback(() => {

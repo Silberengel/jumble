@@ -13,8 +13,8 @@ export type PrimaryPageContextValue = {
   /** Props passed to the current primary page (e.g. `{ spell: 'discussions' }` for spells). */
   currentPageProps: object | undefined
   /**
-   * False while a note drawer, secondary page, or mobile overlay covers the feed (primary unmounted).
-   * True on desktop double-pane so the left column stays visible (but {@link frozen} pauses it).
+   * False while a full-screen mobile overlay or note drawer covers the feed (primary unmounted).
+   * True on desktop double-pane and when mobile secondary pages overlay the frozen feed.
    */
   display: boolean
   /**

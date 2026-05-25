@@ -5,6 +5,7 @@ import {
   fetchNewestPinListForPubkey,
   isEventInPinList
 } from '@/lib/replaceable-list-latest'
+import { dispatchPinListUpdated } from '@/lib/pin-list-events'
 import { decodePersonalListBech32Ref } from '@/lib/personal-list-mutations'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -53,6 +54,11 @@ export function useRemovePinListEntry(onSuccess?: () => void) {
         { specifiedRelayUrls: comprehensiveRelays }
       )
       await indexedDb.putReplaceableEvent(published as Event)
+      dispatchPinListUpdated({
+        ownerPubkey: pubkey,
+        toggledEvent: loadedEvent ?? undefined,
+        pinned: false
+      })
       onSuccess?.()
       return true
     },

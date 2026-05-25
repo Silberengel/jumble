@@ -7,7 +7,10 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
-import { captureMobilePrimaryFeedScrollFromWindow, peekMobilePrimaryFeedScroll } from '@/lib/mobile-primary-feed-scroll'
+import {
+  captureMobilePrimaryFeedScrollFromWindow,
+  peekMobilePrimaryFeedScroll
+} from '@/lib/mobile-primary-feed-scroll'
 import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
 import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
@@ -68,7 +71,7 @@ import {
   usePrimaryNoteViewOptional,
   type TPrimaryOverlayViewType
 } from '@/contexts/primary-note-view-context'
-import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional } from '@/contexts/secondary-page-context'
+import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional, type SecondaryPageContextValue } from '@/contexts/secondary-page-context'
 
 /** Survives React StrictMode remount so initial URL → secondary stack is not built twice. */
 let historyLocationSeedApplied = false
@@ -2033,14 +2036,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     recentSecondaryPushRef.current = { url, at: now }
 
     noteStatsService.setBackgroundStatsPaused(true)
-    client.interruptBackgroundQueries()
+    if (!isSmallScreen) {
+      client.interruptBackgroundQueries()
+    }
 
     if (isSmallScreen && currentPrimaryPage) {
       captureMobilePrimaryFeedScrollFromWindow(currentPrimaryPage)
     }
 
-    // Small screens render either the primary overlay OR the secondary stack — not both.
-    // Clear overlays (e.g. full-screen note) so pushes from Seen-on, settings deep links, etc. show the target page.
+    // Small screens overlay the frozen feed; clear full-screen primary overlays so the secondary page shows.
     if (isSmallScreen && primaryNoteView) {
       setPrimaryNoteView(null)
     }
@@ -2119,6 +2123,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       const top = peekMobilePrimaryFeedScroll(page)
       requestAnimationFrame(() => {
         window.scrollTo({ top, behavior: 'instant' })
+        requestAnimationFrame(() => {
+          window.scrollTo({ top, behavior: 'instant' })
+        })
       })
     }
   }
@@ -2256,34 +2263,60 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   const primaryFrozen = primaryObscured
 
+  /** Mobile secondary pages overlay the feed instead of unmounting it (preserves scroll + timeline). */
+  const mobileSecondaryOverlaysFeed =
+    isSmallScreen && secondaryStack.length > 0 && primaryNoteView == null
+
   useLayoutEffect(() => {
     noteStatsService.setBackgroundStatsPaused(primaryFrozen)
     if (primaryFrozen) {
       extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
-      // Double-pane: keep the left feed's in-flight REQ alive; interrupt only when primary is hidden.
-      if (isSmallScreen || panelMode === 'single') {
+      // Keep in-flight REQ on double-pane and mobile feed overlay; interrupt only when primary is unmounted.
+      const shouldInterrupt = isSmallScreen ? primaryNoteView != null : panelMode === 'single'
+      if (shouldInterrupt) {
         client.interruptBackgroundQueries()
       }
     }
-  }, [primaryFrozen, isSmallScreen, panelMode])
+  }, [primaryFrozen, isSmallScreen, panelMode, primaryNoteView])
 
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({
       navigate: navigatePrimaryPageStable,
       current: currentPrimaryPage,
       currentPageProps,
-      /** Double-pane keeps the feed visible (frozen); single-pane / mobile unmount primary while a panel is open. */
-      display: panelMode === 'double' || !primaryObscured,
+      /** Double-pane and mobile secondary overlay keep the feed mounted (frozen); full-screen mobile overlays unmount it. */
+      display: panelMode === 'double' || !primaryObscured || mobileSecondaryOverlaysFeed,
       frozen: primaryFrozen
     }),
     [
       navigatePrimaryPageStable,
       currentPrimaryPage,
       currentPageProps,
-      isSmallScreen,
       panelMode,
       primaryObscured,
-      primaryFrozen
+      primaryFrozen,
+      mobileSecondaryOverlaysFeed
+    ]
+  )
+
+  const isSidePanelOpen = secondaryStack.length > 0 || drawerOpen
+
+  const secondaryPageContextValue = useMemo(
+    (): SecondaryPageContextValue => ({
+      push: pushSecondaryPage,
+      pop: popSecondaryPage,
+      currentIndex: secondaryStack.length
+        ? secondaryStack[secondaryStack.length - 1].index
+        : 0,
+      navigateToPrimaryPage: navigatePrimaryPageStable,
+      isSidePanelOpen
+    }),
+    [
+      pushSecondaryPage,
+      popSecondaryPage,
+      secondaryStack,
+      navigatePrimaryPageStable,
+      isSidePanelOpen
     ]
   )
 
@@ -2291,16 +2324,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     <PrimaryPageContext.Provider value={primaryPageContextValue}>
       {isSmallScreen ? (
         <KeyboardShortcutsHelpProvider>
-        <SecondaryPageContext.Provider
-          value={{
-            push: pushSecondaryPage,
-            pop: popSecondaryPage,
-            currentIndex: secondaryStack.length
-              ? secondaryStack[secondaryStack.length - 1].index
-              : 0,
-            navigateToPrimaryPage: navigatePrimaryPageStable
-          }}
-        >
+        <SecondaryPageContext.Provider value={secondaryPageContextValue}>
         <CurrentRelaysProvider>
             <PrimaryNoteViewContext.Provider
               value={{
@@ -2350,17 +2374,21 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               </div>
             ) : (
               <>
+                <div
+                  className={cn(
+                    'block h-full min-h-0 min-w-0',
+                    secondaryStack.length > 0 && 'hidden'
+                  )}
+                  aria-hidden={secondaryStack.length > 0}
+                >
+                  {renderActivePrimaryPageContent(primaryPages, currentPrimaryPage)}
+                </div>
                 {secondaryStack.length > 0 ? (
                   <div
                     ref={setMobileSecondarySwipeRoot}
-                    className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
+                    className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y bg-background"
                   >
                     <TopSecondaryStackPane item={secondaryStack[secondaryStack.length - 1]!} />
-                  </div>
-                ) : null}
-                {secondaryStack.length === 0 ? (
-                  <div className="block h-full min-h-0 min-w-0">
-                    {renderActivePrimaryPageContent(primaryPages, currentPrimaryPage)}
                   </div>
                 ) : null}
               </>
@@ -2382,14 +2410,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         </KeyboardShortcutsHelpProvider>
       ) : (
       <KeyboardShortcutsHelpProvider>
-      <SecondaryPageContext.Provider
-        value={{
-          push: pushSecondaryPage,
-          pop: popSecondaryPage,
-          currentIndex: secondaryStack.length ? secondaryStack[secondaryStack.length - 1].index : 0,
-          navigateToPrimaryPage: navigatePrimaryPageStable
-        }}
-      >
+      <SecondaryPageContext.Provider value={secondaryPageContextValue}>
         <CurrentRelaysProvider>
             <PrimaryNoteViewContext.Provider
               value={{

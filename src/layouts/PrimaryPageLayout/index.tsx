@@ -61,7 +61,7 @@ const PrimaryPageLayout = forwardRef(
     )
 
     useEffect(() => {
-      if (!isSmallScreen || current !== pageName) return
+      if (!isSmallScreen || current !== pageName || frozen) return
 
       const handleScroll = () => {
         saveMobilePrimaryFeedScroll(pageName, window.scrollY)
@@ -71,7 +71,7 @@ const PrimaryPageLayout = forwardRef(
         handleScroll()
         window.removeEventListener('scroll', handleScroll)
       }
-    }, [current, isSmallScreen, pageName])
+    }, [current, frozen, isSmallScreen, pageName])
 
     useEffect(() => {
       if (!isSmallScreen || current !== pageName || !display) return
@@ -125,7 +125,7 @@ const PrimaryPageLayout = forwardRef(
 
     if (isSmallScreen) {
       return (
-        <DeepBrowsingProvider active={current === pageName && display}>
+        <DeepBrowsingProvider active={current === pageName && display && !frozen}>
           <div
             ref={smallScreenScrollAreaRef}
             className="min-w-0 w-full overflow-x-hidden"

@@ -12,6 +12,8 @@ export type SecondaryPageContextValue = {
   pop: () => void
   currentIndex: number
   navigateToPrimaryPage: (page: TPrimaryPageName, props?: object) => void
+  /** True when a secondary panel (stack or note drawer) is showing content. */
+  isSidePanelOpen: boolean
 }
 
 export const SecondaryPageContext = createContext<SecondaryPageContextValue | undefined>(undefined)

@@ -19,10 +19,16 @@ import {
 } from '@/lib/note-translation-display'
 import { speakNoteReadAloud } from '@/lib/read-aloud'
 import {
+  dispatchPinListUpdated,
+  PIN_LIST_UPDATED_EVENT,
+  type PinListUpdatedDetail
+} from '@/lib/pin-list-events'
+import {
   buildPinListTagsAfterToggle,
   fetchNewestPinListForPubkey,
   isEventInPinList
 } from '@/lib/replaceable-list-latest'
+import indexedDb from '@/services/indexed-db.service'
 import { generateBech32IdFromATag } from '@/lib/tag'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -133,7 +139,7 @@ export function useMenuActions({
   onOpenPublicMessage,
   onOpenCallInvite,
   onOpenEditOrClone,
-  pinned: pinnedInFeed = false,
+  pinned: _pinnedInFeed = false,
   onViewAttestation
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
@@ -205,8 +211,8 @@ export function useMenuActions({
     }
   }, [])
 
-  // Check if event is pinned (feed hint avoids "Pin note" on rows already shown as pinned)
-  const [isPinned, setIsPinned] = useState(pinnedInFeed)
+  // Whether this note is on the signed-in user's kind 10001 pin list (not profile-owner pins).
+  const [isPinnedInMyList, setIsPinnedInMyList] = useState(false)
 
   // Keep refs so the effect can read the latest relay lists without making them
   // part of the dependency array.  Including live array references as deps causes
@@ -220,7 +226,7 @@ export function useMenuActions({
   useEffect(() => {
     const checkIfPinned = async () => {
       if (!pubkey) {
-        setIsPinned(false)
+        setIsPinnedInMyList(false)
         return
       }
       try {
@@ -234,17 +240,31 @@ export function useMenuActions({
         )
         const pinListEvent = await fetchNewestPinListForPubkey(pubkey, comprehensiveRelays)
         const inList = pinListEvent ? isEventInPinList(pinListEvent, event) : false
-        setIsPinned(inList || pinnedInFeed)
+        setIsPinnedInMyList(inList)
       } catch (error) {
         logger.component('PinStatus', 'Error checking pin status', { error: (error as Error).message })
-        setIsPinned(pinnedInFeed)
+        setIsPinnedInMyList(false)
       }
     }
     checkIfPinned()
     // Only re-run when the user or the specific event changes, not on relay list
     // reference churn (relay arrays are read via refs above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pubkey, event.id, pinnedInFeed])
+  }, [pubkey, event.id])
+
+  useEffect(() => {
+    if (!pubkey) return
+    const ownerPk = pubkey.trim().toLowerCase()
+    const handler = (raw: globalThis.Event) => {
+      const detail = (raw as CustomEvent<PinListUpdatedDetail>).detail
+      if (!detail || detail.ownerPubkey !== ownerPk) return
+      if (detail.toggledEvent?.id === event.id) {
+        setIsPinnedInMyList(detail.pinned ?? false)
+      }
+    }
+    window.addEventListener(PIN_LIST_UPDATED_EVENT, handler)
+    return () => window.removeEventListener(PIN_LIST_UPDATED_EVENT, handler)
+  }, [pubkey, event.id])
   
   const handlePinNote = async () => {
     if (!pubkey) return
@@ -262,8 +282,8 @@ export function useMenuActions({
 
       logger.component('PinNote', 'Current pin list event', { hasEvent: !!latestPinList })
 
-      const newTags = buildPinListTagsAfterToggle(latestPinList ?? null, event, !isPinned)
-      const successMessage = isPinned ? t('Note unpinned') : t('Note pinned')
+      const newTags = buildPinListTagsAfterToggle(latestPinList ?? null, event, !isPinnedInMyList)
+      const successMessage = isPinnedInMyList ? t('Note unpinned') : t('Note pinned')
       logger.component('PinNote', 'Pin list tag count after merge', { count: newTags.length })
 
       const publishRelays = Array.from(
@@ -307,8 +327,15 @@ export function useMenuActions({
         toast.success(successMessage)
       }
       
-      // Update local state - the publish will update the cache automatically
-      setIsPinned(!isPinned)
+      try {
+        await indexedDb.putReplaceableEvent(publishedEvent as import('nostr-tools').Event)
+      } catch {
+        /* ignore */
+      }
+
+      const nowPinned = !isPinnedInMyList
+      dispatchPinListUpdated({ ownerPubkey: pubkey, toggledEvent: event, pinned: nowPinned })
+      setIsPinnedInMyList(nowPinned)
       closeDrawer()
     } catch (error) {
       logger.component('PinNote', 'Error pinning/unpinning note', { error: (error as Error).message })
@@ -1220,11 +1247,11 @@ export function useMenuActions({
       }
     }
 
-    // Pin functionality available for any note (not just own notes)
+    // Pin / unpin only against the signed-in user's list (not another profile's pinned section).
     if (pubkey) {
       actions.push({
         icon: Pin,
-        label: isPinned ? t('Unpin note') : t('Pin note'),
+        label: isPinnedInMyList ? t('Unpin note') : t('Pin note'),
         onClick: () => {
           handlePinNote()
         },
@@ -1261,7 +1288,7 @@ export function useMenuActions({
     mutePubkeyPublicly,
     unmutePubkey,
     attemptDelete,
-    isPinned,
+    isPinnedInMyList,
     handlePinNote,
     isArticleType,
     articleMetadata,

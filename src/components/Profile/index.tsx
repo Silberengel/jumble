@@ -330,14 +330,15 @@ export default function Profile({
     return (
       <>
         <div>
-          <div className="relative isolate mb-2 bg-cover bg-center">
+          <div className="relative isolate bg-cover bg-center">
             <Skeleton className="relative z-0 w-full aspect-[3/1] rounded-none" />
             <Skeleton className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 rounded-full border-4 border-background md:h-48 md:w-48" />
           </div>
+          <div className="h-12 md:h-24" aria-hidden />
         </div>
         <div className="px-4">
-          <Skeleton className="h-5 w-28 mt-14 md:mt-28 mb-1 md:ml-56" />
-          <Skeleton className="h-5 w-56 mt-2 my-1 rounded-full md:ml-56" />
+          <Skeleton className="h-5 w-28 mt-2 mb-1" />
+          <Skeleton className="h-5 w-56 mt-2 my-1 rounded-full" />
         </div>
         <div className="px-4 pt-4 flex items-center justify-center">
           <div className="text-sm text-muted-foreground">
@@ -363,7 +364,7 @@ export default function Profile({
   return (
     <>
       <div>
-        <div className="relative isolate mb-2 bg-cover bg-center">
+        <div className="relative isolate bg-cover bg-center">
           {/* Banner first in paint order; avatar uses higher z-index so it always sits on top. fetchPriority still prefers the pic over the banner. */}
           <ProfileBanner
             banner={banner}
@@ -372,7 +373,7 @@ export default function Profile({
             imageFetchPriority="low"
           />
           {isVideo(avatar ?? '') ? (
-            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:h-48 md:w-48">
+            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:left-4 md:h-48 md:w-48">
               <div className="relative h-full w-full">
                 <div className="h-full w-full overflow-hidden rounded-full border-4 border-background bg-muted">
                   <video
@@ -391,7 +392,7 @@ export default function Profile({
               </div>
             </div>
           ) : (
-            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:h-48 md:w-48">
+            <div className="absolute bottom-0 left-3 z-20 h-24 w-24 translate-y-1/2 md:left-4 md:h-48 md:w-48">
               <div className="relative h-full w-full">
                 <Avatar className="h-full w-full border-4 border-background">
                   <AvatarImage
@@ -411,6 +412,8 @@ export default function Profile({
             </div>
           )}
         </div>
+        {/* Below banner only: room for avatar half that extends past the banner edge */}
+        <div className="h-12 md:h-24" aria-hidden />
         <div className="px-4">
           <div className="flex flex-wrap justify-end gap-2 items-center min-w-0">
             <ProfileOptions
@@ -535,7 +538,7 @@ export default function Profile({
               </>
             ) : null}
           </div>
-          <div className="pt-2 pb-4 md:pl-56">
+          <div className="pt-2 pb-4">
             <div className="flex flex-wrap gap-2 items-center min-w-0">
               <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
             </div>
