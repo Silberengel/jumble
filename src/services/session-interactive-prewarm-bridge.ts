@@ -1,6 +1,6 @@
 /**
  * Multicast hook for {@link ClientService.runSessionPrewarm}'s **interactive** phase (IndexedDB @-mention
- * index + NIP-66). Widgets that depend on a settled relay/follow picture (live activities, relay pulse,
+ * index + NIP-66). Widgets that depend on a settled relay/follow picture (live activities,
  * sidebar calendar) can register here so they refresh once without waiting for the follow-graph background pass.
  */
 

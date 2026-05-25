@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseNostrSpecAffectedKinds } from './nostr-spec-affected-kinds'
+import { parseNostrSpecAffectedKinds, parseNostrSpecAffectedKindsFromEvent } from './nostr-spec-affected-kinds'
 
 describe('parseNostrSpecAffectedKinds', () => {
   it('parses one kind per row and dedupes', () => {
@@ -20,5 +20,20 @@ describe('parseNostrSpecAffectedKinds', () => {
         { id: '3', value: '-1' }
       ])
     ).toEqual([])
+  })
+})
+
+describe('parseNostrSpecAffectedKindsFromEvent', () => {
+  it('reads numeric k tags from the event', () => {
+    expect(
+      parseNostrSpecAffectedKindsFromEvent({
+        tags: [
+          ['d', 'nip-01'],
+          ['k', '1'],
+          ['k', '7'],
+          ['k', '1']
+        ]
+      })
+    ).toEqual([1, 7])
   })
 })

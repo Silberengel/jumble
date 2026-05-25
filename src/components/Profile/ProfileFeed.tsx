@@ -129,6 +129,7 @@ const ProfileFeed = forwardRef<
           hostPrimaryPageName="profile"
           showKinds={profileTimelineShowKinds}
           seeAllFeedEvents={feedKindFilterBypass}
+          showAllKinds={feedKindFilterBypass}
           withKindFilter
           useFilterAsIs
           clientSideKindFilter

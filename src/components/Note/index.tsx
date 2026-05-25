@@ -65,6 +65,7 @@ import LiveEvent from './LiveEvent'
 import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 import AsciidocArticle from './AsciidocArticle/AsciidocArticle'
 import PublicationCard from './PublicationCard'
+import NostrSpecCard from './NostrSpecCard'
 import WikiCard from './WikiCard'
 import LongFormCard from './LongFormCard'
 import MutedNote from './MutedNote'
@@ -482,7 +483,7 @@ export default function Note({
     content = showFull ? (
       renderEventContent()
     ) : (
-      <WikiCard className="mt-2" event={displayEvent} />
+      <NostrSpecCard className="mt-2" event={displayEvent} />
     )
   } else if (event.kind === ExtendedKind.PUBLICATION) {
     if (showFull) {

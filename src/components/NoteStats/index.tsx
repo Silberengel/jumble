@@ -9,13 +9,24 @@ import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import BookmarkButton from '../BookmarkButton'
 import NotificationThreadWatchButtons from '../NotificationThreadWatchButtons'
+import { useBookmarksOptional } from '@/providers/bookmarks-context'
+import { useNotificationThreadWatchOptional } from '@/providers/NotificationThreadWatchProvider'
 import { LikeButtonWithStats } from './LikeButton'
 import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
 import { ZapButtonWithStats } from './ZapButton'
+
+/** One equal-width column in the note action bar; keeps icons centered as button count varies. */
+function NoteStatsBarItem({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-1 basis-0 items-center justify-center [&>*]:min-w-0">
+      {children}
+    </div>
+  )
+}
 
 export default function NoteStats({
   event,
@@ -120,30 +131,61 @@ export default function NoteStats({
     statsFetchRelayScopeKey
   ])
 
-  const interactionButtons = (
-    <>
+  const watch = useNotificationThreadWatchOptional()
+  const bookmarksContext = useBookmarksOptional()
+  const showThreadWatchButtons = Boolean(watch && pubkey)
+  const showBookmarkButton = Boolean(bookmarksContext && pubkey)
+
+  const barItems: ReactNode[] = [
+    <NoteStatsBarItem key="reply">
       <ReplyButtonWithStats event={event} noteStats={noteStats} />
-      {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
+    </NoteStatsBarItem>
+  ]
+
+  if (!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot) {
+    barItems.push(
+      <NoteStatsBarItem key="repost">
         <RepostButtonWithStats event={event} noteStats={noteStats} />
-      )}
+      </NoteStatsBarItem>
+    )
+  }
+
+  barItems.push(
+    <NoteStatsBarItem key="like">
       <LikeButtonWithStats
         event={event}
         noteStats={noteStats}
         isReplyToDiscussion={isReplyToDiscussion}
         useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
       />
-      {!isRssArticleRoot && (
-        <ZapButtonWithStats event={event} noteStats={noteStats} />
-      )}
-    </>
+    </NoteStatsBarItem>
   )
 
-  const utilityButtons = !isRssArticleRoot ? (
-    <>
-      <NotificationThreadWatchButtons event={event} />
-      <BookmarkButton event={event} />
-    </>
-  ) : null
+  if (!isRssArticleRoot) {
+    barItems.push(
+      <NoteStatsBarItem key="tip">
+        <ZapButtonWithStats event={event} noteStats={noteStats} />
+      </NoteStatsBarItem>
+    )
+  }
+
+  if (!isRssArticleRoot && showThreadWatchButtons) {
+    barItems.push(
+      <NoteStatsBarItem key="thread-watch">
+        <div className="flex items-center justify-center gap-0.5">
+          <NotificationThreadWatchButtons event={event} />
+        </div>
+      </NoteStatsBarItem>
+    )
+  }
+
+  if (!isRssArticleRoot && showBookmarkButton) {
+    barItems.push(
+      <NoteStatsBarItem key="bookmark">
+        <BookmarkButton event={event} />
+      </NoteStatsBarItem>
+    )
+  }
 
   return (
     <div
@@ -154,13 +196,12 @@ export default function NoteStats({
     >
       <div
         className={cn(
-          'flex min-w-0 flex-nowrap items-center gap-0 overflow-x-auto overscroll-x-contain [&_svg]:size-[15px] [&_button]:px-1.5',
+          'flex w-full min-w-0 items-stretch [&_svg]:size-[15px] [&_button]:min-h-9 [&_button]:max-w-full [&_button]:px-1 sm:[&_button]:px-1.5',
           loading ? 'animate-pulse' : '',
           classNames?.buttonBar
         )}
       >
-        {interactionButtons}
-        {utilityButtons}
+        {barItems}
       </div>
     </div>
   )

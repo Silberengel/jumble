@@ -12,6 +12,7 @@ import {
   CalendarDays,
   Flame,
   Map as MapIcon,
+  FileText,
   Gift,
   Hash,
   Image as ImageIcon,
@@ -73,6 +74,8 @@ export function fauxSpellLabelKey(name: FauxSpellName): string {
       return 'Media'
     case 'interests':
       return 'Interests'
+    case 'nostrSpecs':
+      return 'Nostr specs'
     case 'bookmarks':
       return 'Bookmarks'
     case 'calendar':
@@ -91,6 +94,7 @@ export const FAUX_SPELL_ICON: Record<FauxSpellName, LucideIcon> = {
   followPacks: Gift,
   media: ImageIcon,
   interests: Hash,
+  nostrSpecs: FileText,
   bookmarks: Bookmark,
   calendar: CalendarDays
 }

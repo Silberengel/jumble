@@ -1005,6 +1005,7 @@ export const FAUX_SPELL_ORDER = [
   'followPacks',
   'media',
   'interests',
+  'nostrSpecs',
   'bookmarks',
   'calendar'
 ] as const

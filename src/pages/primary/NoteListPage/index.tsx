@@ -5,6 +5,7 @@ import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFeed } from '@/providers/feed-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
+import { normalizeUrl } from '@/lib/url'
 import type { TNoteListRef } from '@/components/NoteList'
 import { TPageRef } from '@/types'
 import { Calendar, Compass, Flame } from 'lucide-react'
@@ -13,11 +14,11 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FavoriteRelaysActiveStripMobileBar } from '@/components/FavoriteRelaysActiveStrip'
 import Logo from '@/assets/Logo'
 import RelaysFeed from './RelaysFeed'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
@@ -28,6 +29,15 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   const layoutRef = useRef<TPageRef>(null)
   const feedRef = useRef<TNoteListRef>(null)
   const { relayUrls } = useFeed()
+  const relayUrlsKey = useMemo(
+    () =>
+      [...relayUrls]
+        .map((u) => normalizeUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('|'),
+    [relayUrls]
+  )
   const { isSmallScreen } = useScreenSize()
   const [homeSubHeader, setHomeSubHeader] = useState<React.ReactNode>(null)
 
@@ -52,19 +62,18 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
   // The feed stays mounted and maintains scroll position at all times
 
   useEffect(() => {
-    if (relayUrls.length) {
-      addRelayUrls(relayUrls)
-      return () => {
-        removeRelayUrls(relayUrls)
-      }
+    const urls = relayUrlsKey.split('|').filter(Boolean)
+    if (!urls.length) return
+    addRelayUrls(urls)
+    return () => {
+      removeRelayUrls(urls)
     }
-  }, [relayUrls])
+  }, [relayUrlsKey, addRelayUrls, removeRelayUrls])
 
   const feedPageTitle = t('Favorite Relays')
 
   const subHeader = (
     <>
-      {isSmallScreen ? <FavoriteRelaysActiveStripMobileBar /> : null}
       <div className="w-full min-w-0 border-b border-border/80 bg-background px-3 py-2.5 sm:px-4 sm:py-3">
         <h1 className="app-chrome-title leading-tight tracking-tight">{feedPageTitle}</h1>
       </div>

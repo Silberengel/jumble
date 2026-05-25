@@ -8,7 +8,6 @@ import { BookmarksProvider } from '@/providers/BookmarksProvider'
 import { NotificationThreadWatchProvider } from '@/providers/NotificationThreadWatchProvider'
 import { ContentPolicyProvider } from '@/providers/ContentPolicyProvider'
 import { DeletedEventProvider } from '@/providers/DeletedEventProvider'
-import { FavoriteRelaysActivityProvider } from '@/providers/FavoriteRelaysActivityProvider'
 import { FavoriteRelaysProvider } from '@/providers/FavoriteRelaysProvider'
 import { FeedProvider } from '@/providers/FeedProvider'
 import { FontSizeProvider } from '@/providers/FontSizeProvider'
@@ -48,8 +47,7 @@ export default function App(): JSX.Element {
                     <FavoriteRelaysProvider>
                       <FollowListProvider>
                         <MuteListProvider>
-                          <FavoriteRelaysActivityProvider>
-                            <InterestListProvider>
+                          <InterestListProvider>
                                 <BookmarksProvider>
                                   <NotificationThreadWatchProvider>
                                     <FeedProvider>
@@ -70,7 +68,6 @@ export default function App(): JSX.Element {
                                   </NotificationThreadWatchProvider>
                                 </BookmarksProvider>
                             </InterestListProvider>
-                          </FavoriteRelaysActivityProvider>
                         </MuteListProvider>
                       </FollowListProvider>
                     </FavoriteRelaysProvider>

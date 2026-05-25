@@ -244,6 +244,13 @@ export function buildCalendarSpellFilter(): Filter {
   }
 }
 
+export function buildNostrSpecsSpellFilter(): Filter {
+  return {
+    kinds: [ExtendedKind.NOSTR_SPECIFICATION],
+    limit: FAUX_SPELL_EVENT_LIMIT
+  }
+}
+
 function pluralizeTopic(topic: string): string {
   if (!topic) return topic
   if (topic.endsWith('y') && topic.length > 1 && !/[aeiou]y$/i.test(topic)) {

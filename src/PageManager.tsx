@@ -101,9 +101,6 @@ const SidebarLazy = lazy(() => import('@/components/Sidebar'))
 const BottomNavigationBarLazy = lazy(() => import('@/components/BottomNavigationBar'))
 const TooManyRelaysAlertDialogLazy = lazy(() => import('@/components/TooManyRelaysAlertDialog'))
 const CreateWalletGuideToastLazy = lazy(() => import('@/components/CreateWalletGuideToast'))
-const RelayPulseActiveNpubsSheetLazy = lazy(
-  () => import('@/components/FavoriteRelaysActiveStrip/RelayPulseActiveNpubsSheet').then((m) => ({ default: m.RelayPulseActiveNpubsSheet }))
-)
 
 /** Mobile primary-note overlay: lazy so these pages are not in the main bundle (routes use the same modules → shared async chunks). */
 const SecondaryProfilePageLazy = lazy(() => import('@/pages/secondary/ProfilePage'))
@@ -2378,9 +2375,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             <Suspense fallback={null}>
               <CreateWalletGuideToastLazy />
             </Suspense>
-            <Suspense fallback={null}>
-              <RelayPulseActiveNpubsSheetLazy />
-            </Suspense>
             </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>
         </CurrentRelaysProvider>
@@ -2522,9 +2516,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             </Suspense>
             <Suspense fallback={null}>
               <CreateWalletGuideToastLazy />
-            </Suspense>
-            <Suspense fallback={null}>
-              <RelayPulseActiveNpubsSheetLazy />
             </Suspense>
             </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>

@@ -30,6 +30,17 @@ const RelaysFeed = forwardRef<
         .join('|'),
     [relayUrls]
   )
+  const replyRelayUrlsKey = useMemo(
+    () =>
+      [...replyRelayUrls]
+        .map((u) => normalizeUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('|'),
+    [replyRelayUrls]
+  )
+  const homeFeedSeenOnAllowlistOp = useMemo(() => relayUrls, [relayUrlsKey])
+  const homeFeedSeenOnAllowlistReplies = useMemo(() => replyRelayUrls, [replyRelayUrlsKey])
 
   useEffect(() => {
     if (relayUrls.length === 0) {
@@ -85,7 +96,7 @@ const RelaysFeed = forwardRef<
         }
       }
     ]
-  }, [canRenderFeed, relayUrls, defaultKinds])
+  }, [canRenderFeed, relayUrlsKey, relayUrls, defaultKinds])
   const repliesSubRequests = useMemo(() => {
     if (!canRenderFeed) return []
     return [
@@ -96,7 +107,7 @@ const RelaysFeed = forwardRef<
         }
       }
     ]
-  }, [canRenderFeed, replyRelayUrls, relayUrls, defaultKinds])
+  }, [canRenderFeed, replyRelayUrlsKey, replyRelayUrls, relayUrlsKey, relayUrls, defaultKinds])
 
   if (!canRenderFeed) {
     return null
@@ -117,8 +128,8 @@ const RelaysFeed = forwardRef<
       widenMainGalleryRelays={false}
       feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"
-      homeFeedSeenOnAllowlistOp={relayUrls}
-      homeFeedSeenOnAllowlistReplies={replyRelayUrls}
+      homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}
+      homeFeedSeenOnAllowlistReplies={homeFeedSeenOnAllowlistReplies}
       showFeedClientFilter
       hostPrimaryPageName="feed"
     />

@@ -30,6 +30,7 @@ import {
   buildDiscussionFilter,
   buildInterestsSubRequests,
   buildMediaSpellFilter,
+  buildNostrSpecsSpellFilter,
   buildNotificationsFollowedThreadSubRequests,
   buildNotificationsSpellSubRequests,
   buildWebBookmarksSpellSubRequests,
@@ -390,6 +391,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       selectedFauxSpell === 'calendar' ||
       selectedFauxSpell === 'followPacks' ||
       selectedFauxSpell === 'media' ||
+      selectedFauxSpell === 'nostrSpecs' ||
       selectedFauxSpell === 'bookmarks' ||
       selectedFauxSpell === 'interests'
     const feedUrls = ensureFauxSpellRelayStackTouchesFastRead(
@@ -425,6 +427,10 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     if (selectedFauxSpell === 'calendar') {
       if (!feedUrls.length) return []
       return [{ urls: feedUrls, filter: buildCalendarSpellFilter() }]
+    }
+    if (selectedFauxSpell === 'nostrSpecs') {
+      if (!feedUrls.length) return []
+      return [{ urls: feedUrls, filter: buildNostrSpecsSpellFilter() }]
     }
     if (selectedFauxSpell === 'interests') {
       if (!pubkey || !interestListEvent) return []
@@ -546,6 +552,9 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     }
     if (selectedFauxSpell === 'calendar') {
       return [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME]
+    }
+    if (selectedFauxSpell === 'nostrSpecs') {
+      return [ExtendedKind.NOSTR_SPECIFICATION]
     }
     if (selectedFauxSpell === 'interests') {
       return [...DEFAULT_FEED_SHOW_KINDS]

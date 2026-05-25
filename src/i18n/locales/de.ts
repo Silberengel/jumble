@@ -9,18 +9,6 @@ export default {
     Home: 'Startseite',
     Feed: 'Feed',
     'Favorite Relays': 'Lieblings-Relays',
-    'Relay pulse': 'Relay-Puls',
-    'Relay pulse empty': 'In der letzten Stunde war es ruhig auf deinen Relays.',
-    'Relay pulse follows': 'Folge ich ({{count}})',
-    'Relay pulse others': 'Andere ({{count}})',
-    'Relay pulse updated': 'Aktualisiert {{relative}}',
-    'Relay pulse active npubs': 'Aktive npubs',
-    'Relay pulse active npubs hint':
-      'Kind-0-Profile für npubs, die in der letzten Stunde auf deinen Lieblingsrelais auftauchten (gleiche Stichprobe wie Relay-Puls).',
-    'Relay pulse drawer following': 'Folge ich',
-    'Relay pulse drawer others': 'Andere',
-    'Relay pulse drawer no profiles':
-      'Für diese Stichprobe wurden noch keine Kind-0-Profile geladen.',
     'See the newest notes from your follows': 'Neueste Notizen von deinen Abos anzeigen',
     'All favorite relays': 'Alle Lieblingsrelais',
     'Pinned note': 'Angehefteter Beitrag',
@@ -2561,6 +2549,9 @@ export default {
     'Website where LLM was accessed (optional)': 'Website where LLM was accessed (optional)',
     'Wiki Article (AsciiDoc)': 'Wiki Article (AsciiDoc)',
     'Nostr Specification': 'Nostr Specification',
+    'Nostr specs': 'Nostr-Spezifikationen',
+    'Nostr spec affected kinds': 'Kinds {{kinds}}',
+    'Download as Markdown file': 'Als Markdown-Datei herunterladen',
     'You can only delete your own notes': 'You can only delete your own notes',
     'You must be logged in to create a thread': 'You must be logged in to create a thread',
     'You need to add at least one media server in order to upload media files.':

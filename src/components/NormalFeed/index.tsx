@@ -287,10 +287,10 @@ const NormalFeed = forwardRef<TNoteListRef, {
   )
 
   /**
-   * Relay explorer passes {@link showAllKinds} explicitly. Home feeds must not tie this to
-   * {@link feedKindFilterBypass}: bypass widens REQ only; the kind picker still narrows visible rows.
+   * Relay explorer passes {@link showAllKinds} explicitly. Home feeds tie bypass to visible rows so
+   * "See all events" shows the full merged batch, not only REQ-widened fetches with picker filtering.
    */
-  const listShowAllKinds = showAllKindsProp ?? false
+  const listShowAllKinds = showAllKindsProp ?? feedKindFilterBypass
 
   /** Include kind picker deps for single-relay chips (kindless REQ + client-side kinds). */
   const subHeaderFilterDepsKey = `${allowKindlessRelayExplore ? 'kle' : 'std'}|${showKindsKey}|${feedKindFilterBypass}|${showAllKindsProp ? 'allProp' : 'k'}`
@@ -339,6 +339,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
    * Intentionally omit `tabsElement` from deps — covered by `listMode` + `subHeaderFilterDepsKey`.
    * Omit `onSubHeaderRefresh` / `onFeedFilterTabRowSlotRef`: only embedded in `tabsElement`; unstable
    * identities there would retrigger every render and loop with parent state.
+   * Do not clear subHeader between dep updates — nulling remounts the filter portal slot and retriggers
+   * NoteList subscriptions / layout churn on the home feed.
    */
   useEffect(() => {
     if (!isMainFeed || !setSubHeader) return
@@ -355,7 +357,6 @@ const NormalFeed = forwardRef<TNoteListRef, {
     } else {
       setSubHeader(tabsElement)
     }
-    return () => setSubHeader(null)
   }, [
     isMainFeed,
     setSubHeader,
@@ -365,6 +366,11 @@ const NormalFeed = forwardRef<TNoteListRef, {
     allowKindlessRelayExplore,
     mergeFilterWithTabsRow
   ])
+
+  useEffect(() => {
+    if (!isMainFeed || !setSubHeader) return
+    return () => setSubHeader(null)
+  }, [isMainFeed, setSubHeader])
 
   return (
     <>

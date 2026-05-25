@@ -266,10 +266,13 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   return (
     <FeedContext.Provider
-      value={{
-        relayUrls,
-        replyRelayUrls
-      }}
+      value={useMemo(
+        () => ({
+          relayUrls,
+          replyRelayUrls
+        }),
+        [relayUrls, replyRelayUrls]
+      )}
     >
       {children}
     </FeedContext.Provider>

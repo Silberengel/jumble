@@ -26,7 +26,7 @@ import {
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
 import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
-import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
@@ -911,6 +911,8 @@ const NoteList = forwardRef(
     const timelineEstablishedCloserRef = useRef<(() => void) | null>(null)
     /** Bumps on each timeline effect run so Strict Mode / fast remount does not stack subscribeTimeline waves. */
     const timelineEffectGenerationRef = useRef(0)
+    /** Skip closing/reopening the live REQ when effect deps churn but subscription shape is unchanged. */
+    const lastTimelineLiveIdentityKeyRef = useRef('')
     /** Session snapshot was written to state; log once after commit (see feed-paint layout effect). */
     const feedPaintSessionPendingRef = useRef(false)
     /** Relay / one-shot data was written to state; log once after commit. */
@@ -1095,15 +1097,40 @@ const NoteList = forwardRef(
 
     const timelineSubscriptionKey = feedSubscriptionKey ?? subRequestsKey
 
+    const homeFeedSeenOnAllowlistOpKey = useMemo(
+      () =>
+        homeFeedSeenOnAllowlistOp?.length
+          ? [...homeFeedSeenOnAllowlistOp]
+              .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+              .filter(Boolean)
+              .sort()
+              .join('|')
+          : '',
+      [homeFeedSeenOnAllowlistOp]
+    )
+    const homeFeedSeenOnAllowlistRepliesKey = useMemo(
+      () =>
+        homeFeedSeenOnAllowlistReplies?.length
+          ? [...homeFeedSeenOnAllowlistReplies]
+              .map((u) => normalizeAnyRelayUrl(u) || u.trim())
+              .filter(Boolean)
+              .sort()
+              .join('|')
+          : '',
+      [homeFeedSeenOnAllowlistReplies]
+    )
+
     const homeFeedActiveSeenOnAllowlist = useMemo(() => {
       if (feedSubscriptionKey !== 'home-all-favorites') return undefined
       if (homeFeedListMode === 'postsAndReplies' || homeFeedListMode === 'media') {
-        return homeFeedSeenOnAllowlistReplies?.length ? homeFeedSeenOnAllowlistReplies : undefined
+        return homeFeedSeenOnAllowlistRepliesKey ? homeFeedSeenOnAllowlistReplies : undefined
       }
-      return homeFeedSeenOnAllowlistOp?.length ? homeFeedSeenOnAllowlistOp : undefined
+      return homeFeedSeenOnAllowlistOpKey ? homeFeedSeenOnAllowlistOp : undefined
     }, [
       feedSubscriptionKey,
       homeFeedListMode,
+      homeFeedSeenOnAllowlistOpKey,
+      homeFeedSeenOnAllowlistRepliesKey,
       homeFeedSeenOnAllowlistOp,
       homeFeedSeenOnAllowlistReplies
     ])
@@ -1995,6 +2022,34 @@ const NoteList = forwardRef(
     useImperativeHandle(ref, () => ({ scrollToTop, refresh }), [scrollToTop, refresh])
 
     useEffect(() => {
+      const timelineLiveIdentityKey = [
+        pauseTimelineForPrimaryFreeze ? 'frozen' : 'live',
+        timelineSubscriptionKey,
+        feedSubscriptionKey ?? '',
+        sessionSnapshotIdentityKey,
+        subRequestsKey,
+        timelineResubscribeKindKey,
+        seeAllFeedEvents ? '1' : '0',
+        useFilterAsIs ? '1' : '0',
+        areAlgoRelays ? '1' : '0',
+        allowKindlessRelayExplore ? '1' : '0',
+        clientSideKindFilter ? '1' : '0',
+        showAllKinds ? '1' : '0',
+        withKindFilter ? '1' : '0',
+        feedTimelineScopeKey ?? '',
+        String(refreshCount),
+        relayCapabilityReady ? '1' : '0'
+      ].join('\x1e')
+
+      if (
+        !pauseTimelineForPrimaryFreeze &&
+        lastTimelineLiveIdentityKeyRef.current === timelineLiveIdentityKey &&
+        timelineEstablishedCloserRef.current
+      ) {
+        return () => {}
+      }
+      lastTimelineLiveIdentityKeyRef.current = timelineLiveIdentityKey
+
       const effectGen = ++timelineEffectGenerationRef.current
       const timelineEffectStale = () => effectGen !== timelineEffectGenerationRef.current
 
@@ -3402,6 +3457,7 @@ const NoteList = forwardRef(
       const promise = init()
       const snapshotKeyForCleanup = sessionSnapshotIdentityKey
       return () => {
+        lastTimelineLiveIdentityKeyRef.current = ''
         effectActive = false
         if (liveOnNewFlushTimerRef.current != null) {
           clearTimeout(liveOnNewFlushTimerRef.current)

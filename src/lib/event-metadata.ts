@@ -130,7 +130,7 @@ export function getRelayListFromEvent(
 
 /**
  * Read-side `r` tags from a relay list event (e.g. kind 10012) without {@link FAST_READ_RELAY_URLS} fallback
- * when the list is empty or oversized — for strict “viewer-owned” REQ stacks (relay pulse).
+ * when the list is empty or oversized — for strict viewer-owned REQ stacks.
  */
 export function getRelayListReadFromEventNoFastFallback(
   event: Event | null | undefined,

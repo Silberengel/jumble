@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ExtendedKind, NIP71_VIDEO_KINDS, PROFILE_FEED_KINDS } from '@/constants'
@@ -199,10 +199,10 @@ export default function KindFilter({
       <p className="text-xs text-muted-foreground mb-3">
         {temporarySeeAllEvents ? t('See all events hint') : t('Use filter hint')}
       </p>
-      <div className={cn('grid grid-cols-2 gap-2', temporarySeeAllEvents && 'opacity-50')}>
+      <div className={cn('grid grid-cols-1 gap-2 min-[480px]:grid-cols-2', temporarySeeAllEvents && 'pointer-events-none opacity-50')}>
         <div
           className={cn(
-            'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
+            'cursor-pointer grid min-w-0 gap-1.5 rounded-lg border px-4 py-3 text-left',
             postsGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
           onClick={() => {
@@ -215,8 +215,8 @@ export default function KindFilter({
             setTemporaryShowKind1OPs(showKind1OPs)
           }}
         >
-          <p className="leading-none font-medium">{t('Posts')}</p>
-          <p className="text-muted-foreground text-xs">
+          <p className="leading-snug font-medium whitespace-normal">{t('Posts')}</p>
+          <p className="text-muted-foreground text-xs whitespace-normal break-words">
             {t('Feed filter posts group kinds', {
               kinds: [KIND_1, ...FEED_POSTS_GROUP_KINDS].join(', ')
             })}
@@ -224,7 +224,7 @@ export default function KindFilter({
         </div>
         <div
           className={cn(
-            'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
+            'cursor-pointer grid min-w-0 gap-1.5 rounded-lg border px-4 py-3 text-left',
             repliesGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
           onClick={() => {
@@ -238,8 +238,8 @@ export default function KindFilter({
             setTemporaryShowKind1111(showKind1111)
           }}
         >
-          <p className="leading-none font-medium">{t('Replies')}</p>
-          <p className="text-muted-foreground text-xs">
+          <p className="leading-snug font-medium whitespace-normal">{t('Replies')}</p>
+          <p className="text-muted-foreground text-xs whitespace-normal break-words">
             {t('Feed filter replies group kinds', {
               kinds: [KIND_1, KIND_1111, ...FEED_REPLIES_GROUP_KINDS].join(', ')
             })}
@@ -247,15 +247,15 @@ export default function KindFilter({
         </div>
         <div
           className={cn(
-            'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
+            'cursor-pointer grid min-w-0 gap-1.5 rounded-lg border px-4 py-3 text-left',
             gitGroupEnabled ? 'border-primary/60 bg-primary/5' : 'clickable'
           )}
           onClick={() => {
             setTemporaryShowKinds(applyFeedGitGroupToggle(temporaryShowKinds, !gitGroupEnabled))
           }}
         >
-          <p className="leading-none font-medium">{t('Git')}</p>
-          <p className="text-muted-foreground text-xs">
+          <p className="leading-snug font-medium whitespace-normal">{t('Git')}</p>
+          <p className="text-muted-foreground text-xs whitespace-normal break-words">
             {t('Feed filter git group kinds', { kinds: FEED_GIT_GROUP_KINDS.join(', ') })}
           </p>
         </div>
@@ -266,7 +266,7 @@ export default function KindFilter({
             <div
               key={kindGroup.join('-')}
               className={cn(
-                'cursor-pointer grid gap-1.5 rounded-lg border px-4 py-3',
+                'cursor-pointer grid min-w-0 gap-1.5 rounded-lg border px-4 py-3 text-left',
                 checked ? 'border-primary/60 bg-primary/5' : 'clickable'
               )}
               onClick={() => {
@@ -277,14 +277,14 @@ export default function KindFilter({
                 }
               }}
             >
-              <p className="leading-none font-medium">{t(label)}</p>
-              <p className="text-muted-foreground text-xs">kind {kindGroup.join(', ')}</p>
+              <p className="leading-snug font-medium whitespace-normal">{t(label)}</p>
+              <p className="text-muted-foreground text-xs whitespace-normal break-words">kind {kindGroup.join(', ')}</p>
             </div>
           )
         })}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mt-4">
+      <div className="mt-4 grid grid-cols-1 gap-2 min-[480px]:grid-cols-3">
         <Button
           variant="secondary"
           onClick={() => {
@@ -354,13 +354,18 @@ export default function KindFilter({
     return (
       <>
         {trigger}
-        <Drawer open={open} onOpenChange={setOpen}>
-          <DrawerTrigger asChild></DrawerTrigger>
-          <DrawerContent className="flex max-h-[90dvh] flex-col px-4 min-h-0">
+        <Drawer handleOnly open={open} onOpenChange={setOpen}>
+          <DrawerContent
+            dragHandle="vaul"
+            className="flex max-h-[90dvh] min-h-0 flex-col overflow-hidden px-4"
+          >
             <DrawerHeader className="sr-only">
               <DrawerTitle>Filter</DrawerTitle>
             </DrawerHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-4 [scrollbar-gutter:stable]"
+              style={{ touchAction: 'pan-y' }}
+            >
               {content}
             </div>
           </DrawerContent>
@@ -380,7 +385,7 @@ export default function KindFilter({
         sideOffset={6}
         sticky="always"
       >
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">{content}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pr-5 [scrollbar-gutter:stable]">{content}</div>
       </PopoverContent>
     </Popover>
   )
