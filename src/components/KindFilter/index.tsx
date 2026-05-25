@@ -166,8 +166,9 @@ export default function KindFilter({
     <Button
       variant="ghost"
       size="titlebar-icon"
+      aria-label={t('Filter')}
       className={cn(
-        'relative w-fit px-2 h-8 text-xs focus:text-foreground',
+        'relative h-8 w-fit shrink-0 px-1.5 text-xs focus:text-foreground',
         !isDifferentFromSaved && !feedKindFilterBypass && 'text-muted-foreground',
         feedKindFilterBypass && 'text-amber-600 dark:text-amber-400'
       )}
@@ -177,8 +178,8 @@ export default function KindFilter({
         }
       }}
     >
-      <ListFilter className="size-2.5" />
-      <span className="ml-1 text-xs">{t('Filter')}</span>
+      <ListFilter className="size-3.5 shrink-0" />
+      <span className="ml-1 hidden min-[22rem]:inline">{t('Filter')}</span>
       {isDifferentFromSaved && (
         <div className="absolute size-1.5 rounded-full bg-primary left-6 top-1.5 ring-1 ring-background" />
       )}

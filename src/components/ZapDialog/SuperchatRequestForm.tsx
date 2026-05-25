@@ -129,16 +129,18 @@ export default function SuperchatRequestForm({
           {t('Superchat estimated amount hint')}
         </p>
       </div>
-      <Textarea
-        ref={textareaRef}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        disabled={sending}
-        rows={5}
-        className="mt-3 min-h-[8rem] resize-y text-sm leading-relaxed"
-        aria-label={t('Superchat message')}
-        placeholder={t('Superchat message placeholder')}
-      />
+      <div className="mt-3 min-w-0 max-w-full">
+        <Textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          disabled={sending}
+          rows={5}
+          className="min-h-[8rem] w-full max-w-full resize-y box-border text-sm leading-relaxed focus-visible:ring-inset"
+          aria-label={t('Superchat message')}
+          placeholder={t('Superchat message placeholder')}
+        />
+      </div>
       <div className="mt-4 grid gap-2">
         <Label htmlFor="superchat-pow">{t('Proof of Work (difficulty {{minPow}})', { minPow })}</Label>
         <Slider

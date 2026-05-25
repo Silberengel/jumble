@@ -4,7 +4,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import Tabs, { TabDefinition } from '@/components/Tabs'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
-import { PROFILE_MEDIA_TAB_KINDS, FAST_READ_RELAY_URLS } from '@/constants'
+import { HOME_GALLERY_TAB_KINDS, FAST_READ_RELAY_URLS } from '@/constants'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import type { TPrimaryPageName } from '@/PageManager'
 import { TFeedSubRequest, TNoteListMode } from '@/types'
@@ -23,7 +23,7 @@ import {
 import KindFilter from '../KindFilter'
 
 /**
- * Home Gallery: favorites (or chip relays) first, then {@link FAST_READ_RELAY_URLS} so NIP-71 / picture / voice
+ * Home Gallery: favorites (or chip relays) first, then {@link FAST_READ_RELAY_URLS} so NIP-71 / picture
  * events are not starved when the user’s relay set is mostly text timelines. Deduped by normalized URL.
  */
 function galleryRelayUrlsMergedWithReadLayer(
@@ -193,7 +193,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     setFeedFilterTabRowHost((prev) => (Object.is(prev, node) ? prev : node))
   }, [])
 
-  const MEDIA_KINDS = useMemo(() => [...PROFILE_MEDIA_TAB_KINDS], [])
+  const MEDIA_KINDS = useMemo(() => [...HOME_GALLERY_TAB_KINDS], [])
 
   /** Every shard URL is a nostrarchives Wisp “trending notes” stream — replies/gallery tabs are not applicable. */
   const isWispTrendingOnlyFeed = useMemo(
@@ -295,17 +295,25 @@ const NormalFeed = forwardRef<TNoteListRef, {
   /** Include kind picker deps for single-relay chips (kindless REQ + client-side kinds). */
   const subHeaderFilterDepsKey = `${allowKindlessRelayExplore ? 'kle' : 'std'}|${showKindsKey}|${feedKindFilterBypass}|${showAllKindsProp ? 'allProp' : 'k'}`
 
+  const renderTabsInFeed = !(isMainFeed && setSubHeader) && !allowKindlessRelayExplore
+
+  const mergeFilterWithTabsRow =
+    showFeedClientFilter && ((isMainFeed && !!setSubHeader) || renderTabsInFeed)
+
   /** Notes / Replies / Gallery switch, plus refresh + kind filter — on Wisp trending only the tool row (no mode tabs). */
   const tabsElement = useMemo(() => {
     const kindRowOptions = (
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0">
         {onSubHeaderRefresh != null && <RefreshButton onClick={onSubHeaderRefresh} />}
         <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
+        {mergeFilterWithTabsRow ? (
+          <div ref={onFeedFilterTabRowSlotRef} className="flex items-center" />
+        ) : null}
       </div>
     )
     if (isMainFeed && isWispTrendingOnlyFeed) {
       return (
-        <div className="flex w-full min-w-0 items-center justify-end gap-1 py-1">{kindRowOptions}</div>
+        <div className="flex w-full min-w-0 items-center justify-end gap-0 py-1">{kindRowOptions}</div>
       )
     }
     return (
@@ -324,13 +332,12 @@ const NormalFeed = forwardRef<TNoteListRef, {
     handleListModeChange,
     showKinds,
     onSubHeaderRefresh,
-    handleShowKindsChange
+    handleShowKindsChange,
+    mergeFilterWithTabsRow
   ])
 
-  const renderTabsInFeed = !(isMainFeed && setSubHeader) && !allowKindlessRelayExplore
-
-  const mergeFilterWithTabsRow =
-    showFeedClientFilter && ((isMainFeed && !!setSubHeader) || renderTabsInFeed)
+  const tabRowChromeClass =
+    'w-full min-w-0 border-b border-border/80 bg-background/95 pb-1.5 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-background/80'
 
   /**
    * Push the tab row into {@link PrimaryPageLayout} subHeader. Use `useEffect` (not `useLayoutEffect`) so
@@ -345,15 +352,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
   useEffect(() => {
     if (!isMainFeed || !setSubHeader) return
     if (mergeFilterWithTabsRow) {
-      setSubHeader(
-        <div className="flex w-full min-w-0 flex-wrap items-end gap-x-2 gap-y-1 border-b border-border/80 bg-background/95 pb-1.5 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="min-w-0 flex-1">{tabsElement}</div>
-          <div
-            ref={onFeedFilterTabRowSlotRef}
-            className="flex shrink-0 flex-col items-end self-start"
-          />
-        </div>
-      )
+      setSubHeader(<div className={tabRowChromeClass}>{tabsElement}</div>)
     } else {
       setSubHeader(tabsElement)
     }
@@ -376,15 +375,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     <>
       {renderTabsInFeed &&
         (mergeFilterWithTabsRow ? (
-          <div className="sticky top-0 z-20 border-b border-border/80 bg-background/95 pb-1.5 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="flex w-full min-w-0 flex-wrap items-end gap-x-2 gap-y-1">
-              <div className="min-w-0 flex-1">{tabsElement}</div>
-              <div
-                ref={onFeedFilterTabRowSlotRef}
-                className="flex shrink-0 flex-col items-end self-start"
-              />
-            </div>
-          </div>
+          <div className={cn('sticky top-0 z-20', tabRowChromeClass)}>{tabsElement}</div>
         ) : (
           tabsElement
         ))}

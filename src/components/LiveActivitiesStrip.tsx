@@ -65,6 +65,9 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
   const onSwipePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (placement !== 'mobile' || items.length <= 1) return
+      // Taps on the note button / external link must not capture — capture retargets pointerup
+      // away from the button and suppresses its click (note never opens in the secondary panel).
+      if ((e.target as HTMLElement).closest('button, a, [role="tab"]')) return
       swipeGrabRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId }
       e.currentTarget.setPointerCapture(e.pointerId)
     },
@@ -157,6 +160,7 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
       >
         <button
           type="button"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={openLiveNote}
           className={cn(
             'flex min-w-0 flex-1 gap-2 rounded-md text-left transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -195,6 +199,7 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
           )}
           title={t('liveActivities.openJoinPageTitle')}
           aria-label={t('liveActivities.openJoinPageTitle')}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           <ExternalLink className="size-4 shrink-0" aria-hidden />

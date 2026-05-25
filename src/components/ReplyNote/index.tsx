@@ -142,12 +142,12 @@ export default function ReplyNote({
                     className="shrink-0"
                     short={isSmallScreen}
                   />
+                  <EventPowLabel event={event} />
                 </div>
               </div>
             </div>
             <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
           </div>
-          <EventPowLabel event={event} className="mt-0.5" />
           {webReactionParentUrl ? (
             <div className="not-prose mt-1.5 max-w-full" data-parent-note-preview>
               <WebPreview url={webReactionParentUrl} className="w-full" />

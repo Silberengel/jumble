@@ -705,19 +705,19 @@ export default function AdvancedEventLabDialog({
             minHeight: '12rem',
             fontFamily: 'var(--font-mono, ui-monospace, monospace)'
           },
-          // LanguageTool hits: drop default thin SVG underline, use thick wavy line (see `LT_GRAMMAR_MARK_CLASS`).
+          // LanguageTool hits: subtle wavy underline (default CM lint SVG is hidden).
           [`.cm-lintRange.${LT_GRAMMAR_MARK_CLASS}`]: {
             backgroundImage: 'none',
-            paddingBottom: '2px',
+            paddingBottom: '1px',
             textDecoration: 'underline',
             textDecorationSkipInk: 'none',
             textDecorationStyle: 'wavy',
-            textDecorationColor: '#ea580c',
-            textDecorationThickness: '3px',
-            textUnderlineOffset: '3px'
+            textDecorationColor: 'rgba(234, 88, 12, 0.45)',
+            textDecorationThickness: '1.5px',
+            textUnderlineOffset: '2px'
           },
           [`.cm-lintRange-active.${LT_GRAMMAR_MARK_CLASS}`]: {
-            backgroundColor: 'rgba(234, 88, 12, 0.22)'
+            backgroundColor: 'rgba(234, 88, 12, 0.1)'
           }
         }),
         EditorView.updateListener.of((update) => {
@@ -742,16 +742,16 @@ export default function AdvancedEventLabDialog({
           EditorView.theme({
             [`.cm-lintRange.${LT_GRAMMAR_MARK_CLASS}`]: {
               backgroundImage: 'none',
-              paddingBottom: '2px',
+              paddingBottom: '1px',
               textDecoration: 'underline',
               textDecorationSkipInk: 'none',
               textDecorationStyle: 'wavy',
-              textDecorationColor: '#fdba74',
-              textDecorationThickness: '3px',
-              textUnderlineOffset: '3px'
+              textDecorationColor: 'rgba(251, 146, 60, 0.5)',
+              textDecorationThickness: '1.5px',
+              textUnderlineOffset: '2px'
             },
             [`.cm-lintRange-active.${LT_GRAMMAR_MARK_CLASS}`]: {
-              backgroundColor: 'rgba(251, 146, 60, 0.28)'
+              backgroundColor: 'rgba(251, 146, 60, 0.12)'
             }
           })
         )
@@ -988,7 +988,7 @@ export default function AdvancedEventLabDialog({
               <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
               <div
                 ref={markupHost}
-                className="min-h-[24rem] h-[min(84vh,56rem)] overflow-hidden rounded-md border bg-muted/20"
+                className="min-h-[16rem] h-[min(56vh,37.5rem)] overflow-hidden rounded-md border bg-muted/20"
               />
             </TabsContent>
 

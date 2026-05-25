@@ -46,7 +46,7 @@ export function RefreshButton({
         onClick()
         setTimeout(() => setRefreshing(false), 500)
       }}
-      className="text-muted-foreground focus:text-foreground [&_svg]:size-3 h-8 px-2 text-xs"
+      className="h-8 shrink-0 px-1.5 text-muted-foreground focus:text-foreground [&_svg]:size-3"
     >
       {refreshing ? (
         <Skeleton className="size-3 shrink-0 rounded-sm" aria-hidden />

@@ -693,6 +693,7 @@ export default function Note({
                   className="shrink-0 text-sm text-muted-foreground"
                   short={isSmallScreen}
                 />
+                <EventPowLabel event={event} />
               </div>
             ) : isSyntheticRssParent ? (
               <>
@@ -746,6 +747,7 @@ export default function Note({
                         className="shrink-0"
                         short={isSmallScreen}
                       />
+                      <EventPowLabel event={event} />
                     </div>
                   </div>
                 ) : (
@@ -763,6 +765,7 @@ export default function Note({
                         className="shrink-0"
                         short={isSmallScreen}
                       />
+                      <EventPowLabel event={event} />
                     </span>
                   </div>
                 )}
@@ -812,7 +815,6 @@ export default function Note({
             )}
           </div>
         </div>
-        <EventPowLabel event={event} className="mt-1" />
         {webReactionParentUrl ? (
           <div className="mt-2 not-prose max-w-full" data-parent-note-preview>
             <WebPreview url={webReactionParentUrl} className="w-full" />

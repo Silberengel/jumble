@@ -103,6 +103,37 @@ function isExpectedDevAppNoise(message: string): boolean {
   if (message.includes('[vite]') && (message.includes('connected') || message.includes('connecting'))) {
     return true
   }
+  if (message.includes('[feed:')) {
+    return true
+  }
+  if (
+    message.includes('[SpellsPage] Spell feed') ||
+    message.includes('[NIP-42] Auth accepted') ||
+    message.includes('[RelayInfo] NIP-11 received') ||
+    message.includes('[client] Prewarm:') ||
+    message.includes('[RssFeedSettingsPage] Loaded RSS feed list')
+  ) {
+    return true
+  }
+  if (
+    message.includes('localhost:4869') ||
+    message.includes('127.0.0.1:4869') ||
+    message.includes('ws://localhost:4869')
+  ) {
+    if (
+      message.includes('[PublishEvent]') ||
+      message.includes('[Publish]') ||
+      message.includes('[RelayOp]') ||
+      message.includes('connection failed') ||
+      message.includes('connection timed out') ||
+      message.includes('Local relay connection timeout')
+    ) {
+      return true
+    }
+  }
+  if (message.includes('[FetchRelayLists] Network relay-list fetch exceeded budget')) {
+    return true
+  }
   return false
 }
 

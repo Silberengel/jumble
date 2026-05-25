@@ -4,7 +4,8 @@ import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   FIRST_RELAY_RESULT_GRACE_MS,
-  PROFILE_MEDIA_TAB_KINDS,
+  HOME_GALLERY_TAB_KINDS,
+  HOME_GALLERY_TAB_KIND_SET,
   SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
   SINGLE_RELAY_KINDLESS_REQ_LIMIT
 } from '@/constants'
@@ -1369,6 +1370,10 @@ const NoteList = forwardRef(
 
         if (extraShouldHideEvent?.(evt)) return true
 
+        if (homeFeedListMode === 'media' && !HOME_GALLERY_TAB_KIND_SET.has(evt.kind)) {
+          return true
+        }
+
         if (
           homeFeedActiveSeenOnAllowlist &&
           homeFeedListMode === 'posts' &&
@@ -2607,7 +2612,7 @@ const NoteList = forwardRef(
           }
 
           try {
-            const hits = client.eventService.listSessionEventsByKinds([...PROFILE_MEDIA_TAB_KINDS], {
+            const hits = client.eventService.listSessionEventsByKinds([...HOME_GALLERY_TAB_KINDS], {
               limit: 800
             })
             mergeLayer(hits as Event[], 'gallery_session_local')
@@ -2619,7 +2624,7 @@ const NoteList = forwardRef(
             try {
               const since = dayjs().subtract(120, 'day').unix()
               const rows = await indexedDb.scanEventArchiveByKinds({
-                kinds: [...PROFILE_MEDIA_TAB_KINDS],
+                kinds: [...HOME_GALLERY_TAB_KINDS],
                 since,
                 maxRowsScanned: 28_000,
                 maxMatches: 220
@@ -3111,7 +3116,7 @@ const NoteList = forwardRef(
                   ...(runtimeSnapshot.rawCount === 0
                     ? {
                         emptyHint:
-                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (this tab uses native media kinds only: picture, NIP-71 video regular/addressable, voice).'
+                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (Gallery uses kinds 20, 21, 22, 34235 only).'
                       }
                     : {})
                 })
@@ -4485,7 +4490,7 @@ const NoteList = forwardRef(
       useFeedFilterTabRowPortal && feedClientFilterTabRowHost
 
     const feedClientFilterPanelSurfaceClass = feedClientFilterPanelPortalMode
-      ? 'absolute top-full right-0 z-50 mt-1 w-[min(100vw-1rem,28rem)] max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border border-border bg-background p-3 shadow-lg'
+      ? 'space-y-3 border-b border-border/80 bg-background/95 px-2 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80'
       : 'space-y-3 border-t border-border/60 px-2 py-3'
     const feedClientFilterSectionClass = 'space-y-2 rounded-md border border-border/60 bg-muted/25 p-2.5'
 
@@ -4685,16 +4690,17 @@ const NoteList = forwardRef(
     ) : null
 
     const feedClientFilterChrome = feedClientFilterPanelPortalMode ? (
-      <div className="relative flex items-center gap-1">
-        {feedClientFilterToggleButton}
-        {feedClientFilterPanel}
-      </div>
+      feedClientFilterToggleButton
     ) : (
       <>
         <div className="flex items-center gap-1">{feedClientFilterToggleButton}</div>
         {feedClientFilterPanel}
       </>
     )
+
+    /** Tab-row portal: toggle lives in the header; panel expands in-flow above the list. */
+    const feedClientFilterPanelInList =
+      feedClientFilterPanelPortalMode ? feedClientFilterPanel : null
 
     const feedClientFilterBarEmbedded = (
       <div className="sticky top-0 z-20 border-b border-border/80 bg-background/95 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -4892,6 +4898,7 @@ const NoteList = forwardRef(
                   </div>
                 ) : null}
                 {showFeedClientFilter ? feedClientFilterBar : null}
+                {feedClientFilterPanelInList}
                 {list}
               </div>
             </PullToRefresh>
@@ -4906,6 +4913,7 @@ const NoteList = forwardRef(
                 </div>
               ) : null}
               {showFeedClientFilter ? feedClientFilterBar : null}
+              {feedClientFilterPanelInList}
               {list}
             </div>
           )}

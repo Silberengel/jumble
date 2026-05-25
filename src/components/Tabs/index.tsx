@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { useDeepBrowsing } from '@/providers/DeepBrowsingProvider'
+import { useDeepBrowsing } from '@/providers/DeepBrowsingProvider' 
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -40,7 +40,7 @@ export default function Tabs({
       const activeTab = tabRefs.current[activeIndex]
       const tabsContainer = tabsContainerRef.current
       const { offsetWidth, offsetLeft, offsetHeight } = activeTab
-      const padding = 24 // 12px padding on each side
+      const padding = Math.min(24, Math.max(8, offsetWidth * 0.12))
       
       // Get the container's top position relative to the viewport
       const containerTop = tabsContainer.getBoundingClientRect().top
@@ -124,15 +124,15 @@ export default function Tabs({
     <div
       ref={containerRef}
       className={cn(
-        'sticky flex justify-between top-12 bg-background z-30 px-1 w-full transition-transform border-b',
+        'sticky top-12 z-30 flex w-full min-w-0 items-end justify-between border-b bg-background px-1 transition-transform',
         deepBrowsing && lastScrollTop > threshold ? '-translate-y-[calc(100%+12rem)]' : ''
       )}
     >
-      <div className="flex-1 w-0 min-w-0">
+      <div className="min-w-0 w-0 flex-1">
         <div
           ref={tabsContainerRef}
           role="tablist"
-          className="flex relative gap-1 overflow-x-auto scrollbar-hide"
+          className="relative flex gap-0.5 overflow-x-auto overscroll-x-contain scrollbar-hide sm:gap-1"
         >
           {tabs.map((tab, index) => (
             <button
@@ -144,9 +144,8 @@ export default function Tabs({
                 tabRefs.current[index] = el
               }}
               className={cn(
-                'text-center py-2 px-2 sm:px-4 md:px-6 font-semibold whitespace-nowrap rounded-lg text-xs sm:text-sm md:text-base shrink-0 flex items-center gap-2 justify-center',
-                'bg-transparent border-0 shadow-none cursor-pointer transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-0 bg-transparent px-1.5 py-1.5 text-center text-xs font-semibold shadow-none transition-colors sm:gap-2 sm:px-3 sm:py-2 sm:text-sm md:px-5 md:text-base',
+                'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 value === tab.value ? '' : 'text-muted-foreground'
               )}
               onClick={() => {
@@ -158,7 +157,7 @@ export default function Tabs({
             </button>
           ))}
           <div
-            className="absolute h-1 bg-primary rounded-full transition-all duration-500"
+            className="absolute h-1 rounded-full bg-primary transition-all duration-500"
             style={{
               width: `${indicatorStyle.width}px`,
               left: `${indicatorStyle.left}px`,
@@ -167,7 +166,9 @@ export default function Tabs({
           />
         </div>
       </div>
-      {options && <div className="py-1 flex items-center shrink-0 gap-1">{options}</div>}
+      {options ? (
+        <div className="flex shrink-0 items-center gap-0 py-1 pl-0.5">{options}</div>
+      ) : null}
     </div>
   )
 }

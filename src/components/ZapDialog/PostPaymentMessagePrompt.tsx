@@ -140,7 +140,7 @@ export default function PostPaymentMessagePrompt({
               <DialogDescription className="sr-only">{t('Post payment prompt label')}</DialogDescription>
             ) : null}
           </DrawerHeader>
-          <div className="min-w-0 overflow-x-hidden px-0 pb-4">{body}</div>
+          <div className="min-w-0 px-px pb-4">{body}</div>
           {step === 'choice' ? (
             <DrawerFooter className={choiceFooterClass}>{choiceActions}</DrawerFooter>
           ) : null}
@@ -152,7 +152,7 @@ export default function PostPaymentMessagePrompt({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex w-[calc(100vw-1.25rem)] max-w-lg min-w-0 flex-col gap-4 overflow-hidden sm:max-w-lg"
+        className="flex w-[calc(100vw-1.25rem)] max-w-lg min-w-0 flex-col gap-4 max-h-[min(92dvh,900px)] overflow-y-auto sm:max-w-lg"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader className="min-w-0 shrink-0">
@@ -161,7 +161,7 @@ export default function PostPaymentMessagePrompt({
             <DialogDescription className="sr-only">{t('Post payment prompt label')}</DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="min-w-0 overflow-x-hidden">{body}</div>
+        <div className="min-w-0 px-px">{body}</div>
         {step === 'choice' ? (
           <DialogFooter className={choiceFooterClass}>{choiceActions}</DialogFooter>
         ) : null}

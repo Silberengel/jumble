@@ -20,16 +20,14 @@ export default function EventPowLabel({
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-md border-2 border-amber-500/90',
-        'bg-gradient-to-r from-amber-400/40 to-yellow-300/30 px-2 py-0.5',
-        'text-xs font-bold uppercase tracking-wide text-amber-950 shadow-sm',
-        'ring-2 ring-amber-400/35 dark:border-amber-400/80 dark:from-amber-500/30 dark:to-yellow-500/20',
-        'dark:text-amber-50 dark:ring-amber-300/25',
+        'inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-500/20',
+        'bg-amber-500/[0.08] px-1 py-px text-[10px] font-medium leading-none text-amber-800/75',
+        'dark:border-amber-400/15 dark:bg-amber-500/10 dark:text-amber-200/65',
         className
       )}
       title={t('Proof of Work')}
     >
-      <Pickaxe className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
+      <Pickaxe className="size-2.5 shrink-0 opacity-60" strokeWidth={2} aria-hidden />
       {t('POW {{difficulty}}', { difficulty })}
     </span>
   )

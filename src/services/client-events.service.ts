@@ -232,11 +232,13 @@ export class EventService {
     const snapshot = [...waiters]
     this.sessionEventWaiters.delete(hexId)
     for (const cb of snapshot) {
-      try {
-        cb()
-      } catch (e) {
-        logger.warn('[EventService] sessionEventWaiter failed', { hexId: hexId.slice(0, 8), e })
-      }
+      queueMicrotask(() => {
+        try {
+          cb()
+        } catch (e) {
+          logger.warn('[EventService] sessionEventWaiter failed', { hexId: hexId.slice(0, 8), e })
+        }
+      })
     }
   }
 

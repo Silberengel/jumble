@@ -94,15 +94,17 @@ export default function PublicMessageForm({
   return (
     <div className="min-w-0">
       <p className="text-sm text-muted-foreground">{t('Tip notice prompt description')}</p>
-      <Textarea
-        ref={textareaRef}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        disabled={sending}
-        rows={6}
-        className="mt-3 min-h-[10rem] resize-y text-sm leading-relaxed"
-        aria-label={t('Tip notice prompt description')}
-      />
+      <div className="mt-3 min-w-0 max-w-full">
+        <Textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          disabled={sending}
+          rows={6}
+          className="min-h-[10rem] w-full max-w-full resize-y box-border text-sm leading-relaxed focus-visible:ring-inset"
+          aria-label={t('Tip notice prompt description')}
+        />
+      </div>
       {previewEvent ? (
         <div className="mt-4 min-w-0">
           <p className="text-xs font-medium text-muted-foreground">{t('Preview')}</p>

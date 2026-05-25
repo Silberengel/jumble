@@ -82,6 +82,9 @@ function captureLog(type: string, ...args: unknown[]) {
   if (message.includes('NOTICE from')) {
     return
   }
+  if (import.meta.env.DEV && message.includes('[feed:')) {
+    return
+  }
   buffer.push({ type, message, formattedParts, timestamp: Date.now() })
   if (buffer.length > MAX_ENTRIES) {
     buffer.splice(0, buffer.length - MAX_ENTRIES)
