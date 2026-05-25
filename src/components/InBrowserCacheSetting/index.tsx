@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button'
+import { clearConsoleLogBuffer } from '@/lib/console-log-buffer'
+import { useConsoleLogBuffer } from '@/hooks/useConsoleLogBuffer'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2, RefreshCw, Database, X, Terminal, XCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -25,12 +27,11 @@ export default function InBrowserCacheSetting() {
     requestAccountNetworkHydrate
   } = useNostr()
   const { openBrowseCache } = useCacheBrowser()
-  const [consoleLogs, setConsoleLogs] = useState<Array<{ type: string; message: string; formattedParts?: Array<{ text: string; style?: string }>; timestamp: number }>>([])
+  const consoleLogs = useConsoleLogBuffer()
   const [showConsoleLogs, setShowConsoleLogs] = useState(false)
   const [consoleLogSearch, setConsoleLogSearch] = useState('')
   const [consoleLogLevel, setConsoleLogLevel] = useState<'errors-warnings' | 'all'>('all')
   const [cacheRefreshBusy, setCacheRefreshBusy] = useState(false)
-  const consoleLogRef = useRef<Array<{ type: string; message: string; formattedParts?: Array<{ text: string; style?: string }>; timestamp: number }>>([])
 
   const handleClearCache = async () => {
     if (!confirm(t('Are you sure you want to clear all cached data? This will delete all stored events and settings from your browser.'))) {
@@ -189,86 +190,14 @@ export default function InBrowserCacheSetting() {
     }
   }
 
-  useEffect(() => {
-    const originalLog = console.log
-    const originalError = console.error
-    const originalWarn = console.warn
-    const originalInfo = console.info
-
-    const captureLog = (type: string, ...args: any[]) => {
-      let message = ''
-      let formattedParts: Array<{ text: string; style?: string }> = []
-
-      if (args.length > 0 && typeof args[0] === 'string' && args[0].includes('%c')) {
-        const formatString = args[0]
-        const parts = formatString.split(/%c/g)
-        formattedParts = []
-
-        for (let i = 0; i < parts.length; i++) {
-          const text = parts[i]
-          const style = i < args.length - 1 && typeof args[i + 1] === 'string' ? args[i + 1] : undefined
-          formattedParts.push({ text, style })
-        }
-
-        const remainingArgs = args.slice(parts.length)
-        if (remainingArgs.length > 0) {
-          const remainingText = remainingArgs.map(arg => {
-            if (typeof arg === 'object') {
-              try { return JSON.stringify(arg, null, 2) } catch { return String(arg) }
-            }
-            return String(arg)
-          }).join(' ')
-          if (formattedParts.length > 0) {
-            formattedParts[formattedParts.length - 1].text += ' ' + remainingText
-          } else {
-            formattedParts.push({ text: remainingText })
-          }
-        }
-
-        message = formattedParts.map(p => p.text).join('')
-      } else {
-        message = args.map(arg => {
-          if (typeof arg === 'object') {
-            try { return JSON.stringify(arg, null, 2) } catch { return String(arg) }
-          }
-          return String(arg)
-        }).join(' ')
-        formattedParts = [{ text: message }]
-      }
-
-      const logEntry = { type, message, formattedParts, timestamp: Date.now() }
-      consoleLogRef.current.push(logEntry)
-      if (consoleLogRef.current.length > 1000) {
-        consoleLogRef.current = consoleLogRef.current.slice(-1000)
-      }
-      if (showConsoleLogs) {
-        setConsoleLogs([...consoleLogRef.current])
-      }
-    }
-
-    console.log = (...args: any[]) => { captureLog('log', ...args); originalLog.apply(console, args) }
-    console.error = (...args: any[]) => { captureLog('error', ...args); originalError.apply(console, args) }
-    console.warn = (...args: any[]) => { captureLog('warn', ...args); originalWarn.apply(console, args) }
-    console.info = (...args: any[]) => { captureLog('info', ...args); originalInfo.apply(console, args) }
-
-    return () => {
-      console.log = originalLog
-      console.error = originalError
-      console.warn = originalWarn
-      console.info = originalInfo
-    }
-  }, [showConsoleLogs])
-
   const handleShowConsoleLogs = () => {
-    setConsoleLogs([...consoleLogRef.current])
     setShowConsoleLogs(true)
     setConsoleLogSearch('')
     setConsoleLogLevel('all')
   }
 
   const handleClearConsoleLogs = () => {
-    consoleLogRef.current = []
-    setConsoleLogs([])
+    clearConsoleLogBuffer()
     toast.success(t('Console logs cleared'))
   }
 
@@ -406,7 +335,7 @@ export default function InBrowserCacheSetting() {
         </Button>
         <Button variant="outline" className="shrink-0" onClick={handleShowConsoleLogs}>
           <Terminal className="mr-2 h-4 w-4" />
-          {t('View Console Logs')} ({consoleLogRef.current.length})
+          {t('View Console Logs')} ({consoleLogs.length})
         </Button>
       </div>
 

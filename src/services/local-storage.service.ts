@@ -59,9 +59,6 @@ const SETTINGS_KEYS = [
   StorageKey.QUICK_ZAP,
   StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT,
   StorageKey.AUTOPLAY,
-  StorageKey.HIDE_UNTRUSTED_INTERACTIONS,
-  StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS,
-  StorageKey.HIDE_UNTRUSTED_NOTES,
   StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP,
   StorageKey.DEFAULT_SHOW_NSFW,
   StorageKey.DISMISSED_TOO_MANY_RELAYS_ALERT,
@@ -81,10 +78,6 @@ const SETTINGS_KEYS = [
   StorageKey.SHOW_LIVE_ACTIVITIES_BANNER,
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
-  StorageKey.DEFAULT_QUIET_ENABLED,
-  StorageKey.DEFAULT_QUIET_DAYS,
-  StorageKey.RESPECT_QUIET_TAGS,
-  StorageKey.GLOBAL_QUIET_MODE,
   StorageKey.SHOW_RSS_FEED,
   StorageKey.PANE_MODE,
   StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
@@ -108,9 +101,6 @@ class LocalStorageService {
   private includePublicZapReceipt: boolean = true
   private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
   private autoplay: boolean = true
-  private hideUntrustedInteractions: boolean = false
-  private hideUntrustedNotifications: boolean = false
-  private hideUntrustedNotes: boolean = false
   private mediaUploadServiceConfigMap: Record<string, TMediaUploadServiceConfig> = {}
   private defaultShowNsfw: boolean = false
   private dismissedTooManyRelaysAlert: boolean = false
@@ -127,10 +117,6 @@ class LocalStorageService {
   private shownCreateWalletGuideToastPubkeys: Set<string> = new Set()
   private defaultExpirationEnabled: boolean = false
   private defaultExpirationMonths: number = 6
-  private defaultQuietEnabled: boolean = false
-  private defaultQuietDays: number = 7
-  private respectQuietTags: boolean = true
-  private globalQuietMode: boolean = false
   private showRssFeed: boolean = true
   private panelMode: 'single' | 'double' = 'single'
   private addRandomRelaysToPublish: boolean = false
@@ -218,25 +204,6 @@ class LocalStorageService {
       window.localStorage.getItem(StorageKey.MEDIA_UPLOAD_SERVICE) ?? DEFAULT_NIP_96_SERVICE
 
     this.autoplay = window.localStorage.getItem(StorageKey.AUTOPLAY) !== 'false'
-
-    const hideUntrustedEvents =
-      window.localStorage.getItem(StorageKey.HIDE_UNTRUSTED_EVENTS) === 'true'
-    const storedHideUntrustedInteractions = window.localStorage.getItem(
-      StorageKey.HIDE_UNTRUSTED_INTERACTIONS
-    )
-    const storedHideUntrustedNotifications = window.localStorage.getItem(
-      StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS
-    )
-    const storedHideUntrustedNotes = window.localStorage.getItem(StorageKey.HIDE_UNTRUSTED_NOTES)
-    this.hideUntrustedInteractions = storedHideUntrustedInteractions
-      ? storedHideUntrustedInteractions === 'true'
-      : hideUntrustedEvents
-    this.hideUntrustedNotifications = storedHideUntrustedNotifications
-      ? storedHideUntrustedNotifications === 'true'
-      : hideUntrustedEvents
-    this.hideUntrustedNotes = storedHideUntrustedNotes
-      ? storedHideUntrustedNotes === 'true'
-      : hideUntrustedEvents
 
     const mediaUploadServiceConfigMapStr = window.localStorage.getItem(
       StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP
@@ -419,7 +386,7 @@ class LocalStorageService {
       ? new Set(JSON.parse(shownCreateWalletGuideToastPubkeysStr))
       : new Set()
 
-    // Initialize expiration and quiet settings
+    // Initialize expiration settings
     const defaultExpirationEnabledStr = window.localStorage.getItem(StorageKey.DEFAULT_EXPIRATION_ENABLED)
     this.defaultExpirationEnabled = defaultExpirationEnabledStr === 'true'
 
@@ -430,23 +397,6 @@ class LocalStorageService {
         this.defaultExpirationMonths = num
       }
     }
-
-    const defaultQuietEnabledStr = window.localStorage.getItem(StorageKey.DEFAULT_QUIET_ENABLED)
-    this.defaultQuietEnabled = defaultQuietEnabledStr === 'true'
-
-    const defaultQuietDaysStr = window.localStorage.getItem(StorageKey.DEFAULT_QUIET_DAYS)
-    if (defaultQuietDaysStr) {
-      const num = parseInt(defaultQuietDaysStr)
-      if (!isNaN(num) && num >= 0 && Number.isInteger(num)) {
-        this.defaultQuietDays = num
-      }
-    }
-
-    const respectQuietTagsStr = window.localStorage.getItem(StorageKey.RESPECT_QUIET_TAGS)
-    this.respectQuietTags = respectQuietTagsStr === null ? true : respectQuietTagsStr === 'true'
-
-    const globalQuietModeStr = window.localStorage.getItem(StorageKey.GLOBAL_QUIET_MODE)
-    this.globalQuietMode = globalQuietModeStr === 'true'
 
     const showRssFeedStr = window.localStorage.getItem(StorageKey.SHOW_RSS_FEED)
     this.showRssFeed = showRssFeedStr === null ? true : showRssFeedStr === 'true' // Default to true
@@ -617,12 +567,6 @@ class LocalStorageService {
     const includeReceiptStr = get(StorageKey.INCLUDE_PUBLIC_ZAP_RECEIPT)
     if (includeReceiptStr != null) this.includePublicZapReceipt = includeReceiptStr !== 'false'
     this.autoplay = get(StorageKey.AUTOPLAY) !== 'false'
-    const hideInteractions = get(StorageKey.HIDE_UNTRUSTED_INTERACTIONS)
-    if (hideInteractions != null) this.hideUntrustedInteractions = hideInteractions === 'true'
-    const hideNotifications = get(StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS)
-    if (hideNotifications != null) this.hideUntrustedNotifications = hideNotifications === 'true'
-    const hideNotes = get(StorageKey.HIDE_UNTRUSTED_NOTES)
-    if (hideNotes != null) this.hideUntrustedNotes = hideNotes === 'true'
     const mediaConfigStr = get(StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP)
     if (mediaConfigStr != null) this.mediaUploadServiceConfigMap = JSON.parse(mediaConfigStr) as Record<string, TMediaUploadServiceConfig>
     this.defaultShowNsfw = get(StorageKey.DEFAULT_SHOW_NSFW) === 'true'
@@ -658,15 +602,6 @@ class LocalStorageService {
       const num = parseInt(defaultExpirationMonthsStr)
       if (!isNaN(num) && num >= 0) this.defaultExpirationMonths = num
     }
-    this.defaultQuietEnabled = get(StorageKey.DEFAULT_QUIET_ENABLED) === 'true'
-    const defaultQuietDaysStr = get(StorageKey.DEFAULT_QUIET_DAYS)
-    if (defaultQuietDaysStr != null) {
-      const num = parseInt(defaultQuietDaysStr)
-      if (!isNaN(num) && num >= 0) this.defaultQuietDays = num
-    }
-    const respectQuietStr = get(StorageKey.RESPECT_QUIET_TAGS)
-    if (respectQuietStr != null) this.respectQuietTags = respectQuietStr === 'true'
-    this.globalQuietMode = get(StorageKey.GLOBAL_QUIET_MODE) === 'true'
     const showRssStr = get(StorageKey.SHOW_RSS_FEED)
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const paneStr = get(StorageKey.PANE_MODE)
@@ -866,38 +801,6 @@ class LocalStorageService {
     this.persistSetting(StorageKey.AUTOPLAY, autoplay.toString())
   }
 
-  getHideUntrustedInteractions() {
-    return this.hideUntrustedInteractions
-  }
-
-  setHideUntrustedInteractions(hideUntrustedInteractions: boolean) {
-    this.hideUntrustedInteractions = hideUntrustedInteractions
-    this.persistSetting(
-      StorageKey.HIDE_UNTRUSTED_INTERACTIONS,
-      hideUntrustedInteractions.toString()
-    )
-  }
-
-  getHideUntrustedNotifications() {
-    return this.hideUntrustedNotifications
-  }
-
-  setHideUntrustedNotifications(hideUntrustedNotifications: boolean) {
-    this.hideUntrustedNotifications = hideUntrustedNotifications
-    this.persistSetting(
-      StorageKey.HIDE_UNTRUSTED_NOTIFICATIONS,
-      hideUntrustedNotifications.toString()
-    )
-  }
-
-  getHideUntrustedNotes() {
-    return this.hideUntrustedNotes
-  }
-
-  setHideUntrustedNotes(hideUntrustedNotes: boolean) {
-    this.hideUntrustedNotes = hideUntrustedNotes
-    this.persistSetting(StorageKey.HIDE_UNTRUSTED_NOTES, hideUntrustedNotes.toString())
-  }
 
   getMediaUploadServiceConfig(pubkey?: string | null): TMediaUploadServiceConfig {
     const defaultConfig = { type: 'nip96', service: this.mediaUploadService } as const
@@ -1081,45 +984,6 @@ class LocalStorageService {
       this.defaultExpirationMonths = months
       this.persistSetting(StorageKey.DEFAULT_EXPIRATION_MONTHS, months.toString())
     }
-  }
-
-  // Quiet settings
-  getDefaultQuietEnabled() {
-    return this.defaultQuietEnabled
-  }
-
-  setDefaultQuietEnabled(enabled: boolean) {
-    this.defaultQuietEnabled = enabled
-    this.persistSetting(StorageKey.DEFAULT_QUIET_ENABLED, enabled.toString())
-  }
-
-  getDefaultQuietDays() {
-    return this.defaultQuietDays
-  }
-
-  setDefaultQuietDays(days: number) {
-    if (Number.isInteger(days) && days >= 0) {
-      this.defaultQuietDays = days
-      this.persistSetting(StorageKey.DEFAULT_QUIET_DAYS, days.toString())
-    }
-  }
-
-  getRespectQuietTags() {
-    return this.respectQuietTags
-  }
-
-  setRespectQuietTags(respect: boolean) {
-    this.respectQuietTags = respect
-    this.persistSetting(StorageKey.RESPECT_QUIET_TAGS, respect.toString())
-  }
-
-  getGlobalQuietMode() {
-    return this.globalQuietMode
-  }
-
-  setGlobalQuietMode(enabled: boolean) {
-    this.globalQuietMode = enabled
-    this.persistSetting(StorageKey.GLOBAL_QUIET_MODE, enabled.toString())
   }
 
   getShowRssFeed() {

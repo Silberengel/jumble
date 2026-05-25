@@ -15,7 +15,6 @@ import { cn } from '@/lib/utils'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import noteStatsService from '@/services/note-stats.service'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { PencilLine, Repeat } from 'lucide-react'
@@ -37,7 +36,6 @@ type RepostButtonProps = {
 export function RepostButtonWithStats({ event, hideCount = false, noteStats }: RepostButtonProps) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const { publish, checkLogin, pubkey } = useNostr()
   const { relays: statsRelays } = useNoteStatsRelayHints()
   const [reposting, setReposting] = useState(false)
@@ -46,12 +44,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
   const statsLoaded = noteStats?.updatedAt != null
   const { repostCount, hasReposted } = useMemo(() => {
     return {
-      repostCount: hideUntrustedInteractions
-        ? noteStats?.reposts?.filter((repost) => isUserTrusted(repost.pubkey)).length
-        : noteStats?.reposts?.length,
+      repostCount: noteStats?.reposts?.length,
       hasReposted: pubkey ? noteStats?.repostPubkeySet?.has(pubkey) : false
     }
-  }, [noteStats, event.id, hideUntrustedInteractions, isUserTrusted])
+  }, [noteStats, event.id, pubkey])
   const showRepostCount = !hideCount && (statsLoaded || (repostCount ?? 0) > 0)
   const canRepost = !hasReposted && !reposting
 

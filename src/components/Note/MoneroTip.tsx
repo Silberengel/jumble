@@ -1,6 +1,5 @@
 import { useFetchEvent } from '@/hooks'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import {
   formatXmrAmount,
   getMoneroTipInfo,
@@ -63,9 +62,6 @@ export default function MoneroTip({
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
-
-  const inQuietMode = targetEvent ? shouldHideInteractions(targetEvent) : false
-  if (inQuietMode) return null
 
   if (!tipInfo || !tipInfo.senderPubkey) {
     return (

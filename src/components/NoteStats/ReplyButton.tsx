@@ -1,7 +1,6 @@
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
@@ -19,19 +18,16 @@ type ReplyButtonProps = {
 export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: ReplyButtonProps) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const { replyCount, hasReplied } = useMemo(() => {
     const hasReplied = pubkey
       ? noteStats?.replies?.some((reply) => reply.pubkey === pubkey)
       : false
 
     return {
-      replyCount: hideUntrustedInteractions
-        ? noteStats?.replies?.filter((reply) => isUserTrusted(reply.pubkey)).length ?? 0
-        : noteStats?.replies?.length ?? 0,
+      replyCount: noteStats?.replies?.length ?? 0,
       hasReplied
     }
-  }, [noteStats, event.id, hideUntrustedInteractions, isUserTrusted, pubkey])
+  }, [noteStats, event.id, pubkey])
   const statsLoaded = noteStats?.updatedAt != null
   const replyCountLabel = statsLoaded
     ? replyCount >= 100

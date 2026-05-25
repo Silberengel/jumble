@@ -9,7 +9,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind } from '@/constants'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { createDeletionRequestDraftEvent, createReactionDraftEvent } from '@/lib/draft-event'
 import {
   DISCUSSION_DOWNVOTE_DISPLAY,
@@ -23,7 +22,6 @@ import {
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { eventService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { TNoteStats } from '@/services/note-stats.service'
@@ -66,11 +64,9 @@ export function LikeButtonWithStats({
   const { isSmallScreen } = useScreenSize()
   const { pubkey, publish, checkLogin } = useNostr()
   const { relays: statsRelays } = useNoteStatsRelayHints()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const [liking, setLiking] = useState(false)
   const [isEmojiReactionsOpen, setIsEmojiReactionsOpen] = useState(false)
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
-  const inQuietMode = shouldHideInteractions(event)
   const isReplyToDiscussion = isReplyToDiscussionProp ?? false
   const showDiscussionVotes = isDiscussion || isReplyToDiscussion
 
@@ -78,9 +74,7 @@ export function LikeButtonWithStats({
 
   const { myLastEmoji, likeCount, upVoteCount, downVoteCount } = useMemo(() => {
     const stats = noteStats || {}
-    const likes = hideUntrustedInteractions
-      ? stats.likes?.filter((like) => isUserTrusted(like.pubkey))
-      : stats.likes
+    const likes = stats.likes
 
     const myLike = likes?.find((like) => {
       if (like.pubkey !== pubkey) return false
@@ -101,7 +95,7 @@ export function LikeButtonWithStats({
       upVoteCount,
       downVoteCount
     }
-  }, [noteStats, pubkey, hideUntrustedInteractions, showDiscussionVotes])
+  }, [noteStats, pubkey, showDiscussionVotes])
 
   /** Same idea as {@link ReplyButton}: merged likes (thread fetch / publish) can exist before snapshot sets `updatedAt`. */
   const showLikeCount = !hideCount && (statsLoaded || (likeCount ?? 0) > 0)
@@ -258,7 +252,7 @@ export function LikeButtonWithStats({
       {liking ? (
         <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
       ) : myLastEmoji && !useIconOnlyLikeTrigger ? (
-        <Emoji emoji={inQuietMode ? '+' : myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
+        <Emoji emoji={myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
       ) : (
         <SmilePlus />
       )}

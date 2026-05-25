@@ -1,4 +1,3 @@
-import HideUntrustedContentButton from '@/components/HideUntrustedContentButton'
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import StoredAccountSwitchSelect from '@/components/StoredAccountSwitchSelect'
 import { RefreshButton } from '@/components/RefreshButton'
@@ -29,7 +28,6 @@ import { useBookmarks } from '@/providers/bookmarks-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useNotificationThreadWatchOptional } from '@/providers/NotificationThreadWatchProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { dedupeFollowSetEventsByD } from '@/lib/follow-set-spell'
 import client, { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -88,7 +86,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     followListEvent
   } = useNostr()
   const { addBookmark, removeBookmark } = useBookmarks()
-  const { hideUntrustedNotifications } = useUserTrust()
   const notificationThreadWatch = useNotificationThreadWatchOptional()
   const eventsIFollowListEvent = notificationThreadWatch?.eventsIFollowListEvent ?? null
   const eventsIMutedListEvent = notificationThreadWatch?.eventsIMutedListEvent ?? null
@@ -1054,7 +1051,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                   {notificationsFeedPubkey ? (
                     <StoredAccountSwitchSelect className="min-w-0 flex-1 sm:max-w-[min(100%,20rem)]" />
                   ) : null}
-                  <HideUntrustedContentButton type="notifications" size="titlebar-icon" />
                 </div>
               ) : null}
               <div className="min-h-0 min-w-0 flex-1">
@@ -1104,9 +1100,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                     selectedFauxSpell === 'notifications' && notificationsFeedPubkey
                       ? notificationsMentionExtraHide
                       : undefined
-                  }
-                  hideUntrustedNotes={
-                    selectedFauxSpell === 'notifications' ? hideUntrustedNotifications : false
                   }
                   showPaymentAttestationAction={selectedFauxSpell === 'notifications'}
                 />

@@ -801,7 +801,7 @@ export default function PostContent({
   const createDraftEvent = useCallback(async (cleanedText: string): Promise<any> => {
     const uploadImetaTagsOpt = mediaImetaTags.length > 0 ? mediaImetaTags : undefined
 
-    // Get expiration and quiet settings
+    // Get expiration settings
     const isChattingKind = (kind: number) => 
       kind === kinds.ShortTextNote || 
       kind === ExtendedKind.COMMENT || 
@@ -810,9 +810,6 @@ export default function PostContent({
     
     const addExpirationTag = storage.getDefaultExpirationEnabled()
     const expirationMonths = storage.getDefaultExpirationMonths()
-    const addQuietTag = storage.getDefaultQuietEnabled()
-    const quietDays = storage.getDefaultQuietDays()
-    
     // Determine if we should use protected event tag
     let shouldUseProtectedEvent = false
     if (parentEvent) {
@@ -828,8 +825,6 @@ export default function PostContent({
         isNsfw,
         addExpirationTag: false,
         expirationMonths,
-        addQuietTag,
-        quietDays,
         mediaImetaTags: uploadImetaTagsOpt
       })
     } else if (parentEvent && parentEvent.kind === ExtendedKind.PUBLIC_MESSAGE) {
@@ -839,8 +834,6 @@ export default function PostContent({
         isNsfw,
         addExpirationTag: false,
         expirationMonths,
-        addQuietTag,
-        quietDays,
         mediaImetaTags: uploadImetaTagsOpt
       })
     }
@@ -885,8 +878,6 @@ export default function PostContent({
           isNsfw,
           addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE_COMMENT),
           expirationMonths,
-          addQuietTag,
-          quietDays,
           mediaImetaTags: uploadImetaTagsOpt
         }
       )
@@ -907,8 +898,6 @@ export default function PostContent({
             isNsfw,
             addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE),
             expirationMonths,
-            addQuietTag,
-            quietDays,
             mediaImetaTags: uploadImetaTagsOpt
           }
         )
@@ -922,8 +911,6 @@ export default function PostContent({
             isNsfw,
             addExpirationTag: false,
             expirationMonths,
-            addQuietTag,
-            quietDays,
             mediaImetaTags: uploadImetaTagsOpt
           }
         )
@@ -938,8 +925,6 @@ export default function PostContent({
             isNsfw,
             addExpirationTag: false,
             expirationMonths,
-            addQuietTag,
-            quietDays,
             mediaImetaTags: uploadImetaTagsOpt
           }
         )
@@ -988,9 +973,7 @@ export default function PostContent({
         addClientTag,
         isNsfw,
         addExpirationTag: false,
-        expirationMonths,
-        addQuietTag,
-        quietDays
+        expirationMonths
       })
     } else if (isWikiArticle) {
       return await createWikiArticleDraftEvent(cleanedText, mentions, {
@@ -1002,9 +985,7 @@ export default function PostContent({
         addClientTag,
         isNsfw,
         addExpirationTag: false,
-        expirationMonths,
-        addQuietTag,
-        quietDays
+        expirationMonths
       })
     } else if (isNostrSpecification) {
       const affectedKinds = parseNostrSpecAffectedKinds(nostrSpecAffectedKindRows)
@@ -1017,9 +998,7 @@ export default function PostContent({
         addClientTag,
         isNsfw,
         addExpirationTag: false,
-        expirationMonths,
-        addQuietTag,
-        quietDays
+        expirationMonths
       })
     } else if (isPublicationContent) {
       return await createPublicationContentDraftEvent(cleanedText, mentions, {
@@ -1031,9 +1010,7 @@ export default function PostContent({
         addClientTag,
         isNsfw,
         addExpirationTag: false,
-        expirationMonths,
-        addQuietTag,
-        quietDays
+        expirationMonths
       })
     }
 
@@ -1119,8 +1096,6 @@ export default function PostContent({
           isNsfw,
           addExpirationTag: false,
           expirationMonths,
-          addQuietTag,
-          quietDays,
           mediaImetaTags: uploadImetaTagsOpt
         }
       )
@@ -1135,8 +1110,6 @@ export default function PostContent({
         isNsfw,
         addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.COMMENT),
         expirationMonths,
-        addQuietTag,
-        quietDays,
         mediaImetaTags: uploadImetaTagsOpt
       })
     }
@@ -1148,8 +1121,6 @@ export default function PostContent({
         isNsfw,
         addExpirationTag: false,
         expirationMonths,
-        addQuietTag,
-        quietDays,
         mediaImetaTags: uploadImetaTagsOpt
       })
     }
@@ -1162,8 +1133,6 @@ export default function PostContent({
       isNsfw,
       addExpirationTag: addExpirationTag && isChattingKind(kinds.ShortTextNote),
       expirationMonths,
-      addQuietTag,
-      quietDays,
       mediaImetaTags: uploadImetaTagsOpt
     })
   }, [

@@ -8,7 +8,6 @@ import {
   isNip25ReactionKind,
   isNsfwEvent
 } from '@/lib/event'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { mergeNip84MarkedIntervals, renderPlaintextWithNip84MergedMarks } from '@/lib/nip84-op-body-marks'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -383,8 +382,7 @@ export default function Note({
       }
       if (
         nip84HighlightEvents?.length &&
-        displayEvent.kind === kinds.ShortTextNote &&
-        !shouldHideInteractions(displayEvent)
+        displayEvent.kind === kinds.ShortTextNote
       ) {
         const merged = mergeNip84MarkedIntervals(
           displayEvent.content ?? '',

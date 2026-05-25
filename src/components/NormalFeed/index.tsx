@@ -4,7 +4,6 @@ import { RefreshButton } from '@/components/RefreshButton'
 import Tabs, { TabDefinition } from '@/components/Tabs'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { PROFILE_MEDIA_TAB_KINDS, FAST_READ_RELAY_URLS } from '@/constants'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import type { TPrimaryPageName } from '@/PageManager'
@@ -170,7 +169,6 @@ const NormalFeed = forwardRef<TNoteListRef, {
   },
   ref
 ) {
-  const { hideUntrustedNotes } = useUserTrust()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111, feedKindFilterBypass } =
     useKindFilterOrDefaults()
@@ -397,7 +395,6 @@ const NormalFeed = forwardRef<TNoteListRef, {
           withKindFilter={withKindFilter}
           subRequests={effectiveSubRequests}
           hideReplies={listMode === 'posts'}
-          hideUntrustedNotes={hideUntrustedNotes}
           areAlgoRelays={areAlgoRelays}
           relayCapabilityReady={relayCapabilityReady}
           feedSubscriptionKey={feedSubscriptionKey}

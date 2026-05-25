@@ -7,7 +7,6 @@ import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
 import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState } from 'react'
@@ -58,9 +57,6 @@ export default function NoteStats({
   // Hide boost button for discussion events and replies to discussions
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
   const isReplyToDiscussion = useReplyUnderDiscussionRoot(event)
-
-  // Hide interaction counts if event is in quiet mode
-  const hideInteractions = shouldHideInteractions(event)
 
   /** Synthetic RSS article root: no boost/quote/zap bar entries that normal notes have. */
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
@@ -119,19 +115,18 @@ export default function NoteStats({
 
   const interactionButtons = (
     <>
-      <ReplyButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+      <ReplyButtonWithStats event={event} noteStats={noteStats} />
       {!isDiscussion && !isReplyToDiscussion && !isRssArticleRoot && (
-        <RepostButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+        <RepostButtonWithStats event={event} noteStats={noteStats} />
       )}
       <LikeButtonWithStats
         event={event}
-        hideCount={hideInteractions}
         noteStats={noteStats}
         isReplyToDiscussion={isReplyToDiscussion}
         useIconOnlyLikeTrigger={useIconOnlyLikeTrigger}
       />
       {!isRssArticleRoot && (
-        <ZapButtonWithStats event={event} hideCount={hideInteractions} noteStats={noteStats} />
+        <ZapButtonWithStats event={event} noteStats={noteStats} />
       )}
     </>
   )

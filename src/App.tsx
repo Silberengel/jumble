@@ -23,7 +23,6 @@ import { ScreenSizeProvider } from '@/providers/ScreenSizeProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { LiveActivitiesProvider } from '@/providers/LiveActivitiesProvider'
 import { UserPreferencesProvider } from '@/providers/UserPreferencesProvider'
-import { UserTrustProvider } from '@/providers/UserTrustProvider'
 import { ZapProvider } from '@/providers/ZapProvider'
 import SlowConnectionHint from '@/components/SlowConnectionHint'
 import StartupSessionBanner from '@/components/StartupSessionBanner'
@@ -51,7 +50,6 @@ export default function App(): JSX.Element {
                         <MuteListProvider>
                           <FavoriteRelaysActivityProvider>
                             <InterestListProvider>
-                              <UserTrustProvider>
                                 <BookmarksProvider>
                                   <NotificationThreadWatchProvider>
                                     <FeedProvider>
@@ -71,7 +69,6 @@ export default function App(): JSX.Element {
                                   </FeedProvider>
                                   </NotificationThreadWatchProvider>
                                 </BookmarksProvider>
-                              </UserTrustProvider>
                             </InterestListProvider>
                           </FavoriteRelaysActivityProvider>
                         </MuteListProvider>

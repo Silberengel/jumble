@@ -1,6 +1,5 @@
 import { ExtendedKind } from '@/constants'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -22,7 +21,7 @@ export default function NoteBoostBadges({ event, className }: { event: Event; cl
     return [...(noteStats?.reposts ?? [])].sort((a, b) => b.created_at - a.created_at)
   }, [noteStats, event.kind])
 
-  if (shouldHideInteractions(event) || boosters.length === 0) {
+  if (boosters.length === 0) {
     return null
   }
 

@@ -1,10 +1,8 @@
 import { Separator } from '@/components/ui/separator'
 import { ExtendedKind } from '@/constants'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { Event } from 'nostr-tools'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import HideUntrustedContentButton from '../HideUntrustedContentButton'
 import ReplyNoteList from '../ReplyNoteList'
 import ReplySort, { ReplySortOption } from './ReplySort'
 
@@ -32,11 +30,6 @@ export default function NoteInteractions({
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
   const showQuotes = showQuotesProp ?? !isDiscussion
 
-  // Hide interactions if event is in quiet mode
-  if (shouldHideInteractions(event)) {
-    return null
-  }
-
   return (
     <>
       <div className="flex items-center gap-2 min-w-0 px-2 sm:px-4 md:px-6 py-2">
@@ -47,7 +40,6 @@ export default function NoteInteractions({
           {isDiscussion && (
             <ReplySort selectedSort={replySort} onSortChange={setReplySort} />
           )}
-          <HideUntrustedContentButton type="interactions" size="icon" />
         </div>
       </div>
       <Separator />

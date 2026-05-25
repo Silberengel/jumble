@@ -1,6 +1,7 @@
 import './index.css'
 import './polyfill'
 import './lib/error-suppression'
+import './lib/console-log-buffer'
 import storage from './services/local-storage.service'
 import './services/lightning.service'
 import './lib/debug-utils'

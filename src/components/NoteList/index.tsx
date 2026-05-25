@@ -38,7 +38,6 @@ import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -658,7 +657,6 @@ const NoteList = forwardRef(
       allowKindlessRelayExplore = false,
       filterMutedNotes = true,
       hideReplies = false,
-      hideUntrustedNotes = false,
       areAlgoRelays = false,
       relayCapabilityReady = true,
       pinnedEventIds = [],
@@ -796,7 +794,6 @@ const NoteList = forwardRef(
       allowKindlessRelayExplore?: boolean
       filterMutedNotes?: boolean
       hideReplies?: boolean
-      hideUntrustedNotes?: boolean
       areAlgoRelays?: boolean
       /**
        * When false (e.g. home relay feed waiting on `getRelayInfos`), skip timeline subscribe so
@@ -851,7 +848,6 @@ const NoteList = forwardRef(
   ) => {
     const { t } = useTranslation()
     const { startLogin, pubkey } = useNostr()
-    const { isUserTrusted } = useUserTrust()
     const { mutePubkeySet } = useMuteList()
     const contentPolicy = useContentPolicyOptional()
     const hideContentMentioningMutedUsers = contentPolicy?.hideContentMentioningMutedUsers ?? false
@@ -1309,7 +1305,6 @@ const NoteList = forwardRef(
         if (pinnedEventHexIdSet.has(evt.id)) return true
         if (isEventDeleted(evt)) return true
         if (hideReplies && isReplyNoteEvent(evt)) return true
-        if (hideUntrustedNotes && !isUserTrusted(evt.pubkey)) return true
         if (filterMutedNotes && muteSetHas(mutePubkeySet, evt.pubkey)) return true
         if (
           filterMutedNotes &&
@@ -1345,7 +1340,6 @@ const NoteList = forwardRef(
       [
         filterMutedNotes,
         hideReplies,
-        hideUntrustedNotes,
         hideContentMentioningMutedUsers,
         mutePubkeySet,
         pinnedEventIds,

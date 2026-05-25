@@ -1,7 +1,6 @@
 import { useFetchEvent } from '@/hooks'
 import { usePaymentAttestationStatus } from '@/hooks/usePaymentAttestationStatus'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
-import { shouldHideInteractions } from '@/lib/event-filtering'
 import { formatAmount } from '@/lib/lightning'
 import { openNoteFromFetchOrCache } from '@/lib/navigation-related-events'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -63,12 +62,6 @@ export default function Zap({
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
-
-  const inQuietMode = targetEvent ? shouldHideInteractions(targetEvent) : false
-
-  if (inQuietMode) {
-    return null
-  }
 
   if (!zapInfo || !zapInfo.senderPubkey) {
     return (

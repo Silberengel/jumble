@@ -14,14 +14,12 @@ import {
   aggregateZapsByPubkey,
   dedupeBoostersByPubkey,
   emojiStatsKey,
-  filterStatsInteractors,
   groupReactionsByEmoji,
   MAX_NOTE_STATS_INTERACTORS_SHOWN
 } from '@/lib/note-stats-interactors'
 import { cn } from '@/lib/utils'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { TEmoji } from '@/types'
 import { useMemo, useState, type PointerEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -240,11 +238,10 @@ export function BoostCountHover({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const pubkeys = useMemo(() => {
-    const filtered = filterStatsInteractors(noteStats?.reposts, hideUntrustedInteractions, isUserTrusted)
+    const filtered = noteStats?.reposts ?? []
     return dedupeBoostersByPubkey(filtered).map((r) => r.pubkey)
-  }, [noteStats?.reposts, hideUntrustedInteractions, isUserTrusted])
+  }, [noteStats?.reposts])
 
   return (
     <NoteStatsCountHover
@@ -269,15 +266,14 @@ export function ReactionCountHover({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const { groups, title } = useMemo(() => {
-    let likes = filterStatsInteractors(noteStats?.likes, hideUntrustedInteractions, isUserTrusted)
+    let likes = noteStats?.likes ?? []
     if (emojiFilter) likes = likes.filter((l) => emojiFilter(l.emoji))
     return {
       groups: groupReactionsByEmoji(likes),
       title: titleProp ?? t('Liked by:')
     }
-  }, [noteStats?.likes, hideUntrustedInteractions, isUserTrusted, emojiFilter, titleProp, t])
+  }, [noteStats?.likes, emojiFilter, titleProp, t])
 
   const total = groups.reduce((n, g) => n + g.pubkeys.length, 0)
 
@@ -303,10 +299,8 @@ export function DiscussionVoteCountHover({
   const { t } = useTranslation()
   const emojiFilter = vote === 'up' ? isDiscussionUpvoteEmoji : isDiscussionDownvoteEmoji
 
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const pubkeys = useMemo(() => {
-    const likes = filterStatsInteractors(noteStats?.likes, hideUntrustedInteractions, isUserTrusted)
-      .filter((l) => emojiFilter(l.emoji))
+    const likes = (noteStats?.likes ?? []).filter((l) => emojiFilter(l.emoji))
     const byPk = new Map<string, number>()
     for (const l of likes) {
       const pk = l.pubkey.toLowerCase()
@@ -316,7 +310,7 @@ export function DiscussionVoteCountHover({
     return [...byPk.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([pk]) => pk)
-  }, [noteStats?.likes, hideUntrustedInteractions, isUserTrusted, emojiFilter])
+  }, [noteStats?.likes, emojiFilter])
 
   const title = (
     <span className="inline-flex items-center gap-1">
@@ -345,11 +339,10 @@ export function ZapCountHover({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const zappers = useMemo(() => {
-    const filtered = filterStatsInteractors(noteStats?.zaps, hideUntrustedInteractions, isUserTrusted)
+    const filtered = noteStats?.zaps ?? []
     return aggregateZapsByPubkey(filtered)
-  }, [noteStats?.zaps, hideUntrustedInteractions, isUserTrusted])
+  }, [noteStats?.zaps])
 
   return (
     <NoteStatsCountHover

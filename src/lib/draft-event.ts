@@ -229,8 +229,6 @@ export async function createShortTextNoteDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     /** NIP-94 imeta rows from uploads (audio/video/images as plain URLs in content). */
     mediaImetaTags?: string[][]
   } = {}
@@ -280,9 +278,6 @@ export async function createShortTextNoteDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   const baseDraft = {
     kind: kinds.ShortTextNote,
@@ -317,8 +312,6 @@ export async function createCommentDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
@@ -403,9 +396,6 @@ export async function createCommentDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   const baseDraft = {
     kind: ExtendedKind.COMMENT,
@@ -425,8 +415,6 @@ export async function createPublicMessageReplyDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][] // Allow media imeta tags for audio/video
   } = {}
 ): Promise<TDraftEvent> {
@@ -478,9 +466,6 @@ export async function createPublicMessageReplyDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   // console.log('📝 Final public message reply draft tags:', {
   //   pTags: tags.filter(tag => tag[0] === 'p'),
@@ -505,8 +490,6 @@ export async function createPublicMessageDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][] // Allow media imeta tags for audio/video
   } = {}
 ): Promise<TDraftEvent> {
@@ -538,9 +521,6 @@ export async function createPublicMessageDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   const baseDraft = {
     kind: ExtendedKind.PUBLIC_MESSAGE,
@@ -1146,16 +1126,12 @@ export async function createPollDraftEvent(
     isNsfw,
     addExpirationTag,
     expirationMonths,
-    addQuietTag,
-    quietDays,
     mediaImetaTags
   }: {
     addClientTag?: boolean // accepted for API compat; client tag is added in publish()
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
@@ -1210,9 +1186,6 @@ export async function createPollDraftEvent(
     tags.push(buildExpirationTag(expirationMonths))
   }
 
-  if (addQuietTag && quietDays) {
-    tags.push(buildQuietTag(quietDays))
-  }
 
   const baseDraft = {
     content: transformedEmojisContent.trim(),
@@ -1658,10 +1631,6 @@ function buildExpirationTag(months: number): string[] {
   return ['expiration', expirationTime.toString()]
 }
 
-function buildQuietTag(days: number): string[] {
-  const quietEndTime = dayjs().add(days, 'day').unix()
-  return ['quiet', quietEndTime.toString()]
-}
 
 function trimTagEnd(tag: string[]) {
   let endIndex = tag.length - 1
@@ -1691,8 +1660,6 @@ export async function createHighlightDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][]
   }
 ): Promise<TDraftEvent> {
@@ -1818,9 +1785,6 @@ export async function createHighlightDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options?.addQuietTag && options?.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   mergeUploadImetaTagsInto(tags, options?.mediaImetaTags)
 
@@ -1843,8 +1807,6 @@ export async function createVoiceDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     /** Extra NIP-94 rows from uploads (merged after content-derived imeta, deduped by URL). */
     mediaImetaTags?: string[][]
   } = {}
@@ -1871,9 +1833,6 @@ export async function createVoiceDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: ExtendedKind.VOICE,
@@ -1894,8 +1853,6 @@ export async function createVoiceCommentDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     /** NIP-94 rows from file upload (merged before `imetaTags`; deduped by URL). */
     mediaImetaTags?: string[][]
   } = {}
@@ -1979,9 +1936,6 @@ export async function createVoiceCommentDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: ExtendedKind.VOICE_COMMENT,
@@ -2000,8 +1954,6 @@ export async function createPictureDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
@@ -2026,9 +1978,6 @@ export async function createPictureDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
 
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
 
   // Kind 20 caption is user text only; the file URL lives in `imeta`. Many indexers and caches
   // still deliver full tags, but mirroring the URL in `content` matches kind-1-style clients and
@@ -2060,8 +2009,6 @@ export async function createVideoDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
     mediaImetaTags?: string[][]
   } = {}
 ): Promise<TDraftEvent> {
@@ -2086,9 +2033,6 @@ export async function createVideoDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: videoKind, // NIP-71: 21, 22, or 34235
@@ -2113,8 +2057,6 @@ export async function createLongFormArticleDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
   } = {}
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -2161,9 +2103,6 @@ export async function createLongFormArticleDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: kinds.LongFormArticle,
@@ -2194,8 +2133,6 @@ export async function createWikiArticleDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
   }
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -2231,9 +2168,6 @@ export async function createWikiArticleDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: ExtendedKind.WIKI_ARTICLE,
@@ -2256,8 +2190,6 @@ export async function createNostrSpecificationDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
   }
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -2295,9 +2227,6 @@ export async function createNostrSpecificationDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: ExtendedKind.NOSTR_SPECIFICATION,
@@ -2319,8 +2248,6 @@ export async function createPublicationContentDraftEvent(
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
-    addQuietTag?: boolean
-    quietDays?: number
   }
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -2356,9 +2283,6 @@ export async function createPublicationContentDraftEvent(
     tags.push(buildExpirationTag(options.expirationMonths))
   }
   
-  if (options.addQuietTag && options.quietDays) {
-    tags.push(buildQuietTag(options.quietDays))
-  }
   
   return setDraftEventCache({
     kind: ExtendedKind.PUBLICATION_CONTENT,

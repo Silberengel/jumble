@@ -1,5 +1,4 @@
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { cn } from '@/lib/utils'
 import noteStatsService from '@/services/note-stats.service'
 import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
@@ -21,7 +20,6 @@ export default function RssUrlThreadStatsBar({
   const { relayUrls: statsRelays, relayMergeTier, currentRelaysKey } = useRssUrlThreadQueryRelays()
   const statsRelaysRef = useRef(statsRelays)
   statsRelaysRef.current = statsRelays
-  const { hideUntrustedInteractions, isUserTrusted } = useUserTrust()
   const noteStats = useNoteStatsById(event.id)
   const [loading, setLoading] = useState(false)
 
@@ -38,23 +36,14 @@ export default function RssUrlThreadStatsBar({
     const replies = noteStats?.replies ?? []
     const likes = noteStats?.likes ?? []
     const highlights = noteStats?.highlights ?? []
-    const trustedReplyCount = hideUntrustedInteractions
-      ? replies.filter((r) => isUserTrusted(r.pubkey)).length
-      : replies.length
-    const trustedReactionCount = hideUntrustedInteractions
-      ? likes.filter((l) => isUserTrusted(l.pubkey)).length
-      : likes.length
-    const trustedHighlightCount = hideUntrustedInteractions
-      ? highlights.filter((h) => isUserTrusted(h.pubkey)).length
-      : highlights.length
     const bookmarkCountInner = noteStats?.bookmarkPubkeySet?.size ?? 0
     return {
-      replyCount: trustedReplyCount,
-      reactionCount: trustedReactionCount,
-      highlightCount: trustedHighlightCount,
+      replyCount: replies.length,
+      reactionCount: likes.length,
+      highlightCount: highlights.length,
       bookmarkCount: bookmarkCountInner
     }
-  }, [noteStats, hideUntrustedInteractions, isUserTrusted])
+  }, [noteStats])
 
   return (
     <div

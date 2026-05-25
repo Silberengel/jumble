@@ -30,7 +30,6 @@ import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import {
@@ -109,7 +108,6 @@ function ReplyNoteList({
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigation()
-  const { hideUntrustedInteractions, isUserTrusted, isTrustLoaded } = useUserTrust()
   const noteStats = useNoteStatsById(event.id)
   const { mutePubkeySet } = useMuteList()
   const { hideContentMentioningMutedUsers } = useContentPolicy()
@@ -1138,26 +1136,12 @@ function ReplyNoteList({
       if (isSuperchatKind(item.kind)) return true
       // Backlink rows (quotes, highlights, …): show even when author is not in the trust list.
       if (isQuote) return true
-      if (isTrustLoaded && hideUntrustedInteractions && !isUserTrusted(item.pubkey)) {
-        if (rootInfo?.type !== 'I') {
-          const repliesForThisReply = repliesMap.get(item.id)
-          if (
-            !repliesForThisReply ||
-            repliesForThisReply.events.every((evt) => !isUserTrusted(evt.pubkey))
-          ) {
-            return false
-          }
-        }
-      }
       return true
     },
     [
       mutePubkeySet,
       hideContentMentioningMutedUsers,
       quoteUiIdSet,
-      isTrustLoaded,
-      hideUntrustedInteractions,
-      isUserTrusted,
       rootInfo?.type,
       repliesMap,
       event,

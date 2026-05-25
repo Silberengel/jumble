@@ -17,10 +17,8 @@ import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useFontSize } from '@/providers/FontSizeProvider'
 import { useTheme } from '@/providers/ThemeProvider'
 import { useUserPreferences } from '@/providers/UserPreferencesProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { TMediaAutoLoadPolicy } from '@/types'
 import { SelectValue } from '@radix-ui/react-select'
-import { ExternalLink } from 'lucide-react'
 import { forwardRef, HTMLProps, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -42,7 +40,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
     mediaAutoLoadPolicy,
     setMediaAutoLoadPolicy
   } = useContentPolicy()
-  const { hideUntrustedNotes, updateHideUntrustedNotes } = useUserTrust()
   const {
     notificationListStyle,
     updateNotificationListStyle,
@@ -203,16 +200,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
           />
         </SettingItem>
         <SettingItem>
-          <Label htmlFor="hide-untrusted-notes" className="text-base font-normal">
-            {t('Hide untrusted notes')}
-          </Label>
-          <Switch
-            id="hide-untrusted-notes"
-            checked={hideUntrustedNotes}
-            onCheckedChange={updateHideUntrustedNotes}
-          />
-        </SettingItem>
-        <SettingItem>
           <Label htmlFor="hide-content-mentioning-muted-users" className="text-base font-normal">
             {t('Hide content mentioning muted users')}
           </Label>
@@ -229,22 +216,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
           <Switch id="show-nsfw" checked={defaultShowNsfw} onCheckedChange={setDefaultShowNsfw} />
         </SettingItem>
         {/* DEPRECATED: Double-panel setting removed for technical debt reduction */}
-        <SettingItem>
-          <div>
-            <a
-              className="flex items-center gap-1 cursor-pointer hover:underline"
-              href="https://emojito.meme/browse"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t('Custom emoji management')}
-              <ExternalLink />
-            </a>
-            <div className="text-muted-foreground">
-              {t('After changing emojis, you may need to refresh the page')}
-            </div>
-          </div>
-        </SettingItem>
       </div>
     </SecondaryPageLayout>
   )

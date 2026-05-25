@@ -26,7 +26,6 @@ import { cn, isTouchDevice } from '@/lib/utils'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
-import { useUserTrust } from '@/contexts/user-trust-context'
 import { queryService } from '@/services/client.service'
 import { getSessionFeedSnapshot } from '@/services/session-feed-snapshot.service'
 import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures'
@@ -42,7 +41,6 @@ export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) 
   const { push } = useSecondaryPage()
   const { pubkey, checkLogin, relayList } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { hideUntrustedNotes, isUserTrusted } = useUserTrust()
   const { mutePubkeySet } = useMuteList()
   const [showEditor, setShowEditor] = useState(false)
   const [myReview, setMyReview] = useState<NostrEvent | null>(null)
@@ -68,7 +66,6 @@ export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) 
   const ingestReviewEvent = useCallback(
     (evt: NostrEvent) => {
       if (muteSetHas(mutePubkeySet, evt.pubkey)) return
-      if (hideUntrustedNotes && !isUserTrusted(evt.pubkey)) return
       const stars = getStarsFromRelayReviewEvent(evt)
       if (!stars) return
 
@@ -84,7 +81,7 @@ export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) 
         return [...filtered, evt].sort((a, b) => compareEvents(b, a))
       })
     },
-    [pubkey, mutePubkeySet, hideUntrustedNotes, isUserTrusted]
+    [pubkey, mutePubkeySet]
   )
 
   useEffect(() => {
@@ -104,7 +101,6 @@ export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) 
         if (evt.kind !== ExtendedKind.RELAY_REVIEW || !relayReviewEventTargetsRelay(evt, relayUrl))
           continue
         if (muteSetHas(mutePubkeySet, evt.pubkey)) continue
-        if (hideUntrustedNotes && !isUserTrusted(evt.pubkey)) continue
         const st = getStarsFromRelayReviewEvent(evt)
         if (!st) continue
         if (pubkey && evt.pubkey === pubkey) {

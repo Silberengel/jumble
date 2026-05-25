@@ -136,7 +136,6 @@ const ProfileFeed = forwardRef<
           mergeTimelineWhenSubRequestFiltersMatch
           pinnedEventIds={pinnedEventIds}
           hideReplies={false}
-          hideUntrustedNotes={false}
           filterMutedNotes={false}
           showKind1OPs={showKind1OPs}
           showKind1Replies={showKind1Replies}

@@ -3,16 +3,6 @@ import { TEmoji } from '@/types'
 
 export const MAX_NOTE_STATS_INTERACTORS_SHOWN = 32
 
-export function filterStatsInteractors<T extends { pubkey: string }>(
-  items: T[] | undefined,
-  hideUntrusted: boolean,
-  isUserTrusted: (pk: string) => boolean
-): T[] {
-  if (!items?.length) return []
-  if (!hideUntrusted) return items
-  return items.filter((item) => isUserTrusted(item.pubkey))
-}
-
 export function emojiStatsKey(emoji: TEmoji | string): string {
   return typeof emoji === 'string' ? emoji : emoji.shortcode
 }
