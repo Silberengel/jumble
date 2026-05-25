@@ -1,7 +1,9 @@
 import { getParentBech32Id, getRootBech32Id } from '@/lib/event'
 import { toNote } from '@/lib/link'
+import { prefetchThreadContextForNavigation } from '@/lib/thread-context-local'
 import client from '@/services/client.service'
 import type { Event } from 'nostr-tools'
+import { navigationEventStore } from '@/services/navigation-event-store'
 
 /**
  * Parent / root events already in the session cache (e.g. from {@link ParentNotePreview} or the feed).
@@ -29,15 +31,26 @@ export function resolveCachedNoteEvent(fetched: Event | undefined, noteId?: stri
   return client.peekSessionCachedEvent(noteId.trim())
 }
 
-export function openNoteFromFetchOrCache(
+export async function openNoteFromFetchOrCache(
   navigateToNote: NavigateToNoteFn,
   noteId: string,
   fetched?: Event
-): void {
+): Promise<void> {
   const resolved = resolveCachedNoteEvent(fetched, noteId)
   if (resolved) {
+    await seedThreadContextForNavigation(resolved)
     navigateToNote(toNote(resolved), resolved, getCachedThreadContextEvents(resolved))
     return
   }
   navigateToNote(toNote(noteId))
+}
+
+/** Seed navigation store with parent/root from disk before the note panel mounts. */
+export async function seedThreadContextForNavigation(event: Event): Promise<Event[]> {
+  const prefetched = await prefetchThreadContextForNavigation(event)
+  for (const ev of prefetched) {
+    client.addEventToCache(ev)
+    navigationEventStore.setEvent(ev)
+  }
+  return prefetched
 }

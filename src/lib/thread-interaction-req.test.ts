@@ -47,4 +47,15 @@ describe('buildThreadInteractionFilters', () => {
     expect(filters.some((f) => f['#e']?.[0] === SNAP_HEX)).toBe(true)
     expect(filters.some((f) => f['#a']?.length === 1)).toBe(true)
   })
+
+  it('adds open-note #e filters when viewing a mid-thread reply', () => {
+    const opHex = 'd'.repeat(64)
+    const filters = buildThreadInteractionFilters({
+      root: { type: 'E', id: ROOT_HEX, pubkey: 'c'.repeat(64) },
+      opEventKind: kinds.ShortTextNote,
+      opEventHexId: opHex,
+      limit: 100
+    })
+    expect(filters.some((f) => f['#e']?.[0] === opHex)).toBe(true)
+  })
 })

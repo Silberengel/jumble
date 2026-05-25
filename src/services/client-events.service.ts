@@ -1089,11 +1089,16 @@ export class EventService {
    * found by BFS over e/E/q and (for `a`-root threads) a-tag links. Merges with relay fetches via ReplyProvider.
    */
   getSessionThreadInteractionEvents(
-    root: { type: 'E'; id: string } | { type: 'A'; id: string; eventId: string } | { type: 'I'; id: string }
+    root: { type: 'E'; id: string } | { type: 'A'; id: string; eventId: string } | { type: 'I'; id: string },
+    openNoteHexId?: string
   ): NEvent[] {
     if (root.type === 'I') return []
 
     const threadKeys = new Set<string>()
+    const openHex = openNoteHexId?.trim().toLowerCase()
+    if (openHex && /^[0-9a-f]{64}$/.test(openHex)) {
+      threadKeys.add(openHex)
+    }
     if (root.type === 'E') {
       const id = root.id.trim().toLowerCase()
       if (!/^[0-9a-f]{64}$/.test(id)) return []

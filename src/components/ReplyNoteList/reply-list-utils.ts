@@ -1,7 +1,8 @@
 import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
-import { isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
+import { getParentEventHexId, isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
 import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
+import type { TRepliesMap } from '@/lib/reply-index'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
@@ -24,6 +25,101 @@ export {
   THREAD_PROFILE_CHUNK
 } from './types'
 
+export function openNoteHexId(event: Pick<NEvent, 'id'>): string | undefined {
+  const id = event.id?.trim().toLowerCase()
+  return id && /^[0-9a-f]{64}$/.test(id) ? id : undefined
+}
+
+/** Whether `evt` is a direct or nested reply under the opened note (not a sibling branch). */
+export function replyIsInSubtreeBelowOpenNote(
+  evt: NEvent,
+  opHexLower: string,
+  threadWalk: ReadonlyMap<string, NEvent>
+): boolean {
+  let cur: string | undefined = getParentEventHexId(evt)?.toLowerCase()
+  if (!cur) return false
+  if (cur === opHexLower) return true
+  const seen = new Set<string>()
+  for (let hop = 0; hop < 14 && cur; hop++) {
+    if (seen.has(cur)) return false
+    seen.add(cur)
+    if (cur === opHexLower) return true
+    const parentEv: NEvent | undefined =
+      threadWalk.get(cur) ?? client.peekSessionCachedEvent(cur)
+    if (!parentEv) return false
+    cur = getParentEventHexId(parentEv)?.toLowerCase()
+  }
+  return false
+}
+
+function dedupeEventsFromRepliesMap(repliesMap: TRepliesMap): NEvent[] {
+  const byId = new Map<string, NEvent>()
+  for (const { events } of repliesMap.values()) {
+    for (const evt of events) {
+      byId.set(evt.id, evt)
+    }
+  }
+  return [...byId.values()]
+}
+
+/** Replies to show under “Antworten” for the opened note (direct + nested, not sibling branches). */
+export function collectDisplayedThreadReplies(
+  opEvent: NEvent,
+  rootInfo: TRootInfo | undefined,
+  repliesMap: TRepliesMap,
+  isDiscussionRoot: boolean,
+  mutePubkeySet: Set<string>,
+  hideContentMentioningMutedUsers: boolean | undefined
+): NEvent[] {
+  const threadWalk = new Map<string, NEvent>()
+  for (const evt of dedupeEventsFromRepliesMap(repliesMap)) {
+    threadWalk.set(evt.id.toLowerCase(), evt)
+  }
+
+  if (rootInfo?.type === 'I') {
+    const opHex = openNoteHexId(opEvent)
+    const out: NEvent[] = []
+    const seen = new Set<string>()
+    for (const evt of threadWalk.values()) {
+      if (seen.has(evt.id)) continue
+      if (isPollVoteKind(evt)) continue
+      if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+      if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) continue
+      if (
+        opHex &&
+        opEvent.kind !== ExtendedKind.RSS_THREAD_ROOT &&
+        !replyIsInSubtreeBelowOpenNote(evt, opHex, threadWalk)
+      ) {
+        continue
+      }
+      seen.add(evt.id)
+      out.push(evt)
+    }
+    return out
+  }
+
+  const opHex = openNoteHexId(opEvent)
+  if (!opHex) return []
+
+  const isThreadRootView =
+    rootInfo?.type === 'E' && rootInfo.id.trim().toLowerCase() === opHex
+
+  const out: NEvent[] = []
+  const seen = new Set<string>()
+  for (const evt of threadWalk.values()) {
+    if (seen.has(evt.id)) continue
+    if (isPollVoteKind(evt)) continue
+    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+    if (rootInfo && !replyMatchesThreadForList(evt, opEvent, rootInfo, isDiscussionRoot, threadWalk)) {
+      continue
+    }
+    if (!isThreadRootView && !replyIsInSubtreeBelowOpenNote(evt, opHex, threadWalk)) continue
+    seen.add(evt.id)
+    out.push(evt)
+  }
+  return out
+}
+
 /** Session LRU + publication store + archive: paint thread replies before relay round-trip. */
 export async function loadThreadRepliesFromLocalStores(
   rootInfo: TRootInfo,
@@ -35,6 +131,7 @@ export async function loadThreadRepliesFromLocalStores(
   const filters = buildThreadInteractionFilters({
     root: rootInfo,
     opEventKind: opEvent.kind,
+    opEventHexId: openNoteHexId(opEvent),
     limit: THREAD_REPLY_LIMIT
   })
   if (!filters.length) return []

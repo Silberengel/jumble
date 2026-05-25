@@ -60,6 +60,7 @@ import {
   isProfileDetailPathname
 } from '@/lib/document-meta'
 import { normalizeUrl } from './lib/url'
+import { prefetchThreadContextForNavigation } from '@/lib/thread-context-local'
 import modalManager from './services/modal-manager.service'
 import { decodeRssArticlePathSegment, encodeRssArticlePathSegment } from '@/lib/rss-article'
 import { matchAppRoute } from './routes'
@@ -469,7 +470,7 @@ export function useSmartNoteNavigation() {
   const { isSmallScreen } = useScreenSize()
   const { current: currentPrimaryPage } = usePrimaryPage()
   
-  const navigateToNote = (url: string, event?: Event, relatedEvents?: Event[]) => {
+  const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
     // Extract noteId from URL (handles both /notes/{id} and /{context}/notes/{id})
     const parsed = parseNoteUrl(url)
     if (!parsed) {
@@ -482,6 +483,12 @@ export function useSmartNoteNavigation() {
     if (event) {
       navigationEventStore.setEvent(event, noteId)
       client.addEventToCache(event)
+      await prefetchThreadContextForNavigation(event).then((prefetched) => {
+        for (const ev of prefetched) {
+          client.addEventToCache(ev)
+          navigationEventStore.setEvent(ev)
+        }
+      })
     }
     // Pre-cache related events (parent, root) and nostr embeds so NotePage avoids skeletons.
     if (relatedEvents?.length) {
@@ -542,7 +549,7 @@ export function useSmartNoteNavigationOptional() {
   const { isSmallScreen } = screenSize
   const { current: currentPrimaryPage } = primaryPage
 
-  const navigateToNote = (url: string, event?: Event, relatedEvents?: Event[]) => {
+  const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
     const parsed = parseNoteUrl(url)
     if (!parsed) {
       logger.warn('navigateToNote (optional) ignored invalid note URL', { url })
@@ -553,6 +560,12 @@ export function useSmartNoteNavigationOptional() {
     if (event) {
       navigationEventStore.setEvent(event, noteId)
       client.addEventToCache(event)
+      await prefetchThreadContextForNavigation(event).then((prefetched) => {
+        for (const ev of prefetched) {
+          client.addEventToCache(ev)
+          navigationEventStore.setEvent(ev)
+        }
+      })
     }
     if (relatedEvents?.length) {
       for (const ev of relatedEvents) {

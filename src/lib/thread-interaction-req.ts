@@ -21,6 +21,26 @@ export type BuildThreadInteractionFiltersInput = {
   /** Kind of the note/article the user opened (affects zap inclusion). */
   opEventKind: number
   limit: number
+  /** Hex id of the note the user opened — also REQ `#e` when it is not the thread root. */
+  opEventHexId?: string
+}
+
+function appendOpenNoteScopedEventFilters(
+  filters: Filter[],
+  opEventHexId: string | undefined,
+  rootHexIds: readonly string[],
+  kindsOnETag: number[],
+  kindsOnUpperETag: number[],
+  kindsOnQTag: number[],
+  limit: number
+): void {
+  const opHex = opEventHexId?.trim().toLowerCase()
+  if (!opHex || !/^[0-9a-f]{64}$/.test(opHex)) return
+  const rootSet = new Set(rootHexIds.map((id) => id.trim().toLowerCase()).filter(Boolean))
+  if (rootSet.has(opHex)) return
+  filters.push({ '#e': [opHex], kinds: kindsOnETag, limit })
+  filters.push({ '#E': [opHex], kinds: kindsOnUpperETag, limit })
+  filters.push({ '#q': [opHex], kinds: kindsOnQTag, limit })
 }
 
 /**
@@ -28,7 +48,7 @@ export type BuildThreadInteractionFiltersInput = {
  * Client code classifies replies vs backlinks; {@link QueryService} splits only when over relay caps.
  */
 export function buildThreadInteractionFilters(input: BuildThreadInteractionFiltersInput): Filter[] {
-  const { root, opEventKind, limit } = input
+  const { root, opEventKind, limit, opEventHexId } = input
 
   const kindsNoteCommentVoiceZap = sortedUniqueKinds([
     kinds.ShortTextNote,
@@ -70,19 +90,31 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
   const filters: Filter[] = []
 
   if (root.type === 'E') {
-    filters.push({ '#e': [root.id], kinds: kindsOnETag, limit })
-    filters.push({ '#E': [root.id], kinds: kindsOnUpperETag, limit })
-    filters.push({ '#q': [root.id], kinds: kindsOnQTag, limit })
+    const rootHex = root.id.trim().toLowerCase()
+    filters.push({ '#e': [rootHex], kinds: kindsOnETag, limit })
+    filters.push({ '#E': [rootHex], kinds: kindsOnUpperETag, limit })
+    filters.push({ '#q': [rootHex], kinds: kindsOnQTag, limit })
     if (opEventKind === ExtendedKind.PUBLIC_MESSAGE) {
-      filters.push({ '#q': [root.id], kinds: [ExtendedKind.PUBLIC_MESSAGE], limit })
+      filters.push({ '#q': [rootHex], kinds: [ExtendedKind.PUBLIC_MESSAGE], limit })
     }
+    appendOpenNoteScopedEventFilters(
+      filters,
+      opEventHexId,
+      [rootHex],
+      kindsOnETag,
+      kindsOnUpperETag,
+      kindsOnQTag,
+      limit
+    )
     return filters
   }
 
   filters.push({ '#a': [root.id], kinds: kindsOnETag, limit })
   filters.push({ '#A': [root.id], kinds: kindsOnUpperETag, limit })
+  const rootHexIds: string[] = []
   if (/^[0-9a-f]{64}$/i.test(root.eventId)) {
     const eSnap = root.eventId.trim().toLowerCase()
+    rootHexIds.push(eSnap)
     filters.push({ '#e': [eSnap], kinds: kindsOnETag, limit })
     filters.push({ '#E': [eSnap], kinds: kindsOnUpperETag, limit })
   }
@@ -92,6 +124,15 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
   if (qVals.length > 0) {
     filters.push({ '#q': qVals, kinds: kindsOnQTag, limit })
   }
+  appendOpenNoteScopedEventFilters(
+    filters,
+    opEventHexId,
+    rootHexIds,
+    kindsOnETag,
+    kindsOnUpperETag,
+    kindsOnQTag,
+    limit
+  )
   return filters
 }
 

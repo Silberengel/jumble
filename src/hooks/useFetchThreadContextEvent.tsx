@@ -1,14 +1,14 @@
 import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { resolveThreadContextEventFromLocalStores } from '@/lib/thread-context-local'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
-import { getNoteBech32Id, getParentETag, getRootETag } from '@/lib/event'
+import { getParentETag, getRootETag } from '@/lib/event'
 import { buildThreadContextFetchRelayUrls } from '@/lib/thread-context-relays'
 import client, { eventService } from '@/services/client.service'
-import { navigationEventStore } from '@/services/navigation-event-store'
 import { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -83,44 +83,22 @@ export function useFetchThreadContextEvent(
 
     const skipShortcuts = refetchToken > 0
 
-    const initialMatches =
-      initialEvent &&
-      (initialEvent.id === eventId ||
-        (() => {
-          try {
-            return getNoteBech32Id(initialEvent) === eventId
-          } catch {
-            return false
-          }
-        })())
-    if (!skipShortcuts && initialMatches && initialEvent) {
-      if (!isEventDeleted(initialEvent)) {
-        setEvent(initialEvent)
-        addReplies([initialEvent])
-        setIsFetching(false)
-      }
-      return () => {
-        cancelled = true
-      }
-    }
-
-    if (!skipShortcuts) {
-      const navigationEvent = navigationEventStore.peekEvent(eventId)
-      if (navigationEvent && !isEventDeleted(navigationEvent)) {
-        setEvent(navigationEvent)
-        addReplies([navigationEvent])
-        setIsFetching(false)
-        return () => {
-          cancelled = true
+    void (async () => {
+      if (!skipShortcuts) {
+        const local = await resolveThreadContextEventFromLocalStores(eventId, initialEvent)
+        if (cancelled) return
+        if (local && !isEventDeleted(local)) {
+          setEvent(local)
+          addReplies([local])
+          setIsFetching(false)
+          return
         }
       }
-    }
 
-    setEvent(undefined)
-    setError(null)
-    setIsFetching(true)
+      setEvent(undefined)
+      setError(null)
+      setIsFetching(true)
 
-    const fetchWithFallback = async () => {
       try {
         const relayUrls = await buildThreadContextFetchRelayUrls(
           contextEvent,
@@ -171,9 +149,7 @@ export function useFetchThreadContextEvent(
           setIsFetching(false)
         }
       }
-    }
-
-    void fetchWithFallback()
+    })()
 
     return () => {
       cancelled = true

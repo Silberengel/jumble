@@ -67,6 +67,7 @@ import {
   backlinkRunSectionClass,
   buildVisibleBacklinkRows,
   EA_THREAD_TAIL_REFERENCE_KINDS,
+  collectDisplayedThreadReplies,
   fetchPaymentAttestationsForRecipient,
   hydrateThreadRepliesFromStats,
   isEaThreadTailBacklinkCandidate,
@@ -75,7 +76,9 @@ import {
   loadThreadRepliesFromLocalStores,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
   moveReportsToEndPreserveOrder,
+  openNoteHexId,
   partitionAndSortBacklinkTail,
+  replyIsInSubtreeBelowOpenNote,
   replyFeedZapsFirst,
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
@@ -138,78 +141,21 @@ function ReplyNoteList({
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
 
   const replies: NEvent[] = useMemo(() => {
-    const replyIdSet = new Set<string>()
-    const replyEvents: NEvent[] = []
-    const currentEventKey = isReplaceableEvent(event.kind)
-      ? getReplaceableCoordinateFromEvent(event)
-      : /^[0-9a-f]{64}$/i.test(event.id) ? event.id.toLowerCase() : event.id
-    // For replaceable events, also check the event ID in case replies are stored there
-    const eventIdKey = /^[0-9a-f]{64}$/i.test(event.id) ? event.id.toLowerCase() : event.id
-    let parentEventKeys = [currentEventKey]
-    if (isReplaceableEvent(event.kind) && currentEventKey !== eventIdKey) {
-      parentEventKeys.push(eventIdKey)
-    }
-    // Web article threads: kind 1111 replies use #i (URL) only — ReplyProvider keys them by canonical URL, not synthetic root id.
-    if (event.kind === ExtendedKind.RSS_THREAD_ROOT) {
-      const u = getArticleUrlFromCommentITags(event)
-      if (u) {
-        const canon = canonicalizeRssArticleUrl(u)
-        if (!parentEventKeys.includes(canon)) {
-          parentEventKeys = [canon, ...parentEventKeys]
-        }
-      }
-    }
+    const replyEvents = collectDisplayedThreadReplies(
+      event,
+      rootInfo,
+      repliesMap,
+      isDiscussionRoot,
+      mutePubkeySet,
+      hideContentMentioningMutedUsers
+    )
+    const replyIdSet = new Set(replyEvents.map((r) => r.id))
 
-    
-    const processedEventIds = new Set<string>() // Prevent infinite loops
-    let iterationCount = 0
-    const MAX_ITERATIONS = 10 // Prevent infinite loops
     const threadWalkFromRepliesMap = new Map<string, NEvent>()
     for (const { events: bucket } of repliesMap.values()) {
       for (const e of bucket) {
         threadWalkFromRepliesMap.set(e.id.toLowerCase(), e)
       }
-    }
-
-    while (parentEventKeys.length > 0 && iterationCount < MAX_ITERATIONS) {
-      iterationCount++
-      const events = parentEventKeys.flatMap((id) => repliesMap.get(id)?.events || [])
-      
-      events.forEach((evt) => {
-        if (replyIdSet.has(evt.id)) return
-        if (isPollVoteKind(evt)) return
-        if (
-          shouldHideThreadResponseEvent(
-            evt,
-            mutePubkeySet,
-            hideContentMentioningMutedUsers
-          )
-        ) {
-          return
-        }
-        if (
-          rootInfo &&
-          !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromRepliesMap)
-        ) {
-          return
-        }
-
-        replyIdSet.add(evt.id)
-        replyEvents.push(evt)
-        threadWalkFromRepliesMap.set(evt.id.toLowerCase(), evt)
-      })
-
-      // Include reactions (and every other kind) so BFS can find notes keyed under reaction / zap ids.
-      const newParentEventKeys = events
-        .map((evt) => evt.id)
-        .filter((id) => !processedEventIds.has(id))
-      
-      newParentEventKeys.forEach((id) => processedEventIds.add(id))
-      parentEventKeys = newParentEventKeys
-    }
-    
-    if (iterationCount >= MAX_ITERATIONS) {
-      logger.warn('ReplyNoteList: Maximum iterations reached, possible circular reference in replies')
     }
 
     const includeThreadReply = (evt: NEvent) => {
@@ -225,6 +171,15 @@ function ReplyNoteList({
       ) {
         return false
       }
+      const opHex = openNoteHexId(event)
+      if (
+        opHex &&
+        rootInfo?.type === 'E' &&
+        rootInfo.id.trim().toLowerCase() !== opHex &&
+        !replyIsInSubtreeBelowOpenNote(evt, opHex, threadWalkFromRepliesMap)
+      ) {
+        return false
+      }
       return true
     }
 
@@ -236,7 +191,6 @@ function ReplyNoteList({
     )) {
       replyIdSet.add(evt.id)
       replyEvents.push(evt)
-      threadWalkFromRepliesMap.set(evt.id.toLowerCase(), evt)
     }
 
     const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replyEvents, attestedPaymentIds)
@@ -638,7 +592,10 @@ function ReplyNoteList({
     const init = async () => {
       // Session LRU (timeline / note-stats / prior panels): thread replies before relay round-trip
       if (rootInfo.type === 'E' || rootInfo.type === 'A') {
-        const fromSession = eventService.getSessionThreadInteractionEvents(rootInfo)
+        const fromSession = eventService.getSessionThreadInteractionEvents(
+          rootInfo,
+          openNoteHexId(event)
+        )
         if (fromSession.length > 0) {
           addReplies(fromSession)
         }
@@ -726,6 +683,7 @@ function ReplyNoteList({
           const filters = buildThreadInteractionFilters({
             root: rootInfo,
             opEventKind: event.kind,
+            opEventHexId: openNoteHexId(event),
             limit: THREAD_REPLY_LIMIT
           })
 
