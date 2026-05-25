@@ -78,6 +78,10 @@ function formatArgs(args: unknown[]): { message: string; formattedParts: Array<{
 
 function captureLog(type: string, ...args: unknown[]) {
   const { message, formattedParts } = formatArgs(args)
+  // nostr-tools emits relay NOTICE via console.debug; keep buffer useful for real diagnostics.
+  if (message.includes('NOTICE from')) {
+    return
+  }
   buffer.push({ type, message, formattedParts, timestamp: Date.now() })
   if (buffer.length > MAX_ENTRIES) {
     buffer.splice(0, buffer.length - MAX_ENTRIES)

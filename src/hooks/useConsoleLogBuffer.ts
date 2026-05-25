@@ -9,11 +9,11 @@ function subscribe(onStoreChange: () => void) {
   return subscribeConsoleLogBuffer(onStoreChange)
 }
 
-function getSnapshot(): ConsoleLogEntry[] {
+function getSnapshot(): readonly ConsoleLogEntry[] {
   return getConsoleLogBuffer()
 }
 
 /** Live view of the global console log ring buffer (see Settings → Cache). */
-export function useConsoleLogBuffer(): ConsoleLogEntry[] {
+export function useConsoleLogBuffer(): readonly ConsoleLogEntry[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

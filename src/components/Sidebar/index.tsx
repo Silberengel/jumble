@@ -9,6 +9,7 @@ import PostButton from './PostButton'
 import RssButton from './RssButton'
 import SearchButton from './SearchButton'
 import FavoritesButton from './FavoritesButton'
+import DiscussionsButton from './DiscussionsButton'
 import SpellsButton from './SpellsButton'
 import { ConnectedRelaysSidebarStrip } from '@/components/ConnectedRelays/ConnectedRelaysSidebarStrip'
 import PaneModeToggle from './PaneModeToggle'
@@ -43,6 +44,7 @@ export default function PrimaryPageSidebar() {
           <NotificationButton />
           <SearchButton />
           <FavoritesButton />
+          <DiscussionsButton />
           <SpellsButton />
           <RssButton />
           <ConnectedRelaysSidebarStrip />

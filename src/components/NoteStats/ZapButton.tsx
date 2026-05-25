@@ -221,7 +221,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
 
   return (
     <>
-      <div className="flex h-full min-w-0 select-none items-center">
+      <div className="flex h-full min-w-0 shrink-0 select-none items-center">
         <button
           type="button"
           className={cn(

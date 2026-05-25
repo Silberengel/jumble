@@ -272,7 +272,7 @@ export function LikeButtonWithStats({
   // Discussions (kind 11) and kind 1111 under a discussion: only +/- vote reactions
   if (showDiscussionVotes) {
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex max-w-full items-center gap-0.5 sm:gap-1">
         {DISCUSSION_VOTE_EMOJIS.map((emoji, index) => {
           const isSelected =
             index === 0 ? isDiscussionUpvoteEmoji(myLastEmoji) : isDiscussionDownvoteEmoji(myLastEmoji)
@@ -282,13 +282,13 @@ export function LikeButtonWithStats({
             <div
               key={emoji}
               className={cn(
-                'flex h-full items-center rounded',
+                'flex h-full shrink-0 items-center rounded',
                 isSelected ? 'bg-muted text-primary' : 'text-muted-foreground'
               )}
             >
               <button
                 type="button"
-                className="flex h-full items-center px-2 enabled:hover:text-primary"
+                className="flex h-full shrink-0 items-center px-1.5 sm:px-2 enabled:hover:text-primary"
                 title={emoji === '+' ? t('Upvote') : t('Downvote')}
                 disabled={liking}
                 onClick={() => {
@@ -305,7 +305,7 @@ export function LikeButtonWithStats({
               </button>
               {!hideCount && (noteStats?.updatedAt != null || count > 0) ? (
                 <DiscussionVoteCountHover noteStats={noteStats} vote={index === 0 ? 'up' : 'down'}>
-                  <div className="pr-2 text-sm tabular-nums">
+                  <div className="pr-1 text-sm tabular-nums sm:pr-2">
                     {count >= 100 ? '99+' : count}
                   </div>
                 </DiscussionVoteCountHover>

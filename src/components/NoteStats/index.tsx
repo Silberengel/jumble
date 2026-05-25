@@ -19,10 +19,21 @@ import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
 import { ZapButtonWithStats } from './ZapButton'
 
-/** One equal-width column in the note action bar; keeps icons centered as button count varies. */
-function NoteStatsBarItem({ children }: { children: ReactNode }) {
+/** One column in the note action bar; default equal flex, or sized via `className` (discussions need wider vote slot). */
+function NoteStatsBarItem({
+  children,
+  className
+}: {
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <div className="flex min-w-0 flex-1 basis-0 items-center justify-center [&>*]:min-w-0">
+    <div
+      className={cn(
+        'flex min-w-0 flex-1 basis-0 items-center justify-center overflow-hidden [&>*]:min-w-0 [&>*]:max-w-full',
+        className
+      )}
+    >
       {children}
     </div>
   )
@@ -135,9 +146,13 @@ export default function NoteStats({
   const bookmarksContext = useBookmarksOptional()
   const showThreadWatchButtons = Boolean(watch && pubkey)
   const showBookmarkButton = Boolean(bookmarksContext && pubkey)
+  /** Kind 11 / 1111 under a discussion: up+down votes need more width than a single like button. */
+  const isDiscussionBar = isDiscussion || isReplyToDiscussion
+  const compactBarItem = isDiscussionBar ? 'shrink-0 flex-none basis-auto' : undefined
+  const voteBarItem = isDiscussionBar ? 'min-w-[6.75rem] flex-[2] basis-28 sm:min-w-[7.25rem]' : undefined
 
   const barItems: ReactNode[] = [
-    <NoteStatsBarItem key="reply">
+    <NoteStatsBarItem key="reply" className={compactBarItem}>
       <ReplyButtonWithStats event={event} noteStats={noteStats} />
     </NoteStatsBarItem>
   ]
@@ -151,7 +166,7 @@ export default function NoteStats({
   }
 
   barItems.push(
-    <NoteStatsBarItem key="like">
+    <NoteStatsBarItem key="like" className={voteBarItem}>
       <LikeButtonWithStats
         event={event}
         noteStats={noteStats}
@@ -163,7 +178,7 @@ export default function NoteStats({
 
   if (!isRssArticleRoot) {
     barItems.push(
-      <NoteStatsBarItem key="tip">
+      <NoteStatsBarItem key="tip" className={compactBarItem}>
         <ZapButtonWithStats event={event} noteStats={noteStats} />
       </NoteStatsBarItem>
     )
@@ -171,7 +186,7 @@ export default function NoteStats({
 
   if (!isRssArticleRoot && showThreadWatchButtons) {
     barItems.push(
-      <NoteStatsBarItem key="thread-watch">
+      <NoteStatsBarItem key="thread-watch" className={compactBarItem}>
         <div className="flex items-center justify-center gap-0.5">
           <NotificationThreadWatchButtons event={event} />
         </div>
@@ -181,7 +196,7 @@ export default function NoteStats({
 
   if (!isRssArticleRoot && showBookmarkButton) {
     barItems.push(
-      <NoteStatsBarItem key="bookmark">
+      <NoteStatsBarItem key="bookmark" className={compactBarItem}>
         <BookmarkButton event={event} />
       </NoteStatsBarItem>
     )

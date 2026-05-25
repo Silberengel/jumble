@@ -106,6 +106,17 @@ function isExpectedDevAppNoise(message: string): boolean {
   return false
 }
 
+/** nostr-tools logs relay NOTICE via console.debug; timeout / too-many-steps are normal under load. */
+function isExpectedNostrRelayNotice(message: string): boolean {
+  return (
+    message.includes('NOTICE from') ||
+    message.includes('Too many subscriptions') ||
+    message.includes('Subscription rejected') ||
+    message.includes('too many concurrent REQs') ||
+    message.includes('too many kinds')
+  )
+}
+
 function isExpectedRelayWebSocketNoise(message: string): boolean {
   if (message.includes('WebSocket connection to') || message.includes('Close received after close')) {
     return true
@@ -236,17 +247,16 @@ function suppressExpectedErrors() {
       return
     }
     
-    // Suppress nostr-tools "too many concurrent REQs" errors
-    if (message.includes('NOTICE from') && message.includes('ERROR: too many concurrent REQs')) {
+    // Suppress nostr-tools relay NOTICE / overload errors
+    if (isExpectedNostrRelayNotice(message)) {
       return
     }
-    
-    // Suppress nostr-tools connection errors
-    if (message.includes('NOTICE from') && (
-      message.includes('ERROR:') ||
-      message.includes('connection closed') ||
-      message.includes('connection errored')
-    )) {
+    if (
+      message.includes('NOTICE from') &&
+      (message.includes('ERROR:') ||
+        message.includes('connection closed') ||
+        message.includes('connection errored'))
+    ) {
       return
     }
     
@@ -398,12 +408,7 @@ function suppressExpectedErrors() {
       return
     }
     
-    // Suppress Nostr relay NOTICE messages (too many subscriptions, too many REQs, etc.)
-    if (message.includes('NOTICE from') ||
-        message.includes('Too many subscriptions') ||
-        message.includes('Subscription rejected') ||
-        message.includes('too many concurrent REQs') ||
-        message.includes('too many kinds')) {
+    if (isExpectedNostrRelayNotice(message)) {
       return
     }
 
@@ -449,12 +454,7 @@ function suppressExpectedErrors() {
       return
     }
     
-    // Suppress nostr-tools / relay NOTICE messages (subscription limits, REQ limits, etc.)
-    if (message.includes('NOTICE from') ||
-        message.includes('Too many subscriptions') ||
-        message.includes('Subscription rejected') ||
-        message.includes('too many concurrent REQs') ||
-        message.includes('too many kinds')) {
+    if (isExpectedNostrRelayNotice(message)) {
       return
     }
 
@@ -465,6 +465,22 @@ function suppressExpectedErrors() {
     
     // Call original console.log for unexpected logs
     originalConsoleLog.apply(console, args)
+  }
+
+  const originalConsoleDebug = console.debug
+
+  console.debug = (...args: any[]) => {
+    const message = formatConsoleArgs(args)
+
+    if (isExpectedNostrRelayNotice(message)) {
+      return
+    }
+
+    if (import.meta.env.DEV && isExpectedDevAppNoise(message)) {
+      return
+    }
+
+    originalConsoleDebug.apply(console, args)
   }
 }
 
