@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { nip19 } from 'nostr-tools'
-import { parseNip05NamePubkeyEntry, parseNip05NamePubkeysFromWellKnownJson } from '@/lib/nip05'
+import { parseNip05NamePubkeysFromWellKnownJson } from '@/lib/nip05'
 
 const THEFOREST_WELL_KNOWN = {
   names: {
@@ -60,12 +60,25 @@ describe('parseNip05NamePubkeysFromWellKnownJson', () => {
     expect(rows).toEqual([{ name: 'laeserin', pubkey: laeserinHex }])
   })
 
-  it('matches npub keys when resolving entries', () => {
+  it('parses names provided as [name, pubkey] pairs', () => {
     const laeserinHex = 'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
-    const npub = nip19.npubEncode(laeserinHex)
-    expect(parseNip05NamePubkeyEntry(npub, 'laeserin')).toEqual({
-      name: 'laeserin',
-      pubkey: laeserinHex
+    const rows = parseNip05NamePubkeysFromWellKnownJson({
+      names: [
+        ['laeserin', laeserinHex],
+        ['137', '6da819f91d69cbe591c08b31f555c6d0ab9905197eb515856e339049c018c1af']
+      ]
     })
+    expect(rows.find((r) => r.name === 'laeserin')?.pubkey).toBe(laeserinHex)
+  })
+
+  it('partial name-filtered documents omit other users', () => {
+    const partial = {
+      names: {
+        cloudfodder: '7cc328a08ddb2afdf9f9be77beff4c83489ff979721827d628a542f32a247c0e'
+      }
+    }
+    const rows = parseNip05NamePubkeysFromWellKnownJson(partial)
+    expect(rows.some((r) => r.name === 'laeserin')).toBe(false)
+    expect(rows.some((r) => r.name === 'cloudfodder')).toBe(true)
   })
 })

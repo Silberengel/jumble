@@ -1,7 +1,4 @@
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { useLongPressAction } from '@/hooks/use-long-press-action'
-import { useNip57QuickZap } from '@/hooks/useNip57QuickZap'
 import { useRecipientPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import { useNostr } from '@/providers/NostrProvider'
 import { Zap } from 'lucide-react'
@@ -25,15 +22,7 @@ export default function ProfileZapButton({
   const setOpen = setOpenZapDialog ?? setInternalOpen
   const recipientPayment = useRecipientPaymentData(pubkey, true)
 
-  const { canQuickNip57Zap, sendQuickZap, zapping } = useNip57QuickZap({
-    recipientPubkey: pubkey,
-    recipientPayment,
-    onZapDialogClose: () => setOpen(false)
-  })
-
-  const longPressZap = useLongPressAction(() => sendQuickZap(), { enabled: canQuickNip57Zap })
-
-  const title = canQuickNip57Zap ? t('Payment methods — long-press to zap') : t('Payment methods')
+  const title = t('Payment methods')
 
   return (
     <>
@@ -43,21 +32,9 @@ export default function ProfileZapButton({
         className="rounded-full"
         title={title}
         aria-label={title}
-        disabled={zapping}
-        onClick={() => {
-          if (longPressZap.consumeIfLongPress()) return
-          checkLogin(() => setOpen(true))
-        }}
-        onPointerDown={longPressZap.onPointerDown}
-        onPointerUp={longPressZap.onPointerUp}
-        onPointerLeave={longPressZap.onPointerLeave}
-        onPointerCancel={longPressZap.onPointerCancel}
+        onClick={() => checkLogin(() => setOpen(true))}
       >
-        {zapping ? (
-          <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
-        ) : (
-          <Zap className="text-yellow-400" />
-        )}
+        <Zap className="text-yellow-400" />
       </Button>
       {!setOpenZapDialog && (
         <ZapDialog open={open} setOpen={setInternalOpen} pubkey={pubkey} prefetchedPayment={recipientPayment} />
