@@ -15,7 +15,6 @@ import NotificationThreadWatchButtons from '../NotificationThreadWatchButtons'
 import { LikeButtonWithStats } from './LikeButton'
 import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
-import SeenOnButton from './SeenOnButton'
 import { ZapButtonWithStats } from './ZapButton'
 
 export default function NoteStats({
@@ -147,16 +146,13 @@ export default function NoteStats({
     >
       <div
         className={cn(
-          'flex min-w-0 flex-wrap items-center justify-between gap-x-1 gap-y-2 [&_svg]:size-4 max-sm:[&_button]:pr-2',
+          'flex min-w-0 flex-nowrap items-center gap-0 overflow-x-auto overscroll-x-contain [&_svg]:size-[15px] [&_button]:px-1.5',
           loading ? 'animate-pulse' : '',
           classNames?.buttonBar
         )}
       >
-        <div className="flex min-w-0 flex-wrap items-center">{interactionButtons}</div>
-        <div className="flex shrink-0 flex-wrap items-center">
-          {utilityButtons}
-          <SeenOnButton event={event} allowedRelays={seenOnAllowlist} />
-        </div>
+        {interactionButtons}
+        {utilityButtons}
       </div>
     </div>
   )

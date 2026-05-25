@@ -10,6 +10,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { DesktopMenu } from './DesktopMenu'
 import EditOrCloneEventDialog, { type TEditOrCloneMode } from './EditOrCloneEventDialog'
 import { MobileMenu } from './MobileMenu'
+import NoteOptionsMetaHeader from './NoteOptionsMetaHeader'
 import RawEventDialog from './RawEventDialog'
 import ReportDialog from './ReportDialog'
 import { SubMenuAction, useMenuActions, type ShowSubMenuOptions } from './useMenuActions'
@@ -27,12 +28,15 @@ export default function NoteOptions({
   initialPublicMessageTo,
   onOpenCallInvite,
   initialDefaultContent,
-  pinned = false
+  pinned = false,
+  seenOnAllowlist
 }: {
   event: Event
   className?: string
   /** Note is shown in a pinned section (profile pins, etc.). */
   pinned?: boolean
+  /** When set (home favorites feed), relay list in the menu matches the feed allowlist. */
+  seenOnAllowlist?: readonly string[]
   initialHighlightData?: HighlightData
   highlightDefaultContent?: string
   isPostEditorOpen?: boolean
@@ -124,12 +128,25 @@ export default function NoteOptions({
     []
   )
 
+  const menuHeader = useMemo(
+    () => (
+      <NoteOptionsMetaHeader
+        event={event}
+        allowedRelays={seenOnAllowlist}
+        onNavigate={closeDrawer}
+        inDropdown={!isSmallScreen}
+      />
+    ),
+    [event, seenOnAllowlist, isSmallScreen]
+  )
+
   return (
     <div className={className} onClick={(e) => e.stopPropagation()}>
       {isSmallScreen ? (
         <MobileMenu
           menuActions={menuActions}
           trigger={trigger}
+          header={menuHeader}
           isDrawerOpen={isDrawerOpen}
           setIsDrawerOpen={setIsDrawerOpen}
           showSubMenu={showSubMenu}
@@ -140,7 +157,7 @@ export default function NoteOptions({
           goBackToMainMenu={goBackToMainMenu}
         />
       ) : (
-        <DesktopMenu menuActions={menuActions} trigger={trigger} />
+        <DesktopMenu menuActions={menuActions} trigger={trigger} header={menuHeader} />
       )}
 
       <RawEventDialog

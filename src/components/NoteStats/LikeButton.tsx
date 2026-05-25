@@ -244,7 +244,7 @@ export function LikeButtonWithStats({
   const likeIconButton = (
     <button
       type="button"
-      className="flex h-full items-center gap-1 pl-3 pr-1 text-muted-foreground enabled:hover:text-primary"
+      className="flex h-full items-center gap-0.5 px-1.5 text-muted-foreground enabled:hover:text-primary"
       title={t('Like')}
       disabled={liking}
       onClick={openReactionPicker}
@@ -261,12 +261,12 @@ export function LikeButtonWithStats({
 
   const likeCountLabel = showLikeCount ? (
     <ReactionCountHover noteStats={noteStats}>
-      <div className="pr-3 text-sm tabular-nums">
+      <div className="pr-1 text-sm tabular-nums">
         {(likeCount ?? 0) >= 100 ? '99+' : String(likeCount ?? 0)}
       </div>
     </ReactionCountHover>
   ) : (
-    <span className="pr-3" aria-hidden />
+    <span className="pr-1" aria-hidden />
   )
 
   // Discussions (kind 11) and kind 1111 under a discussion: only +/- vote reactions

@@ -225,7 +225,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         <button
           type="button"
           className={cn(
-            'group flex h-full items-center pl-3 pr-1',
+            'group flex h-full items-center px-1.5',
             disable ? 'cursor-not-allowed' : 'cursor-pointer'
           )}
           title={zapButtonTitle}
@@ -248,7 +248,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
           <ZapCountHover noteStats={noteStats}>
             <div
               className={cn(
-                'pr-3 text-sm tabular-nums',
+                'pr-1 text-sm tabular-nums',
                 hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
               )}
             >
@@ -256,7 +256,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
             </div>
           </ZapCountHover>
         ) : (
-          <span className="pr-3" aria-hidden />
+          <span className="pr-1" aria-hidden />
         )}
       </div>
       <ZapDialog

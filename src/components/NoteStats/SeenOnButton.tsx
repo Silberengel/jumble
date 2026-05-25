@@ -9,14 +9,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { useSeenOnRelays } from '@/hooks/useSeenOnRelays'
 import { toRelay } from '@/lib/link'
-import { filterRelaysToUserAllowlist } from '@/lib/relay-allowlist'
-import { normalizeAnyRelayUrl, simplifyUrl } from '@/lib/url'
+import { simplifyUrl } from '@/lib/url'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import client from '@/services/client.service'
 import { Server } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
 
@@ -31,41 +30,8 @@ export default function SeenOnButton({
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { push } = useSecondaryPage()
-  const [relays, setRelays] = useState<string[]>([])
+  const relays = useSeenOnRelays(event.id, allowedRelays)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const allowedRelaysRef = useRef(allowedRelays)
-  allowedRelaysRef.current = allowedRelays
-  const allowedRelaysKey = allowedRelays?.length
-    ? [...allowedRelays]
-        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-        .filter(Boolean)
-        .sort()
-        .join('|')
-    : ''
-
-  useEffect(() => {
-    let cancelled = false
-    let attempts = 0
-    const maxAttempts = 20
-    const apply = () => {
-      const seenOn = client.getSeenEventRelayUrls(event.id)
-      const allowlist = allowedRelaysRef.current
-      const visible =
-        allowlist?.length ? filterRelaysToUserAllowlist(seenOn, allowlist) : seenOn
-      if (!cancelled) setRelays(visible)
-      return visible.length > 0
-    }
-    if (apply()) return
-    const id = setInterval(() => {
-      if (cancelled) return
-      attempts++
-      if (apply() || attempts >= maxAttempts) clearInterval(id)
-    }, 500)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-  }, [event.id, allowedRelaysKey])
 
   const trigger = (
     <button
@@ -79,7 +45,7 @@ export default function SeenOnButton({
       }}
     >
       <Server />
-      {relays.length > 0 && <div className="text-sm">{relays.length}</div>}
+      {relays.length > 0 ? <span className="text-sm">{relays.length}</span> : null}
     </button>
   )
 
@@ -103,7 +69,7 @@ export default function SeenOnButton({
                     setIsDrawerOpen(false)
                     setTimeout(() => {
                       push(toRelay(relay))
-                    }, 50) // Timeout to allow the drawer to close before navigating
+                    }, 50)
                   }}
                 >
                   <RelayIcon url={relay} /> {simplifyUrl(relay)}

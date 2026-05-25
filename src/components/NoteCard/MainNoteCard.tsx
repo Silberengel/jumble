@@ -149,6 +149,7 @@ function MainNoteCard({
             skipEmbedPrefetch={deferAuthorAvatar}
             showPaymentAttestationAction={showPaymentAttestationAction}
             pinned={pinned}
+            seenOnAllowlist={seenOnAllowlist}
           />
         </Collapsible>
         {!embedded && !searchListPreview ? <NoteBoostBadges event={event} className={`mt-2 ${notePadX}`} /> : null}

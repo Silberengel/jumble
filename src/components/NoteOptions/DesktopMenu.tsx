@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next'
 interface DesktopMenuProps {
   menuActions: MenuAction[]
   trigger: React.ReactNode
+  header?: React.ReactNode
 }
 
 function filterSubMenuRows(
@@ -136,17 +137,20 @@ const MenuContent = memo(
 )
 MenuContent.displayName = 'MenuContent'
 
-export function DesktopMenu({ menuActions, trigger }: DesktopMenuProps) {
+export function DesktopMenu({ menuActions, trigger, header }: DesktopMenuProps) {
   const [subMenuFilter, setSubMenuFilter] = useState('')
   return (
     <DropdownMenu onOpenChange={(open) => !open && setSubMenuFilter('')}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent className="max-h-[50vh] overflow-y-auto">
-        <MenuContent
-          menuActions={menuActions}
-          subMenuFilter={subMenuFilter}
-          setSubMenuFilter={setSubMenuFilter}
-        />
+      <DropdownMenuContent className="max-h-[50vh] overflow-y-auto p-0">
+        {header}
+        <div className="py-1">
+          <MenuContent
+            menuActions={menuActions}
+            subMenuFilter={subMenuFilter}
+            setSubMenuFilter={setSubMenuFilter}
+          />
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

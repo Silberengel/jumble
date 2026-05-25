@@ -74,7 +74,6 @@ import Poll from './Poll'
 import NotificationEventCard from './NotificationEventCard'
 import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
-import NoteKindLabel from './NoteKindLabel'
 import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
 import RelayReview from './RelayReview'
@@ -230,7 +229,8 @@ export default function Note({
   /** When true, parent list already prefetches embeds — skip per-row duplicate fetches. */
   skipEmbedPrefetch = false,
   showPaymentAttestationAction = false,
-  pinned = false
+  pinned = false,
+  seenOnAllowlist
 }: {
   event: Event
   originalNoteId?: string
@@ -252,6 +252,8 @@ export default function Note({
   skipEmbedPrefetch?: boolean
   /** Notifications feed: show attest-superchat action on incoming payments. */
   showPaymentAttestationAction?: boolean
+  /** When set (home favorites feed), relay list in ⋯ menu matches the feed allowlist. */
+  seenOnAllowlist?: readonly string[]
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -786,6 +788,7 @@ export default function Note({
               <NoteOptions
                 event={event}
                 pinned={pinned}
+                seenOnAllowlist={seenOnAllowlist}
                 className={cn(
                   'py-1 shrink-0',
                   size === 'small' ? '[&_svg]:size-4' : '[&_svg]:size-5'
@@ -808,10 +811,7 @@ export default function Note({
             )}
           </div>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <NoteKindLabel kind={event.kind} event={event} size={size} />
-          <EventPowLabel event={event} />
-        </div>
+        <EventPowLabel event={event} className="mt-1" />
         {webReactionParentUrl ? (
           <div className="mt-2 not-prose max-w-full" data-parent-note-preview>
             <WebPreview url={webReactionParentUrl} className="w-full" />

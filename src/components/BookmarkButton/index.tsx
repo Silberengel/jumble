@@ -68,7 +68,7 @@ export default function BookmarkButton({ event }: { event: Event }) {
     <button
       className={`flex items-center gap-1 ${
         isBookmarked ? 'text-rose-400' : 'text-muted-foreground'
-      } enabled:hover:text-rose-400 px-3 h-full`}
+      } enabled:hover:text-rose-400 px-1.5 h-full`}
       onClick={isBookmarked ? handleRemoveBookmark : handleBookmark}
       disabled={updating}
       title={isBookmarked ? t('Remove bookmark') : t('Bookmark')}

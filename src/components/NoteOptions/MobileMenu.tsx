@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 interface MobileMenuProps {
   menuActions: MenuAction[]
   trigger: React.ReactNode
+  header?: React.ReactNode
   isDrawerOpen: boolean
   setIsDrawerOpen: (open: boolean) => void
   showSubMenu: boolean
@@ -33,6 +34,7 @@ function filterSubMenuRows(
 export function MobileMenu({
   menuActions,
   trigger,
+  header,
   isDrawerOpen,
   setIsDrawerOpen,
   showSubMenu,
@@ -63,20 +65,23 @@ export function MobileMenu({
           </DrawerHeader>
           <div className="overflow-y-auto overscroll-contain py-2" style={{ touchAction: 'pan-y' }}>
             {!showSubMenu ? (
-              menuActions.map((action, index) => {
-                const Icon = action.icon
-                return (
-                  <Button
-                    key={index}
-                    onClick={action.onClick}
-                    className={`w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5 ${action.className || ''}`}
-                    variant="ghost"
-                  >
-                    <Icon />
-                    {action.label}
-                  </Button>
-                )
-              })
+              <>
+                {header}
+                {menuActions.map((action, index) => {
+                  const Icon = action.icon
+                  return (
+                    <Button
+                      key={index}
+                      onClick={action.onClick}
+                      className={`w-full p-6 justify-start text-lg gap-4 [&_svg]:size-5 ${action.className || ''}`}
+                      variant="ghost"
+                    >
+                      <Icon />
+                      {action.label}
+                    </Button>
+                  )
+                })}
+              </>
             ) : (
               <>
                 <Button

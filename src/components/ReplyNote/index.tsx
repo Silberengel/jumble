@@ -38,7 +38,6 @@ import ParentNotePreview from '../ParentNotePreview'
 import WebPreview from '../WebPreview'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
-import NoteKindLabel from '../Note/NoteKindLabel'
 import Superchat from '../Note/Superchat'
 import Zap from '../Note/Zap'
 import MoneroTip from '../Note/MoneroTip'
@@ -156,22 +155,7 @@ export default function ReplyNote({
                 <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
               </div>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <NoteKindLabel
-                kind={event.kind}
-                event={event}
-                size="small"
-                className={cn(
-                  (isNip25ReactionKind(event.kind) ||
-                    event.kind === kinds.Zap ||
-                    event.kind === ExtendedKind.PAYMENT_NOTIFICATION ||
-                    event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
-                    event.kind === ExtendedKind.MONERO_TIP_RECEIPT) &&
-                    'opacity-60'
-                )}
-              />
-              <EventPowLabel event={event} />
-            </div>
+            <EventPowLabel event={event} className="mt-0.5" />
             {webReactionParentUrl ? (
               <div className="mt-1.5 not-prose max-w-full" data-parent-note-preview>
                 <WebPreview url={webReactionParentUrl} className="w-full" />

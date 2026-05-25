@@ -103,7 +103,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
     <button
       type="button"
       className={cn(
-        'flex h-full items-center enabled:hover:text-lime-500 pl-3 pr-1',
+        'flex h-full items-center enabled:hover:text-lime-500 px-1.5',
         hasReposted ? 'text-lime-500' : 'text-muted-foreground'
       )}
       title={t('Boost')}
@@ -119,10 +119,10 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
 
   const countLabel = showRepostCount ? (
     <BoostCountHover noteStats={noteStats}>
-      <div className="pr-3 text-sm tabular-nums">{formatCount(repostCount ?? 0)}</div>
+      <div className="pr-1 text-sm tabular-nums">{formatCount(repostCount ?? 0)}</div>
     </BoostCountHover>
   ) : (
-    <span className="pr-3" aria-hidden />
+    <span className="pr-1" aria-hidden />
   )
 
   const postEditor = (
