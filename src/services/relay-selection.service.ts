@@ -11,10 +11,9 @@ import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
 import {
   canonicalRelaySessionKey,
-  isHttpOrHttpsScheme,
   isLocalNetworkUrl,
   normalizeAnyRelayUrl,
-  normalizeHttpRelayUrl
+  normalizeRelayUrlByScheme
 } from '@/lib/url'
 import { TRelaySet, TRelayList } from '@/types'
 import logger from '@/lib/logger'
@@ -144,9 +143,7 @@ class RelaySelectionService {
 
     const addRelay = (url: string, type: RelaySourceType) => {
       if (!url) return
-      const normalized = isHttpOrHttpsScheme(url)
-        ? normalizeHttpRelayUrl(url)
-        : normalizeAnyRelayUrl(url)
+      const normalized = normalizeRelayUrlByScheme(url)
       const key = normalized ? canonicalRelaySessionKey(normalized) : ''
       if (key && !seen.has(key)) {
         seen.add(key)

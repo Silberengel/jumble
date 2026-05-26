@@ -5,7 +5,7 @@ import {
   MAX_REQ_RELAY_URLS
 } from '@/constants'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeRelayUrlByScheme, normalizeUrl } from '@/lib/url'
 
 export { MAX_REQ_RELAY_URLS }
 
@@ -13,7 +13,7 @@ export function dedupeNormalizeRelayUrlsOrdered(urls: readonly string[]): string
   const seen = new Set<string>()
   const out: string[] = []
   for (const u of urls) {
-    const n = normalizeAnyRelayUrl(u) || u.trim()
+    const n = normalizeRelayUrlByScheme(u) || u.trim()
     if (!n || seen.has(n)) continue
     seen.add(n)
     out.push(n)

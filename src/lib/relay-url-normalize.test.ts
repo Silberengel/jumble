@@ -5,6 +5,7 @@ import {
   httpIndexRelayBasesInUrlBatch,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
+  normalizeRelayUrlByScheme,
   normalizeRelayUrlForPage,
   normalizeUrl
 } from '@/lib/url'
@@ -25,6 +26,14 @@ describe('relay URL normalization', () => {
     const wss = normalizeAnyRelayUrl('wss://nostr.land/')
     expect(wss).toMatch(/^wss:\/\/nostr\.land\/?$/)
     expect(normalizeUrl('wss://nostr.land/')).toMatch(/^wss:\/\/nostr\.land\/?$/)
+  })
+
+  it('normalizeRelayUrlByScheme routes by scheme', () => {
+    expect(normalizeRelayUrlByScheme('wss://nostr.land/')).toMatch(/^wss:\/\/nostr\.land\/?$/)
+    expect(normalizeRelayUrlByScheme('https://mercury-relay.imwald.eu/')).toMatch(
+      /^https:\/\/mercury-relay\.imwald\.eu\/?$/
+    )
+    expect(normalizeRelayUrlByScheme('mercury-relay.imwald.eu')).toBe('')
   })
 
   it('rejects bare hostnames', () => {

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
-import { isLocalNetworkUrl, normalizeHttpRelayUrl } from '@/lib/url'
+import { isLocalNetworkUrl, isWebsocketUrl, normalizeRelayUrlByScheme } from '@/lib/url'
 import { getRelaysFromNip07Extension, verifyNip05 } from '@/lib/nip05'
 import { useNostr } from '@/providers/NostrProvider'
 import { TMailboxRelay } from '@/types'
@@ -44,8 +44,8 @@ export default function DiscoveredRelays({ onAdd, localOnly = false }: { onAdd: 
           const nip05Result = await verifyNip05(profile.nip05, account.pubkey)
           if (nip05Result.isVerified && nip05Result.relays) {
             nip05Result.relays.forEach(url => {
-              const normalized = normalizeHttpRelayUrl(url)
-              if (normalized && !discovered.has(normalized)) {
+              const normalized = normalizeRelayUrlByScheme(url)
+              if (normalized && isWebsocketUrl(normalized) && !discovered.has(normalized)) {
                 discovered.set(normalized, {
                   url: normalized,
                   source: 'nip05',
@@ -64,8 +64,8 @@ export default function DiscoveredRelays({ onAdd, localOnly = false }: { onAdd: 
         try {
           const extensionRelays = await getRelaysFromNip07Extension()
           extensionRelays.forEach(url => {
-            const normalized = normalizeHttpRelayUrl(url)
-            if (normalized && !discovered.has(normalized)) {
+            const normalized = normalizeRelayUrlByScheme(url)
+            if (normalized && isWebsocketUrl(normalized) && !discovered.has(normalized)) {
               discovered.set(normalized, {
                 url: normalized,
                 source: 'nip07',

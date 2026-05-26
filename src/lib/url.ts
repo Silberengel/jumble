@@ -118,9 +118,20 @@ export function normalizeAnyRelayUrl(url: string): string {
   return normalizeUrl(url)
 }
 
+/**
+ * Normalize a relay URL using the route for its scheme: `http(s)` index relays (kind 10243)
+ * vs `ws(s)` NIP-01 relays (kind 10002). Bare hostnames are rejected by both routes.
+ */
+export function normalizeRelayUrlByScheme(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (isHttpOrHttpsScheme(trimmed)) return normalizeHttpRelayUrl(trimmed)
+  return normalizeAnyRelayUrl(trimmed)
+}
+
 /** Relay explore/detail routes accept WebSocket relays or kind-10243 HTTP index bases. */
 export function normalizeRelayUrlForPage(url: string): string {
-  return normalizeAnyRelayUrl(url) || normalizeHttpRelayUrl(url)
+  return normalizeRelayUrlByScheme(url)
 }
 
 /** Stable key for per-relay session stats (scheme preserved; no https→wss aliasing). */

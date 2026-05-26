@@ -2,7 +2,7 @@ import { isSocialKindBlockedKind, MAX_PUBLISH_RELAYS, SOCIAL_KIND_BLOCKED_RELAY_
 import { kinds } from 'nostr-tools'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
-import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import { normalizeHttpRelayUrl, normalizeRelayUrlByScheme, normalizeUrl } from '@/lib/url'
 import type { NostrEvent } from 'nostr-tools'
 
 export type TPrePublishRelayCapPreview = {
@@ -50,7 +50,7 @@ export function computePrePublishRelayCapPreview({
   const socialBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
   outbox = dedupeNormalizeRelayUrlsOrdered(
     filterRelaysForEventPublish(outbox, previewKind).filter((url) => {
-      const n = normalizeAnyRelayUrl(url) || url
+      const n = normalizeRelayUrlByScheme(url) || url
       if (applySocialOutboxFilter && socialBlockedSet.has(n)) return false
       return true
     })
@@ -64,7 +64,7 @@ export function computePrePublishRelayCapPreview({
   const outboxNormSet = new Set(outbox)
   const outboxSlotsInPublish =
     selectedRelayUrls.length > 0 ? 0 : capped.filter((u) => outboxNormSet.has(u)).length
-  const selectedNorm = selectedRelayUrls.map((u) => normalizeAnyRelayUrl(u) || u)
+  const selectedNorm = selectedRelayUrls.map((u) => normalizeRelayUrlByScheme(u) || u)
   const selectedContacted = selectedNorm.filter((u) => capped.includes(u)).length
 
   const showCapHint =

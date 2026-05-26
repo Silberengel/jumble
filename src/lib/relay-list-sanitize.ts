@@ -1,4 +1,10 @@
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import {
+  isLocalNetworkUrl,
+  normalizeAnyRelayUrl,
+  normalizeHttpRelayUrl,
+  normalizeRelayUrlByScheme,
+  normalizeUrl
+} from '@/lib/url'
 import type { TMailboxRelay, TMailboxRelayScope, TRelayList } from '@/types'
 
 /** True if this URL is not loopback / LAN (safe to open from another user's browser as a REQ target). */
@@ -81,13 +87,7 @@ export function stripLocalNetworkRelaysForWssReq(urls: readonly string[]): strin
   return out
 }
 
-const normRelayKey = (u: string): string => {
-  const t = typeof u === 'string' ? u.trim() : ''
-  if (!t) return ''
-  if (/^wss?:\/\//i.test(t)) return normalizeUrl(t) || t
-  if (/^https?:\/\//i.test(t)) return normalizeHttpRelayUrl(t) || t
-  return normalizeUrl(t) || normalizeHttpRelayUrl(t) || t
-}
+const normRelayKey = (u: string): string => normalizeRelayUrlByScheme(u) || u.trim()
 
 /**
  * When NIP-65 `originalRelays` is empty but `read` / `write` URL lists are filled (e.g. PROFILE_FETCH fallback),
