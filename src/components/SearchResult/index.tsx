@@ -8,6 +8,7 @@ import Relay from '../Relay'
 import { useNostr } from '@/providers/NostrProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import client from '@/services/client.service'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { normalizeUrl } from '@/lib/url'
 import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
 import { useLayoutEffect, useMemo } from 'react'
@@ -17,7 +18,7 @@ function relayDedupeKey(url: string): string {
 }
 
 export default function SearchResult({ searchParams }: { searchParams: TSearchParams | null }) {
-  const { pubkey, relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
   /**
@@ -54,7 +55,10 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     const relays: string[] = []
 
     if (relayList) {
-      relays.push(...(relayList.read || []), ...(relayList.write || []))
+      relays.push(
+        ...userReadInboxUrls(relayList, cacheRelayListEvent),
+        ...userWriteOutboxUrls(relayList, cacheRelayListEvent)
+      )
     }
 
     relays.push(...(favoriteRelays || []))
@@ -75,7 +79,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
       const n = normalizeUrl(relay) || relay
       return !blockedSet.has(n)
     })
-  }, [pubkey, relayList, favoriteRelays, blockedRelays])
+  }, [relayList, cacheRelayListEvent, favoriteRelays, blockedRelays])
 
   const nonSearchableRelays = useMemo(
     () => combinedRelays.filter((u) => !searchableKeySet.has(relayDedupeKey(u))),

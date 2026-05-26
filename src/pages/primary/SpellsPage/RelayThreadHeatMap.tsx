@@ -4,7 +4,7 @@ import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNote } from '@/lib/link'
 import logger from '@/lib/logger'
 import {
@@ -100,7 +100,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   const { t } = useTranslation()
   const { navigate: navigatePrimary } = usePrimaryPage()
   const { navigateToNote } = useSmartNoteNavigation()
-  const { pubkey, relayList } = useNostr()
+  const { pubkey, relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
 
@@ -125,9 +125,9 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           applySocialKindBlockedFilter: false
         }
       ),

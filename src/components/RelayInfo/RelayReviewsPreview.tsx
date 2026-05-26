@@ -8,10 +8,7 @@ import {
   CarouselPrevious
 } from '@/components/ui/carousel'
 import { ExtendedKind } from '@/constants'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { compareEvents } from '@/lib/event'
 import { getStarsFromRelayReviewEvent } from '@/lib/event-metadata'
@@ -39,7 +36,7 @@ import ReviewEditor from './ReviewEditor'
 export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
-  const { pubkey, checkLogin, relayList } = useNostr()
+  const { pubkey, checkLogin, relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { mutePubkeySet } = useMuteList()
   const [showEditor, setShowEditor] = useState(false)
@@ -117,7 +114,7 @@ export default function RelayReviewsPreview({ relayUrl }: { relayUrl: string }) 
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
       favoriteRelays,
       blockedRelays,
-      userReadRelaysWithHttp(relayList)
+      userReadInboxUrls(relayList, cacheRelayListEvent)
     )
     const uniqueUrls = [...new Set([normalizedTarget, ...base])]
 

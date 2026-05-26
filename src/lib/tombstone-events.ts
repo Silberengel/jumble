@@ -1,5 +1,7 @@
 import { PROFILE_RELAY_URLS } from '@/constants'
-import { normalizeAnyRelayUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import type { TRelayList } from '@/types'
 
 /** Dispatched after tombstones in IndexedDB change (kind-5 sync or local apply). */
@@ -11,22 +13,21 @@ export function dispatchTombstonesUpdated(): void {
 }
 
 /** Relay set for querying the current user's kind-5 events (aligned with login sync). */
-export function buildDeletionRelayUrls(relayList: TRelayList | null | undefined): string[] {
-  const httpR = relayList?.httpRead ?? []
-  const httpW = relayList?.httpWrite ?? []
-  if (!relayList?.read?.length && !relayList?.write?.length && !httpR.length && !httpW.length) {
+export function buildDeletionRelayUrls(
+  relayList: TRelayList | null | undefined,
+  cacheUrls: readonly string[] = []
+): string[] {
+  const readInboxes = collectUserReadInboxUrls(relayList, cacheUrls)
+  const writeOutboxes = collectUserWriteOutboxUrls(relayList, cacheUrls)
+  if (readInboxes.length === 0 && writeOutboxes.length === 0) {
     return Array.from(
       new Set(PROFILE_RELAY_URLS.map((url) => normalizeUrl(url) || url).filter(Boolean))
     ).slice(0, 20)
   }
-  const ws = relayList?.write ?? []
-  const rs = relayList?.read ?? []
   return Array.from(
     new Set([
-      ...ws.map((url: string) => normalizeUrl(url) || url),
-      ...rs.slice(0, 8).map((url: string) => normalizeUrl(url) || url),
-      ...httpW.map((url: string) => normalizeHttpRelayUrl(url) || url),
-      ...httpR.slice(0, 8).map((url: string) => normalizeHttpRelayUrl(url) || url),
+      ...writeOutboxes,
+      ...readInboxes.slice(0, 8),
       ...PROFILE_RELAY_URLS.map((url: string) => normalizeAnyRelayUrl(url) || url)
     ])
   ).slice(0, 20)

@@ -4,10 +4,7 @@ import { RefreshButton } from '@/components/RefreshButton'
 import { ExtendedKind } from '@/constants'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { relayReviewDTagsForRelayUrl, relayReviewsFeedSnapshotKey } from '@/lib/relay-review-feed'
 import { normalizeRelayUrlForPage, simplifyUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -24,7 +21,7 @@ const RelayReviewsPage = forwardRef(({ url, index, hideTitlebar = false }: { url
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const feedRef = useRef<TNoteListRef>(null)
   const bumpFeed = useCallback(() => feedRef.current?.refresh(), [])
-  const { relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
   useEffect(() => {
@@ -52,10 +49,10 @@ const RelayReviewsPage = forwardRef(({ url, index, hideTitlebar = false }: { url
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
       favoriteRelays,
       blockedRelays,
-      userReadRelaysWithHttp(relayList)
+      userReadInboxUrls(relayList, cacheRelayListEvent)
     )
     return [...new Set([normalizedUrl, ...base])]
-  }, [normalizedUrl, favoriteRelays, blockedRelays, relayList])
+  }, [normalizedUrl, favoriteRelays, blockedRelays, relayList, cacheRelayListEvent])
   const reviewsSubRequests = useMemo<TFeedSubRequest[]>(() => {
     if (!normalizedUrl || relayReviewDTags.length === 0) return []
     return [

@@ -1,10 +1,8 @@
 import { Event, kinds } from 'nostr-tools'
 import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
-import {
-  collectRecipientInboxUrls,
-  collectSenderOutboxUrls
-} from '@/lib/public-message-publish-relays'
+import { collectRecipientInboxUrls, collectSenderOutboxUrls } from '@/lib/public-message-publish-relays'
+import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
@@ -20,6 +18,7 @@ import logger from '@/lib/logger'
 import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import nip66Service from '@/services/nip66.service'
 
 export interface RelaySelectionContext {
@@ -68,6 +67,18 @@ class RelaySelectionService {
    * Filter out local network relays from other users' relay lists
    * We should only use our own local relays, not other users' local relays
    */
+  private normRelay(url: string): string {
+    return normalizeRelayUrlByScheme(url) || url.trim()
+  }
+
+  /** Kind 10002 + 10243 write/both outboxes for the logged-in user. */
+  private userWriteOutboxRelays(context: RelaySelectionContext): string[] {
+    return dedupeNormalizeRelayUrlsOrdered([
+      ...(context.userHttpWriteRelays ?? []),
+      ...context.userWriteRelays
+    ])
+  }
+
   private filterLocalRelaysFromOthers(relays: string[], isOwnRelays: boolean = false): string[] {
     if (isOwnRelays) {
       // For our own relays, keep all of them including local ones
@@ -133,7 +144,7 @@ class RelaySelectionService {
           .filter(Boolean)
       )
       filtered.forEach((url) => {
-        relayTypes[url] = httpSet.has(url) ? 'http_relay_list' : 'relay_list'
+        relayTypes[url] = httpSet.has(canonicalRelaySessionKey(url)) ? 'http_relay_list' : 'relay_list'
       })
       return { relays: filtered, relayTypes, randomRelayUrls: [] }
     }
@@ -396,7 +407,6 @@ class RelaySelectionService {
     context: RelaySelectionContext
   ): Promise<string[]> {
     const {
-      userWriteRelays,
       parentEvent,
       isPublicMessage,
       openFrom,
@@ -406,11 +416,12 @@ class RelaySelectionService {
 
     let selectedRelays: string[] = []
 
-    const norm = (url: string) => normalizeAnyRelayUrl(url) || url
+    const userOutboxes = this.userWriteOutboxRelays(context)
+    const defaultOutboxes = userOutboxes.length > 0 ? userOutboxes : FAST_WRITE_RELAY_URLS
 
     // If called with specific relay URLs, use those
     if (openFrom && openFrom.length > 0) {
-      selectedRelays = Array.from(new Set(openFrom.map(norm).filter(Boolean)))
+      selectedRelays = Array.from(new Set(openFrom.map((url) => this.normRelay(url)).filter(Boolean)))
     }
     // For discussion replies, use relay hints from the kind 11 + user's outboxes + local relays + thecitadel
     else if (parentEvent && (parentEvent.kind === ExtendedKind.DISCUSSION || parentEvent.kind === ExtendedKind.COMMENT)) {
@@ -423,8 +434,7 @@ class RelaySelectionService {
     }
     // For regular replies, use user's write relays + mention relays
     else if (parentEvent && this.isRegularReply(parentEvent)) {
-      const userRelays = userWriteRelays.length > 0 ? userWriteRelays : FAST_WRITE_RELAY_URLS
-      selectedRelays = Array.from(new Set(userRelays.map(norm).filter(Boolean)))
+      selectedRelays = Array.from(new Set(defaultOutboxes.map((url) => this.normRelay(url)).filter(Boolean)))
 
       // Add mention relays
       if (userPubkey) {
@@ -441,28 +451,27 @@ class RelaySelectionService {
               try {
                 const relayList = await this.getCachedRelayList(pubkey)
                 if (!relayList) return []
-                return this.filterLocalRelaysFromOthers(relayList.write || [])
+                return this.filterLocalRelaysFromOthers(collectSenderOutboxUrls(relayList))
               } catch (error) {
                 logger.warn('Failed to get cached relay list', { pubkey, error })
                 return []
               }
             })
           )
-          const mentionRelays = mentionRelayLists.flat().map(norm).filter(Boolean)
+          const mentionRelays = mentionRelayLists.flat().map((url) => this.normRelay(url)).filter(Boolean)
           selectedRelays = Array.from(new Set([...selectedRelays, ...mentionRelays]))
         }
       }
     }
     // Default: user's write relays (or fallback to fast write relays if no user relays)
     else {
-      const defaultRelays = userWriteRelays.length > 0 ? userWriteRelays : FAST_WRITE_RELAY_URLS
-      selectedRelays = Array.from(new Set(defaultRelays.map(norm).filter(Boolean)))
+      selectedRelays = Array.from(new Set(defaultOutboxes.map((url) => this.normRelay(url)).filter(Boolean)))
     }
 
     // ALWAYS include cache relays (local network relays) in selected relays
-    const cacheRelays = userWriteRelays.filter(url => isLocalNetworkUrl(url))
+    const cacheRelays = context.userWriteRelays.filter(url => isLocalNetworkUrl(url))
     if (cacheRelays.length > 0) {
-      selectedRelays = Array.from(new Set([...selectedRelays, ...cacheRelays.map(norm).filter(Boolean)]))
+      selectedRelays = Array.from(new Set([...selectedRelays, ...cacheRelays.map((url) => this.normRelay(url)).filter(Boolean)]))
     }
 
     // When "add random relays" setting is ON, include random relays in selected by default; when OFF they are still in the list but unchecked
@@ -498,20 +507,21 @@ class RelaySelectionService {
         if (senderRelays.length === 0) {
           try {
             const userRelayList = await this.getCachedRelayList(userPubkey)
-            senderRelays = collectSenderOutboxUrls(userRelayList)
+            if (userRelayList) {
+              senderRelays = await collectViewerWriteOutboxUrls(userPubkey, userRelayList)
+            }
           } catch (error) {
             logger.warn('Failed to fetch user relay list for PM', { error, userPubkey })
           }
         }
 
         senderRelays.forEach(url => {
-          const normalized = normalizeAnyRelayUrl(url)
-          if (normalized) {
-            if (!relayToMembers.has(normalized)) {
-              relayToMembers.set(normalized, new Set())
-            }
-            relayToMembers.get(normalized)!.add(userPubkey)
+          const normalized = this.normRelay(url)
+          if (!normalized) return
+          if (!relayToMembers.has(normalized)) {
+            relayToMembers.set(normalized, new Set())
           }
+          relayToMembers.get(normalized)!.add(userPubkey)
         })
       }
 
@@ -561,13 +571,12 @@ class RelaySelectionService {
         recipientRelayLists.forEach((relays, index) => {
           const pubkey = recipientPubkeys[index]
           relays.forEach(url => {
-            const normalized = normalizeAnyRelayUrl(url)
-            if (normalized) {
-              if (!relayToMembers.has(normalized)) {
-                relayToMembers.set(normalized, new Set())
-              }
-              relayToMembers.get(normalized)!.add(pubkey)
+            const normalized = this.normRelay(url)
+            if (!normalized) return
+            if (!relayToMembers.has(normalized)) {
+              relayToMembers.set(normalized, new Set())
             }
+            relayToMembers.get(normalized)!.add(pubkey)
           })
         })
       }
@@ -627,7 +636,7 @@ class RelaySelectionService {
 
       // Normalize and deduplicate final list
       const normalizedRelays = relays
-        .map(url => normalizeAnyRelayUrl(url))
+        .map((url) => this.normRelay(url))
         .filter((url): url is string => !!url)
       
       return Array.from(new Set(normalizedRelays))
@@ -663,10 +672,11 @@ class RelaySelectionService {
    * Includes: relay hints from kind 11, wss://thecitadel.nostr1.com, user's outboxes, and local relays
    */
   private async getDiscussionReplyRelays(context: RelaySelectionContext): Promise<string[]> {
-    const { parentEvent, userWriteRelays, userPubkey, blockedRelays } = context
+    const { parentEvent, userPubkey, blockedRelays } = context
     if (!parentEvent) return []
 
     const relayUrls = new Set<string>()
+    const userOutboxes = this.userWriteOutboxRelays(context)
 
     // Step 1: Get relay hints from the kind 11 event
     let discussionEventId: string | null = null
@@ -700,24 +710,21 @@ class RelaySelectionService {
       relayUrls.add(thecitadelUrl)
     }
 
-    // Step 3: Add user's outboxes (write relays from kind 10002)
-    if (userWriteRelays.length > 0) {
-      userWriteRelays.forEach(url => {
-        const normalized = normalizeAnyRelayUrl(url)
-        if (normalized) {
-          relayUrls.add(normalized)
-        }
+    // Step 3: Add user's outboxes (NIP-65 + HTTP index write relays)
+    if (userOutboxes.length > 0) {
+      userOutboxes.forEach((url) => {
+        const normalized = this.normRelay(url)
+        if (normalized) relayUrls.add(normalized)
       })
     } else if (userPubkey) {
       // Fetch user's relay list if not provided
       try {
         const relayList = await this.getCachedRelayList(userPubkey)
-        if (relayList?.write) {
-          relayList.write.forEach(url => {
-            const normalized = normalizeAnyRelayUrl(url)
-            if (normalized) {
-              relayUrls.add(normalized)
-            }
+        if (relayList) {
+          const outboxes = await collectViewerWriteOutboxUrls(userPubkey, relayList)
+          outboxes.forEach((url) => {
+            const normalized = this.normRelay(url)
+            if (normalized) relayUrls.add(normalized)
           })
         }
       } catch (error) {
@@ -746,7 +753,7 @@ class RelaySelectionService {
 
     // Step 5: Convert to array, normalize, and deduplicate
     const normalizedRelays = Array.from(relayUrls)
-      .map(url => normalizeAnyRelayUrl(url))
+      .map((url) => this.normRelay(url))
       .filter((url): url is string => !!url)
 
     const deduplicatedRelays = Array.from(new Set(normalizedRelays))
@@ -849,9 +856,7 @@ class RelaySelectionService {
       return relays
     }
 
-    const safeNormalize = (url: string): string => {
-      return normalizeAnyRelayUrl(url) || url
-    }
+    const safeNormalize = (url: string): string => this.normRelay(url)
 
     const normalizedBlocked = blockedRelays.map(safeNormalize)
     return relays.filter(relay => {

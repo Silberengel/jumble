@@ -8,10 +8,7 @@ import {
   dedupeRelayReviewsNewestFirst,
   loadCachedRelayReviews
 } from '@/lib/explore-relay-reviews'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toRelay } from '@/lib/link'
 import { isExploreBrowsableRelayUrl } from '@/lib/explore-popular-relays'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -59,7 +56,8 @@ const EXPLORE_REVIEWS_EOSE_TAIL_MS = 4500
 function stableRelayInputsKey(
   favoriteRelays: string[],
   blockedRelays: string[],
-  relayList: { read?: string[]; write?: string[]; httpRead?: string[] } | null | undefined
+  relayList: { read?: string[]; write?: string[]; httpRead?: string[] } | null | undefined,
+  cacheRelayListEvent: Event | null | undefined
 ): string {
   const normSortJoin = (urls: string[]) =>
     [...urls]
@@ -70,19 +68,19 @@ function stableRelayInputsKey(
   return [
     normSortJoin(favoriteRelays),
     normSortJoin(blockedRelays),
-    normSortJoin([...(relayList?.httpRead ?? []), ...(relayList?.read ?? [])]),
-    normSortJoin(relayList?.write ?? [])
+    normSortJoin(userReadInboxUrls(relayList, cacheRelayListEvent)),
+    normSortJoin(userWriteOutboxUrls(relayList, cacheRelayListEvent))
   ].join('::')
 }
 
 export default function ExploreRelayReviews() {
   const { t } = useTranslation()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
 
   const relayInputsKey = useMemo(
-    () => stableRelayInputsKey(favoriteRelays, blockedRelays, relayList),
-    [favoriteRelays, blockedRelays, relayList]
+    () => stableRelayInputsKey(favoriteRelays, blockedRelays, relayList, cacheRelayListEvent),
+    [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
   )
 
   const relayUrls = useMemo(() => {
@@ -90,9 +88,9 @@ export default function ExploreRelayReviews() {
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           maxRelays: EXPLORE_REVIEWS_MAX_RELAYS,
           applySocialKindBlockedFilter: false
         }

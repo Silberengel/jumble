@@ -1844,6 +1844,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     await indexedDb.putReplaceableEvent(httpRelayEvent)
     if (account?.pubkey) {
       client.clearRelayListCache(account.pubkey)
+      await client.syncViewerPersonalRelayKeys(account.pubkey)
     }
     setHttpRelayListEvent(httpRelayEvent)
     const mergedRelayList = await client.fetchRelayList(account?.pubkey || '')

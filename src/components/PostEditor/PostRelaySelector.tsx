@@ -1,13 +1,12 @@
-import { ExtendedKind, isSocialKindBlockedKind, MAX_PUBLISH_RELAYS, SOCIAL_KIND_BLOCKED_RELAY_URLS } from '@/constants'
+import { isSocialKindBlockedKind, MAX_PUBLISH_RELAYS, SOCIAL_KIND_BLOCKED_RELAY_URLS } from '@/constants'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
-import { simplifyUrl, isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { simplifyUrl, isLocalNetworkUrl, normalizeRelayUrlByScheme } from '@/lib/url'
+import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useNostr } from '@/providers/NostrProvider'
-import { getRelayListFromEvent } from '@/lib/event-metadata'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import indexedDb from '@/services/indexed-db.service'
+import { userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { Check, ChevronDown, Server } from 'lucide-react'
 import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useCallback, useEffect, useState, useMemo, useRef } from 'react'
@@ -25,7 +24,7 @@ const NO_MENTIONS: string[] = []
 
 /** Keep auto-selection within {@link MAX_PUBLISH_RELAYS}, preserving {@link selectableRelaysOrder} (top of list first). */
 function capAutoSelectedRelays(selectableRelaysOrder: string[], selectedWithCache: string[]): string[] {
-  const norm = (u: string) => normalizeAnyRelayUrl(u) || u
+  const norm = (u: string) => normalizeRelayUrlByScheme(u) || u
   const selectedNormSet = new Set(selectedWithCache.map(norm))
   const ordered: string[] = []
   for (const url of selectableRelaysOrder) {
@@ -71,8 +70,11 @@ export default function PostRelaySelector({
   const { isSmallScreen } = useScreenSize()
   useCurrentRelays() // Keep this hook call for any side effects
   const { relaySets, favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { pubkey, relayList } = useNostr()
-  const userReadRelaysForSelection = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
+  const { pubkey, relayList, cacheRelayListEvent } = useNostr()
+  const userReadRelaysForSelection = useMemo(
+    () => userReadInboxUrls(relayList, cacheRelayListEvent),
+    [relayList, cacheRelayListEvent]
+  )
   const [selectedRelayUrls, setSelectedRelayUrls] = useState<string[]>([])
   const [selectableRelays, setSelectableRelays] = useState<string[]>([])
   const [relayTypes, setRelayTypes] = useState<Record<string, RelaySourceType>>({})
@@ -165,32 +167,9 @@ export default function PostRelaySelector({
     const updateRelaySelection = async () => {
       setIsLoading(true)
       try {
-        let userWriteRelays = relayList?.write || []
-        if (pubkey) {
-          try {
-            const cacheRelayListEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
-            if (cacheRelayListEvent) {
-              const cacheRelayList = getRelayListFromEvent(cacheRelayListEvent)
-              const cacheRelays = [
-                ...cacheRelayList.write,
-                ...cacheRelayList.originalRelays
-                  .filter(relay => (relay.scope === 'both' || relay.scope === 'write') && isLocalNetworkUrl(relay.url))
-                  .map(relay => relay.url)
-              ].filter(url => {
-                if (!url || typeof url !== 'string' || url.trim() === '' || url === 'ws://' || url === 'wss://') return false
-                return isLocalNetworkUrl(url)
-              })
-              const existingUrls = new Set(userWriteRelays.map(url => normalizeUrl(url) || url))
-              const newCacheRelays = cacheRelays
-                .map(url => normalizeUrl(url) || url)
-                .filter((url): url is string => !!url && !existingUrls.has(url))
-              if (newCacheRelays.length > 0) {
-                userWriteRelays = [...newCacheRelays, ...userWriteRelays]
-              }
-            }
-          } catch (error) {
-            logger.warn('Failed to get cache relays from IndexedDB', { error, pubkey })
-          }
+        let userWriteRelays: string[] = []
+        if (pubkey && relayList) {
+          userWriteRelays = await collectViewerWriteOutboxUrls(pubkey, relayList)
         }
 
         const result = await relaySelectionService.selectRelays({
@@ -269,7 +248,7 @@ export default function PostRelaySelector({
   useEffect(() => {
     // An event is "protected" if we have selected relays that aren't the default user write relays
     const defaultUserWriteRelays = [...(relayList?.httpWrite ?? []), ...(relayList?.write || [])]
-    const normW = (u: string) => normalizeAnyRelayUrl(u) || u
+    const normW = (u: string) => normalizeRelayUrlByScheme(u) || u
     const defaultNorm = new Set(defaultUserWriteRelays.map(normW))
     const isProtectedEvent =
       selectedRelayUrls.length > 0 &&

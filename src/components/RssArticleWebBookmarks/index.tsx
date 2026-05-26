@@ -5,10 +5,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { ExtendedKind } from '@/constants'
 import { createWebBookmarkDraftEvent } from '@/lib/draft-event'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
 import { showPublishingError } from '@/lib/publishing-feedback'
 import {
@@ -34,7 +31,7 @@ import { useTranslation } from 'react-i18next'
 export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: string }) {
   const { t } = useTranslation()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
-  const { pubkey, publish, attemptDelete, relayList, account } = useNostr()
+  const { pubkey, publish, attemptDelete, relayList, cacheRelayListEvent, account } = useNostr()
 
   const canonical = useMemo(() => canonicalizeRssArticleUrl(articleUrl), [articleUrl])
   const iVals = useMemo(() => {
@@ -43,11 +40,11 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
   }, [canonical])
 
   const relayUrls = useMemo(() => {
-    const read = userReadRelaysWithHttp(relayList)
+    const read = userReadInboxUrls(relayList, cacheRelayListEvent)
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(favoriteRelays, blockedRelays, read, {})
     if (!base.length) return []
     return appendCuratedReadOnlyRelays(base, blockedRelays)
-  }, [favoriteRelays, blockedRelays, relayList])
+  }, [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent])
 
   const [mine, setMine] = useState<Event[]>([])
   const [loading, setLoading] = useState(false)

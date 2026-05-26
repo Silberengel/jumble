@@ -34,7 +34,7 @@ import indexedDb from '@/services/indexed-db.service'
 import { ExtendedKind, FIRST_RELAY_RESULT_GRACE_MS } from '@/constants'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import { normalizeHexPubkey } from '@/lib/pubkey'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { TOMBSTONES_UPDATED_EVENT } from '@/lib/tombstone-events'
 import {
   buildSpellCatalogAuthors,
@@ -80,6 +80,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     pubkey,
     account,
     relayList,
+    cacheRelayListEvent,
     attemptDelete,
     bookmarkListEvent,
     interestListEvent,
@@ -236,6 +237,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     selectedSpell,
     pubkey,
     relayList,
+    cacheRelayListEvent,
     favoriteRelays,
     blockedRelays,
     notificationsFeedPubkey,
@@ -264,8 +266,8 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
         const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
           favoriteRelays,
           blockedRelays,
-          userReadRelaysWithHttp(relayList),
-          { userWriteRelays: relayList?.write ?? [] }
+          userReadInboxUrls(relayList, cacheRelayListEvent),
+          { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent) }
         )
         if (!feedUrls.length) {
           if (!cancelled) setFollowSetListEvents([])
@@ -378,8 +380,8 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
         }
       }
 
-      const urls = getRelaysForSpellCatalogSync(favoriteRelays, blockedRelays, userReadRelaysWithHttp(relayList), {
-        userWriteRelays: relayList?.write ?? [],
+      const urls = getRelaysForSpellCatalogSync(favoriteRelays, blockedRelays, userReadInboxUrls(relayList, cacheRelayListEvent), {
+        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
         useGlobalRelayBootstrap
       })
       const catalogAuthors = buildSpellCatalogAuthors(pubkey, contacts)

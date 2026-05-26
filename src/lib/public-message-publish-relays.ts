@@ -5,32 +5,21 @@ import {
 } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { dedupeNormalizeRelayUrlsOrdered, relayUrlsLocalsFirst } from '@/lib/relay-url-priority'
-import { isLocalNetworkUrl, normalizeHttpRelayUrl, normalizeUrl } from '@/lib/url'
+import { collectRemoteReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
+import { collectWriteOutboxUrlsFromRelayList } from '@/lib/viewer-write-outboxes'
 import type { TRelayList } from '@/types'
 
-/** NIP-65 / 10243 outbox URLs for the sender (includes viewer-local outboxes). */
+/** NIP-65 / 10243 outbox URLs for the sender (includes viewer-local outboxes when present on `write`). */
 export function collectSenderOutboxUrls(
   relayList: TRelayList | null | undefined,
   extraWriteUrls: readonly string[] = []
 ): string[] {
-  const http = (relayList?.httpWrite ?? [])
-    .map((u) => normalizeHttpRelayUrl(u) || u)
-    .filter((u): u is string => !!u)
-  const ws = (relayList?.write ?? [])
-    .map((u) => normalizeUrl(u) || u)
-    .filter((u): u is string => !!u)
-  return dedupeNormalizeRelayUrlsOrdered([...http, ...ws, ...extraWriteUrls])
+  return collectWriteOutboxUrlsFromRelayList(relayList, extraWriteUrls)
 }
 
 /** NIP-65 / 10243 inbox URLs for a recipient (drops other people's LAN/loopback). */
 export function collectRecipientInboxUrls(relayList: TRelayList | null | undefined): string[] {
-  const http = (relayList?.httpRead ?? [])
-    .map((u) => normalizeHttpRelayUrl(u) || u)
-    .filter((u): u is string => !!u && !isLocalNetworkUrl(u))
-  const ws = (relayList?.read ?? [])
-    .map((u) => normalizeUrl(u) || u)
-    .filter((u): u is string => !!u && !isLocalNetworkUrl(u))
-  return dedupeNormalizeRelayUrlsOrdered([...http, ...ws])
+  return collectRemoteReadInboxUrlsFromRelayList(relayList)
 }
 
 /**

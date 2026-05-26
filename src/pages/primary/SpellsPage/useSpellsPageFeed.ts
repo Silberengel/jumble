@@ -8,7 +8,8 @@ import { normalizeUrl } from '@/lib/url'
 import {
   augmentSubRequestsWithFavoritesFastReadAndInbox,
   getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
+  userReadInboxUrls,
+  userWriteOutboxUrls
 } from '@/lib/favorites-feed-relays'
 import { stableSpellFeedFilterKey } from '@/lib/spell-feed-request-identity'
 import { isUserInEventMentions } from '@/lib/event'
@@ -73,15 +74,16 @@ function buildInboxShardFollowingSubRequests(args: {
   authors: string[]
   favoriteRelays: string[]
   blockedRelays: string[]
-  relayList: { read: string[]; write: string[] } | null | undefined
+  relayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] } | null | undefined
+  cacheRelayListEvent?: Event | null
   augment: (raw: TFeedSubRequest[]) => TFeedSubRequest[]
 }): TFeedSubRequest[] {
-  const { authors, favoriteRelays, blockedRelays, relayList, augment } = args
+  const { authors, favoriteRelays, blockedRelays, relayList, cacheRelayListEvent, augment } = args
   const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
     favoriteRelays,
     blockedRelays,
-    userReadRelaysWithHttp(relayList),
-    { userWriteRelays: relayList?.write ?? [] }
+    userReadInboxUrls(relayList, cacheRelayListEvent),
+    { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent) }
   )
   if (!feedUrls.length) return []
   const capped = authors.slice(0, FOLLOWING_INBOX_SHARD_AUTHOR_CAP)
@@ -113,7 +115,8 @@ export type UseSpellsPageFeedArgs = {
   selectedFauxSpell: string | null
   selectedSpell: Event | null
   pubkey: string | null | undefined
-  relayList: { read: string[]; write: string[] } | null | undefined
+  relayList: { read: string[]; write: string[]; httpRead?: string[]; httpWrite?: string[] } | null | undefined
+  cacheRelayListEvent?: Event | null
   favoriteRelays: string[]
   blockedRelays: string[]
   notificationsFeedPubkey: string | null
@@ -135,6 +138,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     selectedSpell,
     pubkey,
     relayList,
+    cacheRelayListEvent,
     favoriteRelays,
     blockedRelays,
     notificationsFeedPubkey,
@@ -153,11 +157,9 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
   const hideRepliesFollowing = useNoteListHideReplies()
   const [followingSubRequests, setFollowingSubRequests] = useState<TFeedSubRequest[]>([])
 
-  const normalizedReadSorted = relayList
-    ? [...relayList.read].map((u) => normalizeUrl(u) || u).filter(Boolean).sort()
-    : []
+  const normalizedReadSorted = relayList ? [...userReadInboxUrls(relayList, cacheRelayListEvent)].sort() : []
   const normalizedWriteSorted = relayList
-    ? [...relayList.write].map((u) => normalizeUrl(u) || u).filter(Boolean).sort()
+    ? [...userWriteOutboxUrls(relayList, cacheRelayListEvent)].sort()
     : []
 
   const relayMailboxStableKey =
@@ -220,8 +222,8 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
           raw,
           favoriteRelays,
           blockedRelays,
-          userReadRelaysWithHttp(relayList),
-          { userWriteRelays: relayList?.write ?? [] }
+          userReadInboxUrls(relayList, cacheRelayListEvent),
+          { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent) }
         )
       try {
         if (selectedFauxSpell === 'following') {
@@ -232,6 +234,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
             favoriteRelays,
             blockedRelays,
             relayList,
+            cacheRelayListEvent,
             augment
           }
           const syncProvisional = buildInboxShardFollowingSubRequests({
@@ -294,6 +297,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
             favoriteRelays,
             blockedRelays,
             relayList,
+            cacheRelayListEvent,
             augment
           })
           if (!cancelled && syncReq.length > 0) setFollowingSubRequests(syncReq)
@@ -310,6 +314,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
                   favoriteRelays,
                   blockedRelays,
                   relayList,
+                  cacheRelayListEvent,
                   augment
                 })
           if (!cancelled) setFollowingSubRequests(req)
@@ -329,6 +334,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     sortedFavoriteRelaysKey,
     sortedBlockedRelaysKey,
     relayMailboxStableKey,
+    cacheRelayListEvent,
     followSetCatalogLoading,
     followSetListStableKey,
     followListEvent?.id,
@@ -399,9 +405,9 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
         }
       )
@@ -478,7 +484,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
 
   const spellSubRequests = useMemo<TFeedSubRequest[]>(() => {
     if (!selectedSpell) return []
-    const relayListWrite = relayList?.write ?? []
+    const relayListWrite = userWriteOutboxUrls(relayList, cacheRelayListEvent)
     const ctx = { pubkey: pubkey ?? null, contacts }
     const filter = spellEventToFilter(selectedSpell, ctx)
     if (!filter) return []

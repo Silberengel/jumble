@@ -37,6 +37,17 @@ import {
 
 import { getCacheRelayUrls } from '@/lib/private-relays'
 import {
+  collectReadInboxUrlsFromRelayList,
+  collectRemoteReadInboxUrlsFromRelayList,
+  collectUserReadInboxUrls,
+  collectViewerReadInboxUrls
+} from '@/lib/viewer-read-inboxes'
+import {
+  collectUserWriteOutboxUrls,
+  collectViewerWriteOutboxUrls,
+  collectWriteOutboxUrlsFromRelayList
+} from '@/lib/viewer-write-outboxes'
+import {
   buildPersonalRelayKeySet,
   sanitizeRelayUrlsForFetch,
   isReadOnlyIndexerRelay,
@@ -141,8 +152,7 @@ import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { getPaymentAttestationTargetId } from '@/lib/superchat'
 import {
   buildPublicMessagePublishRelayUrls,
-  collectRecipientInboxUrls,
-  collectSenderOutboxUrls
+  collectRecipientInboxUrls
 } from '@/lib/public-message-publish-relays'
 import { buildPrioritizedWriteRelayUrls, dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import {
@@ -173,6 +183,7 @@ import {
   isWebsocketUrl,
   normalizeAnyRelayUrl,
   normalizeHttpRelayUrl,
+  normalizeRelayUrlByScheme,
   normalizeUrl,
   simplifyUrl,
   urlMatchesConfiguredHttpIndexRelay
@@ -626,12 +637,11 @@ class ClientService extends EventTarget {
     const extra: string[] = []
     if (pubkey) {
       const rl = await this.peekRelayListFromStorage(pubkey)
-      extra.push(
-        ...(rl.read ?? []),
-        ...(rl.write ?? []),
-        ...(rl.httpRead ?? []),
-        ...(rl.httpWrite ?? [])
-      )
+      const [readInboxes, writeOutboxes] = await Promise.all([
+        collectViewerReadInboxUrls(pubkey, rl),
+        collectViewerWriteOutboxUrls(pubkey, rl)
+      ])
+      extra.push(...readInboxes, ...writeOutboxes)
     }
     await preloadGifsIntoIdbCache(pubkey, extra)
   }
@@ -752,6 +762,35 @@ class ClientService extends EventTarget {
     return { all, httpIndexBases, cacheRelayEvent }
   }
 
+  /**
+   * Kind 10243 bases used to route publish targets through the HTTP index API (not WebSocket).
+   * Refreshes from IndexedDB when the batch includes https targets so reactions/posts work right
+   * after saving kind 10243 without waiting for a full account re-sync.
+   */
+  private async resolveViewerHttpIndexBasesForPublish(
+    publishTargetUrls: readonly string[]
+  ): Promise<string[]> {
+    const hasHttpTarget = publishTargetUrls.some((u) => isKind10243HttpRelayTagUrl(u.trim()))
+    if (!hasHttpTarget) return this.viewerHttpIndexRelayBases
+
+    const pk = this.pubkey?.trim()
+    if (!pk) return this.viewerHttpIndexRelayBases
+
+    try {
+      const rl = await this.peekRelayListFromStorage(pk)
+      const fresh = [...(rl.httpRead ?? []), ...(rl.httpWrite ?? [])]
+        .map((u) => normalizeHttpRelayUrl(u) || u)
+        .filter(Boolean)
+      if (fresh.length > 0) {
+        this.viewerHttpIndexRelayBases = fresh
+        return fresh
+      }
+    } catch {
+      /* keep session cache */
+    }
+    return this.viewerHttpIndexRelayBases
+  }
+
   /** Kind 10012 + embedded NIP-51 relay sets from IndexedDB only (no network). */
   async fetchFavoriteRelaysFromStorage(pubkey: string): Promise<string[]> {
     try {
@@ -858,48 +897,20 @@ class ClientService extends EventTarget {
     const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
     return dedupeNormalizeRelayUrlsOrdered(
       filterRelaysForEventPublish(relays, event.kind).filter((url) => {
-        const n = normalizeAnyRelayUrl(url) || url
+        const n = normalizeRelayUrlByScheme(url) || url
         if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
         return true
       })
     )
   }
 
-  /**
-   * Author kind 0 / 10133 publish: NIP-65 WS outbox + HTTP write (10243) + cache relays (10432).
-   * {@link fetchRelayList} usually merges cache into `write`; this also appends 10432 tags when missing.
-   */
-  private async resolveFullMailboxWriteUrlsForPublish(
-    pubkey: string,
-    relayList: TRelayList
-  ): Promise<string[]> {
-    const ws = (relayList.write ?? [])
-      .map((u) => normalizeUrl(u) || u)
-      .filter((u): u is string => !!u)
-    const http = (relayList.httpWrite ?? [])
-      .map((u) => normalizeHttpRelayUrl(u) || u)
-      .filter((u): u is string => !!u)
-    let merged = dedupeNormalizeRelayUrlsOrdered([...http, ...ws])
-    try {
-      const cache = await getCacheRelayUrls(pubkey)
-      if (cache.length > 0) {
-        merged = dedupeNormalizeRelayUrlsOrdered([...merged, ...cache])
-      }
-    } catch {
-      /* ignore */
-    }
-    return merged
-  }
-
   private relayListHasWriteUrls(relayList: TRelayList): boolean {
-    return (relayList.write?.length ?? 0) > 0 || (relayList.httpWrite?.length ?? 0) > 0
+    return collectUserWriteOutboxUrls(relayList).length > 0
   }
 
   private relayListUsableForInboxOrdering(relayList: TRelayList): boolean {
     return (
-      this.relayListHasWriteUrls(relayList) ||
-      (relayList.read?.length ?? 0) > 0 ||
-      (relayList.httpRead?.length ?? 0) > 0
+      this.relayListHasWriteUrls(relayList) || collectUserReadInboxUrls(relayList).length > 0
     )
   }
 
@@ -914,23 +925,12 @@ class ClientService extends EventTarget {
     return this.fetchRelayListWithPublishTimeout(pubkey)
   }
 
-  /** NIP-65 `write` URLs for `event.pubkey`, filtered for publish (no read-only / social-kind blocks). */
+  /** NIP-65 / 10243 / 10432 write outboxes for `event.pubkey`, filtered for publish. */
   private async getUserOutboxRelayUrlsForPublish(event: NEvent): Promise<string[]> {
     try {
       const relayList = await this.peekOrFetchRelayListForPublish(event.pubkey)
-      if (!this.relayListHasWriteUrls(relayList)) {
-        return []
-      }
-      const raw = isAuthorProfileMetadataPublishKind(event.kind)
-        ? await this.resolveFullMailboxWriteUrlsForPublish(event.pubkey, relayList)
-        : dedupeNormalizeRelayUrlsOrdered([
-            ...(relayList.httpWrite ?? [])
-              .map((u) => normalizeHttpRelayUrl(u) || u)
-              .filter((u): u is string => !!u),
-            ...(relayList.write ?? [])
-              .map((u) => normalizeUrl(u) || u)
-              .filter((u): u is string => !!u)
-          ])
+      const raw = await collectViewerWriteOutboxUrls(event.pubkey, relayList)
+      if (raw.length === 0) return []
       return this.filterPublishingRelays(raw, event)
     } catch {
       return []
@@ -942,7 +942,7 @@ class ClientService extends EventTarget {
     userOutboxUrls: string[],
     relayStatuses: { url: string; success: boolean; error?: string }[]
   ): Promise<void> {
-    const norm = (u: string) => normalizeAnyRelayUrl(u) || u
+    const norm = (u: string) => normalizeRelayUrlByScheme(u) || u
     const hadSuccess = new Set<string>()
     for (const r of relayStatuses) {
       if (r.success) hadSuccess.add(norm(r.url))
@@ -1191,15 +1191,8 @@ class ClientService extends EventTarget {
     }
     // For Report events, always include user's write relays first, then add seen relays if they're write-capable
     if (event.kind === kinds.Report) {
-      // Start with user's write relays (outboxes) - these are the primary targets for reports
       const relayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
-      const reportHttpWrites = (relayList?.httpWrite ?? [])
-        .map((url) => normalizeHttpRelayUrl(url) || url)
-        .filter((u): u is string => !!u)
-      const reportWsWrites = (relayList?.write ?? [])
-        .map((url) => normalizeUrl(url) || url)
-        .filter((u): u is string => !!u)
-      const userWriteRelays = dedupeNormalizeRelayUrlsOrdered([...reportHttpWrites, ...reportWsWrites])
+      const userWriteRelays = await collectViewerWriteOutboxUrls(event.pubkey, relayList)
       
       // Get seen relays where the reported event was found
       const targetEventId = event.tags.find(tagNameEquals('e'))?.[1]
@@ -1209,9 +1202,9 @@ class ClientService extends EventTarget {
         const allSeenRelays = this.getSeenEventRelayUrls(targetEventId)
         // Filter seen relays: only include those that are in user's write list
         // This ensures we don't try to publish to read-only relays
-        const userWriteRelaySet = new Set(userWriteRelays.map(url => normalizeAnyRelayUrl(url) || url))
+        const userWriteRelaySet = new Set(userWriteRelays.map((url) => normalizeRelayUrlByScheme(url) || url))
         seenRelays.push(...allSeenRelays.filter(url => {
-          const normalized = normalizeAnyRelayUrl(url) || url
+          const normalized = normalizeRelayUrlByScheme(url) || url
           return userWriteRelaySet.has(normalized)
         }))
       }
@@ -1273,7 +1266,7 @@ class ClientService extends EventTarget {
         this.fetchRelayListWithPublishTimeout(event.pubkey),
         recipientListsPromise
       ])
-      const authorWrite = collectSenderOutboxUrls(authorRelayList)
+      const authorWrite = await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
       const recipientRead = dedupeNormalizeRelayUrlsOrdered(
         recipientRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
       )
@@ -1303,7 +1296,7 @@ class ClientService extends EventTarget {
           ? this.fetchRelayListsWithPublishTimeout(senderPubkeys)
           : Promise.resolve([] as TRelayList[])
       ])
-      const authorWrite = collectSenderOutboxUrls(authorRelayList)
+      const authorWrite = await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
       const authorRead = collectRecipientInboxUrls(authorRelayList)
       const senderInboxes = dedupeNormalizeRelayUrlsOrdered(
         senderRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
@@ -1351,16 +1344,10 @@ class ClientService extends EventTarget {
           })
           spellRelayList = this.emptyRelayListForPublish()
         }
-        const spellHttpWrites = (spellRelayList?.httpWrite ?? [])
-          .map((url) => normalizeHttpRelayUrl(url))
-          .filter((url): url is string => !!url)
-        const spellWsWrites = (spellRelayList?.write ?? [])
-          .map((url) => normalizeUrl(url))
-          .filter((url): url is string => !!url)
-        const normalizedWrite = dedupeNormalizeRelayUrlsOrdered([...spellHttpWrites, ...spellWsWrites])
+        const spellWriteFilteredRaw = await collectViewerWriteOutboxUrls(event.pubkey, spellRelayList)
         const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-        const spellWriteFiltered = normalizedWrite.filter((url) => {
-          const n = normalizeAnyRelayUrl(url) || url
+        const spellWriteFiltered = spellWriteFilteredRaw.filter((url) => {
+          const n = normalizeRelayUrlByScheme(url) || url
           return !readOnlySet.has(n)
         })
         return this.filterPublishingRelays(
@@ -1395,14 +1382,7 @@ class ClientService extends EventTarget {
       const relayListPromise = this.fetchRelayListWithPublishTimeout(event.pubkey)
       const [relayLists, relayList] = await Promise.all([relayListsPromise, relayListPromise])
       relayLists.forEach((rl) => {
-        for (const u of rl.httpRead ?? []) {
-          const n = normalizeHttpRelayUrl(u) || u
-          if (n) authorInboxFromContext.push(n)
-        }
-        for (const u of rl.read ?? []) {
-          const n = normalizeUrl(u) || u
-          if (n) authorInboxFromContext.push(n)
-        }
+        authorInboxFromContext.push(...collectRemoteReadInboxUrlsFromRelayList(rl))
       })
       if (
         isAuthorProfileMetadataPublishKind(event.kind) ||
@@ -1461,15 +1441,10 @@ class ClientService extends EventTarget {
           writeRelays: relayList?.write?.slice(0, MAX_PUBLISH_RELAYS) ?? []
         })
       }
-      const wsWrites = (relayList?.write ?? [])
-        .map((u) => normalizeUrl(u) || u)
-        .filter((u): u is string => !!u)
-      const httpWrites = (relayList?.httpWrite ?? [])
-        .map((u) => normalizeHttpRelayUrl(u) || u)
-        .filter((u): u is string => !!u)
-      const userWritesOrdered = isAuthorProfileMetadataPublishKind(event.kind)
-        ? await this.resolveFullMailboxWriteUrlsForPublish(event.pubkey, relayList ?? this.emptyRelayListForPublish())
-        : dedupeNormalizeRelayUrlsOrdered([...httpWrites, ...wsWrites])
+      const userWritesOrdered = await collectViewerWriteOutboxUrls(
+        event.pubkey,
+        relayList ?? this.emptyRelayListForPublish()
+      )
       relays = this.filterPublishingRelays(
         buildPrioritizedWriteRelayUrls({
           userWriteRelays: userWritesOrdered,
@@ -1668,7 +1643,7 @@ class ClientService extends EventTarget {
 
     const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
     let filtered = filterRelaysForEventPublish(mergedRelayUrls, event.kind).filter((url) => {
-      const n = normalizeAnyRelayUrl(url) || url
+      const n = normalizeRelayUrlByScheme(url) || url
       if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
       return true
     })
@@ -1761,6 +1736,8 @@ class ClientService extends EventTarget {
     const relayStatuses: { url: string; success: boolean; error?: string }[] = []
     const publishOpBatch = new RelayPublishOpBatch(publishBatchSource, event.id, publishTargetUrls)
     publishOpBatch.logBegin()
+
+    const httpIndexBasesForPublish = await this.resolveViewerHttpIndexBasesForPublish(publishTargetUrls)
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const client = this
@@ -1894,7 +1871,7 @@ class ClientService extends EventTarget {
           }, connectionTimeout + publishAckBudgetMs + 2_000)
           
           try {
-            if (urlMatchesConfiguredHttpIndexRelay(url, this.viewerHttpIndexRelayBases)) {
+            if (urlMatchesConfiguredHttpIndexRelay(url, httpIndexBasesForPublish)) {
               const base = normalizeHttpRelayUrl(url) || url
               logger.debug(`[PublishEvent] Publishing to kind 10243 HTTP index relay`, { url: base })
               await Promise.race([
@@ -2033,7 +2010,7 @@ class ClientService extends EventTarget {
             }
           } catch (error) {
             const softHttpDown =
-              urlMatchesConfiguredHttpIndexRelay(url, this.viewerHttpIndexRelayBases) &&
+              urlMatchesConfiguredHttpIndexRelay(url, httpIndexBasesForPublish) &&
               (error instanceof IndexRelayTransportError || isIndexRelayTransportFailure(error))
             if (softHttpDown) {
               logger.debug('[PublishEvent] HTTP index relay unreachable', {
@@ -4551,9 +4528,7 @@ class ClientService extends EventTarget {
    */
   async getMailboxStackWriteUrlsForRepublish(pubkey: string): Promise<string[]> {
     const rl = await this.peekRelayListFromStorage(pubkey)
-    const ws = (rl.write ?? []).map((u) => normalizeUrl(u) || u).filter((u): u is string => !!u)
-    const http = (rl.httpWrite ?? []).map((u) => normalizeHttpRelayUrl(u) || u).filter((u): u is string => !!u)
-    return dedupeNormalizeRelayUrlsOrdered([...http, ...ws])
+    return collectViewerWriteOutboxUrls(pubkey, rl)
   }
 
   /** Newest kind 10002 for `pubkey` from IndexedDB and/or session LRU (session may hold a copy not persisted yet). */
@@ -5069,8 +5044,8 @@ class ClientService extends EventTarget {
     if (!/^[0-9a-f]{64}$/.test(pk)) return []
     const relayList = await this.fetchRelayList(pk)
     const urls = dedupeNormalizeRelayUrlsOrdered([
-      ...relayList.write.map((u) => normalizeUrl(u) || u),
-      ...relayList.read.map((u) => normalizeUrl(u) || u),
+      ...collectWriteOutboxUrlsFromRelayList(relayList),
+      ...collectReadInboxUrlsFromRelayList(relayList),
       ...FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u),
       ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u)
     ]).filter(Boolean)
@@ -5127,7 +5102,9 @@ class ClientService extends EventTarget {
       let urls = [...publicReadRelayFallbackUrls()]
       if (myPubkey) {
         const relayList = await this.fetchRelayList(myPubkey)
-        urls = relayList.read.concat([...publicReadRelayFallbackUrls()]).slice(0, 5)
+        urls = collectReadInboxUrlsFromRelayList(relayList)
+          .concat([...publicReadRelayFallbackUrls()])
+          .slice(0, 5)
       }
       return [{ urls, filter: { authors: pubkeys } }]
     }

@@ -4,10 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind } from '@/constants'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toProfile } from '@/lib/link'
 import { formatPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
@@ -114,7 +111,7 @@ function compactCount(n: number): string {
 export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
-  const { relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [cards, setCards] = useState<InteractionCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -126,9 +123,9 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           applySocialKindBlockedFilter: false
         }
       ),

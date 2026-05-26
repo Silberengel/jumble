@@ -8,7 +8,7 @@ import {
   resolveParentSpacesForLiveActivities,
   type TLiveActivityItem
 } from '@/lib/live-activities'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
@@ -22,7 +22,7 @@ import { useNostr } from './NostrProvider'
 import { useUserPreferencesOptional } from './UserPreferencesProvider'
 
 export function LiveActivitiesProvider({ children }: { children: React.ReactNode }) {
-  const { pubkey, relayList, isInitialized, isAccountSessionHydrating } = useNostr()
+  const { pubkey, relayList, cacheRelayListEvent, isInitialized, isAccountSessionHydrating } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const followListCtx = useFollowListOptional()
   const followings = followListCtx?.followings ?? []
@@ -50,8 +50,14 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
   /** Collapse boot + session-prewarm + StrictMode into one network pass. */
   const LIVE_ACTIVITIES_MIN_REFRESH_GAP_MS = 8_000
 
-  const relayRead = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
-  const relayWrite = relayList?.write ?? []
+  const relayRead = useMemo(
+    () => userReadInboxUrls(relayList, cacheRelayListEvent),
+    [relayList, cacheRelayListEvent]
+  )
+  const relayWrite = useMemo(
+    () => userWriteOutboxUrls(relayList, cacheRelayListEvent),
+    [relayList, cacheRelayListEvent]
+  )
 
   const refresh = useCallback(async () => {
     if (!showLiveActivitiesBanner) {

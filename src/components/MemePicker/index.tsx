@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { useUserReadInboxUrls, useUserWriteOutboxUrls } from '@/hooks/useUserMailboxRelayUrls'
 import { useNostr } from '@/providers/NostrProvider'
 import { ExtendedKind, GIF_RELAY_URLS } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
@@ -24,7 +24,7 @@ import {
 } from '@/services/meme.service'
 import mediaUpload from '@/services/media-upload.service'
 import { ExternalLink, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** In-session cache: survives Drawer/Dropdown open↔close without a relay re-fetch. */
 let _sessionMemes: MemeMetadata[] = []
@@ -68,7 +68,7 @@ export default function MemePicker({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { publish, pubkey, relayList } = useNostr()
+  const { publish, pubkey } = useNostr()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -86,8 +86,8 @@ export default function MemePicker({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const memeamigoPopupRef = useRef<Window | null>(null)
 
-  const userReadRelays = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
-  const userWriteRelays = relayList?.write ?? []
+  const userReadRelays = useUserReadInboxUrls()
+  const userWriteRelays = useUserWriteOutboxUrls()
 
   /** Keep memesRef, session cache, and React state in sync. */
   const setMemes = useCallback((newMemes: MemeMetadata[], isSearch = false) => {

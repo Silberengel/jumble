@@ -15,10 +15,7 @@ import {
   loadCachedRelayReviews
 } from '@/lib/explore-relay-reviews'
 import { getRelayUrlFromRelayReviewEvent } from '@/lib/event-metadata'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toRelay } from '@/lib/link'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
@@ -114,7 +111,7 @@ function ExploreRelayDirectoryCard({ entry }: { entry: ExploreRelayEntry }) {
 
 export default function ExploreRelayDirectory({ listFilter = '' }: { listFilter?: string }) {
   const { t } = useTranslation()
-  const { pubkey, relayList } = useNostr()
+  const { pubkey, relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
   const relayInputsKey = useMemo(
@@ -127,9 +124,9 @@ export default function ExploreRelayDirectory({ listFilter = '' }: { listFilter?
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           maxRelays: EXPLORE_REVIEWS_MAX_RELAYS,
           applySocialKindBlockedFilter: false
         }

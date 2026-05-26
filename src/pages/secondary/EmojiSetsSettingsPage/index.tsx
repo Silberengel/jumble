@@ -32,10 +32,7 @@ import { randomString } from '@/lib/random'
 import { showPublishingError } from '@/lib/publishing-feedback'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { createEmojiSetDraftEvent } from '@/lib/draft-event'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import logger from '@/lib/logger'
@@ -63,7 +60,7 @@ const EMOJI_SET_FETCH_OPTS = {
 const EmojiSetsSettingsPage = forwardRef(
   ({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
     const { t } = useTranslation()
-    const { pubkey, account, publish, attemptDelete, checkLogin, relayList, userEmojiListEvent, profileEvent } =
+    const { pubkey, account, publish, attemptDelete, checkLogin, relayList, cacheRelayListEvent, userEmojiListEvent, profileEvent } =
       useNostr()
     const { favoriteRelays, blockedRelays } = useFavoriteRelays()
     const [lists, setLists] = useState<Event[]>([])
@@ -91,11 +88,11 @@ const EmojiSetsSettingsPage = forwardRef(
       const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
-        { userWriteRelays: relayList?.write ?? [] }
+        userReadInboxUrls(relayList, cacheRelayListEvent),
+        { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent) }
       )
       return appendCuratedReadOnlyRelays(feedUrls, blockedRelays)
-    }, [favoriteRelays, blockedRelays, relayList])
+    }, [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent])
 
     const loadLists = useCallback(async () => {
       if (!pubkey) {

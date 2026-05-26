@@ -1,78 +1,46 @@
 import client from '@/services/client.service'
+import {
+  collectViewerWriteOutboxUrls,
+  viewerHasWriteOutboxes
+} from '@/lib/viewer-write-outboxes'
 import indexedDb from '@/services/indexed-db.service'
 import { ExtendedKind } from '@/constants'
+import type { Event } from 'nostr-tools'
 
-/**
- * Check if user has private relays available (outbox relays or cache relays)
- * @param pubkey - User's public key
- * @returns Promise<boolean> - true if user has at least one private relay available
- */
-export async function hasPrivateRelays(pubkey: string): Promise<boolean> {
-  // Check for outbox relays (kind 10002) — IndexedDB merge only; no network wait.
-  const relayList = await client.peekRelayListFromStorage(pubkey)
-  if (relayList.write && relayList.write.length > 0) {
-    return true
-  }
-  
-  // Check for cache relays (kind 10432)
-  const cacheRelayEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
-  if (cacheRelayEvent) {
-    // Check if cache relay event has any relays
-    const hasRelays = cacheRelayEvent.tags.some(tag => tag[0] === 'relay' && tag[1])
-    if (hasRelays) {
-      return true
-    }
-  }
-  
-  return false
-}
-
-/**
- * Get private relay URLs (outbox + cache relays)
- * @param pubkey - User's public key
- * @returns Promise<string[]> - Array of relay URLs
- */
-export async function getPrivateRelayUrls(pubkey: string): Promise<string[]> {
+/** Kind 10432 relay tag URLs from an in-memory event (sync). */
+export function getCacheRelayUrlsFromEvent(event: Event | null | undefined): string[] {
+  if (!event) return []
   const relayUrls: string[] = []
-  
-  // Get outbox relays (kind 10002) — storage-first; cache rows below still augment.
-  const relayList = await client.peekRelayListFromStorage(pubkey)
-  if (relayList.write) {
-    relayUrls.push(...relayList.write)
-  }
-  
-  // Get cache relays (kind 10432)
-  const cacheRelayEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
-  if (cacheRelayEvent) {
-    cacheRelayEvent.tags.forEach(tag => {
-      if (tag[0] === 'relay' && tag[1]) {
-        relayUrls.push(tag[1])
-      }
-    })
-  }
-  
-  // Deduplicate
+  event.tags.forEach((tag) => {
+    if (tag[0] === 'relay' && tag[1]) {
+      relayUrls.push(tag[1])
+    }
+  })
   return Array.from(new Set(relayUrls))
 }
 
 /**
- * Get cache relay URLs only
+ * Check if user has private relays available (outbox relays or cache relays)
+ */
+export async function hasPrivateRelays(pubkey: string): Promise<boolean> {
+  const relayList = await client.peekRelayListFromStorage(pubkey)
+  return viewerHasWriteOutboxes(pubkey, relayList)
+}
+
+/**
+ * Get private relay URLs (kind 10002 WS + kind 10243 HTTP + kind 10432 cache write outboxes)
+ */
+export async function getPrivateRelayUrls(pubkey: string): Promise<string[]> {
+  const relayList = await client.peekRelayListFromStorage(pubkey)
+  return collectViewerWriteOutboxUrls(pubkey, relayList)
+}
+
+/**
+ * Get cache relay URLs only (kind 10432)
  * @param pubkey - User's public key
  * @returns Promise<string[]> - Array of cache relay URLs
  */
 export async function getCacheRelayUrls(pubkey: string): Promise<string[]> {
-  const relayUrls: string[] = []
-  
-  // Get cache relays (kind 10432)
   const cacheRelayEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
-  if (cacheRelayEvent) {
-    cacheRelayEvent.tags.forEach(tag => {
-      if (tag[0] === 'relay' && tag[1]) {
-        relayUrls.push(tag[1])
-      }
-    })
-  }
-  
-  return Array.from(new Set(relayUrls))
+  return getCacheRelayUrlsFromEvent(cacheRelayEvent)
 }
-

@@ -1,5 +1,6 @@
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { relayUrlsLocalsFirst } from '@/lib/relay-url-priority'
+import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 
@@ -36,7 +37,7 @@ export function buildProfileReportsRelayUrls(
   const list = options.includeAuthorLocalRelays
     ? mailboxList
     : stripMailboxLocalUrlsForRemoteViewers(mailboxList)
-  const inboxLayer = relayUrlsLocalsFirst([...(list.httpRead ?? []), ...(list.read ?? [])])
+  const inboxLayer = relayUrlsLocalsFirst(collectReadInboxUrlsFromRelayList(list))
   const cacheLayer = relayUrlsLocalsFirst(
     (options.cacheRelayUrls ?? []).filter((u) => {
       const k = normalizeAnyRelayUrl(u) || u.trim()

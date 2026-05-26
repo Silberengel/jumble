@@ -20,6 +20,10 @@ import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
+import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
+import type { Event } from 'nostr-tools'
 
 function isBlockedRelay(url: string, blockedRelays: string[]): boolean {
   return isRelayBlockedByUser(url, blockedRelays)
@@ -32,14 +36,36 @@ function isBlockedRelay(url: string, blockedRelays: string[]): boolean {
  * Same list drives the favorites tier in REQ/publish prioritization and the all-favorites home feed.
  */
 /**
- * NIP-65 `read` plus HTTP index inboxes (kind 10243) for feed REQ / query URL lists.
+ * Logged-in user's read inbox: kind 10432 cache + kind 10243 HTTP + kind 10002 WS.
+ * Pass `cacheRelayListEvent` (or `cacheUrls`) when kind 10432 is not merged into `relayList.read`.
  */
-export function userReadRelaysWithHttp(
-  relayList: { read?: string[]; httpRead?: string[] } | undefined | null
+export function userReadInboxUrls(
+  relayList: { read?: string[]; httpRead?: string[] } | undefined | null,
+  cacheRelayListEvent?: Event | null,
+  cacheUrls?: readonly string[]
 ): string[] {
-  const http = relayList?.httpRead ?? []
-  const read = relayList?.read ?? []
-  return dedupeNormalizeRelayUrlsOrdered([...http, ...read])
+  const cache = cacheUrls ?? getCacheRelayUrlsFromEvent(cacheRelayListEvent)
+  return collectUserReadInboxUrls(relayList, cache)
+}
+
+/**
+ * Logged-in user's write outbox: kind 10432 cache + kind 10243 HTTP + kind 10002 WS.
+ */
+export function userWriteOutboxUrls(
+  relayList: { write?: string[]; httpWrite?: string[] } | undefined | null,
+  cacheRelayListEvent?: Event | null,
+  cacheUrls?: readonly string[]
+): string[] {
+  const cache = cacheUrls ?? getCacheRelayUrlsFromEvent(cacheRelayListEvent)
+  return collectUserWriteOutboxUrls(relayList, cache)
+}
+
+/** @deprecated use {@link userReadInboxUrls} */
+export function userReadRelaysWithHttp(
+  relayList: { read?: string[]; httpRead?: string[] } | undefined | null,
+  cacheRelayListEvent?: Event | null
+): string[] {
+  return userReadInboxUrls(relayList, cacheRelayListEvent)
 }
 
 export function getFavoritesFeedRelayUrls(
@@ -98,8 +124,8 @@ export function buildAuthorInboxOutboxRelayUrls(
   const list = includeAuthorLocalRelays
     ? authorRelayList
     : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
-  const inboxLayer = relayUrlsLocalsFirst([...(list.httpRead ?? []), ...(list.read ?? [])])
-  const outboxLayer = relayUrlsLocalsFirst([...(list.httpWrite ?? []), ...(list.write ?? [])])
+  const inboxLayer = relayUrlsLocalsFirst(collectUserReadInboxUrls(list))
+  const outboxLayer = relayUrlsLocalsFirst(collectUserWriteOutboxUrls(list))
   return mergeRelayUrlLayers([inboxLayer, outboxLayer], blockedRelays)
 }
 
@@ -213,8 +239,8 @@ export function buildProfilePageReadRelayUrls(
   const list = includeAuthorLocalRelays
     ? authorRelayList
     : stripMailboxLocalUrlsForRemoteViewers(authorRelayList)
-  const authorRead = [...(list.httpRead ?? []), ...(list.read ?? [])]
-  const authorWrite = [...(list.httpWrite ?? []), ...(list.write ?? [])]
+  const authorRead = collectUserReadInboxUrls(list)
+  const authorWrite = collectUserWriteOutboxUrls(list)
   const authorHasNoNip65 = authorRead.length === 0 && authorWrite.length === 0
 
   const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobal)

@@ -4,7 +4,7 @@ import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import { extractHashtagsFromContent, normalizeTopic } from '@/lib/discussion-topics'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNoteList } from '@/lib/link'
 import logger from '@/lib/logger'
 import { useSmartHashtagNavigation } from '@/PageManager'
@@ -115,7 +115,7 @@ type Props = {
 export default function TopicKeywordHeatMap({ refreshKey }: Props) {
   const { t } = useTranslation()
   const { navigateToHashtag } = useSmartHashtagNavigation()
-  const { relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
 
@@ -124,9 +124,9 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
       getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         {
-          userWriteRelays: relayList?.write ?? [],
+          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           applySocialKindBlockedFilter: false
         }
       ),

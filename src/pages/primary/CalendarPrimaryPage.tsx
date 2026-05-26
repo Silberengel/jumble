@@ -8,7 +8,7 @@ import {
   getLocalMonthRangeMs
 } from '@/lib/calendar-event'
 import { replaceableEventDedupeKey } from '@/lib/event'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { setCalendarDayPanelEvents } from '@/lib/calendar-day-panel-cache'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -72,7 +72,7 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
   ref
 ) {
   const { t, i18n } = useTranslation()
-  const { relayList, pubkey } = useNostr()
+  const { relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const followList = useFollowListOptional()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -121,9 +121,9 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
       favoriteRelays,
       blockedRelays,
-      userReadRelaysWithHttp(relayList),
+      userReadInboxUrls(relayList, cacheRelayListEvent),
       {
-        userWriteRelays: relayList?.write ?? [],
+        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
         applySocialKindBlockedFilter: false
       }
     )

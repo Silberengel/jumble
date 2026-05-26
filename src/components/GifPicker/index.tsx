@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { useUserReadInboxUrls, useUserWriteOutboxUrls } from '@/hooks/useUserMailboxRelayUrls'
 import { useNostr } from '@/providers/NostrProvider'
 import { ExtendedKind, FAST_WRITE_RELAY_URLS, GIF_RELAY_URLS } from '@/constants'
 import { cn } from '@/lib/utils'
@@ -50,7 +50,7 @@ export default function GifPicker({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { publish, pubkey, relayList } = useNostr()
+  const { publish, pubkey } = useNostr()
   const [open, setOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   // Initialise from the module-level session cache so re-opens are instant
@@ -70,8 +70,8 @@ export default function GifPicker({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const gifbuddyPopupRef = useRef<Window | null>(null)
 
-  const userReadRelays = useMemo(() => userReadRelaysWithHttp(relayList), [relayList])
-  const userWriteRelays = relayList?.write ?? []
+  const userReadRelays = useUserReadInboxUrls()
+  const userWriteRelays = useUserWriteOutboxUrls()
 
   /** Paste / upload: GIF discovery relays + user writes (unchanged). */
   const gifPublishRelayUrls = useMemo(() => {

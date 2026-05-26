@@ -7,7 +7,7 @@ import {
   getCalendarOccurrenceWindowMs,
   getLocalMondayWeekBounds
 } from '@/lib/calendar-event'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { replaceableEventDedupeKey } from '@/lib/event'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -41,7 +41,7 @@ const SESSION_CALENDAR_MERGE_CAP = 1200
 
 export default function SidebarCalendarWeekWidget() {
   const { t } = useTranslation()
-  const { relayList, pubkey } = useNostr()
+  const { relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const followList = useFollowListOptional()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -62,9 +62,9 @@ export default function SidebarCalendarWeekWidget() {
     const base = getRelayUrlsWithFavoritesFastReadAndInbox(
       favoriteRelays,
       blockedRelays,
-      userReadRelaysWithHttp(relayList),
+      userReadInboxUrls(relayList, cacheRelayListEvent),
       {
-        userWriteRelays: relayList?.write ?? [],
+        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
         applySocialKindBlockedFilter: false
       }
     )

@@ -33,6 +33,7 @@ import {
 } from '@/lib/rss-article'
 import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
 import { blossomSha256FromBlobUrl, cleanUrl, isBlossomBudBlobUrl } from '@/lib/url'
+import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
 import { generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
@@ -1169,10 +1170,7 @@ export async function createPollDraftEvent(
     relays.forEach((relay) => tags.push(buildRelayTag(relay)))
   } else {
     const relayList = await client.fetchRelayList(author)
-    const readHints = [
-      ...(relayList.httpRead || []).slice(0, 4),
-      ...(relayList.read || []).slice(0, 4)
-    ].slice(0, 4)
+    const readHints = collectReadInboxUrlsFromRelayList(relayList).slice(0, 4)
     readHints.forEach((relay) => {
       tags.push(buildRelayTag(relay))
     })

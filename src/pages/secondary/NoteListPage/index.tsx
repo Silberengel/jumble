@@ -13,7 +13,8 @@ import {
 import {
   augmentSubRequestsWithFavoritesFastReadAndInbox,
   getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
+  userReadInboxUrls,
+  userWriteOutboxUrls
 } from '@/lib/favorites-feed-relays'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
@@ -47,7 +48,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   const feedRef = useRef<TNoteListRef>(null)
   const bumpFeed = useCallback(() => feedRef.current?.refresh(), [])
   const { push } = useSecondaryPage()
-  const { relayList, pubkey } = useNostr()
+  const { relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
   const interestList = useInterestListOptional()
@@ -111,7 +112,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       .map((k) => parseInt(k))
       .filter((k) => !isNaN(k))
     const readUrlOpts = {
-      userWriteRelays: relayList?.write ?? [],
+      userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
       applySocialKindBlockedFilter: kinds.length === 0 || kinds.some(isSocialKindBlockedKind),
       useGlobalFavoriteDefaults: useGlobalRelayBootstrap,
       includeGlobalFastRead: useGlobalRelayBootstrap
@@ -124,7 +125,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       const relayUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
+        userReadInboxUrls(relayList, cacheRelayListEvent),
         readUrlOpts
       )
       const mergedSearchKinds = Array.from(
@@ -166,7 +167,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           urls: getRelayUrlsWithFavoritesFastReadAndInbox(
             favoriteRelays,
             blockedRelays,
-            userReadRelaysWithHttp(relayList),
+            userReadInboxUrls(relayList, cacheRelayListEvent),
             readUrlOpts
           )
         }
@@ -209,8 +210,8 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
             urls: getRelayUrlsWithFavoritesFastReadAndInbox(
               favoriteRelays,
               blockedRelays,
-              userReadRelaysWithHttp(relayList),
-              { userWriteRelays: relayList?.write ?? [], useGlobalFavoriteDefaults: useGlobalRelayBootstrap, includeGlobalFastRead: useGlobalRelayBootstrap }
+              userReadInboxUrls(relayList, cacheRelayListEvent),
+              { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent), useGlobalFavoriteDefaults: useGlobalRelayBootstrap, includeGlobalFastRead: useGlobalRelayBootstrap }
             )
           }
         ])
@@ -241,9 +242,9 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
                 raw,
                 favoriteRelays,
                 blockedRelays,
-                userReadRelaysWithHttp(relayList),
+                userReadInboxUrls(relayList, cacheRelayListEvent),
                 {
-                  userWriteRelays: relayList?.write ?? [],
+                  userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
                   useGlobalFavoriteDefaults: useGlobalRelayBootstrap,
                   includeGlobalFastRead: useGlobalRelayBootstrap
                 }
@@ -272,7 +273,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           const relayUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
             favoriteRelays,
             blockedRelays,
-            userReadRelaysWithHttp(relayList),
+            userReadInboxUrls(relayList, cacheRelayListEvent),
             readUrlOpts
           )
           const mergedReqKinds = Array.from(

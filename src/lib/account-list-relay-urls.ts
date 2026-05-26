@@ -1,6 +1,8 @@
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { buildPrioritizedReadRelayUrls, buildPrioritizedWriteRelayUrls } from '@/lib/relay-url-priority'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { normalizeRelayUrlByScheme } from '@/lib/url'
+import { collectViewerReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 
@@ -21,9 +23,11 @@ export async function buildAccountListRelayUrlsForMerge(options: {
     relayList: myRelayList
   })
   const favoritesTier = getFavoritesFeedRelayUrls(favoriteRelays ?? [], blockedRelays, useGlobal)
+  const writeOutboxes = await collectViewerWriteOutboxUrls(accountPubkey, myRelayList)
+  const readInboxes = await collectViewerReadInboxUrls(accountPubkey, myRelayList)
   const read = buildPrioritizedReadRelayUrls({
-    userReadRelays: myRelayList.read ?? [],
-    userWriteRelays: myRelayList.write ?? [],
+    userReadRelays: readInboxes,
+    userWriteRelays: writeOutboxes,
     favoriteRelays: favoritesTier,
     blockedRelays,
     maxRelays: 100,
@@ -31,7 +35,7 @@ export async function buildAccountListRelayUrlsForMerge(options: {
     includeGlobalFastRead: useGlobal
   })
   const write = buildPrioritizedWriteRelayUrls({
-    userWriteRelays: myRelayList.write ?? [],
+    userWriteRelays: writeOutboxes,
     favoriteRelays: favoritesTier,
     blockedRelays,
     maxRelays: 100,
@@ -39,5 +43,5 @@ export async function buildAccountListRelayUrlsForMerge(options: {
     includeGlobalFastWriteReadTails: useGlobal
   })
   const merged = [...read, ...write]
-  return [...new Set(merged.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]
+  return [...new Set(merged.map((u) => normalizeRelayUrlByScheme(u) || u).filter(Boolean))]
 }

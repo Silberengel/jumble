@@ -1,12 +1,14 @@
 import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { getRelayListFromEvent, getHttpRelayListFromEvent } from '@/lib/event-metadata'
 import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
 import {
   syncViewerRelayStackNostrLandAggrEligible,
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
+import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
@@ -54,7 +56,7 @@ function buildHomeReplyFeedRelayUrls(
 }
 
 export function FeedProvider({ children }: { children: ReactNode }) {
-  const { isInitialized, relayList, cacheRelayListEvent, httpRelayListEvent, pubkey } = useNostr()
+  const { isInitialized, relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
 
   const useGlobalRelayDefaults = useMemo(
@@ -80,35 +82,33 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   /** Read-side layers merged into {@link replyRelayUrls}; {@link outboxRelayUrls} is only for aggr eligibility sync. */
   const replyExtraRelayLayers = useMemo(() => {
-    const cacheRelayUrls: string[] = []
-    if (cacheRelayListEvent) {
-      const list = getRelayListFromEvent(cacheRelayListEvent, blockedRelays, {
-        globalReadWriteFallback: useGlobalRelayDefaults
-      })
-      cacheRelayUrls.push(...list.read)
-    }
+    const cacheRelayUrls = getCacheRelayUrlsFromEvent(cacheRelayListEvent)
 
-    const httpRelayUrls: string[] = [...(relayList?.httpRead ?? [])]
-    if (httpRelayListEvent) {
-      const list = getHttpRelayListFromEvent(httpRelayListEvent, blockedRelays)
-      httpRelayUrls.push(...list.httpRead)
-    }
+    const hasReadMailbox =
+      cacheRelayUrls.length > 0 ||
+      (relayList?.read?.length ?? 0) > 0 ||
+      (relayList?.httpRead?.length ?? 0) > 0
+    const hasWriteMailbox =
+      cacheRelayUrls.length > 0 ||
+      (relayList?.write?.length ?? 0) > 0 ||
+      (relayList?.httpWrite?.length ?? 0) > 0
 
     return {
-      inboxRelayUrls: relayList?.read?.length
-        ? relayList.read
+      inboxRelayUrls: hasReadMailbox
+        ? collectUserReadInboxUrls(relayList, cacheRelayUrls)
         : useGlobalRelayDefaults
           ? DEFAULT_FAVORITE_RELAYS
           : [],
-      outboxRelayUrls: relayList?.write?.length
-        ? relayList.write
+      outboxRelayUrls: hasWriteMailbox
+        ? collectUserWriteOutboxUrls(relayList, cacheRelayUrls)
         : useGlobalRelayDefaults
           ? DEFAULT_FAVORITE_RELAYS
           : [],
-      cacheRelayUrls,
-      httpRelayUrls
+      /** Kept for feed-layer identity / aggr sync; URLs are merged into inbox/outbox above. */
+      cacheRelayUrls: [] as string[],
+      httpRelayUrls: [] as string[]
     }
-  }, [relayList, cacheRelayListEvent, httpRelayListEvent, blockedRelays, useGlobalRelayDefaults])
+  }, [relayList, cacheRelayListEvent, useGlobalRelayDefaults])
 
   /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
   const [relayUrls, setRelayUrls] = useState<string[]>(() =>

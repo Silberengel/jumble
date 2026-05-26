@@ -11,7 +11,7 @@ import {
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeHttpRelayUrl, normalizeRelayUrlByScheme } from '@/lib/url'
 import type { TSubRequestFilter } from '@/types'
 
 export type FeedRelayOperation = 'read' | 'write' | 'publish-picker' | 'favorites-feed'
@@ -98,7 +98,7 @@ function canonicalRelayUrl(url: string | undefined | null, layerSource?: FeedRel
 
 function normalizedRelayUrl(url: string, layerSource?: FeedRelayLayerSource | string): string {
   if (layerSource === 'http-index') return normalizeHttpRelayUrl(url) || url.trim()
-  return normalizeAnyRelayUrl(url) || url.trim()
+  return normalizeRelayUrlByScheme(url) || url.trim()
 }
 
 function normalizedSet(urls: readonly string[] | undefined): Set<string> {

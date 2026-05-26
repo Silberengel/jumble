@@ -34,10 +34,7 @@ import { randomString } from '@/lib/random'
 import { showPublishingError } from '@/lib/publishing-feedback'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import {
-  getRelayUrlsWithFavoritesFastReadAndInbox,
-  userReadRelaysWithHttp
-} from '@/lib/favorites-feed-relays'
+import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { createFollowSetDraftEvent } from '@/lib/draft-event'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import logger from '@/lib/logger'
@@ -62,7 +59,7 @@ const FOLLOW_SET_FETCH_OPTS = {
 const FollowSetsSettingsPage = forwardRef(
   ({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
     const { t } = useTranslation()
-    const { pubkey, account, publish, attemptDelete, checkLogin, relayList } = useNostr()
+    const { pubkey, account, publish, attemptDelete, checkLogin, relayList, cacheRelayListEvent } = useNostr()
     const { favoriteRelays, blockedRelays } = useFavoriteRelays()
     const [lists, setLists] = useState<Event[]>([])
     const [loading, setLoading] = useState(true)
@@ -87,8 +84,8 @@ const FollowSetsSettingsPage = forwardRef(
       const feedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
         favoriteRelays,
         blockedRelays,
-        userReadRelaysWithHttp(relayList),
-        { userWriteRelays: relayList?.write ?? [] }
+        userReadInboxUrls(relayList, cacheRelayListEvent),
+        { userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent) }
       )
       return appendCuratedReadOnlyRelays(feedUrls, blockedRelays)
     }, [favoriteRelays, blockedRelays, relayList])

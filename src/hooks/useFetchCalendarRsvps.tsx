@@ -12,22 +12,8 @@ import { Event } from 'nostr-tools'
 import { useEffect, useState } from 'react'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { FAST_READ_RELAY_URLS } from '@/constants'
-import { userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { tagNameEquals } from '@/lib/tag'
-
-/** NIP-65 inboxes only — calendar RSVPs are published to the author’s outboxes, so REQ must include those too. */
-function userWriteRelaysForQuery(
-  relayList: { write?: string[]; httpWrite?: string[] } | null | undefined
-): string[] {
-  if (!relayList) return []
-  const ws = (relayList.write ?? [])
-    .map((url) => normalizeAnyRelayUrl(url) || url)
-    .filter(Boolean) as string[]
-  const http = (relayList.httpWrite ?? [])
-    .map((url) => normalizeAnyRelayUrl(url) || url)
-    .filter(Boolean) as string[]
-  return [...http, ...ws]
-}
 
 function getRsvpStatus(rsvp: Event): 'accepted' | 'tentative' | 'declined' | undefined {
   const status = rsvp.tags.find(tagNameEquals('status'))?.[1]
@@ -53,7 +39,7 @@ function mergeRsvpList(events: Event[]): Event[] {
 }
 
 export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
-  const { relayList } = useNostr()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const [rsvps, setRsvps] = useState<Event[]>([])
   const [isFetching, setIsFetching] = useState(false)
 
@@ -69,8 +55,8 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
     const coordinate = normalizeReplaceableCoordinateString(
       getReplaceableCoordinateFromEvent(calendarEvent)
     )
-    const userRead = userReadRelaysWithHttp(relayList)
-    const userWrite = userWriteRelaysForQuery(relayList)
+    const userRead = userReadInboxUrls(relayList, cacheRelayListEvent)
+    const userWrite = userWriteOutboxUrls(relayList, cacheRelayListEvent)
 
     void (async () => {
       const fromSession = client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
