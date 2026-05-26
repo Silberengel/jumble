@@ -99,7 +99,7 @@ import { TDraftEvent } from '@/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
-import { getReplaceableCoordinateFromEvent, isProtectedEvent as isEventProtected, isReplaceableEvent, isReplyNoteEvent } from '@/lib/event'
+import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -283,7 +283,6 @@ export default function PostContent({
   const [extractedMentions, setExtractedMentions] = useState<string[]>(
     initialPublicMessageTo ? [initialPublicMessageTo] : []
   )
-  const [isProtectedEvent, setIsProtectedEvent] = useState(false)
   const [additionalRelayUrls, setAdditionalRelayUrls] = useState<string[]>([])
   /** When set, too many relays are checked vs the per-publish cap; publish stays disabled until unchecking. */
   const [relayCapBlockInfo, setRelayCapBlockInfo] = useState<{
@@ -644,7 +643,6 @@ export default function PostContent({
       contentOk &&
       (!isPoll || pollCreateData.options.filter((option) => !!option.trim()).length >= 2) &&
       (!isPublicMessage || extractedMentions.length > 0 || parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE) &&
-      (!isProtectedEvent || additionalRelayUrls.length > 0) &&
       (!isHighlight || highlightData.sourceValue.trim() !== '') &&
       (!isCitationInternal || !!citationInternalCTag.trim()) &&
       (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
@@ -665,7 +663,6 @@ export default function PostContent({
     isPublicMessage,
     extractedMentions,
     parentEvent,
-    isProtectedEvent,
     additionalRelayUrls,
     isHighlight,
     highlightData,
@@ -810,13 +807,6 @@ export default function PostContent({
     
     const addExpirationTag = storage.getDefaultExpirationEnabled()
     const expirationMonths = storage.getDefaultExpirationMonths()
-    // Determine if we should use protected event tag
-    let shouldUseProtectedEvent = false
-    if (parentEvent) {
-      const isParentOP = !isReplyNoteEvent(parentEvent)
-      const parentHasProtectedTag = isEventProtected(parentEvent)
-      shouldUseProtectedEvent = isParentOP && parentHasProtectedTag
-    }
 
     // Public messages - check BEFORE media notes to ensure PMs with media stay as PMs
     if (isPublicMessage) {
@@ -874,7 +864,6 @@ export default function PostContent({
         mentions,
         {
           addClientTag,
-          protectedEvent: shouldUseProtectedEvent,
           isNsfw,
           addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE_COMMENT),
           expirationMonths,
@@ -1106,7 +1095,6 @@ export default function PostContent({
     if (parentEvent && parentEvent.kind !== kinds.ShortTextNote) {
       return await createCommentDraftEvent(cleanedText, parentEvent, mentions, {
         addClientTag,
-        protectedEvent: shouldUseProtectedEvent,
         isNsfw,
         addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.COMMENT),
         expirationMonths,
@@ -1129,7 +1117,6 @@ export default function PostContent({
     return await createShortTextNoteDraftEvent(cleanedText, mentions, {
       parentEvent,
       addClientTag,
-      protectedEvent: shouldUseProtectedEvent,
       isNsfw,
       addExpirationTag: addExpirationTag && isChattingKind(kinds.ShortTextNote),
       expirationMonths,
@@ -3370,7 +3357,6 @@ export default function PostContent({
           )}
         >
           <PostRelaySelector
-            setIsProtectedEvent={setIsProtectedEvent}
             setAdditionalRelayUrls={setAdditionalRelayUrls}
             onRelayPublishCapChange={handleRelayPublishCapChange}
             parentEvent={parentEvent}

@@ -146,7 +146,7 @@ export function collectDiscussionThreadTags(params: {
   const { processedContent, topicForTags, title, dynamicTopics, isReadingGroup, author, subject, isNsfw } = params
   const images = extractImagesFromContent(processedContent)
   const hashtags = extractHashtagsFromContent(processedContent)
-  const tags: string[][] = [['title', title.trim()], ['-']]
+  const tags: string[][] = [['title', title.trim()]]
 
   if (topicForTags !== 'all' && topicForTags !== 'general' && topicForTags !== 'groups') {
     const selectedDynamicTopic = dynamicTopics?.allTopics.find((dt) => dt.id === topicForTags)

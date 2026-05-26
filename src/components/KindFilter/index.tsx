@@ -179,7 +179,7 @@ export default function KindFilter({
       }}
     >
       <ListFilter className="size-3.5 shrink-0" />
-      <span className="ml-1 hidden min-[22rem]:inline">{t('Filter')}</span>
+      <span className="ml-1 hidden min-[352px]:inline">{t('Filter')}</span>
       {isDifferentFromSaved && (
         <div className="absolute size-1.5 rounded-full bg-primary left-6 top-1.5 ring-1 ring-background" />
       )}

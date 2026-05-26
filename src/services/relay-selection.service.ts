@@ -18,6 +18,7 @@ import logger from '@/lib/logger'
 import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
+import { isProtectedEvent } from '@/lib/event'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import nip66Service from '@/services/nip66.service'
 
@@ -71,12 +72,14 @@ class RelaySelectionService {
     return normalizeRelayUrlByScheme(url) || url.trim()
   }
 
-  /** Kind 10002 + 10243 write/both outboxes for the logged-in user. */
+  /** Kind 10432 + 10243 + 10002 write outboxes (already merged in {@link RelaySelectionContext.userWriteRelays}). */
   private userWriteOutboxRelays(context: RelaySelectionContext): string[] {
-    return dedupeNormalizeRelayUrlsOrdered([
-      ...(context.userHttpWriteRelays ?? []),
-      ...context.userWriteRelays
-    ])
+    return dedupeNormalizeRelayUrlsOrdered(context.userWriteRelays)
+  }
+
+  /** True when the discussion thread (kind 11 parent) uses the `-` protected tag. */
+  private discussionContextIsProtected(parentEvent: Event): boolean {
+    return isProtectedEvent(parentEvent)
   }
 
   private filterLocalRelaysFromOthers(relays: string[], isOwnRelays: boolean = false): string[] {
@@ -669,14 +672,16 @@ class RelaySelectionService {
 
   /**
    * Get relays for discussion replies (kind 11 or kind 1111)
-   * Includes: relay hints from kind 11, wss://thecitadel.nostr1.com, user's outboxes, and local relays
+   * Includes: relay hints from kind 11, wss://thecitadel.nostr1.com, user's outboxes, and local relays.
+   * Protected threads (`-` tag on kind 11): hints + citadel + cache only — general outboxes reject protected events.
    */
   private async getDiscussionReplyRelays(context: RelaySelectionContext): Promise<string[]> {
     const { parentEvent, userPubkey, blockedRelays } = context
     if (!parentEvent) return []
 
     const relayUrls = new Set<string>()
-    const userOutboxes = this.userWriteOutboxRelays(context)
+    const threadIsProtected = this.discussionContextIsProtected(parentEvent)
+    const userOutboxes = threadIsProtected ? [] : this.userWriteOutboxRelays(context)
 
     // Step 1: Get relay hints from the kind 11 event
     let discussionEventId: string | null = null
@@ -710,25 +715,26 @@ class RelaySelectionService {
       relayUrls.add(thecitadelUrl)
     }
 
-    // Step 3: Add user's outboxes (NIP-65 + HTTP index write relays)
-    if (userOutboxes.length > 0) {
-      userOutboxes.forEach((url) => {
-        const normalized = this.normRelay(url)
-        if (normalized) relayUrls.add(normalized)
-      })
-    } else if (userPubkey) {
-      // Fetch user's relay list if not provided
-      try {
-        const relayList = await this.getCachedRelayList(userPubkey)
-        if (relayList) {
-          const outboxes = await collectViewerWriteOutboxUrls(userPubkey, relayList)
-          outboxes.forEach((url) => {
-            const normalized = this.normRelay(url)
-            if (normalized) relayUrls.add(normalized)
-          })
+    // Step 3: User outboxes (skip for protected threads — most public relays reject `-` events)
+    if (!threadIsProtected) {
+      if (userOutboxes.length > 0) {
+        userOutboxes.forEach((url) => {
+          const normalized = this.normRelay(url)
+          if (normalized) relayUrls.add(normalized)
+        })
+      } else if (userPubkey) {
+        try {
+          const relayList = await this.getCachedRelayList(userPubkey)
+          if (relayList) {
+            const outboxes = await collectViewerWriteOutboxUrls(userPubkey, relayList)
+            outboxes.forEach((url) => {
+              const normalized = this.normRelay(url)
+              if (normalized) relayUrls.add(normalized)
+            })
+          }
+        } catch (error) {
+          logger.warn('Failed to fetch user relay list for discussion reply', { error, userPubkey })
         }
-      } catch (error) {
-        logger.warn('Failed to fetch user relay list for discussion reply', { error, userPubkey })
       }
     }
 

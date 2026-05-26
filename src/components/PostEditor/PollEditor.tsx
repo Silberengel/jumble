@@ -27,8 +27,6 @@ export default function PollEditor({
     pollCreateData.endsAt ? dayjs(pollCreateData.endsAt * 1000).format('YYYY-MM-DDTHH:mm') : ''
   )
   const [additionalRelayUrls, setAdditionalRelayUrls] = useState<string[]>(pollCreateData.relays)
-  const [_isProtectedEvent, setIsProtectedEvent] = useState(false)
-
   useEffect(() => {
     setPollCreateData({
       isMultipleChoice,
@@ -115,7 +113,6 @@ export default function PollEditor({
       <div className="space-y-2">
         <PostRelaySelector
           setAdditionalRelayUrls={setAdditionalRelayUrls}
-          setIsProtectedEvent={setIsProtectedEvent}
           content={content}
         />
       </div>

@@ -39,7 +39,6 @@ function capAutoSelectedRelays(selectableRelaysOrder: string[], selectedWithCach
 export default function PostRelaySelector({
   parentEvent: _parentEvent,
   openFrom,
-  setIsProtectedEvent,
   setAdditionalRelayUrls,
   onRelayPublishCapChange,
   content: postContent = '',
@@ -48,7 +47,6 @@ export default function PostRelaySelector({
 }: {
   parentEvent?: NostrEvent
   openFrom?: string[]
-  setIsProtectedEvent: Dispatch<SetStateAction<boolean>>
   setAdditionalRelayUrls: Dispatch<SetStateAction<string[]>>
   /** Notifies the post form when the relay cap prevents honoring every checked relay (so the form can disable publish and show a banner). */
   onRelayPublishCapChange?: (preview: TPrePublishRelayCapPreview) => void
@@ -81,6 +79,8 @@ export default function PostRelaySelector({
   const [description, setDescription] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [hasManualSelection, setHasManualSelection] = useState(false)
+  /** Auto-picked relays from {@link relaySelectionService}; used to detect manual relay-picker changes. */
+  const autoSelectedRelayUrlsRef = useRef<string[]>([])
   const [previousSelectableCount, setPreviousSelectableCount] = useState(0)
   // Generation counter: incremented every time the effect fires; async callback checks whether
   // it's still the latest invocation before committing state, preventing stale races.
@@ -201,6 +201,7 @@ export default function PostRelaySelector({
           const cacheRelays = result.selectableRelays.filter(url => isLocalNetworkUrl(url))
           const selectedWithCache = Array.from(new Set([...result.selectedRelays, ...cacheRelays]))
           const capped = capAutoSelectedRelays(result.selectableRelays, selectedWithCache)
+          autoSelectedRelayUrlsRef.current = capped
           setSelectedRelayUrls(capped)
           setDescription(describeRelaySelection(capped))
           if (selectableRelaysChanged && hasManualSelection) {
@@ -246,16 +247,8 @@ export default function PostRelaySelector({
 
   // Update parent component with selected relays
   useEffect(() => {
-    // An event is "protected" if we have selected relays that aren't the default user write relays
-    const defaultUserWriteRelays = [...(relayList?.httpWrite ?? []), ...(relayList?.write || [])]
-    const normW = (u: string) => normalizeRelayUrlByScheme(u) || u
-    const defaultNorm = new Set(defaultUserWriteRelays.map(normW))
-    const isProtectedEvent =
-      selectedRelayUrls.length > 0 &&
-      !selectedRelayUrls.every((url) => defaultNorm.has(normW(url)))
-    setIsProtectedEvent(isProtectedEvent)
     setAdditionalRelayUrls(selectedRelayUrls)
-  }, [selectedRelayUrls, relayList, setIsProtectedEvent, setAdditionalRelayUrls])
+  }, [selectedRelayUrls, setAdditionalRelayUrls])
 
   const handleRelayCheckedChange = useCallback((checked: boolean, url: string) => {
     setHasManualSelection(true)

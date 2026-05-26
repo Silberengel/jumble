@@ -226,7 +226,6 @@ export async function createShortTextNoteDraftEvent(
   options: {
     parentEvent?: Event
     addClientTag?: boolean
-    protectedEvent?: boolean
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
@@ -271,10 +270,6 @@ export async function createShortTextNoteDraftEvent(
     tags.push(buildNsfwTag())
   }
 
-  if (options.protectedEvent) {
-    tags.push(buildProtectedTag())
-  }
-
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
   }
@@ -309,7 +304,6 @@ export async function createCommentDraftEvent(
   mentions: string[],
   options: {
     addClientTag?: boolean
-    protectedEvent?: boolean
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
@@ -387,10 +381,6 @@ export async function createCommentDraftEvent(
 
   if (options.isNsfw) {
     tags.push(buildNsfwTag())
-  }
-
-  if (options.protectedEvent) {
-    tags.push(buildProtectedTag())
   }
 
   if (options.addExpirationTag && options.expirationMonths) {
@@ -1620,10 +1610,6 @@ function buildNsfwTag() {
   return ['content-warning', 'NSFW']
 }
 
-function buildProtectedTag() {
-  return ['-']
-}
-
 function buildExpirationTag(months: number): string[] {
   const expirationTime = dayjs().add(months, 'month').unix()
   return ['expiration', expirationTime.toString()]
@@ -1847,7 +1833,6 @@ export async function createVoiceCommentDraftEvent(
   mentions: string[],
   options: {
     addClientTag?: boolean
-    protectedEvent?: boolean
     isNsfw?: boolean
     addExpirationTag?: boolean
     expirationMonths?: number
@@ -1924,10 +1909,6 @@ export async function createVoiceCommentDraftEvent(
   
   if (options.isNsfw) {
     tags.push(buildNsfwTag())
-  }
-  
-  if (options.protectedEvent) {
-    tags.push(buildProtectedTag())
   }
   
   if (options.addExpirationTag && options.expirationMonths) {
