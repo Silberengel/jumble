@@ -357,10 +357,6 @@ export default defineConfig(({ mode }) => {
           if (norm.includes('@getalby') || norm.includes('bitcoin-connect')) {
             return 'vendor-lightning-alby'
           }
-          if (norm.includes('nstart-modal')) {
-            return 'vendor-lightning-nstart'
-          }
-
           if (norm.includes('embla-carousel')) {
             return 'vendor-embla'
           }

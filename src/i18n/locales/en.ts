@@ -539,9 +539,22 @@ export default {
     'read & write relays notice':
       'The number of read and write servers should ideally be kept between 2 and 4.',
     "Don't have an account yet?": "Don't have an account yet?",
-    'or simply generate a private key': 'or simply generate a private key',
-    'This is a private key. Do not share it with anyone. Keep it safe and secure. You will not be able to recover it if you lose it.':
-      'This is a private key. Do not share it with anyone. Keep it safe and secure. You will not be able to recover it if you lose it.',
+    'Sign up creates a private key stored in this browser. Back it up anytime under Settings → Cache & offline storage.':
+      'Sign up creates a private key stored in this browser. Back it up anytime under Settings → Cache & offline storage.',
+    'Signing up…': 'Signing up…',
+    'Account created — customize profile and relays in Settings.':
+      'Account created — customize profile and relays in Settings.',
+    'Private key recovery': 'Private key recovery',
+    'Your private key is stored in this browser. Clearing cache does not remove your account, but losing this browser profile does. Back up your key somewhere safe.':
+      'Your private key is stored in this browser. Clearing cache does not remove your account, but losing this browser profile does. Back up your key somewhere safe.',
+    'This account uses an encrypted key (ncryptsec). You need your encryption password to sign in; the blob below is for backup only.':
+      'This account uses an encrypted key (ncryptsec). You need your encryption password to sign in; the blob below is for backup only.',
+    'Show key': 'Show key',
+    'Hide key': 'Hide key',
+    'Do not share this with anyone. Anyone with this key can control your account.':
+      'Do not share this with anyone. Anyone with this key can control your account.',
+    'Copy npub': 'Copy npub',
+    npub: 'npub',
     Edit: 'Edit',
     Save: 'Save',
     'Display Name': 'Display Name',

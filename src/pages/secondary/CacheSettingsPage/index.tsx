@@ -1,6 +1,7 @@
 import CacheEventImportSettings from '@/components/CacheEventImportSettings'
 import InBrowserCacheSetting from '@/components/InBrowserCacheSetting'
 import EventArchiveCacheSettings from '@/components/EventArchiveCacheSettings'
+import PrivateKeyRecoverySetting from '@/components/PrivateKeyRecoverySetting'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
@@ -31,6 +32,7 @@ const CacheSettingsPage = forwardRef(
         controls={hideTitlebar ? undefined : <RefreshButton onClick={bump} />}
       >
         <div key={contentKey} className="px-4 py-3 space-y-6">
+          <PrivateKeyRecoverySetting />
           <InBrowserCacheSetting />
           <CacheEventImportSettings />
           <EventArchiveCacheSettings />

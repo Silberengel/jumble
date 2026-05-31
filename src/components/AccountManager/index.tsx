@@ -1,17 +1,19 @@
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useNostr } from '@/providers/NostrProvider'
-import { useTheme } from '@/providers/ThemeProvider'
-import { NstartModal } from 'nstart-modal'
+import { generateSecretKey } from 'nostr-tools'
+import { nsecEncode } from 'nostr-tools/nip19'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import AccountList from '../AccountList'
-import GenerateNewAccount from './GenerateNewAccount'
 import NostrConnectLogin from './NostrConnectionLogin'
 import NpubLogin from './NpubLogin'
 import PrivateKeyLogin from './PrivateKeyLogin'
 
-type TAccountManagerPage = 'nsec' | 'bunker' | 'generate' | 'npub' | null
+type TAccountManagerPage = 'nsec' | 'bunker' | 'npub' | null
 
 export default function AccountManager({ close }: { close?: () => void }) {
   const [page, setPage] = useState<TAccountManagerPage>(null)
@@ -22,8 +24,6 @@ export default function AccountManager({ close }: { close?: () => void }) {
         <PrivateKeyLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
       ) : page === 'bunker' ? (
         <NostrConnectLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
-      ) : page === 'generate' ? (
-        <GenerateNewAccount back={() => setPage(null)} onLoginSuccess={() => close?.()} />
       ) : page === 'npub' ? (
         <NpubLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
       ) : (
@@ -40,9 +40,24 @@ function AccountManagerNav({
   setPage: (page: TAccountManagerPage) => void
   close?: () => void
 }) {
-  const { t, i18n } = useTranslation()
-  const { themeSetting } = useTheme()
-  const { nip07Login, bunkerLogin, nsecLogin, ncryptsecLogin, accounts } = useNostr()
+  const { t } = useTranslation()
+  const { nip07Login, nsecLogin, accounts } = useNostr()
+  const [password, setPassword] = useState('')
+  const [signingUp, setSigningUp] = useState(false)
+
+  const handleSignUp = async () => {
+    setSigningUp(true)
+    try {
+      const nsec = nsecEncode(generateSecretKey())
+      await nsecLogin(nsec, password.trim() || undefined, true)
+      setPassword('')
+      close?.()
+    } catch (error) {
+      toast.error(t('Login failed') + ': ' + ((error as Error).message ?? String(error)))
+    } finally {
+      setSigningUp(false)
+    }
+  }
 
   return (
     <div onClick={(e) => e.stopPropagation()} className="flex flex-col gap-8">
@@ -72,38 +87,24 @@ function AccountManagerNav({
         <div className="text-center text-muted-foreground text-sm font-semibold">
           {t("Don't have an account yet?")}
         </div>
-        <Button
-          onClick={() => {
-            const wizard = new NstartModal({
-              baseUrl: 'https://nstart.me',
-              an: 'Imwald',
-              am: themeSetting,
-              al: i18n.language.slice(0, 2),
-              onComplete: ({ nostrLogin }) => {
-                if (!nostrLogin) return
-
-                if (nostrLogin.startsWith('bunker://')) {
-                  bunkerLogin(nostrLogin)
-                } else if (nostrLogin.startsWith('ncryptsec')) {
-                  ncryptsecLogin(nostrLogin)
-                } else if (nostrLogin.startsWith('nsec')) {
-                  nsecLogin(nostrLogin)
-                }
-              }
-            })
-            close?.()
-            wizard.open()
-          }}
-          className="w-full mt-4"
-        >
-          {t('Sign up')}
-        </Button>
-        <Button
-          variant="link"
-          onClick={() => setPage('generate')}
-          className="w-full text-muted-foreground py-0 h-fit mt-1"
-        >
-          {t('or simply generate a private key')}
+        <p className="text-center text-muted-foreground text-xs mt-2 px-2">
+          {t(
+            'Sign up creates a private key stored in this browser. Back it up anytime under Settings → Cache & offline storage.'
+          )}
+        </p>
+        <div className="grid gap-2 mt-3">
+          <Label htmlFor="signup-password-input">{t('password')}</Label>
+          <Input
+            id="signup-password-input"
+            type="password"
+            placeholder={t('optional: encrypt nsec')}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={signingUp}
+          />
+        </div>
+        <Button onClick={handleSignUp} disabled={signingUp} className="w-full mt-4">
+          {signingUp ? t('Signing up…') : t('Sign up')}
         </Button>
       </div>
       {accounts.length > 0 && (

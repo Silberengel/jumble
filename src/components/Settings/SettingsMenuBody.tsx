@@ -12,12 +12,9 @@ import { cn } from '@/lib/utils'
 import { useSmartSettingsNavigation } from '@/PageManager'
 import { useNostr } from '@/providers/NostrProvider'
 import {
-  Check,
   ChevronRight,
-  Copy,
   Database,
   Info,
-  KeyRound,
   PencilLine,
   Rss,
   Server,
@@ -25,7 +22,7 @@ import {
   Users,
   Wallet
 } from 'lucide-react'
-import { forwardRef, HTMLProps, useState } from 'react'
+import { forwardRef, HTMLProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -34,10 +31,8 @@ import { useTranslation } from 'react-i18next'
  */
 export default function SettingsMenuBody({ className }: { className?: string }) {
   const { t } = useTranslation()
-  const { pubkey, nsec, ncryptsec } = useNostr()
+  const { pubkey } = useNostr()
   const { navigateToSettings } = useSmartSettingsNavigation()
-  const [copiedNsec, setCopiedNsec] = useState(false)
-  const [copiedNcryptsec, setCopiedNcryptsec] = useState(false)
 
   return (
     <div className={cn('min-w-0', className)}>
@@ -96,38 +91,6 @@ export default function SettingsMenuBody({ className }: { className?: string }) 
             <div>{t('Personal Lists')}</div>
           </div>
           <ChevronRight />
-        </SettingItem>
-      )}
-      {!!nsec && (
-        <SettingItem
-          className="clickable"
-          onClick={() => {
-            navigator.clipboard.writeText(nsec)
-            setCopiedNsec(true)
-            setTimeout(() => setCopiedNsec(false), 2000)
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <KeyRound />
-            <div>{t('Copy private key')} (nsec)</div>
-          </div>
-          {copiedNsec ? <Check /> : <Copy />}
-        </SettingItem>
-      )}
-      {!!ncryptsec && (
-        <SettingItem
-          className="clickable"
-          onClick={() => {
-            navigator.clipboard.writeText(ncryptsec)
-            setCopiedNcryptsec(true)
-            setTimeout(() => setCopiedNcryptsec(false), 2000)
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <KeyRound />
-            <div>{t('Copy private key')} (ncryptsec)</div>
-          </div>
-          {copiedNcryptsec ? <Check /> : <Copy />}
         </SettingItem>
       )}
       <AboutInfoDialog>

@@ -6,6 +6,7 @@ import {
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   ExtendedKind,
   PROFILE_RELAY_URLS,
@@ -16,11 +17,9 @@ import {
 } from '@/constants'
 import {
   applyImwaldAttributionTags,
-  createDeletionRequestDraftEvent,
-  createFollowListDraftEvent,
-  createMuteListDraftEvent,
-  createRelayListDraftEvent
+  createDeletionRequestDraftEvent
 } from '@/lib/draft-event'
+import { buildNewUserTemplateDrafts } from '@/lib/new-user-template'
 import { getLatestEvent, minePow } from '@/lib/event'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import {
@@ -1506,27 +1505,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     options?: { addClientTag?: boolean }
   ): TDraftEvent => applyImwaldAttributionTags(draftEvent, options)
 
-  const setupNewUser = async (signer: ISigner) => {
-    await Promise.allSettled([
-      client.publishEvent(
-        FAST_READ_RELAY_URLS,
-        await signer.signEvent(normalizeDraftEventTags(createFollowListDraftEvent([])))
-      ),
-      client.publishEvent(
-        FAST_READ_RELAY_URLS,
-        await signer.signEvent(normalizeDraftEventTags(createMuteListDraftEvent([])))
-      ),
-      client.publishEvent(
-        FAST_READ_RELAY_URLS,
-        await signer.signEvent(
-          normalizeDraftEventTags(
-            createRelayListDraftEvent(FAST_READ_RELAY_URLS.map((url) => ({ url, scope: 'both' })))
-          )
-        )
-      )
-    ])
-  }
-
   const signEvent = async (
     draftEvent: TDraftEvent,
     normalizeOpts?: { addClientTag?: boolean }
@@ -1913,6 +1891,59 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     const stored = await indexedDb.putReplaceableEvent(favoriteRelaysEvent)
     /** Always sync UI to IndexedDB winner (same-second updates must not leave stale list + relay sets). */
     setFavoriteRelaysEvent(stored)
+  }
+
+  const setupNewUser = async (signer: ISigner) => {
+    const bootstrapRelays = [...new Set([...FAST_WRITE_RELAY_URLS, ...FAST_READ_RELAY_URLS])]
+
+    try {
+      const pubkey = await signer.getPublicKey()
+      const drafts = buildNewUserTemplateDrafts(pubkey)
+
+      const signDraft = async (draft: TDraftEvent) => {
+        const event = await signer.signEvent(normalizeDraftEventTags(draft))
+        if (!validateEvent(event)) {
+          throw new Error('Event validation failed')
+        }
+        return event as VerifiedEvent
+      }
+
+      const profileEvent = await signDraft(drafts.profile)
+      const favoriteRelaysEvent = await signDraft(drafts.favoriteRelays)
+      const relayListEvent = await signDraft(drafts.relayList)
+      const httpRelayListEvent = await signDraft(drafts.httpRelayList)
+      const interestListEvent = await signDraft(drafts.interestList)
+      const followListEvent = await signDraft(drafts.followList)
+      const muteListEvent = await signDraft(drafts.muteList)
+
+      await Promise.all([
+        updateProfileEvent(profileEvent),
+        updateFavoriteRelaysEvent(favoriteRelaysEvent),
+        updateRelayListEvent(relayListEvent),
+        updateHttpRelayListEvent(httpRelayListEvent),
+        updateInterestListEvent(interestListEvent),
+        updateFollowListEvent(followListEvent),
+        updateMuteListEvent(muteListEvent, [])
+      ])
+
+      await Promise.allSettled(
+        [
+          profileEvent,
+          favoriteRelaysEvent,
+          relayListEvent,
+          httpRelayListEvent,
+          interestListEvent,
+          followListEvent,
+          muteListEvent
+        ].map((event) => client.publishEvent(bootstrapRelays, event))
+      )
+
+      toast.success(
+        t('Account created — customize profile and relays in Settings.')
+      )
+    } catch (error) {
+      logger.error('[setupNewUser] failed', { error })
+    }
   }
 
   const updateBlockedRelaysEvent = async (blockedRelaysEvent: Event) => {
