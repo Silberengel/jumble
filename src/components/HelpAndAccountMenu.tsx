@@ -34,13 +34,11 @@ export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 function AccountDropdownItems({
   onSwitchAccount,
   onLogoutClick,
-  onBrowseCache,
-  showActiveRelays = false
+  onBrowseCache
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
   onBrowseCache: () => void
-  showActiveRelays?: boolean
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
@@ -59,7 +57,7 @@ function AccountDropdownItems({
         <Database className="size-4" />
         {t('Browse Cache')}
       </DropdownMenuItem>
-      {showActiveRelays ? <ActiveRelaysDropdownSection /> : null}
+      <ActiveRelaysDropdownSection />
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={onSwitchAccount}>
         <ArrowDownUp className="size-4" />
@@ -191,7 +189,6 @@ function TitlebarAccountMenu({
           onSwitchAccount={onSwitchAccount}
           onLogoutClick={onLogoutClick}
           onBrowseCache={onBrowseCache}
-          showActiveRelays
         />
       </DropdownMenuContent>
     </DropdownMenu>

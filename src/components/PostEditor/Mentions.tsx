@@ -17,12 +17,15 @@ export default function Mentions({
   content,
   mentions,
   setMentions,
-  parentEvent
+  parentEvent,
+  /** When true, trigger shows only the count (section label supplies the title). */
+  compactTrigger = false
 }: {
   content: string
   mentions: string[]
   setMentions: (mentions: string[]) => void
   parentEvent?: Event
+  compactTrigger?: boolean
 }) {
   const { t } = useTranslation()
   const { pubkey } = useNostr()
@@ -75,8 +78,18 @@ export default function Mentions({
           disabled={potentialMentions.length === 0}
           onClick={(e) => e.stopPropagation()}
         >
-          {t('Mentions')}{' '}
-          {potentialMentions.length > 0 && `(${mentions.length}/${potentialMentions.length})`}
+          {compactTrigger ? (
+            potentialMentions.length > 0 ? (
+              `(${mentions.length}/${potentialMentions.length})`
+            ) : (
+              '—'
+            )
+          ) : (
+            <>
+              {t('Mentions')}{' '}
+              {potentialMentions.length > 0 && `(${mentions.length}/${potentialMentions.length})`}
+            </>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[min(13rem,calc(100vw-1.5rem))] max-w-none p-0 py-1">

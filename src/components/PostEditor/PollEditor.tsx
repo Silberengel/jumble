@@ -7,18 +7,14 @@ import dayjs from 'dayjs'
 import { Eraser, X } from 'lucide-react'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import PostRelaySelector from './PostRelaySelector'
-
 export default function PollEditor({
   pollCreateData,
   setPollCreateData,
-  setIsPoll: _setIsPoll,
-  content = ''
+  setIsPoll: _setIsPoll
 }: {
   pollCreateData: TPollCreateData
   setPollCreateData: Dispatch<SetStateAction<TPollCreateData>>
   setIsPoll: Dispatch<SetStateAction<boolean>>
-  content?: string
 }) {
   const { t } = useTranslation()
   const [isMultipleChoice, setIsMultipleChoice] = useState(pollCreateData.isMultipleChoice)
@@ -26,15 +22,14 @@ export default function PollEditor({
   const [endsAt, setEndsAt] = useState(
     pollCreateData.endsAt ? dayjs(pollCreateData.endsAt * 1000).format('YYYY-MM-DDTHH:mm') : ''
   )
-  const [additionalRelayUrls, setAdditionalRelayUrls] = useState<string[]>(pollCreateData.relays)
   useEffect(() => {
-    setPollCreateData({
+    setPollCreateData((prev) => ({
+      ...prev,
       isMultipleChoice,
       options,
-      endsAt: endsAt ? dayjs(endsAt).startOf('minute').unix() : undefined,
-      relays: additionalRelayUrls
-    })
-  }, [isMultipleChoice, options, endsAt, additionalRelayUrls, setPollCreateData])
+      endsAt: endsAt ? dayjs(endsAt).startOf('minute').unix() : undefined
+    }))
+  }, [isMultipleChoice, options, endsAt, setPollCreateData])
 
   const handleAddOption = () => {
     setOptions([...options, ''])
@@ -110,12 +105,6 @@ export default function PollEditor({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <PostRelaySelector
-          setAdditionalRelayUrls={setAdditionalRelayUrls}
-          content={content}
-        />
-      </div>
     </div>
   )
 }

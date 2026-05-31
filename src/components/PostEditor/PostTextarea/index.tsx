@@ -282,7 +282,7 @@ const PostTextarea = forwardRef<
             </TabsTrigger>
           </TabsList>
           {headerActions && (
-            <div className="flex gap-1 items-center flex-wrap">
+            <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
               {headerActions}
             </div>
           )}

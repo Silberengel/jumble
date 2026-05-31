@@ -293,6 +293,10 @@ export default {
     Connections: 'Connections',
     Calls: 'Calls',
     Advanced: 'Advanced',
+    'Post editor advanced hint': 'Relay targets, mention recipients, client tag, NSFW, and proof of work.',
+    'Open Advanced to adjust mention recipients': 'Open Advanced to adjust who receives this message.',
+    'Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced':
+      'Add nostr:npub… or nostr:nevent… mentions in the text, or open Advanced to pick recipients.',
     'Share with Imwald': 'Share with Imwald',
     'Share with Alexandria': 'Share with Alexandria',
     'Start video call': 'Start video call',

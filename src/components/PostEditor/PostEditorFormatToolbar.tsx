@@ -3,7 +3,7 @@ import GifPicker from '@/components/GifPicker'
 import MemePicker from '@/components/MemePicker'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { isTouchDevice } from '@/lib/utils'
+import { cn, isTouchDevice } from '@/lib/utils'
 import type { TEmoji } from '@/types'
 import { Film, ImageUp, Laugh, Mic, Settings, Smile } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -46,8 +46,10 @@ export function PostEditorFormatToolbar({
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
 
+  const iconBtnClass = 'h-8 w-8 shrink-0 p-0'
+
   return (
-    <div className="flex flex-wrap items-center gap-2 min-w-0 shrink-0">
+    <div className="flex flex-nowrap items-center gap-0.5 min-w-0">
       {showAudioUpload && (
         <Uploader
           onUploadSuccess={upload.onUploadSuccess}
@@ -63,7 +65,7 @@ export function PostEditorFormatToolbar({
             variant="ghost"
             size="icon"
             title={audioUploadTitle}
-            className={audioButtonHighlighted ? 'bg-accent' : ''}
+            className={cn(iconBtnClass, audioButtonHighlighted && 'bg-accent')}
           >
             <Mic className="h-4 w-4" />
           </Button>
@@ -78,11 +80,11 @@ export function PostEditorFormatToolbar({
         onUploadCompressProgress={upload.onUploadCompressProgress}
         accept="image/*"
       >
-        <Button type="button" variant="ghost" size="icon" title={t('Upload Image')}>
+        <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Upload Image')}>
           <ImageUp />
         </Button>
       </Uploader>
-      <Separator orientation="vertical" className="h-6 shrink-0" />
+      <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
       {!isTouchDevice() && (
         <EmojiPickerDialog
           onEmojiClick={(emoji) => {
@@ -90,29 +92,33 @@ export function PostEditorFormatToolbar({
             insertEmoji(emoji)
           }}
         >
-          <Button type="button" variant="ghost" size="icon" title={t('Insert emoji')}>
+          <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert emoji')}>
             <Smile />
           </Button>
         </EmojiPickerDialog>
       )}
       <GifPicker onSelect={(gifUrl) => insertText(gifUrl)}>
-        <Button type="button" variant="ghost" size="icon" title={t('Insert GIF')}>
+        <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert GIF')}>
           <Film className="h-4 w-4" />
         </Button>
       </GifPicker>
       <MemePicker onSelect={(memeUrl) => insertText(memeUrl)}>
-        <Button type="button" variant="ghost" size="icon" title={t('Insert meme')}>
+        <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert meme')}>
           <Laugh className="h-4 w-4" />
         </Button>
       </MemePicker>
-      <Separator orientation="vertical" className="h-6 shrink-0" />
-      <MentionAndEventToolbarButtons insertAtCursor={insertText} variant="ghost" />
+      <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
+      <MentionAndEventToolbarButtons
+        insertAtCursor={insertText}
+        variant="ghost"
+        buttonClassName={iconBtnClass}
+      />
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        title={t('More options')}
-        className={showMoreOptions ? 'bg-accent' : ''}
+        title={t('Advanced')}
+        className={cn(iconBtnClass, showMoreOptions && 'bg-accent')}
         onClick={onToggleMoreOptions}
       >
         <Settings />

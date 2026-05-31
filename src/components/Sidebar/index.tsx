@@ -11,7 +11,6 @@ import SearchButton from './SearchButton'
 import FavoritesButton from './FavoritesButton'
 import DiscussionsButton from './DiscussionsButton'
 import SpellsButton from './SpellsButton'
-import { ConnectedRelaysSidebarStrip } from '@/components/ConnectedRelays/ConnectedRelaysSidebarStrip'
 import PaneModeToggle from './PaneModeToggle'
 import DownloadDesktopSidebarButton from './DownloadDesktopSidebarButton'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
@@ -47,7 +46,6 @@ export default function PrimaryPageSidebar() {
           <DiscussionsButton />
           <SpellsButton />
           <RssButton />
-          <ConnectedRelaysSidebarStrip />
           <PostButton />
           <div className="max-xl:hidden w-full min-w-0 space-y-2 px-1">
             <LiveActivitiesStrip placement="sidebar" />

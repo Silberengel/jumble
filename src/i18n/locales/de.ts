@@ -69,7 +69,7 @@ export default {
     'load more older replies': 'ältere Antworten laden',
     'Write something...': 'Schreibe etwas...',
     Cancel: 'Abbrechen',
-    Mentions: '@',
+    Mentions: 'Erwähnungen',
     'Search for event or address…': 'Nach Event oder Adresse suchen…',
     'Search notes…': 'Notizen suchen…',
     'No notes found': 'Keine Notizen gefunden',
@@ -765,6 +765,13 @@ export default {
       'Wenn an, listet der Hinweis jedes Relay (angenommen, fehlgeschlagen, Fehlertext). Wenn aus, nur eine kurze Zusammenfassung.',
     'Publishing feedback errors note':
       'Fehlgeschlagene Veröffentlichungen und andere Fehler zeigen immer einen Hinweis — mit Kurzfassung oder Pro-Relay-Aufschlüsselung wie oben.',
+    Advanced: 'Erweitert',
+    'Post editor advanced hint':
+      'Relay-Ziele, Erwähnungen, Client-Tag, NSFW und Proof-of-Work.',
+    'Open Advanced to adjust mention recipients':
+      'Öffne Erweitert, um Empfänger anzupassen.',
+    'Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced':
+      'Erwähne nostr:npub… oder nostr:nevent… im Text oder öffne Erweitert für die Empfängerauswahl.',
     'Publish successful': 'Veröffentlichung erfolgreich',
     'Media upload service': 'Medien-Upload-Service',
     BlossomUploadYourListOption: 'Blossom (eigene Liste)',

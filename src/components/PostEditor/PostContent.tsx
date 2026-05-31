@@ -42,7 +42,6 @@ import {
   ExtendedKind,
   isNip71ShortVideoKind,
   isNip71StyleVideoKind,
-  MAX_PUBLISH_RELAYS
 } from '@/constants'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
@@ -106,10 +105,9 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import Mentions, { extractMentions } from './Mentions'
+import { extractMentions } from './Mentions'
 import PollEditor from './PollEditor'
-import PostOptions from './PostOptions'
-import PostRelaySelector from './PostRelaySelector'
+import PostEditorAdvancedPanel from './PostEditorAdvancedPanel'
 import PostTextarea, { TPostTextareaHandle } from './PostTextarea'
 import {
   newNostrSpecAffectedKindRow,
@@ -478,6 +476,13 @@ export default function PostContent({
   useEffect(() => {
     if (isPoll) setRelayCapBlockInfo(null)
   }, [isPoll])
+
+  useEffect(() => {
+    if (!isPoll) return
+    setPollCreateData((prev) =>
+      prev.relays === additionalRelayUrls ? prev : { ...prev, relays: additionalRelayUrls }
+    )
+  }, [isPoll, additionalRelayUrls])
 
   // Clear highlight data when initialHighlightData changes or is removed
   useEffect(() => {
@@ -3086,7 +3091,9 @@ export default function PostContent({
                     title={t('Advanced event lab')}
                   >
                     <Code2 className="h-3.5 w-3.5 shrink-0" />
-                    <span className="hidden sm:inline max-w-[9rem] truncate">{t('Advanced event lab')}</span>
+                    <span className="max-w-[9rem] truncate text-xs sm:text-sm">
+                      {t('Advanced event lab')}
+                    </span>
                   </Button>
                   {!parentEvent ? (
                     <>
@@ -3281,7 +3288,6 @@ export default function PostContent({
           pollCreateData={pollCreateData}
           setPollCreateData={setPollCreateData}
           setIsPoll={setIsPoll}
-          content={text}
         />
       )}
       {isHighlight && (
@@ -3294,23 +3300,18 @@ export default function PostContent({
       {isPublicMessage && (
         <div className="rounded-lg border bg-muted/40 p-3">
           <div className="mb-2 text-sm font-medium">{t('Recipients')}</div>
-          <div className="space-y-2">
-            <Mentions
-              content={text}
-              parentEvent={undefined}
-              mentions={extractedMentions}
-              setMentions={setExtractedMentions}
-            />
-            {extractedMentions.length > 0 ? (
-              <div className="text-sm text-muted-foreground">
-                {t('Recipients detected from your message:')} {extractedMentions.length}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">
-                {t('Add recipients using nostr: mentions (e.g., nostr:npub1...) or the recipient selector above')}
-              </div>
-            )}
-          </div>
+          {extractedMentions.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('Recipients detected from your message:')} {extractedMentions.length}
+              {!showMoreOptions ? (
+                <span className="block text-xs mt-1">{t('Open Advanced to adjust mention recipients')}</span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced')}
+            </p>
+          )}
         </div>
       )}
       {uploadProgresses.length > 0 &&
@@ -3354,43 +3355,6 @@ export default function PostContent({
             </button>
           </div>
         ))}
-      {!isPoll && (
-        <div
-          className={cn(
-            'shrink-0',
-            isDiscussionThread && threadErrors.relay && 'rounded-md ring-1 ring-destructive'
-          )}
-        >
-          <PostRelaySelector
-            setAdditionalRelayUrls={setAdditionalRelayUrls}
-            onRelayPublishCapChange={handleRelayPublishCapChange}
-            parentEvent={parentEvent}
-            openFrom={openFrom}
-            content={text}
-            isPublicMessage={isPublicMessage}
-            mentions={extractedMentions}
-          />
-          {relayCapBlockInfo && (
-            <p className="mt-2 text-sm text-amber-600 dark:text-amber-500" role="alert">
-              {relayCapBlockInfo.outboxSlotsInPublish > 0
-                ? t('Publish relay cap hint with outbox first', {
-                    max: MAX_PUBLISH_RELAYS,
-                    reservedSlots: relayCapBlockInfo.outboxSlotsInPublish,
-                    selected: relayCapBlockInfo.selectedTotal,
-                    selectedContacted: relayCapBlockInfo.selectedContacted
-                  })
-                : t('Publish relay cap hint', {
-                    max: MAX_PUBLISH_RELAYS,
-                    selected: relayCapBlockInfo.selectedTotal,
-                    selectedContacted: relayCapBlockInfo.selectedContacted
-                  })}
-            </p>
-          )}
-          {isDiscussionThread && threadErrors.relay && (
-            <p className="mt-1 text-sm text-destructive">{threadErrors.relay}</p>
-          )}
-        </div>
-      )}
       {/* Hidden uploader for the "Media Note" dropdown item */}
       {!parentEvent && (
         <Uploader
@@ -3406,8 +3370,8 @@ export default function PostContent({
           <button ref={mediaUploaderBtnRef} type="button" aria-hidden="true" tabIndex={-1} />
         </Uploader>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
-        <div className="flex gap-2 items-center min-w-0 shrink-0">
+      <div className="flex min-w-0 w-full items-center gap-1.5">
+        <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
           <PostEditorFormatToolbar
             insertText={(txt) => textareaRef.current?.insertText(txt)}
             insertEmoji={(em) => textareaRef.current?.insertEmoji(em)}
@@ -3422,13 +3386,7 @@ export default function PostContent({
             onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
           />
         </div>
-        <div className="flex gap-2 items-center shrink-0">
-          <Mentions
-            content={text}
-            parentEvent={parentEvent}
-            mentions={mentions}
-            setMentions={setMentions}
-          />
+        <div className="flex shrink-0 items-center gap-1.5">
           <div className="flex gap-2 items-center max-sm:hidden">
             <Button
               type="button"
@@ -3480,15 +3438,37 @@ export default function PostContent({
           </div>
         </div>
       </div>
-      <PostOptions
-        posting={posting}
+      <PostEditorAdvancedPanel
         show={showMoreOptions}
+        posting={posting}
         addClientTag={addClientTag}
         setAddClientTag={setAddClientTag}
         isNsfw={isNsfw}
         setIsNsfw={setIsNsfw}
         minPow={minPow}
         setMinPow={setMinPow}
+        showMentionsPicker={!isHighlight}
+        mentionsContent={text}
+        mentionsParentEvent={isPublicMessage ? undefined : parentEvent}
+        mentions={isPublicMessage ? extractedMentions : mentions}
+        setMentions={isPublicMessage ? setExtractedMentions : setMentions}
+        showRelayPicker={
+          !isPublicationContent &&
+          !isCitationInternal &&
+          !isCitationExternal &&
+          !isCitationHardcopy &&
+          !isCitationPrompt
+        }
+        setAdditionalRelayUrls={setAdditionalRelayUrls}
+        onRelayPublishCapChange={handleRelayPublishCapChange}
+        relayParentEvent={parentEvent}
+        relayOpenFrom={openFrom}
+        relayContent={text}
+        relayIsPublicMessage={isPublicMessage}
+        relayMentions={extractedMentions}
+        relayCapBlockInfo={relayCapBlockInfo}
+        discussionThreadRelayError={threadErrors.relay}
+        isDiscussionThread={isDiscussionThread}
       />
       <div className="flex gap-2 items-center justify-around sm:hidden">
         <Button

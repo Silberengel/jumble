@@ -1,34 +1,14 @@
-import { useSmartRelayNavigation } from '@/PageManager'
 import {
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
 import { useRelayConnectionRows } from '@/hooks/useRelayConnectionRows'
-import { toRelay } from '@/lib/link'
-import { simplifyUrl } from '@/lib/url'
-import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
-import RelayIcon from '../RelayIcon'
+import { ActiveRelaysIconGrid } from './ActiveRelaysIconGrid'
 
-function rowMuted(connected: boolean) {
-  return !connected
-}
-
-function rowTitle(url: string, connected: boolean, t: (k: string) => string) {
-  const base = simplifyUrl(url)
-  if (!connected) return `${base} — ${t('Not connected')}`
-  return base
-}
-
-function rowClass(connected: boolean) {
-  return cn(rowMuted(connected) && 'opacity-45 text-muted-foreground')
-}
-
-/** Relay list block for account (or similar) dropdown menus. */
+/** Compact active-relay icons in the account (user badge) dropdown. */
 export function ActiveRelaysDropdownSection() {
   const { t } = useTranslation()
-  const { navigateToRelay } = useSmartRelayNavigation()
   const { rows, connectedCount } = useRelayConnectionRows()
 
   if (rows.length === 0) return null
@@ -42,17 +22,13 @@ export function ActiveRelaysDropdownSection() {
         <span>{t('Active relays')}</span>
         <span className="tabular-nums text-muted-foreground">{countSummary}</span>
       </DropdownMenuLabel>
-      {rows.map(({ url, connected }) => (
-        <DropdownMenuItem
-          key={url}
-          title={rowTitle(url, connected, t)}
-          onClick={() => navigateToRelay(toRelay(url))}
-          className={cn('min-w-52 gap-2', rowClass(connected))}
-        >
-          <RelayIcon url={url} />
-          {simplifyUrl(url)}
-        </DropdownMenuItem>
-      ))}
+      <div
+        className="px-2 pb-2"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <ActiveRelaysIconGrid />
+      </div>
     </>
   )
 }
