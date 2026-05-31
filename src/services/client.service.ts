@@ -654,16 +654,15 @@ class ClientService extends EventTarget {
 
   /** {@link runSessionPrewarm} — background fetch into GIF IndexedDB cache. */
   private async runGifCachePreload(pubkey: string | null): Promise<void> {
-    const extra: string[] = []
+    let followings: string[] = []
+    let noteFallbackRelays: string[] = []
     if (pubkey) {
+      const ev = await this.fetchFollowListEvent(pubkey)
+      if (ev) followings = getPubkeysFromPTags(ev.tags)
       const rl = await this.peekRelayListFromStorage(pubkey)
-      const [readInboxes, writeOutboxes] = await Promise.all([
-        collectViewerReadInboxUrls(pubkey, rl),
-        collectViewerWriteOutboxUrls(pubkey, rl)
-      ])
-      extra.push(...readInboxes, ...writeOutboxes)
+      noteFallbackRelays = await collectViewerReadInboxUrls(pubkey, rl)
     }
-    await preloadGifsIntoIdbCache(pubkey, extra)
+    await preloadGifsIntoIdbCache(pubkey, followings, noteFallbackRelays)
   }
 
   /** NIP-66 discovery for Explore / publish hints — call when the user opens Explore, not at boot. */

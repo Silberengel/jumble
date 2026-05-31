@@ -530,7 +530,7 @@ export const MONERO_NOSTR_RELAY_URLS = [
  *  Publish to all of these so GIFs are discoverable across clients; some may be temporarily down. */
 export const GIF_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
-  'wss://gifbuddy.lol'
+  'wss://relay.gifbuddy.lol'
 ]
 
 export const SEARCHABLE_RELAY_URLS = [

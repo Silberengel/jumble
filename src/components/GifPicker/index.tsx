@@ -10,14 +10,14 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { useUserReadInboxUrls, useUserWriteOutboxUrls } from '@/hooks/useUserMailboxRelayUrls'
+import { useUserReadInboxUrls } from '@/hooks/useUserMailboxRelayUrls'
 import { useNostr } from '@/providers/NostrProvider'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, GIF_RELAY_URLS } from '@/constants'
+import { ExtendedKind } from '@/constants'
 import { cn } from '@/lib/utils'
-import { normalizeUrl } from '@/lib/url'
 import {
   fetchGifs,
   getAllCachedGifsForSearch,
+  getGif1063RelayUrls,
   gifMetadataMatchesSearch,
   gifShouldOfferNip94Archive,
   buildKind1063GifPublishDraft,
@@ -28,12 +28,15 @@ import mediaUpload from '@/services/media-upload.service'
 import { Download, ExternalLink, X } from 'lucide-react'
 import { kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useFollowListOptional } from '@/providers/follow-list-context'
 
 /** In-session cache: survives Drawer/Dropdown open↔close without a relay re-fetch. */
 let _sessionGifs: GifMetadata[] = []
 import { useTranslation } from 'react-i18next'
 
 const GIFBUDDY_URL = 'https://www.gifbuddy.lol/'
+/** Stable empty follows list — avoids re-running picker fetch every render. */
+const EMPTY_FOLLOWING_PUBKEYS: readonly string[] = []
 /** Query param gifbuddy may use for pre-filled search (common convention). */
 const GIFBUDDY_SEARCH_URL = (q: string) =>
   q.trim() ? `${GIFBUDDY_URL}gifsearch?q=${encodeURIComponent(q.trim())}` : GIFBUDDY_URL
@@ -51,6 +54,12 @@ export default function GifPicker({
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { publish, pubkey } = useNostr()
+  const followList = useFollowListOptional()
+  const followingPubkeys = useMemo(
+    () => followList?.followings ?? EMPTY_FOLLOWING_PUBKEYS,
+    [followList?.followings]
+  )
+  const loadGenerationRef = useRef(0)
   const [open, setOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   // Initialise from the module-level session cache so re-opens are instant
@@ -71,36 +80,9 @@ export default function GifPicker({
   const gifbuddyPopupRef = useRef<Window | null>(null)
 
   const userReadRelays = useUserReadInboxUrls()
-  const userWriteRelays = useUserWriteOutboxUrls()
 
-  /** Paste / upload: GIF discovery relays + user writes (unchanged). */
-  const gifPublishRelayUrls = useMemo(() => {
-    const writeUrls = [...GIF_RELAY_URLS, ...userWriteRelays]
-    const seen = new Set<string>()
-    return writeUrls.filter((u) => {
-      const n = (normalizeUrl(u) ?? u).toLowerCase()
-      if (seen.has(n)) return false
-      seen.add(n)
-      return true
-    })
-  }, [userWriteRelays])
-
-  /** Grid pick / archive: user write relays first, then fast write relays as fallback. */
-  const gifSelectPublishRelayUrls = useMemo(() => {
-    const primary =
-      userWriteRelays.length > 0 ? userWriteRelays : [...FAST_WRITE_RELAY_URLS]
-    const extra = userWriteRelays.length > 0 ? FAST_WRITE_RELAY_URLS : []
-    const seen = new Set<string>()
-    return [...primary, ...extra]
-      .map((u) => normalizeUrl(u) || u)
-      .filter(Boolean)
-      .filter((u) => {
-        const n = u.toLowerCase()
-        if (seen.has(n)) return false
-        seen.add(n)
-        return true
-      })
-  }, [userWriteRelays])
+  /** Kind 1063 publish targets — GIF relays only. */
+  const gif1063PublishRelayUrls = useMemo(() => getGif1063RelayUrls(), [])
 
   /** Keep gifsRef, session cache, and React state in sync. */
   const setGifs = useCallback((newGifs: GifMetadata[], isSearch = false) => {
@@ -116,25 +98,27 @@ export default function GifPicker({
       const pool = gifPoolRef.current
       const filtered = trimmed
         ? pool.filter((g) => gifMetadataMatchesSearch(g, trimmed))
-        : pool.slice(0, 50)
+        : pool
       setGifs(filtered, trimmed.length > 0)
     },
     [setGifs]
   )
 
   const refreshGifPoolFromIdb = useCallback(async () => {
-    const pool = await getAllCachedGifsForSearch(pubkey ?? null)
+    const pool = await getAllCachedGifsForSearch(pubkey ?? null, followingPubkeys)
     gifPoolRef.current = pool
     return pool
-  }, [pubkey])
+  }, [pubkey, followingPubkeys])
 
   const loadGifs = useCallback(
     async (forceRefresh = false) => {
+      const generation = ++loadGenerationRef.current
       setError(null)
 
       if (gifPoolRef.current.length === 0) {
         try {
           const cached = await refreshGifPoolFromIdb()
+          if (generation !== loadGenerationRef.current) return
           if (cached.length > 0) {
             applyLocalFilter(searchInputRef.current)
           }
@@ -145,10 +129,17 @@ export default function GifPicker({
       }
 
       try {
-        await fetchGifs(50, forceRefresh, userReadRelays, pubkey ?? null)
+        await fetchGifs({
+          forceRefresh: forceRefresh || Boolean(pubkey),
+          userPubkey: pubkey ?? null,
+          followingPubkeys,
+          noteFallbackRelays: userReadRelays
+        })
+        if (generation !== loadGenerationRef.current) return
         await refreshGifPoolFromIdb()
+        if (generation !== loadGenerationRef.current) return
         applyLocalFilter(searchInputRef.current)
-        if (gifPoolRef.current.length === 0 && !searchInput.trim()) {
+        if (gifPoolRef.current.length === 0 && !searchInputRef.current.trim()) {
           setError(
             t(
               'No GIFs found. Try searching or add your own. GIFs come from Nostr kind 1063 (NIP-94) events on GIF relays.'
@@ -156,13 +147,14 @@ export default function GifPicker({
           )
         }
       } catch (e) {
+        if (generation !== loadGenerationRef.current) return
         setError(e instanceof Error ? e.message : 'Failed to load GIFs')
         if (gifPoolRef.current.length === 0) setGifsState([])
       } finally {
-        setLoading(false)
+        if (generation === loadGenerationRef.current) setLoading(false)
       }
     },
-    [t, userReadRelays, pubkey, applyLocalFilter, refreshGifPoolFromIdb]
+    [t, userReadRelays, pubkey, followingPubkeys, applyLocalFilter, refreshGifPoolFromIdb]
   )
 
   useEffect(() => {
@@ -185,11 +177,11 @@ export default function GifPicker({
       if (!pubkey || !/^https?:\/\//i.test(url)) return
       // Fire-and-forget: waiting on every relay can freeze the UI when relays are down.
       void publish(buildKind1063GifPublishDraft(url, desc), {
-        specifiedRelayUrls: gifSelectPublishRelayUrls
+        specifiedRelayUrls: gif1063PublishRelayUrls
       }).catch(() => {})
       if (desc) setPublishDescription('')
     },
-    [pubkey, onSelect, publish, gifSelectPublishRelayUrls, publishDescription]
+    [pubkey, onSelect, publish, gif1063PublishRelayUrls, publishDescription]
   )
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -217,7 +209,7 @@ export default function GifPicker({
         tags,
         created_at: Math.floor(Date.now() / 1000)
       }
-      await publish(draft, { specifiedRelayUrls: gifPublishRelayUrls })
+      await publish(draft, { specifiedRelayUrls: gif1063PublishRelayUrls })
       setPublishDescription('')
       setSearchInput('')
       await loadGifs(true)
@@ -273,7 +265,7 @@ export default function GifPicker({
       setPublishingPaste(true)
       try {
         await publish(buildKind1063GifPublishDraft(url, descriptionForPublish), {
-          specifiedRelayUrls: gifPublishRelayUrls
+          specifiedRelayUrls: gif1063PublishRelayUrls
         })
         setPublishDescription('')
       } catch {
@@ -282,7 +274,7 @@ export default function GifPicker({
         setPublishingPaste(false)
       }
     }
-  }, [pasteUrl, pubkey, onSelect, publish, gifPublishRelayUrls, descriptionForPublish])
+  }, [pasteUrl, pubkey, onSelect, publish, gif1063PublishRelayUrls, descriptionForPublish])
 
   /** External GIF from a note: publish kind 1063, then insert URL and close (same relays as grid pick). */
   const handleArchiveAndInsert = useCallback(
@@ -298,7 +290,7 @@ export default function GifPicker({
       setOpen(false)
       void loadGifs(true)
       void publish(buildKind1063GifPublishDraft(url, desc), {
-        specifiedRelayUrls: gifSelectPublishRelayUrls
+        specifiedRelayUrls: gif1063PublishRelayUrls
       })
         .catch(() => {})
         .finally(() => {
@@ -306,7 +298,7 @@ export default function GifPicker({
           if (desc) setPublishDescription('')
         })
     },
-    [pubkey, publish, gifSelectPublishRelayUrls, onSelect, loadGifs, publishDescription]
+    [pubkey, publish, gif1063PublishRelayUrls, onSelect, loadGifs, publishDescription]
   )
 
   const gifSourceKindTitle = useCallback(
@@ -372,8 +364,8 @@ export default function GifPicker({
         <ScrollArea
           className={
             isDrawer
-              ? 'flex-1 min-h-[200px] w-full rounded-md border'
-              : 'h-[280px] w-full rounded-md border'
+              ? 'flex-1 min-h-[420px] w-full rounded-md border'
+              : 'h-[520px] w-full rounded-md border'
           }
         >
           {loading ? (

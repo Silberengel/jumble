@@ -20,21 +20,11 @@ function relayLabel(url: string): string {
   }
 }
 
-/** User-visible result after the relay responds to NIP-42 AUTH (`OK` / failure). */
+/** Relay responded to NIP-42 AUTH with OK — log only (no success toast; routine on many relays). */
 export function notifyRelayNip42Accepted(url: string, okReason?: string): void {
   const key = sessionKeyForRelay(url)
   if (!key || nip42NotifiedAccept.has(key)) return
   nip42NotifiedAccept.add(key)
-
-  const relay = relayLabel(url)
-  const detailSuffix = okReason?.trim() ? ` (${okReason.trim()})` : ''
-  toast.success(
-    i18n.t('Relay auth accepted (NIP-42)', {
-      relay,
-      detailSuffix,
-      defaultValue: `The relay accepted authentication (NIP-42): ${relay}${detailSuffix}`
-    })
-  )
   logger.info('[NIP-42] Auth accepted by relay', { url, okReason })
 }
 
