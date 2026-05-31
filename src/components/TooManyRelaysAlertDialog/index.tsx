@@ -16,7 +16,7 @@ import {
   DrawerHeader,
   DrawerTitle
 } from '@/components/ui/drawer'
-import { toRelaySettings } from '@/lib/link'
+import { MAILBOX_RELAY_COUNT_WARNING_THRESHOLD } from '@/constants'
 import { useSecondaryPage } from '@/contexts/secondary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -34,7 +34,11 @@ export default function TooManyRelaysAlertDialog() {
     const dismissed = storage.getDismissedTooManyRelaysAlert()
     if (dismissed) return
 
-    if (relayList && (relayList.read.length > 4 || relayList.write.length > 4)) {
+    if (
+      relayList &&
+      (relayList.read.length >= MAILBOX_RELAY_COUNT_WARNING_THRESHOLD ||
+        relayList.write.length >= MAILBOX_RELAY_COUNT_WARNING_THRESHOLD)
+    ) {
       setOpen(true)
     } else {
       setOpen(false)

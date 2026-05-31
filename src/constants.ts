@@ -430,6 +430,9 @@ export const FONT_SIZE = {
  */
 export const RANDOM_PUBLISH_RELAY_COUNT = 5
 
+/** Read or write mailbox count above this triggers “too many relays” warnings and the optimize dialog. */
+export const MAILBOX_RELAY_COUNT_WARNING_THRESHOLD = 10
+
 /** Relays to query for NIP-66 relay monitoring events (30166), in addition to FAST_READ_RELAY_URLS. */
 export const NIP66_DISCOVERY_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
@@ -500,12 +503,13 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://hist.nostr.land',
 ]
 
-// Optimized relay list for read operations (includes aggregator)
+// Optimized relay list for read operations
 export const FAST_READ_RELAY_URLS = [
   'wss://theforest.nostr1.com',
   'wss://nostr.land',
   'wss://nostr.wine',
-  'wss://nostr21.com'
+  'wss://nostr21.com',
+  'wss://primus.nostr1.com'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -513,8 +517,7 @@ export const FAST_WRITE_RELAY_URLS = [
   'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
-  'wss://nos.lol',
-  'wss://relay.layer.systems'
+  'wss://nos.lol'
 ]
 
 /**

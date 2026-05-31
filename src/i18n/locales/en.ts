@@ -1235,10 +1235,10 @@ export default {
       'After changing emojis, you may need to refresh the page',
     'Too many read relays': 'Too many read relays',
     'Too many write relays': 'Too many write relays',
-    'You have {{count}} read relays. Most clients only use 2-4 relays, setting more is unnecessary.':
-      'You have {{count}} read relays. Most clients only use 2-4 relays, setting more is unnecessary.',
-    'You have {{count}} write relays. Most clients only use 2-4 relays, setting more is unnecessary.':
-      'You have {{count}} write relays. Most clients only use 2-4 relays, setting more is unnecessary.',
+    'You have {{count}} read relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.':
+      'You have {{count}} read relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.',
+    'You have {{count}} write relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.':
+      'You have {{count}} write relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.',
     'Optimize Relay Settings': 'Optimize Relay Settings',
     'Your current relay configuration may not be optimal. This could make it difficult for others to find your posts and may result in incomplete notifications.':
       'Your current relay configuration may not be optimal. This could make it difficult for others to find your posts and may result in incomplete notifications.',

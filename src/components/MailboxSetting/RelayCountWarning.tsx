@@ -1,3 +1,4 @@
+import { MAILBOX_RELAY_COUNT_WARNING_THRESHOLD } from '@/constants'
 import { TMailboxRelay } from '@/types'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,8 +12,8 @@ export default function RelayCountWarning({ relays }: { relays: TMailboxRelay[] 
   const writeRelayCount = useMemo(() => {
     return relays.filter((r) => r.scope !== 'read').length
   }, [relays])
-  const showReadWarning = readRelayCount > 4
-  const showWriteWarning = writeRelayCount > 4
+  const showReadWarning = readRelayCount >= MAILBOX_RELAY_COUNT_WARNING_THRESHOLD
+  const showWriteWarning = writeRelayCount >= MAILBOX_RELAY_COUNT_WARNING_THRESHOLD
 
   if (!showReadWarning && !showWriteWarning) {
     return null
@@ -24,12 +25,12 @@ export default function RelayCountWarning({ relays }: { relays: TMailboxRelay[] 
       content={
         showReadWarning
           ? t(
-              'You have {{count}} read relays. Most clients only use 2-4 relays, setting more is unnecessary.',
-              { count: readRelayCount }
+              'You have {{count}} read relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.',
+              { count: readRelayCount, limit: MAILBOX_RELAY_COUNT_WARNING_THRESHOLD }
             )
           : t(
-              'You have {{count}} write relays. Most clients only use 2-4 relays, setting more is unnecessary.',
-              { count: writeRelayCount }
+              'You have {{count}} write relays. Most clients only use up to {{limit}} relays, setting more is unnecessary.',
+              { count: writeRelayCount, limit: MAILBOX_RELAY_COUNT_WARNING_THRESHOLD }
             )
       }
     />
