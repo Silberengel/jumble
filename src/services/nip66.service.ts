@@ -66,12 +66,31 @@ class Nip66Service {
   private static instance: Nip66Service
   /** Normalized relay URL -> latest discovery (we keep the most recent 30166 per relay). */
   private discoveryByUrl = new Map<string, TNip66RelayDiscovery>()
+  private publicLivelyListeners = new Set<() => void>()
 
   static getInstance(): Nip66Service {
     if (!Nip66Service.instance) {
       Nip66Service.instance = new Nip66Service()
     }
     return Nip66Service.instance
+  }
+
+  /** Fired when in-memory public lively list changes (e.g. after 30166 ingest). */
+  subscribePublicLivelyUpdated(listener: () => void): () => void {
+    this.publicLivelyListeners.add(listener)
+    return () => {
+      this.publicLivelyListeners.delete(listener)
+    }
+  }
+
+  private notifyPublicLivelyUpdated(): void {
+    for (const listener of this.publicLivelyListeners) {
+      try {
+        listener()
+      } catch {
+        // ignore subscriber errors
+      }
+    }
   }
 
   private isDiscoveryStale(cachedAt: number): boolean {
@@ -106,6 +125,7 @@ class Nip66Service {
     const publicLively = this.buildPublicLivelyFromDiscovery()
     if (publicLively.length > 0 && typeof window !== 'undefined') {
       indexDb.setPublicLivelyRelayUrlsCache(publicLively).catch(() => {})
+      this.notifyPublicLivelyUpdated()
     }
     if (typeof window !== 'undefined') {
       for (const key of updatedKeys) {

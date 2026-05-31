@@ -7,6 +7,7 @@ import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
+import { buildRandomPublishRelayCandidateList, normalizePublishRelayCandidate } from '@/lib/random-publish-relay-pool'
 import {
   canonicalRelaySessionKey,
   isLocalNetworkUrl,
@@ -61,6 +62,8 @@ export interface RelaySelectionResult {
   description: string
   /** Source type per relay URL (for UI labels). */
   relayTypes: Record<string, RelaySourceType>
+  /** Optional random publish relays (NIP-66 / session / write fallbacks), independent of metadata-only read policy. */
+  randomRelayUrls: string[]
 }
 
 class RelaySelectionService {
@@ -110,7 +113,33 @@ class RelaySelectionService {
       selectableRelays,
       selectedRelays,
       description,
-      relayTypes
+      relayTypes,
+      randomRelayUrls: contextWithRandom.randomRelayUrls ?? []
+    }
+  }
+
+  /**
+   * Pick random publish relays for the post picker. Uses NIP-66 lively list and session stats when
+   * available; falls back to {@link FAST_WRITE_RELAY_URLS} so random relays still appear when the
+   * viewer restricts reads to their own relay lists (NIP-66 discovery fetch is skipped in that mode).
+   */
+  private async pickRandomPublishRelayUrls(existingSessionKeys: Set<string>): Promise<string[]> {
+    if (typeof window === 'undefined') return []
+    try {
+      const sessionBoost = client.getSessionSuccessfulPublishRelayUrlsForRandomPool()
+      const publicLively = await nip66Service.getPublicLivelyRelayUrls()
+      const candidates = buildRandomPublishRelayCandidateList({
+        excludeSessionKeys: existingSessionKeys,
+        sessionBoost,
+        nip66Lively: publicLively,
+        fallbackWriteRelays: FAST_WRITE_RELAY_URLS
+      })
+      const preferred = client.getPreferredRelaysForRandom(candidates, RANDOM_PUBLISH_RELAY_COUNT)
+      return preferred
+        .map((url) => normalizePublishRelayCandidate(url))
+        .filter((url) => url.length > 0)
+    } catch {
+      return []
     }
   }
 
@@ -194,32 +223,13 @@ class RelaySelectionService {
       openFrom.forEach((url) => addRelay(url, 'open_from'))
     }
 
-    // Random relays: prefer session-proven fast relays, then fill with random from rest (selection only random between sessions)
-    const randomRelayUrls: string[] = []
-    if (typeof window !== 'undefined') {
-      try {
-        const publicLively = await nip66Service.getPublicLivelyRelayUrls()
-        /** Session OK relays first so they stay candidates even if absent from NIP-66 lively list */
-        const sessionBoost = client.getSessionSuccessfulPublishRelayUrlsForRandomPool()
-        const existing = new Set(order.map((o) => o.url))
-        const seenCand = new Set<string>()
-        const candidates: string[] = []
-        for (const u of [...sessionBoost, ...publicLively]) {
-          const n = normalizeAnyRelayUrl(u) || u
-          if (!n || existing.has(n) || seenCand.has(n)) continue
-          seenCand.add(n)
-          candidates.push(n)
-        }
-        const preferred = client.getPreferredRelaysForRandom(candidates, RANDOM_PUBLISH_RELAY_COUNT)
-        preferred.forEach((url) => {
-          const normalized = normalizeAnyRelayUrl(url) || url
-          addRelay(normalized, 'randomly_selected')
-          randomRelayUrls.push(normalized)
-        })
-      } catch {
-        // ignore
-      }
-    }
+    const existingSessionKeys = new Set(
+      order.map((o) => canonicalRelaySessionKey(o.url)).filter(Boolean)
+    )
+    const randomRelayUrls = await this.pickRandomPublishRelayUrls(existingSessionKeys)
+    randomRelayUrls.forEach((url) => {
+      addRelay(url, 'randomly_selected')
+    })
 
     const deduplicatedRelays = order.map((o) => o.url)
     const filtered = this.filterPublishPickerRelays(

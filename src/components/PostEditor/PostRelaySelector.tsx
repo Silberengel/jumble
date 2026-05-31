@@ -12,6 +12,8 @@ import { NostrEvent } from 'nostr-tools'
 import { Dispatch, SetStateAction, useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
+import { useUserPreferences } from '@/providers/UserPreferencesProvider'
+import nip66Service from '@/services/nip66.service'
 import relaySelectionService, { type RelaySourceType } from '@/services/relay-selection.service'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -22,7 +24,7 @@ import { computePrePublishRelayCapPreview, type TPrePublishRelayCapPreview } fro
 /** Stable default when `mentions` is omitted — inline `= []` is a new array every render and retriggers effects. */
 const NO_MENTIONS: string[] = []
 
-/** Keep auto-selection within {@link MAX_PUBLISH_RELAYS}, preserving {@link selectableRelaysOrder} (top of list first). */
+/** Keep auto-selection within {@link MAX_PUBLISH_RELAYS}, preserving picker order (outboxes before randoms). */
 function capAutoSelectedRelays(selectableRelaysOrder: string[], selectedWithCache: string[]): string[] {
   const norm = (u: string) => normalizeRelayUrlByScheme(u) || u
   const selectedNormSet = new Set(selectedWithCache.map(norm))
@@ -68,7 +70,9 @@ export default function PostRelaySelector({
   const { isSmallScreen } = useScreenSize()
   useCurrentRelays() // Keep this hook call for any side effects
   const { relaySets, favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const { addRandomRelaysToPublish } = useUserPreferences()
   const { pubkey, relayList, cacheRelayListEvent } = useNostr()
+  const [publicLivelyRevision, setPublicLivelyRevision] = useState(0)
   const userReadRelaysForSelection = useMemo(
     () => userReadInboxUrls(relayList, cacheRelayListEvent),
     [relayList, cacheRelayListEvent]
@@ -85,6 +89,18 @@ export default function PostRelaySelector({
   // Generation counter: incremented every time the effect fires; async callback checks whether
   // it's still the latest invocation before committing state, preventing stale races.
   const selectionGenRef = useRef(0)
+
+  useEffect(() => {
+    return nip66Service.subscribePublicLivelyUpdated(() => {
+      setPublicLivelyRevision((v) => v + 1)
+    })
+  }, [])
+
+  useEffect(() => {
+    void nip66Service.getPublicLivelyRelayUrls().then(() => {
+      setPublicLivelyRevision((v) => v + 1)
+    })
+  }, [])
 
   // For discussion replies, content doesn't affect relay selection
   // Check if this is a reply to a discussion by looking for "K" tag with "11"
@@ -235,6 +251,8 @@ export default function PostRelaySelector({
     contentRelaySignature,
     mentions,
     describeRelaySelection,
+    addRandomRelaysToPublish,
+    publicLivelyRevision,
     t
   ])
 
