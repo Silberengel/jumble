@@ -41,6 +41,20 @@ export function looksLikeNostrBech32Identifier(value: string): boolean {
   return /^(npub|nprofile|nevent|note|naddr)1[a-z0-9]+$/i.test(v)
 }
 
+/**
+ * True when free-text input plausibly targets a relay URL (scheme, `://`, or hostname shape).
+ * Usernames, hashtags, and partial profile names must not trigger relay normalization.
+ */
+export function looksLikeRelayUrlInput(value: string): boolean {
+  const v = value.trim()
+  if (!v || looksLikeNostrBech32Identifier(v)) return false
+  if (/^(wss?|https?):?\/?/i.test(v)) return true
+  if (v.includes('://')) return true
+  // hostname.tld — e.g. relay.example.com, nostr.wine (not bare names like "Nusa")
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:[:/].*)?$/i.test(v)) return true
+  return false
+}
+
 /** True when normalized to a WebSocket relay or kind-10243 HTTP index base. */
 export function isValidRelayFetchUrl(url: string): boolean {
   const trimmed = url.trim()
@@ -235,7 +249,7 @@ export function normalizeUrl(url: string): string {
     const trimmed = url.trim()
     if (!trimmed) return ''
     if (!trimmed.includes('://')) {
-      if (!looksLikeNostrBech32Identifier(trimmed)) {
+      if (!looksLikeNostrBech32Identifier(trimmed) && looksLikeRelayUrlInput(trimmed)) {
         logger.warn('WebSocket relay URL requires ws: or wss: prefix', { url: trimmed })
       }
       return ''
