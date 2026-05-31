@@ -38,4 +38,25 @@ describe('buildTopicKeywordBubbles', () => {
     expect(nostr?.pubkeys).toContain(pkC)
     expect(nostr?.pubkeys).toContain(pkB)
   })
+
+  it('excludes muted authors from counts and bubble avatars', () => {
+    const pkA = 'a'.repeat(64)
+    const pkMuted = 'f'.repeat(64)
+    const pkB = 'b'.repeat(64)
+    const bubbles = buildTopicKeywordBubbles(
+      [
+        note(pkA, [['t', 'nostr']]),
+        note(pkMuted, [['t', 'nostr']], 'muted #nostr'),
+        note(pkB, [['t', 'nostr']])
+      ],
+      DEFAULT_FEED_SHOW_KINDS,
+      true,
+      true,
+      true,
+      new Set([pkMuted])
+    )
+    const nostr = bubbles.find((b) => b.key === 'nostr')
+    expect(nostr?.score).toBe(2)
+    expect(nostr?.pubkeys).not.toContain(pkMuted)
+  })
 })

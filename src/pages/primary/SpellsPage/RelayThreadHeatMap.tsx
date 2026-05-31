@@ -4,6 +4,7 @@ import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
+import { filterEventsExcludingMutedAuthors, mutePubkeySetFingerprint, muteSetHas } from '@/lib/mute-set'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNote } from '@/lib/link'
 import logger from '@/lib/logger'
@@ -22,6 +23,7 @@ import {
   type TRelayThreadHeatEdge
 } from '@/lib/relay-thread-heat'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
+import { useMuteList } from '@/contexts/mute-list-context'
 import { useSmartNoteNavigation } from '@/PageManager'
 import { encodeProfileInteractionsSpellId } from './fauxSpellConfig'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -101,6 +103,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   const { navigate: navigatePrimary } = usePrimaryPage()
   const { navigateToNote } = useSmartNoteNavigation()
   const { pubkey, relayList, cacheRelayListEvent } = useNostr()
+  const { mutePubkeySet } = useMuteList()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const { showKinds, showKind1OPs, showKind1Replies, showKind1111 } = useKindFilterOrDefaults()
 
@@ -142,9 +145,14 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   const [error, setError] = useState<string | null>(null)
   const [rescanTick, setRescanTick] = useState(0)
 
+  const muteFingerprint = useMemo(() => mutePubkeySetFingerprint(mutePubkeySet), [mutePubkeySet])
+
   const cacheSettingKey = useMemo(
-    () => (pubkey ? relayThreadHeatMapSettingKey(pubkey, relayUrls, followPubkeys, feedFilterKey) : ''),
-    [pubkey, relayUrls, followPubkeys, feedFilterKey]
+    () =>
+      pubkey
+        ? relayThreadHeatMapSettingKey(pubkey, relayUrls, followPubkeys, feedFilterKey, muteFingerprint)
+        : '',
+    [pubkey, relayUrls, followPubkeys, feedFilterKey, muteFingerprint]
   )
 
   const mergeHeatMapData = useCallback(async (includeRelay = true): Promise<{
@@ -204,7 +212,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         dedup.set(ev.id.toLowerCase(), ev)
       }
     }
-    const merged = filterEventsExcludingTombstones([...dedup.values()], tombstones)
+    const merged = filterEventsExcludingMutedAuthors(
+      filterEventsExcludingTombstones([...dedup.values()], tombstones),
+      mutePubkeySet
+    )
     const feedNotes = merged.filter((e) =>
       eventPassesNoteListKindPicker(e, showKinds, showKind1OPs, showKind1Replies, showKind1111)
     )
@@ -227,6 +238,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       for (const ev of archived) {
         if (!verifyEvent(ev)) continue
         if (ev.kind !== kinds.ShortTextNote && ev.kind !== ExtendedKind.DISCUSSION) continue
+        if (muteSetHas(mutePubkeySet, ev.pubkey)) continue
         rootById.set(ev.id.toLowerCase(), ev)
       }
       const stillMissing = missingRootIds.filter((id) => !rootById.has(id))
@@ -244,6 +256,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         for (const ev of fetched) {
           if (!verifyEvent(ev)) continue
           if (ev.kind !== kinds.ShortTextNote && ev.kind !== ExtendedKind.DISCUSSION) continue
+          if (muteSetHas(mutePubkeySet, ev.pubkey)) continue
           rootById.set(ev.id.toLowerCase(), ev)
         }
       }
@@ -270,7 +283,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       edges: edges.length
     })
     return { bubbles, edges }
-  }, [relayUrls, followSet, showKinds, showKind1OPs, showKind1Replies, showKind1111])
+  }, [relayUrls, followSet, showKinds, showKind1OPs, showKind1Replies, showKind1111, mutePubkeySet])
 
   useEffect(() => {
     let cancelled = false

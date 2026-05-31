@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ExtendedKind } from '@/constants'
+import { useMuteList } from '@/contexts/mute-list-context'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
+import { filterEventsExcludingMutedAuthors, muteSetHas } from '@/lib/mute-set'
 import { filterEventsExcludingTombstones } from '@/lib/event'
 import { extractHashtagsFromContent, formatTopicMapBubbleLabel, isValidNormalizedTopicKey, normalizeTopic } from '@/lib/discussion-topics'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
@@ -50,8 +52,13 @@ type TopicKeyAccum = {
   pubkeyHits: Map<string, number>
 }
 
-function topPubkeysForTopic(hits: Map<string, number>, limit: number): string[] {
+function topPubkeysForTopic(
+  hits: Map<string, number>,
+  limit: number,
+  mutePubkeySet?: ReadonlySet<string>
+): string[] {
   return [...hits.entries()]
+    .filter(([pk]) => !mutePubkeySet || !muteSetHas(mutePubkeySet, pk))
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([pk]) => pk)
@@ -148,7 +155,8 @@ export function buildTopicKeywordBubbles(
   showKinds: readonly number[],
   showKind1OPs: boolean,
   showKind1Replies: boolean,
-  showKind1111: boolean
+  showKind1111: boolean,
+  mutePubkeySet?: ReadonlySet<string>
 ): TTopicKeywordBubble[] {
   const accum = new Map<string, TopicKeyAccum>()
 
@@ -168,6 +176,7 @@ export function buildTopicKeywordBubbles(
   }
 
   for (const ev of events) {
+    if (mutePubkeySet && muteSetHas(mutePubkeySet, ev.pubkey)) continue
     if (!eventPassesNoteListKindPicker(ev, showKinds, showKind1OPs, showKind1Replies, showKind1111)) continue
     const topics = new Set<string>()
     for (const row of ev.tags) {
@@ -192,7 +201,7 @@ export function buildTopicKeywordBubbles(
       score,
       topicNoteCount: row.topicNoteCount,
       keywordNoteCount: row.keywordNoteCount,
-      pubkeys: topPubkeysForTopic(row.pubkeyHits, MAX_BUBBLE_AVATARS)
+      pubkeys: topPubkeysForTopic(row.pubkeyHits, MAX_BUBBLE_AVATARS, mutePubkeySet)
     })
   }
   out.sort((x, y) => y.score - x.score || x.key.localeCompare(y.key))
@@ -205,6 +214,7 @@ type Props = {
 
 export default function TopicKeywordHeatMap({ refreshKey }: Props) {
   const { t } = useTranslation()
+  const { mutePubkeySet } = useMuteList()
   const { navigateToHashtag } = useSmartHashtagNavigation()
   const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
@@ -276,9 +286,12 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
         dedup.set(ev.id.toLowerCase(), ev)
       }
     }
-    const clean = filterEventsExcludingTombstones([...dedup.values()], tombstones)
-    return buildTopicKeywordBubbles(clean, showKinds, showKind1OPs, showKind1Replies, showKind1111)
-  }, [relayUrls, showKinds, showKind1OPs, showKind1Replies, showKind1111])
+    const clean = filterEventsExcludingMutedAuthors(
+      filterEventsExcludingTombstones([...dedup.values()], tombstones),
+      mutePubkeySet
+    )
+    return buildTopicKeywordBubbles(clean, showKinds, showKind1OPs, showKind1Replies, showKind1111, mutePubkeySet)
+  }, [relayUrls, showKinds, showKind1OPs, showKind1Replies, showKind1111, mutePubkeySet])
 
   useEffect(() => {
     let cancelled = false

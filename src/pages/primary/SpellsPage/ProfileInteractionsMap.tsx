@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind } from '@/constants'
+import { useMuteList } from '@/contexts/mute-list-context'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
+import { muteSetHas } from '@/lib/mute-set'
 import { toProfile } from '@/lib/link'
 import { formatPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
@@ -57,12 +59,18 @@ function interactionFilters(pubkey: string, limit: number): TSubRequestFilter[] 
   ]
 }
 
-function mergeInteractionEvents(targetPubkey: string, events: Event[]): InteractionCard[] {
+export function mergeInteractionEvents(
+  targetPubkey: string,
+  events: Event[],
+  mutePubkeySet: ReadonlySet<string>
+): InteractionCard[] {
   const target = targetPubkey.toLowerCase()
   const byPubkey = new Map<string, InteractionCard>()
   const add = (partnerRaw: string | undefined, event: Event, direction: 'out' | 'in') => {
+    if (muteSetHas(mutePubkeySet, event.pubkey)) return
     const partner = partnerRaw?.trim().toLowerCase()
     if (!partner || partner === target || !/^[0-9a-f]{64}$/.test(partner)) return
+    if (muteSetHas(mutePubkeySet, partner)) return
     let row = byPubkey.get(partner)
     if (!row) {
       row = {
@@ -112,6 +120,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
   const { relayList, cacheRelayListEvent } = useNostr()
+  const { mutePubkeySet } = useMuteList()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [cards, setCards] = useState<InteractionCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -168,12 +177,12 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
       try {
         const local = await load(false)
         if (cancelled) return
-        setCards(mergeInteractionEvents(pubkey, local))
+        setCards(mergeInteractionEvents(pubkey, local, mutePubkeySet))
         setLoading(false)
 
         const all = await load(true)
         if (cancelled) return
-        setCards(mergeInteractionEvents(pubkey, all))
+        setCards(mergeInteractionEvents(pubkey, all, mutePubkeySet))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : String(e))
@@ -187,7 +196,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
     return () => {
       cancelled = true
     }
-  }, [pubkey, refreshKey, load])
+  }, [pubkey, refreshKey, load, mutePubkeySet])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -203,7 +212,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
             onClick={() => {
               setRefreshing(true)
               void load(true)
-                .then((rows) => setCards(mergeInteractionEvents(pubkey, rows)))
+                .then((rows) => setCards(mergeInteractionEvents(pubkey, rows, mutePubkeySet)))
                 .catch((e) => setError(e instanceof Error ? e.message : String(e)))
                 .finally(() => setRefreshing(false))
             }}
@@ -221,7 +230,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
       {loading && cards.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 9 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-xl" />
+            <Skeleton key={i} className="h-44 rounded-xl" />
           ))}
         </div>
       ) : error && cards.length === 0 ? (
@@ -234,7 +243,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-          <div className="grid grid-cols-1 gap-2 min-[720px]:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 min-[720px]:grid-cols-2 xl:grid-cols-3">
             {cards.map((card, index) => (
               <button
                 key={card.pubkey}
@@ -244,38 +253,39 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
               >
                 <Card
                   className={cn(
-                    'flex h-full min-w-0 items-center gap-2 p-2 transition-colors hover:bg-accent/70 min-[720px]:gap-3 min-[720px]:p-3',
+                    'flex h-full min-w-0 flex-col overflow-hidden p-3 transition-colors hover:bg-accent/70',
                     index < 3 && 'border-primary/40 bg-primary/5'
                   )}
                 >
-                  <div className="relative shrink-0">
-                    <UserAvatar userId={card.pubkey} size="semiBig" className="min-[720px]:h-16 min-[720px]:w-16" />
-                    <span className="absolute -bottom-1 -right-1 z-10 rounded-full bg-background px-1.5 py-0.5 text-[10px] font-semibold shadow ring-1 ring-border">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Username userId={card.pubkey} className="block truncate text-sm font-semibold" />
+                      <div className="truncate text-xs text-muted-foreground">{formatPubkey(card.pubkey)}</div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground ring-1 ring-border">
                       #{index + 1}
                     </span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <Username userId={card.pubkey} className="block truncate text-sm font-semibold" />
-                    <div className="truncate text-xs text-muted-foreground">{formatPubkey(card.pubkey)}</div>
-                    <div className="mt-1.5 flex min-w-0 flex-wrap gap-1 text-[11px] text-muted-foreground min-[720px]:mt-2 min-[720px]:gap-1.5 min-[720px]:text-xs">
-                      <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-                        <UserRound className="mr-1 inline size-3" aria-hidden />
-                        <span className="min-[720px]:hidden">{compactCount(card.score)}</span>
-                        <span className="hidden min-[720px]:inline">
-                          {t('n interactions', { count: card.score, formattedCount: compactCount(card.score) })}
-                        </span>
+
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="max-w-full truncate rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
+                      <UserRound className="mr-1 inline size-3 shrink-0" aria-hidden />
+                      {t('n interactions', { count: card.score, formattedCount: compactCount(card.score) })}
+                    </span>
+                    {card.authoredByProfile > 0 ? (
+                      <span className="max-w-full truncate rounded-full bg-muted px-2 py-0.5">
+                        {t('outgoing interactions', { count: card.authoredByProfile })}
                       </span>
-                      {card.authoredByProfile > 0 ? (
-                        <span className="hidden rounded-full bg-muted px-2 py-0.5 min-[720px]:inline">
-                          {t('outgoing interactions', { count: card.authoredByProfile })}
-                        </span>
-                      ) : null}
-                      {card.mentionsProfile > 0 ? (
-                        <span className="hidden rounded-full bg-muted px-2 py-0.5 min-[720px]:inline">
-                          {t('incoming interactions', { count: card.mentionsProfile })}
-                        </span>
-                      ) : null}
-                    </div>
+                    ) : null}
+                    {card.mentionsProfile > 0 ? (
+                      <span className="max-w-full truncate rounded-full bg-muted px-2 py-0.5">
+                        {t('incoming interactions', { count: card.mentionsProfile })}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex justify-center">
+                    <UserAvatar userId={card.pubkey} size="big" className="size-16 shrink-0 sm:size-20" />
                   </div>
                 </Card>
               </button>

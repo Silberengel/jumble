@@ -26,7 +26,9 @@ export function relayThreadHeatMapSettingKey(
   relayUrls: readonly string[],
   followPubkeys: readonly string[],
   /** Serialized home kind-picker state so cache invalidates when feed filters change. */
-  feedFilterKey: string
+  feedFilterKey: string,
+  /** Sorted mute pubkeys so cache invalidates when mutes change. */
+  muteFingerprint: string
 ): string {
   const pk = pubkey.trim().toLowerCase()
   const relayKey = digestHeatMapKeyPart([...relayUrls].sort().join('\n'))
@@ -38,7 +40,8 @@ export function relayThreadHeatMapSettingKey(
       .join('\n')
   )
   const feedKey = digestHeatMapKeyPart(feedFilterKey)
-  return `relayHeatV${CACHE_V}:${pk}:${relayKey}:${followKey}:${feedKey}`
+  const muteKey = digestHeatMapKeyPart(muteFingerprint)
+  return `relayHeatV${CACHE_V}:${pk}:${relayKey}:${followKey}:${feedKey}:${muteKey}`
 }
 
 export function parseRelayThreadHeatMapCache(raw: string | null): TRelayThreadHeatMapCacheEnvelope | null {
