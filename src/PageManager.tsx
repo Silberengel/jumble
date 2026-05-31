@@ -104,7 +104,7 @@ const CalendarPrimaryPageLazy = lazy(() => import('./pages/primary/CalendarPrima
 const SidebarLazy = lazy(() => import('@/components/Sidebar'))
 const BottomNavigationBarLazy = lazy(() => import('@/components/BottomNavigationBar'))
 const TooManyRelaysAlertDialogLazy = lazy(() => import('@/components/TooManyRelaysAlertDialog'))
-const CreateWalletGuideToastLazy = lazy(() => import('@/components/CreateWalletGuideToast'))
+const PostSignupBackupRedirectLazy = lazy(() => import('@/components/PostSignupBackupRedirect'))
 
 /** Mobile primary-note overlay: lazy so these pages are not in the main bundle (routes use the same modules → shared async chunks). */
 const SecondaryProfilePageLazy = lazy(() => import('@/pages/secondary/ProfilePage'))
@@ -2414,7 +2414,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               <TooManyRelaysAlertDialogLazy />
             </Suspense>
             <Suspense fallback={null}>
-              <CreateWalletGuideToastLazy />
+              <PostSignupBackupRedirectLazy />
             </Suspense>
             </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>
@@ -2549,7 +2549,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               <TooManyRelaysAlertDialogLazy />
             </Suspense>
             <Suspense fallback={null}>
-              <CreateWalletGuideToastLazy />
+              <PostSignupBackupRedirectLazy />
             </Suspense>
             </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>

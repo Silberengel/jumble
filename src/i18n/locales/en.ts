@@ -547,12 +547,25 @@ export default {
     'Private key recovery': 'Private key recovery',
     'Your private key is stored in this browser. Clearing cache does not remove your account, but losing this browser profile does. Back up your key somewhere safe.':
       'Your private key is stored in this browser. Clearing cache does not remove your account, but losing this browser profile does. Back up your key somewhere safe.',
-    'This account uses an encrypted key (ncryptsec). You need your encryption password to sign in; the blob below is for backup only.':
-      'This account uses an encrypted key (ncryptsec). You need your encryption password to sign in; the blob below is for backup only.',
+    'This account uses an encrypted key (ncryptsec). Use Show key and your encryption password to reveal the original nsec for backup.':
+      'This account uses an encrypted key (ncryptsec). Use Show key and your encryption password to reveal the original nsec for backup.',
+    'Could not decrypt — check your password and try again.':
+      'Could not decrypt — check your password and try again.',
     'Show key': 'Show key',
     'Hide key': 'Hide key',
     'Do not share this with anyone. Anyone with this key can control your account.':
       'Do not share this with anyone. Anyone with this key can control your account.',
+    'Back up your private key now': 'Back up your private key now',
+    'Your account was just created. Copy your nsec (or ncryptsec) below and store it somewhere safe — password manager, encrypted file, or paper offline. Anyone with this key controls your account.':
+      'Your account was just created. Copy your nsec (or ncryptsec) below and store it somewhere safe — password manager, encrypted file, or paper offline. Anyone with this key controls your account.',
+    'After backing up, you can remove the key from this browser and sign in with a browser extension or bunker instead.':
+      'After backing up, you can remove the key from this browser and sign in with a browser extension or bunker instead.',
+    'Remove local private key': 'Remove local private key',
+    'Remove local private key?': 'Remove local private key?',
+    'The private key will be deleted from this browser only. Make sure you have copied it first. This account will become read-only here until you log in again with an extension, bunker, or private key.':
+      'The private key will be deleted from this browser only. Make sure you have copied it first. This account will become read-only here until you log in again with an extension, bunker, or private key.',
+    'Local private key removed. This account is read-only here until you log in with an extension, bunker, or private key again.':
+      'Local private key removed. This account is read-only here until you log in with an extension, bunker, or private key again.',
     'Copy npub': 'Copy npub',
     npub: 'npub',
     Edit: 'Edit',

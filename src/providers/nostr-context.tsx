@@ -44,6 +44,8 @@ export type TNostrContext = {
   nostrConnectionLogin: (clientSecretKey: Uint8Array, connectionString: string) => Promise<string>
   npubLogin(npub: string): Promise<string>
   removeAccount: (account: TAccountPointer) => void
+  /** Remove locally stored nsec/ncryptsec; account becomes read-only npub until remote login. */
+  discardLocalPrivateKey: () => void
   publish: (draftEvent: TDraftEvent, options?: TPublishOptions) => Promise<Event>
   attemptDelete: (targetEvent: Event) => Promise<void>
   signHttpAuth: (url: string, method: string) => Promise<string>

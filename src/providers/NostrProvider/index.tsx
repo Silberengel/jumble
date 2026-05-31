@@ -6,7 +6,6 @@ import {
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
-  FAST_WRITE_RELAY_URLS,
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   ExtendedKind,
   PROFILE_RELAY_URLS,
@@ -19,7 +18,17 @@ import {
   applyImwaldAttributionTags,
   createDeletionRequestDraftEvent
 } from '@/lib/draft-event'
-import { buildNewUserTemplateDrafts } from '@/lib/new-user-template'
+import {
+  TNewUserTemplateDrafts,
+  buildNewUserTemplateDrafts
+} from '@/lib/new-user-template'
+import { markNewUserTemplateBroadcastPending } from '@/lib/new-user-template-broadcast'
+import {
+  clearFreshSignupSkipNetworkHydrate,
+  markFreshSignupSkipNetworkHydrate,
+  schedulePostSignupBackupPrompt,
+  shouldSkipNetworkHydrateForFreshSignup
+} from '@/lib/post-signup-backup-prompt'
 import { getLatestEvent, minePow } from '@/lib/event'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import {
@@ -160,6 +169,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   /** Last account pubkey for which we cleared session UI; avoids nulling relay/profile on same-account rehydrate. */
   const lastNetworkHydrateAccountPubkeyRef = useRef<string | null>(null)
   const manualNetworkHydrateResolveRef = useRef<(() => void) | null>(null)
+  /** Prevents duplicate new-user sign/publish when login or StrictMode fires twice. */
+  const newUserSetupInFlightRef = useRef(new Set<string>())
   const [accountNetworkHydrateBump, setAccountNetworkHydrateBump] = useState(0)
   /**
    * Bumped by {@link switchAccount} after it persists the intended target to storage following
@@ -424,11 +435,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
       const lastNetworkHydrateAt = storage.getAccountNetworkHydrateAt(account.pubkey)
       const hasLocalRelayAndProfile = !!storedRelayListEvent && !!storedProfileEvent
+      const freshSignupSkipNetwork = shouldSkipNetworkHydrateForFreshSignup(account.pubkey)
       const skipNetworkHydrate =
         !userForcedAccountNetworkHydrate &&
-        hasLocalRelayAndProfile &&
-        typeof lastNetworkHydrateAt === 'number' &&
-        Date.now() - lastNetworkHydrateAt < ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS
+        (freshSignupSkipNetwork ||
+          (hasLocalRelayAndProfile &&
+            typeof lastNetworkHydrateAt === 'number' &&
+            Date.now() - lastNetworkHydrateAt < ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS))
 
       if (!skipNetworkHydrate) {
         // Fetch RSS feed list from relays if cache is missing or stale (older than 1 hour)
@@ -798,6 +811,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       } else {
         logger.debug('[NostrProvider] Skipped network hydrate (within min interval); IndexedDB cache only', {
           pubkeySlice: account.pubkey.slice(0, 12),
+          freshSignupSkipNetwork,
           lastNetworkHydrateAt,
           ageMs: Date.now() - (lastNetworkHydrateAt ?? 0)
         })
@@ -805,7 +819,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           client.updateRelayListCache(storedRelayListEvent)
         }
         void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })
-        if (!storedFollowListEvent) {
+        if (!storedFollowListEvent && !freshSignupSkipNetwork) {
           const trySetFollowListSkip = (evt: Event) => {
             if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) return
             indexedDb
@@ -1109,6 +1123,32 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const discardLocalPrivateKey = () => {
+    if (!account?.pubkey) {
+      throw new Error('Not logged in')
+    }
+    const stored = storage.findAccount(account)
+    if (!stored || (stored.signerType !== 'nsec' && stored.signerType !== 'ncryptsec')) {
+      throw new Error('No local private key stored for this account')
+    }
+    storage.removeAccount(stored)
+    const npub = nip19.npubEncode(stored.pubkey)
+    const readOnlyAccount: TAccount = {
+      pubkey: stored.pubkey,
+      signerType: 'npub',
+      npub
+    }
+    const newAccounts = storage.addAccount(readOnlyAccount)
+    storage.switchAccount(readOnlyAccount)
+    setAccounts(newAccounts)
+    setAccount({ pubkey: stored.pubkey, signerType: 'npub' })
+    setNsec(null)
+    setNcryptsec(null)
+    const npubSigner = new NpubSigner()
+    npubSigner.login(npub)
+    setSigner(npubSigner)
+  }
+
   const switchAccount = async (act: TAccountPointer | null): Promise<string | null> => {
     intentionalNip07ReadOnlyPubkeyRef.current = null
     if (!act) {
@@ -1164,14 +1204,25 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       throw new Error('invalid nsec or hex')
     }
     const pubkey = nsecSigner.login(privkey)
-    if (password) {
-      const ncryptsec = nip49.encrypt(privkey, password)
-      login(nsecSigner, { pubkey, signerType: 'ncryptsec', ncryptsec })
-    } else {
-      login(nsecSigner, { pubkey, signerType: 'nsec', nsec: nip19.nsecEncode(privkey) })
-    }
+    const act: TAccount = password
+      ? { pubkey, signerType: 'ncryptsec', ncryptsec: nip49.encrypt(privkey, password) }
+      : { pubkey, signerType: 'nsec', nsec: nip19.nsecEncode(privkey) }
+
+    let signedTemplate: Record<keyof TNewUserTemplateDrafts, VerifiedEvent> | null = null
     if (needSetup) {
-      setupNewUser(nsecSigner)
+      markFreshSignupSkipNetworkHydrate(pubkey)
+      signedTemplate = await persistNewUserTemplateLocally(nsecSigner, pubkey)
+    }
+
+    login(nsecSigner, act)
+    if (act.nsec) setNsec(act.nsec)
+    if (act.ncryptsec) setNcryptsec(act.ncryptsec)
+
+    if (needSetup && signedTemplate) {
+      markNewUserTemplateBroadcastPending(pubkey)
+      schedulePostSignupBackupPrompt(pubkey)
+      storage.setAccountNetworkHydrateAt(pubkey, Date.now())
+      clearFreshSignupSkipNetworkHydrate(pubkey)
     }
     return pubkey
   }
@@ -1893,13 +1944,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     setFavoriteRelaysEvent(stored)
   }
 
-  const setupNewUser = async (signer: ISigner) => {
-    const bootstrapRelays = [...new Set([...FAST_WRITE_RELAY_URLS, ...FAST_READ_RELAY_URLS])]
+  const persistNewUserTemplateLocally = async (
+    signer: ISigner,
+    pubkey: string
+  ): Promise<Record<keyof TNewUserTemplateDrafts, VerifiedEvent>> => {
+    if (newUserSetupInFlightRef.current.has(pubkey)) {
+      throw new Error('New user setup already in progress')
+    }
+    newUserSetupInFlightRef.current.add(pubkey)
 
     try {
-      const pubkey = await signer.getPublicKey()
       const drafts = buildNewUserTemplateDrafts(pubkey)
-
       const signDraft = async (draft: TDraftEvent) => {
         const event = await signer.signEvent(normalizeDraftEventTags(draft))
         if (!validateEvent(event)) {
@@ -1908,41 +1963,37 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         return event as VerifiedEvent
       }
 
-      const profileEvent = await signDraft(drafts.profile)
-      const favoriteRelaysEvent = await signDraft(drafts.favoriteRelays)
-      const relayListEvent = await signDraft(drafts.relayList)
-      const httpRelayListEvent = await signDraft(drafts.httpRelayList)
-      const interestListEvent = await signDraft(drafts.interestList)
-      const followListEvent = await signDraft(drafts.followList)
-      const muteListEvent = await signDraft(drafts.muteList)
+      const signed = {
+        profile: await signDraft(drafts.profile),
+        favoriteRelays: await signDraft(drafts.favoriteRelays),
+        relayList: await signDraft(drafts.relayList),
+        httpRelayList: await signDraft(drafts.httpRelayList),
+        interestList: await signDraft(drafts.interestList),
+        followList: await signDraft(drafts.followList),
+        muteList: await signDraft(drafts.muteList)
+      }
 
       await Promise.all([
-        updateProfileEvent(profileEvent),
-        updateFavoriteRelaysEvent(favoriteRelaysEvent),
-        updateRelayListEvent(relayListEvent),
-        updateHttpRelayListEvent(httpRelayListEvent),
-        updateInterestListEvent(interestListEvent),
-        updateFollowListEvent(followListEvent),
-        updateMuteListEvent(muteListEvent, [])
+        indexedDb.putReplaceableEvent(signed.profile),
+        indexedDb.putReplaceableEvent(signed.favoriteRelays),
+        indexedDb.putReplaceableEvent(signed.relayList),
+        indexedDb.putReplaceableEvent(signed.httpRelayList),
+        indexedDb.putReplaceableEvent(signed.interestList),
+        indexedDb.putReplaceableEvent(signed.followList),
+        indexedDb.putReplaceableEvent(signed.muteList)
       ])
 
-      await Promise.allSettled(
-        [
-          profileEvent,
-          favoriteRelaysEvent,
-          relayListEvent,
-          httpRelayListEvent,
-          interestListEvent,
-          followListEvent,
-          muteListEvent
-        ].map((event) => client.publishEvent(bootstrapRelays, event))
-      )
+      client.updateRelayListCache(signed.relayList)
+      void client.updateFollowListCache(signed.followList).catch(() => {})
+      void replaceableEventService.updateReplaceableEventCache(signed.profile).catch(() => {})
 
-      toast.success(
-        t('Account created — customize profile and relays in Settings.')
-      )
+      return signed
     } catch (error) {
-      logger.error('[setupNewUser] failed', { error })
+      clearFreshSignupSkipNetworkHydrate(pubkey)
+      logger.error('[setupNewUser] local persist failed', { error })
+      throw error
+    } finally {
+      newUserSetupInFlightRef.current.delete(pubkey)
     }
   }
 
@@ -1972,6 +2023,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const startLogin = useCallback(() => setOpenLoginDialog(true), [])
 
   const removeAccountStable = useEventCallback(removeAccount)
+  const discardLocalPrivateKeyStable = useEventCallback(discardLocalPrivateKey)
   const switchAccountStable = useEventCallback(switchAccount)
   const nsecLoginStable = useEventCallback(nsecLogin)
   const ncryptsecLoginStable = useEventCallback(ncryptsecLogin)
@@ -2029,6 +2081,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       nostrConnectionLogin: nostrConnectionLoginStable,
       npubLogin: npubLoginStable,
       removeAccount: removeAccountStable,
+      discardLocalPrivateKey: discardLocalPrivateKeyStable,
       publish: publishStable,
       attemptDelete: attemptDeleteStable,
       signHttpAuth: signHttpAuthStable,
@@ -2080,6 +2133,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       profileEvent,
       publishStable,
       relayList,
+      discardLocalPrivateKeyStable,
       removeAccountStable,
       requestAccountNetworkHydrate,
       rssFeedListEvent,
