@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
 import {

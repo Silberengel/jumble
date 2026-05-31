@@ -17,6 +17,7 @@ import {
   DrawerTitle
 } from '@/components/ui/drawer'
 import { MAILBOX_RELAY_COUNT_WARNING_THRESHOLD } from '@/constants'
+import { toRelaySettings } from '@/lib/link'
 import { useSecondaryPage } from '@/contexts/secondary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
