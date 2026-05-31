@@ -11,7 +11,6 @@ import { isSameAccount } from '@/lib/account'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { isPaytoCategory } from '@/lib/payto-category-display'
 import type { PaytoCategory } from '@/lib/payto-registry'
-import { setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import { randomString } from '@/lib/random'
 import {
   TAccount,
@@ -80,8 +79,7 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
   StorageKey.SHOW_RSS_FEED,
-  StorageKey.PANE_MODE,
-  StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
+  StorageKey.PANE_MODE
 ] as const
 
 class LocalStorageService {
@@ -124,7 +122,6 @@ class LocalStorageService {
   private showPublishSuccessToasts: boolean = false
   private showDetailedPublishToasts: boolean = true
   private showLiveActivitiesBanner: boolean = true
-  private restrictRelaysToMetadataLists: boolean = true
 
   constructor() {
     if (!LocalStorageService.instance) {
@@ -419,12 +416,6 @@ class LocalStorageService {
     const showLiveActivitiesStr = window.localStorage.getItem(StorageKey.SHOW_LIVE_ACTIVITIES_BANNER)
     this.showLiveActivitiesBanner = showLiveActivitiesStr !== 'false'
 
-    const restrictMetadataRelaysStr = window.localStorage.getItem(
-      StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
-    )
-    this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr !== 'false'
-    setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
-
     // Clean up deprecated data
     window.localStorage.removeItem(StorageKey.ACCOUNT_PROFILE_EVENT_MAP)
     window.localStorage.removeItem(StorageKey.ACCOUNT_FOLLOW_LIST_EVENT_MAP)
@@ -433,6 +424,7 @@ class LocalStorageService {
     window.localStorage.removeItem(StorageKey.ACCOUNT_MUTE_DECRYPTED_TAGS_MAP)
     window.localStorage.removeItem(StorageKey.ACTIVE_RELAY_SET_ID)
     window.localStorage.removeItem(StorageKey.FEED_TYPE)
+    window.localStorage.removeItem(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
   }
 
   /** Persist a setting. Keys in SETTINGS_KEYS go only to IndexedDB; others use localStorage. */
@@ -615,11 +607,6 @@ class LocalStorageService {
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const paneStr = get(StorageKey.PANE_MODE)
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
-    const restrictMetadataRelaysStr = get(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
-    if (restrictMetadataRelaysStr != null) {
-      this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr !== 'false'
-      setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
-    }
   }
 
   getRelaySets() {
@@ -1029,16 +1016,6 @@ class LocalStorageService {
   setPanelMode(mode: 'single' | 'double') {
     this.panelMode = mode
     this.persistSetting(StorageKey.PANE_MODE, mode)
-  }
-
-  getRestrictRelaysToMetadataLists(): boolean {
-    return this.restrictRelaysToMetadataLists
-  }
-
-  setRestrictRelaysToMetadataLists(restrict: boolean) {
-    this.restrictRelaysToMetadataLists = restrict
-    setRestrictConnectionsToMetadataRelaysOnly(restrict)
-    this.persistSetting(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS, restrict.toString())
   }
 
   getAccountNetworkHydrateAt(pubkey: string): number | undefined {

@@ -47,6 +47,7 @@ import {
   collectViewerWriteOutboxUrls,
   collectWriteOutboxUrlsFromRelayList
 } from '@/lib/viewer-write-outboxes'
+import { isMetadataPolicyProfileRelay } from '@/lib/metadata-policy-curated-relays'
 import {
   buildPersonalRelayKeySet,
   sanitizeRelayUrlsForFetch,
@@ -54,7 +55,7 @@ import {
   isReadOnlyRelayAllowedForViewer,
   isRelayConnectionAllowedForViewer,
   isMetadataRelaysOnlyPolicyActive,
-  isRestrictConnectionsToMetadataRelaysOnly,
+  isRelayUrlInViewerMetadataLists,
   grantRelayConnectionOperationScope,
   enterSingleRelayExplicitFetchScope,
   isSingleRelayExplicitBrowseActive,
@@ -200,7 +201,7 @@ import {
   urlMatchesConfiguredHttpIndexRelay
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
-import { initRelayPoolIdle, touchRelayPoolActivity, closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
+import { initRelayPoolIdle, touchRelayPoolActivity, closePublishTransientRelaySockets, closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
@@ -433,6 +434,8 @@ class ClientService extends EventTarget {
 
   /** Session-only: relay URL -> { successCount, sumLatencyMs } for preferring faster, proven relays when picking "random" relays. */
   private sessionRelayPublishStats = new Map<string, { successCount: number; sumLatencyMs: number }>()
+  /** Author outbox / random publish targets to close after publish (not personal or profile index). */
+  private publishTransientRelayUrls = new Set<string>()
 
   /**
    * IndexedDB profile index + NIP-66 relay discovery run once per page session. When logged in,
@@ -716,9 +719,7 @@ class ClientService extends EventTarget {
     /** IndexedDB-first: personal lists (incl. cache + HTTP) before policy or network so locals stay allowed. */
     const storageUrls = await this.collectViewerPersonalRelayUrlsFromStorage(pk)
     this.viewerHttpIndexRelayBases = storageUrls.httpIndexBases
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), {
-      viewerActive: isRestrictConnectionsToMetadataRelaysOnly()
-    })
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), { viewerActive: true })
     syncViewerRelayStackNostrLandAggrEligible(storageUrls.all)
     relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(storageUrls.cacheRelayEvent)
     this.closeMetadataPolicyDisallowedRelayConnections()
@@ -1201,6 +1202,11 @@ class ClientService extends EventTarget {
     event: NEvent,
     { specifiedRelayUrls, additionalRelayUrls, favoriteRelayUrls, blockedRelayUrls }: TPublishOptions = {}
   ) {
+    this.publishTransientRelayUrls.clear()
+    const finish = (relays: string[]): string[] => {
+      this.stagePublishTransientRelays(relays)
+      return relays
+    }
     const writeRelayPubOpts = {
       blockedRelays: blockedRelayUrls,
       applySocialKindBlockedFilter: isSocialKindBlockedKind(event.kind)
@@ -1244,9 +1250,23 @@ class ClientService extends EventTarget {
       
       if (userWriteRelays.length === 0 && seenRelays.length === 0) {
         if (!useGlobalRelayDefaults) {
-          return this.filterPublishingRelays(
+          return finish(
+            this.filterPublishingRelays(
+              buildPrioritizedWriteRelayUrls({
+                userWriteRelays: [],
+                favoriteRelays: favoriteRelayUrls ?? [],
+                maxRelays: MAX_PUBLISH_RELAYS,
+                includeGlobalFastWriteReadTails: false,
+                ...writeRelayPubOpts
+              }),
+              event
+            )
+          )
+        }
+        return finish(
+          this.filterPublishingRelays(
             buildPrioritizedWriteRelayUrls({
-              userWriteRelays: [],
+              userWriteRelays: [...FAST_WRITE_RELAY_URLS],
               favoriteRelays: favoriteRelayUrls ?? [],
               maxRelays: MAX_PUBLISH_RELAYS,
               includeGlobalFastWriteReadTails: false,
@@ -1254,29 +1274,21 @@ class ClientService extends EventTarget {
             }),
             event
           )
-        }
-        return this.filterPublishingRelays(
+        )
+      }
+      return finish(
+        this.filterPublishingRelays(
           buildPrioritizedWriteRelayUrls({
-            userWriteRelays: [...FAST_WRITE_RELAY_URLS],
+            userWriteRelays: userWriteRelays,
+            authorReadRelays: [],
             favoriteRelays: favoriteRelayUrls ?? [],
+            extraRelays: seenRelays,
             maxRelays: MAX_PUBLISH_RELAYS,
-            includeGlobalFastWriteReadTails: false,
+            includeGlobalFastWriteReadTails: useGlobalRelayDefaults,
             ...writeRelayPubOpts
           }),
           event
         )
-      }
-      return this.filterPublishingRelays(
-        buildPrioritizedWriteRelayUrls({
-          userWriteRelays: userWriteRelays,
-          authorReadRelays: [],
-          favoriteRelays: favoriteRelayUrls ?? [],
-          extraRelays: seenRelays,
-          maxRelays: MAX_PUBLISH_RELAYS,
-          includeGlobalFastWriteReadTails: useGlobalRelayDefaults,
-          ...writeRelayPubOpts
-        }),
-        event
       )
     }
 
@@ -1313,7 +1325,7 @@ class ClientService extends EventTarget {
         authorWriteCount: authorWrite.length,
         recipientReadCount: recipientRead.length
       })
-      return pubRelays
+      return finish(pubRelays)
     }
 
     // Payment attestations (9741): attester outbox + attester read inboxes (profile wall REQ) +
@@ -1355,7 +1367,7 @@ class ClientService extends EventTarget {
         senderInboxCount: senderInboxes.length,
         seenRelayCount: seenRelays.length
       })
-      return attestationRelays
+      return finish(attestationRelays)
     }
 
     let relays: string[]
@@ -1383,22 +1395,24 @@ class ClientService extends EventTarget {
           const n = normalizeRelayUrlByScheme(url) || url
           return !readOnlySet.has(n)
         })
-        return this.filterPublishingRelays(
-          buildPrioritizedWriteRelayUrls({
-            userWriteRelays:
-              spellWriteFiltered.length > 0
-                ? spellWriteFiltered
-                : useGlobalRelayDefaults
-                  ? dedupeNormalizeRelayUrlsOrdered(FAST_WRITE_RELAY_URLS)
-                  : [],
-            favoriteRelays: favoriteRelayUrls ?? [],
-            extraRelays: [],
-            maxRelays: MAX_PUBLISH_RELAYS,
-            includeGlobalFastWriteReadTails:
-              spellWriteFiltered.length > 0 ? useGlobalRelayDefaults : false,
-            ...writeRelayPubOpts
-          }),
-          event
+        return finish(
+          this.filterPublishingRelays(
+            buildPrioritizedWriteRelayUrls({
+              userWriteRelays:
+                spellWriteFiltered.length > 0
+                  ? spellWriteFiltered
+                  : useGlobalRelayDefaults
+                    ? dedupeNormalizeRelayUrlsOrdered(FAST_WRITE_RELAY_URLS)
+                    : [],
+              favoriteRelays: favoriteRelayUrls ?? [],
+              extraRelays: [],
+              maxRelays: MAX_PUBLISH_RELAYS,
+              includeGlobalFastWriteReadTails:
+                spellWriteFiltered.length > 0 ? useGlobalRelayDefaults : false,
+              ...writeRelayPubOpts
+            }),
+            event
+          )
         )
       }
 
@@ -1539,7 +1553,7 @@ class ClientService extends EventTarget {
     } else {
       relays = dedupeNormalizeRelayUrlsOrdered(relays).slice(0, MAX_PUBLISH_RELAYS)
     }
-    return relays
+    return finish(relays)
   }
 
   /** NOTICE handler: session strikes + rate-limit cooldown + debug log for fetch failures. */
@@ -1619,6 +1633,34 @@ class ClientService extends EventTarget {
   /** Clear session strike / cooldown for one relay (Settings → Session relays). */
   clearSessionRelayStrike(urlOrSessionKey: string): void {
     relaySessionStrikes.clearKey(urlOrSessionKey)
+  }
+
+  /** Stage non-personal publish targets (e.g. from {@link determineTargetRelays}) for post-publish socket cleanup. */
+  stagePublishTransientRelays(urls: readonly string[]): void {
+    for (const raw of urls) {
+      if (!raw?.trim()) continue
+      if (isRelayUrlInViewerMetadataLists(raw)) continue
+      if (isMetadataPolicyProfileRelay(raw)) continue
+      this.publishTransientRelayUrls.add(normalizeUrl(raw) || raw.trim())
+    }
+  }
+
+  /** Close author outbox / random publish sockets; keeps profile index and viewer list relays up. */
+  closePublishTransientRelays(extraUrls?: readonly string[]): void {
+    const seen = new Set<string>()
+    const urls: string[] = []
+    const add = (list: readonly string[]) => {
+      for (const raw of list) {
+        const n = normalizeUrl(raw) || raw.trim()
+        if (!n || seen.has(n)) continue
+        seen.add(n)
+        urls.push(n)
+      }
+    }
+    add([...this.publishTransientRelayUrls])
+    if (extraUrls?.length) add(extraUrls)
+    this.publishTransientRelayUrls.clear()
+    closePublishTransientRelaySockets(urls)
   }
 
   /**
@@ -1788,7 +1830,10 @@ class ClientService extends EventTarget {
           publishOpBatch.record(idx, url, rs?.success === true, rs?.error)
         })
         publishOpBatch.logEnd(status)
-        queueMicrotask(() => closeRelayPoolSocketsIfIdle(publishTargetUrls))
+        queueMicrotask(() => {
+          closePublishTransientRelaySockets(publishTargetUrls)
+          client.closePublishTransientRelays()
+        })
       }
 
       /**
@@ -2635,6 +2680,7 @@ class ClientService extends EventTarget {
       originalDedupedRelays.length === 1 &&
       (singleRelayExplicit === true || isSingleRelayExplicitBrowseActive())
     const revokeFetchScope = preserveExplicitSingleRelay ? enterSingleRelayExplicitFetchScope() : () => {}
+    const revokeOperationScope = grantRelayConnectionOperationScope(originalDedupedRelays)
     const httpKeys = new Set(
       httpIndexBasesForRelayQuery(originalDedupedRelays, this.viewerHttpIndexRelayBases).map((u) =>
         canonicalRelaySessionKey(u)
@@ -2661,6 +2707,8 @@ class ClientService extends EventTarget {
         oneose?.(true)
         relayReqLog?.onBatchEnd?.([])
       })
+      revokeOperationScope()
+      revokeFetchScope()
       return {
         close: () => {}
       }
@@ -2740,12 +2788,12 @@ class ClientService extends EventTarget {
         oneose?.(true)
         relayReqLog?.onBatchEnd?.([])
       })
+      revokeOperationScope()
+      revokeFetchScope()
       return {
         close: () => {}
       }
     }
-
-    const revokeOperationScope = grantRelayConnectionOperationScope(relays)
 
     const reqGroupId =
       relayReqLog?.groupId ??

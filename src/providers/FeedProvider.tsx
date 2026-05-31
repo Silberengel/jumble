@@ -6,12 +6,11 @@ import {
   syncViewerRelayStackNostrLandAggrEligible,
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
-import { METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT } from '@/lib/read-only-relay-personal'
-import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
-import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
@@ -264,12 +263,6 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, replyExtraRelaysIdentity, updateFeedRelayUrls])
-
-  useEffect(() => {
-    const onPolicyChange = () => updateFeedRelayUrls()
-    window.addEventListener(METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT, onPolicyChange)
-    return () => window.removeEventListener(METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT, onPolicyChange)
-  }, [updateFeedRelayUrls])
 
   return (
     <FeedContext.Provider

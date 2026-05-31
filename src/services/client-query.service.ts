@@ -444,10 +444,18 @@ export class QueryService {
     onevent?: (evt: NEvent) => void,
     options?: QueryOptions
   ): Promise<NEvent[]> {
-    urls = sanitizeRelayUrlsForFetch(urls)
+    const originalUrls = [...urls]
+    const revokeOperationScope = grantRelayConnectionOperationScope(originalUrls)
+    urls = sanitizeRelayUrlsForFetch(originalUrls)
     const sanitizedFilters = sanitizeFiltersBeforeReq(filter)
-    if (sanitizedFilters.length === 0) return []
-    if (options?.signal?.aborted) return []
+    if (sanitizedFilters.length === 0) {
+      revokeOperationScope()
+      return []
+    }
+    if (options?.signal?.aborted) {
+      revokeOperationScope()
+      return []
+    }
 
     const maxFilters = RELAY_REQ_MAX_FILTERS_PER_MESSAGE
     if (sanitizedFilters.length > maxFilters) {
@@ -535,7 +543,6 @@ export class QueryService {
     }
 
     const resultPromise = new Promise<NEvent[]>((resolve) => {
-      const revokeOperationScope = grantRelayConnectionOperationScope(urls)
       const events: NEvent[] = []
       const cancelAbortRegistrations: Array<() => void> = []
       const abortHttp = new AbortController()
@@ -845,6 +852,7 @@ export class QueryService {
       return { close: () => {} }
     }
     const originalDedupedRelays = Array.from(new Set(urls))
+    const revokeOperationScope = grantRelayConnectionOperationScope(originalDedupedRelays)
     let relays = sanitizeRelayUrlsForFetch(originalDedupedRelays)
 
     const stripSocialBlockedRelays =
@@ -870,11 +878,10 @@ export class QueryService {
     }
 
     if (relays.length === 0) {
+      revokeOperationScope()
       queueMicrotask(() => callbacks.oneose?.(true))
       return { close: () => {} }
     }
-
-    const revokeOperationScope = grantRelayConnectionOperationScope(relays)
 
     const _knownIds = new Set<string>()
     const grouped = new Map<string, Filter[]>()

@@ -4,7 +4,6 @@ import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
 import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
 import { buildWispTrendingNotesRelayUrl, isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
-  setRestrictConnectionsToMetadataRelaysOnly,
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 
@@ -43,14 +42,12 @@ describe('home feed relay policy', () => {
     expect(merged).toContain('wss://inbox.example/')
   })
 
-  it('metadata-only policy omits wisp trending from home feed relay list', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('personal-relay policy omits wisp trending from home feed relay list', () => {
     setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
     const wisp = buildWispTrendingNotesRelayUrl()
     const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [wisp])
     expect(urls).toContain('wss://relay.example.com/')
     expect(urls.some((u) => isWispTrendingNotesRelayUrl(u))).toBe(false)
-    setRestrictConnectionsToMetadataRelaysOnly(false)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 

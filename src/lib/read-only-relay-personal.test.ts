@@ -9,19 +9,15 @@ import {
   isRelayConnectionAllowedForViewer,
   resetRelayConnectionOperationScopeForTests,
   sanitizeRelayUrlsForFetch,
-  enterMetadataRelaysOnlyBypass,
   enterSingleRelayExplicitBrowse,
   enterSingleRelayExplicitFetchScope,
-  leaveMetadataRelaysOnlyBypass,
   leaveSingleRelayExplicitBrowse,
-  setRestrictConnectionsToMetadataRelaysOnly,
   setViewerPersonalRelayKeys
 } from './read-only-relay-personal'
 import { setViewerBlockedRelayUrls } from './viewer-blocked-relays'
 
 describe('read-only-relay-personal', () => {
   beforeEach(() => {
-    setRestrictConnectionsToMetadataRelaysOnly(false)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
     setViewerBlockedRelayUrls([])
     syncViewerRelayStackNostrLandAggrEligible([])
@@ -29,9 +25,8 @@ describe('read-only-relay-personal', () => {
   })
 
   afterEach(() => {
-    setRestrictConnectionsToMetadataRelaysOnly(false)
-    leaveMetadataRelaysOnlyBypass()
     leaveSingleRelayExplicitBrowse()
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
     setViewerBlockedRelayUrls([])
     syncViewerRelayStackNostrLandAggrEligible([])
     resetRelayConnectionOperationScopeForTests()
@@ -81,8 +76,7 @@ describe('read-only-relay-personal', () => {
     expect(filterReadOnlyRelaysUnlessPersonal(urls)).toEqual(urls)
   })
 
-  it('metadata-only policy blocks ad-hoc feed relays at connect time', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('personal-relay policy blocks ad-hoc feed relays at connect time', () => {
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://relay.example.com/']), { viewerActive: true })
     const urls = [
       'wss://relay.example.com/',
@@ -90,16 +84,18 @@ describe('read-only-relay-personal', () => {
       'wss://theforest.nostr1.com/',
       'wss://nostr.wirednet.jp/'
     ]
-    expect(sanitizeRelayUrlsForFetch(urls)).toEqual(['wss://relay.example.com/'])
-    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(false)
-    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(false)
+    expect(sanitizeRelayUrlsForFetch(urls)).toEqual([
+      'wss://relay.example.com/',
+      'wss://profiles.nostr1.com/'
+    ])
+    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://relay.example.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
   })
 
-  it('metadata-only policy still allows aggr when viewer lists wss://nostr.land', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('personal-relay policy still allows aggr when viewer lists wss://nostr.land', () => {
     syncViewerRelayStackNostrLandAggrEligible(['wss://nostr.land/'])
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://nostr.land/']), { viewerActive: true })
     const urls = ['wss://nostr.land/', AGGR_NOSTR_LAND_WSS, 'wss://nostr.wirednet.jp/']
@@ -112,33 +108,30 @@ describe('read-only-relay-personal', () => {
   })
 
   it('operation scope allows document and gif constant relays during fetch', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
-    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(false)
-    expect(isRelayConnectionAllowedForViewer('wss://nostr.wine/')).toBe(false)
+    expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
+    expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
     const revoke = grantRelayConnectionOperationScope([
       'wss://thecitadel.nostr1.com/',
-      'wss://nostr.wine/',
+      'wss://nostr.wirednet.jp/',
       'wss://essayist.decentnewsroom.com/'
     ])
     expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(true)
-    expect(isRelayConnectionAllowedForViewer('wss://nostr.wine/')).toBe(false)
+    expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://essayist.decentnewsroom.com/')).toBe(true)
     revoke()
   })
 
-  it('metadata-only policy allows curated relays only during an operation scope', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('personal-relay policy allows document relays only during an operation scope', () => {
     setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
-    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(false)
-    const revoke = grantRelayConnectionOperationScope(['wss://profiles.nostr1.com/'])
-    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
+    expect(isRelayConnectionAllowedForViewer('wss://essayist.decentnewsroom.com/')).toBe(false)
+    const revoke = grantRelayConnectionOperationScope(['wss://essayist.decentnewsroom.com/'])
+    expect(isRelayConnectionAllowedForViewer('wss://essayist.decentnewsroom.com/')).toBe(true)
     revoke()
-    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(false)
+    expect(isRelayConnectionAllowedForViewer('wss://essayist.decentnewsroom.com/')).toBe(false)
   })
 
-  it('metadata-only policy allows viewer cache and HTTP index relays', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('personal-relay policy allows viewer cache and HTTP index relays', () => {
     setViewerPersonalRelayKeys(
       buildPersonalRelayKeySet([
         'ws://localhost:4869/',
@@ -152,18 +145,15 @@ describe('read-only-relay-personal', () => {
     expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
   })
 
-  it('metadata-only bypass allows relays outside personal lists', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://nostr.land/']), { viewerActive: true })
-    enterMetadataRelaysOnlyBypass()
-    const urls = ['wss://nostr.land/', 'wss://relay.damus.io/']
-    expect(sanitizeRelayUrlsForFetch(urls)).toEqual(urls)
-    expect(isRelayConnectionAllowedForViewer('wss://relay.damus.io/')).toBe(true)
-    leaveMetadataRelaysOnlyBypass()
+  it('personal-relay policy allows profile index relays without operation scope', () => {
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
+    expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
+    expect(sanitizeRelayUrlsForFetch(['wss://profiles.nostr1.com/', 'wss://nostr.wirednet.jp/'])).toEqual([
+      'wss://profiles.nostr1.com/'
+    ])
   })
 
   it('explicit single-relay browse keeps user-blocked and non-list relays', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://nostr.land/']), { viewerActive: true })
     setViewerBlockedRelayUrls(['wss://relay.layer.systems/'])
     enterSingleRelayExplicitBrowse()
@@ -173,8 +163,7 @@ describe('read-only-relay-personal', () => {
     leaveSingleRelayExplicitBrowse()
   })
 
-  it('operation scope grants an explicit single-relay target under metadata-only', () => {
-    setRestrictConnectionsToMetadataRelaysOnly(true)
+  it('operation scope grants an explicit single-relay target under personal-relay policy', () => {
     setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
     const leaveFetchScope = enterSingleRelayExplicitFetchScope()
     const target = 'wss://relay.layer.systems/'

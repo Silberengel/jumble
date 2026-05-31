@@ -1615,14 +1615,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
     client.interruptBackgroundQueries()
     noteStatsService.beginPublishPriority()
+    let publishRelayCandidates: string[] = []
     try {
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
       const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey, relayList)
-      const relays = await client.determineTargetRelays(event, {
+      publishRelayCandidates = await client.determineTargetRelays(event, {
         ...options,
         favoriteRelayUrls,
         blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent)
       })
+      const relays = publishRelayCandidates
       logger.debug('[Publish] Target relays determined', { relayCount: relays.length, relays: relays.slice(0, 5) })
 
       logger.debug('[Publish] Calling client.publishEvent()...', { relayCount: relays.length, eventId: event.id?.substring(0, 8) })
@@ -1740,6 +1742,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       throw error
     } finally {
       noteStatsService.endPublishPriority()
+      client.closePublishTransientRelays(publishRelayCandidates)
     }
   }
 

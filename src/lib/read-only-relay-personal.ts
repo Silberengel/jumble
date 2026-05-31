@@ -1,7 +1,7 @@
 import {
   READ_ONLY_PERSONAL_LIST_REQUIRED_RELAY_URLS
 } from '@/constants'
-import { isMetadataPolicyOperationScopedRelay } from '@/lib/metadata-policy-curated-relays'
+import { isMetadataPolicyActiveReadGrantRelay, isMetadataPolicyProfileRelay } from '@/lib/metadata-policy-curated-relays'
 import {
   filterAggrNostrLandUnlessViewerEligible,
   getViewerRelayStackNostrLandAggrEligible,
@@ -20,38 +20,12 @@ const personalListRequiredKeySet = new Set(
 let viewerPersonalRelayKeys = new Set<string>()
 /** True after a logged-in viewer's personal relay keys were synced (including empty lists). */
 let viewerMetadataRelaysPolicyActive = false
-let restrictConnectionsToMetadataRelaysOnly = false
-/** Relay explore / search UI: metadata-only policy must not narrow relays on those pages. */
-let metadataRelaysOnlyBypassDepth = 0
 /** Relay detail page mounted: explicit single-relay browse must not be blocked by strikes / user blocks / list gates. */
 let singleRelayExplicitBrowseDepth = 0
 /** In-flight authoritative single-relay timeline REQ (see {@link enterSingleRelayExplicitFetchScope}). */
 let singleRelayExplicitFetchDepth = 0
-/** In-flight query/subscribe URLs (constants + caller stack) allowed to connect briefly under metadata-only policy. */
+/** In-flight query/subscribe URLs allowed to connect briefly under the personal-relay read policy. */
 const operationScopedRelayKeys = new Set<string>()
-
-/** Dispatched when metadata-only relay policy toggles (feeds should rebuild relay URL lists). */
-export const METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT = 'jumble:metadata-relays-only-changed'
-
-export function setRestrictConnectionsToMetadataRelaysOnly(enabled: boolean): void {
-  restrictConnectionsToMetadataRelaysOnly = enabled
-}
-
-export function isRestrictConnectionsToMetadataRelaysOnly(): boolean {
-  return restrictConnectionsToMetadataRelaysOnly
-}
-
-export function enterMetadataRelaysOnlyBypass(): void {
-  metadataRelaysOnlyBypassDepth++
-}
-
-export function leaveMetadataRelaysOnlyBypass(): void {
-  metadataRelaysOnlyBypassDepth = Math.max(0, metadataRelaysOnlyBypassDepth - 1)
-}
-
-export function isMetadataRelaysOnlyBypassActive(): boolean {
-  return metadataRelaysOnlyBypassDepth > 0
-}
 
 export function enterSingleRelayExplicitBrowse(): void {
   singleRelayExplicitBrowseDepth++
@@ -91,13 +65,12 @@ function shouldPreserveExplicitSingleRelay(
   return isSingleRelayExplicitPolicyActive()
 }
 
-/** Logged-in viewer with metadata-only mode: only connect reads to the viewer's relay lists. */
+/**
+ * Logged-in viewer: only connect reads to personal relay lists, aggr when eligible,
+ * operation-scoped URLs, and explicit single-relay browse.
+ */
 export function isMetadataRelaysOnlyPolicyActive(): boolean {
-  return (
-    restrictConnectionsToMetadataRelaysOnly &&
-    viewerMetadataRelaysPolicyActive &&
-    !isMetadataRelaysOnlyBypassActive()
-  )
+  return viewerMetadataRelaysPolicyActive
 }
 
 export function isRelayUrlInViewerMetadataLists(url: string): boolean {
@@ -106,12 +79,13 @@ export function isRelayUrlInViewerMetadataLists(url: string): boolean {
 }
 
 /**
- * Under metadata-only policy: viewer NIP-65 / favorites / cache / HTTP lists, plus aggr.nostr.land when
- * wss://nostr.land is listed, plus relays in an active {@link grantRelayConnectionOperationScope}.
+ * Under personal-relay read policy: viewer NIP-65 / favorites / cache / HTTP lists, aggr.nostr.land when
+ * wss://nostr.land is listed, {@link PROFILE_RELAY_URLS}, plus relays in an active operation scope.
  */
 export function isRelayAllowedUnderMetadataOnlyPolicy(url: string): boolean {
   if (isRelayUrlInViewerMetadataLists(url)) return true
   if (getViewerRelayStackNostrLandAggrEligible() && relayUrlIsAggrNostrLand(url)) return true
+  if (isMetadataPolicyProfileRelay(url)) return true
   const key = relayUrlKey(url)
   if (key.length > 0 && operationScopedRelayKeys.has(key)) return true
   return false
@@ -119,21 +93,17 @@ export function isRelayAllowedUnderMetadataOnlyPolicy(url: string): boolean {
 
 /**
  * Allow read connects to non-personal relays only for the lifetime of an in-flight query/subscribe.
- * Under metadata-only policy, only {@link isMetadataPolicyOperationScopedRelay} URLs are granted
- * (document / GIF / profile stacks — not FAST_READ or feed widening).
+ * Call with the caller's intended URL list **before** {@link sanitizeRelayUrlsForFetch}.
  */
 export function grantRelayConnectionOperationScope(urls: readonly string[]): () => void {
   if (!isMetadataRelaysOnlyPolicyActive()) return () => {}
+  const singleExplicit = urls.length === 1 && isSingleRelayExplicitPolicyActive()
   const added: string[] = []
   for (const raw of urls) {
     if (isRelayUrlInViewerMetadataLists(raw)) continue
     if (getViewerRelayStackNostrLandAggrEligible() && relayUrlIsAggrNostrLand(raw)) continue
-    if (
-      !isMetadataPolicyOperationScopedRelay(raw) &&
-      !(urls.length === 1 && isSingleRelayExplicitPolicyActive())
-    ) {
-      continue
-    }
+    if (isMetadataPolicyProfileRelay(raw)) continue
+    if (!isMetadataPolicyActiveReadGrantRelay(raw) && !singleExplicit) continue
     const key = relayUrlKey(raw)
     if (!key || operationScopedRelayKeys.has(key)) continue
     operationScopedRelayKeys.add(key)
@@ -149,7 +119,7 @@ export function resetRelayConnectionOperationScopeForTests(): void {
   operationScopedRelayKeys.clear()
 }
 
-/** Block read-side pool connects / HTTP index fetches when metadata-only policy is on. */
+/** Block read-side pool connects / HTTP index fetches when personal-relay policy is on. */
 export function isRelayConnectionAllowedForViewer(url: string): boolean {
   if (isSingleRelayExplicitPolicyActive()) return true
   if (!isMetadataRelaysOnlyPolicyActive()) return true
@@ -207,7 +177,7 @@ function isAllowedForKeys(url: string, personalKeys: ReadonlySet<string>): boole
   return key.length > 0 && personalKeys.has(key)
 }
 
-/** Under metadata-only policy: viewer relay lists + aggr.nostr.land when nostr.land is listed. */
+/** Under personal-relay policy: viewer lists + aggr + profile index + in-flight operation scope. */
 function filterRelayUrlsToMetadataOnlyPersonalLists(
   urls: readonly string[],
   personalKeys: ReadonlySet<string>
@@ -216,16 +186,18 @@ function filterRelayUrlsToMetadataOnlyPersonalLists(
     const key = relayUrlKey(u)
     if (key.length > 0 && personalKeys.has(key)) return true
     if (getViewerRelayStackNostrLandAggrEligible() && relayUrlIsAggrNostrLand(u)) return true
+    if (isMetadataPolicyProfileRelay(u)) return true
+    if (key.length > 0 && operationScopedRelayKeys.has(key)) return true
     return false
   })
 }
 
-/** When metadata-only is on, omit global FAST_READ / trending widening from REQ stacks. */
+/** Omit global FAST_READ / trending widening from REQ stacks under personal-relay policy. */
 export function viewerIncludeGlobalFastReadRelayLayer(): boolean {
   return !isMetadataRelaysOnlyPolicyActive()
 }
 
-/** When metadata-only is on, omit {@link FAST_WRITE_RELAY_URLS} from read-side merge/fetch stacks (publish unchanged). */
+/** Omit {@link FAST_WRITE_RELAY_URLS} from read-side merge/fetch stacks (publish unchanged). */
 export function viewerIncludeGlobalFastWriteRelayLayer(): boolean {
   return !isMetadataRelaysOnlyPolicyActive()
 }

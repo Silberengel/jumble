@@ -11,12 +11,10 @@ import { useNostr } from '@/providers/NostrProvider'
 import { BookOpen } from 'lucide-react'
 import { TSearchParams } from '@/types'
 import { Button } from '@/components/ui/button'
-import { useBypassMetadataRelaysOnlyPolicy } from '@/hooks/useBypassMetadataRelaysOnlyPolicy'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
-  useBypassMetadataRelaysOnlyPolicy()
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const { push } = useSecondaryPage()

@@ -388,7 +388,7 @@ export const StorageKey = {
   SHOW_RSS_FEED: 'showRssFeed',
   PANE_MODE: 'paneMode',
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',
-  /** When `'true'`, only connect to relays on the viewer's NIP-65 / favorites / cache / HTTP lists. */
+  /** @deprecated Removed — personal-relay read policy is always on when logged in. */
   RESTRICT_RELAYS_TO_METADATA_LISTS: 'restrictRelaysToMetadataLists',
   /** When `'true'`, show Sonner toasts after successful publishes (default off). */
   SHOW_PUBLISH_SUCCESS_TOASTS: 'showPublishSuccessToasts',
@@ -529,11 +529,8 @@ export const MONERO_NOSTR_RELAY_URLS = [
 /** Relays used for NIP-94 file metadata (kind 1063) / GIF discovery and publish.
  *  Publish to all of these so GIFs are discoverable across clients; some may be temporarily down. */
 export const GIF_RELAY_URLS = [
-  'wss://relay.damus.io',
-  'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
-  'wss://nos.lol',
-  'wss://nostr.mom'
+  'wss://gifbuddy.lol'
 ]
 
 export const SEARCHABLE_RELAY_URLS = [
@@ -552,8 +549,8 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://profiles.nostrver.se/',
-  'wss://indexer.coracle.social/',
-  'wss://thecitadel.nostr1.com'
+  'wss://thecitadel.nostr1.com',
+  'wss://indexer.coracle.social/'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

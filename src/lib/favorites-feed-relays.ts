@@ -20,7 +20,7 @@ import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
-import { viewerIncludeGlobalFastReadRelayLayer, viewerIncludeGlobalFastWriteRelayLayer } from '@/lib/read-only-relay-personal'
+import { viewerIncludeGlobalFastReadRelayLayer } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'

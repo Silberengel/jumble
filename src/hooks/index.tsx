@@ -1,4 +1,3 @@
-export * from './useBypassMetadataRelaysOnlyPolicy'
 export * from './useRelayPageFeedPolicy'
 export * from './useNearViewport'
 export * from './useFetchCalendarRsvps'

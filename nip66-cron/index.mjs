@@ -328,8 +328,9 @@ async function publishEvent (relayUrls, event) {
   let ok = 0
   const conns = []
   for (const url of relayUrls) {
+    let ws
     try {
-      const ws = new WebSocket(url, { handshakeTimeout: 8000 })
+      ws = new WebSocket(url, { handshakeTimeout: 8000 })
       await new Promise((resolve, reject) => {
         let timeoutId
         let resolved = false
@@ -374,6 +375,9 @@ async function publishEvent (relayUrls, event) {
       })
     } catch (err) {
       log('Publish relay error', { url, err: err.message })
+      if (ws) {
+        try { ws.close() } catch (_) {}
+      }
     }
   }
   for (const ws of conns) {

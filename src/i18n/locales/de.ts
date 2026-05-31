@@ -116,9 +116,6 @@ export default {
     'Follows you': 'Folgt dir',
     'Relay Settings': 'Relay-Einstellungen',
     'Relays and Storage Settings': 'Relays und Speicher',
-    'Only my relay lists': 'Nur meine Relay-Listen',
-    'When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. Publishing is unchanged. Relay explore and Search pages are exempt.':
-      'Wenn aktiv, bleiben Lese-Verbindungen auf deinen Listen plus den eingebauten Profilindex-Relays (profiles.nostr1.com, relay.damus.io, …). Andere Relays für Feeds, Threads oder Suche werden nur bei Listeneintrag genutzt. Veröffentlichen bleibt unverändert. Relay-Entdecken und Suche sind ausgenommen.',
     'Relay set name': 'Relay-Set Name',
     'Add a new relay set': 'Neues Relay-Set hinzufügen',
     Add: 'Hinzufügen',

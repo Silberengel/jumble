@@ -43,6 +43,30 @@ function relayKeyForCuratedSet(url: string): string {
   return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
 }
 
+/** Relays grantable for the duration of an active read query/subscribe (not general feed widening). */
+const METADATA_POLICY_ACTIVE_READ_GRANT_RELAY_LISTS: readonly (readonly string[])[] = [
+  ...METADATA_POLICY_OPERATION_SCOPED_RELAY_LISTS,
+  SEARCHABLE_RELAY_URLS,
+  READ_ONLY_RELAY_URLS,
+  NIP66_DISCOVERY_RELAY_URLS
+]
+
+let activeReadGrantRelayKeySet: ReadonlySet<string> | null = null
+
+function getActiveReadGrantRelayKeySet(): ReadonlySet<string> {
+  if (!activeReadGrantRelayKeySet) {
+    const out = new Set<string>()
+    for (const list of METADATA_POLICY_ACTIVE_READ_GRANT_RELAY_LISTS) {
+      for (const u of list) {
+        const key = relayKeyForCuratedSet(u)
+        if (key) out.add(key)
+      }
+    }
+    activeReadGrantRelayKeySet = out
+  }
+  return activeReadGrantRelayKeySet
+}
+
 function getCuratedRelayKeySet(): ReadonlySet<string> {
   if (!curatedRelayKeySet) {
     const out = new Set<string>()
@@ -83,6 +107,12 @@ export function isMetadataPolicyOperationScopedRelay(url: string): boolean {
   return key.length > 0 && getOperationScopedRelayKeySet().has(key)
 }
 
+/** Search / index / discovery stacks allowed only while an active read operation lists them. */
+export function isMetadataPolicyActiveReadGrantRelay(url: string): boolean {
+  const key = relayKeyForCuratedSet(url)
+  return key.length > 0 && getActiveReadGrantRelayKeySet().has(key)
+}
+
 let profileRelayKeySet: ReadonlySet<string> | null = null
 
 function getProfileRelayKeySet(): ReadonlySet<string> {
@@ -107,5 +137,6 @@ export function isMetadataPolicyProfileRelay(url: string): boolean {
 export function resetMetadataPolicyCuratedRelayKeysForTests(): void {
   curatedRelayKeySet = null
   operationScopedRelayKeySet = null
+  activeReadGrantRelayKeySet = null
   profileRelayKeySet = null
 }

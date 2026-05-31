@@ -4,6 +4,10 @@ import { normalizeRelayUrlByScheme } from '@/lib/url'
 import { collectViewerReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import {
+  viewerIncludeGlobalFastReadRelayLayer,
+  viewerIncludeGlobalFastWriteRelayLayer
+} from '@/lib/read-only-relay-personal'
 import client from '@/services/client.service'
 
 /**

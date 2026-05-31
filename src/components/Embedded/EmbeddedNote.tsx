@@ -23,8 +23,6 @@ import {
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
 import {
-  enterMetadataRelaysOnlyBypass,
-  leaveMetadataRelaysOnlyBypass,
   sanitizeRelayUrlsForFetch
 } from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
@@ -305,7 +303,6 @@ function EmbeddedNoteFetched({
   containingEventRef.current = containingEvent
 
   useEffect(() => {
-    enterMetadataRelaysOnlyBypass()
     let cancelled = false
     const noteKey = noteId.trim()
     embedNoteKeyRef.current = noteKey
@@ -386,7 +383,6 @@ function EmbeddedNoteFetched({
     if (eventRef.current) {
       return () => {
         cancelled = true
-        leaveMetadataRelaysOnlyBypass()
         if (retryIntervalRef.current) {
           clearInterval(retryIntervalRef.current)
           retryIntervalRef.current = null
@@ -406,7 +402,6 @@ function EmbeddedNoteFetched({
 
     return () => {
       cancelled = true
-      leaveMetadataRelaysOnlyBypass()
       if (retryIntervalRef.current) {
         clearInterval(retryIntervalRef.current)
         retryIntervalRef.current = null
