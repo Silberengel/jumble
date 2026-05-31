@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   filterContextAuthorReadRelaysForPublish,
   filterRelaysForEventPublish,
+  isReadOnlyRelayUrl,
   isRelayPublishPolicyRejection,
   relayAllowsPublishKind
 } from './relay-publish-filter'
@@ -30,6 +31,17 @@ describe('relay-publish-filter', () => {
       kinds.ShortTextNote
     )
     expect(out).toEqual(['wss://relay.primal.net/'])
+  })
+
+  it('strips filter.nostr.wine broadcast paths (hostname match on READ_ONLY_RELAY_URLS)', () => {
+    const broadcast =
+      'wss://filter.nostr.wine/npub13epj452d892app3mjath3uxgs9l03rylzxwkymdp50avukztmfeschauwt?broadcast=true'
+    expect(isReadOnlyRelayUrl(broadcast)).toBe(true)
+    const out = filterRelaysForEventPublish(
+      ['wss://relay.damus.io/', broadcast],
+      kinds.Reaction
+    )
+    expect(out).toEqual(['wss://relay.damus.io/'])
   })
 
   it('strips profile mirrors from author read hints', () => {

@@ -33,6 +33,25 @@ export function isKind10243HttpRelayTagUrl(url: string): boolean {
   return /^https?:\/\/.+/i.test(u)
 }
 
+/** Bech32 nostr identifiers (npub, nevent, …) — not relay URLs. */
+export function looksLikeNostrBech32Identifier(value: string): boolean {
+  const v = value.trim().replace(/^nostr:/i, '').trim()
+  if (!v) return false
+  if (/^[0-9a-f]{64}$/i.test(v)) return true
+  return /^(npub|nprofile|nevent|note|naddr)1[a-z0-9]+$/i.test(v)
+}
+
+/** True when normalized to a WebSocket relay or kind-10243 HTTP index base. */
+export function isValidRelayFetchUrl(url: string): boolean {
+  const trimmed = url.trim()
+  if (!trimmed || looksLikeNostrBech32Identifier(trimmed)) return false
+  if (isKind10243HttpRelayTagUrl(trimmed)) {
+    return Boolean(normalizeHttpRelayUrl(trimmed))
+  }
+  const ws = normalizeUrl(trimmed)
+  return Boolean(ws && isWebsocketUrl(ws))
+}
+
 /** @deprecated Prefer {@link isKind10243HttpRelayTagUrl} only when parsing kind 10243. */
 export function isHttpRelayUrl(url: string): boolean {
   return isKind10243HttpRelayTagUrl(url)
@@ -216,7 +235,9 @@ export function normalizeUrl(url: string): string {
     const trimmed = url.trim()
     if (!trimmed) return ''
     if (!trimmed.includes('://')) {
-      logger.warn('WebSocket relay URL requires ws: or wss: prefix', { url: trimmed })
+      if (!looksLikeNostrBech32Identifier(trimmed)) {
+        logger.warn('WebSocket relay URL requires ws: or wss: prefix', { url: trimmed })
+      }
       return ''
     }
 

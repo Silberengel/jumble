@@ -726,7 +726,9 @@ export class ReplaceableEventService {
         const queryOpts = {
           replaceableRace: useReplaceableRace,
           eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
-          globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000
+          globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000,
+          /** Feed avatar batches must not be aborted by feed/search {@link interruptBackgroundQueries}. */
+          ...(kind === kinds.Metadata ? { foreground: true as const } : {})
         }
 
         let events: NEvent[]

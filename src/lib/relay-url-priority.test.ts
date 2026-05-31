@@ -8,6 +8,22 @@ import { buildProfilePageReadRelayUrls, getFavoritesFeedRelayUrls } from '@/lib/
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
 
+describe('dedupeNormalizeRelayUrlsOrdered', () => {
+  it('drops npub, nevent, and other non-relay strings', () => {
+    const npub = 'npub1uq6dv4yq94704gk5r22jsqg9gy2wpxkk5dft9q5gugc8tj53nq2qg5q22d'
+    const nevent =
+      'nevent1qvzqqqqqqypzpcp56e2gqttul23dgx549qqs2sg5uzdddg6jk2pg3c3swh9frxq5qqsx3aamhhkjej4jhn0v7693j6hj08mpp7j87w2mt8vdnjja60t04rgalkuxh'
+    expect(
+      dedupeNormalizeRelayUrlsOrdered([
+        'wss://relay.example.com/',
+        npub,
+        nevent,
+        'not-a-relay'
+      ])
+    ).toEqual(['wss://relay.example.com/'])
+  })
+})
+
 describe('filterContextAuthorReadRelaysForPublish', () => {
   it('drops loopback, LAN, .onion, and profile/index mirrors; keeps public relays', () => {
     const out = filterContextAuthorReadRelaysForPublish([

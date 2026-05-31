@@ -471,7 +471,7 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://filter.nostr.wine',
   'wss://primus.nostr1.com',
   'wss://feeds.nostrarchives.com',
-  'wss://feeds.nostrarchives.com/notes/trending/reactions/today'
+  'wss://spatia-arcana.com'
 ]
 
 /**

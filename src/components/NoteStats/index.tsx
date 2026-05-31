@@ -184,8 +184,8 @@ export default function NoteStats({
     >
       <div
         className={cn(
-          'flex w-full min-w-0 flex-wrap items-center justify-start gap-x-3 gap-y-1 sm:gap-x-4',
-          '[&_svg]:size-[15px] [&_button]:min-h-9 [&_button]:max-w-full [&_button]:px-1 sm:[&_button]:px-1.5',
+          'flex w-full min-w-0 flex-wrap items-center justify-start gap-x-6 gap-y-2 sm:gap-x-5',
+          '[&_svg]:size-5 [&_button]:min-h-11 [&_button]:max-w-full [&_button]:px-3 [&_button]:touch-manipulation sm:[&_button]:min-h-10 sm:[&_button]:px-2',
           loading ? 'animate-pulse' : '',
           classNames?.buttonBar
         )}

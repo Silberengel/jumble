@@ -225,7 +225,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
         <button
           type="button"
           className={cn(
-            'group flex h-full items-center px-1.5',
+            'group flex h-full items-center px-2 touch-manipulation',
             disable ? 'cursor-not-allowed' : 'cursor-pointer'
           )}
           title={zapButtonTitle}

@@ -4,7 +4,7 @@ import { toNote, toNoteList } from '@/lib/link'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
 import { randomString } from '@/lib/random'
-import { isKind10243HttpRelayTagUrl, isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpRelayUrl } from '@/lib/url'
+import { isKind10243HttpRelayTagUrl, isWebsocketUrl, looksLikeNostrBech32Identifier, normalizeAnyRelayUrl, normalizeHttpRelayUrl } from '@/lib/url'
 import { normalizeToDTag } from '@/lib/search-parser'
 import { cn } from '@/lib/utils'
 import { useSmartNoteNavigation, useSmartHashtagNavigation } from '@/PageManager'
@@ -55,8 +55,10 @@ const SearchBar = forwardRef<
     if (['w', 'ws', 'ws:', 'ws:/', 'wss', 'wss:', 'wss:/'].includes(input)) {
       return undefined
     }
+    const trimmed = input.trim()
+    if (!trimmed || looksLikeNostrBech32Identifier(trimmed)) return undefined
     try {
-      const n = normalizeAnyRelayUrl(input) || normalizeHttpRelayUrl(input)
+      const n = normalizeAnyRelayUrl(trimmed) || normalizeHttpRelayUrl(trimmed)
       if (!n || (!isWebsocketUrl(n) && !isKind10243HttpRelayTagUrl(n))) return undefined
       return n
     } catch {

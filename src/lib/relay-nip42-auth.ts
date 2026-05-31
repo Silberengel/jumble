@@ -19,6 +19,16 @@ export function isRelayAuthRequiredErrorMessage(message: string): boolean {
   return /auth-required/i.test(message)
 }
 
+/** Socket dropped between AUTH and EVENT, or nostr-tools {@link SendingOnClosedConnection}. */
+export function isRelayConnectionClosedError(err: unknown): boolean {
+  if (err != null && typeof err === 'object' && 'name' in err) {
+    const name = String((err as { name: unknown }).name)
+    if (name === 'SendingOnClosedConnection') return true
+  }
+  const msg = err instanceof Error ? err.message : String(err)
+  return /SendingOnClosedConnection|on a closed connection|relay connection closed|websocket closed/i.test(msg)
+}
+
 /** nostr-tools default when {@link Subscription.close} runs from the client. */
 export function isRelaySubscriptionClosedByCaller(reason: string): boolean {
   return reason.trim() === 'closed by caller'

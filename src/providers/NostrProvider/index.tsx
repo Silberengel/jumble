@@ -39,6 +39,7 @@ import {
   mergeHydratedCacheRelayListEvents
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { buildAccountSessionNetworkHydrateRelayUrls } from '@/lib/relay-list-builder'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import {
   parseBlockedRelayUrlsFromEvent,
@@ -445,6 +446,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             Date.now() - lastNetworkHydrateAt < ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS))
 
       if (!skipNetworkHydrate) {
+        /** Personal-relay policy must be synced before network REQs so profile index relays stay allowed. */
+        await client.syncViewerPersonalRelayKeys(account.pubkey)
+        const hydrateNetworkRelays = buildAccountSessionNetworkHydrateRelayUrls({
+          relayListEvent: storedRelayListEvent,
+          cacheRelayListEvent: storedCacheRelayListEvent,
+          httpRelayListEvent: storedHttpRelayListEvent ?? null,
+          favoriteRelaysEvent: storedFavoriteRelaysEvent,
+          blockedRelays
+        })
+
         // Fetch RSS feed list from relays if cache is missing or stale (older than 1 hour)
         const rssFeedListStale =
           !storedRssFeedListEvent ||
@@ -457,7 +468,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           })
 
           queryService
-            .fetchEvents(FAST_READ_RELAY_URLS.concat(PROFILE_RELAY_URLS), {
+            .fetchEvents(hydrateNetworkRelays, {
               kinds: [ExtendedKind.RSS_FEED_LIST],
               authors: [account.pubkey],
               limit: 1
@@ -500,15 +511,15 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
 
         const [relayListEvents, cacheRelayListEvents, httpRelayListEvents] = await Promise.all([
-        queryService.fetchEvents(FAST_READ_RELAY_URLS, {
+        queryService.fetchEvents(hydrateNetworkRelays, {
           kinds: [kinds.RelayList],
           authors: [account.pubkey]
         }, hydrateFetchOpts),
-        queryService.fetchEvents(FAST_READ_RELAY_URLS, {
+        queryService.fetchEvents(hydrateNetworkRelays, {
           kinds: [ExtendedKind.CACHE_RELAYS],
           authors: [account.pubkey]
         }, hydrateFetchOpts),
-        queryService.fetchEvents(FAST_READ_RELAY_URLS, {
+        queryService.fetchEvents(hydrateNetworkRelays, {
           kinds: [ExtendedKind.HTTP_RELAY_LIST],
           authors: [account.pubkey],
           limit: 1
@@ -550,13 +561,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
       setRelayList(mergedRelayList)
 
-      const normalizedRelays = [
-        ...mergedRelayList.write.map((url: string) => normalizeUrl(url) || url),
-        ...mergedRelayList.read.map((url: string) => normalizeUrl(url) || url),
-        ...FAST_READ_RELAY_URLS.map((url: string) => normalizeUrl(url) || url),
-        ...PROFILE_RELAY_URLS.map((url: string) => normalizeUrl(url) || url)
-      ]
-      const fetchRelays = Array.from(new Set(normalizedRelays)).slice(0, 16)
+      const fetchRelays = buildAccountSessionNetworkHydrateRelayUrls({
+        relayListEvent: relayListEvent ?? storedRelayListEvent,
+        cacheRelayListEvent: cacheRelayListEvent ?? storedCacheRelayListEvent,
+        httpRelayListEvent: httpRelayListEventFetched ?? storedHttpRelayListEvent ?? null,
+        favoriteRelaysEvent: storedFavoriteRelaysEvent,
+        blockedRelays
+      })
       const events = await queryService.fetchEvents(fetchRelays, [
         {
           kinds: [...AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS],
@@ -798,7 +809,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      await replaceableEventService
+      void replaceableEventService
         .refreshAuthorPublishedReplaceablesFromRelays(account.pubkey)
         .catch((err) => {
           logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })

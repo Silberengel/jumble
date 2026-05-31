@@ -33,7 +33,8 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     ) {
       return
     }
-    client.interruptBackgroundQueries({ closePooledRelayConnections: true })
+    /** Yield pool capacity to search REQs without closing in-flight NIP-50 sockets (that zeroed results). */
+    client.interruptBackgroundQueries()
   }, [searchParams?.type, searchParams?.search, searchParams?.input])
 
   /** NIP-50 / index relays — always queried first on their own shard so dead personal relays cannot zero out search. */

@@ -244,13 +244,13 @@ export function LikeButtonWithStats({
   const likeIconButton = (
     <button
       type="button"
-      className="flex h-full items-center gap-0.5 px-1.5 text-muted-foreground enabled:hover:text-primary"
+      className="flex h-full min-w-0 items-center gap-1.5 px-2 text-muted-foreground enabled:hover:text-primary touch-manipulation"
       title={t('Like')}
       disabled={liking}
       onClick={openReactionPicker}
     >
       {liking ? (
-        <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+        <Skeleton className="size-5 shrink-0 rounded-full" aria-hidden />
       ) : myLastEmoji && !useIconOnlyLikeTrigger ? (
         <Emoji emoji={myLastEmoji} classNames={{ img: EMOJI_IMG_INLINE_CLASS }} />
       ) : (
@@ -288,7 +288,7 @@ export function LikeButtonWithStats({
             >
               <button
                 type="button"
-                className="flex h-full shrink-0 items-center px-1.5 sm:px-2 enabled:hover:text-primary"
+                className="flex h-full shrink-0 items-center px-2 sm:px-2.5 enabled:hover:text-primary touch-manipulation"
                 title={emoji === '+' ? t('Upvote') : t('Downvote')}
                 disabled={liking}
                 onClick={() => {
@@ -296,7 +296,7 @@ export function LikeButtonWithStats({
                 }}
               >
                 {liking ? (
-                  <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden />
+                  <Skeleton className="size-5 shrink-0 rounded-full" aria-hidden />
                 ) : (
                   <span className="text-base leading-none" aria-hidden>
                     {arrow}

@@ -7,6 +7,7 @@ import {
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import {
   isLocalNetworkUrl,
+  isValidRelayFetchUrl,
   normalizeAnyRelayUrl,
   normalizeRelayUrlByScheme,
   normalizeUrl
@@ -18,7 +19,8 @@ export function dedupeNormalizeRelayUrlsOrdered(urls: readonly string[]): string
   const seen = new Set<string>()
   const out: string[] = []
   for (const u of urls) {
-    const n = normalizeRelayUrlByScheme(u) || u.trim()
+    if (!isValidRelayFetchUrl(u)) continue
+    const n = normalizeRelayUrlByScheme(u)
     if (!n || seen.has(n)) continue
     seen.add(n)
     out.push(n)

@@ -10,6 +10,7 @@
  */
 
 import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
@@ -32,6 +33,57 @@ import type { Event } from 'nostr-tools'
 
 /** Max author NIP-65 read / write URLs merged into comprehensive read lists (shared with viewer first). */
 export const AUTHOR_NIP65_RELAY_CAP = 2
+
+/**
+ * Relays for logged-in account session network hydrate (NostrProvider).
+ * Uses the viewer's cached mailbox / favorites plus {@link PROFILE_RELAY_URLS} — not {@link FAST_READ_RELAY_URLS},
+ * which are blocked under the personal-relay read policy and caused empty/slow startup merges.
+ */
+export function buildAccountSessionNetworkHydrateRelayUrls(options: {
+  relayListEvent?: Event | null
+  cacheRelayListEvent?: Event | null
+  httpRelayListEvent?: Event | null
+  favoriteRelaysEvent?: Event | null
+  blockedRelays?: string[]
+  cap?: number
+}): string[] {
+  const blocked = options.blockedRelays ?? []
+  const seen = new Set<string>()
+  const out: string[] = []
+  const push = (raw: string | undefined) => {
+    if (!raw) return
+    const n = normalizeAnyRelayUrl(raw) || normalizeUrl(raw) || raw.trim()
+    if (!n) return
+    const key = relayKey(n)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(n)
+  }
+
+  if (options.relayListEvent) {
+    const rl = getRelayListFromEvent(options.relayListEvent, blocked)
+    for (const u of [...rl.read, ...rl.write, ...(rl.httpRead ?? []), ...(rl.httpWrite ?? [])]) {
+      push(u)
+    }
+  }
+  if (options.cacheRelayListEvent) {
+    const crl = getRelayListFromEvent(options.cacheRelayListEvent)
+    for (const u of [...crl.read, ...crl.write]) push(u)
+  }
+  if (options.httpRelayListEvent) {
+    const hrl = getHttpRelayListFromEvent(options.httpRelayListEvent, blocked)
+    for (const u of [...hrl.httpRead, ...hrl.httpWrite]) push(u)
+  }
+  if (options.favoriteRelaysEvent) {
+    for (const [tag, val] of options.favoriteRelaysEvent.tags) {
+      if (tag === 'relay' && val) push(val)
+    }
+  }
+  for (const u of PROFILE_RELAY_URLS) push(u)
+
+  const cap = options.cap ?? 16
+  return out.slice(0, cap)
+}
 
 function relayKey(url: string): string {
   return canonicalRelaySessionKey(url)

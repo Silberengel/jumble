@@ -16,6 +16,20 @@ export const PROFILE_INDEX_ONLY_RELAY_URLS = [
   'wss://indexer.coracle.social/'
 ] as const
 
+function relayKey(url: string): string {
+  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+}
+
+function relayHostname(url: string): string | null {
+  const normalized = normalizeAnyRelayUrl(url) || url.trim()
+  if (!normalized) return null
+  try {
+    return new URL(normalized).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
 const profileIndexOnlyKeySet = new Set(
   PROFILE_INDEX_ONLY_RELAY_URLS.map((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase()).filter(Boolean)
 )
@@ -24,20 +38,30 @@ const readOnlyKeySet = new Set(
   READ_ONLY_RELAY_URLS.map((u) => (normalizeAnyRelayUrl(u) || u).toLowerCase()).filter(Boolean)
 )
 
+const profileIndexOnlyHostSet = new Set(
+  PROFILE_INDEX_ONLY_RELAY_URLS.map((u) => relayHostname(u)).filter((h): h is string => !!h)
+)
+
+const readOnlyHostSet = new Set(
+  READ_ONLY_RELAY_URLS.map((u) => relayHostname(u)).filter((h): h is string => !!h)
+)
+
 const profileIndexPublishKindSet = new Set<number>(AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS)
 
-function relayKey(url: string): string {
-  return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
+/** True when `url` matches a known entry exactly or shares its hostname (e.g. filter.nostr.wine/npub… paths). */
+function relayMatchesHostOrExact(url: string, keySet: ReadonlySet<string>, hostSet: ReadonlySet<string>): boolean {
+  const key = relayKey(url)
+  if (key.length > 0 && keySet.has(key)) return true
+  const host = relayHostname(url)
+  return host != null && hostSet.has(host)
 }
 
 export function isProfileIndexOnlyRelay(url: string): boolean {
-  const key = relayKey(url)
-  return key.length > 0 && profileIndexOnlyKeySet.has(key)
+  return relayMatchesHostOrExact(url, profileIndexOnlyKeySet, profileIndexOnlyHostSet)
 }
 
 export function isReadOnlyRelayUrl(url: string): boolean {
-  const key = relayKey(url)
-  return key.length > 0 && readOnlyKeySet.has(key)
+  return relayMatchesHostOrExact(url, readOnlyKeySet, readOnlyHostSet)
 }
 
 /** True when this relay may receive an EVENT for `eventKind` (profile/list replaceables only on profile mirrors). */

@@ -152,6 +152,7 @@ import {
   authenticateNip42Relay,
   isRelayAuthRequiredCloseReason,
   isRelayAuthRequiredErrorMessage,
+  isRelayConnectionClosedError,
   isRelaySubscriptionClosedByCaller
 } from '@/lib/relay-nip42-auth'
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
@@ -160,7 +161,7 @@ import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/
 import { collectNip05ValuesFromKind0 } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
-import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
+import { filterRelaysForEventPublish, isReadOnlyRelayUrl } from '@/lib/relay-publish-filter'
 import { getPaymentAttestationTargetId } from '@/lib/superchat'
 import {
   buildPublicMessagePublishRelayUrls,
@@ -503,13 +504,15 @@ class ClientService extends EventTarget {
         })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        const skipStrike =
+          msg.includes('[metadata-relays-only]') ||
+          msg.includes('[relay-strike]') ||
+          msg.includes('[relay-rate-limit]') ||
+          msg.includes('[offline]') ||
+          msg.includes('[http-index-relay]')
         if (
-          params?.purpose !== 'write' &&
-          !msg.includes('[metadata-relays-only]') &&
-          !msg.includes('[relay-strike]') &&
-          !msg.includes('[relay-rate-limit]') &&
-          !msg.includes('[offline]') &&
-          !msg.includes('[http-index-relay]')
+          !skipStrike &&
+          (params?.purpose !== 'write' || isLocalNetworkUrl(url))
         ) {
           relaySessionStrikes.recordConnectionFailure(url, msg, 'connection')
         }
@@ -1389,11 +1392,7 @@ class ClientService extends EventTarget {
           spellRelayList = this.emptyRelayListForPublish()
         }
         const spellWriteFilteredRaw = await collectViewerWriteOutboxUrls(event.pubkey, spellRelayList)
-        const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-        const spellWriteFiltered = spellWriteFilteredRaw.filter((url) => {
-          const n = normalizeRelayUrlByScheme(url) || url
-          return !readOnlySet.has(n)
-        })
+        const spellWriteFiltered = spellWriteFilteredRaw.filter((url) => !isReadOnlyRelayUrl(url))
         return finish(
           this.filterPublishingRelays(
             buildPrioritizedWriteRelayUrls({
@@ -1586,12 +1585,11 @@ class ClientService extends EventTarget {
    * so they stay in the random-relay pool even if not currently in monitoring data.
    */
   getSessionSuccessfulPublishRelayUrlsForRandomPool(): string[] {
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u))
     const out: string[] = []
     for (const [url, stats] of this.sessionRelayPublishStats.entries()) {
       if (stats.successCount < 1) continue
       const n = canonicalRelaySessionKey(url)
-      if (!n || readOnlySet.has(n)) continue
+      if (!n || isReadOnlyRelayUrl(n)) continue
       out.push(n)
     }
     out.sort((a, b) => {
@@ -1667,10 +1665,9 @@ class ClientService extends EventTarget {
    * preferring those that have succeeded and been fast this session. Excludes read-only relays.
    */
   getPreferredRelaysForRandom(candidateUrls: string[], count: number): string[] {
-    const readOnlySet = new Set(READ_ONLY_RELAY_URLS.map((u) => normalizeAnyRelayUrl(u) || u))
     const normalizedCandidates = candidateUrls
       .map((u) => normalizeAnyRelayUrl(u) || u)
-      .filter((n) => n && !readOnlySet.has(n))
+      .filter((n) => n && !isReadOnlyRelayUrl(n))
     const unique = Array.from(new Set(normalizedCandidates))
     const preferred: string[] = []
     const rest: string[] = []
@@ -2026,13 +2023,43 @@ class ClientService extends EventTarget {
                     ) {
                       logger.debug(`[PublishEvent] Auth required, attempting authentication`, { url })
                       applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
-                      return authenticateNip42Relay(relay, (authEvt: EventTemplate) =>
+                      const signAuth = (authEvt: EventTemplate) =>
                         queueRelayAuthSign(() => that.signer!.signEvent(authEvt))
-                      )
-                        .then(() => {
-                          logger.debug(`[PublishEvent] Auth successful, retrying publish`, { url })
-                          return relay.publish(event)
-                        })
+                      const preparePublishRelay = async (): Promise<Relay> => {
+                        const r = await that.pool.ensureRelay(url, ensureOpts)
+                        const relayKeyPub = normalizeUrl(url) || url
+                        patchRelayNoticeForFetchFailures(r as unknown as AbstractRelay, relayKeyPub, (u, m) =>
+                          that.handleRelayNoticeSession(u, m)
+                        )
+                        applyRelayNip42AckTimeout(r as unknown as AbstractRelay)
+                        return r
+                      }
+                      const publishAfterAuth = async (): Promise<void> => {
+                        await authenticateNip42Relay(relay as unknown as AbstractRelay, signAuth)
+                        let liveRelay = await preparePublishRelay()
+                        for (let authPubAttempt = 0; authPubAttempt < 2; authPubAttempt++) {
+                          try {
+                            await liveRelay.publish(event)
+                            return
+                          } catch (retryErr) {
+                            if (!isRelayConnectionClosedError(retryErr) || authPubAttempt === 1) {
+                              throw retryErr
+                            }
+                            logger.debug('[PublishEvent] Publish after auth on closed socket; reconnecting', {
+                              url
+                            })
+                            try {
+                              that.pool.close([url])
+                            } catch {
+                              /* ignore */
+                            }
+                            await new Promise((r) => setTimeout(r, 350))
+                            liveRelay = await preparePublishRelay()
+                            await authenticateNip42Relay(liveRelay as unknown as AbstractRelay, signAuth)
+                          }
+                        }
+                      }
+                      return publishAfterAuth()
                         .then(() => {
                           logger.debug(`[PublishEvent] Successfully published after auth`, { url })
                           that.recordPublishSuccess(url, Date.now() - startMs)
@@ -2041,10 +2068,12 @@ class ClientService extends EventTarget {
                           relayStatuses.push({ url, success: true })
                         })
                         .catch((authError) => {
-                          logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authError.message })
+                          const authMsg =
+                            authError instanceof Error ? authError.message : String(authError)
+                          logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authMsg })
                           errors.push({ url, error: authError })
-                          relayStatuses.push({ url, success: false, error: authError.message })
-                          relaySessionStrikes.recordPublishFailure(url, authError.message)
+                          relayStatuses.push({ url, success: false, error: authMsg })
+                          relaySessionStrikes.recordPublishFailure(url, authMsg)
                         })
                     } else {
                       logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
@@ -3989,18 +4018,16 @@ class ClientService extends EventTarget {
   ): Promise<TProfile[]> {
     void this.ensureProfileSearchIndexFromIdb()
     const searchStr = typeof filter.search === 'string' ? filter.search.trim() : ''
-    const normalizedAll = dedupeNormalizeRelayUrlsOrdered(
-      relayUrls.map((u) => normalizeUrl(u) || u).filter(Boolean)
+    const normalizedAll = dedupeNormalizeRelayUrlsOrdered(relayUrls)
+    const profileRelayLayer = dedupeNormalizeRelayUrlsOrdered(PROFILE_RELAY_URLS)
+    const searchableSet = new Set(
+      dedupeNormalizeRelayUrlsOrdered([
+        ...SEARCHABLE_RELAY_URLS,
+        ...getViewerNostrLandAggrSearchRelayUrls(),
+        ...nip66Service.getSearchableRelayUrls(),
+        ...PROFILE_RELAY_URLS
+      ])
     )
-    const profileRelayLayer = dedupeNormalizeRelayUrlsOrdered(
-      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    )
-    const searchableSet = new Set([
-      ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-      ...getViewerNostrLandAggrSearchRelayUrls().map((u) => normalizeUrl(u) || u),
-      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u),
-      ...PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    ])
     let urls = normalizedAll
     if (searchStr.length > 0 && !options?.relaysOnly) {
       const searchCapable = normalizedAll.filter(
@@ -4042,7 +4069,7 @@ class ClientService extends EventTarget {
         options?.globalTimeout ??
         (usesNip50TextSearch ? NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS + 18_000 : 9000),
       relayOpSource: 'ClientService.searchProfiles',
-      foreground: usesNip50TextSearch || usesAuthorsLookup,
+      foreground: usesNip50TextSearch || usesAuthorsLookup || options?.relaysOnly === true,
       signal: options?.signal
     })
 
@@ -4065,15 +4092,13 @@ class ClientService extends EventTarget {
   }
 
   private profileRelaySearchUrls(): string[] {
-    return dedupeNormalizeRelayUrlsOrdered(
-      PROFILE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
-    )
+    return dedupeNormalizeRelayUrlsOrdered(PROFILE_RELAY_URLS)
   }
 
   private nip50ProfileIndexRelayUrls(): string[] {
     return dedupeNormalizeRelayUrlsOrdered([
-      ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u),
-      ...nip66Service.getSearchableRelayUrls().map((u) => normalizeUrl(u) || u)
+      ...SEARCHABLE_RELAY_URLS,
+      ...nip66Service.getSearchableRelayUrls()
     ])
   }
 

@@ -40,7 +40,7 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
     <>
       <button
         className={cn(
-          'flex gap-1 items-center enabled:hover:text-blue-400 px-1.5 h-full',
+          'flex gap-1.5 items-center enabled:hover:text-blue-400 px-2 h-full min-h-11 touch-manipulation',
           hasReplied ? 'text-blue-400' : 'text-muted-foreground'
         )}
         onClick={(e) => {

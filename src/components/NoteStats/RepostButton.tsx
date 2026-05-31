@@ -108,7 +108,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
     <button
       type="button"
       className={cn(
-        'flex h-full items-center enabled:hover:text-lime-500 px-1.5',
+        'flex h-full items-center enabled:hover:text-lime-500 px-2 touch-manipulation',
         hasReposted ? 'text-lime-500' : 'text-muted-foreground'
       )}
       title={t('Boost')}
@@ -118,7 +118,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
         }
       }}
     >
-      {reposting ? <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden /> : <Repeat />}
+      {reposting ? <Skeleton className="size-5 shrink-0 rounded-full" aria-hidden /> : <Repeat />}
     </button>
   )
 

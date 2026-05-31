@@ -6,7 +6,7 @@
  * require this data to function; use as a hint only.
  */
 
-import { normalizeUrl } from '@/lib/url'
+import { normalizeUrl, looksLikeNostrBech32Identifier, isWebsocketUrl } from '@/lib/url'
 import indexDb from '@/services/indexed-db.service'
 import { TNip66RelayDiscovery } from '@/types'
 import { Event as NEvent } from 'nostr-tools'
@@ -22,7 +22,10 @@ function parseEvent(ev: NEvent): TNip66RelayDiscovery | null {
   if (ev.kind !== RELAY_DISCOVERY_KIND) return null
   const d = ev.tags.find((t) => t[0] === 'd')?.[1]
   if (!d) return null
-  const url = d.startsWith('wss://') || d.startsWith('ws://') ? d : `wss://${d}`
+  const dTrim = d.trim()
+  if (!dTrim || looksLikeNostrBech32Identifier(dTrim)) return null
+  const url = dTrim.startsWith('wss://') || dTrim.startsWith('ws://') ? dTrim : `wss://${dTrim}`
+  if (!isWebsocketUrl(url)) return null
 
   const nips = ev.tags.filter((t) => t[0] === 'N').map((t) => parseInt(t[1], 10)).filter((n) => !Number.isNaN(n))
   const requirements: TNip66RelayDiscovery['requirements'] = {}
