@@ -3,7 +3,7 @@ import GifPicker from '@/components/GifPicker'
 import MemePicker from '@/components/MemePicker'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { cn, isTouchDevice } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { TEmoji } from '@/types'
 import { Film, ImageUp, Laugh, Mic, Settings, Smile } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -85,18 +85,16 @@ export function PostEditorFormatToolbar({
         </Button>
       </Uploader>
       <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
-      {!isTouchDevice() && (
-        <EmojiPickerDialog
-          onEmojiClick={(emoji) => {
-            if (emoji == null) return
-            insertEmoji(emoji)
-          }}
-        >
-          <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert emoji')}>
-            <Smile />
-          </Button>
-        </EmojiPickerDialog>
-      )}
+      <EmojiPickerDialog
+        onEmojiClick={(emoji) => {
+          if (emoji == null) return
+          insertEmoji(emoji)
+        }}
+      >
+        <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert emoji')}>
+          <Smile />
+        </Button>
+      </EmojiPickerDialog>
       <GifPicker onSelect={(gifUrl) => insertText(gifUrl)}>
         <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert GIF')}>
           <Film className="h-4 w-4" />
