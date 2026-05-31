@@ -462,7 +462,9 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://search.nos.today',
   'wss://relay.nip46.com',
   'wss://filter.nostr.wine',
-  'wss://primus.nostr1.com'
+  'wss://primus.nostr1.com',
+  'wss://feeds.nostrarchives.com',
+  'wss://feeds.nostrarchives.com/notes/trending/reactions/today'
 ]
 
 /**

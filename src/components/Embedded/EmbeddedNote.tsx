@@ -5,7 +5,10 @@ import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
-import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import {
+  shouldDropEventOnIngest,
+  type ShouldDropEventOnIngestOptions
+} from '@/lib/event-ingest-filter'
 import { normalizeUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import client, { eventService } from '@/services/client.service'
@@ -19,7 +22,11 @@ import {
   syncViewerRelayStackNostrLandAggrEligible,
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
-import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import {
+  enterMetadataRelaysOnlyBypass,
+  leaveMetadataRelaysOnlyBypass,
+  sanitizeRelayUrlsForFetch
+} from '@/lib/read-only-relay-personal'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReply } from '@/providers/ReplyProvider'
@@ -71,6 +78,12 @@ function coordinateFromNoteId(noteId: string): string | null {
   } catch {
     return null
   }
+}
+
+/** Match {@link EventService.fetchEvent} / wide-relay ingest: explicit id lookup relaxes kind-1 spam filters. */
+function embedIngestOptsForNoteKey(noteKey: string): ShouldDropEventOnIngestOptions | undefined {
+  const hex = hexEventIdFromNoteId(noteKey)
+  return hex ? { explicitNoteLookupHexId: hex } : undefined
 }
 
 /** True if `fetchEventWithExternalRelays(noteId, …)` can build a REQ filter (hex, note, nevent, naddr). */
@@ -221,6 +234,8 @@ function EmbeddedNoteFetched({
   const [isFetching, setIsFetching] = useState(true)
   const eventRef = useRef<Event | undefined>(undefined)
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const embedNoteKeyRef = useRef(noteId.trim())
+  embedNoteKeyRef.current = noteId.trim()
   eventRef.current = event
 
   const relayHintsFromParent = useMemo(
@@ -259,12 +274,13 @@ function EmbeddedNoteFetched({
 
   const resolveAndSet = useCallback(
     (ev: Event | undefined) => {
-      if (!ev || isEventDeleted(ev) || shouldDropEventOnIngest(ev)) return false
+      const ingestOpts = embedIngestOptsForNoteKey(embedNoteKeyRef.current)
+      if (!ev || isEventDeleted(ev) || shouldDropEventOnIngest(ev, ingestOpts)) return false
       if (retryIntervalRef.current) {
         clearInterval(retryIntervalRef.current)
         retryIntervalRef.current = null
       }
-      client.addEventToCache(ev)
+      client.addEventToCache(ev, ingestOpts)
       setEvent(ev)
       addReplies([ev])
       return true
@@ -289,12 +305,15 @@ function EmbeddedNoteFetched({
   containingEventRef.current = containingEvent
 
   useEffect(() => {
+    enterMetadataRelaysOnlyBypass()
     let cancelled = false
     const noteKey = noteId.trim()
+    embedNoteKeyRef.current = noteKey
     eventRef.current = undefined
     setEvent(undefined)
     setIsFetching(true)
 
+    const ingestOpts = embedIngestOptsForNoteKey(noteKey)
     const resolve = (ev: Event | undefined) => resolveAndSetRef.current(ev)
 
     const tryShortcuts = (): boolean => {
@@ -315,7 +334,7 @@ function EmbeddedNoteFetched({
       const { fetchRelayOpts: opts, wideRelaysStatic: wideUrls } = embedFetchCtxRef.current
       const hex = hexEventIdFromNoteId(noteKey)
       const isUsable = (e: Event) =>
-        !isEventDeletedRef.current(e) && !shouldDropEventOnIngest(e)
+        !isEventDeletedRef.current(e) && !shouldDropEventOnIngest(e, ingestOpts)
       try {
         const chosen = await firstResolvedUsableEmbedEvent(
           [
@@ -367,6 +386,7 @@ function EmbeddedNoteFetched({
     if (eventRef.current) {
       return () => {
         cancelled = true
+        leaveMetadataRelaysOnlyBypass()
         if (retryIntervalRef.current) {
           clearInterval(retryIntervalRef.current)
           retryIntervalRef.current = null
@@ -386,6 +406,7 @@ function EmbeddedNoteFetched({
 
     return () => {
       cancelled = true
+      leaveMetadataRelaysOnlyBypass()
       if (retryIntervalRef.current) {
         clearInterval(retryIntervalRef.current)
         retryIntervalRef.current = null

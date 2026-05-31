@@ -513,7 +513,7 @@ export class EventService {
     }
 
     const hexIds = [...hexSet].filter((id) => {
-      if (this.getSessionEventIfAllowed(id)) return false
+      if (this.getSessionEventIfAllowed(id, true)) return false
       if (this.embeddedPrefetchHexScheduled.has(id)) return false
       this.embeddedPrefetchHexScheduled.add(id)
       return true
@@ -558,14 +558,17 @@ export class EventService {
           .filter((id) => /^[0-9a-f]{64}$/.test(id))
       )
     ]
-    let toFetch = hexIds.filter((id) => !this.getSessionEventIfAllowed(id))
+    let toFetch = hexIds.filter((id) => !this.getSessionEventIfAllowed(id, true))
     if (toFetch.length === 0) return
 
     const archived = await prefetchArchivedEvents(toFetch)
     for (const ev of archived) {
-      if (!shouldDropEventOnIngest(ev)) this.addEventToCache(ev)
+      const hex = ev.id?.toLowerCase()
+      const ingestOpts =
+        hex && /^[0-9a-f]{64}$/.test(hex) ? { explicitNoteLookupHexId: hex } : undefined
+      this.addEventToCache(ev, ingestOpts)
     }
-    toFetch = toFetch.filter((id) => !this.getSessionEventIfAllowed(id))
+    toFetch = toFetch.filter((id) => !this.getSessionEventIfAllowed(id, true))
     if (toFetch.length === 0) return
 
     const hints = (opts?.relayHints ?? [])
@@ -590,7 +593,10 @@ export class EventService {
         }
       )
       for (const ev of events) {
-        this.addEventToCache(ev)
+        const hex = ev.id?.toLowerCase()
+        const ingestOpts =
+          hex && /^[0-9a-f]{64}$/.test(hex) ? { explicitNoteLookupHexId: hex } : undefined
+        this.addEventToCache(ev, ingestOpts)
       }
     }
   }
