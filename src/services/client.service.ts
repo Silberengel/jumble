@@ -131,7 +131,8 @@ import {
   getHttpRelayListFromEvent,
   getProfileFromEvent,
   getRelayListFromEvent,
-  getRelaySetFromEvent
+  getRelaySetFromEvent,
+  getRelayUrlFromRelayReviewEvent
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
@@ -904,6 +905,22 @@ class ClientService extends EventTarget {
     )
   }
 
+  /** Kind 31987: always attempt the reviewed relay (`d` tag) first in the publish stack. */
+  private pinReviewedRelayForRelayReviewPublish(relays: string[], event: NEvent): string[] {
+    if (event.kind !== ExtendedKind.RELAY_REVIEW) return relays
+    const reviewedRelay = getRelayUrlFromRelayReviewEvent(event)
+    if (!reviewedRelay) return relays
+    const normalized = normalizeRelayUrlByScheme(reviewedRelay) || reviewedRelay.trim()
+    if (!normalized) return relays
+    const [pinned] = this.filterPublishingRelays([normalized], event)
+    if (!pinned) return relays
+    const pinnedKey = (normalizeRelayUrlByScheme(pinned) || pinned).toLowerCase()
+    return dedupeNormalizeRelayUrlsOrdered([
+      pinned,
+      ...relays.filter((url) => (normalizeRelayUrlByScheme(url) || url).toLowerCase() !== pinnedKey)
+    ])
+  }
+
   private relayListHasWriteUrls(relayList: TRelayList): boolean {
     return collectUserWriteOutboxUrls(relayList).length > 0
   }
@@ -1486,6 +1503,7 @@ class ClientService extends EventTarget {
     }
 
     relays = this.filterPublishingRelays(relays, event)
+    relays = this.pinReviewedRelayForRelayReviewPublish(relays, event)
 
     if (specifiedRelayUrls?.length) {
       const checkedCount = specifiedRelayUrls.length
