@@ -2409,7 +2409,12 @@ export default function PostContent({
                     <ChevronDown className="h-4 w-4 opacity-70" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="z-[10000] w-72 p-2" align="end" side="bottom" sideOffset={4}>
+                <PopoverContent
+                  className="z-[10000] w-[min(18rem,calc(100vw-1.5rem))] max-w-none p-2"
+                  align="end"
+                  side="bottom"
+                  sideOffset={4}
+                >
                   <p className="text-muted-foreground mb-2 px-1 text-xs font-medium">{t('Suggested topics')}</p>
                   <div className="max-h-60 overflow-y-auto">
                     {allAvailableTopics.map((topic, index) => {
@@ -3109,7 +3114,7 @@ export default function PostContent({
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuContent align="end" className="w-[min(16rem,calc(100vw-1.5rem))]">
                     <DropdownMenuLabel className="text-xs font-medium text-muted-foreground px-2 py-1">
                       {t('Note type')}
                     </DropdownMenuLabel>

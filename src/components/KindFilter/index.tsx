@@ -379,7 +379,7 @@ export default function KindFilter({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
-        className="flex w-96 max-h-[min(85dvh,calc(100dvh-6rem))] flex-col gap-0 overflow-hidden p-0"
+        className="flex w-[min(24rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0"
         collisionPadding={{ top: 80, bottom: 20, left: 16, right: 16 }}
         side="bottom"
         align="end"

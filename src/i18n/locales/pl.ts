@@ -87,6 +87,7 @@ export default {
     'Raw Event': 'Raw Event',
     'Edit this event': 'Edit this event',
     'Clone or fork this event': 'Clone or fork this event',
+    'Edit or fork this event': 'Edit or fork this event',
     'Event kind': 'Event kind',
     'Note content': 'Note content',
     Publish: 'Publish',

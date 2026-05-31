@@ -459,7 +459,6 @@ export const NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS = ['wss://nostr.wine'] as cons
 export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
   'wss://profiles.nostr1.com',
-  'wss://purplepag.es',
   'wss://relay.nsec.app',
   'wss://bucket.coracle.social',
   'wss://spatia-arcana.com',
@@ -521,10 +520,11 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
-  'wss://purplepag.es',
   'wss://profiles.nostrver.se/',
   'wss://indexer.coracle.social/',
-  'wss://thecitadel.nostr1.com'
+  'wss://thecitadel.nostr1.com',
+  'wss://relay.damus.io',
+  'wss://relay.primal.net'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

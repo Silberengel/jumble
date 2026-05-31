@@ -10,9 +10,7 @@ import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import BookmarkButton from '../BookmarkButton'
 import NotificationThreadWatchButtons from '../NotificationThreadWatchButtons'
-import { useBookmarksOptional } from '@/providers/bookmarks-context'
 import { useNotificationThreadWatchOptional } from '@/providers/NotificationThreadWatchProvider'
 import { LikeButtonWithStats } from './LikeButton'
 import { ReplyButtonWithStats } from './ReplyButton'
@@ -143,9 +141,7 @@ export default function NoteStats({
   ])
 
   const watch = useNotificationThreadWatchOptional()
-  const bookmarksContext = useBookmarksOptional()
   const showThreadWatchButtons = Boolean(watch && pubkey)
-  const showBookmarkButton = Boolean(bookmarksContext && pubkey)
   /** Kind 11 / 1111 under a discussion: up+down votes need more width than a single like button. */
   const isDiscussionBar = isDiscussion || isReplyToDiscussion
   const compactBarItem = isDiscussionBar ? 'shrink-0 flex-none basis-auto' : undefined
@@ -190,14 +186,6 @@ export default function NoteStats({
         <div className="flex items-center justify-center gap-0.5">
           <NotificationThreadWatchButtons event={event} />
         </div>
-      </NoteStatsBarItem>
-    )
-  }
-
-  if (!isRssArticleRoot && showBookmarkButton) {
-    barItems.push(
-      <NoteStatsBarItem key="bookmark" className={compactBarItem}>
-        <BookmarkButton event={event} />
       </NoteStatsBarItem>
     )
   }

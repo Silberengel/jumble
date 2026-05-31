@@ -64,7 +64,12 @@ export function MentionAndEventToolbarButtons({
             <AtSign className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 p-2 z-[10000]" align="start" side="bottom" sideOffset={4}>
+        <PopoverContent
+          className="w-[min(20rem,calc(100vw-1.5rem))] max-w-none p-2 z-[10000]"
+          align="start"
+          side="bottom"
+          sideOffset={4}
+        >
           <Input
             placeholder={t('Search for user…')}
             value={mentionQuery}

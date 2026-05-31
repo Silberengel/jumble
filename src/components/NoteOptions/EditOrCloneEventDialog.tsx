@@ -368,11 +368,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   }
 
   const title =
-    mode === 'edit'
-      ? t('Edit this event')
-      : mode === 'clone'
-        ? t('Clone or fork this event')
-        : t('Create custom event')
+    mode === 'edit' || mode === 'clone'
+      ? t('Edit or fork this event')
+      : t('Create custom event')
 
   const openAdvancedLab = useCallback(() => {
     if (isCreate && parsedCreateKind === null) return

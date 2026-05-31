@@ -213,7 +213,7 @@ export function NoteStatsCountHover({
     return (
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent side="top" align="center" className="z-[100] w-72 p-3">
+        <PopoverContent side="top" align="center" className="z-[100] w-[min(18rem,calc(100vw-1.5rem))] max-w-none p-3">
           {panel}
         </PopoverContent>
       </Popover>
@@ -223,7 +223,7 @@ export function NoteStatsCountHover({
   return (
     <HoverCard openDelay={220} closeDelay={80}>
       <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
-      <HoverCardContent side="top" align="center" className="z-[100] w-72 p-3">
+      <HoverCardContent side="top" align="center" className="z-[100] w-[min(18rem,calc(100vw-1.5rem))] max-w-none p-3">
         {panel}
       </HoverCardContent>
     </HoverCard>

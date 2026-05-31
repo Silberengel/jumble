@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { dropdownMenuMaxHeightClass, floatingPanelScrollClass } from '@/lib/menu-popover-layout'
 import { cn } from '@/lib/utils'
 import { MenuAction, SubMenuAction } from './useMenuActions'
 import { memo, useMemo, useState } from 'react'
@@ -56,7 +57,7 @@ const SubMenuPanel = memo(
           <Icon />
           {action.label}
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="w-[min(28rem,calc(100vw-2rem))] max-w-[28rem] min-w-[18rem] p-0">
+        <DropdownMenuSubContent className="min-w-[min(12rem,calc(100vw-2rem))] p-0">
           {action.subMenuSearchable ? (
             <div
               className="border-b border-border bg-popover p-2"
@@ -72,7 +73,7 @@ const SubMenuPanel = memo(
               />
             </div>
           ) : null}
-          <div className="max-h-[min(50vh,22rem)] overflow-y-auto py-1">
+          <div className={cn(floatingPanelScrollClass, dropdownMenuMaxHeightClass, 'py-1')}>
             {filtered.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                 {t('Language list filter empty')}
@@ -81,15 +82,44 @@ const SubMenuPanel = memo(
               filtered.map((subAction, subIndex) => (
                 <div key={subIndex}>
                   {subAction.separator && subIndex > 0 && <DropdownMenuSeparator />}
-                  <DropdownMenuItem
-                    onClick={subAction.onClick}
-                    className={cn(
-                      'min-w-0 max-w-none whitespace-normal',
-                      subAction.className
-                    )}
-                  >
-                    {subAction.label}
-                  </DropdownMenuItem>
+                  {subAction.subMenu?.length ? (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger
+                        className={cn(
+                          'min-w-0 max-w-none whitespace-normal',
+                          subAction.className
+                        )}
+                      >
+                        {subAction.label}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="p-1">
+                        {subAction.subMenu.map((nested, nestedIndex) => (
+                          <div key={nestedIndex}>
+                            {nested.separator && nestedIndex > 0 && <DropdownMenuSeparator />}
+                            <DropdownMenuItem
+                              onClick={nested.onClick}
+                              className={cn(
+                                'min-w-0 max-w-none whitespace-normal',
+                                nested.className
+                              )}
+                            >
+                              {nested.label}
+                            </DropdownMenuItem>
+                          </div>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={subAction.onClick}
+                      className={cn(
+                        'min-w-0 max-w-none whitespace-normal',
+                        subAction.className
+                      )}
+                    >
+                      {subAction.label}
+                    </DropdownMenuItem>
+                  )}
                 </div>
               ))
             )}
@@ -150,7 +180,7 @@ export function DesktopMenu({ menuActions, trigger, header, open, onOpenChange }
       }}
     >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent className="max-h-[50vh] overflow-y-auto p-0">
+      <DropdownMenuContent showScrollButtons className="p-0">
         {header}
         <div className="py-1">
           <MenuContent

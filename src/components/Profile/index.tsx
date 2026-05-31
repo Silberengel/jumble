@@ -434,7 +434,7 @@ export default function Profile({
                     <Ellipsis />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" showScrollButtons>
                   {profileEvent && (
                     <>
                       <DropdownMenuItem onClick={() => setOpenSelfReply(true)}>

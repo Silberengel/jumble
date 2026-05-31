@@ -1,8 +1,19 @@
 import { ExtendedKind, READ_ALOUD_KINDS } from '@/constants'
-import { getNoteBech32Id, isProtectedEvent, getRootEventHexId } from '@/lib/event'
+import {
+  getNoteBech32Id,
+  getReplaceableCoordinateFromEvent,
+  isProtectedEvent,
+  isReplaceableEvent,
+  getRootEventHexId
+} from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { buildHiveTalkJoinUrl } from '@/lib/hivetalk'
-import { toAlexandria, encodeArticleLikePublicationNaddr, openAlexandriaPublicationFromNaddr } from '@/lib/link'
+import {
+  toAlexandria,
+  encodeArticleLikePublicationNaddr,
+  openAlexandriaPublicationFromNaddr,
+  toRelay
+} from '@/lib/link'
 import logger from '@/lib/logger'
 import { pubkeyToNpub } from '@/lib/pubkey'
 import {
@@ -35,6 +46,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
+import { useBookmarksOptional } from '@/providers/bookmarks-context'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
@@ -42,21 +54,11 @@ import { nip66Service } from '@/services/nip66.service'
 import {
   Bell,
   BellOff,
-  BookOpen,
-  Code,
-  Copy,
-  FileDown,
-  GitFork,
-  Globe,
-  Link,
-  MessageCircle,
-  PencilLine,
+  Bookmark,
   Pin,
-  SatelliteDish,
-  Send,
-  Sparkles,
+  Settings,
+  Share2,
   Trash2,
-  TriangleAlert,
   Video,
   Volume2,
   Languages
@@ -84,6 +86,8 @@ import { useMemo, useState, useEffect, useRef, useContext, useSyncExternalStore 
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import RelayIcon from '../RelayIcon'
+import { useSeenOnRelays } from '@/hooks/useSeenOnRelays'
+import { useSecondaryPage } from '@/PageManager'
 import { PrimaryPageContext } from '@/contexts/primary-page-context'
 import { showPublishingFeedback, toastPublishPromise } from '@/lib/publishing-feedback'
 import type { TEditOrCloneMode } from './EditOrCloneEventDialog'
@@ -95,6 +99,8 @@ export interface SubMenuAction {
   separator?: boolean
   /** Lowercase haystack for submenu filter when the parent sets {@link MenuAction.subMenuSearchable}. */
   filterHaystack?: string
+  /** Nested submenu (desktop dropdown only). */
+  subMenu?: SubMenuAction[]
 }
 
 export interface MenuAction {
@@ -127,6 +133,8 @@ interface UseMenuActionsProps {
   pinned?: boolean
   /** Opens JSON viewer for the kind 9741 attestation of this payment or zap receipt. */
   onViewAttestation?: () => void
+  /** When set (home favorites feed), "Seen on" in Advanced matches the feed allowlist. */
+  seenOnAllowlist?: readonly string[]
 }
 
 export function useMenuActions({
@@ -140,13 +148,31 @@ export function useMenuActions({
   onOpenCallInvite,
   onOpenEditOrClone,
   pinned: _pinnedInFeed = false,
-  onViewAttestation
+  onViewAttestation,
+  seenOnAllowlist
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
+  const { push } = useSecondaryPage()
+  const seenOnRelays = useSeenOnRelays(event.id, seenOnAllowlist)
   // Use useContext directly to avoid error if provider is not available
   const primaryPageContext = useContext(PrimaryPageContext)
   const currentPrimaryPage = primaryPageContext?.current ?? null
-  const { pubkey, profile, attemptDelete, publish, account, relayList } = useNostr()
+  const {
+    pubkey,
+    profile,
+    attemptDelete,
+    publish,
+    account,
+    relayList,
+    bookmarkListEvent,
+    checkLogin
+  } = useNostr()
+  const bookmarksContext = useBookmarksOptional()
+  const { addBookmark, removeBookmark } = bookmarksContext ?? {
+    addBookmark: async () => {},
+    removeBookmark: async () => false
+  }
+  const [bookmarkUpdating, setBookmarkUpdating] = useState(false)
   const canSignEvents = account != null && account.signerType !== 'npub'
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
@@ -183,6 +209,15 @@ export function useMenuActions({
   }, [])
   const { mutePubkeyPublicly, mutePubkeyPrivately, unmutePubkey, mutePubkeySet } = useMuteList()
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, event.pubkey), [mutePubkeySet, event])
+
+  const isBookmarked = useMemo(() => {
+    if (!bookmarkListEvent) return false
+    const isReplaceable = isReplaceableEvent(event.kind)
+    const eventKey = isReplaceable ? getReplaceableCoordinateFromEvent(event) : event.id
+    return bookmarkListEvent.tags.some((tag) =>
+      isReplaceable ? tag[0] === 'a' && tag[1] === eventKey : tag[0] === 'e' && tag[1] === eventKey
+    )
+  }, [bookmarkListEvent, event])
 
   const noteTranslationFromMenu = useSyncExternalStore(
     subscribeNoteTranslations,
@@ -932,224 +967,92 @@ export function useMenuActions({
         ]
       : []
 
-    const actions: MenuAction[] = [
-      {
-        icon: Copy,
-        label: t('Copy event ID'),
-        onClick: () => {
-          navigator.clipboard.writeText(getNoteBech32Id(event))
-          closeDrawer()
-        }
-      },
-      {
-        icon: Copy,
-        label: t('Copy user ID'),
-        onClick: () => {
-          navigator.clipboard.writeText(pubkeyToNpub(event.pubkey) ?? '')
-          closeDrawer()
-        }
-      },
-      ...(READ_ALOUD_KINDS.includes(event.kind)
-        ? [
-            {
-              icon: Volume2,
-              label: t('Read this note aloud'),
-              onClick: () => {
-                closeDrawer()
-                void speakNoteReadAloud(event).then((result) => {
-                  if (result === 'unsupported') {
-                    toast.error(t('Read-aloud is not supported in this browser'))
-                  } else if (result === 'empty') {
-                    toast.error(t('Nothing to read aloud'))
-                  } else if (result === 'error') {
-                    toast.error(t('Read-aloud failed'))
-                  }
-                })
-              }
-            } as MenuAction
-          ]
-        : []),
-      ...(noteSupportsTranslateMenu
-        ? [
-            {
-              icon: Languages,
-              label: t('Translate note'),
-              onClick: isSmallScreen
-                ? () =>
-                    showSubMenuActions(translateTargetSubmenu, t('Translate note'), {
-                      subMenuSearchable: true
-                    })
-                : undefined,
-              subMenu: isSmallScreen ? undefined : translateTargetSubmenu,
-              subMenuSearchable: true
-            } as MenuAction
-          ]
-        : []),
+    const pushSubMenuParent = (
+      target: MenuAction[],
+      icon: MenuAction['icon'],
+      title: string,
+      subMenu: SubMenuAction[],
+      options?: { separator?: boolean; subMenuSearchable?: boolean; className?: string }
+    ) => {
+      if (subMenu.length === 0) return
+      target.push({
+        icon,
+        label: title,
+        separator: options?.separator,
+        className: options?.className,
+        subMenuSearchable: options?.subMenuSearchable,
+        onClick: isSmallScreen
+          ? () =>
+              showSubMenuActions(subMenu, title, {
+                subMenuSearchable: options?.subMenuSearchable
+              })
+          : undefined,
+        subMenu: isSmallScreen ? undefined : subMenu
+      })
+    }
+
+    const connectionsSubMenu: SubMenuAction[] = [
       ...(pubkey && event.pubkey !== pubkey && onOpenPublicMessage
         ? [
             {
-              icon: MessageCircle,
               label: t('Send public message'),
               onClick: () => {
                 closeDrawer()
                 onOpenPublicMessage(event.pubkey)
               }
-            } as MenuAction
+            }
           ]
         : []),
       {
-        icon: Link,
         label: t('Share with Imwald'),
+        separator: pubkey != null && event.pubkey !== pubkey && !!onOpenPublicMessage,
         onClick: () => {
           const noteId = getNoteBech32Id(event)
-          // Contextual URL when on Spells (e.g. discussions faux-spell); plain /notes/{id} otherwise
           const path =
             currentPrimaryPage === 'spells'
               ? `/spells/notes/${noteId}`
               : currentPrimaryPage === 'rss'
                 ? `/rss/notes/${noteId}`
                 : `/notes/${noteId}`
-          const appShareUrl = `https://jumble.imwald.eu${path}`
-          navigator.clipboard.writeText(appShareUrl)
+          navigator.clipboard.writeText(`https://jumble.imwald.eu${path}`)
           closeDrawer()
         }
       },
       {
-        icon: BookOpen,
         label: t('Share with Alexandria'),
         onClick: () => {
           navigator.clipboard.writeText(toAlexandria(getNoteBech32Id(event)))
           closeDrawer()
         }
-      },
-      {
-        icon: Video,
-        label: t('Start call about this'),
+      }
+    ]
+
+    if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
+      connectionsSubMenu.push({
+        label: t('View on Alexandria'),
         separator: true,
         onClick: () => {
           closeDrawer()
-          const roomId = `imwald-note-${event.id}`
-          const url = buildHiveTalkJoinUrl({ room: roomId })
-          window.open(url, '_blank', 'noopener,noreferrer')
+          window.open(
+            'https://next-alexandria.gitcitadel.eu/profile/notifications',
+            '_blank',
+            'noopener,noreferrer'
+          )
         }
-      },
-      {
-        icon: Copy,
-        label: t('Copy call invite link'),
-        onClick: () => {
-          closeDrawer()
-          const roomId = `imwald-note-${event.id}`
-          const url = buildHiveTalkJoinUrl({ room: roomId })
-          navigator.clipboard.writeText(url)
-          toast.success(t('Copied to clipboard'))
-        }
-      },
-      ...(onOpenCallInvite
-        ? [
-            {
-              icon: Send,
-              label: t('Send call invite'),
-              onClick: () => {
-                closeDrawer()
-                const roomId = `imwald-note-${event.id}`
-                const url = buildHiveTalkJoinUrl({ room: roomId })
-                onOpenCallInvite(`${t('Join the video call')}: ${url}`)
-              }
-            } as MenuAction
-          ]
-        : [])
-    ]
-
-    // Add "View on Alexandria" menu item for public messages (PMs)
-    if (event.kind === ExtendedKind.PUBLIC_MESSAGE) {
-      actions.push({
-        icon: Globe,
-        label: t('View on Alexandria'),
-        onClick: () => {
-          closeDrawer()
-          window.open('https://next-alexandria.gitcitadel.eu/profile/notifications', '_blank', 'noopener,noreferrer')
-        },
-        separator: true
       })
     }
 
-    if (canSignEvents && pubkey && onOpenEditOrClone) {
-      const isOwn = event.pubkey === pubkey
-      actions.push({
-        icon: isOwn ? PencilLine : GitFork,
-        label: isOwn ? t('Edit this event') : t('Clone or fork this event'),
-        onClick: () => {
-          closeDrawer()
-          onOpenEditOrClone(isOwn ? 'edit' : 'clone')
-        },
-        separator: true
-      })
-    }
-
-    actions.push({
-      icon: Code,
-      label: t('View raw event'),
-      onClick: () => {
-        closeDrawer()
-        setIsRawEventDialogOpen(true)
-      },
-      separator: !onViewAttestation
-    })
-
-    if (onViewAttestation) {
-      actions.push({
-        icon: Sparkles,
-        label: t('View attestation'),
-        onClick: () => {
-          closeDrawer()
-          onViewAttestation()
-        },
-        separator: true
-      })
-    }
-
-    // Add export options for article-type events
     if (isArticleType) {
-      const isMarkdownFormat = event.kind === kinds.LongFormArticle || event.kind === ExtendedKind.NOSTR_SPECIFICATION
-      const isAsciidocFormat = event.kind === ExtendedKind.WIKI_ARTICLE || event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT
-      
-      if (isMarkdownFormat) {
-        actions.push({
-          icon: FileDown,
-          label: t('Export as Markdown'),
-          onClick: () => {
-            closeDrawer()
-            exportAsMarkdown()
-          },
-          separator: true
-        })
-      }
-      
-      if (isAsciidocFormat) {
-        actions.push({
-          icon: FileDown,
-          label: t('Export as AsciiDoc'),
-          onClick: () => {
-            closeDrawer()
-            exportAsAsciidoc()
-          },
-          separator: true
-        })
-      }
-
-      // Add view options based on event kind
       if (event.kind === kinds.LongFormArticle) {
-        // For LongFormArticle (30023): Alexandria and DecentNewsroom
         if (naddr) {
-          actions.push({
-            icon: BookOpen,
+          connectionsSubMenu.push({
             label: t('View on Alexandria'),
+            separator: connectionsSubMenu.length > 0,
             onClick: handleViewOnAlexandria
           })
         }
         if (dTag && authorNpubForDecentNewsroom) {
-          actions.push({
-            icon: Globe,
+          connectionsSubMenu.push({
             label: t('View on DecentNewsroom'),
             onClick: handleViewOnDecentNewsroom
           })
@@ -1160,55 +1063,244 @@ export function useMenuActions({
         event.kind === ExtendedKind.WIKI_ARTICLE ||
         event.kind === ExtendedKind.NOSTR_SPECIFICATION
       ) {
-        // For 30041, 30040, 30818, 30817: Alexandria
         if (naddr) {
-          actions.push({
-            icon: BookOpen,
+          connectionsSubMenu.push({
             label: t('View on Alexandria'),
+            separator: connectionsSubMenu.length > 0,
             onClick: handleViewOnAlexandria
           })
         }
       }
-
-      if (event.kind === ExtendedKind.PUBLICATION) {
-        actions.push({
-          icon: SatelliteDish,
-          label: t('Rebroadcast entire publication'),
-          onClick: isSmallScreen
-            ? () => showSubMenuActions(publicationBroadcastSubMenu, t('Rebroadcast entire publication to ...'))
-            : undefined,
-          subMenu: isSmallScreen ? undefined : publicationBroadcastSubMenu,
-          separator: true
-        })
-      }
     }
+
+    const callsSubMenu: SubMenuAction[] = [
+      {
+        label: t('Start call about this'),
+        onClick: () => {
+          closeDrawer()
+          const roomId = `imwald-note-${event.id}`
+          window.open(buildHiveTalkJoinUrl({ room: roomId }), '_blank', 'noopener,noreferrer')
+        }
+      },
+      {
+        label: t('Copy call invite link'),
+        onClick: () => {
+          closeDrawer()
+          const roomId = `imwald-note-${event.id}`
+          navigator.clipboard.writeText(buildHiveTalkJoinUrl({ room: roomId }))
+          toast.success(t('Copied to clipboard'))
+        }
+      },
+      ...(onOpenCallInvite
+        ? [
+            {
+              label: t('Send call invite'),
+              onClick: () => {
+                closeDrawer()
+                const roomId = `imwald-note-${event.id}`
+                const url = buildHiveTalkJoinUrl({ room: roomId })
+                onOpenCallInvite(`${t('Join the video call')}: ${url}`)
+              }
+            }
+          ]
+        : [])
+    ]
 
     const isProtected = isProtectedEvent(event)
     const isDiscussion = event.kind === ExtendedKind.DISCUSSION
-    if ((!isProtected || event.pubkey === pubkey) && !isDiscussion && !isReplyToDiscussion) {
-      actions.push({
-        icon: SatelliteDish,
+    const showRepublish =
+      broadcastSubMenu.length > 0 &&
+      (!isProtected || event.pubkey === pubkey) &&
+      !isDiscussion &&
+      !isReplyToDiscussion
+
+    const advancedSubMenu: SubMenuAction[] = [
+      {
+        label: t('Copy event ID'),
+        onClick: () => {
+          navigator.clipboard.writeText(getNoteBech32Id(event))
+          closeDrawer()
+        }
+      },
+      {
+        label: t('Copy user ID'),
+        onClick: () => {
+          navigator.clipboard.writeText(pubkeyToNpub(event.pubkey) ?? '')
+          closeDrawer()
+        }
+      }
+    ]
+
+    if (pubkey && event.pubkey !== pubkey) {
+      advancedSubMenu.push({
+        label: t('Report'),
+        className: 'text-destructive focus:text-destructive',
+        separator: true,
+        onClick: () => {
+          closeDrawer()
+          setIsReportDialogOpen(true)
+        }
+      })
+    }
+
+    if (canSignEvents && pubkey && onOpenEditOrClone) {
+      advancedSubMenu.push({
+        label: t('Edit or fork this event'),
+        separator: advancedSubMenu.length > 2,
+        onClick: () => {
+          closeDrawer()
+          onOpenEditOrClone(event.pubkey === pubkey ? 'edit' : 'clone')
+        }
+      })
+    }
+
+    advancedSubMenu.push({
+      label: t('View raw event'),
+      separator: true,
+      onClick: () => {
+        closeDrawer()
+        setIsRawEventDialogOpen(true)
+      }
+    })
+
+    if (onViewAttestation) {
+      advancedSubMenu.push({
+        label: t('View attestation'),
+        onClick: () => {
+          closeDrawer()
+          onViewAttestation()
+        }
+      })
+    }
+
+    if (showRepublish) {
+      advancedSubMenu.push({
         label: t('Republish to ...'),
+        separator: true,
         onClick: isSmallScreen
           ? () => showSubMenuActions(broadcastSubMenu, t('Republish to ...'))
-          : undefined,
-        subMenu: isSmallScreen ? undefined : broadcastSubMenu,
+          : () => {},
+        subMenu: isSmallScreen ? undefined : broadcastSubMenu
+      } as SubMenuAction)
+    }
+
+    if (isArticleType) {
+      const isMarkdownFormat =
+        event.kind === kinds.LongFormArticle || event.kind === ExtendedKind.NOSTR_SPECIFICATION
+      const isAsciidocFormat =
+        event.kind === ExtendedKind.WIKI_ARTICLE ||
+        event.kind === ExtendedKind.PUBLICATION ||
+        event.kind === ExtendedKind.PUBLICATION_CONTENT
+
+      if (isMarkdownFormat) {
+        advancedSubMenu.push({
+          label: t('Export as Markdown'),
+          onClick: () => {
+            closeDrawer()
+            exportAsMarkdown()
+          }
+        })
+      }
+      if (isAsciidocFormat) {
+        advancedSubMenu.push({
+          label: t('Export as AsciiDoc'),
+          onClick: () => {
+            closeDrawer()
+            exportAsAsciidoc()
+          }
+        })
+      }
+      if (event.kind === ExtendedKind.PUBLICATION && publicationBroadcastSubMenu.length > 0) {
+        advancedSubMenu.push({
+          label: t('Rebroadcast entire publication'),
+          separator: true,
+          onClick: isSmallScreen
+            ? () =>
+                showSubMenuActions(
+                  publicationBroadcastSubMenu,
+                  t('Rebroadcast entire publication to ...')
+                )
+            : () => {},
+          subMenu: isSmallScreen ? undefined : publicationBroadcastSubMenu
+        } as SubMenuAction)
+      }
+    }
+
+    if (seenOnRelays.length > 0) {
+      advancedSubMenu.push({
+        label: (
+          <div
+            className="flex flex-wrap gap-2 py-0.5"
+            role="group"
+            aria-label={t('Seen on')}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {seenOnRelays.map((relay) => (
+              <button
+                key={relay}
+                type="button"
+                title={simplifyUrl(relay)}
+                className="rounded-md p-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closeDrawer()
+                  push(toRelay(relay))
+                }}
+              >
+                <RelayIcon url={relay} className="size-8 shrink-0" />
+              </button>
+            ))}
+          </div>
+        ),
+        onClick: () => {},
         separator: true
       })
     }
 
-    if (pubkey && event.pubkey !== pubkey) {
+    const actions: MenuAction[] = []
+
+    if (READ_ALOUD_KINDS.includes(event.kind)) {
       actions.push({
-        icon: TriangleAlert,
-        label: t('Report'),
-        className: 'text-destructive focus:text-destructive',
+        icon: Volume2,
+        label: t('Read this note aloud'),
         onClick: () => {
           closeDrawer()
-          setIsReportDialogOpen(true)
-        },
-        separator: true
+          void speakNoteReadAloud(event).then((result) => {
+            if (result === 'unsupported') {
+              toast.error(t('Read-aloud is not supported in this browser'))
+            } else if (result === 'empty') {
+              toast.error(t('Nothing to read aloud'))
+            } else if (result === 'error') {
+              toast.error(t('Read-aloud failed'))
+            }
+          })
+        }
       })
     }
+
+    if (noteSupportsTranslateMenu) {
+      actions.push({
+        icon: Languages,
+        label: t('Translate note'),
+        onClick: isSmallScreen
+          ? () =>
+              showSubMenuActions(translateTargetSubmenu, t('Translate note'), {
+                subMenuSearchable: true
+              })
+          : undefined,
+        subMenu: isSmallScreen ? undefined : translateTargetSubmenu,
+        subMenuSearchable: true
+      })
+    }
+
+    pushSubMenuParent(actions, Share2, t('Connections'), connectionsSubMenu, {
+      separator: actions.length > 0
+    })
+    pushSubMenuParent(actions, Video, t('Calls'), callsSubMenu)
+    pushSubMenuParent(actions, Settings, t('Advanced'), advancedSubMenu, {
+      separator: actions.length > 0
+    })
 
     if (pubkey && event.pubkey !== pubkey) {
       if (isMuted) {
@@ -1232,7 +1324,7 @@ export function useMenuActions({
               mutePubkeyPrivately(event.pubkey)
             },
             className: 'text-destructive focus:text-destructive',
-            separator: true
+            separator: actions.length > 0
           },
           {
             icon: BellOff,
@@ -1247,13 +1339,40 @@ export function useMenuActions({
       }
     }
 
-    // Pin / unpin only against the signed-in user's list (not another profile's pinned section).
-    if (pubkey) {
+    if (pubkey && event.pubkey === pubkey) {
       actions.push({
         icon: Pin,
         label: isPinnedInMyList ? t('Unpin note') : t('Pin note'),
         onClick: () => {
           handlePinNote()
+        },
+        separator: true
+      })
+    } else if (pubkey && event.pubkey !== pubkey && bookmarksContext) {
+      actions.push({
+        icon: Bookmark,
+        label: isBookmarked ? t('Remove bookmark') : t('Bookmark'),
+        onClick: () => {
+          closeDrawer()
+          void checkLogin(async () => {
+            if (bookmarkUpdating) return
+            setBookmarkUpdating(true)
+            try {
+              if (isBookmarked) {
+                await removeBookmark(event)
+              } else {
+                await addBookmark(event)
+              }
+            } catch (error) {
+              toast.error(
+                (isBookmarked ? t('Remove bookmark failed') : t('Bookmark failed')) +
+                  ': ' +
+                  (error as Error).message
+              )
+            } finally {
+              setBookmarkUpdating(false)
+            }
+          })
         },
         separator: true
       })
@@ -1290,6 +1409,13 @@ export function useMenuActions({
     attemptDelete,
     isPinnedInMyList,
     handlePinNote,
+    bookmarkListEvent,
+    bookmarksContext,
+    isBookmarked,
+    bookmarkUpdating,
+    addBookmark,
+    removeBookmark,
+    checkLogin,
     isArticleType,
     articleMetadata,
     dTag,
@@ -1302,7 +1428,11 @@ export function useMenuActions({
     profile,
     noteTranslationFromMenu,
     translateMenuOptions,
-    onViewAttestation
+    onViewAttestation,
+    seenOnRelays,
+    push,
+    currentPrimaryPage,
+    isReplyToDiscussion
   ])
 
   return menuActions

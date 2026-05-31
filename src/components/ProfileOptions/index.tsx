@@ -206,7 +206,7 @@ export default function ProfileOptions({
           <Ellipsis />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent>
+      <DropdownMenuContent showScrollButtons className="w-[min(20rem,calc(100vw-1.5rem))]">
         {eventToUse && (
           <>
             <DropdownMenuItem onClick={() => setOpenReply(true)}>

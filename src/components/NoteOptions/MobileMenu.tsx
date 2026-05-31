@@ -8,7 +8,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerOverlay } from '@/components/ui/drawer'
 import { ArrowLeft } from 'lucide-react'
-import { MenuAction, SubMenuAction } from './useMenuActions'
+import { MenuAction, ShowSubMenuOptions, SubMenuAction } from './useMenuActions'
 import { useMemo, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,6 +24,11 @@ interface MobileMenuProps {
   subMenuSearchable: boolean
   closeDrawer: () => void
   goBackToMainMenu: () => void
+  showSubMenuActions: (
+    subMenu: SubMenuAction[],
+    title: string,
+    options?: ShowSubMenuOptions
+  ) => void
 }
 
 function filterSubMenuRows(
@@ -70,7 +75,8 @@ export function MobileMenu({
   subMenuTitle,
   subMenuSearchable,
   closeDrawer,
-  goBackToMainMenu
+  goBackToMainMenu,
+  showSubMenuActions
 }: MobileMenuProps) {
   const { t } = useTranslation()
   const [subMenuFilter, setSubMenuFilter] = useState('')
@@ -106,7 +112,15 @@ export function MobileMenu({
                       icon={Icon}
                       label={action.label}
                       className={action.className}
-                      onClick={action.onClick}
+                      onClick={
+                        action.onClick ??
+                        (action.subMenu?.length
+                          ? () =>
+                              showSubMenuActions(action.subMenu!, action.label, {
+                                subMenuSearchable: action.subMenuSearchable
+                              })
+                          : undefined)
+                      }
                     />
                   )
                 })}
@@ -140,7 +154,12 @@ export function MobileMenu({
                   filteredSubMenu.map((subAction, index) => (
                     <Button
                       key={index}
-                      onClick={subAction.onClick}
+                      onClick={
+                        subAction.subMenu?.length
+                          ? () =>
+                              showSubMenuActions(subAction.subMenu!, String(subAction.label))
+                          : subAction.onClick
+                      }
                       className={cn(drawerMenuButtonClassName, subAction.className)}
                       variant="ghost"
                     >

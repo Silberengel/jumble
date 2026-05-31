@@ -109,6 +109,7 @@ export default function NoteOptions({
     setIsRawEventDialogOpen,
     setIsReportDialogOpen,
     isSmallScreen,
+    seenOnAllowlist,
     onOpenPublicMessage,
     onOpenCallInvite,
     onOpenEditOrClone: (mode) => {
@@ -160,6 +161,7 @@ export default function NoteOptions({
           subMenuSearchable={subMenuSearchable}
           closeDrawer={closeDrawer}
           goBackToMainMenu={goBackToMainMenu}
+          showSubMenuActions={showSubMenuActions}
         />
       ) : (
         <DesktopMenu

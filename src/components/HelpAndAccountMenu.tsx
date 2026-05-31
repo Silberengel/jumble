@@ -27,7 +27,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const titlebarAccountMenuContentClassName =
-  'z-[220] max-h-[min(85dvh,32rem)] w-72 overflow-y-auto overscroll-contain'
+  'z-[220] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain'
 
 export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 

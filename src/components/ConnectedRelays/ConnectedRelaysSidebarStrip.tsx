@@ -88,7 +88,11 @@ export function ConnectedRelaysSidebarStrip({ className }: { className?: string 
                 +{overflow}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" side="right" className="max-h-[min(70vh,24rem)] w-72 overflow-y-auto">
+            <DropdownMenuContent
+              align="start"
+              side="right"
+              className="w-[min(18rem,calc(100vw-1.5rem))]"
+            >
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
                 {t('More relays', { count: overflow })}
               </DropdownMenuLabel>

@@ -176,7 +176,7 @@ export function AdvancedEventLabMarkupToolbar({
           <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="z-[280] w-[min(20rem,92vw)] max-h-80 overflow-y-auto">
+      <DropdownMenuContent align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
         <DropdownMenuLabel>{t('Advanced lab tb citationsHint')}</DropdownMenuLabel>
         {LAB_CITATION_MENU_ITEMS.map(({ type, labelKey }) => (
           <DropdownMenuItem key={type} onSelect={() => openCitationPicker(type)}>
@@ -239,7 +239,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] max-h-80 overflow-y-auto w-56">
+          <DropdownMenuContent align="start" className="z-[280] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto w-56">
             <DropdownMenuLabel>{t('Advanced lab tb headings hint')}</DropdownMenuLabel>
             {(
               [
@@ -573,7 +573,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(70vh,28rem)] overflow-y-auto">
+          <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
             <DropdownMenuLabel>{t('Advanced lab tb mathIntro')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
@@ -733,7 +733,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(80vh,32rem)] overflow-y-auto">
+        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(32rem,80dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocTitlesHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() =>
@@ -1070,7 +1070,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(70vh,28rem)] overflow-y-auto">
+        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStructureHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() =>
@@ -1212,7 +1212,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(70vh,28rem)] overflow-y-auto">
+        <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStemHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', 'x^2 + y^2', ']'))}

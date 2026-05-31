@@ -3,7 +3,16 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Check, ChevronDown, ChevronRight, ChevronUp, Circle } from 'lucide-react'
 
 import { DialogContext } from '@/components/ui/dialog'
+import {
+  dropdownMenuMaxHeightClass,
+  floatingPanelMaxWidthClass,
+  floatingPanelScrollClass,
+  menuItemLargeTextClass
+} from '@/lib/menu-popover-layout'
 import { cn } from '@/lib/utils'
+
+/** @deprecated Use {@link dropdownMenuMaxHeightClass} from `@/lib/menu-popover-layout`. */
+export const dropdownMenuScrollMaxHeightClass = dropdownMenuMaxHeightClass
 
 /** Radix `MenuSubContentProps` omits `side` / `align`; Popper still accepts them at runtime. */
 type DropdownMenuSubContentPositionProps = Partial<
@@ -37,7 +46,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      'flex cursor-default gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      'flex min-w-0 cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent whitespace-normal [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       inset && 'pl-8',
       className
     )}
@@ -117,14 +126,10 @@ const DropdownMenuSubContent = React.forwardRef<
         align={align}
         className={cn(
           'relative min-w-52 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          submenuBelow && 'max-w-[min(100vw-1.5rem,24rem)]',
+          floatingPanelMaxWidthClass,
           inDialog ? 'z-[290]' : 'z-[100]'
         )}
-        onAnimationEnd={() => {
-          if (showScrollButtons) {
-            checkScrollability()
-          }
-        }}
+        onAnimationEnd={checkScrollability}
         collisionPadding={16}
         {...props}
       >
@@ -144,7 +149,10 @@ const DropdownMenuSubContent = React.forwardRef<
         <div
           ref={scrollAreaRef}
           className={cn(
-            'p-1 popover-scroll-y max-h-[min(85dvh,calc(100dvh-3rem))] min-h-0 overflow-x-hidden',
+            'p-1',
+            floatingPanelScrollClass,
+            dropdownMenuMaxHeightClass,
+            floatingPanelMaxWidthClass,
             className
           )}
           onScroll={checkScrollability}
@@ -223,13 +231,10 @@ const DropdownMenuContent = React.forwardRef<
         sideOffset={sideOffset}
         className={cn(
           'relative min-w-52 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+          floatingPanelMaxWidthClass,
           inDialog ? 'z-[290]' : 'z-[100]'
         )}
-        onAnimationEnd={() => {
-          if (showScrollButtons) {
-            checkScrollability()
-          }
-        }}
+        onAnimationEnd={checkScrollability}
         collisionPadding={16}
         {...props}
       >
@@ -249,7 +254,10 @@ const DropdownMenuContent = React.forwardRef<
         <div
           ref={scrollAreaRef}
           className={cn(
-            'p-1 popover-scroll-y max-h-[min(85dvh,calc(100dvh-3rem))] min-h-0 overflow-x-hidden',
+            'p-1',
+            floatingPanelScrollClass,
+            dropdownMenuMaxHeightClass,
+            floatingPanelMaxWidthClass,
             className
           )}
           onScroll={checkScrollability}
@@ -284,7 +292,8 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 rounded-md',
+      'relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      menuItemLargeTextClass,
       inset && 'pl-8',
       className
     )}

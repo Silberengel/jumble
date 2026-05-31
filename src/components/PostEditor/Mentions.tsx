@@ -79,7 +79,7 @@ export default function Mentions({
           {potentialMentions.length > 0 && `(${mentions.length}/${potentialMentions.length})`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-0 py-1">
+      <PopoverContent className="w-[min(13rem,calc(100vw-1.5rem))] max-w-none p-0 py-1">
         <div className="space-y-1">
           {potentialMentions.map((_, index) => {
             const pubkey = potentialMentions[potentialMentions.length - 1 - index]

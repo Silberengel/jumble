@@ -102,7 +102,7 @@ const MentionList = forwardRef<MentionListHandle, MentionListProps>((props, ref)
   return (
     <div
       className={cn(
-        'border rounded-lg bg-background pointer-events-auto flex flex-col max-h-80 min-h-0 overflow-y-scroll overflow-x-hidden',
+        'border rounded-lg bg-background pointer-events-auto flex flex-col min-h-0 max-h-[min(85dvh,calc(100dvh-6rem))] max-w-[min(calc(100vw-1.5rem),28rem)] overflow-x-hidden overflow-y-auto overscroll-contain popover-scroll-y',
         inDialog ? 'z-[290]' : 'z-[110]'
       )}
       onWheel={(e: React.WheelEvent) => e.stopPropagation()}

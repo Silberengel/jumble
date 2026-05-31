@@ -423,7 +423,12 @@ export default function PostRelaySelector({
             <ChevronDown className="w-3 h-3 shrink-0" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[90vw] max-w-md p-0 max-h-[40vh] flex flex-col overflow-hidden" align="start" side="bottom" sideOffset={8}>
+        <PopoverContent
+          className="w-[min(calc(100vw-1.5rem),28rem)] max-w-none p-0 flex flex-col overflow-hidden"
+          align="start"
+          side="bottom"
+          sideOffset={8}
+        >
           <div className="p-3 border-b flex flex-col gap-1 shrink-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">{t('Select relays')}</span>
@@ -431,7 +436,7 @@ export default function PostRelaySelector({
             </div>
             {capHintEl}
           </div>
-          <div className="max-h-[35vh] min-h-0 overflow-y-scroll overflow-x-hidden p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-3 popover-scroll-y">
             {content}
           </div>
         </PopoverContent>

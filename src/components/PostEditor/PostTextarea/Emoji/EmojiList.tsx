@@ -83,7 +83,7 @@ export const EmojiList = forwardRef<EmojiListHandler, EmojiListProps>((props, re
 
   return (
     <ScrollArea
-      className="border rounded-lg bg-background z-[110] pointer-events-auto flex flex-col max-h-80 overflow-y-auto"
+      className="border rounded-lg bg-background z-[110] pointer-events-auto flex flex-col min-h-0 max-h-[min(85dvh,calc(100dvh-6rem))] max-w-[min(calc(100vw-1.5rem),28rem)] overflow-x-hidden overflow-y-auto overscroll-contain popover-scroll-y"
       onWheel={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
     >
