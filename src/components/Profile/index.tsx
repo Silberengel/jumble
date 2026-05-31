@@ -8,7 +8,7 @@ import { ProfileBotBadge } from '@/components/ProfileBotBadge'
 import ProfileOptions from '@/components/ProfileOptions'
 import ProfileZapButton from '@/components/ProfileZapButton'
 import PubkeyCopy from '@/components/PubkeyCopy'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarIdenticon, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchProfile } from '@/hooks'
@@ -396,13 +396,13 @@ export default function Profile({
               <div className="relative h-full w-full">
                 <Avatar className="h-full w-full border-4 border-background">
                   <AvatarImage
-                    src={avatar}
+                    src={avatar || defaultImage}
                     className="object-cover object-center"
                     fetchPriority="high"
                     loading="eager"
                   />
-                  <AvatarFallback>
-                    <img src={defaultImage} alt="" />
+                  <AvatarFallback delayMs={0}>
+                    <AvatarIdenticon src={defaultImage} />
                   </AvatarFallback>
                 </Avatar>
                 {isBot ? (

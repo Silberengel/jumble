@@ -17,7 +17,6 @@ import {
   DrawerHeader,
   DrawerTitle
 } from '@/components/ui/drawer'
-import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { useTranslation } from 'react-i18next'
@@ -32,12 +31,10 @@ export default function LogoutDialog({
   const { t } = useTranslation()
   const { isSmallScreen = false } = useScreenSizeOptional() ?? {}
   const { account, switchAccount } = useNostr()
-  const { navigate } = usePrimaryPage()
 
   const handleLogout = () => {
     setOpen(false)
     void switchAccount(null)
-    navigate('feed')
   }
 
   if (isSmallScreen) {

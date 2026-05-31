@@ -4,6 +4,7 @@ import {
   FAST_WRITE_RELAY_URLS
 } from '@/constants'
 import {
+  createBlockedRelaysDraftEvent,
   createFavoriteRelaysDraftEvent,
   createFollowListDraftEvent,
   createHttpRelayListDraftEvent,
@@ -15,6 +16,12 @@ import {
 import { TDraftEvent, TMailboxRelay } from '@/types'
 
 export const NEW_USER_HTTP_RELAY_URL = 'https://mercury-relay.imwald.eu/'
+
+/** Dead relays seeded into kind 10006 for new accounts. */
+export const NEW_USER_BLOCKED_RELAY_URLS = [
+  'wss://orly-relay.imwald.eu',
+  'wss://relay.nostr.band'
+] as const
 
 export const NEW_USER_INTEREST_TOPICS = [
   'art',
@@ -66,6 +73,10 @@ export function buildNewUserFavoriteRelaysDraft(): TDraftEvent {
   return createFavoriteRelaysDraftEvent([...DEFAULT_FAVORITE_RELAYS], [])
 }
 
+export function buildNewUserBlockedRelaysDraft(): TDraftEvent {
+  return createBlockedRelaysDraftEvent([...NEW_USER_BLOCKED_RELAY_URLS])
+}
+
 export function buildNewUserRelayListDraft(): TDraftEvent {
   return createRelayListDraftEvent(buildNewUserMailboxRelays())
 }
@@ -89,6 +100,7 @@ export function buildNewUserMuteListDraft(): TDraftEvent {
 export type TNewUserTemplateDrafts = {
   profile: TDraftEvent
   favoriteRelays: TDraftEvent
+  blockedRelays: TDraftEvent
   relayList: TDraftEvent
   httpRelayList: TDraftEvent
   interestList: TDraftEvent
@@ -100,6 +112,7 @@ export function buildNewUserTemplateDrafts(pubkey: string): TNewUserTemplateDraf
   return {
     profile: buildNewUserProfileDraft(pubkey),
     favoriteRelays: buildNewUserFavoriteRelaysDraft(),
+    blockedRelays: buildNewUserBlockedRelaysDraft(),
     relayList: buildNewUserRelayListDraft(),
     httpRelayList: buildNewUserHttpRelayListDraft(),
     interestList: buildNewUserInterestListDraft(),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
-import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
-import { NEW_USER_HTTP_RELAY_URL, buildNewUserTemplateDrafts, newUserProfileDisplayName, newUserProfileName, newUserProfileSuffix } from '@/lib/new-user-template'
+import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
+import { NEW_USER_BLOCKED_RELAY_URLS, NEW_USER_HTTP_RELAY_URL, buildNewUserTemplateDrafts, newUserProfileDisplayName, newUserProfileName, newUserProfileSuffix } from '@/lib/new-user-template'
 import { newUserTemplatePublishRelays } from '@/lib/new-user-template-broadcast'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { TRelayList } from '@/types'
@@ -58,6 +58,12 @@ describe('buildNewUserTemplateDrafts', () => {
     expect(drafts.favoriteRelays.tags.filter((t) => t[0] === 'relay')).toHaveLength(2)
   })
 
+  it('builds blocked relays kind 10006 with dead relays', () => {
+    expect(drafts.blockedRelays.kind).toBe(ExtendedKind.BLOCKED_RELAYS)
+    const blocked = drafts.blockedRelays.tags.filter((t) => t[0] === 'relay').map((t) => t[1])
+    expect(blocked).toEqual([...NEW_USER_BLOCKED_RELAY_URLS])
+  })
+
   it('splits mailbox read and write relays', () => {
     expect(drafts.relayList.kind).toBe(kinds.RelayList)
     const readTags = drafts.relayList.tags.filter((t) => t[0] === 'r' && t[2] === 'read')
@@ -97,19 +103,22 @@ describe('buildNewUserTemplateDrafts', () => {
 describe('newUserTemplatePublishRelays', () => {
   const relayList = templateRelayList()
 
-  it('uses template write outboxes only for list kinds', () => {
+  it('caps list kinds to three stable write relays and skips flaky mirrors', () => {
     const targets = newUserTemplatePublishRelays(10015, relayList)
-    expectRelayKeys(targets, [...FAST_WRITE_RELAY_URLS, NEW_USER_HTTP_RELAY_URL])
-    const profileOnlyUrls = PROFILE_RELAY_URLS.filter((u) => !FAST_WRITE_RELAY_URLS.includes(u))
-    for (const profileUrl of profileOnlyUrls) {
-      expect(targets.map(relayKey)).not.toContain(relayKey(profileUrl))
-    }
+    expect(targets.length).toBeLessThanOrEqual(3)
+    expect(targets.map(relayKey)).not.toContain(relayKey('wss://relay.layer.systems'))
+    expect(targets.map(relayKey)).not.toContain(relayKey('wss://profiles.nostrver.se/'))
+    expect(targets.map(relayKey)).not.toContain(relayKey('wss://indexer.coracle.social/'))
+    expectRelayKeys(targets, [NEW_USER_HTTP_RELAY_URL])
   })
 
-  it('adds profile relays for kind 0 and 10002', () => {
+  it('adds profile relays for kind 0 and 10002 up to four targets', () => {
     const profileTargets = newUserTemplatePublishRelays(kinds.Metadata, relayList)
-    expectRelayKeys(profileTargets, [...FAST_WRITE_RELAY_URLS, NEW_USER_HTTP_RELAY_URL, ...PROFILE_RELAY_URLS])
+    expect(profileTargets.length).toBeLessThanOrEqual(4)
+    expectRelayKeys(profileTargets, [NEW_USER_HTTP_RELAY_URL, 'wss://profiles.nostr1.com'])
+    expect(profileTargets.map(relayKey)).not.toContain(relayKey('wss://indexer.coracle.social/'))
     const relayListTargets = newUserTemplatePublishRelays(kinds.RelayList, relayList)
-    expectRelayKeys(relayListTargets, [...FAST_WRITE_RELAY_URLS, NEW_USER_HTTP_RELAY_URL, ...PROFILE_RELAY_URLS])
+    expect(relayListTargets.length).toBeLessThanOrEqual(4)
+    expectRelayKeys(relayListTargets, [NEW_USER_HTTP_RELAY_URL, 'wss://profiles.nostr1.com'])
   })
 })

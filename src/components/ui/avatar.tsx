@@ -38,7 +38,8 @@ const AvatarFallback = React.forwardRef<
   <AvatarPrimitive.Fallback
     ref={ref}
     className={cn(
-      'flex h-full w-full items-center justify-center rounded-full bg-muted',
+      'flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-muted',
+      '[&_img]:block [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-center',
       className
     )}
     {...props}
@@ -46,4 +47,15 @@ const AvatarFallback = React.forwardRef<
 ))
 AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
 
-export { Avatar, AvatarImage, AvatarFallback }
+/** Pubkey identicon (or other fallback) sized to fill a circular avatar. */
+function AvatarIdenticon({ src, className }: { src: string; className?: string }) {
+  return (
+    <img
+      src={src}
+      alt=""
+      className={cn('block h-full w-full object-cover object-center', className)}
+    />
+  )
+}
+
+export { Avatar, AvatarImage, AvatarFallback, AvatarIdenticon }

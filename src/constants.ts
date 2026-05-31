@@ -345,6 +345,9 @@ export const BLOSSOM_PRESET_SELECT_PREFIX = 'blossom-preset:'
 /** [Lotus](https://github.com/0ceanSlim/lotus) — self-hosted Blossom (BUD) server (see GitHub for cdn_url / api_addr). */
 export const LOTUS_BLOSSOM_REPO_URL = 'https://github.com/0ceanSlim/lotus'
 
+/** Window event: session cleared — PageManager returns to `/` and closes note overlays. */
+export const APP_RESET_TO_LANDING_EVENT = 'app-reset-to-landing'
+
 export const StorageKey = {
   VERSION: 'version',
   THEME_SETTING: 'themeSetting',

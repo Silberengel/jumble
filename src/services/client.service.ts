@@ -202,7 +202,7 @@ import {
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
 import { initRelayPoolIdle, touchRelayPoolActivity, closePublishTransientRelaySockets, closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
-import { relaySessionStrikes } from '@/lib/relay-strikes'
+import { classifyRelayNotice, relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
@@ -2109,7 +2109,11 @@ class ClientService extends EventTarget {
               error: error instanceof Error ? error.message : 'Connection failed'
             })
             const errMsg = error instanceof Error ? error.message : 'Connection failed'
-            relaySessionStrikes.recordPublishFailure(url, errMsg)
+            if (classifyRelayNotice(errMsg) === 'rate_limit' || /\b429\b/.test(errMsg)) {
+              relaySessionStrikes.applyConnectionRateLimitCooldownForUrl(url)
+            } else {
+              relaySessionStrikes.recordPublishFailure(url, errMsg)
+            }
           } finally {
             clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount

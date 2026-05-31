@@ -19,7 +19,7 @@ import { NavigationService } from '@/services/navigation.service'
 import { ImwaldBrandBar } from '@/assets/Logo'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import NoteDrawer from '@/components/NoteDrawer'
-import { PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
+import { APP_RESET_TO_LANDING_EVENT, PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
 import { extendProfileNetworkDeferral } from '@/lib/profile-batch-coordinator'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
@@ -2159,6 +2159,48 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     )
     restorePrimaryTabAfterSecondaryClose()
   }
+
+  /** Logout / session clear: drop note overlays and replace the current URL (e.g. `/feed/notes/…`) with `/`. */
+  const resetToLandingPage = () => {
+    ignorePopStateRef.current = true
+    pendingDrawerCloseUrlRef.current = '/'
+
+    setSavedPrimaryPage(null)
+    savedPrimaryPagePropsRef.current = undefined
+    setPrimaryNoteViewState(null)
+    setPrimaryViewType(null)
+
+    noteStatsService.setBackgroundStatsPaused(false)
+
+    if (drawerOpenRef.current) {
+      setDrawerOpen(false)
+    }
+    setSinglePaneSheetOpen(false)
+    secondaryStackRef.current = []
+    setSecondaryStack([])
+
+    setPrimaryPages((prev) => {
+      if (prev.some((p) => p.name === 'feed')) return prev
+      return [...prev, { name: 'feed', element: getPrimaryPageMap().feed }]
+    })
+    setCurrentPrimaryPage('feed')
+
+    window.history.replaceState(null, '', '/')
+
+    window.setTimeout(() => {
+      setDrawerNoteId(null)
+      setDrawerInitialEvent(null)
+      pendingDrawerCloseUrlRef.current = null
+    }, 400)
+  }
+
+  const resetToLandingPageStable = useEventCallback(resetToLandingPage)
+
+  useEffect(() => {
+    const onReset = () => resetToLandingPageStable()
+    window.addEventListener(APP_RESET_TO_LANDING_EVENT, onReset)
+    return () => window.removeEventListener(APP_RESET_TO_LANDING_EVENT, onReset)
+  }, [resetToLandingPageStable])
 
   let lastPopSecondaryPageAt = 0
   const POP_SECONDARY_PAGE_DEBOUNCE_MS = 400

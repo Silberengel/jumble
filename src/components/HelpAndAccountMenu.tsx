@@ -1,7 +1,7 @@
 import LoginDialog from '@/components/LoginDialog'
 import LogoutDialog from '@/components/LogoutDialog'
 import SidebarItem from '@/components/Sidebar/SidebarItem'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarIdenticon, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -115,9 +115,9 @@ function SidebarAccountMenu({
             </div>
           ) : (
             <Avatar className="size-8 shrink-0">
-              <AvatarImage src={avatar} />
-              <AvatarFallback>
-                <img src={defaultAvatar} alt="" />
+              <AvatarImage src={avatar || defaultAvatar} className="object-cover object-center" />
+              <AvatarFallback delayMs={0}>
+                <AvatarIdenticon src={defaultAvatar} />
               </AvatarFallback>
             </Avatar>
           )}
@@ -173,9 +173,12 @@ function TitlebarAccountMenu({
               </div>
             ) : (
               <Avatar className={cn('w-6 h-6', active ? 'ring-primary ring-1' : '')}>
-                <AvatarImage src={resolvedProfile.avatar} className="object-cover object-center" />
-                <AvatarFallback>
-                  <img src={defaultAvatar} alt="" />
+                <AvatarImage
+                  src={resolvedProfile.avatar || defaultAvatar}
+                  className="object-cover object-center"
+                />
+                <AvatarFallback delayMs={0}>
+                  <AvatarIdenticon src={defaultAvatar} />
                 </AvatarFallback>
               </Avatar>
             )

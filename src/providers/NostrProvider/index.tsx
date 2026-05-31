@@ -1,3 +1,4 @@
+import { APP_RESET_TO_LANDING_EVENT } from '@/constants'
 import storage from '@/services/local-storage.service'
 import LoginDialog from '@/components/LoginDialog'
 import NcryptsecPasswordPrompt from '@/components/NcryptsecPasswordPrompt'
@@ -1155,6 +1156,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       storage.switchAccount(null)
       setAccount(null)
       setSigner(null)
+      window.dispatchEvent(new CustomEvent(APP_RESET_TO_LANDING_EVENT))
       return null
     }
     const result = await loginWithAccountPointer(act, { userInitiatedSwitch: true })
@@ -1966,6 +1968,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const signed = {
         profile: await signDraft(drafts.profile),
         favoriteRelays: await signDraft(drafts.favoriteRelays),
+        blockedRelays: await signDraft(drafts.blockedRelays),
         relayList: await signDraft(drafts.relayList),
         httpRelayList: await signDraft(drafts.httpRelayList),
         interestList: await signDraft(drafts.interestList),
@@ -1976,12 +1979,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       await Promise.all([
         indexedDb.putReplaceableEvent(signed.profile),
         indexedDb.putReplaceableEvent(signed.favoriteRelays),
+        indexedDb.putReplaceableEvent(signed.blockedRelays),
         indexedDb.putReplaceableEvent(signed.relayList),
         indexedDb.putReplaceableEvent(signed.httpRelayList),
         indexedDb.putReplaceableEvent(signed.interestList),
         indexedDb.putReplaceableEvent(signed.followList),
         indexedDb.putReplaceableEvent(signed.muteList)
       ])
+
+      const blockedUrls = blockedRelayUrlsFromEvent(signed.blockedRelays)
+      setViewerBlockedRelayUrls(blockedUrls)
+      setBlockedRelaysEvent(signed.blockedRelays)
 
       client.updateRelayListCache(signed.relayList)
       void client.updateFollowListCache(signed.followList).catch(() => {})

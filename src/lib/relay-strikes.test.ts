@@ -126,6 +126,15 @@ describe('relaySessionStrikes publish failures', () => {
     const entry = snap.entries.find((e) => e.key.includes('relay.example.com'))
     expect(entry?.entry.publishFailures).toBe(1)
   })
+
+  it('applies rate-limit cooldown on publish rate-limit NOTICE instead of accruing strikes', () => {
+    const url = 'wss://relay.damus.io/'
+    relaySessionStrikes.recordPublishFailure(url, 'rate-limited: you are noting too much')
+    expect(relaySessionStrikes.isPublishSkipped(url)).toBe(true)
+    const snap = relaySessionStrikes.getDebugSnapshot()
+    const entry = snap.entries.find((e) => e.key.includes('damus'))
+    expect(entry?.entry.publishFailures).toBe(0)
+  })
 })
 
 describe('isRelayStrikeEntryActive', () => {

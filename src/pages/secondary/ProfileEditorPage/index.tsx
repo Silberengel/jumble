@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarIdenticon, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -529,13 +529,13 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
             ) : (
               <Avatar className="h-full w-full">
                 <AvatarImage
-                  src={avatar}
+                  src={avatar || defaultImage}
                   className="object-cover object-center"
                   fetchPriority="high"
                   loading="eager"
                 />
-                <AvatarFallback>
-                  <img src={defaultImage} alt="" />
+                <AvatarFallback delayMs={0}>
+                  {defaultImage ? <AvatarIdenticon src={defaultImage} /> : null}
                 </AvatarFallback>
               </Avatar>
             )}

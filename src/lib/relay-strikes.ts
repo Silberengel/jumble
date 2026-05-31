@@ -30,7 +30,7 @@ const STRIKE_INCREMENT_DEBOUNCE_MS = 30 * 1000
 export type RelayNoticeClass = 'rate_limit' | 'fetch_failed' | 'neutral'
 
 const RATE_LIMIT_RE =
-  /too many concurrent|concurrent req|rate\s*limit|overloaded|429|slow down|throttl|backoff|try again later|maximum\s+subscriptions/i
+  /too many concurrent|concurrent req|rate[\s-]*limit|overloaded|429|slow down|throttl|backoff|try again later|maximum\s+subscriptions|noting too much/i
 
 const FETCH_FAILED_RE = /failed to fetch events/i
 
@@ -319,7 +319,13 @@ class RelaySessionStrikes {
   }
 
   recordPublishFailure(url: string, errorMessage?: string): void {
-    if (errorMessage && isRelayPublishPolicyRejection(errorMessage)) return
+    if (errorMessage) {
+      if (isRelayPublishPolicyRejection(errorMessage)) return
+      if (classifyRelayNotice(errorMessage) === 'rate_limit') {
+        this.applyRateLimitCooldownForUrl(url)
+        return
+      }
+    }
     const key = sessionKey(url)
     if (!key) return
     const now = Date.now()
