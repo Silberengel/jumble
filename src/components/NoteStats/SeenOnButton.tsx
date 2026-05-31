@@ -1,4 +1,4 @@
-import { useSecondaryPage } from '@/PageManager'
+import { useSmartRelayNavigation } from '@/PageManager'
 import { Button } from '@/components/ui/button'
 import {
   drawerMenuButtonClassName,
@@ -34,7 +34,7 @@ export default function SeenOnButton({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { push } = useSecondaryPage()
+  const { navigateToRelay } = useSmartRelayNavigation()
   const relays = useSeenOnRelays(event.id, allowedRelays)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
@@ -73,7 +73,7 @@ export default function SeenOnButton({
                   onClick={() => {
                     setIsDrawerOpen(false)
                     setTimeout(() => {
-                      push(toRelay(relay))
+                      navigateToRelay(toRelay(relay))
                     }, 50)
                   }}
                 >
@@ -94,7 +94,12 @@ export default function SeenOnButton({
         <DropdownMenuLabel>{t('Seen on')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {relays.map((relay) => (
-          <DropdownMenuItem key={relay} onClick={() => push(toRelay(relay))} className="min-w-52">
+          <DropdownMenuItem
+            key={relay}
+            onSelect={(e) => e.preventDefault()}
+            onClick={() => navigateToRelay(toRelay(relay))}
+            className="min-w-52"
+          >
             <RelayIcon url={relay} />
             {simplifyUrl(relay)}
           </DropdownMenuItem>

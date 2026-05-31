@@ -29,6 +29,7 @@ import {
   parseThreadWatchListRefs
 } from '@/lib/notification-thread-watch'
 import { userIdToPubkey } from '@/lib/pubkey'
+import { pinHttpIndexRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
 import { type Event, type Filter } from 'nostr-tools'
@@ -88,6 +89,7 @@ const INTERESTS_MAX_TOPIC_TAG_VALUES = INTERESTS_MAX_TOPICS * 4
  * relays — live faux feeds (media, etc.) stayed empty while the console showed only connection refused.
  */
 export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string[] {
+  const sourceUrls = dedupeNormalizeRelayUrlsOrdered(urls)
   const fast = dedupeNormalizeRelayUrlsOrdered(
     FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
   )
@@ -96,7 +98,7 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     const n = normalizeAnyRelayUrl(u) || u.trim()
     if (n) fastNormSet.add(n)
   }
-  const out = feedRelayPolicyUrls([{ source: 'fallback', urls: dedupeNormalizeRelayUrlsOrdered(urls) }], {
+  const out = feedRelayPolicyUrls([{ source: 'fallback', urls: sourceUrls }], {
     operation: 'read',
     maxRelays: FAUX_SPELL_MAX_RELAYS,
     applySocialKindBlockedFilter: false,
@@ -133,12 +135,13 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     }
     if (!addedOne) break
   }
-  return feedRelayPolicyUrls([{ source: 'fallback', urls: dedupeNormalizeRelayUrlsOrdered(out) }], {
+  const capped = feedRelayPolicyUrls([{ source: 'fallback', urls: dedupeNormalizeRelayUrlsOrdered(out) }], {
     operation: 'read',
     maxRelays: FAUX_SPELL_MAX_RELAYS,
     applySocialKindBlockedFilter: false,
     allowThirdPartyLocalRelays: true
   })
+  return pinHttpIndexRelaysInRelayCap(capped, sourceUrls, FAUX_SPELL_MAX_RELAYS)
 }
 
 /** Dedupe curated read relays and drop user-blocked URLs (no {@link READ_ONLY_RELAY_URLS} prepend). */

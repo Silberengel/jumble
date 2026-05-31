@@ -14,8 +14,7 @@ import { buildHiveTalkJoinUrl } from '@/lib/hivetalk'
 import {
   toAlexandria,
   encodeArticleLikePublicationNaddr,
-  openAlexandriaPublicationFromNaddr,
-  toRelay
+  openAlexandriaPublicationFromNaddr
 } from '@/lib/link'
 import logger from '@/lib/logger'
 import { pubkeyToNpub } from '@/lib/pubkey'
@@ -90,7 +89,6 @@ import { useMemo, useState, useEffect, useRef, useContext, useSyncExternalStore 
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import RelayIcon from '../RelayIcon'
-import { useSeenOnRelays } from '@/hooks/useSeenOnRelays'
 import { useSecondaryPage } from '@/PageManager'
 import { PrimaryPageContext } from '@/contexts/primary-page-context'
 import { showPublishingFeedback, toastPublishPromise } from '@/lib/publishing-feedback'
@@ -137,8 +135,6 @@ interface UseMenuActionsProps {
   pinned?: boolean
   /** Opens JSON viewer for the kind 9741 attestation of this payment or zap receipt. */
   onViewAttestation?: () => void
-  /** When set (home favorites feed), "Seen on" in Advanced matches the feed allowlist. */
-  seenOnAllowlist?: readonly string[]
 }
 
 export function useMenuActions({
@@ -152,12 +148,10 @@ export function useMenuActions({
   onOpenCallInvite,
   onOpenEditOrClone,
   pinned: _pinnedInFeed = false,
-  onViewAttestation,
-  seenOnAllowlist
+  onViewAttestation
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
-  const seenOnRelays = useSeenOnRelays(event.id, seenOnAllowlist)
   // Use useContext directly to avoid error if provider is not available
   const primaryPageContext = useContext(PrimaryPageContext)
   const currentPrimaryPage = primaryPageContext?.current ?? null
@@ -1262,38 +1256,6 @@ export function useMenuActions({
       }
     }
 
-    if (seenOnRelays.length > 0) {
-      advancedSubMenu.push({
-        label: (
-          <div
-            className="flex flex-wrap gap-2 py-0.5"
-            role="group"
-            aria-label={t('Seen on')}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            {seenOnRelays.map((relay) => (
-              <button
-                key={relay}
-                type="button"
-                title={simplifyUrl(relay)}
-                className="rounded-md p-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeDrawer()
-                  push(toRelay(relay))
-                }}
-              >
-                <RelayIcon url={relay} className="size-8 shrink-0" />
-              </button>
-            ))}
-          </div>
-        ),
-        onClick: () => {},
-        separator: true
-      })
-    }
-
     const actions: MenuAction[] = []
 
     if (READ_ALOUD_KINDS.includes(event.kind)) {
@@ -1529,7 +1491,6 @@ export function useMenuActions({
     noteTranslationFromMenu,
     translateMenuOptions,
     onViewAttestation,
-    seenOnRelays,
     push,
     currentPrimaryPage,
     isReplyToDiscussion,

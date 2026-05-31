@@ -1,5 +1,6 @@
 import NewNotesButton from '@/components/NewNotesButton'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
+import { FeedRelaysIconRow } from '@/components/FeedRelaysIconRow'
 import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
 import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
+import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
@@ -1013,16 +1015,10 @@ const NoteList = forwardRef(
     // Memoize subRequests serialization to avoid expensive JSON.stringify on every render
     const subRequestsKey = useMemo(() => legacyFeedSubscriptionKey(subRequests), [subRequests])
 
-    const feedRelayUrls = useMemo(() => {
-      const urls = new Set<string>()
-      for (const req of subRequests) {
-        for (const url of req.urls ?? []) {
-          const trimmed = url.trim()
-          if (trimmed) urls.add(trimmed)
-        }
-      }
-      return [...urls]
-    }, [subRequestsKey])
+    const feedRelayUrls = useMemo(
+      () => uniqueRelayUrlsFromSubRequests(subRequests),
+      [subRequestsKey]
+    )
 
     const feedAttestedSuperchatIds = useFeedAttestedSuperchatIds(feedRelayUrls)
 
@@ -4519,6 +4515,12 @@ const NoteList = forwardRef(
 
     const feedClientFilterPanel = feedClientFilterOpen ? (
       <div id="feed-client-filter-panel" className={feedClientFilterPanelSurfaceClass}>
+            {feedRelayUrls.length > 0 ? (
+              <div className={feedClientFilterSectionClass}>
+                <p className="text-sm font-medium">{t('Feed relays', { defaultValue: 'Relays in this feed' })}</p>
+                <FeedRelaysIconRow urls={feedRelayUrls} />
+              </div>
+            ) : null}
             <div className={feedClientFilterSectionClass}>
               <Label htmlFor="feed-client-search" className="text-sm font-medium">
                 {t('Search loaded posts')}

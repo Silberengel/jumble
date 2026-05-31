@@ -109,7 +109,6 @@ export default function NoteOptions({
     setIsRawEventDialogOpen,
     setIsReportDialogOpen,
     isSmallScreen,
-    seenOnAllowlist,
     onOpenPublicMessage,
     onOpenCallInvite,
     onOpenEditOrClone: (mode) => {

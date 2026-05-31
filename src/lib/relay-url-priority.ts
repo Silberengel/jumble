@@ -5,7 +5,12 @@ import {
   MAX_REQ_RELAY_URLS
 } from '@/constants'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeRelayUrlByScheme, normalizeUrl } from '@/lib/url'
+import {
+  isLocalNetworkUrl,
+  normalizeAnyRelayUrl,
+  normalizeRelayUrlByScheme,
+  normalizeUrl
+} from '@/lib/url'
 
 export { MAX_REQ_RELAY_URLS }
 
@@ -110,8 +115,8 @@ export function buildPrioritizedReadRelayUrls(opts: {
   const applySocial = opts.applySocialKindBlockedFilter !== false
   const exemptFromSocial = new Set<string>()
   for (const u of opts.userReadRelays ?? []) {
-    const n = normalizeAnyRelayUrl(u) || u.trim()
-    if (n) exemptFromSocial.add(n)
+    const n = normalizeRelayUrlByScheme(u) || u.trim()
+    if (n) exemptFromSocial.add(n.toLowerCase())
   }
   const layers = buildReadRelayPriorityLayers({
     userReadRelays: opts.userReadRelays,
