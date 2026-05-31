@@ -40,7 +40,8 @@ import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
-import { sanitizeRelayUrlsForFetch, isRelayConnectionAllowedForViewer } from '@/lib/read-only-relay-personal'
+import { sanitizeRelayUrlsForFetch, isRelayConnectionAllowedForViewer, grantRelayConnectionOperationScope } from '@/lib/read-only-relay-personal'
+import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
 import nip66Service from './nip66.service'
 import type { ISigner, TSignerType } from '@/types'
@@ -399,6 +400,8 @@ export class QueryService {
     if (queue?.length) {
       const next = queue.shift()!
       next()
+    } else if (count === 0) {
+      queueMicrotask(() => closeRelayPoolSocketsIfIdle([relayKey]))
     }
   }
 
@@ -532,6 +535,7 @@ export class QueryService {
     }
 
     const resultPromise = new Promise<NEvent[]>((resolve) => {
+      const revokeOperationScope = grantRelayConnectionOperationScope(urls)
       const events: NEvent[] = []
       const cancelAbortRegistrations: Array<() => void> = []
       const abortHttp = new AbortController()
@@ -640,6 +644,8 @@ export class QueryService {
           }
           cancelAbortRegistrations.length = 0
           resolved = true
+          revokeOperationScope()
+          closeRelayPoolSocketsIfIdle([...wsQueryUrls, ...httpRelayBases])
           if (resolveTimeout) clearTimeout(resolveTimeout)
           if (firstResultGraceTimeoutId) clearTimeout(firstResultGraceTimeoutId)
           if (feedFirstResultGraceTimeoutId) clearTimeout(feedFirstResultGraceTimeoutId)
@@ -867,6 +873,8 @@ export class QueryService {
       queueMicrotask(() => callbacks.oneose?.(true))
       return { close: () => {} }
     }
+
+    const revokeOperationScope = grantRelayConnectionOperationScope(relays)
 
     const _knownIds = new Set<string>()
     const grouped = new Map<string, Filter[]>()
@@ -1101,7 +1109,11 @@ export class QueryService {
         // relay is mis-labeled "skipped" in batch_end.
         void allOpened.then(() => {
           subs.forEach(({ close: subClose }) => subClose())
-          setTimeout(() => opBatch?.finalize('closed', 'subscribe_close'), 0)
+          setTimeout(() => {
+            opBatch?.finalize('closed', 'subscribe_close')
+            revokeOperationScope()
+            closeRelayPoolSocketsIfIdle(relays)
+          }, 0)
         })
       }
     }

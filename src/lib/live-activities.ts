@@ -7,6 +7,7 @@ import {
   MAX_REQ_RELAY_URLS,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
+import { viewerIncludeGlobalFastReadRelayLayer } from '@/lib/read-only-relay-personal'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { nip19, type Event, type Filter } from 'nostr-tools'
 
@@ -669,7 +670,8 @@ export function buildLiveActivitiesRelayUrls(options: {
   includeGlobalFastRead?: boolean
 }): string[] {
   const { loggedIn, favoriteRelays, blockedRelays, relayListRead, relayListWrite } = options
-  const includeFast = options.includeGlobalFastRead !== false
+  const includeFast =
+    options.includeGlobalFastRead !== false && viewerIncludeGlobalFastReadRelayLayer()
   const useGlobalFavoriteDefaults = includeFast
   if (loggedIn) {
     const fav = relayUrlsLocalsFirst(

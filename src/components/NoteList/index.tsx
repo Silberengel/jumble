@@ -27,6 +27,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
+import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
@@ -781,6 +782,7 @@ const NoteList = forwardRef(
        */
       feedClientFilterTabRowHost,
       onSingleRelayKindlessEmpty,
+      onSingleRelayBrowseEmpty,
       feedTopNotice,
       gridLayout = false,
       /**
@@ -855,6 +857,8 @@ const NoteList = forwardRef(
       feedClientFilterTabRowHost?: HTMLElement | null
       /** Single-relay kindless: if EOSE with no events, parent switches to explicit kinds in `subRequests`. */
       onSingleRelayKindlessEmpty?: () => void
+      /** Relay explore: explicit kinds EOSE empty — parent retries kindless `{ limit }` once. */
+      onSingleRelayBrowseEmpty?: () => void
       /** Optional banner above the feed (e.g. kindless→kinds fallback). */
       feedTopNotice?: ReactNode
       /** When true, render events as an Instagram-style 3-column square media grid. */
@@ -946,8 +950,11 @@ const NoteList = forwardRef(
     const feedRelayReturnedAnyEventRef = useRef(false)
     /** One-shot per timeline init: avoid double-calling parent fallback (Strict Mode / duplicate EOSE). */
     const singleRelayKindlessFallbackAttemptedRef = useRef(false)
+    const singleRelayBrowseFallbackAttemptedRef = useRef(false)
     const onSingleRelayKindlessEmptyRef = useRef(onSingleRelayKindlessEmpty)
     onSingleRelayKindlessEmptyRef.current = onSingleRelayKindlessEmpty
+    const onSingleRelayBrowseEmptyRef = useRef(onSingleRelayBrowseEmpty)
+    onSingleRelayBrowseEmptyRef.current = onSingleRelayBrowseEmpty
     /** Timeout handle for kindless EOSE fallback; cleared when EOSE arrives or effect tears down. */
     const kindlessEoseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     /** Dedupe {@link toast.error} when relays return nothing for a feed load. */
@@ -2250,6 +2257,7 @@ const NoteList = forwardRef(
           feedPaintLiveRelayDoneRef.current = false
           feedRelayReturnedAnyEventRef.current = false
           singleRelayKindlessFallbackAttemptedRef.current = false
+          singleRelayBrowseFallbackAttemptedRef.current = false
         }
 
         // Re-subscribe with rows visible (e.g. relay URL expansion): don't flash global loading / skeleton.
@@ -2291,6 +2299,14 @@ const NoteList = forwardRef(
           if (!filterMissingKinds(f)) return false
           if (useFilterAsIs && clientSideKindFilter && timelineFilterHasNonKindScope(f)) return false
           if (useFilterAsIs && allowKindlessRelayExplore && urls.length === 1) {
+            return false
+          }
+          if (
+            useFilterAsIs &&
+            urls.length === 1 &&
+            relayAuthoritativeFeedOnlyRef.current &&
+            hostPrimaryPageNameRef.current === 'relay'
+          ) {
             return false
           }
           return true
@@ -3401,6 +3417,28 @@ const NoteList = forwardRef(
                   }
                 }
 
+                // Relay explore: explicit kinds returned nothing — parent retries kindless once.
+                if (
+                  eosed &&
+                  effectActive &&
+                  onSingleRelayBrowseEmptyRef.current &&
+                  !singleRelayBrowseFallbackAttemptedRef.current &&
+                  !feedRelayReturnedAnyEventRef.current &&
+                  relayAuthoritativeFeedOnlyRef.current &&
+                  hostPrimaryPageNameRef.current === 'relay'
+                ) {
+                  const reqs = subRequestsRef.current
+                  const f0 = reqs[0]
+                  if (reqs.length === 1 && f0 && f0.urls.length === 1) {
+                    const f = f0.filter as Filter
+                    const hasKinds = Array.isArray(f.kinds) && f.kinds.length > 0
+                    if (hasKinds) {
+                      singleRelayBrowseFallbackAttemptedRef.current = true
+                      onSingleRelayBrowseEmptyRef.current()
+                    }
+                  }
+                }
+
                 if (
                   effectActive &&
                   eosed &&
@@ -3960,6 +3998,7 @@ const NoteList = forwardRef(
     useEffect(() => {
       if (relayAuthoritativeFeedOnly) return
       if (!timelinePublicReadFallback) return
+      if (isMetadataRelaysOnlyPolicyActive()) return
       if (feedSubscriptionKey === 'home-all-favorites') return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return

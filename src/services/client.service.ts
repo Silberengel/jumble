@@ -55,6 +55,11 @@ import {
   isRelayConnectionAllowedForViewer,
   isMetadataRelaysOnlyPolicyActive,
   isRestrictConnectionsToMetadataRelaysOnly,
+  grantRelayConnectionOperationScope,
+  enterSingleRelayExplicitFetchScope,
+  isSingleRelayExplicitBrowseActive,
+  isSingleRelayExplicitFetchScopeActive,
+  isSingleRelayExplicitPolicyActive,
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 import {
@@ -116,7 +121,12 @@ function sanitizeSubscribeFiltersBeforeReq(filter: Filter | Filter[]): Filter[] 
   return asArray.map(sanitizeETagFilterForSubscribe).filter((f): f is Filter => !!f)
 }
 
-function withDocumentRelayUrlsForFilters(relays: string[], filters: Filter[]): string[] {
+function withDocumentRelayUrlsForFilters(
+  relays: string[],
+  filters: Filter[],
+  opts?: { singleRelayFeed?: boolean }
+): string[] {
+  if (opts?.singleRelayFeed) return relays
   if (!filters.some((f) => relayFilterIncludesDocumentRelayKind(f))) return relays
   return dedupeNormalizeRelayUrlsOrdered([...relays, ...DOCUMENT_RELAY_URLS])
 }
@@ -190,7 +200,7 @@ import {
   urlMatchesConfiguredHttpIndexRelay
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
-import { initRelayPoolIdle, touchRelayPoolActivity } from '@/lib/relay-pool-idle'
+import { initRelayPoolIdle, touchRelayPoolActivity, closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
@@ -466,8 +476,13 @@ class ClientService extends EventTarget {
       if (params?.purpose !== 'write' && !isRelayConnectionAllowedForViewer(url)) {
         throw new Error(`[metadata-relays-only] skipping relay ${url}`)
       }
-      if (params?.purpose !== 'write' && relaySessionStrikes.isReadHttpSkipped(url)) {
-        throw new Error(`[relay-strike] skipping unresponsive relay ${url}`)
+      if (params?.purpose !== 'write') {
+        if (relaySessionStrikes.isRateLimited(url)) {
+          throw new Error(`[relay-rate-limit] skipping relay ${url}`)
+        }
+        if (!isSingleRelayExplicitPolicyActive() && relaySessionStrikes.isReadHttpSkipped(url)) {
+          throw new Error(`[relay-strike] skipping unresponsive relay ${url}`)
+        }
       }
       if (!isWebsocketUrl(url) && isKind10243HttpRelayTagUrl(url)) {
         throw new Error(`[http-index-relay] ${url} uses the HTTPS index API, not WebSocket`)
@@ -489,10 +504,11 @@ class ClientService extends EventTarget {
           params?.purpose !== 'write' &&
           !msg.includes('[metadata-relays-only]') &&
           !msg.includes('[relay-strike]') &&
+          !msg.includes('[relay-rate-limit]') &&
           !msg.includes('[offline]') &&
           !msg.includes('[http-index-relay]')
         ) {
-          relaySessionStrikes.recordReadFailure(url, 'connection')
+          relaySessionStrikes.recordConnectionFailure(url, msg, 'connection')
         }
         throw err
       }
@@ -1772,6 +1788,7 @@ class ClientService extends EventTarget {
           publishOpBatch.record(idx, url, rs?.success === true, rs?.error)
         })
         publishOpBatch.logEnd(status)
+        queueMicrotask(() => closeRelayPoolSocketsIfIdle(publishTargetUrls))
       }
 
       /**
@@ -2598,7 +2615,8 @@ class ClientService extends EventTarget {
       onclose,
       startLogin,
       onAllClose,
-      connectionSlotPriority
+      connectionSlotPriority,
+      singleRelayExplicit
     }: {
       onevent?: (evt: NEvent) => void
       oneose?: (eosed: boolean) => void
@@ -2607,17 +2625,25 @@ class ClientService extends EventTarget {
       onAllClose?: (reasons: string[]) => void
       /** Jump the global connection queue (single-relay authoritative timelines). */
       connectionSlotPriority?: boolean
+      /** Authoritative single-relay timeline: keep the target relay through sanitizers and strikes. */
+      singleRelayExplicit?: boolean
     },
     relayReqLog?: { groupId?: string; onBatchEnd?: (rows: RelayOpTerminalRow[]) => void }
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
+    const preserveExplicitSingleRelay =
+      originalDedupedRelays.length === 1 &&
+      (singleRelayExplicit === true || isSingleRelayExplicitBrowseActive())
+    const revokeFetchScope = preserveExplicitSingleRelay ? enterSingleRelayExplicitFetchScope() : () => {}
     const httpKeys = new Set(
       httpIndexBasesForRelayQuery(originalDedupedRelays, this.viewerHttpIndexRelayBases).map((u) =>
         canonicalRelaySessionKey(u)
       )
     )
     let relays = sanitizeRelayUrlsForFetch(
-      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url)))
+      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url))),
+      undefined,
+      { preserveExplicitSingleRelay }
     )
     if (navigator.onLine) {
       relays = stripLocalNetworkRelaysForWssReq(relays)
@@ -2640,7 +2666,9 @@ class ClientService extends EventTarget {
       }
     }
 
-    relays = withDocumentRelayUrlsForFilters(relays, filters)
+    relays = withDocumentRelayUrlsForFilters(relays, filters, {
+      singleRelayFeed: originalDedupedRelays.length === 1
+    })
 
     const stripSocialBlockedRelays =
       SOCIAL_KIND_BLOCKED_RELAY_URLS.length > 0 &&
@@ -2691,8 +2719,9 @@ class ClientService extends EventTarget {
     /**
      * Same rule as {@link QueryService.subscribe}: never `pool.close` a lone relay when the REQ carries NIP-50
      * `search` — overlapping one-shots (e.g. Strict Mode) otherwise reset the socket before EOSE.
+     * Also skip for explicit single-relay browse feeds: close+reconnect on every timeline resubscribe triggers 429s.
      */
-    if (groupedRequests.length === 1 && !hasNip50Search) {
+    if (groupedRequests.length === 1 && !hasNip50Search && !preserveExplicitSingleRelay) {
       try {
         this.pool.close([groupedRequests[0]!.url])
       } catch {
@@ -2715,6 +2744,8 @@ class ClientService extends EventTarget {
         close: () => {}
       }
     }
+
+    const revokeOperationScope = grantRelayConnectionOperationScope(relays)
 
     const reqGroupId =
       relayReqLog?.groupId ??
@@ -2807,7 +2838,11 @@ class ClientService extends EventTarget {
             relay = await that.pool.ensureRelay(url, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS })
             patchRelayNoticeForFetchFailures(relay, relayKey, (u, m) => that.handleRelayNoticeSession(u, m))
           } catch (err) {
-            relaySessionStrikes.recordReadFailure(url, 'connection')
+            relaySessionStrikes.recordConnectionFailure(
+              url,
+              (err as Error)?.message ?? String(err),
+              'connection'
+            )
             that.queryService.releaseSubSlot(relayKey)
             handleClose(i, (err as Error)?.message ?? String(err))
             return
@@ -2864,7 +2899,11 @@ class ClientService extends EventTarget {
                           that.handleRelayNoticeSession(u, m)
                         )
                       } catch (err) {
-                        relaySessionStrikes.recordReadFailure(url, 'connection')
+                        relaySessionStrikes.recordConnectionFailure(
+                          url,
+                          (err as Error)?.message ?? String(err),
+                          'connection'
+                        )
                         nip42ResubscribePending.delete(i)
                         that.queryService.releaseSubSlot(relayKey)
                         handleClose(i, (err as Error)?.message ?? String(err))
@@ -2969,7 +3008,14 @@ class ClientService extends EventTarget {
         this.removeEventListener('newEvent', handleNewEventFromInternal)
         void allOpened.then(() => {
           subs.forEach(({ close: subClose }) => subClose())
-          setTimeout(() => opBatch.finalize('closed', 'subscription_closed'), 0)
+          setTimeout(() => {
+            opBatch.finalize('closed', 'subscription_closed')
+            revokeOperationScope()
+            revokeFetchScope()
+            if (!preserveExplicitSingleRelay) {
+              closeRelayPoolSocketsIfIdle(relays)
+            }
+          }, 0)
         })
       }
     }
@@ -3067,7 +3113,9 @@ class ClientService extends EventTarget {
     const httpTimelinePollBases = httpIndexBasesForRelayQuery(
       originalDedupedRelays,
       this.viewerHttpIndexRelayBases
-    ).filter((u) => !relaySessionStrikes.isReadHttpSkipped(u))
+    ).filter(
+      (u) => relayAuthoritativeTimeline || !relaySessionStrikes.isReadHttpSkipped(u)
+    )
     let httpPollIntervalId: ReturnType<typeof setInterval> | null = null
     let httpPollCursorUnix = 0
     const clearHttpTimelinePoll = () => {
@@ -3325,7 +3373,8 @@ class ClientService extends EventTarget {
       onclose: onClose,
       connectionSlotPriority:
         connectionSlotPriority === true ||
-        (relayAuthoritativeTimeline && wsRelays.length === 1 && navigator.onLine)
+        (relayAuthoritativeTimeline && wsRelays.length === 1 && navigator.onLine),
+      singleRelayExplicit: relayAuthoritativeTimeline && originalDedupedRelays.length === 1
     },
     httpOnlyShard ? undefined : relayReqLog)
 
@@ -3539,15 +3588,22 @@ class ClientService extends EventTarget {
       this.viewerHttpIndexRelayBases
     )
     const httpKeys = new Set(httpRelayBases.map((u) => canonicalRelaySessionKey(u)))
+    const preserveExplicitSingleRelay =
+      originalDedupedRelays.length === 1 &&
+      (isSingleRelayExplicitBrowseActive() || isSingleRelayExplicitFetchScopeActive())
     const wsOriginal = sanitizeRelayUrlsForFetch(
-      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url)))
+      originalDedupedRelays.filter((url) => !httpKeys.has(canonicalRelaySessionKey(url))),
+      undefined,
+      { preserveExplicitSingleRelay }
     )
     let relays = [...wsOriginal]
     if (relays.length === 0 && httpRelayBases.length === 0) {
       relays = [...publicReadRelayFallbackUrls()]
     }
     const filters = Array.isArray(filter) ? filter : [filter]
-    relays = withDocumentRelayUrlsForFilters(relays, filters)
+    relays = withDocumentRelayUrlsForFilters(relays, filters, {
+      singleRelayFeed: originalDedupedRelays.length === 1
+    })
     const stripSocialBlockedRelays =
       SOCIAL_KIND_BLOCKED_RELAY_URLS.length > 0 &&
       filters.some((f) => relayFilterIncludesSocialKindBlockedKind(f))
@@ -3621,12 +3677,6 @@ class ClientService extends EventTarget {
       } catch (e) {
         return { events: [], connectionError: e instanceof Error ? e.message : String(e) }
       }
-    }
-    try {
-      await this.pool.ensureRelay(normalized, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS })
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { events: [], connectionError: msg }
     }
     try {
       const events = await this.queryService.query([normalized], filter, undefined, queryOpts)

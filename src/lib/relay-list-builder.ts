@@ -23,7 +23,7 @@ import {
   normalizeHttpRelayUrl,
   normalizeUrl
 } from '@/lib/url'
-import { buildPersonalRelayKeySet, sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { buildPersonalRelayKeySet, sanitizeRelayUrlsForFetch, isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrls } from './private-relays'
 import { defaultFavoriteRelaysForViewer, viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
@@ -206,7 +206,9 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
   ]
 
   let effectiveIncludeFastRead = includeFastReadRelays
-  if (userPubkey && includeFastReadRelays) {
+  if (isMetadataRelaysOnlyPolicyActive()) {
+    effectiveIncludeFastRead = false
+  } else if (userPubkey && includeFastReadRelays) {
     if (useGlobalRelayDefaultsOption !== undefined) {
       effectiveIncludeFastRead = useGlobalRelayDefaultsOption
     } else {

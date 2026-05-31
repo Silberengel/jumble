@@ -1,6 +1,8 @@
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
+import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 
 export { stripNostrLandAggrFromRelayUrls }
 
@@ -28,6 +30,9 @@ export function buildAllFavoritesFeedRelayUrls(
   extraFeedRelayUrls: string[],
   useGlobalFavoriteDefaults = true
 ): string[] {
+  const extras = isMetadataRelaysOnlyPolicyActive()
+    ? extraFeedRelayUrls.filter((u) => !isWispTrendingNotesRelayUrl(u))
+    : extraFeedRelayUrls
   return stripNostrLandAggrFromRelayUrls(
     feedRelayPolicyUrls(
       [
@@ -35,7 +40,7 @@ export function buildAllFavoritesFeedRelayUrls(
           source: 'favorites',
           urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
         },
-        { source: 'fallback', urls: extraFeedRelayUrls }
+        { source: 'fallback', urls: extras }
       ],
       {
         operation: 'favorites-feed',

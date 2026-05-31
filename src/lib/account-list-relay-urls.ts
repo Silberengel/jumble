@@ -32,7 +32,7 @@ export async function buildAccountListRelayUrlsForMerge(options: {
     blockedRelays,
     maxRelays: 100,
     applySocialKindBlockedFilter: false,
-    includeGlobalFastRead: useGlobal
+    includeGlobalFastRead: useGlobal && viewerIncludeGlobalFastReadRelayLayer()
   })
   const write = buildPrioritizedWriteRelayUrls({
     userWriteRelays: writeOutboxes,
@@ -40,7 +40,7 @@ export async function buildAccountListRelayUrlsForMerge(options: {
     blockedRelays,
     maxRelays: 100,
     applySocialKindBlockedFilter: false,
-    includeGlobalFastWriteReadTails: useGlobal
+    includeGlobalFastWriteReadTails: useGlobal && viewerIncludeGlobalFastWriteRelayLayer()
   })
   const merged = [...read, ...write]
   return [...new Set(merged.map((u) => normalizeRelayUrlByScheme(u) || u).filter(Boolean))]

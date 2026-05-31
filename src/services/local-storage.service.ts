@@ -124,7 +124,7 @@ class LocalStorageService {
   private showPublishSuccessToasts: boolean = false
   private showDetailedPublishToasts: boolean = true
   private showLiveActivitiesBanner: boolean = true
-  private restrictRelaysToMetadataLists: boolean = false
+  private restrictRelaysToMetadataLists: boolean = true
 
   constructor() {
     if (!LocalStorageService.instance) {
@@ -422,7 +422,7 @@ class LocalStorageService {
     const restrictMetadataRelaysStr = window.localStorage.getItem(
       StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS
     )
-    this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr === 'true'
+    this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr !== 'false'
     setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
 
     // Clean up deprecated data
@@ -617,7 +617,7 @@ class LocalStorageService {
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
     const restrictMetadataRelaysStr = get(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
     if (restrictMetadataRelaysStr != null) {
-      this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr === 'true'
+      this.restrictRelaysToMetadataLists = restrictMetadataRelaysStr !== 'false'
       setRestrictConnectionsToMetadataRelaysOnly(this.restrictRelaysToMetadataLists)
     }
   }

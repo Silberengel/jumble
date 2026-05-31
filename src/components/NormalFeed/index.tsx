@@ -100,6 +100,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
   hostPrimaryPageName?: TPrimaryPageName
   /** Single-relay kindless wave EOSEd with no events: parent re-subscribes with explicit kinds. */
   onSingleRelayKindlessEmpty?: () => void
+  /** Relay explore: explicit kinds EOSEd empty — parent widens to kindless `{ limit }` once. */
+  onSingleRelayBrowseEmpty?: () => void
   /** Shown above the feed list (e.g. after kindless→kinds fallback on a single-relay chip). */
   feedTopNotice?: ReactNode
   /** Passed through to {@link NoteList} (d-tag browse one-shot). */
@@ -151,6 +153,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
     showFeedClientFilter: showFeedClientFilterProp,
     hostPrimaryPageName,
     onSingleRelayKindlessEmpty,
+    onSingleRelayBrowseEmpty,
     feedTopNotice,
     oneShotFetch = false,
     progressiveWarmupQuery,
@@ -412,6 +415,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           hostPrimaryPageName={hostPrimaryPageName}
           feedClientFilterTabRowHost={mergeFilterWithTabsRow ? feedFilterTabRowHost : undefined}
           onSingleRelayKindlessEmpty={onSingleRelayKindlessEmpty}
+          onSingleRelayBrowseEmpty={onSingleRelayBrowseEmpty}
           feedTopNotice={feedTopNotice}
           oneShotFetch={oneShotFetch}
           progressiveWarmupQuery={progressiveWarmupQuery}

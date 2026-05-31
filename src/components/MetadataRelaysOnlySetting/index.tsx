@@ -1,8 +1,8 @@
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT, setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import client from '@/services/client.service'
 import storage from '@/services/local-storage.service'
-import { setRestrictConnectionsToMetadataRelaysOnly } from '@/lib/read-only-relay-personal'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -22,6 +22,7 @@ export default function MetadataRelaysOnlySetting() {
     setRestrictConnectionsToMetadataRelaysOnly(checked)
     client.interruptBackgroundQueries({ closePooledRelayConnections: true })
     client.closeMetadataPolicyDisallowedRelayConnections()
+    window.dispatchEvent(new CustomEvent(METADATA_RELAYS_ONLY_POLICY_CHANGED_EVENT))
   }
 
   return (
@@ -32,7 +33,7 @@ export default function MetadataRelaysOnlySetting() {
       </div>
       <div className="text-muted-foreground text-xs max-w-xl">
         {t(
-          'When on, the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists. Publishing is unchanged. Relay explore and Search pages are exempt.'
+          'When on (default), the app only opens read connections to relays on your Read & Write, Favorite, Cache, and HTTP relay lists, plus hard-coded relays only while a query or subscription needs them. Publishing is unchanged. Relay explore and Search pages are exempt.'
         )}
       </div>
     </div>

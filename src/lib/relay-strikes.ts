@@ -21,6 +21,8 @@ const STRIKE_COOLDOWN_MS = 3 * 60 * 1000
 
 /** Rate-limit style NOTICE / overload → cool down without incrementing strike counter. */
 const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000
+/** HTTP 429 on WebSocket handshake: shorter backoff so explicit relay browse recovers after accidental hammering. */
+const CONNECTION_RATE_LIMIT_COOLDOWN_MS = 90 * 1000
 
 /** Non–cache-relay failures: at most one strike increment per key per this window. */
 const STRIKE_INCREMENT_DEBOUNCE_MS = 30 * 1000
@@ -123,6 +125,15 @@ class RelaySessionStrikes {
     return e
   }
 
+  /** True when a relay NOTICE or connection error put this URL in rate-limit cooldown. */
+  isRateLimited(url: string): boolean {
+    const key = sessionKey(url)
+    if (!key) return false
+    const e = this.byKey.get(key)
+    if (!e) return false
+    return Date.now() < e.rateLimitUntil
+  }
+
   /** True when read / WS / HTTP index fetch should omit this relay (unless single-relay override). */
   isReadHttpSkipped(url: string): boolean {
     const key = sessionKey(url)
@@ -130,6 +141,19 @@ class RelaySessionStrikes {
     const e = this.byKey.get(key)
     if (!e) return false
     return Date.now() < Math.max(e.rateLimitUntil, e.readStrikeSkipUntil, e.slowParkUntil)
+  }
+
+  /** WS/HTTP connect failure: rate-limit style errors cool down without accruing read strikes. */
+  recordConnectionFailure(url: string, message: string, source: 'connection' | 'http' = 'connection'): void {
+    if (classifyRelayNotice(message) === 'rate_limit') {
+      if (source === 'connection') {
+        this.applyConnectionRateLimitCooldownForUrl(url)
+      } else {
+        this.applyRateLimitCooldownForUrl(url)
+      }
+      return
+    }
+    this.recordReadFailure(url, source)
   }
 
   /** True when publish should omit this relay (unless single-target override). */
@@ -156,12 +180,17 @@ class RelaySessionStrikes {
 
   applyRateLimitCooldownForUrl(url: string): void {
     const key = sessionKey(url)
-    if (key) this.applyRateLimitCooldownKey(key)
+    if (key) this.applyRateLimitCooldownKey(key, RATE_LIMIT_COOLDOWN_MS)
   }
 
-  private applyRateLimitCooldownKey(key: string): void {
+  applyConnectionRateLimitCooldownForUrl(url: string): void {
+    const key = sessionKey(url)
+    if (key) this.applyRateLimitCooldownKey(key, CONNECTION_RATE_LIMIT_COOLDOWN_MS)
+  }
+
+  private applyRateLimitCooldownKey(key: string, cooldownMs = RATE_LIMIT_COOLDOWN_MS): void {
     const e = this.getEntry(key)
-    e.rateLimitUntil = Math.max(e.rateLimitUntil, Date.now() + RATE_LIMIT_COOLDOWN_MS)
+    e.rateLimitUntil = Math.max(e.rateLimitUntil, Date.now() + cooldownMs)
   }
 
   /** WS connect failure, HTTP transport failure, etc. */

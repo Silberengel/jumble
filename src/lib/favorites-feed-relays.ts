@@ -20,6 +20,7 @@ import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
+import { viewerIncludeGlobalFastReadRelayLayer, viewerIncludeGlobalFastWriteRelayLayer } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
@@ -141,12 +142,13 @@ export function buildProfileAugmentedReadRelayUrls(
   maxRelays: number = PROFILE_AUGMENTED_READ_MAX_RELAYS,
   useGlobalRelayBootstrap = true
 ): string[] {
+  const allowFastReadBootstrap = useGlobalRelayBootstrap && viewerIncludeGlobalFastReadRelayLayer()
   const fastReadLayer =
-    useGlobalRelayBootstrap
+    allowFastReadBootstrap
       ? (FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[])
       : []
   const merged = mergeRelayUrlLayers(
-    useGlobalRelayBootstrap ? [fastReadLayer, authorRelayUrls] : [authorRelayUrls, fastReadLayer],
+    allowFastReadBootstrap ? [fastReadLayer, authorRelayUrls] : [authorRelayUrls, fastReadLayer],
     blockedRelays
   )
   return merged.slice(0, maxRelays)
@@ -196,7 +198,8 @@ export function getRelayUrlsWithFavoritesFastReadAndInbox(
   options?: ReadRelayPriorityOptions
 ): string[] {
   const useFavDefaults = options?.useGlobalFavoriteDefaults !== false
-  const includeFast = options?.includeGlobalFastRead !== false
+  const includeFast =
+    options?.includeGlobalFastRead !== false && viewerIncludeGlobalFastReadRelayLayer()
   const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useFavDefaults)
   return buildPrioritizedReadRelayUrls({
     userReadRelays: userInboxReadRelays,
@@ -315,7 +318,8 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
         : relayFilterIncludesSocialKindBlockedKind(r.filter)
 
     const useFavDefaults = options?.useGlobalFavoriteDefaults !== false
-    const includeFast = options?.includeGlobalFastRead !== false
+    const includeFast =
+      options?.includeGlobalFastRead !== false && viewerIncludeGlobalFastReadRelayLayer()
     const favorites = getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useFavDefaults)
 
     const authorOnly = dedupeNormalizeRelayUrlsOrdered(options?.authorWriteRelays ?? [])

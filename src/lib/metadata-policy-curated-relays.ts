@@ -24,7 +24,20 @@ const METADATA_POLICY_CURATED_RELAY_LISTS: readonly (readonly string[])[] = [
   NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS
 ]
 
+/**
+ * Curated stacks allowed to connect briefly under metadata-only policy when merged into an active
+ * query/subscribe (documents, GIFs, profiles, …). Excludes FAST_READ, search indexers, and read-only mirrors.
+ */
+const METADATA_POLICY_OPERATION_SCOPED_RELAY_LISTS: readonly (readonly string[])[] = [
+  PROFILE_RELAY_URLS,
+  DOCUMENT_RELAY_URLS,
+  GIF_RELAY_URLS,
+  BOOKSTR_RELAY_URLS,
+  FOLLOWS_HISTORY_RELAY_URLS
+]
+
 let curatedRelayKeySet: ReadonlySet<string> | null = null
+let operationScopedRelayKeySet: ReadonlySet<string> | null = null
 
 function relayKeyForCuratedSet(url: string): string {
   return (normalizeAnyRelayUrl(url) || url.trim()).toLowerCase()
@@ -44,10 +57,30 @@ function getCuratedRelayKeySet(): ReadonlySet<string> {
   return curatedRelayKeySet
 }
 
+function getOperationScopedRelayKeySet(): ReadonlySet<string> {
+  if (!operationScopedRelayKeySet) {
+    const out = new Set<string>()
+    for (const list of METADATA_POLICY_OPERATION_SCOPED_RELAY_LISTS) {
+      for (const u of list) {
+        const key = relayKeyForCuratedSet(u)
+        if (key) out.add(key)
+      }
+    }
+    operationScopedRelayKeySet = out
+  }
+  return operationScopedRelayKeySet
+}
+
 /** True for relays from specialized constants (profile fetch, read-only indexers, NIP-50, …). */
 export function isMetadataPolicyCuratedRelay(url: string): boolean {
   const key = relayKeyForCuratedSet(url)
   return key.length > 0 && getCuratedRelayKeySet().has(key)
+}
+
+/** Purpose-specific constants that may connect during an in-flight read (not general feed widening). */
+export function isMetadataPolicyOperationScopedRelay(url: string): boolean {
+  const key = relayKeyForCuratedSet(url)
+  return key.length > 0 && getOperationScopedRelayKeySet().has(key)
 }
 
 let profileRelayKeySet: ReadonlySet<string> | null = null
@@ -73,5 +106,6 @@ export function isMetadataPolicyProfileRelay(url: string): boolean {
 /** For tests: reset lazy-built key set after constant changes. */
 export function resetMetadataPolicyCuratedRelayKeysForTests(): void {
   curatedRelayKeySet = null
+  operationScopedRelayKeySet = null
   profileRelayKeySet = null
 }

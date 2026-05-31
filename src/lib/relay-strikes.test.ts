@@ -85,6 +85,13 @@ describe('relaySessionStrikes.clearKey', () => {
     relaySessionStrikes.reset()
   })
 
+  it('recordConnectionFailure applies rate-limit cooldown on HTTP 429', () => {
+    const url = 'wss://relay.layer.systems/'
+    relaySessionStrikes.recordConnectionFailure(url, 'HTTP/1.1 429 Too Many Requests')
+    expect(relaySessionStrikes.isRateLimited(url)).toBe(true)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+  })
+
   it('removes strike state so relay is no longer skipped', () => {
     const url = 'ws://localhost:4000/'
     relaySessionStrikes.applyRateLimitCooldownForUrl(url)

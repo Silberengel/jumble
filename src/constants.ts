@@ -165,7 +165,7 @@ export const RELAY_SLOW_PARK_SIGNALS_THRESHOLD = 2
 export const RELAY_SLOW_PARK_COOLDOWN_MS = 5 * 60 * 1000
 
 /** Close pooled WebSocket when no SUBs and no pool activity for this long (see {@link initRelayPoolIdle}). */
-export const RELAY_POOL_SOCKET_IDLE_MS = 90_000
+export const RELAY_POOL_SOCKET_IDLE_MS = 15_000
 /** How often to scan for idle relay sockets. */
 export const RELAY_POOL_IDLE_SWEEP_INTERVAL_MS = 45_000
 
@@ -510,7 +510,8 @@ export const FAST_WRITE_RELAY_URLS = [
   'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
-  'wss://nos.lol'
+  'wss://nos.lol',
+  'wss://relay.layer.systems'
 ]
 
 /**

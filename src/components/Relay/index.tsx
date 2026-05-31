@@ -2,7 +2,7 @@ import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import RelayInfo from '@/components/RelayInfo'
 import SearchInput from '@/components/SearchInput'
-import { useBypassMetadataRelaysOnlyPolicy, useFetchRelayInfo } from '@/hooks'
+import { useFetchRelayInfo, useRelayPageFeedPolicy } from '@/hooks'
 import type { TPrimaryPageName } from '@/PageManager'
 import { SINGLE_RELAY_KINDLESS_REQ_LIMIT } from '@/constants'
 import { canonicalRelaySessionKey, isLocalNetworkUrl, normalizeRelayUrlForPage } from '@/lib/url'
@@ -15,6 +15,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'r
 import { useTranslation } from 'react-i18next'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import { buildAlexandriaEventsSearchUrlFromNotesQuery } from '@/lib/alexandria-events-search-url'
+import { kindsForSingleRelayBrowse } from '@/lib/single-relay-browse-kinds'
 import { stableFeedKindKey } from '@/features/feed/descriptor'
 import NotFound from '../NotFound'
 
@@ -32,13 +33,15 @@ const Relay = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
-  useBypassMetadataRelaysOnlyPolicy()
+  useRelayPageFeedPolicy()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const { showKinds } = useKindFilterOrDefaults()
   const normalizedUrl = useMemo(() => (url ? normalizeRelayUrlForPage(url) : undefined), [url])
   const { relayInfo } = useFetchRelayInfo(normalizedUrl)
   const [searchInput, setSearchInput] = useState('')
   const [debouncedInput, setDebouncedInput] = useState(searchInput)
+  /** After explicit-kinds REQ EOSEs empty, retry kindless `{ limit }` once (document/specialty relays). */
+  const [kindlessBrowseFallback, setKindlessBrowseFallback] = useState(false)
   const internalNoteListRef = useRef<TNoteListRef>(null)
   const noteListRef = ref ?? internalNoteListRef
 
@@ -81,12 +84,20 @@ const Relay = forwardRef<
     }
   }, [normalizedUrl, noteListRef])
 
+  useEffect(() => {
+    setKindlessBrowseFallback(false)
+  }, [normalizedUrl])
+
   /** Default browse: explicit kinds (many strfry / small relays never return a useful kindless global REQ). */
   const relayBrowseKindsKey = useMemo(() => stableFeedKindKey(showKinds), [showKinds])
   const relayBrowseKinds = useMemo(
-    () => (showKinds.length > 0 ? showKinds : [kinds.ShortTextNote]),
-    [relayBrowseKindsKey, showKinds]
+    () => (normalizedUrl ? kindsForSingleRelayBrowse(normalizedUrl, showKinds) : [kinds.ShortTextNote]),
+    [relayBrowseKindsKey, showKinds, normalizedUrl]
   )
+
+  const onSingleRelayBrowseEmpty = useCallback(() => {
+    setKindlessBrowseFallback(true)
+  }, [])
 
   const relayFeedSubRequests = useMemo<TFeedSubRequest[]>(() => {
     if (!normalizedUrl) return []
@@ -99,13 +110,21 @@ const Relay = forwardRef<
         }
       ]
     }
+    if (kindlessBrowseFallback) {
+      return [
+        {
+          urls: [normalizedUrl],
+          filter: { limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
+        }
+      ]
+    }
     return [
       {
         urls: [normalizedUrl],
         filter: { kinds: [...relayBrowseKinds], limit: SINGLE_RELAY_KINDLESS_REQ_LIMIT }
       }
     ]
-  }, [normalizedUrl, debouncedInput, relayBrowseKindsKey])
+  }, [normalizedUrl, debouncedInput, relayBrowseKindsKey, kindlessBrowseFallback])
 
   const allowKindlessRelayExplore = debouncedInput.trim().length > 0
 
@@ -116,7 +135,7 @@ const Relay = forwardRef<
   )
   const shouldHideEventNotFromThisRelay = useCallback(
     (ev: Event) => {
-      if (hostPrimaryPageName === 'relay' || allowKindlessRelayExplore) {
+      if (allowKindlessRelayExplore) {
         return false
       }
       if (!relaySeenMatchKey) return false
@@ -127,7 +146,7 @@ const Relay = forwardRef<
       if (seen.length === 0) return false
       return !seen.some((u) => canonicalRelaySessionKey(u) === relaySeenMatchKey)
     },
-    [relaySeenMatchKey, normalizedUrl, hostPrimaryPageName, allowKindlessRelayExplore]
+    [relaySeenMatchKey, normalizedUrl, allowKindlessRelayExplore]
   )
 
   const alexandriaFeedEmptyUrl = useMemo(() => {
@@ -168,6 +187,7 @@ const Relay = forwardRef<
         extraShouldHideEvent={shouldHideEventNotFromThisRelay}
         extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
         relayAuthoritativeFeedOnly
+        onSingleRelayBrowseEmpty={onSingleRelayBrowseEmpty}
         alexandriaEmptyUrl={alexandriaFeedEmptyUrl}
       />
     </div>
