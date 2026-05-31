@@ -756,9 +756,14 @@ export default {
     'Favorited by': 'Favorited by',
     'Post settings': 'Post settings',
     'Publishing feedback': 'Publishing feedback',
-    'Publish success toasts': 'Publish success toasts',
-    'Show green notifications when posts, replies, reactions, and other publishes succeed. When off, a small checkmark appears briefly at the bottom-right instead. Errors and failures still use a toast.':
-      'Show green notifications when posts, replies, reactions, and other publishes succeed. When off, a small checkmark appears briefly at the bottom-right instead. Errors and failures still use a toast.',
+    'Publish success toasts': 'Success notifications when publishing',
+    'Publish success toasts hint':
+      'When on, a toast confirms successful posts, replies, reactions, and similar actions. When off, a small checkmark appears briefly at the bottom-right instead.',
+    'Publish toast per-relay details': 'Per-relay breakdown in toasts',
+    'Publish toast per-relay details hint':
+      'When on, those toasts list each relay (accepted, failed, errors). When off, only a short summary line.',
+    'Publishing feedback errors note':
+      'Failed publishes and other errors always show a toast, using the same summary or per-relay style as above.',
     'Publish successful': 'Publish successful',
     'Media upload service': 'Media upload service',
     BlossomUploadYourListOption: 'Blossom (your list)',

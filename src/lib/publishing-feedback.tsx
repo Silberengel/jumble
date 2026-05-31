@@ -23,6 +23,11 @@ function publishSuccessToastsEnabled(): boolean {
   return storage.getShowPublishSuccessToasts()
 }
 
+/** Per-relay toast panels only when success toasts are on and the nested setting is enabled. */
+export function detailedPublishToastsEnabled(): boolean {
+  return publishSuccessToastsEnabled() && storage.getShowDetailedPublishToasts()
+}
+
 function resolvePromiseSuccessLabel(success: string | (() => ReactNode)): string | undefined {
   if (typeof success === 'string') return success
   try {
@@ -123,10 +128,16 @@ export function showPublishingFeedback(
   }
 
   const toastFunction = isSuccess ? toast.success : toast.error
-  
+
+  if (!detailedPublishToastsEnabled()) {
+    toastFunction(message, { duration: isSuccess ? 2000 : duration })
+    return
+  }
+
   toastFunction(<PublishToastRelayPanel message={message} result={result} />, {
     duration,
-    className: 'max-w-lg w-full'
+    className: 'max-w-lg w-full',
+    icon: null
   })
 }
 

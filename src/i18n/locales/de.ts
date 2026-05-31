@@ -757,9 +757,14 @@ export default {
     'Favorited by': 'Favorisiert von',
     'Post settings': 'Beitragseinstellungen',
     'Publishing feedback': 'Rückmeldungen beim Veröffentlichen',
-    'Publish success toasts': 'Erfolgs-Benachrichtigungen beim Veröffentlichen',
-    'Show green notifications when posts, replies, reactions, and other publishes succeed. When off, a small checkmark appears briefly at the bottom-right instead. Errors and failures still use a toast.':
-      'Grüne Hinweise anzeigen, wenn Beiträge, Antworten, Reaktionen und andere Veröffentlichungen gelingen. Wenn aus, erscheint kurz ein kleines Häkchen unten rechts. Fehler weiterhin als Hinweis.',
+    'Publish success toasts': 'Erfolg beim Veröffentlichen anzeigen',
+    'Publish success toasts hint':
+      'Wenn an, bestätigt ein Hinweis gelungene Beiträge, Antworten, Reaktionen und ähnliche Aktionen. Wenn aus, erscheint kurz ein kleines Häkchen unten rechts.',
+    'Publish toast per-relay details': 'Pro-Relay-Aufschlüsselung in Hinweisen',
+    'Publish toast per-relay details hint':
+      'Wenn an, listet der Hinweis jedes Relay (angenommen, fehlgeschlagen, Fehlertext). Wenn aus, nur eine kurze Zusammenfassung.',
+    'Publishing feedback errors note':
+      'Fehlgeschlagene Veröffentlichungen und andere Fehler zeigen immer einen Hinweis — mit Kurzfassung oder Pro-Relay-Aufschlüsselung wie oben.',
     'Publish successful': 'Veröffentlichung erfolgreich',
     'Media upload service': 'Medien-Upload-Service',
     BlossomUploadYourListOption: 'Blossom (eigene Liste)',

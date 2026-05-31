@@ -75,6 +75,7 @@ const SETTINGS_KEYS = [
   StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL,
   StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH,
   StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS,
+  StorageKey.SHOW_DETAILED_PUBLISH_TOASTS,
   StorageKey.SHOW_LIVE_ACTIVITIES_BANNER,
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
@@ -119,8 +120,9 @@ class LocalStorageService {
   private defaultExpirationMonths: number = 6
   private showRssFeed: boolean = true
   private panelMode: 'single' | 'double' = 'single'
-  private addRandomRelaysToPublish: boolean = false
-  private showPublishSuccessToasts: boolean = true
+  private addRandomRelaysToPublish: boolean = true
+  private showPublishSuccessToasts: boolean = false
+  private showDetailedPublishToasts: boolean = true
   private showLiveActivitiesBanner: boolean = true
   private restrictRelaysToMetadataLists: boolean = false
 
@@ -405,10 +407,14 @@ class LocalStorageService {
     this.panelMode = panelModeStr === 'double' ? 'double' : 'single' // Default to 'single'
 
     const addRandomRelaysStr = window.localStorage.getItem(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH)
-    this.addRandomRelaysToPublish = addRandomRelaysStr === null ? false : addRandomRelaysStr === 'true'
+    this.addRandomRelaysToPublish = addRandomRelaysStr === null ? true : addRandomRelaysStr === 'true'
 
     const showPublishSuccessStr = window.localStorage.getItem(StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS)
-    this.showPublishSuccessToasts = showPublishSuccessStr !== 'false'
+    this.showPublishSuccessToasts = showPublishSuccessStr === 'true'
+
+    const showDetailedPublishStr = window.localStorage.getItem(StorageKey.SHOW_DETAILED_PUBLISH_TOASTS)
+    this.showDetailedPublishToasts =
+      showDetailedPublishStr === null ? true : showDetailedPublishStr === 'true'
 
     const showLiveActivitiesStr = window.localStorage.getItem(StorageKey.SHOW_LIVE_ACTIVITIES_BANNER)
     this.showLiveActivitiesBanner = showLiveActivitiesStr !== 'false'
@@ -572,9 +578,12 @@ class LocalStorageService {
     this.defaultShowNsfw = get(StorageKey.DEFAULT_SHOW_NSFW) === 'true'
     this.dismissedTooManyRelaysAlert = get(StorageKey.DISMISSED_TOO_MANY_RELAYS_ALERT) === 'true'
     this.showRecommendedRelaysPanel = get(StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL) === 'true'
-    this.addRandomRelaysToPublish = get(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH) === 'true'
+    const addRandomRelaysStr = get(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH)
+    if (addRandomRelaysStr != null) this.addRandomRelaysToPublish = addRandomRelaysStr === 'true'
     const showPublishSuccessStr = get(StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS)
     if (showPublishSuccessStr != null) this.showPublishSuccessToasts = showPublishSuccessStr !== 'false'
+    const showDetailedPublishStr = get(StorageKey.SHOW_DETAILED_PUBLISH_TOASTS)
+    if (showDetailedPublishStr != null) this.showDetailedPublishToasts = showDetailedPublishStr === 'true'
     const showLiveActivitiesStr = get(StorageKey.SHOW_LIVE_ACTIVITIES_BANNER)
     if (showLiveActivitiesStr != null) this.showLiveActivitiesBanner = showLiveActivitiesStr !== 'false'
     const showKindsStr = get(StorageKey.SHOW_KINDS)
@@ -1002,6 +1011,15 @@ class LocalStorageService {
   setShowPublishSuccessToasts(show: boolean) {
     this.showPublishSuccessToasts = show
     this.persistSetting(StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS, show.toString())
+  }
+
+  getShowDetailedPublishToasts(): boolean {
+    return this.showDetailedPublishToasts
+  }
+
+  setShowDetailedPublishToasts(show: boolean) {
+    this.showDetailedPublishToasts = show
+    this.persistSetting(StorageKey.SHOW_DETAILED_PUBLISH_TOASTS, show.toString())
   }
 
   getPanelMode(): 'single' | 'double' {

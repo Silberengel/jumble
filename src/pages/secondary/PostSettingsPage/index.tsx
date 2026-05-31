@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import MediaUploadServiceSetting from './MediaUploadServiceSetting'
 import ExpirationSettings from './ExpirationSettings'
-import PublishSuccessToastSetting from './PublishSuccessToastSetting'
+import PublishingFeedbackSettings from './PublishingFeedbackSettings'
 
 const PostSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
   const { t } = useTranslation()
@@ -33,7 +33,7 @@ const PostSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?: 
         <MediaUploadServiceSetting />
         <div className="space-y-4">
           <h3 className="text-lg font-medium">{t('Publishing feedback')}</h3>
-          <PublishSuccessToastSetting />
+          <PublishingFeedbackSettings />
         </div>
         <div className="space-y-4">
           <h3 className="text-lg font-medium">{t('Expiration Tags')}</h3>

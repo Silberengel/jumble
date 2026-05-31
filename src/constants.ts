@@ -390,8 +390,10 @@ export const StorageKey = {
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',
   /** When `'true'`, only connect to relays on the viewer's NIP-65 / favorites / cache / HTTP lists. */
   RESTRICT_RELAYS_TO_METADATA_LISTS: 'restrictRelaysToMetadataLists',
-  /** When not `'false'`, show green Sonner toasts after successful publishes (default on). */
+  /** When `'true'`, show Sonner toasts after successful publishes (default off). */
   SHOW_PUBLISH_SUCCESS_TOASTS: 'showPublishSuccessToasts',
+  /** When not `'false'`, publish/feed toasts include per-relay breakdown when success toasts are on (default on). */
+  SHOW_DETAILED_PUBLISH_TOASTS: 'showDetailedPublishToasts',
   /** When not `'false'`, show NIP-53 live activity banner (default on). */
   SHOW_LIVE_ACTIVITIES_BANNER: 'showLiveActivitiesBanner',
   /** Max approximate archive size (MB). `0` in UI means “use platform default”. */

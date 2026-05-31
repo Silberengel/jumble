@@ -52,6 +52,7 @@ import dayjs from 'dayjs'
 import { type Event, type Filter, kinds } from 'nostr-tools'
 import { decode } from 'nostr-tools/nip19'
 import RelayStatusDisplay from '@/components/RelayStatusDisplay'
+import { detailedPublishToastsEnabled } from '@/lib/publishing-feedback'
 import {
   relayOpTerminalRowsToTimelineRelayUiStatuses,
   type RelayOpTerminalRow
@@ -69,7 +70,6 @@ import {
   type ReactNode,
   type SetStateAction
 } from 'react'
-import { CircleAlert } from 'lucide-react'
 import { useLongPressAction } from '@/hooks/use-long-press-action'
 import { useTranslation } from 'react-i18next'
 import PullToRefresh from 'react-simple-pull-to-refresh'
@@ -3926,15 +3926,12 @@ const NoteList = forwardRef(
         const title = t(
           'Relays returned no events for this feed. They may be offline, slow, or not indexing these notes.'
         )
-        if (uiStatuses.length === 0) {
+        if (uiStatuses.length === 0 || !detailedPublishToastsEnabled()) {
           toast.error(title, { duration: 8000 })
         } else {
           toast.error(
             <div className="w-full min-w-0">
-              <div className="flex items-center gap-2 mb-3">
-                <CircleAlert className="w-5 h-5 text-red-500 shrink-0" />
-                <div className="font-semibold">{title}</div>
-              </div>
+              <div className="font-semibold mb-3">{title}</div>
               <div className="text-xs text-muted-foreground mb-2">
                 {t('Per-relay timeline results ({{count}} connections)', {
                   count: uiStatuses.length
@@ -3947,7 +3944,7 @@ const NoteList = forwardRef(
                 aggregateSummary={false}
               />
             </div>,
-            { duration: 12_000, className: 'max-w-lg w-full' }
+            { duration: 12_000, className: 'max-w-lg w-full', icon: null }
           )
         }
       }, debounceMs)
