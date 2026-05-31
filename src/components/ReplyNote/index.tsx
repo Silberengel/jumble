@@ -25,19 +25,15 @@ import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ClientTag from '../ClientTag'
-import EventPowLabel from '../EventPowLabel'
 import Collapsible from '../Collapsible'
 import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
-import { FormattedTimestamp } from '../FormattedTimestamp'
-import Nip05 from '../Nip05'
+import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import NoteOptions from '../NoteOptions'
 import NoteStats from '../NoteStats'
 import ParentNotePreview from '../ParentNotePreview'
 import WebPreview from '../WebPreview'
 import UserAvatar from '../UserAvatar'
-import Username from '../Username'
 import Superchat from '../Note/Superchat'
 import Zap from '../Note/Zap'
 import MoneroTip from '../Note/MoneroTip'
@@ -126,25 +122,14 @@ export default function ReplyNote({
                 maxFileSizeKb={2048}
                 deferRemoteAvatar={false}
               />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <Username
-                    userId={headerUserId}
-                    className="truncate text-sm font-semibold text-muted-foreground hover:text-foreground"
-                    skeletonClassName="h-3"
-                  />
-                  <ClientTag event={event} />
-                </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Nip05 pubkey={headerUserId} append="·" />
-                  <FormattedTimestamp
-                    timestamp={event.created_at}
-                    className="shrink-0"
-                    short={isSmallScreen}
-                  />
-                  <EventPowLabel event={event} />
-                </div>
-              </div>
+              <NoteAuthorMetaLine
+                userId={headerUserId}
+                timestamp={event.created_at}
+                powEvent={event}
+                usernameClassName="max-w-[min(12rem,40vw)] text-sm text-muted-foreground hover:text-foreground"
+                skeletonClassName="h-3"
+                timestampShort={isSmallScreen}
+              />
             </div>
             <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
           </div>

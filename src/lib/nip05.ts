@@ -447,22 +447,33 @@ export async function fetchPubkeysFromDomain(domain: string): Promise<string[]> 
   return entries.map((e) => e.pubkey)
 }
 
+/** Prefer human NIP-05 local parts over `_`, hex keys, or npub labels when one pubkey appears twice. */
+function nip05DomainListNameScore(name: string): number {
+  if (name === '_') return 0
+  if (/^[0-9a-f]{64}$/i.test(name) || name.startsWith('npub1')) return 1
+  return 2
+}
+
 export function parseNip05NamePubkeysFromWellKnownJson(
   json: Record<string, unknown>
 ): Array<{ name: string; pubkey: string }> {
   const normalized = normalizeWellKnownDocument(json)
   if (!normalized) return []
   const names = normalized.names as Record<string, unknown>
-  const out: Array<{ name: string; pubkey: string }> = []
-  const seen = new Set<string>()
+  const byPubkey = new Map<string, { name: string; pubkey: string }>()
   for (const [key, v] of Object.entries(names)) {
     const entry = parseNip05NamePubkeyEntry(key, v)
     if (!entry || !isValidPubkey(entry.pubkey)) continue
-    const dedupe = `${entry.name}:${entry.pubkey}`
-    if (seen.has(dedupe)) continue
-    seen.add(dedupe)
-    out.push(entry)
+    const pk = entry.pubkey.toLowerCase()
+    const prev = byPubkey.get(pk)
+    if (
+      !prev ||
+      nip05DomainListNameScore(entry.name) > nip05DomainListNameScore(prev.name)
+    ) {
+      byPubkey.set(pk, { name: entry.name, pubkey: pk })
+    }
   }
+  const out = [...byPubkey.values()]
   out.sort((a, b) => a.name.localeCompare(b.name))
   return out
 }

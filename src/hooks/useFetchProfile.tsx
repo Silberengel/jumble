@@ -485,7 +485,30 @@ export function useFetchProfile(id?: string, skipCache = false) {
       setPubkey(extractedPubkey)
       setIsFetching(false)
       setError(null)
-      return
+      const awaitingCancelled = { current: false }
+      void tryHydrateProfileFromLocalCaches(pkL, false).then((quick) => {
+        if (awaitingCancelled.current || !quick) return
+        setProfile(quick)
+        setIsFetching(false)
+        setError(null)
+        processingPubkeyRef.current = extractedPubkey
+        initializedPubkeysRef.current.add(extractedPubkey)
+        effectRunCountRef.current.delete(extractedPubkey)
+      })
+      const awaitingEscapeTimer = window.setTimeout(() => {
+        if (awaitingCancelled.current) return
+        void checkProfile(extractedPubkey, awaitingCancelled)
+      }, FEED_PROFILE_PENDING_BATCH_ESCAPE_MS)
+      return () => {
+        awaitingCancelled.current = true
+        window.clearTimeout(awaitingEscapeTimer)
+        if (processingPubkeyRef.current === extractedPubkey) {
+          processingPubkeyRef.current = null
+        }
+        if (extractedPubkey) {
+          effectRunCountRef.current.delete(extractedPubkey)
+        }
+      }
     }
 
     // Skip only when this pubkey already has an in-flight fetch (global dedupe + local flag).

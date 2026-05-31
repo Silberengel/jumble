@@ -1,7 +1,10 @@
 import { ExtendedKind, READ_ALOUD_KINDS } from '@/constants'
+import ClientTag from '@/components/ClientTag'
+import Nip05 from '@/components/Nip05'
 import {
   getNoteBech32Id,
   getReplaceableCoordinateFromEvent,
+  getUsingClient,
   isProtectedEvent,
   isReplaceableEvent,
   getRootEventHexId
@@ -47,6 +50,7 @@ import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
 import { useBookmarksOptional } from '@/providers/bookmarks-context'
+import { useThreadNotificationMenuState } from '@/hooks/useThreadNotificationMenuState'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
@@ -168,6 +172,7 @@ export function useMenuActions({
     checkLogin
   } = useNostr()
   const bookmarksContext = useBookmarksOptional()
+  const { threadFollowed, threadMuted, threadWatch } = useThreadNotificationMenuState(event)
   const { addBookmark, removeBookmark } = bookmarksContext ?? {
     addBookmark: async () => {},
     removeBookmark: async () => false
@@ -1114,9 +1119,40 @@ export function useMenuActions({
       !isDiscussion &&
       !isReplyToDiscussion
 
+    const advancedAuthorMetaRows: SubMenuAction[] = []
+    if (getUsingClient(event)) {
+      advancedAuthorMetaRows.push({
+        label: (
+          <div className="flex flex-col gap-0.5 py-0.5">
+            <span className="text-xs font-medium text-muted-foreground">{t('Posted via')}</span>
+            <ClientTag event={event} />
+          </div>
+        ),
+        onClick: () => {},
+        className: 'cursor-default focus:bg-transparent data-[highlighted]:bg-transparent'
+      })
+    }
+    advancedAuthorMetaRows.push({
+      label: (
+        <div
+          className="flex flex-col gap-0.5 py-0.5"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <span className="text-xs font-medium text-muted-foreground">NIP-05</span>
+          <Nip05 pubkey={event.pubkey} />
+        </div>
+      ),
+      onClick: () => {},
+      className: 'cursor-default focus:bg-transparent data-[highlighted]:bg-transparent',
+      filterHaystack: 'nip05'
+    })
+
     const advancedSubMenu: SubMenuAction[] = [
+      ...advancedAuthorMetaRows,
       {
         label: t('Copy event ID'),
+        separator: advancedAuthorMetaRows.length > 0,
         onClick: () => {
           navigator.clipboard.writeText(getNoteBech32Id(event))
           closeDrawer()
@@ -1339,6 +1375,70 @@ export function useMenuActions({
       }
     }
 
+    const savesGroupStartIndex = actions.length
+    const savesGroupNeedsSeparator = savesGroupStartIndex > 0
+
+    if (threadWatch && pubkey) {
+      actions.push({
+        icon: Bell,
+        label: threadFollowed ? t('Unfollow thread notifications') : t('Follow this'),
+        separator: savesGroupNeedsSeparator,
+        onClick: () => {
+          closeDrawer()
+          void checkLogin(async () => {
+            try {
+              if (threadFollowed) {
+                const ok = await threadWatch.unfollowThreadForNotifications(event)
+                if (ok) {
+                  toast.success(t('Unfollowed thread notifications'))
+                } else {
+                  toast.error(t('Thread notification list update failed'))
+                }
+              } else {
+                await threadWatch.followThreadForNotifications(event)
+                toast.success(t('Following thread for notifications'))
+              }
+            } catch (err) {
+              toast.error(
+                t('Thread notification list update failed') +
+                  ': ' +
+                  (err instanceof Error ? err.message : String(err))
+              )
+            }
+          })
+        }
+      })
+      actions.push({
+        icon: BellOff,
+        label: threadMuted ? t('Unmute thread notifications') : t('Mute this'),
+        className: 'text-destructive focus:text-destructive',
+        onClick: () => {
+          closeDrawer()
+          void checkLogin(async () => {
+            try {
+              if (threadMuted) {
+                const ok = await threadWatch.unmuteThreadForNotifications(event)
+                if (ok) {
+                  toast.success(t('Unmuted thread notifications'))
+                } else {
+                  toast.error(t('Thread notification list update failed'))
+                }
+              } else {
+                await threadWatch.muteThreadForNotifications(event)
+                toast.success(t('Muted thread for notifications'))
+              }
+            } catch (err) {
+              toast.error(
+                t('Thread notification list update failed') +
+                  ': ' +
+                  (err instanceof Error ? err.message : String(err))
+              )
+            }
+          })
+        }
+      })
+    }
+
     if (pubkey && event.pubkey === pubkey) {
       actions.push({
         icon: Pin,
@@ -1346,7 +1446,7 @@ export function useMenuActions({
         onClick: () => {
           handlePinNote()
         },
-        separator: true
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })
     } else if (pubkey && event.pubkey !== pubkey && bookmarksContext) {
       actions.push({
@@ -1374,7 +1474,7 @@ export function useMenuActions({
             }
           })
         },
-        separator: true
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })
     }
 
@@ -1432,7 +1532,10 @@ export function useMenuActions({
     seenOnRelays,
     push,
     currentPrimaryPage,
-    isReplyToDiscussion
+    isReplyToDiscussion,
+    threadWatch,
+    threadFollowed,
+    threadMuted
   ])
 
   return menuActions

@@ -10,14 +10,12 @@ import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import NotificationThreadWatchButtons from '../NotificationThreadWatchButtons'
-import { useNotificationThreadWatchOptional } from '@/providers/NotificationThreadWatchProvider'
 import { LikeButtonWithStats } from './LikeButton'
 import { ReplyButtonWithStats } from './ReplyButton'
 import { RepostButtonWithStats } from './RepostButton'
 import { ZapButtonWithStats } from './ZapButton'
 
-/** One column in the note action bar; default equal flex, or sized via `className` (discussions need wider vote slot). */
+/** One slot in the note action bar; left-aligned with gap spacing (not equal-width columns). */
 function NoteStatsBarItem({
   children,
   className
@@ -28,7 +26,7 @@ function NoteStatsBarItem({
   return (
     <div
       className={cn(
-        'flex min-w-0 flex-1 basis-0 items-center justify-center overflow-hidden [&>*]:min-w-0 [&>*]:max-w-full',
+        'flex shrink-0 items-center overflow-hidden [&>*]:min-w-0 [&>*]:max-w-full',
         className
       )}
     >
@@ -140,15 +138,12 @@ export default function NoteStats({
     statsFetchRelayScopeKey
   ])
 
-  const watch = useNotificationThreadWatchOptional()
-  const showThreadWatchButtons = Boolean(watch && pubkey)
   /** Kind 11 / 1111 under a discussion: up+down votes need more width than a single like button. */
   const isDiscussionBar = isDiscussion || isReplyToDiscussion
-  const compactBarItem = isDiscussionBar ? 'shrink-0 flex-none basis-auto' : undefined
-  const voteBarItem = isDiscussionBar ? 'min-w-[6.75rem] flex-[2] basis-28 sm:min-w-[7.25rem]' : undefined
+  const voteBarItem = isDiscussionBar ? 'min-w-[6.75rem] sm:min-w-[7.25rem]' : undefined
 
   const barItems: ReactNode[] = [
-    <NoteStatsBarItem key="reply" className={compactBarItem}>
+    <NoteStatsBarItem key="reply">
       <ReplyButtonWithStats event={event} noteStats={noteStats} />
     </NoteStatsBarItem>
   ]
@@ -174,18 +169,8 @@ export default function NoteStats({
 
   if (!isRssArticleRoot) {
     barItems.push(
-      <NoteStatsBarItem key="tip" className={compactBarItem}>
+      <NoteStatsBarItem key="tip">
         <ZapButtonWithStats event={event} noteStats={noteStats} />
-      </NoteStatsBarItem>
-    )
-  }
-
-  if (!isRssArticleRoot && showThreadWatchButtons) {
-    barItems.push(
-      <NoteStatsBarItem key="thread-watch" className={compactBarItem}>
-        <div className="flex items-center justify-center gap-0.5">
-          <NotificationThreadWatchButtons event={event} />
-        </div>
       </NoteStatsBarItem>
     )
   }
@@ -199,7 +184,8 @@ export default function NoteStats({
     >
       <div
         className={cn(
-          'flex w-full min-w-0 items-stretch [&_svg]:size-[15px] [&_button]:min-h-9 [&_button]:max-w-full [&_button]:px-1 sm:[&_button]:px-1.5',
+          'flex w-full min-w-0 flex-wrap items-center justify-start gap-x-3 gap-y-1 sm:gap-x-4',
+          '[&_svg]:size-[15px] [&_button]:min-h-9 [&_button]:max-w-full [&_button]:px-1 sm:[&_button]:px-1.5',
           loading ? 'animate-pulse' : '',
           classNames?.buttonBar
         )}

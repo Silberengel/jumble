@@ -66,7 +66,7 @@ export default function ProfileListByNip05Domain({ domain }: { domain: string })
     <div className="px-4 pt-2">
       {visible.map(({ name, pubkey }) => (
         <div
-          key={pubkey}
+          key={`${pubkey}:${name}`}
           className="flex min-w-0 items-center gap-2 border-b border-border/40 py-1 last:border-0"
         >
           {name && name !== '_' ? (

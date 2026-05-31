@@ -41,9 +41,26 @@ function isKactiBroadcastSpamKind1(event: Pick<NEvent, 'kind' | 'content'>): boo
   return c.startsWith('[broadcast:[#')
 }
 
+/**
+ * drift.gits.net kind-1 payloads (`sp_<id>.….drift.gits.net` + `t` tag) — relay index noise, not discussion text.
+ */
+function isDriftGitsNetSpamKind1(
+  event: Pick<NEvent, 'kind' | 'content' | 'tags'>
+): boolean {
+  if (event.kind !== kinds.ShortTextNote) return false
+  const c = typeof event.content === 'string' ? event.content.trim() : ''
+  if (/\.drift\.gits\.net$/i.test(c) || /^sp_[0-9a-f]+\./i.test(c)) return true
+  for (const tag of event.tags) {
+    if (tag[0] === 't' && typeof tag[1] === 'string' && /^sp_[0-9a-f]+$/i.test(tag[1].trim())) {
+      return true
+    }
+  }
+  return false
+}
+
 export type ShouldDropEventOnIngestOptions = {
   /**
-   * When set to the same 64-char hex as {@link NEvent.id} (lowercase), {@link isKactiBroadcastSpamKind1} does not apply
+   * When set to the same 64-char hex as {@link NEvent.id} (lowercase), kind-1 ingest spam filters do not apply
    * so `fetchEvent` / direct note views can still show the payload.
    */
   explicitNoteLookupHexId?: string
@@ -61,7 +78,8 @@ const DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND = 34236
 
 /**
  * Single gate for subscribe/cache/IDB read paths: drop kind-1 JSON-object spam, Kacti broadcast spam,
- * and malformed relay reviews. Optional {@link ShouldDropEventOnIngestOptions} relaxes Kacti drops for explicit id fetch.
+ * drift.gits.net spam, and malformed relay reviews. Optional {@link ShouldDropEventOnIngestOptions} relaxes
+ * kind-1 spam drops for explicit id fetch.
  */
 export function shouldDropEventOnIngest(
   event: NEvent,
@@ -70,9 +88,12 @@ export function shouldDropEventOnIngest(
   if (event.kind === DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND) return true
   if (isIncompleteRelayReviewIngest(event)) return true
   if (isStringifiedJsonObjectContentNostrEvent(event)) return true
+  const relaxKind1Spam = explicitLookupMatchesEvent(event.id, options?.explicitNoteLookupHexId)
   if (isKactiBroadcastSpamKind1(event)) {
-    if (explicitLookupMatchesEvent(event.id, options?.explicitNoteLookupHexId)) return false
-    return true
+    if (!relaxKind1Spam) return true
+  }
+  if (isDriftGitsNetSpamKind1(event)) {
+    if (!relaxKind1Spam) return true
   }
   return false
 }

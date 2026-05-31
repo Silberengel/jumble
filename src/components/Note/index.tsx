@@ -46,11 +46,10 @@ import { CreateHighlightContext } from './CreateHighlightContext'
 import SelectionHighlightTrigger from './SelectionHighlightTrigger'
 import AudioPlayer from '../AudioPlayer'
 import WebPreview from '../WebPreview'
-import ClientTag from '../ClientTag'
-import EventPowLabel from '../EventPowLabel'
+import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import { FormattedTimestamp } from '../FormattedTimestamp'
-import Nip05 from '../Nip05'
 import NoteOptions from '../NoteOptions'
+import EventPowLabel from '../EventPowLabel'
 import ParentNotePreview from '../ParentNotePreview'
 import UserAvatar from '../UserAvatar'
 import Username from '../Username'
@@ -683,7 +682,6 @@ export default function Note({
                     className={`max-w-[min(12rem,40vw)] shrink font-semibold truncate ${size === 'small' ? 'text-sm' : ''}`}
                     skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
                   />
-                  <ClientTag event={event} />
                   <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                     {t(notificationReactionSummaryKey(reactionDisplay))}
                   </span>
@@ -718,7 +716,6 @@ export default function Note({
                     >
                       {t('Imwald synthetic event')}
                     </span>
-                    <ClientTag event={event} />
                   </div>
                 </div>
               </>
@@ -730,45 +727,18 @@ export default function Note({
                   maxFileSizeKb={showFull ? 2048 : 500}
                   deferRemoteAvatar={deferAuthorAvatar}
                 />
-                {showFull ? (
-                  <div className="flex-1 w-0">
-                    <div className="flex gap-2 items-center">
-                      <Username
-                        userId={event.pubkey}
-                        className={`font-semibold flex truncate ${size === 'small' ? 'text-sm' : ''}`}
-                        skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
-                      />
-                      <ClientTag event={event} />
-                    </div>
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Nip05 pubkey={event.pubkey} append="·" />
-                      <FormattedTimestamp
-                        timestamp={event.created_at}
-                        className="shrink-0"
-                        short={isSmallScreen}
-                      />
-                      <EventPowLabel event={event} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden">
-                    <Username
-                      userId={event.pubkey}
-                      className={`max-w-[min(12rem,40vw)] shrink font-semibold truncate ${size === 'small' ? 'text-sm' : ''}`}
-                      skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
-                    />
-                    <ClientTag event={event} />
-                    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0 text-sm text-muted-foreground">
-                      <Nip05 pubkey={event.pubkey} append="·" />
-                      <FormattedTimestamp
-                        timestamp={event.created_at}
-                        className="shrink-0"
-                        short={isSmallScreen}
-                      />
-                      <EventPowLabel event={event} />
-                    </span>
-                  </div>
-                )}
+                <NoteAuthorMetaLine
+                  userId={event.pubkey}
+                  timestamp={event.created_at}
+                  powEvent={event}
+                  usernameClassName={
+                    size === 'small'
+                      ? 'max-w-[min(12rem,40vw)] text-sm'
+                      : 'max-w-[min(16rem,50vw)]'
+                  }
+                  skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
+                  timestampShort={isSmallScreen}
+                />
               </>
             )}
           </div>

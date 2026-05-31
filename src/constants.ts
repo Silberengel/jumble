@@ -277,6 +277,31 @@ export const PROFILE_BATCH_POST_COOLDOWN_MS = 90_000
 export const PROFILE_SECONDARY_PANEL_DEFER_MS = 120_000
 
 /**
+ * Trusted NIP-05 domains shown as compact affiliation badges beside usernames (verified only).
+ * Add entries here to recognize more community registries.
+ */
+export type TNip05AffiliationDomain = {
+  /** Host part after `@` in the NIP-05 identifier (lowercase). */
+  domain: string
+  /** Badge glyph shown to the right of the display name. */
+  emoji: string
+  /** Tooltip / screen-reader label (defaults to `domain`). */
+  label?: string
+}
+
+export const NIP05_AFFILIATION_DOMAINS: readonly TNip05AffiliationDomain[] = [
+  { domain: 'nostr.land', emoji: '🌐', label: 'Land' },
+  { domain: 'theforest.nostr1.com', emoji: '🌲', label: 'TheForest' },
+  { domain: 'gitcitadel.com', emoji: '🛡️', label: 'GitCitadel' },
+  { domain: 'blog.imwald.eu', emoji: '✍🏼', label: 'Imwald' }
+] as const
+
+/** @internal — built from {@link NIP05_AFFILIATION_DOMAINS} for O(1) domain lookup. */
+export const NIP05_AFFILIATION_BY_DOMAIN: ReadonlyMap<string, TNip05AffiliationDomain> = new Map(
+  NIP05_AFFILIATION_DOMAINS.map((entry) => [entry.domain.toLowerCase(), entry])
+)
+
+/**
  * Hex-id / replaceable-coordinate note lookup ({@link EventService.tryHarderToFetchEvent}, big-relays dataloader).
  */
 export const SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS = 5_000

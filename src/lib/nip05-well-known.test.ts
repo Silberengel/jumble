@@ -31,7 +31,8 @@ const THEFOREST_WELL_KNOWN = {
 describe('parseNip05NamePubkeysFromWellKnownJson', () => {
   it('parses theforest.nostr1.com well-known names', () => {
     const rows = parseNip05NamePubkeysFromWellKnownJson(THEFOREST_WELL_KNOWN)
-    expect(rows).toHaveLength(15)
+    expect(rows).toHaveLength(14)
+    expect(new Set(rows.map((r) => r.pubkey)).size).toBe(14)
     expect(rows.find((r) => r.name === 'laeserin')?.pubkey).toBe(
       'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
     )
@@ -69,6 +70,19 @@ describe('parseNip05NamePubkeysFromWellKnownJson', () => {
       ]
     })
     expect(rows.find((r) => r.name === 'laeserin')?.pubkey).toBe(laeserinHex)
+  })
+
+  it('dedupes multiple names for the same pubkey', () => {
+    const hex = '6da819f91d69cbe591c08b31f555c6d0ab9905197eb515856e339049c018c1af'
+    const rows = parseNip05NamePubkeysFromWellKnownJson({
+      names: {
+        '137': hex,
+        '430': hex,
+        laeserin: 'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
+      }
+    })
+    expect(rows).toHaveLength(2)
+    expect(rows.filter((r) => r.pubkey === hex)).toHaveLength(1)
   })
 
   it('partial name-filtered documents omit other users', () => {

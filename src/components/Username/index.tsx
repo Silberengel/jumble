@@ -33,7 +33,15 @@ export default function Username({
   const { profile: fetchedProfile, isFetching } = useFetchProfile(userId)
   const profile = useMemo(() => {
     const idPk = userId ? userIdToPubkey(userId) : ''
-    if (prefetchedProfile && idPk && prefetchedProfile.pubkey === idPk) {
+    if (
+      prefetchedProfile &&
+      idPk &&
+      prefetchedProfile.pubkey.toLowerCase() === idPk.toLowerCase()
+    ) {
+      const fetchedOk = fetchedProfile && !fetchedProfile.batchPlaceholder
+      const prefetchedOk = !prefetchedProfile.batchPlaceholder
+      if (fetchedOk) return fetchedProfile
+      if (prefetchedOk) return prefetchedProfile
       return fetchedProfile ?? prefetchedProfile
     }
     return fetchedProfile
@@ -60,7 +68,7 @@ export default function Username({
   if (profile) {
     const { username, pubkey: profilePubkey } = profile
     return (
-      <span 
+      <span
         data-username
         className={cn('truncate hover:underline cursor-pointer', className)}
         style={{ verticalAlign: 'baseline', ...style }}
