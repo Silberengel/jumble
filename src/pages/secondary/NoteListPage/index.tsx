@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import {
   isSocialKindBlockedKind,
   NIP_SEARCH_DOCUMENT_KINDS,
-  NIP_SEARCH_PAGE_KINDS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import {
@@ -24,6 +23,7 @@ import {
   buildAlexandriaEventsUrlForHashtagParam
 } from '@/lib/alexandria-events-search-url'
 import { compareEventsForDTagQuery, eventMatchesDTagLooseQuery } from '@/lib/dtag-search'
+import { eventMatchesTopicOrContentHashtag, normalizeTopic, relayTopicTagFilterValues } from '@/lib/discussion-topics'
 import { fetchPubkeysFromDomain } from '@/lib/nip05'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useSecondaryPage } from '@/PageManager'
@@ -58,7 +58,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   const [controls, setControls] = useState<React.ReactNode>(null)
   const [data, setData] = useState<
     | {
-        type: 'hashtag' | 'hashtagSearch' | 'search' | 'externalContent' | 'dtag'
+        type: 'hashtag' | 'search' | 'externalContent' | 'dtag'
         kinds?: number[]
         dtag?: string
       }
@@ -74,7 +74,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   const alexandriaEmptyUrl = useMemo(() => {
     if (!data) return null
     if (data.type === 'dtag' && data.dtag) return buildAlexandriaEventsUrlForDTagParam(data.dtag)
-    if (data.type === 'hashtag' || data.type === 'hashtagSearch') {
+    if (data.type === 'hashtag') {
       const t = new URLSearchParams(window.location.search).get('t') ?? ''
       return buildAlexandriaEventsUrlForHashtagParam(t)
     }
@@ -83,12 +83,27 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   // Get hashtag from URL if this is a hashtag page
   const hashtag = useMemo(() => {
-    if (data?.type === 'hashtag' || data?.type === 'hashtagSearch') {
+    if (data?.type === 'hashtag') {
       const searchParams = new URLSearchParams(window.location.search)
       return searchParams.get('t')
     }
     return null
   }, [data])
+
+  const topicKey = useMemo(
+    () => (hashtag ? normalizeTopic(hashtag) || hashtag.toLowerCase() : ''),
+    [hashtag]
+  )
+
+  const topicMatchesEvent = useCallback(
+    (ev: import('nostr-tools').Event) => eventMatchesTopicOrContentHashtag(ev, topicKey),
+    [topicKey]
+  )
+
+  const shouldHideNonTopicEvent = useCallback(
+    (ev: import('nostr-tools').Event) => !topicMatchesEvent(ev),
+    [topicMatchesEvent]
+  )
 
   // Check if the hashtag is already in the user's interest list
   const isHashtagSubscribed = useMemo(() => {
@@ -118,27 +133,22 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       includeGlobalFastRead: useGlobalRelayBootstrap
     }
     const hashtag = searchParams.get('t')
-    const searchFromUrl = searchParams.get('s')
-    if (hashtag && searchFromUrl) {
-      setData({ type: 'hashtagSearch' })
-      setTitle(`${t('Search')}: #${hashtag} · ${searchFromUrl}`)
-      const relayUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
-        favoriteRelays,
-        blockedRelays,
-        userReadInboxUrls(relayList, cacheRelayListEvent),
-        readUrlOpts
-      )
-      const mergedSearchKinds = Array.from(
-        new Set<number>([...NIP_SEARCH_PAGE_KINDS, ...(kinds.length > 0 ? kinds : [])])
-      ).sort((a, b) => a - b)
+    if (hashtag) {
+      const topicKey = normalizeTopic(hashtag) || hashtag.toLowerCase()
+      setData({ type: 'hashtag' })
+      setTitle(`# ${hashtag}`)
       setSubRequests([
         {
-          filter: { '#t': [hashtag], ...(kinds.length > 0 ? { kinds } : {}) },
-          urls: relayUrls
-        },
-        {
-          filter: { search: searchFromUrl, kinds: mergedSearchKinds },
-          urls: [...new Set([...relayUrls, ...SEARCHABLE_RELAY_URLS])]
+          filter: {
+            '#t': relayTopicTagFilterValues(topicKey),
+            ...(kinds.length > 0 ? { kinds } : {})
+          },
+          urls: getRelayUrlsWithFavoritesFastReadAndInbox(
+            favoriteRelays,
+            blockedRelays,
+            userReadInboxUrls(relayList, cacheRelayListEvent),
+            readUrlOpts
+          )
         }
       ])
       const isSubscribedToHashtag = isSubscribed(hashtag)
@@ -155,36 +165,6 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
         )
       } else {
         setControls(null)
-      }
-      return
-    }
-    if (hashtag) {
-      setData({ type: 'hashtag' })
-      setTitle(`# ${hashtag}`)
-      setSubRequests([
-        {
-          filter: { '#t': [hashtag], ...(kinds.length > 0 ? { kinds } : {}) },
-          urls: getRelayUrlsWithFavoritesFastReadAndInbox(
-            favoriteRelays,
-            blockedRelays,
-            userReadInboxUrls(relayList, cacheRelayListEvent),
-            readUrlOpts
-          )
-        }
-      ])
-      // Set controls for hashtag subscribe button - check subscription status
-      const isSubscribedToHashtag = isSubscribed(hashtag)
-      if (pubkey) {
-        setControls(
-          <Button
-            variant="ghost"
-            className="h-10 [&_svg]:size-3"
-            onClick={handleSubscribeHashtag}
-            disabled={isSubscribedToHashtag}
-          >
-            {isSubscribedToHashtag ? t('Subscribed') : t('Subscribe')} <Plus />
-          </Button>
-        )
       }
       return
     }
@@ -332,7 +312,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
 
   // Update controls when subscription status changes
   useEffect(() => {
-    if ((data?.type === 'hashtag' || data?.type === 'hashtagSearch') && pubkey) {
+    if (data?.type === 'hashtag' && pubkey) {
       setControls(
         <Button
           variant="ghost"
@@ -349,7 +329,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
   useEffect(() => {
     const inlineHeader =
       hideTitlebar &&
-      (data?.type === 'hashtag' || data?.type === 'hashtagSearch' || data?.type === 'dtag')
+      (data?.type === 'hashtag' || data?.type === 'dtag')
     if (!hideTitlebar || inlineHeader) {
       registerPrimaryPanelRefresh(null)
       return
@@ -376,6 +356,16 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           oneShotMergedCap={400}
           alexandriaEmptyUrl={alexandriaEmptyUrl}
         />
+      ) : data.type === 'hashtag' ? (
+        <NormalFeed
+          ref={feedRef}
+          subRequests={subRequests}
+          extraShouldHideEvent={shouldHideNonTopicEvent}
+          extraShouldHideRepliesEvent={shouldHideNonTopicEvent}
+          progressiveWarmupQuery={topicKey || undefined}
+          progressiveWarmupMatch={topicMatchesEvent}
+          alexandriaEmptyUrl={alexandriaEmptyUrl}
+        />
       ) : (
         <NormalFeed ref={feedRef} subRequests={subRequests} alexandriaEmptyUrl={alexandriaEmptyUrl} />
       )
@@ -399,7 +389,7 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
       displayScrollToTopButton
     >
       {hideTitlebar &&
-      (data?.type === 'hashtag' || data?.type === 'hashtagSearch' || data?.type === 'dtag') ? (
+      (data?.type === 'hashtag' || data?.type === 'dtag') ? (
         <>
           <div className="px-4 py-2 border-b">
             <div className="flex items-center justify-between gap-2">

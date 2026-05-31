@@ -1124,18 +1124,18 @@ export default {
     'incoming interactions': '{{count}} toward this profile',
     'Topic map': 'Topic map',
     topicMapDescription:
-      'The ten largest bubbles combine how often a normalized string appears as a topic tag (·t·) and as a #hashtag in note text (last ~30 days). Data merges this tab’s session cache, your on-device archive, and your relay stack. Tap a bubble to open one feed that merges #t matches and NIP-50 full-text search.',
+      'Die zehn größten Blasen: gültige Labels der letzten ~30 Tage aus ·t·-Themen-Tags und echten #hashtags im Notiztext (keine Volltextsuche). Größe = kombinierte Häufigkeit; kleine Gesichter = Autoren mit diesem Label. Aus Sitzungs-Cache, Archiv und Relays. Tippen öffnet passende Notizen.',
     topicMapLocalOnlyBanner:
-      'No read relay stack — only this session’s cache and your on-device archive are merged (add relays in settings for a live relay mix).',
-    topicMapLoading: 'Merging session cache, archive, and relays…',
+      'Kein Lese-Relay-Stack — nur Sitzungs-Cache und Geräte-Archiv (Relays in den Einstellungen für Live-Daten).',
+    topicMapLoading: 'Sitzungs-Cache, Archiv und Relays werden zusammengeführt…',
     topicMapEmpty:
-      'No topic or hashtag signals yet in the scanned window. Browse feeds or rescan after syncing.',
-    topicMapFetchError: 'Could not build the topic map from your sources.',
-    topicMapRescan: 'Rescan',
-    topicMapBubbleCounts: '{{topic}} notes with ·t· tag · {{kw}} with #hashtag in text',
-    topicMapOpenMergedFeed: 'Open merged topic and keyword feed',
+      'Keine Themen- oder Hashtag-Signale im Scan-Fenster. Feeds lesen oder nach Sync erneut scannen.',
+    topicMapFetchError: 'Topic Map konnte aus deinen Quellen nicht aufgebaut werden.',
+    topicMapRescan: 'Erneut scannen',
+    topicMapBubbleCounts: '{{topic}} mit ·t·-Tag · {{kw}} mit #hashtag im Text',
+    topicMapOpenMergedFeed: 'Themen-Feed öffnen',
     topicMapClickHint:
-      'Opens a merged feed: same label as a ·t· filter plus NIP-50 search for the words.',
+      'Öffnet Notizen mit diesem ·t·-Tag oder diesem #hashtag im Text.',
     Calendar: 'Kalender',
     'No subscribed interests yet.':
       'Noch keine Interessen abonniert. Themen in den Einstellungen hinzufügen, um sie hier zu sehen.',

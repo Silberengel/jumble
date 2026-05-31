@@ -451,9 +451,34 @@ function startProgressiveIdbSearchLayer(params: ProgressiveSearchLocalLayerOpts)
   })()
 }
 
+function startProgressiveArchiveKindWarmMatchLayer(params: ProgressiveSearchLocalLayerOpts): void {
+  if (!params.warmMatch) return
+  const { warmMatch, isStale, kindsForWarm, afterSort, setEvents, setLoading } = params
+  void (async () => {
+    try {
+      const since = Math.floor(Date.now() / 1000) - 30 * 24 * 3600
+      const evs = await indexedDb.scanEventArchiveByKinds({
+        kinds: kindsForWarm,
+        since,
+        maxRowsScanned: 22_000,
+        maxMatches: 400
+      })
+      if (isStale()) return
+      const matched = evs.filter(warmMatch)
+      if (matched.length) {
+        setEvents((prev) => mergeProgressiveSearchEvents(prev, matched, afterSort))
+        setLoading(false)
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
 function kickProgressiveSearchLocalLayers(params: ProgressiveSearchLocalLayerOpts): void {
   applyProgressiveSessionSearchLayer(params)
   startProgressiveIdbSearchLayer(params)
+  startProgressiveArchiveKindWarmMatchLayer(params)
 }
 
 /** When omitting `kinds` from a live REQ, require another scope so we never subscribe to a whole relay. */

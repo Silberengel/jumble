@@ -3,7 +3,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { ExtendedKind } from '@/constants'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { filterEventsExcludingTombstones } from '@/lib/event'
-import { extractHashtagsFromContent, normalizeTopic } from '@/lib/discussion-topics'
+import { extractHashtagsFromContent, formatTopicMapBubbleLabel, isValidNormalizedTopicKey, normalizeTopic } from '@/lib/discussion-topics'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNoteList } from '@/lib/link'
 import logger from '@/lib/logger'
@@ -14,6 +14,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { cn } from '@/lib/utils'
+import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { Loader2, RefreshCw } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { kinds, verifyEvent } from 'nostr-tools'
@@ -32,12 +33,88 @@ const MAP_KINDS = [kinds.ShortTextNote, ExtendedKind.DISCUSSION] as const
 const ARCHIVE_SCAN_TIMEOUT_MS = 22_000
 const RELAY_FETCH_TIMEOUT_MS = 26_000
 const TOMBSTONES_TIMEOUT_MS = 8_000
+/** Max profile avatars shown around each topic bubble (by tag usage count). */
+const MAX_BUBBLE_AVATARS = 7
 
 export type TTopicKeywordBubble = {
   key: string
   score: number
   topicNoteCount: number
   keywordNoteCount: number
+  pubkeys: string[]
+}
+
+type TopicKeyAccum = {
+  topicNoteCount: number
+  keywordNoteCount: number
+  pubkeyHits: Map<string, number>
+}
+
+function topPubkeysForTopic(hits: Map<string, number>, limit: number): string[] {
+  return [...hits.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([pk]) => pk)
+}
+
+function TopicBubbleAvatarRing({
+  pubkeys,
+  bubbleSizePx
+}: {
+  pubkeys: readonly string[]
+  bubbleSizePx: number
+}) {
+  if (pubkeys.length === 0) return null
+  const avatarPx = Math.max(16, Math.min(26, Math.round(bubbleSizePx * 0.15)))
+  const orbitR = bubbleSizePx * (pubkeys.length === 1 ? 0 : 0.34)
+
+  if (pubkeys.length === 1) {
+    return (
+      <div
+        className="pointer-events-none overflow-hidden rounded-full ring-2 ring-primary/35"
+        style={{ width: avatarPx * 1.35, height: avatarPx * 1.35 }}
+        aria-hidden
+      >
+        <SimpleUserAvatar
+          userId={pubkeys[0]!}
+          deferRemoteAvatar
+          maxFileSizeKb={400}
+          className="!size-full max-w-none"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {pubkeys.map((pk, i) => {
+        const angle = (i / pubkeys.length) * Math.PI * 2 - Math.PI / 2
+        const left = bubbleSizePx / 2 + orbitR * Math.cos(angle)
+        const top = bubbleSizePx / 2 + orbitR * Math.sin(angle)
+        return (
+          <div
+            key={pk}
+            className="pointer-events-none absolute overflow-hidden rounded-full ring-2 ring-background"
+            style={{
+              width: avatarPx,
+              height: avatarPx,
+              left,
+              top,
+              transform: 'translate(-50%, -50%)'
+            }}
+            aria-hidden
+          >
+            <SimpleUserAvatar
+              userId={pk}
+              deferRemoteAvatar
+              maxFileSizeKb={400}
+              className="!size-full max-w-none"
+            />
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, fallback: T, label: string): Promise<T> {
@@ -66,15 +143,29 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, fallback: T, label:
   })
 }
 
-function buildTopicKeywordBubbles(
+export function buildTopicKeywordBubbles(
   events: Event[],
   showKinds: readonly number[],
   showKind1OPs: boolean,
   showKind1Replies: boolean,
   showKind1111: boolean
 ): TTopicKeywordBubble[] {
-  const topicHits = new Map<string, number>()
-  const kwHits = new Map<string, number>()
+  const accum = new Map<string, TopicKeyAccum>()
+
+  const bump = (key: string, ev: Event, viaTopicTag: boolean) => {
+    if (!isValidNormalizedTopicKey(key)) return
+    let row = accum.get(key)
+    if (!row) {
+      row = { topicNoteCount: 0, keywordNoteCount: 0, pubkeyHits: new Map() }
+      accum.set(key, row)
+    }
+    if (viaTopicTag) row.topicNoteCount += 1
+    else row.keywordNoteCount += 1
+    const pk = ev.pubkey.trim().toLowerCase()
+    if (/^[0-9a-f]{64}$/.test(pk)) {
+      row.pubkeyHits.set(pk, (row.pubkeyHits.get(pk) ?? 0) + 1)
+    }
+  }
 
   for (const ev of events) {
     if (!eventPassesNoteListKindPicker(ev, showKinds, showKind1OPs, showKind1Replies, showKind1111)) continue
@@ -82,27 +173,27 @@ function buildTopicKeywordBubbles(
     for (const row of ev.tags) {
       if (row[0] === 't' && row[1]) {
         const n = normalizeTopic(row[1])
-        if (n) topics.add(n)
+        if (n && isValidNormalizedTopicKey(n)) topics.add(n)
       }
     }
     const kws = new Set(extractHashtagsFromContent(ev.content ?? ''))
 
-    for (const k of topics) {
-      topicHits.set(k, (topicHits.get(k) ?? 0) + 1)
-    }
-    for (const k of kws) {
-      kwHits.set(k, (kwHits.get(k) ?? 0) + 1)
-    }
+    for (const k of topics) bump(k, ev, true)
+    for (const k of kws) bump(k, ev, false)
   }
 
-  const keys = new Set<string>([...topicHits.keys(), ...kwHits.keys()])
   const out: TTopicKeywordBubble[] = []
-  for (const key of keys) {
-    const a = topicHits.get(key) ?? 0
-    const b = kwHits.get(key) ?? 0
-    const score = a + b
+  for (const [key, row] of accum) {
+    if (!isValidNormalizedTopicKey(key)) continue
+    const score = row.topicNoteCount + row.keywordNoteCount
     if (score <= 0) continue
-    out.push({ key, score, topicNoteCount: a, keywordNoteCount: b })
+    out.push({
+      key,
+      score,
+      topicNoteCount: row.topicNoteCount,
+      keywordNoteCount: row.keywordNoteCount,
+      pubkeys: topPubkeysForTopic(row.pubkeyHits, MAX_BUBBLE_AVATARS)
+    })
   }
   out.sort((x, y) => y.score - x.score || x.key.localeCompare(y.key))
   return out.slice(0, MAX_BUBBLES)
@@ -221,17 +312,22 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
     }
   }, [mergeData, refreshKey, rescanTick, t])
 
+  useEffect(() => {
+    const pubkeys = [...new Set(rows.flatMap((r) => r.pubkeys))].slice(0, 48)
+    if (pubkeys.length === 0) return
+    void Promise.allSettled(pubkeys.map((pk) => client.fetchProfileEvent(pk).catch(() => {})))
+  }, [rows])
+
   const maxScore = useMemo(() => rows.reduce((m, r) => Math.max(m, r.score), 0) || 1, [rows])
 
   const openMergedFeed = useCallback(
     (key: string) => {
-      const searchPhrase = key.replace(/-/g, ' ')
-      navigateToHashtag(toNoteList({ hashtag: key, search: searchPhrase }))
+      navigateToHashtag(toNoteList({ hashtag: key }))
     },
     [navigateToHashtag]
   )
 
-  const displayLabel = (key: string) => `#${key.replace(/-/g, ' ')}`
+  const displayLabel = (key: string) => formatTopicMapBubbleLabel(key)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -302,16 +398,26 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
                       onClick={() => openMergedFeed(row.key)}
                       aria-label={ariaLabel}
                     >
+                      {row.pubkeys.length > 0 ? (
+                        <TopicBubbleAvatarRing pubkeys={row.pubkeys} bubbleSizePx={size} />
+                      ) : (
+                        <span
+                          className="rounded-full bg-primary/25 ring-2 ring-primary/35 transition-[width,height,opacity] group-hover:bg-primary/35"
+                          style={{
+                            width: `${22 + intensity * 48}%`,
+                            height: `${22 + intensity * 48}%`,
+                            opacity: 0.55 + intensity * 0.45
+                          }}
+                          aria-hidden
+                        />
+                      )}
                       <span
-                        className="rounded-full bg-primary/25 ring-2 ring-primary/35 transition-[width,height,opacity] group-hover:bg-primary/35"
-                        style={{
-                          width: `${22 + intensity * 48}%`,
-                          height: `${22 + intensity * 48}%`,
-                          opacity: 0.55 + intensity * 0.45
-                        }}
-                        aria-hidden
-                      />
-                      <span className="pointer-events-none absolute inset-2 flex items-center justify-center text-pretty text-xs font-semibold leading-tight text-foreground drop-shadow-sm sm:text-sm">
+                        className={cn(
+                          'pointer-events-none absolute inset-x-1 bottom-1.5 z-[1] rounded-md px-1 py-0.5',
+                          'text-pretty text-center text-[10px] font-semibold leading-tight text-foreground sm:text-xs',
+                          'bg-background/75 backdrop-blur-[2px] shadow-sm'
+                        )}
+                      >
                         {displayLabel(row.key)}
                       </span>
                     </button>

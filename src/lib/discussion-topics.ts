@@ -84,6 +84,53 @@ export function extractHashtagsFromContent(content: string): string[] {
   return hashtags
 }
 
+/** True when the event carries `topic` as a normalized `t` tag or `#topic` in note content. */
+export function eventMatchesTopicOrContentHashtag(event: NostrEvent, topic: string): boolean {
+  const key = normalizeTopic(topic)
+  if (!key) return false
+  for (const row of event.tags) {
+    if (row[0] === 't' && row[1] && normalizeTopic(row[1]) === key) return true
+  }
+  return extractHashtagsFromContent(event.content ?? '').includes(key)
+}
+
+/** Normalized topic/hashtag keys suitable for topic-map bubbles and `#t` feeds. */
+export function isValidNormalizedTopicKey(key: string): boolean {
+  const k = key.trim()
+  if (!k || /^[0-9]+$/.test(k)) return false
+  return /^[a-z0-9][a-z0-9_-]*$/.test(k)
+}
+
+/** True when `#${key}` matches the content {@link HASHTAG_REGEX} (ASCII keys after normalization). */
+export function normalizedKeyMatchesHashtagPattern(key: string): boolean {
+  if (!isValidNormalizedTopicKey(key)) return false
+  return /^#[a-z0-9_-]+$/i.test(`#${key}`)
+}
+
+/** Topic-map bubble label: readable words, no `#` prefix. */
+export function formatTopicMapBubbleLabel(key: string): string {
+  return key.replace(/-/g, ' ')
+}
+
+/**
+ * `#t` filter values for relay REQs when opening a normalized topic-map key.
+ * Map keys singularize (e.g. `jesus` → `jesu`); relays often still store the unsingularized t-tag.
+ */
+export function relayTopicTagFilterValues(normalizedKey: string): string[] {
+  const k = normalizeTopic(normalizedKey) || normalizedKey.trim().toLowerCase()
+  if (!k) return []
+  const out = new Set<string>([k])
+  if (!k.endsWith('s')) {
+    out.add(`${k}s`)
+    if (k.endsWith('y')) out.add(`${k.slice(0, -1)}ies`)
+    else out.add(`${k}es`)
+  }
+  if (k.endsWith('s') && k.length > 2 && !k.endsWith('ss')) {
+    out.add(k.slice(0, -1))
+  }
+  return [...out]
+}
+
 /**
  * Extract h-tag (group ID) from event tags
  */

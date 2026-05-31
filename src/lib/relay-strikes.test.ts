@@ -33,6 +33,21 @@ describe('relaySessionStrikes.observeSubscribeBatch', () => {
     expect(relaySessionStrikes.isReadHttpSkipped(fast)).toBe(false)
   })
 
+  it('does not session-park read-only index relays (e.g. aggr.nostr.land)', () => {
+    const aggr = 'wss://aggr.nostr.land/'
+    const fast = 'wss://fast.example.com/'
+
+    relaySessionStrikes.observeSubscribeBatch([
+      row(fast, 'eose', 400),
+      row(aggr, 'eose', 12_000)
+    ])
+    relaySessionStrikes.observeSubscribeBatch([
+      row(fast, 'eose', 500),
+      row(aggr, 'timeout', 10_000)
+    ])
+    expect(relaySessionStrikes.isReadHttpSkipped(aggr)).toBe(false)
+  })
+
   it('clears slow parking on fast EOSE via recordReadSuccess', () => {
     const url = 'wss://recover.example.com/'
     relaySessionStrikes.observeSubscribeBatch([row(url, 'eose', 15_000)])

@@ -7,7 +7,7 @@ import {
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
-import { isRelayPublishPolicyRejection } from '@/lib/relay-publish-filter'
+import { isReadOnlyRelayUrl, isRelayPublishPolicyRejection } from '@/lib/relay-publish-filter'
 import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch, isLocalNetworkUrl } from '@/lib/url'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
@@ -287,9 +287,11 @@ class RelaySessionStrikes {
       const fastEose = row.outcome === 'eose' && row.msFromBatchStart < slowThresholdMs * 0.6
 
       if (timedOut || slowEose) {
-        const parked = this.recordSlowSignalKey(key, now)
+        const parked = this.recordSlowSignalKey(key, now, row.relayUrl)
         if (parked) socketsToClose.push(row.relayUrl)
-        if (timedOut) this.recordReadFailureKey(key, 'connection', row.relayUrl)
+        if (timedOut && !isReadOnlyRelayUrl(row.relayUrl)) {
+          this.recordReadFailureKey(key, 'connection', row.relayUrl)
+        }
         continue
       }
 
@@ -304,9 +306,11 @@ class RelaySessionStrikes {
     return socketsToClose
   }
 
-  private recordSlowSignalKey(key: string, now: number): boolean {
+  private recordSlowSignalKey(key: string, now: number, url?: string): boolean {
     const e = this.getEntry(key)
     if (this.cacheRelayKeys.has(key)) return false
+    // Read-only index relays (aggr.nostr.land, search.nos.today, …) are intentionally slower than inbox relays.
+    if (url && isReadOnlyRelayUrl(url)) return false
     e.slowSignals += 1
     if (e.slowSignals < RELAY_SLOW_PARK_SIGNALS_THRESHOLD) return false
     e.slowParkUntil = Math.max(e.slowParkUntil, now + RELAY_SLOW_PARK_COOLDOWN_MS)
