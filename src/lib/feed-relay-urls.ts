@@ -65,3 +65,53 @@ export function pinHttpIndexRelaysInRelayCap(
 
   return out.slice(0, maxRelays)
 }
+
+/**
+ * Keep global mention / read aggregators in a capped stack (notifications `#p` REQs).
+ * Long NIP-65 lists otherwise fill {@link FAUX_SPELL_MAX_RELAYS} before index relays are reached.
+ */
+export function pinMentionRelaysInRelayCap(
+  capped: readonly string[],
+  mentionSources: readonly string[],
+  maxRelays: number,
+  minPinned: number
+): string[] {
+  const pinKeys = new Set(
+    mentionSources
+      .slice(0, Math.max(0, minPinned))
+      .map((u) => relayDedupeKey(u))
+      .filter(Boolean)
+  )
+  if (pinKeys.size === 0) return [...capped]
+
+  const mentionKeySet = new Set(mentionSources.map((u) => relayDedupeKey(u)).filter(Boolean))
+  const out = [...capped]
+  const outKeys = new Set(out.map(relayDedupeKey))
+
+  for (const raw of mentionSources) {
+    const key = relayDedupeKey(raw)
+    if (!key || outKeys.has(key)) continue
+
+    while (out.length >= maxRelays) {
+      let dropped = false
+      for (let i = out.length - 1; i >= 0; i--) {
+        const candidate = out[i]!
+        const ck = relayDedupeKey(candidate)
+        if (pinKeys.has(ck) || mentionKeySet.has(ck)) continue
+        out.splice(i, 1)
+        outKeys.delete(ck)
+        dropped = true
+        break
+      }
+      if (!dropped) break
+    }
+
+    if (out.length >= maxRelays) continue
+    out.push(raw)
+    outKeys.add(key)
+    pinKeys.add(key)
+    if ([...pinKeys].every((k) => outKeys.has(k))) break
+  }
+
+  return out.slice(0, maxRelays)
+}

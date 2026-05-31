@@ -41,6 +41,7 @@ import {
   MEDIA_SPELL_KINDS,
   NOTIFICATION_SPELL_KINDS,
   applyFauxSpellCapsToSubRequests,
+  buildNotificationSpellRelayUrls,
   ensureFauxSpellRelayStackTouchesFastRead
 } from './fauxSpellFeeds'
 import { getRelaysForSpell, spellEventToFilter } from '@/services/spell.service'
@@ -414,8 +415,11 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     )
 
     if (selectedFauxSpell === 'notifications') {
-      if (!notificationsFeedPubkey || !feedUrls.length) return []
-      const notificationUrls = appendMoneroNostrRelays(feedUrls)
+      if (!notificationsFeedPubkey) return []
+      const notificationUrls = appendMoneroNostrRelays(
+        buildNotificationSpellRelayUrls(feedUrls, blockedRelays)
+      )
+      if (!notificationUrls.length) return []
       const base = buildNotificationsSpellSubRequests(notificationUrls, notificationsFeedPubkey)
       const extra = buildNotificationsFollowedThreadSubRequests(
         notificationUrls,

@@ -1,6 +1,7 @@
 import {
   BOOKSTR_RELAY_URLS,
   DOCUMENT_RELAY_URLS,
+  FAST_READ_RELAY_URLS,
   FOLLOWS_HISTORY_RELAY_URLS,
   GIF_RELAY_URLS,
   NIP42_POOL_AUTOMATIC_AUTH_RELAY_URLS,
@@ -46,6 +47,7 @@ function relayKeyForCuratedSet(url: string): string {
 /** Relays grantable for the duration of an active read query/subscribe (not general feed widening). */
 const METADATA_POLICY_ACTIVE_READ_GRANT_RELAY_LISTS: readonly (readonly string[])[] = [
   ...METADATA_POLICY_OPERATION_SCOPED_RELAY_LISTS,
+  FAST_READ_RELAY_URLS,
   SEARCHABLE_RELAY_URLS,
   READ_ONLY_RELAY_URLS,
   NIP66_DISCOVERY_RELAY_URLS

@@ -14,6 +14,8 @@ import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   PROFILE_MEDIA_TAB_KINDS,
+  READ_ONLY_RELAY_URLS,
+  SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { RENDERABLE_NOTE_KINDS_SORTED } from '@/lib/note-renderable-kinds'
 import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
@@ -29,7 +31,7 @@ import {
   parseThreadWatchListRefs
 } from '@/lib/notification-thread-watch'
 import { userIdToPubkey } from '@/lib/pubkey'
-import { pinHttpIndexRelaysInRelayCap } from '@/lib/feed-relay-urls'
+import { pinHttpIndexRelaysInRelayCap, pinMentionRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
 import { type Event, type Filter } from 'nostr-tools'
@@ -37,6 +39,54 @@ import { type Event, type Filter } from 'nostr-tools'
 /** Default caps for every faux spell feed (relays per subrequest, events per REQ). */
 export const FAUX_SPELL_MAX_RELAYS = 10
 export const FAUX_SPELL_EVENT_LIMIT = 200
+
+/** Minimum global mention/index relays pinned for the notifications spell (`#p` REQ). */
+export const NOTIFICATION_MENTION_RELAY_PIN_COUNT = 5
+
+/** Relays that index `#p` mentions and recent social events for the notifications spell. */
+export function notificationMentionIndexRelayUrls(): string[] {
+  return dedupeNormalizeRelayUrlsOrdered([
+    ...FAST_READ_RELAY_URLS,
+    ...SEARCHABLE_RELAY_URLS,
+    ...READ_ONLY_RELAY_URLS
+  ])
+}
+
+/**
+ * Notifications need global mention aggregators, not only the viewer's NIP-65 inbox (which may not store `#p`).
+ * Pins {@link NOTIFICATION_MENTION_RELAY_PIN_COUNT} index relays under {@link FAUX_SPELL_MAX_RELAYS}.
+ */
+export function buildNotificationSpellRelayUrls(
+  personalUrls: readonly string[],
+  blockedRelays: readonly string[] = []
+): string[] {
+  const blocked = new Set(
+    blockedRelays
+      .map((b) => (normalizeAnyRelayUrl(b) || b.trim()).toLowerCase())
+      .filter(Boolean)
+  )
+  const allow = (u: string) => !blocked.has((normalizeAnyRelayUrl(u) || u.trim()).toLowerCase())
+  const mentionIndex = notificationMentionIndexRelayUrls().filter(allow)
+  const personal = dedupeNormalizeRelayUrlsOrdered([...personalUrls]).filter(allow)
+  const capped = feedRelayPolicyUrls(
+    [
+      { source: 'search', urls: mentionIndex },
+      { source: 'viewer-read', urls: personal }
+    ],
+    {
+      operation: 'read',
+      maxRelays: FAUX_SPELL_MAX_RELAYS,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }
+  )
+  return pinMentionRelaysInRelayCap(
+    capped,
+    mentionIndex,
+    FAUX_SPELL_MAX_RELAYS,
+    Math.min(NOTIFICATION_MENTION_RELAY_PIN_COUNT, mentionIndex.length)
+  )
+}
 
 /** Profile Media tab: single REQ `limit` (matches merged cap in NoteList one-shot). */
 export const PROFILE_MEDIA_REQ_LIMIT = 200
