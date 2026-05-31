@@ -1965,13 +1965,13 @@ class ClientService extends EventTarget {
                           logger.error(`[PublishEvent] Auth or publish failed`, { url, error: authError.message })
                           errors.push({ url, error: authError })
                           relayStatuses.push({ url, success: false, error: authError.message })
-                          relaySessionStrikes.recordPublishFailure(url)
+                          relaySessionStrikes.recordPublishFailure(url, authError.message)
                         })
                     } else {
                       logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
                       errors.push({ url, error })
                       relayStatuses.push({ url, success: false, error: error.message })
-                      relaySessionStrikes.recordPublishFailure(url)
+                      relaySessionStrikes.recordPublishFailure(url, error.message)
                     }
                   })
 
@@ -2029,7 +2029,8 @@ class ClientService extends EventTarget {
               success: false,
               error: error instanceof Error ? error.message : 'Connection failed'
             })
-            relaySessionStrikes.recordPublishFailure(url)
+            const errMsg = error instanceof Error ? error.message : 'Connection failed'
+            relaySessionStrikes.recordPublishFailure(url, errMsg)
           } finally {
             clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount

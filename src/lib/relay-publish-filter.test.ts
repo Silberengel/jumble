@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   filterContextAuthorReadRelaysForPublish,
   filterRelaysForEventPublish,
+  isRelayPublishPolicyRejection,
   relayAllowsPublishKind
 } from './relay-publish-filter'
 
@@ -37,5 +38,16 @@ describe('relay-publish-filter', () => {
       'wss://relay.example.com/'
     ])
     expect(out).toEqual(['wss://relay.example.com/'])
+  })
+
+  it('detects relay kind-policy rejections (not infrastructure faults)', () => {
+    expect(
+      isRelayPublishPolicyRejection(
+        'only published longform articles accepted on this relay (kind 30023)'
+      )
+    ).toBe(true)
+    expect(isRelayPublishPolicyRejection('this relay only accepts kind 1')).toBe(true)
+    expect(isRelayPublishPolicyRejection('Remote relay connection timeout')).toBe(false)
+    expect(isRelayPublishPolicyRejection('Publish timeout after 8000ms')).toBe(false)
   })
 })

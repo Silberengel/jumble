@@ -51,6 +51,27 @@ export function filterRelaysForEventPublish(urls: readonly string[], eventKind: 
 }
 
 /**
+ * Relay refused the EVENT due to kind / content policy (not connectivity).
+ * These are expected when publishing to specialty relays — do not session-strike the relay.
+ */
+export function isRelayPublishPolicyRejection(message: string): boolean {
+  const m = message.trim().toLowerCase()
+  if (!m) return false
+  if (/\bkind\s*[:\s]?\s*\d+\b/.test(m) && /(accept|accepted|only|not supported|unsupported|reject|refused|allow|allowed|permitted)/.test(m)) {
+    return true
+  }
+  if (/only .{0,120} (accept|accepted|allowed|permitted)/.test(m)) return true
+  if (/(does not|don't|do not) accept/.test(m)) return true
+  if (/not accepted on this relay/.test(m)) return true
+  if (/wrong kind/.test(m)) return true
+  if (/unsupported kind/.test(m)) return true
+  if (/kind not (supported|allowed|permitted)/.test(m)) return true
+  if (/event kind (blocked|not allowed|rejected)/.test(m)) return true
+  if (/this relay only accepts/.test(m)) return true
+  return false
+}
+
+/**
  * Reply/mention author **read** hints used as publish targets: never LAN/Tor, read-only aggregators,
  * or profile/index mirrors (those are not inboxes for notes or reactions).
  */

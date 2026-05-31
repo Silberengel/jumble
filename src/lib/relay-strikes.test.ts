@@ -96,6 +96,31 @@ describe('relaySessionStrikes.clearKey', () => {
   })
 })
 
+describe('relaySessionStrikes publish failures', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+  })
+
+  it('does not strike when relay rejects due to kind policy', () => {
+    const url = 'wss://essayist.decentnewsroom.com/'
+    for (let i = 0; i < 10; i++) {
+      relaySessionStrikes.recordPublishFailure(
+        url,
+        'only published longform articles accepted on this relay (kind 30023)'
+      )
+    }
+    expect(relaySessionStrikes.isPublishSkipped(url)).toBe(false)
+  })
+
+  it('strikes after repeated infrastructure publish failures', () => {
+    const url = 'wss://relay.example.com/'
+    relaySessionStrikes.recordPublishFailure(url, 'websocket closed')
+    const snap = relaySessionStrikes.getDebugSnapshot()
+    const entry = snap.entries.find((e) => e.key.includes('relay.example.com'))
+    expect(entry?.entry.publishFailures).toBe(1)
+  })
+})
+
 describe('isRelayStrikeEntryActive', () => {
   it('is false for empty entry', () => {
     expect(

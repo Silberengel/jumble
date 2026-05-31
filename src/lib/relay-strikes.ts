@@ -7,6 +7,7 @@ import {
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { isRelayPublishPolicyRejection } from '@/lib/relay-publish-filter'
 import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch, isLocalNetworkUrl } from '@/lib/url'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
@@ -288,7 +289,8 @@ class RelaySessionStrikes {
     return true
   }
 
-  recordPublishFailure(url: string): void {
+  recordPublishFailure(url: string, errorMessage?: string): void {
+    if (errorMessage && isRelayPublishPolicyRejection(errorMessage)) return
     const key = sessionKey(url)
     if (!key) return
     const now = Date.now()
