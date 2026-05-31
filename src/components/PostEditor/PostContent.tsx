@@ -3081,17 +3081,17 @@ export default function PostContent({
                 isMediaNoteComposerMode ? t('Media Note') :
                 t('Short Note')
               return (
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <div className="flex flex-nowrap items-center justify-end gap-1">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-sm font-normal shrink-0"
+                    className="h-8 shrink-0 gap-1 px-2 text-xs font-normal sm:text-sm"
                     onClick={() => void handleOpenAdvancedLab()}
                     title={t('Advanced event lab')}
                   >
                     <Code2 className="h-3.5 w-3.5 shrink-0" />
-                    <span className="max-w-[9rem] truncate text-xs sm:text-sm">
+                    <span className="max-w-[5.25rem] truncate sm:max-w-[8.5rem]">
                       {t('Advanced event lab')}
                     </span>
                   </Button>
@@ -3101,7 +3101,7 @@ export default function PostContent({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-sm font-normal shrink-0"
+                    className="h-8 w-8 shrink-0 p-0"
                     disabled={!canUseMediaKindFromUrlButton}
                     title={
                       canUseMediaKindFromUrlButton
@@ -3111,13 +3111,17 @@ export default function PostContent({
                     onClick={handleUseMediaNoteKindFromUrl}
                   >
                     <Upload className="h-3.5 w-3.5 shrink-0" />
-                    <span className="hidden sm:inline max-w-[7.5rem] truncate">{t('Media kind')}</span>
+                    <span className="sr-only">{t('Media kind')}</span>
                   </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5 h-8 text-sm font-normal">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 min-w-0 max-w-[6.75rem] shrink gap-1 px-2 text-xs font-normal sm:max-w-[9rem] sm:text-sm"
+                    >
                       <ActiveIcon className="h-3.5 w-3.5 shrink-0" />
-                      <span className="max-w-[120px] truncate">{activeLabel}</span>
+                      <span className="min-w-0 truncate">{activeLabel}</span>
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                     </Button>
                   </DropdownMenuTrigger>

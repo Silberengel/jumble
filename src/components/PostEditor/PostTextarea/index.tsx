@@ -272,8 +272,8 @@ const PostTextarea = forwardRef<
 
     return (
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <TabsList className="w-auto justify-start">
+        <div className="flex min-w-0 flex-col gap-2">
+          <TabsList className="w-auto shrink-0 justify-start">
             <TabsTrigger value="edit" title={t('Edit')}>
               {t('Edit')}
             </TabsTrigger>
@@ -281,11 +281,11 @@ const PostTextarea = forwardRef<
               {t('Preview')}
             </TabsTrigger>
           </TabsList>
-          {headerActions && (
+          {headerActions ? (
             <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
               {headerActions}
             </div>
-          )}
+          ) : null}
         </div>
         <TabsContent
           value="edit"
