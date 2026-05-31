@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
-import { eventMatchesTopicOrContentHashtag, formatTopicMapBubbleLabel, isValidNormalizedTopicKey, normalizedKeyMatchesHashtagPattern, normalizeTopic, relayTopicTagFilterValues } from '@/lib/discussion-topics'
+import { eventMatchesTopicOrContentHashtag, formatTopicMapBubbleLabel, isValidNormalizedTopicKey, normalizedKeyMatchesHashtagPattern, relayTopicTagFilterValues } from '@/lib/discussion-topics'
 
 describe('eventMatchesTopicOrContentHashtag', () => {
   it('matches normalized t tags', () => {
