@@ -44,6 +44,27 @@ function isKactiBroadcastSpamKind1(event: Pick<NEvent, 'kind' | 'content'>): boo
 /**
  * drift.gits.net kind-1 payloads (`sp_<id>.….drift.gits.net` + `t` tag) — relay index noise, not discussion text.
  */
+/** Min length for kind-1 opaque blobs (base64-like relay noise). */
+const OPAQUE_BLOB_KIND1_MIN_LEN = 80
+/** Min length when there is no `=` padding but the whole note is still one opaque token. */
+const OPAQUE_BLOB_KIND1_MIN_LEN_NO_PAD = 120
+
+/**
+ * Long single-token payloads (usually base64) with no readable text — relay index spam.
+ */
+function isLongOpaqueRandomStringKind1(event: Pick<NEvent, 'kind' | 'content'>): boolean {
+  if (event.kind !== kinds.ShortTextNote) return false
+  const raw = typeof event.content === 'string' ? event.content : ''
+  const compact = raw.trim().replace(/\s+/g, '')
+  if (compact.length < OPAQUE_BLOB_KIND1_MIN_LEN) return false
+  if (!/^[A-Za-z0-9+/]+=*$/.test(compact)) return false
+  const bodyLen = compact.replace(/=+$/, '').length
+  if (compact.endsWith('=')) {
+    return bodyLen >= OPAQUE_BLOB_KIND1_MIN_LEN - 4
+  }
+  return compact.length >= OPAQUE_BLOB_KIND1_MIN_LEN_NO_PAD
+}
+
 function isDriftGitsNetSpamKind1(
   event: Pick<NEvent, 'kind' | 'content' | 'tags'>
 ): boolean {
@@ -78,7 +99,8 @@ const DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND = 34236
 
 /**
  * Single gate for subscribe/cache/IDB read paths: drop kind-1 JSON-object spam, Kacti broadcast spam,
- * drift.gits.net spam, and malformed relay reviews. Optional {@link ShouldDropEventOnIngestOptions} relaxes
+ * drift.gits.net spam, long opaque random strings, and malformed relay reviews. Optional
+ * {@link ShouldDropEventOnIngestOptions} relaxes
  * kind-1 spam drops for explicit id fetch.
  */
 export function shouldDropEventOnIngest(
@@ -93,6 +115,9 @@ export function shouldDropEventOnIngest(
     if (!relaxKind1Spam) return true
   }
   if (isDriftGitsNetSpamKind1(event)) {
+    if (!relaxKind1Spam) return true
+  }
+  if (isLongOpaqueRandomStringKind1(event)) {
     if (!relaxKind1Spam) return true
   }
   return false
