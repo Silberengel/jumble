@@ -223,6 +223,7 @@ class Nip89Service {
         ExtendedKind.POLL,
         ExtendedKind.COMMENT,
         ExtendedKind.VOICE,
+        ExtendedKind.MUSIC_TRACK,
         ExtendedKind.VOICE_COMMENT,
         ExtendedKind.DISCUSSION,
         ExtendedKind.RELAY_REVIEW,

@@ -28,6 +28,8 @@ export function getKindDescription(
       return { number: 1111, description: 'Comment' }
     case ExtendedKind.VOICE:
       return { number: 1222, description: 'Voice Note' }
+    case ExtendedKind.MUSIC_TRACK:
+      return { number: 36787, description: 'Music Track' }
     case ExtendedKind.VOICE_COMMENT:
       return { number: 1244, description: 'Voice Comment' }
     case ExtendedKind.PICTURE:

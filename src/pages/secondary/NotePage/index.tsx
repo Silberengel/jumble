@@ -74,6 +74,8 @@ function getEventTypeName(kind: number): string {
       return 'Comment'
     case ExtendedKind.VOICE:
       return 'Voice Post'
+    case ExtendedKind.MUSIC_TRACK:
+      return 'Music Track'
     case ExtendedKind.VOICE_COMMENT:
       return 'Voice Comment'
     case kinds.Highlights:
@@ -284,6 +286,8 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         return 'Note: Comment'
       case 1222: // ExtendedKind.VOICE
         return 'Note: Voice Post'
+      case 36787: // ExtendedKind.MUSIC_TRACK
+        return 'Note: Music Track'
       case 1244: // ExtendedKind.VOICE_COMMENT
         return 'Note: Voice Comment'
       default:

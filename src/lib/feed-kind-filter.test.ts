@@ -36,6 +36,7 @@ describe('feed kind groups', () => {
     expect(on.showKinds).toContain(ExtendedKind.DISCUSSION)
     expect(on.showKinds).toContain(ExtendedKind.PICTURE)
     expect(on.showKinds).toContain(ExtendedKind.VOICE)
+    expect(on.showKinds).toContain(ExtendedKind.MUSIC_TRACK)
     expect(isFeedPostsGroupEnabled(on.showKind1OPs, on.showKinds)).toBe(true)
   })
 

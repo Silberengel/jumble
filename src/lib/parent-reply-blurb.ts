@@ -1,4 +1,5 @@
-import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
+import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind } from '@/constants'
+import { getMusicTrackFromEvent, musicTrackDisplayLine } from '@/lib/music-track'
 import {
   getLiveEventMetadataFromEvent,
   getLongFormArticleMetadataFromEvent
@@ -62,6 +63,11 @@ export function getParentReplyBlurbDisplayText(
     const rawTitle = live.title?.trim()
     if (rawTitle && rawTitle !== 'no title') return truncateBlurb(stripMarkupForPreview(rawTitle), maxLen)
     if (live.summary?.trim()) return truncateBlurb(stripMarkupForPreview(live.summary), maxLen)
+  }
+
+  if (isMusicTrackKind(event.kind)) {
+    const track = getMusicTrackFromEvent(event)
+    if (track) return truncateBlurb(musicTrackDisplayLine(track), maxLen)
   }
 
   if (event.kind === ExtendedKind.PICTURE || isNip71StyleVideoKind(event.kind)) {

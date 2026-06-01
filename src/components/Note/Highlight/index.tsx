@@ -287,6 +287,7 @@ export default function Highlight({
         ExtendedKind.WIKI_ARTICLE, // Has special card
         ExtendedKind.NOSTR_SPECIFICATION, // Has special card
         ExtendedKind.VOICE, // Has special card
+        ExtendedKind.MUSIC_TRACK,
         ExtendedKind.VOICE_COMMENT, // Has special card
       ]
       

@@ -13,18 +13,35 @@ interface AudioPlayerProps {
   className?: string
   /** Optional cover / still (e.g. NIP-53 `image` on live events). */
   poster?: string
+  /** Tried when `src` fails to load (e.g. Primal r2a mirror for blossom URLs). */
+  fallbackSrc?: string
   /** Fires when enough data is buffered to play (e.g. to swap out a blurhash placeholder). */
   onReady?: () => void
 }
 
-export default function AudioPlayer({ src, className, poster, onReady }: AudioPlayerProps) {
+export default function AudioPlayer({
+  src,
+  className,
+  poster,
+  fallbackSrc,
+  onReady
+}: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const [activeSrc, setActiveSrc] = useState(src)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState(false)
   const seekTimeoutRef = useRef<NodeJS.Timeout>()
   const isSeeking = useRef(false)
+
+  useEffect(() => {
+    setActiveSrc(src)
+    setError(false)
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+  }, [src, fallbackSrc])
 
   useEffect(() => {
     if (!onReady) return
@@ -37,7 +54,7 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
     }
     audio.addEventListener('canplay', notify, { once: true })
     return () => audio.removeEventListener('canplay', notify)
-  }, [src, onReady])
+  }, [activeSrc, onReady])
 
   useEffect(() => {
     if (error) {
@@ -122,6 +139,19 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
     }, 300)
   }
 
+  const handleLoadError = () => {
+    const fb = fallbackSrc?.trim()
+    if (fb && activeSrc !== fb) {
+      setActiveSrc(fb)
+      setError(false)
+      setIsPlaying(false)
+      setCurrentTime(0)
+      setDuration(0)
+      return
+    }
+    setError(true)
+  }
+
   if (error) {
     return <ExternalLink url={src} />
   }
@@ -157,7 +187,7 @@ export default function AudioPlayer({ src, className, poster, onReady }: AudioPl
             !cover && 'max-w-md'
           )}
         >
-          <audio ref={audioRef} src={src} preload="metadata" onError={() => setError(true)} />
+          <audio ref={audioRef} src={activeSrc} preload="metadata" onError={handleLoadError} />
 
           <Button size="icon" className="shrink-0 rounded-full" onClick={togglePlay}>
             {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}

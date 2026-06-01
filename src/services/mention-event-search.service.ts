@@ -58,6 +58,7 @@ export const NADDR_KINDS = [
   ExtendedKind.NOSTR_SPECIFICATION, 
   ExtendedKind.PUBLICATION_CONTENT,
   kinds.LongFormArticle,
+  ExtendedKind.MUSIC_TRACK
 ] as const
 
 export type PickerSearchMode = 'nevent' | 'naddr'

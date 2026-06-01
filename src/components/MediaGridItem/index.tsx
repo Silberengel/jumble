@@ -1,4 +1,5 @@
-import { ExtendedKind, isNip71StyleVideoKind } from '@/constants'
+import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind } from '@/constants'
+import { getMusicTrackFromEvent } from '@/lib/music-track'
 import { isLongFormNip71VideoEventKind } from '@/lib/long-video-load-policy'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
@@ -21,7 +22,11 @@ export default function MediaGridItem({ event }: { event: Event }) {
   const isVideo =
     (!isPictureKind && first?.m?.startsWith('video/')) ||
     (!isPictureKind && isNip71StyleVideoKind(event.kind))
-  const isAudio = first?.m?.startsWith('audio/') || event.kind === ExtendedKind.VOICE
+  const musicTrack = isMusicTrackKind(event.kind) ? getMusicTrackFromEvent(event) : null
+  const isAudio =
+    first?.m?.startsWith('audio/') ||
+    event.kind === ExtendedKind.VOICE ||
+    musicTrack != null
   const hasMultiple = media.all.length > 1
 
   // For videos prefer the poster image; long-form feed tiles never prefetch the .mp4 (open note to play).
@@ -29,7 +34,7 @@ export default function MediaGridItem({ event }: { event: Event }) {
     ? isLongFormVideo
       ? (first?.image ?? first?.thumb)
       : (first?.image ?? first?.url)
-    : (first?.thumb ?? first?.url)
+    : musicTrack?.imageUrl ?? first?.thumb ?? first?.url
 
   const handleClick = () => {
     client.addEventToCache(event)

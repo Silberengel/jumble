@@ -44,6 +44,8 @@ function getEventTypeName(kind: number): string {
       return 'Comment'
     case ExtendedKind.VOICE:
       return 'Voice Post'
+    case ExtendedKind.MUSIC_TRACK:
+      return 'Music Track'
     case ExtendedKind.VOICE_COMMENT:
       return 'Voice Comment'
     case kinds.Highlights:

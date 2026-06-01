@@ -8,7 +8,8 @@ export const FEED_POSTS_GROUP_KINDS: readonly number[] = [
   kinds.Highlights,
   ExtendedKind.DISCUSSION,
   ExtendedKind.PICTURE,
-  ExtendedKind.VOICE
+  ExtendedKind.VOICE,
+  ExtendedKind.MUSIC_TRACK
 ]
 
 /** Kind 1 replies, comments, voice comments, superchats — feed filter “Replies” group. */

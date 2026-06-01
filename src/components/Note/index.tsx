@@ -1,5 +1,5 @@
 import { useSmartNoteNavigationOptional } from '@/PageManager'
-import { ExtendedKind, isNip71StyleVideoKind, publicAssetUrl } from '@/constants'
+import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind, publicAssetUrl } from '@/constants'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import {
   getHttpUrlFromITags,
@@ -76,6 +76,7 @@ import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
 import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
+import MusicTrackNote from './MusicTrackNote'
 import RelayReview from './RelayReview'
 import Superchat from './Superchat'
 import Zap from './Zap'
@@ -565,6 +566,8 @@ export default function Note({
     )
   } else if (event.kind === ExtendedKind.PICTURE) {
     content = <PictureNote className="mt-2" event={event} />
+  } else if (isMusicTrackKind(event.kind)) {
+    content = <MusicTrackNote className="mt-2" event={event} loadMedia={showFull} />
   } else if (isNip71StyleVideoKind(event.kind)) {
     content = <VideoNote className="mt-2" event={event} loadMedia={showFull} />
   } else if (event.kind === ExtendedKind.RELAY_REVIEW) {

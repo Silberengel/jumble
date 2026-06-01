@@ -30,6 +30,7 @@ import NormalContentPreview from './NormalContentPreview'
 import PictureNotePreview from './PictureNotePreview'
 import PollPreview from './PollPreview'
 import VideoNotePreview from './VideoNotePreview'
+import MusicTrackNotePreview from './MusicTrackNotePreview'
 import ZapPreview from './ZapPreview'
 import DiscussionNote from '../DiscussionNote'
 import ApplicationHandlerInfo from '../ApplicationHandlerInfo'
@@ -242,6 +243,20 @@ export default function ContentPreview({
       )
     }
     return withKindRow(<VideoNotePreview event={previewEvent} />)
+  }
+
+  if (event.kind === ExtendedKind.MUSIC_TRACK) {
+    if (forParentReplyBlurb) {
+      const line = getParentReplyBlurbDisplayText(previewEvent)
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>
+            {line || t('Music track', { defaultValue: 'Music track' })}
+          </div>
+        </div>
+      )
+    }
+    return withKindRow(<MusicTrackNotePreview event={previewEvent} />)
   }
 
   if (event.kind === ExtendedKind.PICTURE) {

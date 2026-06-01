@@ -572,6 +572,8 @@ export const ExtendedKind = {
   SHORT_VIDEO: 22,
   /** NIP-71: addressable normal video (same rendering as {@link ExtendedKind.VIDEO}). */
   VIDEO_ADDRESSABLE: 34235,
+  /** Music track (addressable): audio URL + metadata in tags; kind 36787. */
+  MUSIC_TRACK: 36787,
   POLL: 1068,
   /** NIP-B9 zap poll (paid votes via zaps). */
   ZAP_POLL: 6969,
@@ -726,6 +728,10 @@ const NIP71_VIDEO_KIND_SET = new Set<number>(NIP71_VIDEO_KINDS)
 /** True for NIP-71 normal/short video events (regular or addressable). */
 export function isNip71StyleVideoKind(kind: number): boolean {
   return NIP71_VIDEO_KIND_SET.has(kind)
+}
+
+export function isMusicTrackKind(kind: number): boolean {
+  return kind === ExtendedKind.MUSIC_TRACK
 }
 
 /**
@@ -951,6 +957,7 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.POLL,
   ExtendedKind.COMMENT,
   ExtendedKind.VOICE,
+  ExtendedKind.MUSIC_TRACK,
   ExtendedKind.VOICE_COMMENT,
   // ExtendedKind.PUBLIC_MESSAGE, // Excluded - public messages should only appear in notifications
   kinds.Highlights,
@@ -1004,7 +1011,8 @@ const PROFILE_PUBLICATIONS_TAB_KIND_SET = new Set<number>(PROFILE_PUBLICATIONS_T
 export const PROFILE_MEDIA_TAB_KINDS: readonly number[] = [
   ExtendedKind.PICTURE,
   ...NIP71_VIDEO_KINDS,
-  ExtendedKind.VOICE
+  ExtendedKind.VOICE,
+  ExtendedKind.MUSIC_TRACK
 ]
 
 /** Home feed Gallery tab: picture + NIP-71 video only (20, 21, 22, 34235). */
