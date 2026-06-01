@@ -125,8 +125,8 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
           <TabsTrigger value="favorite-relays" className="w-full sm:w-auto">{t('Favorite Relays')}</TabsTrigger>
           <TabsTrigger value="mailbox" className="w-full sm:w-auto">{t('Read & Write Relays')}</TabsTrigger>
           <TabsTrigger value="http-relays" className="w-full sm:w-auto">{t('HTTP relays')}</TabsTrigger>
-          <TabsTrigger value="session-relays" className="w-full sm:w-auto">{t('Session relays')}</TabsTrigger>
           <TabsTrigger value="cache-relays" className="w-full sm:w-auto">{t('Cache Relays')}</TabsTrigger>
+          <TabsTrigger value="session-relays" className="w-full sm:w-auto">{t('Session relays')}</TabsTrigger>
         </TabsList>
         <TabsContent value="favorite-relays">
           <FavoriteRelaysSetting />
@@ -137,11 +137,11 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
         <TabsContent value="http-relays">
           <HttpRelaysSetting />
         </TabsContent>
-        <TabsContent value="session-relays">
-          <SessionRelaysTab />
-        </TabsContent>
         <TabsContent value="cache-relays">
           <CacheRelaysSetting />
+        </TabsContent>
+        <TabsContent value="session-relays">
+          <SessionRelaysTab />
         </TabsContent>
       </Tabs>
     </SecondaryPageLayout>

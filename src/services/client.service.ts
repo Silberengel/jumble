@@ -71,7 +71,7 @@ import {
 import {
   filterViewerBlockedRelaysForFetch,
   getViewerBlockedRelayUrls,
-  isRelayBlockedByUser,
+  isViewerRelayBlocked,
   parseBlockedRelayUrlsFromEvent,
   setViewerBlockedRelayUrls
 } from '@/lib/viewer-blocked-relays'
@@ -844,11 +844,10 @@ class ClientService extends EventTarget {
 
   /** Close pooled sockets to relays on the viewer block list (hostname-aware, wss/https). */
   closeViewerBlockedRelayConnections(): void {
-    const blocked = getViewerBlockedRelayUrls()
-    if (!blocked.length) return
+    if (!getViewerBlockedRelayUrls().length) return
     try {
       const toClose = [...this.pool.listConnectionStatus().keys()].filter((url) =>
-        isRelayBlockedByUser(url, blocked)
+        isViewerRelayBlocked(url)
       )
       if (toClose.length > 0) this.pool.close(toClose)
     } catch {

@@ -3,6 +3,7 @@ import {
   FAST_READ_RELAY_URLS,
   FAST_WRITE_RELAY_URLS
 } from '@/constants'
+import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
   createBlockedRelaysDraftEvent,
   createFavoriteRelaysDraftEvent,
@@ -16,6 +17,9 @@ import {
 import { TDraftEvent, TMailboxRelay } from '@/types'
 
 export const NEW_USER_HTTP_RELAY_URL = 'https://mercury-relay.imwald.eu/'
+
+/** nostrarchives trending notes (reactions / today) — read-only feed for new accounts. */
+export const NEW_USER_TRENDING_RELAY_URL = buildWispTrendingNotesRelayUrl('reactions', 'today')
 
 /** Dead relays seeded into kind 10006 for new accounts. */
 export const NEW_USER_BLOCKED_RELAY_URLS = [
@@ -70,7 +74,10 @@ export function buildNewUserProfileDraft(pubkey: string): TDraftEvent {
 }
 
 export function buildNewUserFavoriteRelaysDraft(): TDraftEvent {
-  return createFavoriteRelaysDraftEvent([...DEFAULT_FAVORITE_RELAYS], [])
+  return createFavoriteRelaysDraftEvent(
+    [...DEFAULT_FAVORITE_RELAYS, NEW_USER_TRENDING_RELAY_URL],
+    []
+  )
 }
 
 export function buildNewUserBlockedRelaysDraft(): TDraftEvent {

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
 import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
-import { NEW_USER_BLOCKED_RELAY_URLS, NEW_USER_HTTP_RELAY_URL, buildNewUserTemplateDrafts, newUserProfileDisplayName, newUserProfileName, newUserProfileSuffix } from '@/lib/new-user-template'
+import {
+  NEW_USER_BLOCKED_RELAY_URLS,
+  NEW_USER_HTTP_RELAY_URL,
+  NEW_USER_TRENDING_RELAY_URL,
+  buildNewUserTemplateDrafts,
+  newUserProfileDisplayName,
+  newUserProfileName,
+  newUserProfileSuffix
+} from '@/lib/new-user-template'
 import { newUserTemplatePublishRelays } from '@/lib/new-user-template-broadcast'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { TRelayList } from '@/types'
@@ -55,7 +63,9 @@ describe('buildNewUserTemplateDrafts', () => {
 
   it('builds favorite relays kind 10012', () => {
     expect(drafts.favoriteRelays.kind).toBe(ExtendedKind.FAVORITE_RELAYS)
-    expect(drafts.favoriteRelays.tags.filter((t) => t[0] === 'relay')).toHaveLength(2)
+    const favorites = drafts.favoriteRelays.tags.filter((t) => t[0] === 'relay').map((t) => t[1])
+    expect(favorites).toContain(NEW_USER_TRENDING_RELAY_URL)
+    expect(favorites).toHaveLength(3)
   })
 
   it('builds blocked relays kind 10006 with dead relays', () => {

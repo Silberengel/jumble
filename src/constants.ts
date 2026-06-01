@@ -74,6 +74,7 @@ export const DESKTOP_APP_DOWNLOAD_URL_DEFAULT =
 export const DEFAULT_FAVORITE_RELAYS = [
   'wss://theforest.nostr1.com',
   'wss://nostr.land',
+  'wss://feeds.nostrarchives.com/notes/trending/reactions/today'
 ]
 
 /**
