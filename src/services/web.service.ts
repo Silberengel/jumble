@@ -4,6 +4,7 @@ import {
   isSitesProxyUnavailableThisSession,
   markSitesProxyUnavailableFromHttpStatus
 } from '@/lib/optional-proxy-session'
+import { htmlLooksLikeImwaldAppShell, parseOpenGraphFromHtml } from '@/lib/open-graph'
 import {
   buildDevLocalSitesFetchUrl,
   buildViteProxySitesFetchUrl,
@@ -12,17 +13,6 @@ import {
 import { TWebMetadata } from '@/types'
 import DataLoader from 'dataloader'
 import logger from '@/lib/logger'
-
-/** True when HTML is the Vite/React dev shell or another SPA stub, not the target page. */
-function htmlLooksLikeLocalDevAppShell(html: string): boolean {
-  const head = html.slice(0, 8000)
-  return (
-    head.includes('injectIntoGlobalHook') ||
-    head.includes('/@vite/') ||
-    head.includes('@vite/client') ||
-    head.includes('@react-refresh')
-  )
-}
 
 const HTML_FETCH_HEADERS = {
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -49,146 +39,89 @@ async function tryFetchHtml(
     if (!res.ok) return { html: null, status: res.status }
     const html = await res.text()
     if (html.length < 50) return { html: null, status: res.status }
-    if (htmlLooksLikeLocalDevAppShell(html)) return { html: null, status: res.status }
+    if (htmlLooksLikeImwaldAppShell(html)) {
+      logger.debug('[WebService] Ignoring app-shell HTML from fetch', { fetchUrl })
+      return { html: null, status: res.status }
+    }
     return { html }
   } catch {
     return { html: null }
   }
 }
 
-/**
- * OG HTML: always use `VITE_PROXY_SERVER` first when set; if that fails or is unset, fetch the page directly.
- */
-async function fetchHtmlForOpenGraph(originalUrl: string): Promise<{ html: string; via: string } | null> {
-  const isAlreadyProxyRequest = urlLooksLikeViteProxyRequest(originalUrl)
+type OgFetchAttempt = { label: string; url: string; timeoutMs: number; direct?: boolean }
 
-  if (isAlreadyProxyRequest) {
-    const { html } = await tryFetchHtml(originalUrl, 35_000)
-    return html ? { html, via: originalUrl } : null
-  }
-
+function buildOgFetchAttempts(originalUrl: string): OgFetchAttempt[] {
+  const attempts: OgFetchAttempt[] = []
   const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
+  const proxyDown = isSitesProxyUnavailableThisSession()
 
-  if (proxyServer && !isSitesProxyUnavailableThisSession()) {
-    const proxyFetchUrl = buildViteProxySitesFetchUrl(originalUrl, proxyServer)
-    logger.debug('[WebService] OG fetch via VITE_PROXY_SERVER', { originalUrl, proxyFetchUrl })
-    const proxyTry = await tryFetchHtml(proxyFetchUrl, 35_000)
-    if (proxyTry.html) {
-      clearSitesProxyUnavailableThisSession()
-      return { html: proxyTry.html, via: proxyFetchUrl }
-    }
-    if (typeof proxyTry.status === 'number') {
-      markSitesProxyUnavailableFromHttpStatus(proxyTry.status)
-    }
-    logger.debug('[WebService] OG proxy unavailable or bad response', { originalUrl, status: proxyTry.status })
+  if (proxyServer && !proxyDown && !urlLooksLikeViteProxyRequest(originalUrl)) {
+    attempts.push({
+      label: 'vite-proxy',
+      url: buildViteProxySitesFetchUrl(originalUrl, proxyServer),
+      timeoutMs: 35_000
+    })
   }
 
   if (import.meta.env.DEV) {
     const devSitesUrl = buildDevLocalSitesFetchUrl(originalUrl)
-    if (devSitesUrl && !isSitesProxyUnavailableThisSession()) {
-      const devTry = await tryFetchHtml(devSitesUrl, 35_000)
-      if (devTry.html) {
-        clearSitesProxyUnavailableThisSession()
-        return { html: devTry.html, via: devSitesUrl }
-      }
-      if (typeof devTry.status === 'number') {
-        markSitesProxyUnavailableFromHttpStatus(devTry.status)
-      }
+    if (devSitesUrl && !proxyDown) {
+      attempts.push({ label: 'dev-sites', url: devSitesUrl, timeoutMs: 35_000 })
     }
-    const direct = await tryFetchHtml(originalUrl, 15_000, { direct: true })
-    return direct.html ? { html: direct.html, via: 'direct' } : null
+    attempts.push({ label: 'direct', url: originalUrl, timeoutMs: 15_000, direct: true })
+  } else if (!proxyServer || proxyDown) {
+    attempts.push({ label: 'direct', url: originalUrl, timeoutMs: 15_000, direct: true })
   }
 
-  // In production with a configured proxy, skip direct fetch: random sites rarely allow browser CORS,
-  // and the attempt spams DevTools with cross-origin errors without improving OG success.
-  if (proxyServer) {
-    return null
-  }
+  attempts.push(
+    {
+      label: 'allorigins',
+      url: `https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`,
+      timeoutMs: 25_000
+    },
+    {
+      label: 'corsproxy',
+      url: `https://corsproxy.io/?${encodeURIComponent(originalUrl)}`,
+      timeoutMs: 25_000
+    }
+  )
 
-  const directOnly = await tryFetchHtml(originalUrl, 15_000, { direct: true })
-  return directOnly.html ? { html: directOnly.html, via: 'direct' } : null
+  return attempts
 }
 
-function parseOpenGraphFromHtml(html: string, pageUrl: string): TWebMetadata {
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
+/**
+ * OG HTML: configured `/sites/?url=…` proxy first; then direct (dev or when proxy is down);
+ * then public CORS proxies as last resort.
+ */
+async function fetchHtmlForOpenGraph(originalUrl: string): Promise<{ html: string; via: string } | null> {
+  if (urlLooksLikeViteProxyRequest(originalUrl)) {
+    const { html } = await tryFetchHtml(originalUrl, 35_000)
+    return html ? { html, via: originalUrl } : null
+  }
 
-  const ogTitleMeta = doc.querySelector('meta[property="og:title"]')
-  const titleTag = doc.querySelector('title')
-
-  let title = ogTitleMeta?.getAttribute('content') || titleTag?.textContent
-  if (title) {
-    const trimmedTitle = title.trim()
+  for (const attempt of buildOgFetchAttempts(originalUrl)) {
+    logger.debug('[WebService] OG fetch attempt', {
+      originalUrl,
+      label: attempt.label,
+      fetchUrl: attempt.url
+    })
+    const result = await tryFetchHtml(attempt.url, attempt.timeoutMs, { direct: attempt.direct })
+    if (result.html) {
+      if (attempt.label === 'vite-proxy' || attempt.label === 'dev-sites') {
+        clearSitesProxyUnavailableThisSession()
+      }
+      return { html: result.html, via: attempt.label }
+    }
     if (
-      /^(Redirecting|Loading|Please wait|Redirect)(\.\.\.|…)?$/i.test(trimmedTitle) ||
-      trimmedTitle === '...' ||
-      trimmedTitle === '…'
+      (attempt.label === 'vite-proxy' || attempt.label === 'dev-sites') &&
+      typeof result.status === 'number'
     ) {
-      title = undefined
+      markSitesProxyUnavailableFromHttpStatus(result.status)
     }
   }
 
-  const description =
-    doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
-    (doc.querySelector('meta[name="description"]') as HTMLMetaElement | null)?.content
-
-  let image = (doc.querySelector('meta[property="og:image"]') as HTMLMetaElement | null)?.content
-
-  let audio =
-    doc.querySelector('meta[property="og:audio"]')?.getAttribute('content') ||
-    doc.querySelector('meta[property="og:audio:url"]')?.getAttribute('content') ||
-    doc.querySelector('meta[property="og:audio:secure_url"]')?.getAttribute('content') ||
-    null
-  if (audio && !audio.match(/^https?:\/\//)) {
-    audio = null
-  }
-
-  if (image) {
-    try {
-      const urlObj = new URL(pageUrl)
-      if (image.startsWith('/')) {
-        image = `${urlObj.protocol}//${urlObj.host}${image}`
-      } else if (!image.match(/^https?:\/\//)) {
-        const basePath = urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1)
-        image = `${urlObj.protocol}//${urlObj.host}${basePath}${image}`
-      }
-
-      const imageLower = image.toLowerCase()
-      if (
-        imageLower.includes('/favicon') ||
-        imageLower.endsWith('/favicon.ico') ||
-        imageLower.endsWith('/favicon.svg')
-      ) {
-        logger.warn('[WebService] Filtered out favicon URL from OG image', { url: pageUrl, image })
-        image = undefined
-      }
-    } catch (error) {
-      logger.warn('[WebService] Failed to convert relative image URL', { image, url: pageUrl, error })
-    }
-  }
-
-  try {
-    const urlObj = new URL(pageUrl)
-    const isAppCanonicalHost = urlObj.hostname === 'jumble.imwald.eu'
-    const isAppDefaultTitle =
-      title?.includes('Imwald ') ||
-      title?.includes('Jumble - Imwald Edition') ||
-      title?.includes('Jumble Imwald Edition')
-    const isAppDefaultDesc = description?.includes(
-      'A user-friendly Nostr client focused on relay feed browsing'
-    )
-    if (!isAppCanonicalHost && (isAppDefaultTitle || isAppDefaultDesc)) {
-      logger.debug('[WebService] Filtered out Imwald default OG tags for external domain', {
-        url: pageUrl,
-        hostname: urlObj.hostname
-      })
-      return {}
-    }
-  } catch {
-    /* ignore */
-  }
-
-  return { title, description, image, audio }
+  return null
 }
 
 class WebService {
