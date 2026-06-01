@@ -95,3 +95,21 @@ export function isSpellSubRequestsSameFiltersDifferentRelays(
     return false
   }
 }
+
+/**
+ * True when `nextKey` keeps every prior REQ filter and adds more shards (e.g. notifications spell gains
+ * `#e` / `#a` subrequests after thread-watch lists load from relays).
+ */
+export function isSpellSubRequestsFilterSuperset(prevKey: string | null, nextKey: string): boolean {
+  if (!prevKey || prevKey === nextKey) return false
+  try {
+    type Item = { urls: string[]; filter: string }
+    const prev = JSON.parse(prevKey) as Item[]
+    const next = JSON.parse(nextKey) as Item[]
+    if (!Array.isArray(prev) || !Array.isArray(next) || next.length < prev.length) return false
+    const nextFilters = new Set(next.map((item) => item.filter))
+    return prev.every((item) => nextFilters.has(item.filter))
+  } catch {
+    return false
+  }
+}

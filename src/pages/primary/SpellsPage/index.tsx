@@ -1063,8 +1063,13 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                   subRequests={subRequests}
                   feedSubscriptionKey={spellFeedSubscriptionKey}
                   hostPrimaryPageName="spells"
-                  preserveTimelineOnSubRequestsChange={spellFauxMergeTimeline}
-                  mergeTimelineWhenSubRequestFiltersMatch={spellFauxMergeTimeline}
+                  preserveTimelineOnSubRequestsChange={
+                    spellFauxMergeTimeline || selectedFauxSpell === 'notifications'
+                  }
+                  mergeTimelineWhenSubRequestFiltersMatch={
+                    spellFauxMergeTimeline || selectedFauxSpell === 'notifications'
+                  }
+                  mergeLiveEventsImmediately={selectedFauxSpell === 'notifications'}
                   showKinds={
                     selectedFauxSpell === 'notifications' ? NOTIFICATION_SPELL_KINDS : showKinds
                   }

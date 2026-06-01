@@ -24,6 +24,7 @@ import { prefetchAuthorNip30EmojisForPubkeys } from '@/lib/nip30-author-emojis'
 import { shouldFilterEvent } from '@/lib/event-filtering'
 import {
   isRelayUrlStrictSupersetIdentityKey,
+  isSpellSubRequestsFilterSuperset,
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
@@ -749,6 +750,12 @@ const NoteList = forwardRef(
        */
       timelineLoadingSafetyTimeoutMs,
       /**
+       * When true, live `onNew` events merge into the visible timeline immediately (home feed behavior).
+       * Default false on Spells faux feeds: new rows go to {@link NewNotesButton} until the user scrolls near the top.
+       * Enable for notifications so mentions/replies appear without tapping “Show n new notes”.
+       */
+      mergeLiveEventsImmediately = false,
+      /**
        * With {@link useFilterAsIs}: omit relay `kinds` when the subrequest filter has none. Kindless relay feeds
        * merge the full batch; {@link withKindFilter} + {@link showAllKinds} control whether {@link showKinds}
        * narrows merge and visible rows. Other `useFilterAsIs` paths may still narrow merged batches to {@link showKinds}.
@@ -865,6 +872,7 @@ const NoteList = forwardRef(
       spellFeedInstrumentToken?: number
       onSpellFeedFirstPaint?: (detail: { eventCount: number; firstEventId: string }) => void
       timelineLoadingSafetyTimeoutMs?: number
+      mergeLiveEventsImmediately?: boolean
       clientSideKindFilter?: boolean
       oneShotFetch?: boolean
       oneShotMergedCap?: number
@@ -1333,6 +1341,8 @@ const NoteList = forwardRef(
     withKindFilterRef.current = withKindFilter
     const hostPrimaryPageNameRef = useRef(hostPrimaryPageName)
     hostPrimaryPageNameRef.current = hostPrimaryPageName
+    const mergeLiveEventsImmediatelyRef = useRef(mergeLiveEventsImmediately)
+    mergeLiveEventsImmediatelyRef.current = mergeLiveEventsImmediately
     const gridLayoutRef = useRef(gridLayout)
     gridLayoutRef.current = gridLayout
 
@@ -1443,6 +1453,61 @@ const NoteList = forwardRef(
     useEffect(() => {
       shouldHideEventRef.current = shouldHideEvent
     }, [shouldHideEvent])
+
+    /** Paint the author's own publishes into the open feed without waiting for relay echo or "new notes". */
+    useEffect(() => {
+      const onOwnPublish = (data: globalThis.Event) => {
+        const evt = (data as CustomEvent<Event>).detail
+        if (!evt?.id || !pubkey || evt.pubkey !== pubkey) return
+        if (shouldHideEventRef.current(evt)) return
+
+        const mapped = stripNostrLandAggrFromTimelineSubRequests(
+          feedSubscriptionKey,
+          mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
+        ).filter((req) => req.urls.length > 0)
+        if (mapped.length === 0) return
+        if (
+          !mapped.some(({ filter }) =>
+            eventMatchesSubRequestFilterWithWindow(evt, filter as Filter)
+          )
+        ) {
+          return
+        }
+
+        const narrowed = narrowLiveBatchUsingRefs([evt])
+        if (narrowed.length === 0) return
+
+        if (eventsRef.current.some((e) => e.id === evt.id)) return
+
+        const cap = allowKindlessRelayExplore
+          ? RELAY_EXPLORE_LIMIT
+          : areAlgoRelays
+            ? ALGO_LIMIT
+            : LIMIT
+        setEvents((oldEvents) => {
+          if (oldEvents.some((e) => e.id === evt.id)) return oldEvents
+          const next = collapseDuplicateNip18RepostTimelineRows(
+            mergeEventBatchesById(oldEvents, narrowed, cap, areAlgoRelays)
+          )
+          lastEventsForTimelinePrefetchRef.current = next
+          return next
+        })
+        setNewEvents((pending) => pending.filter((e) => e.id !== evt.id))
+        setLoading(false)
+        client.prefetchEmbeddedEventsForParents(narrowed, {
+          relayHintsOnly: relayAuthoritativeFeedOnlyRef.current
+        })
+      }
+
+      client.addEventListener('newEvent', onOwnPublish)
+      return () => client.removeEventListener('newEvent', onOwnPublish)
+    }, [
+      pubkey,
+      feedSubscriptionKey,
+      allowKindlessRelayExplore,
+      areAlgoRelays,
+      shouldHideEvent
+    ])
 
     const { items: filteredEvents, bufferExhaustedForVisibleQuota } = useMemo(() => {
       const idSet = new Set<string>()
@@ -2256,7 +2321,8 @@ const NoteList = forwardRef(
         !feedScopeChanged &&
         prevSubKey != null &&
         (isRelayUrlStrictSupersetIdentityKey(prevSubKey, subRequestsKey) ||
-          isSpellSubRequestsSameFiltersDifferentRelays(prevSubKey, subRequestsKey))
+          isSpellSubRequestsSameFiltersDifferentRelays(prevSubKey, subRequestsKey) ||
+          isSpellSubRequestsFilterSuperset(prevSubKey, subRequestsKey))
 
       const keepExistingTimelineEvents =
         preserveTimelineOnSubRequestsChange &&
@@ -2266,7 +2332,8 @@ const NoteList = forwardRef(
         (prevSubKey === subRequestsKey ||
           isRelayUrlStrictSupersetIdentityKey(prevSubKey, subRequestsKey) ||
           (mergeTimelineWhenSubRequestFiltersMatch &&
-            isSpellSubRequestsSameFiltersDifferentRelays(prevSubKey, subRequestsKey)))
+            (isSpellSubRequestsSameFiltersDifferentRelays(prevSubKey, subRequestsKey) ||
+              isSpellSubRequestsFilterSuperset(prevSubKey, subRequestsKey))))
       prevSubRequestsKeyForTimelineRef.current = subRequestsKey
 
       /** False after cleanup so stale timeline callbacks cannot overwrite state after switching feeds (e.g. Spells discussions → notifications). */
@@ -3516,12 +3583,15 @@ const NoteList = forwardRef(
                 }
               }
               if (shouldHideEventRef.current(event)) return
+              const isOwnPublish = Boolean(pubkey && event.pubkey === pubkey)
               const route: 'profile' | 'home' | 'pending' =
-                (pubkey && event.pubkey === pubkey) || eventMatchesProfileTimelineRequest(event)
-                  ? 'profile'
-                  : hostPrimaryPageNameRef.current === 'feed'
-                    ? 'home'
-                    : 'pending'
+                mergeLiveEventsImmediatelyRef.current || isOwnPublish
+                  ? 'home'
+                  : eventMatchesProfileTimelineRequest(event)
+                    ? 'profile'
+                    : hostPrimaryPageNameRef.current === 'feed'
+                      ? 'home'
+                      : 'pending'
               liveOnNewPendingRef.current.push({ event, route })
               scheduleLiveOnNewFlush()
             },
