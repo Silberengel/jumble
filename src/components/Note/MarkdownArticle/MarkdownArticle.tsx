@@ -6,6 +6,8 @@ import Wikilink from '@/components/UniversalContent/Wikilink'
 import { BookstrContent } from '@/components/Bookstr'
 import WebPreview from '@/components/WebPreview'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
+import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
+import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
@@ -33,11 +35,15 @@ import {
   ExtendedKind,
   isNip52CalendarCardKind,
   SPOTIFY_OPEN_URL_REGEX,
+  FOUNTAIN_OPEN_URL_REGEX,
+  WAVLAKE_OPEN_URL_REGEX,
   WS_URL_REGEX,
   YOUTUBE_URL_REGEX,
   ZAP_STREAM_WATCH_URL_REGEX
 } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
 import { EMOJI_SHORT_CODE_REGEX, NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
@@ -429,6 +435,14 @@ function isSpotifyUrl(url: string): boolean {
   const flags = SPOTIFY_OPEN_URL_REGEX.flags.replace('g', '')
   const regex = new RegExp(SPOTIFY_OPEN_URL_REGEX.source, flags)
   return regex.test(url)
+}
+
+function isWavlakeUrl(url: string): boolean {
+  return isWavlakeOpenUrl(url)
+}
+
+function isFountainUrl(url: string): boolean {
+  return isFountainOpenUrl(url)
 }
 
 function isZapStreamUrl(url: string): boolean {
@@ -1309,6 +1323,61 @@ function parseMarkdownContentLegacy(
     }
   })
 
+  const wavlakeUrlMatches = Array.from(content.matchAll(WAVLAKE_OPEN_URL_REGEX))
+  wavlakeUrlMatches.forEach((match) => {
+    if (match.index !== undefined) {
+      const url = match[0]
+      const start = match.index
+      const end = match.index + match[0].length
+      const isInMarkdown = patterns.some(
+        (p) =>
+          (p.type === 'markdown-link' ||
+            p.type === 'markdown-image-link' ||
+            p.type === 'markdown-image' ||
+            p.type === 'youtube-url' ||
+            p.type === 'spotify-url') &&
+          start >= p.index &&
+          start < p.end
+      )
+      if (!isInMarkdown && !isWithinBlockPattern(start, end, blockPatterns) && isWavlakeUrl(url)) {
+        patterns.push({
+          index: start,
+          end: end,
+          type: 'wavlake-url',
+          data: { url }
+        })
+      }
+    }
+  })
+
+  const fountainUrlMatches = Array.from(content.matchAll(FOUNTAIN_OPEN_URL_REGEX))
+  fountainUrlMatches.forEach((match) => {
+    if (match.index !== undefined) {
+      const url = match[0]
+      const start = match.index
+      const end = match.index + match[0].length
+      const isInMarkdown = patterns.some(
+        (p) =>
+          (p.type === 'markdown-link' ||
+            p.type === 'markdown-image-link' ||
+            p.type === 'markdown-image' ||
+            p.type === 'youtube-url' ||
+            p.type === 'spotify-url' ||
+            p.type === 'wavlake-url') &&
+          start >= p.index &&
+          start < p.end
+      )
+      if (!isInMarkdown && !isWithinBlockPattern(start, end, blockPatterns) && isFountainUrl(url)) {
+        patterns.push({
+          index: start,
+          end: end,
+          type: 'fountain-url',
+          data: { url }
+        })
+      }
+    }
+  })
+
   const zapstreamUrlMatches = Array.from(content.matchAll(ZAP_STREAM_WATCH_URL_REGEX))
   zapstreamUrlMatches.forEach((match) => {
     if (match.index !== undefined) {
@@ -1321,7 +1390,9 @@ function parseMarkdownContentLegacy(
             p.type === 'markdown-image-link' ||
             p.type === 'markdown-image' ||
             p.type === 'youtube-url' ||
-            p.type === 'spotify-url') &&
+            p.type === 'spotify-url' ||
+            p.type === 'wavlake-url' ||
+            p.type === 'fountain-url') &&
           start >= p.index &&
           start < p.end
       )
@@ -1345,7 +1416,7 @@ function parseMarkdownContentLegacy(
       const end = match.index + match[0].length
       // Only add if not already covered by a markdown link/image-link/image or YouTube URL and not in block pattern
       const isInMarkdown = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url') && 
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'wavlake-url' || p.type === 'fountain-url' || p.type === 'zapstream-url') &&
         start >= p.index && 
         start < p.end
       )
@@ -2326,6 +2397,20 @@ function parseMarkdownContentLegacy(
       parts.push(
         <div key={`spotify-url-${patternIdx}`} className="my-2">
           <SpotifyEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+        </div>
+      )
+    } else if (pattern.type === 'wavlake-url') {
+      const { url } = pattern.data
+      parts.push(
+        <div key={`wavlake-url-${patternIdx}`} className="my-2">
+          <WavlakeEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+        </div>
+      )
+    } else if (pattern.type === 'fountain-url') {
+      const { url } = pattern.data
+      parts.push(
+        <div key={`fountain-url-${patternIdx}`} className="my-2">
+          <FountainEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
         </div>
       )
     } else if (pattern.type === 'zapstream-url') {
@@ -3776,6 +3861,20 @@ function parseMarkdownContentMarked(
                     </div>
                   )
                 }
+                if (isWavlakeUrl(cleaned)) {
+                  return (
+                    <div key={`${key}-line-wavlake-${lineIdx}`} className="my-2">
+                      <WavlakeEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                    </div>
+                  )
+                }
+                if (isFountainUrl(cleaned)) {
+                  return (
+                    <div key={`${key}-line-fountain-${lineIdx}`} className="my-2">
+                      <FountainEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                    </div>
+                  )
+                }
                 if (isZapStreamUrl(cleaned)) {
                   return (
                     <div key={`${key}-line-zapstream-${lineIdx}`} className="my-2">
@@ -3949,6 +4048,20 @@ function parseMarkdownContentMarked(
             </div>
           )
         }
+        if (isWavlakeUrl(cleaned)) {
+          return (
+            <div key={`${key}-wavlake-url`} className="my-2">
+              <WavlakeEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+            </div>
+          )
+        }
+        if (isFountainUrl(cleaned)) {
+          return (
+            <div key={`${key}-fountain-url`} className="my-2">
+              <FountainEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+            </div>
+          )
+        }
         if (isZapStreamUrl(cleaned)) {
           return (
             <div key={`${key}-zapstream-url`} className="my-2">
@@ -4020,6 +4133,20 @@ function parseMarkdownContentMarked(
         return (
           <div key={`${key}-spotify-sole-link`} className="my-2">
             <SpotifyEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          </div>
+        )
+      }
+      if (soleHref && isWavlakeUrl(soleHref)) {
+        return (
+          <div key={`${key}-wavlake-sole-link`} className="my-2">
+            <WavlakeEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          </div>
+        )
+      }
+      if (soleHref && isFountainUrl(soleHref)) {
+        return (
+          <div key={`${key}-fountain-sole-link`} className="my-2">
+            <FountainEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
           </div>
         )
       }
@@ -4108,6 +4235,24 @@ function parseMarkdownContentMarked(
               nodes.push(
                 <div key={`${key}-inline-spotify-with-media-${idx}`} className="my-2">
                   <SpotifyEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+              return
+            }
+            if (cleaned && isWavlakeUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-wavlake-with-media-${idx}`} className="my-2">
+                  <WavlakeEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+              return
+            }
+            if (cleaned && isFountainUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-fountain-with-media-${idx}`} className="my-2">
+                  <FountainEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
                 </div>
               )
               return
@@ -5463,6 +5608,48 @@ export default function MarkdownArticle({
     return spotifyUrls
   }, [event.id, JSON.stringify(event.tags)])
 
+  const tagWavlakeUrls = useMemo(() => {
+    const wavlakeUrls: string[] = []
+    const seenUrls = new Set<string>()
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return
+        if (!isWavlakeUrl(url)) return
+
+        const cleaned = cleanUrl(url)
+        if (cleaned && !seenUrls.has(cleaned)) {
+          wavlakeUrls.push(cleaned)
+          seenUrls.add(cleaned)
+        }
+      })
+
+    return wavlakeUrls
+  }, [event.id, JSON.stringify(event.tags)])
+
+  const tagFountainUrls = useMemo(() => {
+    const fountainUrls: string[] = []
+    const seenUrls = new Set<string>()
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return
+        if (!isFountainUrl(url)) return
+
+        const cleaned = cleanUrl(url)
+        if (cleaned && !seenUrls.has(cleaned)) {
+          fountainUrls.push(cleaned)
+          seenUrls.add(cleaned)
+        }
+      })
+
+    return fountainUrls
+  }, [event.id, JSON.stringify(event.tags)])
+
   const tagZapStreamUrls = useMemo(() => {
     const zapUrls: string[] = []
     const seenUrls = new Set<string>()
@@ -5497,6 +5684,8 @@ export default function MarkdownArticle({
         if (isImage(url) || isMedia(url) || isHlsPlaylistUrl(url) || isBlossomBudBlobUrl(url)) return
         if (isYouTubeUrl(url)) return // Exclude YouTube URLs
         if (isSpotifyUrl(url)) return
+        if (isWavlakeUrl(url)) return
+        if (isFountainUrl(url)) return
         if (isZapStreamWatchUrl(url)) return
 
         const cleaned = cleanUrl(url)
@@ -5505,7 +5694,7 @@ export default function MarkdownArticle({
           seenUrls.add(cleaned)
         }
       })
-    
+
     return links
   }, [event.id, JSON.stringify(event.tags)])
   
@@ -5659,6 +5848,34 @@ export default function MarkdownArticle({
     return urls
   }, [event.content])
 
+  const wavlakeUrlsInContent = useMemo(() => {
+    const urls = new Set<string>()
+    const urlRegex = /https?:\/\/[^\s<>"']+/g
+    let match
+    while ((match = urlRegex.exec(event.content)) !== null) {
+      const url = match[0]
+      const cleaned = cleanUrl(url)
+      if (cleaned && isWavlakeUrl(cleaned)) {
+        urls.add(cleaned)
+      }
+    }
+    return urls
+  }, [event.content])
+
+  const fountainUrlsInContent = useMemo(() => {
+    const urls = new Set<string>()
+    const urlRegex = /https?:\/\/[^\s<>"']+/g
+    let match
+    while ((match = urlRegex.exec(event.content)) !== null) {
+      const url = match[0]
+      const cleaned = cleanUrl(url)
+      if (cleaned && isFountainUrl(cleaned)) {
+        urls.add(cleaned)
+      }
+    }
+    return urls
+  }, [event.content])
+
   const zapstreamUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
     const urlRegex = /https?:\/\/[^\s<>"']+/g
@@ -5688,6 +5905,8 @@ export default function MarkdownArticle({
         !isHlsPlaylistUrl(url) &&
         !isYouTubeUrl(url) &&
         !isSpotifyUrl(url) &&
+        !isWavlakeUrl(url) &&
+        !isFountainUrl(url) &&
         !isZapStreamWatchUrl(url)
       ) {
         const cleaned = cleanUrl(url)
@@ -5754,6 +5973,20 @@ export default function MarkdownArticle({
       return cleaned && !spotifyUrlsInContent.has(cleaned)
     })
   }, [tagSpotifyUrls, spotifyUrlsInContent])
+
+  const leftoverTagWavlakeUrls = useMemo(() => {
+    return tagWavlakeUrls.filter((url) => {
+      const cleaned = cleanUrl(url)
+      return cleaned && !wavlakeUrlsInContent.has(cleaned)
+    })
+  }, [tagWavlakeUrls, wavlakeUrlsInContent])
+
+  const leftoverTagFountainUrls = useMemo(() => {
+    return tagFountainUrls.filter((url) => {
+      const cleaned = cleanUrl(url)
+      return cleaned && !fountainUrlsInContent.has(cleaned)
+    })
+  }, [tagFountainUrls, fountainUrlsInContent])
 
   const leftoverTagZapStreamUrls = useMemo(() => {
     return tagZapStreamUrls.filter((canon) => !zapstreamUrlsInContent.has(canon))
@@ -6187,6 +6420,32 @@ export default function MarkdownArticle({
               return (
                 <div key={`tag-spotify-${cleaned}`} className="my-2">
                   <SpotifyEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {leftoverTagWavlakeUrls.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {leftoverTagWavlakeUrls.map((url) => {
+              const cleaned = cleanUrl(url)
+              return (
+                <div key={`tag-wavlake-${cleaned}`} className="my-2">
+                  <WavlakeEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {leftoverTagFountainUrls.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {leftoverTagFountainUrls.map((url) => {
+              const cleaned = cleanUrl(url)
+              return (
+                <div key={`tag-fountain-${cleaned}`} className="my-2">
+                  <FountainEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
                 </div>
               )
             })}

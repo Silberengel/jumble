@@ -124,6 +124,8 @@ export type TWebMetadata = {
   title?: string | null
   description?: string | null
   image?: string | null
+  /** Direct audio URL from og:audio (e.g. fountain.fm episodes). */
+  audio?: string | null
 }
 
 export type TRelaySet = {

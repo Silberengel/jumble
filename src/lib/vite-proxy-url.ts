@@ -15,3 +15,9 @@ export function buildViteProxySitesFetchUrl(originalUrl: string, proxyServer: st
 export function urlLooksLikeViteProxyRequest(url: string): boolean {
   return url.includes('/sites/') || url.includes('/sites/?url=')
 }
+
+/** Same-origin Vite dev proxy (`vite.config.ts` → :8090 OG scraper). */
+export function buildDevLocalSitesFetchUrl(originalUrl: string): string | null {
+  if (typeof window === 'undefined') return null
+  return `${window.location.origin}/sites/?url=${encodeURIComponent(originalUrl)}`
+}

@@ -2,6 +2,8 @@ import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-br
 import { isImage, isVideo, isAudio } from '@/lib/url'
 import { URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
 /**
@@ -89,6 +91,14 @@ export function preprocessMarkdownMediaLinks(content: string): string {
     }
 
     if (isSpotifyOpenUrl(url)) {
+      continue
+    }
+
+    if (isWavlakeOpenUrl(url)) {
+      continue
+    }
+
+    if (isFountainOpenUrl(url)) {
       continue
     }
 

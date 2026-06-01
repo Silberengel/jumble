@@ -2507,7 +2507,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                           {secondaryStack.length > 0 ? (
                             <TopSecondaryStackPane
                               item={secondaryStack[secondaryStack.length - 1]!}
-                              className="flex h-full min-h-0 min-w-0 flex-col"
+                              className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                             />
                           ) : (
                             <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">

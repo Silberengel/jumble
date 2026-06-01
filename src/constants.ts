@@ -1074,6 +1074,14 @@ export const YOUTUBE_URL_REGEX =
 export const SPOTIFY_OPEN_URL_REGEX =
   /https?:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:track|album|playlist|episode|show)\/[a-zA-Z0-9]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
 
+/** wavlake.com track / album (UUID) or artist profile slug — embedded via embed.wavlake.com */
+export const WAVLAKE_OPEN_URL_REGEX =
+  /https?:\/\/(?:www\.)?wavlake\.com\/(?:(?:track|album)\/[0-9a-f-]{36}|[a-z0-9][a-z0-9-]*)(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
+
+/** fountain.fm podcast episode or show — played via og:audio from episode pages */
+export const FOUNTAIN_OPEN_URL_REGEX =
+  /https?:\/\/(?:www\.)?fountain\.fm\/(?:episode|show)\/[A-Za-z0-9]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
+
 /** zap.stream live player: path must be a bare NIP-19 naddr (`/naddr1…`). */
 export const ZAP_STREAM_WATCH_URL_REGEX =
   /https?:\/\/(?:www\.)?zap\.stream\/(naddr1[02-9ac-hj-np-z]+)(?:\?[^\s#]*)?(?:#[^\s]*)?/gi

@@ -15,6 +15,8 @@ import { parseAboutContentWithCoinPayto } from '@/lib/payto-about-coin-lines'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
 import { isImage, isMedia, isHlsPlaylistUrl, isBlossomBudBlobUrl } from './url'
 import { isSpotifyOpenUrl } from './spotify-url'
+import { isFountainOpenUrl } from './fountain-url'
+import { isWavlakeOpenUrl } from './wavlake-url'
 import { isZapStreamWatchUrl } from './zap-stream-url'
 
 export type TEmbeddedNodeType =
@@ -32,6 +34,7 @@ export type TEmbeddedNodeType =
   | 'invoice'
   | 'youtube'
   | 'spotify'
+  | 'wavlake'
   | 'zapstream'
   | 'payto'
 
@@ -125,6 +128,10 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
       type = 'youtube'
     } else if (isSpotifyOpenUrl(url)) {
       type = 'spotify'
+    } else if (isWavlakeOpenUrl(url)) {
+      type = 'wavlake'
+    } else if (isFountainOpenUrl(url)) {
+      type = 'fountain'
     } else if (isZapStreamWatchUrl(url)) {
       type = 'zapstream'
     }

@@ -32,12 +32,16 @@ import Emoji from '../Emoji'
 import ImageGallery from '../ImageGallery'
 import MediaPlayer from '../MediaPlayer'
 import SpotifyEmbeddedPlayer from '../SpotifyEmbeddedPlayer'
+import FountainEmbeddedPlayer from '../FountainEmbeddedPlayer'
+import WavlakeEmbeddedPlayer from '../WavlakeEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '../ZapStreamLiveEventEmbed'
 import WebPreview from '../WebPreview'
 import { toNote } from '@/lib/link'
 import { YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
+import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
 
@@ -180,6 +184,8 @@ export default function Content({
           !isHlsPlaylistUrl(url) &&
           !isYouTubeUrl(url) &&
           !isSpotifyOpenUrl(url) &&
+          !isWavlakeOpenUrl(url) &&
+          !isFountainOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
@@ -247,6 +253,50 @@ export default function Content({
     return urls
   }, [event, nodes])
 
+  const wavlakeUrlsFromTags = useMemo(() => {
+    if (!event) return []
+    const urls: string[] = []
+    const seenUrls = new Set<string>()
+    const hasWavlakeInContent = nodes?.some((node) => node.type === 'wavlake') || false
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (isWavlakeOpenUrl(url)) {
+          const cleaned = cleanUrl(url)
+          if (cleaned && !hasWavlakeInContent && !seenUrls.has(cleaned)) {
+            urls.push(cleaned)
+            seenUrls.add(cleaned)
+          }
+        }
+      })
+
+    return urls
+  }, [event, nodes])
+
+  const fountainUrlsFromTags = useMemo(() => {
+    if (!event) return []
+    const urls: string[] = []
+    const seenUrls = new Set<string>()
+    const hasFountainInContent = nodes?.some((node) => node.type === 'fountain') || false
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (isFountainOpenUrl(url)) {
+          const cleaned = cleanUrl(url)
+          if (cleaned && !hasFountainInContent && !seenUrls.has(cleaned)) {
+            urls.push(cleaned)
+            seenUrls.add(cleaned)
+          }
+        }
+      })
+
+    return urls
+  }, [event, nodes])
+
   const zapStreamCanonicalInContent = useMemo(() => {
     if (!nodes) return new Set<string>()
     const s = new Set<string>()
@@ -297,6 +347,8 @@ export default function Content({
           !isHlsPlaylistUrl(url) &&
           !isYouTubeUrl(url) &&
           !isSpotifyOpenUrl(url) &&
+          !isWavlakeOpenUrl(url) &&
+          !isFountainOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
@@ -506,6 +558,24 @@ export default function Content({
         />
       ))}
 
+      {wavlakeUrlsFromTags.map((url) => (
+        <WavlakeEmbeddedPlayer
+          key={`tag-wavlake-${url}`}
+          url={url}
+          className="mt-2"
+          mustLoad={mustLoadMedia}
+        />
+      ))}
+
+      {fountainUrlsFromTags.map((url) => (
+        <FountainEmbeddedPlayer
+          key={`tag-fountain-${url}`}
+          url={url}
+          className="mt-2"
+          mustLoad={mustLoadMedia}
+        />
+      ))}
+
       {zapstreamUrlsFromTags.map((url) => (
         <ZapStreamLiveEventEmbed
           key={`tag-zapstream-${url}`}
@@ -665,6 +735,26 @@ export default function Content({
         if (node.type === 'spotify') {
           return (
             <SpotifyEmbeddedPlayer
+              key={index}
+              url={node.data}
+              className="mt-2"
+              mustLoad={mustLoadMedia}
+            />
+          )
+        }
+        if (node.type === 'wavlake') {
+          return (
+            <WavlakeEmbeddedPlayer
+              key={index}
+              url={node.data}
+              className="mt-2"
+              mustLoad={mustLoadMedia}
+            />
+          )
+        }
+        if (node.type === 'fountain') {
+          return (
+            <FountainEmbeddedPlayer
               key={index}
               url={node.data}
               className="mt-2"

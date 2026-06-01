@@ -24,7 +24,7 @@ export default function EmojiPickerDialog({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen} handleOnly>
+      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
         <DrawerContent
           dragHandle="vaul"

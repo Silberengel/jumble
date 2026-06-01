@@ -14,6 +14,7 @@ import { useUserReadInboxUrls, useUserWriteOutboxUrls } from '@/hooks/useUserMai
 import { useNostr } from '@/providers/NostrProvider'
 import { ExtendedKind, GIF_RELAY_URLS } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
+import { cn } from '@/lib/utils'
 import {
   fetchMemes,
   getCachedMemes,
@@ -297,7 +298,10 @@ export default function MemePicker({
   const isDrawer = isSmallScreen
   const content = (
     <div
-      className={`flex flex-col gap-2 p-2 ${isDrawer ? 'w-full h-[70vh] max-h-[70vh] overflow-hidden' : 'min-w-[280px] max-w-[360px]'}`}
+      className={cn(
+        'flex min-w-0 w-full flex-col gap-2 p-2',
+        isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
+      )}
     >
       <div className="flex items-center gap-1 shrink-0">
         <Input
@@ -319,16 +323,54 @@ export default function MemePicker({
       </div>
       {error && <p className="text-sm text-muted-foreground px-1 shrink-0">{error}</p>}
       <div
-        className={isDrawer ? 'flex-1 min-h-0 flex flex-col' : undefined}
+        className={cn(isDrawer && 'flex min-h-0 flex-1 flex-col')}
         {...(isDrawer && { 'data-vaul-no-drag': true })}
       >
-        <ScrollArea
-          className={
-            isDrawer
-              ? 'flex-1 min-h-[200px] w-full rounded-md border'
-              : 'h-[280px] w-full rounded-md border'
-          }
-        >
+        {isDrawer ? (
+          <div className="page-scroll-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border">
+            {loading ? (
+              <div
+                className="grid grid-cols-2 gap-1 p-2 min-h-[200px]"
+                role="status"
+                aria-busy="true"
+                aria-live="polite"
+              >
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="aspect-square w-full rounded" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1 p-2">
+                {memes.map((meme) => (
+                  <button
+                    key={meme.eventId}
+                    type="button"
+                    className="rounded overflow-hidden border border-transparent hover:border-primary focus:border-primary focus:outline-none aspect-square"
+                    onClick={() => handleSelect(meme)}
+                  >
+                    <img
+                      src={meme.url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        const el = e.target as HTMLImageElement
+                        const fallback = meme.fallbackUrl?.trim()
+                        if (fallback && el.dataset.memeFallbackTried !== '1') {
+                          el.dataset.memeFallbackTried = '1'
+                          el.src = fallback
+                          return
+                        }
+                        el.style.display = 'none'
+                      }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+        <ScrollArea className="h-[280px] w-full rounded-md border">
           {loading ? (
             <div
               className="grid grid-cols-2 gap-1 p-2 min-h-[200px]"
@@ -370,6 +412,7 @@ export default function MemePicker({
             </div>
           )}
         </ScrollArea>
+        )}
       </div>
       <div className="flex flex-col gap-2 border-t pt-2 shrink-0">
         <div className="flex flex-col gap-1.5">
@@ -456,13 +499,19 @@ export default function MemePicker({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen}>
+      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
-        <DrawerContent portalContainer={portalContainer}>
+        <DrawerContent
+          dragHandle="vaul"
+          portalContainer={portalContainer}
+          className="max-h-[min(88dvh,calc(100dvh-5rem))] px-2 pb-2"
+        >
           <DrawerHeader className="sr-only">
             <DrawerTitle>{t('Choose a meme')}</DrawerTitle>
           </DrawerHeader>
-          {content}
+          <div className="flex min-h-0 w-full min-w-0 max-w-[100vw] flex-1 flex-col overflow-hidden">
+            {content}
+          </div>
         </DrawerContent>
       </Drawer>
     )

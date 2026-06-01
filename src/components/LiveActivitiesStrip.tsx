@@ -135,7 +135,7 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
         'min-w-0 max-w-full overflow-hidden',
         placement === 'sidebar' &&
           'mb-2 rounded-lg border border-border/80 bg-muted/50 p-2 shadow-sm dark:bg-muted/30',
-        placement === 'mobile' && 'w-full shrink-0 border-b border-border/80 bg-muted/50 px-2 py-2 dark:bg-muted/30'
+        placement === 'mobile' && 'w-full shrink-0 border-b border-border/80 bg-muted/50 px-2 py-1 dark:bg-muted/30'
       )}
       role="region"
       aria-label={t('liveActivities.regionLabel')}
@@ -146,14 +146,16 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
           {t('liveActivities.swipeToBrowse')}
         </span>
       ) : null}
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground xl:text-xs">
-        {t('liveActivities.heading')}
-      </div>
+      {placement === 'sidebar' ? (
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground xl:text-xs">
+          {t('liveActivities.heading')}
+        </div>
+      ) : null}
       <div
         className={cn(
           'flex min-w-0 gap-1.5 rounded-md',
           placement === 'sidebar' && 'flex-col xl:flex-row xl:items-stretch',
-          placement === 'mobile' && 'items-stretch touch-pan-y',
+          placement === 'mobile' && 'items-center touch-pan-y',
           mobileSwipe && 'cursor-grab active:cursor-grabbing'
         )}
         onPointerDown={mobileSwipe ? onSwipePointerDown : undefined}
@@ -165,28 +167,42 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
           onPointerDown={(e) => e.stopPropagation()}
           onClick={openLiveNote}
           className={cn(
-            'flex min-w-0 flex-1 gap-2 rounded-md text-left transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            placement === 'sidebar' && 'flex-col xl:flex-row xl:items-start',
-            placement === 'mobile' && 'items-center'
+            'flex min-w-0 flex-1 rounded-md text-left transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            placement === 'sidebar' && 'flex-col gap-2 xl:flex-row xl:items-start',
+            placement === 'mobile' && 'flex-row items-center gap-1.5'
           )}
           title={t('liveActivities.viewNoteTitle')}
         >
+          {placement === 'mobile' ? (
+            <span className="shrink-0 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
+              {t('liveActivities.heading')}
+            </span>
+          ) : null}
           {current.imageUrl ? (
             <img
               src={current.imageUrl}
               alt=""
               className={cn(
                 'shrink-0 rounded object-cover',
-                placement === 'sidebar' ? 'h-14 w-full xl:h-12 xl:w-12' : 'h-12 w-12'
+                placement === 'sidebar' ? 'h-14 w-full xl:h-12 xl:w-12' : 'h-8 w-8'
               )}
             />
           ) : null}
           <div className="min-w-0 flex-1">
-            <div className="line-clamp-2 text-xs font-medium leading-snug xl:text-sm">{current.title}</div>
-            {current.summary ? (
+            <div
+              className={cn(
+                'font-medium',
+                placement === 'sidebar'
+                  ? 'line-clamp-2 text-xs leading-snug xl:text-sm'
+                  : 'truncate text-xs leading-none'
+              )}
+            >
+              {current.title}
+            </div>
+            {placement === 'sidebar' && current.summary ? (
               <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground xl:text-xs">{current.summary}</p>
             ) : null}
-            {current.fromFollowedHost ? (
+            {placement === 'sidebar' && current.fromFollowedHost ? (
               <p className="mt-1 text-[10px] text-green-600 dark:text-green-500">{t('liveActivities.fromFollow')}</p>
             ) : null}
           </div>
@@ -197,19 +213,19 @@ export default function LiveActivitiesStrip({ placement }: { placement: TPlaceme
           rel="noopener noreferrer"
           className={cn(
             'flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground',
-            placement === 'sidebar' ? 'h-9 w-full xl:h-auto xl:w-9 xl:self-start' : 'h-12 w-10'
+            placement === 'sidebar' ? 'h-9 w-full xl:h-auto xl:w-9 xl:self-start' : 'h-8 w-8'
           )}
           title={t('liveActivities.openJoinPageTitle')}
           aria-label={t('liveActivities.openJoinPageTitle')}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <ExternalLink className="size-4 shrink-0" aria-hidden />
+          <ExternalLink className={cn('shrink-0', placement === 'mobile' ? 'size-3.5' : 'size-4')} aria-hidden />
         </a>
       </div>
       {items.length > 1 ? (
         placement === 'mobile' ? (
-          <div className="mt-2 flex justify-center gap-1.5" aria-hidden>
+          <div className="mt-1 flex justify-center gap-1" aria-hidden>
             {items.map((item, i) => (
               <span
                 key={item.address}

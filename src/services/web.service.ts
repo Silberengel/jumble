@@ -4,7 +4,11 @@ import {
   isSitesProxyUnavailableThisSession,
   markSitesProxyUnavailableFromHttpStatus
 } from '@/lib/optional-proxy-session'
-import { buildViteProxySitesFetchUrl, urlLooksLikeViteProxyRequest } from '@/lib/vite-proxy-url'
+import {
+  buildDevLocalSitesFetchUrl,
+  buildViteProxySitesFetchUrl,
+  urlLooksLikeViteProxyRequest
+} from '@/lib/vite-proxy-url'
 import { TWebMetadata } from '@/types'
 import DataLoader from 'dataloader'
 import logger from '@/lib/logger'
@@ -25,16 +29,22 @@ const HTML_FETCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (compatible; Imwald/1.0; +https://jumble.imwald.eu)'
 }
 
+/** Browser direct fetches: no custom User-Agent (many sites reject it in CORS preflight). */
+const HTML_FETCH_HEADERS_DIRECT = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+}
+
 async function tryFetchHtml(
   fetchUrl: string,
-  timeoutMs: number
+  timeoutMs: number,
+  options?: { direct?: boolean }
 ): Promise<{ html: string | null; status?: number }> {
   try {
     const res = await fetchWithTimeout(fetchUrl, {
       timeoutMs,
       mode: 'cors',
       credentials: 'omit',
-      headers: HTML_FETCH_HEADERS
+      headers: options?.direct ? HTML_FETCH_HEADERS_DIRECT : HTML_FETCH_HEADERS
     })
     if (!res.ok) return { html: null, status: res.status }
     const html = await res.text()
@@ -71,16 +81,31 @@ async function fetchHtmlForOpenGraph(originalUrl: string): Promise<{ html: strin
       markSitesProxyUnavailableFromHttpStatus(proxyTry.status)
     }
     logger.debug('[WebService] OG proxy unavailable or bad response', { originalUrl, status: proxyTry.status })
-    // In production with a configured proxy, skip direct fetch: random sites rarely allow browser CORS,
-    // and the attempt spams DevTools with cross-origin errors without improving OG success.
-    if (!import.meta.env.PROD) {
-      const direct = await tryFetchHtml(originalUrl, 15_000)
-      return direct.html ? { html: direct.html, via: 'direct' } : null
+  }
+
+  if (import.meta.env.DEV) {
+    const devSitesUrl = buildDevLocalSitesFetchUrl(originalUrl)
+    if (devSitesUrl && !isSitesProxyUnavailableThisSession()) {
+      const devTry = await tryFetchHtml(devSitesUrl, 35_000)
+      if (devTry.html) {
+        clearSitesProxyUnavailableThisSession()
+        return { html: devTry.html, via: devSitesUrl }
+      }
+      if (typeof devTry.status === 'number') {
+        markSitesProxyUnavailableFromHttpStatus(devTry.status)
+      }
     }
+    const direct = await tryFetchHtml(originalUrl, 15_000, { direct: true })
+    return direct.html ? { html: direct.html, via: 'direct' } : null
+  }
+
+  // In production with a configured proxy, skip direct fetch: random sites rarely allow browser CORS,
+  // and the attempt spams DevTools with cross-origin errors without improving OG success.
+  if (proxyServer) {
     return null
   }
 
-  const directOnly = await tryFetchHtml(originalUrl, 15_000)
+  const directOnly = await tryFetchHtml(originalUrl, 15_000, { direct: true })
   return directOnly.html ? { html: directOnly.html, via: 'direct' } : null
 }
 
@@ -108,6 +133,15 @@ function parseOpenGraphFromHtml(html: string, pageUrl: string): TWebMetadata {
     (doc.querySelector('meta[name="description"]') as HTMLMetaElement | null)?.content
 
   let image = (doc.querySelector('meta[property="og:image"]') as HTMLMetaElement | null)?.content
+
+  let audio =
+    doc.querySelector('meta[property="og:audio"]')?.getAttribute('content') ||
+    doc.querySelector('meta[property="og:audio:url"]')?.getAttribute('content') ||
+    doc.querySelector('meta[property="og:audio:secure_url"]')?.getAttribute('content') ||
+    null
+  if (audio && !audio.match(/^https?:\/\//)) {
+    audio = null
+  }
 
   if (image) {
     try {
@@ -154,7 +188,7 @@ function parseOpenGraphFromHtml(html: string, pageUrl: string): TWebMetadata {
     /* ignore */
   }
 
-  return { title, description, image }
+  return { title, description, image, audio }
 }
 
 class WebService {

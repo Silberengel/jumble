@@ -332,9 +332,83 @@ export default function GifPicker({
 
   /** In drawer mode we constrain height and make only the GIF grid scroll so the drawer doesn't "sink" */
   const isDrawer = isSmallScreen
+  const gifGrid = loading ? (
+    <div
+      className="grid grid-cols-2 gap-1 p-2 min-h-[200px]"
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      {Array.from({ length: 8 }).map((_, i) => (
+        <Skeleton key={i} className="aspect-square w-full rounded" />
+      ))}
+    </div>
+  ) : (
+    <div className="grid grid-cols-2 gap-1 p-2">
+      {gifs.map((gif) => {
+        const showArchive = gifShouldOfferNip94Archive(gif) && isLoggedIn
+        return (
+          <div key={gif.eventId} className="relative aspect-square rounded overflow-hidden">
+            <button
+              type="button"
+              className={cn(
+                'absolute inset-0 z-0 rounded overflow-hidden border border-transparent hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              )}
+              onClick={() => handleSelect(gif)}
+            >
+              <img
+                src={gif.url}
+                alt=""
+                className="w-full h-full object-cover pointer-events-none"
+                loading="lazy"
+                onError={(e) => {
+                  const el = e.target as HTMLImageElement
+                  const fallback = gif.fallbackUrl?.trim()
+                  if (fallback && el.dataset.gifFallbackTried !== '1') {
+                    el.dataset.gifFallbackTried = '1'
+                    el.src = fallback
+                    return
+                  }
+                  el.style.display = 'none'
+                }}
+              />
+            </button>
+            <span
+              className="absolute top-1 left-1 z-10 max-w-[calc(100%-2.5rem)] truncate rounded border border-border/80 bg-background/90 px-1 py-px text-[10px] font-medium tabular-nums text-foreground backdrop-blur-sm pointer-events-none shadow-sm"
+              title={gifSourceKindTitle(gif)}
+            >
+              {gifSourceKindShortLabel(gif)}
+            </span>
+            {showArchive && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute bottom-1 right-1 z-10 h-7 w-7 shadow-md"
+                disabled={archivingEventId === gif.eventId}
+                title={t(
+                  'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                )}
+                aria-label={t(
+                  'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                )}
+                onClick={(e) => handleArchiveAndInsert(e, gif)}
+              >
+                <Download className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+
   const content = (
     <div
-      className={`flex flex-col gap-2 p-2 ${isDrawer ? 'w-full h-[70vh] max-h-[70vh] overflow-hidden' : 'min-w-[280px] max-w-[360px]'}`}
+      className={cn(
+        'flex min-w-0 w-full flex-col gap-2 p-2',
+        isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
+      )}
     >
       <div className="flex items-center gap-1 shrink-0">
         <Input
@@ -358,87 +432,16 @@ export default function GifPicker({
         <p className="text-sm text-muted-foreground px-1 shrink-0">{error}</p>
       )}
       <div
-        className={isDrawer ? 'flex-1 min-h-0 flex flex-col' : undefined}
+        className={cn(isDrawer && 'flex min-h-0 flex-1 flex-col')}
         {...(isDrawer && { 'data-vaul-no-drag': true })}
       >
-        <ScrollArea
-          className={
-            isDrawer
-              ? 'flex-1 min-h-[420px] w-full rounded-md border'
-              : 'h-[520px] w-full rounded-md border'
-          }
-        >
-          {loading ? (
-            <div
-              className="grid grid-cols-2 gap-1 p-2 min-h-[200px]"
-              role="status"
-              aria-busy="true"
-              aria-live="polite"
-            >
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-square w-full rounded" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-1 p-2">
-              {gifs.map((gif) => {
-                const showArchive = gifShouldOfferNip94Archive(gif) && isLoggedIn
-                return (
-                  <div key={gif.eventId} className="relative aspect-square rounded overflow-hidden">
-                    <button
-                      type="button"
-                      className={cn(
-                        'absolute inset-0 z-0 rounded overflow-hidden border border-transparent hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                      )}
-                      onClick={() => handleSelect(gif)}
-                    >
-                      <img
-                        src={gif.url}
-                        alt=""
-                        className="w-full h-full object-cover pointer-events-none"
-                        loading="lazy"
-                        onError={(e) => {
-                          const el = e.target as HTMLImageElement
-                          const fallback = gif.fallbackUrl?.trim()
-                          if (fallback && el.dataset.gifFallbackTried !== '1') {
-                            el.dataset.gifFallbackTried = '1'
-                            el.src = fallback
-                            return
-                          }
-                          el.style.display = 'none'
-                        }}
-                      />
-                    </button>
-                    <span
-                      className="absolute top-1 left-1 z-10 max-w-[calc(100%-2.5rem)] truncate rounded border border-border/80 bg-background/90 px-1 py-px text-[10px] font-medium tabular-nums text-foreground backdrop-blur-sm pointer-events-none shadow-sm"
-                      title={gifSourceKindTitle(gif)}
-                    >
-                      {gifSourceKindShortLabel(gif)}
-                    </span>
-                    {showArchive && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="absolute bottom-1 right-1 z-10 h-7 w-7 shadow-md"
-                        disabled={archivingEventId === gif.eventId}
-                        title={t(
-                          'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
-                        )}
-                        aria-label={t(
-                          'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
-                        )}
-                        onClick={(e) => handleArchiveAndInsert(e, gif)}
-                      >
-                        <Download className="size-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </ScrollArea>
+        {isDrawer ? (
+          <div className="page-scroll-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border">
+            {gifGrid}
+          </div>
+        ) : (
+          <ScrollArea className="h-[520px] w-full rounded-md border">{gifGrid}</ScrollArea>
+        )}
       </div>
       <div className="flex flex-col gap-2 border-t pt-2 shrink-0">
         <div className="flex flex-col gap-1.5">
@@ -521,13 +524,19 @@ export default function GifPicker({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen} handleOnly>
+      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
-        <DrawerContent dragHandle="vaul" portalContainer={portalContainer}>
+        <DrawerContent
+          dragHandle="vaul"
+          portalContainer={portalContainer}
+          className="max-h-[min(88dvh,calc(100dvh-5rem))] px-2 pb-2"
+        >
           <DrawerHeader className="sr-only">
             <DrawerTitle>{t('Choose a GIF')}</DrawerTitle>
           </DrawerHeader>
-          {content}
+          <div className="flex min-h-0 w-full min-w-0 max-w-[100vw] flex-1 flex-col overflow-hidden">
+            {content}
+          </div>
         </DrawerContent>
       </Drawer>
     )

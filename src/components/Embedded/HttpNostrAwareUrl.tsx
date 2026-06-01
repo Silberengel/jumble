@@ -15,7 +15,11 @@ import { EmbeddedNormalUrl } from './EmbeddedNormalUrl'
 import { EmbeddedNote } from './EmbeddedNote'
 import WebPreview from '@/components/WebPreview'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
+import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
+import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
+import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
 import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
@@ -59,6 +63,26 @@ export function HttpNostrAwareUrl({
   if (isEmbeddableYoutubeUrl(cleaned)) {
     return (
       <YoutubeEmbeddedPlayer
+        url={cleaned}
+        className={cn('mt-2 max-w-[400px]', className)}
+        mustLoad={renderMode === 'article'}
+      />
+    )
+  }
+
+  if (isWavlakeOpenUrl(cleaned)) {
+    return (
+      <WavlakeEmbeddedPlayer
+        url={cleaned}
+        className={cn('mt-2 max-w-[400px]', className)}
+        mustLoad={renderMode === 'article'}
+      />
+    )
+  }
+
+  if (isFountainOpenUrl(cleaned)) {
+    return (
+      <FountainEmbeddedPlayer
         url={cleaned}
         className={cn('mt-2 max-w-[400px]', className)}
         mustLoad={renderMode === 'article'}

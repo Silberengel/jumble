@@ -7,6 +7,17 @@ type TScreenSizeContext = {
 
 const ScreenSizeContext = createContext<TScreenSizeContext | undefined>(undefined)
 
+const SMALL_SCREEN_MQ = '(max-width: 768px)'
+const LARGE_SCREEN_MQ = '(min-width: 1280px)'
+
+/** Layout breakpoints follow the CSS viewport (matchMedia), not `window.innerWidth` — Firefox/Chrome responsive mode emulates width without changing innerWidth. */
+function readScreenSizeFlags(): Pick<TScreenSizeContext, 'isSmallScreen' | 'isLargeScreen'> {
+  return {
+    isSmallScreen: window.matchMedia(SMALL_SCREEN_MQ).matches,
+    isLargeScreen: window.matchMedia(LARGE_SCREEN_MQ).matches
+  }
+}
+
 export const useScreenSize = () => {
   const context = useContext(ScreenSizeContext)
   if (!context) {
@@ -21,24 +32,31 @@ export function useScreenSizeOptional(): TScreenSizeContext | undefined {
 }
 
 export function ScreenSizeProvider({ children }: { children: React.ReactNode }) {
-  const [isSmallScreen, setIsSmallScreen] = useState(() => window.innerWidth <= 768)
-  const [isLargeScreen, setIsLargeScreen] = useState(() => window.innerWidth >= 1280)
-  
+  const [flags, setFlags] = useState(readScreenSizeFlags)
+
   useEffect(() => {
-    const handleResize = () => {
-      setIsSmallScreen(window.innerWidth <= 768)
-      setIsLargeScreen(window.innerWidth >= 1280)
+    const smallMq = window.matchMedia(SMALL_SCREEN_MQ)
+    const largeMq = window.matchMedia(LARGE_SCREEN_MQ)
+    const sync = () => setFlags(readScreenSizeFlags())
+
+    smallMq.addEventListener('change', sync)
+    largeMq.addEventListener('change', sync)
+    window.addEventListener('resize', sync)
+    window.visualViewport?.addEventListener('resize', sync)
+
+    return () => {
+      smallMq.removeEventListener('change', sync)
+      largeMq.removeEventListener('change', sync)
+      window.removeEventListener('resize', sync)
+      window.visualViewport?.removeEventListener('resize', sync)
     }
-    
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   return (
     <ScreenSizeContext.Provider
       value={{
-        isSmallScreen,
-        isLargeScreen
+        isSmallScreen: flags.isSmallScreen,
+        isLargeScreen: flags.isLargeScreen
       }}
     >
       {children}
