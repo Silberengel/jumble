@@ -20,7 +20,8 @@ export function useNip57QuickZap(opts: {
   onZapDialogClose?: () => void
 }) {
   const { t } = useTranslation()
-  const { pubkey, checkLogin } = useNostr()
+  const { pubkey, account, checkLogin } = useNostr()
+  const isLoggedIn = Boolean(pubkey && account && account.signerType !== 'npub')
   const { isWalletConnected, defaultZapSats, defaultZapComment, includePublicZapReceipt } = useZap()
   const [zapping, setZapping] = useState(false)
   const enabled = opts.enabled ?? false
@@ -66,11 +67,11 @@ export function useNip57QuickZap(opts: {
 
   const canQuickNip57Zap =
     enabled &&
+    isLoggedIn &&
     isWalletConnected &&
     defaultZapSats >= 1 &&
     nip57Addresses !== null &&
     nip57Addresses.length > 0 &&
-    !!pubkey &&
     pubkey !== opts.recipientPubkey
 
   const recipientNpubLabel = useMemo(() => {

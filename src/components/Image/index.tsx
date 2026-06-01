@@ -1,9 +1,11 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { markMediaUrlRevealed, wasMediaUrlRevealed } from '@/lib/revealed-media-session'
 import {
   isRenderableMediaUrl,
   isSafeMediaUrl,
   primalR2aMirrorForBlossomPrimalUrl,
+  primalR2aUploads2UrlFromSha256,
   resolvePrimalBlossomPlayableUrl
 } from '@/lib/url'
 import { TImetaInfo } from '@/types'
@@ -53,8 +55,17 @@ function formatFileSize(bytes: number): string {
   return `${bytes} B`
 }
 
+function extensionWithDotFromUrl(url: string): string {
+  try {
+    const m = new URL(url).pathname.match(/(\.[a-z0-9]+)$/i)
+    return m?.[1]?.toLowerCase() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export default function Image({
-  image: { url, blurHash, dim, alt: imetaAlt, fallback, size: fileSizeBytes },
+  image: { url, blurHash, dim, alt: imetaAlt, fallback, size: fileSizeBytes, x: imetaHash },
   alt,
   className = '',
   classNames = {},
@@ -112,6 +123,8 @@ export default function Image({
   const loadWatchRef = useRef<number | null>(null)
   /** After r2a + imeta fallbacks fail, try `url` on blossom.primal.net once (see handleError). */
   const triedPrimaryBlossomDirectRef = useRef(false)
+  const triedR2aFromHashRef = useRef(false)
+  const userRevealedRef = useRef(false)
   // Kept in sync in the reset effect; load-timeout runs only while tap-to-load is actually active.
   const wasInitiallyHeldRef = useRef(effectiveHoldUntilClick)
   const imgRef = useRef<HTMLImageElement | null>(null)
@@ -160,11 +173,14 @@ export default function Image({
     loadSettledRef.current = false
     wasInitiallyHeldRef.current = effectiveHoldUntilClick
     const shouldHold = effectiveHoldUntilClick
-    setRevealed(!shouldHold)
+    const sessionRevealed = Boolean(url?.trim() && wasMediaUrlRevealed(url))
+    const showImmediately = !shouldHold || userRevealedRef.current || sessionRevealed
+    setRevealed(showImmediately)
     setHasError(false)
     setDisplaySkeleton(true)
     setFallbackIndex(0)
     triedPrimaryBlossomDirectRef.current = false
+    triedR2aFromHashRef.current = false
     clearLoadWatch()
     if (!url?.trim()) {
       setIsLoading(false)
@@ -172,7 +188,7 @@ export default function Image({
       setDisplaySkeleton(false)
       return
     }
-    setIsLoading(!shouldHold)
+    setIsLoading(showImmediately)
   }, [url, effectiveHoldUntilClick])
 
   const notifyLoaded = useCallback(() => {
@@ -195,7 +211,7 @@ export default function Image({
       notifyLoaded()
       return
     }
-    if (!effectiveHoldUntilClick && typeof el.decode === 'function') {
+    if (typeof el.decode === 'function') {
       let cancelled = false
       el.decode().then(() => {
         if (!cancelled && el.naturalWidth > 0) notifyLoaded()
@@ -204,7 +220,7 @@ export default function Image({
         cancelled = true
       }
     }
-  }, [revealed, badSrc, imageUrl, effectiveHoldUntilClick, notifyLoaded])
+  }, [revealed, badSrc, imageUrl, notifyLoaded])
 
   useEffect(() => {
     clearLoadWatch()
@@ -213,6 +229,11 @@ export default function Image({
     if (!wasInitiallyHeldRef.current) return
     loadWatchRef.current = window.setTimeout(() => {
       loadWatchRef.current = null
+      const el = imgRef.current
+      if (el?.complete && el.naturalWidth > 0) {
+        notifyLoaded()
+        return
+      }
       setIsLoading(false)
       setDisplaySkeleton(false)
       setHasError(true)
@@ -244,6 +265,16 @@ export default function Image({
       setImageUrl(primary)
       return
     }
+    const hash = imetaHash?.trim().toLowerCase()
+    if (hash && !triedR2aFromHashRef.current) {
+      const r2a = primalR2aUploads2UrlFromSha256(hash, extensionWithDotFromUrl(primary || imageUrl))
+      if (r2a && imageUrl !== r2a) {
+        triedR2aFromHashRef.current = true
+        loadSettledRef.current = false
+        setImageUrl(r2a)
+        return
+      }
+    }
     setIsLoading(false)
     setDisplaySkeleton(false)
     setHasError(true)
@@ -265,6 +296,8 @@ export default function Image({
 
   const handleReveal = () => {
     if (revealed) return
+    userRevealedRef.current = true
+    if (url?.trim()) markMediaUrlRevealed(url)
     setRevealed(true)
     setIsLoading(true)
   }
@@ -323,7 +356,7 @@ export default function Image({
           ref={imgRef}
           src={imageUrl}
           alt={finalAlt}
-          referrerPolicy="no-referrer"
+          referrerPolicy="no-referrer-when-downgrade"
           decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
           loading="eager"
