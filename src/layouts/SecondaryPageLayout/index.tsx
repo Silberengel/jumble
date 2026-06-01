@@ -62,11 +62,9 @@ const SecondaryPageLayout = forwardRef(
     )
 
     useEffect(() => {
-      if (isSmallScreen) {
-        setTimeout(() => window.scrollTo({ top: 0 }), 10)
-        return
-      }
-    }, [])
+      if (!isSmallScreen) return
+      setTimeout(() => scrollAreaRef.current?.scrollTo({ top: 0 }), 10)
+    }, [isSmallScreen])
 
     useEffect(() => {
       if (isSmallScreen) return
@@ -88,13 +86,8 @@ const SecondaryPageLayout = forwardRef(
 
     if (isSmallScreen) {
       return (
-        <DeepBrowsingProvider active={currentIndex === index}>
-          <div
-            className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y"
-            style={{
-              paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
-            }}
-          >
+        <DeepBrowsingProvider active={currentIndex === index} scrollAreaRef={scrollAreaRef}>
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {shouldRenderTitlebar ? (
               <SecondaryPageTitlebar
                 title={title}
@@ -102,19 +95,26 @@ const SecondaryPageLayout = forwardRef(
                 hideBackButton={hideBackButton}
                 hideBottomBorder={hideTitlebarBottomBorder}
                 titlebar={titlebar}
-                sticky={isSmallScreen}
               />
             ) : null}
-            {children}
+            <div
+              ref={scrollAreaRef}
+              className="page-scroll-y min-h-0 min-w-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-y-contain touch-pan-y"
+              style={{
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
+              }}
+            >
+              {children}
+            </div>
           </div>
-          {displayScrollToTopButton && <ScrollToTopButton />}
+          {displayScrollToTopButton && <ScrollToTopButton scrollAreaRef={scrollAreaRef} />}
         </DeepBrowsingProvider>
       )
     }
 
     return (
       <DeepBrowsingProvider active={currentIndex === index} scrollAreaRef={scrollAreaRef}>
-        <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {shouldRenderTitlebar ? (
             <SecondaryPageTitlebar
               title={title}
@@ -127,7 +127,7 @@ const SecondaryPageLayout = forwardRef(
           <div
             ref={scrollAreaRef}
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-auto"
+            className="page-scroll-y min-h-0 min-w-0 flex-1 basis-0 overflow-y-scroll overflow-x-auto overscroll-y-contain"
           >
             {children}
             <div className="h-12" />

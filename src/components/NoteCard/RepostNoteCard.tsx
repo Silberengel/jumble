@@ -1,7 +1,8 @@
 import { ExtendedKind } from '@/constants'
 import { isMentioningMutedUsers } from '@/lib/event'
 import { generateBech32IdFromATag, getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import client from '@/services/client.service'
@@ -28,7 +29,9 @@ export default function RepostNoteCard({
   seenOnAllowlist?: readonly string[]
 }) {
   const { mutePubkeySet } = useMuteList()
-  const { hideContentMentioningMutedUsers } = useContentPolicy()
+  const hideContentMentioningMutedUsers =
+    useContentPolicyOptional()?.hideContentMentioningMutedUsers ??
+    storage.getHideContentMentioningMutedUsers()
   const [targetEvent, setTargetEvent] = useState<Event | null>(null)
   const shouldHide = useMemo(() => {
     if (!targetEvent) return true

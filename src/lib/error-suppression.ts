@@ -116,6 +116,15 @@ function isExpectedDevAppNoise(message: string): boolean {
     return true
   }
   if (
+    message.includes('feeds.nostrarchives.com') &&
+    (message.includes('CORS') ||
+      message.includes('Gleiche-Quelle') ||
+      message.includes('Cross-Origin') ||
+      message.includes('Access-Control-Allow-Origin'))
+  ) {
+    return true
+  }
+  if (
     message.includes('localhost:4869') ||
     message.includes('127.0.0.1:4869') ||
     message.includes('ws://localhost:4869')
@@ -126,10 +135,21 @@ function isExpectedDevAppNoise(message: string): boolean {
       message.includes('[RelayOp]') ||
       message.includes('connection failed') ||
       message.includes('connection timed out') ||
-      message.includes('Local relay connection timeout')
+      message.includes('Local relay connection timeout') ||
+      message.includes('kann keine Verbindung') ||
+      message.includes('can\'t establish a connection') ||
+      message.includes("can't establish a connection")
     ) {
       return true
     }
+  }
+  if (
+    message.includes('profiles.nostrver.se') &&
+    (message.includes('kann keine Verbindung') ||
+      message.includes('can\'t establish a connection') ||
+      message.includes("can't establish a connection"))
+  ) {
+    return true
   }
   if (message.includes('[FetchRelayLists] Network relay-list fetch exceeded budget')) {
     return true

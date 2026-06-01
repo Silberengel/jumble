@@ -20,7 +20,8 @@ import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { generateBech32IdFromETag } from '@/lib/tag'
 import { useSmartNoteNavigation } from '@/PageManager'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
@@ -109,7 +110,9 @@ function ReplyNoteList({
   const { navigateToNote } = useSmartNoteNavigation()
   const noteStats = useNoteStatsById(event.id)
   const { mutePubkeySet } = useMuteList()
-  const { hideContentMentioningMutedUsers } = useContentPolicy()
+  const hideContentMentioningMutedUsers =
+    useContentPolicyOptional()?.hideContentMentioningMutedUsers ??
+    storage.getHideContentMentioningMutedUsers()
   const { pubkey: userPubkey } = useNostr()
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()

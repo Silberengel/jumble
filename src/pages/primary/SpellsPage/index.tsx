@@ -813,6 +813,173 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     </Button>
   )
 
+  const spellsSubHeader = (
+    <div className="flex flex-col gap-2 px-4 py-2.5 sm:px-4">
+      {selectedFauxSpell ? (
+        <div className="flex shrink-0 items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 -ml-2 h-9 text-muted-foreground hover:text-foreground"
+            onClick={clearSpellSelection}
+          >
+            <ChevronLeft className="size-4 shrink-0" aria-hidden />
+            <span>{t('Spells')}</span>
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            {isSmallScreen ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-w-0 flex-1 justify-between font-normal sm:max-w-md"
+                  title={selectedSpell ? spellMenuLabel(selectedSpell) : undefined}
+                  aria-haspopup="dialog"
+                  aria-expanded={spellPickerOpen}
+                  onClick={() => setSpellPickerOpen(true)}
+                >
+                  <span className="truncate">
+                    {selectedSpell ? spellMenuLabel(selectedSpell) : t('Select a spell…')}
+                  </span>
+                  <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" aria-hidden />
+                </Button>
+                <Drawer open={spellPickerOpen} onOpenChange={setSpellPickerOpen}>
+                  <DrawerContent className="flex max-h-[min(92dvh,40rem)] flex-col gap-0 p-0 sm:max-h-[75vh]">
+                    <DrawerHeader className="shrink-0 space-y-0 border-b px-4 py-3 text-left">
+                      <DrawerTitle className="text-base">{t('Select a spell…')}</DrawerTitle>
+                    </DrawerHeader>
+                    <div
+                      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
+                      role="listbox"
+                      aria-label={t('Select a spell…')}
+                    >
+                      {spellPickerPanel}
+                    </div>
+                  </DrawerContent>
+                </Drawer>
+              </>
+            ) : (
+              <DropdownMenu open={spellPickerOpen} onOpenChange={setSpellPickerOpen}>
+                <DropdownMenuTrigger asChild aria-haspopup="menu">
+                  {spellPickerTriggerButton}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  side="bottom"
+                  showScrollButtons
+                  className="max-h-[min(75vh,40rem)] w-[var(--radix-dropdown-menu-trigger-width)] max-w-md p-0"
+                >
+                  <div className="sticky top-0 z-10 border-b bg-popover px-3 py-2 text-left text-sm font-semibold">
+                    {t('Select a spell…')}
+                  </div>
+                  <div className="px-1 py-2" role="listbox" aria-label={t('Select a spell…')}>
+                    {spellPickerPanel}
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                className="justify-start gap-2"
+                variant="outline"
+                onClick={() => {
+                  setSpellToEdit(null)
+                  setSpellToClone(null)
+                  setCreateOpen(true)
+                }}
+              >
+                <Wand2 className="size-4" />
+                {t('Create a Spell')}
+              </Button>
+              {selectedSpell && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    title={
+                      favoriteSpellSet.has(selectedSpell.id.toLowerCase())
+                        ? t('Spell star remove title')
+                        : t('Spell star add title')
+                    }
+                    onClick={() => void toggleFavoriteSpell(selectedSpell)}
+                  >
+                    <Star
+                      className={`size-4 ${favoriteSpellSet.has(selectedSpell.id.toLowerCase()) ? 'fill-amber-400 text-amber-500' : ''}`}
+                    />
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="icon" className="shrink-0" title={t('More options')}>
+                        <MoreVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {selectedSpellCanEditOrDelete ? (
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onClick={() => {
+                            setSpellToClone(null)
+                            setSpellToEdit(selectedSpell)
+                            setCreateOpen(true)
+                          }}
+                        >
+                          <Pencil className="size-4" />
+                          {t('Edit spell')}
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onClick={() => {
+                            setSpellToEdit(null)
+                            setSpellToClone(selectedSpell)
+                            setCreateOpen(true)
+                          }}
+                        >
+                          <Copy className="size-4" />
+                          {t('Clone spell')}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem className="gap-2" onClick={() => setDefinitionSpell(selectedSpell)}>
+                        <FileText className="size-4" />
+                        {t('View definition')}
+                      </DropdownMenuItem>
+                      {selectedSpellCanEditOrDelete ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="gap-2 text-destructive focus:text-destructive"
+                            onClick={() => handleDeleteSpell(selectedSpell)}
+                          >
+                            <Trash2 className="size-4" />
+                            {t('Delete')}
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+            </div>
+          </div>
+
+          {spellsCatalogSyncing ? (
+            <p className="text-xs text-muted-foreground">{t('Loading spells from your relays…')}</p>
+          ) : null}
+
+          {spellsForSelect.length === 0 && !spellsCatalogSyncing && (
+            <p className="text-sm text-muted-foreground">{t('No spells yet. Create one with the button above.')}</p>
+          )}
+        </>
+      )}
+    </div>
+  )
+
   return (
     <PrimaryPageLayout
       ref={layoutRef}
@@ -842,175 +1009,10 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           </div>
         </div>
       }
+      subHeader={spellsSubHeader}
       displayScrollToTopButton
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
-        {selectedFauxSpell ? (
-          <div className="flex shrink-0 items-center">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 -ml-2 h-9 text-muted-foreground hover:text-foreground"
-              onClick={clearSpellSelection}
-            >
-              <ChevronLeft className="size-4 shrink-0" aria-hidden />
-              <span>{t('Spells')}</span>
-            </Button>
-          </div>
-        ) : (
-          <>
-            {/* Spell picker + actions above the feed */}
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <>
-                {isSmallScreen ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="min-w-0 flex-1 justify-between font-normal sm:max-w-md"
-                      title={selectedSpell ? spellMenuLabel(selectedSpell) : undefined}
-                      aria-haspopup="dialog"
-                      aria-expanded={spellPickerOpen}
-                      onClick={() => setSpellPickerOpen(true)}
-                    >
-                      <span className="truncate">
-                        {selectedSpell ? spellMenuLabel(selectedSpell) : t('Select a spell…')}
-                      </span>
-                      <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" aria-hidden />
-                    </Button>
-                    <Drawer open={spellPickerOpen} onOpenChange={setSpellPickerOpen}>
-                      <DrawerContent className="flex max-h-[min(92dvh,40rem)] flex-col gap-0 p-0 sm:max-h-[75vh]">
-                        <DrawerHeader className="shrink-0 space-y-0 border-b px-4 py-3 text-left">
-                          <DrawerTitle className="text-base">{t('Select a spell…')}</DrawerTitle>
-                        </DrawerHeader>
-                        <div
-                          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
-                          role="listbox"
-                          aria-label={t('Select a spell…')}
-                        >
-                          {spellPickerPanel}
-                        </div>
-                      </DrawerContent>
-                    </Drawer>
-                  </>
-                ) : (
-                  <DropdownMenu open={spellPickerOpen} onOpenChange={setSpellPickerOpen}>
-                    <DropdownMenuTrigger asChild aria-haspopup="menu">
-                      {spellPickerTriggerButton}
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      side="bottom"
-                      showScrollButtons
-                      className="max-h-[min(75vh,40rem)] w-[var(--radix-dropdown-menu-trigger-width)] max-w-md p-0"
-                    >
-                      <div className="sticky top-0 z-10 border-b bg-popover px-3 py-2 text-left text-sm font-semibold">
-                        {t('Select a spell…')}
-                      </div>
-                      <div className="px-1 py-2" role="listbox" aria-label={t('Select a spell…')}>
-                        {spellPickerPanel}
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </>
-
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Button
-                  className="justify-start gap-2"
-                  variant="outline"
-                  onClick={() => {
-                    setSpellToEdit(null)
-                    setSpellToClone(null)
-                    setCreateOpen(true)
-                  }}
-                >
-                  <Wand2 className="size-4" />
-                  {t('Create a Spell')}
-                </Button>
-                {selectedSpell && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                      title={
-                        favoriteSpellSet.has(selectedSpell.id.toLowerCase())
-                          ? t('Spell star remove title')
-                          : t('Spell star add title')
-                      }
-                      onClick={() => void toggleFavoriteSpell(selectedSpell)}
-                    >
-                      <Star
-                        className={`size-4 ${favoriteSpellSet.has(selectedSpell.id.toLowerCase()) ? 'fill-amber-400 text-amber-500' : ''}`}
-                      />
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="icon" className="shrink-0" title={t('More options')}>
-                          <MoreVertical className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {selectedSpellCanEditOrDelete ? (
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onClick={() => {
-                              setSpellToClone(null)
-                              setSpellToEdit(selectedSpell)
-                              setCreateOpen(true)
-                            }}
-                          >
-                            <Pencil className="size-4" />
-                            {t('Edit spell')}
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onClick={() => {
-                              setSpellToEdit(null)
-                              setSpellToClone(selectedSpell)
-                              setCreateOpen(true)
-                            }}
-                          >
-                            <Copy className="size-4" />
-                            {t('Clone spell')}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem className="gap-2" onClick={() => setDefinitionSpell(selectedSpell)}>
-                          <FileText className="size-4" />
-                          {t('View definition')}
-                        </DropdownMenuItem>
-                        {selectedSpellCanEditOrDelete ? (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="gap-2 text-destructive focus:text-destructive"
-                              onClick={() => handleDeleteSpell(selectedSpell)}
-                            >
-                              <Trash2 className="size-4" />
-                              {t('Delete')}
-                            </DropdownMenuItem>
-                          </>
-                        ) : null}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {spellsCatalogSyncing ? (
-              <p className="text-xs text-muted-foreground">{t('Loading spells from your relays…')}</p>
-            ) : null}
-
-            {spellsForSelect.length === 0 && !spellsCatalogSyncing && (
-              <p className="text-sm text-muted-foreground">{t('No spells yet. Create one with the button above.')}</p>
-            )}
-          </>
-        )}
-
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 pt-2">
         {/* Feed — faux spells and kind-777 spells all use NoteList */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selectedFauxSpell === 'notifications' && !pubkey ? (

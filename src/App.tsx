@@ -38,7 +38,7 @@ export default function App(): JSX.Element {
           <DeletedEventProvider>
             <NostrProvider>
               <CacheBrowserProvider>
-              <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden max-md:h-auto max-md:max-h-none max-md:min-h-dvh max-md:overflow-visible">
+              <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden max-md:h-[var(--vh)] max-md:max-h-[var(--vh)] max-md:min-h-0">
                 <VersionUpdateBanner />
                 <StartupSessionBanner />
                 <SlowConnectionHint />

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import {
-  captureMobilePrimaryFeedScrollFromWindow,
+  captureMobilePrimaryFeedScroll,
   peekMobilePrimaryFeedScroll
 } from '@/lib/mobile-primary-feed-scroll'
 import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
@@ -2054,7 +2054,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
 
     if (isSmallScreen && currentPrimaryPage) {
-      captureMobilePrimaryFeedScrollFromWindow(currentPrimaryPage)
+      captureMobilePrimaryFeedScroll(currentPrimaryPage)
     }
 
     // Small screens overlay the frozen feed; clear full-screen primary overlays so the secondary page shows.
@@ -2393,13 +2393,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               }}
             >
             <NoteDrawerContext.Provider value={{ openDrawer, closeDrawer, isDrawerOpen: drawerOpen, drawerNoteId, drawerInitialEvent }}>
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-content-canvas min-h-[var(--vh)]">
+            <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-content-canvas">
             <LiveActivitiesStrip placement="mobile" />
             {primaryNoteView ? (
               // Show primary note view with back button on mobile
               <div
                 ref={setMobilePrimarySwipeRoot}
-                className="flex min-h-0 flex-1 flex-col h-full w-full touch-pan-y"
+                className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden touch-pan-y"
               >
                 <ImwaldBrandBar />
                 <div className="flex gap-1 border-b border-border p-1 items-center justify-between font-semibold">
@@ -2423,15 +2423,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                   </div>
                   <RefreshButton onClick={triggerPrimaryPanelRefresh} />
                 </div>
-                <div className="flex-1 overflow-auto">
+                <div className="page-scroll-y min-h-0 flex-1 basis-0 overflow-y-scroll overscroll-y-contain touch-pan-y">
                   {primaryNoteView}
                 </div>
               </div>
             ) : (
-              <>
+              <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
                 <div
                   className={cn(
-                    'block h-full min-h-0 min-w-0',
+                    'flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden',
                     secondaryStack.length > 0 && 'hidden'
                   )}
                   aria-hidden={secondaryStack.length > 0}
@@ -2441,12 +2441,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                 {secondaryStack.length > 0 ? (
                   <div
                     ref={setMobileSecondarySwipeRoot}
-                    className="flex min-h-0 min-w-0 flex-1 flex-col touch-pan-y bg-background"
+                    className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden touch-pan-y bg-background"
                   >
                     <TopSecondaryStackPane item={secondaryStack[secondaryStack.length - 1]!} />
                   </div>
                 ) : null}
-              </>
+              </div>
             )}
             </div>
             <Suspense fallback={null}>
@@ -2675,7 +2675,7 @@ function secondaryPanelUrlsMatch(stackUrl: string, locationUrl: string): boolean
 /** Mount only the top secondary frame so Back unmounts feeds/relays under the previous page. */
 function TopSecondaryStackPane({
   item,
-  className = 'block h-full min-h-0 min-w-0'
+  className = 'flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
 }: {
   item: TStackItem
   className?: string

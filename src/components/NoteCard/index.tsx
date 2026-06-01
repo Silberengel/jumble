@@ -1,7 +1,8 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { isMentioningMutedUsers, isNip18RepostKind, isNip56ReportEvent } from '@/lib/event'
 import ReportCard from '@/components/ReportCard'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { Event } from 'nostr-tools'
@@ -37,7 +38,9 @@ const NoteCard = memo(function NoteCard({
   showPaymentAttestationAction?: boolean
 }) {
   const { mutePubkeySet } = useMuteList()
-  const { hideContentMentioningMutedUsers } = useContentPolicy()
+  const hideContentMentioningMutedUsers =
+    useContentPolicyOptional()?.hideContentMentioningMutedUsers ??
+    storage.getHideContentMentioningMutedUsers()
   const shouldHide = useMemo(() => {
     if (filterMutedNotes && muteSetHas(mutePubkeySet, event.pubkey)) {
       return true

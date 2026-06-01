@@ -1,4 +1,5 @@
 import { isViewerRelayBlocked } from '@/lib/viewer-blocked-relays'
+import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
   devProxyCorsProblematicHttpsIndexRelayBase,
   devProxyLoopbackHttpRelayBase,
@@ -169,6 +170,10 @@ class RelayInfoService {
   }
 
   private async fetchRelayNip11(url: string) {
+    // Path-based WS trending feed — no NIP-11 document at the derived https URL (avoids CORS noise).
+    if (isWispTrendingNotesRelayUrl(url)) {
+      return undefined
+    }
     try {
       const httpCandidate = url.trim().replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://')
       const httpBase = normalizeHttpRelayUrl(httpCandidate) || httpCandidate

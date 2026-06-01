@@ -13,10 +13,11 @@ import {
 } from '@/lib/keyboard-shortcuts'
 import {
   peekMobilePrimaryFeedScroll,
+  registerMobilePrimaryFeedScrollElement,
   saveMobilePrimaryFeedScroll
 } from '@/lib/mobile-primary-feed-scroll'
 import { cn } from '@/lib/utils'
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 
 const PrimaryPageLayout = forwardRef(
   (
@@ -39,7 +40,6 @@ const PrimaryPageLayout = forwardRef(
     ref
   ) => {
     const scrollAreaRef = useRef<HTMLDivElement>(null)
-    const smallScreenScrollAreaRef = useRef<HTMLDivElement>(null)
     const { isSmallScreen } = useScreenSize()
     const { current, display, frozen } = usePrimaryPage()
     const savedScrollTopRef = useRef(0)
@@ -50,34 +50,45 @@ const PrimaryPageLayout = forwardRef(
       () => ({
         scrollToTop: (behavior: ScrollBehavior = 'smooth') => {
           setTimeout(() => {
-            if (scrollAreaRef.current) {
-              return scrollAreaRef.current.scrollTo({ top: 0, behavior })
-            }
-            window.scrollTo({ top: 0, behavior })
+            scrollAreaRef.current?.scrollTo({ top: 0, behavior })
           }, 10)
         }
       }),
       []
     )
 
+    useLayoutEffect(() => {
+      if (!isSmallScreen) {
+        registerMobilePrimaryFeedScrollElement(null)
+        return
+      }
+      registerMobilePrimaryFeedScrollElement(scrollAreaRef.current)
+      return () => registerMobilePrimaryFeedScrollElement(null)
+    }, [isSmallScreen, display, current, pageName])
+
     useEffect(() => {
-      if (!isSmallScreen || current !== pageName || frozen) return
+      if (!isSmallScreen || current !== pageName) return
+
+      const el = scrollAreaRef.current
+      if (!el) return
 
       const handleScroll = () => {
-        saveMobilePrimaryFeedScroll(pageName, window.scrollY)
+        saveMobilePrimaryFeedScroll(pageName, el.scrollTop)
       }
-      window.addEventListener('scroll', handleScroll, { passive: true })
+      el.addEventListener('scroll', handleScroll, { passive: true })
       return () => {
         handleScroll()
-        window.removeEventListener('scroll', handleScroll)
+        el.removeEventListener('scroll', handleScroll)
       }
-    }, [current, frozen, isSmallScreen, pageName])
+    }, [current, isSmallScreen, pageName])
 
     useEffect(() => {
       if (!isSmallScreen || current !== pageName || !display) return
       const top = peekMobilePrimaryFeedScroll(pageName)
       requestAnimationFrame(() => {
-        window.scrollTo({ top, behavior: 'instant' })
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = top
+        }
       })
     }, [current, display, isSmallScreen, pageName])
 
@@ -125,25 +136,32 @@ const PrimaryPageLayout = forwardRef(
 
     if (isSmallScreen) {
       return (
-        <DeepBrowsingProvider active={current === pageName && display && !frozen}>
-          <div
-            ref={smallScreenScrollAreaRef}
-            className="min-w-0 w-full overflow-x-hidden"
-            style={{
-              paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
-            }}
-          >
+        <DeepBrowsingProvider
+          active={current === pageName && display && !frozen}
+          scrollAreaRef={scrollAreaRef}
+        >
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {hasTitlebarRow ? (
               <PrimaryPageTitlebar hideBottomBorder={hideTitlebarBottomBorder}>
                 {titlebar}
               </PrimaryPageTitlebar>
             ) : null}
-            {subHeader && <div className="shrink-0 w-full min-w-0 bg-background">{subHeader}</div>}
-            <div className="min-w-0 w-full">
+            {subHeader ? (
+              <div className="min-w-0 shrink-0 border-b border-border/80 bg-background">
+                {subHeader}
+              </div>
+            ) : null}
+            <div
+              ref={scrollAreaRef}
+              className="page-scroll-y min-h-0 min-w-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-y-contain touch-pan-y"
+              style={{
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 3rem)'
+              }}
+            >
               {children}
             </div>
           </div>
-          {displayScrollToTopButton && <ScrollToTopButton />}
+          {displayScrollToTopButton && <ScrollToTopButton scrollAreaRef={scrollAreaRef} />}
         </DeepBrowsingProvider>
       )
     }
@@ -165,7 +183,7 @@ const PrimaryPageLayout = forwardRef(
           <div
             ref={scrollAreaRef}
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-auto"
+            className="page-scroll-y min-h-0 min-w-0 flex-1 basis-0 overflow-y-scroll overflow-x-auto overscroll-y-contain"
           >
             {children}
             <div className="h-4" />

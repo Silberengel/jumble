@@ -25,6 +25,20 @@
     }
   }
 
+  /* Mobile: lock document scroll; feeds and note panels scroll inside .page-scroll-y regions. */
+  @media (max-width: 768px) {
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
+    #root {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
   input,
   textarea,
   button {
@@ -96,25 +110,49 @@
     display: none; /* Safari and Chrome */
   }
 
-  /* Popover / select lists: keep a visible vertical scrollbar (not overlay-only). */
+  /*
+   * Primary/secondary pages, popovers, selects: visible vertical scrollbar (not overlay-only).
+   * Pair with Tailwind overflow-y-scroll on the same element.
+   */
+  .page-scroll-y,
   .popover-scroll-y {
-    overflow-y: scroll;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
   }
+  .page-scroll-y::-webkit-scrollbar,
   .popover-scroll-y::-webkit-scrollbar {
     width: 10px;
   }
+  .page-scroll-y::-webkit-scrollbar-thumb,
   .popover-scroll-y::-webkit-scrollbar-thumb {
     border-radius: 9999px;
     background-color: hsl(var(--muted-foreground) / 0.35);
   }
+  .page-scroll-y::-webkit-scrollbar-thumb:hover,
   .popover-scroll-y::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.5);
   }
+  .page-scroll-y::-webkit-scrollbar-track,
   .popover-scroll-y::-webkit-scrollbar-track {
     border-radius: 9999px;
     background-color: hsl(var(--muted) / 0.45);
+  }
+
+  /* Narrow viewports: stronger scroll affordance (feed + note panels use inner scroll). */
+  @media (max-width: 768px) {
+    .page-scroll-y {
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: auto;
+    }
+    .page-scroll-y::-webkit-scrollbar {
+      width: 12px;
+    }
+    .page-scroll-y::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--muted-foreground) / 0.55);
+    }
+    .page-scroll-y::-webkit-scrollbar-thumb:hover {
+      background-color: hsl(var(--muted-foreground) / 0.7);
+    }
   }
 
   /*

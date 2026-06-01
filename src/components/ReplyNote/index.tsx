@@ -18,7 +18,8 @@ import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -59,7 +60,9 @@ export default function ReplyNote({
   const { isSmallScreen } = useScreenSize()
   const { navigateToNote } = useSmartNoteNavigation()
   const { mutePubkeySet } = useMuteList()
-  const { hideContentMentioningMutedUsers } = useContentPolicy()
+  const hideContentMentioningMutedUsers =
+    useContentPolicyOptional()?.hideContentMentioningMutedUsers ??
+    storage.getHideContentMentioningMutedUsers()
   const [showMuted, setShowMuted] = useState(false)
   const reactionDisplay = useNotificationReactionDisplay(event)
   const webReactionParentUrl = useMemo(
