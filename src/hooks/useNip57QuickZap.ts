@@ -6,7 +6,7 @@ import lightning from '@/services/lightning.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { RecipientPaymentData } from '@/hooks/useRecipientAlternativePayments'
 import { NostrEvent } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatSatsGrouped } from '@/lib/lightning'
@@ -22,9 +22,19 @@ export function useNip57QuickZap(opts: {
   const { t } = useTranslation()
   const { pubkey, account, checkLogin } = useNostr()
   const isLoggedIn = Boolean(pubkey && account && account.signerType !== 'npub')
-  const { isWalletConnected, defaultZapSats, defaultZapComment, includePublicZapReceipt } = useZap()
+  const { defaultZapSats, defaultZapComment, includePublicZapReceipt } = useZap()
   const [zapping, setZapping] = useState(false)
+  const ignoreResultRef = useRef(false)
   const enabled = opts.enabled ?? false
+
+  useEffect(() => {
+    if (enabled) {
+      ignoreResultRef.current = false
+      return
+    }
+    ignoreResultRef.current = true
+    setZapping(false)
+  }, [enabled])
 
   const lightningAddressOptionsKey = useMemo(
     () =>
@@ -68,7 +78,6 @@ export function useNip57QuickZap(opts: {
   const canQuickNip57Zap =
     enabled &&
     isLoggedIn &&
-    isWalletConnected &&
     defaultZapSats >= 1 &&
     nip57Addresses !== null &&
     nip57Addresses.length > 0 &&
@@ -84,10 +93,16 @@ export function useNip57QuickZap(opts: {
     n: formatSatsGrouped(defaultZapSats)
   })
 
+  const cancelZap = useCallback(() => {
+    ignoreResultRef.current = true
+    setZapping(false)
+  }, [])
+
   const sendQuickZap = useCallback(() => {
     if (!canQuickNip57Zap || zapping || !nip57Addresses?.length) return
     checkLogin(async () => {
       if (!pubkey) return
+      ignoreResultRef.current = false
       try {
         setZapping(true)
         const zapResult = await lightning.zap(
@@ -102,7 +117,7 @@ export function useNip57QuickZap(opts: {
             candidates: nip57Addresses
           }
         )
-        if (!zapResult) return
+        if (ignoreResultRef.current || !zapResult) return
         if (includePublicZapReceipt && zapResult.zapReceipt === null) {
           toast.warning(
             t(
@@ -142,6 +157,7 @@ export function useNip57QuickZap(opts: {
     canQuickNip57Zap,
     quickZapLabel,
     sendQuickZap,
+    cancelZap,
     zapping
   }
 }

@@ -88,7 +88,11 @@ export default function PaytoDialog({
       setCompletedPaymentDetails(null)
       closeModal()
       releaseBodyScrollLocks()
+      return
     }
+    // Nested on ZapDialog: Radix scroll-lock can block clicks on this dialog.
+    const id = requestAnimationFrame(() => releaseBodyScrollLocks())
+    return () => cancelAnimationFrame(id)
   }, [open])
 
   useEffect(() => {

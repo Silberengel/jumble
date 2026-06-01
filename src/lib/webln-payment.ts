@@ -73,3 +73,28 @@ export async function sendWebLNPaymentWithRetry(
   }
   throw lastError
 }
+
+const DEFAULT_WEBLN_PAYMENT_TIMEOUT_MS = 90_000
+
+/** Same as {@link sendWebLNPaymentWithRetry} but rejects when the wallet never responds. */
+export async function sendWebLNPaymentWithRetryAndTimeout(
+  provider: WebLNProvider,
+  invoice: string,
+  options?: { maxAttempts?: number; timeoutMs?: number }
+): Promise<{ preimage: string }> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_WEBLN_PAYMENT_TIMEOUT_MS
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      sendWebLNPaymentWithRetry(provider, invoice, options?.maxAttempts ?? 3),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('Wallet payment timed out')),
+          timeoutMs
+        )
+      })
+    ])
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+  }
+}

@@ -6,10 +6,7 @@ import {
 } from '@/constants'
 import { getProfileFromEvent, getZapInfoFromEvent } from '@/lib/event-metadata'
 import { closeModal, init, launchPaymentModal } from '@getalby/bitcoin-connect-react'
-import {
-  isNwcWalletServiceInfoError,
-  sendWebLNPaymentWithRetry
-} from '@/lib/webln-payment'
+import { sendWebLNPaymentWithRetryAndTimeout } from '@/lib/webln-payment'
 import { Invoice } from '@getalby/lightning-tools'
 import { bech32 } from '@scure/base'
 import { WebLNProvider } from '@webbtc/webln-types'
@@ -145,7 +142,7 @@ class LightningService {
 
     if (this.provider) {
       try {
-        const { preimage } = await sendWebLNPaymentWithRetry(this.provider, pr)
+        const { preimage } = await sendWebLNPaymentWithRetryAndTimeout(this.provider, pr)
         closeOuterModel?.()
         const zapReceipt =
           relays.length > 0
@@ -160,9 +157,7 @@ class LightningService {
         onPaymentFlowComplete?.(result)
         return result
       } catch (error) {
-        if (!isNwcWalletServiceInfoError(error)) {
-          throw error
-        }
+        logger.info('WebLN zap payment unavailable, falling back to invoice UI', { error })
       }
     }
 
@@ -302,15 +297,13 @@ class LightningService {
   ): Promise<PaymentFlowResult> {
     if (this.provider) {
       try {
-        const { preimage } = await sendWebLNPaymentWithRetry(this.provider, invoice)
+        const { preimage } = await sendWebLNPaymentWithRetryAndTimeout(this.provider, invoice)
         closeOuterModel?.()
         const result = { preimage, invoice }
         onPaymentFlowComplete?.(result)
         return result
       } catch (error) {
-        if (!isNwcWalletServiceInfoError(error)) {
-          throw error
-        }
+        logger.info('WebLN invoice payment unavailable, falling back to invoice UI', { error })
       }
     }
 

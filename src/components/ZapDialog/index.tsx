@@ -95,7 +95,7 @@ export default function ZapDialog({
     return groupPaymentMethodsForDisplay(merged, senderPaytoTypes)
   }, [recipientPayment, senderPaytoTypes])
 
-  const { canQuickNip57Zap, quickZapLabel, sendQuickZap, zapping } = useNip57QuickZap({
+  const { canQuickNip57Zap, quickZapLabel, sendQuickZap, cancelZap, zapping } = useNip57QuickZap({
     enabled: open,
     recipientPubkey: pubkey,
     referencedEvent: event,
@@ -108,7 +108,12 @@ export default function ZapDialog({
     paymentGroups.length > 0 || canQuickNip57Zap ? (
       <>
         {canQuickNip57Zap ? (
-          <Nip57QuickZapButton label={quickZapLabel} zapping={zapping} onClick={sendQuickZap} />
+          <Nip57QuickZapButton
+            label={quickZapLabel}
+            zapping={zapping}
+            onClick={sendQuickZap}
+            onCancel={cancelZap}
+          />
         ) : null}
         {paymentGroups.length > 0 ? (
           <PaymentMethodsSection
