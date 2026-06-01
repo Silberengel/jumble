@@ -1591,12 +1591,17 @@ export class ReplaceableEventService {
    */
   static readonly AUTHOR_REPLACEABLES_REFRESHED_EVENT = 'jumble:author-replaceables-refreshed' as const
 
-  async refreshAuthorPublishedReplaceablesFromRelays(pubkey: string): Promise<void> {
+  async refreshAuthorPublishedReplaceablesFromRelays(
+    pubkey: string,
+    options?: { force?: boolean }
+  ): Promise<void> {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return
 
-    const notBefore = this.authorProfileViewRefreshNotBeforeMs.get(pk) ?? 0
-    if (Date.now() < notBefore) return
+    if (!options?.force) {
+      const notBefore = this.authorProfileViewRefreshNotBeforeMs.get(pk) ?? 0
+      if (Date.now() < notBefore) return
+    }
 
     const inFlight = this.authorReplaceablesRefreshByPubkey.get(pk)
     if (inFlight) return inFlight

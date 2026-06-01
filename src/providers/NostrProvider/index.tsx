@@ -770,13 +770,31 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (favoriteRelaysEvent) {
-        if (
-          hydrationGenForThisRun === accountHydrationGenerationRef.current &&
-          resolvedFavoritePut &&
-          resolvedFavoritePut.id === favoriteRelaysEvent.id
-        ) {
-          setFavoriteRelaysEvent(favoriteRelaysEvent)
+        if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+          setFavoriteRelaysEvent(resolvedFavoritePut ?? favoriteRelaysEvent)
         }
+      } else if (!storedFavoriteRelaysEvent) {
+        const trySetFavoriteRelays = (evt: Event) => {
+          if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) return
+          void indexedDb
+            .putReplaceableEvent(evt)
+            .then((stored) => {
+              if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+                setFavoriteRelaysEvent(stored)
+              }
+            })
+            .catch(() => {
+              if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+                setFavoriteRelaysEvent(evt)
+              }
+            })
+        }
+        void replaceableEventService
+          .fetchReplaceableEvent(account.pubkey, ExtendedKind.FAVORITE_RELAYS)
+          .then((ev) => {
+            if (ev) trySetFavoriteRelays(ev)
+          })
+          .catch(() => {})
       }
       if (blockedRelaysEvent) {
         if (resolvedBlockedPut && resolvedBlockedPut.id === blockedRelaysEvent.id) {
@@ -1953,8 +1971,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   const updateFavoriteRelaysEvent = async (favoriteRelaysEvent: Event) => {
     const stored = await indexedDb.putReplaceableEvent(favoriteRelaysEvent)
-    /** Always sync UI to IndexedDB winner (same-second updates must not leave stale list + relay sets). */
-    setFavoriteRelaysEvent(stored)
+    /** Prefer the event we just published; only keep IDB row when it is strictly newer. */
+    setFavoriteRelaysEvent(
+      stored.created_at > favoriteRelaysEvent.created_at ? stored : favoriteRelaysEvent
+    )
   }
 
   const persistNewUserTemplateLocally = async (

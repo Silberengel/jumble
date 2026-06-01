@@ -3959,11 +3959,14 @@ class ClientService extends EventTarget {
    * from a comprehensive relay set, persist to IndexedDB, and notify the app (see
    * `ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT`).
    */
-  async refreshAuthorPublishedReplaceablesOnProfileView(pubkey: string): Promise<void> {
+  async refreshAuthorPublishedReplaceablesOnProfileView(
+    pubkey: string,
+    options?: { force?: boolean }
+  ): Promise<void> {
     const pk = pubkey.trim().toLowerCase()
     if (!/^[0-9a-f]{64}$/.test(pk)) return
     try {
-      await this.replaceableEventService.refreshAuthorPublishedReplaceablesFromRelays(pk)
+      await this.replaceableEventService.refreshAuthorPublishedReplaceablesFromRelays(pk, options)
     } catch (err) {
       logger.debug('[client] refreshAuthorPublishedReplaceablesOnProfileView failed', {
         pubkeySlice: pk.slice(0, 12),

@@ -18,6 +18,7 @@ import { ExtendedKind } from '@/constants'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useNostr } from '@/providers/NostrProvider'
+import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { Code, MoreVertical } from 'lucide-react'
 import { kinds } from 'nostr-tools'
@@ -33,9 +34,15 @@ const FAVORITE_TAB_KINDS = [
 const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
-  const { account, relayList } = useNostr()
+  const { account, relayList, requestAccountNetworkHydrate } = useNostr()
   const [contentKey, setContentKey] = useState(0)
-  const bump = useCallback(() => setContentKey((k) => k + 1), [])
+  const bump = useCallback(async () => {
+    setContentKey((k) => k + 1)
+    const pk = account?.pubkey
+    if (!pk) return
+    await requestAccountNetworkHydrate()
+    await client.refreshAuthorPublishedReplaceablesOnProfileView(pk, { force: true })
+  }, [account?.pubkey, requestAccountNetworkHydrate])
 
   useEffect(() => {
     if (account?.pubkey) {
@@ -108,7 +115,7 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
       controls={
         hideTitlebar ? undefined : (
           <div className="flex items-center gap-0">
-            <RefreshButton onClick={bump} />
+            <RefreshButton onClick={() => void bump()} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label={t('More options')}>
