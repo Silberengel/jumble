@@ -842,6 +842,15 @@ export default {
     'HTTP relays': 'HTTP-Relays',
     httpRelaysDescription:
       'HTTPS-Index-Relays (z. B. REST /api/events/filter). Gleiche Lese-/Schreib-/beides-Rollen wie Mailbox-Relays; gespeichert als Kind 10243. Liste leeren und speichern, um eine leere Liste zu veröffentlichen.',
+    relaySettingsEventKindsLabel: 'Nostr-Event-Kind',
+    relaySettingsEventKindsEditOne:
+      'Speichern veröffentlicht hier ein ersetzbares Listen-Event dieses Kinds auf deinen Relays.',
+    relaySettingsEventKindsEditMany:
+      'Speichern veröffentlicht hier ersetzbare Listen-Events dieser Kinds auf deinen Relays.',
+    relaySettingsEventKindsView:
+      'Zeigt die veröffentlichte Relay-Liste dieses Nutzers aus Kind {{kinds}}, sofern der Client sie geladen hat.',
+    relaySettingsEventKindsSession:
+      'Kein ersetzbares Relay-Listen-Event — dieser Tab zeigt nur Session-Bewertung und Strafen im Speicher (nichts wird veröffentlicht).',
     'HTTP relays saved': 'HTTP-Relays gespeichert',
     'Failed to save HTTP relay list': 'HTTP-Relay-Liste konnte nicht gespeichert werden',
     'HTTP relays must start with https:// or http://':

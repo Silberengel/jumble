@@ -3,6 +3,7 @@ import HttpRelaysSetting from '@/components/HttpRelaysSetting'
 import JsonViewDialog from '@/components/JsonViewDialog'
 import MailboxSetting from '@/components/MailboxSetting'
 import FavoriteRelaysSetting from '@/components/FavoriteRelaysSetting'
+import RelaySettingsKindNotice from '@/components/RelaySettingsKindNotice'
 import SessionRelaysTab from '@/components/SessionRelaysTab'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
@@ -22,6 +23,12 @@ import { Code, MoreVertical } from 'lucide-react'
 import { kinds } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+const FAVORITE_TAB_KINDS = [
+  ExtendedKind.FAVORITE_RELAYS,
+  ExtendedKind.BLOCKED_RELAYS,
+  kinds.Relaysets
+] as const
 
 const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
   const { t } = useTranslation()
@@ -128,19 +135,24 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
           <TabsTrigger value="cache-relays" className="w-full sm:w-auto">{t('Cache Relays')}</TabsTrigger>
           <TabsTrigger value="session-relays" className="w-full sm:w-auto">{t('Session relays')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="favorite-relays">
+        <TabsContent value="favorite-relays" className="space-y-4">
+          <RelaySettingsKindNotice kinds={FAVORITE_TAB_KINDS} />
           <FavoriteRelaysSetting />
         </TabsContent>
-        <TabsContent value="mailbox">
+        <TabsContent value="mailbox" className="space-y-4">
+          <RelaySettingsKindNotice kinds={[kinds.RelayList]} />
           <MailboxSetting />
         </TabsContent>
-        <TabsContent value="http-relays">
+        <TabsContent value="http-relays" className="space-y-4">
+          <RelaySettingsKindNotice kinds={[ExtendedKind.HTTP_RELAY_LIST]} />
           <HttpRelaysSetting />
         </TabsContent>
-        <TabsContent value="cache-relays">
+        <TabsContent value="cache-relays" className="space-y-4">
+          <RelaySettingsKindNotice kinds={[ExtendedKind.CACHE_RELAYS]} />
           <CacheRelaysSetting />
         </TabsContent>
-        <TabsContent value="session-relays">
+        <TabsContent value="session-relays" className="space-y-4">
+          <RelaySettingsKindNotice kinds={[]} variant="session" />
           <SessionRelaysTab />
         </TabsContent>
       </Tabs>

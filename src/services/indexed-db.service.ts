@@ -15,6 +15,7 @@ import {
   getCalendarOccurrenceWindowMs,
   isCalendarEventKind
 } from '@/lib/calendar-event'
+import { calendarEventHexId, calendarRsvpParentKeyFromEventId } from '@/lib/calendar-rsvp-match'
 import {
   getReplaceableCoordinate,
   getReplaceableCoordinateFromEvent,
@@ -3784,12 +3785,20 @@ class IndexedDbService {
     })
   }
 
-  /** Persist a NIP-52 RSVP (31925). Indexed by normalized `a` parent coordinate. */
+  /** Persist a NIP-52 RSVP (31925). Indexed by normalized `a` coordinate or `e:<calendar-id>`. */
   async putCalendarRsvpEventRow(ev: Event): Promise<void> {
     if (ev.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) return
     const rawA = ev.tags.find(tagNameEquals('a'))?.[1]?.trim()
-    if (!rawA) return
-    const parentCoordinate = normalizeReplaceableCoordinateString(rawA)
+    const rawE = ev.tags.find(tagNameEquals('e'))?.[1]?.trim()
+    const eHex =
+      rawE && /^[0-9a-f]{64}$/i.test(rawE) ? rawE.toLowerCase() : ''
+    let parentCoordinate = ''
+    if (rawA) {
+      parentCoordinate = normalizeReplaceableCoordinateString(rawA)
+    } else if (eHex) {
+      parentCoordinate = `e:${eHex}`
+    }
+    if (!parentCoordinate) return
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.CALENDAR_RSVP_EVENTS)) return
 
@@ -3860,7 +3869,29 @@ class IndexedDbService {
     })
   }
 
-  /** Cached RSVPs for a calendar replaceable coordinate (`kind:pubkey:d`). */
+  /** RSVPs for a calendar note: `a` coordinate index plus `e:<event-id>` rows. */
+  async getCalendarRsvpEventsForCalendarEvent(calendarEvent: Event, limit = 400): Promise<Event[]> {
+    const coord = normalizeReplaceableCoordinateString(
+      getReplaceableCoordinateFromEvent(calendarEvent)
+    )
+    const eKey = calendarRsvpParentKeyFromEventId(calendarEventHexId(calendarEvent))
+    const [byCoord, byE] = await Promise.all([
+      this.getCalendarRsvpEventsByParentCoordinate(coord, limit),
+      eKey ? this.getCalendarRsvpEventsByParentCoordinate(eKey, limit) : Promise.resolve([])
+    ])
+    const seen = new Set<string>()
+    const out: Event[] = []
+    for (const ev of [...byCoord, ...byE]) {
+      const id = ev.id.toLowerCase()
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(ev)
+    }
+    out.sort((a, b) => b.created_at - a.created_at)
+    return out.slice(0, limit)
+  }
+
+  /** Cached RSVPs for a calendar replaceable coordinate (`kind:pubkey:d`) or `e:<hex>`. */
   async getCalendarRsvpEventsByParentCoordinate(
     parentCoordinate: string,
     limit = 400

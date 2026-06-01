@@ -51,7 +51,7 @@ export default function CalendarEventContent({
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
   const { pubkey: myPubkey, publish } = useNostr()
-  const { rsvps, isFetching, getRsvpStatus: getStatus } = useFetchCalendarRsvps(event)
+  const { rsvps, isFetching, getRsvpStatus: getStatus, applyRsvp } = useFetchCalendarRsvps(event)
 
   const meta = useMemo(() => {
     if (!isCalendarEventKind(event.kind)) return null
@@ -88,7 +88,8 @@ export default function CalendarEventContent({
     return [...httpRs, ...(meta.image?.trim() ? [meta.image.trim()] : [])]
   }, [meta, event])
 
-  const myRsvp = myPubkey ? rsvps.find((r) => r.pubkey === myPubkey) : undefined
+  const myPk = myPubkey?.toLowerCase()
+  const myRsvp = myPk ? rsvps.find((r) => r.pubkey.toLowerCase() === myPk) : undefined
   const myStatus = myRsvp ? getStatus(myRsvp) : undefined
 
   // Organizer + invitees (event p tags) + anyone who sent an RSVP. Each shows response: accepted/tentative/declined or no response.
@@ -108,12 +109,13 @@ export default function CalendarEventContent({
       new Set([organizerPubkey, ...participantPubkeys, ...rsvps.map((r) => r.pubkey)])
     )
     return allPubkeys.map((pubkey) => {
-      const rsvp = rsvps.find((r) => r.pubkey === pubkey)
+      const pk = pubkey.toLowerCase()
+      const rsvp = rsvps.find((r) => r.pubkey.toLowerCase() === pk)
       return {
         pubkey,
         role: roleByPubkey.get(pubkey),
         status: (rsvp ? getStatus(rsvp) : null) as RsvpStatus | null,
-        isOrganizer: pubkey === organizerPubkey
+        isOrganizer: pk === organizerPubkey.toLowerCase()
       }
     })
   }, [event.pubkey, event.tags, rsvps])
@@ -142,7 +144,8 @@ export default function CalendarEventContent({
     }
     try {
       const draft = createCalendarRsvpDraftEvent(event, status)
-      await publish(draft)
+      const signed = await publish(draft)
+      applyRsvp(signed)
       toast.success(t('RSVP updated'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('Failed to update RSVP'))

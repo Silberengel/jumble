@@ -47,6 +47,7 @@ import {
 } from './event-archive.service'
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
 import { isCalendarEventKind } from '@/lib/calendar-event'
+import { calendarRsvpMatchesCalendarEvent } from '@/lib/calendar-rsvp-match'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
@@ -1045,25 +1046,10 @@ export class EventService {
    */
   getSessionCalendarRsvpsForCalendarEvent(calendarEvent: NEvent): NEvent[] {
     if (!isCalendarEventKind(calendarEvent.kind)) return []
-    const coordNorm = normalizeReplaceableCoordinateString(
-      getReplaceableCoordinateFromEvent(calendarEvent)
-    )
-    const calId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
-      ? calendarEvent.id.toLowerCase()
-      : calendarEvent.id
     const out: NEvent[] = []
     for (const [, event] of this.sessionEventCache.entries()) {
-      if (event.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) continue
       if (shouldDropEventOnIngest(event)) continue
-      const rawA = event.tags.find(tagNameEquals('a'))?.[1]?.trim()
-      if (rawA && normalizeReplaceableCoordinateString(rawA) === coordNorm) {
-        out.push(event)
-        continue
-      }
-      const eTag = event.tags.find(tagNameEquals('e'))?.[1]?.trim().toLowerCase()
-      if (eTag && /^[0-9a-f]{64}$/.test(eTag) && eTag === calId) {
-        out.push(event)
-      }
+      if (calendarRsvpMatchesCalendarEvent(calendarEvent, event)) out.push(event)
     }
     return out.sort((a, b) => b.created_at - a.created_at)
   }

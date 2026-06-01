@@ -862,6 +862,15 @@ export default {
     'HTTP relays': 'HTTP relays',
     httpRelaysDescription:
       'HTTPS index relays (e.g. REST /api/events/filter). Same read/write/both roles as mailbox relays; stored as kind 10243. Clear the list and save to publish an empty list.',
+    relaySettingsEventKindsLabel: 'Nostr event kind',
+    relaySettingsEventKindsEditOne:
+      'Saving here publishes a replaceable list event of this kind to your relays.',
+    relaySettingsEventKindsEditMany:
+      'Saving here publishes replaceable list events of these kinds to your relays.',
+    relaySettingsEventKindsView:
+      'Shows this user’s published relay list from kind {{kinds}} when the client has fetched it.',
+    relaySettingsEventKindsSession:
+      'No replaceable relay list event — this tab only shows in-memory session relay scoring and strikes (nothing is published).',
     'HTTP relays saved': 'HTTP relays saved',
     'Failed to save HTTP relay list': 'Failed to save HTTP relay list',
     'HTTP relays must start with https:// or http://':

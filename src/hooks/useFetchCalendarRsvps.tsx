@@ -1,25 +1,23 @@
 import { ExtendedKind } from '@/constants'
+import { isCalendarEventKind } from '@/lib/calendar-event'
+import {
+  calendarEventHexId,
+  calendarRsvpMatchesCalendarEvent,
+  parseCalendarRsvpStatus
+} from '@/lib/calendar-rsvp-match'
 import {
   getReplaceableCoordinateFromEvent,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
-import { isCalendarEventKind } from '@/lib/calendar-event'
-import client from '@/services/client.service'
-import { queryService } from '@/services/client.service'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import client, { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { useNostr } from '@/providers/NostrProvider'
 import { Event } from 'nostr-tools'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { FAST_READ_RELAY_URLS } from '@/constants'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
-import { tagNameEquals } from '@/lib/tag'
-
-function getRsvpStatus(rsvp: Event): 'accepted' | 'tentative' | 'declined' | undefined {
-  const status = rsvp.tags.find(tagNameEquals('status'))?.[1]
-  if (status === 'accepted' || status === 'tentative' || status === 'declined') return status
-  return undefined
-}
 
 function mergeRsvp(prev: Event[], evt: Event): Event[] {
   const next = prev.filter((e) => e.id !== evt.id)
@@ -38,10 +36,24 @@ function mergeRsvpList(events: Event[]): Event[] {
   return acc
 }
 
+function filterMatchingRsvps(calendarEvent: Event, events: Event[]): Event[] {
+  return events.filter((ev) => calendarRsvpMatchesCalendarEvent(calendarEvent, ev))
+}
+
 export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
   const { relayList, cacheRelayListEvent } = useNostr()
   const [rsvps, setRsvps] = useState<Event[]>([])
   const [isFetching, setIsFetching] = useState(false)
+
+  const applyRsvp = useCallback(
+    (evt: Event) => {
+      if (!calendarEvent || !isCalendarEventKind(calendarEvent.kind)) return
+      if (!calendarRsvpMatchesCalendarEvent(calendarEvent, evt)) return
+      void indexedDb.putCalendarRsvpEventRow(evt).catch(() => undefined)
+      setRsvps((prev) => mergeRsvp(prev, evt))
+    },
+    [calendarEvent]
+  )
 
   useEffect(() => {
     if (!calendarEvent || !isCalendarEventKind(calendarEvent.kind)) {
@@ -52,34 +64,35 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
     let cancelled = false
     setIsFetching(true)
 
-    const coordinate = normalizeReplaceableCoordinateString(
-      getReplaceableCoordinateFromEvent(calendarEvent)
-    )
     const userRead = userReadInboxUrls(relayList, cacheRelayListEvent)
     const userWrite = userWriteOutboxUrls(relayList, cacheRelayListEvent)
 
     void (async () => {
-      const fromSession = client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
+      const fromSession = filterMatchingRsvps(
+        calendarEvent,
+        client.getSessionCalendarRsvpsForCalendarEvent(calendarEvent)
+      )
       setRsvps(mergeRsvpList(fromSession))
 
       const idbP = indexedDb
-        .getCalendarRsvpEventsByParentCoordinate(coordinate)
+        .getCalendarRsvpEventsForCalendarEvent(calendarEvent)
         .catch((): Event[] => [])
 
       void idbP.then((rows) => {
         if (cancelled) return
-        setRsvps(mergeRsvpList([...rows, ...fromSession]))
+        setRsvps(mergeRsvpList(filterMatchingRsvps(calendarEvent, [...rows, ...fromSession])))
       })
 
       const baseUrls = new Set<string>([
         ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
         ...userRead.map((url) => normalizeAnyRelayUrl(url) || url),
-        ...userWrite.map((url) => normalizeAnyRelayUrl(url) || url)
+        ...userWrite.map((url) => normalizeAnyRelayUrl(url) || url),
+        ...relayHintsFromEventTags(calendarEvent).map((url) => normalizeAnyRelayUrl(url) || url),
+        ...client.getSeenEventRelayUrls(calendarEvent.id).map((url) => normalizeAnyRelayUrl(url) || url)
       ].filter(Boolean) as string[])
 
       const organizerPubkey = calendarEvent.pubkey
       try {
-        let relayUrls: string[]
         try {
           const organizerRelays = await client.fetchRelayList(organizerPubkey)
           if (!cancelled) {
@@ -93,17 +106,17 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
               if (u) baseUrls.add(u)
             })
           }
-          relayUrls = Array.from(baseUrls)
         } catch {
-          relayUrls = Array.from(baseUrls)
+          // keep baseUrls
         }
         if (cancelled) return
-        const urls = relayUrls?.length ? relayUrls : Array.from(baseUrls)
-        const calendarHexId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
-          ? calendarEvent.id.toLowerCase()
-          : calendarEvent.id
+
+        const coordinate = normalizeReplaceableCoordinateString(
+          getReplaceableCoordinateFromEvent(calendarEvent)
+        )
+        const calendarHexId = calendarEventHexId(calendarEvent)
         const events = await queryService.fetchEvents(
-          urls,
+          Array.from(baseUrls),
           [
             {
               kinds: [ExtendedKind.CALENDAR_EVENT_RSVP],
@@ -123,12 +136,16 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
           }
         )
         if (cancelled) return
-        const fromRelay = events ?? []
+        const fromRelay = filterMatchingRsvps(calendarEvent, events ?? [])
         const fromIdb = await idbP
         await Promise.allSettled(
           fromRelay.map((ev) => indexedDb.putCalendarRsvpEventRow(ev).catch(() => undefined))
         )
-        setRsvps(mergeRsvpList([...fromIdb, ...fromSession, ...fromRelay]))
+        setRsvps(
+          mergeRsvpList(
+            filterMatchingRsvps(calendarEvent, [...fromIdb, ...fromSession, ...fromRelay])
+          )
+        )
       } finally {
         if (!cancelled) setIsFetching(false)
       }
@@ -137,38 +154,23 @@ export function useFetchCalendarRsvps(calendarEvent: Event | undefined) {
     return () => {
       cancelled = true
     }
-  }, [calendarEvent?.id, calendarEvent?.kind, calendarEvent?.pubkey, relayList])
+  }, [calendarEvent, relayList, cacheRelayListEvent])
 
-  // When we publish an RSVP, NostrProvider calls client.emitNewEvent(event). Merge it into rsvps so the UI updates immediately.
   useEffect(() => {
     if (!calendarEvent || !isCalendarEventKind(calendarEvent.kind)) return
 
-    const coordinate = normalizeReplaceableCoordinateString(
-      getReplaceableCoordinateFromEvent(calendarEvent)
-    )
-    const calId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
-      ? calendarEvent.id.toLowerCase()
-      : calendarEvent.id
     const handler = (e: CustomEvent<Event>) => {
-      const evt = e.detail
-      if (evt.kind !== ExtendedKind.CALENDAR_EVENT_RSVP) return
-      const aTag = evt.tags.find(tagNameEquals('a'))
-      const aCoord = aTag?.[1] ? normalizeReplaceableCoordinateString(aTag[1]) : ''
-      const eTag = evt.tags.find(tagNameEquals('e'))?.[1]?.trim().toLowerCase()
-      const matchesA = aCoord !== '' && aCoord === coordinate
-      const matchesE = eTag && /^[0-9a-f]{64}$/.test(eTag) && eTag === calId
-      if (!matchesA && !matchesE) return
-      void indexedDb.putCalendarRsvpEventRow(evt).catch(() => undefined)
-      setRsvps((prev) => mergeRsvp(prev, evt))
+      applyRsvp(e.detail)
     }
 
     client.addEventListener('newEvent', handler as EventListener)
     return () => client.removeEventListener('newEvent', handler as EventListener)
-  }, [calendarEvent?.id, calendarEvent?.kind, calendarEvent?.pubkey])
+  }, [calendarEvent, applyRsvp])
 
   return {
     rsvps,
     isFetching,
-    getRsvpStatus
+    getRsvpStatus: parseCalendarRsvpStatus,
+    applyRsvp
   }
 }

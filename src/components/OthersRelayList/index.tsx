@@ -1,5 +1,7 @@
 import { useSmartRelayNavigation } from '@/PageManager'
+import RelaySettingsKindNotice from '@/components/RelaySettingsKindNotice'
 import { Badge } from '@/components/ui/badge'
+import { kinds } from 'nostr-tools'
 import { useFetchRelayInfo, useFetchRelayList } from '@/hooks'
 import { toRelay } from '@/lib/link'
 import { userIdToPubkey } from '@/lib/pubkey'
@@ -19,6 +21,7 @@ export default function OthersRelayList({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-4">
+      <RelaySettingsKindNotice kinds={[kinds.RelayList]} variant="view" />
       {showingRelayListFallback && (
         <p
           className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
