@@ -39,14 +39,16 @@ export default function EmojiPickerDialog({
           <DrawerHeader className="sr-only">
             <DrawerTitle>Emoji Picker</DrawerTitle>
           </DrawerHeader>
-          <div className="flex w-full max-w-[100vw] min-w-0 min-h-0 shrink flex-col items-stretch overflow-x-hidden pb-1">
-            <EmojiPicker
-              onEmojiClick={(emoji, e) => {
-                e.stopPropagation()
-                setOpen(false)
-                onEmojiClick?.(emoji)
-              }}
-            />
+          <div className="flex w-full max-w-[100vw] min-w-0 min-h-0 max-h-[min(72dvh,calc(100dvh-6rem))] flex-col overflow-hidden pb-1">
+            {open ? (
+              <EmojiPicker
+                onEmojiClick={(emoji, e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  onEmojiClick?.(emoji)
+                }}
+              />
+            ) : null}
           </div>
         </DrawerContent>
       </Drawer>

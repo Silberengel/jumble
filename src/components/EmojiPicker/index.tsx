@@ -134,9 +134,31 @@ export default function EmojiPicker({
 
   const reactionsList = reactions ?? [...DEFAULT_SUGGESTED_EMOJIS]
 
+  const ownEmojisRow =
+    ownEmojis.length > 0 ? (
+      <div className="flex shrink-0 items-center gap-0.5 px-1 py-1 border-b overflow-x-auto scrollbar-hide">
+        {ownEmojis.map((emoji) => (
+          <button
+            key={emoji.shortcode}
+            type="button"
+            title={`:${emoji.shortcode}:`}
+            className="shrink-0 w-8 h-8 rounded hover:bg-muted flex items-center justify-center"
+            onClick={(e) => {
+              recordEmojiUsed(emoji)
+              onEmojiClick(emoji, e.nativeEvent)
+            }}
+          >
+            <img src={emoji.url} alt={emoji.shortcode} className="w-6 h-6 object-contain" />
+          </button>
+        ))}
+      </div>
+    ) : null
+
   if (mode === 'reactions') {
     return (
-      <div className="flex flex-wrap items-center gap-1 p-2">
+      <div className="flex w-full min-w-0 flex-col">
+        {ownEmojisRow}
+        <div className="flex flex-wrap items-center gap-1 p-2">
         {reactionsList.map((emoji) => (
           <button
             key={emoji}
@@ -158,31 +180,15 @@ export default function EmojiPicker({
         >
           <Plus size={20} />
         </button>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="w-full flex flex-col">
-      {ownEmojis.length > 0 && (
-        <div className="flex items-center gap-0.5 px-1 py-1 border-b overflow-x-auto scrollbar-hide">
-          {ownEmojis.map((emoji) => (
-            <button
-              key={emoji.shortcode}
-              type="button"
-              title={`:${emoji.shortcode}:`}
-              className="shrink-0 w-8 h-8 rounded hover:bg-muted flex items-center justify-center"
-              onClick={(e) => {
-                recordEmojiUsed(emoji)
-                onEmojiClick(emoji, e.nativeEvent)
-              }}
-            >
-              <img src={emoji.url} alt={emoji.shortcode} className="w-6 h-6 object-contain" />
-            </button>
-          ))}
-        </div>
-      )}
-      <div ref={containerRef} />
+    <div className="flex w-full min-w-0 flex-col">
+      {ownEmojisRow}
+      <div ref={containerRef} className="min-h-0 w-full flex-1 overflow-hidden" />
     </div>
   )
 }

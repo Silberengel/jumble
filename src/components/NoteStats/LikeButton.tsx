@@ -340,6 +340,7 @@ export function LikeButtonWithStats({
         <Drawer handleOnly open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
           <DrawerContent
             dragHandle="vaul"
+            className="max-h-[min(88dvh,calc(100dvh-5rem))]"
             onPointerDownOutside={(e) => {
               const t = e.target as HTMLElement | null
               if (t?.closest?.('[data-vaul-overlay]')) return
@@ -349,7 +350,9 @@ export function LikeButtonWithStats({
             <DrawerHeader className="sr-only">
               <DrawerTitle>React</DrawerTitle>
             </DrawerHeader>
-            {likeEmojiPicker}
+            <div className="flex min-h-0 w-full max-h-[min(72dvh,calc(100dvh-6rem))] flex-col overflow-hidden px-1 pb-1">
+              {isEmojiReactionsOpen ? likeEmojiPicker : null}
+            </div>
           </DrawerContent>
         </Drawer>
       </>
