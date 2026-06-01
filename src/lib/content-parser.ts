@@ -35,6 +35,7 @@ export type TEmbeddedNodeType =
   | 'youtube'
   | 'spotify'
   | 'wavlake'
+  | 'fountain'
   | 'zapstream'
   | 'payto'
 

@@ -31,7 +31,7 @@ import {
   normalizeReplaceableCoordinateString,
   relayHintWssUrlsFromEvent
 } from '@/lib/event'
-import { getFirstHexEventIdFromETags, tagNameEquals } from '@/lib/tag'
+import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
 import DataLoader from 'dataloader'
