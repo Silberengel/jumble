@@ -1,4 +1,5 @@
 import {
+  DEFAULT_FONT_SIZE,
   DEFAULT_NIP_96_SERVICE,
   ExtendedKind,
   MEDIA_AUTO_LOAD_POLICY,
@@ -89,7 +90,7 @@ class LocalStorageService {
   private themeSetting: TThemeSetting = 'system'
   private theme: TTheme = 'light'
   private addClientTag: boolean = true
-  private fontSize: TFontSize = 'medium'
+  private fontSize: TFontSize = DEFAULT_FONT_SIZE
   private accounts: TAccount[] = []
   private currentAccount: TAccount | null = null
   private noteListMode: TNoteListMode = 'posts'
@@ -139,7 +140,7 @@ class LocalStorageService {
     const addClientTagStr = window.localStorage.getItem(StorageKey.ADD_CLIENT_TAG)
     this.addClientTag = addClientTagStr === null ? true : addClientTagStr === 'true'
     this.fontSize =
-      (window.localStorage.getItem(StorageKey.FONT_SIZE) as TFontSize) ?? 'medium'
+      (window.localStorage.getItem(StorageKey.FONT_SIZE) as TFontSize) ?? DEFAULT_FONT_SIZE
     const accountsStr = window.localStorage.getItem(StorageKey.ACCOUNTS)
     this.accounts = accountsStr ? JSON.parse(accountsStr) : []
     const currentAccountStr = window.localStorage.getItem(StorageKey.CURRENT_ACCOUNT)

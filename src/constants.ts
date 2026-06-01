@@ -424,6 +424,8 @@ export const FONT_SIZE = {
   LARGE: 'large'
 } as const
 
+export const DEFAULT_FONT_SIZE = FONT_SIZE.LARGE
+
 /**
  * Random public relays (from NIP-66 lively list; write-tested monitors preferred) merged into the
  * publish relay picker. More candidates improve odds some accept open writes.

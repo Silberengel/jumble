@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
+  DEFAULT_FONT_SIZE,
   FONT_SIZE,
   MEDIA_AUTO_LOAD_POLICY,
   NOTIFICATION_LIST_STYLE,
@@ -111,7 +112,7 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
           <Label htmlFor="font-size" className="text-base font-normal">
             {t('Font size')}
           </Label>
-          <Select defaultValue={FONT_SIZE.MEDIUM} value={fontSize} onValueChange={setFontSize}>
+          <Select defaultValue={DEFAULT_FONT_SIZE} value={fontSize} onValueChange={setFontSize}>
             <SelectTrigger id="font-size" className="w-48">
               <SelectValue />
             </SelectTrigger>
