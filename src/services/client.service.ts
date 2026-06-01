@@ -69,6 +69,9 @@ import {
   viewerUsesGlobalRelayDefaults
 } from '@/lib/viewer-relay-defaults'
 import {
+  filterViewerBlockedRelaysForFetch,
+  getViewerBlockedRelayUrls,
+  isRelayBlockedByUser,
   parseBlockedRelayUrlsFromEvent,
   setViewerBlockedRelayUrls
 } from '@/lib/viewer-blocked-relays'
@@ -720,11 +723,6 @@ class ClientService extends EventTarget {
 
     /** IndexedDB-first: personal lists (incl. cache + HTTP) before policy or network so locals stay allowed. */
     const storageUrls = await this.collectViewerPersonalRelayUrlsFromStorage(pk)
-    this.viewerHttpIndexRelayBases = storageUrls.httpIndexBases
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), { viewerActive: true })
-    syncViewerRelayStackNostrLandAggrEligible(storageUrls.all)
-    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(storageUrls.cacheRelayEvent)
-    this.closeMetadataPolicyDisallowedRelayConnections()
 
     try {
       const blockedEvt = await indexedDb.getReplaceableEvent(pk, ExtendedKind.BLOCKED_RELAYS)
@@ -732,6 +730,13 @@ class ClientService extends EventTarget {
     } catch {
       setViewerBlockedRelayUrls([])
     }
+
+    this.viewerHttpIndexRelayBases = filterViewerBlockedRelaysForFetch(storageUrls.httpIndexBases)
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), { viewerActive: true })
+    syncViewerRelayStackNostrLandAggrEligible(storageUrls.all)
+    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(storageUrls.cacheRelayEvent)
+    this.closeMetadataPolicyDisallowedRelayConnections()
+    this.closeViewerBlockedRelayConnections()
 
     const urls = [...storageUrls.all]
     try {
@@ -742,6 +747,7 @@ class ClientService extends EventTarget {
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
     syncViewerRelayStackNostrLandAggrEligible(urls)
     this.closeMetadataPolicyDisallowedRelayConnections()
+    this.closeViewerBlockedRelayConnections()
   }
 
   /** NIP-65 / 10243 / 10432 / favorites (10012) from IndexedDB only — no network. */
@@ -802,8 +808,9 @@ class ClientService extends EventTarget {
         .map((u) => normalizeHttpRelayUrl(u) || u)
         .filter(Boolean)
       if (fresh.length > 0) {
-        this.viewerHttpIndexRelayBases = fresh
-        return fresh
+        const filtered = filterViewerBlockedRelaysForFetch(fresh)
+        this.viewerHttpIndexRelayBases = filtered
+        return filtered
       }
     } catch {
       /* keep session cache */
@@ -828,6 +835,20 @@ class ClientService extends EventTarget {
     try {
       const toClose = [...this.pool.listConnectionStatus().keys()].filter(
         (url) => !isRelayConnectionAllowedForViewer(url)
+      )
+      if (toClose.length > 0) this.pool.close(toClose)
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Close pooled sockets to relays on the viewer block list (hostname-aware, wss/https). */
+  closeViewerBlockedRelayConnections(): void {
+    const blocked = getViewerBlockedRelayUrls()
+    if (!blocked.length) return
+    try {
+      const toClose = [...this.pool.listConnectionStatus().keys()].filter((url) =>
+        isRelayBlockedByUser(url, blocked)
       )
       if (toClose.length > 0) this.pool.close(toClose)
     } catch {
@@ -3190,12 +3211,9 @@ class ClientService extends EventTarget {
     let eosedAt: number | null = null
     let eventIds = new Set<string>()
 
-    const httpTimelinePollBases = httpIndexBasesForRelayQuery(
-      originalDedupedRelays,
-      this.viewerHttpIndexRelayBases
-    ).filter(
-      (u) => relayAuthoritativeTimeline || !relaySessionStrikes.isReadHttpSkipped(u)
-    )
+    const httpTimelinePollBases = filterViewerBlockedRelaysForFetch(
+      httpIndexBasesForRelayQuery(originalDedupedRelays, this.viewerHttpIndexRelayBases)
+    ).filter((u) => relayAuthoritativeTimeline || !relaySessionStrikes.isReadHttpSkipped(u))
     let httpPollIntervalId: ReturnType<typeof setInterval> | null = null
     let httpPollCursorUnix = 0
     const clearHttpTimelinePoll = () => {

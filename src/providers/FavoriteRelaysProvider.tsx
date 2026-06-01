@@ -7,7 +7,7 @@ import { getRelaySetFromEvent } from '@/lib/event-metadata'
 import { randomString } from '@/lib/random'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { setViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
-import { queryService } from '@/services/client.service'
+import client, { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { TRelaySet } from '@/types'
 import { Event, kinds } from 'nostr-tools'
@@ -159,6 +159,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     setViewerBlockedRelayUrls(blockedRelays)
+    client.closeViewerBlockedRelayConnections()
   }, [blockedRelays])
 
   useEffect(() => {

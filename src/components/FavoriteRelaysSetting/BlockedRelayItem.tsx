@@ -33,7 +33,7 @@ export default function BlockedRelayItem({ relay }: { relay: string }) {
       onClick={() => push(toRelay(relay))}
     >
       <div className="flex items-center gap-2 flex-1">
-        <RelayIcon url={relay} />
+        <RelayIcon url={relay} skipRelayInfoFetch />
         <div className="flex-1 w-0 truncate font-semibold">{relay}</div>
       </div>
       <Button

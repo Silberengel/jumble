@@ -25,6 +25,10 @@ export function getViewerBlockedRelayUrls(): readonly string[] {
   return viewerBlockedRelayUrls
 }
 
+export function isViewerRelayBlocked(url: string): boolean {
+  return isRelayBlockedByUser(url, viewerBlockedRelayUrls)
+}
+
 /** Drop user-blocked relays (hostname-aware) before any REQ / query / WebSocket connect. */
 export function filterViewerBlockedRelaysForFetch(urls: readonly string[]): string[] {
   if (!viewerBlockedRelayUrls.length) return [...urls]

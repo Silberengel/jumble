@@ -41,6 +41,7 @@ import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import { sanitizeRelayUrlsForFetch, isRelayConnectionAllowedForViewer, grantRelayConnectionOperationScope } from '@/lib/read-only-relay-personal'
+import { filterViewerBlockedRelaysForFetch } from '@/lib/viewer-blocked-relays'
 import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
 import nip66Service from './nip66.service'
@@ -516,7 +517,9 @@ export class QueryService {
             ? FIRST_RELAY_RESULT_GRACE_MS
             : null
 
-    const httpRelayBases = httpIndexBasesForRelayQuery(urls, options?.httpIndexRelayBases ?? [])
+    const httpRelayBases = filterViewerBlockedRelaysForFetch(
+      httpIndexBasesForRelayQuery(urls, options?.httpIndexRelayBases ?? [])
+    )
       .filter((u) => !relaySessionStrikes.isReadHttpSkipped(u))
       .filter((u) => isRelayConnectionAllowedForViewer(u))
     const httpKeys = new Set(httpRelayBases.map((u) => canonicalRelaySessionKey(u)))

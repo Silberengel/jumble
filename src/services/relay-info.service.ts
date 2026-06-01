@@ -1,3 +1,4 @@
+import { isViewerRelayBlocked } from '@/lib/viewer-blocked-relays'
 import {
   devProxyCorsProblematicHttpsIndexRelayBase,
   devProxyLoopbackHttpRelayBase,
@@ -142,6 +143,9 @@ class RelayInfoService {
   }
 
   private async _getRelayInfo(url: string) {
+    if (isViewerRelayBlocked(url)) {
+      return undefined
+    }
     const exist = this.relayInfoMap.get(url)
     if (exist && !this.isStale(exist)) {
       return exist

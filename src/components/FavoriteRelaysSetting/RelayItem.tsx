@@ -36,7 +36,7 @@ export default function RelayItem({ relay, isBlocked = false }: { relay: string;
           <GripVertical className="size-4 text-muted-foreground" />
         </div>
         <div className="flex gap-2 items-center flex-1 min-w-0">
-          <RelayIcon url={relay} />
+          <RelayIcon url={relay} skipRelayInfoFetch={isBlocked} />
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="flex-1 truncate font-semibold">{relay}</div>
             {isBlocked && (
