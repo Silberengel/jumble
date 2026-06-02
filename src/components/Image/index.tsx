@@ -130,6 +130,8 @@ export default function Image({
   const imgRef = useRef<HTMLImageElement | null>(null)
   /** Deduplicate onLoad vs sync cache hit vs decode() — otherwise blurhash can stick when `onLoad` never runs. */
   const loadSettledRef = useRef(false)
+  /** When imeta has no `dim`, reserve space from decoded natural size to avoid mobile layout shift. */
+  const [intrinsicDim, setIntrinsicDim] = useState<{ width: number; height: number } | undefined>()
 
   const finalAlt = imetaAlt || alt
   const imgTitle =
@@ -151,6 +153,21 @@ export default function Image({
 
   const badSrc = !imageUrl?.trim() || !isRenderableMediaUrl(imageUrl.trim())
   const showErrorState = hasError || badSrc
+  const effectiveDim =
+    dim && dim.width > 0 && dim.height > 0 ? dim : intrinsicDim
+
+  const captureIntrinsicDim = useCallback(
+    (el: HTMLImageElement) => {
+      if (dim && dim.width > 0 && dim.height > 0) return
+      const w = el.naturalWidth
+      const h = el.naturalHeight
+      if (w <= 0 || h <= 0) return
+      setIntrinsicDim((prev) =>
+        prev?.width === w && prev?.height === h ? prev : { width: w, height: h }
+      )
+    },
+    [dim]
+  )
 
   /** NIP-94 blurhash when present; otherwise a stable URL-derived placeholder (many events omit blurhash). */
   const effectiveBlurHash = useMemo(() => {
@@ -171,6 +188,7 @@ export default function Image({
   useEffect(() => {
     setImageUrl(resolvePrimalBlossomPlayableUrl(url ?? ''))
     loadSettledRef.current = false
+    setIntrinsicDim(undefined)
     wasInitiallyHeldRef.current = effectiveHoldUntilClick
     const shouldHold = effectiveHoldUntilClick
     const sessionRevealed = Boolean(url?.trim() && wasMediaUrlRevealed(url))
@@ -195,12 +213,14 @@ export default function Image({
     if (loadSettledRef.current) return
     loadSettledRef.current = true
     clearLoadWatch()
+    const el = imgRef.current
+    if (el) captureIntrinsicDim(el)
     setIsLoading(false)
     setHasError(false)
     // Unmount blurhash/skeleton immediately — keeping z-10 overlay (even at opacity-0) leaves bg-muted/40
     // and canvas layers visible as odd tinted bands until delayed teardown.
     setDisplaySkeleton(false)
-  }, [])
+  }, [captureIntrinsicDim])
 
   // Cached images are often `complete` before `onLoad` is attached (feed mounts many cards at once).
   useLayoutEffect(() => {
@@ -208,19 +228,23 @@ export default function Image({
     const el = imgRef.current
     if (!el) return
     if (el.complete && el.naturalWidth > 0) {
+      captureIntrinsicDim(el)
       notifyLoaded()
       return
     }
     if (typeof el.decode === 'function') {
       let cancelled = false
       el.decode().then(() => {
-        if (!cancelled && el.naturalWidth > 0) notifyLoaded()
+        if (!cancelled && el.naturalWidth > 0) {
+          captureIntrinsicDim(el)
+          notifyLoaded()
+        }
       }).catch(() => {})
       return () => {
         cancelled = true
       }
     }
-  }, [revealed, badSrc, imageUrl, notifyLoaded])
+  }, [revealed, badSrc, imageUrl, notifyLoaded, captureIntrinsicDim])
 
   useEffect(() => {
     clearLoadWatch()
@@ -285,9 +309,9 @@ export default function Image({
   }
 
   const reserveStyle = wrapperReserveStyle(
-    dim,
+    effectiveDim,
     showErrorState,
-    displaySkeleton && !showErrorState
+    displaySkeleton && !showErrorState && !effectiveDim
   )
   const mergedWrapperStyle: CSSProperties | undefined =
     reserveStyle || wrapperStyleProp
@@ -369,8 +393,8 @@ export default function Image({
             isLoading ? 'opacity-0' : 'opacity-100',
             className
           )}
-          width={dim?.width}
-          height={dim?.height}
+          width={effectiveDim?.width ?? dim?.width}
+          height={effectiveDim?.height ?? dim?.height}
         />
       )}
       {showErrorState && (

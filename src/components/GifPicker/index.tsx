@@ -41,6 +41,12 @@ const EMPTY_FOLLOWING_PUBKEYS: readonly string[] = []
 const GIFBUDDY_SEARCH_URL = (q: string) =>
   q.trim() ? `${GIFBUDDY_URL}gifsearch?q=${encodeURIComponent(q.trim())}` : GIFBUDDY_URL
 
+/** Lock drawer height at open so mobile keyboard / dvh changes do not resize the sheet. */
+function mobileDrawerHeightPx(): number {
+  const vh = window.visualViewport?.height ?? window.innerHeight
+  return Math.min(Math.round(vh * 0.88), Math.round(vh - 80))
+}
+
 export default function GifPicker({
   children,
   onSelect,
@@ -78,6 +84,10 @@ export default function GifPicker({
   const [publishDescription, setPublishDescription] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const gifbuddyPopupRef = useRef<Window | null>(null)
+  const pickerRootRef = useRef<HTMLDivElement>(null)
+  const [mobileDrawerHeight, setMobileDrawerHeight] = useState<number | undefined>()
+  /** Keep drawer content mounted until Vaul's close animation finishes (avoids empty-sheet flicker). */
+  const [drawerContentMounted, setDrawerContentMounted] = useState(false)
 
   const userReadRelays = useUserReadInboxUrls()
 
@@ -167,13 +177,46 @@ export default function GifPicker({
     void loadGifs()
   }, [open, loadGifs])
 
+  useEffect(() => {
+    if (!open || !isSmallScreen) return
+    setMobileDrawerHeight(mobileDrawerHeightPx())
+  }, [open, isSmallScreen])
+
+  useEffect(() => {
+    if (open) setDrawerContentMounted(true)
+  }, [open])
+
+  const preparePickerClose = useCallback(() => {
+    loadGenerationRef.current += 1
+    setLoading(false)
+    const el = document.activeElement
+    if (el instanceof HTMLElement && pickerRootRef.current?.contains(el)) {
+      el.blur()
+    }
+  }, [])
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) preparePickerClose()
+      setOpen(next)
+    },
+    [preparePickerClose]
+  )
+
+  const handleDrawerAnimationEnd = useCallback((isOpen: boolean) => {
+    if (!isOpen) {
+      setDrawerContentMounted(false)
+      setMobileDrawerHeight(undefined)
+    }
+  }, [])
+
   const handleSelect = useCallback(
     (gif: GifMetadata) => {
       const url = (gif.fallbackUrl?.trim() || gif.url).trim()
       if (!url) return
       const desc = publishDescription.trim()
       onSelect?.(url)
-      setOpen(false)
+      handleOpenChange(false)
       if (!pubkey || !/^https?:\/\//i.test(url)) return
       // Fire-and-forget: waiting on every relay can freeze the UI when relays are down.
       void publish(buildKind1063GifPublishDraft(url, desc), {
@@ -181,7 +224,7 @@ export default function GifPicker({
       }).catch(() => {})
       if (desc) setPublishDescription('')
     },
-    [pubkey, onSelect, publish, gif1063PublishRelayUrls, publishDescription]
+    [pubkey, onSelect, publish, gif1063PublishRelayUrls, publishDescription, handleOpenChange]
   )
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,7 +284,7 @@ export default function GifPicker({
         window.removeEventListener('message', handler)
         gifbuddyPopupRef.current = null
         onSelect?.(urlToInsert)
-        setOpen(false)
+        handleOpenChange(false)
       }
     }
     window.addEventListener('message', handler)
@@ -250,7 +293,7 @@ export default function GifPicker({
       gifbuddyPopupRef.current = null
     }, 10 * 60 * 1000)
     if (w) w.addEventListener('beforeunload', () => { clearTimeout(t); window.removeEventListener('message', handler) })
-  }, [searchInput, onSelect])
+  }, [searchInput, onSelect, handleOpenChange])
 
   const descriptionForPublish = publishDescription.trim()
 
@@ -260,7 +303,7 @@ export default function GifPicker({
     if (!url || !/^https?:\/\//i.test(url)) return
     onSelect?.(url)
     setPasteUrl('')
-    setOpen(false)
+    handleOpenChange(false)
     if (pubkey) {
       setPublishingPaste(true)
       try {
@@ -274,7 +317,7 @@ export default function GifPicker({
         setPublishingPaste(false)
       }
     }
-  }, [pasteUrl, pubkey, onSelect, publish, gif1063PublishRelayUrls, descriptionForPublish])
+  }, [pasteUrl, pubkey, onSelect, publish, gif1063PublishRelayUrls, descriptionForPublish, handleOpenChange])
 
   /** External GIF from a note: publish kind 1063, then insert URL and close (same relays as grid pick). */
   const handleArchiveAndInsert = useCallback(
@@ -287,7 +330,7 @@ export default function GifPicker({
       const desc = publishDescription.trim()
       setArchivingEventId(gif.eventId)
       onSelect?.(url)
-      setOpen(false)
+      handleOpenChange(false)
       void loadGifs(true)
       void publish(buildKind1063GifPublishDraft(url, desc), {
         specifiedRelayUrls: gif1063PublishRelayUrls
@@ -298,7 +341,7 @@ export default function GifPicker({
           if (desc) setPublishDescription('')
         })
     },
-    [pubkey, publish, gif1063PublishRelayUrls, onSelect, loadGifs, publishDescription]
+    [pubkey, publish, gif1063PublishRelayUrls, onSelect, loadGifs, publishDescription, handleOpenChange]
   )
 
   const gifSourceKindTitle = useCallback(
@@ -344,11 +387,14 @@ export default function GifPicker({
       ))}
     </div>
   ) : (
-    <div className="grid grid-cols-2 gap-1 p-2">
+    <div className="grid grid-cols-2 gap-1 p-2 min-h-[200px] content-start">
       {gifs.map((gif) => {
         const showArchive = gifShouldOfferNip94Archive(gif) && isLoggedIn
         return (
-          <div key={gif.eventId} className="relative aspect-square rounded overflow-hidden">
+          <div
+            key={gif.eventId}
+            className="relative aspect-square min-h-0 w-full rounded overflow-hidden [contain:layout]"
+          >
             <button
               type="button"
               className={cn(
@@ -405,6 +451,8 @@ export default function GifPicker({
 
   const content = (
     <div
+      ref={pickerRootRef}
+      data-gif-picker-root
       className={cn(
         'flex min-w-0 w-full flex-col gap-2 p-2',
         isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
@@ -422,7 +470,10 @@ export default function GifPicker({
           variant="ghost"
           size="icon"
           className="shrink-0 size-8"
-          onClick={() => setOpen(false)}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleOpenChange(false)
+          }}
           aria-label={t('Close')}
         >
           <X className="size-4" />
@@ -524,18 +575,35 @@ export default function GifPicker({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
+      <Drawer
+        open={open}
+        onOpenChange={handleOpenChange}
+        onAnimationEnd={handleDrawerAnimationEnd}
+        handleOnly
+        shouldScaleBackground={false}
+        repositionInputs={false}
+      >
         <DrawerTrigger asChild>{children}</DrawerTrigger>
         <DrawerContent
           dragHandle="vaul"
           portalContainer={portalContainer}
-          className="max-h-[min(88dvh,calc(100dvh-5rem))] px-2 pb-2"
+          className="px-2 pb-2"
+          style={
+            mobileDrawerHeight != null
+              ? { height: mobileDrawerHeight, maxHeight: mobileDrawerHeight }
+              : { maxHeight: 'min(88dvh, calc(100dvh - 5rem))' }
+          }
+          onPointerDownOutside={(e) => {
+            const t = e.target as HTMLElement | null
+            if (t?.closest?.('[data-vaul-overlay]')) return
+            e.preventDefault()
+          }}
         >
           <DrawerHeader className="sr-only">
             <DrawerTitle>{t('Choose a GIF')}</DrawerTitle>
           </DrawerHeader>
-          <div className="flex min-h-0 w-full min-w-0 max-w-[100vw] flex-1 flex-col overflow-hidden">
-            {content}
+          <div className="flex h-full min-h-0 w-full min-w-0 max-w-[100vw] flex-col overflow-hidden">
+            {drawerContentMounted ? content : null}
           </div>
         </DrawerContent>
       </Drawer>
@@ -543,7 +611,7 @@ export default function GifPicker({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent side="top" className="p-0" portalContainer={portalContainer}>
         {content}
