@@ -93,7 +93,7 @@ class LocalStorageService {
   private fontSize: TFontSize = DEFAULT_FONT_SIZE
   private accounts: TAccount[] = []
   private currentAccount: TAccount | null = null
-  private noteListMode: TNoteListMode = 'posts'
+  private noteListMode: TNoteListMode = 'postsAndReplies'
   private defaultZapSats: number = DEFAULT_ZAP_SATS
   private defaultZapComment: string = 'Zap!'
   private preferredPaytoCategory: PaytoCategory | null = null

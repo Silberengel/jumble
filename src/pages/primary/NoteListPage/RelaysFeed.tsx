@@ -144,8 +144,6 @@ const RelaysFeed = forwardRef<
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
       repliesSubRequests={repliesSubRequests}
-      mainFeedGalleryRelayUrls={stableReplyRelayUrls}
-      widenMainGalleryRelays={false}
       feedSubscriptionKey="home-all-favorites"
       feedTimelineScopeKey="all-favorites"
       homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}

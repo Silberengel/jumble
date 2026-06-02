@@ -1,7 +1,6 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import NoteCard from '@/components/NoteCard'
-import KindFilter from '@/components/KindFilter'
-import { RefreshButton } from '@/components/RefreshButton'
+import FeedFilterToolbarRow, { feedFilterRowChromeClass } from '@/components/FeedFilterToolbarRow'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind, PROFILE_FEED_KINDS, PROFILE_TIMELINE_REQ_LIMIT } from '@/constants'
 import { useProfileAuthorFeedSubRequests } from '@/hooks/useProfileAuthorFeedSubRequests'
@@ -10,6 +9,7 @@ import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
 import { nip19, kinds } from 'nostr-tools'
+import { cn } from '@/lib/utils'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -34,6 +34,10 @@ const ProfileFeed = forwardRef<
   }, [showKinds])
   const [isRefreshing, setIsRefreshing] = useState(false)
   const noteListRef = useRef<TNoteListRef>(null)
+  const [feedFilterTabRowHost, setFeedFilterTabRowHost] = useState<HTMLDivElement | null>(null)
+  const onFeedFilterTabRowSlotRef = useCallback((node: HTMLDivElement | null) => {
+    setFeedFilterTabRowHost((prev) => (Object.is(prev, node) ? prev : node))
+  }, [])
 
   const { pinEvents, loadingPins, refreshPins } = useProfilePins(pubkey)
 
@@ -106,9 +110,14 @@ const ProfileFeed = forwardRef<
           {t('Refreshing posts...')}
         </div>
       )}
-      <div className="mb-2 flex flex-wrap items-center justify-end gap-2 px-2">
-        <RefreshButton onClick={refreshAll} />
-        <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
+      <div className={cn('mb-2 px-1', feedFilterRowChromeClass)}>
+        <FeedFilterToolbarRow
+          showKinds={showKinds}
+          onShowKindsChange={handleShowKindsChange}
+          onRefresh={refreshAll}
+          feedFilterTabRowSlotRef={onFeedFilterTabRowSlotRef}
+          includeFeedSearchSlot
+        />
       </div>
       {pinEvents.filter((e) => !isEventDeleted(e)).length > 0 && (
         <div className="mb-3 space-y-2 px-1" aria-label={t('Pinned posts')}>
@@ -142,6 +151,7 @@ const ProfileFeed = forwardRef<
           showKind1Replies={showKind1Replies}
           showKind1111={showKind1111}
           showFeedClientFilter
+          feedClientFilterTabRowHost={feedFilterTabRowHost}
           timelinePublicReadFallback
           revealBatchSize={48}
         />
