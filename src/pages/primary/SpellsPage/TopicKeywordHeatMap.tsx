@@ -1,11 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
-import { ExtendedKind } from '@/constants'
 import { useMuteList } from '@/contexts/mute-list-context'
-import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
-import { filterEventsExcludingMutedAuthors, muteSetHas } from '@/lib/mute-set'
+import { filterEventsExcludingMutedAuthors } from '@/lib/mute-set'
 import { filterEventsExcludingTombstones } from '@/lib/event'
-import { extractHashtagsFromContent, formatTopicMapBubbleLabel, isValidNormalizedTopicKey, normalizeTopic } from '@/lib/discussion-topics'
+import { formatTopicMapBubbleLabel } from '@/lib/discussion-topics'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNoteList } from '@/lib/link'
 import logger from '@/lib/logger'
@@ -19,50 +17,24 @@ import { cn } from '@/lib/utils'
 import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { Loader2, RefreshCw } from 'lucide-react'
 import type { Event } from 'nostr-tools'
-import { kinds, verifyEvent } from 'nostr-tools'
+import { verifyEvent } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import {
+  buildTopicKeywordBubbles,
+  TOPIC_KEYWORD_MAP_KINDS,
+  type TTopicKeywordBubble
+} from './build-topic-keyword-bubbles'
 
 const HEAT_WINDOW_SEC = 30 * 24 * 3600
 const HEAT_REQ_LIMIT = 1500
-const MAX_BUBBLES = 10
 const SESSION_LIMIT = 4000
 const ARCHIVE_MAX_SCAN = 35_000
 const ARCHIVE_MAX_MATCHES = 2500
 
-const MAP_KINDS = [kinds.ShortTextNote, ExtendedKind.DISCUSSION] as const
-
 const ARCHIVE_SCAN_TIMEOUT_MS = 22_000
 const RELAY_FETCH_TIMEOUT_MS = 26_000
 const TOMBSTONES_TIMEOUT_MS = 8_000
-/** Max profile avatars shown around each topic bubble (by tag usage count). */
-const MAX_BUBBLE_AVATARS = 7
-
-export type TTopicKeywordBubble = {
-  key: string
-  score: number
-  topicNoteCount: number
-  keywordNoteCount: number
-  pubkeys: string[]
-}
-
-type TopicKeyAccum = {
-  topicNoteCount: number
-  keywordNoteCount: number
-  pubkeyHits: Map<string, number>
-}
-
-function topPubkeysForTopic(
-  hits: Map<string, number>,
-  limit: number,
-  mutePubkeySet?: ReadonlySet<string>
-): string[] {
-  return [...hits.entries()]
-    .filter(([pk]) => !mutePubkeySet || !muteSetHas(mutePubkeySet, pk))
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, limit)
-    .map(([pk]) => pk)
-}
 
 function TopicBubbleAvatarRing({
   pubkeys,
@@ -150,64 +122,6 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, fallback: T, label:
   })
 }
 
-export function buildTopicKeywordBubbles(
-  events: Event[],
-  showKinds: readonly number[],
-  showKind1OPs: boolean,
-  showKind1Replies: boolean,
-  showKind1111: boolean,
-  mutePubkeySet?: ReadonlySet<string>
-): TTopicKeywordBubble[] {
-  const accum = new Map<string, TopicKeyAccum>()
-
-  const bump = (key: string, ev: Event, viaTopicTag: boolean) => {
-    if (!isValidNormalizedTopicKey(key)) return
-    let row = accum.get(key)
-    if (!row) {
-      row = { topicNoteCount: 0, keywordNoteCount: 0, pubkeyHits: new Map() }
-      accum.set(key, row)
-    }
-    if (viaTopicTag) row.topicNoteCount += 1
-    else row.keywordNoteCount += 1
-    const pk = ev.pubkey.trim().toLowerCase()
-    if (/^[0-9a-f]{64}$/.test(pk)) {
-      row.pubkeyHits.set(pk, (row.pubkeyHits.get(pk) ?? 0) + 1)
-    }
-  }
-
-  for (const ev of events) {
-    if (mutePubkeySet && muteSetHas(mutePubkeySet, ev.pubkey)) continue
-    if (!eventPassesNoteListKindPicker(ev, showKinds, showKind1OPs, showKind1Replies, showKind1111)) continue
-    const topics = new Set<string>()
-    for (const row of ev.tags) {
-      if (row[0] === 't' && row[1]) {
-        const n = normalizeTopic(row[1])
-        if (n && isValidNormalizedTopicKey(n)) topics.add(n)
-      }
-    }
-    const kws = new Set(extractHashtagsFromContent(ev.content ?? ''))
-
-    for (const k of topics) bump(k, ev, true)
-    for (const k of kws) bump(k, ev, false)
-  }
-
-  const out: TTopicKeywordBubble[] = []
-  for (const [key, row] of accum) {
-    if (!isValidNormalizedTopicKey(key)) continue
-    const score = row.topicNoteCount + row.keywordNoteCount
-    if (score <= 0) continue
-    out.push({
-      key,
-      score,
-      topicNoteCount: row.topicNoteCount,
-      keywordNoteCount: row.keywordNoteCount,
-      pubkeys: topPubkeysForTopic(row.pubkeyHits, MAX_BUBBLE_AVATARS, mutePubkeySet)
-    })
-  }
-  out.sort((x, y) => y.score - x.score || x.key.localeCompare(y.key))
-  return out.slice(0, MAX_BUBBLES)
-}
-
 type Props = {
   refreshKey: number
 }
@@ -242,10 +156,10 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
 
   const mergeData = useCallback(async (includeRelay = true): Promise<TTopicKeywordBubble[]> => {
     const windowStart = Math.floor(Date.now() / 1000) - HEAT_WINDOW_SEC
-    const sessionEv = eventService.listSessionEventsByKinds(MAP_KINDS, { limit: SESSION_LIMIT })
+    const sessionEv = eventService.listSessionEventsByKinds(TOPIC_KEYWORD_MAP_KINDS, { limit: SESSION_LIMIT })
 
     const archiveScan = indexedDb.scanEventArchiveByKinds({
-      kinds: [...MAP_KINDS],
+      kinds: [...TOPIC_KEYWORD_MAP_KINDS],
       since: windowStart,
       maxRowsScanned: ARCHIVE_MAX_SCAN,
       maxMatches: ARCHIVE_MAX_MATCHES
@@ -254,7 +168,7 @@ export default function TopicKeywordHeatMap({ refreshKey }: Props) {
       includeRelay && relayUrls.length > 0
         ? client.fetchEvents(
             relayUrls,
-            { kinds: [...MAP_KINDS], limit: HEAT_REQ_LIMIT },
+            { kinds: [...TOPIC_KEYWORD_MAP_KINDS], limit: HEAT_REQ_LIMIT },
             { eoseTimeout: 8000, globalTimeout: 20000 }
           )
         : Promise.resolve([] as Event[])

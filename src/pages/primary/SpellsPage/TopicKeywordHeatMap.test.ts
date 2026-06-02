@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
 import { DEFAULT_FEED_SHOW_KINDS } from '@/constants'
-import { buildTopicKeywordBubbles } from './TopicKeywordHeatMap'
+import { buildTopicKeywordBubbles } from './build-topic-keyword-bubbles'
 
 function note(pubkey: string, tags: string[][], content = '') {
   return {

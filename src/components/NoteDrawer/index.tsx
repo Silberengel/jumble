@@ -72,7 +72,7 @@ export default function NoteDrawer({ open, onOpenChange, noteId, initialEvent }:
     <Sheet open={open} onOpenChange={onOpenChange} registerWithModalManager={false}>
       <SheetContent
         side="right"
-        className="relative w-full overscroll-contain sm:max-w-[1042px] overflow-y-auto p-0"
+        className="relative flex h-full w-full flex-col overflow-hidden p-0 sm:max-w-[1042px]"
         hideClose
         onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
         onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
@@ -83,8 +83,9 @@ export default function NoteDrawer({ open, onOpenChange, noteId, initialEvent }:
           style={{ width: MOBILE_SWIPE_BACK_EDGE_PX }}
           aria-hidden
         />
-        <div className="min-h-full touch-pan-y">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden touch-pan-y">
           <NotePage
+            key={displayNoteId}
             id={displayNoteId}
             index={currentIndex}
             hideTitlebar={false}

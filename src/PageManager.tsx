@@ -463,10 +463,9 @@ function parseNoteUrl(url: string): { noteId: string; context?: string } | null 
   return null
 }
 
-// Fixed: Note navigation uses drawer on mobile/single-pane, secondary panel on double-pane desktop
+// Fixed: Note navigation uses full-screen stack on mobile, sheet (single-pane) or side panel (double-pane) on desktop
 export function useSmartNoteNavigation() {
   const { push: pushSecondaryPage } = useSecondaryPage()
-  const { openDrawer } = useNoteDrawer()
   const { isSmallScreen } = useScreenSize()
   const { current: currentPrimaryPage } = usePrimaryPage()
   
@@ -515,10 +514,8 @@ export function useSmartNoteNavigation() {
       // Desktop: check panel mode
       const currentPanelMode = storage.getPanelMode()
       if (currentPanelMode === 'single') {
-        // Always push so the secondary stack matches the drawer; otherwise the first note is not on
-        // the stack and Back after opening a quote only closes the drawer instead of the parent note.
+        // Single-pane desktop: one sheet driven by the secondary stack (same as relays/settings).
         pushSecondaryPage(contextualUrl)
-        openDrawer(noteId, event)
       } else {
         // Double-pane: use secondary panel
         pushSecondaryPage(contextualUrl)
@@ -532,11 +529,10 @@ export function useSmartNoteNavigation() {
 /** Safe variant for createRoot trees (e.g. AsciidocArticle embedded notes). Returns no-op navigation when outside providers. */
 export function useSmartNoteNavigationOptional() {
   const pushSecondaryPage = useSecondaryPageOptional()
-  const noteDrawer = useNoteDrawerOptional()
   const screenSize = useScreenSizeOptional()
   const primaryPage = usePrimaryPageOptional()
 
-  if (!pushSecondaryPage || !noteDrawer || !screenSize || !primaryPage) {
+  if (!pushSecondaryPage || !screenSize || !primaryPage) {
     return {
       navigateToNote: (url: string, _event?: Event, _relatedEvents?: Event[]) => {
         window.location.href = url
@@ -545,7 +541,6 @@ export function useSmartNoteNavigationOptional() {
   }
 
   const { push } = pushSecondaryPage
-  const { openDrawer } = noteDrawer
   const { isSmallScreen } = screenSize
   const { current: currentPrimaryPage } = primaryPage
 
@@ -582,7 +577,6 @@ export function useSmartNoteNavigationOptional() {
       const currentPanelMode = storage.getPanelMode()
       if (currentPanelMode === 'single') {
         push(contextualUrl)
-        openDrawer(noteId, event)
       } else {
         push(contextualUrl)
       }
@@ -1375,9 +1369,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               if (isSmallScreen || panelMode === 'single') {
                 // Seed stack so in-note navigation (e.g. quotes → back) can pop to this note
                 pushNoteUrlOnStack(buildNoteUrl(noteId, resolved.name))
-                if (!isSmallScreen) {
-                  openDrawer(noteId)
-                }
 
                 setTimeout(() => {
                   setCurrentPrimaryPage(resolved.name)
@@ -1398,9 +1389,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
           if (isSmallScreen || panelMode === 'single') {
             pushNoteUrlOnStack(contextualUrl)
-            if (!isSmallScreen) {
-              openDrawer(noteId)
-            }
             return
           } else {
             pushNoteUrlOnStack(contextualUrl)
@@ -1502,6 +1490,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       
       // For relay URLs and other non-note URLs, push to secondary stack
       // (will be rendered in drawer in single-pane mode, side panel in double-pane mode)
+      const pathOnlyForSecondary = pathname.split('?')[0].split('#')[0]
+      if (pathOnlyForSecondary.startsWith('/settings/') && pathOnlyForSecondary !== '/settings') {
+        setCurrentPrimaryPage('settings')
+        setPrimaryPages((prev) => mergePrimaryPageEntry(prev, { name: 'settings' }))
+      }
+
       setSecondaryStack((prevStack) => {
         if (isCurrentPage(prevStack, url)) return prevStack
 
@@ -1688,27 +1682,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             window.location.pathname + window.location.search + window.location.hash
           if (locUrl !== '/' && locUrl !== '') {
             const synced = syncSecondaryStackWhenPopStateStateIsNull(pre, locUrl)
-            if ((panelMode === 'single' && !isSmallScreen) && drawerOpen && drawerNoteId && synced.length > 0) {
-              const topItemUrl = synced[synced.length - 1]?.url
-              if (topItemUrl) {
-                const topNoteUrlMatch =
-                  topItemUrl.match(
-                    /\/(discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/
-                  ) || topItemUrl.match(/\/notes\/(.+)$/)
-                if (topNoteUrlMatch) {
-                  const topNoteId = topNoteUrlMatch[topNoteUrlMatch.length - 1]
-                    .split('?')[0]
-                    .split('#')[0]
-                  if (topNoteId && topNoteId !== drawerNoteId) {
-                    setTimeout(() => {
-                      if (drawerOpen) {
-                        openDrawer(topNoteId)
-                      }
-                    }, 0)
-                  }
-                }
-              }
-            }
             return synced
           }
           state = { index: -1, url: '/' }
@@ -1803,9 +1776,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             const noteId = noteUrlMatch[noteUrlMatch.length - 1].split('?')[0].split('#')[0]
             if (noteId) {
               if (isSmallScreen || panelMode === 'single') {
-                if (!isSmallScreen) {
-                  openDrawer(noteId)
-                }
                 const built = findAndCreateComponent(state.url, state.index)
                 if (built.component) {
                   return [
@@ -1848,29 +1818,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             closeDrawer()
           }
           // DO NOT update URL when closing panel - closing should NEVER affect the main page
-        } else if (newStack.length > 0) {
-          // Stack still has items - update drawer to show the top item's note (for mobile/single-pane)
-          // Only update drawer if drawer is currently open (not in the process of closing)
-          if (panelMode === 'single' && !isSmallScreen && drawerOpen && drawerNoteId) {
-            // Extract noteId from top item's URL or from state.url
-            const topItemUrl = newStack[newStack.length - 1]?.url || state?.url
-            if (topItemUrl) {
-              const topNoteUrlMatch = topItemUrl.match(/\/(discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/) || 
-                                     topItemUrl.match(/\/notes\/(.+)$/)
-              if (topNoteUrlMatch) {
-                const topNoteId = topNoteUrlMatch[topNoteUrlMatch.length - 1].split('?')[0].split('#')[0]
-                if (topNoteId && topNoteId !== drawerNoteId) {
-                  // Use setTimeout to ensure drawer update happens after stack state is committed
-                  setTimeout(() => {
-                    // Double-check drawer is still open before updating
-                    if (drawerOpen) {
-                      openDrawer(topNoteId)
-                    }
-                  }, 0)
-                }
-              }
-            }
-          }
         }
         // If newStack.length === 0, we're closing - don't reopen the drawer
         return newStack
@@ -2215,16 +2162,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     return next
   }
 
-  const syncDrawerToSecondaryStackTop = (stack: TStackItem[]) => {
-    if (isSmallScreen || panelMode !== 'single') return
-    const top = stack[stack.length - 1]
-    if (!top) return
-    const noteId = noteHexIdFromSecondaryNoteUrl(top.url)
-    if (!noteId) return
-    openDrawer(noteId, navigationEventStore.peekEvent(noteId))
-  }
-
-  /** UI-first back: sync stack / drawer immediately, then align browser history. */
   const popSecondaryPage = () => {
     const now = Date.now()
     if (now - lastPopSecondaryPageAt < POP_SECONDARY_PAGE_DEBOUNCE_MS) return
@@ -2237,11 +2174,10 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
     const stackLen = secondaryStackRef.current.length
 
-    // Mobile / single-pane: one code path — drawer + stack share the same close behavior
+    // Mobile / single-pane: one code path — stack drives the overlay (sheet on desktop, full-screen on mobile)
     if (isSmallScreen || panelMode === 'single') {
       if (stackLen > 1) {
-        const next = popOneSecondaryStackFrame()
-        syncDrawerToSecondaryStackTop(next)
+        popOneSecondaryStackFrame()
         ignorePopStateRef.current = true
         window.history.back()
       } else {
@@ -2308,10 +2244,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     const shouldBeOpen =
       panelMode === 'single' &&
       !isSmallScreen &&
-      secondaryStack.length > 0 &&
-      !drawerOpen
+      secondaryStack.length > 0
     setSinglePaneSheetOpen(shouldBeOpen)
-  }, [panelMode, isSmallScreen, secondaryStack.length, drawerOpen])
+  }, [panelMode, isSmallScreen, secondaryStack.length])
 
   const primaryObscured =
     secondaryStack.length > 0 || drawerOpen || primaryNoteView != null
@@ -2553,8 +2488,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             {/* Generic drawer for secondary stack in single-pane mode (for relay pages, etc.) */}
             {panelMode === 'single' &&
               !isSmallScreen &&
-              secondaryStack.length > 0 &&
-              !drawerOpen && (
+              secondaryStack.length > 0 && (
               <Sheet
                 open={singlePaneSheetOpen}
                 registerWithModalManager={false}
@@ -2568,22 +2502,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               >
                 <SheetContent
                   side="right"
-                  className="w-full sm:max-w-[1042px] overflow-y-auto p-0"
+                  className="flex h-full w-full flex-col overflow-hidden p-0 sm:max-w-[1042px]"
                   hideClose
                   onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
                   onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
                 >
-                  <div className="h-full">
-                    {secondaryStack.map((item, index) => {
-                      const isLast = index === secondaryStack.length - 1
-                      if (!isLast) return null
-                      return (
-                        <div key={item.index}>
-                          {item.component}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <TopSecondaryStackPane
+                    item={secondaryStack[secondaryStack.length - 1]!}
+                    className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                  />
                 </SheetContent>
               </Sheet>
             )}

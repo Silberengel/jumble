@@ -16,7 +16,6 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
-import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'

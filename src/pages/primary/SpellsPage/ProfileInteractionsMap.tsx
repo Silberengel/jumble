@@ -6,7 +6,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind } from '@/constants'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
-import { muteSetHas } from '@/lib/mute-set'
 import { toProfile } from '@/lib/link'
 import { formatPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
@@ -16,10 +15,11 @@ import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
 import type { TSubRequestFilter } from '@/types'
 import { Loader2, RefreshCw, UserRound } from 'lucide-react'
-import type { Event, Filter } from 'nostr-tools'
+import type { Filter } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { mergeInteractionEvents, type InteractionCard } from './merge-interaction-events'
 
 const INTERACTION_KINDS = [
   kinds.ShortTextNote,
@@ -36,16 +36,6 @@ const INTERACTION_KINDS = [
 
 const LOCAL_LIMIT = 1200
 const RELAY_LIMIT = 700
-const MAX_CARDS = 80
-
-type InteractionCard = {
-  pubkey: string
-  score: number
-  authoredByProfile: number
-  mentionsProfile: number
-  latestCreatedAt: number
-  eventIds: Set<string>
-}
 
 type Props = {
   pubkey: string
@@ -57,58 +47,6 @@ function interactionFilters(pubkey: string, limit: number): TSubRequestFilter[] 
     { authors: [pubkey], kinds: INTERACTION_KINDS, limit },
     { '#p': [pubkey], kinds: INTERACTION_KINDS, limit } as Filter & { limit: number }
   ]
-}
-
-export function mergeInteractionEvents(
-  targetPubkey: string,
-  events: Event[],
-  mutePubkeySet: ReadonlySet<string>
-): InteractionCard[] {
-  const target = targetPubkey.toLowerCase()
-  const byPubkey = new Map<string, InteractionCard>()
-  const add = (partnerRaw: string | undefined, event: Event, direction: 'out' | 'in') => {
-    if (muteSetHas(mutePubkeySet, event.pubkey)) return
-    const partner = partnerRaw?.trim().toLowerCase()
-    if (!partner || partner === target || !/^[0-9a-f]{64}$/.test(partner)) return
-    if (muteSetHas(mutePubkeySet, partner)) return
-    let row = byPubkey.get(partner)
-    if (!row) {
-      row = {
-        pubkey: partner,
-        score: 0,
-        authoredByProfile: 0,
-        mentionsProfile: 0,
-        latestCreatedAt: 0,
-        eventIds: new Set()
-      }
-      byPubkey.set(partner, row)
-    }
-    if (row.eventIds.has(event.id)) return
-    row.eventIds.add(event.id)
-    row.score += 1
-    row.latestCreatedAt = Math.max(row.latestCreatedAt, event.created_at)
-    if (direction === 'out') row.authoredByProfile += 1
-    else row.mentionsProfile += 1
-  }
-
-  for (const event of events) {
-    const pTags = [
-      ...new Set(
-        event.tags
-          .filter((tag) => tag[0] === 'p' && /^[0-9a-f]{64}$/i.test(tag[1] ?? ''))
-          .map((tag) => tag[1]!.toLowerCase())
-      )
-    ]
-    if (event.pubkey.toLowerCase() === target) {
-      for (const partner of pTags) add(partner, event, 'out')
-    } else if (pTags.includes(target)) {
-      add(event.pubkey, event, 'in')
-    }
-  }
-
-  return [...byPubkey.values()]
-    .sort((a, b) => b.score - a.score || b.latestCreatedAt - a.latestCreatedAt || a.pubkey.localeCompare(b.pubkey))
-    .slice(0, MAX_CARDS)
 }
 
 function compactCount(n: number): string {

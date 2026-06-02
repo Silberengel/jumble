@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { kinds } from 'nostr-tools'
-import { mergeInteractionEvents } from './ProfileInteractionsMap'
+import { mergeInteractionEvents } from './merge-interaction-events'
 
 function interaction(pubkey: string, pTags: string[]) {
   return {
