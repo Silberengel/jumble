@@ -53,19 +53,19 @@ export default function AddNewRelay() {
 
   return (
     <div className="space-y-1">
-      <div className="flex gap-2 items-center">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <Input
           placeholder={t('Add a new relay')}
           value={input}
           onChange={handleNewRelayInputChange}
           onKeyDown={handleNewRelayInputKeyDown}
-          className={errorMsg ? 'border-destructive' : ''}
+          className={`min-w-0 flex-1 ${errorMsg ? 'border-destructive' : ''}`}
         />
-        <Button onClick={saveRelay} disabled={isLoading || !input.trim()}>
+        <Button className="shrink-0 sm:w-auto" onClick={saveRelay} disabled={isLoading || !input.trim()}>
           {isLoading ? t('Adding...') : t('Add')}
         </Button>
       </div>
-      {errorMsg && <div className="text-destructive text-sm pl-8">{errorMsg}</div>}
+      {errorMsg && <div className="text-destructive text-sm">{errorMsg}</div>}
     </div>
   )
 }

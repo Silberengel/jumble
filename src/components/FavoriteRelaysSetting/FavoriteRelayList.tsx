@@ -16,6 +16,9 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
+import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
+import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import RelayItem from './RelayItem'
 
@@ -24,8 +27,11 @@ export default function FavoriteRelayList() {
   const { pubkey } = useNostr()
   const { favoriteRelays, blockedRelays, reorderFavoriteRelays, favoriteRelaysFromPublishedList } =
     useFavoriteRelays()
-  
-  // Show all relays including blocked ones (they'll be marked visually)
+
+  const displayRelays = useMemo(
+    () => ensureTrendingInFavoriteRelayList(favoriteRelays),
+    [favoriteRelays]
+  )
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -66,9 +72,9 @@ export default function FavoriteRelayList() {
         onDragEnd={handleDragEnd}
         modifiers={[restrictToVerticalAxis, restrictToParentElement]}
       >
-        <SortableContext items={favoriteRelays} strategy={verticalListSortingStrategy}>
-          <div className="grid gap-2">
-            {favoriteRelays.map((relay) => (
+        <SortableContext items={displayRelays} strategy={verticalListSortingStrategy}>
+          <div className="grid min-w-0 gap-2">
+            {displayRelays.map((relay) => (
               <RelayItem key={relay} relay={relay} isBlocked={blockedRelays.includes(relay)} />
             ))}
           </div>

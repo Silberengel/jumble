@@ -111,7 +111,10 @@ import {
   stableFeedKindKey
 } from '@/features/feed/descriptor'
 import { mapNoteListSubRequestsForTimeline } from '@/features/feed/note-list-requests'
-import { stripNostrLandAggrFromTimelineSubRequests } from '@/lib/home-feed-relays'
+import {
+  ensureHomeFeedTrendingRelay,
+  stripNostrLandAggrFromTimelineSubRequests
+} from '@/lib/home-feed-relays'
 import { createFetchEventsFeedRuntimeLoader } from '@/features/feed/client-loader'
 import { FeedRuntime } from '@/features/feed/runtime'
 import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/feed/diagnostics'
@@ -1055,10 +1058,13 @@ const NoteList = forwardRef(
     // Memoize subRequests serialization to avoid expensive JSON.stringify on every render
     const subRequestsKey = useMemo(() => legacyFeedSubscriptionKey(subRequests), [subRequests])
 
-    const feedRelayUrls = useMemo(
-      () => uniqueRelayUrlsFromSubRequests(subRequests),
-      [subRequestsKey]
-    )
+    const feedRelayUrls = useMemo(() => {
+      const urls = uniqueRelayUrlsFromSubRequests(subRequests)
+      if (feedSubscriptionKey === 'home-all-favorites') {
+        return ensureHomeFeedTrendingRelay(urls)
+      }
+      return urls
+    }, [subRequestsKey, feedSubscriptionKey])
 
     const feedAttestedSuperchatIds = useFeedAttestedSuperchatIds(feedRelayUrls)
 

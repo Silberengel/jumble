@@ -1,6 +1,7 @@
 import RelayIcon from '@/components/RelayIcon'
 import { Button } from '@/components/ui/button'
 import { toRelay } from '@/lib/link'
+import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import { simplifyUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useSmartRelayNavigation } from '@/PageManager'
@@ -25,6 +26,10 @@ export function FeedRelaysIconRow({
     >
       {urls.map((url) => {
         const label = simplifyUrl(url)
+        const isTrending = isWispTrendingNotesRelayUrl(url)
+        const title = isTrending
+          ? t('Trending on Nostr', { defaultValue: 'Trending on Nostr' })
+          : label
         return (
           <Button
             key={url}
@@ -32,8 +37,12 @@ export function FeedRelaysIconRow({
             variant="ghost"
             size="sm"
             className="h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-full p-0 hover:bg-muted/80"
-            title={label}
-            aria-label={t('Open relay feed', { relay: label, defaultValue: `Open ${label} feed` })}
+            title={title}
+            aria-label={
+              isTrending
+                ? t('Open trending feed', { defaultValue: 'Open trending feed' })
+                : t('Open relay feed', { relay: label, defaultValue: `Open ${label} feed` })
+            }
             onClick={() => navigateToRelay(toRelay(url))}
           >
             <RelayIcon url={url} className="h-6 w-6" iconSize={12} />

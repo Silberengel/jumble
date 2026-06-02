@@ -29,19 +29,19 @@ export default function BlockedRelayItem({ relay }: { relay: string }) {
 
   return (
     <div
-      className="relative group clickable flex gap-2 border rounded-lg p-2 pr-2.5 items-center justify-between select-none"
+      className="relative group clickable flex min-w-0 items-start gap-2 rounded-lg border p-2 select-none sm:items-center"
       onClick={() => push(toRelay(relay))}
     >
-      <div className="flex items-center gap-2 flex-1">
-        <RelayIcon url={relay} skipRelayInfoFetch />
-        <div className="flex-1 w-0 truncate font-semibold">{relay}</div>
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        <RelayIcon url={relay} skipRelayInfoFetch className="mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-1 break-all text-sm font-semibold leading-snug">{relay}</div>
       </div>
       <Button
         variant="ghost"
         size="sm"
         onClick={handleUnblock}
         disabled={isLoading}
-        className="h-8 w-8 p-0"
+        className="h-8 w-8 shrink-0 p-0"
       >
         {isLoading ? (
           <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden />

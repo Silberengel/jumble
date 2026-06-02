@@ -1,6 +1,7 @@
 import RelaySimpleInfo, { RelaySimpleInfoSkeleton } from '@/components/RelaySimpleInfo'
 import { Button } from '@/components/ui/button'
 import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
+import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import { useFetchRelayInfo } from '@/hooks'
 import { toRelay, toRelaySettings } from '@/lib/link'
@@ -70,7 +71,7 @@ export default function ExploreFavoriteRelays() {
   )
 
   const { urls, usingDefaults } = useMemo(() => {
-    const visible = favoriteRelays.filter((r) => {
+    const visible = ensureTrendingInFavoriteRelayList(favoriteRelays).filter((r) => {
       const k = normalizeUrl(r) || r
       return k && !blockedSet.has(k)
     })

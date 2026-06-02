@@ -42,25 +42,25 @@ export default function RelaySet({ relaySet }: { relaySet: TRelaySet }) {
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      <div className="w-full border rounded-lg px-2 py-2.5">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center">
+    <div ref={setNodeRef} style={style} className="group relative min-w-0">
+      <div className="w-full min-w-0 rounded-lg border px-2 py-2.5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center">
             <div
-              className="cursor-grab active:cursor-grabbing p-2 hover:bg-muted rounded touch-none"
+              className="cursor-grab touch-none rounded p-2 hover:bg-muted active:cursor-grabbing"
               {...attributes}
               {...listeners}
             >
               <GripVertical className="size-4 text-muted-foreground" />
             </div>
-            <div className="flex gap-2 items-center">
-              <div className="flex justify-center items-center w-6 h-6 shrink-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center">
                 <FolderClosed className="size-4" />
               </div>
               <RelaySetName relaySet={relaySet} />
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex shrink-0 items-center justify-end gap-1 self-end sm:self-auto">
             <RelayUrlsExpandToggle relaySetId={relaySet.id}>
               {t('n relays', { n: relaySet.relayUrls.length })}
             </RelayUrlsExpandToggle>
@@ -111,7 +111,7 @@ function RelaySetName({ relaySet }: { relaySet: TRelaySet }) {
       </Button>
     </div>
   ) : (
-    <div className="h-8 font-semibold flex items-center select-none">{relaySet.name}</div>
+    <div className="flex min-h-8 min-w-0 items-center break-words font-semibold select-none">{relaySet.name}</div>
   )
 }
 

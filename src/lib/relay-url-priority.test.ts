@@ -88,7 +88,19 @@ describe('nostr.land aggregator feed relay policy', () => {
       []
     )
 
-    expect(out).toEqual(['wss://relay.example.com/'])
+    expect(out).toEqual([
+      'wss://relay.example.com/',
+      'wss://feeds.nostrarchives.com/notes/trending/reactions/today'
+    ])
+  })
+
+  it('uses DEFAULT_FAVORITE_RELAYS when favorites are empty and global defaults apply', () => {
+    const out = getFavoritesFeedRelayUrls([], [], true)
+    expect(out).toEqual([
+      'wss://theforest.nostr1.com/',
+      'wss://nostr.land/',
+      'wss://feeds.nostrarchives.com/notes/trending/reactions/today'
+    ])
   })
 })
 

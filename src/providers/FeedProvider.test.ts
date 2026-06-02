@@ -44,11 +44,16 @@ describe('home feed relay policy', () => {
 
   it('personal-relay policy omits wisp trending from home feed relay list', () => {
     setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
-    const wisp = buildWispTrendingNotesRelayUrl()
-    const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [wisp])
+    const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [])
     expect(urls).toContain('wss://relay.example.com/')
     expect(urls.some((u) => isWispTrendingNotesRelayUrl(u))).toBe(false)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
+  })
+
+  it('includes trending from favorites tier without extra feed relays', () => {
+    const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [])
+    expect(urls).toContain('wss://relay.example.com/')
+    expect(urls).toContain(buildWispTrendingNotesRelayUrl())
   })
 
   it('stripNostrLandAggrFromRelayUrls removes aggr with trailing slash and hostname variants', () => {

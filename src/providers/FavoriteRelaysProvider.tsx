@@ -1,4 +1,4 @@
-import { FAST_READ_RELAY_URLS, DEFAULT_FAVORITE_RELAYS } from '@/constants'
+import { FAST_READ_RELAY_URLS, DEFAULT_FAVORITE_RELAYS, ExtendedKind } from '@/constants'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import storage from '@/services/local-storage.service'
 import { createFavoriteRelaysDraftEvent, createBlockedRelaysDraftEvent, createRelaySetDraftEvent } from '@/lib/draft-event'
@@ -26,15 +26,17 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
   const [relaySets, setRelaySets] = useState<TRelaySet[]>([])
 
   useEffect(() => {
-    if (!favoriteRelaysEvent) {
-      let favoriteRelays: string[] = []
+    let cancelled = false
+
+    const applyNoFavoriteRelaysEvent = () => {
+      let next: string[] = []
 
       if (pubkey) {
         const storedRelaySets = storage.getRelaySets()
         storedRelaySets.forEach(({ relayUrls }) => {
           relayUrls.forEach((url) => {
-            if (!favoriteRelays.includes(url)) {
-              favoriteRelays.push(url)
+            if (!next.includes(url)) {
+              next.push(url)
             }
           })
         })
@@ -42,23 +44,23 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
 
       const useGlobal = viewerUsesGlobalRelayDefaults({
         viewerPubkey: pubkey,
-        favoriteRelayUrls: favoriteRelays,
+        favoriteRelayUrls: next,
         relayList
       })
-      if (favoriteRelays.length === 0 && useGlobal) {
-        favoriteRelays = [...DEFAULT_FAVORITE_RELAYS]
+      if (next.length === 0 && useGlobal) {
+        next = [...DEFAULT_FAVORITE_RELAYS]
       }
 
-      setFavoriteRelays(favoriteRelays)
+      if (cancelled) return
+      setFavoriteRelays(next)
       setRelaySetEvents([])
-      return
     }
 
-    const init = async () => {
+    const applyFavoriteRelaysEvent = async (event: Event) => {
       const relays: string[] = []
       const relaySetIds: string[] = []
 
-      favoriteRelaysEvent.tags.forEach(([tagName, tagValue]) => {
+      event.tags.forEach(([tagName, tagValue]) => {
         if (!tagValue) return
 
         if (tagName === 'relay') {
@@ -69,7 +71,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
         } else if (tagName === 'a') {
           const [kind, author, relaySetId] = tagValue.split(':')
           if (kind !== kinds.Relaysets.toString()) return
-          if (!pubkey || author !== pubkey) return // TODO: support others relay sets
+          if (!pubkey || author !== pubkey) return
           if (!relaySetId) return
 
           if (!relaySetIds.includes(relaySetId)) {
@@ -78,18 +80,22 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
         }
       })
 
-      // Keep all favorites in state - don't filter blocked relays here
-      // Blocked relays are filtered at the relay selection service level
+      if (cancelled) return
       setFavoriteRelays(relays)
 
       if (!pubkey || !relaySetIds.length) {
-        setRelaySets([])
+        setRelaySetEvents([])
         return
       }
-      const storedRelaySetEvents = await Promise.all(
-        relaySetIds.map((id) => indexedDb.getReplaceableEvent(pubkey, kinds.Relaysets, id))
-      )
-      setRelaySetEvents(storedRelaySetEvents.filter(Boolean) as Event[])
+
+      const storedRelaySetEvents = (
+        await Promise.all(
+          relaySetIds.map((id) => indexedDb.getReplaceableEvent(pubkey, kinds.Relaysets, id))
+        )
+      ).filter(Boolean) as Event[]
+
+      if (cancelled) return
+      setRelaySetEvents(storedRelaySetEvents)
 
       const relaySetDiscoverGlobal = viewerUsesGlobalRelayDefaults({
         viewerPubkey: pubkey,
@@ -110,33 +116,60 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
           '#d': relaySetIds
         }
       )
+      if (cancelled) return
+
       const relaySetEventMap = new Map<string, Event>()
-      newRelaySetEvents.forEach((event) => {
-        const d = getReplaceableEventIdentifier(event)
+      newRelaySetEvents.forEach((fetched) => {
+        const d = getReplaceableEventIdentifier(fetched)
         if (!d) return
 
         const old = relaySetEventMap.get(d)
-        if (!old || old.created_at < event.created_at) {
-          relaySetEventMap.set(d, event)
+        if (!old || old.created_at < fetched.created_at) {
+          relaySetEventMap.set(d, fetched)
         }
       })
       const uniqueNewRelaySetEvents = relaySetIds
         .map((id, index) => {
-          const event = relaySetEventMap.get(id)
-          if (event) {
-            return event
+          const fetched = relaySetEventMap.get(id)
+          if (fetched) {
+            return fetched
           }
           return storedRelaySetEvents[index] || null
         })
         .filter(Boolean) as Event[]
       setRelaySetEvents(uniqueNewRelaySetEvents)
       await Promise.all(
-        uniqueNewRelaySetEvents.map((event) => {
-          return indexedDb.putReplaceableEvent(event)
-        })
+        uniqueNewRelaySetEvents.map((evt) => indexedDb.putReplaceableEvent(evt))
       )
     }
-    init()
+
+    if (favoriteRelaysEvent) {
+      void applyFavoriteRelaysEvent(favoriteRelaysEvent)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (!pubkey) {
+      applyNoFavoriteRelaysEvent()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    /** PWA / cold start: read kind 10012 from IndexedDB before NostrProvider finishes hydrating. */
+    void indexedDb.getReplaceableEvent(pubkey, ExtendedKind.FAVORITE_RELAYS).then((stored) => {
+      if (cancelled) return
+      if (stored) {
+        void applyFavoriteRelaysEvent(stored)
+      } else {
+        applyNoFavoriteRelaysEvent()
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [favoriteRelaysEvent, pubkey, relayList])
 
   useEffect(() => {
@@ -328,6 +361,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
     [favoriteRelays, publish, updateFavoriteRelaysEvent]
   )
 
+  /** Published kind 10012 `relay` tags (and relay sets via {@link relaySets}); trending is added in feed/UI layers. */
   const contextValue = useMemo(
     () => ({
       favoriteRelaysFromPublishedList: !!favoriteRelaysEvent,

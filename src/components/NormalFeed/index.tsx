@@ -325,6 +325,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
         tabs={tabs}
         onTabChange={handleListModeChange}
         options={kindRowOptions}
+        pinnedToLayout={isMainFeed && !!setSubHeader}
       />
     )
   }, [

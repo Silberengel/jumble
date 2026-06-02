@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
-import { normalizeUrl } from '@/lib/url'
+import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
+import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 
 /**
  * Trending notes stream from nostrarchives (path-based relay URL). The WebSocket speaks **standard NIP-01**
@@ -28,6 +29,47 @@ export const WISP_TRENDING_FEED_KINDS: readonly number[] = [
   ExtendedKind.SHORT_VIDEO,
   ExtendedKind.VIDEO_ADDRESSABLE
 ]
+
+/**
+ * Ensure the default nostrarchives trending notes relay is present in a favorite-relay list.
+ * Skips when any Wisp trending URL is already listed (dedupes duplicate trending paths).
+ * When `forFeed` is true, omits injection under the metadata-relays-only read policy.
+ */
+export function ensureTrendingInFavoriteRelayList(
+  relayUrls: readonly string[],
+  options?: { forFeed?: boolean }
+): string[] {
+  if (options?.forFeed && isMetadataRelaysOnlyPolicyActive()) {
+    return [...relayUrls]
+  }
+
+  const out: string[] = []
+  const seen = new Set<string>()
+  let hasTrending = false
+
+  for (const raw of relayUrls) {
+    const normalized = normalizeAnyRelayUrl(raw) || raw.trim()
+    if (!normalized) continue
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) continue
+    if (isWispTrendingNotesRelayUrl(normalized)) {
+      if (hasTrending) continue
+      hasTrending = true
+    }
+    seen.add(key)
+    out.push(normalized)
+  }
+
+  if (!hasTrending) {
+    const trending = normalizeUrl(buildWispTrendingNotesRelayUrl()) || buildWispTrendingNotesRelayUrl()
+    const key = trending.toLowerCase()
+    if (!seen.has(key)) {
+      out.push(trending)
+    }
+  }
+
+  return out
+}
 
 /** True when `url` is any nostrarchives notes trending WebSocket feed (path `/notes/trending/...`). */
 export function isWispTrendingNotesRelayUrl(url: string): boolean {

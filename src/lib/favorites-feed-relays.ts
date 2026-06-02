@@ -16,6 +16,7 @@ import {
   MAX_REQ_RELAY_URLS,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
+import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
@@ -78,9 +79,11 @@ export function getFavoritesFeedRelayUrls(
     const k = normalizeAnyRelayUrl(r) || r
     return k && !isBlockedRelay(r, blockedRelays)
   })
-  const base = visible.length > 0 ? visible : useGlobalFavoriteDefaults ? DEFAULT_FAVORITE_RELAYS : []
+  const base =
+    visible.length > 0 ? visible : useGlobalFavoriteDefaults ? [...DEFAULT_FAVORITE_RELAYS] : []
+  const withTrending = ensureTrendingInFavoriteRelayList(base, { forFeed: true })
   return feedRelayPolicyUrls(
-    [{ source: 'favorites', urls: base }],
+    [{ source: 'favorites', urls: withTrending }],
     {
       operation: 'favorites-feed',
       blockedRelays,

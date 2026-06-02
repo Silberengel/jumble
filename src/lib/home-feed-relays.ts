@@ -2,7 +2,10 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
-import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
+import {
+  ensureTrendingInFavoriteRelayList,
+  isWispTrendingNotesRelayUrl
+} from '@/lib/wisp-trending-relay'
 
 export { stripNostrLandAggrFromRelayUrls }
 
@@ -24,6 +27,11 @@ export function stripNostrLandAggrFromTimelineSubRequests<T extends { urls: stri
   })) as T[]
 }
 
+/** Home Notes / Replies / Gallery: always include the Wisp trending path relay (deduped). */
+export function ensureHomeFeedTrendingRelay(urls: readonly string[]): string[] {
+  return ensureTrendingInFavoriteRelayList(urls, { forFeed: true })
+}
+
 export function buildAllFavoritesFeedRelayUrls(
   favoriteRelays: string[],
   blockedRelays: string[],
@@ -33,22 +41,24 @@ export function buildAllFavoritesFeedRelayUrls(
   const extras = isMetadataRelaysOnlyPolicyActive()
     ? extraFeedRelayUrls.filter((u) => !isWispTrendingNotesRelayUrl(u))
     : extraFeedRelayUrls
-  return stripNostrLandAggrFromRelayUrls(
-    feedRelayPolicyUrls(
-      [
+  return ensureHomeFeedTrendingRelay(
+    stripNostrLandAggrFromRelayUrls(
+      feedRelayPolicyUrls(
+        [
+          {
+            source: 'favorites',
+            urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
+          },
+          { source: 'fallback', urls: extras }
+        ],
         {
-          source: 'favorites',
-          urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
-        },
-        { source: 'fallback', urls: extras }
-      ],
-      {
-        operation: 'favorites-feed',
-        blockedRelays,
-        nostrLandAggr: 'never',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
-      }
+          operation: 'favorites-feed',
+          blockedRelays,
+          nostrLandAggr: 'never',
+          applySocialKindBlockedFilter: false,
+          allowThirdPartyLocalRelays: true
+        }
+      )
     )
   )
 }

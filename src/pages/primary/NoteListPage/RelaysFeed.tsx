@@ -1,5 +1,6 @@
 import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
+import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
 import { checkAlgoRelay } from '@/lib/relay'
 import { normalizeUrl } from '@/lib/url'
 import { useFeed } from '@/providers/feed-context'
@@ -98,7 +99,7 @@ const RelaysFeed = forwardRef<
     if (!canRenderFeed) return []
     return [
       {
-        urls: stableRelayUrls,
+        urls: ensureHomeFeedTrendingRelay(stableRelayUrls),
         filter: {
           kinds: defaultKinds
         }
@@ -107,9 +108,11 @@ const RelaysFeed = forwardRef<
   }, [canRenderFeed, relayUrlsKey, stableRelayUrls, defaultKindsKey, defaultKinds])
   const repliesSubRequests = useMemo(() => {
     if (!canRenderFeed) return []
+    const replyUrls =
+      stableReplyRelayUrls.length > 0 ? stableReplyRelayUrls : stableRelayUrls
     return [
       {
-        urls: stableReplyRelayUrls.length > 0 ? stableReplyRelayUrls : stableRelayUrls,
+        urls: ensureHomeFeedTrendingRelay(replyUrls),
         filter: {
           kinds: defaultKinds
         }

@@ -1,6 +1,10 @@
 import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
+import {
+  buildAllFavoritesFeedRelayUrls,
+  ensureHomeFeedTrendingRelay,
+  stripNostrLandAggrFromRelayUrls
+} from '@/lib/home-feed-relays'
 import logger from '@/lib/logger'
 import {
   syncViewerRelayStackNostrLandAggrEligible,
@@ -11,7 +15,6 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
-import { buildWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { FeedContext } from './feed-context'
@@ -36,21 +39,23 @@ function buildHomeReplyFeedRelayUrls(
   blockedRelays: string[]
 ): string[] {
   /** Home Replies/Gallery: never prepend aggr (reserved for side-panel threads, profiles, spells). */
-  return stripNostrLandAggrFromRelayUrls(
-    feedRelayPolicyUrls(
-      [
-        { source: 'favorites', urls: primaryRelayUrls },
-        { source: 'viewer-read', urls: inboxRelayUrls },
-        { source: 'cache', urls: cacheRelayUrls },
-        { source: 'http-index', urls: httpRelayUrls }
-      ],
-      {
-        operation: 'read',
-        blockedRelays,
-        nostrLandAggr: 'never',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
-      }
+  return ensureHomeFeedTrendingRelay(
+    stripNostrLandAggrFromRelayUrls(
+      feedRelayPolicyUrls(
+        [
+          { source: 'favorites', urls: primaryRelayUrls },
+          { source: 'viewer-read', urls: inboxRelayUrls },
+          { source: 'cache', urls: cacheRelayUrls },
+          { source: 'http-index', urls: httpRelayUrls }
+        ],
+        {
+          operation: 'read',
+          blockedRelays,
+          nostrLandAggr: 'never',
+          applySocialKindBlockedFilter: false,
+          allowThirdPartyLocalRelays: true
+        }
+      )
     )
   )
 }
@@ -73,12 +78,6 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     () => [...favoriteRelays, ...relaySets.flatMap((relaySet) => relaySet.relayUrls)],
     [favoriteRelays, relaySets]
   )
-
-  /**
-   * Mixed trending slice (nostrarchives / Wisp-style feed) so the home timeline isn’t only the user’s
-   * graph — keeps a finger on what the wider network is surfacing, alongside favorites / NIP-65.
-   */
-  const primaryExtraRelayUrls = useMemo(() => [buildWispTrendingNotesRelayUrl()], [])
 
   /** Read-side layers merged into {@link replyRelayUrls}; {@link outboxRelayUrls} is only for aggr eligibility sync. */
   const replyExtraRelayLayers = useMemo(() => {
@@ -111,12 +110,10 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   }, [relayList, cacheRelayListEvent, useGlobalRelayDefaults])
 
   /** Default relays immediately so feeds / sidebar REQ never wait on Nostr session restore. */
-  const [relayUrls, setRelayUrls] = useState<string[]>(() =>
-    buildAllFavoritesFeedRelayUrls([], [], [buildWispTrendingNotesRelayUrl()])
-  )
+  const [relayUrls, setRelayUrls] = useState<string[]>(() => buildAllFavoritesFeedRelayUrls([], [], []))
   const [replyRelayUrls, setReplyRelayUrls] = useState<string[]>(() =>
     buildHomeReplyFeedRelayUrls(
-      buildAllFavoritesFeedRelayUrls([], [], [buildWispTrendingNotesRelayUrl()]),
+      buildAllFavoritesFeedRelayUrls([], [], []),
       [],
       [],
       [],
@@ -152,7 +149,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     const primaryRelays = buildAllFavoritesFeedRelayUrls(
       favoriteFeedRelayUrls,
       blockedRelays,
-      primaryExtraRelayUrls,
+      [],
       useGlobalRelayDefaults
     )
     const replyRelays = buildHomeReplyFeedRelayUrls(
@@ -174,7 +171,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
     setUrlStateIfChanged(setRelayUrls, primaryRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
-  }, [favoriteFeedRelayUrls, blockedRelays, primaryExtraRelayUrls, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
+  }, [favoriteFeedRelayUrls, blockedRelays, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
 
   const favoriteRelaysIdentity = useMemo(
     () =>

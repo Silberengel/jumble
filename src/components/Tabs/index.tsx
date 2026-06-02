@@ -14,13 +14,16 @@ export default function Tabs({
   value,
   onTabChange,
   threshold = 800,
-  options = null
+  options = null,
+  /** When true, tabs live in layout chrome (subHeader) — no sticky offset or deep-scroll collapse. */
+  pinnedToLayout = false
 }: {
   tabs: TabDefinition[]
   value: string
   onTabChange?: (tab: string) => void
   threshold?: number
   options?: ReactNode
+  pinnedToLayout?: boolean
 }) {
   const { t } = useTranslation()
   const { deepBrowsing, lastScrollTop } = useDeepBrowsing()
@@ -120,12 +123,18 @@ export default function Tabs({
     }
   }, [updateIndicatorPosition])
 
+  const collapseOnDeepBrowse =
+    !pinnedToLayout && deepBrowsing && lastScrollTop > threshold
+
   return (
     <div
       ref={containerRef}
       className={cn(
-        'sticky top-12 z-30 flex w-full min-w-0 items-end justify-between border-b bg-background px-1 transition-transform',
-        deepBrowsing && lastScrollTop > threshold ? '-translate-y-[calc(100%+12rem)]' : ''
+        'flex w-full min-w-0 items-end justify-between border-b bg-background px-1',
+        pinnedToLayout
+          ? 'z-10'
+          : 'sticky top-12 z-30 transition-transform',
+        collapseOnDeepBrowse ? '-translate-y-[calc(100%+12rem)]' : ''
       )}
     >
       <div className="min-w-0 w-0 flex-1">

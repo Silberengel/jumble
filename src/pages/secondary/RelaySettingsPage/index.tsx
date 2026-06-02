@@ -134,7 +134,12 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
       }
     >
       <JsonViewDialog value={jsonPayload} isOpen={jsonOpen} onClose={() => setJsonOpen(false)} />
-      <Tabs key={contentKey} value={tabValue} onValueChange={setTabValue} className="px-4 py-3 space-y-4">
+      <Tabs
+        key={contentKey}
+        value={tabValue}
+        onValueChange={setTabValue}
+        className="min-w-0 w-full space-y-4 px-2 py-3 sm:px-4"
+      >
         <TabsList className="flex-col sm:flex-row h-auto sm:h-9">
           <TabsTrigger value="favorite-relays" className="w-full sm:w-auto">{t('Favorite Relays')}</TabsTrigger>
           <TabsTrigger value="mailbox" className="w-full sm:w-auto">{t('Read & Write Relays')}</TabsTrigger>
