@@ -1,11 +1,16 @@
 import { buildHighlightDataFromEvent } from '@/lib/build-highlight-data'
-import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { useCreateHighlight } from './CreateHighlightContext'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Event } from 'nostr-tools'
 import { Highlighter } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+
+const MOBILE_TOUCH_END_SETTLE_MS = 600
+const MOBILE_SELECTION_STABLE_MS = 1600
+const DESKTOP_SELECTION_DELAY_MS = 50
 
 function getParagraphContextFromRange(range: Range): string {
   let node: Node | null = range.commonAncestorContainer
@@ -21,6 +26,46 @@ function getParagraphContextFromRange(range: Range): string {
   return range.toString().trim()
 }
 
+function isRangeInContainer(range: Range, container: HTMLElement): boolean {
+  const commonAncestor = range.commonAncestorContainer
+  if (commonAncestor.nodeType === Node.ELEMENT_NODE) {
+    if (container.contains(commonAncestor as Element)) return true
+  } else {
+    const parent = commonAncestor.parentElement
+    if (parent && container.contains(parent)) return true
+  }
+  try {
+    const contentRect = container.getBoundingClientRect()
+    const rangeRect = range.getBoundingClientRect()
+    return !(
+      rangeRect.bottom < contentRect.top ||
+      rangeRect.top > contentRect.bottom ||
+      rangeRect.right < contentRect.left ||
+      rangeRect.left > contentRect.right
+    )
+  } catch {
+    return false
+  }
+}
+
+function readSelectionInContainer(container: HTMLElement): {
+  selectedText: string
+  paragraphContext: string
+  rect: DOMRect
+} | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
+  const range = selection.getRangeAt(0)
+  if (!isRangeInContainer(range, container)) return null
+  const selectedText = selection.toString().trim()
+  if (!selectedText) return null
+  return {
+    selectedText,
+    paragraphContext: getParagraphContextFromRange(range),
+    rect: range.getBoundingClientRect()
+  }
+}
+
 export default function SelectionHighlightTrigger({
   event,
   children
@@ -29,144 +74,259 @@ export default function SelectionHighlightTrigger({
   children: React.ReactNode
 }) {
   const { t } = useTranslation()
+  const { isSmallScreen } = useScreenSize()
   const openHighlight = useCreateHighlight()
   const containerRef = useRef<HTMLDivElement>(null)
-  const [toolbar, setToolbar] = useState<{
-    selectedText: string
-    paragraphContext: string
-    top: number
-    left: number
-  } | null>(null)
+  const [selectedText, setSelectedText] = useState('')
+  const [paragraphContext, setParagraphContext] = useState('')
+  const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null)
+  const [showMobileDrawer, setShowMobileDrawer] = useState(false)
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // True while a touch is physically in contact with the screen.
-  const isTouchActiveRef = useRef(false)
+  const touchEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const selectionStableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isSelectingRef = useRef(false)
+  const lastSelectionChangeRef = useRef(0)
 
-  const evaluateSelection = useCallback(() => {
-    if (!openHighlight || !containerRef.current) return
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      setToolbar(null)
-      return
-    }
-    const range = sel.getRangeAt(0)
-    if (!containerRef.current.contains(range.commonAncestorContainer)) {
-      setToolbar(null)
-      return
-    }
-    const selectedText = range.toString().trim()
-    if (!selectedText) {
-      setToolbar(null)
-      return
-    }
+  const clearUi = useCallback(() => {
+    setSelectedText('')
+    setParagraphContext('')
+    setToolbarPos(null)
+    setShowMobileDrawer(false)
+  }, [])
 
-    const rect = range.getBoundingClientRect()
-    const toolbarHeight = 44
-    const margin = 8
-    // Prefer above the selection; fall back to below if too close to top of viewport.
-    const top =
-      rect.top - toolbarHeight < margin ? rect.bottom + margin : rect.top - toolbarHeight
-    const rawLeft = rect.left + rect.width / 2 - 80
-    const left = Math.max(margin, Math.min(rawLeft, window.innerWidth - 176 - margin))
+  const applySelection = useCallback(
+    (forceShow = false) => {
+      if (!openHighlight || !containerRef.current) return
+      const hit = readSelectionInContainer(containerRef.current)
+      if (!hit) {
+        clearUi()
+        return
+      }
 
-    setToolbar({ selectedText, paragraphContext: getParagraphContextFromRange(range), top, left })
-  }, [openHighlight])
+      setSelectedText(hit.selectedText)
+      setParagraphContext(hit.paragraphContext)
 
-  // Desktop: mouseup fires reliably after text selection by mouse.
-  const handleMouseUp = useCallback(() => {
-    evaluateSelection()
-  }, [evaluateSelection])
+      if (isSmallScreen) {
+        if (forceShow || !isSelectingRef.current) {
+          setShowMobileDrawer(true)
+          setToolbarPos(null)
+        }
+        return
+      }
+
+      const toolbarHeight = 44
+      const margin = 8
+      const top =
+        hit.rect.top - toolbarHeight < margin ? hit.rect.bottom + margin : hit.rect.top - toolbarHeight
+      const rawLeft = hit.rect.left + hit.rect.width / 2 - 80
+      const left = Math.max(margin, Math.min(rawLeft, window.innerWidth - 176 - margin))
+      setToolbarPos({ top, left })
+      setShowMobileDrawer(false)
+    },
+    [clearUi, isSmallScreen, openHighlight]
+  )
+
+  const scheduleDesktopSelection = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => applySelection(true), DESKTOP_SELECTION_DELAY_MS)
+  }, [applySelection])
+
+  const scheduleMobileStableSelection = useCallback(() => {
+    lastSelectionChangeRef.current = Date.now()
+    if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
+    selectionStableTimeoutRef.current = setTimeout(() => {
+      const elapsed = Date.now() - lastSelectionChangeRef.current
+      if (elapsed >= MOBILE_SELECTION_STABLE_MS && !isSelectingRef.current) {
+        applySelection(true)
+      }
+    }, MOBILE_SELECTION_STABLE_MS)
+  }, [applySelection])
 
   useEffect(() => {
     if (!openHighlight) return
 
-    const schedule = (delayMs: number) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(evaluateSelection, delayMs)
+    const onMouseUp = (e: MouseEvent) => {
+      if (isSmallScreen) return
+      const el =
+        e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null
+      if (el?.closest('[data-selection-highlight-ui]')) return
+      scheduleDesktopSelection()
     }
 
-    // Mobile: finger touches screen — mark active so selectionchange is suppressed during
-    // the gesture itself (avoids positioning the toolbar mid-drag).
     const onTouchStart = () => {
-      isTouchActiveRef.current = true
+      if (!isSmallScreen) return
+      isSelectingRef.current = true
+      if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
+      setShowMobileDrawer(false)
     }
 
-    // Mobile: finger lifts — wait for the browser to settle the selection, then evaluate.
-    // Shorter delay on coarse pointers; contextmenu (below) is the reliable path when the OS shows the callout.
+    const onTouchMove = () => {
+      if (!isSmallScreen) return
+      isSelectingRef.current = true
+      if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
+      setShowMobileDrawer(false)
+    }
+
     const onTouchEnd = () => {
-      isTouchActiveRef.current = false
-      schedule(isMobileBrowserProfile() ? 280 : 600)
+      if (!isSmallScreen) return
+      if (touchEndTimeoutRef.current) clearTimeout(touchEndTimeoutRef.current)
+      touchEndTimeoutRef.current = setTimeout(() => {
+        isSelectingRef.current = false
+        scheduleMobileStableSelection()
+      }, MOBILE_TOUCH_END_SETTLE_MS)
     }
 
-    // Both: covers keyboard selection (Shift+Arrow) on desktop and selection-handle
-    // dragging on mobile (which may not generate touch events in our DOM).
     const onSelectionChange = () => {
-      if (isTouchActiveRef.current) return
-      schedule(80)
+      if (isSmallScreen) {
+        lastSelectionChangeRef.current = Date.now()
+        if (isSelectingRef.current) return
+
+        const selection = window.getSelection()
+        const hasSelection =
+          selection &&
+          !selection.isCollapsed &&
+          selection.rangeCount > 0 &&
+          selection.toString().trim().length > 0
+
+        if (!hasSelection) {
+          if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
+          clearUi()
+          return
+        }
+
+        scheduleMobileStableSelection()
+        return
+      }
+
+      scheduleDesktopSelection()
     }
 
-    // When the system opens the text callout / context menu, selection is still valid here; delayed
-    // touchend/selectionchange often misses on iOS/Android because the selection is cleared before we run.
     const onContextMenu = (e: MouseEvent) => {
       if (!containerRef.current) return
-      const t = e.target
-      if (!(t instanceof Node) || !containerRef.current.contains(t)) return
-      queueMicrotask(() => evaluateSelection())
+      const target = e.target
+      if (!(target instanceof Node) || !containerRef.current.contains(target)) return
+      queueMicrotask(() => applySelection(true))
     }
 
+    document.addEventListener('mouseup', onMouseUp)
     document.addEventListener('touchstart', onTouchStart, { passive: true })
+    document.addEventListener('touchmove', onTouchMove, { passive: true })
     document.addEventListener('touchend', onTouchEnd, { passive: true })
     document.addEventListener('selectionchange', onSelectionChange)
     document.addEventListener('contextmenu', onContextMenu)
 
     return () => {
+      document.removeEventListener('mouseup', onMouseUp)
       document.removeEventListener('touchstart', onTouchStart)
+      document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
       document.removeEventListener('selectionchange', onSelectionChange)
       document.removeEventListener('contextmenu', onContextMenu)
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (touchEndTimeoutRef.current) clearTimeout(touchEndTimeoutRef.current)
+      if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
     }
-  }, [openHighlight, evaluateSelection])
+  }, [
+    applySelection,
+    clearUi,
+    isSmallScreen,
+    openHighlight,
+    scheduleDesktopSelection,
+    scheduleMobileStableSelection
+  ])
 
   const handleCreateHighlight = useCallback(() => {
-    if (!toolbar || !openHighlight) return
-    const highlightData = buildHighlightDataFromEvent(event, toolbar.paragraphContext)
-    openHighlight(highlightData, toolbar.selectedText)
-    setToolbar(null)
+    if (!selectedText || !openHighlight) return
+    const highlightData = buildHighlightDataFromEvent(event, paragraphContext)
+    openHighlight(highlightData, selectedText)
+    clearUi()
     window.getSelection()?.removeAllRanges()
-  }, [event, toolbar, openHighlight])
+  }, [clearUi, event, openHighlight, paragraphContext, selectedText])
 
   const handleDismiss = useCallback(() => {
-    setToolbar(null)
-  }, [])
+    clearUi()
+    window.getSelection()?.removeAllRanges()
+  }, [clearUi])
 
   if (!openHighlight) return <>{children}</>
 
+  const showDesktopToolbar = !isSmallScreen && selectedText && toolbarPos
+
   return (
-    <div ref={containerRef} onMouseUp={handleMouseUp} className="relative">
+    <div ref={containerRef} className="relative select-text">
       {children}
-      {toolbar && (
+      {showDesktopToolbar ? (
         <>
           <div
-            className="fixed z-[150] flex items-center gap-1 rounded-md border bg-background px-2 py-1.5 shadow-lg"
-            style={{ top: toolbar.top, left: toolbar.left }}
+            className="highlight-button-container fixed z-[150] flex items-center gap-1 rounded-md border bg-background px-2 py-1.5 shadow-lg"
+            data-selection-highlight-ui
+            style={{ top: toolbarPos.top, left: toolbarPos.left }}
           >
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5"
-              onClick={handleCreateHighlight}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleCreateHighlight()
+              }}
             >
               <Highlighter className="h-4 w-4" />
               {t('Create Highlight')}
             </Button>
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={handleDismiss}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDismiss()
+              }}
+            >
               {t('Cancel')}
             </Button>
           </div>
-          <div className="fixed inset-0 z-[149]" aria-hidden onClick={handleDismiss} />
+          <div
+            className="fixed inset-0 z-[149]"
+            aria-hidden
+            data-selection-highlight-ui
+            onClick={handleDismiss}
+          />
         </>
-      )}
+      ) : null}
+
+      {isSmallScreen ? (
+        <Drawer
+          open={showMobileDrawer && selectedText.length > 0}
+          onOpenChange={(open) => {
+            setShowMobileDrawer(open)
+            if (!open) handleDismiss()
+          }}
+        >
+          <DrawerContent data-selection-highlight-ui>
+            <DrawerHeader>
+              <DrawerTitle>{t('Create Highlight')}</DrawerTitle>
+            </DrawerHeader>
+            <div className="space-y-4 p-4 pb-8">
+              <div className="text-sm text-muted-foreground">{t('Selected text')}:</div>
+              <div className="break-words rounded-lg bg-muted p-3 text-sm">&ldquo;{selectedText}&rdquo;</div>
+              <Button
+                className="w-full"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCreateHighlight()
+                }}
+              >
+                <Highlighter className="mr-2 h-4 w-4" />
+                {t('Create Highlight')}
+              </Button>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : null}
     </div>
   )
 }

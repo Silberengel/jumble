@@ -638,7 +638,20 @@ export default function Note({
         onClick={disableClick ? undefined : (e) => {
           // Don't navigate if clicking on interactive elements
           const target = e.target as HTMLElement
-          if (target.closest('button') || target.closest('[role="button"]') || target.closest('a') || target.closest('[data-embedded-note]') || target.closest('[data-parent-note-preview]') || target.closest('[data-user-avatar]') || target.closest('[data-username]')) {
+          if (window.getSelection()?.toString().trim()) {
+            return
+          }
+          if (
+            target.closest('button') ||
+            target.closest('[role="button"]') ||
+            target.closest('a') ||
+            target.closest('[data-embedded-note]') ||
+            target.closest('[data-parent-note-preview]') ||
+            target.closest('[data-user-avatar]') ||
+            target.closest('[data-username]') ||
+            target.closest('[data-selection-highlight-ui]') ||
+            target.closest('.highlight-button-container')
+          ) {
             return
           }
           e.stopPropagation()

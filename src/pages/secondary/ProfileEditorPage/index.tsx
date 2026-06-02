@@ -496,7 +496,6 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           <ProfileBanner
             banner={banner}
             pubkey={account.pubkey}
-            className="w-full aspect-[3/1]"
             imageFetchPriority="low"
           />
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">

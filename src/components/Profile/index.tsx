@@ -369,7 +369,7 @@ export default function Profile({
           <ProfileBanner
             banner={banner}
             pubkey={pubkey}
-            className="relative z-0 w-full overflow-hidden aspect-[3/1]"
+            className="relative z-0"
             imageFetchPriority="low"
           />
           {isVideo(avatar ?? '') ? (
