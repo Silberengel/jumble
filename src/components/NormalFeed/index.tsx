@@ -306,7 +306,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
   /** Notes / Replies / Gallery switch, plus refresh + kind filter — on Wisp trending only the tool row (no mode tabs). */
   const tabsElement = useMemo(() => {
     const kindRowOptions = (
-      <div className="flex items-center gap-0">
+      <div className="flex shrink-0 flex-nowrap items-center gap-0">
         {onSubHeaderRefresh != null && <RefreshButton onClick={onSubHeaderRefresh} />}
         <KindFilter showKinds={showKinds} onShowKindsChange={handleShowKindsChange} />
         {mergeFilterWithTabsRow ? (

@@ -29,9 +29,28 @@ export function DeepBrowsingProvider({
     (!scrollAreaRef ? window.scrollY : scrollAreaRef.current?.scrollTop) || 0
   )
   const [lastScrollTop, setLastScrollTop] = useState(lastScrollTopRef.current)
+  /**
+   * Chrome (especially installed PWA) fires scroll when we restore `scrollTop` programmatically.
+   * That one-shot jump looks like "deep browse" and hid sticky tab rows via translate. Firefox often
+   * does not surface the same scroll event pattern on restore.
+   */
+  const ignoreScrollForDeepBrowseRef = useRef(true)
 
   useEffect(() => {
     if (!active) return
+
+    ignoreScrollForDeepBrowseRef.current = true
+    setDeepBrowsing(false)
+    const syncScrollTop = () => {
+      const scrollTop = (!scrollAreaRef ? window.scrollY : scrollAreaRef.current?.scrollTop) || 0
+      lastScrollTopRef.current = scrollTop
+      setLastScrollTop(scrollTop)
+    }
+    syncScrollTop()
+    const graceTimer = window.setTimeout(() => {
+      ignoreScrollForDeepBrowseRef.current = false
+      syncScrollTop()
+    }, 150)
 
     let rafId: number | null = null
     const handleScroll = () => {
@@ -43,6 +62,12 @@ export function DeepBrowsingProvider({
         const diff = scrollTop - lastScrollTopRef.current
         lastScrollTopRef.current = scrollTop
         setLastScrollTop(scrollTop)
+
+        if (ignoreScrollForDeepBrowseRef.current) {
+          rafId = null
+          return
+        }
+
         if (scrollTop <= 800) {
           setDeepBrowsing(false)
           rafId = null
@@ -62,6 +87,7 @@ export function DeepBrowsingProvider({
 
     target?.addEventListener('scroll', handleScroll, { passive: true })
     return () => {
+      window.clearTimeout(graceTimer)
       target?.removeEventListener('scroll', handleScroll)
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
