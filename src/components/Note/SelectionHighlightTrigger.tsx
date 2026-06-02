@@ -1,6 +1,5 @@
 import { buildHighlightDataFromEvent } from '@/lib/build-highlight-data'
 import { useCreateHighlight } from './CreateHighlightContext'
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Event } from 'nostr-tools'
 import { Highlighter } from 'lucide-react'
@@ -80,7 +79,6 @@ export default function SelectionHighlightTrigger({
   const [selectedText, setSelectedText] = useState('')
   const [paragraphContext, setParagraphContext] = useState('')
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null)
-  const [showMobileDrawer, setShowMobileDrawer] = useState(false)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -92,7 +90,6 @@ export default function SelectionHighlightTrigger({
     setSelectedText('')
     setParagraphContext('')
     setToolbarPos(null)
-    setShowMobileDrawer(false)
   }, [])
 
   const applySelection = useCallback(
@@ -104,25 +101,19 @@ export default function SelectionHighlightTrigger({
         return
       }
 
+      if (isSmallScreen && isSelectingRef.current && !forceShow) return
+
       setSelectedText(hit.selectedText)
       setParagraphContext(hit.paragraphContext)
 
-      if (isSmallScreen) {
-        if (forceShow || !isSelectingRef.current) {
-          setShowMobileDrawer(true)
-          setToolbarPos(null)
-        }
-        return
-      }
-
-      const toolbarHeight = 44
+      const toolbarHeight = isSmallScreen ? 48 : 44
+      const toolbarWidth = isSmallScreen ? 200 : 176
       const margin = 8
       const top =
         hit.rect.top - toolbarHeight < margin ? hit.rect.bottom + margin : hit.rect.top - toolbarHeight
-      const rawLeft = hit.rect.left + hit.rect.width / 2 - 80
-      const left = Math.max(margin, Math.min(rawLeft, window.innerWidth - 176 - margin))
+      const rawLeft = hit.rect.left + hit.rect.width / 2 - toolbarWidth / 2
+      const left = Math.max(margin, Math.min(rawLeft, window.innerWidth - toolbarWidth - margin))
       setToolbarPos({ top, left })
-      setShowMobileDrawer(false)
     },
     [clearUi, isSmallScreen, openHighlight]
   )
@@ -158,14 +149,14 @@ export default function SelectionHighlightTrigger({
       if (!isSmallScreen) return
       isSelectingRef.current = true
       if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
-      setShowMobileDrawer(false)
+      setToolbarPos(null)
     }
 
     const onTouchMove = () => {
       if (!isSmallScreen) return
       isSelectingRef.current = true
       if (selectionStableTimeoutRef.current) clearTimeout(selectionStableTimeoutRef.current)
-      setShowMobileDrawer(false)
+      setToolbarPos(null)
     }
 
     const onTouchEnd = () => {
@@ -195,6 +186,7 @@ export default function SelectionHighlightTrigger({
           return
         }
 
+        setToolbarPos(null)
         scheduleMobileStableSelection()
         return
       }
@@ -251,12 +243,12 @@ export default function SelectionHighlightTrigger({
 
   if (!openHighlight) return <>{children}</>
 
-  const showDesktopToolbar = !isSmallScreen && selectedText && toolbarPos
+  const showToolbar = selectedText && toolbarPos
 
   return (
     <div ref={containerRef} className="relative select-text">
       {children}
-      {showDesktopToolbar ? (
+      {showToolbar ? (
         <>
           <div
             className="highlight-button-container fixed z-[150] flex items-center gap-1 rounded-md border bg-background px-2 py-1.5 shadow-lg"
@@ -266,8 +258,8 @@ export default function SelectionHighlightTrigger({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5"
+              size={isSmallScreen ? 'default' : 'sm'}
+              className={isSmallScreen ? 'h-10 gap-1.5' : 'h-8 gap-1.5'}
               onClick={(e) => {
                 e.stopPropagation()
                 handleCreateHighlight()
@@ -279,8 +271,8 @@ export default function SelectionHighlightTrigger({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
-              className="h-8 px-2"
+              size={isSmallScreen ? 'default' : 'sm'}
+              className={isSmallScreen ? 'h-10 px-3' : 'h-8 px-2'}
               onClick={(e) => {
                 e.stopPropagation()
                 handleDismiss()
@@ -289,43 +281,15 @@ export default function SelectionHighlightTrigger({
               {t('Cancel')}
             </Button>
           </div>
-          <div
-            className="fixed inset-0 z-[149]"
-            aria-hidden
-            data-selection-highlight-ui
-            onClick={handleDismiss}
-          />
+          {!isSmallScreen ? (
+            <div
+              className="fixed inset-0 z-[149]"
+              aria-hidden
+              data-selection-highlight-ui
+              onClick={handleDismiss}
+            />
+          ) : null}
         </>
-      ) : null}
-
-      {isSmallScreen ? (
-        <Drawer
-          open={showMobileDrawer && selectedText.length > 0}
-          onOpenChange={(open) => {
-            setShowMobileDrawer(open)
-            if (!open) handleDismiss()
-          }}
-        >
-          <DrawerContent data-selection-highlight-ui>
-            <DrawerHeader>
-              <DrawerTitle>{t('Create Highlight')}</DrawerTitle>
-            </DrawerHeader>
-            <div className="space-y-4 p-4 pb-8">
-              <div className="text-sm text-muted-foreground">{t('Selected text')}:</div>
-              <div className="break-words rounded-lg bg-muted p-3 text-sm">&ldquo;{selectedText}&rdquo;</div>
-              <Button
-                className="w-full"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCreateHighlight()
-                }}
-              >
-                <Highlighter className="mr-2 h-4 w-4" />
-                {t('Create Highlight')}
-              </Button>
-            </div>
-          </DrawerContent>
-        </Drawer>
       ) : null}
     </div>
   )
