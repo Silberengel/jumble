@@ -631,11 +631,23 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     ]
   )
 
+  const followingFeedPreparing = useMemo(() => {
+    if (!pubkey || !isFollowFeedFauxSpellId(selectedFauxSpell ?? '')) return false
+    if (followSetCatalogLoading) return true
+    return followingSubRequests.length === 0
+  }, [
+    pubkey,
+    selectedFauxSpell,
+    followSetCatalogLoading,
+    followingSubRequests.length
+  ])
+
   return {
     relayMailboxStableKey,
     sortedFavoriteRelaysKey,
     sortedBlockedRelaysKey,
     followingSubRequests,
+    followingFeedPreparing,
     fauxSubRequests,
     subRequests,
     spellFeedSubscriptionKey,

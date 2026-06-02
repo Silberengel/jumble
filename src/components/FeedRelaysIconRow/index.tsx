@@ -9,18 +9,27 @@ import { useTranslation } from 'react-i18next'
 
 export function FeedRelaysIconRow({
   urls,
-  className
+  className,
+  compact = false
 }: {
   urls: readonly string[]
   className?: string
+  /** Smaller icons for inline toolbar rows (e.g. next to the feed filter toggle). */
+  compact?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToRelay } = useSmartRelayNavigation()
   if (urls.length === 0) return null
 
+  const buttonClass = compact
+    ? 'h-5 w-5 min-h-5 min-w-5 shrink-0 rounded-full p-0 hover:bg-muted/80'
+    : 'h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-full p-0 hover:bg-muted/80'
+  const iconClass = compact ? 'h-4 w-4' : 'h-6 w-6'
+  const iconSize = compact ? 8 : 12
+
   return (
     <div
-      className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}
+      className={cn('flex min-w-0 flex-nowrap items-center', compact ? 'gap-0.5' : 'gap-1', className)}
       role="group"
       aria-label={t('Feed relays', { defaultValue: 'Relays in this feed' })}
     >
@@ -36,7 +45,7 @@ export function FeedRelaysIconRow({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-full p-0 hover:bg-muted/80"
+            className={buttonClass}
             title={title}
             aria-label={
               isTrending
@@ -45,7 +54,7 @@ export function FeedRelaysIconRow({
             }
             onClick={() => navigateToRelay(toRelay(url))}
           >
-            <RelayIcon url={url} className="h-6 w-6" iconSize={12} />
+            <RelayIcon url={url} className={iconClass} iconSize={iconSize} />
           </Button>
         )
       })}

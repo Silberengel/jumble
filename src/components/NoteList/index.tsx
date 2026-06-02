@@ -4653,14 +4653,17 @@ const NoteList = forwardRef(
       </Button>
     )
 
+    const feedRelayToolbarRow =
+      feedRelayUrls.length > 0 ? (
+        <FeedRelaysIconRow
+          urls={feedRelayUrls}
+          compact
+          className="min-w-0 flex-1 overflow-x-auto scrollbar-hide"
+        />
+      ) : null
+
     const feedClientFilterPanel = feedClientFilterOpen ? (
       <div id="feed-client-filter-panel" className={feedClientFilterPanelSurfaceClass}>
-            {feedRelayUrls.length > 0 ? (
-              <div className={feedClientFilterSectionClass}>
-                <p className="text-sm font-medium">{t('Feed relays', { defaultValue: 'Relays in this feed' })}</p>
-                <FeedRelaysIconRow urls={feedRelayUrls} />
-              </div>
-            ) : null}
             <div className={feedClientFilterSectionClass}>
               <Label htmlFor="feed-client-search" className="text-sm font-medium">
                 {t('Search loaded posts')}
@@ -4839,10 +4842,16 @@ const NoteList = forwardRef(
     ) : null
 
     const feedClientFilterChrome = feedClientFilterPanelPortalMode ? (
-      feedClientFilterToggleButton
+      <div className="flex min-w-0 w-full flex-nowrap items-center gap-1">
+        {feedRelayToolbarRow}
+        <div className="shrink-0">{feedClientFilterToggleButton}</div>
+      </div>
     ) : (
       <>
-        <div className="flex items-center gap-1">{feedClientFilterToggleButton}</div>
+        <div className="flex min-w-0 flex-nowrap items-center gap-1 px-0.5">
+          {feedRelayToolbarRow}
+          <div className="ml-auto shrink-0">{feedClientFilterToggleButton}</div>
+        </div>
         {feedClientFilterPanel}
       </>
     )
@@ -4870,15 +4879,21 @@ const NoteList = forwardRef(
     // Relay-op rows arrive only after every relay in the wave reports terminal state. A slow or
     // wedged connection (e.g. NIP-42 re-auth) can delay that indefinitely while events already stream
     // in — without this guard the "Looking for more events…" banner never clears.
+    const showFeedInitialLoading =
+      listSourceEvents.length === 0 &&
+      !feedFullSearchActive &&
+      (loading || (subRequests.length > 0 && !feedTimelineEmptyUiReady))
+
     const showRelaySubscribeWavePendingBanner =
       !oneShotFetch &&
       !feedFullSearchActive &&
       subRequests.length > 0 &&
       relayCapabilityReady &&
       timelineKey != null &&
-      feedSubscribeRelayOutcomes.length === 0 &&
-      feedTimelineEmptyUiReady &&
-      timelineEventsForFilter.length === 0
+      timelineEventsForFilter.length === 0 &&
+      (loading ||
+        !feedTimelineEmptyUiReady ||
+        (feedSubscribeRelayOutcomes.length === 0 && feedTimelineEmptyUiReady))
     const showProgressiveLayersPendingBanner =
       Boolean(progressiveWarmupTrimmed) && progressiveLayersSearching && !feedFullSearchActive
     const showLookingForMoreEventsBanner =
@@ -4950,9 +4965,7 @@ const NoteList = forwardRef(
             />
           ))
         )}
-        {listSourceEvents.length === 0 &&
-        !feedFullSearchActive &&
-        (loading || (subRequests.length > 0 && !feedTimelineEmptyUiReady)) ? (
+        {showFeedInitialLoading ? (
           <div
             ref={bottomRef}
             className={gridLayout ? 'grid grid-cols-3 gap-0.5 pr-4 min-h-[40vh]' : 'min-h-[40vh] space-y-2 px-1 py-4'}
@@ -4960,6 +4973,9 @@ const NoteList = forwardRef(
             aria-live="polite"
             aria-busy="true"
           >
+            <p className="col-span-full px-2 pb-2 text-center text-sm text-muted-foreground">
+              {t('Loading feed…')}
+            </p>
             {gridLayout
               ? Array.from({ length: 9 }).map((_, i) => (
                   <div key={i} className="aspect-square animate-pulse bg-muted" />

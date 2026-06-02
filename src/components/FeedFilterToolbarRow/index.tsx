@@ -37,7 +37,10 @@ export default function FeedFilterToolbarRow({
       {onRefresh != null ? <RefreshButton onClick={onRefresh} /> : null}
       <KindFilter showKinds={showKinds} onShowKindsChange={onShowKindsChange} />
       {includeFeedSearchSlot ? (
-        <div ref={feedFilterTabRowSlotRef} className="flex shrink-0 flex-nowrap items-center" />
+        <div
+          ref={feedFilterTabRowSlotRef}
+          className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-1 overflow-hidden"
+        />
       ) : null}
     </div>
   )

@@ -2,6 +2,7 @@ import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
 import { checkAlgoRelay } from '@/lib/relay'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeUrl } from '@/lib/url'
 import { useFeed } from '@/providers/feed-context'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -21,7 +22,8 @@ const RelaysFeed = forwardRef<
   const { relayUrls, replyRelayUrls } = useFeed()
   const { showKinds } = useKindFilterOrDefaults()
   const [areAlgoRelays, setAreAlgoRelays] = useState(false)
-  const [relayCapabilityReady, setRelayCapabilityReady] = useState(false)
+  /** Timeline REQs must not wait on NIP-11; cache/IDB serves algo detection in the background. */
+  const [relayCapabilityReady, setRelayCapabilityReady] = useState(true)
 
   const relayUrlsKey = useMemo(
     () =>
@@ -41,47 +43,40 @@ const RelaysFeed = forwardRef<
         .join('|'),
     [replyRelayUrls]
   )
-  const stableRelayUrls = useMemo(() => relayUrls, [relayUrlsKey])
-  const stableReplyRelayUrls = useMemo(() => replyRelayUrls, [replyRelayUrlsKey])
+  const stableRelayUrls = useMemo(
+    () => dedupeNormalizeRelayUrlsOrdered(relayUrls),
+    [relayUrlsKey]
+  )
+  const stableReplyRelayUrls = useMemo(
+    () => dedupeNormalizeRelayUrlsOrdered(replyRelayUrls),
+    [replyRelayUrlsKey]
+  )
   const homeFeedSeenOnAllowlistOp = useMemo(() => stableRelayUrls, [relayUrlsKey])
   const homeFeedSeenOnAllowlistReplies = useMemo(() => stableReplyRelayUrls, [replyRelayUrlsKey])
 
   useEffect(() => {
-    if (relayUrls.length === 0) {
+    if (stableRelayUrls.length === 0) {
       setAreAlgoRelays(false)
       setRelayCapabilityReady(false)
       return
     }
+    setRelayCapabilityReady(true)
+
     let cancelled = false
-    setRelayCapabilityReady(false)
-
-    const init = async () => {
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('getRelayInfos timeout after 8 seconds'))
-        }, 8000)
-      })
-
+    void (async () => {
       try {
-        const relayInfos = await Promise.race([
-          relayInfoService.getRelayInfos(relayUrls),
-          timeoutPromise
-        ])
+        // Memory + IndexedDB cache first; network only for stale/missing (see relay-info.service).
+        const relayInfos = await relayInfoService.getRelayInfos(stableRelayUrls)
         if (cancelled) return
-        const areAlgo = relayInfos.every((relayInfo) => checkAlgoRelay(relayInfo))
-        setAreAlgoRelays(areAlgo)
+        setAreAlgoRelays(relayInfos.every((relayInfo) => checkAlgoRelay(relayInfo)))
       } catch {
         if (!cancelled) setAreAlgoRelays(false)
-      } finally {
-        if (!cancelled) setRelayCapabilityReady(true)
       }
-    }
-
-    void init()
+    })()
     return () => {
       cancelled = true
     }
-  }, [relayUrlsKey, relayUrls.length])
+  }, [relayUrlsKey, stableRelayUrls])
 
   /** Stable identity when kind filter is empty so `subRequests` does not invalidate every render. */
   const fallbackNoteKinds = useMemo(() => [kinds.ShortTextNote], [])
@@ -92,14 +87,14 @@ const RelaysFeed = forwardRef<
   }, [kindsOverride, showKinds, fallbackNoteKinds])
   const defaultKindsKey = useMemo(() => JSON.stringify(defaultKinds), [defaultKinds])
 
-  const canRenderFeed = relayUrls.length > 0
+  const canRenderFeed = stableRelayUrls.length > 0
 
   // Hooks must run every render — never place useMemo after conditional returns.
   const subRequests = useMemo(() => {
     if (!canRenderFeed) return []
     return [
       {
-        urls: ensureHomeFeedTrendingRelay(stableRelayUrls),
+        urls: dedupeNormalizeRelayUrlsOrdered(ensureHomeFeedTrendingRelay(stableRelayUrls)),
         filter: {
           kinds: defaultKinds
         }
@@ -112,7 +107,7 @@ const RelaysFeed = forwardRef<
       stableReplyRelayUrls.length > 0 ? stableReplyRelayUrls : stableRelayUrls
     return [
       {
-        urls: ensureHomeFeedTrendingRelay(replyUrls),
+        urls: dedupeNormalizeRelayUrlsOrdered(ensureHomeFeedTrendingRelay(replyUrls)),
         filter: {
           kinds: defaultKinds
         }

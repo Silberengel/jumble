@@ -1638,7 +1638,9 @@ export default {
     'Loading follow list…': 'Loading follow list…',
     'Could not load recommended follows': 'Could not load recommended follows',
     'Your follow list is empty': 'Your follow list is empty',
+    'Loading feed…': 'Loading feed…',
     'Loading recent posts from follows…': 'Loading recent posts from follows…',
+    'Loading notifications…': 'Loading notifications…',
     'Loading more…': 'Loading more…',
     'No recent posts from this user in the current fetch':
       'No recent posts from this user in the current fetch',

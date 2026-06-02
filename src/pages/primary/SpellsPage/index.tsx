@@ -1,4 +1,5 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
+import { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import StoredAccountSwitchSelect from '@/components/StoredAccountSwitchSelect'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
@@ -230,6 +231,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     notificationsMentionExtraHide,
     hideRepliesFollowing,
     fauxSubRequests,
+    followingFeedPreparing,
     NOTIFICATION_SPELL_LOADING_SAFETY_MS,
     NOTIFICATION_SPELL_KINDS
   } = useSpellsPageFeed({
@@ -1045,6 +1047,15 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                 pubkey={decodeProfileInteractionsSpellId(selectedFauxSpell)!}
                 refreshKey={profileInteractionsRefreshKey}
               />
+            </div>
+          ) : selectedFauxSpell && followingFeedPreparing ? (
+            <div className="space-y-2 px-1 py-8" role="status" aria-busy="true" aria-live="polite">
+              <p className="text-center text-sm text-muted-foreground">
+                {t('Loading recent posts from follows…')}
+              </p>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <NoteCardLoadingSkeleton key={i} />
+              ))}
             </div>
           ) : selectedFauxSpell && fauxSubRequests.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{fauxFeedEmptyMessage}</div>

@@ -18,7 +18,6 @@ import {
 } from '@/lib/feed-kind-filter'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
-import { useFontSize } from '@/providers/FontSizeProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { ListFilter } from 'lucide-react'
@@ -60,7 +59,6 @@ export default function KindFilter({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const { fontSize } = useFontSize()
   const {
     showKinds: savedShowKinds,
     showKind1OPs: savedShowKind1OPs,
@@ -170,7 +168,7 @@ export default function KindFilter({
       size="titlebar-icon"
       aria-label={t('Filter')}
       className={cn(
-        'relative h-8 w-fit shrink-0 px-1.5 text-xs focus:text-foreground',
+        'relative shrink-0 focus:text-foreground',
         !isDifferentFromSaved && !feedKindFilterBypass && 'text-muted-foreground',
         feedKindFilterBypass && 'text-amber-600 dark:text-amber-400'
       )}
@@ -180,17 +178,9 @@ export default function KindFilter({
         }
       }}
     >
-      <ListFilter className="size-3.5 shrink-0" />
-      <span
-        className={cn(
-          'ml-1 hidden',
-          isSmallScreen && fontSize === 'large' ? 'min-[400px]:inline' : 'min-[352px]:inline'
-        )}
-      >
-        {t('Filter')}
-      </span>
+      <ListFilter className="size-5 shrink-0" />
       {isDifferentFromSaved && (
-        <div className="absolute size-1.5 rounded-full bg-primary left-6 top-1.5 ring-1 ring-background" />
+        <div className="absolute size-1.5 rounded-full bg-primary right-1.5 top-1.5 ring-1 ring-background" />
       )}
     </Button>
   )
