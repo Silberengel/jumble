@@ -2411,12 +2411,16 @@ export default {
     'Searching…': 'Searching…',
     'Full-text search merged intro':
       'Notes appear as each index relay responds (merged by card; each card shows which relays returned it). The search wave stops at the sooner of {{totalSeconds}}s from start or {{afterFirstSeconds}}s after the first results arrive from any relay (up to {{concurrency}} relays in parallel, {{relayCount}} total). This is not a live feed — results do not auto-update.',
+    'Notes search local intro':
+      'Searches your local cache and archive only — session memory, publication cache, and event archive on this device. Matches title, summary, description, context, content, and similar readable fields.',
+    'Full-text search empty local':
+      'No notes matched this search in your local cache or archive.',
     'Full-text search progress relays': '{{done}} / {{total}} index relays',
     'Full-text search seen on label': 'Seen on',
     'Full-text search seen on relays': 'Relays that returned this note',
     'Full-text search local archive badge': 'This device',
     'Full-text search local archive description':
-      'Matched in your publication cache or event archive on this device. Index relays may not have ingested the note yet.',
+      'Matched in your publication cache or event archive on this device.',
     'Full-text search empty merged':
       'No notes matched this search in your archive or on the configured index relays (they can be slow or offline).',
     'Full-text search relay errors summary': '{{count}} relay(s) could not be queried.',

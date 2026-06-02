@@ -55,8 +55,8 @@ function dTagMatchRank(needle: string, dVal: string | undefined): number {
   return 3
 }
 
-/** Merged NIP-50 search: device cache/archive hits before relay-only hits; then {@link compareEventsForDTagQuery}. */
-export function compareMergedNip50SearchHits(
+/** Merged general search: device cache/archive hits before relay-only hits; then {@link compareEventsForDTagQuery}. */
+export function compareMergedGeneralSearchHits(
   needle: string,
   a: { event: Event; fromLocalArchive?: boolean },
   b: { event: Event; fromLocalArchive?: boolean }
@@ -66,6 +66,9 @@ export function compareMergedNip50SearchHits(
   if (aTier !== bTier) return aTier - bTier
   return compareEventsForDTagQuery(needle, a.event, b.event)
 }
+
+/** @deprecated Use {@link compareMergedGeneralSearchHits}. */
+export const compareMergedNip50SearchHits = compareMergedGeneralSearchHits
 
 /** For merged lists: better d-tag match first; tie-break newest first. Kind 30041 sinks unless `d` equals the needle. */
 export function compareEventsForDTagQuery(needle: string, a: Event, b: Event): number {

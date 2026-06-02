@@ -51,7 +51,7 @@ import { calendarRsvpMatchesCalendarEvent } from '@/lib/calendar-rsvp-match'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
-import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
+import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -834,7 +834,7 @@ export class EventService {
 
   /**
    * Get events from session cache matching search (newest {@link Event.created_at} first).
-   * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries; only rows where {@link eventMatchesNip50LocalFullTextQuery}
+   * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries; only rows where {@link eventMatchesGeneralSearchQuery}
    * matches the trimmed query are returned (not “recent rows” without a text hit).
    */
   getSessionEventsMatchingSearch(query: string, limit: number, allowedKinds?: number[]): NEvent[] {
@@ -854,7 +854,7 @@ export class EventService {
         continue
       }
 
-      if (eventMatchesNip50LocalFullTextQuery(event, queryTrim)) {
+      if (eventMatchesGeneralSearchQuery(event, queryTrim)) {
         buf.push(event)
       }
     }

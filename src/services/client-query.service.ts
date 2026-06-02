@@ -59,6 +59,11 @@ function filtersHaveNip50Search(filters: readonly Filter[]): boolean {
   return filters.some((f) => typeof f.search === 'string' && f.search.trim().length > 0)
 }
 
+/** Single-relay index `search` queries (NIP-50 wire format) that need long EOSE / global budgets. */
+function relayOpUsesIndexSearchFetchPath(source: string | undefined): boolean {
+  return source === 'fetchEventsFromSingleRelay'
+}
+
 /** NIP-50 index relays answer after connect + slot wait; nostr-tools synthetic EOSE runs this long after REQ `fire()`. */
 const NIP50_RELAY_SUBSCRIPTION_EOSE_TIMEOUT_MS = 38_000
 /**
@@ -478,8 +483,8 @@ export class QueryService {
     const effectiveFilter: Filter | Filter[] =
       sanitizedFilters.length === 1 ? sanitizedFilters[0]! : sanitizedFilters
     const hasNip50Search = filtersHaveNip50Search(sanitizedFilters)
-    const useNip50FetchPath =
-      hasNip50Search && options?.relayOpSource === 'fetchEventsFromSingleRelay'
+    const useIndexSearchFetchPath =
+      hasNip50Search && relayOpUsesIndexSearchFetchPath(options?.relayOpSource)
     const globalTimeoutRaw = options?.globalTimeout ?? 10000
     /**
      * Callers that pass a budget **below** {@link NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS} (e.g. merged search UI)
@@ -487,16 +492,16 @@ export class QueryService {
      * before index relays finish (default {@link ClientService.fetchEventsFromSingleRelay} uses 25s).
      */
     const globalTimeout =
-      useNip50FetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
+      useIndexSearchFetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
         ? globalTimeoutRaw
-        : useNip50FetchPath
+        : useIndexSearchFetchPath
           ? Math.max(globalTimeoutRaw, NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS)
           : globalTimeoutRaw
     /** After all relays EOSE, brief settle; shorter when the caller uses a short NIP-50 global budget. */
     const eoseTimeout =
-      useNip50FetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
+      useIndexSearchFetchPath && globalTimeoutRaw < NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS
         ? Math.max(options?.eoseTimeout ?? 500, Math.min(2_000, globalTimeout))
-        : useNip50FetchPath
+        : useIndexSearchFetchPath
           ? Math.max(options?.eoseTimeout ?? 500, 3_000)
           : options?.eoseTimeout ?? 500
     const replaceableRace = options?.replaceableRace ?? false

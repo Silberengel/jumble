@@ -1,11 +1,11 @@
-import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
+import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
 import indexedDb from '@/services/indexed-db.service'
 import { eventService } from '@/services/client.service'
 import type { Event } from 'nostr-tools'
 
 export type CollectLocalTextSearchParams = {
   query: string
-  /** Kind filter (same semantics as NIP-50 `kinds` on relays). */
+  /** Kind filter (same semantics as search page `kinds`). */
   allowedKinds: readonly number[]
   /**
    * Session LRU scan cap for {@link EventService.getSessionEventsMatchingSearch}.
@@ -27,7 +27,7 @@ export type CollectLocalTextSearchParams = {
 /**
  * Merges local session + publication + event-archive (and optionally other IndexedDB stores) for the same
  * text query and kind filter, deduped by id, sorted newest-first. Every row must satisfy
- * {@link eventMatchesNip50LocalFullTextQuery} (defense in depth on top of store-specific scans).
+ * {@link eventMatchesGeneralSearchQuery} (defense in depth on top of store-specific scans).
  */
 export async function collectLocalEventsForTextSearch(
   params: CollectLocalTextSearchParams
@@ -44,7 +44,7 @@ export async function collectLocalEventsForTextSearch(
 
   const push = (ev: Event) => {
     if (!kindSet.has(ev.kind)) return
-    if (!eventMatchesNip50LocalFullTextQuery(ev, q)) return
+    if (!eventMatchesGeneralSearchQuery(ev, q)) return
     if (seen.has(ev.id)) return
     seen.add(ev.id)
     out.push(ev)

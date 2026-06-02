@@ -547,6 +547,12 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
+  'wss://relay.damus.io',
+  'wss://theforest.nostr1.com',
+  'wss://nostr.land',
+  'wss://relay.primal.net',
+  'wss://nos.lol',
+  'wss://thecitadel.nostr1.com'
 ]
 
 /**
@@ -888,13 +894,15 @@ export const NIP_SEARCH_DOCUMENT_KINDS: readonly number[] = [
 ]
 
 /**
- * Primary Search page NIP-50 `kinds`: profiles, short notes, and document kinds.
- * Search used only {@link NIP_SEARCH_DOCUMENT_KINDS} before, so handles and npub-related
- * metadata (kind 0) and normal notes (kind 1) never matched.
+ * Primary Search page note kinds: profiles, short notes, and document kinds.
+ * {@link GENERAL_SEARCH_PAGE_KINDS} is an alias for the same set.
  */
 export const NIP_SEARCH_PAGE_KINDS: readonly number[] = Array.from(
   new Set<number>([kinds.Metadata, kinds.ShortTextNote, ...NIP_SEARCH_DOCUMENT_KINDS])
 ).sort((a, b) => a - b)
+
+/** Alias for {@link NIP_SEARCH_PAGE_KINDS} (general search UI). */
+export const GENERAL_SEARCH_PAGE_KINDS = NIP_SEARCH_PAGE_KINDS
 
 export function relayFilterIncludesDocumentRelayKind(filter: Filter): boolean {
   const k = filter.kinds

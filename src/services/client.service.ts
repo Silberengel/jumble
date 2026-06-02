@@ -3738,7 +3738,11 @@ class ClientService extends EventTarget {
   async fetchEventsFromSingleRelay(
     url: string,
     filter: Filter | Filter[],
-    options?: { globalTimeout?: number; signal?: AbortSignal }
+    options?: {
+      globalTimeout?: number
+      signal?: AbortSignal
+      relayOpSource?: string
+    }
   ): Promise<{ events: NEvent[]; connectionError?: string }> {
     const normalized = normalizeAnyRelayUrl(url) || url
     if (!normalized) {
@@ -3746,9 +3750,9 @@ class ClientService extends EventTarget {
     }
     const queryOpts = {
       globalTimeout: options?.globalTimeout ?? 25_000,
-      relayOpSource: 'fetchEventsFromSingleRelay' as const,
+      relayOpSource: options?.relayOpSource ?? ('fetchEventsFromSingleRelay' as const),
       foreground: true as const,
-      /** NIP-50 must run to EOSE; implicit feed grace would close the REQ after the first hit. */
+      /** General / picker single-relay queries use explicit grace from caller globalTimeout. */
       firstRelayResultGraceMs: false as const,
       ...(options?.signal ? { signal: options.signal } : {})
     }
