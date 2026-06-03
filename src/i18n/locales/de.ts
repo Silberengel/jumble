@@ -456,6 +456,7 @@ export default {
     'Show more...': 'Mehr anzeigen...',
     'Search dropdown profile search': 'PROFILES',
     'Profile search no results': 'No matching profiles were found for this search.',
+    'Pubkey list search placeholder': 'Nach Name, npub oder Pubkey suchen…',
     'Profile search failed':
       'Profile search could not complete. Check your connection or try again.',
     'All users': 'Alle Benutzer',

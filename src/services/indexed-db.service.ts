@@ -1184,6 +1184,7 @@ class IndexedDbService {
       case 10001: // Pin list
         return StoreNames.PIN_LIST_EVENTS
       case ExtendedKind.PROFILE_BADGES_LIST:
+      case ExtendedKind.PROFILE_BADGES: // deprecated NIP-58 list (d=profile_badges); same store as 10008
         return StoreNames.PROFILE_BADGES_LIST_EVENTS
       case 10015: // Interest list
         return StoreNames.INTEREST_LIST_EVENTS

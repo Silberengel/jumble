@@ -6,7 +6,14 @@ import UserItem from '../UserItem'
 
 const PROFILE_CHUNK = 80
 
-export default function ProfileList({ pubkeys }: { pubkeys: string[] }) {
+export default function ProfileList({
+  pubkeys,
+  seedProfiles
+}: {
+  pubkeys: string[]
+  /** Profiles from list search (IndexedDB kind 0) — shown immediately without another fetch. */
+  seedProfiles?: Map<string, TProfile>
+}) {
   const [visiblePubkeys, setVisiblePubkeys] = useState<string[]>([])
   const [profilesByPubkey, setProfilesByPubkey] = useState<Map<string, TProfile>>(() => new Map())
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -104,8 +111,27 @@ export default function ProfileList({ pubkeys }: { pubkeys: string[] }) {
   useEffect(() => {
     batchGenRef.current += 1
     loadedRef.current.clear()
-    setProfilesByPubkey(new Map())
-  }, [pubkeysKey])
+    const next = new Map<string, TProfile>()
+    if (seedProfiles) {
+      for (const [pk, p] of seedProfiles) {
+        next.set(pk.toLowerCase(), p)
+        loadedRef.current.add(pk.toLowerCase())
+      }
+    }
+    setProfilesByPubkey(next)
+  }, [pubkeysKey, seedProfiles])
+
+  useEffect(() => {
+    if (!seedProfiles?.size) return
+    setProfilesByPubkey((prev) => {
+      const next = new Map(prev)
+      for (const [pk, p] of seedProfiles) {
+        const pkNorm = pk.toLowerCase()
+        if (!next.has(pkNorm)) next.set(pkNorm, p)
+      }
+      return next
+    })
+  }, [seedProfiles])
 
   return (
     <div className="px-4 pt-2">

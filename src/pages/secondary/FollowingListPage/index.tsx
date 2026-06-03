@@ -1,5 +1,6 @@
 import JsonViewDialog from '@/components/JsonViewDialog'
 import ProfileList from '@/components/ProfileList'
+import PubkeyListSearchField from '@/components/PubkeyListSearchField'
 import { RefreshButton } from '@/components/RefreshButton'
 import {
   AlertDialog,
@@ -19,6 +20,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useFetchFollowings, useFetchProfile } from '@/hooks'
+import { usePubkeyListSearchProfiles } from '@/hooks/usePubkeyListSearchProfiles'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
@@ -40,6 +42,8 @@ const FollowingListPage = forwardRef(({ id, index, hideTitlebar = false }: { id?
   const [listRefreshNonce, setListRefreshNonce] = useState(0)
   const { profile } = useFetchProfile(id)
   const { followings, followListEvent } = useFetchFollowings(profile?.pubkey, listRefreshNonce)
+  const { searchQuery, setSearchQuery, filteredPubkeys, searchProfileMap } =
+    usePubkeyListSearchProfiles(followings)
   const [jsonOpen, setJsonOpen] = useState(false)
   const [followJsonPayload, setFollowJsonPayload] = useState<unknown>(null)
   const [cleanConfirmOpen, setCleanConfirmOpen] = useState(false)
@@ -156,7 +160,12 @@ const FollowingListPage = forwardRef(({ id, index, hideTitlebar = false }: { id?
       displayScrollToTopButton
     >
       <JsonViewDialog value={followJsonPayload} isOpen={jsonOpen} onClose={() => setJsonOpen(false)} />
-      <ProfileList pubkeys={followings} />
+      <PubkeyListSearchField value={searchQuery} onChange={setSearchQuery} />
+      {searchQuery.trim() && filteredPubkeys.length === 0 ? (
+        <p className="px-4 text-sm text-muted-foreground">{t('Profile search no results')}</p>
+      ) : (
+        <ProfileList pubkeys={filteredPubkeys} seedProfiles={searchProfileMap} />
+      )}
       <AlertDialog open={cleanConfirmOpen} onOpenChange={setCleanConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

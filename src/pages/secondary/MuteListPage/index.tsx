@@ -1,5 +1,6 @@
 import JsonViewDialog from '@/components/JsonViewDialog'
 import MuteButton from '@/components/MuteButton'
+import PubkeyListSearchField from '@/components/PubkeyListSearchField'
 import Nip05 from '@/components/Nip05'
 import ProfileAbout from '@/components/ProfileAbout'
 import { RefreshButton } from '@/components/RefreshButton'
@@ -24,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
 import { useFetchProfile } from '@/hooks'
+import { usePubkeyListSearchProfiles } from '@/hooks/usePubkeyListSearchProfiles'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
@@ -32,6 +34,7 @@ import { useMuteList } from '@/contexts/mute-list-context'
 import indexedDb from '@/services/indexed-db.service'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
+import type { TProfile } from '@/types'
 import { Code, Eraser, Lock, MoreVertical, Unlock } from 'lucide-react'
 import dayjs from 'dayjs'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -48,6 +51,8 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
   const [jsonOpen, setJsonOpen] = useState(false)
   const [jsonPayload, setJsonPayload] = useState<unknown>(null)
   const mutePubkeys = useMemo(() => getMutePubkeys(), [getMutePubkeys])
+  const { searchQuery, setSearchQuery, filteredPubkeys, searchProfileMap } =
+    usePubkeyListSearchProfiles(mutePubkeys)
   const [visibleMutePubkeys, setVisibleMutePubkeys] = useState<string[]>([])
   const [listRefreshKey, setListRefreshKey] = useState(0)
   const [cleanConfirmOpen, setCleanConfirmOpen] = useState(false)
@@ -86,8 +91,8 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
   }, [hideTitlebar, registerPrimaryPanelRefresh, bumpList])
 
   useEffect(() => {
-    setVisibleMutePubkeys(mutePubkeys.slice(0, 10))
-  }, [mutePubkeys, listRefreshKey])
+    setVisibleMutePubkeys(filteredPubkeys.slice(0, 10))
+  }, [filteredPubkeys, listRefreshKey])
 
   useEffect(() => {
     const options = {
@@ -97,10 +102,10 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
     }
 
     const observerInstance = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && mutePubkeys.length > visibleMutePubkeys.length) {
+      if (entries[0].isIntersecting && filteredPubkeys.length > visibleMutePubkeys.length) {
         setVisibleMutePubkeys((prev) => [
           ...prev,
-          ...mutePubkeys.slice(prev.length, prev.length + 10)
+          ...filteredPubkeys.slice(prev.length, prev.length + 10)
         ])
       }
     }, options)
@@ -115,7 +120,7 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
         observerInstance.unobserve(currentBottomRef)
       }
     }
-  }, [visibleMutePubkeys, mutePubkeys])
+  }, [visibleMutePubkeys, filteredPubkeys])
 
   const handleCleanList = useCallback(async () => {
     if (!pubkey || cleaning) return
@@ -207,21 +212,37 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <div key={listRefreshKey} className="space-y-2 px-4 pt-2">
-        {visibleMutePubkeys.map((pubkey, index) => (
-          <UserItem key={`${index}-${pubkey}`} pubkey={pubkey} />
-        ))}
-        {mutePubkeys.length > visibleMutePubkeys.length && <div ref={bottomRef} />}
-      </div>
+      <PubkeyListSearchField value={searchQuery} onChange={setSearchQuery} className="pt-2" />
+      {searchQuery.trim() && filteredPubkeys.length === 0 ? (
+        <p className="px-4 pb-2 text-sm text-muted-foreground">{t('Profile search no results')}</p>
+      ) : (
+        <div key={listRefreshKey} className="space-y-2 px-4 pt-0">
+          {visibleMutePubkeys.map((pubkey, index) => (
+            <UserItem
+              key={`${index}-${pubkey}`}
+              pubkey={pubkey}
+              prefetchedProfile={searchProfileMap.get(pubkey.toLowerCase())}
+            />
+          ))}
+          {filteredPubkeys.length > visibleMutePubkeys.length && <div ref={bottomRef} />}
+        </div>
+      )}
     </SecondaryPageLayout>
   )
 })
 MuteListPage.displayName = 'MuteListPage'
 export default MuteListPage
 
-function UserItem({ pubkey }: { pubkey: string }) {
+function UserItem({
+  pubkey,
+  prefetchedProfile
+}: {
+  pubkey: string
+  prefetchedProfile?: TProfile
+}) {
   const { changing, getMuteType, switchToPrivateMute, switchToPublicMute } = useMuteList()
-  const { profile } = useFetchProfile(pubkey)
+  const { profile: fetchedProfile } = useFetchProfile(pubkey)
+  const profile = prefetchedProfile ?? fetchedProfile
   const muteType = useMemo(() => getMuteType(pubkey), [pubkey, getMuteType])
   const [switching, setSwitching] = useState(false)
 

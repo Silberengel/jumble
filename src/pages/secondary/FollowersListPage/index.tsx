@@ -1,5 +1,6 @@
 import JsonViewDialog from '@/components/JsonViewDialog'
 import ProfileList from '@/components/ProfileList'
+import PubkeyListSearchField from '@/components/PubkeyListSearchField'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,11 +11,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useFetchProfile } from '@/hooks'
 import { useNostrArchivesAvailable } from '@/hooks/useNostrArchivesAvailable'
+import { usePubkeyListSearchProfiles } from '@/hooks/usePubkeyListSearchProfiles'
+import { userIdToPubkey } from '@/lib/pubkey'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import nostrArchivesApi from '@/services/nostr-archives-api.service'
 import { Code, MoreVertical } from 'lucide-react'
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const FOLLOWERS_PAGE_SIZE = 100
@@ -31,6 +34,11 @@ const FollowersListPage = forwardRef(
     const archivesAvailable = useNostrArchivesAvailable()
     const [listRefreshNonce, setListRefreshNonce] = useState(0)
     const { profile } = useFetchProfile(id)
+    const profilePubkey = useMemo(() => {
+      if (!id) return null
+      const pk = userIdToPubkey(id)
+      return pk.length === 64 && /^[0-9a-f]{64}$/i.test(pk) ? pk.toLowerCase() : null
+    }, [id])
     const [followers, setFollowers] = useState<string[]>([])
     const [totalCount, setTotalCount] = useState<number | null>(null)
     const [hasMore, setHasMore] = useState(false)
@@ -40,6 +48,8 @@ const FollowersListPage = forwardRef(
     const bottomRef = useRef<HTMLDivElement>(null)
     const loadMoreInFlight = useRef(false)
     const offsetRef = useRef(0)
+    const { searchQuery, setSearchQuery, filteredPubkeys, searchProfileMap } =
+      usePubkeyListSearchProfiles(followers)
 
     const bumpList = useCallback(() => {
       offsetRef.current = 0
@@ -48,7 +58,7 @@ const FollowersListPage = forwardRef(
 
     const openFollowersJson = useCallback(() => {
       setFollowersJsonPayload({
-        pubkey: profile?.pubkey ?? null,
+        pubkey: profilePubkey ?? profile?.pubkey ?? null,
         source: 'nostr-archives',
         endpoint: '/v1/social/{pubkey}',
         followersOffset: offsetRef.current,
@@ -57,7 +67,7 @@ const FollowersListPage = forwardRef(
         totalCount
       })
       setJsonOpen(true)
-    }, [profile?.pubkey, followers, totalCount])
+    }, [profilePubkey, profile?.pubkey, followers, totalCount])
 
     useEffect(() => {
       if (!hideTitlebar) {
@@ -70,7 +80,7 @@ const FollowersListPage = forwardRef(
 
     const fetchPage = useCallback(
       async (offset: number, append: boolean) => {
-        const pk = profile?.pubkey
+        const pk = profilePubkey
         if (!pk || !archivesAvailable) return false
 
         const res = await nostrArchivesApi.getSocialGraph(pk, {
@@ -101,12 +111,12 @@ const FollowersListPage = forwardRef(
         setHasMore(offsetRef.current < res.data.followers.count && batch.length > 0)
         return true
       },
-      [profile?.pubkey, archivesAvailable]
+      [profilePubkey, archivesAvailable]
     )
 
     useEffect(() => {
       let cancelled = false
-      const pk = profile?.pubkey
+      const pk = profilePubkey
 
       if (!pk) {
         setFollowers([])
@@ -136,7 +146,7 @@ const FollowersListPage = forwardRef(
       return () => {
         cancelled = true
       }
-    }, [profile?.pubkey, listRefreshNonce, archivesAvailable, fetchPage])
+    }, [profilePubkey, listRefreshNonce, archivesAvailable, fetchPage])
 
     useEffect(() => {
       const el = bottomRef.current
@@ -201,9 +211,14 @@ const FollowersListPage = forwardRef(
         ) : (
           <>
             {totalCount != null ? (
-              <p className="text-xs text-muted-foreground mb-3">{t('Nostr Archives followers hint')}</p>
+              <p className="text-xs text-muted-foreground mb-3 px-4">{t('Nostr Archives followers hint')}</p>
             ) : null}
-            <ProfileList pubkeys={followers} />
+            <PubkeyListSearchField value={searchQuery} onChange={setSearchQuery} />
+            {searchQuery.trim() && filteredPubkeys.length === 0 ? (
+              <p className="px-4 text-sm text-muted-foreground">{t('Profile search no results')}</p>
+            ) : (
+              <ProfileList pubkeys={filteredPubkeys} seedProfiles={searchProfileMap} />
+            )}
           </>
         )}
         <div ref={bottomRef} className="h-1" />
