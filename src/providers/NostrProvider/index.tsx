@@ -84,7 +84,14 @@ import { NostrContext, type TNostrContext } from '@/providers/nostr-context'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEventCallback } from '@/hooks/use-event-callback'
 import { useTranslation } from 'react-i18next'
-import { findStoredAccountForPointer, isSameAccount } from '@/lib/account'
+import { findStoredAccountForPointer, isSameAccount, canAccountSignEvents, canManageIdentityFeatures } from '@/lib/account'
+import {
+  createAnonAccountPointer,
+  createEphemeralSigner,
+  isAnonAccount,
+  isAnonSessionPersisted,
+  setAnonSessionPersisted
+} from '@/lib/anon-session'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { BunkerSigner } from './bunker.signer'
@@ -103,8 +110,10 @@ let nostrSessionRestoreStarted = false
 function favoriteRelayUrlsForPublish(
   favoriteRelaysEvent: Event | null,
   pubkey: string | null,
-  relayList: TRelayList | null | undefined
+  relayList: TRelayList | null | undefined,
+  account: TAccountPointer | null
 ): string[] {
+  if (isAnonAccount(account)) return [...DEFAULT_FAVORITE_RELAYS]
   const urlsFromEvent = (): string[] => {
     const urls: string[] = []
     if (!favoriteRelaysEvent) return urls
@@ -206,6 +215,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         return await loginByNostrLoginHash()
       }
 
+      if (isAnonSessionPersisted()) {
+        loginAnon()
+        return
+      }
+
       const accounts = storage.getAccounts()
       const act = storage.getCurrentAccount() ?? accounts[0] // auto login the first account
       if (!act) return
@@ -260,6 +274,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setRssFeedListEvent(null)
         setCacheRelayListEvent(null)
         setHttpRelayListEvent(undefined)
+        return undefined
+      }
+
+      if (isAnonAccount(account)) {
+        setIsAccountSessionHydrating(false)
+        lastNetworkHydrateAccountPubkeyRef.current = null
         return undefined
       }
 
@@ -1248,15 +1268,38 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     setSigner(npubSigner)
   }
 
+  const loginAnon = (): null => {
+    setAnonSessionPersisted(true)
+    clearSessionUiForAccountChange()
+    accountHydrationGenerationRef.current += 1
+    lastNetworkHydrateAccountPubkeyRef.current = null
+
+    const pointer = createAnonAccountPointer()
+    setAccount(pointer)
+    setSigner(null)
+    setNsec(null)
+    setNcryptsec(null)
+    accountForReplaceablesSyncRef.current = pointer
+    client.setSigner(undefined, 'anon')
+    client.pubkey = undefined
+    return null
+  }
+
   const switchAccount = async (act: TAccountPointer | null): Promise<string | null> => {
     intentionalNip07ReadOnlyPubkeyRef.current = null
     if (!act) {
+      setAnonSessionPersisted(false)
       storage.switchAccount(null)
       setAccount(null)
       setSigner(null)
       window.dispatchEvent(new CustomEvent(APP_RESET_TO_LANDING_EVENT))
       return null
     }
+    if (isAnonAccount(act)) {
+      loginAnon()
+      return null
+    }
+    setAnonSessionPersisted(false)
     const result = await loginWithAccountPointer(act, { userInitiatedSwitch: true })
     // If loginWithAccountPointer fell back to read-only npub it skips storage.switchAccount.
     // Persist the user's intent here so session restore and NIP-07 recovery target this row.
@@ -1489,6 +1532,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     act: TAccountPointer,
     options?: { userInitiatedSwitch?: boolean }
   ): Promise<string | null> => {
+    if (isAnonAccount(act)) {
+      loginAnon()
+      return null
+    }
     const fallbackToReadOnlyNpub = (pubkey: string, reason?: unknown): string => {
       const pk =
         accountPubkeyToHex(pubkey) ??
@@ -1870,6 +1917,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     normalizeOpts?: { addClientTag?: boolean }
   ) => {
     const normalizedDraft = normalizeDraftEventTags(draftEvent, normalizeOpts)
+
+    if (isAnonAccount(account)) {
+      const ephemeral = createEphemeralSigner()
+      const event = await ephemeral.signEvent(normalizedDraft)
+      if (!validateEvent(event)) {
+        throw new Error('Event validation failed - invalid signature or format.')
+      }
+      return event as VerifiedEvent
+    }
+
     // Add timeout to prevent hanging
     const signEventWithTimeout = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -1925,12 +1982,23 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     draftEvent: TDraftEvent,
     { minPow = 0, ...options }: TPublishOptions = {}
   ) => {
-    if (!account || !signer || account.signerType === 'npub') {
+    if (!account || account.signerType === 'npub') {
+      throw new LoginRequiredError()
+    }
+    if (!isAnonAccount(account) && !signer) {
       throw new LoginRequiredError()
     }
 
-    const accountPk = accountPubkeyToHex(account.pubkey)
-    await assertSignerMatchesAccountForPublish()
+    const anonSigner = isAnonAccount(account) ? createEphemeralSigner() : null
+    const activeSigner = anonSigner ?? signer
+    if (!activeSigner) {
+      throw new LoginRequiredError()
+    }
+
+    const accountPk = isAnonAccount(account) ? null : accountPubkeyToHex(account.pubkey)
+    if (!isAnonAccount(account)) {
+      await assertSignerMatchesAccountForPublish()
+    }
 
     const normalizeOpts = { addClientTag: options.addClientTag }
     const draft = normalizeDraftEventTags(draftEvent, normalizeOpts)
@@ -1944,12 +2012,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           })
         )
       }
+      const publishPubkey = anonSigner ? await anonSigner.getPublicKey() : account.pubkey
       const unsignedTemplate = {
         kind: draft.kind,
         content: draft.content,
         tags: draft.tags,
         created_at: draft.created_at,
-        pubkey: account.pubkey
+        pubkey: publishPubkey
       }
       if (!validateEvent(unsignedTemplate)) {
         throw new Error(t('Invalid event fields'))
@@ -1957,13 +2026,23 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const id = getEventHash(unsignedTemplate)
       event = { ...unsignedTemplate, id, sig: '' }
     } else if (minPow > 0) {
-      const unsignedEvent = await minePow({ ...draft, pubkey: account.pubkey }, minPow)
-      event = await signEvent(unsignedEvent, normalizeOpts)
+      const publishPubkey = anonSigner ? await anonSigner.getPublicKey() : account.pubkey
+      const unsignedEvent = await minePow({ ...draft, pubkey: publishPubkey }, minPow)
+      const normalizedUnsigned = normalizeDraftEventTags(unsignedEvent, normalizeOpts)
+      event = await activeSigner.signEvent(normalizedUnsigned)
+      if (!validateEvent(event)) {
+        throw new Error('Event validation failed - invalid signature or format.')
+      }
     } else {
-      event = await signEvent(draft, normalizeOpts)
+      const normalizedDraft = normalizeDraftEventTags(draft, normalizeOpts)
+      event = await activeSigner.signEvent(normalizedDraft)
+      if (!validateEvent(event)) {
+        throw new Error('Event validation failed - invalid signature or format.')
+      }
     }
 
     if (
+      !isAnonAccount(account) &&
       event.kind !== kinds.Application &&
       accountPk &&
       !hexPubkeysEqual(event.pubkey, accountPk)
@@ -1976,7 +2055,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     let publishRelayCandidates: string[] = []
     try {
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
-      const favoriteRelayUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account.pubkey, relayList)
+      const favoriteRelayUrls = favoriteRelayUrlsForPublish(
+        favoriteRelaysEvent,
+        account.pubkey,
+        relayList,
+        account
+      )
       publishRelayCandidates = await client.determineTargetRelays(event, {
         ...options,
         favoriteRelayUrls,
@@ -2105,10 +2189,16 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }
 
   const attemptDelete = async (targetEvent: Event) => {
-    if (!signer || account?.signerType === 'npub') {
+    if (!account || account.signerType === 'npub') {
       return
     }
-    if (account?.pubkey !== targetEvent.pubkey) {
+    if (isAnonAccount(account)) {
+      throw new Error(t('accountSwitch.anonCannotDelete'))
+    }
+    if (!signer) {
+      return
+    }
+    if (account.pubkey !== targetEvent.pubkey) {
       throw new Error(t('You can only delete your own notes'))
     }
 
@@ -2117,7 +2207,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     client.interruptBackgroundQueries()
 
     // Privacy: Only use user's own relays, never connect to "seen on" relays
-    const favUrls = favoriteRelayUrlsForPublish(favoriteRelaysEvent, account?.pubkey ?? null, relayList)
+    const favUrls = favoriteRelayUrlsForPublish(
+      favoriteRelaysEvent,
+      account?.pubkey ?? null,
+      relayList,
+      account
+    )
     const relays = await client.determineTargetRelays(targetEvent, {
       favoriteRelayUrls: favUrls,
       blockedRelayUrls: blockedRelayUrlsFromEvent(blockedRelaysEvent)
@@ -2152,10 +2247,20 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }
 
   const nip04Encrypt = async (pubkey: string, plainText: string) => {
+    if (isAnonAccount(account)) {
+      return createEphemeralSigner().nip04Encrypt(pubkey, plainText)
+    }
     return signer?.nip04Encrypt(pubkey, plainText) ?? ''
   }
 
   const nip04Decrypt = async (pubkey: string, cipherText: string) => {
+    if (isAnonAccount(account)) {
+      try {
+        return (await createEphemeralSigner().nip04Decrypt(pubkey, cipherText)) ?? ''
+      } catch {
+        return ''
+      }
+    }
     if (!signer) return ''
     try {
       return (await signer.nip04Decrypt(pubkey, cipherText)) ?? ''
@@ -2170,6 +2275,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       if (cb) {
         toast.error(t('readOnlySession.cannotPublish'))
       }
+      return
+    }
+    if (isAnonAccount(account)) {
+      if (cb) return await cb()
       return
     }
     if (!signer) {
@@ -2404,7 +2513,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       isInitialized,
       isAccountSessionHydrating,
       isNip07LoginInFlight,
-      pubkey: account?.pubkey ?? null,
+      pubkey: isAnonAccount(account) ? null : (account?.pubkey ?? null),
       profile,
       profileEvent,
       relayList,
@@ -2420,7 +2529,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       rssFeedListEvent,
       account,
       accounts,
-      canSignEvents: account != null && account.signerType !== 'npub',
+      canSignEvents: canAccountSignEvents(account),
+      isAnonSession: isAnonAccount(account),
+      canManageIdentity: canManageIdentityFeatures(account),
       nsec,
       ncryptsec,
       switchAccount: switchAccountStable,

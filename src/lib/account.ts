@@ -1,5 +1,20 @@
+import { isAnonAccount } from '@/lib/anon-session'
 import { accountPubkeyToHex, hexPubkeysEqual } from '@/lib/pubkey'
 import { TAccount, TAccountPointer, TSignerType } from '@/types'
+
+export { createAnonAccountPointer, isAnonAccount } from '@/lib/anon-session'
+
+/** True when the session can sign events (includes anonymous write mode). */
+export function canAccountSignEvents(account: TAccountPointer | null | undefined): boolean {
+  if (!account) return false
+  if (account.signerType === 'npub') return false
+  return true
+}
+
+/** True when the session has a stable identity (follow/mute/profile/lists). False for anon write mode. */
+export function canManageIdentityFeatures(account: TAccountPointer | null | undefined): boolean {
+  return canAccountSignEvents(account) && !isAnonAccount(account)
+}
 
 export function isSameAccount(a: TAccountPointer | null, b: TAccountPointer | null) {
   if (!a || !b) return false
@@ -41,7 +56,8 @@ const SWITCH_SIGNER_PRIORITY: Record<TSignerType, number> = {
   'browser-nsec': 1,
   ncryptsec: 2,
   bunker: 3,
-  npub: 4
+  npub: 4,
+  anon: 99
 }
 
 function normalizedPubkeyHex(account: TAccountPointer): string | null {

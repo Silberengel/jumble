@@ -1,6 +1,13 @@
+import { AnonUserAvatar } from '@/components/AnonUserAvatar'
 import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
-import { accountPointerKey, isRedundantAccountPick, listSwitchableAccounts } from '@/lib/account'
+import {
+  accountPointerKey,
+  createAnonAccountPointer,
+  isAnonAccount,
+  isRedundantAccountPick,
+  listSwitchableAccounts
+} from '@/lib/account'
 import { accountPubkeyToHex, formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { Nip07Signer } from '@/providers/NostrProvider/nip-07.signer'
@@ -28,6 +35,7 @@ type Props = {
 }
 
 const EXTENSION_SYNC_HINT_DISMISSED_PREFIX = 'extensionSyncHintDismissed:'
+const anonAccount = createAnonAccountPointer()
 
 function readExtensionSyncHintDismissed(pubkey: string | null): boolean {
   if (!pubkey || typeof window === 'undefined') return false
@@ -55,6 +63,7 @@ export default function StoredAccountSwitchSelect({
     pubkey,
     account,
     accounts,
+    isAnonSession,
     switchAccount,
     isAccountSessionHydrating,
     retryNip07SignerForPreferredAccount,
@@ -67,9 +76,10 @@ export default function StoredAccountSwitchSelect({
   const [extensionSyncHintDismissed, setExtensionSyncHintDismissed] = useState(false)
 
   const sessionPubkey = useMemo(() => {
+    if (isAnonSession) return null
     const cur = pubkey?.trim()
     return cur ? normalizeHexPubkey(cur) : null
-  }, [pubkey])
+  }, [pubkey, isAnonSession])
 
   const storedAccounts = useMemo(() => listSwitchableAccounts(accounts), [accounts])
 
@@ -135,6 +145,17 @@ export default function StoredAccountSwitchSelect({
 
   const handlePick = useCallback(
     async (nextAccount: TAccountPointer) => {
+      if (isAnonAccount(nextAccount)) {
+        if (isAnonSession) return
+        setSwitchingKey(accountPointerKey(nextAccount))
+        try {
+          await switchAccount(nextAccount)
+        } finally {
+          setSwitchingKey(null)
+        }
+        return
+      }
+
       const target = accountPubkeyToHex(nextAccount.pubkey)
       if (isRedundantAccountPick(nextAccount, account)) {
         if (account?.signerType === 'npub' && nextAccount.signerType === 'nip-07') {
@@ -172,7 +193,7 @@ export default function StoredAccountSwitchSelect({
         setSwitchingKey(null)
       }
     },
-    [account, switchAccount, retryNip07SignerForPreferredAccount, t, inComposer]
+    [account, switchAccount, retryNip07SignerForPreferredAccount, t, inComposer, isAnonSession]
   )
 
   const handleRetryExtension = useCallback(async () => {
@@ -199,9 +220,14 @@ export default function StoredAccountSwitchSelect({
     }
   }, [sessionPubkey])
 
-  if (storedAccounts.length <= 1 || !sessionPubkey) return null
+  const showSwitcher =
+    inComposer || isAnonSession || storedAccounts.length > 1 || storedAccounts.length > 0
+  if (!showSwitcher) return null
+  if (!inComposer && storedAccounts.length <= 1 && !isAnonSession) return null
 
   const busy = isAccountSessionHydrating || switchingKey !== null
+  const anonActive = isAnonSession
+  const anonSwitching = switchingKey === accountPointerKey(anonAccount)
 
   return (
     <div
@@ -216,7 +242,7 @@ export default function StoredAccountSwitchSelect({
         className
       )}
       role="group"
-      aria-label={t('notificationsViewAsAccountAria')}
+      aria-label={t('notificationsViewAsAccount')}
     >
       <div
         className={cn(
@@ -233,9 +259,35 @@ export default function StoredAccountSwitchSelect({
           {t('notificationsViewAsAccount')}
         </span>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            disabled={busy && !anonSwitching}
+            aria-pressed={anonActive}
+            aria-label={t('accountSwitch.selectAnon')}
+            title={t('accountSwitch.anonHint')}
+            className={cn(
+              'relative shrink-0 rounded-full p-0.5 transition-[box-shadow,opacity]',
+              'ring-2 ring-offset-2 ring-offset-background',
+              anonActive ? 'ring-primary' : 'ring-transparent hover:ring-muted-foreground/35',
+              busy && !anonSwitching && 'opacity-50'
+            )}
+            onClick={(e) => {
+              if (inComposer) e.stopPropagation()
+              void handlePick(anonAccount)
+            }}
+          >
+            <AnonUserAvatar size="small" />
+            {anonSwitching ? (
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+              </span>
+            ) : null}
+          </button>
           {storedAccounts.map((act) => {
             const pk = normalizeHexPubkey(act.pubkey)
             const isActive =
+              !isAnonSession &&
+              sessionPubkey != null &&
               hexPubkeysEqual(pk, sessionPubkey) &&
               (account?.signerType === act.signerType ||
                 (account?.signerType === 'npub' &&

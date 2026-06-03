@@ -21,13 +21,13 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { pubkey: accountPubkey, checkLogin } = useNostr()
-  const { signControlProps } = useSignGatedControl()
+  const { signControlProps, canManageIdentity } = useSignGatedControl()
   const { mutePubkeySet, changing, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } =
     useMuteList()
   const [updating, setUpdating] = useState(false)
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, pubkey), [mutePubkeySet, pubkey])
 
-  if (!accountPubkey || (pubkey && pubkey === accountPubkey)) return null
+  if (!canManageIdentity || !accountPubkey || (pubkey && pubkey === accountPubkey)) return null
 
   const handleMute = async (e: React.MouseEvent, isPrivate = true) => {
     e.stopPropagation()

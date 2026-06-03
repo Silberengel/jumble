@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 export default function FollowButton({ pubkey }: { pubkey: string }) {
   const { t } = useTranslation()
   const { pubkey: accountPubkey, checkLogin } = useNostr()
-  const { canSignEvents, signControlProps } = useSignGatedControl()
+  const { canManageIdentity, signControlProps } = useSignGatedControl()
   const followList = useFollowListOptional()
   const { mutePubkeySet, unmutePubkey } = useMuteList()
   const [updating, setUpdating] = useState(false)
@@ -33,7 +33,7 @@ export default function FollowButton({ pubkey }: { pubkey: string }) {
   const isFollowing = useMemo(() => followings.includes(pubkey), [followings, pubkey])
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, pubkey), [mutePubkeySet, pubkey])
 
-  if (!followList || !accountPubkey || !canSignEvents || (pubkey && pubkey === accountPubkey)) {
+  if (!followList || !accountPubkey || !canManageIdentity || (pubkey && pubkey === accountPubkey)) {
     return null
   }
 

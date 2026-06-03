@@ -165,7 +165,15 @@ export interface ISigner {
   nip04Decrypt: (pubkey: string, cipherText: string) => Promise<string>
 }
 
-export type TSignerType = 'nsec' | 'nip-07' | 'bunker' | 'browser-nsec' | 'ncryptsec' | 'npub'
+export type TSignerType =
+  | 'nsec'
+  | 'nip-07'
+  | 'bunker'
+  | 'browser-nsec'
+  | 'ncryptsec'
+  | 'npub'
+  /** Ephemeral write session: fresh key per sign/publish/auth action. */
+  | 'anon'
 
 export type TAccount = {
   pubkey: string

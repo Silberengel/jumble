@@ -28,6 +28,7 @@ import { useSmartSettingsNavigation } from '@/PageManager'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
 import { AccountQuickSwitchMenuItems } from '@/components/AccountQuickSwitchMenuItems'
+import { AnonUserAvatar } from '@/components/AnonUserAvatar'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
@@ -65,16 +66,32 @@ function AccountDropdownItems({
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
+  const { isAnonSession } = useNostr()
+  const anonIdentityDisabled = t('accountSwitch.anonIdentityDisabled')
 
   return (
     <>
       <ReadOnlySessionIndicator variant="menu" />
       <AccountQuickSwitchMenuItems onAfterSwitch={onCloseMenu} />
-      <DropdownMenuItem onClick={() => navigate('profile')}>
+      <DropdownMenuItem
+        disabled={isAnonSession}
+        title={isAnonSession ? anonIdentityDisabled : undefined}
+        onClick={() => {
+          if (isAnonSession) return
+          navigate('profile')
+        }}
+      >
         <User className="size-4" />
         {t('Profile')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => navigate('settings')}>
+      <DropdownMenuItem
+        disabled={isAnonSession}
+        title={isAnonSession ? anonIdentityDisabled : undefined}
+        onClick={() => {
+          if (isAnonSession) return
+          navigate('settings')
+        }}
+      >
         <Settings className="size-4" />
         {t('Settings')}
       </DropdownMenuItem>
@@ -105,22 +122,22 @@ function SidebarAccountMenu({
   onBrowseCache: () => void
 }) {
   const { t } = useTranslation()
-  const { account, profile } = useNostr()
+  const { account, profile, isAnonSession } = useNostr()
   const { current, display } = usePrimaryPage()
   const [menuOpen, setMenuOpen] = useState(false)
   const pubkey = account?.pubkey
-  const { profile: fetchedProfile } = useFetchProfile(pubkey)
+  const { profile: fetchedProfile } = useFetchProfile(isAnonSession ? undefined : pubkey)
   const resolvedProfile = useMemo(
-    () => profileForActivePubkey(pubkey, profile, fetchedProfile),
-    [pubkey, profile, fetchedProfile]
+    () => (isAnonSession ? null : profileForActivePubkey(pubkey, profile, fetchedProfile)),
+    [pubkey, profile, fetchedProfile, isAnonSession]
   )
   const active = useMemo(() => current === 'profile' && display, [display, current])
 
-  if (!pubkey) return null
+  if (!pubkey && !isAnonSession) return null
 
-  const defaultAvatar = generateImageByPubkey(pubkey)
-  const npub = pubkeyToNpub(pubkey)
-  const fallbackUsername = npub ? formatNpub(npub) : formatPubkey(pubkey)
+  const defaultAvatar = pubkey ? generateImageByPubkey(pubkey) : ''
+  const npub = pubkey ? pubkeyToNpub(pubkey) : null
+  const fallbackUsername = npub ? formatNpub(npub) : pubkey ? formatPubkey(pubkey) : t('accountSwitch.anon')
   const { username, avatar } = resolvedProfile
     ? { username: resolvedProfile.username, avatar: resolvedProfile.avatar ?? defaultAvatar }
     : { username: fallbackUsername, avatar: defaultAvatar }
@@ -139,7 +156,9 @@ function SidebarAccountMenu({
             active && 'bg-accent/50'
           )}
         >
-          {isVideo(avatar ?? '') ? (
+          {isAnonSession ? (
+            <AnonUserAvatar size="medium" className="size-8 shrink-0" />
+          ) : isVideo(avatar ?? '') ? (
             <div className="size-8 shrink-0 overflow-hidden rounded-full">
               <video src={avatar} className="h-full w-full object-cover object-center" autoPlay muted loop playsInline />
             </div>
@@ -151,7 +170,9 @@ function SidebarAccountMenu({
               </AvatarFallback>
             </Avatar>
           )}
-          <span className="truncate max-xl:hidden">{username}</span>
+          <span className="truncate max-xl:hidden">
+            {isAnonSession ? t('accountSwitch.anon') : username}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="z-[220]">
@@ -176,12 +197,12 @@ function TitlebarAccountMenu({
   onBrowseCache: () => void
 }) {
   const { t } = useTranslation()
-  const { account, profile } = useNostr()
+  const { account, profile, isAnonSession } = useNostr()
   const pubkey = account?.pubkey
-  const { profile: fetchedProfile } = useFetchProfile(pubkey)
+  const { profile: fetchedProfile } = useFetchProfile(isAnonSession ? undefined : pubkey)
   const resolvedProfile = useMemo(
-    () => profileForActivePubkey(pubkey, profile, fetchedProfile),
-    [pubkey, profile, fetchedProfile]
+    () => (isAnonSession ? null : profileForActivePubkey(pubkey, profile, fetchedProfile)),
+    [pubkey, profile, fetchedProfile, isAnonSession]
   )
   const { current, display } = usePrimaryPage()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -201,7 +222,9 @@ function TitlebarAccountMenu({
           title={t('Account menu')}
           aria-label={t('Account menu')}
         >
-          {resolvedProfile ? (
+          {isAnonSession ? (
+            <AnonUserAvatar size="small" className="size-6" />
+          ) : resolvedProfile ? (
             isVideo(resolvedProfile.avatar ?? '') ? (
               <div className={cn('w-6 h-6 overflow-hidden rounded-full', active ? 'ring-primary ring-1' : '')}>
                 <video src={resolvedProfile.avatar} className="h-full w-full object-cover object-center" autoPlay muted loop playsInline />
@@ -246,7 +269,7 @@ function LoggedOutTitlebarMenu({ onLogin }: { onLogin: () => void }) {
 
 /** Sidebar: account / login stack. Titlebar (mobile): compact account or login control. */
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
-  const { pubkey, checkLogin, isNip07LoginInFlight } = useNostr()
+  const { pubkey, checkLogin, isNip07LoginInFlight, isAnonSession } = useNostr()
   const { navigateToSettings } = useSmartSettingsNavigation()
   const onBrowseCache = useCallback(() => {
     if (!openBrowseCacheFromRegistry()) {
@@ -257,7 +280,7 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
   let account: ReactNode
-  if (pubkey) {
+  if (pubkey || isAnonSession) {
     account =
       variant === 'sidebar' ? (
         <SidebarAccountMenu

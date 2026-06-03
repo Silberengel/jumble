@@ -1025,6 +1025,15 @@ export default {
       'Could not sign in as this account — your extension is using a different key. Switch the key in the extension or tap “Retry extension” below.',
     'accountSwitch.extensionUnavailable':
       'Could not reach the browser extension. Unlock nos2x/Alby, allow this site, then click the account again.',
+    'accountSwitch.anon': 'Anon',
+    'accountSwitch.selectAnon': 'Post anonymously',
+    'accountSwitch.anonHint':
+      'Each post, reply, reaction, or auth uses a fresh key. Default read/write relays only.',
+    'accountSwitch.anonHintShort': 'Fresh key every action · default relays',
+    'accountSwitch.anonCannotDelete':
+      'Anonymous sessions cannot delete notes (each action uses a new key).',
+    'accountSwitch.anonIdentityDisabled':
+      'Switch to a logged-in account for profile, follow, mute, and other identity features.',
     'Show untrusted {type}': 'Show untrusted {{type}}',
     'Hide untrusted {type}': 'Hide untrusted {{type}}',
     'Currently hiding {type} from untrusted users.':

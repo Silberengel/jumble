@@ -35,6 +35,7 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 
+import { createEphemeralSigner } from '@/lib/anon-session'
 import { getCacheRelayUrls } from '@/lib/private-relays'
 import {
   collectReadInboxUrlsFromRelayList,
@@ -690,7 +691,7 @@ class ClientService extends EventTarget {
      * is still signing; the batch then finishes and never refetches. Other relays stay on reactive
      * `relay.auth()` after `auth-required` to avoid double-sign races with the wider pool.
      */
-    if (signer && signerType !== 'npub') {
+    if (signer && signerType !== 'npub' && signerType !== 'anon') {
       this.pool.automaticallyAuth = (relayURL: string) => {
         const n = normalizeUrl(relayURL) || relayURL
         if (!READ_ONLY_RELAY_CONNECT_BOOST_URLS.has(n)) return null
@@ -699,6 +700,13 @@ class ClientService extends EventTarget {
         return async (event: EventTemplate) => {
           const evt = await queueRelayAuthSign(() => signer.signEvent(event))
           return evt as VerifiedEvent
+        }
+      }
+    } else if (signerType === 'anon') {
+      this.pool.automaticallyAuth = () => {
+        return async (event: EventTemplate) => {
+          const ephemeral = createEphemeralSigner()
+          return (await ephemeral.signEvent(event)) as VerifiedEvent
         }
       }
     } else {

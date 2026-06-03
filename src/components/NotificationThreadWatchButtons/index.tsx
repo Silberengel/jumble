@@ -9,12 +9,12 @@ import { useNostr } from '@/providers/NostrProvider'
 
 export default function NotificationThreadWatchButtons({ event }: { event: Event }) {
   const { t } = useTranslation()
-  const { pubkey, checkLogin } = useNostr()
+  const { pubkey, checkLogin, canManageIdentity } = useNostr()
   const watch = useNotificationThreadWatchOptional()
   const [busy, setBusy] = useState<'follow' | 'mute' | null>(null)
 
   // Show for your own notes too (e.g. notifications feed): you may still want follow/mute on that anchor.
-  if (!watch || !pubkey) return null
+  if (!watch || !pubkey || !canManageIdentity) return null
 
   const followed = watch.isFollowedForNotifications(event)
   const muted = watch.isMutedForNotifications(event)

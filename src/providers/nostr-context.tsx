@@ -37,6 +37,10 @@ export type TNostrContext = {
   ncryptsec: string | null
   /** True when the session can sign (not read-only npub fallback). */
   canSignEvents: boolean
+  /** Anonymous write session: fresh key per publish/sign/auth. */
+  isAnonSession: boolean
+  /** Stable identity features (profile, follow, mute, lists). False in anon write mode. */
+  canManageIdentity: boolean
   /** Returns the new session pubkey on success, or `null` if logout / switch failed. */
   switchAccount: (account: TAccountPointer | null) => Promise<string | null>
   /** View an account read-only (notifications, relays) without matching the browser extension. */

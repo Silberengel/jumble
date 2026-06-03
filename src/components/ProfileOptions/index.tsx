@@ -63,7 +63,7 @@ export default function ProfileOptions({
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
-  const { pubkey: accountPubkey, publish, checkLogin } = useNostr()
+  const { pubkey: accountPubkey, publish, checkLogin, canManageIdentity } = useNostr()
   const { mutePubkeySet, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } = useMuteList()
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
@@ -294,32 +294,33 @@ export default function ProfileOptions({
             </DropdownMenuItem>
           </>
         )}
-        {isMuted ? (
-          <DropdownMenuItem
-            onClick={() => unmutePubkey(pubkey)}
-            className="text-destructive focus:text-destructive"
-          >
-            <Bell />
-            {t('Unmute user')}
-          </DropdownMenuItem>
-        ) : (
-          <>
+        {canManageIdentity &&
+          (isMuted ? (
             <DropdownMenuItem
-              onClick={() => mutePubkeyPrivately(pubkey)}
+              onClick={() => unmutePubkey(pubkey)}
               className="text-destructive focus:text-destructive"
             >
-              <BellOff />
-              {t('Mute user privately')}
+              <Bell />
+              {t('Unmute user')}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => mutePubkeyPublicly(pubkey)}
-              className="text-destructive focus:text-destructive"
-            >
-              <BellOff />
-              {t('Mute user publicly')}
-            </DropdownMenuItem>
-          </>
-        )}
+          ) : (
+            <>
+              <DropdownMenuItem
+                onClick={() => mutePubkeyPrivately(pubkey)}
+                className="text-destructive focus:text-destructive"
+              >
+                <BellOff />
+                {t('Mute user privately')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => mutePubkeyPublicly(pubkey)}
+                className="text-destructive focus:text-destructive"
+              >
+                <BellOff />
+                {t('Mute user publicly')}
+              </DropdownMenuItem>
+            </>
+          ))}
       </DropdownMenuContent>
         {eventToUse && (
           <PostEditor

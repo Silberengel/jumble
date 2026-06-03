@@ -39,7 +39,7 @@ export default function FollowPackPreview({
   className?: string
 }) {
   const { t } = useTranslation()
-  const { pubkey } = useNostr()
+  const { pubkey, canManageIdentity } = useNostr()
   const followList = useFollowListOptional()
   const followings = followList?.followings ?? []
   const { mutePubkeySet } = useMuteList()
@@ -169,7 +169,7 @@ export default function FollowPackPreview({
         ) : null}
       </div>
 
-      {!pubkey ? (
+      {!canManageIdentity ? (
         <p className="text-sm text-muted-foreground">{t('Please log in to follow')}</p>
       ) : !followList ? null : (
         <Button

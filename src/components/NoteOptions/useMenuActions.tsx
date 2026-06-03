@@ -163,7 +163,8 @@ export function useMenuActions({
     account,
     relayList,
     bookmarkListEvent,
-    checkLogin
+    checkLogin,
+    canManageIdentity
   } = useNostr()
   const bookmarksContext = useBookmarksOptional()
   const { threadFollowed, threadMuted, threadWatch } = useThreadNotificationMenuState(event)
@@ -1300,7 +1301,7 @@ export function useMenuActions({
       separator: actions.length > 0
     })
 
-    if (pubkey && event.pubkey !== pubkey) {
+    if (canManageIdentity && pubkey && event.pubkey !== pubkey) {
       if (isMuted) {
         actions.push({
           icon: Bell,
@@ -1340,7 +1341,7 @@ export function useMenuActions({
     const savesGroupStartIndex = actions.length
     const savesGroupNeedsSeparator = savesGroupStartIndex > 0
 
-    if (threadWatch && pubkey) {
+    if (canManageIdentity && threadWatch && pubkey) {
       actions.push({
         icon: Bell,
         label: threadFollowed ? t('Unfollow thread notifications') : t('Follow this'),
@@ -1401,7 +1402,7 @@ export function useMenuActions({
       })
     }
 
-    if (pubkey && event.pubkey === pubkey) {
+    if (canManageIdentity && pubkey && event.pubkey === pubkey) {
       actions.push({
         icon: Pin,
         label: isPinnedInMyList ? t('Unpin note') : t('Pin note'),
@@ -1410,7 +1411,7 @@ export function useMenuActions({
         },
         separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })
-    } else if (pubkey && event.pubkey !== pubkey && bookmarksContext) {
+    } else if (canManageIdentity && pubkey && event.pubkey !== pubkey && bookmarksContext) {
       actions.push({
         icon: Bookmark,
         label: isBookmarked ? t('Remove bookmark') : t('Bookmark'),
