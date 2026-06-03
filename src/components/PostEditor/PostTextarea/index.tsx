@@ -13,10 +13,12 @@ import Text from '@tiptap/extension-text'
 import { TextSelection } from '@tiptap/pm/state'
 import { Editor, EditorContent, useEditor } from '@tiptap/react'
 import { Event } from 'nostr-tools'
+import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import {
   Dispatch,
   forwardRef,
   SetStateAction,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -122,6 +124,7 @@ const PostTextarea = forwardRef<
     ref
   ) => {
     const { t } = useTranslation()
+    const isSmallScreen = useScreenSizeOptional()?.isSmallScreen ?? false
     const onUploadSuccessRef = useRef(onUploadSuccess)
     onUploadSuccessRef.current = onUploadSuccess
     const onUploadCompressPhaseRef = useRef(onUploadCompressPhase)
@@ -196,6 +199,19 @@ const PostTextarea = forwardRef<
     })
 
     editorRef.current = editor
+
+    useEffect(() => {
+      if (!editor || !isSmallScreen) return
+      const scrollEditorIntoView = () => {
+        requestAnimationFrame(() => {
+          editor.view.dom.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+        })
+      }
+      editor.on('focus', scrollEditorIntoView)
+      return () => {
+        editor.off('focus', scrollEditorIntoView)
+      }
+    }, [editor, isSmallScreen])
 
     useImperativeHandle(ref, () => ({
       appendText: (text: string, addNewline = false) => {

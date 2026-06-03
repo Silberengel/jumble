@@ -98,7 +98,7 @@ export default function PostEditor({
     return (
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          className="h-full w-full max-w-full p-0 border-none overflow-hidden"
+          className="flex h-[var(--vh,100dvh)] max-h-[var(--vh,100dvh)] w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           side="bottom"
           hideClose
           onInteractOutside={(e) => {
@@ -114,15 +114,13 @@ export default function PostEditor({
             }
           }}
         >
-          <ScrollArea className="px-4 h-full max-h-screen min-w-0 overflow-x-auto" scrollBarClassName="opacity-100">
-            <div className="space-y-4 px-2 pr-4 py-6 min-w-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>Post Editor</SheetTitle>
-                <SheetDescription>Create a new post or reply</SheetDescription>
-              </SheetHeader>
-              {content}
-            </div>
-          </ScrollArea>
+          <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-2 min-w-0">
+            <SheetHeader className="sr-only">
+              <SheetTitle>Post Editor</SheetTitle>
+              <SheetDescription>Create a new post or reply</SheetDescription>
+            </SheetHeader>
+            {content}
+          </div>
         </SheetContent>
       </Sheet>
     )

@@ -47,6 +47,7 @@ import {
 } from '@/constants'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
@@ -200,6 +201,7 @@ export default function PostContent({
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
+  const { isSmallScreen } = useScreenSize()
   const { addReplies } = useReplyIngress()
 
   const mergePublishedReplyIntoThread = useCallback(
@@ -2519,7 +2521,19 @@ export default function PostContent({
   }
 
   return (
-    <div className="space-y-2 min-w-0">
+    <div
+      className={cn(
+        'min-w-0',
+        isSmallScreen ? 'flex min-h-0 flex-1 flex-col' : 'space-y-2'
+      )}
+    >
+      <NeventPickerProvider>
+        <div
+          className={cn(
+            'space-y-2 min-w-0',
+            isSmallScreen && 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain'
+          )}
+        >
       {/* Dynamic Title based on mode */}
       <div className="text-lg font-semibold">
         {(() => {
@@ -2569,7 +2583,7 @@ export default function PostContent({
       </div>
       
       {parentEvent && (
-        <ScrollArea className="flex max-h-48 flex-col overflow-y-auto rounded-lg border bg-muted/40">
+        <ScrollArea className="flex max-h-32 sm:max-h-48 flex-col overflow-y-auto rounded-lg border bg-muted/40">
           <div className="p-2 sm:p-3 pointer-events-none">
             <Note size="small" event={parentEvent} hideParentNotePreview />
           </div>
@@ -3355,7 +3369,6 @@ export default function PostContent({
         </div>
       )}
       
-      <NeventPickerProvider>
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -3364,7 +3377,7 @@ export default function PostContent({
           parentEvent={isDiscussionThread && !parentEvent ? THREAD_POST_EDITOR_PARENT : parentEvent}
           onSubmit={() => post()}
           className={cn(
-            isPoll ? 'min-h-20' : 'min-h-52',
+            isPoll ? 'min-h-20' : isSmallScreen ? 'min-h-36' : 'min-h-52',
             isDiscussionThread && threadErrors.content && 'border-destructive'
           )}
           onUploadStart={handleUploadStart}
@@ -3718,6 +3731,14 @@ export default function PostContent({
           <button ref={mediaUploaderBtnRef} type="button" aria-hidden="true" tabIndex={-1} />
         </Uploader>
       )}
+        </div>
+      <div
+        className={cn(
+          'space-y-2 min-w-0',
+          isSmallScreen &&
+            'sticky bottom-0 z-10 shrink-0 border-t border-border bg-background pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]'
+        )}
+      >
       <div className="flex min-w-0 w-full items-center gap-1.5">
         <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
           <PostEditorFormatToolbar
@@ -3873,6 +3894,7 @@ export default function PostContent({
           inComposer
         />
       ) : null}
+      </div>
 
       {/* Media Kind Selection Dialog */}
       <Dialog open={showMediaKindDialog} onOpenChange={setShowMediaKindDialog}>
