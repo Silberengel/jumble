@@ -1014,7 +1014,7 @@ export default {
       'Could not switch account. Check your signer, password, or extension and try again.',
     'accountSwitch.selectAccount': 'Switch to {{pubkey}}',
     'accountSwitch.extensionSyncHint':
-      'This account uses a browser extension. Select the same key in your extension (Alby, nos2x, …), then tap Retry — the app will connect automatically when the keys match.',
+      'Browsing read-only. Retry connects when your extension matches this key — a different extension key is fine if you only want to look around.',
     'accountSwitch.extensionRetry': 'Retry extension',
     'accountSwitch.extensionConnected': 'Extension connected for this account.',
     'accountSwitch.extensionRetryFailed':

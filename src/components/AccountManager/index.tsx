@@ -5,7 +5,8 @@ import { Separator } from '@/components/ui/separator'
 import { useNostr } from '@/providers/NostrProvider'
 import { generateSecretKey } from 'nostr-tools'
 import { nsecEncode } from 'nostr-tools/nip19'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import AccountList from '../AccountList'
@@ -41,9 +42,26 @@ function AccountManagerNav({
   close?: () => void
 }) {
   const { t } = useTranslation()
-  const { nip07Login, nsecLogin, accounts } = useNostr()
+  const { nip07Login, nsecLogin, accounts, isNip07LoginInFlight, requestAccountNetworkHydrate } =
+    useNostr()
   const [password, setPassword] = useState('')
   const [signingUp, setSigningUp] = useState(false)
+  const [extensionLoginPending, setExtensionLoginPending] = useState(false)
+
+  const handleExtensionLogin = useCallback(async () => {
+    setExtensionLoginPending(true)
+    try {
+      const pubkey = await nip07Login()
+      if (pubkey) {
+        await requestAccountNetworkHydrate()
+        close?.()
+      }
+    } catch {
+      // nip07Login toasts and rethrows
+    } finally {
+      setExtensionLoginPending(false)
+    }
+  }, [nip07Login, close])
 
   const handleSignUp = async () => {
     setSigningUp(true)
@@ -67,7 +85,14 @@ function AccountManagerNav({
         </div>
         <div className="space-y-2 mt-4">
           {!!window.nostr && (
-            <Button onClick={() => nip07Login().then(() => close?.())} className="w-full">
+            <Button
+              onClick={() => void handleExtensionLogin()}
+              disabled={extensionLoginPending || isNip07LoginInFlight}
+              className="w-full"
+            >
+              {extensionLoginPending || isNip07LoginInFlight ? (
+                <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+              ) : null}
               {t('Login with Browser Extension')}
             </Button>
           )}

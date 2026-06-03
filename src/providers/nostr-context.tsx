@@ -35,15 +35,21 @@ export type TNostrContext = {
   accounts: TAccountPointer[]
   nsec: string | null
   ncryptsec: string | null
+  /** True when the session can sign (not read-only npub fallback). */
+  canSignEvents: boolean
   /** Returns the new session pubkey on success, or `null` if logout / switch failed. */
   switchAccount: (account: TAccountPointer | null) => Promise<string | null>
+  /** View an account read-only (notifications, relays) without matching the browser extension. */
+  viewAccountAsReadOnly: (account: TAccountPointer) => Promise<string | null>
   /** Reconnect NIP-07 when the extension pubkey matches the stored preferred account. */
   retryNip07SignerForPreferredAccount: () => Promise<boolean>
   /** Sign in with whichever pubkey the browser extension exposes now. */
   adoptExtensionNip07Identity: () => Promise<void>
+  /** True while the login modal must stay open for an in-flight NIP-07 authorize. */
+  isNip07LoginInFlight: boolean
   nsecLogin: (nsec: string, password?: string, needSetup?: boolean) => Promise<string>
   ncryptsecLogin: (ncryptsec: string) => Promise<string>
-  nip07Login: () => Promise<string>
+  nip07Login: () => Promise<string | null>
   bunkerLogin: (bunker: string) => Promise<string>
   nostrConnectionLogin: (clientSecretKey: Uint8Array, connectionString: string) => Promise<string>
   npubLogin(npub: string): Promise<string>

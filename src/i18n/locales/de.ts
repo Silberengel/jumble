@@ -997,7 +997,7 @@ export default {
       'Kontowechsel fehlgeschlagen. Signierer, Passwort oder Erweiterung prüfen und erneut versuchen.',
     'accountSwitch.selectAccount': 'Zu {{pubkey}} wechseln',
     'accountSwitch.extensionSyncHint':
-      'Dieses Konto nutzt eine Browser-Erweiterung. Wähle denselben Schlüssel in der Erweiterung (Alby, nos2x, …) und tippe auf „Erneut“ — die App verbindet sich automatisch, sobald die Schlüssel übereinstimmen.',
+      'Nur-Lesen-Ansicht. „Erneut“ verbindet, wenn die Erweiterung zu diesem Schlüssel passt — ein anderer Erweiterungsschlüssel ist in Ordnung, wenn du nur stöbern willst.',
     'accountSwitch.extensionRetry': 'Erweiterung erneut',
     'accountSwitch.extensionConnected': 'Erweiterung für dieses Konto verbunden.',
     'accountSwitch.extensionRetryFailed':

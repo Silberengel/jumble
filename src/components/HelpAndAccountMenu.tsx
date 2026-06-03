@@ -20,6 +20,8 @@ import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartSettingsNavigation } from '@/PageManager'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
+import { AccountQuickSwitchMenuItems } from '@/components/AccountQuickSwitchMenuItems'
+import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
 import { ActiveRelaysDropdownSection } from '@/components/ConnectedRelays/ActiveRelaysDropdownSection'
 import { useRelayConnectionRows } from '@/hooks/useRelayConnectionRows'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
@@ -34,17 +36,21 @@ export type HelpAndAccountMenuVariant = 'sidebar' | 'titlebar'
 function AccountDropdownItems({
   onSwitchAccount,
   onLogoutClick,
-  onBrowseCache
+  onBrowseCache,
+  onCloseMenu
 }: {
   onSwitchAccount: () => void
   onLogoutClick: () => void
   onBrowseCache: () => void
+  onCloseMenu?: () => void
 }) {
   const { t } = useTranslation()
   const { navigate } = usePrimaryPage()
 
   return (
     <>
+      <ReadOnlySessionIndicator variant="menu" />
+      <AccountQuickSwitchMenuItems onAfterSwitch={onCloseMenu} />
       <DropdownMenuItem onClick={() => navigate('profile')}>
         <User className="size-4" />
         {t('Profile')}
@@ -83,6 +89,7 @@ function SidebarAccountMenu({
   const { t } = useTranslation()
   const { account, profile } = useNostr()
   const { current, display } = usePrimaryPage()
+  const [menuOpen, setMenuOpen] = useState(false)
   const pubkey = account?.pubkey
   const { profile: fetchedProfile } = useFetchProfile(pubkey)
   const active = useMemo(() => current === 'profile' && display, [display, current])
@@ -96,7 +103,7 @@ function SidebarAccountMenu({
   const { username, avatar } = resolvedProfile || { username: fallbackUsername, avatar: defaultAvatar }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -129,6 +136,7 @@ function SidebarAccountMenu({
           onSwitchAccount={onSwitchAccount}
           onLogoutClick={onLogoutClick}
           onBrowseCache={onBrowseCache}
+          onCloseMenu={() => setMenuOpen(false)}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -150,6 +158,7 @@ function TitlebarAccountMenu({
   const { profile: fetchedProfile } = useFetchProfile(pubkey)
   const resolvedProfile = fetchedProfile ?? profile
   const { current, display } = usePrimaryPage()
+  const [menuOpen, setMenuOpen] = useState(false)
   const defaultAvatar = useMemo(
     () => (resolvedProfile?.pubkey ? generateImageByPubkey(resolvedProfile.pubkey) : ''),
     [resolvedProfile]
@@ -157,7 +166,7 @@ function TitlebarAccountMenu({
   const active = useMemo(() => current === 'profile' && display, [display, current])
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -192,6 +201,7 @@ function TitlebarAccountMenu({
           onSwitchAccount={onSwitchAccount}
           onLogoutClick={onLogoutClick}
           onBrowseCache={onBrowseCache}
+          onCloseMenu={() => setMenuOpen(false)}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -230,7 +240,7 @@ function LoggedOutTitlebarMenu({ onLogin }: { onLogin: () => void }) {
 
 /** Sidebar: account / login stack. Titlebar (mobile): compact account or login control. */
 export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccountMenuVariant }) {
-  const { pubkey, checkLogin } = useNostr()
+  const { pubkey, checkLogin, isNip07LoginInFlight } = useNostr()
   const { navigateToSettings } = useSmartSettingsNavigation()
   const onBrowseCache = useCallback(() => {
     if (!openBrowseCacheFromRegistry()) {
@@ -274,7 +284,11 @@ export default function HelpAndAccountMenu({ variant }: { variant: HelpAndAccoun
       <div className={wrapClass}>
         {account}
       </div>
-      <LoginDialog open={loginDialogOpen} setOpen={setLoginDialogOpen} />
+      <LoginDialog
+        open={loginDialogOpen}
+        setOpen={setLoginDialogOpen}
+        blockClose={isNip07LoginInFlight}
+      />
       <LogoutDialog open={logoutDialogOpen} setOpen={setLogoutDialogOpen} />
     </>
   )

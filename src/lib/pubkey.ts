@@ -97,6 +97,17 @@ export function isValidPubkey(pubkey: string) {
   return /^[0-9a-f]{64}$/i.test(pubkey)
 }
 
+/** Hex pubkey from a NIP-07 `getPublicKey()` result (hex or npub / nostr: URI). */
+export function pubkeyFromNip07Extension(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const fromId = userIdToPubkey(trimmed)
+  if (isValidPubkey(fromId)) return fromId.toLowerCase()
+  if (isValidPubkey(trimmed)) return trimmed.toLowerCase()
+  return null
+}
+
 /** Hex pubkey from pasted npub / nprofile / hex / `nostr:` URL (e.g. invite lists). */
 export function inviteInputToHexPubkey(raw: string): string | null {
   const t = raw.trim().replace(/^nostr:/i, '').trim()

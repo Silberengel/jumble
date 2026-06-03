@@ -1,8 +1,9 @@
+import { DropdownMenuLabel } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useTranslation } from 'react-i18next'
 
-type TVariant = 'sidebar' | 'titlebar'
+type TVariant = 'sidebar' | 'titlebar' | 'menu'
 
 export function ReadOnlySessionIndicator({ variant }: { variant: TVariant }) {
   const { t } = useTranslation()
@@ -10,6 +11,15 @@ export function ReadOnlySessionIndicator({ variant }: { variant: TVariant }) {
   if (account?.signerType !== 'npub') return null
 
   const hint = t('readOnlySession.hint')
+
+  if (variant === 'menu') {
+    return (
+      <DropdownMenuLabel className="py-1.5 text-xs font-medium text-amber-700 dark:text-amber-200">
+        <span title={hint}>{t('readOnlySession.label')}</span>
+        <span className="mt-0.5 block font-normal text-muted-foreground">{hint}</span>
+      </DropdownMenuLabel>
+    )
+  }
 
   if (variant === 'sidebar') {
     return (

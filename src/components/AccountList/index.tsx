@@ -1,13 +1,15 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { isSameAccount } from '@/lib/account'
-import { formatPubkey } from '@/lib/pubkey'
+import { isRedundantAccountPick, isSameAccount } from '@/lib/account'
+import { formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { TAccountPointer, TSignerType } from '@/types'
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { SimpleUserAvatar } from '../UserAvatar'
 import { SimpleUsername } from '../Username'
 
@@ -23,7 +25,15 @@ export default function AccountList({
    *  dialogs fighting over focus trapping). */
   closeDialog?: () => void
 }) {
-  const { accounts, account, switchAccount, removeAccount } = useNostr()
+  const { t } = useTranslation()
+  const {
+    accounts,
+    account,
+    switchAccount,
+    viewAccountAsReadOnly,
+    removeAccount,
+    retryNip07SignerForPreferredAccount
+  } = useNostr()
   const [switchingAccount, setSwitchingAccount] = useState<TAccountPointer | null>(null)
 
   return (
@@ -33,19 +43,49 @@ export default function AccountList({
           key={`${act.pubkey}-${act.signerType}`}
           className={cn(
             'relative rounded-lg',
-            act.pubkey === account?.pubkey ? 'border border-primary' : 'clickable'
+            account &&
+              hexPubkeysEqual(
+                normalizeHexPubkey(act.pubkey),
+                normalizeHexPubkey(account.pubkey)
+              ) &&
+              (act.signerType === account.signerType ||
+                (account.signerType === 'npub' && act.signerType === 'nip-07'))
+              ? 'border border-primary'
+              : 'clickable'
           )}
           onClick={() => {
-            if (isSameAccount(act, account)) return
-            setSwitchingAccount(act)
-            if (act.signerType === 'ncryptsec') {
-              closeDialog?.()
-            }
-            switchAccount(act)
-              .then(() => {
+            void (async () => {
+              if (isRedundantAccountPick(act, account)) {
+                if (account?.signerType === 'npub' && act.signerType === 'nip-07') {
+                  setSwitchingAccount(act)
+                  const ok = await retryNip07SignerForPreferredAccount()
+                  if (ok) toast.success(t('accountSwitch.extensionConnected'))
+                  else toast.error(t('accountSwitch.extensionRetryFailed'))
+                  setSwitchingAccount(null)
+                }
+                return
+              }
+              setSwitchingAccount(act)
+              if (act.signerType === 'ncryptsec') {
+                closeDialog?.()
+              }
+              try {
+                const needsWriteSigner =
+                  act.signerType === 'nsec' ||
+                  act.signerType === 'ncryptsec' ||
+                  act.signerType === 'bunker'
+                const switched = needsWriteSigner
+                  ? await switchAccount(act)
+                  : await viewAccountAsReadOnly(act)
+                if (!switched) {
+                  toast.error(t('notificationsSwitchAccountFailed'))
+                  return
+                }
                 if (act.signerType !== 'ncryptsec') afterSwitch()
-              })
-              .finally(() => setSwitchingAccount(null))
+              } finally {
+                setSwitchingAccount(null)
+              }
+            })()
           }}
         >
           <div className="flex justify-between items-center p-2">

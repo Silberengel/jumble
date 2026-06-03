@@ -1,5 +1,6 @@
 import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
+import { accountPointerKey, isRedundantAccountPick, listSwitchableAccounts } from '@/lib/account'
 import { formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { Nip07Signer } from '@/providers/NostrProvider/nip-07.signer'
@@ -23,20 +24,6 @@ type Props = {
   alignEnd?: boolean
 }
 
-function dedupeStoredAccounts(accounts: TAccountPointer[]): TAccountPointer[] {
-  const seen = new Set<string>()
-  const out: TAccountPointer[] = []
-  for (const a of accounts) {
-    const raw = a.pubkey?.trim()
-    if (!raw) continue
-    const p = normalizeHexPubkey(raw)
-    if (seen.has(p)) continue
-    seen.add(p)
-    out.push(a)
-  }
-  return out
-}
-
 /**
  * Switch {@link useNostr} session among stored accounts (notifications spell, post editor).
  * Avatar chips instead of a native select; NIP-07 extension sync hint + retry when read-only.
@@ -54,12 +41,13 @@ export default function StoredAccountSwitchSelect({
     account,
     accounts,
     switchAccount,
+    viewAccountAsReadOnly,
     isAccountSessionHydrating,
     retryNip07SignerForPreferredAccount,
     adoptExtensionNip07Identity
   } = useNostr()
 
-  const [switchingPubkey, setSwitchingPubkey] = useState<string | null>(null)
+  const [switchingKey, setSwitchingKey] = useState<string | null>(null)
   const [retryingExtension, setRetryingExtension] = useState(false)
   const [extensionPubkey, setExtensionPubkey] = useState<string | null>(null)
 
@@ -68,19 +56,16 @@ export default function StoredAccountSwitchSelect({
     return cur ? normalizeHexPubkey(cur) : null
   }, [pubkey])
 
-  const storedAccounts = useMemo(() => dedupeStoredAccounts(accounts), [accounts])
-
-  const activeStoredAccount = useMemo(() => {
-    if (!sessionPubkey) return null
-    return (
-      storedAccounts.find((a) => hexPubkeysEqual(normalizeHexPubkey(a.pubkey), sessionPubkey)) ?? null
-    )
-  }, [storedAccounts, sessionPubkey])
+  const storedAccounts = useMemo(() => listSwitchableAccounts(accounts), [accounts])
 
   const needsExtensionSync = useMemo(() => {
-    if (!activeStoredAccount || !account) return false
-    return activeStoredAccount.signerType === 'nip-07' && account.signerType === 'npub'
-  }, [activeStoredAccount, account])
+    if (!sessionPubkey || !account || account.signerType !== 'npub') return false
+    return accounts.some(
+      (a) =>
+        a.signerType === 'nip-07' &&
+        hexPubkeysEqual(normalizeHexPubkey(a.pubkey), sessionPubkey)
+    )
+  }, [accounts, sessionPubkey, account])
 
   const extensionDiffersFromSession = useMemo(() => {
     if (!extensionPubkey || !sessionPubkey) return false
@@ -93,48 +78,46 @@ export default function StoredAccountSwitchSelect({
       return
     }
     let cancelled = false
-    const poll = async () => {
+    void (async () => {
       try {
         const nip07Signer = new Nip07Signer()
         await nip07Signer.init()
         const pk = await nip07Signer.getPublicKey()
-        if (cancelled || !pk?.trim()) return
-        setExtensionPubkey(pk)
-        if (
-          sessionPubkey &&
-          hexPubkeysEqual(normalizeHexPubkey(pk), sessionPubkey) &&
-          !retryingExtension
-        ) {
-          const ok = await retryNip07SignerForPreferredAccount()
-          if (!cancelled && ok) {
-            toast.success(t('accountSwitch.extensionConnected'))
-          }
-        }
+        if (!cancelled && pk?.trim()) setExtensionPubkey(pk)
       } catch {
         if (!cancelled) setExtensionPubkey(null)
       }
-    }
-    void poll()
-    const id = window.setInterval(() => void poll(), 2_000)
+    })()
     return () => {
       cancelled = true
-      window.clearInterval(id)
     }
-  }, [
-    needsExtensionSync,
-    sessionPubkey,
-    retryNip07SignerForPreferredAccount,
-    retryingExtension,
-    t
-  ])
+  }, [needsExtensionSync])
 
   const handlePick = useCallback(
     async (nextAccount: TAccountPointer) => {
       const target = normalizeHexPubkey(nextAccount.pubkey)
-      if (sessionPubkey && hexPubkeysEqual(target, sessionPubkey)) return
-      setSwitchingPubkey(target)
+      if (isRedundantAccountPick(nextAccount, account)) {
+        if (account?.signerType === 'npub' && nextAccount.signerType === 'nip-07') {
+          setSwitchingKey(accountPointerKey(nextAccount))
+          try {
+            const ok = await retryNip07SignerForPreferredAccount()
+            if (ok) toast.success(t('accountSwitch.extensionConnected'))
+            else toast.error(t('accountSwitch.extensionRetryFailed'))
+          } finally {
+            setSwitchingKey(null)
+          }
+        }
+        return
+      }
+      setSwitchingKey(accountPointerKey(nextAccount))
       try {
-        const switched = await switchAccount(nextAccount)
+        const needsWriteSigner =
+          nextAccount.signerType === 'nsec' ||
+          nextAccount.signerType === 'ncryptsec' ||
+          nextAccount.signerType === 'bunker'
+        const switched = needsWriteSigner
+          ? await switchAccount(nextAccount)
+          : await viewAccountAsReadOnly(nextAccount)
         if (!switched) {
           toast.error(t('notificationsSwitchAccountFailed'))
           return
@@ -143,14 +126,17 @@ export default function StoredAccountSwitchSelect({
           toast.error(t('notificationsSwitchAccountFailed'))
           return
         }
-        if (nextAccount.signerType === 'nip-07') {
-          await retryNip07SignerForPreferredAccount()
-        }
       } finally {
-        setSwitchingPubkey(null)
+        setSwitchingKey(null)
       }
     },
-    [sessionPubkey, switchAccount, retryNip07SignerForPreferredAccount, t]
+    [
+      account,
+      switchAccount,
+      viewAccountAsReadOnly,
+      retryNip07SignerForPreferredAccount,
+      t
+    ]
   )
 
   const handleRetryExtension = useCallback(async () => {
@@ -169,7 +155,7 @@ export default function StoredAccountSwitchSelect({
 
   if (storedAccounts.length <= 1 || !sessionPubkey) return null
 
-  const busy = isAccountSessionHydrating || switchingPubkey !== null
+  const busy = isAccountSessionHydrating || switchingKey !== null
 
   return (
     <div
@@ -203,10 +189,14 @@ export default function StoredAccountSwitchSelect({
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {storedAccounts.map((act) => {
             const pk = normalizeHexPubkey(act.pubkey)
-            const isActive = hexPubkeysEqual(pk, sessionPubkey)
-            const isSwitching = switchingPubkey !== null && hexPubkeysEqual(pk, switchingPubkey)
-            const readOnlyChip =
-              isActive && act.signerType === 'nip-07' && account?.signerType === 'npub'
+            const isActive =
+              hexPubkeysEqual(pk, sessionPubkey) &&
+              (account?.signerType === act.signerType ||
+                (account?.signerType === 'npub' &&
+                  act.signerType === 'nip-07' &&
+                  needsExtensionSync))
+            const isSwitching = switchingKey === accountPointerKey(act)
+            const readOnlyChip = isActive && needsExtensionSync
             return (
               <button
                 key={`${pk}-${act.signerType}`}

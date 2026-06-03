@@ -6,16 +6,19 @@ import { useEffect, useState } from 'react'
 import SidebarItem from './SidebarItem'
 
 export default function PostButton() {
-  const { checkLogin } = useNostr()
+  const { checkLogin, canSignEvents } = useNostr()
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
+    if (!canSignEvents) return
     const onRequest = () => {
       checkLogin(() => setOpen(true))
     }
     postEditorService.addEventListener('requestOpenNewPost', onRequest)
     return () => postEditorService.removeEventListener('requestOpenNewPost', onRequest)
-  }, [checkLogin])
+  }, [canSignEvents, checkLogin])
+
+  if (!canSignEvents) return null
 
   return (
     <div className="pt-4">
