@@ -80,6 +80,7 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
   StorageKey.SHOW_RSS_FEED,
+  StorageKey.USE_NOSTR_ARCHIVES_API,
   StorageKey.PANE_MODE
 ] as const
 
@@ -118,6 +119,8 @@ class LocalStorageService {
   private defaultExpirationEnabled: boolean = false
   private defaultExpirationMonths: number = 6
   private showRssFeed: boolean = true
+  /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
+  private useNostrArchivesApi: boolean = true
   private panelMode: 'single' | 'double' = 'single'
   private addRandomRelaysToPublish: boolean = true
   private showPublishSuccessToasts: boolean = false
@@ -614,6 +617,8 @@ class LocalStorageService {
     }
     const showRssStr = get(StorageKey.SHOW_RSS_FEED)
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
+    const archivesApiStr = get(StorageKey.USE_NOSTR_ARCHIVES_API)
+    if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
     const paneStr = get(StorageKey.PANE_MODE)
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
   }
@@ -998,6 +1003,15 @@ class LocalStorageService {
   setShowRssFeed(show: boolean) {
     this.showRssFeed = show
     this.persistSetting(StorageKey.SHOW_RSS_FEED, show.toString())
+  }
+
+  getUseNostrArchivesApi(): boolean {
+    return this.useNostrArchivesApi
+  }
+
+  setUseNostrArchivesApi(enabled: boolean) {
+    this.useNostrArchivesApi = enabled
+    this.persistSetting(StorageKey.USE_NOSTR_ARCHIVES_API, enabled ? 'true' : 'false')
   }
 
   getShowPublishSuccessToasts(): boolean {

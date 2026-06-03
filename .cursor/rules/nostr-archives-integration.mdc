@@ -1,0 +1,21 @@
+# Nostr Archives integration
+
+When calling `nostrArchivesApi` or adding Archives-only UI:
+
+## Persist events
+
+- Any **verified** Nostr event from Archives must go through `persistArchivesEventsIfNew` / `persistArchivesPayloadEvents` (or API methods that call `getAndPersist`).
+- That writes to **session cache** (`client.addEventToCache`) and **IndexedDB archive** (`queuePersistSeenEvent` via ingest).
+- Skip duplicates: already in session or archive row.
+- Unverified / slim API rows (no valid `sig`) are not persisted; use relay fetch as fallback.
+
+## Graceful failure
+
+- API methods return `TArchivesApiResult` — **never throw** to UI.
+- When `ok: false` or `!nostrArchivesApi.isAvailable()`: hide Archives-only widgets or use existing relay/local paths.
+- Circuit breaker opens after 2 failures for 60s; respect `storage.getUseNostrArchivesApi()`.
+- Do not block core flows (post, reply, feed) on Archives.
+
+## Rate limit
+
+- Use `nostrArchivesApi` service only (100 req/min client budget). Batch metadata and interaction prefetch.

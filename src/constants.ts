@@ -390,6 +390,8 @@ export const StorageKey = {
   DEFAULT_EXPIRATION_ENABLED: 'defaultExpirationEnabled',
   DEFAULT_EXPIRATION_MONTHS: 'defaultExpirationMonths',
   SHOW_RSS_FEED: 'showRssFeed',
+  /** When not `'false'`, allow Nostr Archives REST for discovery/stats (default on). */
+  USE_NOSTR_ARCHIVES_API: 'useNostrArchivesApi',
   PANE_MODE: 'paneMode',
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',
   /** @deprecated Removed — personal-relay read policy is always on when logged in. */
@@ -543,7 +545,17 @@ export const GIF_RELAY_URLS = [
   'wss://relay.gifbuddy.lol'
 ]
 
+/** Nostr Archives NIP-50 search relay — https://nostrarchives.com/docs */
+export const NOSTR_ARCHIVES_SEARCH_RELAY_URL = 'wss://search.nostrarchives.com'
+
+/** REST API base — https://api.nostrarchives.com (120 req/min per IP). */
+export const NOSTR_ARCHIVES_API_BASE_URL = 'https://api.nostrarchives.com'
+
+/** Client-side budget below the public 120/min cap. */
+export const NOSTR_ARCHIVES_API_RATE_LIMIT_PER_MIN = 100
+
 export const SEARCHABLE_RELAY_URLS = [
+  NOSTR_ARCHIVES_SEARCH_RELAY_URL,
   'wss://search.nos.today',
   'wss://nostr.wine',
   'wss://relay.noswhere.com',
