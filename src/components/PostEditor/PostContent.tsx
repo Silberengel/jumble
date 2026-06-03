@@ -1,4 +1,5 @@
 import storage from '@/services/local-storage.service'
+import StoredAccountSwitchSelect from '@/components/StoredAccountSwitchSelect'
 import Note from '@/components/Note'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -3520,7 +3521,10 @@ export default function PostContent({
           {parentEvent ? t('Reply') : isDiscussionThread ? t('Create Thread') : t('Post')}
         </Button>
       </div>
-      
+      {open ? (
+        <StoredAccountSwitchSelect withTopBorder alignEnd className="w-full" showLabelAlways />
+      ) : null}
+
       {/* Media Kind Selection Dialog */}
       <Dialog open={showMediaKindDialog} onOpenChange={setShowMediaKindDialog}>
         <DialogContent>

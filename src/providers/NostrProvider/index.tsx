@@ -1471,6 +1471,31 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
    * Stored NIP-07 account pubkey no longer matches the extension (user switched keys).
    * Drop the stale stored NIP-07 row and sign in with whatever pubkey the extension returns now.
    */
+  const retryNip07SignerForPreferredAccount = useEventCallback(async (): Promise<boolean> => {
+    const preferred = storage.getCurrentAccount()
+    if (!preferred || preferred.signerType !== 'nip-07') return false
+    try {
+      const nip07Signer = new Nip07Signer()
+      await nip07Signer.init()
+      const extPubkey = await nip07Signer.getPublicKey()
+      if (!extPubkey?.trim()) return false
+      if (extPubkey.toLowerCase() !== preferred.pubkey.toLowerCase()) {
+        return false
+      }
+      intentionalNip07ReadOnlyPubkeyRef.current = null
+      nip07KeyMismatchToastShownRef.current = false
+      login(nip07Signer, preferred)
+      setNip07RecoveryBump((b) => b + 1)
+      return true
+    } catch (e) {
+      logger.info('[NostrProvider] NIP-07 retry for preferred account failed', {
+        pubkeySlice: preferred.pubkey.slice(0, 12),
+        error: e instanceof Error ? e.message : String(e)
+      })
+      return false
+    }
+  })
+
   const adoptCurrentExtensionNip07Identity = useEventCallback(async () => {
     try {
       intentionalNip07ReadOnlyPubkeyRef.current = null
@@ -1560,7 +1585,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             fireNip07ExtensionKeyMismatchToast()
           }
           // Keep retrying — the extension may update its approved key after a moment.
-          schedule(quietReadOnly ? 8_000 : 3_000)
+          schedule(quietReadOnly ? 2_000 : 3_000)
           return
         }
         logger.info('[NostrProvider] NIP-07 recovery retry failed', {
@@ -2064,6 +2089,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const removeAccountStable = useEventCallback(removeAccount)
   const discardLocalPrivateKeyStable = useEventCallback(discardLocalPrivateKey)
   const switchAccountStable = useEventCallback(switchAccount)
+  const retryNip07SignerForPreferredAccountStable = useEventCallback(retryNip07SignerForPreferredAccount)
+  const adoptExtensionNip07IdentityStable = useEventCallback(adoptCurrentExtensionNip07Identity)
   const nsecLoginStable = useEventCallback(nsecLogin)
   const ncryptsecLoginStable = useEventCallback(ncryptsecLogin)
   const npubLoginStable = useEventCallback(npubLogin)
@@ -2113,6 +2140,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       nsec,
       ncryptsec,
       switchAccount: switchAccountStable,
+      retryNip07SignerForPreferredAccount: retryNip07SignerForPreferredAccountStable,
+      adoptExtensionNip07Identity: adoptExtensionNip07IdentityStable,
       nsecLogin: nsecLoginStable,
       ncryptsecLogin: ncryptsecLoginStable,
       nip07Login: nip07LoginStable,
@@ -2180,6 +2209,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       signHttpAuthStable,
       startLogin,
       switchAccountStable,
+      retryNip07SignerForPreferredAccountStable,
+      adoptExtensionNip07IdentityStable,
       updateBlockedRelaysEventStable,
       updateBookmarkListEventStable,
       updateCacheRelayListEventStable,

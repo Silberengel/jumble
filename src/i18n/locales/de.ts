@@ -995,6 +995,13 @@ export default {
       'Gespeichertes Konto wechseln. Benachrichtigungen, Antworten, Zaps, Reaktionen und Boosts nutzen dieses Konto.',
     notificationsSwitchAccountFailed:
       'Kontowechsel fehlgeschlagen. Signierer, Passwort oder Erweiterung prüfen und erneut versuchen.',
+    'accountSwitch.selectAccount': 'Zu {{pubkey}} wechseln',
+    'accountSwitch.extensionSyncHint':
+      'Dieses Konto nutzt eine Browser-Erweiterung. Wähle denselben Schlüssel in der Erweiterung (Alby, nos2x, …) und tippe auf „Erneut“ — die App verbindet sich automatisch, sobald die Schlüssel übereinstimmen.',
+    'accountSwitch.extensionRetry': 'Erweiterung erneut',
+    'accountSwitch.extensionConnected': 'Erweiterung für dieses Konto verbunden.',
+    'accountSwitch.extensionRetryFailed':
+      'Erweiterungsschlüssel passt noch nicht. Schlüssel in der Erweiterung wechseln und erneut versuchen.',
     'Show untrusted {type}': 'Untrusted {{type}} anzeigen',
     'Hide untrusted {type}': 'Untrusted {{type}} ausblenden',
     'Currently hiding {type} from untrusted users.':

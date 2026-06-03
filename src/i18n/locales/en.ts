@@ -1012,6 +1012,13 @@ export default {
       'Switch stored account. Notifications, replies, zaps, reactions, and boosts use this account.',
     notificationsSwitchAccountFailed:
       'Could not switch account. Check your signer, password, or extension and try again.',
+    'accountSwitch.selectAccount': 'Switch to {{pubkey}}',
+    'accountSwitch.extensionSyncHint':
+      'This account uses a browser extension. Select the same key in your extension (Alby, nos2x, …), then tap Retry — the app will connect automatically when the keys match.',
+    'accountSwitch.extensionRetry': 'Retry extension',
+    'accountSwitch.extensionConnected': 'Extension connected for this account.',
+    'accountSwitch.extensionRetryFailed':
+      'Extension key still does not match. Switch the key in your extension, then try again.',
     'Show untrusted {type}': 'Show untrusted {{type}}',
     'Hide untrusted {type}': 'Hide untrusted {{type}}',
     'Currently hiding {type} from untrusted users.':

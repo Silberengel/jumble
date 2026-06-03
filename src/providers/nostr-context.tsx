@@ -37,6 +37,10 @@ export type TNostrContext = {
   ncryptsec: string | null
   /** Returns the new session pubkey on success, or `null` if logout / switch failed. */
   switchAccount: (account: TAccountPointer | null) => Promise<string | null>
+  /** Reconnect NIP-07 when the extension pubkey matches the stored preferred account. */
+  retryNip07SignerForPreferredAccount: () => Promise<boolean>
+  /** Sign in with whichever pubkey the browser extension exposes now. */
+  adoptExtensionNip07Identity: () => Promise<void>
   nsecLogin: (nsec: string, password?: string, needSetup?: boolean) => Promise<string>
   ncryptsecLogin: (ncryptsec: string) => Promise<string>
   nip07Login: () => Promise<string>
