@@ -5270,11 +5270,18 @@ class ClientService extends EventTarget {
     ]).filter(Boolean)
     const capped = urls.slice(0, 20)
     if (capped.length === 0) return []
-    return this.queryService.fetchEvents(capped, {
-      kinds: [kinds.Metadata, kinds.UserEmojiList, kinds.Emojisets],
-      authors: [pk],
-      limit: 120
-    })
+    return this.fetchEvents(
+      capped,
+      {
+        kinds: [kinds.Metadata, kinds.UserEmojiList, kinds.Emojisets],
+        authors: [pk],
+        limit: 120
+      },
+      {
+        /** Must survive note-panel / search {@link interruptBackgroundQueries} — custom emoji images go blank when aborted. */
+        foreground: true
+      }
+    )
   }
 
   /** =========== Following favorite relays =========== */

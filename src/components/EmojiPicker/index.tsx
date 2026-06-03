@@ -1,3 +1,4 @@
+import { EMOJI_PICKER_DATA_SOURCE } from '@/lib/emoji-picker-data-source'
 import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI, DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
 import { recordEmojiUsed } from '@/lib/recently-used-emojis'
 import { useNostr } from '@/providers/NostrProvider'
@@ -47,10 +48,11 @@ export default function EmojiPicker({
     import('emoji-picker-element').then(({ Picker }) => {
       if (cancelled || !containerRef.current) return
 
-      const picker = new Picker() as HTMLElement & { customEmoji: unknown[] }
+      const picker = new Picker({
+        dataSource: EMOJI_PICKER_DATA_SOURCE,
+        customEmoji: customEmojis
+      }) as HTMLElement & { customEmoji: unknown[] }
       pickerRef.current = picker
-
-      picker.customEmoji = customEmojis
 
       if (themeSetting === 'dark') {
         picker.className = 'dark'
@@ -59,9 +61,10 @@ export default function EmojiPicker({
       }
 
       picker.style.width = '100%'
+      picker.style.minWidth = '280px'
+      picker.style.maxWidth = '350px'
       picker.style.height = 'min(350px, 50dvh)'
       picker.style.minHeight = '280px'
-      picker.style.display = 'block'
       picker.style.setProperty('--num-columns', '8')
 
       const handleClick = (e: Event) => {
@@ -193,7 +196,7 @@ export default function EmojiPicker({
       {ownEmojisRow}
       <div
         ref={containerRef}
-        className="h-[min(350px,50dvh)] min-h-[280px] w-full shrink-0 overflow-hidden"
+        className="h-[min(350px,50dvh)] min-h-[280px] w-full min-w-[280px] max-w-[350px] shrink-0"
       />
     </div>
   )

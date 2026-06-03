@@ -375,7 +375,10 @@ export function LikeButtonWithStats({
     <div className="flex h-full min-w-0 items-center">
       <DropdownMenu open={isEmojiReactionsOpen} onOpenChange={setIsEmojiReactionsOpen}>
         <DropdownMenuTrigger asChild>{likeIconButton}</DropdownMenuTrigger>
-        <DropdownMenuContent side="top" className="p-0 w-fit">
+        <DropdownMenuContent
+          side="top"
+          className="p-0 w-[min(100vw-1rem,350px)] max-w-[calc(100vw-1rem)] overflow-hidden"
+        >
           {likeEmojiPicker}
         </DropdownMenuContent>
       </DropdownMenu>

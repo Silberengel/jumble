@@ -727,8 +727,12 @@ export class ReplaceableEventService {
           replaceableRace: useReplaceableRace,
           eoseTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS : 100,
           globalTimeout: isSlowReplaceableBatch ? METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS : 2000,
-          /** Feed avatar batches must not be aborted by feed/search {@link interruptBackgroundQueries}. */
-          ...(kind === kinds.Metadata ? { foreground: true as const } : {})
+          /** Feed avatars + NIP-30 inventory must survive {@link interruptBackgroundQueries}. */
+          ...(kind === kinds.Metadata ||
+          kind === kinds.UserEmojiList ||
+          kind === kinds.Emojisets
+            ? { foreground: true as const }
+            : {})
         }
 
         let events: NEvent[]
@@ -897,7 +901,8 @@ export class ReplaceableEventService {
         const events = await this.queryService.query(relayUrls, filter, undefined, {
           replaceableRace: true,
           eoseTimeout: isDocumentRelayKind(kind) ? 2500 : 100,
-          globalTimeout: isDocumentRelayKind(kind) ? 8000 : 2000
+          globalTimeout: isDocumentRelayKind(kind) ? 8000 : 2000,
+          ...(kind === kinds.Emojisets ? { foreground: true as const } : {})
         })
 
         for (const event of events) {

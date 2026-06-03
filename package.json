@@ -96,6 +96,7 @@
     "embla-carousel-react": "^8.6.0",
     "embla-carousel-wheel-gestures": "^8.1.0",
     "emoji-picker-element": "^1.29.1",
+    "emoji-picker-element-data": "^1.8.0",
     "flexsearch": "^0.7.43",
     "highlight.js": "^11.9.0",
     "hls.js": "^1.6.15",
