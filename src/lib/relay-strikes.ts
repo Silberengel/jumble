@@ -93,6 +93,30 @@ function sessionKey(url: string): string {
 class RelaySessionStrikes {
   private byKey = new Map<string, StrikeEntry>()
   private cacheRelayKeys = new Set<string>()
+  private changeListeners = new Set<() => void>()
+
+  /** Subscribe to session strike map changes (for relay icon UI). */
+  subscribe(listener: () => void): () => void {
+    this.changeListeners.add(listener)
+    return () => {
+      this.changeListeners.delete(listener)
+    }
+  }
+
+  private emitChange(): void {
+    for (const listener of this.changeListeners) {
+      listener()
+    }
+  }
+
+  /** True when this URL has session strike / cooldown state (see {@link isRelayStrikeEntryActive}). */
+  isSessionStrikeActiveForUrl(url: string, now = Date.now()): boolean {
+    const key = sessionKey(url)
+    if (!key) return false
+    const e = this.byKey.get(key)
+    if (!e) return false
+    return isRelayStrikeEntryActive(e, now)
+  }
 
   setSessionCacheRelayKeysFromKind10432(ev: Event | null | undefined): void {
     this.cacheRelayKeys.clear()
@@ -191,6 +215,7 @@ class RelaySessionStrikes {
   private applyRateLimitCooldownKey(key: string, cooldownMs = RATE_LIMIT_COOLDOWN_MS): void {
     const e = this.getEntry(key)
     e.rateLimitUntil = Math.max(e.rateLimitUntil, Date.now() + cooldownMs)
+    this.emitChange()
   }
 
   /** WS connect failure, HTTP transport failure, etc. */
@@ -230,6 +255,7 @@ class RelaySessionStrikes {
       e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
       logger.debug('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures, threshold })
     }
+    this.emitChange()
   }
 
   private readStrikeThresholdForKey(
@@ -254,6 +280,7 @@ class RelaySessionStrikes {
     e.readLastStrikeIncrementAt = 0
     e.slowSignals = 0
     e.slowParkUntil = 0
+    this.emitChange()
   }
 
   /**
@@ -299,6 +326,7 @@ class RelaySessionStrikes {
         const e = this.byKey.get(key)
         if (e && e.slowSignals > 0) {
           e.slowSignals = Math.max(0, e.slowSignals - 1)
+          this.emitChange()
         }
       }
     }
@@ -312,6 +340,7 @@ class RelaySessionStrikes {
     // Read-only index relays (aggr.nostr.land, search.nos.today, …) are intentionally slower than inbox relays.
     if (url && isReadOnlyRelayUrl(url)) return false
     e.slowSignals += 1
+    this.emitChange()
     if (e.slowSignals < RELAY_SLOW_PARK_SIGNALS_THRESHOLD) return false
     e.slowParkUntil = Math.max(e.slowParkUntil, now + RELAY_SLOW_PARK_COOLDOWN_MS)
     logger.warn('[RelayStrikes] session-parked slow relay', {
@@ -344,6 +373,7 @@ class RelaySessionStrikes {
       e.publishStrikeSkipUntil = Math.max(e.publishStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
       logger.warn('[RelayStrikes] publish path strike skip', { key, publishFailures: e.publishFailures })
     }
+    this.emitChange()
   }
 
   /** Successful publish clears publish strikes (existing publish stats stay in ClientService). */
@@ -355,6 +385,7 @@ class RelaySessionStrikes {
     e.publishFailures = 0
     e.publishStrikeSkipUntil = 0
     e.publishLastStrikeIncrementAt = 0
+    this.emitChange()
   }
 
   filterPublishUrls(urls: readonly string[]): string[] {
@@ -389,11 +420,13 @@ class RelaySessionStrikes {
     const key = sessionKey(urlOrSessionKey) || urlOrSessionKey.trim()
     if (!key) return
     this.byKey.delete(key)
+    this.emitChange()
   }
 
   reset(): void {
     this.byKey.clear()
     this.cacheRelayKeys.clear()
+    this.emitChange()
   }
 }
 

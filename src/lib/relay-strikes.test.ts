@@ -152,6 +152,29 @@ describe('relaySessionStrikes publish failures', () => {
   })
 })
 
+describe('relaySessionStrikes.isSessionStrikeActiveForUrl', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+  })
+
+  it('is false with no strike state', () => {
+    expect(relaySessionStrikes.isSessionStrikeActiveForUrl('wss://relay.example/')).toBe(false)
+  })
+
+  it('is true after read failures accrue', () => {
+    const url = 'wss://relay.example/'
+    relaySessionStrikes.recordReadFailure(url, 'http')
+    expect(relaySessionStrikes.isSessionStrikeActiveForUrl(url)).toBe(true)
+  })
+
+  it('is false after clearKey', () => {
+    const url = 'wss://relay.example/'
+    relaySessionStrikes.recordReadFailure(url, 'http')
+    relaySessionStrikes.clearKey(url)
+    expect(relaySessionStrikes.isSessionStrikeActiveForUrl(url)).toBe(false)
+  })
+})
+
 describe('isRelayStrikeEntryActive', () => {
   it('is false for empty entry', () => {
     expect(

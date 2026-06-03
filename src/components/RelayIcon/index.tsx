@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useFetchRelayInfo } from '@/hooks'
+import { useRelaySessionStrikeActive } from '@/hooks/useRelaySessionStrikeActive'
 import {
   getRelayIconFallbackGlyph,
   getRelayIconOverrideSrc,
@@ -53,6 +54,7 @@ export default function RelayIcon({
     relayInfoProp !== undefined || skipRelayInfoFetch ? undefined : url
   )
   const relayInfo = relayInfoProp !== undefined ? relayInfoProp : fetchedRelayInfo
+  const sessionStrike = useRelaySessionStrikeActive(url)
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   useEffect(() => {
     setIconLoadFailed(false)
@@ -79,7 +81,9 @@ export default function RelayIcon({
   const fallbackGlyph = useMemo(() => getRelayIconFallbackGlyph(url), [url])
 
   return (
-    <Avatar className={cn('w-6 h-6', className)}>
+    <Avatar
+      className={cn('w-6 h-6', sessionStrike && 'grayscale opacity-50', className)}
+    >
       {iconUrl && !iconLoadFailed && (
         <AvatarImage
           src={iconUrl}
