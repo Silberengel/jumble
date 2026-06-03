@@ -2020,6 +2020,75 @@ export async function createVideoDraftEvent(
   })
 }
 
+export async function createMusicTrackDraftEvent(
+  content: string,
+  mentions: string[],
+  options: {
+    dTag: string
+    title: string
+    audioUrl: string
+    artist?: string
+    imageUrl?: string
+    album?: string
+    durationSec?: number
+    format?: string
+    language?: string
+    genres?: string[]
+    addClientTag?: boolean
+    isNsfw?: boolean
+  }
+): Promise<TDraftEvent> {
+  const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
+  const hashtags = extractHashtags(transformedEmojisContent)
+
+  const tags: string[][] = []
+  tags.push(buildDTag(normalizeDTag(options.dTag)))
+  tags.push(buildTitleTag(options.title))
+  tags.push(['url', options.audioUrl.trim()])
+  tags.push(['t', 'music'])
+  if (options.artist?.trim()) {
+    tags.push(['artist', options.artist.trim()])
+  }
+  if (options.imageUrl?.trim()) {
+    tags.push(['image', options.imageUrl.trim()])
+  }
+  if (options.album?.trim()) {
+    tags.push(['album', options.album.trim()])
+  }
+  if (options.durationSec != null && options.durationSec > 0) {
+    tags.push(['duration', String(Math.floor(options.durationSec))])
+  }
+  if (options.format?.trim()) {
+    tags.push(['format', options.format.trim()])
+  }
+  if (options.language?.trim()) {
+    tags.push(['language', options.language.trim()])
+  }
+  const genreTags = new Set<string>()
+  for (const g of options.genres ?? []) {
+    const t = normalizeTopic(g.trim())
+    if (t && t !== 'music') genreTags.add(t)
+  }
+  for (const h of hashtags) {
+    if (h !== 'music') genreTags.add(h)
+  }
+  for (const g of genreTags) {
+    tags.push(['t', g])
+  }
+  tags.push(...emojiTags)
+  tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
+
+  if (options.isNsfw) {
+    tags.push(buildNsfwTag())
+  }
+
+  return setDraftEventCache({
+    kind: ExtendedKind.MUSIC_TRACK,
+    content: transformedEmojisContent,
+    tags
+  })
+}
+
 // Article draft event functions
 
 export async function createLongFormArticleDraftEvent(

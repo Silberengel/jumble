@@ -11,7 +11,27 @@ import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 import MediaPlayer from '../MediaPlayer'
+
+/** Tags already shown on the music card — omit from caption markdown so they are not rendered twice. */
+const MUSIC_TRACK_CAPTION_OMIT_TAGS = new Set([
+  'd',
+  'title',
+  'artist',
+  'url',
+  'image',
+  'video',
+  'album',
+  'duration',
+  'format',
+  'language',
+  'track_number',
+  'released',
+  'explicit',
+  'alt',
+  'genre'
+])
 
 export default function MusicTrackNote({
   event,
@@ -37,6 +57,11 @@ export default function MusicTrackNote({
     () => (track ? primalR2aMirrorForBlossomPrimalUrl(track.audioUrl) ?? undefined : undefined),
     [track]
   )
+  const captionEvent = useMemo(() => {
+    if (!caption) return null
+    const tags = event.tags.filter(([name]) => !MUSIC_TRACK_CAPTION_OMIT_TAGS.has(name))
+    return { ...event, content: caption, tags } as Event
+  }, [event, caption])
 
   if (!track) {
     return (
@@ -86,8 +111,16 @@ export default function MusicTrackNote({
           </div>
         ) : null}
       </div>
-      {caption ? (
-        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{caption}</p>
+      {captionEvent ? (
+        <div className="mt-2 min-w-0 text-sm text-muted-foreground">
+          <MarkdownArticle
+            event={captionEvent}
+            hideMetadata
+            lazyMedia={!mustLoad}
+            parentImageUrl={track.imageUrl}
+            className="prose-sm prose-headings:text-muted-foreground prose-p:text-muted-foreground"
+          />
+        </div>
       ) : null}
     </div>
   )

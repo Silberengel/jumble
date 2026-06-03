@@ -78,6 +78,18 @@ const PostTextarea = forwardRef<
       topics?: string[]
       affectedKinds?: number[]
     }
+    musicTrackMetadata?: {
+      dTag?: string
+      title?: string
+      audioUrl?: string
+      artist?: string
+      imageUrl?: string
+      album?: string
+      durationSec?: number
+      format?: string
+      language?: string
+      genres?: string[]
+    }
     extraPreviewTags?: string[][]
     addClientTag?: boolean
   }
@@ -103,6 +115,7 @@ const PostTextarea = forwardRef<
       mediaImetaTags,
       mediaUrl,
       articleMetadata,
+      musicTrackMetadata,
       extraPreviewTags,
       addClientTag = true
     },
@@ -311,6 +324,7 @@ const PostTextarea = forwardRef<
               mediaImetaTags={mediaImetaTags}
               mediaUrl={mediaUrl}
               articleMetadata={articleMetadata}
+              musicTrackMetadata={musicTrackMetadata}
               extraPreviewTags={extraPreviewTags}
               addClientTag={addClientTag}
             />

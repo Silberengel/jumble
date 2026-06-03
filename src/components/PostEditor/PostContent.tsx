@@ -35,6 +35,7 @@ import {
   createCitationExternalDraftEvent,
   createCitationHardcopyDraftEvent,
   createCitationPromptDraftEvent,
+  createMusicTrackDraftEvent,
   collectUploadImetaTagsForContentUrls,
   mergeUploadImetaTagsInto,
   stripImwaldAttributionTags
@@ -330,6 +331,17 @@ export default function PostContent({
   const [isWikiArticle, setIsWikiArticle] = useState(false)
   const [isNostrSpecification, setIsNostrSpecification] = useState(false)
   const [isPublicationContent, setIsPublicationContent] = useState(false)
+  const [isMusicTrack, setIsMusicTrack] = useState(false)
+  const [musicTrackDTag, setMusicTrackDTag] = useState('')
+  const [musicTrackTitle, setMusicTrackTitle] = useState('')
+  const [musicTrackArtist, setMusicTrackArtist] = useState('')
+  const [musicTrackAudioUrl, setMusicTrackAudioUrl] = useState('')
+  const [musicTrackImageUrl, setMusicTrackImageUrl] = useState('')
+  const [musicTrackAlbum, setMusicTrackAlbum] = useState('')
+  const [musicTrackDuration, setMusicTrackDuration] = useState('')
+  const [musicTrackFormat, setMusicTrackFormat] = useState('')
+  const [musicTrackLanguage, setMusicTrackLanguage] = useState('')
+  const [musicTrackGenres, setMusicTrackGenres] = useState('')
   const [nostrSpecAffectedKindRows, setNostrSpecAffectedKindRows] = useState<NostrSpecAffectedKindRow[]>(
     () => [newNostrSpecAffectedKindRow()]
   )
@@ -387,6 +399,7 @@ export default function PostContent({
   const [mediaNoteUploadPending, setMediaNoteUploadPending] = useState(false)
   /** Stable auto d-tag when the field is left empty; `{ slug, value }` resets when article subtype changes. */
   const articleDTagFallbackRef = useRef<{ slug: string; value: string } | null>(null)
+  const musicTrackDTagFallbackRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (articleDTag.trim()) {
@@ -590,6 +603,8 @@ export default function PostContent({
       return ExtendedKind.NOSTR_SPECIFICATION
     } else if (isPublicationContent) {
       return ExtendedKind.PUBLICATION_CONTENT
+    } else if (isMusicTrack) {
+      return ExtendedKind.MUSIC_TRACK
     } else if (isCitationInternal) {
       return ExtendedKind.CITATION_INTERNAL
     } else if (isCitationExternal) {
@@ -615,6 +630,7 @@ export default function PostContent({
     isWikiArticle,
     isNostrSpecification,
     isPublicationContent,
+    isMusicTrack,
     isCitationInternal,
     isCitationExternal,
     isCitationHardcopy,
@@ -654,6 +670,7 @@ export default function PostContent({
       (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
       (!isCitationHardcopy || !!citationAccessedOn.trim()) &&
       (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim())) &&
+      (!isMusicTrack || (!!musicTrackTitle.trim() && !!musicTrackAudioUrl.trim())) &&
       relayCapBlockInfo === null
     )
   }, [
@@ -686,7 +703,10 @@ export default function PostContent({
     threadIsReadingGroup,
     threadReadingAuthor,
     threadReadingSubject,
-    relayCapBlockInfo
+    relayCapBlockInfo,
+    isMusicTrack,
+    musicTrackTitle,
+    musicTrackAudioUrl
   ])
 
   const getDeterminedKindRef = useRef(getDeterminedKind)
@@ -803,6 +823,38 @@ export default function PostContent({
     articleImage,
     articleSubject,
     nostrSpecAffectedKindRows
+  ])
+
+  const musicTrackPreviewMetadata = useMemo(() => {
+    if (!isMusicTrack) return undefined
+    const genres = musicTrackGenres.trim()
+      ? musicTrackGenres.split(/[,\s]+/).filter((s) => s.trim())
+      : []
+    const durationRaw = Number.parseInt(musicTrackDuration.trim(), 10)
+    return {
+      dTag: musicTrackDTag.trim() || undefined,
+      title: musicTrackTitle.trim() || undefined,
+      audioUrl: musicTrackAudioUrl.trim() || undefined,
+      artist: musicTrackArtist.trim() || undefined,
+      imageUrl: musicTrackImageUrl.trim() || undefined,
+      album: musicTrackAlbum.trim() || undefined,
+      durationSec: Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : undefined,
+      format: musicTrackFormat.trim() || undefined,
+      language: musicTrackLanguage.trim() || undefined,
+      genres: genres.length > 0 ? genres : undefined
+    }
+  }, [
+    isMusicTrack,
+    musicTrackDTag,
+    musicTrackTitle,
+    musicTrackAudioUrl,
+    musicTrackArtist,
+    musicTrackImageUrl,
+    musicTrackAlbum,
+    musicTrackDuration,
+    musicTrackFormat,
+    musicTrackLanguage,
+    musicTrackGenres
   ])
 
   const mergedExtraPreviewTags = useMemo((): string[][] | undefined => {
@@ -943,6 +995,37 @@ export default function PostContent({
     const topics = articleSubject.trim()
       ? articleSubject.split(/[,\s]+/).filter(s => s.trim())
       : []
+
+    if (isMusicTrack) {
+      const trimmedDTag = musicTrackDTag.trim()
+      let effectiveDTag = trimmedDTag
+      if (!effectiveDTag) {
+        if (!musicTrackDTagFallbackRef.current) {
+          musicTrackDTagFallbackRef.current = `music-track-${Math.floor(Date.now() / 1000)}`
+        }
+        effectiveDTag = musicTrackDTagFallbackRef.current
+      } else {
+        musicTrackDTagFallbackRef.current = null
+      }
+      const genres = musicTrackGenres.trim()
+        ? musicTrackGenres.split(/[,\s]+/).filter((s) => s.trim())
+        : []
+      const durationRaw = Number.parseInt(musicTrackDuration.trim(), 10)
+      return await createMusicTrackDraftEvent(cleanedText, mentions, {
+        dTag: effectiveDTag,
+        title: musicTrackTitle.trim(),
+        audioUrl: musicTrackAudioUrl.trim(),
+        artist: musicTrackArtist.trim() || undefined,
+        imageUrl: musicTrackImageUrl.trim() || undefined,
+        album: musicTrackAlbum.trim() || undefined,
+        durationSec: Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : undefined,
+        format: musicTrackFormat.trim() || undefined,
+        language: musicTrackLanguage.trim() || undefined,
+        genres,
+        addClientTag,
+        isNsfw
+      })
+    }
 
     // Articles
     const isArticleDraft =
@@ -1160,6 +1243,17 @@ export default function PostContent({
     isWikiArticle,
     isNostrSpecification,
     isPublicationContent,
+    isMusicTrack,
+    musicTrackDTag,
+    musicTrackTitle,
+    musicTrackArtist,
+    musicTrackAudioUrl,
+    musicTrackImageUrl,
+    musicTrackAlbum,
+    musicTrackDuration,
+    musicTrackFormat,
+    musicTrackLanguage,
+    musicTrackGenres,
     isCitationInternal,
     isCitationExternal,
     isCitationHardcopy,
@@ -1502,6 +1596,7 @@ export default function PostContent({
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
       setIsPublicationContent(false)
+      setIsMusicTrack(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
       setIsCitationHardcopy(false)
@@ -1526,6 +1621,7 @@ export default function PostContent({
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
       setIsPublicationContent(false)
+      setIsMusicTrack(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
       setIsCitationHardcopy(false)
@@ -1553,6 +1649,7 @@ export default function PostContent({
     setIsWikiArticle(false)
     setIsNostrSpecification(false)
     setIsPublicationContent(false)
+    setIsMusicTrack(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
     setIsCitationHardcopy(false)
@@ -1616,7 +1713,7 @@ export default function PostContent({
   }
 
   const canUseMediaKindFromUrlButton = useMemo(() => {
-    if (parentEvent || isDiscussionThread || isPublicMessage) return false
+    if (parentEvent || isDiscussionThread || isPublicMessage || isMusicTrack) return false
     if (mediaNoteKind !== null && mediaUrl) return false
     if (mediaImetaTags.length > 0) return true
     if (mediaUrl) return true
@@ -1627,6 +1724,7 @@ export default function PostContent({
     parentEvent,
     isDiscussionThread,
     isPublicMessage,
+    isMusicTrack,
     mediaNoteKind,
     mediaUrl,
     mediaImetaTags,
@@ -1635,7 +1733,7 @@ export default function PostContent({
 
   /** When the editor already contains a media URL (e.g. after drop/paste) but kind stayed 1. */
   const handleUseMediaNoteKindFromUrl = () => {
-    if (parentEvent || isDiscussionThread || isPublicMessage) return
+    if (parentEvent || isDiscussionThread || isPublicMessage || isMusicTrack) return
     if (mediaNoteKind !== null && mediaUrl) {
       toast.info(t('Already publishing as a media note'))
       return
@@ -1658,6 +1756,7 @@ export default function PostContent({
     setIsWikiArticle(false)
     setIsNostrSpecification(false)
     setIsPublicationContent(false)
+    setIsMusicTrack(false)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
     setIsCitationHardcopy(false)
@@ -1691,6 +1790,7 @@ export default function PostContent({
       !isWikiArticle &&
       !isNostrSpecification &&
       !isPublicationContent &&
+      !isMusicTrack &&
       !isCitationInternal &&
       !isCitationExternal &&
       !isCitationHardcopy &&
@@ -1706,6 +1806,7 @@ export default function PostContent({
       isWikiArticle,
       isNostrSpecification,
       isPublicationContent,
+      isMusicTrack,
       isCitationInternal,
       isCitationExternal,
       isCitationHardcopy,
@@ -1714,6 +1815,31 @@ export default function PostContent({
       isMediaNoteComposerMode
     ]
   )
+
+  const handleMusicTrackToggle = () => {
+    if (parentEvent) return
+    setIsMusicTrack((prev) => !prev)
+    if (!isMusicTrack) {
+      setIsPoll(false)
+      setIsPublicMessage(false)
+      setIsHighlight(false)
+      setIsLongFormArticle(false)
+      setIsWikiArticle(false)
+      setIsNostrSpecification(false)
+      setIsPublicationContent(false)
+      setIsMusicTrack(false)
+      setIsCitationInternal(false)
+      setIsCitationExternal(false)
+      setIsCitationHardcopy(false)
+      setIsCitationPrompt(false)
+      setIsDiscussionThread(false)
+      setMediaNoteKind(null)
+      setMediaUrl('')
+      setMediaImetaTags([])
+      composerImetaTagsRef.current = []
+      musicTrackDTagFallbackRef.current = null
+    }
+  }
 
   const handleHighlightToggle = () => {
     if (parentEvent) return
@@ -1727,6 +1853,7 @@ export default function PostContent({
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
       setIsPublicationContent(false)
+      setIsMusicTrack(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
       setIsCitationHardcopy(false)
@@ -1746,6 +1873,11 @@ export default function PostContent({
       setIsPoll(false)
       setIsPublicMessage(false)
       setIsHighlight(false)
+      setIsLongFormArticle(false)
+      setIsWikiArticle(false)
+      setIsNostrSpecification(false)
+      setIsPublicationContent(false)
+      setIsMusicTrack(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
       setIsCitationHardcopy(false)
@@ -2148,6 +2280,30 @@ export default function PostContent({
           }
           return // Don't set media note kind for non-audio in replies/PMs
         }
+      } else if (isMusicTrack) {
+        const fileType = uploadingFile.type
+        const fileName = uploadingFile.name.toLowerCase()
+        const isAudioMime =
+          fileType.startsWith('audio/') ||
+          fileType === 'audio/mp4' ||
+          fileType === 'audio/x-m4a' ||
+          fileType === 'audio/m4a'
+        const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg)$/i.test(fileName)
+        const isAudio = isAudioMime || isAudioExt || /\.m4a$/i.test(fileName)
+        const isImage =
+          fileType.startsWith('image/') || imageUrlLooksLikeHttpImage(url)
+
+        if (isAudio) {
+          setMusicTrackAudioUrl(url)
+          const ext = fileName.split('.').pop()
+          if (ext && !musicTrackFormat.trim()) {
+            setMusicTrackFormat(ext)
+          }
+        } else if (isImage) {
+          setMusicTrackImageUrl(url)
+        } else if (!urlAlreadyInEditor) {
+          appendUploadedUrlToComposer(url, imageUrlLooksLikeHttpImage(url))
+        }
       } else {
         // For new posts, check if file is ambiguous (could be audio or video)
         if (isAmbiguousMediaFile(uploadingFile)) {
@@ -2172,7 +2328,7 @@ export default function PostContent({
       // Don't throw - just log the error so the upload doesn't fail completely
     }
     
-    if (!mediaNoteUploaderIntentRef.current) {
+    if (!mediaNoteUploaderIntentRef.current && !isMusicTrack) {
       clearNonMediaNoteComposerModes()
     }
 
@@ -2223,6 +2379,7 @@ export default function PostContent({
     setIsCitationHardcopy(false)
     setIsCitationPrompt(false)
     setIsDiscussionThread(false)
+    setIsMusicTrack(false)
     
     // Clear article metadata when switching off article mode
     if (type === null) {
@@ -2263,6 +2420,7 @@ export default function PostContent({
     setIsWikiArticle(false)
     setIsNostrSpecification(false)
     setIsPublicationContent(false)
+    setIsMusicTrack(false)
     setIsDiscussionThread(false)
     
     // Set default accessedOn if not already set
@@ -2294,6 +2452,18 @@ export default function PostContent({
     setIsWikiArticle(false)
     setIsNostrSpecification(false)
     setIsPublicationContent(false)
+    setIsMusicTrack(false)
+    setMusicTrackDTag('')
+    setMusicTrackTitle('')
+    setMusicTrackArtist('')
+    setMusicTrackAudioUrl('')
+    setMusicTrackImageUrl('')
+    setMusicTrackAlbum('')
+    setMusicTrackDuration('')
+    setMusicTrackFormat('')
+    setMusicTrackLanguage('')
+    setMusicTrackGenres('')
+    musicTrackDTagFallbackRef.current = null
     setIsCitationInternal(false)
     setIsCitationExternal(false)
     setIsCitationHardcopy(false)
@@ -2701,6 +2871,138 @@ export default function PostContent({
           </div>
         </div>
       )}
+
+      {isMusicTrack && (
+        <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+          <div className="space-y-2">
+            <Label htmlFor="music-track-dtag" className="text-sm font-medium">
+              {t('D-Tag')}
+            </Label>
+            <Input
+              id="music-track-dtag"
+              value={musicTrackDTag}
+              onChange={(e) => setMusicTrackDTag(e.target.value)}
+              placeholder={t('e.g., my-song-slug')}
+            />
+            <p className="text-xs text-muted-foreground">{t('articleDTagDefaultHint')}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="music-track-title" className="text-sm font-medium">
+              {t('Title')} <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="music-track-title"
+              value={musicTrackTitle}
+              onChange={(e) => setMusicTrackTitle(e.target.value)}
+              placeholder={t('Track title')}
+              className={!musicTrackTitle.trim() ? 'border-destructive' : ''}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="music-track-artist" className="text-sm font-medium">
+              {t('Artist')}
+            </Label>
+            <Input
+              id="music-track-artist"
+              value={musicTrackArtist}
+              onChange={(e) => setMusicTrackArtist(e.target.value)}
+              placeholder={t('Artist name (optional)')}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="music-track-audio-url" className="text-sm font-medium">
+              {t('Audio URL')} <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="music-track-audio-url"
+              value={musicTrackAudioUrl}
+              onChange={(e) => setMusicTrackAudioUrl(e.target.value)}
+              placeholder={t('https://example.com/track.m4a')}
+              className={!musicTrackAudioUrl.trim() ? 'border-destructive' : ''}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="music-track-image-url" className="text-sm font-medium">
+              {t('Cover image URL')}
+            </Label>
+            <Input
+              id="music-track-image-url"
+              value={musicTrackImageUrl}
+              onChange={(e) => setMusicTrackImageUrl(e.target.value)}
+              placeholder={t('https://example.com/cover.png')}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="music-track-album" className="text-sm font-medium">
+                {t('Album')}
+              </Label>
+              <Input
+                id="music-track-album"
+                value={musicTrackAlbum}
+                onChange={(e) => setMusicTrackAlbum(e.target.value)}
+                placeholder={t('Album (optional)')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="music-track-duration" className="text-sm font-medium">
+                {t('Duration (seconds)')}
+              </Label>
+              <Input
+                id="music-track-duration"
+                type="number"
+                min={1}
+                value={musicTrackDuration}
+                onChange={(e) => setMusicTrackDuration(e.target.value)}
+                placeholder="245"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="music-track-format" className="text-sm font-medium">
+                {t('Format')}
+              </Label>
+              <Input
+                id="music-track-format"
+                value={musicTrackFormat}
+                onChange={(e) => setMusicTrackFormat(e.target.value)}
+                placeholder="mp3"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="music-track-language" className="text-sm font-medium">
+                {t('Language')}
+              </Label>
+              <Input
+                id="music-track-language"
+                value={musicTrackLanguage}
+                onChange={(e) => setMusicTrackLanguage(e.target.value)}
+                placeholder="de"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="music-track-genres" className="text-sm font-medium">
+              {t('Genres')}
+            </Label>
+            <Input
+              id="music-track-genres"
+              value={musicTrackGenres}
+              onChange={(e) => setMusicTrackGenres(e.target.value)}
+              placeholder={t('heimatsound, deutschland')}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('Comma-separated genre tags (kind 36787 also adds t=music automatically)', {
+                defaultValue: 'Comma-separated genre tags (t=music is added automatically)'
+              })}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('Use the editor below for lyrics or notes (Markdown).', {
+              defaultValue: 'Use the editor below for lyrics or notes (Markdown).'
+            })}
+          </p>
+        </div>
+      )}
       
       {/* Citation metadata fields */}
       {(isCitationInternal ||
@@ -3077,6 +3379,7 @@ export default function PostContent({
           pollCreateData={isPoll ? pollCreateData : undefined}
           extraPreviewTags={mergedExtraPreviewTags}
           articleMetadata={articlePreviewMetadata}
+          musicTrackMetadata={musicTrackPreviewMetadata}
           addClientTag={addClientTag}
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
@@ -3086,6 +3389,7 @@ export default function PostContent({
                 isWikiArticle ? FileText :
                 isNostrSpecification ? FileText :
                 isPublicationContent ? Book :
+                isMusicTrack ? Music :
                 isCitationInternal || isCitationExternal || isCitationHardcopy || isCitationPrompt ? Quote :
                 isHighlight ? Highlighter :
                 isPublicMessage ? MessageCircle :
@@ -3098,6 +3402,7 @@ export default function PostContent({
                 isWikiArticle ? t('Wiki Article (AsciiDoc)') :
                 isNostrSpecification ? t('Nostr Specification') :
                 isPublicationContent ? t('Publication Note') :
+                isMusicTrack ? t('Music Track', { defaultValue: 'Music Track' }) :
                 isCitationInternal ? t('Internal Citation') :
                 isCitationExternal ? t('External Citation') :
                 isCitationHardcopy ? t('Hardcopy Citation') :
@@ -3172,6 +3477,18 @@ export default function PostContent({
                         <span className="text-xs text-muted-foreground mt-0.5">{t('Attach image, audio, or video')}</span>
                       </div>
                       {isMediaNoteComposerMode && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleMusicTrackToggle} className="gap-3 py-2 cursor-pointer">
+                      <Music className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="font-medium leading-none">{t('Music Track', { defaultValue: 'Music Track' })}</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">
+                          {t('Publish audio with cover art and lyrics (kind 36787)', {
+                            defaultValue: 'Publish audio with cover art and lyrics (kind 36787)'
+                          })}
+                        </span>
+                      </div>
+                      {isMusicTrack && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleHighlightToggle} className="gap-3 py-2 cursor-pointer">

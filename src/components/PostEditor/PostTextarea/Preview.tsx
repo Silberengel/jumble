@@ -31,6 +31,7 @@ export default function Preview({
   mediaImetaTags,
   mediaUrl,
   articleMetadata,
+  musicTrackMetadata,
   extraPreviewTags,
   addClientTag = true
 }: { 
@@ -49,6 +50,18 @@ export default function Preview({
     topics?: string[]
     /** Kind 30817: each number becomes a `k` tag. */
     affectedKinds?: number[]
+  }
+  musicTrackMetadata?: {
+    dTag?: string
+    title?: string
+    audioUrl?: string
+    artist?: string
+    imageUrl?: string
+    album?: string
+    durationSec?: number
+    format?: string
+    language?: string
+    genres?: string[]
   }
   /** Merged into the fake event (e.g. kind 11 discussion title / topic tags). */
   extraPreviewTags?: string[][]
@@ -168,6 +181,44 @@ export default function Preview({
         tags.push(...normalizedTopics.map((topic) => ['t', topic]))
       }
     }
+    if (musicTrackMetadata && kind === ExtendedKind.MUSIC_TRACK) {
+      if (musicTrackMetadata.dTag) {
+        tags.push(['d', musicTrackMetadata.dTag])
+      }
+      if (musicTrackMetadata.title) {
+        tags.push(['title', musicTrackMetadata.title])
+      }
+      if (musicTrackMetadata.audioUrl) {
+        tags.push(['url', musicTrackMetadata.audioUrl])
+      }
+      tags.push(['t', 'music'])
+      if (musicTrackMetadata.artist) {
+        tags.push(['artist', musicTrackMetadata.artist])
+      }
+      if (musicTrackMetadata.imageUrl) {
+        tags.push(['image', musicTrackMetadata.imageUrl])
+      }
+      if (musicTrackMetadata.album) {
+        tags.push(['album', musicTrackMetadata.album])
+      }
+      if (musicTrackMetadata.durationSec) {
+        tags.push(['duration', String(musicTrackMetadata.durationSec)])
+      }
+      if (musicTrackMetadata.format) {
+        tags.push(['format', musicTrackMetadata.format])
+      }
+      if (musicTrackMetadata.language) {
+        tags.push(['language', musicTrackMetadata.language])
+      }
+      if (musicTrackMetadata.genres?.length) {
+        for (const g of musicTrackMetadata.genres) {
+          const topic = normalizeTopic(g.trim())
+          if (topic && topic !== 'music') {
+            tags.push(['t', topic])
+          }
+        }
+      }
+    }
     if (extraPreviewTags?.length) {
       tags.push(...extraPreviewTags)
     }
@@ -176,7 +227,7 @@ export default function Preview({
       stripped.push(buildClientTag())
     }
     return stripped
-  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, kind, extraPreviewTags, addClientTag])
+  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, kind, extraPreviewTags, addClientTag])
   
   const fakeEvent = useMemo(() => {
     // For voice comments, include the media URL in content if not already there
@@ -273,6 +324,14 @@ export default function Preview({
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
         <AsciidocArticle event={fakeEvent} hideImagesAndInfo={false} />
+      </Card>
+    )
+  }
+
+  if (kind === ExtendedKind.MUSIC_TRACK) {
+    return withClientBadge(
+      <Card className={cn('p-3', className, selectableClass)}>
+        <ContentPreview event={fakeEvent} />
       </Card>
     )
   }
