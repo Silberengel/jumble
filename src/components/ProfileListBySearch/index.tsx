@@ -2,8 +2,10 @@ import { useSecondaryPage } from '@/PageManager'
 import { PROFILE_RELAY_URLS } from '@/constants'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
+import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import { toProfile } from '@/lib/link'
 import client from '@/services/client.service'
+import type { TProfile } from '@/types'
 import { cn } from '@/lib/utils'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -29,7 +31,9 @@ export function ProfileListBySearch({
   const [hasMore, setHasMore] = useState(true)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [empty, setEmpty] = useState(false)
+  const [profilesByPubkey, setProfilesByPubkey] = useState<Map<string, TProfile>>(() => new Map())
   const bottomRef = useRef<HTMLDivElement>(null)
+  const profileBatchGenRef = useRef(0)
   const loadMoreInFlight = useRef(false)
   const untilRef = useRef(until)
   untilRef.current = until
@@ -106,6 +110,28 @@ export function ProfileListBySearch({
       ac.abort()
     }
   }, [search])
+
+  const pubkeysKey = pubkeys.join('\u0001')
+
+  useEffect(() => {
+    const need = pubkeys
+      .map((pk) => pk.trim().toLowerCase())
+      .filter((pk) => /^[0-9a-f]{64}$/.test(pk))
+    if (need.length === 0) {
+      setProfilesByPubkey(new Map())
+      return
+    }
+
+    const gen = ++profileBatchGenRef.current
+    void fetchProfilesMetadataBatch(need).then((profiles) => {
+      if (gen !== profileBatchGenRef.current) return
+      const next = new Map<string, TProfile>()
+      for (const p of profiles) {
+        next.set(p.pubkey.toLowerCase(), { ...p, pubkey: p.pubkey.toLowerCase() })
+      }
+      setProfilesByPubkey(next)
+    })
+  }, [pubkeysKey])
 
   const loadMore = useCallback(async () => {
     if (loadMoreInFlight.current || !hasMore) return
@@ -207,7 +233,11 @@ export function ProfileListBySearch({
             }
           }}
         >
-          <UserItem pubkey={pubkey} />
+          <UserItem
+            pubkey={pubkey}
+            prefetchedProfile={profilesByPubkey.get(pubkey.toLowerCase())}
+            deferRemoteAvatar={false}
+          />
         </div>
       ))}
       {phase === 'ready' && hasMore && pubkeys.length > 0 && (

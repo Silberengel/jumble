@@ -1,5 +1,5 @@
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
-import client from '@/services/client.service'
+import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import type { TProfile } from '@/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import UserItem from '../UserItem'
@@ -68,7 +68,7 @@ export default function ProfileList({ pubkeys }: { pubkeys: string[] }) {
         chunks.push(need.slice(i, i + PROFILE_CHUNK))
       }
       const settled = await Promise.allSettled(
-        chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
+        chunks.map((chunk) => fetchProfilesMetadataBatch(chunk))
       )
       if (gen !== batchGenRef.current) return
 

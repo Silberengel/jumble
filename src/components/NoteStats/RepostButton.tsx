@@ -22,7 +22,11 @@ import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import noteStatsService from '@/services/note-stats.service'
-import type { TNoteStats } from '@/services/note-stats.service'
+import {
+  displayListCountWithArchives,
+  noteStatsHasResolvableCounts,
+  type TNoteStats
+} from '@/services/note-stats.service'
 import { PencilLine, Repeat } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
@@ -48,10 +52,14 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
   const [reposting, setReposting] = useState(false)
   const [isPostDialogOpen, setIsPostDialogOpen] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const statsLoaded = noteStats?.updatedAt != null
+  const statsLoaded = noteStatsHasResolvableCounts(noteStats)
   const { repostCount, hasReposted } = useMemo(() => {
     return {
-      repostCount: noteStats?.reposts?.length,
+      repostCount: displayListCountWithArchives(
+        noteStats?.reposts?.length,
+        noteStats?.archivesInteractions,
+        'reposts'
+      ),
       hasReposted: pubkey ? noteStats?.repostPubkeySet?.has(pubkey) : false
     }
   }, [noteStats, event.id, pubkey])

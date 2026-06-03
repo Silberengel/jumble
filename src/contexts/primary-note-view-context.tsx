@@ -8,6 +8,7 @@ export type TPrimaryOverlayViewType =
   | 'hashtag'
   | 'relay'
   | 'following'
+  | 'followers'
   | 'mute'
   | 'bookmarks'
   | 'pins'

@@ -211,6 +211,10 @@ export function resolveImwaldRouteSocialCopy(
     pageTitle = `Following · ${SITE_NAME}`
     ogTitle = `Following list · ${SITE_NAME}`
     description = `Following list on ${SITE_NAME}.`
+  } else if (path.match(/^\/users\/[^/]+\/followers$/)) {
+    pageTitle = `Followers · ${SITE_NAME}`
+    ogTitle = `Followers list · ${SITE_NAME}`
+    description = `Followers list on ${SITE_NAME}.`
   } else if (path.match(/^\/users\/[^/]+\/relays$/)) {
     pageTitle = `Relays · ${SITE_NAME}`
     ogTitle = `User relays · ${SITE_NAME}`

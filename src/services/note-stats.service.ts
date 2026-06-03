@@ -41,6 +41,7 @@ import client, { eventService } from '@/services/client.service'
 import { TEmoji } from '@/types'
 import dayjs from 'dayjs'
 import { Event, Filter, kinds } from 'nostr-tools'
+import type { TArchivesInteractionCounts } from '@/types/nostr-archives'
 
 export type TNoteStats = {
   likeIdSet: Set<string>
@@ -57,7 +58,29 @@ export type TNoteStats = {
   highlights: { id: string; pubkey: string; created_at: number }[]
   /** Pubkeys whose NIP-51 bookmark list includes this note id (`e` tag). */
   bookmarkPubkeySet?: Set<string>
+  /** Aggregate counts from Nostr Archives `/v1/events/{id}/interactions` (floor for display until relay lists catch up). */
+  archivesInteractions?: TArchivesInteractionCounts
   updatedAt?: number
+}
+
+export function noteStatsHasResolvableCounts(stats?: Partial<TNoteStats>): boolean {
+  return stats?.updatedAt != null || stats?.archivesInteractions != null
+}
+
+export function displayListCountWithArchives(
+  listLen: number | undefined,
+  archives: TArchivesInteractionCounts | undefined,
+  field: 'reactions' | 'replies' | 'reposts'
+): number {
+  return Math.max(listLen ?? 0, archives?.[field] ?? 0)
+}
+
+export function displayZapSatsWithArchives(
+  zaps: TNoteStats['zaps'] | undefined,
+  archives: TArchivesInteractionCounts | undefined
+): number {
+  const fromList = zaps?.reduce((acc, zap) => acc + zap.amount, 0) ?? 0
+  return Math.max(fromList, archives?.zap_sats ?? 0)
 }
 
 class NoteStatsService {
@@ -875,6 +898,19 @@ class NoteStatsService {
 
   getNoteStats(id: string): Partial<TNoteStats> | undefined {
     return this.noteStatsMap.get(this.statsKey(id))
+  }
+
+  /** Merge Archives aggregate interaction counts; does not replace relay-derived lists. */
+  applyArchivesInteractionCounts(noteId: string, counts: TArchivesInteractionCounts): void {
+    const key = this.statsKey(noteId)
+    const old = this.noteStatsMap.get(key) ?? {}
+    this.noteStatsMap.set(key, { ...old, archivesInteractions: counts })
+    this.notifyNoteStats(key)
+  }
+
+  /** Batched prefetch via {@link queueArchivesInteractionPrefetch} (dynamic import avoids service cycle). */
+  prefetchArchivesInteractions(noteId: string): void {
+    void import('@/lib/note-stats-archives-prefetch').then((m) => m.queueArchivesInteractionPrefetch(noteId))
   }
 
   /** Same social `kinds` / tag filters as {@link fetchNoteStats} — for thread UI to load counted replies. */

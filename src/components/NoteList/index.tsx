@@ -34,6 +34,7 @@ import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
+import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds'
 import { shouldIncludePaymentInFeed } from '@/lib/superchat'
@@ -1787,7 +1788,7 @@ const NoteList = forwardRef(
           chunks.push(need.slice(i, i + FEED_PROFILE_CHUNK))
         }
         const settled = await Promise.allSettled(
-          chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
+          chunks.map((chunk) => fetchProfilesMetadataBatch(chunk))
         )
         if (gen !== feedProfileBatchGenRef.current) return
 

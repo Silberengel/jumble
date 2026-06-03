@@ -25,7 +25,11 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { eventService } from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
-import type { TNoteStats } from '@/services/note-stats.service'
+import {
+  displayListCountWithArchives,
+  noteStatsHasResolvableCounts,
+  type TNoteStats
+} from '@/services/note-stats.service'
 import { TEmoji } from '@/types'
 import { SmilePlus } from 'lucide-react'
 import { Event } from 'nostr-tools'
@@ -72,7 +76,7 @@ export function LikeButtonWithStats({
   const isReplyToDiscussion = isReplyToDiscussionProp ?? false
   const showDiscussionVotes = isDiscussion || isReplyToDiscussion
 
-  const statsLoaded = noteStats?.updatedAt != null
+  const statsLoaded = noteStatsHasResolvableCounts(noteStats)
 
   const { myLastEmoji, likeCount, upVoteCount, downVoteCount } = useMemo(() => {
     const stats = noteStats || {}
@@ -93,7 +97,9 @@ export function LikeButtonWithStats({
 
     return {
       myLastEmoji: myLike?.emoji,
-      likeCount: likes?.length,
+      likeCount: showDiscussionVotes
+        ? likes?.length
+        : displayListCountWithArchives(likes?.length, stats.archivesInteractions, 'reactions'),
       upVoteCount,
       downVoteCount
     }

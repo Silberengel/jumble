@@ -7,6 +7,7 @@ import {
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { resolveNoteEventFromArchives } from '@/lib/note-page-load-pipeline'
 import client, { eventService } from '@/services/client.service'
 import { loadArchivedEventForFetch } from '@/services/event-archive.service'
 import { candidateKeysForNoteUrlId } from '@/services/navigation-event-store'
@@ -53,6 +54,11 @@ export async function resolveThreadContextEventFromLocalStores(
   if (fromArchive && !shouldDropEventOnIngest(fromArchive, { explicitNoteLookupHexId: hex })) {
     client.addEventToCache(fromArchive, { explicitNoteLookupHexId: hex })
     return fromArchive
+  }
+
+  const fromArchivesApi = await resolveNoteEventFromArchives(hex)
+  if (fromArchivesApi && !shouldDropEventOnIngest(fromArchivesApi, { explicitNoteLookupHexId: hex })) {
+    return fromArchivesApi
   }
 
   const fromPublication = await eventService.peekPublicationStoreEvent(hex)

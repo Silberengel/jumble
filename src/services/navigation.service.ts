@@ -21,6 +21,7 @@ import PersonalListsSettingsPage from '@/pages/secondary/PersonalListsSettingsPa
 import NotePage from '@/pages/secondary/NotePage'
 import SecondaryProfilePage from '@/pages/secondary/ProfilePage'
 import FollowingListPage from '@/pages/secondary/FollowingListPage'
+import FollowersListPage from '@/pages/secondary/FollowersListPage'
 import MuteListPage from '@/pages/secondary/MuteListPage'
 import OthersRelaySettingsPage from '@/pages/secondary/OthersRelaySettingsPage'
 import SecondaryRelayPage from '@/pages/secondary/RelayPage'
@@ -41,6 +42,7 @@ export type ViewType =
   | 'hashtag'
   | 'relay'
   | 'following'
+  | 'followers'
   | 'mute'
   | 'bookmarks'
   | 'pins'
@@ -138,6 +140,10 @@ export class ComponentFactory {
     return React.createElement(FollowingListPage, { id: profileId, index: 0, hideTitlebar: true })
   }
 
+  static createFollowersListPage(profileId: string): ReactNode {
+    return React.createElement(FollowersListPage, { id: profileId, index: 0, hideTitlebar: true })
+  }
+
   static createMuteListPage(_profileId: string): ReactNode {
     return React.createElement(MuteListPage, { index: 0, hideTitlebar: true })
   }
@@ -231,6 +237,15 @@ export class NavigationService {
   }
 
   /**
+   * Navigate to followers list (Nostr Archives)
+   */
+  navigateToFollowersList(url: string): void {
+    const profileId = URLParser.extractProfileId(url.replace('/followers', ''))
+    const component = ComponentFactory.createFollowersListPage(profileId)
+    this.updateHistoryAndView(url, component, 'followers')
+  }
+
+  /**
    * Navigate to mute list
    */
   navigateToMuteList(url: string): void {
@@ -278,6 +293,7 @@ export class NavigationService {
     }
     if (viewType === 'profile') {
       if (pathname.includes('/following')) return 'Following'
+      if (pathname.includes('/followers')) return 'Followers'
       if (pathname.includes('/relays')) return 'Relays and Storage Settings'
       return 'Profile'
     }
@@ -294,6 +310,7 @@ export class NavigationService {
       return 'Note'
     }
     if (viewType === 'following') return 'Following'
+    if (viewType === 'followers') return 'Followers'
     if (viewType === 'mute') return 'Muted Users'
     if (viewType === 'bookmarks') return 'Bookmarks'
     if (viewType === 'notification-thread-follow') return 'Thread notifications (follow)'
@@ -351,6 +368,10 @@ export function createNavigationHook(service: NavigationService) {
     
     useSmartFollowingListNavigation: () => ({
       navigateToFollowingList: (url: string) => service.navigateToFollowingList(url)
+    }),
+
+    useSmartFollowersListNavigation: () => ({
+      navigateToFollowersList: (url: string) => service.navigateToFollowersList(url)
     }),
     
     useSmartMuteListNavigation: () => ({

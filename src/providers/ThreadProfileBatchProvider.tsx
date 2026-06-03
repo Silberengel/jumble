@@ -1,5 +1,5 @@
 import { PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
-import client from '@/services/client.service'
+import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import {
   collectProfilePubkeysFromEvents,
   extendProfileNetworkDeferral
@@ -32,9 +32,12 @@ function emptyBatch(): TBatchState {
  */
 export function ThreadProfileBatchProvider({
   seedEvents,
+  seedProfiles = [],
   children
 }: {
   seedEvents: readonly Event[]
+  /** Pre-hydrated profiles (e.g. from Archives note page bundle) — skip network for these pubkeys. */
+  seedProfiles?: readonly TProfile[]
   children: ReactNode
 }) {
   const parentNoteFeed = useNoteFeedProfileContext()
@@ -64,7 +67,7 @@ export function ThreadProfileBatchProvider({
         chunks.push(need.slice(i, i + PROFILE_CHUNK))
       }
       const settled = await Promise.allSettled(
-        chunks.map((chunk) => client.fetchProfilesForPubkeys(chunk))
+        chunks.map((chunk) => fetchProfilesMetadataBatch(chunk))
       )
       if (gen !== genRef.current) return
 
@@ -104,8 +107,12 @@ export function ThreadProfileBatchProvider({
   }
 
   const seedKey = useMemo(
-    () => seedEvents.map((e) => e.id).join('\x1e'),
-    [seedEvents]
+    () =>
+      [
+        seedEvents.map((e) => e.id).join('\x1e'),
+        seedProfiles.map((p) => p.pubkey).join('\x1e')
+      ].join('\x1f'),
+    [seedEvents, seedProfiles]
   )
 
   useLayoutEffect(() => {
@@ -113,12 +120,20 @@ export function ThreadProfileBatchProvider({
     genRef.current += 1
     const gen = genRef.current
     loadedRef.current.clear()
-    setBatch(emptyBatch())
+
+    const seeded = new Map<string, TProfile>()
+    for (const p of seedProfiles) {
+      const pkNorm = p.pubkey.toLowerCase()
+      seeded.set(pkNorm, { ...p, pubkey: pkNorm })
+      loadedRef.current.add(pkNorm)
+    }
+    setBatch({ profiles: seeded, pending: new Set(), version: 0 })
 
     const candidates = collectProfilePubkeysFromEvents(seedEvents)
     const parentProfiles = parentNoteFeed?.profiles
     const parentPending = parentNoteFeed?.pendingPubkeys
     const need = candidates.filter((pk) => {
+      if (seeded.has(pk)) return false
       if (parentProfiles?.has(pk)) return false
       if (parentPending?.has(pk)) return false
       return true

@@ -58,6 +58,11 @@ class NostrArchivesApiService {
     return () => this.availabilityListeners.delete(listener)
   }
 
+  /** Call after `storage.setUseNostrArchivesApi` so hooks re-render. */
+  notifySettingsChanged(): void {
+    this.notifyAvailability()
+  }
+
   private notifyAvailability(): void {
     this.availabilityListeners.forEach((l) => l())
   }

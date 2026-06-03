@@ -1,4 +1,8 @@
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
+import {
+  displayZapSatsWithArchives,
+  noteStatsHasResolvableCounts
+} from '@/services/note-stats.service'
 import { recipientHasAnyPaymentOptions } from '@/lib/merge-payment-methods'
 import {
   buildRecipientPaymentData,
@@ -124,10 +128,10 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const { t } = useTranslation()
   const { pubkey } = useNostr()
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
-  const statsLoaded = noteStats?.updatedAt != null
+  const statsLoaded = noteStatsHasResolvableCounts(noteStats)
   const { zapAmount, hasZapped } = useMemo(() => {
     return {
-      zapAmount: noteStats?.zaps?.reduce((acc, zap) => acc + zap.amount, 0),
+      zapAmount: displayZapSatsWithArchives(noteStats?.zaps, noteStats?.archivesInteractions),
       hasZapped: pubkey ? noteStats?.zaps?.some((zap) => zap.pubkey === pubkey) : false
     }
   }, [noteStats, pubkey])

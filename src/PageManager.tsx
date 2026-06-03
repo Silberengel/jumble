@@ -109,6 +109,7 @@ const PostSignupBackupRedirectLazy = lazy(() => import('@/components/PostSignupB
 /** Mobile primary-note overlay: lazy so these pages are not in the main bundle (routes use the same modules → shared async chunks). */
 const SecondaryProfilePageLazy = lazy(() => import('@/pages/secondary/ProfilePage'))
 const PrimaryFollowingListPageLazy = lazy(() => import('@/pages/secondary/FollowingListPage'))
+const PrimaryFollowersListPageLazy = lazy(() => import('@/pages/secondary/FollowersListPage'))
 const PrimaryMuteListPageLazy = lazy(() => import('@/pages/secondary/MuteListPage'))
 const PrimaryBookmarkListPageLazy = lazy(() => import('@/pages/secondary/BookmarkListPage'))
 const PrimaryNotificationThreadFollowListPageLazy = lazy(() =>
@@ -784,6 +785,27 @@ export function useSmartFollowingListNavigation() {
   }
   
   return { navigateToFollowingList }
+}
+
+export function useSmartFollowersListNavigation() {
+  const { setPrimaryNoteView } = usePrimaryNoteView()
+  const { push: pushSecondaryPage } = useSecondaryPage()
+  const { isSmallScreen } = useScreenSize()
+
+  const navigateToFollowersList = (url: string) => {
+    if (isSmallScreen) {
+      const profileId = url.replace('/users/', '').replace('/followers', '')
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<PrimaryFollowersListPageLazy id={profileId} index={0} hideTitlebar={true} />),
+        'followers'
+      )
+    } else {
+      pushSecondaryPage(url)
+    }
+  }
+
+  return { navigateToFollowersList }
 }
 
 // Fixed: Mute list navigation now uses primary note view on mobile, secondary routing on desktop
@@ -1953,6 +1975,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     if (
       primaryViewType === 'following' ||
+      primaryViewType === 'followers' ||
       primaryViewType === 'others-relay-settings'
     ) {
       const currentPath = window.location.pathname.split('?')[0].split('#')[0]

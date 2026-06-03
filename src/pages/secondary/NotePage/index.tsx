@@ -32,6 +32,11 @@ import {
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
+import {
+  prewarmArchivesNotePage,
+  profilesFromArchivesNotePageBundle
+} from '@/lib/note-page-load-pipeline'
+import type { TProfile } from '@/types'
 import { stripMarkupForPreview } from '@/lib/parent-reply-blurb'
 import { tagNameEquals } from '@/lib/tag'
 import { cn } from '@/lib/utils'
@@ -220,6 +225,16 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
 
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
+
+  const [archivesSeedProfiles, setArchivesSeedProfiles] = useState<TProfile[]>([])
+
+  useEffect(() => {
+    if (!finalEvent?.id) return
+    setArchivesSeedProfiles([])
+    prewarmArchivesNotePage(finalEvent.id, 50, (bundle) => {
+      setArchivesSeedProfiles(profilesFromArchivesNotePageBundle(bundle))
+    })
+  }, [finalEvent?.id])
 
   /** Resolve nostr embeds after first paint — avoids competing with thread/profile batch on open. */
   useEffect(() => {
@@ -524,7 +539,7 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
 
   return (
     <ThreadReplyProvider threadKey={finalEvent.id}>
-    <ThreadProfileBatchProvider seedEvents={[finalEvent]}>
+    <ThreadProfileBatchProvider seedEvents={[finalEvent]} seedProfiles={archivesSeedProfiles}>
     <SecondaryPageLayout
       ref={ref}
       index={index}

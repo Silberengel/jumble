@@ -35,6 +35,7 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 
+import { archivesMetadataListToProfiles } from '@/lib/archives-profile-metadata'
 import { createEphemeralSigner } from '@/lib/anon-session'
 import { getCacheRelayUrls } from '@/lib/private-relays'
 import {
@@ -244,6 +245,7 @@ import { preloadGifsIntoIdbCache } from './gif.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
 import { notifySessionInteractivePrewarmComplete } from './session-interactive-prewarm-bridge'
 import nip66Service from './nip66.service'
+import nostrArchivesApi from './nostr-archives-api.service'
 import { buildProfileKind0SearchFilters } from '@/lib/profile-relay-search-filters'
 import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import {
@@ -4213,6 +4215,16 @@ class ClientService extends EventTarget {
       : runAbort.signal
 
     merge(await this.searchProfilesFromLocal(q, limit))
+    if (isStale()) return out.slice(0, limit)
+    emit()
+    if (out.length >= limit) return out.slice(0, limit)
+
+    if (q.length >= 2 && nostrArchivesApi.isAvailable()) {
+      const suggestRes = await nostrArchivesApi.searchSuggest(q, Math.min(limit, 10))
+      if (!isStale() && suggestRes.ok) {
+        merge(archivesMetadataListToProfiles(suggestRes.data.suggestions))
+      }
+    }
     if (isStale()) return out.slice(0, limit)
     emit()
     if (out.length >= limit) return out.slice(0, limit)

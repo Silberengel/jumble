@@ -115,6 +115,7 @@ export default function NoteStats({
   useEffect(() => {
     if (!fetchIfNotExisting) return
     if (shouldDeferStatsFetch && !isNearViewport) return
+    noteStatsService.prefetchArchivesInteractions(event.id)
     setLoading(true)
     noteStatsService
       .fetchNoteStats(event, pubkey, statsRelaysRef.current, {

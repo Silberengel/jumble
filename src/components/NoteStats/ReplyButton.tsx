@@ -2,7 +2,11 @@ import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { cn } from '@/lib/utils'
 import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
-import type { TNoteStats } from '@/services/note-stats.service'
+import {
+  displayListCountWithArchives,
+  noteStatsHasResolvableCounts,
+  type TNoteStats
+} from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
@@ -26,11 +30,15 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
       : false
 
     return {
-      replyCount: noteStats?.replies?.length ?? 0,
+      replyCount: displayListCountWithArchives(
+        noteStats?.replies?.length,
+        noteStats?.archivesInteractions,
+        'replies'
+      ),
       hasReplied
     }
   }, [noteStats, event.id, pubkey])
-  const statsLoaded = noteStats?.updatedAt != null
+  const statsLoaded = noteStatsHasResolvableCounts(noteStats)
   const replyCountLabel = statsLoaded
     ? replyCount >= 100
       ? '99+'

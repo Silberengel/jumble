@@ -1,4 +1,5 @@
 import { getNoteBech32Id } from '@/lib/event'
+import { resolveThreadContextEventFromLocalStores } from '@/lib/thread-context-local'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { eventService } from '@/services/client.service'
@@ -84,6 +85,21 @@ export function useFetchEvent(
 
     const fetchEvent = async () => {
       try {
+        if (!skipShortcuts) {
+          const fromLocal = await resolveThreadContextEventFromLocalStores(
+            eventId,
+            initialMatches ? initialEvent : undefined
+          )
+          if (cancelled) return
+          if (fromLocal && !isEventDeleted(fromLocal)) {
+            setEvent(fromLocal)
+            addReplies([fromLocal])
+            setIsFetching(false)
+            return
+          }
+          // Archives REST is already tried inside resolveThreadContextEventFromLocalStores.
+        }
+
         // First load: DataLoader dedupes. Refetches (incl. session-waiter) clear a prior undefined so
         // timeline-cached events resolve after the embed mounted first.
         const opts = fetchOpts?.relayHints?.length ? fetchOpts : undefined

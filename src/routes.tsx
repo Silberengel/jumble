@@ -10,6 +10,7 @@ import {
 
 /** Lazy + Suspense so importing `routes` does not sync-pull pages that depend on PageManager (breaks Vite HMR cycles). */
 const FollowingListPageLazy = lazy(() => import('./pages/secondary/FollowingListPage'))
+const FollowersListPageLazy = lazy(() => import('./pages/secondary/FollowersListPage'))
 const GeneralSettingsPageLazy = lazy(() => import('./pages/secondary/GeneralSettingsPage'))
 const MuteListPageLazy = lazy(() => import('./pages/secondary/MuteListPage'))
 const BookmarkListPageLazy = lazy(() => import('./pages/secondary/BookmarkListPage'))
@@ -99,6 +100,7 @@ const ROUTES = [
   { path: '/home/rss-item/:articleKey', element: rssArticlePageElement },
   { path: '/users', element: SR(ProfileListPageLazy) },
   { path: '/users/:id/following', element: SR(FollowingListPageLazy) },
+  { path: '/users/:id/followers', element: SR(FollowersListPageLazy) },
   { path: '/users/:id/relays', element: SR(OthersRelaySettingsPageLazy) },
   { path: '/users/:id', element: SR(ProfilePageLazy) },
   { path: '/relays/:url/reviews', element: SR(RelayReviewsPageLazy) },

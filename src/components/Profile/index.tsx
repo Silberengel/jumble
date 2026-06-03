@@ -66,6 +66,7 @@ import NotFound from '../NotFound'
 import ProfileBadges from './ProfileBadges'
 import ProfileFeed from './ProfileFeed'
 import ProfileReportsDialog from './ProfileReportsDialog'
+import SmartFollowers from './SmartFollowers'
 import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
@@ -617,6 +618,7 @@ export default function Profile({
             )}
             <div className="flex flex-wrap gap-4 items-center gap-x-4 gap-y-2 mt-2 text-sm min-w-0">
               <SmartFollowings pubkey={pubkey} />
+              <SmartFollowers pubkey={pubkey} />
               <SmartRelays pubkey={pubkey} />
               {isSelf && <SmartMuteLink />}
             </div>

@@ -2,11 +2,17 @@ import { RefreshButton } from '@/components/RefreshButton'
 import SearchBar, { TSearchBarRef } from '@/components/SearchBar'
 import SearchResult from '@/components/SearchResult'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
-import { toSearch } from '@/lib/link'
+import { toNote, toNoteList, toSearch } from '@/lib/link'
+import {
+  pickArchivesResolvedOverHexDefault,
+  tryResolveSearchViaArchives
+} from '@/lib/nostr-archives-search-resolved'
 import { parseAdvancedSearch } from '@/lib/search-parser'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import { useSecondaryPage } from '@/PageManager'
+import { useSecondaryPage, useSmartHashtagNavigation, useSmartNoteNavigation } from '@/PageManager'
+import client from '@/services/client.service'
+import { eventService } from '@/services/client.service'
 import { useNostr } from '@/providers/NostrProvider'
 import { BookOpen } from 'lucide-react'
 import { TSearchParams } from '@/types'
@@ -18,6 +24,8 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const { push } = useSecondaryPage()
+  const { navigateToNote } = useSmartNoteNavigation()
+  const { navigateToHashtag } = useSmartHashtagNavigation()
   const { pubkey, relayList } = useNostr()
   const [locationRevision, setLocationRevision] = useState(0)
   const [resultRefreshKey, setResultRefreshKey] = useState(0)
@@ -87,6 +95,34 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
     }
   }, [])
 
+  const navigateFromSearchParams = (params: TSearchParams) => {
+    if (params.type === 'note') {
+      eventService
+        .fetchEvent(params.search)
+        .then((ev) => {
+          if (!ev) return
+          const hex = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : undefined
+          eventService.addEventToCache(ev, hex ? { explicitNoteLookupHexId: hex } : undefined)
+        })
+        .catch(() => {})
+      navigateToNote(toNote(params.search))
+      return
+    }
+    if (params.type === 'hashtag') {
+      navigateToHashtag(toNoteList({ hashtag: params.search }))
+      return
+    }
+    if (params.type === 'dtag') {
+      navigateToHashtag(toNoteList({ domain: params.search }))
+      return
+    }
+    if (params.type === 'profile') {
+      client.fetchProfileEvent(params.search).catch(() => {})
+    }
+    push(toSearch(params))
+    bumpLocationRevision()
+  }
+
   const onSearch = (params: TSearchParams | null) => {
     if (!params) {
       push(toSearch())
@@ -94,6 +130,27 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
       setResultRefreshKey((k) => k + 1)
       return
     }
+
+    void (async () => {
+      const archivesResolved = await tryResolveSearchViaArchives(params.search)
+      if (archivesResolved) {
+        const effective = pickArchivesResolvedOverHexDefault(archivesResolved, params)
+        if (
+          effective.type === 'note' ||
+          effective.type === 'hashtag' ||
+          effective.type === 'dtag' ||
+          effective.type === 'profile'
+        ) {
+          navigateFromSearchParams(effective)
+          return
+        }
+      }
+
+      runSearchPageRouting(params)
+    })()
+  }
+
+  const runSearchPageRouting = (params: TSearchParams) => {
     // Check if this is a 'notes' search that contains advanced search parameters
     if (params.type === 'notes' && params.search) {
       const searchParams = parseAdvancedSearch(params.search)
@@ -141,8 +198,7 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
     }
 
     // Default behavior - route to SearchPage
-    push(toSearch(params))
-    bumpLocationRevision()
+    navigateFromSearchParams(params)
   }
 
   return (
