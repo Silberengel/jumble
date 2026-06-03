@@ -47,7 +47,15 @@ import {
 } from '@/lib/viewer-blocked-relays'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
-import { formatPubkey, hexPubkeysEqual, isValidPubkey, normalizeHexPubkey, pubkeyToNpub, pubkeyFromNip07Extension } from '@/lib/pubkey'
+import {
+  accountPubkeyToHex,
+  formatPubkey,
+  hexPubkeysEqual,
+  isValidPubkey,
+  normalizeHexPubkey,
+  pubkeyToNpub,
+  pubkeyFromNip07Extension
+} from '@/lib/pubkey'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
 import client from '@/services/client.service'
 import { ReplaceableEventService } from '@/services/client-replaceable-events.service'
@@ -75,9 +83,8 @@ import { NostrContext, type TNostrContext } from '@/providers/nostr-context'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEventCallback } from '@/hooks/use-event-callback'
 import { useTranslation } from 'react-i18next'
-import { isSameAccount } from '@/lib/account'
+import { findStoredAccountForPointer, isSameAccount } from '@/lib/account'
 import { flushSync } from 'react-dom'
-import { showNip07ExtensionKeyMismatchToast } from '@/lib/nip07-extension-key-mismatch-toast'
 import { toast } from 'sonner'
 import { BunkerSigner } from './bunker.signer'
 import { Nip07Signer } from './nip-07.signer'
@@ -146,7 +153,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [ncryptsecPasswordOpen, setNcryptsecPasswordOpen] = useState(false)
   const ncryptsecPasswordResolveRef = useRef<((value: string | null) => void) | null>(null)
   /** One toast per mismatch episode; cleared after a successful NIP-07 login. */
-  const nip07KeyMismatchToastShownRef = useRef(false)
   /**
    * User picked a stored NIP-07 account from the notifications switcher but the extension key
    * differs — we fall back to read-only npub without spamming the mismatch toast / recovery UI.
@@ -1172,7 +1178,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     const normalized = normalizeLoginAccount(act)
     const prev = accountForReplaceablesSyncRef.current
     if (normalized.signerType === 'nip-07') {
-      nip07KeyMismatchToastShownRef.current = false
       intentionalNip07ReadOnlyPubkeyRef.current = null
     }
     storage.addAccount(normalized)
@@ -1252,7 +1257,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     // If loginWithAccountPointer fell back to read-only npub it skips storage.switchAccount.
     // Persist the user's intent here so session restore and NIP-07 recovery target this row.
     if (result !== null) {
-      const storedFull = storage.findAccount(act)
+      const storedFull = findStoredAccountForPointer(storage.getAccounts(), act)
       if (storedFull && !isSameAccount(storage.getCurrentAccount(), storedFull)) {
         storage.switchAccount(storedFull)
         syncAccountPointersFromStorage()
@@ -1262,7 +1267,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     return result
   }
 
-  /** Browse as an identity without requiring the browser extension to match (no NIP-07 recovery loop). */
+  /** Browse read-only, or connect NIP-07 when the extension already matches this pubkey. */
   const viewAccountAsReadOnly = async (act: TAccountPointer): Promise<string | null> => {
     const stored = storage.findAccount(act)
     const normalized = normalizeLoginAccount(
@@ -1270,8 +1275,30 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     )
     if (!isValidPubkey(normalized.pubkey)) return null
 
+    const nip07Row =
+      stored?.signerType === 'nip-07'
+        ? stored
+        : storage
+            .getAccounts()
+            .find(
+              (a) =>
+                a.signerType === 'nip-07' &&
+                hexPubkeysEqual(normalizeHexPubkey(a.pubkey), normalized.pubkey)
+            )
+    if (nip07Row) {
+      try {
+        const nip07Signer = new Nip07Signer()
+        await nip07Signer.init()
+        const extPubkey = pubkeyFromNip07Extension(await nip07Signer.getPublicKey())
+        if (extPubkey && hexPubkeysEqual(extPubkey, normalized.pubkey)) {
+          return login(nip07Signer, nip07Row)
+        }
+      } catch {
+        // Fall through to intentional read-only browse.
+      }
+    }
+
     intentionalNip07ReadOnlyPubkeyRef.current = normalized.pubkey.toLowerCase()
-    nip07KeyMismatchToastShownRef.current = true
 
     const storageRow: TAccount =
       stored ??
@@ -1401,18 +1428,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     try {
       const nip07Signer = new Nip07Signer()
       await nip07Signer.init()
-      const raw = await nip07Signer.getPublicKey()
-      const pubkey = pubkeyFromNip07Extension(raw)
+      const pubkey = pubkeyFromNip07Extension(await nip07Signer.getPublicKey())
       if (!pubkey) {
-        throw new Error(
-          raw
-            ? 'Extension returned an invalid pubkey'
-            : 'You did not allow to access your pubkey'
-        )
+        throw new Error('Extension returned an invalid pubkey')
       }
       const readOnlyDup = storage
         .getAccounts()
-        .find((a) => a.pubkey === pubkey && a.signerType === 'npub')
+        .find((a) => a.signerType === 'npub' && hexPubkeysEqual(a.pubkey, pubkey))
       if (readOnlyDup) {
         storage.removeAccount(readOnlyDup)
         syncAccountPointersFromStorage()
@@ -1464,23 +1486,56 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     options?: { userInitiatedSwitch?: boolean }
   ): Promise<string | null> => {
     const fallbackToReadOnlyNpub = (pubkey: string, reason?: unknown): string => {
-      const npubSigner = new NpubSigner()
-      const npub = nip19.npubEncode(pubkey)
-      npubSigner.login(npub)
-      // Keep this fallback in-memory only; do not rewrite stored account type.
-      setAccount({ pubkey, signerType: 'npub' })
-      setSigner(npubSigner)
-      logger.warn('[NostrProvider] Signer unavailable during restore; using read-only session', {
-        pubkeySlice: pubkey.slice(0, 12),
-        reason: reason instanceof Error ? reason.message : String(reason ?? '')
-      })
-      return pubkey
+      const pk =
+        accountPubkeyToHex(pubkey) ??
+        (isValidPubkey(normalizeHexPubkey(pubkey)) ? normalizeHexPubkey(pubkey) : null)
+      if (!pk) return pubkey
+
+      const apply = (): string => {
+        const npubSigner = new NpubSigner()
+        npubSigner.login(nip19.npubEncode(pk))
+        const prev = accountForReplaceablesSyncRef.current
+        const sessionChanged =
+          !prev || !hexPubkeysEqual(prev.pubkey, pk) || prev.signerType !== 'npub'
+
+        if (sessionChanged) {
+          clearSessionUiForAccountChange()
+          accountHydrationGenerationRef.current += 1
+          lastNetworkHydrateAccountPubkeyRef.current = null
+        }
+
+        const pointer = { pubkey: pk, signerType: 'npub' as const }
+        setAccount(pointer)
+        setSigner(npubSigner)
+        accountForReplaceablesSyncRef.current = pointer
+        client.setSigner(npubSigner, 'npub')
+        client.pubkey = pk
+        void client.syncViewerPersonalRelayKeys(pk)
+
+        if (sessionChanged) {
+          setAccountNetworkHydrateBump((n) => n + 1)
+        }
+
+        logger.warn('[NostrProvider] Signer unavailable during restore; using read-only session', {
+          pubkeySlice: pk.slice(0, 12),
+          reason: reason instanceof Error ? reason.message : String(reason ?? '')
+        })
+        return pk
+      }
+
+      return options?.userInitiatedSwitch ? flushSync(apply) : apply()
     }
     const currentAccountState = account
 
-    let storedAccount = storage.findAccount(act)
+    const wantedPk = accountPubkeyToHex(act.pubkey)
+    let storedAccount = findStoredAccountForPointer(storage.getAccounts(), act)
     if (!storedAccount) {
-      return null
+      if (!wantedPk) return null
+      if (act.signerType === 'nip-07') {
+        storedAccount = { pubkey: wantedPk, signerType: 'nip-07' }
+      } else {
+        return null
+      }
     }
     if (storedAccount.signerType === 'nsec' || storedAccount.signerType === 'browser-nsec') {
       if (storedAccount.nsec) {
@@ -1512,16 +1567,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         return login(browserNsecSigner, storedAccount)
       }
     } else if (storedAccount.signerType === 'nip-07') {
+      const targetPk =
+        wantedPk ?? accountPubkeyToHex(storedAccount.pubkey)
+      if (!targetPk) return null
       try {
         const nip07Signer = new Nip07Signer()
         await nip07Signer.init()
         const pubkey = pubkeyFromNip07Extension(await nip07Signer.getPublicKey())
-        if (!pubkey || pubkey !== storedAccount.pubkey.toLowerCase()) {
+        if (!pubkey || !hexPubkeysEqual(pubkey, targetPk)) {
           throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
         }
-        if (pubkey !== storedAccount.pubkey) {
-          storedAccount = { ...storedAccount, pubkey }
-        }
+        storedAccount = { ...storedAccount, pubkey, signerType: 'nip-07' }
         return login(nip07Signer, storedAccount)
       } catch (err) {
         let lastNip07Err: unknown = err
@@ -1531,14 +1587,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           const retrySigner = new Nip07Signer()
           await retrySigner.init()
           const retryPubkey = pubkeyFromNip07Extension(await retrySigner.getPublicKey())
-          if (!retryPubkey || retryPubkey !== storedAccount.pubkey.toLowerCase()) {
+          if (!retryPubkey || !hexPubkeysEqual(retryPubkey, targetPk)) {
             throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
           }
-          const act =
-            retryPubkey !== storedAccount.pubkey
-              ? { ...storedAccount, pubkey: retryPubkey }
-              : storedAccount
-          return login(retrySigner, act)
+          const healed = { ...storedAccount, pubkey: retryPubkey, signerType: 'nip-07' as const }
+          return login(retrySigner, healed)
         } catch (retryErr) {
           lastNip07Err = retryErr
           // If this tab already has a working nip-07 signer for the same account, keep it.
@@ -1549,11 +1602,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           ) {
             try {
               const currentPubkey = await signer.getPublicKey()
-              if (currentPubkey.toLowerCase() === storedAccount.pubkey.toLowerCase()) {
+              if (hexPubkeysEqual(currentPubkey, targetPk)) {
                 logger.info('[NostrProvider] Keeping existing NIP-07 signer after transient restore failure', {
-                  pubkeySlice: storedAccount.pubkey.slice(0, 12)
+                  pubkeySlice: targetPk.slice(0, 12)
                 })
-                return storedAccount.pubkey
+                return targetPk
               }
             } catch {
               // Ignore and fall through to read-only fallback.
@@ -1562,15 +1615,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
         if (
           (isNip07SignerPubkeyMismatchError(err) || isNip07SignerPubkeyMismatchError(lastNip07Err)) &&
-          !nip07KeyMismatchToastShownRef.current
+          options?.userInitiatedSwitch
         ) {
-          if (options?.userInitiatedSwitch) {
-            intentionalNip07ReadOnlyPubkeyRef.current = storedAccount.pubkey.toLowerCase()
-          } else {
-            fireNip07ExtensionKeyMismatchToast()
-          }
+          intentionalNip07ReadOnlyPubkeyRef.current = targetPk
         }
-        return fallbackToReadOnlyNpub(storedAccount.pubkey, err)
+        return fallbackToReadOnlyNpub(targetPk, err)
       }
     } else if (storedAccount.signerType === 'bunker') {
       if (storedAccount.bunker && storedAccount.bunkerClientSecretKey) {
@@ -1605,34 +1654,54 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     return null
   }
 
-  /**
-   * Stored NIP-07 account pubkey no longer matches the extension (user switched keys).
-   * Drop the stale stored NIP-07 row and sign in with whatever pubkey the extension returns now.
-   */
-  const retryNip07SignerForPreferredAccount = useEventCallback(async (): Promise<boolean> => {
-    const preferred = storage.getCurrentAccount()
-    if (!preferred || preferred.signerType !== 'nip-07') return false
+  const reconnectNip07ForPubkey = async (
+    targetPk: string,
+    nip07Template: TAccount
+  ): Promise<boolean> => {
     try {
       const nip07Signer = new Nip07Signer()
       await nip07Signer.init()
       const extPubkey = pubkeyFromNip07Extension(await nip07Signer.getPublicKey())
-      if (!extPubkey || extPubkey !== preferred.pubkey.toLowerCase()) {
+      if (!extPubkey || !hexPubkeysEqual(extPubkey, targetPk)) {
+        logger.info('[NostrProvider] NIP-07 reconnect: extension key mismatch', {
+          wantedPubkeySlice: targetPk.slice(0, 12),
+          extensionPubkeySlice: extPubkey?.slice(0, 12) ?? null
+        })
         return false
       }
       intentionalNip07ReadOnlyPubkeyRef.current = null
-      nip07KeyMismatchToastShownRef.current = false
-      const act =
-        extPubkey !== preferred.pubkey ? { ...preferred, pubkey: extPubkey } : preferred
+      const act: TAccount = { ...nip07Template, pubkey: extPubkey, signerType: 'nip-07' }
+      storage.switchAccount(act)
+      syncAccountPointersFromStorage()
       login(nip07Signer, act)
       setNip07RecoveryBump((b) => b + 1)
       return true
     } catch (e) {
-      logger.info('[NostrProvider] NIP-07 retry for preferred account failed', {
-        pubkeySlice: preferred.pubkey.slice(0, 12),
+      logger.info('[NostrProvider] NIP-07 reconnect failed', {
+        pubkeySlice: targetPk.slice(0, 12),
         error: e instanceof Error ? e.message : String(e)
       })
       return false
     }
+  }
+
+  /** Reconnect NIP-07 for the active read-only session (or stored preferred row). */
+  const retryNip07SignerForPreferredAccount = useEventCallback(async (): Promise<boolean> => {
+    const sessionPk =
+      account?.signerType === 'npub' && account.pubkey
+        ? accountPubkeyToHex(account.pubkey)
+        : null
+    if (!sessionPk) {
+      const preferred = storage.getCurrentAccount()
+      if (!preferred || preferred.signerType !== 'nip-07') return false
+      const preferredPk = accountPubkeyToHex(preferred.pubkey)
+      if (!preferredPk) return false
+      return reconnectNip07ForPubkey(preferredPk, preferred)
+    }
+    const nip07Row = storage
+      .getAccounts()
+      .find((a) => a.signerType === 'nip-07' && hexPubkeysEqual(a.pubkey, sessionPk))
+    return reconnectNip07ForPubkey(sessionPk, nip07Row ?? { pubkey: sessionPk, signerType: 'nip-07' })
   })
 
   const adoptCurrentExtensionNip07Identity = useEventCallback(async () => {
@@ -1663,35 +1732,76 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   })
 
-  const fireNip07ExtensionKeyMismatchToast = useCallback(() => {
-    if (nip07KeyMismatchToastShownRef.current) return
-    nip07KeyMismatchToastShownRef.current = true
-    showNip07ExtensionKeyMismatchToast({
-      onReload: () => window.location.reload(),
-      onUseExtensionIdentity: () => {
-        void adoptCurrentExtensionNip07Identity()
-      }
-    })
-  }, [adoptCurrentExtensionNip07Identity])
-
   /**
-   * If session restore temporarily fell back to read-only (`npub`) while the stored
-   * account is still `nip-07`, periodically retry reconnecting the extension signer.
+   * User chose read-only browse, but the extension may already match — promote quietly.
    */
   useEffect(() => {
     if (!account || account.signerType !== 'npub') return
     const intentionalPk = intentionalNip07ReadOnlyPubkeyRef.current
-    if (
-      intentionalPk &&
-      hexPubkeysEqual(normalizeHexPubkey(account.pubkey), intentionalPk)
-    ) {
+    const sessionPk = accountPubkeyToHex(account.pubkey)
+    if (!intentionalPk || !sessionPk || !hexPubkeysEqual(sessionPk, intentionalPk)) {
       return
     }
+
+    let cancelled = false
+    let promotionStopped = false
+    const tryPromote = async () => {
+      if (promotionStopped) return
+      const nip07Row = storage
+        .getAccounts()
+        .find(
+          (a) => a.signerType === 'nip-07' && hexPubkeysEqual(a.pubkey, intentionalPk)
+        )
+      if (!nip07Row) return
+      try {
+        if (cancelled) return
+        const ok = await reconnectNip07ForPubkey(intentionalPk, nip07Row)
+        if (ok) {
+          logger.info('[NostrProvider] Promoted intentional read-only session to NIP-07', {
+            pubkeySlice: intentionalPk.slice(0, 12)
+          })
+          promotionStopped = true
+        } else {
+          // Extension key differs — stay read-only; avoid reconnect spam in the console.
+          promotionStopped = true
+        }
+      } catch {
+        // Extension not ready — stay read-only until the user switches account.
+        promotionStopped = true
+      }
+    }
+
+    void tryPromote()
+    const id = window.setInterval(() => {
+      if (promotionStopped) {
+        window.clearInterval(id)
+        return
+      }
+      void tryPromote()
+    }, 2_500)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account])
+
+  useEffect(() => {
+    if (!account || account.signerType !== 'npub') return
+    const intentionalPk = intentionalNip07ReadOnlyPubkeyRef.current
+    if (intentionalPk) return
+    const sessionPk = accountPubkeyToHex(account.pubkey)
+    if (!sessionPk) return
     const preferred = storage.getCurrentAccount()
-    if (!preferred || preferred.signerType !== 'nip-07') return
-    if (!hexPubkeysEqual(normalizeHexPubkey(preferred.pubkey), normalizeHexPubkey(account.pubkey))) {
-      return
-    }
+    const recoverPk =
+      preferred && hexPubkeysEqual(preferred.pubkey, sessionPk)
+        ? accountPubkeyToHex(preferred.pubkey)
+        : sessionPk
+    if (!recoverPk) return
+    const nip07Row = storage
+      .getAccounts()
+      .find((a) => a.signerType === 'nip-07' && hexPubkeysEqual(a.pubkey, recoverPk))
+    if (!nip07Row) return
 
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -1710,33 +1820,25 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       if (cancelled || attempts >= maxAttempts) return
       attempts += 1
       try {
-        const nip07Signer = new Nip07Signer()
-        await nip07Signer.init()
-        const pubkey = await nip07Signer.getPublicKey()
-        if (pubkey.toLowerCase() !== preferred.pubkey.toLowerCase()) {
-          throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
+        const ok = await reconnectNip07ForPubkey(recoverPk, nip07Row)
+        if (ok) {
+          logger.info('[NostrProvider] Recovered NIP-07 signer from read-only fallback', {
+            pubkeySlice: recoverPk.slice(0, 12),
+            attempts
+          })
+          return
         }
-        login(nip07Signer, preferred)
-        logger.info('[NostrProvider] Recovered NIP-07 signer from read-only fallback', {
-          pubkeySlice: pubkey.slice(0, 12),
-          attempts
-        })
-        return
+        throw new Error(NIP07_SIGNER_PUBKEY_MISMATCH_MSG)
       } catch (error) {
         if (isNip07SignerPubkeyMismatchError(error)) {
           logger.info('[NostrProvider] NIP-07 recovery: extension key mismatch on attempt', {
             attempts,
-            wantedPubkey: preferred.pubkey.slice(0, 12)
+            wantedPubkey: recoverPk.slice(0, 12)
           })
-          if (intentionalNip07ReadOnlyPubkeyRef.current) {
-            return
-          }
-          fireNip07ExtensionKeyMismatchToast()
-          schedule(3_000)
           return
         }
         logger.info('[NostrProvider] NIP-07 recovery retry failed', {
-          pubkeySlice: preferred.pubkey.slice(0, 12),
+          pubkeySlice: recoverPk.slice(0, 12),
           attempts,
           error: error instanceof Error ? error.message : String(error)
         })
@@ -1752,7 +1854,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     // nip07RecoveryBump is incremented by switchAccount after it updates storage following an
     // npub fallback, so the loop re-fires with the correct preferred account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, nip07RecoveryBump, fireNip07ExtensionKeyMismatchToast])
+  }, [account, nip07RecoveryBump])
 
   const normalizeDraftEventTags = (
     draftEvent: TDraftEvent,
@@ -1796,7 +1898,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     { minPow = 0, ...options }: TPublishOptions = {}
   ) => {
     if (!account || !signer || account.signerType === 'npub') {
-      setOpenLoginDialog(true)
       throw new LoginRequiredError()
     }
 
@@ -1980,7 +2081,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   const attemptDelete = async (targetEvent: Event) => {
     if (!signer || account?.signerType === 'npub') {
-      setOpenLoginDialog(true)
       return
     }
     if (account?.pubkey !== targetEvent.pubkey) {
@@ -2041,7 +2141,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }
 
   const checkLogin = async <T,>(cb?: () => T | Promise<T>): Promise<T | void> => {
-    if (!signer || account?.signerType === 'npub') {
+    if (account?.signerType === 'npub') {
+      return
+    }
+    if (!signer) {
       setOpenLoginDialog(true)
       return
     }
@@ -2231,7 +2334,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     })
   }, [account])
 
-  const startLogin = useCallback(() => setOpenLoginDialog(true), [])
+  const startLogin = useCallback(() => {
+    if (account?.signerType === 'npub') return
+    setOpenLoginDialog(true)
+  }, [account?.signerType])
 
   const removeAccountStable = useEventCallback(removeAccount)
   const discardLocalPrivateKeyStable = useEventCallback(discardLocalPrivateKey)

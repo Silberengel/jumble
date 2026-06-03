@@ -1,3 +1,4 @@
+export * from './useSignGatedControl'
 export * from './useRelayPageFeedPolicy'
 export * from './useNearViewport'
 export * from './useFetchCalendarRsvps'

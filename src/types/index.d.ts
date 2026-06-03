@@ -147,6 +147,8 @@ export type TFontSize = 'small' | 'medium' | 'large'
 export type TDraftEvent = Pick<Event, 'content' | 'created_at' | 'kind' | 'tags'>
 
 export type TNip07 = {
+  /** Optional permission prompt (Alby, nos2x, …). */
+  enable?: () => Promise<unknown>
   getPublicKey: () => Promise<string>
   signEvent: (draftEvent: TDraftEvent) => Promise<VerifiedEvent>
   nip04?: {

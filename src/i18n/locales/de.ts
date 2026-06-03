@@ -1002,6 +1002,8 @@ export default {
     'accountSwitch.extensionConnected': 'Erweiterung für dieses Konto verbunden.',
     'accountSwitch.extensionRetryFailed':
       'Erweiterungsschlüssel passt noch nicht. Schlüssel in der Erweiterung wechseln und erneut versuchen.',
+    'accountSwitch.extensionUnavailable':
+      'Browser-Erweiterung nicht erreichbar. nos2x/Alby entsperren, Seite erlauben, dann Konto erneut wählen.',
     'Show untrusted {type}': 'Untrusted {{type}} anzeigen',
     'Hide untrusted {type}': 'Untrusted {{type}} ausblenden',
     'Currently hiding {type} from untrusted users.':

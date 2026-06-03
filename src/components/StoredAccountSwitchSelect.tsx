@@ -1,12 +1,12 @@
 import { SimpleUserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { accountPointerKey, isRedundantAccountPick, listSwitchableAccounts } from '@/lib/account'
-import { formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
+import { accountPubkeyToHex, formatPubkey, hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { cn } from '@/lib/utils'
 import { Nip07Signer } from '@/providers/NostrProvider/nip-07.signer'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TAccountPointer } from '@/types'
-import { Loader2 } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -22,6 +22,17 @@ type Props = {
   withTopBorder?: boolean
   /** Align chips to the end (e.g. beside the publish button). */
   alignEnd?: boolean
+}
+
+const EXTENSION_SYNC_HINT_DISMISSED_PREFIX = 'extensionSyncHintDismissed:'
+
+function readExtensionSyncHintDismissed(pubkey: string | null): boolean {
+  if (!pubkey || typeof window === 'undefined') return false
+  try {
+    return sessionStorage.getItem(`${EXTENSION_SYNC_HINT_DISMISSED_PREFIX}${pubkey}`) === 'true'
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -41,7 +52,6 @@ export default function StoredAccountSwitchSelect({
     account,
     accounts,
     switchAccount,
-    viewAccountAsReadOnly,
     isAccountSessionHydrating,
     retryNip07SignerForPreferredAccount,
     adoptExtensionNip07Identity
@@ -50,6 +60,7 @@ export default function StoredAccountSwitchSelect({
   const [switchingKey, setSwitchingKey] = useState<string | null>(null)
   const [retryingExtension, setRetryingExtension] = useState(false)
   const [extensionPubkey, setExtensionPubkey] = useState<string | null>(null)
+  const [extensionSyncHintDismissed, setExtensionSyncHintDismissed] = useState(false)
 
   const sessionPubkey = useMemo(() => {
     const cur = pubkey?.trim()
@@ -73,6 +84,10 @@ export default function StoredAccountSwitchSelect({
   }, [extensionPubkey, sessionPubkey])
 
   useEffect(() => {
+    setExtensionSyncHintDismissed(readExtensionSyncHintDismissed(sessionPubkey))
+  }, [sessionPubkey])
+
+  useEffect(() => {
     if (!needsExtensionSync) {
       setExtensionPubkey(null)
       return
@@ -93,13 +108,36 @@ export default function StoredAccountSwitchSelect({
     }
   }, [needsExtensionSync])
 
+  useEffect(() => {
+    if (!needsExtensionSync || !extensionPubkey || !sessionPubkey) return
+    if (!hexPubkeysEqual(normalizeHexPubkey(extensionPubkey), sessionPubkey)) return
+    let cancelled = false
+    void (async () => {
+      const ok = await retryNip07SignerForPreferredAccount()
+      if (!cancelled && ok) {
+        toast.success(t('accountSwitch.extensionConnected'))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    needsExtensionSync,
+    extensionPubkey,
+    sessionPubkey,
+    retryNip07SignerForPreferredAccount,
+    t
+  ])
+
   const handlePick = useCallback(
     async (nextAccount: TAccountPointer) => {
-      const target = normalizeHexPubkey(nextAccount.pubkey)
+      const target = accountPubkeyToHex(nextAccount.pubkey)
       if (isRedundantAccountPick(nextAccount, account)) {
         if (account?.signerType === 'npub' && nextAccount.signerType === 'nip-07') {
           setSwitchingKey(accountPointerKey(nextAccount))
           try {
+            const switched = await switchAccount(nextAccount)
+            if (switched) return
             const ok = await retryNip07SignerForPreferredAccount()
             if (ok) toast.success(t('accountSwitch.extensionConnected'))
             else toast.error(t('accountSwitch.extensionRetryFailed'))
@@ -111,18 +149,12 @@ export default function StoredAccountSwitchSelect({
       }
       setSwitchingKey(accountPointerKey(nextAccount))
       try {
-        const needsWriteSigner =
-          nextAccount.signerType === 'nsec' ||
-          nextAccount.signerType === 'ncryptsec' ||
-          nextAccount.signerType === 'bunker'
-        const switched = needsWriteSigner
-          ? await switchAccount(nextAccount)
-          : await viewAccountAsReadOnly(nextAccount)
+        const switched = await switchAccount(nextAccount)
         if (!switched) {
           toast.error(t('notificationsSwitchAccountFailed'))
           return
         }
-        if (!hexPubkeysEqual(normalizeHexPubkey(switched), target)) {
+        if (target && !hexPubkeysEqual(switched, target)) {
           toast.error(t('notificationsSwitchAccountFailed'))
           return
         }
@@ -130,13 +162,7 @@ export default function StoredAccountSwitchSelect({
         setSwitchingKey(null)
       }
     },
-    [
-      account,
-      switchAccount,
-      viewAccountAsReadOnly,
-      retryNip07SignerForPreferredAccount,
-      t
-    ]
+    [account, switchAccount, retryNip07SignerForPreferredAccount, t]
   )
 
   const handleRetryExtension = useCallback(async () => {
@@ -152,6 +178,16 @@ export default function StoredAccountSwitchSelect({
       setRetryingExtension(false)
     }
   }, [retryNip07SignerForPreferredAccount, t])
+
+  const dismissExtensionSyncHint = useCallback(() => {
+    setExtensionSyncHintDismissed(true)
+    if (!sessionPubkey) return
+    try {
+      sessionStorage.setItem(`${EXTENSION_SYNC_HINT_DISMISSED_PREFIX}${sessionPubkey}`, 'true')
+    } catch {
+      // ignore quota or private browsing
+    }
+  }, [sessionPubkey])
 
   if (storedAccounts.length <= 1 || !sessionPubkey) return null
 
@@ -235,13 +271,21 @@ export default function StoredAccountSwitchSelect({
         </div>
       </div>
 
-      {needsExtensionSync ? (
+      {needsExtensionSync && !extensionSyncHintDismissed ? (
         <div
           className={cn(
-            'rounded-md border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-950 dark:text-amber-100',
+            'relative rounded-md border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 pr-8 text-xs text-amber-950 dark:text-amber-100',
             alignEnd && 'max-w-md self-end'
           )}
         >
+          <button
+            type="button"
+            className="absolute right-1 top-1 rounded-md p-1 text-amber-800/80 hover:bg-amber-500/15 hover:text-amber-950 dark:text-amber-200/80 dark:hover:bg-amber-500/20 dark:hover:text-amber-50"
+            aria-label={t('Dismiss')}
+            onClick={dismissExtensionSyncHint}
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
           <p className="leading-relaxed">{t('accountSwitch.extensionSyncHint')}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button

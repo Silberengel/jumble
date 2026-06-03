@@ -198,7 +198,7 @@ export default function PostContent({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
 }) {
   const { t, i18n } = useTranslation()
-  const { pubkey, publish, checkLogin } = useNostr()
+  const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
   const { addReplies } = useReply()
 
   const mergePublishedReplyIntoThread = useCallback(
@@ -643,6 +643,7 @@ export default function PostContent({
       : (mediaNoteKind !== null && mediaUrl) || hasNonemptyContent
     return (
       !!pubkey &&
+      canSignEvents &&
       !posting &&
       !uploadProgresses.length &&
       discussionOk &&
@@ -658,6 +659,7 @@ export default function PostContent({
     )
   }, [
     pubkey,
+    canSignEvents,
     text,
     getDeterminedKind,
     posting,

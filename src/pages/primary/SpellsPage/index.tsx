@@ -1,6 +1,5 @@
 import NoteList, { type TNoteListRef } from '@/components/NoteList'
 import { NoteCardLoadingSkeleton } from '@/components/NoteCard'
-import StoredAccountSwitchSelect from '@/components/StoredAccountSwitchSelect'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import {
@@ -1060,14 +1059,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           ) : selectedFauxSpell && fauxSubRequests.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{fauxFeedEmptyMessage}</div>
           ) : selectedFauxSpell && fauxSubRequests.length > 0 ? (
-            <>
-              {selectedFauxSpell === 'notifications' ? (
-                <div className="sticky top-0 z-10 shrink-0 border-b border-border/50 bg-background/95 px-1 py-2 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
-                  {notificationsFeedPubkey ? (
-                    <StoredAccountSwitchSelect className="w-full" showLabelAlways />
-                  ) : null}
-                </div>
-              ) : null}
               <div className="min-h-0 min-w-0 flex-1">
                 <NoteList
                   ref={spellFeedListRef}
@@ -1127,7 +1118,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                   }
                 />
               </div>
-            </>
           ) : selectedSpell ? (
             subRequests.length > 0 ? (
               <NoteList

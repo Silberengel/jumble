@@ -1019,6 +1019,8 @@ export default {
     'accountSwitch.extensionConnected': 'Extension connected for this account.',
     'accountSwitch.extensionRetryFailed':
       'Extension key still does not match. Switch the key in your extension, then try again.',
+    'accountSwitch.extensionUnavailable':
+      'Could not reach the browser extension. Unlock nos2x/Alby, allow this site, then click the account again.',
     'Show untrusted {type}': 'Show untrusted {{type}}',
     'Hide untrusted {type}': 'Hide untrusted {{type}}',
     'Currently hiding {type} from untrusted users.':

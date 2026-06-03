@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
+import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +23,7 @@ import { toast } from 'sonner'
 export default function FollowButton({ pubkey }: { pubkey: string }) {
   const { t } = useTranslation()
   const { pubkey: accountPubkey, checkLogin } = useNostr()
+  const { canSignEvents, signControlProps } = useSignGatedControl()
   const followList = useFollowListOptional()
   const { mutePubkeySet, unmutePubkey } = useMuteList()
   const [updating, setUpdating] = useState(false)
@@ -31,7 +33,9 @@ export default function FollowButton({ pubkey }: { pubkey: string }) {
   const isFollowing = useMemo(() => followings.includes(pubkey), [followings, pubkey])
   const isMuted = useMemo(() => muteSetHas(mutePubkeySet, pubkey), [mutePubkeySet, pubkey])
 
-  if (!followList || !accountPubkey || (pubkey && pubkey === accountPubkey)) return null
+  if (!followList || !accountPubkey || !canSignEvents || (pubkey && pubkey === accountPubkey)) {
+    return null
+  }
 
   const { follow, unfollow } = followList
 
@@ -92,7 +96,7 @@ export default function FollowButton({ pubkey }: { pubkey: string }) {
           <Button
             className="rounded-full min-w-28 max-w-full text-destructive whitespace-normal break-words px-3"
             variant="secondary"
-            disabled={updating}
+            {...signControlProps({ disabled: updating })}
           >
             {updating ? (
               <Skeleton className="mx-auto size-4 shrink-0 rounded-full" aria-hidden />
@@ -125,7 +129,7 @@ export default function FollowButton({ pubkey }: { pubkey: string }) {
         <Button
           className="rounded-full min-w-28"
           variant={hover ? 'destructive' : 'secondary'}
-          disabled={updating}
+          {...signControlProps({ disabled: updating })}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
         >
@@ -154,7 +158,11 @@ export default function FollowButton({ pubkey }: { pubkey: string }) {
       </AlertDialogContent>
     </AlertDialog>
   ) : (
-    <Button className="rounded-full min-w-28" onClick={handleFollow} disabled={updating}>
+    <Button
+      className="rounded-full min-w-28"
+      onClick={handleFollow}
+      {...signControlProps({ disabled: updating })}
+    >
       {updating ? <Skeleton className="mx-auto size-4 shrink-0 rounded-full" aria-hidden /> : t('Follow')}
     </Button>
   )

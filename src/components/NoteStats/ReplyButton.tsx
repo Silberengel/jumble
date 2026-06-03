@@ -1,5 +1,6 @@
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { cn } from '@/lib/utils'
+import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
@@ -18,6 +19,7 @@ type ReplyButtonProps = {
 export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: ReplyButtonProps) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
+  const { signControlProps } = useSignGatedControl()
   const { replyCount, hasReplied } = useMemo(() => {
     const hasReplied = pubkey
       ? noteStats?.replies?.some((reply) => reply.pubkey === pubkey)
@@ -39,6 +41,7 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
   return (
     <>
       <button
+        type="button"
         className={cn(
           'flex gap-1.5 items-center enabled:hover:text-blue-400 px-2 h-full min-h-11 touch-manipulation',
           hasReplied ? 'text-blue-400' : 'text-muted-foreground'
@@ -49,7 +52,7 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
             setOpen(true)
           })
         }}
-        title={t('Reply')}
+        {...signControlProps({ title: t('Reply') })}
       >
         <MessageCircle />
         {!hideCount && replyCountLabel !== '' && (

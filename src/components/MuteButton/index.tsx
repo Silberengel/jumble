@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
+import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { BellOff } from 'lucide-react'
@@ -20,6 +21,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { pubkey: accountPubkey, checkLogin } = useNostr()
+  const { signControlProps } = useSignGatedControl()
   const { mutePubkeySet, changing, mutePubkeyPrivately, mutePubkeyPublicly, unmutePubkey } =
     useMuteList()
   const [updating, setUpdating] = useState(false)
@@ -69,7 +71,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
         className="rounded-full min-w-20 max-w-full text-destructive whitespace-normal break-words px-3"
         variant="secondary"
         onClick={handleUnmute}
-        disabled={updating || changing}
+        {...signControlProps({ disabled: updating || changing })}
       >
         {updating ? (
           <Skeleton className="mx-auto size-4 shrink-0 rounded-full" aria-hidden />
@@ -84,7 +86,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
     <Button
       variant="destructive"
       className="w-20 min-w-20 rounded-full"
-      disabled={updating || changing}
+      {...signControlProps({ disabled: updating || changing })}
     >
       {updating ? <Skeleton className="mx-auto size-4 shrink-0 rounded-full" aria-hidden /> : t('Mute')}
     </Button>
@@ -100,7 +102,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
               className="w-full p-6 justify-start text-destructive text-lg gap-4 [&_svg]:size-5 focus:text-destructive"
               variant="ghost"
               onClick={(e) => handleMute(e, true)}
-              disabled={updating || changing}
+              {...signControlProps({ disabled: updating || changing })}
             >
               {updating ? <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden /> : t('Mute user privately')}
             </Button>
@@ -108,7 +110,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
               className="w-full p-6 justify-start text-destructive text-lg gap-4 [&_svg]:size-5 focus:text-destructive"
               variant="ghost"
               onClick={(e) => handleMute(e, false)}
-              disabled={updating || changing}
+              {...signControlProps({ disabled: updating || changing })}
             >
               {updating ? <Skeleton className="size-4 shrink-0 rounded-full" aria-hidden /> : t('Mute user publicly')}
             </Button>
@@ -124,6 +126,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
       <DropdownMenuContent>
         <DropdownMenuItem
           onClick={(e) => handleMute(e, true)}
+          disabled={signControlProps().disabled}
           className="text-destructive focus:text-destructive"
         >
           <BellOff />
@@ -131,6 +134,7 @@ export default function MuteButton({ pubkey }: { pubkey: string }) {
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => handleMute(e, false)}
+          disabled={signControlProps().disabled}
           className="text-destructive focus:text-destructive"
         >
           <BellOff />

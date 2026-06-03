@@ -81,16 +81,17 @@ export function normalizeHexPubkey(pubkey: string): string {
   return /^[0-9a-f]{64}$/i.test(t) ? t.toLowerCase() : t
 }
 
+/** Hex pubkey from stored account fields (hex, npub, or `nostr:` URI). */
+export function accountPubkeyToHex(pubkey: string): string | null {
+  const pk = userIdToPubkey(pubkey.trim())
+  return isValidPubkey(pk) ? pk.toLowerCase() : null
+}
+
 export function hexPubkeysEqual(a: string, b: string): boolean {
   if (a === b) return true
-  const na = normalizeHexPubkey(a)
-  const nb = normalizeHexPubkey(b)
-  return (
-    na.length === 64 &&
-    nb.length === 64 &&
-    /^[0-9a-f]{64}$/.test(na) &&
-    na === nb
-  )
+  const ha = accountPubkeyToHex(a)
+  const hb = accountPubkeyToHex(b)
+  return ha !== null && hb !== null && ha === hb
 }
 
 export function isValidPubkey(pubkey: string) {

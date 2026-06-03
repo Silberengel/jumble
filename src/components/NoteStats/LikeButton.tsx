@@ -20,6 +20,7 @@ import {
   isDiscussionVoteEmoji
 } from '@/lib/discussion-votes'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
+import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { eventService } from '@/services/client.service'
@@ -63,6 +64,7 @@ export function LikeButtonWithStats({
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { pubkey, publish, checkLogin } = useNostr()
+  const { canSignEvents, signControlProps } = useSignGatedControl()
   const { relays: statsRelays } = useNoteStatsRelayHints()
   const [liking, setLiking] = useState(false)
   const [isEmojiReactionsOpen, setIsEmojiReactionsOpen] = useState(false)
@@ -234,6 +236,7 @@ export function LikeButtonWithStats({
   }
 
   const openReactionPicker = () => {
+    if (!canSignEvents) return
     if (myLastEmoji && !isEmojiReactionsOpen) {
       like(myLastEmoji)
       return
@@ -245,8 +248,7 @@ export function LikeButtonWithStats({
     <button
       type="button"
       className="flex h-full min-w-0 items-center gap-1.5 px-2 text-muted-foreground enabled:hover:text-primary touch-manipulation"
-      title={t('Like')}
-      disabled={liking}
+      {...signControlProps({ title: t('Like'), disabled: liking })}
       onClick={openReactionPicker}
     >
       {liking ? (
@@ -289,8 +291,10 @@ export function LikeButtonWithStats({
               <button
                 type="button"
                 className="flex h-full shrink-0 items-center px-2 sm:px-2.5 enabled:hover:text-primary touch-manipulation"
-                title={emoji === '+' ? t('Upvote') : t('Downvote')}
-                disabled={liking}
+                {...signControlProps({
+                  title: emoji === '+' ? t('Upvote') : t('Downvote'),
+                  disabled: liking
+                })}
                 onClick={() => {
                   like(emoji)
                 }}

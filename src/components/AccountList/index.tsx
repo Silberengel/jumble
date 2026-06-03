@@ -30,7 +30,6 @@ export default function AccountList({
     accounts,
     account,
     switchAccount,
-    viewAccountAsReadOnly,
     removeAccount,
     retryNip07SignerForPreferredAccount
   } = useNostr()
@@ -58,9 +57,14 @@ export default function AccountList({
               if (isRedundantAccountPick(act, account)) {
                 if (account?.signerType === 'npub' && act.signerType === 'nip-07') {
                   setSwitchingAccount(act)
-                  const ok = await retryNip07SignerForPreferredAccount()
-                  if (ok) toast.success(t('accountSwitch.extensionConnected'))
-                  else toast.error(t('accountSwitch.extensionRetryFailed'))
+                  const switched = await switchAccount(act)
+                  if (switched) {
+                    afterSwitch()
+                  } else {
+                    const ok = await retryNip07SignerForPreferredAccount()
+                    if (ok) toast.success(t('accountSwitch.extensionConnected'))
+                    else toast.error(t('accountSwitch.extensionRetryFailed'))
+                  }
                   setSwitchingAccount(null)
                 }
                 return
@@ -70,13 +74,7 @@ export default function AccountList({
                 closeDialog?.()
               }
               try {
-                const needsWriteSigner =
-                  act.signerType === 'nsec' ||
-                  act.signerType === 'ncryptsec' ||
-                  act.signerType === 'bunker'
-                const switched = needsWriteSigner
-                  ? await switchAccount(act)
-                  : await viewAccountAsReadOnly(act)
+                const switched = await switchAccount(act)
                 if (!switched) {
                   toast.error(t('notificationsSwitchAccountFailed'))
                   return

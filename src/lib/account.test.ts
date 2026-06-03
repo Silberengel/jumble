@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { isRedundantAccountPick, isSameAccount, listSwitchableAccounts } from './account'
+import {
+  findStoredAccountForPointer,
+  isRedundantAccountPick,
+  isSameAccount,
+  listSwitchableAccounts
+} from './account'
+import { nip19 } from 'nostr-tools'
+import { getPublicKey, generateSecretKey } from 'nostr-tools'
 
 describe('listSwitchableAccounts', () => {
   const A = 'a'.repeat(64)
@@ -39,6 +46,17 @@ describe('isSameAccount', () => {
   })
 })
 
+describe('findStoredAccountForPointer', () => {
+  it('finds nip-07 row when pointer pubkey is npub bech32', () => {
+    const sk = generateSecretKey()
+    const hex = getPublicKey(sk)
+    const npub = nip19.npubEncode(hex)
+    const accounts = [{ pubkey: hex, signerType: 'nip-07' as const }]
+    const found = findStoredAccountForPointer(accounts, { pubkey: npub, signerType: 'nip-07' })
+    expect(found?.pubkey).toBe(hex)
+  })
+})
+
 describe('isRedundantAccountPick', () => {
   const A = 'a'.repeat(64)
 
@@ -47,12 +65,12 @@ describe('isRedundantAccountPick', () => {
     expect(isRedundantAccountPick(row, row)).toBe(true)
   })
 
-  it('allows nip-07 pick while session is read-only npub for same pubkey', () => {
+  it('treats nip-07 pick as redundant when session is read-only npub for same pubkey (reconnect)', () => {
     expect(
       isRedundantAccountPick(
         { pubkey: A, signerType: 'nip-07' },
         { pubkey: A, signerType: 'npub' }
       )
-    ).toBe(false)
+    ).toBe(true)
   })
 })

@@ -6,7 +6,7 @@ import {
   isPubkeyAwaitingProfileBatch,
   shouldDeferPerPubkeyProfileNetwork
 } from '@/lib/profile-batch-coordinator'
-import { normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
+import { hexPubkeysEqual, normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { eventService, replaceableEventService } from '@/services/client.service'
@@ -576,6 +576,10 @@ export function useFetchProfile(id?: string, skipCache = false) {
       effectRunCountRef.current.delete(oldPubkey)
       initializedPubkeysRef.current.delete(oldPubkey)
       processingPubkeyRef.current = null
+    }
+
+    if (extractedPubkey && profile && !hexPubkeysEqual(profile.pubkey, extractedPubkey)) {
+      setProfile(null)
     }
 
     const cancelled = { current: false }

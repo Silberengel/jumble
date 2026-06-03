@@ -18,6 +18,7 @@ import { createRepostDraftEvent } from '@/lib/draft-event'
 import { getNoteBech32Id } from '@/lib/event'
 import { cn } from '@/lib/utils'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
+import { useSignGatedControl } from '@/hooks/useSignGatedControl'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import noteStatsService from '@/services/note-stats.service'
@@ -42,6 +43,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { publish, checkLogin, pubkey } = useNostr()
+  const { canSignEvents, signControlProps } = useSignGatedControl()
   const { relays: statsRelays } = useNoteStatsRelayHints()
   const [reposting, setReposting] = useState(false)
   const [isPostDialogOpen, setIsPostDialogOpen] = useState(false)
@@ -54,7 +56,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
     }
   }, [noteStats, event.id, pubkey])
   const showRepostCount = !hideCount && (statsLoaded || (repostCount ?? 0) > 0)
-  const canRepost = !hasReposted && !reposting
+  const canRepost = canSignEvents && !hasReposted && !reposting
 
   const repost = async () => {
     checkLogin(async () => {
@@ -111,8 +113,9 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
         'flex h-full items-center enabled:hover:text-lime-500 px-2 touch-manipulation',
         hasReposted ? 'text-lime-500' : 'text-muted-foreground'
       )}
-      title={t('Boost')}
+      {...signControlProps({ title: t('Boost'), disabled: !canSignEvents })}
       onClick={() => {
+        if (!canSignEvents) return
         if (isSmallScreen) {
           setIsDrawerOpen(true)
         }
@@ -173,6 +176,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                     setIsPostDialogOpen(true)
                   })
                 }}
+                {...signControlProps()}
                 className={drawerMenuButtonClassName}
                 variant="ghost"
               >
@@ -209,6 +213,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                 setIsPostDialogOpen(true)
               })
             }}
+            disabled={!canSignEvents}
           >
             <PencilLine /> {t('Quote')}
           </DropdownMenuItem>

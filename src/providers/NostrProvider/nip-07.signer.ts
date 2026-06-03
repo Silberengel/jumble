@@ -1,4 +1,21 @@
+import { pubkeyFromNip07Extension } from '@/lib/pubkey'
 import { ISigner, TDraftEvent, TNip07 } from '@/types'
+
+/** Fresh extension pubkey (hex), after init + optional enable. */
+export async function getExtensionPubkeyHex(): Promise<string> {
+  const signer = new Nip07Signer()
+  await signer.init()
+  const raw = await signer.getPublicKey()
+  const hex = pubkeyFromNip07Extension(raw)
+  if (!hex) {
+    throw new Error(
+      raw
+        ? 'Extension returned an invalid pubkey'
+        : 'You did not allow the extension to access your pubkey'
+    )
+  }
+  return hex
+}
 
 export class Nip07Signer implements ISigner {
   private signer: TNip07 | undefined
@@ -13,6 +30,9 @@ export class Nip07Signer implements ISigner {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (window.nostr) {
         this.signer = window.nostr
+        if (typeof this.signer.enable === 'function') {
+          await this.signer.enable()
+        }
         return
       }
       await new Promise((resolve) => setTimeout(resolve, checkInterval))

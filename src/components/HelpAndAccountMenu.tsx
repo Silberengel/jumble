@@ -11,7 +11,14 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatPubkey, formatNpub, generateImageByPubkey, pubkeyToNpub } from '@/lib/pubkey'
+import {
+  accountPubkeyToHex,
+  formatPubkey,
+  formatNpub,
+  generateImageByPubkey,
+  hexPubkeysEqual,
+  pubkeyToNpub
+} from '@/lib/pubkey'
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { openBrowseCacheFromRegistry } from '@/contexts/cache-browser-context'
@@ -27,6 +34,20 @@ import { useRelayConnectionRows } from '@/hooks/useRelayConnectionRows'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TProfile } from '@/types'
+
+/** Profile for the badge only when it belongs to the active session pubkey (avoids stale name/avatar). */
+function profileForActivePubkey(
+  pubkey: string | undefined,
+  nostrProfile: TProfile | null,
+  fetchedProfile: TProfile | null
+): TProfile | null {
+  const pk = pubkey ? accountPubkeyToHex(pubkey) : null
+  if (!pk) return null
+  if (fetchedProfile && hexPubkeysEqual(fetchedProfile.pubkey, pk)) return fetchedProfile
+  if (nostrProfile && hexPubkeysEqual(nostrProfile.pubkey, pk)) return nostrProfile
+  return null
+}
 
 const titlebarAccountMenuContentClassName =
   'z-[220] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain'
@@ -92,6 +113,10 @@ function SidebarAccountMenu({
   const [menuOpen, setMenuOpen] = useState(false)
   const pubkey = account?.pubkey
   const { profile: fetchedProfile } = useFetchProfile(pubkey)
+  const resolvedProfile = useMemo(
+    () => profileForActivePubkey(pubkey, profile, fetchedProfile),
+    [pubkey, profile, fetchedProfile]
+  )
   const active = useMemo(() => current === 'profile' && display, [display, current])
 
   if (!pubkey) return null
@@ -99,8 +124,9 @@ function SidebarAccountMenu({
   const defaultAvatar = generateImageByPubkey(pubkey)
   const npub = pubkeyToNpub(pubkey)
   const fallbackUsername = npub ? formatNpub(npub) : formatPubkey(pubkey)
-  const resolvedProfile = fetchedProfile ?? profile
-  const { username, avatar } = resolvedProfile || { username: fallbackUsername, avatar: defaultAvatar }
+  const { username, avatar } = resolvedProfile
+    ? { username: resolvedProfile.username, avatar: resolvedProfile.avatar ?? defaultAvatar }
+    : { username: fallbackUsername, avatar: defaultAvatar }
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -121,7 +147,7 @@ function SidebarAccountMenu({
               <video src={avatar} className="h-full w-full object-cover object-center" autoPlay muted loop playsInline />
             </div>
           ) : (
-            <Avatar className="size-8 shrink-0">
+            <Avatar className="size-8 shrink-0" key={pubkey}>
               <AvatarImage src={avatar || defaultAvatar} className="object-cover object-center" />
               <AvatarFallback delayMs={0}>
                 <AvatarIdenticon src={defaultAvatar} />
@@ -156,7 +182,10 @@ function TitlebarAccountMenu({
   const { account, profile } = useNostr()
   const pubkey = account?.pubkey
   const { profile: fetchedProfile } = useFetchProfile(pubkey)
-  const resolvedProfile = fetchedProfile ?? profile
+  const resolvedProfile = useMemo(
+    () => profileForActivePubkey(pubkey, profile, fetchedProfile),
+    [pubkey, profile, fetchedProfile]
+  )
   const { current, display } = usePrimaryPage()
   const [menuOpen, setMenuOpen] = useState(false)
   const defaultAvatar = useMemo(
@@ -181,7 +210,7 @@ function TitlebarAccountMenu({
                 <video src={resolvedProfile.avatar} className="h-full w-full object-cover object-center" autoPlay muted loop playsInline />
               </div>
             ) : (
-              <Avatar className={cn('w-6 h-6', active ? 'ring-primary ring-1' : '')}>
+              <Avatar className={cn('w-6 h-6', active ? 'ring-primary ring-1' : '')} key={pubkey}>
                 <AvatarImage
                   src={resolvedProfile.avatar || defaultAvatar}
                   className="object-cover object-center"

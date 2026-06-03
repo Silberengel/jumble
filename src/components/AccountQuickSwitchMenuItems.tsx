@@ -25,7 +25,6 @@ export function AccountQuickSwitchMenuItems({ onAfterSwitch }: { onAfterSwitch?:
     accounts,
     account,
     switchAccount,
-    viewAccountAsReadOnly,
     retryNip07SignerForPreferredAccount
   } = useNostr()
   const rows = listSwitchableAccounts(accounts)
@@ -35,23 +34,22 @@ export function AccountQuickSwitchMenuItems({ onAfterSwitch }: { onAfterSwitch?:
   const handleSwitch = async (act: TAccountPointer) => {
     if (isRedundantAccountPick(act, account)) {
       if (account?.signerType === 'npub' && act.signerType === 'nip-07') {
+        const switched = await switchAccount(act)
+        if (switched) {
+          onAfterSwitch?.()
+          return
+        }
         const ok = await retryNip07SignerForPreferredAccount()
         if (ok) {
           toast.success(t('accountSwitch.extensionConnected'))
           onAfterSwitch?.()
         } else {
-          toast.error(t('accountSwitch.extensionRetryFailed'))
+          toast.error(t('accountSwitch.extensionUnavailable'))
         }
       }
       return
     }
-    const needsWriteSigner =
-      act.signerType === 'nsec' ||
-      act.signerType === 'ncryptsec' ||
-      act.signerType === 'bunker'
-    const switched = needsWriteSigner
-      ? await switchAccount(act)
-      : await viewAccountAsReadOnly(act)
+    const switched = await switchAccount(act)
     if (!switched) {
       toast.error(t('notificationsSwitchAccountFailed'))
       return
