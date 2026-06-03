@@ -59,6 +59,9 @@ export default function EmojiPicker({
       }
 
       picker.style.width = '100%'
+      picker.style.height = 'min(350px, 50dvh)'
+      picker.style.minHeight = '280px'
+      picker.style.display = 'block'
       picker.style.setProperty('--num-columns', '8')
 
       const handleClick = (e: Event) => {
@@ -188,7 +191,10 @@ export default function EmojiPicker({
   return (
     <div className="flex w-full min-w-0 flex-col">
       {ownEmojisRow}
-      <div ref={containerRef} className="min-h-0 w-full flex-1 overflow-hidden" />
+      <div
+        ref={containerRef}
+        className="h-[min(350px,50dvh)] min-h-[280px] w-full shrink-0 overflow-hidden"
+      />
     </div>
   )
 }

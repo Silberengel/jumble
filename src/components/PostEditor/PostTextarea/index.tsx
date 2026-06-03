@@ -131,36 +131,40 @@ const PostTextarea = forwardRef<
     onUploadCompressPhaseRef.current = onUploadCompressPhase
     const onUploadCompressProgressRef = useRef(onUploadCompressProgress)
     onUploadCompressProgressRef.current = onUploadCompressProgress
+    const onUploadStartRef = useRef(onUploadStart)
+    onUploadStartRef.current = onUploadStart
+    const onUploadEndRef = useRef(onUploadEnd)
+    onUploadEndRef.current = onUploadEnd
+    const onUploadProgressRef = useRef(onUploadProgress)
+    onUploadProgressRef.current = onUploadProgress
+    const onSubmitRef = useRef(onSubmit)
+    onSubmitRef.current = onSubmit
     const [activeTab, setActiveTab] = useState('edit')
     const editorRef = useRef<Editor | null>(null)
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
 
-    const editor = useEditor({
-      // TipTap + Radix Dialog/Tabs: defer init so React 18 does not warn about flushSync in a lifecycle.
-      immediatelyRender: false,
-      extensions: [
+    const placeholderText = useMemo(
+      () => t('Write something...') + ' (' + t('Paste or drop media files to upload') + ')',
+      [t]
+    )
+
+    // Extension instances must be stable — recreating them each render makes useEditor destroy/recreate
+    // the editor (blank composer in reply dialog).
+    const extensions = useMemo(
+      () => [
         Document,
         Paragraph,
         Text,
         History,
         HardBreak,
-        Placeholder.configure({
-          placeholder:
-            t('Write something...') + ' (' + t('Paste or drop media files to upload') + ')'
-        }),
-        Emoji.configure({
-          suggestion: emojiSuggestion
-        }),
-        Mention.configure({
-          suggestion: mentionSuggestion
-        }),
+        Placeholder.configure({ placeholder: placeholderText }),
+        Emoji.configure({ suggestion: emojiSuggestion }),
+        Mention.configure({ suggestion: mentionSuggestion }),
         ClipboardAndDropHandler.configure({
-          onUploadStart: (file, cancel) => {
-            onUploadStart?.(file, cancel)
-          },
-          onUploadEnd: (file) => onUploadEnd?.(file),
-          onUploadProgress: (file, p) => onUploadProgress?.(file, p),
+          onUploadStart: (file, cancel) => onUploadStartRef.current?.(file, cancel),
+          onUploadEnd: (file) => onUploadEndRef.current?.(file),
+          onUploadProgress: (file, p) => onUploadProgressRef.current?.(file, p),
           onUploadSuccess: (result) => onUploadSuccessRef.current?.(result),
           onUploadCompressPhase: (file, phase) =>
             onUploadCompressPhaseRef.current?.(file, phase),
@@ -168,18 +172,30 @@ const PostTextarea = forwardRef<
             onUploadCompressProgressRef.current?.(file, pct)
         })
       ],
+      [placeholderText]
+    )
+
+    const editorSurfaceClass = useMemo(
+      () =>
+        cn(
+          'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          className
+        ),
+      [className]
+    )
+
+    const editor = useEditor({
+      // TipTap + Radix Dialog/Tabs: defer init so React 18 does not warn about flushSync in a lifecycle.
+      immediatelyRender: false,
+      extensions,
       editorProps: {
         attributes: {
-          class: cn(
-            'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-            className
-          )
+          class: editorSurfaceClass
         },
         handleKeyDown: (_view, event) => {
-          // Handle Ctrl+Enter or Cmd+Enter for submit
           if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
             event.preventDefault()
-            onSubmit?.()
+            onSubmitRef.current?.()
             return true
           }
           return false
@@ -199,6 +215,16 @@ const PostTextarea = forwardRef<
     })
 
     editorRef.current = editor
+
+    useEffect(() => {
+      if (!editor) return
+      editor.setOptions({
+        editorProps: {
+          ...editor.options.editorProps,
+          attributes: { class: editorSurfaceClass }
+        }
+      })
+    }, [editor, editorSurfaceClass])
 
     useEffect(() => {
       if (!editor || !isSmallScreen) return
@@ -295,9 +321,10 @@ const PostTextarea = forwardRef<
       }
     }))
 
-    if (!editor) {
-      return null
-    }
+    const editorShellClass = cn(
+      'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+      className
+    )
 
     return (
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
@@ -321,7 +348,16 @@ const PostTextarea = forwardRef<
           forceMount
           className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
         >
-          <EditorContent className="tiptap" editor={editor} />
+          {editor ? (
+            <EditorContent className="tiptap" editor={editor} />
+          ) : (
+            <div
+              className={cn(editorShellClass, 'text-muted-foreground')}
+              aria-hidden
+            >
+              {placeholderText}
+            </div>
+          )}
         </TabsContent>
         <TabsContent
           value="preview"

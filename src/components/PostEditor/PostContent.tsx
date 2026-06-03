@@ -767,7 +767,15 @@ export default function PostContent({
     const wasOpen = prevComposerShellOpenRef.current
     prevComposerShellOpenRef.current = open
     if (!wasOpen && open && !advancedLabOpenRef.current) {
-      textareaRef.current?.syncFromPostCache()
+      // TipTap mounts async (immediatelyRender: false); retry after the editor exists.
+      const sync = () => textareaRef.current?.syncFromPostCache()
+      sync()
+      const raf = requestAnimationFrame(sync)
+      const tmr = window.setTimeout(sync, 0)
+      return () => {
+        cancelAnimationFrame(raf)
+        window.clearTimeout(tmr)
+      }
     }
   }, [open, getDeterminedKind, defaultContent, parentEvent])
 

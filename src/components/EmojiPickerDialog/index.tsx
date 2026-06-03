@@ -60,7 +60,7 @@ export default function EmojiPickerDialog({
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"
-        className="p-0 w-[min(100vw-1rem,350px)] max-w-[calc(100vw-1rem)] overflow-hidden"
+        className="p-0 w-[min(100vw-1rem,350px)] max-w-[calc(100vw-1rem)] overflow-hidden flex flex-col"
         portalContainer={portalContainer}
       >
         <EmojiPicker

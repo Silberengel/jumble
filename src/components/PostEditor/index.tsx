@@ -144,7 +144,10 @@ export default function PostEditor({
           }
         }}
       >
-        <ScrollArea className="px-4 h-full max-h-screen min-w-0" scrollBarClassName="opacity-100">
+        <ScrollArea
+          className="px-4 max-h-[min(90dvh,900px)] min-w-0"
+          scrollBarClassName="opacity-100"
+        >
           <div className="space-y-4 px-2 pr-4 py-6 min-w-0">
             <DialogHeader className="sr-only">
               <DialogTitle>Post Editor</DialogTitle>

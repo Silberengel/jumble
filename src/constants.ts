@@ -504,6 +504,7 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://relay.wikifreedia.xyz',
   'wss://relay.gifbuddy.lol',
   'wss://hist.nostr.land',
+  'wss://essayist.decentnewsroom.com'
 ]
 
 // Optimized relay list for read operations
