@@ -466,7 +466,9 @@ export default {
     readOnlySession: {
       label: 'Read-only',
       labelShort: 'R/O',
-      hint: 'Browsing without a signing key. Sign in with an extension, nsec, or another method to post, react, and edit.'
+      hint: 'Nur-Lesen ohne Signierschlüssel. Mit passender Erweiterung, nsec o. Ä. anmelden, um zu posten, reagieren und bearbeiten.',
+      cannotPublish:
+        'Dieses Konto ist nur lesbar. Verbinde die passende Erweiterung oder wähle ein Konto, das signieren kann.'
     },
     'reload notes': 'Notizen neu laden',
     'Logged in Accounts': 'Angemeldete Konten',
@@ -1000,6 +1002,8 @@ export default {
       'Nur-Lesen-Ansicht. „Erneut“ verbindet, wenn die Erweiterung zu diesem Schlüssel passt — ein anderer Erweiterungsschlüssel ist in Ordnung, wenn du nur stöbern willst.',
     'accountSwitch.extensionRetry': 'Erweiterung erneut',
     'accountSwitch.extensionConnected': 'Erweiterung für dieses Konto verbunden.',
+    'accountSwitch.composerExtensionMismatch':
+      'Anmeldung für dieses Konto fehlgeschlagen — die Erweiterung nutzt einen anderen Schlüssel. Schlüssel in der Erweiterung wechseln oder „Erweiterung erneut“ unten tippen.',
     'accountSwitch.extensionRetryFailed':
       'Erweiterungsschlüssel passt noch nicht. Schlüssel in der Erweiterung wechseln und erneut versuchen.',
     'accountSwitch.extensionUnavailable':
@@ -2086,6 +2090,8 @@ export default {
     'nip07.useExtensionIdentity': 'Erweiterungs-Identität verwenden',
     'nip07.switchedToExtensionIdentity': 'Auf die aktuelle Identität Ihrer Erweiterung umgestellt.',
     'nip07.adoptExtensionFailed': 'Wechsel zur Erweiterungs-Identität fehlgeschlagen',
+    'nip07.publishExtensionMismatch':
+      'Die Erweiterung hat mit einem anderen Schlüssel signiert als das gewählte Konto. Schlüssel in der Erweiterung wechseln oder „Erweiterung erneut“ im Editor nutzen.',
     'Login to configure RSS feeds': 'Login to configure RSS feeds',
     'Long-form Article': 'Long-form Article',
     'Mailbox relays saved': 'Mailbox relays saved',

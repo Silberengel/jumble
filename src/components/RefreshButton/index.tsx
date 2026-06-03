@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLongPressAction } from '@/hooks/use-long-press-action'
 import { hardReloadPreservingFeedSnapshots } from '@/services/session-feed-snapshot.service'
-import { RefreshCcw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -46,12 +46,13 @@ export function RefreshButton({
         onClick()
         setTimeout(() => setRefreshing(false), 500)
       }}
-      className="h-8 shrink-0 px-1.5 text-muted-foreground focus:text-foreground [&_svg]:size-3"
+      className="shrink-0 text-muted-foreground focus:text-foreground"
+      aria-label={t('Refresh')}
     >
       {refreshing ? (
-        <Skeleton className="size-3 shrink-0 rounded-sm" aria-hidden />
+        <Skeleton className="size-5 shrink-0 rounded-sm" aria-hidden />
       ) : (
-        <RefreshCcw />
+        <RefreshCw className="size-5" aria-hidden />
       )}
     </Button>
   )

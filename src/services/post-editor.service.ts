@@ -2,6 +2,20 @@ class PostEditorService extends EventTarget {
   static instance: PostEditorService
 
   isSuggestionPopupOpen = false
+  /** Ref-count of open PostEditor / Sheet shells (reply, new post, etc.). */
+  private composerShellOpenCount = 0
+
+  get isComposerShellOpen(): boolean {
+    return this.composerShellOpenCount > 0
+  }
+
+  setComposerShellOpen(open: boolean) {
+    if (open) {
+      this.composerShellOpenCount += 1
+    } else {
+      this.composerShellOpenCount = Math.max(0, this.composerShellOpenCount - 1)
+    }
+  }
 
   constructor() {
     super()

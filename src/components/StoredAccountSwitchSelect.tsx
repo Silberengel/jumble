@@ -5,6 +5,7 @@ import { accountPubkeyToHex, formatPubkey, hexPubkeysEqual, normalizeHexPubkey }
 import { cn } from '@/lib/utils'
 import { Nip07Signer } from '@/providers/NostrProvider/nip-07.signer'
 import { useNostr } from '@/providers/NostrProvider'
+import storage from '@/services/local-storage.service'
 import type { TAccountPointer } from '@/types'
 import { Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -22,6 +23,8 @@ type Props = {
   withTopBorder?: boolean
   /** Align chips to the end (e.g. beside the publish button). */
   alignEnd?: boolean
+  /** Post composer: keep clicks from bubbling to the dialog/sheet dismiss layer. */
+  inComposer?: boolean
 }
 
 const EXTENSION_SYNC_HINT_DISMISSED_PREFIX = 'extensionSyncHintDismissed:'
@@ -44,7 +47,8 @@ export default function StoredAccountSwitchSelect({
   showLabelAlways = false,
   withBottomBorder = false,
   withTopBorder = false,
-  alignEnd = false
+  alignEnd = false,
+  inComposer = false
 }: Props) {
   const { t } = useTranslation()
   const {
@@ -158,11 +162,17 @@ export default function StoredAccountSwitchSelect({
           toast.error(t('notificationsSwitchAccountFailed'))
           return
         }
+        if (inComposer && nextAccount.signerType === 'nip-07') {
+          const current = storage.getCurrentAccount()
+          if (current?.signerType === 'npub' && hexPubkeysEqual(current.pubkey, switched)) {
+            toast.error(t('accountSwitch.composerExtensionMismatch'))
+          }
+        }
       } finally {
         setSwitchingKey(null)
       }
     },
-    [account, switchAccount, retryNip07SignerForPreferredAccount, t]
+    [account, switchAccount, retryNip07SignerForPreferredAccount, t, inComposer]
   )
 
   const handleRetryExtension = useCallback(async () => {
@@ -257,7 +267,10 @@ export default function StoredAccountSwitchSelect({
                     : 'ring-transparent hover:ring-muted-foreground/35',
                   busy && !isSwitching && 'opacity-50'
                 )}
-                onClick={() => void handlePick(act)}
+                onClick={(e) => {
+                  if (inComposer) e.stopPropagation()
+                  void handlePick(act)
+                }}
               >
                 <SimpleUserAvatar userId={pk} size="small" deferRemoteAvatar={false} />
                 {isSwitching ? (

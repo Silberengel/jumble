@@ -467,7 +467,9 @@ export default {
     readOnlySession: {
       label: 'Read-only',
       labelShort: 'R/O',
-      hint: 'Browsing without a signing key. Sign in with an extension, nsec, or another method to post, react, and edit.'
+      hint: 'Browsing without a signing key. Sign in with an extension, nsec, or another method to post, react, and edit.',
+      cannotPublish:
+        'This account is read-only. Connect the matching browser extension key or pick an account that can sign.'
     },
     'reload notes': 'reload notes',
     'Logged in Accounts': 'Logged in Accounts',
@@ -1019,6 +1021,8 @@ export default {
     'accountSwitch.extensionConnected': 'Extension connected for this account.',
     'accountSwitch.extensionRetryFailed':
       'Extension key still does not match. Switch the key in your extension, then try again.',
+    'accountSwitch.composerExtensionMismatch':
+      'Could not sign in as this account — your extension is using a different key. Switch the key in the extension or tap “Retry extension” below.',
     'accountSwitch.extensionUnavailable':
       'Could not reach the browser extension. Unlock nos2x/Alby, allow this site, then click the account again.',
     'Show untrusted {type}': 'Show untrusted {{type}}',
@@ -2085,6 +2089,8 @@ export default {
     'nip07.useExtensionIdentity': 'Use extension identity',
     'nip07.switchedToExtensionIdentity': "Switched to your extension's current identity.",
     'nip07.adoptExtensionFailed': 'Could not switch to extension identity',
+    'nip07.publishExtensionMismatch':
+      'Your extension signed with a different key than the selected account. Switch the key in the extension or use “Retry extension” in the composer.',
     'Login to configure RSS feeds': 'Login to configure RSS feeds',
     'Long-form Article': 'Long-form Article',
     'Mailbox relays saved': 'Mailbox relays saved',

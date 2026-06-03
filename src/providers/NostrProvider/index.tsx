@@ -63,6 +63,7 @@ import { queryService, replaceableEventService } from '@/services/client.service
 import customEmojiService from '@/services/custom-emoji.service'
 import indexedDb from '@/services/indexed-db.service'
 import postEditorCache from '@/services/post-editor-cache.service'
+import postEditorService from '@/services/post-editor.service'
 import noteStatsService from '@/services/note-stats.service'
 import {
   ISigner,
@@ -938,6 +939,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     const prev = prevAccountPubkeyRef.current
     const curr = account?.pubkey ?? null
     prevAccountPubkeyRef.current = curr
+    if (postEditorService.isComposerShellOpen) {
+      return
+    }
     if (prev != null && curr != null && prev !== curr) {
       postEditorCache.clearOnAccountChange()
     } else if (prev != null && curr === null) {
@@ -1893,6 +1897,30 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     return event as VerifiedEvent
   }
 
+  const publishExtensionMismatchError = () =>
+    new Error(
+      t('nip07.publishExtensionMismatch', {
+        defaultValue:
+          'Your extension signed with a different key than the selected account. Switch the key in the extension or use “Retry extension” in the composer.'
+      })
+    )
+
+  const assertSignerMatchesAccountForPublish = async () => {
+    if (!account || !signer || account.signerType === 'npub') return
+    const accountPk = accountPubkeyToHex(account.pubkey)
+    if (!accountPk) throw new LoginRequiredError()
+    if (account.signerType !== 'nip-07') return
+    let signerPk: string | null = null
+    try {
+      signerPk = pubkeyFromNip07Extension(await signer.getPublicKey())
+    } catch {
+      return
+    }
+    if (signerPk && !hexPubkeysEqual(signerPk, accountPk)) {
+      throw publishExtensionMismatchError()
+    }
+  }
+
   const publish = async (
     draftEvent: TDraftEvent,
     { minPow = 0, ...options }: TPublishOptions = {}
@@ -1900,6 +1928,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     if (!account || !signer || account.signerType === 'npub') {
       throw new LoginRequiredError()
     }
+
+    const accountPk = accountPubkeyToHex(account.pubkey)
+    await assertSignerMatchesAccountForPublish()
 
     const normalizeOpts = { addClientTag: options.addClientTag }
     const draft = normalizeDraftEventTags(draftEvent, normalizeOpts)
@@ -1932,18 +1963,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       event = await signEvent(draft, normalizeOpts)
     }
 
-    if (event.kind !== kinds.Application && event.pubkey !== account.pubkey) {
-      const profileEvent = await replaceableEventService.fetchReplaceableEvent(event.pubkey, kinds.Metadata)
-      const eventAuthor = profileEvent ? getProfileFromEvent(profileEvent) : undefined
-      const result = confirm(
-        t(
-          'You are about to publish an event signed by [{{eventAuthorName}}]. You are currently logged in as [{{currentUsername}}]. Are you sure?',
-          { eventAuthorName: eventAuthor?.username, currentUsername: profile?.username }
-        )
-      )
-      if (!result) {
-        throw new Error(t('Cancelled'))
-      }
+    if (
+      event.kind !== kinds.Application &&
+      accountPk &&
+      !hexPubkeysEqual(event.pubkey, accountPk)
+    ) {
+      throw publishExtensionMismatchError()
     }
 
     client.interruptBackgroundQueries()
@@ -2142,6 +2167,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   const checkLogin = async <T,>(cb?: () => T | Promise<T>): Promise<T | void> => {
     if (account?.signerType === 'npub') {
+      if (cb) {
+        toast.error(t('readOnlySession.cannotPublish'))
+      }
       return
     }
     if (!signer) {

@@ -18,25 +18,27 @@ export default function PostButton() {
     return () => postEditorService.removeEventListener('requestOpenNewPost', onRequest)
   }, [canSignEvents, checkLogin])
 
-  if (!canSignEvents) return null
-
   return (
-    <div className="pt-4">
-      <SidebarItem
-        title="New post"
-        description="Post"
-        onClick={(e) => {
-          e.stopPropagation()
-          checkLogin(() => {
-            setOpen(true)
-          })
-        }}
-        variant="default"
-        className="bg-primary-active hover:bg-primary-hover active:bg-primary-active xl:justify-center gap-2"
-      >
-        <PencilLine strokeWidth={3} />
-      </SidebarItem>
+    <>
+      {canSignEvents ? (
+        <div className="pt-4">
+          <SidebarItem
+            title="New post"
+            description="Post"
+            onClick={(e) => {
+              e.stopPropagation()
+              checkLogin(() => {
+                setOpen(true)
+              })
+            }}
+            variant="default"
+            className="bg-primary-active hover:bg-primary-hover active:bg-primary-active xl:justify-center gap-2"
+          >
+            <PencilLine strokeWidth={3} />
+          </SidebarItem>
+        </div>
+      ) : null}
       <PostEditor open={open} setOpen={setOpen} />
-    </div>
+    </>
   )
 }

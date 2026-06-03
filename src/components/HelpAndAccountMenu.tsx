@@ -29,8 +29,6 @@ import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { useNostr } from '@/providers/NostrProvider'
 import { AccountQuickSwitchMenuItems } from '@/components/AccountQuickSwitchMenuItems'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
-import { ActiveRelaysDropdownSection } from '@/components/ConnectedRelays/ActiveRelaysDropdownSection'
-import { useRelayConnectionRows } from '@/hooks/useRelayConnectionRows'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -84,7 +82,6 @@ function AccountDropdownItems({
         <Database className="size-4" />
         {t('Browse Cache')}
       </DropdownMenuItem>
-      <ActiveRelaysDropdownSection />
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={onSwitchAccount}>
         <ArrowDownUp className="size-4" />
@@ -239,31 +236,11 @@ function TitlebarAccountMenu({
 
 function LoggedOutTitlebarMenu({ onLogin }: { onLogin: () => void }) {
   const { t } = useTranslation()
-  const { rows } = useRelayConnectionRows()
-
-  if (rows.length === 0) {
-    return (
-      <Button variant="ghost" size="titlebar-icon" onClick={onLogin} title={t('Login')}>
-        <UserRound />
-      </Button>
-    )
-  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="titlebar-icon" title={t('Login')} aria-label={t('Login')}>
-          <UserRound />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="bottom" className={titlebarAccountMenuContentClassName}>
-        <DropdownMenuItem onClick={onLogin}>
-          <LogIn className="size-4" />
-          {t('Login')}
-        </DropdownMenuItem>
-        <ActiveRelaysDropdownSection />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button variant="ghost" size="titlebar-icon" onClick={onLogin} title={t('Login')}>
+      <UserRound />
+    </Button>
   )
 }
 

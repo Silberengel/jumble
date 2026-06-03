@@ -18,20 +18,20 @@ export default function WriteButton() {
     return () => postEditorService.removeEventListener('requestOpenNewPost', onRequest)
   }, [canSignEvents, checkLogin])
 
-  if (!canSignEvents) return null
-
   return (
     <>
-      <BottomNavigationBarItem
-        onClick={(e) => {
-          e.stopPropagation()
-          checkLogin(() => {
-            setOpen(true)
-          })
-        }}
-      >
-        <PencilLine />
-      </BottomNavigationBarItem>
+      {canSignEvents ? (
+        <BottomNavigationBarItem
+          onClick={(e) => {
+            e.stopPropagation()
+            checkLogin(() => {
+              setOpen(true)
+            })
+          }}
+        >
+          <PencilLine />
+        </BottomNavigationBarItem>
+      ) : null}
       <PostEditor open={open} setOpen={setOpen} />
     </>
   )

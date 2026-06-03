@@ -46,7 +46,7 @@ import {
 } from '@/constants'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { useReply } from '@/providers/ReplyProvider'
+import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
@@ -199,7 +199,7 @@ export default function PostContent({
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
-  const { addReplies } = useReply()
+  const { addReplies } = useReplyIngress()
 
   const mergePublishedReplyIntoThread = useCallback(
     (reply: Event, relayStatuses?: TRelayPublishStatus[]) => {
@@ -742,6 +742,7 @@ export default function PostContent({
   }, [getDeterminedKind, defaultContent, parentEvent, isNsfw, isPoll, pollCreateData, addClientTag])
 
   const prevComposerShellOpenRef = useRef(open)
+  const prevComposerPubkeyRef = useRef(pubkey)
   useEffect(() => {
     const wasOpen = prevComposerShellOpenRef.current
     prevComposerShellOpenRef.current = open
@@ -749,6 +750,18 @@ export default function PostContent({
       textareaRef.current?.syncFromPostCache()
     }
   }, [open, getDeterminedKind, defaultContent, parentEvent])
+
+  useEffect(() => {
+    if (!open) {
+      prevComposerPubkeyRef.current = pubkey
+      return
+    }
+    const prevPk = prevComposerPubkeyRef.current
+    prevComposerPubkeyRef.current = pubkey
+    if (prevPk && pubkey && prevPk !== pubkey && !advancedLabOpenRef.current) {
+      textareaRef.current?.syncFromPostCache()
+    }
+  }, [open, pubkey])
 
   const rssReplyExtraPreviewTags = useMemo((): string[][] | undefined => {
     if (!parentEvent || parentEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) return undefined
@@ -1245,6 +1258,10 @@ export default function PostContent({
   const post = async (e?: React.MouseEvent) => {
     e?.stopPropagation()
     checkLogin(async () => {
+      if (!canSignEvents) {
+        toast.error(t('readOnlySession.cannotPublish'))
+        return
+      }
       if (!canPost) {
         logger.warn('Attempted to post while canPost is false')
         return
@@ -1387,6 +1404,16 @@ export default function PostContent({
         close()
       } catch (error) {
         if (error instanceof LoginRequiredError) {
+          toast.error(t('readOnlySession.cannotPublish'))
+          return
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        if (
+          message === t('Cancelled') ||
+          message.includes('Signer pubkey does not match') ||
+          message.includes(t('nip07.publishExtensionMismatch'))
+        ) {
+          toast.error(t('nip07.publishExtensionMismatch'))
           return
         }
         // AggregateError = "Failed to publish to any relay" is already logged in NostrProvider with relayStatuses; avoid duplicate noise
@@ -3524,7 +3551,13 @@ export default function PostContent({
         </Button>
       </div>
       {open ? (
-        <StoredAccountSwitchSelect withTopBorder alignEnd className="w-full" showLabelAlways />
+        <StoredAccountSwitchSelect
+          withTopBorder
+          alignEnd
+          className="w-full"
+          showLabelAlways
+          inComposer
+        />
       ) : null}
 
       {/* Media Kind Selection Dialog */}

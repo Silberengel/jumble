@@ -17,7 +17,9 @@ import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { pubkeyToNpub } from '@/lib/pubkey'
 import postEditor from '@/services/post-editor.service'
 import { Event } from 'nostr-tools'
-import { Dispatch, useMemo } from 'react'
+import postEditorService from '@/services/post-editor.service'
+import { Dispatch, useEffect, useMemo } from 'react'
+import { useNostr } from '@/providers/NostrProvider'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
 
@@ -46,6 +48,16 @@ export default function PostEditor({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
 }) {
   const { isSmallScreen } = useScreenSize()
+  const { isAccountSessionHydrating, isNip07LoginInFlight } = useNostr()
+
+  useEffect(() => {
+    if (!open) return
+    postEditorService.setComposerShellOpen(true)
+    return () => postEditorService.setComposerShellOpen(false)
+  }, [open])
+
+  const blockDismissForAccountSwitch =
+    isAccountSessionHydrating || isNip07LoginInFlight
 
   const effectiveDefaultContent = useMemo(() => {
     if (initialPublicMessageTo) {
@@ -89,6 +101,12 @@ export default function PostEditor({
           className="h-full w-full max-w-full p-0 border-none overflow-hidden"
           side="bottom"
           hideClose
+          onInteractOutside={(e) => {
+            if (blockDismissForAccountSwitch) e.preventDefault()
+          }}
+          onPointerDownOutside={(e) => {
+            if (blockDismissForAccountSwitch) e.preventDefault()
+          }}
           onEscapeKeyDown={(e) => {
             if (postEditor.isSuggestionPopupOpen) {
               e.preventDefault()
@@ -115,6 +133,12 @@ export default function PostEditor({
       <DialogContent
         className="p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full overflow-hidden"
         withoutClose
+        onInteractOutside={(e) => {
+          if (blockDismissForAccountSwitch) e.preventDefault()
+        }}
+        onPointerDownOutside={(e) => {
+          if (blockDismissForAccountSwitch) e.preventDefault()
+        }}
         onEscapeKeyDown={(e) => {
           if (postEditor.isSuggestionPopupOpen) {
             e.preventDefault()
