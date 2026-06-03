@@ -18,6 +18,7 @@ import { useMemo, type ReactNode } from 'react'
 import ContentPreview from '../../ContentPreview'
 import Content from '../../Content'
 import Highlight from '../../Note/Highlight'
+import MusicTrackNote from '../../Note/MusicTrackNote'
 import MarkdownArticle from '../../Note/MarkdownArticle/MarkdownArticle'
 import AsciidocArticle from '../../Note/AsciidocArticle/AsciidocArticle'
 import { HighlightData } from '../HighlightEditor'
@@ -331,7 +332,7 @@ export default function Preview({
   if (kind === ExtendedKind.MUSIC_TRACK) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
-        <ContentPreview event={fakeEvent} />
+        <MusicTrackNote event={fakeEvent} loadMedia className="mt-0" />
       </Card>
     )
   }

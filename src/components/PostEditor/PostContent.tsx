@@ -1827,7 +1827,6 @@ export default function PostContent({
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
       setIsPublicationContent(false)
-      setIsMusicTrack(false)
       setIsCitationInternal(false)
       setIsCitationExternal(false)
       setIsCitationHardcopy(false)
