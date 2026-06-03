@@ -7,6 +7,7 @@ import {
   ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS,
   DEFAULT_FAVORITE_RELAYS,
   FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   ExtendedKind,
   PROFILE_RELAY_URLS,
@@ -113,7 +114,7 @@ function favoriteRelayUrlsForPublish(
   relayList: TRelayList | null | undefined,
   account: TAccountPointer | null
 ): string[] {
-  if (isAnonAccount(account)) return [...DEFAULT_FAVORITE_RELAYS]
+  if (isAnonAccount(account)) return [...FAST_WRITE_RELAY_URLS]
   const urlsFromEvent = (): string[] => {
     const urls: string[] = []
     if (!favoriteRelaysEvent) return urls

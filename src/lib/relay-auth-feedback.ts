@@ -1,4 +1,5 @@
 import i18n from '@/i18n'
+import { isRelayAuthAccessDeniedMessage } from '@/lib/relay-nip42-auth'
 import { normalizeUrl, simplifyUrl } from '@/lib/url'
 import logger from '@/lib/logger'
 import { toast } from 'sonner'
@@ -35,12 +36,22 @@ export function notifyRelayNip42Rejected(url: string, message: string): void {
 
   const relay = relayLabel(url)
   const msg = message.trim() || i18n.t('Relay auth error unknown', { defaultValue: 'Unknown error' })
-  toast.error(
-    i18n.t('Relay auth rejected (NIP-42)', {
-      relay,
-      message: msg,
-      defaultValue: `The relay rejected authentication (NIP-42): ${relay} — ${msg}`
-    })
-  )
+  if (isRelayAuthAccessDeniedMessage(msg)) {
+    toast.info(
+      i18n.t('Relay membership required (NIP-42)', {
+        relay,
+        message: msg,
+        defaultValue: `${relay} requires membership or access you don't have — ${msg}`
+      })
+    )
+  } else {
+    toast.error(
+      i18n.t('Relay auth rejected (NIP-42)', {
+        relay,
+        message: msg,
+        defaultValue: `The relay rejected authentication (NIP-42): ${relay} — ${msg}`
+      })
+    )
+  }
   logger.warn('[NIP-42] Auth rejected by relay', { url, message: msg })
 }

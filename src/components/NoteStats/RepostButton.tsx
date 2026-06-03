@@ -60,13 +60,13 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
 
   const repost = async () => {
     checkLogin(async () => {
-      if (!canRepost || !pubkey) return
+      if (!canRepost) return
 
       setReposting(true)
       const timer = setTimeout(() => setReposting(false), 5000)
 
       try {
-        const hasReposted = noteStats?.repostPubkeySet?.has(pubkey)
+        const hasReposted = pubkey ? noteStats?.repostPubkeySet?.has(pubkey) : false
         if (hasReposted) return
         if (!noteStats?.updatedAt) {
           await noteStatsService.fetchNoteStats(event, pubkey, statsRelays, { foreground: true })

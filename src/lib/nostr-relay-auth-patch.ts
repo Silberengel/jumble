@@ -1,4 +1,9 @@
 import { notifyRelayNip42Accepted, notifyRelayNip42Rejected } from '@/lib/relay-auth-feedback'
+import {
+  NIP42_AUTH_ACCESS_DENIED,
+  isRelayAuthAccessDeniedMessage
+} from '@/lib/relay-nip42-auth'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools'
 
@@ -89,6 +94,13 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
         if (benignRace) {
           r.authPromise = undefined
           return ''
+        }
+        if (isRelayAuthAccessDeniedMessage(msg)) {
+          notifyRelayNip42Rejected(url, msg)
+          r.authPromise = undefined
+          relaySessionStrikes.recordReadFailure(url, 'connection')
+          // Resolve (do not reject): pool / nostr-tools may call auth() without `.catch()`.
+          return NIP42_AUTH_ACCESS_DENIED
         }
         notifyRelayNip42Rejected(url, msg)
         throw err

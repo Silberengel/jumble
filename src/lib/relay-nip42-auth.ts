@@ -1,6 +1,36 @@
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools'
 
+/** Resolved (not rejected) by {@link patchPoolRelayAuthRaceAndFeedback} when auth is permanently denied. */
+export const NIP42_AUTH_ACCESS_DENIED = '__jumble_nip42_access_denied__'
+
+export class RelayAuthAccessDeniedError extends Error {
+  override readonly name = 'RelayAuthAccessDeniedError'
+
+  constructor(message: string) {
+    super(message)
+  }
+}
+
+/** Relay rejected NIP-42 AUTH with a permanent access restriction (membership, allowlist, etc.). */
+export function isRelayAuthAccessDeniedMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed) return false
+  if (isRelayAuthRequiredCloseReason(trimmed) || isRelayAuthRequiredErrorMessage(trimmed)) {
+    return false
+  }
+  const lower = trimmed.toLowerCase()
+  return (
+    lower.startsWith('restricted:') ||
+    lower.startsWith('forbidden:') ||
+    lower.startsWith('blocked:') ||
+    /membership required/i.test(trimmed) ||
+    /access denied/i.test(trimmed) ||
+    /not authorized/i.test(trimmed) ||
+    /not allowed/i.test(trimmed)
+  )
+}
+
 function readNip42Challenge(relay: AbstractRelay): string | undefined {
   return (relay as unknown as { challenge?: string }).challenge
 }
@@ -54,5 +84,12 @@ export async function authenticateNip42Relay(
       "can't perform auth, no challenge was received (timed out waiting for relay AUTH message)"
     )
   }
-  return relay.auth(signAuthEvent)
+  const reason = await relay.auth(signAuthEvent)
+  if (reason === NIP42_AUTH_ACCESS_DENIED) {
+    throw new RelayAuthAccessDeniedError('relay authentication access denied')
+  }
+  if (isRelayAuthAccessDeniedMessage(reason)) {
+    throw new RelayAuthAccessDeniedError(reason)
+  }
+  return reason
 }

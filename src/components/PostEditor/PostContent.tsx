@@ -642,7 +642,6 @@ export default function PostContent({
       ? hasNonemptyContent
       : (mediaNoteKind !== null && mediaUrl) || hasNonemptyContent
     return (
-      !!pubkey &&
       canSignEvents &&
       !posting &&
       !uploadProgresses.length &&
@@ -658,7 +657,6 @@ export default function PostContent({
       relayCapBlockInfo === null
     )
   }, [
-    pubkey,
     canSignEvents,
     text,
     getDeterminedKind,

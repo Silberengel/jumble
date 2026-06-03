@@ -104,7 +104,7 @@ export function LikeButtonWithStats({
 
   const like = async (emoji: string | TEmoji) => {
     checkLogin(async () => {
-      if (liking || !pubkey) return
+      if (liking || !canSignEvents) return
 
       setLiking(true)
       const timer = setTimeout(() => setLiking(false), 10_000)
@@ -121,9 +121,11 @@ export function LikeButtonWithStats({
             : typeof myLastEmoji === 'object'
               ? myLastEmoji.shortcode
               : undefined
-        const isTogglingOff = showDiscussionVotes
-          ? discussionVoteMatches(myLastEmoji, emoji)
-          : myLastEmojiString === emojiString
+        const isTogglingOff =
+          pubkey &&
+          (showDiscussionVotes
+            ? discussionVoteMatches(myLastEmoji, emoji)
+            : myLastEmojiString === emojiString)
 
         logger.debug('Like toggle check', {
           myLastEmoji,
@@ -136,7 +138,7 @@ export function LikeButtonWithStats({
         if (isTogglingOff) {
           // User wants to toggle off - find their previous reaction and delete it
           const myReaction = noteStats?.likes?.find((like) => {
-            if (like.pubkey !== pubkey) return false
+            if (!pubkey || like.pubkey !== pubkey) return false
             if (showDiscussionVotes) return discussionVoteMatches(like.emoji, emoji)
             const likeEmojiString = typeof like.emoji === 'string' ? like.emoji : like.emoji.shortcode
             return likeEmojiString === emojiString

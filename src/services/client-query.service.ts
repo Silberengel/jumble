@@ -21,8 +21,10 @@ import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
   authenticateNip42Relay,
+  isRelayAuthAccessDeniedMessage,
   isRelayAuthRequiredCloseReason,
-  isRelaySubscriptionClosedByCaller
+  isRelaySubscriptionClosedByCaller,
+  RelayAuthAccessDeniedError
 } from '@/lib/relay-nip42-auth'
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
@@ -1091,9 +1093,17 @@ export class QueryService {
                       this.releaseGlobalRelayConnectionSlot()
                     }
                   })
-                  .catch(() => {
+                  .catch((err) => {
                     nip42ResubscribePending.delete(i)
-                    handleClose(i, reason)
+                    const authMsg = err instanceof Error ? err.message : String(err)
+                    if (
+                      err instanceof RelayAuthAccessDeniedError ||
+                      isRelayAuthAccessDeniedMessage(authMsg)
+                    ) {
+                      nip42HasAuthedOnce.add(i)
+                      relaySessionStrikes.recordReadFailure(url, 'connection')
+                    }
+                    handleClose(i, authMsg || reason)
                   })
                 return
               }

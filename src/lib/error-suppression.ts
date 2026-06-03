@@ -3,6 +3,8 @@
  * This helps reduce noise in the development console
  */
 
+import { isRelayAuthAccessDeniedMessage } from '@/lib/relay-nip42-auth'
+
 // Track suppressed errors to avoid spam
 const suppressedErrors = new Set<string>()
 
@@ -548,6 +550,11 @@ function suppressExpectedRejections() {
     // nostr-tools: relay.send() attaches to connectionPromise without .catch(); if the socket
     // closes before the REQ is sent, the rejection was previously uncaught (SendingOnClosedConnection).
     if (event.reason?.name === 'SendingOnClosedConnection') {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    if (event.reason?.name === 'RelayAuthAccessDeniedError' || isRelayAuthAccessDeniedMessage(msg)) {
       event.preventDefault()
       event.stopPropagation()
     }

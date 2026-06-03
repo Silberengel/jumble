@@ -15,6 +15,8 @@ export default {
       'The relay accepted authentication (NIP-42): {{relay}}{{detailSuffix}}',
     'Relay auth rejected (NIP-42)':
       'The relay rejected authentication (NIP-42): {{relay}} — {{message}}',
+    'Relay membership required (NIP-42)':
+      "{{relay}} requires membership or access you don't have — {{message}}",
     'Relay auth error unknown': 'Unknown error',
     Settings: 'Settings',
     'Account menu': 'Account menu',

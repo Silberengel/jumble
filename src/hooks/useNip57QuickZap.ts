@@ -20,8 +20,8 @@ export function useNip57QuickZap(opts: {
   onZapDialogClose?: () => void
 }) {
   const { t } = useTranslation()
-  const { pubkey, account, checkLogin } = useNostr()
-  const isLoggedIn = Boolean(pubkey && account && account.signerType !== 'npub')
+  const { pubkey, checkLogin, canSignEvents, isAnonSession } = useNostr()
+  const isLoggedIn = canSignEvents
   const { defaultZapSats, defaultZapComment, includePublicZapReceipt } = useZap()
   const [zapping, setZapping] = useState(false)
   const ignoreResultRef = useRef(false)
@@ -81,7 +81,7 @@ export function useNip57QuickZap(opts: {
     defaultZapSats >= 1 &&
     nip57Addresses !== null &&
     nip57Addresses.length > 0 &&
-    pubkey !== opts.recipientPubkey
+    (isAnonSession || pubkey !== opts.recipientPubkey)
 
   const recipientNpubLabel = useMemo(() => {
     const npub = pubkeyToNpub(opts.recipientPubkey)
@@ -101,12 +101,12 @@ export function useNip57QuickZap(opts: {
   const sendQuickZap = useCallback(() => {
     if (!canQuickNip57Zap || zapping || !nip57Addresses?.length) return
     checkLogin(async () => {
-      if (!pubkey) return
+      if (!canSignEvents) return
       ignoreResultRef.current = false
       try {
         setZapping(true)
         const zapResult = await lightning.zap(
-          pubkey,
+          isAnonSession ? '' : (pubkey ?? ''),
           opts.referencedEvent ?? opts.recipientPubkey,
           defaultZapSats,
           defaultZapComment,
@@ -126,13 +126,16 @@ export function useNip57QuickZap(opts: {
           )
         }
         if (opts.referencedEvent) {
-          noteStatsService.addZap(
-            pubkey,
-            opts.referencedEvent.id,
-            zapResult.invoice,
-            defaultZapSats,
-            defaultZapComment
-          )
+          const zapSenderPubkey = zapResult.zapReceipt?.pubkey ?? pubkey
+          if (zapSenderPubkey) {
+            noteStatsService.addZap(
+              zapSenderPubkey,
+              opts.referencedEvent.id,
+              zapResult.invoice,
+              defaultZapSats,
+              defaultZapComment
+            )
+          }
         }
       } catch (error) {
         toast.error(`${t('Zap failed')}: ${(error as Error).message}`)
@@ -146,6 +149,8 @@ export function useNip57QuickZap(opts: {
     nip57Addresses,
     checkLogin,
     pubkey,
+    canSignEvents,
+    isAnonSession,
     defaultZapSats,
     defaultZapComment,
     includePublicZapReceipt,

@@ -154,10 +154,12 @@ import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
   authenticateNip42Relay,
+  isRelayAuthAccessDeniedMessage,
   isRelayAuthRequiredCloseReason,
   isRelayAuthRequiredErrorMessage,
   isRelayConnectionClosedError,
-  isRelaySubscriptionClosedByCaller
+  isRelaySubscriptionClosedByCaller,
+  RelayAuthAccessDeniedError
 } from '@/lib/relay-nip42-auth'
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
@@ -211,6 +213,7 @@ import { classifyRelayNotice, relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
+  TDraftEvent,
   TProfile,
   TPublishEventExtras,
   TPublishOptions,
@@ -908,10 +911,23 @@ class ClientService extends EventTarget {
     }
   }
 
+  /** Sign with the session signer, or a fresh ephemeral key in anon write mode. */
+  async signEventWithSession(draft: TDraftEvent): Promise<VerifiedEvent> {
+    if (this.signerType === 'anon') {
+      const ephemeral = createEphemeralSigner()
+      return (await ephemeral.signEvent(draft)) as VerifiedEvent
+    }
+    if (!this.signer) {
+      throw new Error('Please login first to sign the event')
+    }
+    return (await this.signer.signEvent(draft)) as VerifiedEvent
+  }
+
   /** Read-only logins (e.g. npub) cannot sign relay AUTH challenges; avoid calling signEvent. */
   private canSignerAuthenticateRelay(): boolean {
-    if (!this.signer) return false
     if (this.signerType === 'npub') return false
+    if (this.signerType === 'anon') return true
+    if (!this.signer) return false
     return true
   }
 
@@ -2102,6 +2118,12 @@ class ClientService extends EventTarget {
                           errors.push({ url, error: authError })
                           relayStatuses.push({ url, success: false, error: authMsg })
                           relaySessionStrikes.recordPublishFailure(url, authMsg)
+                          if (
+                            authError instanceof RelayAuthAccessDeniedError ||
+                            isRelayAuthAccessDeniedMessage(authMsg)
+                          ) {
+                            relaySessionStrikes.recordReadFailure(url, 'connection')
+                          }
                         })
                     } else {
                       logger.error(`[PublishEvent] Publish failed`, { url, error: error.message })
@@ -3063,9 +3085,17 @@ class ClientService extends EventTarget {
                       that.queryService.releaseGlobalRelayConnectionSlot()
                     }
                   })
-                  .catch(() => {
+                  .catch((err) => {
                     nip42ResubscribePending.delete(i)
-                    handleClose(i, reason)
+                    const authMsg = err instanceof Error ? err.message : String(err)
+                    if (
+                      err instanceof RelayAuthAccessDeniedError ||
+                      isRelayAuthAccessDeniedMessage(authMsg)
+                    ) {
+                      nip42HasAuthedOnce.add(i)
+                      relaySessionStrikes.recordReadFailure(url, 'connection')
+                    }
+                    handleClose(i, authMsg || reason)
                   })
                 return
               }

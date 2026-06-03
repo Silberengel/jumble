@@ -75,7 +75,7 @@ class LightningService {
     onPaymentFlowComplete?: (result: PaymentFlowResult) => void,
     zapLightning?: { address?: string; candidates?: string[] }
   ): Promise<PaymentFlowResult> {
-    if (!client.signer) {
+    if (!client.signer && client.signerType !== 'anon') {
       throw new Error('You need to be logged in to zap')
     }
     const clampedSats = clampZapSats(sats)
@@ -118,7 +118,7 @@ class LightningService {
       relays,
       comment
     })
-    const zapRequest = await client.signer.signEvent(zapRequestDraft)
+    const zapRequest = await client.signEventWithSession(zapRequestDraft)
     const zapRequestUrl = buildLnurlPayCallbackUrl(callback, {
       amount: String(amount),
       nostr: JSON.stringify(zapRequest),
