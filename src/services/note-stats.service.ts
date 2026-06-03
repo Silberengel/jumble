@@ -877,6 +877,14 @@ class NoteStatsService {
     return this.noteStatsMap.get(this.statsKey(id))
   }
 
+  /** Same social `kinds` / tag filters as {@link fetchNoteStats} — for thread UI to load counted replies. */
+  getSocialStatsFiltersForEvent(event: Event): Filter[] {
+    const replaceableCoordinate = isReplaceableEvent(event.kind)
+      ? getReplaceableCoordinateFromEvent(event)
+      : undefined
+    return this.buildFilterGroups(event, replaceableCoordinate).social
+  }
+
   /**
    * Snapshot for {@link useNoteStatsById} / `useSyncExternalStore`: `epoch` changes on every stats notify so React
    * always re-renders when counts update (avoids stale UI when the map entry reference is reused or updates race mount).

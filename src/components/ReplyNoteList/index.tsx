@@ -62,6 +62,8 @@ import {
   backlinkRunSectionClass,
   buildVisibleBacklinkRows,
   EA_THREAD_TAIL_REFERENCE_KINDS,
+  buildNoteStatsReplyIdSet,
+  buildRepliesListAlignedWithNoteStats,
   collectDisplayedThreadReplies,
   fetchPaymentAttestationsForRecipient,
   hydrateThreadRepliesFromStats,
@@ -137,12 +139,25 @@ function ReplyNoteList({
     return out.length ? out : undefined
   }, [duplicateWebPreviewCleanedUrlHints, rootInfo])
 
+  const statsReplyIds = useMemo(
+    () => buildNoteStatsReplyIdSet(noteStats?.replies),
+    [noteStats?.replies, noteStats?.updatedAt]
+  )
+
   const replies: NEvent[] = useMemo(() => {
-    const replyEvents = collectDisplayedThreadReplies(
+    const threadDisplayed = collectDisplayedThreadReplies(
       event,
       rootInfo,
       repliesMap,
       isDiscussionRoot,
+      mutePubkeySet,
+      hideContentMentioningMutedUsers,
+      statsReplyIds
+    )
+    const replyEvents = buildRepliesListAlignedWithNoteStats(
+      noteStats?.replies,
+      repliesMap,
+      threadDisplayed,
       mutePubkeySet,
       hideContentMentioningMutedUsers
     )
@@ -162,6 +177,7 @@ function ReplyNoteList({
       ) {
         return false
       }
+      if (statsReplyIds.has(evt.id)) return true
       if (
         rootInfo &&
         !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromRepliesMap)
@@ -169,11 +185,16 @@ function ReplyNoteList({
         return false
       }
       const opHex = openNoteHexId(event)
+      const opHexLower = opHex?.toLowerCase()
+      const viewingThreadRoot =
+        opHexLower &&
+        ((rootInfo?.type === 'E' && rootInfo.id.trim().toLowerCase() === opHexLower) ||
+          (rootInfo?.type === 'A' && rootInfo.eventId.trim().toLowerCase() === opHexLower))
       if (
-        opHex &&
-        rootInfo?.type === 'E' &&
-        rootInfo.id.trim().toLowerCase() !== opHex &&
-        !replyIsInSubtreeBelowOpenNote(evt, opHex, threadWalkFromRepliesMap)
+        opHexLower &&
+        rootInfo &&
+        !viewingThreadRoot &&
+        !replyIsInSubtreeBelowOpenNote(evt, opHexLower, threadWalkFromRepliesMap)
       ) {
         return false
       }
@@ -283,7 +304,10 @@ function ReplyNoteList({
     sort,
     attestedPaymentIds,
     isDiscussionRoot,
-    event.kind
+    event.kind,
+    statsReplyIds,
+    noteStats?.replies,
+    noteStats?.updatedAt
   ])
 
   const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
@@ -479,13 +503,19 @@ function ReplyNoteList({
   }, [event.id])
 
   useEffect(() => {
-    if (!rootInfo) return
     const fromStats = noteStats?.replies
     if (!fromStats?.length) return
+
+    const statsIdSet = buildNoteStatsReplyIdSet(fromStats)
+    const sessionHits = eventService
+      .getSessionEventsForNoteStatsTarget(event, { maxScan: 40_000 })
+      .filter((e) => statsIdSet.has(e.id))
+    if (sessionHits.length > 0) addReplies(sessionHits)
 
     const candidates = fromStats.filter(
       (r) =>
         !replyIdPresentInRepliesMap(repliesMap, r.id) &&
+        !client.peekSessionCachedEvent(r.id) &&
         !statsHydratedReplyIdsRef.current.has(r.id)
     )
     if (candidates.length === 0) return
@@ -493,25 +523,16 @@ function ReplyNoteList({
     let cancelled = false
     ;(async () => {
       for (const { id } of candidates) statsHydratedReplyIdsRef.current.add(id)
-      const batch = await hydrateThreadRepliesFromStats(
-        candidates,
-        rootInfo,
-        event,
-        isDiscussionRoot
-      )
+      const batch = await hydrateThreadRepliesFromStats(candidates, {
+        relayUrls: threadRelayUrlsRef.current,
+        mutePubkeySet,
+        hideContentMentioningMutedUsers
+      })
       if (cancelled) return
       for (const { id } of candidates) {
         if (!batch.some((e) => e.id === id)) statsHydratedReplyIdsRef.current.delete(id)
       }
-      const ok = batch.filter(
-        (e) =>
-          !shouldHideThreadResponseEvent(
-            e,
-            mutePubkeySet,
-            hideContentMentioningMutedUsers
-          )
-      )
-      if (ok.length > 0) addReplies(ok)
+      if (batch.length > 0) addReplies(batch)
     })()
 
     return () => {
@@ -519,14 +540,78 @@ function ReplyNoteList({
     }
   }, [
     event,
-    rootInfo,
-    isDiscussionRoot,
+    event.id,
     noteStats?.replies,
     noteStats?.updatedAt,
     repliesMap,
     addReplies,
     mutePubkeySet,
-    hideContentMentioningMutedUsers
+    hideContentMentioningMutedUsers,
+    refreshToken
+  ])
+
+  /** When stats counted many replies but the thread REQ returned few, run the same social filters as note-stats. */
+  const statsRelaySyncGenRef = useRef(0)
+  useEffect(() => {
+    const statsLen = noteStats?.replies?.length ?? 0
+    if (statsLen < 3) return
+    const resolved = buildRepliesListAlignedWithNoteStats(
+      noteStats?.replies,
+      repliesMap,
+      [],
+      mutePubkeySet,
+      hideContentMentioningMutedUsers
+    )
+    if (resolved.length >= statsLen) return
+
+    const relayUrls = threadRelayUrlsRef.current
+    if (!relayUrls.length) return
+
+    const socialFilters = noteStatsService.getSocialStatsFiltersForEvent(event)
+    if (!socialFilters.length) return
+
+    const gen = ++statsRelaySyncGenRef.current
+    void queryService
+      .fetchEvents(relayUrls, socialFilters, {
+        foreground: true,
+        globalTimeout: 14_000,
+        firstRelayResultGraceMs: 900,
+        relayOpSource: 'ReplyNoteList.statsSocialSync',
+        onevent: (evt: NEvent) => {
+          if (gen !== statsRelaySyncGenRef.current) return
+          if (isPollVoteKind(evt)) return
+          if (!statsReplyIds.has(evt.id)) return
+          if (
+            shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+          ) {
+            return
+          }
+          addReplies([evt])
+        }
+      })
+      .then((batch) => {
+        if (gen !== statsRelaySyncGenRef.current) return
+        const ok = batch.filter(
+          (evt) =>
+            statsReplyIds.has(evt.id) &&
+            !isPollVoteKind(evt) &&
+            !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+        )
+        if (ok.length > 0) addReplies(ok)
+      })
+      .catch(() => {
+        /* optional */
+      })
+  }, [
+    event,
+    noteStats?.replies?.length,
+    noteStats?.updatedAt,
+    repliesMap,
+    statsReplyIds,
+    addReplies,
+    mutePubkeySet,
+    hideContentMentioningMutedUsers,
+    refreshToken
   ])
 
   const onNewReply = useCallback(
@@ -587,6 +672,9 @@ function ReplyNoteList({
     const fetchGeneration = ++replyFetchGenRef.current
 
     const init = async () => {
+      const cachedStatsReplies = noteStatsService.getNoteStats(event.id)?.replies
+      const statsIdSetInit = buildNoteStatsReplyIdSet(cachedStatsReplies)
+
       // Session LRU (timeline / note-stats / prior panels): thread replies before relay round-trip
       if (rootInfo.type === 'E' || rootInfo.type === 'A') {
         const fromSession = eventService.getSessionThreadInteractionEvents(
@@ -595,6 +683,12 @@ function ReplyNoteList({
         )
         if (fromSession.length > 0) {
           addReplies(fromSession)
+        }
+        if (statsIdSetInit.size > 0) {
+          const statsSessionHits = eventService
+            .getSessionEventsForNoteStatsTarget(event, { maxScan: 40_000 })
+            .filter((e) => statsIdSetInit.has(e.id))
+          if (statsSessionHits.length > 0) addReplies(statsSessionHits)
         }
       }
 
@@ -698,13 +792,26 @@ function ReplyNoteList({
           const recipientPubkey = event.pubkey
 
           // Stream replies as relays return them (aggr is first in the list) instead of waiting for full EOSE.
+          const statsIdsStream = buildNoteStatsReplyIdSet(
+            noteStatsService.getNoteStats(event.id)?.replies
+          )
+
           const streamThreadReply = (evt: NEvent) => {
             if (fetchGeneration !== replyFetchGenRef.current) return
             if (isPollVoteKind(evt)) return
             if (rootInfo.type === 'I') {
               if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) return
             }
-            if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) return
+            if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+              return
+            if (statsIdsStream.size > 0) {
+              if (
+                !statsIdsStream.has(evt.id) &&
+                !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
+              ) {
+                return
+              }
+            }
             addReplies([evt])
             if (!hasCache) setLoading(false)
           }
@@ -760,15 +867,29 @@ function ReplyNoteList({
             allReplies.map((e) => [e.id.toLowerCase(), e] as const)
           )
 
+          const statsIdsForFetch = buildNoteStatsReplyIdSet(
+            noteStatsService.getNoteStats(event.id)?.replies
+          )
+
           // Filter and add replies (URL threads include kind 9802 highlights of this page)
           const regularReplies = allReplies.filter((evt) => {
             if (isPollVoteKind(evt)) return false
-            const match = replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromBatch)
-            if (!match) return false
-            return !shouldHideThreadResponseEvent(
+            if (
+              shouldHideThreadResponseEvent(
+                evt,
+                mutePubkeySet,
+                hideContentMentioningMutedUsers
+              )
+            ) {
+              return false
+            }
+            if (statsIdsForFetch.has(evt.id)) return true
+            return replyMatchesThreadForList(
               evt,
-              mutePubkeySet,
-              hideContentMentioningMutedUsers
+              event,
+              rootInfo,
+              isDiscussionRoot,
+              threadWalkFromBatch
             )
           })
           
@@ -999,6 +1120,13 @@ function ReplyNoteList({
       }
     }
   }, [mergedFeed.length, showCount])
+
+  /** Expand the visible window as stats-backed replies hydrate (count badge can be 99+). */
+  useEffect(() => {
+    const statsLen = noteStats?.replies?.length ?? 0
+    if (statsLen === 0) return
+    setShowCount((prev) => Math.max(prev, Math.min(mergedFeed.length, statsLen)))
+  }, [mergedFeed.length, noteStats?.replies?.length])
 
   const highlightReply = useCallback((eventId: string, scrollTo = true) => {
     if (scrollTo) {

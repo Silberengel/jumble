@@ -35,8 +35,12 @@ const ProfileFeed = forwardRef<
   const [isRefreshing, setIsRefreshing] = useState(false)
   const noteListRef = useRef<TNoteListRef>(null)
   const [feedFilterTabRowHost, setFeedFilterTabRowHost] = useState<HTMLDivElement | null>(null)
+  const [feedFilterPanelHost, setFeedFilterPanelHost] = useState<HTMLDivElement | null>(null)
   const onFeedFilterTabRowSlotRef = useCallback((node: HTMLDivElement | null) => {
     setFeedFilterTabRowHost((prev) => (Object.is(prev, node) ? prev : node))
+  }, [])
+  const onFeedFilterPanelHostRef = useCallback((node: HTMLDivElement | null) => {
+    setFeedFilterPanelHost((prev) => (Object.is(prev, node) ? prev : node))
   }, [])
 
   const { pinEvents, loadingPins, refreshPins } = useProfilePins(pubkey)
@@ -119,6 +123,7 @@ const ProfileFeed = forwardRef<
           includeFeedSearchSlot
         />
       </div>
+      <div ref={onFeedFilterPanelHostRef} className="min-w-0 px-1" />
       {pinEvents.filter((e) => !isEventDeleted(e)).length > 0 && (
         <div className="mb-3 space-y-2 px-1" aria-label={t('Pinned posts')}>
           {pinEvents
@@ -152,6 +157,7 @@ const ProfileFeed = forwardRef<
           showKind1111={showKind1111}
           showFeedClientFilter
           feedClientFilterTabRowHost={feedFilterTabRowHost}
+          feedClientFilterPanelHost={feedFilterPanelHost}
           timelinePublicReadFallback
           revealBatchSize={48}
         />

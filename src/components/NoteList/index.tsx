@@ -816,6 +816,8 @@ const NoteList = forwardRef(
        * sits on that row instead of an extra bar above the list. Omitted on spells / standalone NoteList.
        */
       feedClientFilterTabRowHost,
+      /** When set with {@link feedClientFilterTabRowHost}, portaled filter panel renders here (e.g. profile: above pins). */
+      feedClientFilterPanelHost,
       onSingleRelayKindlessEmpty,
       onSingleRelayBrowseEmpty,
       feedTopNotice,
@@ -891,6 +893,7 @@ const NoteList = forwardRef(
       showFeedClientFilter?: boolean
       hostPrimaryPageName?: TPrimaryPageName
       feedClientFilterTabRowHost?: HTMLElement | null
+      feedClientFilterPanelHost?: HTMLElement | null
       /** Single-relay kindless: if EOSE with no events, parent switches to explicit kinds in `subRequests`. */
       onSingleRelayKindlessEmpty?: () => void
       /** Relay explore: explicit kinds EOSE empty — parent retries kindless `{ limit }` once. */
@@ -1115,9 +1118,14 @@ const NoteList = forwardRef(
     const primaryPageCtx = usePrimaryPageOptional()
     const primaryPageCurrent = primaryPageCtx?.current ?? null
     const primaryPanelFrozen = primaryPageCtx?.frozen ?? false
-    /** Only pause timelines on the active primary page feed — not secondary-panel profiles, search, etc. */
+    const primaryFeedDisplayed = primaryPageCtx?.display ?? true
+    /**
+     * Pause timelines only when the active primary feed is hidden (e.g. mobile note takeover,
+     * single-pane sheet). Double-pane and mobile feed overlay keep `display` true — keep loading.
+     */
     const pauseTimelineForPrimaryFreeze =
       primaryPanelFrozen &&
+      !primaryFeedDisplayed &&
       hostPrimaryPageName != null &&
       hostPrimaryPageName === primaryPageCurrent
 
@@ -4856,9 +4864,18 @@ const NoteList = forwardRef(
       </>
     )
 
-    /** Tab-row portal: toggle lives in the header; panel expands in-flow above the list. */
+    const feedClientFilterPanelPortaled =
+      feedClientFilterPanelPortalMode &&
+      feedClientFilterPanelHost &&
+      feedClientFilterPanel
+        ? createPortal(feedClientFilterPanel, feedClientFilterPanelHost)
+        : null
+
+    /** Tab-row portal: toggle in header; panel in {@link feedClientFilterPanelHost} or above the list. */
     const feedClientFilterPanelInList =
-      feedClientFilterPanelPortalMode ? feedClientFilterPanel : null
+      feedClientFilterPanelPortalMode && !feedClientFilterPanelHost
+        ? feedClientFilterPanel
+        : null
 
     const feedClientFilterBarEmbedded = (
       <div className="sticky top-0 z-20 border-b border-border/80 bg-background/95 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -5044,6 +5061,7 @@ const NoteList = forwardRef(
     return (
       <div ref={feedRootRef} className="relative">
         <div ref={topRef} className="scroll-mt-[calc(6rem+1px)]" />
+        {feedClientFilterPanelPortaled}
         <NoteFeedProfileContext.Provider value={noteFeedProfileContextValue}>
           {supportTouch ? (
             <PullToRefresh

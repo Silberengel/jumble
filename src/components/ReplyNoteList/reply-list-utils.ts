@@ -8,7 +8,7 @@ import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
 import noteStatsService from '@/services/note-stats.service'
-import client, { eventService } from '@/services/client.service'
+import client, { eventService, queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import type { TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
@@ -62,6 +62,84 @@ function dedupeEventsFromRepliesMap(repliesMap: TRepliesMap): NEvent[] {
   return [...byId.values()]
 }
 
+export function buildNoteStatsReplyIdSet(
+  replies: ReadonlyArray<{ id: string }> | undefined
+): Set<string> {
+  const out = new Set<string>()
+  if (!replies?.length) return out
+  for (const r of replies) {
+    if (r.id) out.add(r.id)
+  }
+  return out
+}
+
+/** Resolve full events for ids already counted in note-stats (map → session LRU). */
+export function resolveEventsForStatsReplyIds(
+  statsReplies: ReadonlyArray<{ id: string }> | undefined,
+  repliesMap: TRepliesMap
+): NEvent[] {
+  if (!statsReplies?.length) return []
+  const fromMap = dedupeEventsFromRepliesMap(repliesMap)
+  const byId = new Map(fromMap.map((e) => [e.id, e]))
+  const out: NEvent[] = []
+  const seen = new Set<string>()
+  for (const { id } of statsReplies) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    const mapped = byId.get(id)
+    if (mapped) {
+      out.push(mapped)
+      continue
+    }
+    const peek = client.peekSessionCachedEvent(id)
+    if (peek) out.push(peek)
+  }
+  return out
+}
+
+/**
+ * Primary reply list for “Antworten”: same rows as note-stats `replies`, then any extra thread rows.
+ * Preserves stats ordering so the badge count matches rendered rows when events are resolvable.
+ */
+export function buildRepliesListAlignedWithNoteStats(
+  statsReplies: ReadonlyArray<{ id: string; pubkey: string; created_at: number }> | undefined,
+  repliesMap: TRepliesMap,
+  threadDisplayed: NEvent[],
+  mutePubkeySet: Set<string>,
+  hideContentMentioningMutedUsers: boolean | undefined
+): NEvent[] {
+  const statsIds = buildNoteStatsReplyIdSet(statsReplies)
+  const byId = new Map<string, NEvent>()
+
+  const keep = (evt: NEvent) => {
+    if (isPollVoteKind(evt)) return false
+    return !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+  }
+
+  for (const evt of resolveEventsForStatsReplyIds(statsReplies, repliesMap)) {
+    if (keep(evt)) byId.set(evt.id, evt)
+  }
+  for (const evt of threadDisplayed) {
+    if (keep(evt)) byId.set(evt.id, evt)
+  }
+
+  const ordered: NEvent[] = []
+  const seen = new Set<string>()
+  for (const meta of statsReplies ?? []) {
+    const evt = byId.get(meta.id)
+    if (!evt || seen.has(evt.id)) continue
+    seen.add(evt.id)
+    ordered.push(evt)
+  }
+  for (const evt of threadDisplayed) {
+    if (seen.has(evt.id) || statsIds.has(evt.id)) continue
+    if (!keep(evt)) continue
+    seen.add(evt.id)
+    ordered.push(evt)
+  }
+  return ordered
+}
+
 /** Replies to show under “Antworten” for the opened note (direct + nested, not sibling branches). */
 export function collectDisplayedThreadReplies(
   opEvent: NEvent,
@@ -69,11 +147,21 @@ export function collectDisplayedThreadReplies(
   repliesMap: TRepliesMap,
   isDiscussionRoot: boolean,
   mutePubkeySet: Set<string>,
-  hideContentMentioningMutedUsers: boolean | undefined
+  hideContentMentioningMutedUsers: boolean | undefined,
+  /** Reply ids already counted on this note in note-stats — always show when loaded. */
+  statsReplyIds?: ReadonlySet<string>
 ): NEvent[] {
   const threadWalk = new Map<string, NEvent>()
   for (const evt of dedupeEventsFromRepliesMap(repliesMap)) {
     threadWalk.set(evt.id.toLowerCase(), evt)
+  }
+  if (statsReplyIds) {
+    for (const id of statsReplyIds) {
+      const key = id.toLowerCase()
+      if (threadWalk.has(key)) continue
+      const peek = client.peekSessionCachedEvent(id)
+      if (peek) threadWalk.set(key, peek)
+    }
   }
 
   if (rootInfo?.type === 'I') {
@@ -84,6 +172,11 @@ export function collectDisplayedThreadReplies(
       if (seen.has(evt.id)) continue
       if (isPollVoteKind(evt)) continue
       if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+      if (statsReplyIds?.has(evt.id)) {
+        seen.add(evt.id)
+        out.push(evt)
+        continue
+      }
       if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) continue
       if (
         opHex &&
@@ -101,8 +194,11 @@ export function collectDisplayedThreadReplies(
   const opHex = openNoteHexId(opEvent)
   if (!opHex) return []
 
+  const opHexLower = opHex.toLowerCase()
+  /** Viewing the thread root itself (kind-1 note or a replaceable article instance). */
   const isThreadRootView =
-    rootInfo?.type === 'E' && rootInfo.id.trim().toLowerCase() === opHex
+    (rootInfo?.type === 'E' && rootInfo.id.trim().toLowerCase() === opHexLower) ||
+    (rootInfo?.type === 'A' && rootInfo.eventId.trim().toLowerCase() === opHexLower)
 
   const out: NEvent[] = []
   const seen = new Set<string>()
@@ -110,6 +206,11 @@ export function collectDisplayedThreadReplies(
     if (seen.has(evt.id)) continue
     if (isPollVoteKind(evt)) continue
     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+    if (statsReplyIds?.has(evt.id)) {
+      seen.add(evt.id)
+      out.push(evt)
+      continue
+    }
     if (rootInfo && !replyMatchesThreadForList(evt, opEvent, rootInfo, isDiscussionRoot, threadWalk)) {
       continue
     }
@@ -157,39 +258,99 @@ export async function loadThreadRepliesFromLocalStores(
   })
 }
 
-/** Resolve reply ids from note-stats via archive + session fetch, then thread-match filter. */
+const STATS_HYDRATE_ARCHIVE_CHUNK = 80
+const STATS_HYDRATE_FETCH_CHUNK = 40
+const STATS_HYDRATE_RELAY_IDS_CHUNK = 200
+
+export type HydrateThreadRepliesFromStatsOpts = {
+  relayUrls?: string[]
+  mutePubkeySet?: Set<string>
+  hideContentMentioningMutedUsers?: boolean | undefined
+}
+
+/**
+ * Resolve reply ids already counted in note-stats (archive, session, fetch, relay `ids` REQ).
+ * Does not re-apply thread-match filters — stats and UI counts must stay aligned.
+ */
 export async function hydrateThreadRepliesFromStats(
   candidates: ReadonlyArray<{ id: string }>,
-  rootInfo: TRootInfo,
-  opEvent: NEvent,
-  isDiscussionRoot: boolean
+  opts?: HydrateThreadRepliesFromStatsOpts
 ): Promise<NEvent[]> {
   if (!candidates.length) return []
 
-  const ids = candidates.map((c) => c.id)
+  const ids = [
+    ...new Set(
+      candidates
+        .map((c) => c.id.trim())
+        .filter((id) => /^[0-9a-f]{64}$/i.test(id))
+    )
+  ]
+  if (!ids.length) return []
+
   const byId = new Map<string, NEvent>()
-  try {
-    const archived = await indexedDb.getArchivedEventsByIds(ids)
-    for (const e of archived) byId.set(e.id, e)
-  } catch {
-    /* optional */
-  }
-  for (const id of ids) {
-    if (byId.has(id)) continue
+
+  for (let i = 0; i < ids.length; i += STATS_HYDRATE_ARCHIVE_CHUNK) {
+    const chunk = ids.slice(i, i + STATS_HYDRATE_ARCHIVE_CHUNK)
     try {
-      const ev = await eventService.fetchEvent(id)
-      if (ev) byId.set(ev.id, ev)
+      const archived = await indexedDb.getArchivedEventsByIds(chunk)
+      for (const e of archived) byId.set(e.id, e)
     } catch {
       /* optional */
     }
   }
 
+  for (const id of ids) {
+    if (byId.has(id)) continue
+    const cached = client.peekSessionCachedEvent(id)
+    if (cached) byId.set(cached.id, cached)
+  }
+
+  const missingAfterLocal = ids.filter((id) => !byId.has(id))
+  for (let i = 0; i < missingAfterLocal.length; i += STATS_HYDRATE_FETCH_CHUNK) {
+    const chunk = missingAfterLocal.slice(i, i + STATS_HYDRATE_FETCH_CHUNK)
+    await Promise.allSettled(
+      chunk.map(async (id) => {
+        try {
+          const ev = await eventService.fetchEvent(id)
+          if (ev) byId.set(ev.id, ev)
+        } catch {
+          /* optional */
+        }
+      })
+    )
+  }
+
+  const relayUrls = (opts?.relayUrls ?? []).filter(Boolean)
+  const missingAfterFetch = ids.filter((id) => !byId.has(id))
+  if (missingAfterFetch.length > 0 && relayUrls.length > 0) {
+    for (let i = 0; i < missingAfterFetch.length; i += STATS_HYDRATE_RELAY_IDS_CHUNK) {
+      const chunk = missingAfterFetch.slice(i, i + STATS_HYDRATE_RELAY_IDS_CHUNK)
+      try {
+        const fromRelay = await queryService.fetchEvents(
+          relayUrls,
+          [{ ids: chunk, limit: chunk.length }],
+          {
+            foreground: true,
+            globalTimeout: 12_000,
+            relayOpSource: 'ReplyNoteList.statsHydrate'
+          }
+        )
+        for (const e of fromRelay) byId.set(e.id, e)
+      } catch {
+        /* optional */
+      }
+    }
+  }
+
   const batch: NEvent[] = []
-  for (const ev of byId.values()) {
+  for (const id of ids) {
+    const ev = byId.get(id)
+    if (!ev) continue
     if (isPollVoteKind(ev)) continue
-    if (rootInfo.type === 'I') {
-      if (!isRssArticleUrlThreadInteraction(ev, rootInfo.id)) continue
-    } else if (!replyMatchesThreadForList(ev, opEvent, rootInfo, isDiscussionRoot)) {
+    if (
+      opts?.mutePubkeySet &&
+      shouldHideThreadResponseEvent(ev, opts.mutePubkeySet, opts.hideContentMentioningMutedUsers)
+    ) {
       continue
     }
     batch.push(ev)
