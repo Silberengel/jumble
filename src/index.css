@@ -102,6 +102,12 @@
       sans-serif;
   }
 
+  @media (max-width: 768px) {
+    .tiptap .ProseMirror {
+      min-height: min(42vh, 20rem);
+    }
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none; /* Internet Explorer 10+ */
     scrollbar-width: none; /* Firefox */

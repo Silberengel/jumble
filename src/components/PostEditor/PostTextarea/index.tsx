@@ -226,18 +226,6 @@ const PostTextarea = forwardRef<
       })
     }, [editor, editorSurfaceClass])
 
-    useEffect(() => {
-      if (!editor || !isSmallScreen) return
-      const scrollEditorIntoView = () => {
-        requestAnimationFrame(() => {
-          editor.view.dom.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-        })
-      }
-      editor.on('focus', scrollEditorIntoView)
-      return () => {
-        editor.off('focus', scrollEditorIntoView)
-      }
-    }, [editor, isSmallScreen])
 
     useImperativeHandle(ref, () => ({
       appendText: (text: string, addNewline = false) => {
@@ -327,8 +315,14 @@ const PostTextarea = forwardRef<
     )
 
     return (
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
-        <div className="flex min-w-0 flex-col gap-2">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className={cn(
+          isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
+        )}
+      >
+        <div className="flex min-w-0 shrink-0 flex-col gap-2">
           <TabsList className="w-auto shrink-0 justify-start">
             <TabsTrigger value="edit" title={t('Edit')}>
               {t('Edit')}
@@ -346,10 +340,16 @@ const PostTextarea = forwardRef<
         <TabsContent
           value="edit"
           forceMount
-          className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+          className={cn(
+            'mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isSmallScreen && 'flex min-h-0 flex-1 flex-col'
+          )}
         >
           {editor ? (
-            <EditorContent className="tiptap" editor={editor} />
+            <EditorContent
+              className={cn('tiptap', isSmallScreen && 'flex min-h-0 flex-1 flex-col')}
+              editor={editor}
+            />
           ) : (
             <div
               className={cn(editorShellClass, 'text-muted-foreground')}

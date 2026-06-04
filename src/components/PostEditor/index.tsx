@@ -18,7 +18,7 @@ import { pubkeyToNpub } from '@/lib/pubkey'
 import postEditor from '@/services/post-editor.service'
 import { Event } from 'nostr-tools'
 import postEditorService from '@/services/post-editor.service'
-import { Dispatch, useEffect, useMemo } from 'react'
+import { Dispatch, useEffect, useMemo, useRef, useState } from 'react'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
@@ -49,6 +49,20 @@ export default function PostEditor({
 }) {
   const { isSmallScreen } = useScreenSize()
   const { isAccountSessionHydrating, isNip07LoginInFlight } = useNostr()
+  /** Lock sheet height at open so the mobile keyboard does not resize/jank the composer. */
+  const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
+  const wasOpenRef = useRef(false)
+
+  useEffect(() => {
+    if (open && isSmallScreen && !wasOpenRef.current) {
+      const vh = window.visualViewport?.height ?? window.innerHeight
+      setMobileSheetHeightPx(Math.round(vh))
+    }
+    if (!open) {
+      setMobileSheetHeightPx(null)
+    }
+    wasOpenRef.current = open
+  }, [open, isSmallScreen])
 
   useEffect(() => {
     if (!open) return
@@ -98,7 +112,12 @@ export default function PostEditor({
     return (
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          className="flex h-[var(--vh,100dvh)] max-h-[var(--vh,100dvh)] w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
+          className="flex w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
+          style={
+            mobileSheetHeightPx != null
+              ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
+              : { height: 'var(--vh, 100dvh)', maxHeight: 'var(--vh, 100dvh)' }
+          }
           side="bottom"
           hideClose
           onInteractOutside={(e) => {
@@ -114,7 +133,7 @@ export default function PostEditor({
             }
           }}
         >
-          <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-2 min-w-0">
+          <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2 min-w-0 overflow-hidden">
             <SheetHeader className="sr-only">
               <SheetTitle>Post Editor</SheetTitle>
               <SheetDescription>Create a new post or reply</SheetDescription>

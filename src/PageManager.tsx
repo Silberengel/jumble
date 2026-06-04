@@ -479,32 +479,8 @@ export function useSmartNoteNavigation() {
     }
     const { noteId } = parsed
 
-    navigationEventStore.clear()
-    if (event) {
-      navigationEventStore.setEvent(event, noteId)
-      client.addEventToCache(event)
-      await prefetchThreadContextForNavigation(event).then((prefetched) => {
-        for (const ev of prefetched) {
-          client.addEventToCache(ev)
-          navigationEventStore.setEvent(ev)
-        }
-      })
-    }
-    // Pre-cache related events (parent, root) and nostr embeds so NotePage avoids skeletons.
-    if (relatedEvents?.length) {
-      for (const ev of relatedEvents) {
-        if (ev && ev !== event) {
-          client.addEventToCache(ev)
-          navigationEventStore.setEvent(ev)
-        }
-      }
-    }
-    if (event) {
-      client.prefetchEmbeddedEventsForParents(
-        [event, ...(relatedEvents ?? []).filter((ev) => ev && ev !== event)]
-      )
-    }
-    
+    primeNoteNavigationCache(noteId, event, relatedEvents)
+
     // Build contextual URL based on current page
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
     
@@ -552,25 +528,7 @@ export function useSmartNoteNavigationOptional() {
       return
     }
     const { noteId } = parsed
-    navigationEventStore.clear()
-    if (event) {
-      navigationEventStore.setEvent(event, noteId)
-      client.addEventToCache(event)
-      await prefetchThreadContextForNavigation(event).then((prefetched) => {
-        for (const ev of prefetched) {
-          client.addEventToCache(ev)
-          navigationEventStore.setEvent(ev)
-        }
-      })
-    }
-    if (relatedEvents?.length) {
-      for (const ev of relatedEvents) {
-        if (ev && ev !== event) {
-          client.addEventToCache(ev)
-          navigationEventStore.setEvent(ev)
-        }
-      }
-    }
+    primeNoteNavigationCache(noteId, event, relatedEvents)
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
     if (isSmallScreen) {
       push(contextualUrl)
@@ -2010,6 +1968,14 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     if (isCurrentPage(secondaryStackRef.current, url)) {
       const top = secondaryStackRef.current[secondaryStackRef.current.length - 1]
+      if (top && !top.component) {
+        const restored = ensureStackItemComponent(top)
+        if (restored.component) {
+          const next = [...secondaryStackRef.current.slice(0, -1), restored]
+          secondaryStackRef.current = next
+          setSecondaryStack(next)
+        }
+      }
       if (isSmallScreen && top) {
         window.history.pushState({ index: top.index, url }, '', url)
       }
@@ -2018,8 +1984,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     recentSecondaryPushRef.current = { url, at: now }
 
-    noteStatsService.setBackgroundStatsPaused(true)
+    // Mobile overlays the feed — keep stats/live updates on the visible timeline.
     if (!isSmallScreen) {
+      noteStatsService.setBackgroundStatsPaused(true)
       client.interruptBackgroundQueries()
     }
 
@@ -2066,6 +2033,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       
       if (isCurrentPage(prevStack, url)) {
         const top = prevStack[prevStack.length - 1]
+        if (top && !top.component) {
+          const restored = ensureStackItemComponent(top)
+          if (restored.component) {
+            if (isSmallScreen) {
+              window.history.pushState({ index: restored.index, url }, '', url)
+            }
+            return [...prevStack.slice(0, -1), restored]
+          }
+        }
         if (isSmallScreen && top) {
           window.history.pushState({ index: top.index, url }, '', url)
         }
@@ -2280,8 +2256,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const mobileSecondaryOverlaysFeed =
     isSmallScreen && secondaryStack.length > 0 && primaryNoteView == null
 
+  const primaryFeedStillVisible =
+    panelMode === 'double' || !primaryObscured || mobileSecondaryOverlaysFeed
+
   useLayoutEffect(() => {
-    noteStatsService.setBackgroundStatsPaused(primaryFrozen)
+    const pauseBackgroundStats = primaryObscured && !primaryFeedStillVisible
+    noteStatsService.setBackgroundStatsPaused(pauseBackgroundStats)
     if (primaryFrozen) {
       extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
       // Keep in-flight REQ on double-pane and mobile feed overlay; interrupt only when primary is unmounted.
@@ -2290,7 +2270,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         client.interruptBackgroundQueries()
       }
     }
-  }, [primaryFrozen, isSmallScreen, panelMode, primaryNoteView])
+  }, [primaryObscured, primaryFeedStillVisible, isSmallScreen, panelMode, primaryNoteView])
 
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({
@@ -2581,12 +2561,57 @@ export function SecondaryPageLink({
   )
 }
 
+/** Re-mount a stack frame when LRU eviction cleared `component` (otherwise the panel is blank). */
+function ensureStackItemComponent(item: TStackItem): TStackItem {
+  if (item.component) return item
+  const { component, ref } = findAndCreateComponent(item.url, item.index)
+  if (!component) return item
+  return { ...item, component, ref }
+}
+
+function primeNoteNavigationCache(
+  noteId: string,
+  event?: Event,
+  relatedEvents?: Event[]
+): void {
+  navigationEventStore.clear()
+  if (event) {
+    navigationEventStore.setEvent(event, noteId)
+    client.addEventToCache(event)
+    void prefetchThreadContextForNavigation(event).then((prefetched) => {
+      for (const ev of prefetched) {
+        client.addEventToCache(ev)
+        navigationEventStore.setEvent(ev)
+      }
+    })
+  }
+  if (relatedEvents?.length) {
+    for (const ev of relatedEvents) {
+      if (ev && ev !== event) {
+        client.addEventToCache(ev)
+        navigationEventStore.setEvent(ev)
+      }
+    }
+  }
+  if (event) {
+    void client.prefetchEmbeddedEventsForParents(
+      [event, ...(relatedEvents ?? []).filter((ev) => ev && ev !== event)]
+    )
+  }
+}
+
 function isCurrentPage(stack: TStackItem[], url: string) {
   const currentPage = stack[stack.length - 1]
   if (!currentPage) return false
 
-  logger.component('PageManager', 'isCurrentPage check', { currentUrl: currentPage.url, newUrl: url, match: currentPage.url === url })
-  return currentPage.url === url
+  const match =
+    currentPage.url === url || secondaryPanelUrlsMatch(currentPage.url, url)
+  logger.component('PageManager', 'isCurrentPage check', {
+    currentUrl: currentPage.url,
+    newUrl: url,
+    match
+  })
+  return match
 }
 
 /** Route elements are `<Suspense><LazyPage /></Suspense>` — props must be applied to the lazy leaf, not Suspense. */

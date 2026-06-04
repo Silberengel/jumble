@@ -2538,8 +2538,10 @@ export default function PostContent({
       <NeventPickerProvider>
         <div
           className={cn(
-            'space-y-2 min-w-0',
-            isSmallScreen && 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain'
+            'min-w-0',
+            isSmallScreen
+              ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain'
+              : 'space-y-2'
           )}
         >
       {/* Dynamic Title based on mode */}
@@ -3377,6 +3379,7 @@ export default function PostContent({
         </div>
       )}
       
+      <div className={cn(isSmallScreen && 'flex min-h-0 min-w-0 flex-1 flex-col')}>
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -3385,7 +3388,11 @@ export default function PostContent({
           parentEvent={isDiscussionThread && !parentEvent ? THREAD_POST_EDITOR_PARENT : parentEvent}
           onSubmit={() => post()}
           className={cn(
-            isPoll ? 'min-h-20' : isSmallScreen ? 'min-h-36' : 'min-h-52',
+            isPoll
+              ? 'min-h-20'
+              : isSmallScreen
+                ? 'min-h-[min(42vh,20rem)]'
+                : 'min-h-52',
             isDiscussionThread && threadErrors.content && 'border-destructive'
           )}
           onUploadStart={handleUploadStart}
@@ -3644,6 +3651,7 @@ export default function PostContent({
             })()
           }
         />
+      </div>
       {isDiscussionThread && !parentEvent && (
         <div className="flex min-w-0 flex-col gap-1">
           {threadErrors.content && <p className="text-sm text-destructive">{threadErrors.content}</p>}
