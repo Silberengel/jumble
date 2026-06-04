@@ -3,12 +3,13 @@ import { useFetchRelayInfo } from '@/hooks'
 import { useRelaySessionStrikeActive } from '@/hooks/useRelaySessionStrikeActive'
 import {
   getRelayIconFallbackGlyph,
+  getRelayIconLucideFallback,
   getRelayIconOverrideSrc,
   relayUrlFingerprintColors
 } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
 import type { TRelayInfo } from '@/types'
-import { Server } from 'lucide-react'
+import { Home, Search, Server } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 /**
@@ -59,8 +60,10 @@ export default function RelayIcon({
   useEffect(() => {
     setIconLoadFailed(false)
   }, [url, relayInfo?.icon])
+  const lucideFallback = useMemo(() => getRelayIconLucideFallback(url), [url])
+
   const iconUrl = useMemo(() => {
-    if (!url) return undefined
+    if (!url || lucideFallback) return undefined
 
     const override = getRelayIconOverrideSrc(url)
     if (override) {
@@ -75,7 +78,7 @@ export default function RelayIcon({
     }
 
     return undefined
-  }, [url, relayInfo])
+  }, [url, relayInfo, lucideFallback])
 
   const fallbackColors = useMemo(() => relayUrlFingerprintColors(url), [url])
   const fallbackGlyph = useMemo(() => getRelayIconFallbackGlyph(url), [url])
@@ -95,7 +98,11 @@ export default function RelayIcon({
         className="bg-transparent"
         style={{ backgroundColor: fallbackColors.background, color: fallbackColors.color }}
       >
-        {fallbackGlyph ? (
+        {lucideFallback === 'search' ? (
+          <Search size={iconSize} className="opacity-95" aria-hidden />
+        ) : lucideFallback === 'home' ? (
+          <Home size={iconSize} className="opacity-95" aria-hidden />
+        ) : fallbackGlyph ? (
           <span
             className="leading-none select-none"
             style={{ fontSize: Math.max(12, iconSize + 4) }}

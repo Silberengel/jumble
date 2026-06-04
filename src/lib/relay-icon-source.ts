@@ -36,6 +36,8 @@ export function isNostrArchivesBrandedRelayUrl(url: string | undefined): boolean
   )
 }
 
+export type RelayIconLucideFallback = 'search' | 'home'
+
 function parseRelayHostname(url: string): string | undefined {
   const raw = (normalizeUrl(url) || url).trim()
   const forParse = raw.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://')
@@ -66,11 +68,31 @@ export function getRelayIconOverrideSrc(url: string | undefined): string | undef
   return undefined
 }
 
+/** Loopback dev/cache relays (localhost, 127.0.0.1, ::1) — not broader LAN ranges. */
+export function isLoopbackRelayUrl(url: string | undefined): boolean {
+  const host = parseRelayHostname(url ?? '')
+  if (!host) return false
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
+/**
+ * Lucide icon for relays that should not use NIP-11 / favicon (shown in {@link RelayIcon}).
+ * Takes precedence over {@link getRelayIconOverrideSrc} and NIP-11 `icon`.
+ */
+export function getRelayIconLucideFallback(url: string | undefined): RelayIconLucideFallback | undefined {
+  const host = parseRelayHostname(url ?? '')
+  if (!host) return undefined
+  if (host === 'search.nos.today') return 'search'
+  if (isLoopbackRelayUrl(url)) return 'home'
+  return undefined
+}
+
 /**
  * Unicode fallback when NIP-11 / favicon is missing or failed to load (shown in {@link RelayIcon}).
  * Sovbit hosts use {@link getRelayIconOverrideSrc} favicons instead; purplepag uses the purple circle.
  */
 export function getRelayIconFallbackGlyph(url: string | undefined): string | undefined {
+  if (getRelayIconLucideFallback(url)) return undefined
   const host = parseRelayHostname(url ?? '')
   if (!host) return undefined
   if (host === 'purplepag.es') return '🟣'

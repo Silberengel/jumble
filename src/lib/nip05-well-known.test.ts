@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { nip19 } from 'nostr-tools'
-import { parseNip05NamePubkeysFromWellKnownJson } from '@/lib/nip05'
+import {
+  getWellKnownNip05Url,
+  parseNip05NamePubkeysFromWellKnownJson,
+  verifyNip05AgainstWellKnown
+} from '@/lib/nip05'
 
 const THEFOREST_WELL_KNOWN = {
   names: {
@@ -27,6 +31,44 @@ const THEFOREST_WELL_KNOWN = {
     metoo: ['wss://nostr21.com']
   }
 } as const
+
+const SILBERENGEL_HEX = 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1'
+
+describe('verifyNip05AgainstWellKnown', () => {
+  it('fails on nostr.land-style empty full document', () => {
+    const base = { isVerified: false, nip05Name: 'silberengel', nip05Domain: 'nostr.land' }
+    const out = verifyNip05AgainstWellKnown(
+      { names: {}, relays: {} },
+      'silberengel',
+      SILBERENGEL_HEX,
+      base
+    )
+    expect(out.isVerified).toBe(false)
+  })
+
+  it('verifies with name-scoped document (nostr.land ?name= response)', () => {
+    const base = { isVerified: false, nip05Name: 'silberengel', nip05Domain: 'nostr.land' }
+    const out = verifyNip05AgainstWellKnown(
+      {
+        names: { silberengel: SILBERENGEL_HEX },
+        relays: { silberengel: ['wss://nostr.land'] }
+      },
+      'silberengel',
+      SILBERENGEL_HEX,
+      base
+    )
+    expect(out.isVerified).toBe(true)
+    expect(out.relays).toEqual(['wss://nostr.land'])
+  })
+})
+
+describe('getWellKnownNip05Url', () => {
+  it('appends name query per NIP-05', () => {
+    expect(getWellKnownNip05Url('nostr.land', 'silberengel')).toBe(
+      'https://nostr.land/.well-known/nostr.json?name=silberengel'
+    )
+  })
+})
 
 describe('parseNip05NamePubkeysFromWellKnownJson', () => {
   it('parses theforest.nostr1.com well-known names', () => {

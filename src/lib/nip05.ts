@@ -18,7 +18,7 @@ type TVerifyNip05Result = {
 }
 
 /** Bumps when verification rules change so LRU does not serve stale false negatives. */
-const VERIFY_CACHE_SCHEMA = 7
+const VERIFY_CACHE_SCHEMA = 8
 
 /** Bumps when well-known fetch/parse rules change so stale empty cache entries are not reused. */
 const WELL_KNOWN_CACHE_SCHEMA = 5
@@ -239,23 +239,19 @@ const verifyNip05ResultCache = new LRUCache<string, TVerifyNip05Result>({
   }
 })
 
-async function _verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05Result> {
-  const nip05Str = asNip05LookupString(nip05).trim()
-  const split = splitNip05Identifier(nip05Str)
-  const nip05Name = split?.name ?? ''
-  const nip05Domain = split?.domain ?? ''
-  const result: TVerifyNip05Result = { isVerified: false, nip05Name, nip05Domain }
-  const userHex = normalizePubkeyForNip05Lookup(pubkey)
-  if (!split || !userHex) return result
-
-  const json = await fetchWellKnownNostrJson(nip05Domain, nip05Name)
-  if (!json) return result
+export function verifyNip05AgainstWellKnown(
+  json: Record<string, unknown> | null,
+  nip05Name: string,
+  userHex: string,
+  base: TVerifyNip05Result
+): TVerifyNip05Result {
+  if (!json) return base
 
   const names = json.names as Record<string, unknown> | undefined
-  if (!names || typeof names !== 'object') return result
+  if (!names || typeof names !== 'object') return base
 
   const resolved = resolveNamesEntry(names, nip05Name, userHex)
-  if (!resolved || !hexPubkeysEqual(resolved.pubkey, userHex)) return result
+  if (!resolved || !hexPubkeysEqual(resolved.pubkey, userHex)) return base
 
   const relays = json.relays as Record<string, unknown> | undefined
   const relayList = pickRelayListForPubkey(
@@ -266,10 +262,32 @@ async function _verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05
     names
   )
   return {
-    ...result,
+    ...base,
     isVerified: true,
     relays: Array.isArray(relayList) ? (relayList as string[]) : undefined
   }
+}
+
+async function _verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05Result> {
+  const nip05Str = asNip05LookupString(nip05).trim()
+  const split = splitNip05Identifier(nip05Str)
+  const nip05Name = split?.name ?? ''
+  const nip05Domain = split?.domain ?? ''
+  const result: TVerifyNip05Result = { isVerified: false, nip05Name, nip05Domain }
+  const userHex = normalizePubkeyForNip05Lookup(pubkey)
+  if (!split || !userHex) return result
+
+  const fullDoc = await getOrFetchWellKnownJsonForDomain(nip05Domain)
+  let verified = verifyNip05AgainstWellKnown(fullDoc, nip05Name, userHex, result)
+  if (verified.isVerified) return verified
+
+  // NIP-05: dynamic hosts (e.g. nostr.land) only include the user when `?name=` is set.
+  // Do not cache these responses — they are not a full domain listing.
+  if (nip05Name) {
+    const scoped = await fetchWellKnownNostrJsonOnce(nip05Domain, nip05Name)
+    verified = verifyNip05AgainstWellKnown(scoped, nip05Name, userHex, result)
+  }
+  return verified
 }
 
 export async function verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05Result> {
@@ -406,7 +424,7 @@ async function fetchWellKnownNostrJsonOnce(
   return null
 }
 
-/** Always fetch the full domain document (never `?name=` — partial responses must not poison domain cache). */
+/** Full domain document for listing/cache (no `?name=` — partial responses must not poison domain cache). */
 async function fetchWellKnownFullDocument(domain: string): Promise<Record<string, unknown> | null> {
   return fetchWellKnownNostrJsonOnce(domain, undefined)
 }
@@ -437,8 +455,8 @@ async function getOrFetchWellKnownJsonForDomain(
   return inflight
 }
 
-/** Fetch `/.well-known/nostr.json` for a domain (full document; `name` is resolved locally). */
-async function fetchWellKnownNostrJson(domain: string, _name?: string): Promise<Record<string, unknown> | null> {
+/** Fetch full `/.well-known/nostr.json` for a domain (domain listing / relay discovery). */
+async function fetchWellKnownNostrJson(domain: string): Promise<Record<string, unknown> | null> {
   return getOrFetchWellKnownJsonForDomain(domain)
 }
 
