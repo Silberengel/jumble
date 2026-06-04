@@ -4214,48 +4214,54 @@ class ClientService extends EventTarget {
       ? AbortSignal.any([runAbort.signal, externalSignal])
       : runAbort.signal
 
-    merge(await this.searchProfilesFromLocal(q, limit))
-    if (isStale()) return out.slice(0, limit)
-    emit()
-    if (out.length >= limit) return out.slice(0, limit)
+    const relayUrls = this.profileRelaySearchUrls()
+    const indexUrls = this.nip50ProfileIndexRelayUrls()
 
-    if (q.length >= 2 && nostrArchivesApi.isAvailable()) {
-      const suggestRes = await nostrArchivesApi.searchSuggest(q, Math.min(limit, 10))
-      if (!isStale() && suggestRes.ok) {
-        merge(archivesMetadataListToProfiles(suggestRes.data.suggestions))
+    const localPromise = this.searchProfilesFromLocal(q, limit)
+    const profileRelayPromise = this.searchProfiles(
+      relayUrls,
+      { search: q, limit },
+      {
+        relaysOnly: true,
+        includeTagFilters: false,
+        signal: relaySignal,
+        eoseTimeout: 6_000,
+        globalTimeout: 9_000
       }
-    }
-    if (isStale()) return out.slice(0, limit)
-    emit()
-    if (out.length >= limit) return out.slice(0, limit)
+    ).catch(() => [] as TProfile[])
+    const archivesPromise =
+      q.length >= 2 && nostrArchivesApi.isAvailable()
+        ? nostrArchivesApi.searchSuggest(q, Math.min(limit, 10))
+        : Promise.resolve({ ok: false as const, reason: 'disabled' as const })
 
-    const needAfterLocal = limit - out.length
-    merge(
-      await this.searchProfiles(
-        this.profileRelaySearchUrls(),
-        { search: q, limit: needAfterLocal },
-        {
-          relaysOnly: true,
-          includeTagFilters: false,
-          signal: relaySignal,
-          eoseTimeout: 6_000,
-          globalTimeout: 9_000
-        }
-      )
-    )
+    const [localProfiles, profileRelayProfiles, archivesRes] = await Promise.all([
+      localPromise,
+      profileRelayPromise,
+      archivesPromise
+    ])
+
+    merge(localProfiles)
+    if (!isStale() && archivesRes.ok) {
+      merge(archivesMetadataListToProfiles(archivesRes.data.suggestions))
+    }
+    merge(profileRelayProfiles)
     if (isStale()) return out.slice(0, limit)
     emit()
     if (out.length >= limit) return out.slice(0, limit)
     if (out.length > 0) return out.slice(0, limit)
 
-    const indexUrls = this.nip50ProfileIndexRelayUrls()
     if (indexUrls.length > 0) {
       merge(
         await this.searchProfiles(
           indexUrls,
           { search: q, limit },
-          { signal: relaySignal, includeTagFilters: true }
-        )
+          {
+            signal: relaySignal,
+            includeTagFilters: true,
+            eoseTimeout: 5_000,
+            globalTimeout: 12_000
+          }
+        ).catch(() => [] as TProfile[])
       )
       if (!isStale()) emit()
     }
@@ -4407,10 +4413,17 @@ class ClientService extends EventTarget {
     }
 
     const updateIfNeeded = () => {
-      if (onUpdate && out.length > 0) {
-        onUpdate([...out])
-      }
+      if (onUpdate) onUpdate([...out])
     }
+
+    const profileRelayPromise =
+      q.length >= 1
+        ? this.searchProfiles(
+            this.profileRelaySearchUrls(),
+            { search: q, limit },
+            { relaysOnly: true, includeTagFilters: false, eoseTimeout: 6_000, globalTimeout: 9_000 }
+          ).catch(() => [] as TProfile[])
+        : Promise.resolve([] as TProfile[])
 
     const matchProfileText = (p: TProfile) =>
       ((p.username ?? '') + ' ' + (p.original_username ?? '') + ' ' + (p.nip05 ?? '')).toLowerCase()
@@ -4507,14 +4520,10 @@ class ClientService extends EventTarget {
       return out
     }
 
-    // 3. Profile relays only (purplepag.es, profiles.nostr1.com, …) — not NIP-50 index relays.
+    // 3. Profile relays (started in parallel with local + follow merge above).
     if (q.length >= 1 && out.length < limit) {
       try {
-        const relayProfiles = await this.searchProfiles(
-          this.profileRelaySearchUrls(),
-          { search: q, limit: limit - out.length },
-          { relaysOnly: true, includeTagFilters: false, eoseTimeout: 6_000, globalTimeout: 9_000 }
-        )
+        const relayProfiles = await profileRelayPromise
         for (const p of relayProfiles) {
           const npub = pubkeyToNpub(p.pubkey)
           if (!npub) continue
@@ -4531,7 +4540,10 @@ class ClientService extends EventTarget {
       const indexUrls = this.nip50ProfileIndexRelayUrls()
       if (indexUrls.length > 0) {
         try {
-          const indexProfiles = await this.searchProfiles(indexUrls, { search: q, limit })
+          const indexProfiles = await this.searchProfiles(indexUrls, { search: q, limit }, {
+            eoseTimeout: 5_000,
+            globalTimeout: 12_000
+          })
           for (const p of indexProfiles) {
             const npub = pubkeyToNpub(p.pubkey)
             if (!npub) continue
@@ -4594,17 +4606,22 @@ class ClientService extends EventTarget {
     if (remaining <= 0) return out
 
     const npubs = await this.searchNpubsFromLocal(q, remaining)
+    const pkBatch: string[] = []
     for (const npub of npubs) {
-      let pkHex: string
       try {
-        pkHex = userIdToPubkey(npub).toLowerCase()
+        const pkHex = userIdToPubkey(npub).toLowerCase()
+        if (!seen.has(pkHex)) pkBatch.push(pkHex)
       } catch {
         continue
       }
-      if (seen.has(pkHex)) continue
-      const p = await this.replaceableEventService.fetchProfile(npub)
-      if (!p) continue
-      seen.add(pkHex)
+    }
+    if (pkBatch.length === 0) return out
+
+    const profiles = await this.fetchProfilesForPubkeys(pkBatch.slice(0, remaining))
+    for (const p of profiles) {
+      const pk = p.pubkey.toLowerCase()
+      if (seen.has(pk)) continue
+      seen.add(pk)
       out.push(p)
       if (out.length >= limit) break
     }

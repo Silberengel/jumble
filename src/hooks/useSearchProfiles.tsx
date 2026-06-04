@@ -64,7 +64,13 @@ export function useSearchProfiles(
       }
     }
 
-    void run()
+    const wallTimeout = window.setTimeout(() => {
+      if (!cancelled && !ac.signal.aborted) setIsFetching(false)
+    }, 20_000)
+
+    void run().finally(() => {
+      window.clearTimeout(wallTimeout)
+    })
     return () => {
       cancelled = true
       if (partialTimerRef.current) clearTimeout(partialTimerRef.current)

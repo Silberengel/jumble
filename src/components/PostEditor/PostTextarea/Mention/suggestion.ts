@@ -22,6 +22,7 @@ export const OPEN_NEVENT_PICKER_EVENT = 'open-nevent-picker'
 // Shared state for incremental updates
 let currentComponent: ReactRenderer<MentionListHandle, MentionListProps> | undefined
 let currentQuery = ''
+let pendingMentionItems: MentionListItem[] | null = null
 let backgroundSearchController: AbortController | null = null
 let mentionSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let mentionSearchGeneration = 0
@@ -100,8 +101,11 @@ const suggestion = {
         currentQuery = q
 
         const updateComponent = (npubs: string[]) => {
-          if (currentComponent && currentQuery === q && generation === mentionSearchGeneration) {
+          if (generation !== mentionSearchGeneration || currentQuery !== q) return
+          pendingMentionItems = npubs
+          if (currentComponent) {
             currentComponent.updateProps({ items: npubs })
+            pendingMentionItems = null
           }
         }
 
@@ -150,6 +154,11 @@ const suggestion = {
         
         // Store component reference for incremental updates
         currentComponent = component
+
+        if (pendingMentionItems) {
+          component.updateProps({ items: pendingMentionItems })
+          pendingMentionItems = null
+        }
 
         if (!props.clientRect) {
           return
@@ -206,6 +215,7 @@ const suggestion = {
         }
         currentComponent = undefined
         currentQuery = ''
+        pendingMentionItems = null
         
         if (popup[0]) {
           popup[0].destroy()
