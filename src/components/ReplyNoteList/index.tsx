@@ -490,6 +490,8 @@ function ReplyNoteList({
   ])
 
   const [loading, setLoading] = useState<boolean>(false)
+  /** Bumped when thread relay URLs are known — re-runs stats id hydration with inbox relays. */
+  const [threadRelaysRevision, setThreadRelaysRevision] = useState(0)
   const [showCount, setShowCount] = useState(THREAD_REPLY_SHOW_COUNT)
   const [highlightReplyId, setHighlightReplyId] = useState<string | undefined>(undefined)
   const replyRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -500,6 +502,7 @@ function ReplyNoteList({
 
   useEffect(() => {
     statsHydratedReplyIdsRef.current.clear()
+    setThreadRelaysRevision(0)
   }, [event.id])
 
   useEffect(() => {
@@ -520,11 +523,14 @@ function ReplyNoteList({
     )
     if (candidates.length === 0) return
 
+    const relayUrls = threadRelayUrlsRef.current
+    if (!relayUrls.length) return
+
     let cancelled = false
     ;(async () => {
       for (const { id } of candidates) statsHydratedReplyIdsRef.current.add(id)
       const batch = await hydrateThreadRepliesFromStats(candidates, {
-        relayUrls: threadRelayUrlsRef.current,
+        relayUrls,
         mutePubkeySet,
         hideContentMentioningMutedUsers
       })
@@ -547,7 +553,8 @@ function ReplyNoteList({
     addReplies,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
-    refreshToken
+    refreshToken,
+    threadRelaysRevision
   ])
 
   /** When stats counted many replies but the thread REQ returned few, run the same social filters as note-stats. */
@@ -695,12 +702,17 @@ function ReplyNoteList({
       // Check cache next — discussion cache merges with relay results
       const cachedData = discussionFeedCache.getCachedReplies(rootInfo)
       const hasCache = cachedData !== null
+      const existingReplyCount = [...repliesMap.values()].reduce((n, b) => n + b.events.length, 0)
+      const showLoadingIndicator =
+        existingReplyCount === 0 && !(hasCache && cachedData && cachedData.length > 0)
 
       if (hasCache && cachedData) {
         addReplies(cachedData)
-        setLoading(false)
-      } else {
+      }
+      if (showLoadingIndicator) {
         setLoading(true)
+      } else {
+        setLoading(false)
       }
 
       try {
@@ -727,6 +739,7 @@ function ReplyNoteList({
       async function fetchFromRelays() {
         if (!rootInfo) return // Type guard
 
+        const streamWalk = new Map<string, NEvent>()
         try {
           // READ from: thread hints, author/user NIP-65, favorites, cache — then DEFAULT_FAVORITE_RELAYS fallback.
           const opAuthorPubkey = rootInfo.type === 'E' || rootInfo.type === 'A' ? rootInfo.pubkey : undefined
@@ -789,6 +802,7 @@ function ReplyNoteList({
             )
           )
           threadRelayUrlsRef.current = relayUrlsForThreadReq
+          setThreadRelaysRevision((n) => n + 1)
           const recipientPubkey = event.pubkey
 
           // Stream replies as relays return them (aggr is first in the list) instead of waiting for full EOSE.
@@ -804,16 +818,17 @@ function ReplyNoteList({
             }
             if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
               return
-            if (statsIdsStream.size > 0) {
-              if (
-                !statsIdsStream.has(evt.id) &&
-                !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot)
-              ) {
-                return
-              }
+            streamWalk.set(evt.id.toLowerCase(), evt)
+            if (statsIdsStream.has(evt.id)) {
+              addReplies([evt])
+              setLoading(false)
+              return
+            }
+            if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, streamWalk)) {
+              return
             }
             addReplies([evt])
-            if (!hasCache) setLoading(false)
+            setLoading(false)
           }
 
           const superchatFilters = buildThreadSuperchatPriorityFilters({
@@ -941,9 +956,22 @@ function ReplyNoteList({
             }, 0)
           }
 
-          if (!hasCache) {
-            // No cache: stop loading after adding replies
-            setLoading(false)
+          const statsAfterFetch = noteStatsService.getNoteStats(event.id)?.replies
+          if (statsAfterFetch?.length) {
+            const resolvedIds = new Set(mergedForUi.map((e) => e.id))
+            const missingStats = statsAfterFetch.filter(
+              (r) => !resolvedIds.has(r.id) && !client.peekSessionCachedEvent(r.id)
+            )
+            if (missingStats.length > 0) {
+              const hydrated = await hydrateThreadRepliesFromStats(missingStats, {
+                relayUrls: relayUrlsForThreadReq,
+                mutePubkeySet,
+                hideContentMentioningMutedUsers
+              })
+              if (fetchGeneration === replyFetchGenRef.current && hydrated.length > 0) {
+                addReplies(hydrated)
+              }
+            }
           }
 
           // Second pass for URL threads: fetch replies to individual comments that may omit the
@@ -1068,9 +1096,8 @@ function ReplyNoteList({
           }
         } catch (error) {
           logger.error('[ReplyNoteList] Error fetching replies:', error)
-          if (fetchGeneration !== replyFetchGenRef.current) return
-          if (!hasCache) {
-            // Only set loading to false if we don't have cache to fall back on
+        } finally {
+          if (fetchGeneration === replyFetchGenRef.current) {
             setLoading(false)
           }
         }

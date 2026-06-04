@@ -515,7 +515,8 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr.land',
   'wss://nostr.wine',
   'wss://nostr21.com',
-  'wss://primus.nostr1.com'
+  'wss://primus.nostr1.com',
+  'wss://nostr.sovbit.host'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -557,15 +558,8 @@ export const NOSTR_ARCHIVES_API_RATE_LIMIT_PER_MIN = 100
 export const SEARCHABLE_RELAY_URLS = [
   NOSTR_ARCHIVES_SEARCH_RELAY_URL,
   'wss://search.nos.today',
-  'wss://nostr.wine',
   'wss://relay.noswhere.com',
-  'wss://nostr-pub.wellorder.net',
-  'wss://relay.damus.io',
-  'wss://theforest.nostr1.com',
-  'wss://nostr.land',
-  'wss://relay.primal.net',
-  'wss://nos.lol',
-  'wss://thecitadel.nostr1.com'
+  'wss://nostr-pub.wellorder.net'
 ]
 
 /**

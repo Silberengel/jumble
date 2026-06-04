@@ -50,11 +50,8 @@ export function AccountQuickSwitchMenuItems({ onAfterSwitch }: { onAfterSwitch?:
 
     if (isRedundantAccountPick(act, account)) {
       if (account?.signerType === 'npub' && act.signerType === 'nip-07') {
-        const switched = await switchAccount(act)
-        if (switched) {
-          onAfterSwitch?.()
-          return
-        }
+        // switchAccount may return a pubkey even when it fell back to read-only npub — always try reconnect.
+        await switchAccount(act)
         const ok = await retryNip07SignerForPreferredAccount()
         if (ok) {
           toast.success(t('accountSwitch.extensionConnected'))

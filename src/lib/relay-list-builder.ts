@@ -13,6 +13,7 @@ import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from 
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
+import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
@@ -737,7 +738,18 @@ export async function buildReplyReadRelayList(
     includeProfileFetchRelays: useGlobal,
     blockedRelays
   })
-  return prependAggrForEventLookupRelayUrls(
-    mergeRelayUrlLayers([scoped, defaultFavoriteRelaysForViewer(useGlobal)], blockedRelays)
-  )
+  const layers: string[][] = [threadRelayHints]
+  if (userPubkey) {
+    try {
+      const rl = await client.peekRelayListFromStorage(userPubkey)
+      const cache = await getCacheRelayUrls(userPubkey).catch(() => [] as string[])
+      const inbox = collectUserReadInboxUrls(rl ?? undefined, cache)
+      if (inbox.length > 0) layers.push(inbox)
+    } catch {
+      /* inbox tier optional */
+    }
+  }
+  layers.push(scoped)
+  layers.push(defaultFavoriteRelaysForViewer(useGlobal))
+  return prependAggrForEventLookupRelayUrls(mergeRelayUrlLayers(layers, blockedRelays))
 }

@@ -1,3 +1,4 @@
+import { NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
 import { normalizeUrl } from '@/lib/url'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 
@@ -14,10 +15,26 @@ export const NOSTR_SOVBIT_ICON_SRC = 'https://nostr.sovbit.host/favicon.ico'
 export const FREELAY_SOVBIT_ICON_SRC = 'https://freelay.sovbit.host/favicon.ico'
 
 /**
- * Nostr Archives front-site favicon for trending shards and related relay hosts.
+ * Nostr Archives front-site favicon for trending shards, search relay, and related hosts.
  * @see https://nostrarchives.com/
  */
 export const NOSTRARCHIVES_SITE_ICON_SRC = 'https://nostrarchives.com/favicon.ico'
+
+/** Same branding as Wisp trending — nostrarchives.com favicon in {@link RelayIcon}. */
+export function isNostrArchivesBrandedRelayUrl(url: string | undefined): boolean {
+  if (!url) return false
+  if (isWispTrendingNotesRelayUrl(url)) return true
+  const norm = (normalizeUrl(url) || url).trim().toLowerCase()
+  if (norm === (normalizeUrl(NOSTR_ARCHIVES_SEARCH_RELAY_URL) || NOSTR_ARCHIVES_SEARCH_RELAY_URL).toLowerCase()) {
+    return true
+  }
+  const host = parseRelayHostname(url)
+  return (
+    host === 'feeds.nostrarchives.com' ||
+    host === 'nostrarchives.com' ||
+    host === 'search.nostrarchives.com'
+  )
+}
 
 function parseRelayHostname(url: string): string | undefined {
   const raw = (normalizeUrl(url) || url).trim()
@@ -43,11 +60,7 @@ export function getRelayIconOverrideSrc(url: string | undefined): string | undef
   if (host === 'freelay.sovbit.host') {
     return FREELAY_SOVBIT_ICON_SRC
   }
-  if (
-    isWispTrendingNotesRelayUrl(url) ||
-    host === 'feeds.nostrarchives.com' ||
-    host === 'nostrarchives.com'
-  ) {
+  if (isNostrArchivesBrandedRelayUrl(url)) {
     return NOSTRARCHIVES_SITE_ICON_SRC
   }
   return undefined

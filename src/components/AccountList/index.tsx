@@ -57,13 +57,13 @@ export default function AccountList({
               if (isRedundantAccountPick(act, account)) {
                 if (account?.signerType === 'npub' && act.signerType === 'nip-07') {
                   setSwitchingAccount(act)
-                  const switched = await switchAccount(act)
-                  if (switched) {
+                  await switchAccount(act)
+                  const ok = await retryNip07SignerForPreferredAccount()
+                  if (ok) {
+                    toast.success(t('accountSwitch.extensionConnected'))
                     afterSwitch()
                   } else {
-                    const ok = await retryNip07SignerForPreferredAccount()
-                    if (ok) toast.success(t('accountSwitch.extensionConnected'))
-                    else toast.error(t('accountSwitch.extensionRetryFailed'))
+                    toast.error(t('accountSwitch.extensionRetryFailed'))
                   }
                   setSwitchingAccount(null)
                 }

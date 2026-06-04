@@ -161,8 +161,7 @@ export default function StoredAccountSwitchSelect({
         if (account?.signerType === 'npub' && nextAccount.signerType === 'nip-07') {
           setSwitchingKey(accountPointerKey(nextAccount))
           try {
-            const switched = await switchAccount(nextAccount)
-            if (switched) return
+            await switchAccount(nextAccount)
             const ok = await retryNip07SignerForPreferredAccount()
             if (ok) toast.success(t('accountSwitch.extensionConnected'))
             else toast.error(t('accountSwitch.extensionRetryFailed'))
