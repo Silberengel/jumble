@@ -5,7 +5,14 @@ export type TArchivesApiResult<T> =
   | { ok: true; data: T }
   | {
       ok: false
-      reason: 'disabled' | 'circuit_open' | 'rate_limited' | 'network' | 'http' | 'parse'
+      reason:
+        | 'disabled'
+        | 'circuit_open'
+        | 'rate_limited'
+        | 'network'
+        | 'http'
+        | 'not_found'
+        | 'parse'
       status?: number
     }
 

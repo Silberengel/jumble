@@ -27,6 +27,18 @@ const CIRCUIT_FAILURE_THRESHOLD = 2
 const CIRCUIT_COOLDOWN_MS = 60_000
 const REQUEST_TIMEOUT_MS = 12_000
 
+/** Whether a failed response indicates the Archives API is down (vs. missing data or bad input). */
+export function isArchivesApiCircuitFailure(
+  reason: 'network' | 'parse' | 'http',
+  status?: number
+): boolean {
+  if (reason === 'network' || reason === 'parse') return true
+  if (status == null) return true
+  if (status === 404) return false
+  if (status >= 500) return true
+  return false
+}
+
 class NostrArchivesApiService {
   static instance: NostrArchivesApiService
 
@@ -78,9 +90,19 @@ class NostrArchivesApiService {
     this.consecutiveFailures += 1
     if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
       this.circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS
-      logger.info('[nostr-archives] API circuit open', { cooldownMs: CIRCUIT_COOLDOWN_MS })
+      logger.info(
+        '[nostr-archives] API paused after repeated errors — relay fallbacks only; retrying automatically',
+        { failures: this.consecutiveFailures, retryAfterMs: CIRCUIT_COOLDOWN_MS }
+      )
       this.notifyAvailability()
     }
+  }
+
+  /** @internal Vitest only — reset circuit breaker and rate-limit window. */
+  resetForTests(): void {
+    this.requestTimestamps = []
+    this.consecutiveFailures = 0
+    this.circuitOpenUntil = 0
   }
 
   private consumeRateLimit(): boolean {
@@ -120,8 +142,21 @@ class NostrArchivesApiService {
       })
       clearTimeout(timer)
 
+      if (res.status === 404) {
+        logger.debug('[nostr-archives] not indexed in archive (404)', { path })
+        return { ok: false, reason: 'not_found', status: 404 }
+      }
+
       if (!res.ok) {
-        this.recordFailure()
+        if (isArchivesApiCircuitFailure('http', res.status)) {
+          this.recordFailure()
+          logger.warn('[nostr-archives] API error — using relay fallbacks', {
+            path,
+            status: res.status
+          })
+        } else {
+          logger.debug('[nostr-archives] request rejected', { path, status: res.status })
+        }
         return { ok: false, reason: 'http', status: res.status }
       }
 
@@ -132,13 +167,17 @@ class NostrArchivesApiService {
         return { ok: true, data }
       } catch {
         this.recordFailure()
+        logger.warn('[nostr-archives] API returned invalid JSON — using relay fallbacks', {
+          path,
+          status: res.status
+        })
         return { ok: false, reason: 'parse', status: res.status }
       }
     } catch (err) {
       clearTimeout(timer)
       this.recordFailure()
       const aborted = err instanceof Error && err.name === 'AbortError'
-      logger.debug('[nostr-archives] fetch failed', {
+      logger.warn('[nostr-archives] API unreachable — using relay fallbacks', {
         path,
         aborted,
         message: err instanceof Error ? err.message : String(err)
