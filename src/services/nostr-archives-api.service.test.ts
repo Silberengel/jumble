@@ -38,17 +38,34 @@ describe('NostrArchivesApiService circuit breaker', () => {
   })
 
   it('returns not_found for 404 without opening the circuit', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('not found', { status: 404 }))
-    )
+    const fetchMock = vi.fn(async () => new Response('not found', { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
 
     const first = await nostrArchivesApi.getEventById(EVENT_ID)
     const second = await nostrArchivesApi.getEventById(EVENT_ID)
 
     expect(first).toEqual({ ok: false, reason: 'not_found', status: 404 })
     expect(second).toEqual({ ok: false, reason: 'not_found', status: 404 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(nostrArchivesApi.isAvailable()).toBe(true)
+  })
+
+  it('dedupes concurrent getEventById for the same id', async () => {
+    let resolveFetch!: () => void
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = () => resolve(new Response('not found', { status: 404 }))
+        })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const a = nostrArchivesApi.getEventById(EVENT_ID)
+    const b = nostrArchivesApi.getEventById(EVENT_ID)
+    resolveFetch()
+    await Promise.all([a, b])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('opens circuit after repeated 5xx errors', async () => {
@@ -64,5 +81,22 @@ describe('NostrArchivesApiService circuit breaker', () => {
 
     const blocked = await nostrArchivesApi.getEventById(EVENT_ID)
     expect(blocked).toEqual({ ok: false, reason: 'circuit_open' })
+  })
+
+  it('does not open circuit on request timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'))
+          })
+      )
+    )
+
+    await nostrArchivesApi.getEventById(EVENT_ID)
+    await nostrArchivesApi.getEventById(EVENT_ID)
+
+    expect(nostrArchivesApi.isAvailable()).toBe(true)
   })
 })

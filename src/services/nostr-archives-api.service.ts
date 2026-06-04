@@ -21,11 +21,14 @@ import type {
   TArchivesProfileMetadata,
   TArchivesSocialGraph
 } from '@/types/nostr-archives'
+import { LRUCache } from 'lru-cache'
 import type { Event } from 'nostr-tools'
 
 const CIRCUIT_FAILURE_THRESHOLD = 2
 const CIRCUIT_COOLDOWN_MS = 60_000
 const REQUEST_TIMEOUT_MS = 12_000
+/** Skip repeat `/v1/events/{id}` lookups after a 404 for this long (event not in archive). */
+const ARCHIVES_NOT_FOUND_CACHE_TTL_MS = 30 * 60_000
 
 /** Whether a failed response indicates the Archives API is down (vs. missing data or bad input). */
 export function isArchivesApiCircuitFailure(
@@ -39,6 +42,26 @@ export function isArchivesApiCircuitFailure(
   return false
 }
 
+/** Client-side timeout (`AbortController`) — slow response, not necessarily API down. */
+function isFetchAbortError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false
+  const rec = err as { name?: unknown; message?: unknown }
+  const name = typeof rec.name === 'string' ? rec.name : ''
+  const message = typeof rec.message === 'string' ? rec.message : String(err)
+  if (name === 'AbortError') return true
+  return /operation was aborted|aborted/i.test(message)
+}
+
+/** Event id from Archives event lookup paths (`/v1/events/{id}`, interactions, note page). */
+export function eventIdFromArchivesApiPath(path: string): string | undefined {
+  const base = path.split('?')[0] ?? path
+  const event = base.match(/^\/v1\/events\/([0-9a-f]{64})(?:\/interactions)?$/i)
+  if (event) return event[1].toLowerCase()
+  const page = base.match(/^\/v1\/pages\/note\/([0-9a-f]{64})/i)
+  if (page) return page[1].toLowerCase()
+  return undefined
+}
+
 class NostrArchivesApiService {
   static instance: NostrArchivesApiService
 
@@ -46,6 +69,9 @@ class NostrArchivesApiService {
   private consecutiveFailures = 0
   private circuitOpenUntil = 0
   private availabilityListeners = new Set<() => void>()
+  /** Event ids that returned 404 — avoid re-fetching on every thread/feed row. */
+  private notFoundEventUntil = new LRUCache<string, number>({ max: 4096 })
+  private fetchInFlight = new Map<string, Promise<TArchivesApiResult<unknown>>>()
 
   constructor() {
     if (!NostrArchivesApiService.instance) {
@@ -87,6 +113,7 @@ class NostrArchivesApiService {
   }
 
   private recordFailure(): void {
+    if (Date.now() < this.circuitOpenUntil) return
     this.consecutiveFailures += 1
     if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
       this.circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS
@@ -103,6 +130,26 @@ class NostrArchivesApiService {
     this.requestTimestamps = []
     this.consecutiveFailures = 0
     this.circuitOpenUntil = 0
+    this.notFoundEventUntil.clear()
+    this.fetchInFlight.clear()
+  }
+
+  private isEventNotFoundCached(eventId: string): boolean {
+    const exp = this.notFoundEventUntil.get(eventId)
+    if (exp == null) return false
+    if (Date.now() >= exp) {
+      this.notFoundEventUntil.delete(eventId)
+      return false
+    }
+    return true
+  }
+
+  private markEventNotFound(eventId: string): void {
+    this.notFoundEventUntil.set(eventId, Date.now() + ARCHIVES_NOT_FOUND_CACHE_TTL_MS)
+  }
+
+  private fetchCacheKey(path: string, init?: RequestInit): string {
+    return `${(init?.method ?? 'GET').toUpperCase()} ${path}`
   }
 
   private consumeRateLimit(): boolean {
@@ -123,6 +170,28 @@ class NostrArchivesApiService {
     if (Date.now() < this.circuitOpenUntil) {
       return { ok: false, reason: 'circuit_open' }
     }
+
+    const eventId = eventIdFromArchivesApiPath(path)
+    if (eventId && this.isEventNotFoundCached(eventId)) {
+      return { ok: false, reason: 'not_found', status: 404 }
+    }
+
+    const key = this.fetchCacheKey(path, init)
+    const inflight = this.fetchInFlight.get(key)
+    if (inflight) return inflight
+
+    const promise = this.fetchJsonNetwork(path, init, eventId).finally(() => {
+      this.fetchInFlight.delete(key)
+    })
+    this.fetchInFlight.set(key, promise)
+    return promise
+  }
+
+  private async fetchJsonNetwork(
+    path: string,
+    init: RequestInit | undefined,
+    eventId: string | undefined
+  ): Promise<TArchivesApiResult<unknown>> {
     if (!this.consumeRateLimit()) {
       return { ok: false, reason: 'rate_limited' }
     }
@@ -143,6 +212,7 @@ class NostrArchivesApiService {
       clearTimeout(timer)
 
       if (res.status === 404) {
+        if (eventId) this.markEventNotFound(eventId)
         logger.debug('[nostr-archives] not indexed in archive (404)', { path })
         return { ok: false, reason: 'not_found', status: 404 }
       }
@@ -175,11 +245,17 @@ class NostrArchivesApiService {
       }
     } catch (err) {
       clearTimeout(timer)
+      const aborted = isFetchAbortError(err)
+      if (aborted) {
+        logger.debug('[nostr-archives] request timed out — using relay fallbacks', {
+          path,
+          timeoutMs: REQUEST_TIMEOUT_MS
+        })
+        return { ok: false, reason: 'timeout' }
+      }
       this.recordFailure()
-      const aborted = err instanceof Error && err.name === 'AbortError'
       logger.warn('[nostr-archives] API unreachable — using relay fallbacks', {
         path,
-        aborted,
         message: err instanceof Error ? err.message : String(err)
       })
       return { ok: false, reason: 'network' }

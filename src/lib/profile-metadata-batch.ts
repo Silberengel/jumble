@@ -6,6 +6,7 @@ import {
 } from '@/lib/profile-batch-coordinator'
 import client from '@/services/client.service'
 import nostrArchivesApi from '@/services/nostr-archives-api.service'
+import type { TArchivesApiResult, TArchivesProfileMetadata } from '@/types/nostr-archives'
 import type { TProfile } from '@/types'
 
 function normalizeHexPubkeys(pubkeys: readonly string[]): string[] {
@@ -29,9 +30,20 @@ function placeholderProfile(pubkey: string): TProfile {
   }
 }
 
+function mergeArchivesProfiles(
+  byPk: Map<string, TProfile>,
+  res: TArchivesApiResult<{ profiles: TArchivesProfileMetadata[] }>
+): void {
+  if (!res.ok) return
+  for (const meta of res.data.profiles) {
+    const profile = archivesMetadataToProfile(meta)
+    if (profile) byPk.set(profile.pubkey, profile)
+  }
+}
+
 /**
- * Batch profile hydration: Nostr Archives `POST /v1/profiles/metadata` first, then
- * {@link client.fetchProfilesForPubkeys} for pubkeys Archives did not return.
+ * Batch profile hydration: Nostr Archives `POST /v1/profiles/metadata` and relay fetch run in
+ * parallel so a slow or missing Archives response never blocks relay fallbacks (feeds stay populated).
  */
 export async function fetchProfilesMetadataBatch(pubkeys: readonly string[]): Promise<TProfile[]> {
   const deduped = normalizeHexPubkeys(pubkeys)
@@ -41,21 +53,17 @@ export async function fetchProfilesMetadataBatch(pubkeys: readonly string[]): Pr
   try {
     const byPk = new Map<string, TProfile>()
 
-    if (nostrArchivesApi.isAvailable()) {
-      const res = await nostrArchivesApi.fetchProfilesMetadata(deduped)
-      if (res.ok) {
-        for (const meta of res.data.profiles) {
-          const profile = archivesMetadataToProfile(meta)
-          if (profile) byPk.set(profile.pubkey, profile)
-        }
-      }
-    }
+    const relayPromise = client.fetchProfilesForPubkeys(deduped).catch(() => [] as TProfile[])
+    const archivesPromise = nostrArchivesApi.isAvailable()
+      ? nostrArchivesApi.fetchProfilesMetadata(deduped)
+      : Promise.resolve({ ok: false as const, reason: 'disabled' as const })
 
-    const missing = deduped.filter((pk) => !byPk.has(pk))
-    if (missing.length > 0) {
-      const relayProfiles = await client.fetchProfilesForPubkeys(missing)
-      for (const p of relayProfiles) {
-        const pkNorm = p.pubkey.toLowerCase()
+    const [archivesRes, relayProfiles] = await Promise.all([archivesPromise, relayPromise])
+    mergeArchivesProfiles(byPk, archivesRes)
+
+    for (const p of relayProfiles) {
+      const pkNorm = p.pubkey.toLowerCase()
+      if (!byPk.has(pkNorm)) {
         byPk.set(pkNorm, { ...p, pubkey: pkNorm })
       }
     }

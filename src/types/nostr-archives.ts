@@ -10,6 +10,7 @@ export type TArchivesApiResult<T> =
         | 'circuit_open'
         | 'rate_limited'
         | 'network'
+        | 'timeout'
         | 'http'
         | 'not_found'
         | 'parse'
