@@ -1,5 +1,5 @@
 import { Event, kinds } from 'nostr-tools'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
+import { ExtendedKind, FAST_WRITE_RELAY_URLS, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { collectRecipientInboxUrls, collectSenderOutboxUrls } from '@/lib/public-message-publish-relays'
 import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
@@ -277,7 +277,25 @@ class RelaySelectionService {
       // If no cached relay list event, fetch from relays (which will also cache it)
       if (!relayListEvent) {
         try {
-          relayList = await client.fetchRelayList(pubkey) // Keep using client for relay list merging
+          relayList = await Promise.race([
+            client.fetchRelayList(pubkey),
+            new Promise<TRelayList>((resolve) =>
+              setTimeout(
+                () =>
+                  resolve(
+                    mergeKind10243({
+                      write: [],
+                      read: [],
+                      originalRelays: [],
+                      httpRead: [],
+                      httpWrite: [],
+                      httpOriginalRelays: []
+                    })
+                  ),
+                PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+              )
+            )
+          ])
         } catch (error) {
           logger.warn('Failed to fetch relay list from relays', { error, pubkey })
           relayList = mergeKind10243({

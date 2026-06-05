@@ -476,7 +476,8 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://filter.nostr.wine',
   'wss://primus.nostr1.com',
   'wss://feeds.nostrarchives.com',
-  'wss://spatia-arcana.com'
+  'wss://spatia-arcana.com',
+  'wss://search.nostrarchives.com'
 ]
 
 /**
@@ -572,7 +573,8 @@ export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://relay.damus.io',
   'wss://thecitadel.nostr1.com',
-  'wss://indexer.coracle.social/'
+  'wss://indexer.coracle.social/',
+  'wss://purplepag.es'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

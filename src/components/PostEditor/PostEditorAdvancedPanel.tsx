@@ -76,19 +76,22 @@ export default function PostEditorAdvancedPanel({
     setAddClientTag(storage.getAddClientTag())
   }, [setAddClientTag])
 
-  if (!show) return null
-
   const onAddClientTagChange = (checked: boolean) => {
     storage.setAddClientTag(checked)
     setAddClientTag(checked)
   }
 
+  // Mentions + relay picker must stay mounted when Advanced is collapsed so auto-selection
+  // effects still run (especially on mobile where users often post without opening Advanced).
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-muted/25 p-3">
-      <div>
-        <p className="text-sm font-medium">{t('Advanced')}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{t('Post editor advanced hint')}</p>
-      </div>
+    <div className={cn(!show && 'hidden')} aria-hidden={!show}>
+      <div className="space-y-4 rounded-lg border border-border bg-muted/25 p-3">
+        {show ? (
+          <div>
+            <p className="text-sm font-medium">{t('Advanced')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('Post editor advanced hint')}</p>
+          </div>
+        ) : null}
 
       {showMentionsPicker && setMentions ? (
         <div className="space-y-2">
@@ -142,47 +145,50 @@ export default function PostEditorAdvancedPanel({
         </div>
       ) : null}
 
-      <div className="space-y-4 pt-1 border-t border-border">
-        <div className="space-y-2">
+      {show ? (
+        <div className="space-y-4 pt-1 border-t border-border">
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="add-client-tag" className="text-sm font-normal">
+                {t('Add client tag')}
+              </Label>
+              <Switch
+                id="add-client-tag"
+                checked={addClientTag}
+                onCheckedChange={onAddClientTagChange}
+                disabled={posting}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">{t('Show others this was sent via Imwald')}</p>
+          </div>
+
           <div className="flex items-center space-x-2">
-            <Label htmlFor="add-client-tag" className="text-sm font-normal">
-              {t('Add client tag')}
+            <Label htmlFor="add-nsfw-tag" className="text-sm font-normal">
+              {t('NSFW')}
             </Label>
             <Switch
-              id="add-client-tag"
-              checked={addClientTag}
-              onCheckedChange={onAddClientTagChange}
+              id="add-nsfw-tag"
+              checked={isNsfw}
+              onCheckedChange={setIsNsfw}
               disabled={posting}
             />
           </div>
-          <p className="text-muted-foreground text-xs">{t('Show others this was sent via Imwald')}</p>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <Label htmlFor="add-nsfw-tag" className="text-sm font-normal">
-            {t('NSFW')}
-          </Label>
-          <Switch
-            id="add-nsfw-tag"
-            checked={isNsfw}
-            onCheckedChange={setIsNsfw}
-            disabled={posting}
-          />
+          <div className="grid gap-2">
+            <Label className="text-sm font-normal">
+              {t('Proof of Work (difficulty {{minPow}})', { minPow })}
+            </Label>
+            <Slider
+              defaultValue={[0]}
+              value={[minPow]}
+              onValueChange={([pow]) => setMinPow(pow)}
+              max={28}
+              step={1}
+              disabled={posting}
+            />
+          </div>
         </div>
-
-        <div className="grid gap-2">
-          <Label className="text-sm font-normal">
-            {t('Proof of Work (difficulty {{minPow}})', { minPow })}
-          </Label>
-          <Slider
-            defaultValue={[0]}
-            value={[minPow]}
-            onValueChange={([pow]) => setMinPow(pow)}
-            max={28}
-            step={1}
-            disabled={posting}
-          />
-        </div>
+      ) : null}
       </div>
     </div>
   )

@@ -86,19 +86,26 @@ export default function PostRelaySelector({
   /** Auto-picked relays from {@link relaySelectionService}; used to detect manual relay-picker changes. */
   const autoSelectedRelayUrlsRef = useRef<string[]>([])
   const [previousSelectableCount, setPreviousSelectableCount] = useState(0)
-  // Generation counter: incremented every time the effect fires; async callback checks whether
-  // it's still the latest invocation before committing state, preventing stale races.
-  const selectionGenRef = useRef(0)
+  const hasManualSelectionRef = useRef(false)
+  const previousSelectableCountRef = useRef(0)
+  const publicLivelyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    hasManualSelectionRef.current = hasManualSelection
+  }, [hasManualSelection])
+
+  useEffect(() => {
+    previousSelectableCountRef.current = previousSelectableCount
+  }, [previousSelectableCount])
 
   useEffect(() => {
     return nip66Service.subscribePublicLivelyUpdated(() => {
-      setPublicLivelyRevision((v) => v + 1)
-    })
-  }, [])
-
-  useEffect(() => {
-    void nip66Service.getPublicLivelyRelayUrls().then(() => {
-      setPublicLivelyRevision((v) => v + 1)
+      if (publicLivelyDebounceRef.current) clearTimeout(publicLivelyDebounceRef.current)
+      // Debounce: NIP-66 can emit many updates during discovery; batch them so selection
+      // is not restarted before the prior run finishes (which left "Loading…" stuck).
+      publicLivelyDebounceRef.current = setTimeout(() => {
+        setPublicLivelyRevision((v) => v + 1)
+      }, 600)
     })
   }, [])
 
@@ -159,6 +166,12 @@ export default function PostRelaySelector({
     return [...new Set(matches)].sort().join('\n')
   }, [postContent, isDiscussionReply, isPublicMessage, mentions])
 
+  /** Stable dep for PM recipient changes — raw `mentions` array identity changes every extract. */
+  const mentionsRelaySignature = useMemo(
+    () => (isPublicMessage && mentions.length > 0 ? [...mentions].sort().join('\n') : ''),
+    [isPublicMessage, mentions]
+  )
+
   // Memoize arrays to prevent unnecessary re-renders
   const memoizedFavoriteRelays = useMemo(() => favoriteRelays, [favoriteRelays])
   const memoizedBlockedRelays = useMemo(() => {
@@ -175,13 +188,13 @@ export default function PostRelaySelector({
   const memoizedRelaySets = useMemo(() => relaySets, [relaySets])
   const memoizedOpenFrom = useMemo(() => openFrom, [openFrom])
 
-  // Single relay-selection effect. The generation counter (selectionGenRef) guards against
-  // stale async completions: if a newer invocation has started, the older one discards its results.
+  // Single relay-selection effect. Cleanup sets `active = false` so superseded runs never
+  // commit stale state; only the latest run clears the loading indicator.
   useEffect(() => {
-    const gen = ++selectionGenRef.current
+    let active = true
+    setIsLoading(true)
 
     const updateRelaySelection = async () => {
-      setIsLoading(true)
       try {
         let userWriteRelays: string[] = []
         if (pubkey && relayList) {
@@ -203,41 +216,43 @@ export default function PostRelaySelector({
           openFrom: memoizedOpenFrom
         })
 
-        // Discard results from a superseded invocation
-        if (gen !== selectionGenRef.current) return
+        if (!active) return
 
         const newSelectableCount = result.selectableRelays.length
-        const selectableRelaysChanged = newSelectableCount !== previousSelectableCount
+        const selectableRelaysChanged = newSelectableCount !== previousSelectableCountRef.current
 
         setSelectableRelays(result.selectableRelays)
         setRelayTypes(result.relayTypes ?? {})
         setPreviousSelectableCount(newSelectableCount)
 
-        if (!hasManualSelection || selectableRelaysChanged) {
+        if (!hasManualSelectionRef.current || selectableRelaysChanged) {
           const cacheRelays = result.selectableRelays.filter(url => isLocalNetworkUrl(url))
           const selectedWithCache = Array.from(new Set([...result.selectedRelays, ...cacheRelays]))
           const capped = capAutoSelectedRelays(result.selectableRelays, selectedWithCache)
           autoSelectedRelayUrlsRef.current = capped
           setSelectedRelayUrls(capped)
           setDescription(describeRelaySelection(capped))
-          if (selectableRelaysChanged && hasManualSelection) {
+          if (selectableRelaysChanged && hasManualSelectionRef.current) {
             setHasManualSelection(false)
           }
         }
       } catch (error) {
-        if (gen !== selectionGenRef.current) return
+        if (!active) return
         logger.error('Failed to update relay selection', { error })
         setSelectableRelays([])
-        if (!hasManualSelection) {
+        if (!hasManualSelectionRef.current) {
           setSelectedRelayUrls([])
           setDescription(t('No relays selected'))
         }
       } finally {
-        if (gen === selectionGenRef.current) setIsLoading(false)
+        if (active) setIsLoading(false)
       }
     }
 
-    updateRelaySelection()
+    void updateRelaySelection()
+    return () => {
+      active = false
+    }
   }, [
     memoizedOpenFrom,
     _parentEvent,
@@ -247,9 +262,10 @@ export default function PostRelaySelector({
     isPublicMessage,
     pubkey,
     relayList,
+    userReadRelaysForSelection,
     isDiscussionReply,
     contentRelaySignature,
-    mentions,
+    mentionsRelaySignature,
     describeRelaySelection,
     addRandomRelaysToPublish,
     publicLivelyRevision,
