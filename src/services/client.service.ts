@@ -165,7 +165,7 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
 import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
-import { collectNip05ValuesFromKind0 } from '@/lib/profile-metadata-search'
+import { collectNip05ValuesFromKind0, profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import { filterRelaysForEventPublish, isReadOnlyRelayUrl } from '@/lib/relay-publish-filter'
@@ -241,6 +241,7 @@ import {
 } from 'nostr-tools'
 import { AbstractRelay } from 'nostr-tools/abstract-relay'
 import indexedDb from './indexed-db.service'
+import postEditorService from './post-editor.service'
 import { preloadGifsIntoIdbCache } from './gif.service'
 import { invalidateArchiveFootprintCache } from './event-archive.service'
 import { notifySessionInteractivePrewarmComplete } from './session-interactive-prewarm-bridge'
@@ -4269,6 +4270,69 @@ class ClientService extends EventTarget {
     return out.slice(0, limit)
   }
 
+  /** Match @-mention query against authors visible in the current session (thread / feed). */
+  private async searchNpubsFromSessionAuthors(query: string, limit: number): Promise<string[]> {
+    const q = query.trim()
+    if (!q || limit <= 0) return []
+
+    const candidatePubkeys = this.eventService.collectSessionMentionCandidatePubkeys()
+    const out: string[] = []
+    const seen = new Set<string>()
+
+    for (const pk of candidatePubkeys) {
+      if (out.length >= limit) break
+      let meta = this.eventService.getSessionMetadataForPubkey(pk)
+      if (!meta) {
+        try {
+          meta = (await indexedDb.getReplaceableEvent(pk, kinds.Metadata)) ?? undefined
+        } catch {
+          meta = undefined
+        }
+      }
+      if (!meta || !profileKind0MatchesSearchQuery(meta, q)) continue
+      const npub = pubkeyToNpub(pk)
+      if (!npub || seen.has(npub)) continue
+      seen.add(npub)
+      out.push(npub)
+    }
+    return out
+  }
+
+  /** Reply-thread participants (parent author + `p` tags) for @-mention autocomplete. */
+  private async searchNpubsFromReplyParent(query: string, limit: number): Promise<string[]> {
+    const parent = postEditorService.replyParentEvent
+    if (!parent || limit <= 0) return []
+
+    const q = query.trim()
+    const pks = new Set<string>()
+    const author = parent.pubkey.trim().toLowerCase()
+    if (/^[0-9a-f]{64}$/.test(author)) pks.add(author)
+    for (const t of parent.tags ?? []) {
+      if (!Array.isArray(t) || t.length < 2) continue
+      if (t[0] !== 'p' && t[0] !== 'P') continue
+      const pk = String(t[1] ?? '').trim().toLowerCase()
+      if (/^[0-9a-f]{64}$/.test(pk)) pks.add(pk)
+    }
+
+    const out: string[] = []
+    for (const pk of pks) {
+      if (out.length >= limit) break
+      let meta = this.eventService.getSessionMetadataForPubkey(pk)
+      if (!meta) {
+        try {
+          meta = (await indexedDb.getReplaceableEvent(pk, kinds.Metadata)) ?? undefined
+        } catch {
+          meta = undefined
+        }
+      }
+      if (!meta) continue
+      if (q && !profileKind0MatchesSearchQuery(meta, q)) continue
+      const npub = pubkeyToNpub(pk)
+      if (npub) out.push(npub)
+    }
+    return out
+  }
+
   async searchNpubsFromLocal(query: string, limit: number = 100) {
     await this.ensureProfileSearchIndexFromIdb()
     const seen = new Set<string>()
@@ -4425,30 +4489,39 @@ class ClientService extends EventTarget {
           ).catch(() => [] as TProfile[])
         : Promise.resolve([] as TProfile[])
 
-    const matchProfileText = (p: TProfile) =>
-      ((p.username ?? '') + ' ' + (p.original_username ?? '') + ' ' + (p.nip05 ?? '')).toLowerCase()
-
     const directPk = decodeProfileSearchQueryToPubkeyHex(q)
     if (directPk) {
       const np = pubkeyToNpub(directPk)
       if (np) addNpub(np)
     }
 
-    // 1. Local index first (FlexSearch + session) — fills the @-mention list immediately.
+    // 1. Local sources first — IndexedDB substring, session thread authors, FlexSearch.
     //    Cap how many local hits we take so we never fill `limit` here alone; otherwise we returned
     //    early and skipped relay search entirely (bad for handle search beyond the local index).
     const localCap = Math.min(limit, 24)
-    let local: string[] = []
-    try {
-      local = await this.searchNpubsFromLocal(q, localCap)
-    } catch {
-      // FlexSearch / session search should not throw; if it does, still return relay + follow hits.
-      local = []
+    const [replyParentNpubs, localNpubs, idbProfiles, sessionAuthorNpubs] = await Promise.all([
+      this.searchNpubsFromReplyParent(q, localCap).catch(() => [] as string[]),
+      this.searchNpubsFromLocal(q, localCap).catch(() => [] as string[]),
+      this.searchProfilesFromIndexedDBCache(q, localCap).catch(() => [] as TProfile[]),
+      this.searchNpubsFromSessionAuthors(q, localCap).catch(() => [] as string[])
+    ])
+
+    for (const npub of replyParentNpubs) {
+      if (addNpub(npub)) updateIfNeeded()
+      if (out.length >= limit) break
     }
-    for (const npub of local) {
-      if (addNpub(npub)) {
-        updateIfNeeded()
-      }
+
+    for (const p of idbProfiles) {
+      const np = pubkeyToNpub(p.pubkey)
+      if (np && addNpub(np)) updateIfNeeded()
+      if (out.length >= limit) break
+    }
+    for (const npub of sessionAuthorNpubs) {
+      if (addNpub(npub)) updateIfNeeded()
+      if (out.length >= limit) break
+    }
+    for (const npub of localNpubs) {
+      if (addNpub(npub)) updateIfNeeded()
       if (out.length >= limit) break
     }
 
@@ -4459,9 +4532,8 @@ class ClientService extends EventTarget {
       return out
     }
 
-    // 2. Follow list — must never block TipTap `items()`: no await here.
-    //    Previously we awaited merge when the follow list was in IDB; that ran up to 80 parallel
-    //    getReplaceableEvent(metadata) calls and could stall Firefox for seconds with no dropdown.
+    // 2. Follow list — batch IDB read; wait briefly so follows appear before relay fallback.
+    let followMergeWork: Promise<void> = Promise.resolve()
     if (this.pubkey && qLower.length >= 1) {
       const pk = this.pubkey.trim().toLowerCase()
       const viewerPubkey = this.pubkey
@@ -4472,7 +4544,7 @@ class ClientService extends EventTarget {
           const followPubkeys = getPubkeysFromPTags(followListEvent.tags)
             .map((hex) => hex.trim().toLowerCase())
             .filter((hex) => /^[0-9a-f]{64}$/.test(hex))
-            .slice(0, 80)
+            .slice(0, 200)
           if (followPubkeys.length === 0) return
 
           const events = await indexedDb.getManyReplaceableEvents(followPubkeys, kinds.Metadata)
@@ -4480,10 +4552,9 @@ class ClientService extends EventTarget {
             if (out.length >= limit) break
             const ev = events[i]
             if (!ev) continue
-            const p = getProfileFromEvent(ev)
             const npub = pubkeyToNpub(followPubkeys[i]!)
             if (!npub) continue
-            if (!matchProfileText(p).includes(qLower)) continue
+            if (!profileKind0MatchesSearchQuery(ev, q)) continue
             if (addNpub(npub)) {
               updateIfNeeded()
             }
@@ -4493,7 +4564,7 @@ class ClientService extends EventTarget {
         }
       }
 
-      void (async () => {
+      followMergeWork = (async () => {
         try {
           const cachedFollow = await indexedDb.getReplaceableEvent(pk, kinds.Contacts)
           if (cachedFollow) {
@@ -4511,6 +4582,13 @@ class ClientService extends EventTarget {
           }
         }
       })()
+
+      if (out.length < limit) {
+        await Promise.race([
+          followMergeWork,
+          new Promise<void>((resolve) => setTimeout(resolve, 1_500))
+        ])
+      }
     }
 
     if (out.length >= limit) {

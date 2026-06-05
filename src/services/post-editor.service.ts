@@ -1,3 +1,5 @@
+import type { Event } from 'nostr-tools'
+
 class PostEditorService extends EventTarget {
   static instance: PostEditorService
 
@@ -35,6 +37,13 @@ class PostEditorService extends EventTarget {
   /** Opens the main “new note” composer (same as sidebar / write button). Listeners run login check. */
   requestOpenNewPost() {
     this.dispatchEvent(new CustomEvent('requestOpenNewPost'))
+  }
+
+  /** Parent note when replying — used by @-mention search to surface thread participants. */
+  replyParentEvent?: Event
+
+  setReplyParentEvent(event?: Event) {
+    this.replyParentEvent = event
   }
 }
 

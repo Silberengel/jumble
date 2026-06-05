@@ -117,7 +117,7 @@ import {
   parseNostrSpecAffectedKinds,
   type NostrSpecAffectedKindRow
 } from '@/lib/nostr-spec-affected-kinds'
-import { NeventPickerProvider } from './PostTextarea/Mention/NeventNaddrPickerDialog'
+import { NeventPickerProvider } from './PostTextarea/Mention/NeventPickerProvider'
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'

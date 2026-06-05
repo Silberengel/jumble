@@ -1,4 +1,3 @@
-import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import {
   MENTION_NPUB_DROPDOWN_LIMIT,
   searchNpubsForMention,
@@ -8,9 +7,9 @@ import postEditor from '@/services/post-editor.service'
 import type { Editor } from '@tiptap/core'
 import { ReactRenderer } from '@tiptap/react'
 import { SuggestionKeyDownProps, type SuggestionProps } from '@tiptap/suggestion'
-import tippy, { GetReferenceClientRect, Instance, Props } from 'tippy.js'
 import MentionList, { MentionListHandle, MentionListProps, type MentionListItem } from './MentionList'
 import { NEVENT_NADDR_PICKER_ID } from './constants'
+import { createSuggestionPopup } from '../suggestion-popup'
 
 export type { PickerSearchMode }
 
@@ -19,12 +18,8 @@ const MENTION_CHAR = '@'
 
 export const OPEN_NEVENT_PICKER_EVENT = 'open-nevent-picker'
 
-// Shared state for incremental updates
 let currentComponent: ReactRenderer<MentionListHandle, MentionListProps> | undefined
 let currentQuery = ''
-let pendingMentionItems: MentionListItem[] | null = null
-let backgroundSearchController: AbortController | null = null
-let mentionSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let mentionSearchGeneration = 0
 
 /** Extend range.to to include any trailing word chars (handle, NIP-05) so the full @handle is replaced. Exported for nevent picker. */
@@ -43,6 +38,17 @@ export function extendMentionRangeToEndOfWord(editor: Editor, range: { from: num
     pos += i - offset
   }
   return pos
+}
+
+function mountPopup(
+  popup: ReturnType<typeof createSuggestionPopup>,
+  props: { editor: Editor; clientRect?: (() => DOMRect | null) | null },
+  component: ReactRenderer<MentionListHandle, MentionListProps>
+) {
+  popup.ensure({
+    clientRect: props.clientRect,
+    content: component.element
+  })
 }
 
 const suggestion = {
@@ -86,118 +92,69 @@ const suggestion = {
       const mode: PickerSearchMode = q === 'naddr' || q.startsWith('naddr') ? 'naddr' : 'nevent'
       return [{ id: NEVENT_NADDR_PICKER_ID, mode }]
     }
-    
-    if (mentionSearchDebounceTimer) clearTimeout(mentionSearchDebounceTimer)
+
     const generation = ++mentionSearchGeneration
+    currentQuery = q
 
-    return new Promise<MentionListItem[]>((resolve) => {
-      mentionSearchDebounceTimer = setTimeout(async () => {
-        if (generation !== mentionSearchGeneration) return
+    const updateComponent = (npubs: string[]) => {
+      if (generation !== mentionSearchGeneration || currentQuery !== q) return
+      if (currentComponent) {
+        currentComponent.updateProps({ items: npubs, loading: false })
+      }
+    }
 
-        if (currentQuery !== q && backgroundSearchController) {
-          backgroundSearchController.abort()
-          backgroundSearchController = null
-        }
-        currentQuery = q
+    if (currentComponent) {
+      currentComponent.updateProps({ items: [], loading: true })
+    }
 
-        const updateComponent = (npubs: string[]) => {
-          if (generation !== mentionSearchGeneration || currentQuery !== q) return
-          pendingMentionItems = npubs
-          if (currentComponent) {
-            currentComponent.updateProps({ items: npubs })
-            pendingMentionItems = null
-          }
-        }
-
-        backgroundSearchController = new AbortController()
-        try {
-          const results = await searchNpubsForMention(query, MENTION_NPUB_DROPDOWN_LIMIT, updateComponent)
-          if (generation === mentionSearchGeneration) resolve(results ?? [])
-        } catch {
-          if (generation === mentionSearchGeneration) resolve([])
-        }
-      }, SEARCH_QUERY_DEBOUNCE_MS)
-    })
+    try {
+      const results = await searchNpubsForMention(query, MENTION_NPUB_DROPDOWN_LIMIT, updateComponent)
+      if (generation === mentionSearchGeneration) {
+        currentComponent?.updateProps({ items: results ?? [], loading: false })
+        return results ?? []
+      }
+      return []
+    } catch {
+      if (generation === mentionSearchGeneration) {
+        currentComponent?.updateProps({ items: [], loading: false })
+      }
+      return []
+    }
   },
 
   render: () => {
     let component: ReactRenderer<MentionListHandle, MentionListProps> | undefined
-    let popup: Instance[] = []
-    let touchListener: (e: TouchEvent) => void
+    let popup: ReturnType<typeof createSuggestionPopup> | undefined
     let closePopup: () => void
     let exited = false
 
     return {
       onBeforeStart: () => {
-        touchListener = (e: TouchEvent) => {
-          if (popup && popup[0] && postEditor.isSuggestionPopupOpen) {
-            const popupElement = popup[0].popper
-            if (popupElement && !popupElement.contains(e.target as Node)) {
-              popup[0].hide()
-            }
-          }
-        }
-        document.addEventListener('touchstart', touchListener)
-
         closePopup = () => {
-          if (popup && popup[0]) {
-            popup[0].hide()
-          }
+          popup?.hide()
         }
         postEditor.addEventListener('closeSuggestionPopup', closePopup)
       },
-      onStart: (props: { editor: Editor; clientRect?: (() => DOMRect | null) | null }) => {
+      onStart: (props: SuggestionProps<MentionListItem>) => {
+        popup = createSuggestionPopup(props.editor)
         component = new ReactRenderer(MentionList, {
-          props,
+          props: { ...props, loading: true },
           editor: props.editor
         })
-        
-        // Store component reference for incremental updates
         currentComponent = component
-
-        if (pendingMentionItems) {
-          component.updateProps({ items: pendingMentionItems })
-          pendingMentionItems = null
-        }
-
-        if (!props.clientRect) {
-          return
-        }
-
-        popup = tippy('body', {
-          getReferenceClientRect: props.clientRect as GetReferenceClientRect,
-          appendTo: () => document.body,
-          content: component.element,
-          showOnCreate: true,
-          interactive: true,
-          trigger: 'manual',
-          placement: 'bottom-start',
-          hideOnClick: true,
-          touch: true,
-          onShow() {
-            postEditor.isSuggestionPopupOpen = true
-          },
-          onHide() {
-            postEditor.isSuggestionPopupOpen = false
-          }
-        })
+        mountPopup(popup, props, component)
       },
 
       onUpdate(props: SuggestionProps<MentionListItem>) {
         component?.updateProps(props)
-
-        if (!props.clientRect) {
-          return
+        if (popup && component) {
+          mountPopup(popup, props, component)
         }
-
-        popup[0]?.setProps({
-          getReferenceClientRect: props.clientRect
-        } as Partial<Props>)
       },
 
       onKeyDown(props: SuggestionKeyDownProps) {
         if (props.event.key === 'Escape') {
-          popup[0]?.hide()
+          popup?.hide()
           return true
         }
         return component?.ref?.onKeyDown(props) ?? false
@@ -207,26 +164,12 @@ const suggestion = {
         if (exited) return
         exited = true
         postEditor.isSuggestionPopupOpen = false
-        
-        // Abort background search
-        if (backgroundSearchController) {
-          backgroundSearchController.abort()
-          backgroundSearchController = null
-        }
         currentComponent = undefined
         currentQuery = ''
-        pendingMentionItems = null
-        
-        if (popup[0]) {
-          popup[0].destroy()
-          popup = []
-        }
-        if (component) {
-          component.destroy()
-          component = undefined
-        }
-
-        document.removeEventListener('touchstart', touchListener)
+        popup?.destroy()
+        popup = undefined
+        component?.destroy()
+        component = undefined
         postEditor.removeEventListener('closeSuggestionPopup', closePopup)
       }
     }

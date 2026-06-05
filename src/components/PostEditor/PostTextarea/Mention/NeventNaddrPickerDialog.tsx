@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { SEARCH_QUERY_DEBOUNCE_MS } from '@/constants'
 import { getNoteBech32Id } from '@/lib/event'
 import { mergedSearchNoteHasPreviewBody } from '@/lib/merged-search-note-preview'
@@ -21,8 +20,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Search } from 'lucide-react'
-import type { Editor } from '@tiptap/core'
-import { OPEN_NEVENT_PICKER_EVENT, extendMentionRangeToEndOfWord } from './suggestion'
 
 type NeventNaddrPickerDialogProps = {
   open: boolean
@@ -186,69 +183,4 @@ function NeventNaddrPickerDialog({
   )
 }
 
-type NeventPickerContextValue = {
-  openNeventPicker: (onSelected: (nostrLink: string) => void, initialMode?: PickerSearchMode) => void
-}
-
-export const NeventPickerContext = React.createContext<NeventPickerContextValue | null>(null)
-
-export function NeventPickerProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const [onSelectedRef, setOnSelectedRef] = useState<((link: string) => void) | null>(null)
-  const [initialMode, setInitialMode] = useState<PickerSearchMode>('nevent')
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { editor, range, initialMode: detailMode } = (e as CustomEvent<{
-        editor: Editor
-        range: { from: number; to: number }
-        initialMode?: PickerSearchMode
-      }>).detail
-      const to = extendMentionRangeToEndOfWord(editor, range)
-      setOnSelectedRef(() => (link: string) => {
-        editor.chain().focus().insertContentAt({ from: range.from, to }, link + ' ').run()
-      })
-      setInitialMode(detailMode ?? 'nevent')
-      setOpen(true)
-    }
-    window.addEventListener(OPEN_NEVENT_PICKER_EVENT, handler)
-    return () => window.removeEventListener(OPEN_NEVENT_PICKER_EVENT, handler)
-  }, [])
-
-  const openNeventPicker = useCallback((onSelected: (nostrLink: string) => void, mode?: PickerSearchMode) => {
-    setOnSelectedRef(() => onSelected)
-    setInitialMode(mode ?? 'nevent')
-    setOpen(true)
-  }, [])
-
-  const handleSelect = useCallback(
-    (link: string) => {
-      onSelectedRef?.(link)
-      setOnSelectedRef(null)
-    },
-    [onSelectedRef]
-  )
-
-  const handleOpenChange = useCallback((next: boolean) => {
-    if (!next) {
-      setOnSelectedRef(null)
-      setInitialMode('nevent')
-    }
-    setOpen(next)
-  }, [])
-
-  const value = React.useMemo(() => ({ openNeventPicker }), [openNeventPicker])
-
-  return (
-    <NeventPickerContext.Provider value={value}>
-      {children}
-      <NeventNaddrPickerDialog
-        open={open}
-        onOpenChange={handleOpenChange}
-        onSelect={handleSelect}
-        initialMode={initialMode}
-      />
-    </NeventPickerContext.Provider>
-  )
-}
-
+export default NeventNaddrPickerDialog

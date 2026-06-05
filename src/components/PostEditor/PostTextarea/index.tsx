@@ -3,6 +3,7 @@ import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
 import customEmojiService from '@/services/custom-emoji.service'
 import postEditorCache from '@/services/post-editor-cache.service'
+import postEditorService from '@/services/post-editor.service'
 import { TEmoji } from '@/types'
 import Document from '@tiptap/extension-document'
 import { HardBreak } from '@tiptap/extension-hard-break'
@@ -215,6 +216,11 @@ const PostTextarea = forwardRef<
     })
 
     editorRef.current = editor
+
+    useEffect(() => {
+      postEditorService.setReplyParentEvent(parentEvent)
+      return () => postEditorService.setReplyParentEvent(undefined)
+    }, [parentEvent])
 
     useEffect(() => {
       if (!editor) return

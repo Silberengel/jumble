@@ -9,6 +9,7 @@ import { SimpleUserAvatar } from '../../../UserAvatar'
 import { SimpleUsername } from '../../../Username'
 import type { PickerSearchMode } from '@/services/mention-event-search.service'
 import { NEVENT_NADDR_PICKER_ID } from './constants'
+import { SUGGESTION_POPUP_Z_INDEX } from '../suggestion-popup'
 
 export type MentionListItem = string | { id: string; mode?: PickerSearchMode }
 
@@ -20,6 +21,8 @@ export interface MentionListProps {
   onSelectIndex?: (index: number) => void
   /** When provided, used to detect if we're inside a dialog (for z-index). */
   editor?: Editor
+  /** True while mention search is in flight (show placeholder instead of hiding the list). */
+  loading?: boolean
 }
 
 export interface MentionListHandle {
@@ -29,7 +32,6 @@ export interface MentionListHandle {
 const MentionList = forwardRef<MentionListHandle, MentionListProps>((props, ref) => {
   const { t } = useTranslation()
   const items = props.items ?? []
-  const inDialog = Boolean(props.editor?.view?.dom?.closest?.('[role="dialog"]'))
   const [internalIndex, setInternalIndex] = useState<number>(0)
   const isControlled = props.selectedIndex !== undefined
   const selectedIndex = isControlled ? props.selectedIndex! : internalIndex
@@ -96,15 +98,32 @@ const MentionList = forwardRef<MentionListHandle, MentionListProps>((props, ref)
   }))
 
   if (!items.length) {
-    return null
+    if (!props.loading) {
+      return (
+        <div
+          className="border rounded-lg bg-background pointer-events-auto p-3 max-w-[min(calc(100vw-1.5rem),28rem)]"
+          style={{ zIndex: SUGGESTION_POPUP_Z_INDEX }}
+        >
+          <p className="text-sm text-muted-foreground">{t('No users found')}</p>
+        </div>
+      )
+    }
+    return (
+      <div
+        className="border rounded-lg bg-background pointer-events-auto p-3 max-w-[min(calc(100vw-1.5rem),28rem)]"
+        style={{ zIndex: SUGGESTION_POPUP_Z_INDEX }}
+      >
+        <p className="text-sm text-muted-foreground">{t('Searching…')}</p>
+      </div>
+    )
   }
 
   return (
     <div
       className={cn(
-        'border rounded-lg bg-background pointer-events-auto flex flex-col min-h-0 max-h-[min(85dvh,calc(100dvh-6rem))] max-w-[min(calc(100vw-1.5rem),28rem)] overflow-x-hidden overflow-y-auto overscroll-contain popover-scroll-y',
-        inDialog ? 'z-[290]' : 'z-[110]'
+        'border rounded-lg bg-background pointer-events-auto flex flex-col min-h-0 max-h-[min(85dvh,calc(100dvh-6rem))] max-w-[min(calc(100vw-1.5rem),28rem)] overflow-x-hidden overflow-y-auto overscroll-contain popover-scroll-y'
       )}
+      style={{ zIndex: SUGGESTION_POPUP_Z_INDEX }}
       onWheel={(e: React.WheelEvent) => e.stopPropagation()}
       onTouchMove={(e: React.TouchEvent) => e.stopPropagation()}
     >

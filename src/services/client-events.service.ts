@@ -833,6 +833,29 @@ export class EventService {
   }
 
   /**
+   * Pubkeys from notes / replies already in the session LRU (authors + `p`/`P` tags).
+   * Used by @-mention search so thread participants match without a relay round-trip.
+   */
+  collectSessionMentionCandidatePubkeys(maxPubkeys = 400): string[] {
+    const pks = new Set<string>()
+    for (const ev of this.sessionEventCache.values()) {
+      if (shouldDropEventOnIngest(ev)) continue
+      if (pks.size >= maxPubkeys) break
+      const author = ev.pubkey.trim().toLowerCase()
+      if (/^[0-9a-f]{64}$/.test(author)) pks.add(author)
+      for (const t of ev.tags ?? []) {
+        if (pks.size >= maxPubkeys) break
+        if (!Array.isArray(t) || t.length < 2) continue
+        const tag = String(t[0])
+        if (tag !== 'p' && tag !== 'P') continue
+        const pk = String(t[1] ?? '').trim().toLowerCase()
+        if (/^[0-9a-f]{64}$/.test(pk)) pks.add(pk)
+      }
+    }
+    return [...pks]
+  }
+
+  /**
    * Get events from session cache matching search (newest {@link Event.created_at} first).
    * Scans up to {@link SESSION_SEARCH_MAX_SCAN} entries; only rows where {@link eventMatchesGeneralSearchQuery}
    * matches the trimmed query are returned (not “recent rows” without a text hit).
