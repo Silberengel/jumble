@@ -1,5 +1,19 @@
 import type { Event } from 'nostr-tools'
 
+/** NIP-32 `l` tag value for user-curated publication lists (namespace `ugc`). */
+export const NIP32_BOOKLIST_LABEL = 'booklist'
+
+/** NIP-32 namespace for user-generated labels (e.g. booklist). */
+export const NIP32_UGC_NAMESPACE = 'ugc'
+
+export function isBooklistNip32Label(label: string): boolean {
+  return label.trim().toLowerCase() === NIP32_BOOKLIST_LABEL
+}
+
+export function labelEventHasBooklistTag(event: Pick<Event, 'tags'>): boolean {
+  return extractNip32LabelValues(event.tags).some(isBooklistNip32Label)
+}
+
 /** NIP-32 lowercase `l` tag values (actual labels), not uppercase `L` namespace declarations. */
 export function extractNip32LabelValues(tags: string[][]): string[] {
   const out: string[] = []

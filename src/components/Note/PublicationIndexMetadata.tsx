@@ -13,6 +13,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import PublicationCoverFallback from './PublicationCoverFallback'
 import PublicationCoverImage from './PublicationCoverImage'
+import PublicationBooklistButton from './PublicationBooklistButton'
 
 function formatAuthorLine(authors: PublicationAuthor[]): string {
   if (authors.length === 0) return ''
@@ -176,23 +177,29 @@ export default function PublicationIndexMetadata({
         </div>
       ) : null}
 
-      {metadata.source ? (
-        <a
-          href={metadata.source}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            'inline-flex min-w-0 max-w-full items-center gap-1.5 text-primary hover:underline',
-            isFull ? 'text-sm' : 'text-xs'
-          )}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ExternalLink className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{sourceHostname(metadata.source)}</span>
-        </a>
-      ) : null}
+      {metadata.source || tagsComponent || isFull ? (
+        <div className="flex min-w-0 flex-col gap-2">
+          {metadata.source ? (
+            <a
+              href={metadata.source}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                'flex min-w-0 max-w-full items-center gap-1.5 text-primary hover:underline',
+                isFull ? 'text-sm' : 'text-xs'
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{sourceHostname(metadata.source)}</span>
+            </a>
+          ) : null}
 
-      {tagsComponent}
+          {tagsComponent}
+
+          {isFull ? <PublicationBooklistButton event={event} className="w-fit self-start" /> : null}
+        </div>
+      ) : null}
 
       {isFull && metadata.sections.length > 0 ? (
         <div className="rounded-lg border border-border bg-muted/20 p-3">

@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { extractNip32LabelValues, formatNip32LabelSnippet } from '@/lib/nip32-label'
+import {
+  extractNip32LabelValues,
+  formatNip32LabelSnippet,
+  isBooklistNip32Label
+} from '@/lib/nip32-label'
 import type { Event } from 'nostr-tools'
 
 describe('nip32-label', () => {
+  it('isBooklistNip32Label matches case-insensitively', () => {
+    expect(isBooklistNip32Label('booklist')).toBe(true)
+    expect(isBooklistNip32Label('Booklist')).toBe(true)
+    expect(isBooklistNip32Label('ugc')).toBe(false)
+  })
+
   it('extracts lowercase l tag values, not uppercase L namespace declarations', () => {
     const tags = [
       ['L', 'ugc'],

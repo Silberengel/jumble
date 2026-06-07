@@ -2,13 +2,17 @@ import {
   clearAllLibraryIndexCaches,
   filterLibraryPublicationsByUser,
   buildLibraryRelayUrls,
+  libraryPublicationEntriesFromIndex,
   loadLibraryPublicationIndex,
   peekLibrarySearchResults,
+  refreshLibraryEngagement,
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   type LibraryPublicationEntry,
   type PublicationEngagementMaps
 } from '@/lib/library-publication-index'
+import { BOOKLIST_LABEL_UPDATED_EVENT } from '@/lib/booklist-label'
+import { fetchNewestPinListForPubkey } from '@/lib/replaceable-list-latest'
 import { getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
@@ -23,12 +27,20 @@ const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelEventIds: new Set(),
   labelValuesByAddress: new Map(),
   labelValuesByEventId: new Map(),
+  booklistAddresses: new Set(),
+  booklistEventIds: new Set(),
+  myBooklistAddresses: new Set(),
+  myBooklistEventIds: new Set(),
+  myCommentAddresses: new Set(),
+  myCommentEventIds: new Set(),
+  myHighlightAddresses: new Set(),
+  myHighlightEventIds: new Set(),
   commentAddresses: new Set(),
   highlightAddresses: new Set()
 }
 
 export function useLibraryPublications(isActive: boolean) {
-  const { pubkey } = useNostr()
+  const { pubkey, bookmarkListEvent } = useNostr()
   const [entries, setEntries] = useState<LibraryPublicationEntry[]>([])
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
   const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
@@ -43,7 +55,24 @@ export function useLibraryPublications(isActive: boolean) {
   const [error, setError] = useState<string | null>(null)
   const [allIndexCount, setAllIndexCount] = useState(0)
   const [topLevelCount, setTopLevelCount] = useState(0)
+  const [pinListEvent, setPinListEvent] = useState<Event | null>(null)
   const loadGenRef = useRef(0)
+
+  useEffect(() => {
+    if (!pubkey) {
+      setPinListEvent(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const relays = await buildLibraryRelayUrls(pubkey)
+      const pinList = await fetchNewestPinListForPubkey(pubkey, relays)
+      if (!cancelled) setPinListEvent(pinList)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [pubkey])
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(searchQuery), SEARCH_DEBOUNCE_MS)
@@ -69,6 +98,7 @@ export function useLibraryPublications(isActive: boolean) {
           const result = await Promise.race([
             loadLibraryPublicationIndex(relays, {
               forceRefresh,
+              viewerPubkey: pubkey || undefined,
               onIndexesReady: (snapshot) => {
                 if (gen !== loadGenRef.current) return
                 setEntries(snapshot.engaged)
@@ -111,6 +141,31 @@ export function useLibraryPublications(isActive: boolean) {
     if (!isActive) return
     void load(false)
   }, [isActive, load])
+
+  useEffect(() => {
+    if (!isActive || !pubkey || indexEvents.length === 0) return
+    let cancelled = false
+    const onBooklistUpdated = () => {
+      void (async () => {
+        const relays = await buildLibraryRelayUrls(pubkey)
+        const { engagement: nextEngagement, engaged } = await refreshLibraryEngagement(
+          relays,
+          indexEvents,
+          pubkey
+        )
+        if (cancelled) return
+        setEngagement(nextEngagement)
+        if (!debouncedSearch.trim()) {
+          setEntries(engaged)
+        }
+      })()
+    }
+    window.addEventListener(BOOKLIST_LABEL_UPDATED_EVENT, onBooklistUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener(BOOKLIST_LABEL_UPDATED_EVENT, onBooklistUpdated)
+    }
+  }, [isActive, pubkey, indexEvents, debouncedSearch])
 
   useEffect(() => {
     const q = debouncedSearch.trim()
@@ -179,12 +234,32 @@ export function useLibraryPublications(isActive: boolean) {
 
   const filteredEntries = useMemo(() => {
     const q = debouncedSearch.trim()
-    let list = q ? (searchResults ?? []) : entries
-    if (showOnlyMine) {
-      list = filterLibraryPublicationsByUser(list, pubkey)
+    const mineFilterOpts = { bookmarkListEvent, pinListEvent }
+    let list: LibraryPublicationEntry[]
+    if (showOnlyMine && !q) {
+      list = filterLibraryPublicationsByUser(
+        libraryPublicationEntriesFromIndex(indexEvents, engagement),
+        pubkey,
+        mineFilterOpts
+      )
+    } else {
+      list = q ? (searchResults ?? []) : entries
+      if (showOnlyMine) {
+        list = filterLibraryPublicationsByUser(list, pubkey, mineFilterOpts)
+      }
     }
     return list
-  }, [entries, showOnlyMine, pubkey, debouncedSearch, searchResults])
+  }, [
+    entries,
+    showOnlyMine,
+    pubkey,
+    debouncedSearch,
+    searchResults,
+    indexEvents,
+    engagement,
+    bookmarkListEvent,
+    pinListEvent
+  ])
 
   return {
     entries: filteredEntries,

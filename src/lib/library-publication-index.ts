@@ -7,7 +7,7 @@ import {
 } from '@/lib/general-search-text-match'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
-import { extractNip32LabelValues } from '@/lib/nip32-label'
+import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
 import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
@@ -19,6 +19,8 @@ import {
   getTopLevelIndexEvents,
   hydrateNestedIndexEvents
 } from '@/lib/publication-index'
+import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
+import { isEventInPinList } from '@/lib/replaceable-list-latest'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import {
   clearLibraryIndexIdbCache,
@@ -60,6 +62,14 @@ export type PublicationEngagementMaps = {
   labelEventIds: Set<string>
   labelValuesByAddress: Map<string, Set<string>>
   labelValuesByEventId: Map<string, Set<string>>
+  booklistAddresses: Set<string>
+  booklistEventIds: Set<string>
+  myBooklistAddresses: Set<string>
+  myBooklistEventIds: Set<string>
+  myCommentAddresses: Set<string>
+  myCommentEventIds: Set<string>
+  myHighlightAddresses: Set<string>
+  myHighlightEventIds: Set<string>
   commentAddresses: Set<string>
   highlightAddresses: Set<string>
 }
@@ -69,6 +79,10 @@ export type LibraryPublicationEntry = {
   hasLabel: boolean
   /** NIP-32 `l` tag values from kind-1985 events (e.g. "booklist"), not `L` namespaces (e.g. "ugc"). */
   labelNames: string[]
+  hasBooklistLabel: boolean
+  hasMyBooklistLabel: boolean
+  hasMyComment: boolean
+  hasMyHighlight: boolean
   hasComment: boolean
   hasHighlight: boolean
   engagementCount: number
@@ -76,6 +90,7 @@ export type LibraryPublicationEntry = {
 
 type LibraryIndexCache = {
   relayKey: string
+  viewerPubkey: string | null
   indexEvents: Event[]
   indexByAddress: Map<string, Event>
   engagement: PublicationEngagementMaps
@@ -302,17 +317,27 @@ export function buildEngagementMapsFromEvents(
   comments: Event[],
   highlights: Event[],
   targetAddresses?: Set<string>,
-  targetEventIds?: Set<string>
+  targetEventIds?: Set<string>,
+  viewerPubkey?: string | null
 ): PublicationEngagementMaps {
   const labelAddresses = new Set<string>()
   const labelEventIds = new Set<string>()
   const labelValuesByAddress = new Map<string, Set<string>>()
   const labelValuesByEventId = new Map<string, Set<string>>()
+  const booklistAddresses = new Set<string>()
+  const booklistEventIds = new Set<string>()
+  const myBooklistAddresses = new Set<string>()
+  const myBooklistEventIds = new Set<string>()
+  const myCommentAddresses = new Set<string>()
+  const myCommentEventIds = new Set<string>()
+  const myHighlightAddresses = new Set<string>()
+  const myHighlightEventIds = new Set<string>()
   const commentAddresses = new Set<string>()
   const highlightAddresses = new Set<string>()
 
   const addressMatches = (addr: string) => !targetAddresses || targetAddresses.has(addr)
   const eventIdMatches = (id: string) => !targetEventIds || targetEventIds.has(id.toLowerCase())
+  const viewerPk = viewerPubkey?.trim().toLowerCase()
 
   const addLabelValues = (map: Map<string, Set<string>>, key: string, values: string[]) => {
     if (values.length === 0) return
@@ -326,28 +351,52 @@ export function buildEngagementMapsFromEvents(
 
   for (const ev of labels) {
     const labelValues = extractNip32LabelValues(ev.tags)
+    const isBooklist = labelValues.some(isBooklistNip32Label)
+    const isViewerLabel = !!viewerPk && ev.pubkey.toLowerCase() === viewerPk
     for (const tag of ev.tags) {
       if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
         labelAddresses.add(tag[1])
         addLabelValues(labelValuesByAddress, tag[1], labelValues)
+        if (isBooklist) {
+          booklistAddresses.add(tag[1])
+          if (isViewerLabel) myBooklistAddresses.add(tag[1])
+        }
       }
       if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
         const eventId = tag[1].toLowerCase()
         labelEventIds.add(eventId)
         addLabelValues(labelValuesByEventId, eventId, labelValues)
+        if (isBooklist) {
+          booklistEventIds.add(eventId)
+          if (isViewerLabel) myBooklistEventIds.add(eventId)
+        }
       }
     }
   }
 
   for (const ev of comments) {
+    const isViewerEvent = !!viewerPk && ev.pubkey.toLowerCase() === viewerPk
     for (const tag of ev.tags) {
-      if (tag[0] === 'A' && tag[1] && addressMatches(tag[1])) commentAddresses.add(tag[1])
+      if (tag[0] === 'A' && tag[1] && addressMatches(tag[1])) {
+        commentAddresses.add(tag[1])
+        if (isViewerEvent) myCommentAddresses.add(tag[1])
+      }
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1]) && isViewerEvent) {
+        myCommentEventIds.add(tag[1].toLowerCase())
+      }
     }
   }
 
   for (const ev of highlights) {
+    const isViewerEvent = !!viewerPk && ev.pubkey.toLowerCase() === viewerPk
     for (const tag of ev.tags) {
-      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) highlightAddresses.add(tag[1])
+      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
+        highlightAddresses.add(tag[1])
+        if (isViewerEvent) myHighlightAddresses.add(tag[1])
+      }
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1]) && isViewerEvent) {
+        myHighlightEventIds.add(tag[1].toLowerCase())
+      }
     }
   }
 
@@ -356,6 +405,14 @@ export function buildEngagementMapsFromEvents(
     labelEventIds,
     labelValuesByAddress,
     labelValuesByEventId,
+    booklistAddresses,
+    booklistEventIds,
+    myBooklistAddresses,
+    myBooklistEventIds,
+    myCommentAddresses,
+    myCommentEventIds,
+    myHighlightAddresses,
+    myHighlightEventIds,
     commentAddresses,
     highlightAddresses
   }
@@ -393,23 +450,17 @@ export async function fetchPublicationEngagementMaps(
   relayUrls: string[],
   targetAddresses: Set<string>,
   targetEventIds: Set<string>,
-  options?: { httpOnly?: boolean }
+  options?: { httpOnly?: boolean; viewerPubkey?: string | null }
 ): Promise<PublicationEngagementMaps> {
   if (relayUrls.length === 0 || targetAddresses.size === 0) {
-    return {
-      labelAddresses: new Set(),
-      labelEventIds: new Set(),
-      labelValuesByAddress: new Map(),
-      labelValuesByEventId: new Map(),
-      commentAddresses: new Set(),
-      highlightAddresses: new Set()
-    }
+    return emptyPublicationEngagementMaps()
   }
 
   const addressChunks = chunkArray([...targetAddresses], ENGAGEMENT_ADDRESS_CHUNK)
   const eventIdChunks = chunkArray([...targetEventIds], ENGAGEMENT_EVENT_ID_CHUNK)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(relayUrls)
-  const useWs = !options?.httpOnly && wsRelays.length > 0
+  /** Labels/comments/highlights often live on WS relays only — always query them when available. */
+  const useWsEngagement = wsRelays.length > 0
 
   const highlightFilters = addressChunks.map(
     (chunk): Filter => ({ kinds: [kinds.Highlights], '#a': chunk, limit: chunk.length * 12 })
@@ -425,24 +476,24 @@ export async function fetchPublicationEngagementMaps(
   )
 
   const highlightPromise = Promise.all([
-    useWs && highlightFilters.length > 0
+    useWsEngagement && highlightFilters.length > 0
       ? queryService.fetchEvents(wsRelays, highlightFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, kinds.Highlights, '#a', addressChunks)
   ]).then(([scoped, bulk]) => dedupeEventsById([...scoped, ...bulk]))
 
   const labelPromise = Promise.all([
-    useWs && labelAddressFilters.length > 0
+    useWsEngagement && labelAddressFilters.length > 0
       ? queryService.fetchEvents(wsRelays, labelAddressFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    useWs && labelEventFilters.length > 0
+    useWsEngagement && labelEventFilters.length > 0
       ? queryService.fetchEvents(wsRelays, labelEventFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.LABEL, '#a', addressChunks)
   ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
 
   const commentPromise = Promise.all([
-    useWs && commentWsFilters.length > 0
+    useWsEngagement && commentWsFilters.length > 0
       ? queryService.fetchEvents(wsRelays, commentWsFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.COMMENT, '#A', addressChunks)
@@ -459,7 +510,8 @@ export async function fetchPublicationEngagementMaps(
     dedupeEventsById(comments),
     dedupeEventsById(highlights),
     targetAddresses,
-    targetEventIds
+    targetEventIds,
+    options?.viewerPubkey
   )
 }
 
@@ -484,14 +536,122 @@ function collectLabelNamesForTarget(
 ): void {
   const byAddress = maps.labelValuesByAddress.get(address)
   if (byAddress) {
-    for (const value of byAddress) out.add(value)
+    for (const value of byAddress) {
+      if (!isBooklistNip32Label(value)) out.add(value)
+    }
   }
   if (eventId) {
     const byEventId = maps.labelValuesByEventId.get(eventId.toLowerCase())
     if (byEventId) {
-      for (const value of byEventId) out.add(value)
+      for (const value of byEventId) {
+        if (!isBooklistNip32Label(value)) out.add(value)
+      }
     }
   }
+}
+
+function collectBooklistFlagsForTarget(
+  address: string,
+  eventId: string | undefined,
+  maps: PublicationEngagementMaps
+): { hasBooklistLabel: boolean; hasMyBooklistLabel: boolean } {
+  const hasBooklistLabel =
+    maps.booklistAddresses.has(address) ||
+    (eventId ? maps.booklistEventIds.has(eventId.toLowerCase()) : false)
+  const hasMyBooklistLabel =
+    maps.myBooklistAddresses.has(address) ||
+    (eventId ? maps.myBooklistEventIds.has(eventId.toLowerCase()) : false)
+  return { hasBooklistLabel, hasMyBooklistLabel }
+}
+
+function collectMyEngagementFlagsForTarget(
+  address: string,
+  eventId: string | undefined,
+  maps: PublicationEngagementMaps
+): { hasMyComment: boolean; hasMyHighlight: boolean } {
+  const hasMyComment =
+    maps.myCommentAddresses.has(address) ||
+    (eventId ? maps.myCommentEventIds.has(eventId.toLowerCase()) : false)
+  const hasMyHighlight =
+    maps.myHighlightAddresses.has(address) ||
+    (eventId ? maps.myHighlightEventIds.has(eventId.toLowerCase()) : false)
+  return { hasMyComment, hasMyHighlight }
+}
+
+/** Build one library row with engagement/booklist flags for a top-level kind-30040 root. */
+export function buildLibraryPublicationEntry(
+  root: Event,
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps
+): LibraryPublicationEntry {
+  const reachable = collectReachableAddressesCached(root, indexByAddress)
+  const rootAddr = eventTagAddress(root)
+  if (rootAddr) reachable.add(rootAddr)
+
+  let hasLabel = false
+  let hasComment = false
+  let hasHighlight = false
+  let hasBooklistLabel = false
+  let hasMyBooklistLabel = false
+  let hasMyComment = false
+  let hasMyHighlight = false
+  let engagementCount = 0
+  const labelNames = new Set<string>()
+
+  for (const addr of reachable) {
+    const indexed = indexByAddress.get(addr)
+    const flags = addressHasEngagement(addr, indexed?.id, engagement)
+    const booklistFlags = collectBooklistFlagsForTarget(addr, indexed?.id, engagement)
+    const myFlags = collectMyEngagementFlagsForTarget(addr, indexed?.id, engagement)
+    if (flags.hasLabel) {
+      hasLabel = true
+      collectLabelNamesForTarget(addr, indexed?.id, engagement, labelNames)
+    }
+    if (booklistFlags.hasBooklistLabel) hasBooklistLabel = true
+    if (booklistFlags.hasMyBooklistLabel) hasMyBooklistLabel = true
+    if (myFlags.hasMyComment) hasMyComment = true
+    if (myFlags.hasMyHighlight) hasMyHighlight = true
+    if (flags.hasComment) hasComment = true
+    if (flags.hasHighlight) hasHighlight = true
+    if (flags.hasLabel || flags.hasComment || flags.hasHighlight) engagementCount++
+  }
+
+  const rootFlags = addressHasEngagement(rootAddr ?? '', root.id, engagement)
+  const rootBooklistFlags = collectBooklistFlagsForTarget(rootAddr ?? '', root.id, engagement)
+  const rootMyFlags = collectMyEngagementFlagsForTarget(rootAddr ?? '', root.id, engagement)
+  hasLabel = hasLabel || rootFlags.hasLabel
+  hasComment = hasComment || rootFlags.hasComment
+  hasHighlight = hasHighlight || rootFlags.hasHighlight
+  hasBooklistLabel = hasBooklistLabel || rootBooklistFlags.hasBooklistLabel
+  hasMyBooklistLabel = hasMyBooklistLabel || rootBooklistFlags.hasMyBooklistLabel
+  hasMyComment = hasMyComment || rootMyFlags.hasMyComment
+  hasMyHighlight = hasMyHighlight || rootMyFlags.hasMyHighlight
+  if (rootFlags.hasLabel) {
+    collectLabelNamesForTarget(rootAddr ?? '', root.id, engagement, labelNames)
+  }
+
+  return {
+    event: root,
+    hasLabel,
+    labelNames: [...labelNames].sort((a, b) => a.localeCompare(b)),
+    hasBooklistLabel,
+    hasMyBooklistLabel,
+    hasMyComment,
+    hasMyHighlight,
+    hasComment,
+    hasHighlight,
+    engagementCount
+  }
+}
+
+export function libraryPublicationEntriesFromIndex(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps
+): LibraryPublicationEntry[] {
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  return getTopLevelIndexEvents(indexEvents).map((root) =>
+    buildLibraryPublicationEntry(root, indexByAddress, engagement)
+  )
 }
 
 export function filterEngagedPublications(
@@ -499,80 +659,35 @@ export function filterEngagedPublications(
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  const out: LibraryPublicationEntry[] = []
-
-  for (const root of roots) {
-    const reachable = collectReachableAddressesCached(root, indexByAddress)
-    const rootAddr = eventTagAddress(root)
-    if (rootAddr) reachable.add(rootAddr)
-
-    let hasLabel = false
-    let hasComment = false
-    let hasHighlight = false
-    let engagementCount = 0
-    const labelNames = new Set<string>()
-
-    for (const addr of reachable) {
-      const indexed = indexByAddress.get(addr)
-      const flags = addressHasEngagement(addr, indexed?.id, engagement)
-      if (flags.hasLabel) {
-        hasLabel = true
-        collectLabelNamesForTarget(addr, indexed?.id, engagement, labelNames)
-      }
-      if (flags.hasComment) hasComment = true
-      if (flags.hasHighlight) hasHighlight = true
-      if (flags.hasLabel || flags.hasComment || flags.hasHighlight) engagementCount++
-    }
-
-    const rootFlags = addressHasEngagement(rootAddr ?? '', root.id, engagement)
-    hasLabel = hasLabel || rootFlags.hasLabel
-    hasComment = hasComment || rootFlags.hasComment
-    hasHighlight = hasHighlight || rootFlags.hasHighlight
-    if (rootFlags.hasLabel) {
-      collectLabelNamesForTarget(rootAddr ?? '', root.id, engagement, labelNames)
-    }
-
-    if (hasLabel || hasComment || hasHighlight) {
-      out.push({
-        event: root,
-        hasLabel,
-        labelNames: [...labelNames].sort((a, b) => a.localeCompare(b)),
-        hasComment,
-        hasHighlight,
-        engagementCount: Math.max(engagementCount, 1)
-      })
-    }
-  }
-
-  return out
+  return getTopLevelIndexEvents(roots)
+    .map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
+    .filter((entry) => entry.hasLabel || entry.hasComment || entry.hasHighlight)
 }
 
 export function buildRecentPublicationEntries(
   roots: Event[],
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps,
   limit = LIBRARY_RECENT_FALLBACK_LIMIT
 ): LibraryPublicationEntry[] {
-  return [...roots]
+  return [...getTopLevelIndexEvents(roots)]
     .sort((a, b) => b.created_at - a.created_at)
     .slice(0, limit)
-    .map((event) => ({
-      event,
-      hasLabel: false,
-      labelNames: [],
-      hasComment: false,
-      hasHighlight: false,
-      engagementCount: 0
-    }))
+    .map((event) => buildLibraryPublicationEntry(event, indexByAddress, engagement))
 }
 
-/** Engaged publications first; when none match, show the newest top-level indexes. */
+/** Engaged publications first; when none match, show the newest top-level indexes (still enriched). */
 export function pickLibraryPublicationEntries(
   roots: Event[],
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  const engaged = sortLibraryPublications(filterEngagedPublications(roots, indexByAddress, engagement))
-  if (engaged.length > 0) return engaged
-  return buildRecentPublicationEntries(roots)
+  const enriched = getTopLevelIndexEvents(roots).map((root) =>
+    buildLibraryPublicationEntry(root, indexByAddress, engagement)
+  )
+  const engaged = enriched.filter((entry) => entry.hasLabel || entry.hasComment || entry.hasHighlight)
+  if (engaged.length > 0) return sortLibraryPublications(engaged)
+  return sortLibraryPublications(buildRecentPublicationEntries(roots, indexByAddress, engagement))
 }
 
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
@@ -583,13 +698,51 @@ export function sortLibraryPublications(entries: LibraryPublicationEntry[]): Lib
   })
 }
 
-const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
-  labelAddresses: new Set(),
-  labelEventIds: new Set(),
-  labelValuesByAddress: new Map(),
-  labelValuesByEventId: new Map(),
-  commentAddresses: new Set(),
-  highlightAddresses: new Set()
+const EMPTY_ENGAGEMENT = emptyPublicationEngagementMaps()
+
+function emptyPublicationEngagementMaps(): PublicationEngagementMaps {
+  return {
+    labelAddresses: new Set(),
+    labelEventIds: new Set(),
+    labelValuesByAddress: new Map(),
+    labelValuesByEventId: new Map(),
+    booklistAddresses: new Set(),
+    booklistEventIds: new Set(),
+    myBooklistAddresses: new Set(),
+    myBooklistEventIds: new Set(),
+    myCommentAddresses: new Set(),
+    myCommentEventIds: new Set(),
+    myHighlightAddresses: new Set(),
+    myHighlightEventIds: new Set(),
+    commentAddresses: new Set(),
+    highlightAddresses: new Set()
+  }
+}
+
+function isEventInBookmarkList(bookmarkList: Event, event: Event): boolean {
+  const isReplaceable = isReplaceableEvent(event.kind)
+  const eventKey = isReplaceable ? getReplaceableCoordinateFromEvent(event) : event.id
+  return bookmarkList.tags.some((tag) =>
+    isReplaceable ? tag[0] === 'a' && tag[1] === eventKey : tag[0] === 'e' && tag[1] === eventKey
+  )
+}
+
+export function publicationEntryBelongsToUser(
+  entry: LibraryPublicationEntry,
+  opts: {
+    userPubkey: string
+    bookmarkListEvent?: Event | null
+    pinListEvent?: Event | null
+  }
+): boolean {
+  const { event } = entry
+  const pk = opts.userPubkey.toLowerCase()
+  if (event.pubkey.toLowerCase() === pk) return true
+  if (event.tags.some((t) => t[0] === 'p' && t[1]?.toLowerCase() === pk)) return true
+  if (entry.hasMyBooklistLabel || entry.hasMyComment || entry.hasMyHighlight) return true
+  if (opts.bookmarkListEvent && isEventInBookmarkList(opts.bookmarkListEvent, event)) return true
+  if (opts.pinListEvent && isEventInPinList(opts.pinListEvent, event)) return true
+  return false
 }
 
 /** Haystack for kind-30040 index search: general fields plus section refs and language tags. */
@@ -660,11 +813,36 @@ function libraryEntriesFromRoots(
       event: root,
       hasLabel: false,
       labelNames: [],
+      hasBooklistLabel: false,
+      hasMyBooklistLabel: false,
       hasComment: false,
       hasHighlight: false,
       engagementCount: 0
     }
   })
+}
+
+/** Re-fetch engagement maps for the current library index snapshot (e.g. after booklist toggle). */
+export async function refreshLibraryEngagement(
+  relayUrls: string[],
+  indexEvents: Event[],
+  viewerPubkey?: string | null
+): Promise<{ engagement: PublicationEngagementMaps; engaged: LibraryPublicationEntry[] }> {
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
+  const targetEventIds = collectPublicationIndexEventIds(indexEvents)
+  const engagement = await fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds, {
+    httpOnly: true,
+    viewerPubkey
+  })
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  if (sessionCache) {
+    sessionCache = { ...sessionCache, engagement, viewerPubkey: viewerPubkey ?? null }
+  }
+  return {
+    engagement,
+    engaged: pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
+  }
 }
 
 /** Search all cached kind-30040 indexes (library index store), mapping nested hits to top-level roots. */
@@ -1031,14 +1209,20 @@ export function filterLibraryPublicationsBySearch(
 
 export function filterLibraryPublicationsByUser(
   entries: LibraryPublicationEntry[],
-  userPubkey: string | null | undefined
+  userPubkey: string | null | undefined,
+  opts?: {
+    bookmarkListEvent?: Event | null
+    pinListEvent?: Event | null
+  }
 ): LibraryPublicationEntry[] {
   if (!userPubkey) return entries
-  const pk = userPubkey.toLowerCase()
-  return entries.filter(({ event }) => {
-    if (event.pubkey.toLowerCase() === pk) return true
-    return event.tags.some((t) => t[0] === 'p' && t[1]?.toLowerCase() === pk)
-  })
+  return entries.filter((entry) =>
+    publicationEntryBelongsToUser(entry, {
+      userPubkey,
+      bookmarkListEvent: opts?.bookmarkListEvent,
+      pinListEvent: opts?.pinListEvent
+    })
+  )
 }
 
 function collectTargetAddressesFromIndexes(
@@ -1080,6 +1264,7 @@ export async function loadLibraryPublicationIndex(
   relayUrls: string[],
   options?: {
     forceRefresh?: boolean
+    viewerPubkey?: string | null
     /** Called as soon as kind-30040 indexes are loaded — before engagement (which can take minutes). */
     onIndexesReady?: (snapshot: {
       engaged: LibraryPublicationEntry[]
@@ -1096,11 +1281,29 @@ export async function loadLibraryPublicationIndex(
   engagement: PublicationEngagementMaps
 }> {
   const key = relaySetKey(relayUrls)
+  const viewerPubkey = options?.viewerPubkey ?? null
   if (import.meta.env.DEV) {
     logger.info('[Library] load start', { relayCount: relayUrls.length, cached: sessionCache?.relayKey === key })
   }
 
   if (!options?.forceRefresh && sessionCache?.relayKey === key) {
+    if (sessionCache.viewerPubkey !== viewerPubkey) {
+      const targetAddresses = collectTargetAddressesFromIndexes(
+        sessionCache.indexEvents,
+        sessionCache.indexByAddress
+      )
+      const targetEventIds = collectPublicationIndexEventIds(sessionCache.indexEvents)
+      sessionCache = {
+        ...sessionCache,
+        viewerPubkey,
+        engagement: await fetchPublicationEngagementMaps(
+          relayUrls,
+          targetAddresses,
+          targetEventIds,
+          { httpOnly: true, viewerPubkey }
+        )
+      }
+    }
     const engaged = await buildEngagedFromCache(
       relayUrls,
       sessionCache.indexEvents,
@@ -1128,7 +1331,7 @@ export async function loadLibraryPublicationIndex(
   let topLevel = getTopLevelIndexEvents(indexEvents)
 
   options?.onIndexesReady?.({
-    engaged: buildRecentPublicationEntries(topLevel),
+    engaged: buildRecentPublicationEntries(topLevel, indexByAddress, emptyPublicationEngagementMaps()),
     allIndexCount: indexEvents.length,
     topLevelCount: topLevel.length,
     indexEvents
@@ -1158,21 +1361,11 @@ export async function loadLibraryPublicationIndex(
   try {
     engagement = await Promise.race([
       fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds, {
-        httpOnly: true
+        httpOnly: true,
+        viewerPubkey
       }),
       new Promise<PublicationEngagementMaps>((resolve) => {
-        window.setTimeout(
-          () =>
-            resolve({
-              labelAddresses: new Set(),
-              labelEventIds: new Set(),
-              labelValuesByAddress: new Map(),
-              labelValuesByEventId: new Map(),
-              commentAddresses: new Set(),
-              highlightAddresses: new Set()
-            }),
-          ENGAGEMENT_FETCH_TIMEOUT_MS
-        )
+        window.setTimeout(() => resolve(emptyPublicationEngagementMaps()), ENGAGEMENT_FETCH_TIMEOUT_MS)
       })
     ])
   } catch (e) {
@@ -1181,14 +1374,7 @@ export async function loadLibraryPublicationIndex(
         message: e instanceof Error ? e.message : String(e)
       })
     }
-    engagement = {
-      labelAddresses: new Set(),
-      labelEventIds: new Set(),
-      labelValuesByAddress: new Map(),
-      labelValuesByEventId: new Map(),
-      commentAddresses: new Set(),
-      highlightAddresses: new Set()
-    }
+    engagement = emptyPublicationEngagementMaps()
   }
   if (import.meta.env.DEV) {
     logger.info('[Library] engagement maps built', {
@@ -1198,7 +1384,7 @@ export async function loadLibraryPublicationIndex(
     })
   }
 
-  sessionCache = { relayKey: key, indexEvents, indexByAddress, engagement }
+  sessionCache = { relayKey: key, viewerPubkey, indexEvents, indexByAddress, engagement }
 
   const engaged = pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
 

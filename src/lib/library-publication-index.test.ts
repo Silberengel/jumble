@@ -7,6 +7,7 @@ import {
   clearLibrarySearchSessionCache,
   filterEngagedPublications,
   filterLibraryPublicationsBySearch,
+  filterLibraryPublicationsByUser,
   pickLibraryPublicationEntries,
   peekLibrarySearchResults,
   publicationIndexMatchesSearchQuery,
@@ -75,6 +76,7 @@ describe('library-publication-index', () => {
     expect(engaged).toHaveLength(1)
     expect(engaged[0].hasLabel).toBe(true)
     expect(engaged[0].labelNames).toEqual(['MIT'])
+    expect(engaged[0].hasBooklistLabel).toBe(false)
   })
 
   it('extracts NIP-32 l tag values, not L namespace declarations', () => {
@@ -98,7 +100,33 @@ describe('library-publication-index', () => {
     const engagement = buildEngagementMapsFromEvents([label], [], [])
     const engaged = filterEngagedPublications([root], indexByAddress, engagement)
     expect(engaged).toHaveLength(1)
-    expect(engaged[0].labelNames).toEqual(['booklist'])
+    expect(engaged[0].labelNames).toEqual([])
+    expect(engaged[0].hasBooklistLabel).toBe(true)
+    expect(engaged[0].hasMyBooklistLabel).toBe(false)
+  })
+
+  it('tracks viewer booklist labels separately', () => {
+    const rootAddr = `30040:${PK}:book`
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    const indexByAddress = buildIndexByAddress([root])
+    const viewerPk = 'f'.repeat(64)
+    const label: Event = {
+      id: '6'.repeat(64),
+      kind: ExtendedKind.LABEL,
+      pubkey: viewerPk,
+      created_at: 50,
+      content: '',
+      tags: [
+        ['L', 'ugc'],
+        ['l', 'booklist', 'ugc'],
+        ['a', rootAddr]
+      ],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([label], [], [], undefined, undefined, viewerPk)
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
+    expect(engaged[0].hasBooklistLabel).toBe(true)
+    expect(engaged[0].hasMyBooklistLabel).toBe(true)
   })
 
   it('filterLibraryPublicationsBySearch matches title', () => {
@@ -108,6 +136,10 @@ describe('library-publication-index', () => {
         event: root,
         hasLabel: true,
         labelNames: ['MIT'],
+        hasBooklistLabel: false,
+        hasMyBooklistLabel: false,
+        hasMyComment: false,
+        hasMyHighlight: false,
         hasComment: false,
         hasHighlight: false,
         engagementCount: 1
@@ -225,7 +257,85 @@ describe('library-publication-index', () => {
       ev.created_at = i
       return ev
     })
-    expect(buildRecentPublicationEntries(roots, 10)).toHaveLength(10)
-    expect(buildRecentPublicationEntries(roots, 10)[0].event.created_at).toBe(11)
+    const indexByAddress = buildIndexByAddress(roots)
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    expect(buildRecentPublicationEntries(roots, indexByAddress, engagement, 10)).toHaveLength(10)
+    expect(buildRecentPublicationEntries(roots, indexByAddress, engagement, 10)[0].event.created_at).toBe(11)
+  })
+
+  it('filterLibraryPublicationsByUser includes authored, booklist, bookmarked, and commented', () => {
+    const viewerPk = 'f'.repeat(64)
+    const authored = indexEvent('mine', [`30041:${PK}:ch`], '1'.repeat(64))
+    authored.pubkey = viewerPk
+    const booklisted = indexEvent('booklisted', [`30041:${PK}:ch2`], '2'.repeat(64))
+    const commented = indexEvent('commented', [`30041:${PK}:ch3`], '3'.repeat(64))
+    const unrelated = indexEvent('other', [`30041:${PK}:ch4`], '4'.repeat(64))
+    const entries = [
+      {
+        event: authored,
+        hasLabel: false,
+        labelNames: [],
+        hasBooklistLabel: false,
+        hasMyBooklistLabel: false,
+        hasMyComment: false,
+        hasMyHighlight: false,
+        hasComment: false,
+        hasHighlight: false,
+        engagementCount: 0
+      },
+      {
+        event: booklisted,
+        hasLabel: false,
+        labelNames: [],
+        hasBooklistLabel: true,
+        hasMyBooklistLabel: true,
+        hasMyComment: false,
+        hasMyHighlight: false,
+        hasComment: false,
+        hasHighlight: false,
+        engagementCount: 0
+      },
+      {
+        event: commented,
+        hasLabel: false,
+        labelNames: [],
+        hasBooklistLabel: false,
+        hasMyBooklistLabel: false,
+        hasMyComment: true,
+        hasMyHighlight: false,
+        hasComment: true,
+        hasHighlight: false,
+        engagementCount: 1
+      },
+      {
+        event: unrelated,
+        hasLabel: false,
+        labelNames: [],
+        hasBooklistLabel: false,
+        hasMyBooklistLabel: false,
+        hasMyComment: false,
+        hasMyHighlight: false,
+        hasComment: false,
+        hasHighlight: false,
+        engagementCount: 0
+      }
+    ]
+    const bookmarkList: Event = {
+      id: 'b'.repeat(64),
+      kind: kinds.BookmarkList,
+      pubkey: viewerPk,
+      created_at: 100,
+      content: '',
+      tags: [['a', `30040:${PK}:other`]],
+      sig: 'd'.repeat(128)
+    }
+    unrelated.tags.push(['d', 'other'])
+
+    const filtered = filterLibraryPublicationsByUser(entries, viewerPk, {
+      bookmarkListEvent: bookmarkList
+    })
+    expect(filtered.map((e) => e.event.id).sort()).toEqual(
+      [authored.id, booklisted.id, commented.id, unrelated.id].sort()
+    )
   })
 })

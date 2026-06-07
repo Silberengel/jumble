@@ -5,6 +5,7 @@ import customEmojiService from '@/services/custom-emoji.service'
 import mediaUpload from '@/services/media-upload.service'
 import { appendContentWarningTagIfNeeded } from '@/lib/content-warning'
 import { prefixNostrAddresses } from '@/lib/nostr-address'
+import { NIP32_BOOKLIST_LABEL, NIP32_UGC_NAMESPACE } from '@/lib/nip32-label'
 import { normalizeHashtag, normalizeTopic } from '@/lib/discussion-topics'
 import logger from '@/lib/logger'
 import {
@@ -1208,6 +1209,20 @@ export function createDeletionRequestDraftEvent(event: Event): TDraftEvent {
     kind: kinds.EventDeletion,
     content: 'Request for deletion of the event.',
     tags,
+    created_at: dayjs().unix()
+  }
+}
+
+/** NIP-32 kind-1985 label placing a kind-30040 publication on the user's booklist. */
+export function createBooklistLabelDraftEvent(publication: Event): TDraftEvent {
+  return {
+    kind: ExtendedKind.LABEL,
+    content: '',
+    tags: [
+      ['L', NIP32_UGC_NAMESPACE],
+      ['l', NIP32_BOOKLIST_LABEL, NIP32_UGC_NAMESPACE],
+      buildATag(publication)
+    ],
     created_at: dayjs().unix()
   }
 }
