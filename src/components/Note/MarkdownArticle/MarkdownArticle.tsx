@@ -110,6 +110,13 @@ function resolveImetaForMarkdownImageUrl(
  */
 const MD_PARAGRAPH_FLOW_CLASS = 'mb-1 last:mb-0'
 
+/** Paragraph that is only a single `:shortcode:` (custom or native) — often a trailing reaction emoji. */
+const EMOJI_ONLY_PARAGRAPH_RE = new RegExp(`^${EMOJI_SHORT_CODE_REGEX.source}$`)
+
+function isEmojiOnlyParagraphText(text: string): boolean {
+  return EMOJI_ONLY_PARAGRAPH_RE.test(text.trim())
+}
+
 /** Author custom emoji image URL → slide index in the note lightbox ({@link lightboxSlideFromImeta}). */
 type TInlineEmojiLightbox = {
   imageIndexMap: Map<string, number>
@@ -3681,6 +3688,9 @@ function parseMarkdownContentMarked(
   const renderParagraph = (token: any, key: string): React.ReactNode => {
     const rawParagraphText = String(token.text ?? token.raw ?? '')
     const paragraphText = rawParagraphText.trim()
+    if (!paragraphText) {
+      return null
+    }
     const displayMathSplit = splitParagraphByDisplayMath(rawParagraphText)
     if (displayMathSplit) {
       return (
@@ -4552,8 +4562,13 @@ function parseMarkdownContentMarked(
     }
 
     const inlineNodes = renderInlineTokens(paragraphTokens, `${key}-inline`)
+    const emojiOnly = isEmojiOnlyParagraphText(paragraphText)
     return (
-      <div key={`${key}-p`} role="paragraph" className={MD_PARAGRAPH_FLOW_CLASS}>
+      <div
+        key={`${key}-p`}
+        role="paragraph"
+        className={emojiOnly ? 'mb-1 last:mb-0 leading-none' : MD_PARAGRAPH_FLOW_CLASS}
+      >
         {inlineNodes}
       </div>
     )
@@ -4573,7 +4588,10 @@ function parseMarkdownContentMarked(
       const key = `${keyPrefix}-${i}`
       switch (token.type) {
         case 'space': {
-          const gapEm = spaceTokenExtraGapEm(token)
+          const next = tokens[i + 1]
+          const nextIsEmojiOnly =
+            next?.type === 'paragraph' && isEmojiOnlyParagraphText(String(next.text ?? next.raw ?? ''))
+          const gapEm = nextIsEmojiOnly ? 0 : spaceTokenExtraGapEm(token)
           if (gapEm > 0) {
             nodes.push(
               <div

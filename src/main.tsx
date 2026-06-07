@@ -12,7 +12,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { initI18n } from './i18n'
-import { restoreSessionFeedSnapshotsAfterHardRefresh } from './services/session-feed-snapshot.service'
+import { restorePersistedFeedSnapshots } from './services/session-feed-snapshot.service'
 import { installStaleBuildChunkRecovery } from './lib/stale-chunk-recovery'
 import { initPwaUpdate } from './lib/pwa-update'
 import { installViewportHeightListeners } from './lib/viewport-height'
@@ -51,7 +51,7 @@ async function bootstrap() {
     })()
   ])
   console.info('[imwald] Boot: mounting React (UI shell will appear; Nostr session restores next)')
-  restoreSessionFeedSnapshotsAfterHardRefresh()
+  restorePersistedFeedSnapshots()
   // Mark session storage as used so it's visible in DevTools; VersionUpdateBanner and NotePage also use it.
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, String(Date.now()))

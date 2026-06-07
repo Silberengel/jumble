@@ -2244,9 +2244,11 @@ const NoteList = forwardRef(
               )
               .filter((req) => req.urls.length > 0)
             if (mapped.length === 0) return
-            const disk = await client.getTimelineDiskSnapshotEvents(
-              mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
-            )
+            const diskReq = mapped as Array<{ urls: string[]; filter: TSubRequestFilter }>
+            const disk = await client.getLocalFeedEvents(diskReq, {
+              maxRowsScanned: 50_000,
+              maxMatches: Math.min(FEED_FULL_SEARCH_MERGE_CAP, Math.max(LIMIT, 200))
+            })
             if (diskPrimeCancelled || timelineEffectStale() || !disk.length) return
             const cap = areAlgoRelays ? ALGO_LIMIT : LIMIT
             const merged = collapseDuplicateNip18RepostTimelineRows(mergeEventBatchesById([], disk, cap, areAlgoRelays))
@@ -2529,6 +2531,20 @@ const NoteList = forwardRef(
             ? ALGO_LIMIT
             : LIMIT
 
+        const paintLocalWarmupTimeline = (merged: Event[], variant: string) => {
+          if (merged.length === 0 || timelineEffectStale()) return
+          timelineMergeBootstrapRef.current = merged.slice()
+          setEvents(merged)
+          lastEventsForTimelinePrefetchRef.current = merged
+          setNewEvents([])
+          setShowCount(revealBatchSize ?? SHOW_COUNT)
+          setLoading(false)
+          feedPaintRelayPendingRef.current = true
+          feedPaintRelayMetaRef.current = { variant, mergedCount: merged.length }
+          setFeedEmptyToastGateTick((n) => n + 1)
+          setFeedTimelineEmptyUiReady(true)
+        }
+
         /** Profile feeds: bounded fetch in parallel with subscribe (do not wait for EOSE / outcomes). */
         const runProfileTimelineNetworkFetch = (variant: string) => {
           if (!profileAuthorWarmSpecForRefresh || !profileMappedForRefresh) return
@@ -2588,12 +2604,18 @@ const NoteList = forwardRef(
           )
         }
 
+        const shouldAwaitLocalDiskWarmup =
+          !oneShotFetch &&
+          mappedSubRequests.length > 0 &&
+          !relayAuthoritativeFeedOnlyRef.current
+
         const isSpellPageLocalWarmup =
-          hostPrimaryPageName === 'spells' && !oneShotFetch && mappedSubRequests.length > 0
+          hostPrimaryPageName === 'spells' && shouldAwaitLocalDiskWarmup
 
         /**
          * Session + IndexedDB hydration without blocking relay REQ/subscribe. Merges the same way as live
          * {@link onEvents} so rows appear as soon as local sources resolve.
+         * Skipped when {@link shouldAwaitLocalDiskWarmup} already painted from disk in `init`.
          */
         const startNonBlockingTimelineDiskPrime = () => {
           const strictSingleRelayAuthoritative =
@@ -2603,7 +2625,7 @@ const NoteList = forwardRef(
               (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
           if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
           if (oneShotFetch || mappedSubRequests.length === 0) return
-          if (isSpellPageLocalWarmup) return
+          if (shouldAwaitLocalDiskWarmup) return
           const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
           const strictSingleRelayShard =
             mappedSubRequests.length === 1 &&
@@ -2733,79 +2755,53 @@ const NoteList = forwardRef(
             setLoading(!!oneShotFetch)
           } else {
             let primedFromDisk = false
-            let spellLocalMergeBase: Event[] = []
+            let localMergeBase: Event[] = []
+            const profileMapped = mappedSubRequests as Array<{
+              urls: string[]
+              filter: TSubRequestFilter
+            }>
+            const profileAuthorWarmSpec = getProfileAuthorWarmupSpec(profileMapped)
 
-            if (isSpellPageLocalWarmup) {
-              const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
-              const matchesSpellLocal = (ev: Event) =>
-                shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
-              const kindsForScan = unionKindsForSpellLocalWarmup(
-                shardFilters,
-                effectiveShowKindsRef.current
-              )
-              const sinceTightest = tightestSinceFromSpellFilters(shardFilters)
-              const localLayerCap = Math.min(
-                FEED_FULL_SEARCH_MERGE_CAP,
-                Math.max(eventCapEarly, 200)
-              )
-              const sessionScanCap = Math.min(800, localLayerCap * 4)
+            if (shouldAwaitLocalDiskWarmup) {
+              if (isSpellPageLocalWarmup) {
+                const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
+                const matchesSpellLocal = (ev: Event) =>
+                  shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
+                const kindsForScan = unionKindsForSpellLocalWarmup(
+                  shardFilters,
+                  effectiveShowKindsRef.current
+                )
+                const sinceTightest = tightestSinceFromSpellFilters(shardFilters)
+                const localLayerCap = Math.min(
+                  FEED_FULL_SEARCH_MERGE_CAP,
+                  Math.max(eventCapEarly, 200)
+                )
+                const sessionScanCap = Math.min(800, localLayerCap * 4)
 
-              const sessionHits = client
-                .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
-                .filter(matchesSpellLocal)
-                .sort((a, b) => b.created_at - a.created_at)
+                const sessionHits = client
+                  .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
+                  .filter(matchesSpellLocal)
+                  .sort((a, b) => b.created_at - a.created_at)
 
-              if (!timelineEffectStale() && sessionHits.length > 0) {
-                const narrowedS = narrowLiveBatch(sessionHits)
-                if (narrowedS.length > 0) {
-                  const mergedS = collapseDuplicateNip18RepostTimelineRows(
-                    mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
-                  )
-                  if (mergedS.length > 0) {
-                    spellLocalMergeBase = mergedS
-                    timelineMergeBootstrapRef.current = mergedS.slice()
-                    setEvents(mergedS)
-                    lastEventsForTimelinePrefetchRef.current = mergedS
-                    setNewEvents([])
-                    setShowCount(revealBatchSize ?? SHOW_COUNT)
-                    setLoading(false)
-                    feedPaintRelayPendingRef.current = true
-                    feedPaintRelayMetaRef.current = {
-                      variant: 'spell_local_session',
-                      mergedCount: mergedS.length
+                if (!timelineEffectStale() && sessionHits.length > 0) {
+                  const narrowedS = narrowLiveBatch(sessionHits)
+                  if (narrowedS.length > 0) {
+                    const mergedS = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
+                    )
+                    if (mergedS.length > 0) {
+                      localMergeBase = mergedS
+                      primedFromDisk = true
+                      paintLocalWarmupTimeline(mergedS, 'spell_local_session')
                     }
-                    primedFromDisk = true
                   }
                 }
-              }
 
-              void (async () => {
                 try {
                   const filterAwareDiskReq = mappedSubRequests as Array<{
                     urls: string[]
                     filter: TSubRequestFilter
                   }>
-
-                  const mergeSpellLocalDiskLayer = (incoming: Event[], variant: string) => {
-                    if (!effectActive || timelineEffectStale()) return
-                    const narrowed = narrowLiveBatch(incoming)
-                    if (narrowed.length === 0) return
-                    const merged = collapseDuplicateNip18RepostTimelineRows(
-                      mergeEventBatchesById(spellLocalMergeBase, narrowed, eventCapEarly, areAlgoRelays)
-                    )
-                    if (merged.length === 0) return
-                    spellLocalMergeBase = merged
-                    timelineMergeBootstrapRef.current = merged.slice()
-                    setEvents(merged)
-                    lastEventsForTimelinePrefetchRef.current = merged
-                    setNewEvents([])
-                    setShowCount(revealBatchSize ?? SHOW_COUNT)
-                    setLoading(false)
-                    feedPaintRelayPendingRef.current = true
-                    feedPaintRelayMetaRef.current = { variant, mergedCount: merged.length }
-                    setFeedEmptyToastGateTick((n) => n + 1)
-                    setFeedTimelineEmptyUiReady(true)
-                  }
 
                   const mentionRecipients = recipientPubkeysFromSpellFilters(shardFilters)
                   if (mentionRecipients.length === 1) {
@@ -2814,10 +2810,19 @@ const NoteList = forwardRef(
                         mentionRecipients[0]!,
                         localLayerCap
                       )
-                      mergeSpellLocalDiskLayer(
-                        paymentNotifications.filter(matchesSpellLocal),
-                        'spell_payment_notifications_idb'
-                      )
+                      const payRows = paymentNotifications.filter(matchesSpellLocal)
+                      if (payRows.length > 0 && !timelineEffectStale()) {
+                        const narrowedPay = narrowLiveBatch(payRows)
+                        if (narrowedPay.length > 0) {
+                          const mergedPay = collapseDuplicateNip18RepostTimelineRows(
+                            mergeEventBatchesById(localMergeBase, narrowedPay, eventCapEarly, areAlgoRelays)
+                          )
+                          if (mergedPay.length > 0) {
+                            localMergeBase = mergedPay
+                            primedFromDisk = true
+                          }
+                        }
+                      }
                     } catch {
                       /* best-effort */
                     }
@@ -2839,108 +2844,89 @@ const NoteList = forwardRef(
                       maxMatches: localLayerCap * 2
                     })
                   ])
-                  if (!effectActive || timelineEffectStale()) return
-                  const seen = new Set<string>()
-                  const combinedRaw: Event[] = []
-                  for (const ev of diskRaw) {
-                    if (seen.has(ev.id)) continue
-                    seen.add(ev.id)
-                    combinedRaw.push(ev)
+                  if (effectActive && !timelineEffectStale()) {
+                    const seen = new Set<string>()
+                    const combinedRaw: Event[] = []
+                    for (const ev of diskRaw) {
+                      if (seen.has(ev.id)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    for (const ev of filterAwareLocalRaw) {
+                      if (seen.has(ev.id)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    for (const ev of fromPub) {
+                      if (seen.has(ev.id)) continue
+                      if (!matchesSpellLocal(ev)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    for (const ev of fromArch) {
+                      if (seen.has(ev.id)) continue
+                      if (!matchesSpellLocal(ev)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    combinedRaw.sort((a, b) => b.created_at - a.created_at)
+                    if (combinedRaw.length > 0) {
+                      const diskNarrowed = narrowLiveBatch(combinedRaw)
+                      if (diskNarrowed.length > 0) {
+                        const merged = collapseDuplicateNip18RepostTimelineRows(
+                          mergeEventBatchesById(localMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
+                        )
+                        if (merged.length > 0) {
+                          localMergeBase = merged
+                          primedFromDisk = true
+                        }
+                      }
+                    }
                   }
-                  for (const ev of filterAwareLocalRaw) {
-                    if (seen.has(ev.id)) continue
-                    seen.add(ev.id)
-                    combinedRaw.push(ev)
-                  }
-                  for (const ev of fromPub) {
-                    if (seen.has(ev.id)) continue
-                    if (!matchesSpellLocal(ev)) continue
-                    seen.add(ev.id)
-                    combinedRaw.push(ev)
-                  }
-                  for (const ev of fromArch) {
-                    if (seen.has(ev.id)) continue
-                    if (!matchesSpellLocal(ev)) continue
-                    seen.add(ev.id)
-                    combinedRaw.push(ev)
-                  }
-                  combinedRaw.sort((a, b) => b.created_at - a.created_at)
-                  if (combinedRaw.length === 0) return
-                  const diskNarrowed = narrowLiveBatch(combinedRaw)
-                  if (diskNarrowed.length === 0) return
-                  const merged = collapseDuplicateNip18RepostTimelineRows(
-                    mergeEventBatchesById(spellLocalMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
-                  )
-                  if (merged.length === 0) return
-                  timelineMergeBootstrapRef.current = merged.slice()
-                  setEvents(merged)
-                  lastEventsForTimelinePrefetchRef.current = merged
-                  setNewEvents([])
-                  setShowCount(revealBatchSize ?? SHOW_COUNT)
-                  setLoading(false)
-                  feedPaintRelayPendingRef.current = true
-                  feedPaintRelayMetaRef.current = {
-                    variant:
-                      spellLocalMergeBase.length > 0 ? 'spell_local_merged' : 'disk_snapshot',
-                    mergedCount: merged.length
+
+                  if (primedFromDisk && localMergeBase.length > 0 && !timelineEffectStale()) {
+                    paintLocalWarmupTimeline(localMergeBase, 'spell_local_disk')
                   }
                 } catch {
                   /* spell local + disk snapshot is best-effort */
                 }
-              })()
-            } else {
-              const profileMapped = mappedSubRequests as Array<{
-                urls: string[]
-                filter: TSubRequestFilter
-              }>
-              const profileAuthorWarmSpec = getProfileAuthorWarmupSpec(profileMapped)
-              if (isProfileTimelineFeed && profileAuthorWarmSpec && !timelineEffectStale()) {
+              } else if (isProfileTimelineFeed && profileAuthorWarmSpec && !timelineEffectStale()) {
                 profileLocalPrimingPendingRef.current = true
-                const sessionScanLimit = Math.min(4000, Math.max(eventCapEarly * 4, 800))
-                const sessionHits = client.eventService.listSessionEventsAuthoredBy(
-                  profileAuthorWarmSpec.author,
-                  { kinds: profileAuthorWarmSpec.kinds, limit: sessionScanLimit }
-                )
-                if (sessionHits.length > 0) {
-                  const narrowedS = narrowLiveBatch(sessionHits as Event[])
-                  if (narrowedS.length > 0) {
-                    const mergedS = collapseDuplicateNip18RepostTimelineRows(
-                      mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
-                    )
-                    if (mergedS.length > 0) {
-                      timelineMergeBootstrapRef.current = mergedS.slice()
-                      setEvents(mergedS)
-                      lastEventsForTimelinePrefetchRef.current = mergedS
-                      setNewEvents([])
-                      setShowCount(revealBatchSize ?? SHOW_COUNT)
-                      setLoading(false)
-                      feedPaintRelayPendingRef.current = true
-                      feedPaintRelayMetaRef.current = {
-                        variant: 'profile_local_session',
-                        mergedCount: mergedS.length
+                try {
+                  const sessionScanLimit = Math.min(4000, Math.max(eventCapEarly * 4, 800))
+                  const sessionHits = client.eventService.listSessionEventsAuthoredBy(
+                    profileAuthorWarmSpec.author,
+                    { kinds: profileAuthorWarmSpec.kinds, limit: sessionScanLimit }
+                  )
+                  if (sessionHits.length > 0) {
+                    const narrowedS = narrowLiveBatch(sessionHits as Event[])
+                    if (narrowedS.length > 0) {
+                      const mergedS = collapseDuplicateNip18RepostTimelineRows(
+                        mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
+                      )
+                      if (mergedS.length > 0) {
+                        localMergeBase = mergedS
+                        primedFromDisk = true
+                        paintLocalWarmupTimeline(mergedS, 'profile_local_session')
                       }
-                      primedFromDisk = true
                     }
                   }
-                }
 
-                void (async () => {
-                  try {
-                    const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
-                    const archiveCap = Math.min(2000, Math.max(eventCapEarly, 150))
-                    const [fromArchive, diskSnap, fromLocalFeed] = await Promise.all([
-                      indexedDb.scanEventArchiveByAuthorPubkey(profileAuthorWarmSpec.author, {
-                        kinds: profileAuthorWarmSpec.kinds,
-                        maxRowsScanned: 16_000,
-                        maxMatches: archiveCap
-                      }),
-                      client.getTimelineDiskSnapshotEvents(diskReq),
-                      client.getLocalFeedEvents(diskReq, {
-                        maxRowsScanned: 16_000,
-                        maxMatches: archiveCap
-                      })
-                    ])
-                    if (!effectActive || timelineEffectStale()) return
+                  const diskReq = mappedSubRequests as Array<{ urls: string[]; filter: TSubRequestFilter }>
+                  const archiveCap = Math.min(2000, Math.max(eventCapEarly, 150))
+                  const [fromArchive, diskSnap, fromLocalFeed] = await Promise.all([
+                    indexedDb.scanEventArchiveByAuthorPubkey(profileAuthorWarmSpec.author, {
+                      kinds: profileAuthorWarmSpec.kinds,
+                      maxRowsScanned: 16_000,
+                      maxMatches: archiveCap
+                    }),
+                    client.getTimelineDiskSnapshotEvents(diskReq),
+                    client.getLocalFeedEvents(diskReq, {
+                      maxRowsScanned: 16_000,
+                      maxMatches: archiveCap
+                    })
+                  ])
+                  if (effectActive && !timelineEffectStale()) {
                     const premerged = mergeEventBatchesById(
                       [],
                       [...(fromArchive as Event[]), ...(diskSnap as Event[]), ...(fromLocalFeed as Event[])],
@@ -2950,34 +2936,22 @@ const NoteList = forwardRef(
                     if (premerged.length > 0) {
                       const narrowed = narrowLiveBatch(premerged)
                       if (narrowed.length > 0) {
-                        setEvents((prev) => {
-                          const merged = collapseDuplicateNip18RepostTimelineRows(
-                            mergeEventBatchesById(prev, narrowed, eventCapEarly, areAlgoRelays)
-                          )
-                          if (merged.length > 0) {
-                            timelineMergeBootstrapRef.current = merged.slice()
-                          }
-                          lastEventsForTimelinePrefetchRef.current = merged
-                          return merged
-                        })
-                        setNewEvents([])
-                        setShowCount(revealBatchSize ?? SHOW_COUNT)
-                        if (!feedPaintLiveRelayDoneRef.current) {
-                          setLoading(false)
-                          feedPaintRelayPendingRef.current = true
-                          feedPaintRelayMetaRef.current = {
-                            variant: 'profile_local_archive',
-                            mergedCount: narrowed.length
-                          }
-                          setFeedEmptyToastGateTick((n) => n + 1)
-                          setFeedTimelineEmptyUiReady(true)
+                        const merged = collapseDuplicateNip18RepostTimelineRows(
+                          mergeEventBatchesById(localMergeBase, narrowed, eventCapEarly, areAlgoRelays)
+                        )
+                        if (merged.length > 0) {
+                          localMergeBase = merged
+                          primedFromDisk = true
+                          paintLocalWarmupTimeline(merged, 'profile_local_disk')
                         }
                       }
                     }
+                  }
 
-                    const relayUrls = getProfileTimelineFetchRelayUrls(profileMapped)
-                    if (relayUrls.length > 0) {
-                      const fetched = await client.fetchEvents(
+                  const relayUrls = getProfileTimelineFetchRelayUrls(profileMapped)
+                  if (relayUrls.length > 0 && effectActive && !timelineEffectStale()) {
+                    void client
+                      .fetchEvents(
                         relayUrls,
                         {
                           authors: [profileAuthorWarmSpec.author],
@@ -2992,45 +2966,128 @@ const NoteList = forwardRef(
                           foreground: true
                         }
                       )
-                      if (!effectActive || timelineEffectStale()) return
-                      if (fetched.length > 0) {
+                      .then((fetched) => {
+                        if (!effectActive || timelineEffectStale() || fetched.length === 0) return
                         const narrowedFetch = narrowLiveBatch(fetched)
-                        if (narrowedFetch.length > 0) {
-                          setEvents((prev) => {
-                            const merged = collapseDuplicateNip18RepostTimelineRows(
-                              mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
-                            )
-                            if (merged.length > 0) {
-                              timelineMergeBootstrapRef.current = merged.slice()
-                            }
-                            lastEventsForTimelinePrefetchRef.current = merged
-                            return merged
-                          })
-                          feedRelayReturnedAnyEventRef.current = true
-                          if (!feedPaintLiveRelayDoneRef.current) {
-                            setLoading(false)
-                            setFeedEmptyToastGateTick((n) => n + 1)
-                            setFeedTimelineEmptyUiReady(true)
+                        if (narrowedFetch.length === 0) return
+                        setEvents((prev) => {
+                          const merged = collapseDuplicateNip18RepostTimelineRows(
+                            mergeEventBatchesById(prev, narrowedFetch, eventCapEarly, areAlgoRelays)
+                          )
+                          if (merged.length > 0) {
+                            timelineMergeBootstrapRef.current = merged.slice()
                           }
+                          lastEventsForTimelinePrefetchRef.current = merged
+                          return merged
+                        })
+                        feedRelayReturnedAnyEventRef.current = true
+                        if (!feedPaintLiveRelayDoneRef.current) {
+                          setLoading(false)
+                          setFeedEmptyToastGateTick((n) => n + 1)
+                          setFeedTimelineEmptyUiReady(true)
+                        }
+                      })
+                      .catch(() => {
+                        /* best-effort */
+                      })
+                  }
+                } catch {
+                  /* profile local archive is best-effort */
+                } finally {
+                  profileLocalPrimingPendingRef.current = false
+                }
+              } else {
+                const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
+                const matchesTimelineLocal = (ev: Event) =>
+                  shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
+                const kindsForScan = unionKindsForSpellLocalWarmup(
+                  shardFilters,
+                  effectiveShowKindsRef.current
+                )
+                const sinceTightest = tightestSinceFromSpellFilters(shardFilters)
+                const localLayerCap = Math.min(
+                  FEED_FULL_SEARCH_MERGE_CAP,
+                  Math.max(eventCapEarly, 200)
+                )
+                const sessionScanCap = Math.min(800, localLayerCap * 4)
+                const filterAwareDiskReq = mappedSubRequests as Array<{
+                  urls: string[]
+                  filter: TSubRequestFilter
+                }>
+
+                const sessionHits = client
+                  .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
+                  .filter(matchesTimelineLocal)
+                  .sort((a, b) => b.created_at - a.created_at)
+
+                if (!timelineEffectStale() && sessionHits.length > 0) {
+                  const narrowedS = narrowLiveBatch(sessionHits)
+                  if (narrowedS.length > 0) {
+                    const mergedS = collapseDuplicateNip18RepostTimelineRows(
+                      mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
+                    )
+                    if (mergedS.length > 0) {
+                      localMergeBase = mergedS
+                      primedFromDisk = true
+                      paintLocalWarmupTimeline(mergedS, 'timeline_local_session')
+                    }
+                  }
+                }
+
+                try {
+                  const [diskRaw, filterAwareLocalRaw, fromArch] = await Promise.all([
+                    client.getTimelineDiskSnapshotEvents(filterAwareDiskReq),
+                    client.getLocalFeedEvents(filterAwareDiskReq, {
+                      maxRowsScanned: 50_000,
+                      maxMatches: localLayerCap * 3
+                    }),
+                    indexedDb.scanEventArchiveByKinds({
+                      kinds: kindsForScan,
+                      since: sinceTightest,
+                      maxRowsScanned: 50_000,
+                      maxMatches: localLayerCap * 2
+                    })
+                  ])
+                  if (effectActive && !timelineEffectStale()) {
+                    const seen = new Set<string>()
+                    const combinedRaw: Event[] = []
+                    for (const ev of diskRaw) {
+                      if (seen.has(ev.id)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    for (const ev of filterAwareLocalRaw) {
+                      if (seen.has(ev.id)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    for (const ev of fromArch as Event[]) {
+                      if (seen.has(ev.id)) continue
+                      if (!matchesTimelineLocal(ev)) continue
+                      seen.add(ev.id)
+                      combinedRaw.push(ev)
+                    }
+                    combinedRaw.sort((a, b) => b.created_at - a.created_at)
+                    if (combinedRaw.length > 0) {
+                      const diskNarrowed = narrowLiveBatch(combinedRaw)
+                      if (diskNarrowed.length > 0) {
+                        const merged = collapseDuplicateNip18RepostTimelineRows(
+                          mergeEventBatchesById(localMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
+                        )
+                        if (merged.length > 0) {
+                          localMergeBase = merged
+                          primedFromDisk = true
+                          paintLocalWarmupTimeline(merged, 'timeline_local_disk')
                         }
                       }
                     }
-                  } catch {
-                    /* profile local archive is best-effort */
-                  } finally {
-                    profileLocalPrimingPendingRef.current = false
-                    if (!effectActive || timelineEffectStale()) return
-                    if (!feedPaintLiveRelayDoneRef.current) {
-                      feedPaintLiveRelayDoneRef.current = true
-                      setLoading(false)
-                      setFeedEmptyToastGateTick((n) => n + 1)
-                      setFeedTimelineEmptyUiReady(true)
-                    }
                   }
-                })()
+                } catch {
+                  /* generic local + disk snapshot is best-effort */
+                }
               }
             }
-            if (!primedFromDisk && !profileRelayStackRefinement) {
+            if (!primedFromDisk && !profileRelayStackRefinement && !shouldAwaitLocalDiskWarmup) {
               if (!keepRowsVisible) setLoading(true)
               timelineMergeBootstrapRef.current = []
               setEvents([])
@@ -3932,6 +3989,21 @@ const NoteList = forwardRef(
     useEffect(() => {
       eventsRef.current = events
     }, [events])
+
+    /** Debounced session snapshot so F5 / tab reload restores the last painted timeline (Spells notifications, etc.). */
+    useEffect(() => {
+      if (!sessionSnapshotIdentityKey || events.length === 0) return
+      const strictSingleRelayAuthoritative =
+        subRequestsRef.current.length === 1 &&
+        subRequestsRef.current[0]!.urls.length === 1 &&
+        (hostPrimaryPageNameRef.current === 'relay' ||
+          (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
+      if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
+      const timer = window.setTimeout(() => {
+        setSessionFeedSnapshot(sessionSnapshotIdentityKey, events)
+      }, 400)
+      return () => window.clearTimeout(timer)
+    }, [events, sessionSnapshotIdentityKey, allowKindlessRelayExplore, useFilterAsIs])
 
     useEffect(() => {
       newEventsRef.current = newEvents
