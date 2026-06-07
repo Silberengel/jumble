@@ -229,19 +229,6 @@ export default function Image({
     if (el.complete && el.naturalWidth > 0) {
       captureIntrinsicDim(el)
       notifyLoaded()
-      return
-    }
-    if (typeof el.decode === 'function') {
-      let cancelled = false
-      el.decode().then(() => {
-        if (!cancelled && el.naturalWidth > 0) {
-          captureIntrinsicDim(el)
-          notifyLoaded()
-        }
-      }).catch(() => {})
-      return () => {
-        cancelled = true
-      }
     }
   }, [revealed, badSrc, imageUrl, notifyLoaded, captureIntrinsicDim])
 
@@ -398,7 +385,7 @@ export default function Image({
           src={imageUrl}
           alt={finalAlt}
           referrerPolicy="no-referrer-when-downgrade"
-          decoding={effectiveHoldUntilClick ? 'async' : 'sync'}
+          decoding="async"
           // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
           loading="eager"
           {...(fetchPriority ? { fetchpriority: fetchPriority } : {})}

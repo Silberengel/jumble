@@ -1,3 +1,4 @@
+import { findSessionBooklistLabelForPublication } from '@/lib/booklist-label'
 import { ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
 import {
   eventMatchesGeneralSearchQuery,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/publication-index'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { isEventInPinList } from '@/lib/replaceable-list-latest'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import {
   clearLibraryIndexIdbCache,
@@ -117,7 +119,15 @@ function librarySearchFingerprint(context: LibrarySearchContext): string {
     ? engagement.labelAddresses.size +
       engagement.labelEventIds.size +
       engagement.commentAddresses.size +
-      engagement.highlightAddresses.size
+      engagement.highlightAddresses.size +
+      engagement.booklistAddresses.size +
+      engagement.booklistEventIds.size +
+      engagement.myBooklistAddresses.size +
+      engagement.myBooklistEventIds.size +
+      engagement.myCommentAddresses.size +
+      engagement.myCommentEventIds.size +
+      engagement.myHighlightAddresses.size +
+      engagement.myHighlightEventIds.size
     : 0
   return `${context.indexEvents.length}:${engagementSize}`
 }
@@ -247,23 +257,38 @@ function normalizeLibraryRelayUrl(url: string): string {
   return normalizeUrl(trimmed) || trimmed
 }
 
-function libraryIndexRelayUrls(extraRelayUrls: string[] = []): string[] {
-  const base = LIBRARY_RELAY_URLS.map(normalizeLibraryRelayUrl).filter(Boolean)
-  const extra = extraRelayUrls.map(normalizeLibraryRelayUrl).filter(Boolean)
+function filterBlockedLibraryRelays(urls: string[], blockedRelays: readonly string[] = []): string[] {
+  if (blockedRelays.length === 0) return urls
+  return urls.filter((url) => !isRelayBlockedByUser(url, blockedRelays))
+}
+
+function libraryIndexRelayUrls(extraRelayUrls: string[] = [], blockedRelays: readonly string[] = []): string[] {
+  const base = filterBlockedLibraryRelays(
+    LIBRARY_RELAY_URLS.map(normalizeLibraryRelayUrl).filter(Boolean),
+    blockedRelays
+  )
+  const extra = filterBlockedLibraryRelays(
+    extraRelayUrls.map(normalizeLibraryRelayUrl).filter(Boolean),
+    blockedRelays
+  )
   return [...new Set([...base, ...extra])]
 }
 
-export async function buildLibraryRelayUrls(userPubkey?: string): Promise<string[]> {
-  const base = libraryIndexRelayUrls()
+export async function buildLibraryRelayUrls(
+  userPubkey?: string,
+  blockedRelays: string[] = []
+): Promise<string[]> {
+  const base = libraryIndexRelayUrls([], blockedRelays)
   const urls = await buildComprehensiveRelayList({
     userPubkey,
     includeUserOwnRelays: true,
     includeFastReadRelays: false,
     includeSearchableRelays: false,
     includeFavoriteRelays: false,
-    relayHints: base
+    relayHints: base,
+    blockedRelays
   })
-  return libraryIndexRelayUrls([...urls])
+  return libraryIndexRelayUrls([...urls], blockedRelays)
 }
 
 export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Event[]> {
@@ -733,13 +758,19 @@ export function publicationEntryBelongsToUser(
     userPubkey: string
     bookmarkListEvent?: Event | null
     pinListEvent?: Event | null
+    myBooklistAddresses?: Set<string>
+    myBooklistEventIds?: Set<string>
   }
 ): boolean {
   const { event } = entry
   const pk = opts.userPubkey.toLowerCase()
+  const rootAddr = eventTagAddress(event)
   if (event.pubkey.toLowerCase() === pk) return true
   if (event.tags.some((t) => t[0] === 'p' && t[1]?.toLowerCase() === pk)) return true
   if (entry.hasMyBooklistLabel || entry.hasMyComment || entry.hasMyHighlight) return true
+  if (rootAddr && opts.myBooklistAddresses?.has(rootAddr)) return true
+  if (opts.myBooklistEventIds?.has(event.id.toLowerCase())) return true
+  if (findSessionBooklistLabelForPublication(opts.userPubkey, event)) return true
   if (opts.bookmarkListEvent && isEventInBookmarkList(opts.bookmarkListEvent, event)) return true
   if (opts.pinListEvent && isEventInPinList(opts.pinListEvent, event)) return true
   return false
@@ -806,20 +837,7 @@ function libraryEntriesFromRoots(
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  return roots.map((root) => {
-    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
-    if (engaged.length > 0) return engaged[0]
-    return {
-      event: root,
-      hasLabel: false,
-      labelNames: [],
-      hasBooklistLabel: false,
-      hasMyBooklistLabel: false,
-      hasComment: false,
-      hasHighlight: false,
-      engagementCount: 0
-    }
-  })
+  return roots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
 }
 
 /** Re-fetch engagement maps for the current library index snapshot (e.g. after booklist toggle). */
@@ -1213,6 +1231,8 @@ export function filterLibraryPublicationsByUser(
   opts?: {
     bookmarkListEvent?: Event | null
     pinListEvent?: Event | null
+    myBooklistAddresses?: Set<string>
+    myBooklistEventIds?: Set<string>
   }
 ): LibraryPublicationEntry[] {
   if (!userPubkey) return entries
@@ -1220,7 +1240,9 @@ export function filterLibraryPublicationsByUser(
     publicationEntryBelongsToUser(entry, {
       userPubkey,
       bookmarkListEvent: opts?.bookmarkListEvent,
-      pinListEvent: opts?.pinListEvent
+      pinListEvent: opts?.pinListEvent,
+      myBooklistAddresses: opts?.myBooklistAddresses,
+      myBooklistEventIds: opts?.myBooklistEventIds
     })
   )
 }

@@ -38,7 +38,7 @@ export default function PublicationCoverImage({
       <Image
         image={{ url: imageUrl, pubkey }}
         className={cn(maxClass, 'max-w-full object-contain')}
-        classNames={{ wrapper: 'inline-block w-auto max-w-full' }}
+        classNames={{ wrapper: 'block w-full max-w-full' }}
         hideIfError
         holdUntilClick={!autoLoadMedia}
       />

@@ -2,7 +2,7 @@ import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, POLL_TYPE } 
 import { TEmoji, TMailboxRelay, TPollType, TRelayList, TRelaySet, TPaymentInfo, TProfile } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { buildATag } from './draft-event'
-import { resolveGutenbergCoverImageUrl } from './gutenberg-cover'
+import { normalizeGutenbergCoverImageUrl, resolveGutenbergCoverImageUrl } from './gutenberg-cover'
 import { getLatestEvent, getReplaceableEventIdentifier } from './event'
 import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightning'
 import { formatPubkey, pubkeyToNpub } from './pubkey'
@@ -720,7 +720,9 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
   }
 
   let image = base.image?.trim() || undefined
-  if (!image) {
+  if (image) {
+    image = normalizeGutenbergCoverImageUrl(image)
+  } else {
     image = resolveGutenbergCoverImageUrl(source)
   }
 

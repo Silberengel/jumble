@@ -85,4 +85,15 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     const meta = getPublicationIndexMetadataFromEvent(event)
     expect(meta.image).toBe('https://example.com/cover.jpg')
   })
+
+  it('normalizes Gutenberg ebook page in image tag to cover JPG', () => {
+    const event = indexEvent([
+      ['d', 'book'],
+      ['title', 'Book'],
+      ['image', 'https://www.gutenberg.org/ebooks/16702'],
+      ['a', `30041:${PK}:intro`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.image).toBe('https://www.gutenberg.org/cache/epub/16702/pg16702.cover.medium.jpg')
+  })
 })

@@ -338,4 +338,48 @@ describe('library-publication-index', () => {
       [authored.id, booklisted.id, commented.id, unrelated.id].sort()
     )
   })
+
+  it('searchLibraryPublications keeps my booklist flags for booklist-only publications', async () => {
+    clearLibrarySearchSessionCache()
+    const viewerPk = 'f'.repeat(64)
+    const rootAddr = `30040:${PK}:jane-eyre`
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    root.tags = [['d', 'jane-eyre'], ['title', 'Jane Eyre'], ['a', `30041:${PK}:intro`]]
+    const label: Event = {
+      id: '7'.repeat(64),
+      kind: ExtendedKind.LABEL,
+      pubkey: viewerPk,
+      created_at: 50,
+      content: '',
+      tags: [['L', 'ugc'], ['l', 'booklist', 'ugc'], ['a', rootAddr]],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([label], [], [], undefined, undefined, viewerPk)
+    const results = await searchLibraryPublications('jane eyre', { indexEvents: [root], engagement })
+    expect(results).toHaveLength(1)
+    expect(results[0].hasMyBooklistLabel).toBe(true)
+    expect(filterLibraryPublicationsByUser(results, viewerPk)).toHaveLength(1)
+  })
+
+  it('filterLibraryPublicationsByUser matches myBooklistAddresses without engagement flags', () => {
+    const viewerPk = 'f'.repeat(64)
+    const rootAddr = `30040:${PK}:jane-eyre`
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    const entry = {
+      event: root,
+      hasLabel: false,
+      labelNames: [],
+      hasBooklistLabel: false,
+      hasMyBooklistLabel: false,
+      hasMyComment: false,
+      hasMyHighlight: false,
+      hasComment: false,
+      hasHighlight: false,
+      engagementCount: 0
+    }
+    const filtered = filterLibraryPublicationsByUser([entry], viewerPk, {
+      myBooklistAddresses: new Set([rootAddr])
+    })
+    expect(filtered).toHaveLength(1)
+  })
 })

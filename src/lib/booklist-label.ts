@@ -9,6 +9,57 @@ import type { Event, Filter } from 'nostr-tools'
 
 export const BOOKLIST_LABEL_UPDATED_EVENT = 'booklist-label-updated'
 
+export type ViewerBooklistTargets = {
+  addresses: Set<string>
+  eventIds: Set<string>
+}
+
+function collectBooklistTargetsFromLabelEvents(events: Event[]): ViewerBooklistTargets {
+  const addresses = new Set<string>()
+  const eventIds = new Set<string>()
+  for (const ev of events) {
+    if (!labelEventHasBooklistTag(ev)) continue
+    for (const tag of ev.tags) {
+      if (tag[0] === 'a' && tag[1]?.trim()) addresses.add(tag[1].trim())
+      if (tag[0] === 'e' && tag[1]?.trim()) eventIds.add(tag[1].trim().toLowerCase())
+    }
+  }
+  return { addresses, eventIds }
+}
+
+/** All publication coordinates the viewer has on their booklist (session + network). */
+export async function fetchViewerBooklistTargets(
+  userPubkey: string,
+  relayUrls: string[]
+): Promise<ViewerBooklistTargets> {
+  const sessionHits = eventService.listSessionEventsAuthoredBy(userPubkey, {
+    kinds: [ExtendedKind.LABEL],
+    limit: 200
+  })
+  const merged = new Map<string, Event>()
+  for (const ev of sessionHits) {
+    if (labelEventHasBooklistTag(ev)) merged.set(ev.id, ev)
+  }
+
+  if (relayUrls.length > 0) {
+    const filter: Filter = {
+      kinds: [ExtendedKind.LABEL],
+      authors: [userPubkey],
+      '#l': [NIP32_BOOKLIST_LABEL],
+      limit: 500
+    }
+    const network = await client.fetchEvents(relayUrls, [filter], {
+      globalTimeout: 12_000,
+      eoseTimeout: 3_000
+    })
+    for (const ev of network) {
+      if (labelEventHasBooklistTag(ev)) merged.set(ev.id, ev)
+    }
+  }
+
+  return collectBooklistTargetsFromLabelEvents([...merged.values()])
+}
+
 export function dispatchBooklistLabelUpdated(publication: Event): void {
   window.dispatchEvent(
     new CustomEvent(BOOKLIST_LABEL_UPDATED_EVENT, {

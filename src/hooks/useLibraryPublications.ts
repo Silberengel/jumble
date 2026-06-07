@@ -11,10 +11,12 @@ import {
   type LibraryPublicationEntry,
   type PublicationEngagementMaps
 } from '@/lib/library-publication-index'
-import { BOOKLIST_LABEL_UPDATED_EVENT } from '@/lib/booklist-label'
+import { BOOKLIST_LABEL_UPDATED_EVENT, fetchViewerBooklistTargets } from '@/lib/booklist-label'
+import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import { fetchNewestPinListForPubkey } from '@/lib/replaceable-list-latest'
 import { getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -39,8 +41,11 @@ const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   highlightAddresses: new Set()
 }
 
+const EMPTY_BOOKLIST_TARGETS = { addresses: new Set<string>(), eventIds: new Set<string>() }
+
 export function useLibraryPublications(isActive: boolean) {
   const { pubkey, bookmarkListEvent } = useNostr()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [entries, setEntries] = useState<LibraryPublicationEntry[]>([])
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
   const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
@@ -56,7 +61,30 @@ export function useLibraryPublications(isActive: boolean) {
   const [allIndexCount, setAllIndexCount] = useState(0)
   const [topLevelCount, setTopLevelCount] = useState(0)
   const [pinListEvent, setPinListEvent] = useState<Event | null>(null)
+  const [myBooklistTargets, setMyBooklistTargets] = useState(EMPTY_BOOKLIST_TARGETS)
   const loadGenRef = useRef(0)
+
+  const loadMyBooklistTargets = useCallback(async () => {
+    if (!pubkey) {
+      setMyBooklistTargets(EMPTY_BOOKLIST_TARGETS)
+      return
+    }
+    const relays = await buildAccountListRelayUrlsForMerge({
+      accountPubkey: pubkey,
+      favoriteRelays: favoriteRelays ?? [],
+      blockedRelays: blockedRelays ?? []
+    })
+    const targets = await fetchViewerBooklistTargets(pubkey, relays)
+    setMyBooklistTargets(targets)
+  }, [pubkey, favoriteRelays, blockedRelays])
+
+  useEffect(() => {
+    if (!isActive || !pubkey) {
+      setMyBooklistTargets(EMPTY_BOOKLIST_TARGETS)
+      return
+    }
+    void loadMyBooklistTargets()
+  }, [isActive, pubkey, loadMyBooklistTargets])
 
   useEffect(() => {
     if (!pubkey) {
@@ -65,9 +93,9 @@ export function useLibraryPublications(isActive: boolean) {
     }
     let cancelled = false
     void (async () => {
-      const relays = await buildLibraryRelayUrls(pubkey)
+      const relays = await buildLibraryRelayUrls(pubkey, blockedRelays ?? [])
       const pinList = await fetchNewestPinListForPubkey(pubkey, relays)
-      if (!cancelled) setPinListEvent(pinList)
+      if (!cancelled) setPinListEvent(pinList ?? null)
     })()
     return () => {
       cancelled = true
@@ -89,7 +117,7 @@ export function useLibraryPublications(isActive: boolean) {
         logger.info('[Library] page load requested', { forceRefresh, gen })
       }
       try {
-        const relays = await buildLibraryRelayUrls(pubkey || undefined)
+        const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
         let timeoutId: number | undefined
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = window.setTimeout(() => reject(new Error('Library load timed out')), LOAD_TIMEOUT_MS)
@@ -134,7 +162,7 @@ export function useLibraryPublications(isActive: boolean) {
         }
       }
     },
-    [pubkey]
+    [pubkey, blockedRelays]
   )
 
   useEffect(() => {
@@ -147,7 +175,8 @@ export function useLibraryPublications(isActive: boolean) {
     let cancelled = false
     const onBooklistUpdated = () => {
       void (async () => {
-        const relays = await buildLibraryRelayUrls(pubkey)
+        await loadMyBooklistTargets()
+        const relays = await buildLibraryRelayUrls(pubkey, blockedRelays ?? [])
         const { engagement: nextEngagement, engaged } = await refreshLibraryEngagement(
           relays,
           indexEvents,
@@ -165,7 +194,7 @@ export function useLibraryPublications(isActive: boolean) {
       cancelled = true
       window.removeEventListener(BOOKLIST_LABEL_UPDATED_EVENT, onBooklistUpdated)
     }
-  }, [isActive, pubkey, indexEvents, debouncedSearch])
+  }, [isActive, pubkey, indexEvents, debouncedSearch, loadMyBooklistTargets, blockedRelays])
 
   useEffect(() => {
     const q = debouncedSearch.trim()
@@ -205,8 +234,8 @@ export function useLibraryPublications(isActive: boolean) {
     setRelaySearchLoading(true)
     setError(null)
     try {
-      const relays = await buildLibraryRelayUrls(pubkey || undefined)
-      const { events, mergedIndexEvents, entries, fromCache } = await searchLibraryPublicationsOnRelays(
+      const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+      const { events, mergedIndexEvents, fromCache } = await searchLibraryPublicationsOnRelays(
         q,
         relays,
         { indexEvents, engagement }
@@ -220,6 +249,18 @@ export function useLibraryPublications(isActive: boolean) {
           fromCache
         })
       }
+
+      let nextEngagement = engagement
+      if (pubkey) {
+        const refreshed = await refreshLibraryEngagement(relays, mergedIndexEvents, pubkey)
+        nextEngagement = refreshed.engagement
+        setEngagement(nextEngagement)
+      }
+
+      const entries = await searchLibraryPublications(q, {
+        indexEvents: mergedIndexEvents,
+        engagement: nextEngagement
+      })
       setSearchResults(entries)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
@@ -230,11 +271,16 @@ export function useLibraryPublications(isActive: boolean) {
     } finally {
       setRelaySearchLoading(false)
     }
-  }, [searchQuery, pubkey, indexEvents, engagement])
+  }, [searchQuery, pubkey, indexEvents, engagement, blockedRelays])
 
   const filteredEntries = useMemo(() => {
     const q = debouncedSearch.trim()
-    const mineFilterOpts = { bookmarkListEvent, pinListEvent }
+    const mineFilterOpts = {
+      bookmarkListEvent,
+      pinListEvent,
+      myBooklistAddresses: myBooklistTargets.addresses,
+      myBooklistEventIds: myBooklistTargets.eventIds
+    }
     let list: LibraryPublicationEntry[]
     if (showOnlyMine && !q) {
       list = filterLibraryPublicationsByUser(
@@ -258,7 +304,8 @@ export function useLibraryPublications(isActive: boolean) {
     indexEvents,
     engagement,
     bookmarkListEvent,
-    pinListEvent
+    pinListEvent,
+    myBooklistTargets
   ])
 
   return {

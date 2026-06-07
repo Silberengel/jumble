@@ -528,6 +528,12 @@ export default defineConfig(({ mode }) => {
             }
           },
           {
+            // Project Gutenberg covers: bypass SW cache — CacheFirst can serve stale/truncated
+            // HTML error bodies for .jpg URLs and the browser reports "image corrupt or truncated".
+            urlPattern: /^https:\/\/(?:www\.)?gutenberg\.org\//i,
+            handler: 'NetworkOnly'
+          },
+          {
             // Generic cross-origin images by file extension (covers hosts not matched above)
             urlPattern: /^https?:\/\/.+\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico)(?:\?.*)?$/i,
             handler: 'CacheFirst',
