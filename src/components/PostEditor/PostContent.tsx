@@ -1361,21 +1361,22 @@ export default function PostContent({
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
         let d = await finalizeDraftEvent(cleanedText)
-        const labKey = advancedLabPersistenceKey
-        const saved = postEditorCache.getAdvancedLabDraft(labKey)
-        if (saved && saved.kind === d.kind) {
-          setAdvancedLabInitial({
-            kind: saved.kind,
-            content: saved.content,
-            tags: stripImwaldAttributionTags(saved.tags).map((row: string[]) => [...row])
-          })
-        } else {
-          setAdvancedLabInitial({
-            kind: d.kind,
-            content: d.content,
-            tags: stripImwaldAttributionTags(d.tags ?? []).map((row: string[]) => [...row])
-          })
-        }
+        const saved = postEditorCache.getAdvancedLabDraft(advancedLabPersistenceKey)
+        // Prefer live composer text; only restore a persisted lab body when the composer is empty.
+        const useSavedLabBody = !d.content.trim() && saved && saved.kind === d.kind
+        setAdvancedLabInitial(
+          useSavedLabBody
+            ? {
+                kind: saved.kind,
+                content: saved.content,
+                tags: stripImwaldAttributionTags(saved.tags).map((row: string[]) => [...row])
+              }
+            : {
+                kind: d.kind,
+                content: d.content,
+                tags: stripImwaldAttributionTags(d.tags ?? []).map((row: string[]) => [...row])
+              }
+        )
         setAdvancedLabOpen(true)
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))

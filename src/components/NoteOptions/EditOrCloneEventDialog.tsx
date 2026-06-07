@@ -377,7 +377,8 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
     const key = advancedLabDraftPersistenceKey
     const saved = key ? postEditorCache.getAdvancedLabDraft(key) : undefined
-    if (saved && saved.kind === k) {
+    const useSavedLabBody = !content.trim() && saved && saved.kind === k
+    if (useSavedLabBody) {
       setAdvancedLabInitial({
         kind: saved.kind,
         content: saved.content,

@@ -1,3 +1,4 @@
+import { ExtendedKind } from '@/constants'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
@@ -159,7 +160,11 @@ const PostTextarea = forwardRef<
     }, [setText, text])
 
     const previewSurfaceClass = cn(
-      isSmallScreen ? 'min-h-[min(36dvh,17rem)]' : 'min-h-52'
+      kind === ExtendedKind.POLL
+        ? 'min-h-20'
+        : isSmallScreen
+          ? 'min-h-[min(36dvh,17rem)]'
+          : 'min-h-52'
     )
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
