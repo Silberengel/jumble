@@ -655,6 +655,82 @@ export function getLongFormArticleMetadataFromEvent(event: Event) {
   return { title, summary, image, tags: Array.from(tags) }
 }
 
+export type PublicationAuthor = {
+  name: string
+  role?: string
+}
+
+export type PublicationSectionRef = {
+  coordinate: string
+  label?: string
+}
+
+export type PublicationIndexMetadata = {
+  title?: string
+  summary?: string
+  image?: string
+  tags: string[]
+  authors: PublicationAuthor[]
+  source?: string
+  type?: string
+  version?: string
+  releaseDate?: string
+  language?: string
+  sectionCount: number
+  sections: PublicationSectionRef[]
+}
+
+/** NKBIP-01 kind 30040 index metadata from tags (content is always empty). */
+export function getPublicationIndexMetadataFromEvent(event: Event): PublicationIndexMetadata {
+  const base = getLongFormArticleMetadataFromEvent(event)
+  const authors: PublicationAuthor[] = []
+  const sections: PublicationSectionRef[] = []
+  let source: string | undefined
+  let type: string | undefined
+  let version: string | undefined
+  let releaseDate: string | undefined
+  let language: string | undefined
+
+  for (const tag of event.tags) {
+    const name = (tag[0] || '').trim().toLowerCase()
+    const value = tag[1]?.trim()
+    if (!value) continue
+
+    if (name === 'author') {
+      const role = tag[2]?.trim()
+      authors.push({ name: value, role: role || undefined })
+    } else if (name === 'source') {
+      source = value
+    } else if (name === 'type') {
+      type = value
+    } else if (name === 'version') {
+      version = value
+    } else if (name === 'release_date') {
+      releaseDate = value
+    } else if (name === 'l' && !language) {
+      language = value
+    } else if (name === 'a') {
+      const label = tag[3]?.trim() || tag[2]?.trim()
+      sections.push({
+        coordinate: value,
+        label: label && !label.startsWith('wss://') && !label.startsWith('ws://') ? label : undefined
+      })
+    }
+  }
+
+  return {
+    ...base,
+    authors,
+    source,
+    type,
+    version,
+    releaseDate,
+    language,
+    sectionCount: sections.length,
+    sections
+  }
+}
+
 export function getLiveEventMetadataFromEvent(event: Event) {
   let title: string | undefined
   let room: string | undefined

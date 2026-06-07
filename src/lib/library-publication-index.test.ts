@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildEngagementMapsFromEvents,
+  buildLibraryPublicationRelaySearchFilters,
   buildRecentPublicationEntries,
+  clearLibrarySearchSessionCache,
   filterEngagedPublications,
   filterLibraryPublicationsBySearch,
-  pickLibraryPublicationEntries
+  pickLibraryPublicationEntries,
+  peekLibrarySearchResults,
+  publicationIndexMatchesSearchQuery,
+  publicationQueryDTagVariants,
+  searchLibraryPublicationIndex,
+  searchLibraryPublications
 } from '@/lib/library-publication-index'
 import { buildIndexByAddress } from '@/lib/publication-index'
 import type { Event } from 'nostr-tools'
@@ -82,6 +89,93 @@ describe('library-publication-index', () => {
     ]
     expect(filterLibraryPublicationsBySearch(entries, 'title book')).toHaveLength(1)
     expect(filterLibraryPublicationsBySearch(entries, 'missing')).toHaveLength(0)
+  })
+
+  it('publicationIndexMatchesSearchQuery matches author, source, and section labels', () => {
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    root.tags.push(['author', 'Sudraka', 'author'])
+    root.tags.push(['source', 'https://www.gutenberg.org/ebooks/21020'])
+    root.tags.push(['type', 'book'])
+    root.tags.push(['a', `30041:${PK}:intro`, 'wss://relay.example', 'Introduction'])
+
+    expect(publicationIndexMatchesSearchQuery(root, 'sudraka')).toBe(true)
+    expect(publicationIndexMatchesSearchQuery(root, 'gutenberg')).toBe(true)
+    expect(publicationIndexMatchesSearchQuery(root, 'introduction')).toBe(true)
+    expect(publicationIndexMatchesSearchQuery(root, 'missing')).toBe(false)
+  })
+
+  it('buildLibraryPublicationRelaySearchFilters uses kind 30040 for d-tag and search', () => {
+    expect(publicationQueryDTagVariants('Village Life in China')).toContain('village-life-in-china')
+
+    const filters = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
+    expect(filters.length).toBeGreaterThan(0)
+    expect(filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === ExtendedKind.PUBLICATION)).toBe(
+      true
+    )
+
+    const dFilter = filters.find((f) => f['#d'])
+    expect(dFilter?.['#d']).toContain('village-life-in-china')
+
+    const searchFilter = filters.find((f) => f.search === 'Village Life in China')
+    expect(searchFilter?.kinds).toEqual([ExtendedKind.PUBLICATION])
+  })
+
+  it('searchLibraryPublications caches results for repeated queries', async () => {
+    clearLibrarySearchSessionCache()
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    root.tags = [['d', 'book'], ['title', 'Title book'], ['a', `30041:${PK}:intro`]]
+    const indexEvents = [root]
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+
+    const first = await searchLibraryPublications('title book', { indexEvents, engagement })
+    expect(first).toHaveLength(1)
+
+    const peeked = peekLibrarySearchResults('title book', { indexEvents, engagement })
+    expect(peeked?.map((e) => e.event.id)).toEqual([root.id])
+
+    const second = await searchLibraryPublications('title book', { indexEvents, engagement })
+    expect(second.map((e) => e.event.id)).toEqual([root.id])
+  })
+
+  it('searchLibraryPublications cache invalidates when index corpus changes', async () => {
+    clearLibrarySearchSessionCache()
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    root.tags = [['d', 'book'], ['title', 'Title book'], ['a', `30041:${PK}:intro`]]
+    const other = indexEvent('other', [`30041:${PK}:ch`])
+    other.tags = [['d', 'other'], ['title', 'Other title'], ['a', `30041:${PK}:ch`]]
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+
+    await searchLibraryPublications('title book', { indexEvents: [root, other], engagement })
+    expect(peekLibrarySearchResults('title book', { indexEvents: [root, other], engagement })).toHaveLength(1)
+    expect(peekLibrarySearchResults('title book', { indexEvents: [root], engagement })).toBeNull()
+
+    const results = await searchLibraryPublications('other title', {
+      indexEvents: [root, other],
+      engagement
+    })
+    expect(results).toHaveLength(1)
+    expect(results[0].event.id).toBe(other.id)
+  })
+
+  it('searchLibraryPublicationIndex searches all indexes and maps nested hits to roots', () => {
+    const leafAddr = `30041:${PK}:chapter-1`
+    const childAddr = `30040:${PK}:part-1`
+    const root = indexEvent('book', [childAddr])
+    root.tags = [['d', 'book'], ['title', 'Root Book Title'], ['a', childAddr]]
+    const child = indexEvent('part-1', [leafAddr], '2'.repeat(64))
+    child.tags = [
+      ['d', 'part-1'],
+      ['title', 'Part One'],
+      ['a', leafAddr, 'wss://relay.example', 'Chapter One']
+    ]
+    const indexEvents = [root, child]
+    const indexByAddress = buildIndexByAddress(indexEvents)
+
+    const byRootTitle = searchLibraryPublicationIndex('root book', indexEvents, indexByAddress)
+    expect(byRootTitle.map((ev) => ev.id)).toEqual([root.id])
+
+    const bySection = searchLibraryPublicationIndex('chapter one', indexEvents, indexByAddress)
+    expect(bySection.map((ev) => ev.id)).toEqual([root.id])
   })
 
   it('pickLibraryPublicationEntries falls back to newest roots without engagement', () => {

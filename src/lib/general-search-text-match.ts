@@ -46,6 +46,9 @@ const GENERAL_SEARCH_TEXT_TAG_NAMES = new Set([
   'location',
   'editor',
   'version',
+  'source',
+  'type',
+  'release_date',
   'llm'
 ])
 

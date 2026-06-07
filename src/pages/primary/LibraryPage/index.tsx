@@ -22,10 +22,14 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     setShowOnlyMine,
     loading,
     engagementLoading,
+    searchLoading,
+    relaySearchLoading,
     error,
     allIndexCount,
     topLevelCount,
-    refresh
+    refresh,
+    searchOnRelays,
+    hasIndexData
   } = useLibraryPublications(isActive)
 
   useImperativeHandle(
@@ -60,7 +64,9 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             onSearchQueryChange={setSearchQuery}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
-            disabled={loading}
+            onSearchRelays={() => void searchOnRelays()}
+            relaySearchLoading={relaySearchLoading}
+            disabled={loading && !hasIndexData}
           />
         </div>
         {error ? (
@@ -72,6 +78,10 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
         ) : engagementLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library engagement loading')}</p>
+        ) : searchLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
+        ) : relaySearchLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library relay search loading')}</p>
         ) : null}
         {statusLine ? (
           <p className="mb-4 text-xs text-muted-foreground">{statusLine}</p>

@@ -1,12 +1,20 @@
 import { ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
+import {
+  eventMatchesGeneralSearchQuery,
+  generalSearchHaystack,
+  generalSearchQueryTerms,
+  normalizeGeneralSearchQuery
+} from '@/lib/general-search-text-match'
+import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
-import { queryIndexRelay, queryIndexRelayForLibrary } from '@/lib/index-relay-http'
+import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
   collectPublicationIndexEventIds,
   collectReachableAddressesCached,
   eventTagAddress,
   filterValidIndexEvents,
+  getReferencedChild30040Addresses,
   getTopLevelIndexEvents,
   hydrateNestedIndexEvents
 } from '@/lib/publication-index'
@@ -37,6 +45,9 @@ const MAX_TARGET_ADDRESSES = 480
 const HYDRATE_MISSING_CAP = 64
 export const LIBRARY_RECENT_FALLBACK_LIMIT = 120
 const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
+const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
+export const LIBRARY_RELAY_SEARCH_LIMIT = 100
+const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
 const QUERY_OPTS = {
   globalTimeout: 18_000,
   eoseTimeout: 3_000,
@@ -66,6 +77,69 @@ type LibraryIndexCache = {
 }
 
 let sessionCache: LibraryIndexCache | null = null
+
+type LibrarySearchSessionRow = {
+  fingerprint: string
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents: Event[]
+  relaySearched: boolean
+}
+
+const librarySearchSessionCache = new Map<string, LibrarySearchSessionRow>()
+
+function librarySearchQueryKey(query: string): string {
+  return normalizeGeneralSearchQuery(query).toLowerCase()
+}
+
+function librarySearchFingerprint(context: LibrarySearchContext): string {
+  const engagement = context.engagement
+  const engagementSize = engagement
+    ? engagement.labelAddresses.size +
+      engagement.labelEventIds.size +
+      engagement.commentAddresses.size +
+      engagement.highlightAddresses.size
+    : 0
+  return `${context.indexEvents.length}:${engagementSize}`
+}
+
+function getLibrarySearchSessionRow(
+  query: string,
+  context: LibrarySearchContext,
+  opts?: { requireRelaySearch?: boolean }
+): LibrarySearchSessionRow | null {
+  const key = librarySearchQueryKey(query)
+  if (!key) return null
+  const row = librarySearchSessionCache.get(key)
+  if (!row) return null
+  if (row.fingerprint !== librarySearchFingerprint(context)) return null
+  if (opts?.requireRelaySearch && !row.relaySearched) return null
+  return row
+}
+
+function putLibrarySearchSessionRow(
+  query: string,
+  context: LibrarySearchContext,
+  row: Omit<LibrarySearchSessionRow, 'fingerprint'>
+): void {
+  const key = librarySearchQueryKey(query)
+  if (!key) return
+  librarySearchSessionCache.set(key, {
+    ...row,
+    fingerprint: librarySearchFingerprint(context)
+  })
+}
+
+/** Sync read of cached search hits for the current index + engagement snapshot. */
+export function peekLibrarySearchResults(
+  query: string,
+  context: LibrarySearchContext
+): LibraryPublicationEntry[] | null {
+  return getLibrarySearchSessionRow(query, context)?.entries ?? null
+}
+
+export function clearLibrarySearchSessionCache(): void {
+  librarySearchSessionCache.clear()
+}
 
 function relaySetKey(urls: string[]): string {
   return [...new Set(urls.map((u) => normalizeUrl(u) || u))].sort().join('|')
@@ -448,8 +522,201 @@ export function sortLibraryPublications(entries: LibraryPublicationEntry[]): Lib
   })
 }
 
-function normalizeSearchQuery(query: string): string {
-  return query.trim().toLowerCase()
+const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
+  labelAddresses: new Set(),
+  labelEventIds: new Set(),
+  commentAddresses: new Set(),
+  highlightAddresses: new Set()
+}
+
+/** Haystack for kind-30040 index search: general fields plus section refs and language tags. */
+export function publicationIndexSearchHaystack(event: Event): string {
+  const base = generalSearchHaystack(event)
+  if (event.kind !== ExtendedKind.PUBLICATION) return base
+
+  const extra: string[] = []
+  for (const tag of event.tags ?? []) {
+    const name = (tag[0] || '').trim().toLowerCase()
+    if (name === 'l' && tag[1]?.trim()) {
+      extra.push(tag[1].trim())
+    } else if (name === 'a') {
+      const coord = tag[1]?.trim()
+      if (coord) extra.push(coord.replace(/:/g, ' ').replace(/-/g, ' '))
+      const label = tag[3]?.trim() || (tag[2]?.trim() && !/^wss?:\/\//i.test(tag[2]) ? tag[2].trim() : '')
+      if (label) extra.push(label)
+    }
+  }
+  if (extra.length === 0) return base
+  return `${base}\n${extra.join('\n')}`.toLowerCase()
+}
+
+export function publicationIndexMatchesSearchQuery(event: Event, query: string): boolean {
+  if (eventMatchesGeneralSearchQuery(event, query)) return true
+  if (event.kind !== ExtendedKind.PUBLICATION) return false
+
+  const raw = query.trim()
+  if (!raw) return false
+
+  const haystack = publicationIndexSearchHaystack(event)
+  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
+  const qSpace = normalized.replace(/-/g, ' ')
+  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
+  for (const needle of needles) {
+    if (needle && haystack.includes(needle)) return true
+  }
+
+  const words = generalSearchQueryTerms(raw)
+  if (words.length >= 2 && words.every((w) => haystack.includes(w))) return true
+  return false
+}
+
+function buildAddressToRootMap(
+  topLevel: Event[],
+  indexByAddress: Map<string, Event>
+): Map<string, Event> {
+  const map = new Map<string, Event>()
+  for (const root of topLevel) {
+    const rootAddr = eventTagAddress(root)
+    if (rootAddr) map.set(rootAddr, root)
+    for (const addr of collectReachableAddressesCached(root, indexByAddress)) {
+      map.set(addr, root)
+    }
+  }
+  return map
+}
+
+function libraryEntriesFromRoots(
+  roots: Event[],
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps
+): LibraryPublicationEntry[] {
+  return roots.map((root) => {
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
+    if (engaged.length > 0) return engaged[0]
+    return {
+      event: root,
+      hasLabel: false,
+      hasComment: false,
+      hasHighlight: false,
+      engagementCount: 0
+    }
+  })
+}
+
+/** Search all cached kind-30040 indexes (library index store), mapping nested hits to top-level roots. */
+export function searchLibraryPublicationIndex(
+  query: string,
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Event[] {
+  const q = query.trim()
+  if (!q || indexEvents.length === 0) return []
+
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const topLevelIds = new Set(topLevel.map((ev) => ev.id))
+  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const roots = new Map<string, Event>()
+
+  for (const ev of indexEvents) {
+    if (ev.kind !== ExtendedKind.PUBLICATION) continue
+    if (!publicationIndexMatchesSearchQuery(ev, q)) continue
+
+    if (topLevelIds.has(ev.id)) {
+      roots.set(ev.id, ev)
+      continue
+    }
+
+    const addr = eventTagAddress(ev)
+    const root = addr ? addressToRoot.get(addr) : undefined
+    if (root) roots.set(root.id, root)
+  }
+
+  return [...roots.values()]
+}
+
+export type LibrarySearchContext = {
+  indexEvents: Event[]
+  engagement?: PublicationEngagementMaps
+}
+
+/**
+ * Search publications across the library index cache (all loaded kind-30040 rows) and the
+ * publication reading cache ({@link StoreNames.PUBLICATION_EVENTS}).
+ */
+export async function searchLibraryPublications(
+  query: string,
+  context: LibrarySearchContext
+): Promise<LibraryPublicationEntry[]> {
+  const q = query.trim()
+  if (!q) return []
+
+  const cached = getLibrarySearchSessionRow(q, context)
+  if (cached) {
+    if (import.meta.env.DEV) {
+      logger.info('[Library] search cache hit', { query: q, relaySearched: cached.relaySearched })
+    }
+    return cached.entries
+  }
+
+  let indexEvents = context.indexEvents
+  if (indexEvents.length === 0) {
+    const cachedIndex = await loadLibraryIndexCacheEvents()
+    indexEvents = filterValidIndexEvents(cachedIndex)
+  }
+
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const fromIndex = searchLibraryPublicationIndex(q, indexEvents, indexByAddress)
+  const rootMap = new Map<string, Event>()
+  for (const root of fromIndex) rootMap.set(root.id, root)
+
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+
+  try {
+    const fromReadingCache = await indexedDb.getCachedEventsForSearch(
+      q,
+      LIBRARY_SEARCH_READING_CACHE_LIMIT,
+      [ExtendedKind.PUBLICATION],
+      { scanBudget: 12_000, collectCap: 400 }
+    )
+    for (const ev of fromReadingCache) {
+      if (ev.kind !== ExtendedKind.PUBLICATION) continue
+      if (!publicationIndexMatchesSearchQuery(ev, q)) continue
+      if (rootMap.has(ev.id)) continue
+
+      const addr = eventTagAddress(ev)
+      const indexedRoot = addr ? addressToRoot.get(addr) : undefined
+      if (indexedRoot) {
+        rootMap.set(indexedRoot.id, indexedRoot)
+        continue
+      }
+
+      if (filterValidIndexEvents([ev]).length === 0) continue
+      const referenced = getReferencedChild30040Addresses(indexEvents)
+      if (addr && referenced.has(addr)) continue
+      rootMap.set(ev.id, ev)
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] reading-cache search failed', {
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+  }
+
+  const roots = [...rootMap.values()]
+  const entries = sortLibraryPublications(libraryEntriesFromRoots(roots, indexByAddress, engagement))
+
+  const searchContext: LibrarySearchContext = { indexEvents, engagement }
+  const prev = getLibrarySearchSessionRow(q, searchContext)
+  putLibrarySearchSessionRow(q, searchContext, {
+    entries,
+    mergedIndexEvents: prev?.mergedIndexEvents ?? indexEvents,
+    relaySearched: prev?.relaySearched ?? false
+  })
+
+  return entries
 }
 
 function tryNpubFromQuery(query: string): string | null {
@@ -466,11 +733,228 @@ function tryNpubFromQuery(query: string): string | null {
   return null
 }
 
+/** NIP-54-style d-tag slug (matches publication draft normalization). */
+function normalizePublicationDTag(term: string): string {
+  return term
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+/** d-tag filter values: hyphenated slug variants for relay `#d` REQ. */
+export function publicationQueryDTagVariants(query: string): string[] {
+  const raw = query.trim()
+  if (!raw) return []
+  const seen = new Set<string>()
+  const add = (value: string) => {
+    const v = value.trim().toLowerCase()
+    if (v) seen.add(v)
+  }
+  add(normalizeToDTag(raw))
+  add(normalizePublicationDTag(raw))
+  add(raw.toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''))
+  return [...seen]
+}
+
+/**
+ * OR-merge REQ filters for kind **30040** publication indexes: `#d` slugs plus NIP-50 `search`
+ * (title, author, summary/description on index relays).
+ */
+export function buildLibraryPublicationRelaySearchFilters(opts: {
+  query: string
+  limit?: number
+}): Filter[] {
+  const searchRaw = opts.query.trim()
+  if (!searchRaw) return []
+
+  const limit = Math.max(1, Math.min(opts.limit ?? LIBRARY_RELAY_SEARCH_LIMIT, 100))
+  const kind = ExtendedKind.PUBLICATION
+  const seen = new Set<string>()
+  const out: Filter[] = []
+  const add = (filter: Filter) => {
+    const key = JSON.stringify(filter)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(filter)
+  }
+
+  const npub = tryNpubFromQuery(searchRaw)
+  if (npub) {
+    add({ kinds: [kind], authors: [npub], limit })
+    return out
+  }
+
+  const dTags = publicationQueryDTagVariants(searchRaw)
+  if (dTags.length > 0) {
+    add({ kinds: [kind], '#d': dTags, limit })
+  }
+
+  const searchNorm = normalizeGeneralSearchQuery(searchRaw)
+  add({ kinds: [kind], search: searchRaw, limit })
+  if (searchNorm !== searchRaw) {
+    add({ kinds: [kind], search: searchNorm, limit })
+  }
+
+  const adv = parseAdvancedSearch(searchRaw)
+  const titleValues = adv.title
+    ? Array.isArray(adv.title)
+      ? adv.title
+      : [adv.title]
+    : []
+  for (const title of titleValues) {
+    const t = title.trim()
+    if (!t) continue
+    add({ kinds: [kind], search: t, limit })
+    const titleDTags = publicationQueryDTagVariants(t)
+    if (titleDTags.length > 0) {
+      add({ kinds: [kind], '#d': titleDTags, limit })
+    }
+  }
+
+  const authorValues = adv.author
+    ? Array.isArray(adv.author)
+      ? adv.author
+      : [adv.author]
+    : []
+  for (const author of authorValues) {
+    const a = author.trim()
+    if (a) add({ kinds: [kind], search: a, limit })
+  }
+
+  const descriptionValues = adv.description
+    ? Array.isArray(adv.description)
+      ? adv.description
+      : [adv.description]
+    : []
+  for (const description of descriptionValues) {
+    const d = description.trim()
+    if (d) add({ kinds: [kind], search: d, limit })
+  }
+
+  return out
+}
+
+/** Query document relays for kind-30040 indexes matching {@link buildLibraryPublicationRelaySearchFilters}. */
+export async function searchLibraryPublicationsOnRelays(
+  query: string,
+  relayUrls: string[],
+  context: LibrarySearchContext,
+  options?: { forceRefresh?: boolean }
+): Promise<{
+  events: Event[]
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents: Event[]
+  fromCache: boolean
+}> {
+  const q = query.trim()
+  if (!q) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
+  }
+
+  if (!options?.forceRefresh) {
+    const cached = getLibrarySearchSessionRow(q, context, { requireRelaySearch: true })
+    if (cached) {
+      if (import.meta.env.DEV) {
+        logger.info('[Library] relay search cache hit', { query: q })
+      }
+      return {
+        events: [],
+        entries: cached.entries,
+        mergedIndexEvents: cached.mergedIndexEvents,
+        fromCache: true
+      }
+    }
+  }
+
+  const filters = buildLibraryPublicationRelaySearchFilters({ query: q })
+  if (filters.length === 0) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
+  }
+
+  const indexRelays = libraryIndexRelayUrls(relayUrls)
+  const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
+  const batches: Promise<Event[]>[] = []
+
+  if (wsRelays.length > 0) {
+    batches.push(
+      queryService
+        .fetchEvents(wsRelays, filters, {
+          globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
+          eoseTimeout: 8_000,
+          firstRelayResultGraceMs: false
+        })
+        .catch((e) => {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] WS publication search failed', {
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+          return [] as Event[]
+        })
+    )
+  }
+
+  for (const httpRelay of httpRelays) {
+    for (const filter of filters) {
+      batches.push(
+        queryIndexRelayPublicationSearch(httpRelay, filter)
+          .then((page) => page.events as Event[])
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] HTTP publication search failed', {
+                relay: httpRelay,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+            return [] as Event[]
+          })
+      )
+    }
+  }
+
+  const settled = await Promise.all(batches)
+  const networkEvents = dedupeEventsById(settled.flat())
+  const valid = filterValidIndexEvents(networkEvents)
+  if (valid.length > 0) {
+    void persistLibraryIndexCacheEvents(valid)
+  }
+
+  const mergedIndex = dedupeEventsById([...(context.indexEvents ?? []), ...valid])
+  const indexByAddress = buildIndexByAddress(mergedIndex)
+  const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress)
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  const entries = sortLibraryPublications(
+    libraryEntriesFromRoots(roots, indexByAddress, engagement)
+  )
+
+  const searchContext: LibrarySearchContext = {
+    indexEvents: mergedIndex,
+    engagement
+  }
+  putLibrarySearchSessionRow(q, searchContext, {
+    entries,
+    mergedIndexEvents: mergedIndex,
+    relaySearched: true
+  })
+
+  if (import.meta.env.DEV) {
+    logger.info('[Library] relay search done', {
+      filters: filters.length,
+      network: networkEvents.length,
+      valid: valid.length,
+      roots: roots.length
+    })
+  }
+
+  return { events: valid, entries, mergedIndexEvents: mergedIndex, fromCache: false }
+}
+
 export function filterLibraryPublicationsBySearch(
   entries: LibraryPublicationEntry[],
   query: string
 ): LibraryPublicationEntry[] {
-  const q = normalizeSearchQuery(query)
+  const q = query.trim()
   if (!q) return entries
 
   const npub = tryNpubFromQuery(q)
@@ -478,20 +962,7 @@ export function filterLibraryPublicationsBySearch(
     return entries.filter(({ event }) => event.pubkey.toLowerCase() === npub)
   }
 
-  return entries.filter(({ event }) => {
-    const title = event.tags.find((t) => t[0] === 'title')?.[1]?.toLowerCase() ?? ''
-    const author = event.tags.find((t) => t[0] === 'author')?.[1]?.toLowerCase() ?? ''
-    const nip05 = event.tags.find((t) => t[0] === 'nip05')?.[1]?.toLowerCase() ?? ''
-    const dTag = event.tags.find((t) => t[0] === 'd')?.[1]?.toLowerCase() ?? ''
-    const pubkey = event.pubkey.toLowerCase()
-    return (
-      title.includes(q) ||
-      author.includes(q) ||
-      nip05.includes(q) ||
-      dTag.includes(q) ||
-      pubkey.includes(q)
-    )
-  })
+  return entries.filter(({ event }) => publicationIndexMatchesSearchQuery(event, q))
 }
 
 export function filterLibraryPublicationsByUser(
@@ -550,12 +1021,15 @@ export async function loadLibraryPublicationIndex(
       engaged: LibraryPublicationEntry[]
       allIndexCount: number
       topLevelCount: number
+      indexEvents: Event[]
     }) => void
   }
 ): Promise<{
   engaged: LibraryPublicationEntry[]
   allIndexCount: number
   topLevelCount: number
+  indexEvents: Event[]
+  engagement: PublicationEngagementMaps
 }> {
   const key = relaySetKey(relayUrls)
   if (import.meta.env.DEV) {
@@ -575,7 +1049,9 @@ export async function loadLibraryPublicationIndex(
     return {
       engaged,
       allIndexCount: sessionCache.indexEvents.length,
-      topLevelCount: getTopLevelIndexEvents(sessionCache.indexEvents).length
+      topLevelCount: getTopLevelIndexEvents(sessionCache.indexEvents).length,
+      indexEvents: sessionCache.indexEvents,
+      engagement: sessionCache.engagement
     }
   }
 
@@ -590,7 +1066,8 @@ export async function loadLibraryPublicationIndex(
   options?.onIndexesReady?.({
     engaged: buildRecentPublicationEntries(topLevel),
     allIndexCount: indexEvents.length,
-    topLevelCount: topLevel.length
+    topLevelCount: topLevel.length,
+    indexEvents
   })
 
   const topLevelForHydrate = topLevel
@@ -669,17 +1146,21 @@ export async function loadLibraryPublicationIndex(
   return {
     engaged,
     allIndexCount: indexEvents.length,
-    topLevelCount: topLevel.length
+    topLevelCount: topLevel.length,
+    indexEvents,
+    engagement
   }
 }
 
 export function clearLibraryPublicationIndexCache(): void {
   sessionCache = null
+  clearLibrarySearchSessionCache()
 }
 
 /** Clears Library tab session + IDB index cache only (publication reading cache is unchanged). */
 export async function clearAllLibraryIndexCaches(): Promise<void> {
   sessionCache = null
+  clearLibrarySearchSessionCache()
   await clearLibraryIndexIdbCache()
 }
 

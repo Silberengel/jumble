@@ -1,7 +1,8 @@
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Search } from 'lucide-react'
+import { Loader2, Search, Wifi } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 export default function LibrarySearchBar({
@@ -9,15 +10,20 @@ export default function LibrarySearchBar({
   onSearchQueryChange,
   showOnlyMine,
   onShowOnlyMineChange,
+  onSearchRelays,
+  relaySearchLoading,
   disabled
 }: {
   searchQuery: string
   onSearchQueryChange: (value: string) => void
   showOnlyMine: boolean
   onShowOnlyMineChange: (value: boolean) => void
+  onSearchRelays?: () => void
+  relaySearchLoading?: boolean
   disabled?: boolean
 }) {
   const { t } = useTranslation()
+  const canSearchRelays = searchQuery.trim().length > 0 && !relaySearchLoading
 
   return (
     <div className="space-y-3">
@@ -33,6 +39,23 @@ export default function LibrarySearchBar({
           aria-label={t('Library search placeholder')}
         />
       </div>
+      {onSearchRelays ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full sm:w-auto"
+          disabled={disabled || !canSearchRelays}
+          onClick={onSearchRelays}
+        >
+          {relaySearchLoading ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Wifi className="size-4" aria-hidden />
+          )}
+          {t('Library search relays')}
+        </Button>
+      ) : null}
       <div className="flex items-center gap-2">
         <Switch
           id="library-show-mine"

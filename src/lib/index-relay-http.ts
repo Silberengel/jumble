@@ -41,6 +41,9 @@ function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
   if (f.kinds?.length) body.kinds = f.kinds
   if (f.since != null) body.since = f.since
   if (f.until != null) body.until = f.until
+  if (typeof f.search === 'string' && f.search.trim()) {
+    body.search = f.search.trim()
+  }
   /** Index relays expect NIP-01 lowercase single-letter tag keys (`#e` not `#E`). */
   const tagBuckets = new Map<string, string[]>()
   for (const key of Object.keys(f)) {
@@ -410,6 +413,68 @@ export async function queryIndexRelayForLibrary(
       throw new IndexRelayTransportError(e)
     }
     warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] library filter request error', {
+      endpoint,
+      error: e
+    })
+    return { events: [], apiRowCount: 0 }
+  }
+}
+
+/** Kind-30040 discovery search: keeps NIP-50 `search` (unlike bulk {@link queryIndexRelayForLibrary}). */
+export async function queryIndexRelayPublicationSearch(
+  baseUrl: string,
+  filter: Filter,
+  options?: { signal?: AbortSignal }
+): Promise<TIndexRelayLibraryPage> {
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayFilterUrl(base)
+  if (shouldSkipDevIndexRelayFetch(endpoint)) {
+    return { events: [], apiRowCount: 0 }
+  }
+
+  const body = nostrFilterToIndexRelayBody(filter)
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+      timeoutMs: 25_000
+    })
+    if (!res.ok) {
+      if (res.status >= 500) {
+        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
+        throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      }
+      return { events: [], apiRowCount: 0 }
+    }
+    clearDevIndexRelayUnavailableThisSession()
+    const json = (await res.json()) as { data?: unknown }
+    const data = json.data
+    if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
+
+    const events: NEvent[] = []
+    const seen = new Set<string>()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
+      if (ev && !seen.has(ev.id)) {
+        seen.add(ev.id)
+        events.push(ev)
+      }
+    }
+    return { events, apiRowCount: data.length }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication search request error', {
       endpoint,
       error: e
     })

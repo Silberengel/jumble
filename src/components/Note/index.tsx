@@ -12,7 +12,7 @@ import {
 import { mergeNip84MarkedIntervals, renderPlaintextWithNip84MergedMarks } from '@/lib/nip84-op-body-marks'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
-import { encodeArticleLikePublicationNaddr, openAlexandriaPublicationFromNaddr, toNote } from '@/lib/link'
+import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import {
   DISCUSSION_DOWNVOTE_DISPLAY,
@@ -66,6 +66,7 @@ import LiveEvent from './LiveEvent'
 import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
 import AsciidocArticle from './AsciidocArticle/AsciidocArticle'
 import PublicationCard from './PublicationCard'
+import PublicationIndexMetadata from './PublicationIndexMetadata'
 import NostrSpecCard from './NostrSpecCard'
 import WikiCard from './WikiCard'
 import LongFormCard from './LongFormCard'
@@ -76,7 +77,6 @@ import Poll from './Poll'
 import NotificationEventCard from './NotificationEventCard'
 import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
-import { Button } from '@/components/ui/button'
 import VideoNote from './VideoNote'
 import MusicTrackNote from './MusicTrackNote'
 import RelayReview from './RelayReview'
@@ -489,25 +489,7 @@ export default function Note({
     )
   } else if (event.kind === ExtendedKind.PUBLICATION) {
     if (showFull) {
-      const naddrFull = encodeArticleLikePublicationNaddr(displayEvent)
-      content = (
-        <div className="mt-2 space-y-3">
-          <PublicationCard event={displayEvent} disableNavigation />
-          {naddrFull ? (
-            <Button
-              type="button"
-              size="lg"
-              className="w-full font-semibold"
-              onClick={(e) => {
-                e.stopPropagation()
-                openAlexandriaPublicationFromNaddr(naddrFull)
-              }}
-            >
-              {t('View on Alexandria')}
-            </Button>
-          ) : null}
-        </div>
-      )
+      content = <PublicationIndexMetadata className="mt-2" event={displayEvent} variant="full" />
     } else {
       content = <PublicationCard className="mt-2" event={displayEvent} />
     }

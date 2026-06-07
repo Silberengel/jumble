@@ -1,16 +1,37 @@
+import { ExtendedKind } from '@/constants'
 import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
-import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
+import { extractBookMetadata } from '@/lib/bookstr-parser'
+import {
+  getLongFormArticleMetadataFromEvent,
+  getPublicationIndexMetadataFromEvent
+} from '@/lib/event-metadata'
+import { persistLibraryPublicationForReading } from '@/lib/library-publication-index'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
+import { BookOpen } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import Image from '../Image'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
-import { persistLibraryPublicationForReading } from '@/lib/library-publication-index'
-import { ExtendedKind } from '@/constants'
+import ArticleCardCoverImage from './ArticleCardCoverImage'
+import PublicationIndexMetadata from './PublicationIndexMetadata'
+
+function PublicationCoverFallback({ layout }: { layout: 'stacked' | 'row' }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-center rounded-lg bg-muted text-muted-foreground',
+        layout === 'stacked'
+          ? 'mb-3 aspect-video w-full max-w-full'
+          : 'aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg xl:aspect-video xl:max-w-[400px]'
+      )}
+    >
+      <BookOpen className={layout === 'stacked' ? 'size-10' : 'size-12'} aria-hidden />
+    </div>
+  )
+}
 
 export default function PublicationCard({
   event,
@@ -29,10 +50,17 @@ export default function PublicationCard({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
+  const indexMetadata = useMemo(
+    () => (event.kind === ExtendedKind.PUBLICATION ? getPublicationIndexMetadataFromEvent(event) : null),
+    [event]
+  )
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
   const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
-  const isBookstrEvent = (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) && !!bookMetadata.book
+  const isBookstrEvent =
+    (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) &&
+    !!bookMetadata.book
+  const isPublicationIndex = event.kind === ExtendedKind.PUBLICATION && !isBookstrEvent
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -41,12 +69,14 @@ export default function PublicationCard({
     navigateToNote(toNote(event), event)
   }
 
-  const titleComponent = metadata.title ? <div className="text-xl font-semibold break-words min-w-0 sm:line-clamp-2">{metadata.title}</div> : null
+  const titleComponent = metadata.title ? (
+    <div className="min-w-0 text-xl font-semibold break-words sm:line-clamp-2">{metadata.title}</div>
+  ) : null
 
   const formatBookName = (book: string) => {
     return book
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ')
   }
 
@@ -84,16 +114,62 @@ export default function PublicationCard({
     </div>
   ) : null
 
-  if (isSmallScreen) {
+  const cardShellClass = cn(
+    'min-w-0 rounded-lg border p-4 transition-colors',
+    disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
+  )
+
+  if (isPublicationIndex && indexMetadata) {
+    const coverImage = indexMetadata.image?.trim()
+    const cover =
+      coverImage ? (
+        <Image
+          image={{ url: coverImage, pubkey: event.pubkey }}
+          className={
+            isSmallScreen
+              ? 'mb-3 aspect-video w-full max-w-full'
+              : 'aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg bg-foreground object-cover xl:aspect-video xl:max-w-[400px]'
+          }
+          classNames={
+            isSmallScreen ? undefined : { wrapper: 'w-auto max-w-[min(400px,42%)] shrink-0 xl:max-w-[400px]' }
+          }
+          hideIfError
+          holdUntilClick={!autoLoadMedia}
+        />
+      ) : (
+        <PublicationCoverFallback layout={isSmallScreen ? 'stacked' : 'row'} />
+      )
+
+    if (isSmallScreen) {
+      return (
+        <div className={cn('w-full min-w-0', className)}>
+          <div className={cardShellClass} onClick={disableNavigation ? undefined : handleCardClick}>
+            {cover}
+            <PublicationIndexMetadata event={event} variant="compact" />
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className={cn('w-full min-w-0', className)}>
         <div
-          className={cn(
-            'min-w-0 rounded-lg border p-4 transition-colors',
-            disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
-          )}
+          className={cn(cardShellClass, 'overflow-hidden')}
           onClick={disableNavigation ? undefined : handleCardClick}
         >
+          <div className="flex min-w-0 gap-4">
+            {cover}
+            <PublicationIndexMetadata event={event} variant="compact" className="min-h-0 min-w-[10rem] flex-1 basis-0" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSmallScreen) {
+    return (
+      <div className={cn('w-full min-w-0', className)}>
+        <div className={cardShellClass} onClick={disableNavigation ? undefined : handleCardClick}>
           {metadata.image ? (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
@@ -101,7 +177,14 @@ export default function PublicationCard({
               hideIfError
               holdUntilClick={!autoLoadMedia}
             />
-          ) : null}
+          ) : (
+            <ArticleCardCoverImage
+              event={event}
+              imageUrl={metadata.image}
+              autoLoadMedia={autoLoadMedia}
+              layout="stacked"
+            />
+          )}
           <div className="min-w-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}
@@ -117,10 +200,7 @@ export default function PublicationCard({
   return (
     <div className={cn('w-full min-w-0', className)}>
       <div
-        className={cn(
-          'min-w-0 overflow-hidden rounded-lg border p-4 transition-colors',
-          disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
-        )}
+        className={cn(cardShellClass, 'overflow-hidden')}
         onClick={disableNavigation ? undefined : handleCardClick}
       >
         <div className="flex min-w-0 gap-4">
@@ -132,7 +212,14 @@ export default function PublicationCard({
               hideIfError
               holdUntilClick={!autoLoadMedia}
             />
-          ) : null}
+          ) : (
+            <ArticleCardCoverImage
+              event={event}
+              imageUrl={metadata.image}
+              autoLoadMedia={autoLoadMedia}
+              layout="row"
+            />
+          )}
           <div className="min-h-0 min-w-[10rem] flex-1 basis-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}

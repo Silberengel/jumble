@@ -1,26 +1,43 @@
 import {
   clearAllLibraryIndexCaches,
-  filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
   buildLibraryRelayUrls,
   loadLibraryPublicationIndex,
-  type LibraryPublicationEntry
+  peekLibrarySearchResults,
+  searchLibraryPublications,
+  searchLibraryPublicationsOnRelays,
+  type LibraryPublicationEntry,
+  type PublicationEngagementMaps
 } from '@/lib/library-publication-index'
+import { getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
+import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const SEARCH_DEBOUNCE_MS = 300
 const LOAD_TIMEOUT_MS = 120_000
 
+const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
+  labelAddresses: new Set(),
+  labelEventIds: new Set(),
+  commentAddresses: new Set(),
+  highlightAddresses: new Set()
+}
+
 export function useLibraryPublications(isActive: boolean) {
   const { pubkey } = useNostr()
   const [entries, setEntries] = useState<LibraryPublicationEntry[]>([])
+  const [indexEvents, setIndexEvents] = useState<Event[]>([])
+  const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showOnlyMine, setShowOnlyMine] = useState(false)
   const [loading, setLoading] = useState(false)
   const [engagementLoading, setEngagementLoading] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [relaySearchLoading, setRelaySearchLoading] = useState(false)
+  const [searchResults, setSearchResults] = useState<LibraryPublicationEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [allIndexCount, setAllIndexCount] = useState(0)
   const [topLevelCount, setTopLevelCount] = useState(0)
@@ -53,6 +70,7 @@ export function useLibraryPublications(isActive: boolean) {
               onIndexesReady: (snapshot) => {
                 if (gen !== loadGenRef.current) return
                 setEntries(snapshot.engaged)
+                setIndexEvents(snapshot.indexEvents)
                 setAllIndexCount(snapshot.allIndexCount)
                 setTopLevelCount(snapshot.topLevelCount)
                 setLoading(false)
@@ -63,6 +81,8 @@ export function useLibraryPublications(isActive: boolean) {
           ])
           if (gen !== loadGenRef.current) return
           setEntries(result.engaged)
+          setIndexEvents(result.indexEvents)
+          setEngagement(result.engagement)
           setAllIndexCount(result.allIndexCount)
           setTopLevelCount(result.topLevelCount)
         } finally {
@@ -90,20 +110,79 @@ export function useLibraryPublications(isActive: boolean) {
     void load(false)
   }, [isActive, load])
 
+  useEffect(() => {
+    const q = debouncedSearch.trim()
+    if (!q) {
+      setSearchResults(null)
+      setSearchLoading(false)
+      return
+    }
+
+    const cached = peekLibrarySearchResults(q, { indexEvents, engagement })
+    if (cached) {
+      setSearchResults(cached)
+      setSearchLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSearchLoading(true)
+    void searchLibraryPublications(q, { indexEvents, engagement }).then((results) => {
+      if (cancelled) return
+      setSearchResults(results)
+      setSearchLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedSearch, indexEvents, engagement])
+
   const refresh = useCallback(() => {
     void clearAllLibraryIndexCaches().then(() => load(true))
   }, [load])
 
+  const searchOnRelays = useCallback(async () => {
+    const q = searchQuery.trim()
+    if (!q) return
+    setRelaySearchLoading(true)
+    setError(null)
+    try {
+      const relays = await buildLibraryRelayUrls(pubkey || undefined)
+      const { events, mergedIndexEvents, entries, fromCache } = await searchLibraryPublicationsOnRelays(
+        q,
+        relays,
+        { indexEvents, engagement }
+      )
+      setIndexEvents(mergedIndexEvents)
+      setAllIndexCount(mergedIndexEvents.length)
+      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+      if (import.meta.env.DEV) {
+        logger.info('[Library] relay search merged', {
+          newEvents: events.length,
+          fromCache
+        })
+      }
+      setSearchResults(entries)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Relay search failed'
+      setError(message)
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] relay search failed', { message })
+      }
+    } finally {
+      setRelaySearchLoading(false)
+    }
+  }, [searchQuery, pubkey, indexEvents, engagement])
+
   const filteredEntries = useMemo(() => {
-    let list = entries
+    const q = debouncedSearch.trim()
+    let list = q ? (searchResults ?? []) : entries
     if (showOnlyMine) {
       list = filterLibraryPublicationsByUser(list, pubkey)
     }
-    if (debouncedSearch.trim()) {
-      list = filterLibraryPublicationsBySearch(list, debouncedSearch)
-    }
     return list
-  }, [entries, showOnlyMine, pubkey, debouncedSearch])
+  }, [entries, showOnlyMine, pubkey, debouncedSearch, searchResults])
 
   return {
     entries: filteredEntries,
@@ -113,9 +192,13 @@ export function useLibraryPublications(isActive: boolean) {
     setShowOnlyMine,
     loading,
     engagementLoading,
+    searchLoading,
+    relaySearchLoading,
     error,
     allIndexCount,
     topLevelCount,
-    refresh
+    refresh,
+    searchOnRelays,
+    hasIndexData: indexEvents.length > 0
   }
 }
