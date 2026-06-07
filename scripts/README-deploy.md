@@ -59,9 +59,9 @@ docker compose -f docker-compose.prod.yml up -d
 
 That starts the **full** stack in `docker-compose.prod.yml` (app, NIP-66 monitor, OG proxy, Piper, LanguageTool, LibreTranslate). The SPA is on **port 8089**; see `docker-compose.prod.yml` header for Apache paths.
 
-**Grammar + translate:** `./scripts/build-and-push-prod.sh` now bakes in **`/api/languagetool`** and **`/api/translate`** by default (same as `.env.development`). Override with `LANGUAGE_TOOL_URL` / `TRANSLATE_URL` if your paths differ; set either to empty to omit that feature from the bundle.
+**Grammar + translate + export:** `./scripts/build-and-push-prod.sh` now bakes in **`/api/languagetool`**, **`/api/translate`**, and **`/api/asciidoctor`** by default (same as `.env.development`). Override with `LANGUAGE_TOOL_URL` / `TRANSLATE_URL` / `ASCIIDOCTOR_SERVER_URL` if your paths differ; set any to empty to omit that feature from the bundle.
 
-Apache (or nginx) must still proxy `/api/languagetool` → `127.0.0.1:8010` and `/api/translate` → `127.0.0.1:5000`.
+Apache (or nginx) must still proxy `/api/languagetool` → `127.0.0.1:8010`, `/api/translate` → `127.0.0.1:5000`, and `/api/asciidoctor` → `127.0.0.1:8091` (Wikistr sidecar; not part of `docker-compose.prod.yml`).
 
 **Shared host:** if you already run another `og-proxy` on `127.0.0.1:8090` or another Wyoming Piper on the same ports, `docker compose up -d` can fail with a port or name conflict. Either stop the duplicates or start only the pieces you need, e.g. `docker compose up -d jumble jumble-nip66-monitor languagetool libretranslate` (and point `PIPER_TTS_HOST` / Apache at your existing Piper stack if applicable).
 

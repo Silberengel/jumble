@@ -35,6 +35,7 @@ These are enabled by build-time URLs:
 VITE_READ_ALOUD_TTS_URL=/api/piper-tts
 VITE_LANGUAGE_TOOL_URL=/api/languagetool
 VITE_TRANSLATE_URL=/api/translate
+VITE_ASCIIDOCTOR_SERVER_URL=/api/asciidoctor
 ```
 
 Proxy targets:
@@ -46,6 +47,8 @@ ProxyPass        /api/languagetool http://127.0.0.1:8010
 ProxyPassReverse /api/languagetool http://127.0.0.1:8010
 ProxyPass        /api/translate http://127.0.0.1:5000
 ProxyPassReverse /api/translate http://127.0.0.1:5000
+ProxyPass        /api/asciidoctor/ http://127.0.0.1:8091/
+ProxyPassReverse /api/asciidoctor/ http://127.0.0.1:8091/
 ```
 
 For the full production workflow, use `scripts/README-deploy.md` and `docker-compose.prod.yml`.

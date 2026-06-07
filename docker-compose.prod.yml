@@ -17,7 +17,7 @@
 # - Set NIP66_MONITOR_NPUB (npub1... derived from the same key) so the relay info page shows the monitor's avatar and handle in the NIP-66 liveliness section.
 #
 # Apache (or nginx) must proxy same-origin paths baked into the SPA, e.g. /api/languagetool → http://127.0.0.1:8010
-# and /api/translate → http://127.0.0.1:5000. Build the app with:
+# and /api/translate → http://127.0.0.1:5000 and /api/asciidoctor → http://127.0.0.1:8091. Build the app with:
 #   LANGUAGE_TOOL_URL=/api/languagetool TRANSLATE_URL=/api/translate ./scripts/build-and-push-prod.sh
 
 services:
