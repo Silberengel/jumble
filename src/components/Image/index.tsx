@@ -22,7 +22,7 @@ import {
   useRef,
   useState
 } from 'react'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useTranslation } from 'react-i18next'
 
 /** Browsers often never fire `onError` for invalid URIs, ORB, or stalled fetches — this forces a visible error. */
@@ -65,7 +65,7 @@ function extensionWithDotFromUrl(url: string): string {
 }
 
 export default function Image({
-  image: { url, blurHash, dim, alt: imetaAlt, fallback, size: fileSizeBytes, x: imetaHash },
+  image: { url, blurHash, dim, alt: imetaAlt, fallback, size: fileSizeBytes, x: imetaHash, pubkey },
   alt,
   className = '',
   classNames = {},
@@ -108,10 +108,9 @@ export default function Image({
   holdUntilClick?: boolean
 }) {
   const { t } = useTranslation()
-  const contentPolicy = useContentPolicyOptional()
+  const autoLoadForAuthor = useShouldAutoLoadMedia(pubkey)
   /** Tap-to-load only if the parent asked and policy allows (or there is no policy — trust the parent). */
-  const effectiveHoldUntilClick =
-    holdUntilClick && (contentPolicy !== undefined ? !contentPolicy.autoLoadMedia : true)
+  const effectiveHoldUntilClick = holdUntilClick && !autoLoadForAuthor
 
   const urlOk = !!url?.trim()
   const [revealed, setRevealed] = useState(!effectiveHoldUntilClick)

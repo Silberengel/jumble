@@ -24,6 +24,7 @@ import {
 } from '@/hooks/useNotificationReactionDisplay'
 import logger from '@/lib/logger'
 import client from '@/services/client.service'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useMuteListOptional } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
@@ -277,7 +278,7 @@ export default function Note({
   const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const contentPolicy = useContentPolicyOptional()
   const defaultShowNsfw = contentPolicy?.defaultShowNsfw ?? true
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const [showNsfw, setShowNsfw] = useState(false)
   const muteList = useMuteListOptional()
   const mutePubkeySet = muteList?.mutePubkeySet ?? new Set<string>()

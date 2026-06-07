@@ -2,7 +2,7 @@ import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { useSecondaryPageOptional } from '@/PageManager'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -19,8 +19,7 @@ export default function WikiCard({
   const isSmallScreen = screenSize?.isSmallScreen ?? false
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()

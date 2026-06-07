@@ -1,8 +1,8 @@
 import { isImwaldElectron } from '@/lib/client-platform'
 import { ensureYouTubeIframeApi } from '@/lib/youtube-iframe-api'
 import { parseYoutubeUrl } from '@/lib/youtube-url'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import mediaManager from '@/services/media-manager.service'
 import { YouTubePlayer } from '@/types/youtube'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -13,14 +13,15 @@ import logger from '@/lib/logger'
 export default function YoutubeEmbeddedPlayer({
   url,
   className,
-  mustLoad = false
+  mustLoad = false,
+  authorPubkey
 }: {
   url: string
   className?: string
   mustLoad?: boolean
+  authorPubkey?: string | null
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey)
   const [userClickedLoad, setUserClickedLoad] = useState(false)
   const { videoId, isShort } = useMemo(() => parseYoutubeUrl(url), [url])
   const [initSuccess, setInitSuccess] = useState(false)

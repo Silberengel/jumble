@@ -113,7 +113,7 @@ class LocalStorageService {
   private feedKindFilterBypass: boolean = false
   private hideContentMentioningMutedUsers: boolean = false
   private notificationListStyle: TNotificationStyle = NOTIFICATION_LIST_STYLE.DETAILED
-  private mediaAutoLoadPolicy: TMediaAutoLoadPolicy = MEDIA_AUTO_LOAD_POLICY.ALWAYS
+  private mediaAutoLoadPolicy: TMediaAutoLoadPolicy = MEDIA_AUTO_LOAD_POLICY.FOLLOWS_ONLY
   private showRecommendedRelaysPanel: boolean = false
   private shownCreateWalletGuideToastPubkeys: Set<string> = new Set()
   private defaultExpirationEnabled: boolean = false

@@ -1146,6 +1146,7 @@ export const NOTIFICATION_LIST_STYLE = {
 } as const
 
 export const MEDIA_AUTO_LOAD_POLICY = {
+  FOLLOWS_ONLY: 'follows-only',
   ALWAYS: 'always',
   WIFI_ONLY: 'wifi-only',
   NEVER: 'never'

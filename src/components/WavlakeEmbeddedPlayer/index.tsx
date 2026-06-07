@@ -3,8 +3,8 @@ import {
   wavlakeEmbedMinHeight,
   wavlakeOpenUrlToEmbedSrc
 } from '@/lib/wavlake-url'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import ExternalLink from '../ExternalLink'
 import LazyMediaTapPlaceholder from '../MediaPlayer/LazyMediaTapPlaceholder'
@@ -12,14 +12,15 @@ import LazyMediaTapPlaceholder from '../MediaPlayer/LazyMediaTapPlaceholder'
 export default function WavlakeEmbeddedPlayer({
   url,
   className,
-  mustLoad = false
+  mustLoad = false,
+  authorPubkey
 }: {
   url: string
   className?: string
   mustLoad?: boolean
+  authorPubkey?: string | null
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey)
   const [userClickedLoad, setUserClickedLoad] = useState(false)
   const embedSrc = useMemo(() => wavlakeOpenUrlToEmbedSrc(url), [url])
   const minHeight = useMemo(() => wavlakeEmbedMinHeight(url), [url])

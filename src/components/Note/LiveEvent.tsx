@@ -9,7 +9,7 @@ import {
   preferredLiveJoinUrlForEvent
 } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useLiveActivitiesOptional } from '@/providers/useLiveActivities'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
@@ -26,8 +26,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
   const liveActivities = useLiveActivitiesOptional()
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const metadata = useMemo(() => getLiveEventMetadataFromEvent(event), [event])
   const playback = useMemo(() => liveEventInlinePlaybackFromEvent(event), [event])
   const joinUrl = useMemo(() => preferredLiveJoinUrlForEvent(event), [event])
@@ -87,7 +86,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
       <MarkdownArticle
         event={summaryMarkdownEvent}
         hideMetadata
-        lazyMedia={autoLoadMedia}
+        lazyMedia={!autoLoadMedia}
         className="prose-sm max-w-none min-w-0 w-full"
       />
     </div>
@@ -168,6 +167,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
             src={playback.src}
             poster={inlinePlayerPoster}
             className="w-full"
+            authorPubkey={event.pubkey}
             fallbackPageUrl={zapStreamFallbackUrl ?? joinUrl ?? undefined}
           />
         </div>

@@ -1,6 +1,6 @@
 import { randomString } from '@/lib/random'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { useEffect, useMemo, useState } from 'react'
@@ -28,8 +28,7 @@ export default function ImageWithLightbox({
   mustLoad?: boolean
 }) {
   const id = useMemo(() => `image-with-lightbox-${randomString()}`, [])
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(image.pubkey)
   const [index, setIndex] = useState(-1)
   const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
 

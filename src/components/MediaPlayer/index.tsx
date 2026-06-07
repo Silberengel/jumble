@@ -6,7 +6,7 @@ import {
   resolvePrimalBlossomPlayableUrl
 } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import AudioPlayer from '../AudioPlayer'
@@ -48,6 +48,7 @@ export default function MediaPlayer({
   className,
   mustLoad = false,
   deferLoadUntilClick = false,
+  authorPubkey,
   poster,
   blurHash,
   fallbackPageUrl
@@ -60,6 +61,8 @@ export default function MediaPlayer({
    * placeholder. Used for NIP-71 long-form video events in feeds.
    */
   deferLoadUntilClick?: boolean
+  /** Note author; when set, follow-only and related policies apply per author. */
+  authorPubkey?: string | null
   poster?: string
   /** NIP-94 / imeta blurhash for lazy placeholder when poster is missing */
   blurHash?: string
@@ -67,8 +70,8 @@ export default function MediaPlayer({
   fallbackPageUrl?: string
 }) {
   const { t } = useTranslation()
-  const { autoLoadMedia } = useContentPolicy()
-  /** Tap-to-load when {@link autoLoadMedia} is off; cleared when policy switches back to never. */
+  const authorAutoLoad = useShouldAutoLoadMedia(authorPubkey)
+  /** Tap-to-load when auto-load is off for this author; cleared when policy switches back to never. */
   const [userClickedLoad, setUserClickedLoad] = useState(false)
   const [mediaType, setMediaType] = useState<MediaSurface>(null)
   const [probeFailed, setProbeFailed] = useState(false)
@@ -96,11 +99,11 @@ export default function MediaPlayer({
   const effectiveMediaType = mediaType ?? urlEmbedSurfaceHint
 
   const showEmbed =
-    mustLoad || (!deferLoadUntilClick && autoLoadMedia) || userClickedLoad
+    mustLoad || (!deferLoadUntilClick && authorAutoLoad) || userClickedLoad
 
   useLayoutEffect(() => {
-    if (!autoLoadMedia) setUserClickedLoad(false)
-  }, [autoLoadMedia])
+    if (!authorAutoLoad) setUserClickedLoad(false)
+  }, [authorAutoLoad])
 
   useEffect(() => {
     readyOnceRef.current = false

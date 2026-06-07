@@ -1,5 +1,5 @@
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { getGroupMetadataFromEvent } from '@/lib/event-metadata'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import ClientSelect from '../ClientSelect'
@@ -14,8 +14,7 @@ export default function GroupMetadata({
   originalNoteId?: string
   className?: string
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const metadata = useMemo(() => getGroupMetadataFromEvent(event), [event])
 
   const groupNameComponent = (
@@ -29,13 +28,14 @@ export default function GroupMetadata({
   return (
     <div className={className}>
       <div className="flex gap-4">
-        {metadata.picture && autoLoadMedia && (
+        {metadata.picture ? (
           <Image
             image={{ url: metadata.picture, pubkey: event.pubkey }}
             className="aspect-square bg-foreground h-20"
             hideIfError
+            holdUntilClick={!autoLoadMedia}
           />
-        )}
+        ) : null}
         <div className="flex-1 w-0 space-y-1">
           {groupNameComponent}
           {groupAboutComponent}

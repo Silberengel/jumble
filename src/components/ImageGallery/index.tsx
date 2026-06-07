@@ -1,7 +1,7 @@
 import { randomString } from '@/lib/random'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import modalManager from '@/services/modal-manager.service'
 import { TImetaInfo } from '@/types'
 import { ReactNode, useEffect, useLayoutEffect, useMemo, useState } from 'react'
@@ -23,17 +23,18 @@ export default function ImageGallery({
   images,
   start = 0,
   end = images.length,
-  mustLoad = false
+  mustLoad = false,
+  authorPubkey
 }: {
   className?: string
   images: TImetaInfo[]
   start?: number
   end?: number
   mustLoad?: boolean
+  authorPubkey?: string | null
 }) {
   const id = useMemo(() => `image-gallery-${randomString()}`, [])
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey ?? images[start]?.pubkey)
   const [index, setIndex] = useState(-1)
   const [lightboxPortalActive, setLightboxPortalActive] = useState(false)
 

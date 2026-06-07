@@ -5,7 +5,7 @@ import { ExtendedKind } from '@/constants'
 import { getLongFormArticleMetadataFromEvent, dTagToTitleCase } from '@/lib/event-metadata'
 import { extractBookMetadata } from '@/lib/bookstr-parser'
 import { cn } from '@/lib/utils'
-import { useContentPolicy } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
@@ -134,8 +134,16 @@ function getTitleWithFallbacks(event: Event | null, eventMetadata: { title?: str
   return null
 }
 
-export default function WebPreview({ url, className }: { url: string; className?: string }) {
-  const { autoLoadMedia } = useContentPolicy()
+export default function WebPreview({
+  url,
+  className,
+  authorPubkey
+}: {
+  url: string
+  className?: string
+  authorPubkey?: string | null
+}) {
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey)
   const { isSmallScreen } = useScreenSize()
 
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])

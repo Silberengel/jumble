@@ -1,3 +1,4 @@
+export * from './useShouldAutoLoadMedia'
 export * from './useSignGatedControl'
 export * from './useRelayPageFeedPolicy'
 export * from './useNearViewport'

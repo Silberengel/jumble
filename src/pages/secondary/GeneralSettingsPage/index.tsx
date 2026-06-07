@@ -154,7 +154,7 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
             {t('Auto-load media')}
           </Label>
           <Select
-            defaultValue="wifi-only"
+            defaultValue={MEDIA_AUTO_LOAD_POLICY.FOLLOWS_ONLY}
             value={mediaAutoLoadPolicy}
             onValueChange={(value: TMediaAutoLoadPolicy) =>
               setMediaAutoLoadPolicy(value as TMediaAutoLoadPolicy)
@@ -164,6 +164,9 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={MEDIA_AUTO_LOAD_POLICY.FOLLOWS_ONLY}>
+                {t('Follows only')}
+              </SelectItem>
               <SelectItem value={MEDIA_AUTO_LOAD_POLICY.ALWAYS}>{t('Always')}</SelectItem>
               {isSupportCheckConnectionType() && (
                 <SelectItem value={MEDIA_AUTO_LOAD_POLICY.WIFI_ONLY}>{t('Wi-Fi only')}</SelectItem>

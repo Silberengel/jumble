@@ -7,7 +7,7 @@ import {
 } from '@/lib/music-track'
 import { primalR2aMirrorForBlossomPrimalUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -42,8 +42,7 @@ export default function MusicTrackNote({
   className?: string
   loadMedia?: boolean
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const mustLoad = loadMedia || autoLoadMedia
   const { t } = useTranslation()
 
@@ -107,7 +106,12 @@ export default function MusicTrackNote({
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               {t('Music video', { defaultValue: 'Music video' })}
             </p>
-            <MediaPlayer src={track.videoUrl} className="w-full max-w-none" mustLoad={mustLoad} />
+            <MediaPlayer
+              src={track.videoUrl}
+              className="w-full max-w-none"
+              mustLoad={mustLoad}
+              authorPubkey={event.pubkey}
+            />
           </div>
         ) : null}
       </div>

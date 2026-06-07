@@ -3,7 +3,7 @@ import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -26,8 +26,7 @@ export default function PublicationCard({
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
@@ -93,13 +92,14 @@ export default function PublicationCard({
           )}
           onClick={disableNavigation ? undefined : handleCardClick}
         >
-          {metadata.image && autoLoadMedia && (
+          {metadata.image ? (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
               className="mb-3 aspect-video w-full max-w-full"
               hideIfError
+              holdUntilClick={!autoLoadMedia}
             />
-          )}
+          ) : null}
           <div className="min-w-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}
@@ -122,14 +122,15 @@ export default function PublicationCard({
         onClick={disableNavigation ? undefined : handleCardClick}
       >
         <div className="flex min-w-0 gap-4">
-          {metadata.image && autoLoadMedia && (
+          {metadata.image ? (
             <Image
               image={{ url: metadata.image, pubkey: event.pubkey }}
               classNames={{ wrapper: 'w-auto max-w-[min(400px,42%)] shrink-0 xl:max-w-[400px]' }}
               className="aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg bg-foreground object-cover xl:aspect-video xl:max-w-[400px]"
               hideIfError
+              holdUntilClick={!autoLoadMedia}
             />
-          )}
+          ) : null}
           <div className="min-h-0 min-w-[10rem] flex-1 basis-0 space-y-2 overflow-hidden">
             {titleComponent}
             {bookstrMetadataComponent}

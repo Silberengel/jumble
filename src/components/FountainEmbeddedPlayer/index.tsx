@@ -8,7 +8,7 @@ import {
 } from '@/lib/fountain-url'
 import { cleanUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import LazyMediaTapPlaceholder from '../MediaPlayer/LazyMediaTapPlaceholder'
@@ -68,14 +68,15 @@ const cardShell = (className?: string) =>
 export default function FountainEmbeddedPlayer({
   url,
   className,
-  mustLoad = false
+  mustLoad = false,
+  authorPubkey
 }: {
   url: string
   className?: string
   mustLoad?: boolean
+  authorPubkey?: string | null
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey)
   const [userClickedLoad, setUserClickedLoad] = useState(false)
   const cleanedUrl = useMemo(() => cleanUrl(url) || url, [url])
   const minHeight = useMemo(() => fountainEmbedMinHeight(cleanedUrl), [cleanedUrl])

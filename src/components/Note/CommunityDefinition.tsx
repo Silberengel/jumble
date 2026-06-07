@@ -1,5 +1,5 @@
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { getCommunityDefinitionFromEvent } from '@/lib/event-metadata'
-import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import ClientSelect from '../ClientSelect'
@@ -12,8 +12,7 @@ export default function CommunityDefinition({
   event: Event
   className?: string
 }) {
-  const contentPolicy = useContentPolicyOptional()
-  const autoLoadMedia = contentPolicy?.autoLoadMedia ?? true
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
   const metadata = useMemo(() => getCommunityDefinitionFromEvent(event), [event])
 
   const communityNameComponent = (
@@ -27,13 +26,14 @@ export default function CommunityDefinition({
   return (
     <div className={className}>
       <div className="flex gap-4">
-        {metadata.image && autoLoadMedia && (
+        {metadata.image ? (
           <Image
             image={{ url: metadata.image, pubkey: event.pubkey }}
             className="aspect-square bg-foreground h-20"
             hideIfError
+            holdUntilClick={!autoLoadMedia}
           />
-        )}
+        ) : null}
         <div className="flex-1 w-0 space-y-1">
           {communityNameComponent}
           {communityDescriptionComponent}

@@ -1643,6 +1643,7 @@ export default {
     'POW {{difficulty}}': 'POW {{difficulty}}',
     'via {{client}}': 'via {{client}}',
     'Auto-load media': 'Auto-load media',
+    'Follows only': 'Follows only',
     Always: 'Always',
     'Wi-Fi only': 'Wi-Fi only',
     Never: 'Never',

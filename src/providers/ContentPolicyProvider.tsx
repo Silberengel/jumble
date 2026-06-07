@@ -1,4 +1,4 @@
-import { MEDIA_AUTO_LOAD_POLICY } from '@/constants'
+import { resolveGlobalAutoLoadMedia } from '@/lib/media-auto-load-policy'
 import storage from '@/services/local-storage.service'
 import { TMediaAutoLoadPolicy } from '@/types'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
@@ -16,6 +16,8 @@ type TContentPolicyContext = {
   autoLoadMedia: boolean
   mediaAutoLoadPolicy: TMediaAutoLoadPolicy
   setMediaAutoLoadPolicy: (policy: TMediaAutoLoadPolicy) => void
+  /** From the Network Information API when available (`undefined` on most desktop browsers). */
+  connectionType: string | undefined
 
   /** True when `navigator.onLine` is false or the connection type is 'none'. */
   isOffline: boolean
@@ -68,18 +70,10 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
     }
   }, [])
 
-  const autoLoadMedia = useMemo(() => {
-    if (mediaAutoLoadPolicy === MEDIA_AUTO_LOAD_POLICY.ALWAYS) {
-      return true
-    }
-    if (mediaAutoLoadPolicy === MEDIA_AUTO_LOAD_POLICY.NEVER) {
-      return false
-    }
-    // WIFI_ONLY: block only when explicitly on cellular — connection.type returns
-    // 'unknown' on Linux/Windows desktop (Network Information API is reliable only
-    // on Android/ChromeOS), so an allowlist would wrongly block desktop wifi.
-    return connectionType !== 'cellular'
-  }, [mediaAutoLoadPolicy, connectionType])
+  const autoLoadMedia = useMemo(
+    () => resolveGlobalAutoLoadMedia(mediaAutoLoadPolicy, connectionType),
+    [mediaAutoLoadPolicy, connectionType]
+  )
 
   const updateAutoplay = useCallback((autoplay: boolean) => {
     storage.setAutoplay(autoplay)
@@ -119,6 +113,7 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
       autoLoadMedia,
       mediaAutoLoadPolicy,
       setMediaAutoLoadPolicy: updateMediaAutoLoadPolicy,
+      connectionType,
       isOffline
     }),
     [
@@ -131,6 +126,7 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
       autoLoadMedia,
       mediaAutoLoadPolicy,
       updateMediaAutoLoadPolicy,
+      connectionType,
       isOffline
     ]
   )

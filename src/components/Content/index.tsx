@@ -92,6 +92,7 @@ export default function Content({
   mustLoadMedia?: boolean
 }) {
   const _content = event?.content ?? content
+  const authorPubkey = event?.pubkey
   const iArticleUrl = useMemo(() => (event ? getHttpUrlFromITags(event) : undefined), [event])
   const iArticleCleaned = useMemo(
     () => (iArticleUrl ? cleanUrl(iArticleUrl) || iArticleUrl : ''),
@@ -485,7 +486,7 @@ export default function Content({
     <div className={cn('text-wrap break-words whitespace-pre-wrap', className)}>
       {iArticleUrl && (
         <div className="mb-2 max-w-full">
-          <WebPreview url={iArticleUrl} className="w-full" />
+          <WebPreview url={iArticleUrl} className="w-full" authorPubkey={authorPubkey} />
         </div>
       )}
       {/* Render images that appear in content in a single carousel at the top */}
@@ -497,6 +498,7 @@ export default function Content({
           start={0}
           end={imagesInContent.length}
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       )}
       
@@ -510,6 +512,7 @@ export default function Content({
           start={0}
           end={carouselImages.length}
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       )}
       
@@ -520,6 +523,7 @@ export default function Content({
             src={video.url}
             className="w-full max-w-full"
             mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
             deferLoadUntilClick={deferLongVideoLoad}
             poster={video.image || video.thumb}
             blurHash={video.blurHash}
@@ -534,6 +538,7 @@ export default function Content({
           src={audio.url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
           poster={audio.thumb}
           blurHash={audio.blurHash}
         />
@@ -546,6 +551,7 @@ export default function Content({
           url={url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       ))}
 
@@ -555,6 +561,7 @@ export default function Content({
           url={url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       ))}
 
@@ -564,6 +571,7 @@ export default function Content({
           url={url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       ))}
 
@@ -573,6 +581,7 @@ export default function Content({
           url={url}
           className="mt-2"
           mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
         />
       ))}
 
@@ -613,6 +622,7 @@ export default function Content({
               key={index}
               src={cleanedUrl}
               mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
               deferLoadUntilClick={deferLongVideoLoad}
               poster={tagMediaInfo?.image || tagMediaInfo?.thumb}
               blurHash={tagMediaInfo?.blurHash}
@@ -642,6 +652,7 @@ export default function Content({
                 key={`url-media-${index}`}
                 src={cleanedUrl}
                 mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
                 deferLoadUntilClick={deferLongVideoLoad}
                 poster={poster}
                 blurHash={mediaInfo?.blurHash}
@@ -667,6 +678,7 @@ export default function Content({
                 start={0}
                 end={1}
                 mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
               />
             )
           }
@@ -729,6 +741,7 @@ export default function Content({
               url={node.data}
               className="mt-2"
               mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
             />
           )
         }
@@ -739,6 +752,7 @@ export default function Content({
               url={node.data}
               className="mt-2"
               mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
             />
           )
         }
@@ -749,6 +763,7 @@ export default function Content({
               url={node.data}
               className="mt-2"
               mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
             />
           )
         }
@@ -759,6 +774,7 @@ export default function Content({
               url={node.data}
               className="mt-2"
               mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
             />
           )
         }
@@ -781,7 +797,7 @@ export default function Content({
         <div className="space-y-3 mt-6 pt-4 border-t">
           <h3 className="text-sm font-semibold text-muted-foreground mb-3">Links</h3>
           {contentLinks.map((url, index) => (
-            <WebPreview key={`content-${index}-${url}`} url={url} className="w-full" />
+            <WebPreview key={`content-${index}-${url}`} url={url} className="w-full" authorPubkey={authorPubkey} />
           ))}
         </div>
       )}
@@ -791,7 +807,7 @@ export default function Content({
         <div className="space-y-3 mt-6 pt-4 border-t">
           <h3 className="text-sm font-semibold text-muted-foreground mb-3">Related Links</h3>
           {tagLinks.map((url, index) => (
-            <WebPreview key={`tag-${index}-${url}`} url={url} className="w-full" />
+            <WebPreview key={`tag-${index}-${url}`} url={url} className="w-full" authorPubkey={authorPubkey} />
           ))}
         </div>
       )}

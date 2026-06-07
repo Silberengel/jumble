@@ -1,5 +1,6 @@
 import ContentImage from '@/components/Image'
 import UserAvatar from '@/components/UserAvatar'
+import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { cn } from '@/lib/utils'
 import type { Event } from 'nostr-tools'
 
@@ -9,19 +10,22 @@ import type { Event } from 'nostr-tools'
 export default function ArticleCardCoverImage({
   event,
   imageUrl,
-  autoLoadMedia,
+  autoLoadMedia: autoLoadMediaProp,
   layout,
   hideImageIfError = false
 }: {
   event: Event
   imageUrl?: string
-  autoLoadMedia: boolean
+  /** Deprecated: prefer per-author policy via {@link useShouldAutoLoadMedia}. Kept for callers that pass it. */
+  autoLoadMedia?: boolean
   layout: 'stacked' | 'row'
   /** Passed through to {@link ContentImage} when an `image` tag URL exists. */
   hideImageIfError?: boolean
 }) {
+  const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = autoLoadMediaProp ?? autoLoadFromPolicy
   const trimmed = imageUrl?.trim()
-  if (trimmed && autoLoadMedia) {
+  if (trimmed) {
     return (
       <ContentImage
         image={{ url: trimmed, pubkey: event.pubkey }}
@@ -32,10 +36,10 @@ export default function ArticleCardCoverImage({
         }
         classNames={layout === 'row' ? { wrapper: 'w-auto max-w-[400px] shrink-0' } : undefined}
         hideIfError={hideImageIfError}
+        holdUntilClick={!autoLoadMedia}
       />
     )
   }
-  if (trimmed) return null
 
   return (
     <div
