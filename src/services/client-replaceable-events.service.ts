@@ -16,6 +16,7 @@ import {
 import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
+import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
@@ -158,8 +159,9 @@ export class ReplaceableEventService {
     >(
       this.replaceableEventFromBigRelaysBatchLoadFn.bind(this),
       {
-        batchScheduleFn: (callback) => setTimeout(callback, 100), // Increased from 50ms to 100ms to better batch rapid scrolling
-        maxBatchSize: 200, // Reduced from 500 to prevent overwhelming the system during rapid scrolling
+        batchScheduleFn: (callback) =>
+          setTimeout(callback, scrollActivity.isActive ? 200 : 100),
+        maxBatchSize: 64,
         cacheKeyFn: ({ pubkey, kind }) => `${pubkey}:${kind}`
       }
     )

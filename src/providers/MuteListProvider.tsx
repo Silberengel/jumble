@@ -163,7 +163,7 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     return (await client.fetchMuteListEvent(accountPubkey)) ?? null
   }, [accountPubkey, favoriteRelays, blockedRelays])
 
-  const publishNewMuteListEvent = async (tags: string[][], content?: string) => {
+  const publishNewMuteListEvent = useCallback(async (tags: string[][], content?: string) => {
     if (dayjs().unix() === muteListEvent?.created_at) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
@@ -171,9 +171,9 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     const event = await publish(newMuteListDraftEvent)
     toast.success(t('Successfully updated mute list'))
     return event
-  }
+  }, [muteListEvent?.created_at, publish, t])
 
-  const checkMuteListEvent = (muteListEvent: Event | null | undefined) => {
+  const checkMuteListEvent = useCallback((muteListEvent: Event | null | undefined) => {
     if (!muteListEvent) {
       const result = confirm(t('MuteListNotFoundConfirmation'))
 
@@ -181,9 +181,9 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
         throw new Error('Mute list not found')
       }
     }
-  }
+  }, [t])
 
-  const mutePubkeyPublicly = async (pubkey: string) => {
+  const mutePubkeyPublicly = useCallback(async (pubkey: string) => {
     if (!accountPubkey || changing) return
 
     setChanging(true)
@@ -207,9 +207,16 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     } finally {
       setChanging(false)
     }
-  }
+  }, [
+    accountPubkey,
+    changing,
+    loadLatestMuteListEvent,
+    publishNewMuteListEvent,
+    t,
+    updateMuteListEvent
+  ])
 
-  const mutePubkeyPrivately = async (pubkey: string) => {
+  const mutePubkeyPrivately = useCallback(async (pubkey: string) => {
     if (!accountPubkey || changing) return
 
     setChanging(true)
@@ -234,9 +241,17 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     } finally {
       setChanging(false)
     }
-  }
+  }, [
+    accountPubkey,
+    changing,
+    loadLatestMuteListEvent,
+    nip04Encrypt,
+    publishNewMuteListEvent,
+    t,
+    updateMuteListEvent
+  ])
 
-  const unmutePubkey = async (pubkey: string) => {
+  const unmutePubkey = useCallback(async (pubkey: string) => {
     if (!accountPubkey || changing) return
 
     setChanging(true)
@@ -261,9 +276,16 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     } finally {
       setChanging(false)
     }
-  }
+  }, [
+    accountPubkey,
+    changing,
+    loadLatestMuteListEvent,
+    nip04Encrypt,
+    publishNewMuteListEvent,
+    updateMuteListEvent
+  ])
 
-  const switchToPublicMute = async (pubkey: string) => {
+  const switchToPublicMute = useCallback(async (pubkey: string) => {
     if (!accountPubkey || changing) return
 
     setChanging(true)
@@ -288,9 +310,16 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     } finally {
       setChanging(false)
     }
-  }
+  }, [
+    accountPubkey,
+    changing,
+    loadLatestMuteListEvent,
+    nip04Encrypt,
+    publishNewMuteListEvent,
+    updateMuteListEvent
+  ])
 
-  const switchToPrivateMute = async (pubkey: string) => {
+  const switchToPrivateMute = useCallback(async (pubkey: string) => {
     if (!accountPubkey || changing) return
 
     setChanging(true)
@@ -316,22 +345,42 @@ export function MuteListProvider({ children }: { children: ReactNode }) {
     } finally {
       setChanging(false)
     }
-  }
+  }, [
+    accountPubkey,
+    changing,
+    loadLatestMuteListEvent,
+    nip04Encrypt,
+    publishNewMuteListEvent,
+    updateMuteListEvent
+  ])
+
+  const contextValue = useMemo(
+    () => ({
+      mutePubkeySet,
+      changing,
+      getMutePubkeys,
+      getMuteType,
+      mutePubkeyPublicly,
+      mutePubkeyPrivately,
+      unmutePubkey,
+      switchToPublicMute,
+      switchToPrivateMute
+    }),
+    [
+      mutePubkeySet,
+      changing,
+      getMutePubkeys,
+      getMuteType,
+      mutePubkeyPublicly,
+      mutePubkeyPrivately,
+      unmutePubkey,
+      switchToPublicMute,
+      switchToPrivateMute
+    ]
+  )
 
   return (
-    <MuteListContext.Provider
-      value={{
-        mutePubkeySet,
-        changing,
-        getMutePubkeys,
-        getMuteType,
-        mutePubkeyPublicly,
-        mutePubkeyPrivately,
-        unmutePubkey,
-        switchToPublicMute,
-        switchToPrivateMute
-      }}
-    >
+    <MuteListContext.Provider value={contextValue}>
       {children}
     </MuteListContext.Provider>
   )

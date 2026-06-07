@@ -38,6 +38,7 @@ import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds'
 import { shouldIncludePaymentInFeed } from '@/lib/superchat'
+import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
@@ -1390,20 +1391,23 @@ const NoteList = forwardRef(
       [withKindFilter, showAllKinds]
     )
 
+    const pinnedEventHexIdSet = useMemo(() => {
+      const set = new Set<string>()
+      pinnedEventIds.forEach((id) => {
+        try {
+          const { type, data } = decode(id)
+          if (type === 'nevent') {
+            set.add(data.id)
+          }
+        } catch {
+          // ignore
+        }
+      })
+      return set
+    }, [pinnedEventIds])
+
     const shouldHideEvent = useCallback(
       (evt: Event) => {
-        const pinnedEventHexIdSet = new Set()
-        pinnedEventIds.forEach((id) => {
-          try {
-            const { type, data } = decode(id)
-            if (type === 'nevent') {
-              pinnedEventHexIdSet.add(data.id)
-            }
-          } catch {
-            // ignore
-          }
-        })
-
         if (pinnedEventHexIdSet.has(evt.id)) return true
         if (isEventDeleted(evt)) return true
         if (hideReplies && isReplyNoteEvent(evt)) return true
@@ -1454,7 +1458,7 @@ const NoteList = forwardRef(
         hideReplies,
         hideContentMentioningMutedUsers,
         mutePubkeySet,
-        pinnedEventIds,
+        pinnedEventHexIdSet,
         isEventDeleted,
         feedAttestedSuperchatIds,
         incomingPaymentRecipientPubkey,
@@ -1924,11 +1928,12 @@ const NoteList = forwardRef(
       const handle = window.setTimeout(() => {
         const candidates = new Set<string>()
         const emojiAuthors = new Set<string>()
-        for (const e of timelineEventsForFilter) {
+        const profilePrefetchCap = Math.min(120, Math.max(showCount + 64, 64))
+        for (const e of filteredEvents.slice(0, profilePrefetchCap)) {
           collectProfilePrefetchPubkeysFromEvent(e, candidates)
           collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
         }
-        for (const e of newEvents) {
+        for (const e of newEvents.slice(0, 32)) {
           collectProfilePrefetchPubkeysFromEvent(e, candidates)
           collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
         }
@@ -1945,7 +1950,7 @@ const NoteList = forwardRef(
       }, FEED_PROFILE_BATCH_DEBOUNCE_MS)
       return () => window.clearTimeout(handle)
     }, [
-      timelineEventsForFilter,
+      filteredEvents,
       newEvents,
       clientFilteredEvents,
       showCount,
@@ -4508,6 +4513,7 @@ const NoteList = forwardRef(
       let lastScrollPrefetchInvokeMs = 0
 
       const onScrollFlushNewNotesAtTop = () => {
+        scrollActivity.markScrolling()
         if (oneShotFetchRef.current) return
         if (feedFullSearchEventsRef.current !== null) return
         const t = scrollPrefetchTarget
@@ -4522,6 +4528,7 @@ const NoteList = forwardRef(
       }
 
       const onScrollPrefetch = () => {
+        scrollActivity.markScrolling()
         if (scrollPrefetchRafId) return
         scrollPrefetchRafId = requestAnimationFrame(() => {
           scrollPrefetchRafId = 0

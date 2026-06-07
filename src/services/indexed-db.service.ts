@@ -916,7 +916,7 @@ class IndexedDbService {
   }
 
   /**
-   * Loads all cached kind-0 rows in one synchronous cursor pass (no `await` inside `onsuccess`, which
+   * Loads cached kind-0 rows in one synchronous cursor pass (no `await` inside `onsuccess`, which
    * would risk inactive transactions), then invokes `callback` in chunks with `requestAnimationFrame`
    * yields so FlexSearch indexing does not monopolize the main thread.
    */
@@ -925,6 +925,9 @@ class IndexedDbService {
     if (!this.db) {
       return
     }
+
+    const MAX_PROFILE_EVENTS_ITERATE = 8_000
+    let truncated = false
 
     const events = await new Promise<Event[]>((resolve, reject) => {
       const out: Event[] = []
@@ -937,14 +940,25 @@ class IndexedDbService {
           resolve(out)
           return
         }
-        const value = (cursor.value as TValue<Event>).value
-        if (value) out.push(value)
+        if (out.length < MAX_PROFILE_EVENTS_ITERATE) {
+          const value = (cursor.value as TValue<Event>).value
+          if (value) out.push(value)
+        } else {
+          truncated = true
+        }
         cursor.continue()
       }
       request.onerror = () => {
         reject(request.error ?? new Error('iterateProfileEvents: cursor failed'))
       }
     })
+
+    if (truncated) {
+      logger.warn('[indexedDb] iterateProfileEvents capped profile row scan', {
+        cap: MAX_PROFILE_EVENTS_ITERATE,
+        loaded: events.length
+      })
+    }
 
     const yieldToMain = () =>
       new Promise<void>((resolve) => {

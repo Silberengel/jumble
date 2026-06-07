@@ -1,7 +1,7 @@
 import { MEDIA_AUTO_LOAD_POLICY } from '@/constants'
 import storage from '@/services/local-storage.service'
 import { TMediaAutoLoadPolicy } from '@/types'
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 type TContentPolicyContext = {
   autoplay: boolean
@@ -81,22 +81,22 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
     return connectionType !== 'cellular'
   }, [mediaAutoLoadPolicy, connectionType])
 
-  const updateAutoplay = (autoplay: boolean) => {
+  const updateAutoplay = useCallback((autoplay: boolean) => {
     storage.setAutoplay(autoplay)
     setAutoplay(autoplay)
-  }
+  }, [])
 
-  const updateDefaultShowNsfw = (defaultShowNsfw: boolean) => {
+  const updateDefaultShowNsfw = useCallback((defaultShowNsfw: boolean) => {
     storage.setDefaultShowNsfw(defaultShowNsfw)
     setDefaultShowNsfw(defaultShowNsfw)
-  }
+  }, [])
 
-  const updateHideContentMentioningMutedUsers = (hide: boolean) => {
+  const updateHideContentMentioningMutedUsers = useCallback((hide: boolean) => {
     storage.setHideContentMentioningMutedUsers(hide)
     setHideContentMentioningMutedUsers(hide)
-  }
+  }, [])
 
-  const updateMediaAutoLoadPolicy = (policy: TMediaAutoLoadPolicy) => {
+  const updateMediaAutoLoadPolicy = useCallback((policy: TMediaAutoLoadPolicy) => {
     storage.setMediaAutoLoadPolicy(policy)
     // Defer React state: Radix Select fires onValueChange while its portal is still unmounting.
     // An immediate full-tree re-render (feed + body portals) races removeChild and throws.
@@ -106,23 +106,37 @@ export function ContentPolicyProvider({ children }: { children: React.ReactNode 
     } else {
       run()
     }
-  }
+  }, [])
+
+  const contextValue = useMemo(
+    () => ({
+      autoplay,
+      setAutoplay: updateAutoplay,
+      defaultShowNsfw,
+      setDefaultShowNsfw: updateDefaultShowNsfw,
+      hideContentMentioningMutedUsers,
+      setHideContentMentioningMutedUsers: updateHideContentMentioningMutedUsers,
+      autoLoadMedia,
+      mediaAutoLoadPolicy,
+      setMediaAutoLoadPolicy: updateMediaAutoLoadPolicy,
+      isOffline
+    }),
+    [
+      autoplay,
+      updateAutoplay,
+      defaultShowNsfw,
+      updateDefaultShowNsfw,
+      hideContentMentioningMutedUsers,
+      updateHideContentMentioningMutedUsers,
+      autoLoadMedia,
+      mediaAutoLoadPolicy,
+      updateMediaAutoLoadPolicy,
+      isOffline
+    ]
+  )
 
   return (
-    <ContentPolicyContext.Provider
-      value={{
-        autoplay,
-        setAutoplay: updateAutoplay,
-        defaultShowNsfw,
-        setDefaultShowNsfw: updateDefaultShowNsfw,
-        hideContentMentioningMutedUsers,
-        setHideContentMentioningMutedUsers: updateHideContentMentioningMutedUsers,
-        autoLoadMedia,
-        mediaAutoLoadPolicy,
-        setMediaAutoLoadPolicy: updateMediaAutoLoadPolicy,
-        isOffline
-      }}
-    >
+    <ContentPolicyContext.Provider value={contextValue}>
       {children}
     </ContentPolicyContext.Provider>
   )

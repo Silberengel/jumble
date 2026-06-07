@@ -34,9 +34,14 @@ export function ensureYouTubeIframeApi(): Promise<void> {
 
       if (scriptAlreadyPresent()) {
         chainReady()
+        const pollDeadlineMs = Date.now() + 5_000
         const poll = () => {
           tryResolve()
           if (hasYtPlayer()) return
+          if (Date.now() >= pollDeadlineMs) {
+            resolve()
+            return
+          }
           requestAnimationFrame(poll)
         }
         poll()
