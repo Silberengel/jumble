@@ -10,6 +10,7 @@ export default function LibrarySearchBar({
   onSearchQueryChange,
   showOnlyMine,
   onShowOnlyMineChange,
+  mineFilterLoading,
   onSearchRelays,
   relaySearchLoading,
   disabled
@@ -18,6 +19,7 @@ export default function LibrarySearchBar({
   onSearchQueryChange: (value: string) => void
   showOnlyMine: boolean
   onShowOnlyMineChange: (value: boolean) => void
+  mineFilterLoading?: boolean
   onSearchRelays?: () => void
   relaySearchLoading?: boolean
   disabled?: boolean
@@ -66,6 +68,9 @@ export default function LibrarySearchBar({
         <Label htmlFor="library-show-mine" className="text-sm text-muted-foreground cursor-pointer">
           {t('Library show only my publications')}
         </Label>
+        {mineFilterLoading ? (
+          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+        ) : null}
       </div>
     </div>
   )

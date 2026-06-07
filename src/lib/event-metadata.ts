@@ -2,7 +2,13 @@ import { ExtendedKind, FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, POLL_TYPE } 
 import { TEmoji, TMailboxRelay, TPollType, TRelayList, TRelaySet, TPaymentInfo, TProfile } from '@/types'
 import { Event, kinds } from 'nostr-tools'
 import { buildATag } from './draft-event'
-import { normalizeGutenbergCoverImageUrl, resolveGutenbergCoverImageUrl } from './gutenberg-cover'
+import {
+  gutenbergCoverImageUrl,
+  gutenbergEbookPageUrl,
+  normalizeGutenbergCoverImageUrl,
+  parseGutenbergEbookIdFromDTag,
+  resolveGutenbergCoverImageUrl
+} from './gutenberg-cover'
 import { getLatestEvent, getReplaceableEventIdentifier } from './event'
 import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightning'
 import { formatPubkey, pubkeyToNpub } from './pubkey'
@@ -719,11 +725,19 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     }
   }
 
+  const dTag = event.tags.find((tag) => tag[0] === 'd')?.[1]?.trim()
+  const gutenbergIdFromDTag = dTag ? parseGutenbergEbookIdFromDTag(dTag) : null
+  if (!source && gutenbergIdFromDTag) {
+    source = gutenbergEbookPageUrl(gutenbergIdFromDTag)
+  }
+
   let image = base.image?.trim() || undefined
   if (image) {
     image = normalizeGutenbergCoverImageUrl(image)
   } else {
-    image = resolveGutenbergCoverImageUrl(source)
+    image =
+      resolveGutenbergCoverImageUrl(source) ??
+      (gutenbergIdFromDTag ? gutenbergCoverImageUrl(gutenbergIdFromDTag) : undefined)
   }
 
   return {

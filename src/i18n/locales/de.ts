@@ -1654,6 +1654,7 @@ export default {
     'Library empty': 'Noch keine Publikationen auf deinen Relays gefunden.',
     'Library empty filtered': 'Keine Publikationen entsprechen den Filtern.',
     'Library loading': 'Publikationen werden von Dokument-Relays geladen…',
+    'Library mine filter loading': 'Deine Publikationen werden gefiltert…',
     'Library engagement loading': 'Engagement-Filter werden aktualisiert…',
     'Library search loading': 'Publikationen werden durchsucht…',
     'Library search relays': 'Relays durchsuchen',

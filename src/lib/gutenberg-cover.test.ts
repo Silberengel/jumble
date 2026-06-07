@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   gutenbergCoverImageUrl,
+  gutenbergEbookPageUrl,
   normalizeGutenbergCoverImageUrl,
   parseGutenbergEbookId,
+  parseGutenbergEbookIdFromDTag,
   resolveGutenbergCoverImageUrl
 } from '@/lib/gutenberg-cover'
 
@@ -29,6 +31,16 @@ describe('gutenberg-cover', () => {
       resolveGutenbergCoverImageUrl('https://www.gutenberg.org/ebooks/58363')
     ).toBe('https://www.gutenberg.org/cache/epub/58363/pg58363.cover.medium.jpg')
     expect(resolveGutenbergCoverImageUrl('https://example.com/book')).toBeUndefined()
+  })
+
+  it('parses ebook id from legacy pg-prefixed d-tags', () => {
+    expect(parseGutenbergEbookIdFromDTag('pg28217-dante-et-goethe-dialogues')).toBe('28217')
+    expect(parseGutenbergEbookIdFromDTag('pg28217')).toBe('28217')
+    expect(parseGutenbergEbookIdFromDTag('jane-eyre')).toBeNull()
+  })
+
+  it('builds gutenberg.org ebook page URL', () => {
+    expect(gutenbergEbookPageUrl('28217')).toBe('https://www.gutenberg.org/ebooks/28217')
   })
 
   it('normalizeGutenbergCoverImageUrl converts ebook pages to cover JPG', () => {

@@ -20,6 +20,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     setSearchQuery,
     showOnlyMine,
     setShowOnlyMine,
+    mineFilterLoading,
     loading,
     engagementLoading,
     searchLoading,
@@ -64,6 +65,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             onSearchQueryChange={setSearchQuery}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
+            mineFilterLoading={mineFilterLoading}
             onSearchRelays={() => void searchOnRelays()}
             relaySearchLoading={relaySearchLoading}
             disabled={loading && !hasIndexData}
@@ -80,6 +82,8 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           <p className="mb-4 text-xs text-muted-foreground">{t('Library engagement loading')}</p>
         ) : searchLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
+        ) : mineFilterLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library mine filter loading')}</p>
         ) : relaySearchLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library relay search loading')}</p>
         ) : null}
@@ -88,7 +92,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         ) : null}
         <LibraryPublicationGrid
           entries={entries}
-          loading={loading && entries.length === 0}
+          loading={(loading && entries.length === 0) || (showOnlyMine && mineFilterLoading)}
           emptyMessage={
             searchQuery.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }

@@ -86,6 +86,17 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     expect(meta.image).toBe('https://example.com/cover.jpg')
   })
 
+  it('infers Gutenberg source and cover from pg-prefixed d-tag when tags are missing', () => {
+    const event = indexEvent([
+      ['d', 'pg28217-dante-et-goethe-dialogues'],
+      ['title', 'Dante et Goethe: Dialogues'],
+      ['a', `30041:${PK}:intro`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.source).toBe('https://www.gutenberg.org/ebooks/28217')
+    expect(meta.image).toBe('https://www.gutenberg.org/cache/epub/28217/pg28217.cover.medium.jpg')
+  })
+
   it('normalizes Gutenberg ebook page in image tag to cover JPG', () => {
     const event = indexEvent([
       ['d', 'book'],

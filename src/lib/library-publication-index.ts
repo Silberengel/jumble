@@ -1,4 +1,3 @@
-import { findSessionBooklistLabelForPublication } from '@/lib/booklist-label'
 import { ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
 import {
   eventMatchesGeneralSearchQuery,
@@ -770,10 +769,98 @@ export function publicationEntryBelongsToUser(
   if (entry.hasMyBooklistLabel || entry.hasMyComment || entry.hasMyHighlight) return true
   if (rootAddr && opts.myBooklistAddresses?.has(rootAddr)) return true
   if (opts.myBooklistEventIds?.has(event.id.toLowerCase())) return true
-  if (findSessionBooklistLabelForPublication(opts.userPubkey, event)) return true
   if (opts.bookmarkListEvent && isEventInBookmarkList(opts.bookmarkListEvent, event)) return true
   if (opts.pinListEvent && isEventInPinList(opts.pinListEvent, event)) return true
   return false
+}
+
+export type LibraryMineFilterOpts = {
+  bookmarkListEvent?: Event | null
+  pinListEvent?: Event | null
+  myBooklistAddresses?: Set<string>
+  myBooklistEventIds?: Set<string>
+}
+
+/** Cheap membership test on a top-level index — no full {@link LibraryPublicationEntry} build. */
+export function publicationRootBelongsToUser(
+  root: Event,
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps,
+  userPubkey: string,
+  opts?: LibraryMineFilterOpts
+): boolean {
+  const pk = userPubkey.toLowerCase()
+  if (root.pubkey.toLowerCase() === pk) return true
+  if (root.tags.some((t) => t[0] === 'p' && t[1]?.toLowerCase() === pk)) return true
+  const rootAddr = eventTagAddress(root)
+  if (rootAddr && opts?.myBooklistAddresses?.has(rootAddr)) return true
+  if (opts?.myBooklistEventIds?.has(root.id.toLowerCase())) return true
+  if (opts?.bookmarkListEvent && isEventInBookmarkList(opts.bookmarkListEvent, root)) return true
+  if (opts?.pinListEvent && isEventInPinList(opts.pinListEvent, root)) return true
+
+  const reachable = collectReachableAddressesCached(root, indexByAddress)
+  if (rootAddr) reachable.add(rootAddr)
+  for (const addr of reachable) {
+    const indexed = indexByAddress.get(addr)
+    const eventId = indexed?.id ?? (addr === rootAddr ? root.id : undefined)
+    if (collectBooklistFlagsForTarget(addr, eventId, engagement).hasMyBooklistLabel) return true
+    const myFlags = collectMyEngagementFlagsForTarget(addr, eventId, engagement)
+    if (myFlags.hasMyComment || myFlags.hasMyHighlight) return true
+  }
+  return false
+}
+
+const MINE_FILTER_BATCH_SIZE = 40
+
+/** Build library rows only for publications belonging to the viewer (fast path for “My publications”). */
+export function libraryPublicationEntriesForUserFromIndex(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  userPubkey: string,
+  opts?: LibraryMineFilterOpts
+): LibraryPublicationEntry[] {
+  if (!userPubkey) return []
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const out: LibraryPublicationEntry[] = []
+  for (const root of getTopLevelIndexEvents(indexEvents)) {
+    if (!publicationRootBelongsToUser(root, indexByAddress, engagement, userPubkey, opts)) continue
+    out.push(buildLibraryPublicationEntry(root, indexByAddress, engagement))
+  }
+  return sortLibraryPublications(out)
+}
+
+/** Yields between root batches so the UI stays responsive on large indexes. */
+export function libraryPublicationEntriesForUserFromIndexAsync(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  userPubkey: string,
+  opts?: LibraryMineFilterOpts,
+  signal?: { cancelled: boolean }
+): Promise<LibraryPublicationEntry[]> {
+  if (!userPubkey) return Promise.resolve([])
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const roots = getTopLevelIndexEvents(indexEvents)
+  const out: LibraryPublicationEntry[] = []
+  let i = 0
+
+  return new Promise((resolve) => {
+    const step = () => {
+      if (signal?.cancelled) return
+      const end = Math.min(i + MINE_FILTER_BATCH_SIZE, roots.length)
+      for (; i < end; i++) {
+        const root = roots[i]
+        if (!publicationRootBelongsToUser(root, indexByAddress, engagement, userPubkey, opts)) continue
+        out.push(buildLibraryPublicationEntry(root, indexByAddress, engagement))
+      }
+      if (signal?.cancelled) return
+      if (i < roots.length) {
+        requestAnimationFrame(step)
+      } else {
+        resolve(sortLibraryPublications(out))
+      }
+    }
+    requestAnimationFrame(step)
+  })
 }
 
 /** Haystack for kind-30040 index search: general fields plus section refs and language tags. */

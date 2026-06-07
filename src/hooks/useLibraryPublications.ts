@@ -2,14 +2,15 @@ import {
   clearAllLibraryIndexCaches,
   filterLibraryPublicationsByUser,
   buildLibraryRelayUrls,
-  libraryPublicationEntriesFromIndex,
+  libraryPublicationEntriesForUserFromIndexAsync,
   loadLibraryPublicationIndex,
   peekLibrarySearchResults,
   refreshLibraryEngagement,
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   type LibraryPublicationEntry,
-  type PublicationEngagementMaps
+  type PublicationEngagementMaps,
+  type LibraryMineFilterOpts
 } from '@/lib/library-publication-index'
 import { BOOKLIST_LABEL_UPDATED_EVENT, fetchViewerBooklistTargets } from '@/lib/booklist-label'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
@@ -62,20 +63,36 @@ export function useLibraryPublications(isActive: boolean) {
   const [topLevelCount, setTopLevelCount] = useState(0)
   const [pinListEvent, setPinListEvent] = useState<Event | null>(null)
   const [myBooklistTargets, setMyBooklistTargets] = useState(EMPTY_BOOKLIST_TARGETS)
+  const [booklistTargetsLoading, setBooklistTargetsLoading] = useState(false)
   const loadGenRef = useRef(0)
+  const [mineIndexEntries, setMineIndexEntries] = useState<LibraryPublicationEntry[]>([])
+  const [mineFilterComputing, setMineFilterComputing] = useState(false)
+  const mineIndexCacheRef = useRef<{
+    indexEvents: Event[]
+    engagement: PublicationEngagementMaps
+    pubkey: string
+    mineFilterOpts: LibraryMineFilterOpts
+    entries: LibraryPublicationEntry[]
+  } | null>(null)
 
   const loadMyBooklistTargets = useCallback(async () => {
     if (!pubkey) {
       setMyBooklistTargets(EMPTY_BOOKLIST_TARGETS)
+      setBooklistTargetsLoading(false)
       return
     }
-    const relays = await buildAccountListRelayUrlsForMerge({
-      accountPubkey: pubkey,
-      favoriteRelays: favoriteRelays ?? [],
-      blockedRelays: blockedRelays ?? []
-    })
-    const targets = await fetchViewerBooklistTargets(pubkey, relays)
-    setMyBooklistTargets(targets)
+    setBooklistTargetsLoading(true)
+    try {
+      const relays = await buildAccountListRelayUrlsForMerge({
+        accountPubkey: pubkey,
+        favoriteRelays: favoriteRelays ?? [],
+        blockedRelays: blockedRelays ?? []
+      })
+      const targets = await fetchViewerBooklistTargets(pubkey, relays)
+      setMyBooklistTargets(targets)
+    } finally {
+      setBooklistTargetsLoading(false)
+    }
   }, [pubkey, favoriteRelays, blockedRelays])
 
   useEffect(() => {
@@ -273,21 +290,67 @@ export function useLibraryPublications(isActive: boolean) {
     }
   }, [searchQuery, pubkey, indexEvents, engagement, blockedRelays])
 
-  const filteredEntries = useMemo(() => {
-    const q = debouncedSearch.trim()
-    const mineFilterOpts = {
+  const mineFilterOpts = useMemo(
+    () => ({
       bookmarkListEvent,
       pinListEvent,
       myBooklistAddresses: myBooklistTargets.addresses,
       myBooklistEventIds: myBooklistTargets.eventIds
+    }),
+    [bookmarkListEvent, pinListEvent, myBooklistTargets]
+  )
+
+  useEffect(() => {
+    if (!showOnlyMine || !pubkey || indexEvents.length === 0 || debouncedSearch.trim()) {
+      setMineFilterComputing(false)
+      return
     }
+
+    const cached = mineIndexCacheRef.current
+    if (
+      cached &&
+      cached.indexEvents === indexEvents &&
+      cached.engagement === engagement &&
+      cached.pubkey === pubkey &&
+      cached.mineFilterOpts === mineFilterOpts
+    ) {
+      setMineIndexEntries(cached.entries)
+      setMineFilterComputing(false)
+      return
+    }
+
+    const signal = { cancelled: false }
+    setMineFilterComputing(true)
+
+    void libraryPublicationEntriesForUserFromIndexAsync(
+      indexEvents,
+      engagement,
+      pubkey,
+      mineFilterOpts,
+      signal
+    ).then((computed) => {
+      if (signal.cancelled) return
+      mineIndexCacheRef.current = {
+        indexEvents,
+        engagement,
+        pubkey,
+        mineFilterOpts,
+        entries: computed
+      }
+      setMineIndexEntries(computed)
+      setMineFilterComputing(false)
+    })
+
+    return () => {
+      signal.cancelled = true
+    }
+  }, [showOnlyMine, pubkey, indexEvents, engagement, mineFilterOpts, debouncedSearch])
+
+  const filteredEntries = useMemo(() => {
+    const q = debouncedSearch.trim()
     let list: LibraryPublicationEntry[]
     if (showOnlyMine && !q) {
-      list = filterLibraryPublicationsByUser(
-        libraryPublicationEntriesFromIndex(indexEvents, engagement),
-        pubkey,
-        mineFilterOpts
-      )
+      list = mineFilterComputing ? [] : mineIndexEntries
     } else {
       list = q ? (searchResults ?? []) : entries
       if (showOnlyMine) {
@@ -301,11 +364,9 @@ export function useLibraryPublications(isActive: boolean) {
     pubkey,
     debouncedSearch,
     searchResults,
-    indexEvents,
-    engagement,
-    bookmarkListEvent,
-    pinListEvent,
-    myBooklistTargets
+    mineIndexEntries,
+    mineFilterComputing,
+    mineFilterOpts
   ])
 
   return {
@@ -314,6 +375,8 @@ export function useLibraryPublications(isActive: boolean) {
     setSearchQuery,
     showOnlyMine,
     setShowOnlyMine,
+    mineFilterLoading:
+      mineFilterComputing || (showOnlyMine && booklistTargetsLoading),
     loading,
     engagementLoading,
     searchLoading,

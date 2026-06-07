@@ -3,6 +3,8 @@
 const GUTENBERG_EBOOK_URL = /gutenberg\.org\/ebooks\/(\d+)/i
 const GUTENBERG_FILES_URL = /gutenberg\.org\/files\/(\d+)/i
 const GUTENBERG_CACHE_URL = /gutenberg\.org\/cache\/epub\/(\d+)/i
+/** Legacy publication d-tags: `pg28217-dante-et-goethe-dialogues`, `pg28217`, … */
+const GUTENBERG_DTAG = /^pg(\d+)(?:-.*)?$/i
 
 const DIRECT_IMAGE_EXT = /\.(?:jpe?g|png|gif|webp|avif)(?:[?#]|$)/i
 
@@ -19,6 +21,18 @@ export function parseGutenbergEbookId(source: string): string | null {
 export function gutenbergCoverImageUrl(ebookId: string): string {
   const id = ebookId.trim()
   return `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`
+}
+
+export function gutenbergEbookPageUrl(ebookId: string): string {
+  return `https://www.gutenberg.org/ebooks/${ebookId.trim()}`
+}
+
+/** Parse Project Gutenberg ebook id from a kind-30040 `d` tag (e.g. `pg28217-…`). */
+export function parseGutenbergEbookIdFromDTag(dTag: string): string | null {
+  const trimmed = dTag.trim()
+  if (!trimmed) return null
+  const match = trimmed.match(GUTENBERG_DTAG)
+  return match?.[1] ?? null
 }
 
 /** When `source` points at Project Gutenberg, return the standard medium cover URL. */

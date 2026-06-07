@@ -8,7 +8,9 @@ import {
   filterEngagedPublications,
   filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
+  libraryPublicationEntriesForUserFromIndex,
   pickLibraryPublicationEntries,
+  publicationRootBelongsToUser,
   peekLibrarySearchResults,
   publicationIndexMatchesSearchQuery,
   publicationQueryDTagVariants,
@@ -359,6 +361,33 @@ describe('library-publication-index', () => {
     expect(results).toHaveLength(1)
     expect(results[0].hasMyBooklistLabel).toBe(true)
     expect(filterLibraryPublicationsByUser(results, viewerPk)).toHaveLength(1)
+  })
+
+  it('libraryPublicationEntriesForUserFromIndex builds only matching roots', () => {
+    const viewerPk = 'f'.repeat(64)
+    const mine = indexEvent('mine', [`30041:${PK}:a`], '1'.repeat(64))
+    mine.pubkey = viewerPk
+    const other = indexEvent('other', [`30041:${PK}:b`], '2'.repeat(64))
+    const indexEvents = [mine, other]
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const entries = libraryPublicationEntriesForUserFromIndex(indexEvents, engagement, viewerPk, {
+      myBooklistAddresses: new Set()
+    })
+    expect(entries).toHaveLength(1)
+    expect(entries[0].event.id).toBe(mine.id)
+  })
+
+  it('publicationRootBelongsToUser matches booklist address without building entries', () => {
+    const viewerPk = 'f'.repeat(64)
+    const rootAddr = `30040:${PK}:jane-eyre`
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    const indexByAddress = buildIndexByAddress([root])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    expect(
+      publicationRootBelongsToUser(root, indexByAddress, engagement, viewerPk, {
+        myBooklistAddresses: new Set([rootAddr])
+      })
+    ).toBe(true)
   })
 
   it('filterLibraryPublicationsByUser matches myBooklistAddresses without engagement flags', () => {
