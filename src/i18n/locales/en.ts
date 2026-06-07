@@ -1683,6 +1683,7 @@ export default {
     'Library search relays': 'Search the relays',
     'Library relay search loading': 'Searching document relays…',
     'Library status line': '{{shown}} shown · {{topLevel}} top-level · {{total}} indexes loaded',
+    'Library load more': 'Load next {{count}} books',
     'Library badge label': 'Label',
     'Library badge booklist': 'Booklist',
     'Library badge my booklist': 'On my booklist',

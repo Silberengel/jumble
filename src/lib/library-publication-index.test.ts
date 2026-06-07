@@ -5,10 +5,13 @@ import {
   buildLibraryPublicationRelaySearchFilters,
   buildRecentPublicationEntries,
   clearLibrarySearchSessionCache,
+  computeLibraryFeedRootOrder,
   filterEngagedPublications,
   filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
+  libraryDefaultFeedSlice,
   libraryPublicationEntriesForUserFromIndex,
+  LIBRARY_PAGE_SIZE,
   pickLibraryPublicationEntries,
   publicationRootBelongsToUser,
   peekLibrarySearchResults,
@@ -291,6 +294,50 @@ describe('library-publication-index', () => {
     const engagement = buildEngagementMapsFromEvents([], [], [])
     expect(buildRecentPublicationEntries(roots, indexByAddress, engagement, 10)).toHaveLength(10)
     expect(buildRecentPublicationEntries(roots, indexByAddress, engagement, 10)[0].event.created_at).toBe(11)
+  })
+
+  it('libraryDefaultFeedSlice pages through the feed in chunks of LIBRARY_PAGE_SIZE', () => {
+    const roots = Array.from({ length: 250 }, (_, i) => {
+      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`], `${String(i).padStart(64, '0')}`)
+      ev.created_at = i
+      return ev
+    })
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const topLevelCount = roots.length
+
+    const page0 = libraryDefaultFeedSlice(roots, engagement, 0)
+    expect(page0.entries).toHaveLength(LIBRARY_PAGE_SIZE)
+    expect(page0.totalCount).toBe(topLevelCount)
+    expect(page0.hasMore).toBe(topLevelCount > LIBRARY_PAGE_SIZE)
+
+    const page1 = libraryDefaultFeedSlice(roots, engagement, 1)
+    expect(page1.entries).toHaveLength(Math.min(LIBRARY_PAGE_SIZE * 2, topLevelCount))
+    expect(page1.hasMore).toBe(topLevelCount > LIBRARY_PAGE_SIZE * 2)
+
+    const lastPageIndex = Math.ceil(topLevelCount / LIBRARY_PAGE_SIZE) - 1
+    const lastPage = libraryDefaultFeedSlice(roots, engagement, lastPageIndex)
+    expect(lastPage.entries).toHaveLength(topLevelCount)
+    expect(lastPage.hasMore).toBe(false)
+  })
+
+  it('computeLibraryFeedRootOrder keeps engaged roots before recent ones', () => {
+    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`], '1'.repeat(64))
+    engagedRoot.created_at = 1
+    const recentRoot = indexEvent('recent', [`30041:${PK}:b`], '2'.repeat(64))
+    recentRoot.created_at = 100
+    const indexByAddress = buildIndexByAddress([engagedRoot, recentRoot])
+    const label: Event = {
+      id: '4'.repeat(64),
+      kind: ExtendedKind.LABEL,
+      pubkey: 'f'.repeat(64),
+      created_at: 50,
+      content: '',
+      tags: [['L', 'ugc'], ['l', 'booklist', 'ugc'], ['e', engagedRoot.id]],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([label], [], [])
+    const ordered = computeLibraryFeedRootOrder([engagedRoot, recentRoot], indexByAddress, engagement)
+    expect(ordered.map((e) => e.id)).toEqual([engagedRoot.id, recentRoot.id])
   })
 
   it('filterLibraryPublicationsByUser includes authored, booklist, bookmarked, and commented', () => {

@@ -47,7 +47,9 @@ const ENGAGEMENT_ADDRESS_CHUNK = 36
 const ENGAGEMENT_EVENT_ID_CHUNK = 44
 const MAX_TARGET_ADDRESSES = 480
 const HYDRATE_MISSING_CAP = 64
-export const LIBRARY_RECENT_FALLBACK_LIMIT = 120
+export const LIBRARY_PAGE_SIZE = 120
+/** @deprecated Use {@link LIBRARY_PAGE_SIZE} */
+export const LIBRARY_RECENT_FALLBACK_LIMIT = LIBRARY_PAGE_SIZE
 const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
@@ -692,7 +694,7 @@ export function buildRecentPublicationEntries(
   roots: Event[],
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps,
-  limit = LIBRARY_RECENT_FALLBACK_LIMIT
+  limit = LIBRARY_PAGE_SIZE
 ): LibraryPublicationEntry[] {
   return [...getTopLevelIndexEvents(roots)]
     .sort((a, b) => b.created_at - a.created_at)
@@ -700,30 +702,87 @@ export function buildRecentPublicationEntries(
     .map((event) => buildLibraryPublicationEntry(event, indexByAddress, engagement))
 }
 
-/** Engaged publications first, then fill with newest top-level indexes up to {@link LIBRARY_RECENT_FALLBACK_LIMIT}. */
+/** Full default-feed order: engaged publications first, then newest top-level indexes. */
+export function computeLibraryFeedRootOrder(
+  roots: Event[],
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps
+): Event[] {
+  const topLevel = getTopLevelIndexEvents(roots)
+  const engagedRoots: Event[] = []
+  const restRoots: Event[] = []
+  for (const root of topLevel) {
+    const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
+    if (entry.hasLabel || entry.hasComment || entry.hasHighlight) {
+      engagedRoots.push(root)
+    } else {
+      restRoots.push(root)
+    }
+  }
+  const sortedEngaged = sortLibraryPublications(
+    engagedRoots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
+  ).map((entry) => entry.event)
+  restRoots.sort((a, b) => b.created_at - a.created_at)
+
+  const seen = new Set<string>()
+  const ordered: Event[] = []
+  for (const root of [...sortedEngaged, ...restRoots]) {
+    if (seen.has(root.id)) continue
+    seen.add(root.id)
+    ordered.push(root)
+  }
+  return ordered
+}
+
+/** Entries for default library feed from page 0 through {@link pageIndexInclusive} (inclusive). */
+export function libraryFeedEntriesThroughPage(
+  orderedRoots: Event[],
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps,
+  pageIndexInclusive: number,
+  pageSize = LIBRARY_PAGE_SIZE
+): LibraryPublicationEntry[] {
+  const end = Math.min(orderedRoots.length, (pageIndexInclusive + 1) * pageSize)
+  return orderedRoots
+    .slice(0, end)
+    .map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
+}
+
+export function libraryDefaultFeedSlice(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  pageIndexInclusive: number
+): {
+  entries: LibraryPublicationEntry[]
+  totalCount: number
+  hasMore: boolean
+} {
+  if (indexEvents.length === 0) {
+    return { entries: [], totalCount: 0, hasMore: false }
+  }
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const ordered = computeLibraryFeedRootOrder(indexEvents, indexByAddress, engagement)
+  const entries = libraryFeedEntriesThroughPage(
+    ordered,
+    indexByAddress,
+    engagement,
+    pageIndexInclusive
+  )
+  return {
+    entries,
+    totalCount: ordered.length,
+    hasMore: entries.length < ordered.length
+  }
+}
+
+/** First page of the default library feed (engaged first, then recent). */
 export function pickLibraryPublicationEntries(
   roots: Event[],
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  const engaged = filterEngagedPublications(roots, indexByAddress, engagement)
-  const recent = buildRecentPublicationEntries(roots, indexByAddress, engagement)
-  if (engaged.length === 0) return sortLibraryPublications(recent)
-
-  const seen = new Set<string>()
-  const merged: LibraryPublicationEntry[] = []
-  for (const entry of sortLibraryPublications(engaged)) {
-    if (seen.has(entry.event.id)) continue
-    seen.add(entry.event.id)
-    merged.push(entry)
-  }
-  for (const entry of recent) {
-    if (merged.length >= LIBRARY_RECENT_FALLBACK_LIMIT) break
-    if (seen.has(entry.event.id)) continue
-    seen.add(entry.event.id)
-    merged.push(entry)
-  }
-  return merged
+  const ordered = computeLibraryFeedRootOrder(roots, indexByAddress, engagement)
+  return libraryFeedEntriesThroughPage(ordered, indexByAddress, engagement, 0)
 }
 
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {

@@ -1,8 +1,10 @@
 import LibraryPublicationGrid from '@/components/Library/LibraryPublicationGrid'
 import LibrarySearchBar from '@/components/Library/LibrarySearchBar'
 import { RefreshButton } from '@/components/RefreshButton'
+import { Button } from '@/components/ui/button'
 import PrimaryPageLayout, { TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import { useLibraryPublications } from '@/hooks/useLibraryPublications'
+import { LIBRARY_PAGE_SIZE } from '@/lib/library-publication-index'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { TPageRef } from '@/types'
 import { BookOpen } from 'lucide-react'
@@ -30,7 +32,10 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     topLevelCount,
     refresh,
     searchOnRelays,
-    hasIndexData
+    hasIndexData,
+    loadMoreFeed,
+    defaultFeedHasMore,
+    feedTotalCount
   } = useLibraryPublications(isActive)
 
   useImperativeHandle(
@@ -97,6 +102,15 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             searchQuery.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }
         />
+        {defaultFeedHasMore ? (
+          <div className="mt-6 flex justify-center">
+            <Button type="button" variant="outline" onClick={loadMoreFeed}>
+              {t('Library load more', {
+                count: Math.min(LIBRARY_PAGE_SIZE, feedTotalCount - entries.length)
+              })}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </PrimaryPageLayout>
   )

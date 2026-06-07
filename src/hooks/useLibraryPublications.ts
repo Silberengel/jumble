@@ -3,6 +3,7 @@ import {
   filterLibraryPublicationsByUser,
   buildLibraryRelayUrls,
   libraryPublicationEntriesForUserFromIndexAsync,
+  libraryDefaultFeedSlice,
   loadLibraryPublicationIndex,
   peekLibrarySearchResults,
   refreshLibraryEngagement,
@@ -48,6 +49,8 @@ export function useLibraryPublications(isActive: boolean) {
   const { pubkey, bookmarkListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [entries, setEntries] = useState<LibraryPublicationEntry[]>([])
+  const [feedPageIndex, setFeedPageIndex] = useState(0)
+  const [feedTotalCount, setFeedTotalCount] = useState(0)
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
   const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
   const [searchQuery, setSearchQuery] = useState('')
@@ -124,12 +127,27 @@ export function useLibraryPublications(isActive: boolean) {
     return () => window.clearTimeout(t)
   }, [searchQuery])
 
+  useEffect(() => {
+    setFeedPageIndex(0)
+  }, [debouncedSearch, showOnlyMine])
+
+  const applyDefaultFeedSlice = useCallback(
+    (indexEventsSlice: Event[], engagementMaps: PublicationEngagementMaps, pageIndex: number) => {
+      const slice = libraryDefaultFeedSlice(indexEventsSlice, engagementMaps, pageIndex)
+      setEntries(slice.entries)
+      setFeedTotalCount(slice.totalCount)
+      return slice
+    },
+    []
+  )
+
   const load = useCallback(
     async (forceRefresh = false) => {
       const gen = ++loadGenRef.current
       setLoading(true)
       setEngagementLoading(false)
       setError(null)
+      setFeedPageIndex(0)
       if (import.meta.env.DEV) {
         logger.info('[Library] page load requested', { forceRefresh, gen })
       }
@@ -146,10 +164,10 @@ export function useLibraryPublications(isActive: boolean) {
               viewerPubkey: pubkey || undefined,
               onIndexesReady: (snapshot) => {
                 if (gen !== loadGenRef.current) return
-                setEntries(snapshot.engaged)
                 setIndexEvents(snapshot.indexEvents)
                 setAllIndexCount(snapshot.allIndexCount)
                 setTopLevelCount(snapshot.topLevelCount)
+                applyDefaultFeedSlice(snapshot.indexEvents, EMPTY_ENGAGEMENT, 0)
                 setLoading(false)
                 setEngagementLoading(true)
               }
@@ -157,11 +175,11 @@ export function useLibraryPublications(isActive: boolean) {
             timeoutPromise
           ])
           if (gen !== loadGenRef.current) return
-          setEntries(result.engaged)
           setIndexEvents(result.indexEvents)
           setEngagement(result.engagement)
           setAllIndexCount(result.allIndexCount)
           setTopLevelCount(result.topLevelCount)
+          applyDefaultFeedSlice(result.indexEvents, result.engagement, 0)
         } finally {
           if (timeoutId != null) window.clearTimeout(timeoutId)
         }
@@ -179,7 +197,7 @@ export function useLibraryPublications(isActive: boolean) {
         }
       }
     },
-    [pubkey, blockedRelays]
+    [pubkey, blockedRelays, applyDefaultFeedSlice]
   )
 
   useEffect(() => {
@@ -194,7 +212,7 @@ export function useLibraryPublications(isActive: boolean) {
       void (async () => {
         await loadMyBooklistTargets()
         const relays = await buildLibraryRelayUrls(pubkey, blockedRelays ?? [])
-        const { engagement: nextEngagement, engaged } = await refreshLibraryEngagement(
+        const { engagement: nextEngagement } = await refreshLibraryEngagement(
           relays,
           indexEvents,
           pubkey
@@ -202,7 +220,8 @@ export function useLibraryPublications(isActive: boolean) {
         if (cancelled) return
         setEngagement(nextEngagement)
         if (!debouncedSearch.trim()) {
-          setEntries(engaged)
+          setFeedPageIndex(0)
+          applyDefaultFeedSlice(indexEvents, nextEngagement, 0)
         }
       })()
     }
@@ -211,7 +230,7 @@ export function useLibraryPublications(isActive: boolean) {
       cancelled = true
       window.removeEventListener(BOOKLIST_LABEL_UPDATED_EVENT, onBooklistUpdated)
     }
-  }, [isActive, pubkey, indexEvents, debouncedSearch, loadMyBooklistTargets, blockedRelays])
+  }, [isActive, pubkey, indexEvents, debouncedSearch, loadMyBooklistTargets, blockedRelays, applyDefaultFeedSlice])
 
   useEffect(() => {
     const q = debouncedSearch.trim()
@@ -346,6 +365,20 @@ export function useLibraryPublications(isActive: boolean) {
     }
   }, [showOnlyMine, pubkey, indexEvents, engagement, mineFilterOpts, debouncedSearch])
 
+  useEffect(() => {
+    if (debouncedSearch.trim() || showOnlyMine || indexEvents.length === 0) return
+    applyDefaultFeedSlice(indexEvents, engagement, feedPageIndex)
+  }, [debouncedSearch, showOnlyMine, indexEvents, engagement, feedPageIndex, applyDefaultFeedSlice])
+
+  const loadMoreFeed = useCallback(() => {
+    setFeedPageIndex((page) => page + 1)
+  }, [])
+
+  const defaultFeedHasMore = useMemo(() => {
+    if (debouncedSearch.trim() || showOnlyMine) return false
+    return entries.length < feedTotalCount
+  }, [debouncedSearch, showOnlyMine, entries.length, feedTotalCount])
+
   const filteredEntries = useMemo(() => {
     const q = debouncedSearch.trim()
     let list: LibraryPublicationEntry[]
@@ -386,6 +419,9 @@ export function useLibraryPublications(isActive: boolean) {
     topLevelCount,
     refresh,
     searchOnRelays,
-    hasIndexData: indexEvents.length > 0
+    hasIndexData: indexEvents.length > 0,
+    loadMoreFeed,
+    defaultFeedHasMore,
+    feedTotalCount
   }
 }

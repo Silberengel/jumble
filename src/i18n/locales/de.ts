@@ -1660,6 +1660,7 @@ export default {
     'Library search relays': 'Relays durchsuchen',
     'Library relay search loading': 'Dokument-Relays werden durchsucht…',
     'Library status line': '{{shown}} angezeigt · {{topLevel}} Top-Level · {{total}} Indizes geladen',
+    'Library load more': 'Nächste {{count}} Bücher laden',
     'Library badge label': 'Label',
     'Library badge comment': 'Kommentar',
     'Library badge highlight': 'Markierung',
