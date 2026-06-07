@@ -1,6 +1,7 @@
 import { useSecondaryPageOptional, useSmartHashtagNavigationOptional, useSmartRelayNavigationOptional } from '@/PageManager'
 import Image from '@/components/Image'
 import UserAvatar from '@/components/UserAvatar'
+import { MediaAutoLoadEventProvider } from '@/providers/MediaAutoLoadEventContext'
 import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
 import { BookstrContent } from '@/components/Bookstr'
@@ -6192,6 +6193,7 @@ export default function MarkdownArticle({
   }, [metadata.tags, hashtagsInContent])
   
   return (
+    <MediaAutoLoadEventProvider event={event}>
     <>
       <style>{`
         /* Padding (not margin) so separation does not collapse with the prior list's margin */
@@ -6562,5 +6564,6 @@ export default function MarkdownArticle({
           document.body
         )}
     </>
+    </MediaAutoLoadEventProvider>
   )
 }

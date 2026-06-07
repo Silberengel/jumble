@@ -278,7 +278,7 @@ export default function Note({
   const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const contentPolicy = useContentPolicyOptional()
   const defaultShowNsfw = contentPolicy?.defaultShowNsfw ?? true
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const [showNsfw, setShowNsfw] = useState(false)
   const muteList = useMuteListOptional()
   const mutePubkeySet = muteList?.mutePubkeySet ?? new Set<string>()
@@ -469,7 +469,7 @@ export default function Note({
             >
               {href}
             </a>
-            <WebPreview url={href} className="w-full" />
+            <WebPreview url={href} className="w-full" authorPubkey={event.pubkey} sourceEvent={event} />
           </div>
         ) : null}
         {displayEvent.content?.trim() ? renderEventContent({ hideMetadata: true }) : null}
@@ -560,7 +560,7 @@ export default function Note({
       <>
         {voiceArticleUrl && (
           <div className="mt-2 not-prose max-w-full">
-            <WebPreview url={voiceArticleUrl} className="w-full" />
+            <WebPreview url={voiceArticleUrl} className="w-full" authorPubkey={event.pubkey} sourceEvent={event} />
           </div>
         )}
         <AudioPlayer className="mt-2" src={event.content} />

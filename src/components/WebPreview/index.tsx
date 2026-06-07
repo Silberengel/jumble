@@ -9,7 +9,7 @@ import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
-import { nip19, kinds } from 'nostr-tools'
+import { nip19, kinds, type Event } from 'nostr-tools'
 import { useMemo, useEffect, useState } from 'react'
 import Image from '../Image'
 import Username from '../Username'
@@ -17,7 +17,6 @@ import { resolveImwaldRouteSocialCopy } from '@/lib/document-meta'
 import { cleanUrl, isSafeMediaUrl } from '@/lib/url'
 import { tagNameEquals } from '@/lib/tag'
 import { queryService } from '@/services/client.service'
-import { Event } from 'nostr-tools'
 import { FAST_READ_RELAY_URLS } from '@/constants'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
@@ -137,13 +136,16 @@ function getTitleWithFallbacks(event: Event | null, eventMetadata: { title?: str
 export default function WebPreview({
   url,
   className,
-  authorPubkey
+  authorPubkey,
+  sourceEvent
 }: {
   url: string
   className?: string
   authorPubkey?: string | null
+  /** Note being rendered; content-warning tags block OG/image autoload. */
+  sourceEvent?: Event | null
 }) {
-  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey, sourceEvent)
   const { isSmallScreen } = useScreenSize()
 
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])

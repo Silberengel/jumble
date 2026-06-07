@@ -14,7 +14,7 @@ export default function GroupMetadata({
   originalNoteId?: string
   className?: string
 }) {
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getGroupMetadataFromEvent(event), [event])
 
   const groupNameComponent = (

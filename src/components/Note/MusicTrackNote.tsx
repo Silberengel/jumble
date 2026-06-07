@@ -42,7 +42,7 @@ export default function MusicTrackNote({
   className?: string
   loadMedia?: boolean
 }) {
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const mustLoad = loadMedia || autoLoadMedia
   const { t } = useTranslation()
 

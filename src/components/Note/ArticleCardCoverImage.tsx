@@ -22,7 +22,7 @@ export default function ArticleCardCoverImage({
   /** Passed through to {@link ContentImage} when an `image` tag URL exists. */
   hideImageIfError?: boolean
 }) {
-  const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
   const autoLoadMedia = autoLoadMediaProp ?? autoLoadFromPolicy
   const trimmed = imageUrl?.trim()
   if (trimmed) {

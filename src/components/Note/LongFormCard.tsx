@@ -31,7 +31,7 @@ export default function LongFormCard({
   const push = secondaryPage?.push ?? ((url: string) => {
     window.location.href = url
   })
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()

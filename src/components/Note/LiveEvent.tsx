@@ -26,7 +26,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
   const liveActivities = useLiveActivitiesOptional()
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getLiveEventMetadataFromEvent(event), [event])
   const playback = useMemo(() => liveEventInlinePlaybackFromEvent(event), [event])
   const joinUrl = useMemo(() => preferredLiveJoinUrlForEvent(event), [event])

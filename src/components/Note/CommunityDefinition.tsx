@@ -12,7 +12,7 @@ export default function CommunityDefinition({
   event: Event
   className?: string
 }) {
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey)
+  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getCommunityDefinitionFromEvent(event), [event])
 
   const communityNameComponent = (
