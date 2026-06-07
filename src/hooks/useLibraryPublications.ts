@@ -1,5 +1,5 @@
 import {
-  clearLibraryPublicationIndexCache,
+  clearAllLibraryIndexCaches,
   filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
   buildLibraryRelayUrls,
@@ -81,8 +81,7 @@ export function useLibraryPublications(isActive: boolean) {
   }, [isActive, load])
 
   const refresh = useCallback(() => {
-    clearLibraryPublicationIndexCache()
-    void load(true)
+    void clearAllLibraryIndexCaches().then(() => load(true))
   }, [load])
 
   const filteredEntries = useMemo(() => {

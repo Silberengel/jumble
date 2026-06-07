@@ -9,6 +9,7 @@ import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import Image from '../Image'
 import { extractBookMetadata } from '@/lib/bookstr-parser'
+import { persistLibraryPublicationForReading } from '@/lib/library-publication-index'
 import { ExtendedKind } from '@/constants'
 
 export default function PublicationCard({
@@ -36,6 +37,7 @@ export default function PublicationCard({
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (disableNavigation) return
+    persistLibraryPublicationForReading(event)
     navigateToNote(toNote(event), event)
   }
 

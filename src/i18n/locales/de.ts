@@ -1658,6 +1658,23 @@ export default {
     'Library badge label': 'Label',
     'Library badge comment': 'Kommentar',
     'Library badge highlight': 'Markierung',
+    'libraryIndexCache.sectionTitle': 'Bibliotheks-Publikationsindex',
+    'libraryIndexCache.sectionBlurb':
+      'Zwischengespeicherte Kind-30040-Index-Events für den Bibliotheks-Tab. Beim Leeren wird nur der Entdeckungslisten-Cache entfernt — geöffnete Publikationen bleiben im Lese-Cache.',
+    'libraryIndexCache.defaultsMobile':
+      'Standard mobil: bis zu {{entries}} Indizes, ~{{mb}} MB.',
+    'libraryIndexCache.defaultsElectron':
+      'Standard Desktop-App: bis zu {{entries}} Indizes, ~{{mb}} MB.',
+    'libraryIndexCache.defaultsDesktopWeb':
+      'Standard Desktop-Web: bis zu {{entries}} Indizes, ~{{mb}} MB.',
+    'libraryIndexCache.footprintSummary':
+      '{{count}} / {{maxEntries}} Indizes (~{{mb}} / {{maxMb}} MB).',
+    'libraryIndexCache.clear': 'Bibliotheksindex-Cache leeren',
+    'libraryIndexCache.clearing': 'Wird geleert…',
+    'libraryIndexCache.clearConfirm':
+      'Bibliotheksindex-Cache leeren? Beim nächsten Besuch werden Indizes erneut von Relays geladen. Geöffnete Publikationen bleiben im Lese-Cache.',
+    'libraryIndexCache.clearedToast': 'Bibliotheksindex-Cache geleert.',
+    'libraryIndexCache.clearFailed': 'Bibliotheksindex-Cache konnte nicht geleert werden.',
     'Search page clear': 'Leeren',
     'Search page clear description':
       'Suchfeld leeren, Vorschläge schließen und Ergebnisse entfernen, um neu zu suchen.',

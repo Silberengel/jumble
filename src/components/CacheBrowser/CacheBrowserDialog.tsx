@@ -6,6 +6,7 @@ import { Trash2, RefreshCw, Database, WrapText, Search, X, TriangleAlert, Copy, 
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import indexedDb, { isLikelyCachedNostrEvent, StoreNames, type TCachedEventSearchHit } from '@/services/indexed-db.service'
+import { clearAllLibraryIndexCaches } from '@/lib/library-publication-index'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -177,7 +178,11 @@ export default function CacheBrowserDialog({
     if (!selectedStore) return
     if (!confirm(t('Are you sure you want to delete all items from this store?'))) return
     try {
-      await indexedDb.clearStore(selectedStore)
+      if (selectedStore === StoreNames.LIBRARY_PUBLICATION_INDEX) {
+        await clearAllLibraryIndexCaches()
+      } else {
+        await indexedDb.clearStore(selectedStore)
+      }
       setStoreItems([])
       void loadCacheInfo()
       toast.success(t('All items deleted successfully'))

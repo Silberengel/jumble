@@ -1,6 +1,7 @@
 import CacheEventImportSettings from '@/components/CacheEventImportSettings'
 import InBrowserCacheSetting from '@/components/InBrowserCacheSetting'
 import EventArchiveCacheSettings from '@/components/EventArchiveCacheSettings'
+import LibraryIndexCacheSettings from '@/components/LibraryIndexCacheSettings'
 import PrivateKeyRecoverySetting from '@/components/PrivateKeyRecoverySetting'
 import { RefreshButton } from '@/components/RefreshButton'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
@@ -65,6 +66,7 @@ const CacheSettingsPage = forwardRef<TPageRef, { index?: number; hideTitlebar?: 
           <InBrowserCacheSetting />
           <CacheEventImportSettings />
           <EventArchiveCacheSettings />
+          <LibraryIndexCacheSettings />
         </div>
       </SecondaryPageLayout>
     )

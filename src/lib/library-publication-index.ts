@@ -12,9 +12,12 @@ import {
 } from '@/lib/publication-index'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import {
+  clearLibraryIndexIdbCache,
   loadLibraryIndexCacheEvents,
   persistLibraryIndexCacheEvents
 } from '@/lib/library-index-idb-cache'
+import client from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import {
   canonicalRelaySessionKey,
   httpIndexBasesForRelayQuery,
@@ -598,4 +601,20 @@ export async function loadLibraryPublicationIndex(
 
 export function clearLibraryPublicationIndexCache(): void {
   sessionCache = null
+}
+
+/** Clears Library tab session + IDB index cache only (publication reading cache is unchanged). */
+export async function clearAllLibraryIndexCaches(): Promise<void> {
+  sessionCache = null
+  await clearLibraryIndexIdbCache()
+}
+
+/**
+ * When opening a publication from Library, seed session cache and the publication events store
+ * so offline re-read works even if the index lived only in the Library LRU store.
+ */
+export function persistLibraryPublicationForReading(event: Event): void {
+  if (event.kind !== ExtendedKind.PUBLICATION) return
+  client.addEventToCache(event)
+  void indexedDb.putReplaceableEvent(event).catch(() => {})
 }

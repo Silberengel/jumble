@@ -1681,6 +1681,23 @@ export default {
     'Library badge label': 'Label',
     'Library badge comment': 'Comment',
     'Library badge highlight': 'Highlight',
+    'libraryIndexCache.sectionTitle': 'Library publication index',
+    'libraryIndexCache.sectionBlurb':
+      'Cached kind-30040 index events used to populate the Library tab. Clearing this only removes the discovery list cache—not publications you have opened for reading.',
+    'libraryIndexCache.defaultsMobile':
+      'Default on mobile web: up to {{entries}} indexes, ~{{mb}} MB.',
+    'libraryIndexCache.defaultsElectron':
+      'Default in the desktop app: up to {{entries}} indexes, ~{{mb}} MB.',
+    'libraryIndexCache.defaultsDesktopWeb':
+      'Default on desktop web: up to {{entries}} indexes, ~{{mb}} MB.',
+    'libraryIndexCache.footprintSummary':
+      'Using {{count}} / {{maxEntries}} indexes (~{{mb}} / {{maxMb}} MB).',
+    'libraryIndexCache.clear': 'Clear library index cache',
+    'libraryIndexCache.clearing': 'Clearing…',
+    'libraryIndexCache.clearConfirm':
+      'Clear the Library index cache? The Library tab will reload indexes from relays on next visit. Opened publications stay in your publication reading cache.',
+    'libraryIndexCache.clearedToast': 'Library index cache cleared.',
+    'libraryIndexCache.clearFailed': 'Failed to clear library index cache.',
     'Search page clear': 'Clear',
     'Search page clear description':
       'Clear the search field, close suggestions, and remove results so you can start a new search.',
