@@ -105,10 +105,6 @@ export function nearestScrollportRoot(el: HTMLElement | null): Element | undefin
   return undefined
 }
 
-function rectsOverlap(a: DOMRectReadOnly, b: DOMRectReadOnly): boolean {
-  return a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right
-}
-
 /** True when `el` intersects the viewport or its nearest scrollport (with margin). */
 export function elementIsNearVisibleScrollport(el: HTMLElement, marginPx: number): boolean {
   const elRect = el.getBoundingClientRect()

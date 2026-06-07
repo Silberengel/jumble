@@ -179,6 +179,7 @@ function NoteListPageTitlebar({
             <Flame />
           </Button>
         ) : null}
+        <LibraryTitlebarButton />
       </div>
       <div className="flex min-h-0 min-w-0 items-center justify-center gap-0.5 px-0.5">
         <button
@@ -194,7 +195,6 @@ function NoteListPageTitlebar({
           <Logo className="max-h-7 w-full min-w-0 object-contain object-center sm:max-h-8" />
         </button>
         <DiscussionsTitlebarButton />
-        <LibraryTitlebarButton />
         <Button
           variant="ghost"
           size="titlebar-icon"
