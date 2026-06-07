@@ -180,7 +180,7 @@ const PostTextarea = forwardRef<
       () =>
         cn(
           'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          isSmallScreen && 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain',
+          isSmallScreen && 'h-full min-h-0 flex-1 overflow-y-auto overscroll-y-contain',
           className
         ),
       [className, isSmallScreen]

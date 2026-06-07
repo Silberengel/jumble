@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sheet'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { pubkeyToNpub } from '@/lib/pubkey'
+import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
 import postEditor from '@/services/post-editor.service'
 import { Event } from 'nostr-tools'
 import postEditorService from '@/services/post-editor.service'
@@ -67,6 +68,7 @@ export default function PostEditor({
   useEffect(() => {
     if (!open) return
     postEditorService.setComposerShellOpen(true)
+    void preloadEmojiPicker()
     return () => postEditorService.setComposerShellOpen(false)
   }, [open])
 

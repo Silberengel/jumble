@@ -174,6 +174,22 @@ function formatMarkupImageAtCursor(url: string, asciidoc: boolean): string {
   return `![image](${safe})`
 }
 
+/** On mobile, title + kind-specific fields scroll in a capped header; the editor keeps the rest. */
+function ComposerHeaderScroll({
+  enabled,
+  children
+}: {
+  enabled: boolean
+  children: React.ReactNode
+}) {
+  if (!enabled) return <>{children}</>
+  return (
+    <div className="flex max-h-[min(36dvh,16rem)] min-h-0 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain">
+      {children}
+    </div>
+  )
+}
+
 export default function PostContent({
   open,
   defaultContent = '',
@@ -2539,11 +2555,10 @@ export default function PostContent({
         <div
           className={cn(
             'min-w-0',
-            isSmallScreen
-              ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain'
-              : 'space-y-2'
+            isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
           )}
         >
+          <ComposerHeaderScroll enabled={isSmallScreen}>
       {/* Dynamic Title based on mode */}
       <div className="text-lg font-semibold">
         {(() => {
@@ -3378,8 +3393,13 @@ export default function PostContent({
           </div>
         </div>
       )}
-      
-      <div className={cn(isSmallScreen && 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden')}>
+          </ComposerHeaderScroll>
+
+      <div
+        className={cn(
+          isSmallScreen && 'flex min-h-[min(36dvh,17rem)] min-w-0 flex-1 flex-col overflow-hidden'
+        )}
+      >
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -3391,7 +3411,7 @@ export default function PostContent({
             isPoll
               ? 'min-h-20'
               : isSmallScreen
-                ? 'min-h-0'
+                ? 'h-full min-h-0'
                 : 'min-h-52',
             isDiscussionThread && threadErrors.content && 'border-destructive'
           )}
@@ -3752,7 +3772,7 @@ export default function PostContent({
         className={cn(
           'space-y-2 min-w-0',
           isSmallScreen &&
-            'sticky bottom-0 z-10 shrink-0 border-t border-border bg-background pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]'
+            'z-10 shrink-0 border-t border-border bg-background pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]'
         )}
       >
       <div className="flex min-w-0 w-full items-center gap-1.5">

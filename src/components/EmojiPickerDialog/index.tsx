@@ -4,9 +4,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { TEmoji } from '@/types'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import EmojiPicker from '../EmojiPicker'
 
 export default function EmojiPickerDialog({
@@ -21,15 +22,35 @@ export default function EmojiPickerDialog({
 }) {
   const { isSmallScreen } = useScreenSize()
   const [open, setOpen] = useState(false)
+  /** Keep picker mounted after first open so emoji-picker-element is not cold-started every time. */
+  const [pickerMounted, setPickerMounted] = useState(false)
+
+  useEffect(() => {
+    if (open) setPickerMounted(true)
+  }, [open])
+
+  useEffect(() => {
+    void preloadEmojiPicker()
+  }, [])
+
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next)
+  }, [])
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
+      <Drawer
+        open={open}
+        onOpenChange={handleOpenChange}
+        handleOnly
+        shouldScaleBackground={false}
+        repositionInputs={false}
+      >
         <DrawerTrigger asChild>{children}</DrawerTrigger>
         <DrawerContent
           dragHandle="vaul"
           portalContainer={portalContainer}
-          className="max-h-[min(88dvh,calc(100dvh-5rem))] px-2"
+          className="max-h-[min(60dvh,calc(100dvh-8rem))] px-2 pb-2"
           onPointerDownOutside={(e) => {
             const t = e.target as HTMLElement | null
             if (t?.closest?.('[data-vaul-overlay]')) return
@@ -39,8 +60,8 @@ export default function EmojiPickerDialog({
           <DrawerHeader className="sr-only">
             <DrawerTitle>Emoji Picker</DrawerTitle>
           </DrawerHeader>
-          <div className="flex w-full max-w-[100vw] min-w-0 min-h-0 max-h-[min(72dvh,calc(100dvh-6rem))] flex-col overflow-hidden pb-1">
-            {open ? (
+          <div className="flex w-full max-w-[100vw] min-w-0 min-h-0 flex-col overflow-hidden pb-1">
+            {pickerMounted ? (
               <EmojiPicker
                 onEmojiClick={(emoji, e) => {
                   e.stopPropagation()
@@ -56,7 +77,7 @@ export default function EmojiPickerDialog({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"

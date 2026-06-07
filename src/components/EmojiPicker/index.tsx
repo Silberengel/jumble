@@ -1,4 +1,5 @@
 import { EMOJI_PICKER_DATA_SOURCE } from '@/lib/emoji-picker-data-source'
+import { preloadEmojiPickerModule } from '@/lib/emoji-picker-preload'
 import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI, DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
 import { recordEmojiUsed } from '@/lib/recently-used-emojis'
 import { useNostr } from '@/providers/NostrProvider'
@@ -25,6 +26,7 @@ export default function EmojiPicker({
     reactionsDefaultOpen ? 'reactions' : 'full'
   )
   const [customEmojiTick, setCustomEmojiTick] = useState(0)
+  const [pickerReady, setPickerReady] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<(HTMLElement & { customEmoji: unknown[] }) | null>(null)
 
@@ -44,8 +46,9 @@ export default function EmojiPicker({
     if (mode !== 'full') return
 
     let cancelled = false
+    setPickerReady(false)
 
-    import('emoji-picker-element').then(({ Picker }) => {
+    preloadEmojiPickerModule().then(({ Picker }) => {
       if (cancelled || !containerRef.current) return
 
       const picker = new Picker({
@@ -110,10 +113,12 @@ export default function EmojiPicker({
 
       picker.addEventListener('emoji-click', handleClick)
       containerRef.current.appendChild(picker)
+      if (!cancelled) setPickerReady(true)
     })
 
     return () => {
       cancelled = true
+      setPickerReady(false)
       if (pickerRef.current) {
         pickerRef.current.remove()
         pickerRef.current = null
@@ -196,8 +201,14 @@ export default function EmojiPicker({
       {ownEmojisRow}
       <div
         ref={containerRef}
-        className="h-[min(350px,50dvh)] min-h-[280px] w-full min-w-[280px] max-w-[350px] shrink-0"
-      />
+        className="relative h-[min(320px,45dvh)] min-h-[240px] w-full min-w-[280px] max-w-[350px] shrink-0"
+      >
+        {!pickerReady ? (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+            …
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
