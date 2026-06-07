@@ -9,8 +9,13 @@ type TReplyContext = {
 
 const ReplyContext = createContext<TReplyContext | undefined>(undefined)
 
+/** Returns undefined outside provider (e.g. isolated `createRoot` embeds or HMR context splits). */
+export function useReplyOptional(): TReplyContext | undefined {
+  return useContext(ReplyContext)
+}
+
 export const useReply = () => {
-  const context = useContext(ReplyContext)
+  const context = useReplyOptional()
   if (!context) {
     throw new Error('useReply must be used within a ReplyProvider')
   }

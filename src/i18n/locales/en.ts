@@ -1674,7 +1674,7 @@ export default {
     'Library page title': 'Library',
     'Library search placeholder': 'Search publications by title, author, or tag…',
     'Library show only my publications': 'Show only my publications',
-    'Library empty': 'No engaged publications found on your relays yet.',
+    'Library empty': 'No publications found on your relays yet.',
     'Library empty filtered': 'No publications match your filters.',
     'Library loading': 'Loading publications from document relays…',
     'Library status line': '{{shown}} shown · {{topLevel}} top-level · {{total}} indexes loaded',

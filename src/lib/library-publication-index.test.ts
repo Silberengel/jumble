@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildEngagementMapsFromEvents,
+  buildRecentPublicationEntries,
   filterEngagedPublications,
-  filterLibraryPublicationsBySearch
+  filterLibraryPublicationsBySearch,
+  pickLibraryPublicationEntries
 } from '@/lib/library-publication-index'
 import { buildIndexByAddress } from '@/lib/publication-index'
 import type { Event } from 'nostr-tools'
@@ -80,5 +82,30 @@ describe('library-publication-index', () => {
     ]
     expect(filterLibraryPublicationsBySearch(entries, 'title book')).toHaveLength(1)
     expect(filterLibraryPublicationsBySearch(entries, 'missing')).toHaveLength(0)
+  })
+
+  it('pickLibraryPublicationEntries falls back to newest roots without engagement', () => {
+    const older = indexEvent('old-book', [`30041:${PK}:a`], '1'.repeat(64))
+    older.created_at = 10
+    const newer = indexEvent('new-book', [`30041:${PK}:b`], '2'.repeat(64))
+    newer.created_at = 20
+    const indexByAddress = buildIndexByAddress([older, newer])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+
+    const picked = pickLibraryPublicationEntries([older, newer], indexByAddress, engagement)
+
+    expect(picked).toHaveLength(2)
+    expect(picked[0].event.id).toBe(newer.id)
+    expect(picked.every((e) => e.engagementCount === 0)).toBe(true)
+  })
+
+  it('buildRecentPublicationEntries caps at limit', () => {
+    const roots = Array.from({ length: 12 }, (_, i) => {
+      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`], String(i).padEnd(64, '0').slice(0, 64))
+      ev.created_at = i
+      return ev
+    })
+    expect(buildRecentPublicationEntries(roots, 10)).toHaveLength(10)
+    expect(buildRecentPublicationEntries(roots, 10)[0].event.created_at).toBe(11)
   })
 })

@@ -12,6 +12,10 @@ import {
 } from '@/lib/publication-index'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import {
+  loadLibraryIndexCacheEvents,
+  persistLibraryIndexCacheEvents
+} from '@/lib/library-index-idb-cache'
+import {
   canonicalRelaySessionKey,
   httpIndexBasesForRelayQuery,
   normalizeHttpRelayUrl,
@@ -28,6 +32,7 @@ const ENGAGEMENT_ADDRESS_CHUNK = 36
 const ENGAGEMENT_EVENT_ID_CHUNK = 44
 const MAX_TARGET_ADDRESSES = 480
 const HYDRATE_MISSING_CAP = 64
+export const LIBRARY_RECENT_FALLBACK_LIMIT = 10
 const QUERY_OPTS = {
   globalTimeout: 18_000,
   eoseTimeout: 3_000,
@@ -150,6 +155,8 @@ export async function buildLibraryRelayUrls(userPubkey?: string): Promise<string
 export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Event[]> {
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   if (indexRelays.length === 0) return []
+
+  const cached = await loadLibraryIndexCacheEvents()
   const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_FETCH_LIMIT }
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
 
@@ -161,13 +168,18 @@ export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Even
     batches.push(fetchPaginatedFromHttpIndexRelay(httpRelay, filter))
   }
 
-  const merged = dedupeEventsById((await Promise.all(batches)).flat())
+  const networkMerged =
+    batches.length > 0 ? dedupeEventsById((await Promise.all(batches)).flat()) : []
+  const merged = dedupeEventsById([...cached, ...networkMerged])
   const valid = filterValidIndexEvents(merged)
+  void persistLibraryIndexCacheEvents(valid)
   if (import.meta.env.DEV) {
     logger.info('[Library] index fetch', {
       indexRelays: indexRelays.length,
       wsRelays: wsRelays.length,
       httpRelays: httpRelays.length,
+      cachedCount: cached.length,
+      networkCount: networkMerged.length,
       mergedCount: merged.length,
       validCount: valid.length
     })
@@ -368,6 +380,33 @@ export function filterEngagedPublications(
   return out
 }
 
+export function buildRecentPublicationEntries(
+  roots: Event[],
+  limit = LIBRARY_RECENT_FALLBACK_LIMIT
+): LibraryPublicationEntry[] {
+  return [...roots]
+    .sort((a, b) => b.created_at - a.created_at)
+    .slice(0, limit)
+    .map((event) => ({
+      event,
+      hasLabel: false,
+      hasComment: false,
+      hasHighlight: false,
+      engagementCount: 0
+    }))
+}
+
+/** Engaged publications first; when none match, show the newest top-level indexes. */
+export function pickLibraryPublicationEntries(
+  roots: Event[],
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps
+): LibraryPublicationEntry[] {
+  const engaged = sortLibraryPublications(filterEngagedPublications(roots, indexByAddress, engagement))
+  if (engaged.length > 0) return engaged
+  return buildRecentPublicationEntries(roots)
+}
+
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
   return [...entries].sort((a, b) => {
     if (a.hasLabel !== b.hasLabel) return a.hasLabel ? -1 : 1
@@ -466,7 +505,7 @@ async function buildEngagedFromCache(
     const targetEventIds = collectPublicationIndexEventIds(indexEvents)
     maps = await fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds)
   }
-  return sortLibraryPublications(filterEngagedPublications(topLevel, indexByAddress, maps))
+  return pickLibraryPublicationEntries(topLevel, indexByAddress, maps)
 }
 
 export async function loadLibraryPublicationIndex(
@@ -539,13 +578,14 @@ export async function loadLibraryPublicationIndex(
   sessionCache = { relayKey: key, indexEvents, indexByAddress, engagement }
 
   const topLevel = getTopLevelIndexEvents(indexEvents)
-  const engaged = sortLibraryPublications(filterEngagedPublications(topLevel, indexByAddress, engagement))
+  const engaged = pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
 
   if (import.meta.env.DEV) {
     logger.info('[Library] load done', {
       engaged: engaged.length,
       topLevel: topLevel.length,
-      allIndexCount: indexEvents.length
+      allIndexCount: indexEvents.length,
+      recentFallback: engaged.length > 0 && engaged.every((e) => e.engagementCount === 0)
     })
   }
 

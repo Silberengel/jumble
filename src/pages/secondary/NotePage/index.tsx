@@ -32,6 +32,7 @@ import {
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
+import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
 import {
   prewarmArchivesNotePage,
   profilesFromArchivesNotePageBundle
@@ -125,6 +126,26 @@ function eventPointersReferenceSameNote(a: string | undefined, b: string | undef
 }
 
 const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: { id?: string; index?: number; hideTitlebar?: boolean; initialEvent?: Event }, ref) => {
+  const threadKey = useMemo(() => {
+    const sync = resolveNoteEventSync(id, initialEvent)
+    return sync?.id ?? id?.trim() ?? 'pending'
+  }, [id, initialEvent])
+
+  return (
+    <ThreadReplyProvider threadKey={threadKey}>
+      <NotePageBody
+        ref={ref}
+        id={id}
+        index={index}
+        hideTitlebar={hideTitlebar}
+        initialEvent={initialEvent}
+      />
+    </ThreadReplyProvider>
+  )
+})
+NotePage.displayName = 'NotePage'
+
+const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: { id?: string; index?: number; hideTitlebar?: boolean; initialEvent?: Event }, ref) => {
   const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const { event, isFetching, refetch: refetchMain } = useFetchEvent(id, initialEvent)
@@ -538,7 +559,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
   }
 
   return (
-    <ThreadReplyProvider threadKey={finalEvent.id}>
     <ThreadProfileBatchProvider seedEvents={[finalEvent]} seedProfiles={archivesSeedProfiles}>
     <SecondaryPageLayout
       ref={ref}
@@ -610,10 +630,9 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
       </div>
     </SecondaryPageLayout>
     </ThreadProfileBatchProvider>
-    </ThreadReplyProvider>
   )
 })
-NotePage.displayName = 'NotePage'
+NotePageBody.displayName = 'NotePageBody'
 export default NotePage
 
 function ThreadContextSkeleton() {

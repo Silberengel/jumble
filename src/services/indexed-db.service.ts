@@ -142,6 +142,8 @@ export const StoreNames = {
   TIMELINE_STATE: 'timelineState',
   /** Piper / read-aloud WAV blobs keyed by SHA-256 of endpoint + text + speed. */
   PIPER_TTS_CACHE: 'piperTtsCache',
+  /** Library kind-30040 index LRU (rotating cache; separate byte/entry budget from EVENT_ARCHIVE). */
+  LIBRARY_PUBLICATION_INDEX: 'libraryPublicationIndex',
   /** NIP-52 calendar notes (31922/31923). Key: {@link replaceableEventDedupeKey}. Index: `occurrenceStartMs`. */
   CALENDAR_EVENTS: 'calendarEvents',
   /** NIP-52 calendar RSVPs (31925). Key: event id. Index: `parentCoordinate` (`a` tag). */
@@ -173,6 +175,7 @@ export type TCalendarRsvpCacheRow = {
 const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set([
   StoreNames.SETTINGS,
   StoreNames.PIPER_TTS_CACHE,
+  StoreNames.LIBRARY_PUBLICATION_INDEX,
   StoreNames.RELAY_INFOS,
   StoreNames.NIP66_DISCOVERY,
   StoreNames.GIF_CACHE,
@@ -227,7 +230,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 39
+const DB_VERSION = 40
 
 /** Hint age for profile/payment reads (stale rows still returned; background refresh). */
 const PROFILE_AND_PAYMENT_STALE_READ_MS = 5 * 60 * 1000
@@ -241,6 +244,14 @@ function idbEventToError(ev: Parameters<NonNullable<IDBRequest['onerror']>>[0]):
   const domError = request?.error
   const message = domError?.message ?? 'IndexedDB operation failed'
   return new Error(message)
+}
+
+type TLibraryPublicationIndexCacheRow = {
+  key: string
+  value: Event
+  addedAt: number
+  lastAccessAt: number
+  approxBytes: number
 }
 
 /** Create any object stores from {@link StoreNames} that are missing (e.g. after partial upgrades). */
@@ -269,6 +280,9 @@ function ensureMissingObjectStores(db: IDBDatabase): void {
       const pa = db.createObjectStore(storeName, { keyPath: 'key' })
       pa.createIndex('authorPubkey', 'authorPubkey', { unique: false })
       pa.createIndex('targetEventId', 'targetEventId', { unique: false })
+    } else if (storeName === StoreNames.LIBRARY_PUBLICATION_INDEX) {
+      const lib = db.createObjectStore(storeName, { keyPath: 'key' })
+      lib.createIndex('lastAccessAt', 'lastAccessAt', { unique: false })
     } else {
       db.createObjectStore(storeName, { keyPath: 'key' })
     }
@@ -507,6 +521,12 @@ class IndexedDbService {
               const pa = db.createObjectStore(StoreNames.PAYMENT_ATTESTATION_EVENTS, { keyPath: 'key' })
               pa.createIndex('authorPubkey', 'authorPubkey', { unique: false })
               pa.createIndex('targetEventId', 'targetEventId', { unique: false })
+            }
+          }
+          if (event.oldVersion < 40) {
+            if (!db.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) {
+              const lib = db.createObjectStore(StoreNames.LIBRARY_PUBLICATION_INDEX, { keyPath: 'key' })
+              lib.createIndex('lastAccessAt', 'lastAccessAt', { unique: false })
             }
           }
           ensureMissingObjectStores(db)
@@ -3661,6 +3681,191 @@ class IndexedDbService {
     for (const key of toDelete) {
       await this.deleteStoreItem(StoreNames.PIPER_TTS_CACHE, key)
     }
+  }
+
+  private approxLibraryPublicationIndexBytes(ev: Event): number {
+    try {
+      return new Blob([JSON.stringify(ev)]).size
+    } catch {
+      return 2048
+    }
+  }
+
+  async getLibraryPublicationIndexCacheEvents(): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return []
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      const out: Event[] = []
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        const row = cursor.value as TLibraryPublicationIndexCacheRow
+        if (row?.value?.kind === ExtendedKind.PUBLICATION) out.push(row.value)
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async getLibraryPublicationIndexCacheFootprint(): Promise<{ count: number; bytes: number }> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) {
+      return { count: 0, bytes: 0 }
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      let count = 0
+      let bytes = 0
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve({ count, bytes })
+          return
+        }
+        const row = cursor.value as TLibraryPublicationIndexCacheRow
+        count += 1
+        bytes += row.approxBytes ?? this.approxLibraryPublicationIndexBytes(row.value)
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async mergeLibraryPublicationIndexCacheEvents(
+    events: Event[],
+    opts: { maxEntries: number; maxBytes: number }
+  ): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX) || events.length === 0) {
+      return
+    }
+
+    const now = Date.now()
+    const storeName = StoreNames.LIBRARY_PUBLICATION_INDEX
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(storeName, 'readwrite')
+      const store = tx.objectStore(storeName)
+      let pending = events.length
+      if (pending === 0) {
+        tx.commit()
+        resolve()
+        return
+      }
+
+      const finishOne = () => {
+        pending -= 1
+        if (pending === 0) {
+          tx.commit()
+          resolve()
+        }
+      }
+
+      for (const ev of events) {
+        const get = store.get(ev.id)
+        get.onsuccess = () => {
+          const prev = get.result as TLibraryPublicationIndexCacheRow | undefined
+          const row: TLibraryPublicationIndexCacheRow = {
+            key: ev.id,
+            value: ev,
+            addedAt: prev?.addedAt ?? now,
+            lastAccessAt: now,
+            approxBytes: this.approxLibraryPublicationIndexBytes(ev)
+          }
+          const put = store.put(row)
+          put.onsuccess = () => finishOne()
+          put.onerror = (e) => {
+            finishOne()
+            if (pending === 0) reject(idbEventToError(e))
+          }
+        }
+        get.onerror = (e) => {
+          finishOne()
+          if (pending === 0) reject(idbEventToError(e))
+        }
+      }
+    })
+
+    await this.pruneLibraryPublicationIndexCache(opts.maxEntries, opts.maxBytes)
+  }
+
+  async pruneLibraryPublicationIndexCache(maxEntries: number, maxBytes: number): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
+
+    const rows: Array<{ key: string; lastAccessAt: number; bytes: number }> = []
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve()
+          return
+        }
+        const row = cursor.value as TLibraryPublicationIndexCacheRow
+        rows.push({
+          key: cursor.key as string,
+          lastAccessAt: row.lastAccessAt ?? row.addedAt,
+          bytes: row.approxBytes ?? this.approxLibraryPublicationIndexBytes(row.value)
+        })
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+
+    rows.sort((a, b) => a.lastAccessAt - b.lastAccessAt)
+    const toDelete = new Set<string>()
+    let totalBytes = rows.reduce((s, r) => s + r.bytes, 0)
+    let totalCount = rows.length
+    while (totalCount > maxEntries || totalBytes > maxBytes) {
+      const victim = rows.shift()
+      if (!victim) break
+      toDelete.add(victim.key)
+      totalBytes -= victim.bytes
+      totalCount -= 1
+    }
+
+    for (const key of toDelete) {
+      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
+    }
+  }
+
+  async clearLibraryPublicationIndexCacheStore(): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readwrite')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).clear()
+      req.onsuccess = () => {
+        tx.commit()
+        resolve()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
   }
 
   /**

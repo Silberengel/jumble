@@ -454,7 +454,7 @@ function extractValidNoteId(raw: string): string | null {
 function parseNoteUrl(url: string): { noteId: string; context?: string } | null {
   // Match patterns like /discussions/notes/{noteId} or /notes/{noteId}
   const contextualMatch = url.match(
-    /\/(discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/
+    /\/(discussions|search|library|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/
   )
   if (contextualMatch) {
     const noteId = extractValidNoteId(contextualMatch[2])
