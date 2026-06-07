@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import { eventTagAddress } from '@/lib/publication-index'
+import { uppercaseRomanNumeralsInText } from '@/lib/roman-numeral-display'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import {
   publicationRefKey,
@@ -65,6 +66,10 @@ function humanizeIdentifier(identifier: string): string | undefined {
   return identifier.replace(/-/g, ' ')
 }
 
+function finalizeSectionTitle(title: string): string {
+  return uppercaseRomanNumeralsInText(title)
+}
+
 export function sectionTitle(
   ref: PublicationSectionRef,
   event: Event | undefined,
@@ -72,23 +77,23 @@ export function sectionTitle(
 ): string {
   if (event) {
     const title = tagValue(event, 'title')
-    if (title) return title
+    if (title) return finalizeSectionTitle(title)
     const dTag = tagValue(event, 'd')
     const humanizedD = dTag ? humanizeIdentifier(dTag) : undefined
-    if (humanizedD) return humanizedD
+    if (humanizedD) return finalizeSectionTitle(humanizedD)
   }
 
   const coordinate = coordinateForRef(ref, event)
   if (coordinate) {
     const label = labelMap.get(coordinate)
-    if (label) return label
+    if (label) return finalizeSectionTitle(label)
   }
 
   const identifier =
     ref.identifier ??
     (coordinate ? coordinate.split(':').slice(2).join(':') : undefined)
   const humanized = identifier ? humanizeIdentifier(identifier) : undefined
-  if (humanized) return humanized
+  if (humanized) return finalizeSectionTitle(humanized)
 
   return 'Section'
 }

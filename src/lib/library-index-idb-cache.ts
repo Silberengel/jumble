@@ -4,20 +4,21 @@ import {
   getLibraryIndexCacheBudget
 } from '@/lib/library-index-cache-config'
 import logger from '@/lib/logger'
-import { isVerifiedPublicationIndex } from '@/lib/publication-index'
+import { filterStructuralIndexEvents } from '@/lib/publication-index'
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
 export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
   try {
     const cached = await indexedDb.getLibraryPublicationIndexCacheEvents()
-    const verified = cached.filter(isVerifiedPublicationIndex)
-    if (verified.length < cached.length) {
+    // IDB rows were verified on write; structural re-check only (avoid ~5k verifyEvent on read).
+    const structural = filterStructuralIndexEvents(cached)
+    if (structural.length < cached.length) {
       void indexedDb
         .pruneUnverifiedLibraryPublicationIndexCacheEvents()
         .catch(() => {})
     }
-    return verified
+    return structural
   } catch (e) {
     if (import.meta.env.DEV) {
       logger.warn('[Library] index IDB read failed', {

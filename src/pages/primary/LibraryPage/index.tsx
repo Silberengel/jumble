@@ -97,7 +97,10 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         ) : null}
         <LibraryPublicationGrid
           entries={entries}
-          loading={(loading && entries.length === 0) || (showOnlyMine && mineFilterLoading)}
+          loading={
+            (loading && entries.length === 0 && !hasIndexData) ||
+            (showOnlyMine && mineFilterLoading)
+          }
           emptyMessage={
             searchQuery.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }

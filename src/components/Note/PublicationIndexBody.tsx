@@ -1,7 +1,7 @@
 import AsciidocArticle from '@/components/Note/AsciidocArticle/AsciidocArticle'
 import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
-import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
+import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import { fetchPublicationTreeForExport } from '@/lib/publication-export'
 import {
@@ -145,6 +145,8 @@ export default function PublicationIndexBody({
     () =>
       Array.from(
         new Set([
+          ...LIBRARY_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
+          ...DOCUMENT_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url),
           ...currentBrowsingRelayUrls.map((url) => normalizeAnyRelayUrl(url) || url),
           ...favoriteRelays.map((url) => normalizeAnyRelayUrl(url) || url),
           ...FAST_READ_RELAY_URLS.map((url) => normalizeAnyRelayUrl(url) || url)

@@ -10,6 +10,7 @@ import {
   publicationRefKey,
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
+import { uppercaseRomanNumeralsInText } from '@/lib/roman-numeral-display'
 import type { Event } from 'nostr-tools'
 
 const MAX_NEST_DEPTH = 8
@@ -40,7 +41,8 @@ function tagValue(event: Event, name: string): string | undefined {
 }
 
 function titleFromIndex(event: Event): string {
-  return tagValue(event, 'title') || tagValue(event, 'd') || 'Publication'
+  const raw = tagValue(event, 'title') || tagValue(event, 'd') || 'Publication'
+  return uppercaseRomanNumeralsInText(raw)
 }
 
 function authorFromMetadata(metadata: PublicationIndexMetadata, pubkey: string): string {
@@ -121,7 +123,7 @@ function appendIndexBody(
         if (!sectionTitle && ref.coordinate) {
           sectionTitle = ref.coordinate.split(':').slice(2).join(':')
         }
-        if (sectionTitle) parts.push(heading(headingLevel, sectionTitle))
+        if (sectionTitle) parts.push(heading(headingLevel, uppercaseRomanNumeralsInText(sectionTitle)))
 
         const body = article.content.trim()
         if (body) parts.push(`${body}\n\n`)
@@ -129,7 +131,9 @@ function appendIndexBody(
     } else if (ref.type === 'e') {
       const article = resolveRefEvent(ref, fetched)
       if (!article) continue
-      const sectionTitle = tagValue(article, 'title')?.trim() || 'Section'
+      const sectionTitle = uppercaseRomanNumeralsInText(
+        tagValue(article, 'title')?.trim() || 'Section'
+      )
       parts.push(heading(headingLevel, sectionTitle))
       const body = article.content.trim()
       if (body) parts.push(`${body}\n\n`)

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from '../Image'
 import PublicationCoverFallback from './PublicationCoverFallback'
 
-/** Max cover height in the library grid (3-column cards). */
-export const LIBRARY_PUBLICATION_COVER_MAX_CLASS = 'max-h-48'
+/** Library grid: larger axis capped at 200px; aspect ratio preserved (no crop). */
+export const LIBRARY_PUBLICATION_COVER_MAX_CLASS = 'max-h-[200px] max-w-[200px]'
 
 /** Max cover box in publication detail / note panel (larger axis capped at 400px). */
 export const PUBLICATION_COVER_MAX_CLASS = 'max-h-[400px] max-w-[400px]'
@@ -53,7 +53,7 @@ export default function PublicationCoverImage({
     return <PublicationCoverFallback layout={layout} size={size} className={className} />
   }
 
-  const stackedLayoutClass = isLibrary ? 'aspect-[3/4] w-full' : 'w-fit'
+  const stackedLayoutClass = isLibrary ? 'w-fit max-w-full' : 'w-fit'
 
   // Library grid: always load covers (user opened Bibliothek). Tap-to-reveal on the card would
   // fight PublicationCard navigation, leaving blurhash placeholders stuck forever.
@@ -62,11 +62,12 @@ export default function PublicationCoverImage({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted',
+        'flex shrink-0 items-center justify-center rounded-lg bg-muted',
         maxClass,
         layout === 'stacked' ? stackedLayoutClass : 'aspect-[3/4] w-full max-w-[9rem] sm:max-w-[10rem]',
         layout === 'stacked' && size === 'default' && 'mb-3',
         layout === 'stacked' && isLibrary && 'mb-2',
+        !isLibrary && 'overflow-hidden',
         className
       )}
       onClick={holdCoverUntilClick ? (e) => e.stopPropagation() : undefined}
@@ -74,8 +75,8 @@ export default function PublicationCoverImage({
       <Image
         key={activeUrl}
         image={{ url: activeUrl, pubkey }}
-        className={cn(maxClass, 'h-auto w-auto max-w-full object-contain')}
-        classNames={{ wrapper: cn('block max-w-full', isLibrary ? 'w-full' : 'w-fit') }}
+        className={cn(maxClass, 'h-auto w-auto object-contain')}
+        classNames={{ wrapper: cn('block w-fit max-w-full') }}
         hideIfError
         onFinalError={handleImageError}
         holdUntilClick={holdCoverUntilClick}

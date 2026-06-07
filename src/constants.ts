@@ -463,6 +463,7 @@ export const BOOKSTR_RELAY_URLS = [
  */
 export const DOCUMENT_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
+  'wss://theforest.nostr1.com',
   'wss://relay.wikifreedia.xyz',
   'wss://essayist.decentnewsroom.com'
 ] as const

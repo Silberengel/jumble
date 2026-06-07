@@ -117,6 +117,23 @@ describe('buildPublicationSectionTree', () => {
     expect(contentOrder).toEqual(toc.map((e) => e.title))
   })
 
+  it('uppercases Roman numerals in section titles', () => {
+    const c1 = `30041:${PK}:chapter-iii`
+    const root = indexEvent(
+      [
+        ['d', 'book'],
+        ['title', 'Book'],
+        ['a', c1]
+      ],
+      'root-id'
+    )
+    const ch1 = sectionEvent('chapter-iii', 'Chapitre Iii', 'ch1-id')
+    const fetched = new Map<string, Event>([[c1, ch1]])
+
+    const tree = buildPublicationSectionTree(root, fetched)
+    expect(tree[0]?.title).toBe('Chapitre III')
+  })
+
   it('orderedPublicationRefsFromIndex assigns tagOrder in tag-list sequence', () => {
     const root = indexEvent(
       [

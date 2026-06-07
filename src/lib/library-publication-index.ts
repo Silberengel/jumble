@@ -23,6 +23,7 @@ import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/eve
 import { verifyEvent } from 'nostr-tools'
 import { isEventInPinList } from '@/lib/replaceable-list-latest'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
+import { stripLocalNetworkRelaysForWssReq } from '@/lib/relay-list-sanitize'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import {
   clearLibraryIndexIdbCache,
@@ -41,9 +42,12 @@ import { queryService } from '@/services/client.service'
 import type { Event, Filter } from 'nostr-tools'
 import { kinds, nip19 } from 'nostr-tools'
 
-const INDEX_FETCH_LIMIT = 500
+const INDEX_WS_PAGE_LIMIT = 500
 const INDEX_HTTP_PAGE_LIMIT = 100
-const INDEX_HTTP_MAX_PAGES = 5
+/** Cursor pages per relay for library index bulk load (up to ~50k WS / ~10k HTTP rows each). */
+const INDEX_MAX_PAGES_PER_RELAY = 100
+/** verifyEvent batch size — yield between chunks so the main thread stays responsive. */
+const INDEX_VERIFY_CHUNK = 80
 const ENGAGEMENT_ADDRESS_CHUNK = 36
 const ENGAGEMENT_EVENT_ID_CHUNK = 44
 const MAX_TARGET_ADDRESSES = 480
@@ -56,11 +60,21 @@ export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
 /** NIP-51 pin list (kind 10001). */
 const PIN_LIST_KIND = 10001
-const QUERY_OPTS = {
-  globalTimeout: 18_000,
-  eoseTimeout: 3_000,
-  firstRelayResultGraceMs: false as const
-}
+/** Per-relay WS page fetch — one relay at a time avoids multi-relay onclose resolving after ~1s. */
+const LIBRARY_INDEX_QUERY_OPTS = {
+  globalTimeout: 45_000,
+  eoseTimeout: 8_000,
+  firstRelayResultGraceMs: false as const,
+  foreground: true
+} as const
+
+/** First-page batch: unblock the library grid quickly. */
+const LIBRARY_INDEX_FIRST_PAGE_OPTS = {
+  globalTimeout: 12_000,
+  eoseTimeout: 5_000,
+  firstRelayResultGraceMs: false as const,
+  foreground: true
+} as const
 
 const ENGAGEMENT_QUERY_OPTS = {
   globalTimeout: 45_000,
@@ -116,6 +130,56 @@ type LibraryIndexCache = {
 }
 
 let sessionCache: LibraryIndexCache | null = null
+
+type LibraryIndexLoadSnapshot = {
+  engaged: LibraryPublicationEntry[]
+  allIndexCount: number
+  topLevelCount: number
+  indexEvents: Event[]
+}
+
+type LibraryIndexLoadResult = LibraryIndexLoadSnapshot & {
+  engagement: PublicationEngagementMaps
+}
+
+type LibraryIndexLoadJob = {
+  relayKey: string
+  forceRefresh: boolean
+  promise: Promise<LibraryIndexLoadResult>
+  onIndexesReadyListeners: Array<(snapshot: LibraryIndexLoadSnapshot) => void>
+  lastProgressEvents: Event[] | null
+}
+
+let indexLoadJob: LibraryIndexLoadJob | null = null
+
+function emitIndexesReadySnapshot(
+  listeners: Array<(snapshot: LibraryIndexLoadSnapshot) => void>,
+  indexEvents: Event[]
+) {
+  if (listeners.length === 0) return
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const snapshot: LibraryIndexLoadSnapshot = {
+    engaged: buildRecentPublicationEntries(topLevel, indexByAddress, emptyPublicationEngagementMaps()),
+    allIndexCount: indexEvents.length,
+    topLevelCount: topLevel.length,
+    indexEvents
+  }
+  for (const listener of listeners) {
+    listener(snapshot)
+  }
+}
+
+function registerIndexesReadyListener(
+  job: LibraryIndexLoadJob,
+  listener?: (snapshot: LibraryIndexLoadSnapshot) => void
+) {
+  if (!listener) return
+  job.onIndexesReadyListeners.push(listener)
+  if (job.lastProgressEvents) {
+    emitIndexesReadySnapshot([listener], job.lastProgressEvents)
+  }
+}
 
 type LibrarySearchSessionRow = {
   fingerprint: string
@@ -238,16 +302,120 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return out
 }
 
-async function fetchPaginatedFromHttpIndexRelay(baseUrl: string, filter: Filter): Promise<Event[]> {
-  const out: Event[] = []
-  const seen = new Set<string>()
-  let until: number | undefined
+function isLibraryDeepIndexRelay(url: string): boolean {
+  const key = canonicalRelaySessionKey(normalizeLibraryRelayUrl(url) || url)
+  return key !== '' && LIBRARY_DEEP_INDEX_RELAY_KEYS.has(key)
+}
 
-  for (let page = 0; page < INDEX_HTTP_MAX_PAGES; page++) {
+function oldestCreatedAt(events: Event[]): number {
+  let oldest = Number.MAX_SAFE_INTEGER
+  for (const ev of events) {
+    if (ev.created_at < oldest) oldest = ev.created_at
+  }
+  return oldest
+}
+
+function mergeIndexPageBatch(out: Event[], seen: Set<string>, batch: Event[]): number {
+  let oldest = batch[0]?.created_at ?? Number.MAX_SAFE_INTEGER
+  for (const ev of batch) {
+    if (ev.created_at < oldest) oldest = ev.created_at
+    if (seen.has(ev.id)) continue
+    seen.add(ev.id)
+    out.push(ev)
+  }
+  return oldest
+}
+
+async function fetchWsIndexFirstPage(wsRelay: string, filter: Filter): Promise<Event[]> {
+  const pageFilter: Filter = { ...filter, limit: INDEX_WS_PAGE_LIMIT }
+  try {
+    return await queryService.fetchEvents([wsRelay], [pageFilter], LIBRARY_INDEX_FIRST_PAGE_OPTS)
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] WS index first page failed', {
+        wsRelay,
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+    return []
+  }
+}
+
+async function fetchHttpIndexFirstPage(baseUrl: string, filter: Filter): Promise<Event[]> {
+  const pageFilter: Filter = { ...filter, limit: INDEX_HTTP_PAGE_LIMIT }
+  try {
+    const pageResult = await queryIndexRelayForLibrary(baseUrl, pageFilter)
+    return pageResult.events
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] HTTP index first page failed', {
+        baseUrl,
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+    return []
+  }
+}
+
+async function fetchRemainingPagesFromWsIndexRelay(
+  wsRelay: string,
+  filter: Filter,
+  firstPage: Event[]
+): Promise<Event[]> {
+  if (firstPage.length < INDEX_WS_PAGE_LIMIT) return []
+
+  const out: Event[] = []
+  const seen = new Set(firstPage.map((ev) => ev.id))
+  let until = oldestCreatedAt(firstPage) - 1
+  if (until < 0) return []
+
+  for (let page = 1; page < INDEX_MAX_PAGES_PER_RELAY; page++) {
+    const pageFilter: Filter = {
+      ...filter,
+      limit: INDEX_WS_PAGE_LIMIT,
+      until
+    }
+    let batch: Event[] = []
+    try {
+      batch = await queryService.fetchEvents([wsRelay], [pageFilter], LIBRARY_INDEX_QUERY_OPTS)
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] WS index page failed', {
+          wsRelay,
+          page,
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+      break
+    }
+    if (batch.length === 0) break
+
+    const oldest = mergeIndexPageBatch(out, seen, batch)
+    if (batch.length < INDEX_WS_PAGE_LIMIT) break
+    if (oldest === Number.MAX_SAFE_INTEGER) break
+    until = oldest - 1
+  }
+
+  return out
+}
+
+async function fetchRemainingPagesFromHttpIndexRelay(
+  baseUrl: string,
+  filter: Filter,
+  firstPage: Event[]
+): Promise<Event[]> {
+  if (firstPage.length === 0) return []
+
+  const out: Event[] = []
+  const seen = new Set(firstPage.map((ev) => ev.id))
+  let until = oldestCreatedAt(firstPage) - 1
+  if (until < 0) return []
+
+  for (let page = 1; page < INDEX_MAX_PAGES_PER_RELAY; page++) {
     const pageFilter: Filter = {
       ...filter,
       limit: INDEX_HTTP_PAGE_LIMIT,
-      ...(until != null ? { until } : {})
+      until
     }
     let batch: Event[] = []
     let apiRowCount = 0
@@ -267,14 +435,7 @@ async function fetchPaginatedFromHttpIndexRelay(baseUrl: string, filter: Filter)
     }
     if (apiRowCount === 0) break
 
-    let oldest = batch[0]?.created_at ?? Number.MAX_SAFE_INTEGER
-    for (const ev of batch) {
-      if (ev.created_at < oldest) oldest = ev.created_at
-      if (seen.has(ev.id)) continue
-      seen.add(ev.id)
-      out.push(ev)
-    }
-
+    const oldest = mergeIndexPageBatch(out, seen, batch)
     if (apiRowCount < INDEX_HTTP_PAGE_LIMIT) break
     if (oldest === Number.MAX_SAFE_INTEGER) break
     until = oldest - 1
@@ -290,6 +451,12 @@ function normalizeLibraryRelayUrl(url: string): string {
   if (http) return http
   return normalizeUrl(trimmed) || trimmed
 }
+
+const LIBRARY_DEEP_INDEX_RELAY_KEYS = new Set(
+  LIBRARY_RELAY_URLS.map((url) =>
+    canonicalRelaySessionKey(normalizeLibraryRelayUrl(url) || url)
+  ).filter(Boolean)
+)
 
 function filterBlockedLibraryRelays(urls: string[], blockedRelays: readonly string[] = []): string[] {
   if (blockedRelays.length === 0) return urls
@@ -379,50 +546,147 @@ function engagementMapsSizeSummary(maps: PublicationEngagementMaps): Record<stri
   }
 }
 
-export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Event[]> {
+export type FetchLibraryIndexEventsOptions = {
+  /** Called when IDB cache and each network batch are ready — unblocks the library grid early. */
+  onProgress?: (events: Event[]) => void
+}
+
+async function filterValidNewIndexEvents(
+  incoming: Event[],
+  knownIds: ReadonlySet<string>
+): Promise<Event[]> {
+  const novel = incoming.filter((event) => !knownIds.has(event.id))
+  if (novel.length === 0) return []
+  const out: Event[] = []
+  for (let i = 0; i < novel.length; i += INDEX_VERIFY_CHUNK) {
+    out.push(...filterValidIndexEvents(novel.slice(i, i + INDEX_VERIFY_CHUNK)))
+    if (i + INDEX_VERIFY_CHUNK < novel.length) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0)
+      })
+    }
+  }
+  return out
+}
+
+async function mergeValidIndexBatch(
+  existing: Event[],
+  knownIds: Set<string>,
+  incoming: Event[]
+): Promise<Event[]> {
+  const newValid = await filterValidNewIndexEvents(incoming, knownIds)
+  if (newValid.length === 0) return existing
+  for (const event of newValid) knownIds.add(event.id)
+  return dedupeEventsById([...existing, ...newValid])
+}
+
+export async function fetchLibraryIndexEvents(
+  relayUrls: string[],
+  options?: FetchLibraryIndexEventsOptions
+): Promise<Event[]> {
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   if (indexRelays.length === 0) return []
 
   const cached = await loadLibraryIndexCacheEvents()
-  const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_FETCH_LIMIT }
-  const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
-
-  const batches: Promise<Event[]>[] = []
-  if (wsRelays.length > 0) {
-    batches.push(
-      queryService.fetchEvents(wsRelays, [filter], QUERY_OPTS).catch((e) => {
-        if (import.meta.env.DEV) {
-          logger.warn('[Library] WS index fetch failed', {
-            message: e instanceof Error ? e.message : String(e)
-          })
-        }
-        return [] as Event[]
-      })
-    )
+  let validMerged = dedupeEventsById(cached)
+  const knownValidIds = new Set(validMerged.map((event) => event.id))
+  const emitProgress = () => {
+    options?.onProgress?.(validMerged)
   }
-  for (const httpRelay of httpRelays) {
-    batches.push(fetchPaginatedFromHttpIndexRelay(httpRelay, filter))
+  emitProgress()
+
+  const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_WS_PAGE_LIMIT }
+  const { wsRelays: rawWsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
+  const wsRelays = stripLocalNetworkRelaysForWssReq(rawWsRelays)
+
+  const firstPageByRelay = new Map<string, Event[]>()
+  const firstPagePromises: Promise<{ relay: string; events: Event[] }>[] = [
+    ...wsRelays.map(async (wsRelay) => {
+      const events = await fetchWsIndexFirstPage(wsRelay, filter)
+      return { relay: wsRelay, events }
+    }),
+    ...httpRelays.map(async (httpRelay) => {
+      const events = await fetchHttpIndexFirstPage(httpRelay, filter)
+      return { relay: httpRelay, events }
+    })
+  ]
+
+  const firstSettled = await Promise.allSettled(firstPagePromises)
+  for (const result of firstSettled) {
+    if (result.status !== 'fulfilled') continue
+    firstPageByRelay.set(result.value.relay, result.value.events)
   }
 
-  const settled = await Promise.allSettled(batches)
-  const networkMerged = dedupeEventsById(
-    settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+  const firstPageNetwork = dedupeEventsById(
+    firstSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
   )
-  const merged = dedupeEventsById([...cached, ...networkMerged])
-  const valid = filterValidIndexEvents(merged)
-  void persistLibraryIndexCacheEvents(valid)
+  validMerged = await mergeValidIndexBatch(validMerged, knownValidIds, firstPageNetwork)
+  void persistLibraryIndexCacheEvents(validMerged)
+  emitProgress()
+
   if (import.meta.env.DEV) {
-    logger.info('[Library] index fetch', {
+    const perRelayFirstPageCounts = firstSettled.map((r) =>
+      r.status === 'fulfilled'
+        ? { relay: r.value.relay, count: r.value.events.length }
+        : { relay: 'unknown', count: 0 }
+    )
+    logger.info('[Library] index first page', {
       indexRelays: indexRelays.length,
       wsRelays: wsRelays.length,
       httpRelays: httpRelays.length,
+      strippedWsRelays: rawWsRelays.length - wsRelays.length,
       cachedCount: cached.length,
-      networkCount: networkMerged.length,
-      mergedCount: merged.length,
-      validCount: valid.length
+      firstPageCount: firstPageNetwork.length,
+      mergedCount: validMerged.length,
+      validCount: validMerged.length,
+      topLevelCount: getTopLevelIndexEvents(validMerged).length,
+      perRelayCounts: perRelayFirstPageCounts
     })
   }
-  return valid
+
+  const deepBatches: Promise<{ relay: string; events: Event[] }>[] = []
+  for (const wsRelay of wsRelays) {
+    if (!isLibraryDeepIndexRelay(wsRelay)) continue
+    deepBatches.push(
+      fetchRemainingPagesFromWsIndexRelay(wsRelay, filter, firstPageByRelay.get(wsRelay) ?? []).then(
+        (events) => ({ relay: wsRelay, events })
+      )
+    )
+  }
+  for (const httpRelay of httpRelays) {
+    if (!isLibraryDeepIndexRelay(httpRelay)) continue
+    deepBatches.push(
+      fetchRemainingPagesFromHttpIndexRelay(
+        httpRelay,
+        filter,
+        firstPageByRelay.get(httpRelay) ?? []
+      ).then((events) => ({ relay: httpRelay, events }))
+    )
+  }
+
+  const deepSettled = await Promise.allSettled(deepBatches)
+  const deepNetwork = dedupeEventsById(
+    deepSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
+  )
+  validMerged = await mergeValidIndexBatch(validMerged, knownValidIds, deepNetwork)
+  void persistLibraryIndexCacheEvents(validMerged)
+  emitProgress()
+
+  if (import.meta.env.DEV) {
+    const perRelayDeepCounts = deepSettled.map((r) =>
+      r.status === 'fulfilled'
+        ? { relay: r.value.relay, count: r.value.events.length }
+        : { relay: 'unknown', count: 0 }
+    )
+    logger.info('[Library] index fetch complete', {
+      deepPageCount: deepNetwork.length,
+      mergedCount: validMerged.length,
+      validCount: validMerged.length,
+      topLevelCount: getTopLevelIndexEvents(validMerged).length,
+      perRelayDeepCounts
+    })
+  }
+  return validMerged
 }
 
 export function buildEngagementMapsFromEvents(
@@ -1749,24 +2013,56 @@ export async function loadLibraryPublicationIndex(
     forceRefresh?: boolean
     viewerPubkey?: string | null
     /** Called as soon as kind-30040 indexes are loaded — before engagement (which can take minutes). */
-    onIndexesReady?: (snapshot: {
-      engaged: LibraryPublicationEntry[]
-      allIndexCount: number
-      topLevelCount: number
-      indexEvents: Event[]
-    }) => void
+    onIndexesReady?: (snapshot: LibraryIndexLoadSnapshot) => void
   }
-): Promise<{
-  engaged: LibraryPublicationEntry[]
-  allIndexCount: number
-  topLevelCount: number
-  indexEvents: Event[]
-  engagement: PublicationEngagementMaps
-}> {
-  const key = relaySetKey(relayUrls)
+): Promise<LibraryIndexLoadResult> {
+  const relayKey = relaySetKey(relayUrls)
+  const forceRefresh = options?.forceRefresh ?? false
+
+  if (!forceRefresh && indexLoadJob?.relayKey === relayKey && !indexLoadJob.forceRefresh) {
+    registerIndexesReadyListener(indexLoadJob, options?.onIndexesReady)
+    if (import.meta.env.DEV) {
+      logger.info('[Library] load joined in-flight', {
+        relayCount: relayUrls.length,
+        hasProgress: indexLoadJob.lastProgressEvents != null
+      })
+    }
+    return indexLoadJob.promise
+  }
+
+  const job: LibraryIndexLoadJob = {
+    relayKey,
+    forceRefresh,
+    onIndexesReadyListeners: [],
+    lastProgressEvents: null,
+    promise: Promise.resolve(null as unknown as LibraryIndexLoadResult)
+  }
+  registerIndexesReadyListener(job, options?.onIndexesReady)
+  indexLoadJob = job
+  job.promise = runLibraryPublicationIndexLoad(relayUrls, options, job).finally(() => {
+    if (indexLoadJob === job) indexLoadJob = null
+  })
+  return job.promise
+}
+
+async function runLibraryPublicationIndexLoad(
+  relayUrls: string[],
+  options: {
+    forceRefresh?: boolean
+    viewerPubkey?: string | null
+    onIndexesReady?: (snapshot: LibraryIndexLoadSnapshot) => void
+  } | undefined,
+  job: LibraryIndexLoadJob
+): Promise<LibraryIndexLoadResult> {
+  const key = job.relayKey
   const viewerPubkey = options?.viewerPubkey ?? null
   if (import.meta.env.DEV) {
     logger.info('[Library] load start', { relayCount: relayUrls.length, cached: sessionCache?.relayKey === key })
+  }
+
+  const emitIndexesReady = (indexEvents: Event[]) => {
+    job.lastProgressEvents = indexEvents
+    emitIndexesReadySnapshot(job.onIndexesReadyListeners, indexEvents)
   }
 
   if (!options?.forceRefresh && sessionCache?.relayKey === key) {
@@ -1802,6 +2098,7 @@ export async function loadLibraryPublicationIndex(
     if (import.meta.env.DEV) {
       logger.info('[Library] load from cache', { engaged: engaged.length })
     }
+    emitIndexesReady(sessionCache.indexEvents)
     return {
       engaged,
       allIndexCount: sessionCache.indexEvents.length,
@@ -1811,7 +2108,9 @@ export async function loadLibraryPublicationIndex(
     }
   }
 
-  const indexEvents = await fetchLibraryIndexEvents(relayUrls)
+  const indexEvents = await fetchLibraryIndexEvents(relayUrls, {
+    onProgress: emitIndexesReady
+  })
   if (import.meta.env.DEV) {
     logger.info('[Library] indexes fetched', { validCount: indexEvents.length })
   }
@@ -1819,12 +2118,7 @@ export async function loadLibraryPublicationIndex(
   const indexByAddress = buildIndexByAddress(indexEvents)
   let topLevel = getTopLevelIndexEvents(indexEvents)
 
-  options?.onIndexesReady?.({
-    engaged: buildRecentPublicationEntries(topLevel, indexByAddress, emptyPublicationEngagementMaps()),
-    allIndexCount: indexEvents.length,
-    topLevelCount: topLevel.length,
-    indexEvents
-  })
+  emitIndexesReady(indexEvents)
 
   const topLevelForHydrate = topLevel
   await hydrateNestedIndexEvents(indexEvents, indexByAddress, relayUrls, {
@@ -1895,12 +2189,14 @@ export async function loadLibraryPublicationIndex(
 
 export function clearLibraryPublicationIndexCache(): void {
   sessionCache = null
+  indexLoadJob = null
   clearLibrarySearchSessionCache()
 }
 
 /** Clears Library tab session + IDB index cache only (publication reading cache is unchanged). */
 export async function clearAllLibraryIndexCaches(): Promise<void> {
   sessionCache = null
+  indexLoadJob = null
   clearLibrarySearchSessionCache()
   await clearLibraryIndexIdbCache()
 }

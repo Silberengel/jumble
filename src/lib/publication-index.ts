@@ -29,19 +29,28 @@ export function eventTagAddress(event: Event): string | null {
   return `${event.kind}:${event.pubkey.toLowerCase()}:${d}`
 }
 
-/** Removes kind 30040 index events that don't comply with NKBIP-01. */
+/** NKBIP-01 shape checks only — no signature verification (cheap for large IDB reads). */
+export function isStructuralPublicationIndex(event: Event): boolean {
+  if (event.kind !== ExtendedKind.PUBLICATION) return false
+  if ((event.content ?? '') !== '') return false
+  const hasTitle = event.tags.some(
+    (t) => (t[0] || '').trim().toLowerCase() === 'title' && t[1]
+  )
+  const hasD = event.tags.some((t) => (t[0] || '').trim().toLowerCase() === 'd' && t[1])
+  const hasA = event.tags.some((t) => t[0] === 'a' && t[1])
+  const hasE = event.tags.some((t) => t[0] === 'e' && t[1])
+  return hasTitle && hasD && (hasA || hasE)
+}
+
+export function filterStructuralIndexEvents(events: Event[]): Event[] {
+  return events.filter(isStructuralPublicationIndex)
+}
+
+/** Removes kind 30040 index events that don't comply with NKBIP-01 (includes signature check). */
 export function filterValidIndexEvents(events: Event[]): Event[] {
-  return events.filter((event) => {
-    if (event.kind !== ExtendedKind.PUBLICATION) return false
-    if ((event.content ?? '') !== '') return false
-    const hasTitle = event.tags.some(
-      (t) => (t[0] || '').trim().toLowerCase() === 'title' && t[1]
-    )
-    const hasD = event.tags.some((t) => (t[0] || '').trim().toLowerCase() === 'd' && t[1])
-    const hasA = event.tags.some((t) => t[0] === 'a' && t[1])
-    const hasE = event.tags.some((t) => t[0] === 'e' && t[1])
-    return hasTitle && hasD && (hasA || hasE) && isVerifiedPublicationIndex(event)
-  })
+  return events.filter(
+    (event) => isStructuralPublicationIndex(event) && isVerifiedPublicationIndex(event)
+  )
 }
 
 export function collectPublicationATagRefs(event: Event): PublicationSectionRef[] {

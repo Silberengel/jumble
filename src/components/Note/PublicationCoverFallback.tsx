@@ -17,7 +17,9 @@ export default function PublicationCoverFallback({
   const isLibrary = size === 'library'
   const maxClass = isLibrary ? LIBRARY_PUBLICATION_COVER_MAX_CLASS : PUBLICATION_COVER_MAX_CLASS
 
-  const stackedLayoutClass = isLibrary ? 'aspect-[3/4] w-full' : 'aspect-[3/4] w-48 max-w-full'
+  const stackedLayoutClass = isLibrary
+    ? 'h-[200px] w-[200px] max-h-[200px] max-w-[200px]'
+    : 'aspect-[3/4] w-48 max-w-full'
 
   return (
     <div

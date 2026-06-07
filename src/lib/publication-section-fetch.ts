@@ -1,11 +1,12 @@
 import logger from '@/lib/logger'
-import { FAST_READ_RELAY_URLS } from '@/constants'
+import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import { publicationCoordinateLookupKeys, splitPublicationCoordinate } from '@/lib/publication-coordinate'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 import client, { queryService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import type { Event, Filter } from 'nostr-tools'
-import { nip19 } from 'nostr-tools'
+import { kinds, nip19 } from 'nostr-tools'
 
 export type PublicationSectionRef = {
   type: 'a' | 'e'
@@ -65,6 +66,47 @@ function collectRelayHints(refs: PublicationSectionRef[]): string[] {
   return [...new Set(out)]
 }
 
+const PUBLICATION_SECTION_QUERY_OPTS = {
+  globalTimeout: 22_000,
+  eoseTimeout: 5_000,
+  /** Document relays (thecitadel, etc.) are often slower than fast-read mirrors. */
+  firstRelayResultGraceMs: 4_000,
+  foreground: true
+} as const
+
+const PUBLICATION_CONTENT_KINDS = [
+  ExtendedKind.PUBLICATION_CONTENT,
+  ExtendedKind.PUBLICATION,
+  ExtendedKind.WIKI_ARTICLE,
+  kinds.LongFormArticle
+] as const
+
+async function seedSectionsFromLocalCache(
+  refs: PublicationSectionRef[]
+): Promise<Map<string, Event>> {
+  const out = new Map<string, Event>()
+  for (const ref of refs) {
+    const key = publicationRefKey(ref)
+    if (!key || out.has(key)) continue
+    try {
+      if (ref.type === 'a' && ref.coordinate) {
+        const ev = await indexedDb.getPublicationEvent(ref.coordinate)
+        if (ev) out.set(key, ev)
+      } else if (ref.type === 'e' && ref.eventId) {
+        const hex = resolvePublicationEventIdToHex(ref.eventId)
+        if (!hex) continue
+        const ev =
+          (await indexedDb.getEventFromPublicationStore(hex)) ??
+          (await client.fetchEvent(hex).catch(() => undefined))
+        if (ev) out.set(key, ev)
+      }
+    } catch {
+      // ignore per-ref cache misses
+    }
+  }
+  return out
+}
+
 export async function buildPublicationSectionRelayUrls(
   indexEvent: Event,
   refs: PublicationSectionRef[],
@@ -72,6 +114,7 @@ export async function buildPublicationSectionRelayUrls(
   includeSearchableRelays = false
 ): Promise<string[]> {
   const hints = collectRelayHints(refs)
+  const documentRelays = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u) => !!u)
   const fastReadRelays = FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u) => !!u)
   const seenOnRelays = queryService
     .getSeenEventRelayUrls(indexEvent.id)
@@ -80,7 +123,7 @@ export async function buildPublicationSectionRelayUrls(
   const urls = await buildComprehensiveRelayList({
     authorPubkey: indexEvent.pubkey,
     userPubkey: client.pubkey || undefined,
-    relayHints: [...hints, ...seenOnRelays],
+    relayHints: [...documentRelays, ...hints, ...seenOnRelays],
     includeUserOwnRelays: true,
     includeProfileFetchRelays: true,
     includeFastReadRelays: true,
@@ -88,8 +131,10 @@ export async function buildPublicationSectionRelayUrls(
     includeFavoriteRelays: true,
     includeLocalRelays: true
   })
-  // Keep fast-read relays pinned at the front so slicing can never drop them.
-  const prioritized = [...new Set([...fastReadRelays, ...hints, ...seenOnRelays, ...urls])]
+  // Pin document relays first — 30040/30041 content lives there, not on fast-read mirrors.
+  const prioritized = [
+    ...new Set([...documentRelays, ...hints, ...seenOnRelays, ...fastReadRelays, ...urls])
+  ]
   if (import.meta.env.DEV) {
     logger.info('[PublicationSection] relay_urls_built', {
       indexId: indexEvent.id,
@@ -129,14 +174,19 @@ export async function batchFetchPublicationSectionEvents(
   refs: PublicationSectionRef[],
   relayUrls: string[]
 ): Promise<Map<string, Event>> {
-  const out = new Map<string, Event>()
-  if (refs.length === 0 || relayUrls.length === 0) return out
+  const out = await seedSectionsFromLocalCache(refs)
+  if (refs.length === 0) return out
+
+  const unresolvedForNetwork = refs.filter((r) => !out.has(publicationRefKey(r)))
+  if (unresolvedForNetwork.length === 0 || relayUrls.length === 0) return out
 
   const eRefs: PublicationSectionRef[] = []
   const eHexByKey = new Map<string, string>()
-  const aRefs = refs.filter((r) => r.type === 'a' && r.coordinate && r.pubkey && typeof r.kind === 'number')
+  const aRefs = unresolvedForNetwork.filter(
+    (r) => r.type === 'a' && r.coordinate && r.pubkey && typeof r.kind === 'number'
+  )
 
-  for (const ref of refs) {
+  for (const ref of unresolvedForNetwork) {
     // Only explicit `e` refs are resolved by id. For `a` refs, tag[3] is historization metadata only.
     if (ref.type !== 'e' || !ref.eventId) continue
     const key = publicationRefKey(ref)
@@ -199,11 +249,7 @@ export async function batchFetchPublicationSectionEvents(
   let events: Event[] = []
   if (filters.length > 0) {
     try {
-      events = await queryService.fetchEvents(relayUrls, filters, {
-        globalTimeout: 12_000,
-        eoseTimeout: 2_000,
-        firstRelayResultGraceMs: false
-      })
+      events = await queryService.fetchEvents(relayUrls, filters, PUBLICATION_SECTION_QUERY_OPTS)
     } catch (err) {
       if (import.meta.env.DEV) {
         logger.warn('[PublicationSection] batch_fetch_error', {
@@ -437,12 +483,22 @@ export async function batchFetchPublicationSectionEvents(
       }
       g.dTags.push(d)
     }
+    const kindsForFallback = [
+      ...new Set(
+        unresolvedAfterHint
+          .map((r) => r.kind)
+          .filter((k): k is number => typeof k === 'number' && k > 0)
+      )
+    ]
+    const fallbackKinds =
+      kindsForFallback.length > 0 ? kindsForFallback : [...PUBLICATION_CONTENT_KINDS]
     for (const g of groups.values()) {
       const uniqueD = [...new Set(g.dTags)]
       for (let i = 0; i < uniqueD.length; i += D_CHUNK) {
         const dChunk = uniqueD.slice(i, i + D_CHUNK)
         fallbackFilters.push({
           authors: [g.pubkey],
+          kinds: fallbackKinds,
           '#d': dChunk,
           limit: dChunk.length * ANY_KIND_LIMIT_PER_D
         })
@@ -457,11 +513,11 @@ export async function batchFetchPublicationSectionEvents(
         })
       }
       try {
-        const fallbackEvents = await queryService.fetchEvents(relayUrls, fallbackFilters, {
-          globalTimeout: 10_000,
-          eoseTimeout: 2_000,
-          firstRelayResultGraceMs: false
-        })
+        const fallbackEvents = await queryService.fetchEvents(
+          relayUrls,
+          fallbackFilters,
+          PUBLICATION_SECTION_QUERY_OPTS
+        )
         const byAuthorD = new Map<string, Event[]>()
         for (const ev of fallbackEvents) {
           const d = dTagOf(ev)
@@ -533,11 +589,11 @@ export async function batchFetchPublicationSectionEvents(
         })
       }
       try {
-        const scanEvents = await queryService.fetchEvents(relayUrls, scanFilters, {
-          globalTimeout: 12_000,
-          eoseTimeout: 2_000,
-          firstRelayResultGraceMs: false
-        })
+        const scanEvents = await queryService.fetchEvents(
+          relayUrls,
+          scanFilters,
+          PUBLICATION_SECTION_QUERY_OPTS
+        )
         const scanByCoord = new Map<string, Event>()
         for (const ev of scanEvents) {
           const coord = coordinateOfEvent(ev)

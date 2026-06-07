@@ -72,8 +72,9 @@ export function useLibraryPublications(isActive: boolean) {
   const [pinListEvent, setPinListEvent] = useState<Event | null>(null)
   const [myBooklistTargets, setMyBooklistTargets] = useState(EMPTY_BOOKLIST_TARGETS)
   const [booklistTargetsLoading, setBooklistTargetsLoading] = useState(false)
-  const loadGenRef = useRef(0)
-  const indexesReadyGenRef = useRef(0)
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const forceRefreshNextLoadRef = useRef(false)
+  const indexesReadyRef = useRef(false)
   const [mineIndexEntries, setMineIndexEntries] = useState<LibraryPublicationEntry[]>([])
   const [mineFilterComputing, setMineFilterComputing] = useState(false)
   const mineIndexCacheRef = useRef<{
@@ -147,69 +148,95 @@ export function useLibraryPublications(isActive: boolean) {
     []
   )
 
-  const load = useCallback(
-    async (forceRefresh = false) => {
-      const gen = ++loadGenRef.current
-      setLoading(true)
-      setEngagementLoading(false)
-      setError(null)
-      setFeedPageIndex(0)
-      if (import.meta.env.DEV) {
-        logger.info('[Library] page load requested', { forceRefresh, gen })
-      }
+  const applyIndexesSnapshot = useCallback(
+    (
+      snapshot: {
+        indexEvents: Event[]
+        allIndexCount: number
+        topLevelCount: number
+      },
+      engagementMaps: PublicationEngagementMaps,
+      pageIndex: number
+    ) => {
+      setIndexEvents(snapshot.indexEvents)
+      setAllIndexCount(snapshot.allIndexCount)
+      setTopLevelCount(snapshot.topLevelCount)
+      applyDefaultFeedSlice(snapshot.indexEvents, engagementMaps, pageIndex)
+    },
+    [applyDefaultFeedSlice]
+  )
+
+  useEffect(() => {
+    if (!isActive) return
+    let cancelled = false
+    indexesReadyRef.current = false
+    setLoading(true)
+    setEngagementLoading(false)
+    setError(null)
+    setFeedPageIndex(0)
+    const forceRefresh = forceRefreshNextLoadRef.current
+    forceRefreshNextLoadRef.current = false
+    if (import.meta.env.DEV) {
+      logger.info('[Library] page load requested', { forceRefresh, reloadNonce })
+    }
+
+    void (async () => {
       try {
         const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-        indexesReadyGenRef.current = 0
+        if (cancelled) return
         const result = await loadLibraryPublicationIndex(relays, {
           forceRefresh,
           viewerPubkey: pubkey || undefined,
           onIndexesReady: (snapshot) => {
-            if (gen !== loadGenRef.current) return
-            indexesReadyGenRef.current = gen
-            setIndexEvents(snapshot.indexEvents)
-            setAllIndexCount(snapshot.allIndexCount)
-            setTopLevelCount(snapshot.topLevelCount)
-            applyDefaultFeedSlice(snapshot.indexEvents, EMPTY_ENGAGEMENT, 0)
+            if (cancelled) return
+            indexesReadyRef.current = true
+            if (import.meta.env.DEV && snapshot.indexEvents.length > 0) {
+              logger.info('[Library] indexes ready (progress)', {
+                validCount: snapshot.indexEvents.length,
+                topLevelCount: snapshot.topLevelCount,
+                entryCount: snapshot.engaged.length
+              })
+            }
+            applyIndexesSnapshot(snapshot, EMPTY_ENGAGEMENT, 0)
             setLoading(false)
             setEngagementLoading(true)
           }
         })
-        if (gen !== loadGenRef.current) return
-        setIndexEvents(result.indexEvents)
+        if (cancelled) return
+        applyIndexesSnapshot(result, result.engagement, 0)
         setEngagement(result.engagement)
-        setAllIndexCount(result.allIndexCount)
-        setTopLevelCount(result.topLevelCount)
-        applyDefaultFeedSlice(result.indexEvents, result.engagement, 0)
       } catch (e) {
-        if (gen !== loadGenRef.current) return
-        if (indexesReadyGenRef.current === gen) {
+        if (cancelled) return
+        if (indexesReadyRef.current) {
           if (import.meta.env.DEV) {
             logger.warn('[Library] engagement phase failed after indexes loaded', {
-              message: e instanceof Error ? e.message : String(e),
-              gen
+              message: e instanceof Error ? e.message : String(e)
             })
           }
         } else {
           const message = e instanceof Error ? e.message : 'Failed to load library'
           setError(message)
           if (import.meta.env.DEV) {
-            logger.warn('[Library] page load failed', { message, gen })
+            logger.warn('[Library] page load failed', { message })
           }
         }
       } finally {
-        if (gen === loadGenRef.current) {
+        if (!cancelled) {
           setLoading(false)
           setEngagementLoading(false)
         }
       }
-    },
-    [pubkey, blockedRelays, applyDefaultFeedSlice]
-  )
+    })()
 
-  useEffect(() => {
-    if (!isActive) return
-    void load(false)
-  }, [isActive, load])
+    return () => {
+      cancelled = true
+    }
+  }, [isActive, pubkey, blockedRelays, reloadNonce, applyIndexesSnapshot])
+
+  const refresh = useCallback(() => {
+    forceRefreshNextLoadRef.current = true
+    void clearAllLibraryIndexCaches().then(() => setReloadNonce((n) => n + 1))
+  }, [])
 
   useEffect(() => {
     if (!isActive || !pubkey || indexEvents.length === 0) return
@@ -265,10 +292,6 @@ export function useLibraryPublications(isActive: boolean) {
       cancelled = true
     }
   }, [debouncedSearch, indexEvents, engagement])
-
-  const refresh = useCallback(() => {
-    void clearAllLibraryIndexCaches().then(() => load(true))
-  }, [load])
 
   const searchOnRelays = useCallback(async () => {
     const q = searchQuery.trim()
