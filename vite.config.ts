@@ -37,7 +37,11 @@ function fullReloadOnProvidersAndPages(): Plugin {
     apply: 'serve',
     handleHotUpdate({ file, server }) {
       const normalized = file.replace(/\\/g, '/')
-      if (normalized.includes('/src/providers/') || normalized.includes('/src/pages/')) {
+      if (
+        normalized.includes('/src/providers/') ||
+        normalized.includes('/src/pages/') ||
+        normalized.endsWith('/src/PageManager.tsx')
+      ) {
         server.ws.send({ type: 'full-reload' })
         return []
       }
@@ -61,25 +65,38 @@ function blobFromLogArgs(args: unknown[]): string {
 /**
  * `http-proxy` logs `Error: connect ECONNREFUSED …` via `console.error`, bypassing Vite's `logger.error`.
  */
+const DEV_INDEX_RELAY_PROXY_PATH_MARKERS = [
+  '/api/languagetool',
+  '/v2/',
+  '/api/piper-tts',
+  '/api/translate',
+  '/sites',
+  '/dev-index-relay',
+  '/dev-cors-index-relay',
+  '/api/events'
+] as const
+
+function isDevProxyConnectivityNoise(blob: string): boolean {
+  return (
+    blob.includes('ECONNREFUSED') ||
+    blob.includes('ETIMEDOUT') ||
+    blob.includes('ECONNRESET') ||
+    blob.includes('EHOSTUNREACH')
+  )
+}
+
 function isOptionalDevProxyConnRefusedNoise(args: unknown[]): boolean {
   const blob = blobFromLogArgs(args)
-  if (!blob.includes('ECONNREFUSED')) return false
+  if (!isDevProxyConnectivityNoise(blob)) return false
+  if (DEV_INDEX_RELAY_PROXY_PATH_MARKERS.some((m) => blob.includes(m))) return true
   if (blob.includes('127.0.0.1:') || blob.includes('localhost:')) return true
   return OPTIONAL_DEV_PROXY_LOOPBACK_PORTS.some((port) => new RegExp(`\\b:${port}\\b`).test(blob))
 }
 
 function isOptionalDevProxyHttpError(text: string): boolean {
   if (!text.includes('http proxy error')) return false
-  if (!text.includes('ECONNREFUSED')) return false
-  if (
-    text.includes('/api/languagetool') ||
-    text.includes('/v2/') ||
-    text.includes('/api/piper-tts') ||
-    text.includes('/api/translate') ||
-    text.includes('/sites') ||
-    text.includes('/dev-index-relay') ||
-    text.includes('/api/events')
-  ) {
+  if (!isDevProxyConnectivityNoise(text)) return false
+  if (DEV_INDEX_RELAY_PROXY_PATH_MARKERS.some((m) => text.includes(m))) {
     return true
   }
   return OPTIONAL_DEV_PROXY_LOOPBACK_PORTS.some((port) => text.includes(`127.0.0.1:${port}`))
@@ -259,7 +276,14 @@ export default defineConfig(({ mode }) => {
         '/dev-index-relay': {
           target: devIndexRelayTarget,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/dev-index-relay/, '') || '/'
+          timeout: 12_000,
+          proxyTimeout: 12_000,
+          rewrite: (p) => p.replace(/^\/dev-index-relay/, '') || '/',
+          configure: jsonProxyErrorHandler(502, {
+            ok: false,
+            error: 'dev_index_relay_unreachable',
+            hint: 'Start the local index relay (VITE_DEV_INDEX_RELAY_TARGET, default :4000) or disable that kind-10243 URL in dev'
+          })
         },
         /**
          * Some public index relays (e.g. nos.lol) omit `Content-Type` from CORS preflight
@@ -270,7 +294,14 @@ export default defineConfig(({ mode }) => {
           target: devCorsIndexRelayTarget,
           changeOrigin: true,
           secure: true,
-          rewrite: (p) => p.replace(/^\/dev-cors-index-relay/, '') || '/'
+          timeout: 12_000,
+          proxyTimeout: 12_000,
+          rewrite: (p) => p.replace(/^\/dev-cors-index-relay/, '') || '/',
+          configure: jsonProxyErrorHandler(502, {
+            ok: false,
+            error: 'cors_index_relay_unreachable',
+            hint: 'Remote index relay unreachable — check network or VITE_DEV_CORS_INDEX_RELAY_TARGET'
+          })
         }
       }
     },

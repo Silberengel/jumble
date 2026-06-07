@@ -7,6 +7,7 @@ import {
   type LazyExoticComponent,
   type ReactElement
 } from 'react'
+import NotePageRoute from './pages/secondary/NotePage/NotePageRoute'
 
 /** Lazy + Suspense so importing `routes` does not sync-pull pages that depend on PageManager (breaks Vite HMR cycles). */
 const FollowingListPageLazy = lazy(() => import('./pages/secondary/FollowingListPage'))
@@ -28,7 +29,6 @@ const PinListPageLazy = lazy(() => import('./pages/secondary/PinListPage'))
 const ProfileBadgesListPageLazy = lazy(() => import('./pages/secondary/ProfileBadgesListPage'))
 const InterestListPageLazy = lazy(() => import('./pages/secondary/InterestListPage'))
 const NoteListPageLazy = lazy(() => import('./pages/secondary/NoteListPage'))
-const NotePageLazy = lazy(() => import('./pages/secondary/NotePage'))
 const OthersRelaySettingsPageLazy = lazy(() => import('./pages/secondary/OthersRelaySettingsPage'))
 const PostSettingsPageLazy = lazy(() => import('./pages/secondary/PostSettingsPage'))
 const ProfileEditorPageLazy = lazy(() => import('./pages/secondary/ProfileEditorPage'))
@@ -60,7 +60,7 @@ function SR(C: LazyExoticComponent<ComponentType<any>>): ReactElement {
   )
 }
 
-const notePageElement = SR(NotePageLazy)
+const notePageElement = <NotePageRoute />
 const noteListPageElement = SR(NoteListPageLazy)
 const rssArticlePageElement = SR(RssArticlePageLazy)
 

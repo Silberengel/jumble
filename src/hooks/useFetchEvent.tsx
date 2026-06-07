@@ -1,9 +1,8 @@
-import { getNoteBech32Id } from '@/lib/event'
+import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
 import { resolveThreadContextEventFromLocalStores } from '@/lib/thread-context-local'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { eventService } from '@/services/client.service'
-import { navigationEventStore } from '@/services/navigation-event-store'
 import { Event } from 'nostr-tools'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -15,8 +14,13 @@ export function useFetchEvent(
   const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
-  const [event, setEvent] = useState<Event | undefined>(initialEvent)
-  const [isFetching, setIsFetching] = useState(!initialEvent)
+  const [event, setEvent] = useState<Event | undefined>(() =>
+    eventId ? resolveNoteEventSync(eventId, initialEvent) : initialEvent
+  )
+  const [isFetching, setIsFetching] = useState(() => {
+    if (!eventId) return false
+    return !resolveNoteEventSync(eventId, initialEvent)
+  })
   const [refetchToken, setRefetchToken] = useState(0)
 
   const refetch = useCallback(() => {
@@ -41,34 +45,11 @@ export function useFetchEvent(
 
     const skipShortcuts = refetchToken > 0
 
-    // If we have an initial event that matches the eventId, use it and skip fetching
-    const initialMatches =
-      initialEvent &&
-      (initialEvent.id === eventId ||
-        (() => {
-          try {
-            return getNoteBech32Id(initialEvent) === eventId
-          } catch {
-            return false
-          }
-        })())
-    if (!skipShortcuts && initialMatches && initialEvent) {
-      if (!isEventDeleted(initialEvent)) {
-        setEvent(initialEvent)
-        addReplies([initialEvent])
-        setIsFetching(false)
-      }
-      return () => {
-        cancelled = true
-      }
-    }
-
-    // Check navigation event store first (events passed through navigation) — peek so remounts still see it.
     if (!skipShortcuts) {
-      const navigationEvent = navigationEventStore.peekEvent(eventId)
-      if (navigationEvent && !isEventDeleted(navigationEvent)) {
-        setEvent(navigationEvent)
-        addReplies([navigationEvent])
+      const syncHit = resolveNoteEventSync(eventId, initialEvent)
+      if (syncHit && !isEventDeleted(syncHit)) {
+        setEvent(syncHit)
+        addReplies([syncHit])
         setIsFetching(false)
         return () => {
           cancelled = true
@@ -88,7 +69,7 @@ export function useFetchEvent(
         if (!skipShortcuts) {
           const fromLocal = await resolveThreadContextEventFromLocalStores(
             eventId,
-            initialMatches ? initialEvent : undefined
+            resolveNoteEventSync(eventId, initialEvent)
           )
           if (cancelled) return
           if (fromLocal && !isEventDeleted(fromLocal)) {

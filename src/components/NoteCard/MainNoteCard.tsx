@@ -3,6 +3,7 @@ import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { Separator } from '@/components/ui/separator'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
+import { preloadNotePageChunk } from '@/pages/secondary/NotePage/NotePageRoute'
 import { useSmartNoteNavigationOptional } from '@/PageManager'
 import client from '@/services/client.service'
 import { Pin } from 'lucide-react'
@@ -85,6 +86,7 @@ function MainNoteCard({
     <div
       className={className}
       data-event-id={event.id}
+      onPointerEnter={preloadNotePageChunk}
       onClick={(e) => {
         // Don't navigate when user has selected text (e.g. for creating a highlight)
         const sel = window.getSelection()
