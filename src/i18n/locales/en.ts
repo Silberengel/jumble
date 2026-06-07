@@ -300,7 +300,8 @@ export default {
     Connections: 'Connections',
     Calls: 'Calls',
     Advanced: 'Advanced',
-    'Post editor advanced hint': 'Relay targets, mention recipients, client tag, NSFW, and proof of work.',
+    'Post editor advanced hint':
+      'Relay targets, mention recipients, client tag, content warning, and proof of work.',
     'Open Advanced to adjust mention recipients': 'Open Advanced to adjust who receives this message.',
     'Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced':
       'Add nostr:npub… or nostr:nevent… mentions in the text, or open Advanced to pick recipients.',
@@ -2122,6 +2123,13 @@ export default {
     'Long-form Article': 'Long-form Article',
     'Mailbox relays saved': 'Mailbox relays saved',
     'Mark as NSFW': 'Mark as NSFW',
+    'Content warning': 'Content warning',
+    'Content warning hint':
+      'Adds a NIP-36 content-warning tag so readers must opt in to view this note.',
+    'Content warning preset': 'Warning label',
+    'Custom label…': 'Custom label…',
+    'Content warning custom placeholder': 'e.g. Violence, Trigger warning',
+    'Content warning label': '⚠ {{label}}',
     'Maximum {{max}} invitees': 'Maximum {{max}} invitees',
     'Maximum {{max}} invitees allowed': 'Maximum {{max}} invitees allowed',
     Medium: 'Medium',

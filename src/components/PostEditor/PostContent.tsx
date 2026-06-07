@@ -41,6 +41,11 @@ import {
   stripImwaldAttributionTags
 } from '@/lib/draft-event'
 import {
+  contentWarningDraftOptions,
+  DEFAULT_CONTENT_WARNING_LABEL,
+  normalizeContentWarningLabel
+} from '@/lib/content-warning'
+import {
   ExtendedKind,
   isNip71ShortVideoKind,
   isNip71StyleVideoKind,
@@ -296,6 +301,7 @@ export default function PostContent({
   const [addClientTag, setAddClientTag] = useState(() => storage.getAddClientTag())
   const [mentions, setMentions] = useState<string[]>([])
   const [isNsfw, setIsNsfw] = useState(false)
+  const [contentWarningLabel, setContentWarningLabel] = useState(DEFAULT_CONTENT_WARNING_LABEL)
   const [isPoll, setIsPoll] = useState(false)
   const [isPublicMessage, setIsPublicMessage] = useState(!!initialPublicMessageTo)
   const [extractedMentions, setExtractedMentions] = useState<string[]>(
@@ -478,7 +484,8 @@ export default function PostContent({
       isReadingGroup: threadIsReadingGroup,
       author: threadReadingAuthor,
       subject: threadReadingSubject,
-      isNsfw
+      isNsfw,
+      contentWarningLabel
     })
   }, [
     isDiscussionThread,
@@ -490,7 +497,8 @@ export default function PostContent({
     threadIsReadingGroup,
     threadReadingAuthor,
     threadReadingSubject,
-    isNsfw
+    isNsfw,
+    contentWarningLabel
   ])
 
   const handleRelayPublishCapChange = useCallback((preview: TPrePublishRelayCapPreview) => {
@@ -753,6 +761,9 @@ export default function PostContent({
       })
       if (cachedSettings) {
         setIsNsfw(cachedSettings.isNsfw ?? false)
+        setContentWarningLabel(
+          normalizeContentWarningLabel(cachedSettings.contentWarningLabel ?? DEFAULT_CONTENT_WARNING_LABEL)
+        )
         setIsPoll(cachedSettings.isPoll ?? false)
         setPollCreateData(
           cachedSettings.pollCreateData ?? {
@@ -770,12 +781,13 @@ export default function PostContent({
       { kind: getDeterminedKind, defaultContent, parentEvent },
       {
         isNsfw,
+        contentWarningLabel,
         isPoll,
         pollCreateData,
         addClientTag
       }
     )
-  }, [getDeterminedKind, defaultContent, parentEvent, isNsfw, isPoll, pollCreateData, addClientTag])
+  }, [getDeterminedKind, defaultContent, parentEvent, isNsfw, contentWarningLabel, isPoll, pollCreateData, addClientTag])
 
   const prevComposerShellOpenRef = useRef(open)
   const prevComposerPubkeyRef = useRef(pubkey)
@@ -904,12 +916,13 @@ export default function PostContent({
     
     const addExpirationTag = storage.getDefaultExpirationEnabled()
     const expirationMonths = storage.getDefaultExpirationMonths()
+    const contentWarningOpts = contentWarningDraftOptions(isNsfw, contentWarningLabel)
 
     // Public messages - check BEFORE media notes to ensure PMs with media stay as PMs
     if (isPublicMessage) {
       return await createPublicMessageDraftEvent(cleanedText, extractedMentions, {
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths,
         mediaImetaTags: uploadImetaTagsOpt
@@ -918,7 +931,7 @@ export default function PostContent({
       // For PM replies, always create PM even if there's media
       return await createPublicMessageReplyDraftEvent(cleanedText, parentEvent, mentions, {
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths,
         mediaImetaTags: uploadImetaTagsOpt
@@ -936,7 +949,8 @@ export default function PostContent({
         isReadingGroup: threadIsReadingGroup,
         author: threadReadingAuthor,
         subject: threadReadingSubject,
-        isNsfw
+        isNsfw,
+        contentWarningLabel
       })
       const draft: TDraftEvent = {
         kind: ExtendedKind.DISCUSSION,
@@ -961,7 +975,7 @@ export default function PostContent({
         mentions,
         {
           addClientTag,
-          isNsfw,
+          ...contentWarningOpts,
           addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE_COMMENT),
           expirationMonths,
           mediaImetaTags: uploadImetaTagsOpt
@@ -981,7 +995,7 @@ export default function PostContent({
           mentions,
           {
             addClientTag,
-            isNsfw,
+            ...contentWarningOpts,
             addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.VOICE),
             expirationMonths,
             mediaImetaTags: uploadImetaTagsOpt
@@ -994,7 +1008,7 @@ export default function PostContent({
           mentions,
           {
             addClientTag,
-            isNsfw,
+            ...contentWarningOpts,
             addExpirationTag: false,
             expirationMonths,
             mediaImetaTags: uploadImetaTagsOpt
@@ -1008,7 +1022,7 @@ export default function PostContent({
           mediaNoteKind,
           {
             addClientTag,
-            isNsfw,
+            ...contentWarningOpts,
             addExpirationTag: false,
             expirationMonths,
             mediaImetaTags: uploadImetaTagsOpt
@@ -1049,7 +1063,7 @@ export default function PostContent({
         language: musicTrackLanguage.trim() || undefined,
         genres,
         addClientTag,
-        isNsfw
+        ...contentWarningOpts
       })
     }
 
@@ -1088,7 +1102,7 @@ export default function PostContent({
         image: articleImage.trim() || undefined,
         topics: topics.length > 0 ? topics : undefined,
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths
       })
@@ -1100,7 +1114,7 @@ export default function PostContent({
         image: articleImage.trim() || undefined,
         topics: topics.length > 0 ? topics : undefined,
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths
       })
@@ -1113,7 +1127,7 @@ export default function PostContent({
         affectedKinds: affectedKinds.length > 0 ? affectedKinds : undefined,
         topics: topics.length > 0 ? topics : undefined,
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths
       })
@@ -1125,7 +1139,7 @@ export default function PostContent({
         image: articleImage.trim() || undefined,
         topics: topics.length > 0 ? topics : undefined,
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths
       })
@@ -1210,7 +1224,7 @@ export default function PostContent({
         undefined,
         {
           addClientTag,
-          isNsfw,
+          ...contentWarningOpts,
           addExpirationTag: false,
           expirationMonths,
           mediaImetaTags: uploadImetaTagsOpt
@@ -1223,7 +1237,7 @@ export default function PostContent({
     if (parentEvent && parentEvent.kind !== kinds.ShortTextNote) {
       return await createCommentDraftEvent(cleanedText, parentEvent, mentions, {
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.COMMENT),
         expirationMonths,
         mediaImetaTags: uploadImetaTagsOpt
@@ -1234,7 +1248,7 @@ export default function PostContent({
     if (isPoll) {
       return await createPollDraftEvent(pubkey!, cleanedText, mentions, pollCreateData, {
         addClientTag,
-        isNsfw,
+        ...contentWarningOpts,
         addExpirationTag: false,
         expirationMonths,
         mediaImetaTags: uploadImetaTagsOpt
@@ -1245,7 +1259,7 @@ export default function PostContent({
     return await createShortTextNoteDraftEvent(cleanedText, mentions, {
       parentEvent,
       addClientTag,
-      isNsfw,
+      ...contentWarningOpts,
       addExpirationTag: addExpirationTag && isChattingKind(kinds.ShortTextNote),
       expirationMonths,
       mediaImetaTags: uploadImetaTagsOpt
@@ -1292,6 +1306,7 @@ export default function PostContent({
     pollCreateData,
     addClientTag,
     isNsfw,
+    contentWarningLabel,
     articleDTag,
     articleTitle,
     articleImage,
@@ -3850,6 +3865,8 @@ export default function PostContent({
         setAddClientTag={setAddClientTag}
         isNsfw={isNsfw}
         setIsNsfw={setIsNsfw}
+        contentWarningLabel={contentWarningLabel}
+        setContentWarningLabel={setContentWarningLabel}
         minPow={minPow}
         setMinPow={setMinPow}
         showMentionsPicker={!isHighlight}

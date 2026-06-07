@@ -10,6 +10,7 @@ const PERSIST_DEBOUNCE_MS = 5_000
 
 type TPostSettings = {
   isNsfw?: boolean
+  contentWarningLabel?: string
   isPoll?: boolean
   pollCreateData?: TPollCreateData
   addClientTag?: boolean

@@ -3,6 +3,7 @@ import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
 import customEmojiService from '@/services/custom-emoji.service'
 import mediaUpload from '@/services/media-upload.service'
+import { appendContentWarningTagIfNeeded } from '@/lib/content-warning'
 import { prefixNostrAddresses } from '@/lib/nostr-address'
 import { normalizeHashtag, normalizeTopic } from '@/lib/discussion-topics'
 import logger from '@/lib/logger'
@@ -227,6 +228,7 @@ export async function createShortTextNoteDraftEvent(
     parentEvent?: Event
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     /** NIP-94 imeta rows from uploads (audio/video/images as plain URLs in content). */
@@ -266,9 +268,7 @@ export async function createShortTextNoteDraftEvent(
   // p tags
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -305,6 +305,7 @@ export async function createCommentDraftEvent(
   options: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
@@ -379,9 +380,7 @@ export async function createCommentDraftEvent(
     )
   }
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -404,6 +403,7 @@ export async function createPublicMessageReplyDraftEvent(
   options: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][] // Allow media imeta tags for audio/video
@@ -449,9 +449,7 @@ export async function createPublicMessageReplyDraftEvent(
     ...Array.from(recipients).map((pubkey) => buildPTag(pubkey))
   )
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -479,6 +477,7 @@ export async function createPublicMessageDraftEvent(
   options: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][] // Allow media imeta tags for audio/video
@@ -504,9 +503,7 @@ export async function createPublicMessageDraftEvent(
     ...recipients.map((pubkey) => buildPTag(pubkey))
   )
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -1115,12 +1112,14 @@ export async function createPollDraftEvent(
   { isMultipleChoice, relays, options, endsAt }: TPollCreateData,
   {
     isNsfw,
+    contentWarningLabel,
     addExpirationTag,
     expirationMonths,
     mediaImetaTags
   }: {
     addClientTag?: boolean // accepted for API compat; client tag is added in publish()
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
@@ -1166,9 +1165,7 @@ export async function createPollDraftEvent(
     })
   }
 
-  if (isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, { isNsfw, contentWarningLabel })
 
   if (addExpirationTag && expirationMonths) {
     tags.push(buildExpirationTag(expirationMonths))
@@ -1606,10 +1603,6 @@ export function applyImwaldAttributionTags(
   return draft
 }
 
-function buildNsfwTag() {
-  return ['content-warning', 'NSFW']
-}
-
 function buildExpirationTag(months: number): string[] {
   const expirationTime = dayjs().add(months, 'month').unix()
   return ['expiration', expirationTime.toString()]
@@ -1642,6 +1635,7 @@ export async function createHighlightDraftEvent(
   options?: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
@@ -1761,9 +1755,7 @@ export async function createHighlightDraftEvent(
   }
 
   // Add optional tags
-  if (options?.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options ?? {})
 
   if (options?.addExpirationTag && options?.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -1789,6 +1781,7 @@ export async function createVoiceDraftEvent(
   options: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     /** Extra NIP-94 rows from uploads (merged after content-derived imeta, deduped by URL). */
@@ -1809,9 +1802,7 @@ export async function createVoiceDraftEvent(
   tags.push(...imetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -1834,6 +1825,7 @@ export async function createVoiceCommentDraftEvent(
   options: {
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     /** NIP-94 rows from file upload (merged before `imetaTags`; deduped by URL). */
@@ -1907,9 +1899,7 @@ export async function createVoiceCommentDraftEvent(
     )
   }
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -1931,6 +1921,7 @@ export async function createPictureDraftEvent(
     title?: string
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
@@ -1949,9 +1940,7 @@ export async function createPictureDraftEvent(
   mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -1986,6 +1975,7 @@ export async function createVideoDraftEvent(
     title?: string
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
@@ -2004,9 +1994,7 @@ export async function createVideoDraftEvent(
   mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -2036,6 +2024,7 @@ export async function createMusicTrackDraftEvent(
     genres?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
   }
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
@@ -2078,9 +2067,7 @@ export async function createMusicTrackDraftEvent(
   tags.push(...emojiTags)
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
 
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
 
   return setDraftEventCache({
     kind: ExtendedKind.MUSIC_TRACK,
@@ -2103,6 +2090,7 @@ export async function createLongFormArticleDraftEvent(
     topics?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
   } = {}
@@ -2143,9 +2131,7 @@ export async function createLongFormArticleDraftEvent(
     tags.push(...generateImetaTags(images))
   }
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -2179,6 +2165,7 @@ export async function createWikiArticleDraftEvent(
     topics?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
   }
@@ -2208,9 +2195,7 @@ export async function createWikiArticleDraftEvent(
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -2236,6 +2221,7 @@ export async function createNostrSpecificationDraftEvent(
     topics?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
   }
@@ -2267,9 +2253,7 @@ export async function createNostrSpecificationDraftEvent(
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))
@@ -2294,6 +2278,7 @@ export async function createPublicationContentDraftEvent(
     topics?: string[]
     addClientTag?: boolean
     isNsfw?: boolean
+    contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
   }
@@ -2323,9 +2308,7 @@ export async function createPublicationContentDraftEvent(
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
-  if (options.isNsfw) {
-    tags.push(buildNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, options)
   
   if (options.addExpirationTag && options.expirationMonths) {
     tags.push(buildExpirationTag(options.expirationMonths))

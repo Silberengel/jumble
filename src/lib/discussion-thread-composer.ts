@@ -1,4 +1,5 @@
 import { ExtendedKind } from '@/constants'
+import { appendContentWarningTagIfNeeded } from '@/lib/content-warning'
 import { extractHashtagsFromContent, normalizeTopic } from '@/lib/discussion-topics'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
 import { Event } from 'nostr-tools'
@@ -46,10 +47,6 @@ function extractImagesFromContent(content: string): string[] {
 
 function generateImetaTagsFromUrls(imageUrls: string[]): string[][] {
   return imageUrls.map((url) => ['imeta', 'url', url])
-}
-
-function buildDiscussionNsfwTag(): string[] {
-  return ['content-warning', '']
 }
 
 /** Match preset/dynamic list by id or exact label (case-insensitive); otherwise normalize as a new topic slug. */
@@ -142,8 +139,10 @@ export function collectDiscussionThreadTags(params: {
   author: string
   subject: string
   isNsfw: boolean
+  contentWarningLabel?: string
 }): string[][] {
-  const { processedContent, topicForTags, title, dynamicTopics, isReadingGroup, author, subject, isNsfw } = params
+  const { processedContent, topicForTags, title, dynamicTopics, isReadingGroup, author, subject, isNsfw, contentWarningLabel } =
+    params
   const images = extractImagesFromContent(processedContent)
   const hashtags = extractHashtagsFromContent(processedContent)
   const tags: string[][] = [['title', title.trim()]]
@@ -221,9 +220,7 @@ export function collectDiscussionThreadTags(params: {
     tags.push(...generateImetaTagsFromUrls(images))
   }
 
-  if (isNsfw) {
-    tags.push(buildDiscussionNsfwTag())
-  }
+  appendContentWarningTagIfNeeded(tags, { isNsfw, contentWarningLabel })
 
   return tags
 }

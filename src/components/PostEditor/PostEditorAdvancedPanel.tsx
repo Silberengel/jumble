@@ -1,12 +1,27 @@
 import { MAX_PUBLISH_RELAYS } from '@/constants'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import {
+  CONTENT_WARNING_CUSTOM_SELECT_VALUE,
+  CONTENT_WARNING_PRESETS,
+  DEFAULT_CONTENT_WARNING_LABEL,
+  isPresetContentWarningLabel,
+  normalizeContentWarningLabel
+} from '@/lib/content-warning'
 import type { TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
 import { cn } from '@/lib/utils'
 import storage from '@/services/local-storage.service'
 import type { Event } from 'nostr-tools'
-import { Dispatch, SetStateAction, useEffect } from 'react'
+import { Dispatch, SetStateAction, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Mentions from './Mentions'
 import PostRelaySelector from './PostRelaySelector'
@@ -18,6 +33,8 @@ export type PostEditorAdvancedPanelProps = {
   setAddClientTag: Dispatch<SetStateAction<boolean>>
   isNsfw: boolean
   setIsNsfw: Dispatch<SetStateAction<boolean>>
+  contentWarningLabel: string
+  setContentWarningLabel: Dispatch<SetStateAction<string>>
   minPow: number
   setMinPow: Dispatch<SetStateAction<number>>
   /** Relay picker + cap hints (hidden for modes that do not pick relays). */
@@ -51,6 +68,8 @@ export default function PostEditorAdvancedPanel({
   setAddClientTag,
   isNsfw,
   setIsNsfw,
+  contentWarningLabel,
+  setContentWarningLabel,
   minPow,
   setMinPow,
   showRelayPicker = false,
@@ -80,6 +99,11 @@ export default function PostEditorAdvancedPanel({
     storage.setAddClientTag(checked)
     setAddClientTag(checked)
   }
+
+  const selectValue = useMemo(() => {
+    if (isPresetContentWarningLabel(contentWarningLabel)) return contentWarningLabel
+    return CONTENT_WARNING_CUSTOM_SELECT_VALUE
+  }, [contentWarningLabel])
 
   // Mentions + relay picker must stay mounted when Advanced is collapsed so auto-selection
   // effects still run (especially on mobile where users often post without opening Advanced).
@@ -162,16 +186,65 @@ export default function PostEditorAdvancedPanel({
             <p className="text-muted-foreground text-xs">{t('Show others this was sent via Imwald')}</p>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <Label htmlFor="add-nsfw-tag" className="text-sm font-normal">
-              {t('NSFW')}
-            </Label>
-            <Switch
-              id="add-nsfw-tag"
-              checked={isNsfw}
-              onCheckedChange={setIsNsfw}
-              disabled={posting}
-            />
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="add-content-warning-tag" className="text-sm font-normal">
+                {t('Content warning')}
+              </Label>
+              <Switch
+                id="add-content-warning-tag"
+                checked={isNsfw}
+                onCheckedChange={(checked) => {
+                  setIsNsfw(checked)
+                  if (checked && !contentWarningLabel.trim()) {
+                    setContentWarningLabel(DEFAULT_CONTENT_WARNING_LABEL)
+                  }
+                }}
+                disabled={posting}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">{t('Content warning hint')}</p>
+            {isNsfw ? (
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+                <Select
+                  value={selectValue}
+                  onValueChange={(value) => {
+                    if (value === CONTENT_WARNING_CUSTOM_SELECT_VALUE) {
+                      if (isPresetContentWarningLabel(contentWarningLabel)) {
+                        setContentWarningLabel('')
+                      }
+                      return
+                    }
+                    setContentWarningLabel(value)
+                  }}
+                  disabled={posting}
+                >
+                  <SelectTrigger aria-label={t('Content warning preset')}>
+                    <SelectValue placeholder={t('Content warning preset')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTENT_WARNING_PRESETS.map((preset) => (
+                      <SelectItem key={preset} value={preset}>
+                        {preset}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CONTENT_WARNING_CUSTOM_SELECT_VALUE}>{t('Custom label…')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {selectValue === CONTENT_WARNING_CUSTOM_SELECT_VALUE ? (
+                  <Input
+                    value={contentWarningLabel}
+                    onChange={(e) => setContentWarningLabel(e.target.value)}
+                    onBlur={() =>
+                      setContentWarningLabel((prev) => normalizeContentWarningLabel(prev))
+                    }
+                    placeholder={t('Content warning custom placeholder')}
+                    disabled={posting}
+                    maxLength={80}
+                  />
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-2">

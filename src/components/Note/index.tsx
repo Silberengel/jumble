@@ -1,4 +1,5 @@
 import { useSmartNoteNavigationOptional } from '@/PageManager'
+import { getContentWarningLabel } from '@/lib/content-warning'
 import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind, publicAssetUrl } from '@/constants'
 import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
 import {
@@ -429,7 +430,7 @@ export default function Note({
   } else if (muteSetHas(mutePubkeySet, event.pubkey) && !showMuted) {
     content = <MutedNote show={() => setShowMuted(true)} />
   } else if (!defaultShowNsfw && isNsfwEvent(event) && !showNsfw) {
-    content = <NsfwNote show={() => setShowNsfw(true)} />
+    content = <NsfwNote show={() => setShowNsfw(true)} label={getContentWarningLabel(event)} />
   } else if (isNip25ReactionKind(event.kind)) {
     content = null
   } else if (isNip18RepostKind(displayEvent.kind)) {
