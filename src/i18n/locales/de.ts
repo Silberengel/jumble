@@ -1897,6 +1897,13 @@ export default {
     "Are you sure you want to unregister the service worker? This will clear this app's service worker caches and you will need to reload the page.":
       "Are you sure you want to unregister the service worker? This will clear this app's service worker caches and you will need to reload the page.",
     'Article exported as AsciiDoc': 'Article exported as AsciiDoc',
+    'Download as AsciiDoc': 'Als AsciiDoc herunterladen',
+    'Download as EPUB': 'Als EPUB herunterladen',
+    'Download as PDF': 'Als PDF herunterladen',
+    'Exporting publication…': 'Publikation wird exportiert…',
+    'Publication exported as EPUB': 'Publikation als EPUB exportiert',
+    'Publication exported as PDF': 'Publikation als PDF exportiert',
+    'Failed to export publication': 'Export der Publikation fehlgeschlagen',
     'Article exported as Markdown': 'Article exported as Markdown',
     'Article title (optional)': 'Article title (optional)',
     articleDTagDefaultHint:

@@ -50,7 +50,7 @@ function fullReloadOnProvidersAndPages(): Plugin {
 }
 
 /** Loopback targets in `server.proxy` — optional in dev; see PROXY_SETUP.md. */
-const OPTIONAL_DEV_PROXY_LOOPBACK_PORTS = [4000, 5000, 8010, 8090, 9876] as const
+const OPTIONAL_DEV_PROXY_LOOPBACK_PORTS = [4000, 5000, 8010, 8090, 8091, 9876] as const
 
 function blobFromLogArgs(args: unknown[]): string {
   return args
@@ -69,6 +69,7 @@ const DEV_INDEX_RELAY_PROXY_PATH_MARKERS = [
   '/api/languagetool',
   '/v2/',
   '/api/piper-tts',
+  '/api/asciidoctor',
   '/api/translate',
   '/sites',
   '/dev-index-relay',
@@ -261,6 +262,16 @@ export default defineConfig(({ mode }) => {
             ok: false,
             error: 'translate_proxy_unreachable',
             hint: 'Start LibreTranslate (or compatible API) on :5000 — see PROXY_SETUP.md'
+          })
+        },
+        '/api/asciidoctor': {
+          target: 'http://127.0.0.1:8091',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/api\/asciidoctor/u, '') || '/',
+          configure: jsonProxyErrorHandler(503, {
+            ok: false,
+            error: 'asciidoctor_proxy_unreachable',
+            hint: 'Start the Wikistr AsciiDoctor server on :8091 (see ../wikistr/deployment)'
           })
         },
         '/sites': {

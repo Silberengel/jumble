@@ -42,7 +42,10 @@ import {
   isEventInPinList
 } from '@/lib/replaceable-list-latest'
 import indexedDb from '@/services/indexed-db.service'
-import { generateBech32IdFromATag } from '@/lib/tag'
+import {
+  exportPublicationDownload,
+  isAsciiDoctorServerConfigured
+} from '@/lib/publication-export'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useMuteList } from '@/contexts/mute-list-context'
@@ -58,6 +61,7 @@ import {
   Bell,
   BellOff,
   Bookmark,
+  Download,
   Pin,
   Settings,
   Share2,
@@ -837,55 +841,25 @@ export function useMenuActions({
 
     const exportAsAsciidoc = async () => {
       if (!isArticleType) return
-      
+
       try {
-        const title = articleMetadata?.title || 'Article'
-        let content = event.content
-        let filename = `${title}.adoc`
-        
-        // For publications (30040), export all referenced sections
         if (event.kind === ExtendedKind.PUBLICATION) {
-          const contentParts: string[] = []
-          
-          // Extract all 'a' tag references
-          const aTags = event.tags.filter(tag => tag[0] === 'a' && tag[1])
-          
-          // Fetch all referenced events
-          const fetchPromises = aTags.map(async (tag) => {
-            try {
-              const coordinate = tag[1]
-              const [kindStr] = coordinate.split(':')
-              const kind = parseInt(kindStr)
-              
-              if (isNaN(kind)) return null
-              
-              // Try to fetch the event
-              const aTag = ['a', coordinate, tag[2] || '', tag[3] || '']
-              const bech32Id = generateBech32IdFromATag(aTag)
-              if (bech32Id) {
-                const fetchedEvent = await eventService.fetchEvent(bech32Id)
-                return fetchedEvent
-              }
-              return null
-            } catch (error) {
-              logger.warn('[NoteOptions] Error fetching referenced event for export:', error)
-              return null
-            }
+          closeDrawer()
+          await toast.promise(exportPublicationDownload(event, 'adoc', relayUrls), {
+            loading: t('Exporting publication…'),
+            success: () => t('Article exported as AsciiDoc'),
+            error: (err: unknown) =>
+              t('Failed to export article') +
+              ': ' +
+              (err instanceof Error ? err.message : String(err))
           })
-          
-          const referencedEvents = (await Promise.all(fetchPromises)).filter((e): e is Event => e !== null)
-          
-          // Combine all events into one AsciiDoc document
-          for (const refEvent of referencedEvents) {
-            const refTitle = refEvent.tags.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
-            contentParts.push(`= ${refTitle}\n\n${refEvent.content}\n\n`)
-          }
-          
-          if (contentParts.length > 0) {
-            content = contentParts.join('\n')
-          }
+          return
         }
-        
+
+        const title = articleMetadata?.title || 'Article'
+        const content = event.content
+        const filename = `${title}.adoc`
+
         const blob = new Blob([content], { type: 'text/plain' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -895,13 +869,26 @@ export function useMenuActions({
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
-        
+
         logger.info('[NoteOptions] Exported article as AsciiDoc')
         toast.success(t('Article exported as AsciiDoc'))
       } catch (error) {
         logger.error('[NoteOptions] Error exporting article:', error)
         toast.error(t('Failed to export article'))
       }
+    }
+
+    const exportPublicationAs = (format: 'epub' | 'pdf') => {
+      closeDrawer()
+      void toast.promise(exportPublicationDownload(event, format, relayUrls), {
+        loading: t('Exporting publication…'),
+        success: () =>
+          format === 'epub' ? t('Publication exported as EPUB') : t('Publication exported as PDF'),
+        error: (err: unknown) =>
+          t('Failed to export publication') +
+          ': ' +
+          (err instanceof Error ? err.message : String(err))
+      })
     }
 
     // View on external sites functions
@@ -1439,6 +1426,29 @@ export function useMenuActions({
         },
         separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })
+    }
+
+    if (event.kind === ExtendedKind.PUBLICATION) {
+      actions.push({
+        icon: Download,
+        label: t('Download as AsciiDoc'),
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator,
+        onClick: () => {
+          void exportAsAsciidoc()
+        }
+      })
+      if (isAsciiDoctorServerConfigured()) {
+        actions.push({
+          icon: Download,
+          label: t('Download as EPUB'),
+          onClick: () => exportPublicationAs('epub')
+        })
+        actions.push({
+          icon: Download,
+          label: t('Download as PDF'),
+          onClick: () => exportPublicationAs('pdf')
+        })
+      }
     }
 
     // Delete only when signed in as the author with a signing key (not read-only npub)

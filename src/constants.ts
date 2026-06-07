@@ -29,6 +29,13 @@ export const LANGUAGE_TOOL_URL =
 export const TRANSLATE_URL =
   (import.meta.env.VITE_TRANSLATE_URL as string | undefined)?.trim() || ''
 
+/**
+ * Wikistr/unfold AsciiDoctor sidecar for EPUB/PDF export (`POST /convert/{epub|pdf|html5}`).
+ * Dev default: `/api/asciidoctor` (Vite proxy → localhost:8091). Production: set full URL or same-origin path.
+ */
+export const ASCIIDOCTOR_SERVER_URL =
+  (import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL as string | undefined)?.trim() || ''
+
 /** HiveTalk (WebRTC video call) base URL; override with VITE_HIVETALK_BASE_URL for self-hosted instances. */
 export const HIVETALK_BASE_URL =
   (import.meta.env.VITE_HIVETALK_BASE_URL as string | undefined) ?? 'https://honey.hivetalk.org'
