@@ -3,6 +3,8 @@
 const GUTENBERG_EBOOK_URL = /gutenberg\.org\/ebooks\/(\d+)/i
 const GUTENBERG_FILES_URL = /gutenberg\.org\/files\/(\d+)/i
 const GUTENBERG_CACHE_URL = /gutenberg\.org\/cache\/epub\/(\d+)/i
+/** `pg63983.cover.medium.jpg`, `pg292405.jpg`, … on any host (e.g. nostr.build mirrors). */
+const PG_COVER_FILENAME = /[/\s]pg(\d+)(?:\.cover\.(?:small|medium)\.jpg|\.jpg)/i
 /** Legacy publication d-tags: `pg28217-dante-et-goethe-dialogues`, `pg28217`, … */
 const GUTENBERG_DTAG = /^pg(\d+)(?:-.*)?$/i
 
@@ -15,6 +17,8 @@ export function parseGutenbergEbookId(source: string): string | null {
     const match = trimmed.match(pattern)
     if (match?.[1]) return match[1]
   }
+  const fromFilename = trimmed.match(PG_COVER_FILENAME)
+  if (fromFilename?.[1]) return fromFilename[1]
   return null
 }
 
@@ -61,25 +65,43 @@ export function resolveGutenbergCoverImageUrl(source: string | undefined): strin
  */
 export function normalizeGutenbergCoverImageUrl(url: string): string {
   const trimmed = url.trim()
-  if (!trimmed.toLowerCase().includes('gutenberg')) return trimmed
   const id = parseGutenbergEbookId(trimmed)
   if (!id) return trimmed
-  if (DIRECT_IMAGE_EXT.test(trimmed)) return trimmed
-  return gutenbergCoverImageUrl(id)
+  if (trimmed.toLowerCase().includes('gutenberg.org')) {
+    if (DIRECT_IMAGE_EXT.test(trimmed)) return trimmed
+    return gutenbergCoverImageUrl(id)
+  }
+  // Third-party PG mirror filename — canonical Gutenberg CDN cover.
+  if (PG_COVER_FILENAME.test(trimmed)) return gutenbergCoverImageUrl(id)
+  if (trimmed.toLowerCase().includes('gutenberg')) return gutenbergCoverImageUrl(id)
+  return trimmed
 }
 
-/** Ordered cover URLs to try (library prefers small, then medium; always deduped). */
-export function gutenbergCoverCandidateUrls(url: string, preferSmall: boolean): string[] {
+/**
+ * Ordered cover URLs to try. Medium is always first (matches detail panel); library may also try small.
+ * Non-gutenberg.org mirrors (e.g. nostr.build) keep the original URL, then fall back to gutenberg.org.
+ */
+export function gutenbergCoverCandidateUrls(url: string, includeSmallFallback: boolean): string[] {
   const trimmed = url.trim()
   if (!trimmed) return []
   const id = parseGutenbergEbookId(trimmed)
-  if (!id || !trimmed.toLowerCase().includes('gutenberg')) return [trimmed]
+  if (!id) return [trimmed]
 
-  const ordered: string[] = []
-  if (preferSmall) ordered.push(gutenbergCoverImageUrl(id, 'small'))
-  ordered.push(gutenbergCoverImageUrl(id, 'medium'))
-  const normalized = normalizeGutenbergCoverImageUrl(trimmed)
-  for (const candidate of [normalized, trimmed]) {
+  const canonical: string[] = [
+    gutenbergCoverImageUrl(id, 'medium'),
+    ...(includeSmallFallback ? [gutenbergCoverImageUrl(id, 'small')] : [])
+  ]
+
+  if (!trimmed.toLowerCase().includes('gutenberg.org')) {
+    const ordered = [trimmed]
+    for (const candidate of canonical) {
+      if (!ordered.includes(candidate)) ordered.push(candidate)
+    }
+    return ordered
+  }
+
+  const ordered = [...canonical]
+  for (const candidate of [normalizeGutenbergCoverImageUrl(trimmed), trimmed]) {
     if (!ordered.includes(candidate)) ordered.push(candidate)
   }
   return ordered

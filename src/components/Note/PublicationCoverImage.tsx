@@ -1,7 +1,6 @@
-import { useNearViewport } from '@/hooks/useNearViewport'
 import { gutenbergCoverCandidateUrls } from '@/lib/gutenberg-cover'
 import { cn } from '@/lib/utils'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from '../Image'
 import PublicationCoverFallback from './PublicationCoverFallback'
 
@@ -27,8 +26,6 @@ export default function PublicationCoverImage({
   className?: string
 }) {
   const isLibrary = size === 'library'
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const isNearViewport = useNearViewport(wrapperRef, { enabled: isLibrary })
   const maxClass = isLibrary ? LIBRARY_PUBLICATION_COVER_MAX_CLASS : PUBLICATION_COVER_MAX_CLASS
   const candidateUrls = useMemo(
     () => gutenbergCoverCandidateUrls(imageUrl, isLibrary),
@@ -58,9 +55,12 @@ export default function PublicationCoverImage({
 
   const stackedLayoutClass = isLibrary ? 'aspect-[3/4] w-full' : 'w-fit'
 
+  // Library grid: always load covers (user opened Bibliothek). Tap-to-reveal on the card would
+  // fight PublicationCard navigation, leaving blurhash placeholders stuck forever.
+  const holdCoverUntilClick = isLibrary ? false : !autoLoadMedia
+
   return (
     <div
-      ref={wrapperRef}
       className={cn(
         'flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted',
         maxClass,
@@ -69,23 +69,18 @@ export default function PublicationCoverImage({
         layout === 'stacked' && isLibrary && 'mb-2',
         className
       )}
+      onClick={holdCoverUntilClick ? (e) => e.stopPropagation() : undefined}
     >
-      {isNearViewport ? (
-        <Image
-          key={activeUrl}
-          image={{ url: activeUrl, pubkey }}
-          className={cn(
-            maxClass,
-            isLibrary ? 'max-w-full object-contain' : 'h-auto w-auto max-w-full object-contain'
-          )}
-          classNames={{ wrapper: isLibrary ? 'block w-full max-w-full' : 'block w-fit max-w-full' }}
-          hideIfError
-          onFinalError={handleImageError}
-          holdUntilClick={!autoLoadMedia}
-          loading={isLibrary ? 'lazy' : 'eager'}
-          fetchPriority={isLibrary ? 'low' : undefined}
-        />
-      ) : null}
+      <Image
+        key={activeUrl}
+        image={{ url: activeUrl, pubkey }}
+        className={cn(maxClass, 'h-auto w-auto max-w-full object-contain')}
+        classNames={{ wrapper: cn('block max-w-full', isLibrary ? 'w-full' : 'w-fit') }}
+        hideIfError
+        onFinalError={handleImageError}
+        holdUntilClick={holdCoverUntilClick}
+        loading="eager"
+      />
     </div>
   )
 }

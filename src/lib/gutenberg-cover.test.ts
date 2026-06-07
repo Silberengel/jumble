@@ -22,6 +22,15 @@ describe('gutenberg-cover', () => {
     ).toBe('16702')
   })
 
+  it('parses ebook id from pg-prefixed cover filenames on third-party hosts', () => {
+    expect(
+      parseGutenbergEbookId(
+        'https://api.nostr.build/v2/upload/67104/p/33358/pg33358.cover.medium.jpg'
+      )
+    ).toBe('33358')
+    expect(parseGutenbergEbookId('https://cdn.example.com/pg292405.jpg')).toBe('292405')
+  })
+
   it('builds medium cover URL by default', () => {
     expect(gutenbergCoverImageUrl('58363')).toBe(
       'https://www.gutenberg.org/cache/epub/58363/pg58363.cover.medium.jpg'
@@ -59,19 +68,46 @@ describe('gutenberg-cover', () => {
     expect(gutenbergEbookPageUrl('28217')).toBe('https://www.gutenberg.org/ebooks/28217')
   })
 
-  it('gutenbergCoverCandidateUrls tries small then medium in library mode', () => {
+  it('gutenbergCoverCandidateUrls tries medium first, then small in library mode', () => {
     expect(
       gutenbergCoverCandidateUrls(
         'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg',
         true
       )
     ).toEqual([
-      'https://www.gutenberg.org/cache/epub/11/pg11.cover.small.jpg',
-      'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg'
+      'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg',
+      'https://www.gutenberg.org/cache/epub/11/pg11.cover.small.jpg'
     ])
+    expect(
+      gutenbergCoverCandidateUrls(
+        'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg',
+        false
+      )
+    ).toEqual(['https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg'])
     expect(gutenbergCoverCandidateUrls('https://example.com/cover.jpg', true)).toEqual([
       'https://example.com/cover.jpg'
     ])
+  })
+
+  it('gutenbergCoverCandidateUrls falls back to gutenberg.org for PG mirror URLs', () => {
+    expect(
+      gutenbergCoverCandidateUrls(
+        'https://api.nostr.build/v2/upload/67104/p/33358/pg33358.cover.medium.jpg',
+        true
+      )
+    ).toEqual([
+      'https://api.nostr.build/v2/upload/67104/p/33358/pg33358.cover.medium.jpg',
+      'https://www.gutenberg.org/cache/epub/33358/pg33358.cover.medium.jpg',
+      'https://www.gutenberg.org/cache/epub/33358/pg33358.cover.small.jpg'
+    ])
+  })
+
+  it('normalizeGutenbergCoverImageUrl rewrites PG mirror filenames to gutenberg.org', () => {
+    expect(
+      normalizeGutenbergCoverImageUrl(
+        'https://api.nostr.build/v2/upload/67104/p/33358/pg33358.cover.medium.jpg'
+      )
+    ).toBe('https://www.gutenberg.org/cache/epub/33358/pg33358.cover.medium.jpg')
   })
 
   it('normalizeGutenbergCoverImageUrl converts ebook pages to cover JPG', () => {
