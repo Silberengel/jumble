@@ -460,6 +460,12 @@ export const DOCUMENT_RELAY_URLS = [
   'wss://essayist.decentnewsroom.com'
 ] as const
 
+/** Document + mercury index relays for Library publication browsing. */
+export const LIBRARY_RELAY_URLS = [
+  ...DOCUMENT_RELAY_URLS,
+  'https://mercury-relay.imwald.eu/'
+] as const
+
 /**
  * Relays that must never receive publishes: search engines, index mirrors, and similar endpoints that only ingest
  * or aggregate for read. Use only to strip URLs from publish / write / publish-picker paths — do not prepend this
@@ -594,6 +600,8 @@ export const ExtendedKind = {
   ZAP_POLL: 6969,
   POLL_RESPONSE: 1018,
   COMMENT: 1111,
+  /** NIP-32 label events. */
+  LABEL: 1985,
   VOICE: 1222,
   VOICE_COMMENT: 1244,
   PUBLIC_MESSAGE: 24,

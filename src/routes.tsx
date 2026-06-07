@@ -66,7 +66,7 @@ const rssArticlePageElement = SR(RssArticlePageLazy)
 
 /** Primary segments used in contextual `/…/notes/:id` and `/…/rss-item/:key` routes. */
 const CONTEXTUAL_ROUTE_PREFIXES =
-  'discussions|search|profile|home|feed|spells|explore|rss|calendar'
+  'discussions|search|library|profile|home|feed|spells|explore|rss|calendar'
 
 const contextualNotePathRe = new RegExp(
   `^/(${CONTEXTUAL_ROUTE_PREFIXES})/notes/([^/?#]+)$`
@@ -82,6 +82,7 @@ const ROUTES = [
   { path: '/notes/:id', element: notePageElement },
   { path: '/discussions/notes/:id', element: notePageElement },
   { path: '/search/notes/:id', element: notePageElement },
+  { path: '/library/notes/:id', element: notePageElement },
   { path: '/profile/notes/:id', element: notePageElement },
   { path: '/explore/notes/:id', element: notePageElement },
   { path: '/home/notes/:id', element: notePageElement },

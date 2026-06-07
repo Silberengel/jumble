@@ -96,6 +96,7 @@ const MePageLazy = lazy(() => import('./pages/primary/MePage'))
 const ProfilePageLazy = lazy(() => import('./pages/primary/ProfilePage'))
 const RelayPageLazy = lazy(() => import('./pages/primary/RelayPage'))
 const SearchPageLazy = lazy(() => import('./pages/primary/SearchPage'))
+const LibraryPageLazy = lazy(() => import('./pages/primary/LibraryPage'))
 const RssPageLazy = lazy(() => import('./pages/primary/RssPage'))
 const SettingsPrimaryPageLazy = lazy(() => import('./pages/primary/SettingsPrimaryPage'))
 const CalendarPrimaryPageLazy = lazy(() => import('./pages/primary/CalendarPrimaryPage'))
@@ -146,6 +147,7 @@ const PRIMARY_PAGE_REF_MAP = {
   profile: createRef<TPageRef>(),
   relay: createRef<TPageRef>(),
   search: createRef<TPageRef>(),
+  library: createRef<TPageRef>(),
   rss: createRef<TPageRef>(),
   settings: createRef<TPageRef>(),
   spells: createRef<TPageRef>(),
@@ -183,6 +185,11 @@ const getPrimaryPageMap = () => ({
   search: (
     <Suspense fallback={primaryPageLazyFallback}>
       <SearchPageLazy ref={PRIMARY_PAGE_REF_MAP.search} />
+    </Suspense>
+  ),
+  library: (
+    <Suspense fallback={primaryPageLazyFallback}>
+      <LibraryPageLazy ref={PRIMARY_PAGE_REF_MAP.library} />
     </Suspense>
   ),
   rss: (
@@ -300,6 +307,7 @@ function buildNoteUrl(noteId: string, currentPage: TPrimaryPageName | null): str
   // Pages that should preserve context in the URL
   const contextualPages: TPrimaryPageName[] = [
     'search',
+    'library',
     'profile',
     'feed',
     'spells',
@@ -323,6 +331,7 @@ function buildRssArticleUrl(
   const key = encodeRssArticlePathSegment(articleUrl)
   const contextualPages: TPrimaryPageName[] = [
     'search',
+    'library',
     'profile',
     'feed',
     'spells',

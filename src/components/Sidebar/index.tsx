@@ -8,6 +8,7 @@ import NotificationButton from './NotificationButton'
 import PostButton from './PostButton'
 import RssButton from './RssButton'
 import SearchButton from './SearchButton'
+import LibraryButton from './LibraryButton'
 import FavoritesButton from './FavoritesButton'
 import DiscussionsButton from './DiscussionsButton'
 import SpellsButton from './SpellsButton'
@@ -42,6 +43,7 @@ export default function PrimaryPageSidebar() {
           <FeedButton />
           <NotificationButton />
           <SearchButton />
+          <LibraryButton />
           <FavoritesButton />
           <DiscussionsButton />
           <SpellsButton />
