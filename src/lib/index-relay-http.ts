@@ -7,6 +7,7 @@
  * Known broken CORS HTTPS hosts (e.g. nos.lol) use `/dev-cors-index-relay` (see `vite.config.ts` + `url.ts`).
  * Production and other remote HTTPS relays still need CORS or your own reverse proxy.
  */
+import { ExtendedKind } from '@/constants'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
 import {
@@ -15,7 +16,7 @@ import {
   normalizeHttpRelayUrl
 } from '@/lib/url'
 import type { Filter, Event as NEvent } from 'nostr-tools'
-import { verifyEvent } from 'nostr-tools'
+import { validateEvent, verifyEvent } from 'nostr-tools'
 
 function trimSlash(base: string): string {
   return base.replace(/\/+$/, '')
@@ -181,6 +182,14 @@ function handleFilterTransportFailure(endpoint: string, err?: unknown): void {
   })
 }
 
+/** NKBIP-01 kind 30040 indexes always have empty `content` (relays may JSON-encode that as `null`). */
+function normalizedIndexRelayContent(kind: number, contentRaw: unknown): string | null {
+  if (kind === ExtendedKind.PUBLICATION) return ''
+  if (typeof contentRaw === 'string') return contentRaw
+  if (contentRaw == null) return ''
+  return null
+}
+
 function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
   try {
     const id = raw.id
@@ -200,14 +209,61 @@ function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
     ) {
       return null
     }
-    const content =
-      typeof contentRaw === 'string' ? contentRaw : contentRaw == null ? '' : null
+    const content = normalizedIndexRelayContent(kind, contentRaw)
     if (content === null) return null
     const ev = { id, pubkey, created_at, kind, tags, content, sig } as NEvent
     return verifyEvent(ev) ? ev : null
   } catch {
     return null
   }
+}
+
+/**
+ * Parse HTTP index relay rows for Library discovery. Kind 30040 content is always normalized to `''`.
+ * When verify fails (some index mirrors store stale id/sig), accept structurally valid 30040 rows.
+ */
+export function rawToIndexRelayEvent(raw: Record<string, unknown>): NEvent | null {
+  try {
+    const id = raw.id
+    const pubkey = raw.pubkey
+    const created_at = raw.created_at
+    const kind = raw.kind
+    const tags = raw.tags
+    const contentRaw = raw.content
+    const sig = raw.sig
+    if (
+      typeof id !== 'string' ||
+      typeof pubkey !== 'string' ||
+      typeof created_at !== 'number' ||
+      typeof kind !== 'number' ||
+      !Array.isArray(tags) ||
+      typeof sig !== 'string'
+    ) {
+      return null
+    }
+    const content = normalizedIndexRelayContent(kind, contentRaw)
+    if (content === null) return null
+    const ev = {
+      id: id.toLowerCase(),
+      pubkey: pubkey.toLowerCase(),
+      created_at,
+      kind,
+      tags,
+      content,
+      sig
+    } as NEvent
+    if (verifyEvent(ev)) return ev
+    if (kind === ExtendedKind.PUBLICATION && validateEvent(ev)) return ev
+    return null
+  } catch {
+    return null
+  }
+}
+
+export type TIndexRelayLibraryPage = {
+  events: NEvent[]
+  /** Rows returned by the relay before client-side filtering (drives pagination). */
+  apiRowCount: number
 }
 
 /**
@@ -297,6 +353,68 @@ export async function queryIndexRelay(
     }
   }
   return out
+}
+
+/** Library discovery: paginate using {@link rawToIndexRelayEvent} and the relay's raw row count. */
+export async function queryIndexRelayForLibrary(
+  baseUrl: string,
+  filter: Filter,
+  options?: { signal?: AbortSignal }
+): Promise<TIndexRelayLibraryPage> {
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayFilterUrl(base)
+  if (shouldSkipDevIndexRelayFetch(endpoint)) {
+    return { events: [], apiRowCount: 0 }
+  }
+
+  const body = nostrFilterToIndexRelayBody(filterForIndexRelay(filter))
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+      timeoutMs: 25_000
+    })
+    if (!res.ok) {
+      if (res.status >= 500) {
+        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
+        throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      }
+      return { events: [], apiRowCount: 0 }
+    }
+    clearDevIndexRelayUnavailableThisSession()
+    const json = (await res.json()) as { data?: unknown }
+    const data = json.data
+    if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
+
+    const events: NEvent[] = []
+    const seen = new Set<string>()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
+      if (ev && !seen.has(ev.id)) {
+        seen.add(ev.id)
+        events.push(ev)
+      }
+    }
+    return { events, apiRowCount: data.length }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] library filter request error', {
+      endpoint,
+      error: e
+    })
+    return { events: [], apiRowCount: 0 }
+  }
 }
 
 function filterForIndexRelay(f: Filter): Filter {

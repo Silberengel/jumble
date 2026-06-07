@@ -1,6 +1,6 @@
 import { ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
 import logger from '@/lib/logger'
-import { queryIndexRelay } from '@/lib/index-relay-http'
+import { queryIndexRelay, queryIndexRelayForLibrary } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
   collectPublicationIndexEventIds,
@@ -35,7 +35,8 @@ const ENGAGEMENT_ADDRESS_CHUNK = 36
 const ENGAGEMENT_EVENT_ID_CHUNK = 44
 const MAX_TARGET_ADDRESSES = 480
 const HYDRATE_MISSING_CAP = 64
-export const LIBRARY_RECENT_FALLBACK_LIMIT = 10
+export const LIBRARY_RECENT_FALLBACK_LIMIT = 120
+const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 const QUERY_OPTS = {
   globalTimeout: 18_000,
   eoseTimeout: 3_000,
@@ -110,10 +111,25 @@ async function fetchPaginatedFromHttpIndexRelay(baseUrl: string, filter: Filter)
       limit: INDEX_HTTP_PAGE_LIMIT,
       ...(until != null ? { until } : {})
     }
-    const batch = await queryIndexRelay(baseUrl, pageFilter)
-    if (batch.length === 0) break
+    let batch: Event[] = []
+    let apiRowCount = 0
+    try {
+      const pageResult = await queryIndexRelayForLibrary(baseUrl, pageFilter)
+      batch = pageResult.events
+      apiRowCount = pageResult.apiRowCount
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] HTTP index page failed', {
+          baseUrl,
+          page,
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+      break
+    }
+    if (apiRowCount === 0) break
 
-    let oldest = batch[0].created_at
+    let oldest = batch[0]?.created_at ?? Number.MAX_SAFE_INTEGER
     for (const ev of batch) {
       if (ev.created_at < oldest) oldest = ev.created_at
       if (seen.has(ev.id)) continue
@@ -121,7 +137,8 @@ async function fetchPaginatedFromHttpIndexRelay(baseUrl: string, filter: Filter)
       out.push(ev)
     }
 
-    if (batch.length < INDEX_HTTP_PAGE_LIMIT) break
+    if (apiRowCount < INDEX_HTTP_PAGE_LIMIT) break
+    if (oldest === Number.MAX_SAFE_INTEGER) break
     until = oldest - 1
   }
 
@@ -165,14 +182,25 @@ export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Even
 
   const batches: Promise<Event[]>[] = []
   if (wsRelays.length > 0) {
-    batches.push(queryService.fetchEvents(wsRelays, [filter], QUERY_OPTS))
+    batches.push(
+      queryService.fetchEvents(wsRelays, [filter], QUERY_OPTS).catch((e) => {
+        if (import.meta.env.DEV) {
+          logger.warn('[Library] WS index fetch failed', {
+            message: e instanceof Error ? e.message : String(e)
+          })
+        }
+        return [] as Event[]
+      })
+    )
   }
   for (const httpRelay of httpRelays) {
     batches.push(fetchPaginatedFromHttpIndexRelay(httpRelay, filter))
   }
 
-  const networkMerged =
-    batches.length > 0 ? dedupeEventsById((await Promise.all(batches)).flat()) : []
+  const settled = await Promise.allSettled(batches)
+  const networkMerged = dedupeEventsById(
+    settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+  )
   const merged = dedupeEventsById([...cached, ...networkMerged])
   const valid = filterValidIndexEvents(merged)
   void persistLibraryIndexCacheEvents(valid)
@@ -258,7 +286,8 @@ async function fetchHttpEngagementByAddresses(
 export async function fetchPublicationEngagementMaps(
   relayUrls: string[],
   targetAddresses: Set<string>,
-  targetEventIds: Set<string>
+  targetEventIds: Set<string>,
+  options?: { httpOnly?: boolean }
 ): Promise<PublicationEngagementMaps> {
   if (relayUrls.length === 0 || targetAddresses.size === 0) {
     return {
@@ -272,6 +301,7 @@ export async function fetchPublicationEngagementMaps(
   const addressChunks = chunkArray([...targetAddresses], ENGAGEMENT_ADDRESS_CHUNK)
   const eventIdChunks = chunkArray([...targetEventIds], ENGAGEMENT_EVENT_ID_CHUNK)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(relayUrls)
+  const useWs = !options?.httpOnly && wsRelays.length > 0
 
   const highlightFilters = addressChunks.map(
     (chunk): Filter => ({ kinds: [kinds.Highlights], '#a': chunk, limit: chunk.length * 12 })
@@ -287,24 +317,24 @@ export async function fetchPublicationEngagementMaps(
   )
 
   const highlightPromise = Promise.all([
-    wsRelays.length > 0 && highlightFilters.length > 0
+    useWs && highlightFilters.length > 0
       ? queryService.fetchEvents(wsRelays, highlightFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, kinds.Highlights, '#a', addressChunks)
   ]).then(([scoped, bulk]) => dedupeEventsById([...scoped, ...bulk]))
 
   const labelPromise = Promise.all([
-    wsRelays.length > 0 && labelAddressFilters.length > 0
+    useWs && labelAddressFilters.length > 0
       ? queryService.fetchEvents(wsRelays, labelAddressFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    wsRelays.length > 0 && labelEventFilters.length > 0
+    useWs && labelEventFilters.length > 0
       ? queryService.fetchEvents(wsRelays, labelEventFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.LABEL, '#a', addressChunks)
   ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
 
   const commentPromise = Promise.all([
-    wsRelays.length > 0 && commentWsFilters.length > 0
+    useWs && commentWsFilters.length > 0
       ? queryService.fetchEvents(wsRelays, commentWsFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.COMMENT, '#A', addressChunks)
@@ -513,7 +543,15 @@ async function buildEngagedFromCache(
 
 export async function loadLibraryPublicationIndex(
   relayUrls: string[],
-  options?: { forceRefresh?: boolean }
+  options?: {
+    forceRefresh?: boolean
+    /** Called as soon as kind-30040 indexes are loaded — before engagement (which can take minutes). */
+    onIndexesReady?: (snapshot: {
+      engaged: LibraryPublicationEntry[]
+      allIndexCount: number
+      topLevelCount: number
+    }) => void
+  }
 ): Promise<{
   engaged: LibraryPublicationEntry[]
   allIndexCount: number
@@ -547,7 +585,15 @@ export async function loadLibraryPublicationIndex(
   }
 
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const topLevelForHydrate = getTopLevelIndexEvents(indexEvents)
+  let topLevel = getTopLevelIndexEvents(indexEvents)
+
+  options?.onIndexesReady?.({
+    engaged: buildRecentPublicationEntries(topLevel),
+    allIndexCount: indexEvents.length,
+    topLevelCount: topLevel.length
+  })
+
+  const topLevelForHydrate = topLevel
   await hydrateNestedIndexEvents(indexEvents, indexByAddress, relayUrls, {
     maxPasses: 1,
     maxMissingPerPass: HYDRATE_MISSING_CAP,
@@ -557,6 +603,7 @@ export async function loadLibraryPublicationIndex(
     logger.info('[Library] nested hydrate done', { indexCount: indexEvents.length })
   }
 
+  topLevel = getTopLevelIndexEvents(indexEvents)
   const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
   const targetEventIds = collectPublicationIndexEventIds(indexEvents)
   if (import.meta.env.DEV) {
@@ -565,11 +612,39 @@ export async function loadLibraryPublicationIndex(
       targetEventIds: targetEventIds.size
     })
   }
-  const engagement = await fetchPublicationEngagementMaps(
-    relayUrls,
-    targetAddresses,
-    targetEventIds
-  )
+
+  let engagement: PublicationEngagementMaps
+  try {
+    engagement = await Promise.race([
+      fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds, {
+        httpOnly: true
+      }),
+      new Promise<PublicationEngagementMaps>((resolve) => {
+        window.setTimeout(
+          () =>
+            resolve({
+              labelAddresses: new Set(),
+              labelEventIds: new Set(),
+              commentAddresses: new Set(),
+              highlightAddresses: new Set()
+            }),
+          ENGAGEMENT_FETCH_TIMEOUT_MS
+        )
+      })
+    ])
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] engagement fetch failed', {
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+    engagement = {
+      labelAddresses: new Set(),
+      labelEventIds: new Set(),
+      commentAddresses: new Set(),
+      highlightAddresses: new Set()
+    }
+  }
   if (import.meta.env.DEV) {
     logger.info('[Library] engagement maps built', {
       labels: engagement.labelAddresses.size + engagement.labelEventIds.size,
@@ -580,7 +655,6 @@ export async function loadLibraryPublicationIndex(
 
   sessionCache = { relayKey: key, indexEvents, indexByAddress, engagement }
 
-  const topLevel = getTopLevelIndexEvents(indexEvents)
   const engaged = pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
 
   if (import.meta.env.DEV) {

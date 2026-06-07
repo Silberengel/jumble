@@ -1654,6 +1654,7 @@ export default {
     'Library empty': 'Noch keine Publikationen auf deinen Relays gefunden.',
     'Library empty filtered': 'Keine Publikationen entsprechen den Filtern.',
     'Library loading': 'Publikationen werden von Dokument-Relays geladen…',
+    'Library engagement loading': 'Engagement-Filter werden aktualisiert…',
     'Library status line': '{{shown}} angezeigt · {{topLevel}} Top-Level · {{total}} Indizes geladen',
     'Library badge label': 'Label',
     'Library badge comment': 'Kommentar',

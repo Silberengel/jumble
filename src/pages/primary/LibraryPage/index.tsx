@@ -21,6 +21,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     showOnlyMine,
     setShowOnlyMine,
     loading,
+    engagementLoading,
     error,
     allIndexCount,
     topLevelCount,
@@ -69,13 +70,15 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         ) : null}
         {loading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
+        ) : engagementLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library engagement loading')}</p>
         ) : null}
         {statusLine ? (
           <p className="mb-4 text-xs text-muted-foreground">{statusLine}</p>
         ) : null}
         <LibraryPublicationGrid
           entries={entries}
-          loading={loading}
+          loading={loading && entries.length === 0}
           emptyMessage={
             searchQuery.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }

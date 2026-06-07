@@ -16,7 +16,7 @@ export function eventTagAddress(event: Event): string | null {
 export function filterValidIndexEvents(events: Event[]): Event[] {
   return events.filter((event) => {
     if (event.kind !== ExtendedKind.PUBLICATION) return false
-    if (event.content != null && event.content.length > 0) return false
+    if ((event.content ?? '') !== '') return false
     const hasTitle = event.tags.some(
       (t) => (t[0] || '').trim().toLowerCase() === 'title' && t[1]
     )

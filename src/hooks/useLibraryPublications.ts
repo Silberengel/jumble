@@ -11,7 +11,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const SEARCH_DEBOUNCE_MS = 300
-const LOAD_TIMEOUT_MS = 90_000
+const LOAD_TIMEOUT_MS = 120_000
 
 export function useLibraryPublications(isActive: boolean) {
   const { pubkey } = useNostr()
@@ -20,11 +20,11 @@ export function useLibraryPublications(isActive: boolean) {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showOnlyMine, setShowOnlyMine] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [engagementLoading, setEngagementLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [allIndexCount, setAllIndexCount] = useState(0)
   const [topLevelCount, setTopLevelCount] = useState(0)
   const loadGenRef = useRef(0)
-  const inFlightRef = useRef(0)
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(searchQuery), SEARCH_DEBOUNCE_MS)
@@ -34,8 +34,8 @@ export function useLibraryPublications(isActive: boolean) {
   const load = useCallback(
     async (forceRefresh = false) => {
       const gen = ++loadGenRef.current
-      inFlightRef.current += 1
       setLoading(true)
+      setEngagementLoading(false)
       setError(null)
       if (import.meta.env.DEV) {
         logger.info('[Library] page load requested', { forceRefresh, gen })
@@ -48,7 +48,17 @@ export function useLibraryPublications(isActive: boolean) {
         })
         try {
           const result = await Promise.race([
-            loadLibraryPublicationIndex(relays, { forceRefresh }),
+            loadLibraryPublicationIndex(relays, {
+              forceRefresh,
+              onIndexesReady: (snapshot) => {
+                if (gen !== loadGenRef.current) return
+                setEntries(snapshot.engaged)
+                setAllIndexCount(snapshot.allIndexCount)
+                setTopLevelCount(snapshot.topLevelCount)
+                setLoading(false)
+                setEngagementLoading(true)
+              }
+            }),
             timeoutPromise
           ])
           if (gen !== loadGenRef.current) return
@@ -66,9 +76,9 @@ export function useLibraryPublications(isActive: boolean) {
           logger.warn('[Library] page load failed', { message, gen })
         }
       } finally {
-        inFlightRef.current = Math.max(0, inFlightRef.current - 1)
-        if (inFlightRef.current === 0) {
+        if (gen === loadGenRef.current) {
           setLoading(false)
+          setEngagementLoading(false)
         }
       }
     },
@@ -102,6 +112,7 @@ export function useLibraryPublications(isActive: boolean) {
     showOnlyMine,
     setShowOnlyMine,
     loading,
+    engagementLoading,
     error,
     allIndexCount,
     topLevelCount,
