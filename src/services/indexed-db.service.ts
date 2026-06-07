@@ -27,6 +27,7 @@ import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
+import { isVerifiedPublicationIndex } from '@/lib/publication-index'
 import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import {
@@ -3689,6 +3690,39 @@ class IndexedDbService {
     } catch {
       return 2048
     }
+  }
+
+  async pruneUnverifiedLibraryPublicationIndexCacheEvents(): Promise<number> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return 0
+
+    const toDelete: string[] = []
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve()
+          return
+        }
+        const row = cursor.value as TLibraryPublicationIndexCacheRow
+        if (row?.value?.kind === ExtendedKind.PUBLICATION && !isVerifiedPublicationIndex(row.value)) {
+          toDelete.push(cursor.key as string)
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+
+    for (const key of toDelete) {
+      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
+    }
+    return toDelete.length
   }
 
   async getLibraryPublicationIndexCacheEvents(): Promise<Event[]> {

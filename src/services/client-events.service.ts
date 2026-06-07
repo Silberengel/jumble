@@ -1,3 +1,4 @@
+import { isVerifiedPublicationIndex } from '@/lib/publication-index'
 import {
   AUTHOR_CORE_PREFETCH_ON_INGEST_KINDS,
   ExtendedKind,
@@ -670,6 +671,7 @@ export class EventService {
    */
   addEventToCache(event: NEvent, ingestOpts?: ShouldDropEventOnIngestOptions): void {
     if (shouldDropEventOnIngest(event, ingestOpts)) return
+    if (event.kind === ExtendedKind.PUBLICATION && !isVerifiedPublicationIndex(event)) return
     const cleanEvent = { ...event }
     delete (cleanEvent as any).relayStatuses
     // REQ filters and nip19 decode use lowercase hex; some relays/clients emit uppercase ids.

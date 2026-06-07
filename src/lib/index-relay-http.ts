@@ -16,7 +16,7 @@ import {
   normalizeHttpRelayUrl
 } from '@/lib/url'
 import type { Filter, Event as NEvent } from 'nostr-tools'
-import { validateEvent, verifyEvent } from 'nostr-tools'
+import { verifyEvent } from 'nostr-tools'
 
 function trimSlash(base: string): string {
   return base.replace(/\/+$/, '')
@@ -223,7 +223,7 @@ function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
 
 /**
  * Parse HTTP index relay rows for Library discovery. Kind 30040 content is always normalized to `''`.
- * When verify fails (some index mirrors store stale id/sig), accept structurally valid 30040 rows.
+ * Signature must verify — tag order is part of the signed event (NKBIP-01 reading order).
  */
 export function rawToIndexRelayEvent(raw: Record<string, unknown>): NEvent | null {
   try {
@@ -255,9 +255,7 @@ export function rawToIndexRelayEvent(raw: Record<string, unknown>): NEvent | nul
       content,
       sig
     } as NEvent
-    if (verifyEvent(ev)) return ev
-    if (kind === ExtendedKind.PUBLICATION && validateEvent(ev)) return ev
-    return null
+    return verifyEvent(ev) ? ev : null
   } catch {
     return null
   }

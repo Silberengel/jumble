@@ -5,6 +5,23 @@ import {
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
+import { verifyEvent } from 'nostr-tools'
+
+/** Normalize kind-30040 rows before signature check (NKBIP-01 empty content; lowercase hex). */
+export function publicationIndexForVerify(event: Event): Event {
+  return {
+    ...event,
+    id: event.id.toLowerCase(),
+    pubkey: event.pubkey.toLowerCase(),
+    content: event.content ?? ''
+  }
+}
+
+/** True when the event is a kind-30040 index and the signature matches the tag array. */
+export function isVerifiedPublicationIndex(event: Event): boolean {
+  if (event.kind !== ExtendedKind.PUBLICATION) return false
+  return verifyEvent(publicationIndexForVerify(event))
+}
 
 export function eventTagAddress(event: Event): string | null {
   const d = event.tags.find((t) => (t[0] || '').trim().toLowerCase() === 'd')?.[1]
@@ -23,7 +40,7 @@ export function filterValidIndexEvents(events: Event[]): Event[] {
     const hasD = event.tags.some((t) => (t[0] || '').trim().toLowerCase() === 'd' && t[1])
     const hasA = event.tags.some((t) => t[0] === 'a' && t[1])
     const hasE = event.tags.some((t) => t[0] === 'e' && t[1])
-    return hasTitle && hasD && (hasA || hasE)
+    return hasTitle && hasD && (hasA || hasE) && isVerifiedPublicationIndex(event)
   })
 }
 

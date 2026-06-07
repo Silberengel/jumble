@@ -4,12 +4,20 @@ import {
   getLibraryIndexCacheBudget
 } from '@/lib/library-index-cache-config'
 import logger from '@/lib/logger'
+import { isVerifiedPublicationIndex } from '@/lib/publication-index'
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
 export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
   try {
-    return await indexedDb.getLibraryPublicationIndexCacheEvents()
+    const cached = await indexedDb.getLibraryPublicationIndexCacheEvents()
+    const verified = cached.filter(isVerifiedPublicationIndex)
+    if (verified.length < cached.length) {
+      void indexedDb
+        .pruneUnverifiedLibraryPublicationIndexCacheEvents()
+        .catch(() => {})
+    }
+    return verified
   } catch (e) {
     if (import.meta.env.DEV) {
       logger.warn('[Library] index IDB read failed', {

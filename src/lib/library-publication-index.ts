@@ -20,6 +20,7 @@ import {
   hydrateNestedIndexEvents
 } from '@/lib/publication-index'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
+import { verifyEvent } from 'nostr-tools'
 import { isEventInPinList } from '@/lib/replaceable-list-latest'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
@@ -215,7 +216,18 @@ function dedupeEventsById(events: Event[]): Event[] {
   const byId = new Map<string, Event>()
   for (const ev of events) {
     const prev = byId.get(ev.id)
-    if (!prev || ev.created_at > prev.created_at) byId.set(ev.id, ev)
+    if (!prev) {
+      byId.set(ev.id, ev)
+      continue
+    }
+    const prevVerified = verifyEvent(prev)
+    const nextVerified = verifyEvent(ev)
+    if (nextVerified && !prevVerified) {
+      byId.set(ev.id, ev)
+      continue
+    }
+    if (prevVerified && !nextVerified) continue
+    if (ev.created_at > prev.created_at) byId.set(ev.id, ev)
   }
   return [...byId.values()]
 }

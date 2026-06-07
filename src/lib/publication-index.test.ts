@@ -9,19 +9,21 @@ import {
   getTopLevelIndexEvents
 } from '@/lib/publication-index'
 import type { Event } from 'nostr-tools'
+import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools'
 
-const PK = 'a'.repeat(64)
+const sk = generateSecretKey()
+const PK = getPublicKey(sk)
 
-function indexEvent(d: string, aTags: string[], id = d.padEnd(64, '0').slice(0, 64)): Event {
-  return {
-    id,
-    kind: ExtendedKind.PUBLICATION,
-    pubkey: PK,
-    created_at: 100,
-    content: '',
-    tags: [['d', d], ['title', `Title ${d}`], ...aTags.map((a) => ['a', a] as [string, string])],
-    sig: 'c'.repeat(128)
-  }
+function indexEvent(d: string, aTags: string[]): Event {
+  return finalizeEvent(
+    {
+      kind: ExtendedKind.PUBLICATION,
+      created_at: 100,
+      content: '',
+      tags: [['d', d], ['title', `Title ${d}`], ...aTags.map((a) => ['a', a] as [string, string])]
+    },
+    sk
+  )
 }
 
 function contentEvent(d: string, id = d.padEnd(64, '1').slice(0, 64)): Event {
@@ -50,7 +52,7 @@ describe('publication-index', () => {
   it('getTopLevelIndexEvents excludes nested 30040 children', () => {
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr, `30041:${PK}:intro`])
-    const child = indexEvent('part-1', [`30041:${PK}:chapter-1`], '2'.repeat(64))
+    const child = indexEvent('part-1', [`30041:${PK}:chapter-1`])
     const top = getTopLevelIndexEvents([root, child])
     expect(top).toHaveLength(1)
     expect(eventTagAddress(top[0])).toBe(`30040:${PK}:book`)
@@ -60,7 +62,7 @@ describe('publication-index', () => {
     const childAddr = `30040:${PK}:part-1`
     const leafAddr = `30041:${PK}:chapter-1`
     const root = indexEvent('book', [childAddr, `30041:${PK}:intro`])
-    const child = indexEvent('part-1', [leafAddr], '2'.repeat(64))
+    const child = indexEvent('part-1', [leafAddr])
     const indexByAddress = buildIndexByAddress([root, child])
 
     const reachable = collectReachableAddressesCached(root, indexByAddress)
@@ -74,7 +76,7 @@ describe('publication-index', () => {
   it('fetchMissingIndex resolves nested index not in initial cache', async () => {
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr])
-    const child = indexEvent('part-1', [`30041:${PK}:chapter-1`], '2'.repeat(64))
+    const child = indexEvent('part-1', [`30041:${PK}:chapter-1`])
     const indexByAddress = buildIndexByAddress([root])
 
     const reachable = await collectReachableAddresses(root, indexByAddress, async (addr) => {
