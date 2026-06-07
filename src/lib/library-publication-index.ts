@@ -54,6 +54,8 @@ const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
+/** NIP-51 pin list (kind 10001). */
+const PIN_LIST_KIND = 10001
 const QUERY_OPTS = {
   globalTimeout: 18_000,
   eoseTimeout: 3_000,
@@ -74,7 +76,13 @@ export type PublicationEngagementMaps = {
   myHighlightAddresses: Set<string>
   myHighlightEventIds: Set<string>
   commentAddresses: Set<string>
+  commentEventIds: Set<string>
   highlightAddresses: Set<string>
+  highlightEventIds: Set<string>
+  bookmarkAddresses: Set<string>
+  bookmarkEventIds: Set<string>
+  pinAddresses: Set<string>
+  pinEventIds: Set<string>
 }
 
 export type LibraryPublicationEntry = {
@@ -88,6 +96,8 @@ export type LibraryPublicationEntry = {
   hasMyHighlight: boolean
   hasComment: boolean
   hasHighlight: boolean
+  hasBookmark: boolean
+  hasPin: boolean
   engagementCount: number
 }
 
@@ -120,9 +130,15 @@ function librarySearchFingerprint(context: LibrarySearchContext): string {
     ? engagement.labelAddresses.size +
       engagement.labelEventIds.size +
       engagement.commentAddresses.size +
+      engagement.commentEventIds.size +
       engagement.highlightAddresses.size +
+      engagement.highlightEventIds.size +
       engagement.booklistAddresses.size +
       engagement.booklistEventIds.size +
+      engagement.bookmarkAddresses.size +
+      engagement.bookmarkEventIds.size +
+      engagement.pinAddresses.size +
+      engagement.pinEventIds.size +
       engagement.myBooklistAddresses.size +
       engagement.myBooklistEventIds.size +
       engagement.myCommentAddresses.size +
@@ -344,7 +360,9 @@ export function buildEngagementMapsFromEvents(
   highlights: Event[],
   targetAddresses?: Set<string>,
   targetEventIds?: Set<string>,
-  viewerPubkey?: string | null
+  viewerPubkey?: string | null,
+  bookmarkLists: Event[] = [],
+  pinLists: Event[] = []
 ): PublicationEngagementMaps {
   const labelAddresses = new Set<string>()
   const labelEventIds = new Set<string>()
@@ -359,7 +377,13 @@ export function buildEngagementMapsFromEvents(
   const myHighlightAddresses = new Set<string>()
   const myHighlightEventIds = new Set<string>()
   const commentAddresses = new Set<string>()
+  const commentEventIds = new Set<string>()
   const highlightAddresses = new Set<string>()
+  const highlightEventIds = new Set<string>()
+  const bookmarkAddresses = new Set<string>()
+  const bookmarkEventIds = new Set<string>()
+  const pinAddresses = new Set<string>()
+  const pinEventIds = new Set<string>()
 
   const addressMatches = (addr: string) => !targetAddresses || targetAddresses.has(addr)
   const eventIdMatches = (id: string) => !targetEventIds || targetEventIds.has(id.toLowerCase())
@@ -407,8 +431,9 @@ export function buildEngagementMapsFromEvents(
         commentAddresses.add(tag[1])
         if (isViewerEvent) myCommentAddresses.add(tag[1])
       }
-      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1]) && isViewerEvent) {
-        myCommentEventIds.add(tag[1].toLowerCase())
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
+        commentEventIds.add(tag[1].toLowerCase())
+        if (isViewerEvent) myCommentEventIds.add(tag[1].toLowerCase())
       }
     }
   }
@@ -420,8 +445,31 @@ export function buildEngagementMapsFromEvents(
         highlightAddresses.add(tag[1])
         if (isViewerEvent) myHighlightAddresses.add(tag[1])
       }
-      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1]) && isViewerEvent) {
-        myHighlightEventIds.add(tag[1].toLowerCase())
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
+        highlightEventIds.add(tag[1].toLowerCase())
+        if (isViewerEvent) myHighlightEventIds.add(tag[1].toLowerCase())
+      }
+    }
+  }
+
+  for (const ev of bookmarkLists) {
+    for (const tag of ev.tags) {
+      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
+        bookmarkAddresses.add(tag[1])
+      }
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
+        bookmarkEventIds.add(tag[1].toLowerCase())
+      }
+    }
+  }
+
+  for (const ev of pinLists) {
+    for (const tag of ev.tags) {
+      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
+        pinAddresses.add(tag[1])
+      }
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
+        pinEventIds.add(tag[1].toLowerCase())
       }
     }
   }
@@ -440,7 +488,13 @@ export function buildEngagementMapsFromEvents(
     myHighlightAddresses,
     myHighlightEventIds,
     commentAddresses,
-    highlightAddresses
+    commentEventIds,
+    highlightAddresses,
+    highlightEventIds,
+    bookmarkAddresses,
+    bookmarkEventIds,
+    pinAddresses,
+    pinEventIds
   }
 }
 
@@ -500,13 +554,34 @@ export async function fetchPublicationEngagementMaps(
   const commentWsFilters = addressChunks.map(
     (chunk): Filter => ({ kinds: [ExtendedKind.COMMENT], '#A': chunk, limit: chunk.length * 12 })
   )
+  const commentEventFilters = eventIdChunks.map(
+    (chunk): Filter => ({ kinds: [ExtendedKind.COMMENT], '#e': chunk, limit: chunk.length * 12 })
+  )
+  const highlightEventFilters = eventIdChunks.map(
+    (chunk): Filter => ({ kinds: [kinds.Highlights], '#e': chunk, limit: chunk.length * 12 })
+  )
+  const bookmarkAddressFilters = addressChunks.map(
+    (chunk): Filter => ({ kinds: [kinds.BookmarkList], '#a': chunk, limit: chunk.length * 8 })
+  )
+  const bookmarkEventFilters = eventIdChunks.map(
+    (chunk): Filter => ({ kinds: [kinds.BookmarkList], '#e': chunk, limit: chunk.length * 8 })
+  )
+  const pinAddressFilters = addressChunks.map(
+    (chunk): Filter => ({ kinds: [PIN_LIST_KIND], '#a': chunk, limit: chunk.length * 8 })
+  )
+  const pinEventFilters = eventIdChunks.map(
+    (chunk): Filter => ({ kinds: [PIN_LIST_KIND], '#e': chunk, limit: chunk.length * 8 })
+  )
 
   const highlightPromise = Promise.all([
     useWsEngagement && highlightFilters.length > 0
       ? queryService.fetchEvents(wsRelays, highlightFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
+    useWsEngagement && highlightEventFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, highlightEventFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, kinds.Highlights, '#a', addressChunks)
-  ]).then(([scoped, bulk]) => dedupeEventsById([...scoped, ...bulk]))
+  ]).then(([scoped, byEvent, bulk]) => dedupeEventsById([...scoped, ...byEvent, ...bulk]))
 
   const labelPromise = Promise.all([
     useWsEngagement && labelAddressFilters.length > 0
@@ -522,13 +597,38 @@ export async function fetchPublicationEngagementMaps(
     useWsEngagement && commentWsFilters.length > 0
       ? queryService.fetchEvents(wsRelays, commentWsFilters, QUERY_OPTS)
       : Promise.resolve([] as Event[]),
+    useWsEngagement && commentEventFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, commentEventFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
     fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.COMMENT, '#A', addressChunks)
-  ]).then(([scoped, bulk]) => dedupeEventsById([...scoped, ...bulk]))
+  ]).then(([scoped, byEvent, bulk]) => dedupeEventsById([...scoped, ...byEvent, ...bulk]))
 
-  const [highlights, labels, comments] = await Promise.all([
+  const bookmarkPromise = Promise.all([
+    useWsEngagement && bookmarkAddressFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, bookmarkAddressFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
+    useWsEngagement && bookmarkEventFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, bookmarkEventFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
+    fetchHttpEngagementByAddresses(httpRelays, kinds.BookmarkList, '#a', addressChunks)
+  ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
+
+  const pinPromise = Promise.all([
+    useWsEngagement && pinAddressFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, pinAddressFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
+    useWsEngagement && pinEventFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, pinEventFilters, QUERY_OPTS)
+      : Promise.resolve([] as Event[]),
+    fetchHttpEngagementByAddresses(httpRelays, PIN_LIST_KIND, '#a', addressChunks)
+  ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
+
+  const [highlights, labels, comments, bookmarkLists, pinLists] = await Promise.all([
     highlightPromise,
     labelPromise,
-    commentPromise
+    commentPromise,
+    bookmarkPromise,
+    pinPromise
   ])
 
   return buildEngagementMapsFromEvents(
@@ -537,7 +637,9 @@ export async function fetchPublicationEngagementMaps(
     dedupeEventsById(highlights),
     targetAddresses,
     targetEventIds,
-    options?.viewerPubkey
+    options?.viewerPubkey,
+    dedupeEventsById(bookmarkLists),
+    dedupeEventsById(pinLists)
   )
 }
 
@@ -546,12 +648,54 @@ function addressHasEngagement(
   eventId: string | undefined,
   maps: PublicationEngagementMaps
 ): { hasLabel: boolean; hasComment: boolean; hasHighlight: boolean } {
+  const idLower = eventId?.toLowerCase()
   const hasLabel =
-    maps.labelAddresses.has(address) ||
-    (eventId ? maps.labelEventIds.has(eventId.toLowerCase()) : false)
-  const hasComment = maps.commentAddresses.has(address)
-  const hasHighlight = maps.highlightAddresses.has(address)
+    maps.labelAddresses.has(address) || (idLower ? maps.labelEventIds.has(idLower) : false)
+  const hasComment =
+    maps.commentAddresses.has(address) || (idLower ? maps.commentEventIds.has(idLower) : false)
+  const hasHighlight =
+    maps.highlightAddresses.has(address) || (idLower ? maps.highlightEventIds.has(idLower) : false)
   return { hasLabel, hasComment, hasHighlight }
+}
+
+function collectBookmarkPinFlagsForTarget(
+  address: string,
+  eventId: string | undefined,
+  maps: PublicationEngagementMaps
+): { hasBookmark: boolean; hasPin: boolean } {
+  const idLower = eventId?.toLowerCase()
+  return {
+    hasBookmark:
+      maps.bookmarkAddresses.has(address) || (idLower ? maps.bookmarkEventIds.has(idLower) : false),
+    hasPin: maps.pinAddresses.has(address) || (idLower ? maps.pinEventIds.has(idLower) : false)
+  }
+}
+
+function targetHasPublicationEngagement(
+  flags: { hasLabel: boolean; hasComment: boolean; hasHighlight: boolean },
+  booklistFlags: { hasBooklistLabel: boolean },
+  bookmarkPinFlags: { hasBookmark: boolean; hasPin: boolean }
+): boolean {
+  return (
+    flags.hasLabel ||
+    flags.hasComment ||
+    flags.hasHighlight ||
+    booklistFlags.hasBooklistLabel ||
+    bookmarkPinFlags.hasBookmark ||
+    bookmarkPinFlags.hasPin
+  )
+}
+
+/** True when a library row has any engagement signal from any author. */
+export function publicationEntryHasEngagement(entry: LibraryPublicationEntry): boolean {
+  return (
+    entry.hasLabel ||
+    entry.hasBooklistLabel ||
+    entry.hasComment ||
+    entry.hasHighlight ||
+    entry.hasBookmark ||
+    entry.hasPin
+  )
 }
 
 function collectLabelNamesForTarget(
@@ -617,6 +761,8 @@ export function buildLibraryPublicationEntry(
   let hasLabel = false
   let hasComment = false
   let hasHighlight = false
+  let hasBookmark = false
+  let hasPin = false
   let hasBooklistLabel = false
   let hasMyBooklistLabel = false
   let hasMyComment = false
@@ -628,6 +774,7 @@ export function buildLibraryPublicationEntry(
     const indexed = indexByAddress.get(addr)
     const flags = addressHasEngagement(addr, indexed?.id, engagement)
     const booklistFlags = collectBooklistFlagsForTarget(addr, indexed?.id, engagement)
+    const bookmarkPinFlags = collectBookmarkPinFlagsForTarget(addr, indexed?.id, engagement)
     const myFlags = collectMyEngagementFlagsForTarget(addr, indexed?.id, engagement)
     if (flags.hasLabel) {
       hasLabel = true
@@ -639,15 +786,20 @@ export function buildLibraryPublicationEntry(
     if (myFlags.hasMyHighlight) hasMyHighlight = true
     if (flags.hasComment) hasComment = true
     if (flags.hasHighlight) hasHighlight = true
-    if (flags.hasLabel || flags.hasComment || flags.hasHighlight) engagementCount++
+    if (bookmarkPinFlags.hasBookmark) hasBookmark = true
+    if (bookmarkPinFlags.hasPin) hasPin = true
+    if (targetHasPublicationEngagement(flags, booklistFlags, bookmarkPinFlags)) engagementCount++
   }
 
   const rootFlags = addressHasEngagement(rootAddr ?? '', root.id, engagement)
   const rootBooklistFlags = collectBooklistFlagsForTarget(rootAddr ?? '', root.id, engagement)
+  const rootBookmarkPinFlags = collectBookmarkPinFlagsForTarget(rootAddr ?? '', root.id, engagement)
   const rootMyFlags = collectMyEngagementFlagsForTarget(rootAddr ?? '', root.id, engagement)
   hasLabel = hasLabel || rootFlags.hasLabel
   hasComment = hasComment || rootFlags.hasComment
   hasHighlight = hasHighlight || rootFlags.hasHighlight
+  hasBookmark = hasBookmark || rootBookmarkPinFlags.hasBookmark
+  hasPin = hasPin || rootBookmarkPinFlags.hasPin
   hasBooklistLabel = hasBooklistLabel || rootBooklistFlags.hasBooklistLabel
   hasMyBooklistLabel = hasMyBooklistLabel || rootBooklistFlags.hasMyBooklistLabel
   hasMyComment = hasMyComment || rootMyFlags.hasMyComment
@@ -666,6 +818,8 @@ export function buildLibraryPublicationEntry(
     hasMyHighlight,
     hasComment,
     hasHighlight,
+    hasBookmark,
+    hasPin,
     engagementCount
   }
 }
@@ -687,7 +841,7 @@ export function filterEngagedPublications(
 ): LibraryPublicationEntry[] {
   return getTopLevelIndexEvents(roots)
     .map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
-    .filter((entry) => entry.hasLabel || entry.hasComment || entry.hasHighlight)
+    .filter((entry) => publicationEntryHasEngagement(entry))
 }
 
 export function buildRecentPublicationEntries(
@@ -713,7 +867,7 @@ export function computeLibraryFeedRootOrder(
   const restRoots: Event[] = []
   for (const root of topLevel) {
     const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
-    if (entry.hasLabel || entry.hasComment || entry.hasHighlight) {
+    if (publicationEntryHasEngagement(entry)) {
       engagedRoots.push(root)
     } else {
       restRoots.push(root)
@@ -787,7 +941,9 @@ export function pickLibraryPublicationEntries(
 
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
   return [...entries].sort((a, b) => {
-    if (a.hasLabel !== b.hasLabel) return a.hasLabel ? -1 : 1
+    const aEngaged = publicationEntryHasEngagement(a)
+    const bEngaged = publicationEntryHasEngagement(b)
+    if (aEngaged !== bEngaged) return aEngaged ? -1 : 1
     if (a.engagementCount !== b.engagementCount) return b.engagementCount - a.engagementCount
     return b.event.created_at - a.event.created_at
   })
@@ -810,7 +966,13 @@ function emptyPublicationEngagementMaps(): PublicationEngagementMaps {
     myHighlightAddresses: new Set(),
     myHighlightEventIds: new Set(),
     commentAddresses: new Set(),
-    highlightAddresses: new Set()
+    commentEventIds: new Set(),
+    highlightAddresses: new Set(),
+    highlightEventIds: new Set(),
+    bookmarkAddresses: new Set(),
+    bookmarkEventIds: new Set(),
+    pinAddresses: new Set(),
+    pinEventIds: new Set()
   }
 }
 

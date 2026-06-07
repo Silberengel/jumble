@@ -5,7 +5,7 @@ import type { LibraryPublicationEntry } from '@/lib/library-publication-index'
 import { isBooklistNip32Label } from '@/lib/nip32-label'
 import { cn } from '@/lib/utils'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { BookOpen, Highlighter, MessageSquare, Tag } from 'lucide-react'
+import { BookOpen, Bookmark, Highlighter, MessageSquare, Pin, Tag } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 function LabelBadgeIcon({ name }: { name: string }) {
@@ -23,7 +23,9 @@ function EngagementBadges({ entry }: { entry: LibraryPublicationEntry }) {
     otherLabels.length === 0 &&
     !entry.hasLabel &&
     !entry.hasComment &&
-    !entry.hasHighlight
+    !entry.hasHighlight &&
+    !entry.hasBookmark &&
+    !entry.hasPin
   ) {
     return null
   }
@@ -81,6 +83,18 @@ function EngagementBadges({ entry }: { entry: LibraryPublicationEntry }) {
         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           <Highlighter className="size-3" aria-hidden />
           {t('Library badge highlight')}
+        </span>
+      )}
+      {entry.hasBookmark && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          <Bookmark className="size-3" aria-hidden />
+          {t('Library badge bookmark')}
+        </span>
+      )}
+      {entry.hasPin && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          <Pin className="size-3" aria-hidden />
+          {t('Library badge pin')}
         </span>
       )}
     </div>

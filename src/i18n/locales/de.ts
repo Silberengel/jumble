@@ -1664,6 +1664,8 @@ export default {
     'Library badge label': 'Label',
     'Library badge comment': 'Kommentar',
     'Library badge highlight': 'Markierung',
+    'Library badge bookmark': 'Lesezeichen',
+    'Library badge pin': 'Angepinnt',
     'Publication version': 'v{{version}}',
     'Publication sections_one': '{{count}} Abschnitt',
     'Publication sections_other': '{{count}} Abschnitte',

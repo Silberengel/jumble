@@ -40,7 +40,13 @@ const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   myHighlightAddresses: new Set(),
   myHighlightEventIds: new Set(),
   commentAddresses: new Set(),
-  highlightAddresses: new Set()
+  commentEventIds: new Set(),
+  highlightAddresses: new Set(),
+  highlightEventIds: new Set(),
+  bookmarkAddresses: new Set(),
+  bookmarkEventIds: new Set(),
+  pinAddresses: new Set(),
+  pinEventIds: new Set()
 }
 
 const EMPTY_BOOKLIST_TARGETS = { addresses: new Set<string>(), eventIds: new Set<string>() }

@@ -39,6 +39,65 @@ function indexEvent(d: string, aTags: string[], id = d.padEnd(64, '0').slice(0, 
 }
 
 describe('library-publication-index', () => {
+  it('matches comments and highlights by root event id', () => {
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    const indexByAddress = buildIndexByAddress([root])
+    const comment: Event = {
+      id: '8'.repeat(64),
+      kind: ExtendedKind.COMMENT,
+      pubkey: 'f'.repeat(64),
+      created_at: 50,
+      content: 'nice book',
+      tags: [['e', root.id]],
+      sig: 'e'.repeat(128)
+    }
+    const highlight: Event = {
+      id: '9'.repeat(64),
+      kind: kinds.Highlights,
+      pubkey: 'f'.repeat(64),
+      created_at: 50,
+      content: 'quote',
+      tags: [['e', root.id]],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([], [comment], [highlight])
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
+    expect(engaged).toHaveLength(1)
+    expect(engaged[0].hasComment).toBe(true)
+    expect(engaged[0].hasHighlight).toBe(true)
+  })
+
+  it('matches bookmark and pin lists from any author', () => {
+    const rootAddr = `30040:${PK}:book`
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    const indexByAddress = buildIndexByAddress([root])
+    const bookmarkList: Event = {
+      id: 'b'.repeat(64),
+      kind: kinds.BookmarkList,
+      pubkey: 'f'.repeat(64),
+      created_at: 100,
+      content: '',
+      tags: [['a', rootAddr]],
+      sig: 'd'.repeat(128)
+    }
+    const pinList: Event = {
+      id: 'p'.repeat(64),
+      kind: 10001,
+      pubkey: 'e'.repeat(64),
+      created_at: 100,
+      content: '',
+      tags: [['e', root.id]],
+      sig: 'd'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([], [], [], undefined, undefined, null, [
+      bookmarkList
+    ], [pinList])
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
+    expect(engaged).toHaveLength(1)
+    expect(engaged[0].hasBookmark).toBe(true)
+    expect(engaged[0].hasPin).toBe(true)
+  })
+
   it('matches engagement on nested 30041 addresses', () => {
     const leafAddr = `30041:${PK}:chapter-1`
     const childAddr = `30040:${PK}:part-1`
@@ -147,6 +206,8 @@ describe('library-publication-index', () => {
         hasMyHighlight: false,
         hasComment: false,
         hasHighlight: false,
+        hasBookmark: false,
+        hasPin: false,
         engagementCount: 1
       }
     ]
@@ -358,6 +419,8 @@ describe('library-publication-index', () => {
         hasMyHighlight: false,
         hasComment: false,
         hasHighlight: false,
+        hasBookmark: false,
+        hasPin: false,
         engagementCount: 0
       },
       {
@@ -370,6 +433,8 @@ describe('library-publication-index', () => {
         hasMyHighlight: false,
         hasComment: false,
         hasHighlight: false,
+        hasBookmark: false,
+        hasPin: false,
         engagementCount: 0
       },
       {
@@ -382,6 +447,8 @@ describe('library-publication-index', () => {
         hasMyHighlight: false,
         hasComment: true,
         hasHighlight: false,
+        hasBookmark: false,
+        hasPin: false,
         engagementCount: 1
       },
       {
@@ -394,6 +461,8 @@ describe('library-publication-index', () => {
         hasMyHighlight: false,
         hasComment: false,
         hasHighlight: false,
+        hasBookmark: false,
+        hasPin: false,
         engagementCount: 0
       }
     ]
@@ -479,6 +548,8 @@ describe('library-publication-index', () => {
       hasMyHighlight: false,
       hasComment: false,
       hasHighlight: false,
+      hasBookmark: false,
+      hasPin: false,
       engagementCount: 0
     }
     const filtered = filterLibraryPublicationsByUser([entry], viewerPk, {

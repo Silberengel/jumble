@@ -1689,6 +1689,8 @@ export default {
     'Library badge my booklist': 'On my booklist',
     'Library badge comment': 'Comment',
     'Library badge highlight': 'Highlight',
+    'Library badge bookmark': 'Bookmark',
+    'Library badge pin': 'Pin',
     'Add to my booklist': 'Add to my booklist',
     'Remove from my booklist': 'Remove from my booklist',
     'Add to my booklist failed': 'Failed to add to booklist',
