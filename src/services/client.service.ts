@@ -168,13 +168,14 @@ import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/
 import { collectNip05ValuesFromKind0, profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
-import { filterRelaysForEventPublish, isReadOnlyRelayUrl } from '@/lib/relay-publish-filter'
+import { isReadOnlyRelayUrl } from '@/lib/relay-publish-filter'
 import { getPaymentAttestationTargetId } from '@/lib/superchat'
 import {
   buildPublicMessagePublishRelayUrls,
   collectRecipientInboxUrls
 } from '@/lib/public-message-publish-relays'
 import { buildPrioritizedWriteRelayUrls, dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
+import { filterPublishingRelayUrls } from '@/lib/social-kind-blocked-relays'
 import {
   IndexRelayTransportError,
   isIndexRelayTransportFailure,
@@ -961,14 +962,7 @@ class ClientService extends EventTarget {
    * Normalize, dedupe, then cap at {@link MAX_PUBLISH_RELAYS}.
    */
   private filterPublishingRelays(relays: string[], event: NEvent): string[] {
-    const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-    return dedupeNormalizeRelayUrlsOrdered(
-      filterRelaysForEventPublish(relays, event.kind).filter((url) => {
-        const n = normalizeRelayUrlByScheme(url) || url
-        if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
-        return true
-      })
-    )
+    return filterPublishingRelayUrls(relays, event.kind)
   }
 
   /** Kind 31987: always attempt the reviewed relay (`d` tag) first in the publish stack. */
@@ -1760,13 +1754,7 @@ class ClientService extends EventTarget {
           : relayUrls
     }
 
-    const socialKindBlockedSet = new Set(SOCIAL_KIND_BLOCKED_RELAY_URLS.map((u) => normalizeUrl(u) || u))
-    let filtered = filterRelaysForEventPublish(mergedRelayUrls, event.kind).filter((url) => {
-      const n = normalizeRelayUrlByScheme(url) || url
-      if (isSocialKindBlockedKind(event.kind) && socialKindBlockedSet.has(n)) return false
-      return true
-    })
-    filtered = Array.from(new Set(filtered))
+    let filtered = filterPublishingRelayUrls(mergedRelayUrls, event.kind)
     filtered = Array.from(new Set(filtered))
     const countAfterFiltersBeforeCap = filtered.length
     filtered = await this.capPublishRelayUrlsForPublish(

@@ -804,11 +804,15 @@ export const NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT: readonly number[] 
 
 /**
  * When a filter touches these kinds (or omits `kinds`), omit {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} from the relay
- * stack — those relays do not carry this note/comment surface (kinds **1** / **1111** / **11** per relay policy).
+ * stack — those relays do not carry this note/comment/reaction surface (kinds **1** / **7** / **11** / **1111** / **17**).
  * @see {@link relayFilterIncludesSocialKindBlockedKind}
  */
 const SOCIAL_KIND_BLOCKED_KINDS: readonly number[] = [
   kinds.ShortTextNote,
+  kinds.Reaction,
+  kinds.Repost,
+  ExtendedKind.GENERIC_REPOST,
+  ExtendedKind.EXTERNAL_REACTION,
   ExtendedKind.DISCUSSION,
   ExtendedKind.COMMENT
 ]

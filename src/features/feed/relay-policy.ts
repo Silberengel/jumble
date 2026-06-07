@@ -1,6 +1,5 @@
 import {
   READ_ONLY_RELAY_URLS,
-  SOCIAL_KIND_BLOCKED_RELAY_URLS,
   relayFilterIncludesSocialKindBlockedKind
 } from '@/constants'
 import { relayAllowsPublishKind } from '@/lib/relay-publish-filter'
@@ -11,6 +10,7 @@ import {
   relayUrlsStripExtendedTagReqBlocked
 } from '@/lib/relay-extended-tag-req-blocks'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
+import { isSocialKindBlockedRelayUrl } from '@/lib/social-kind-blocked-relays'
 import { isLocalNetworkUrl, normalizeHttpRelayUrl, normalizeRelayUrlByScheme } from '@/lib/url'
 import type { TSubRequestFilter } from '@/types'
 
@@ -134,7 +134,7 @@ function isReadOnlyRelay(norm: string): boolean {
 }
 
 function isSocialKindBlockedRelay(norm: string): boolean {
-  return normalizedSet(SOCIAL_KIND_BLOCKED_RELAY_URLS).has(norm)
+  return isSocialKindBlockedRelayUrl(norm)
 }
 
 function isExtendedTagBlockedRelay(norm: string): boolean {
