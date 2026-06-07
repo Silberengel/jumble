@@ -700,18 +700,30 @@ export function buildRecentPublicationEntries(
     .map((event) => buildLibraryPublicationEntry(event, indexByAddress, engagement))
 }
 
-/** Engaged publications first; when none match, show the newest top-level indexes (still enriched). */
+/** Engaged publications first, then fill with newest top-level indexes up to {@link LIBRARY_RECENT_FALLBACK_LIMIT}. */
 export function pickLibraryPublicationEntries(
   roots: Event[],
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  const enriched = getTopLevelIndexEvents(roots).map((root) =>
-    buildLibraryPublicationEntry(root, indexByAddress, engagement)
-  )
-  const engaged = enriched.filter((entry) => entry.hasLabel || entry.hasComment || entry.hasHighlight)
-  if (engaged.length > 0) return sortLibraryPublications(engaged)
-  return sortLibraryPublications(buildRecentPublicationEntries(roots, indexByAddress, engagement))
+  const engaged = filterEngagedPublications(roots, indexByAddress, engagement)
+  const recent = buildRecentPublicationEntries(roots, indexByAddress, engagement)
+  if (engaged.length === 0) return sortLibraryPublications(recent)
+
+  const seen = new Set<string>()
+  const merged: LibraryPublicationEntry[] = []
+  for (const entry of sortLibraryPublications(engaged)) {
+    if (seen.has(entry.event.id)) continue
+    seen.add(entry.event.id)
+    merged.push(entry)
+  }
+  for (const entry of recent) {
+    if (merged.length >= LIBRARY_RECENT_FALLBACK_LIMIT) break
+    if (seen.has(entry.event.id)) continue
+    seen.add(entry.event.id)
+    merged.push(entry)
+  }
+  return merged
 }
 
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {

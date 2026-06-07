@@ -253,6 +253,34 @@ describe('library-publication-index', () => {
     expect(picked.every((e) => e.engagementCount === 0)).toBe(true)
   })
 
+  it('pickLibraryPublicationEntries merges engaged roots with recent feed', () => {
+    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`], '1'.repeat(64))
+    engagedRoot.created_at = 5
+    const recentRoots = Array.from({ length: 5 }, (_, i) => {
+      const ev = indexEvent(`recent-${i}`, [`30041:${PK}:r-${i}`], String(i + 2).padEnd(64, '0').slice(0, 64))
+      ev.created_at = 100 + i
+      return ev
+    })
+    const roots = [engagedRoot, ...recentRoots]
+    const indexByAddress = buildIndexByAddress(roots)
+    const label: Event = {
+      id: '4'.repeat(64),
+      kind: ExtendedKind.LABEL,
+      pubkey: 'f'.repeat(64),
+      created_at: 50,
+      content: '',
+      tags: [['L', 'ugc'], ['l', 'booklist', 'ugc'], ['e', engagedRoot.id]],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([label], [], [])
+
+    const picked = pickLibraryPublicationEntries(roots, indexByAddress, engagement)
+
+    expect(picked.length).toBeGreaterThan(1)
+    expect(picked.some((e) => e.event.id === engagedRoot.id && e.hasBooklistLabel)).toBe(true)
+    expect(picked.some((e) => e.event.id === recentRoots[4].id)).toBe(true)
+  })
+
   it('buildRecentPublicationEntries caps at limit', () => {
     const roots = Array.from({ length: 12 }, (_, i) => {
       const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`], String(i).padEnd(64, '0').slice(0, 64))

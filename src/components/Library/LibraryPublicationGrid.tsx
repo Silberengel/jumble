@@ -1,8 +1,10 @@
 import PublicationCard from '@/components/Note/PublicationCard'
 import { Skeleton } from '@/components/ui/skeleton'
+import { libraryPublicationGridColumnClass, usePanelMode } from '@/hooks/usePanelMode'
 import type { LibraryPublicationEntry } from '@/lib/library-publication-index'
 import { isBooklistNip32Label } from '@/lib/nip32-label'
 import { cn } from '@/lib/utils'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { BookOpen, Highlighter, MessageSquare, Tag } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -95,10 +97,13 @@ export default function LibraryPublicationGrid({
   emptyMessage?: string
 }) {
   const { t } = useTranslation()
+  const { isSmallScreen } = useScreenSize()
+  const panelMode = usePanelMode()
+  const gridCols = libraryPublicationGridColumnClass(isSmallScreen, panelMode)
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className={cn('grid gap-4', gridCols)}>
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-48 w-full rounded-lg" />
         ))}
@@ -115,7 +120,7 @@ export default function LibraryPublicationGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className={cn('grid gap-4', gridCols)}>
       {entries.map((entry) => (
         <div
           key={entry.event.id}
