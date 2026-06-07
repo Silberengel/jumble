@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  gutenbergCoverCandidateUrls,
   gutenbergCoverImageUrl,
   gutenbergEbookPageUrl,
   gutenbergLibraryCoverImageUrl,
@@ -56,6 +57,21 @@ describe('gutenberg-cover', () => {
 
   it('builds gutenberg.org ebook page URL', () => {
     expect(gutenbergEbookPageUrl('28217')).toBe('https://www.gutenberg.org/ebooks/28217')
+  })
+
+  it('gutenbergCoverCandidateUrls tries small then medium in library mode', () => {
+    expect(
+      gutenbergCoverCandidateUrls(
+        'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg',
+        true
+      )
+    ).toEqual([
+      'https://www.gutenberg.org/cache/epub/11/pg11.cover.small.jpg',
+      'https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg'
+    ])
+    expect(gutenbergCoverCandidateUrls('https://example.com/cover.jpg', true)).toEqual([
+      'https://example.com/cover.jpg'
+    ])
   })
 
   it('normalizeGutenbergCoverImageUrl converts ebook pages to cover JPG', () => {

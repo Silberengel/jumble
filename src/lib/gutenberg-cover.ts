@@ -67,3 +67,20 @@ export function normalizeGutenbergCoverImageUrl(url: string): string {
   if (DIRECT_IMAGE_EXT.test(trimmed)) return trimmed
   return gutenbergCoverImageUrl(id)
 }
+
+/** Ordered cover URLs to try (library prefers small, then medium; always deduped). */
+export function gutenbergCoverCandidateUrls(url: string, preferSmall: boolean): string[] {
+  const trimmed = url.trim()
+  if (!trimmed) return []
+  const id = parseGutenbergEbookId(trimmed)
+  if (!id || !trimmed.toLowerCase().includes('gutenberg')) return [trimmed]
+
+  const ordered: string[] = []
+  if (preferSmall) ordered.push(gutenbergCoverImageUrl(id, 'small'))
+  ordered.push(gutenbergCoverImageUrl(id, 'medium'))
+  const normalized = normalizeGutenbergCoverImageUrl(trimmed)
+  for (const candidate of [normalized, trimmed]) {
+    if (!ordered.includes(candidate)) ordered.push(candidate)
+  }
+  return ordered
+}

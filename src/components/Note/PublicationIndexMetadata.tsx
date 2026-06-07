@@ -128,10 +128,10 @@ export default function PublicationIndexMetadata({
           autoLoadMedia={autoLoadMedia}
           size="default"
           layout="stacked"
-          className="mb-0 w-fit max-w-xl"
+          className="mb-0"
         />
       ) : isFull ? (
-        <PublicationCoverFallback layout="stacked" size="default" className="w-fit max-w-xl" />
+        <PublicationCoverFallback layout="stacked" size="default" className="mb-0" />
       ) : null}
 
       {showTitle ? (

@@ -70,6 +70,8 @@ export default function Image({
   className = '',
   classNames = {},
   hideIfError = false,
+  /** Called after internal URL fallbacks are exhausted and the image still failed to load. */
+  onFinalError,
   errorPlaceholder = <ImageOff />,
   style: wrapperStyleProp,
   holdUntilClick = false,
@@ -95,6 +97,7 @@ export default function Image({
   /** Caption below the image; defaults to resolved alt when {@link showAltCaption} is true. */
   caption?: string
   hideIfError?: boolean
+  onFinalError?: () => void
   errorPlaceholder?: React.ReactNode
   /** Passed to the inner `<img>` (e.g. profile banner vs avatar load order). */
   fetchPriority?: 'high' | 'low' | 'auto'
@@ -291,6 +294,7 @@ export default function Image({
     setIsLoading(false)
     setDisplaySkeleton(false)
     setHasError(true)
+    onFinalError?.()
   }
 
   const handleLoad = () => {

@@ -14,14 +14,17 @@ export default function PublicationCoverFallback({
   size?: 'library' | 'default'
   className?: string
 }) {
-  const maxClass = size === 'library' ? LIBRARY_PUBLICATION_COVER_MAX_CLASS : PUBLICATION_COVER_MAX_CLASS
+  const isLibrary = size === 'library'
+  const maxClass = isLibrary ? LIBRARY_PUBLICATION_COVER_MAX_CLASS : PUBLICATION_COVER_MAX_CLASS
+
+  const stackedLayoutClass = isLibrary ? 'aspect-[3/4] w-full' : 'aspect-[3/4] w-48 max-w-full'
 
   return (
     <div
       className={cn(
         'flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground',
         maxClass,
-        layout === 'stacked' ? 'aspect-[3/4] w-full' : 'aspect-[3/4] w-full max-w-[9rem] sm:max-w-[10rem]',
+        layout === 'stacked' ? stackedLayoutClass : 'aspect-[3/4] w-full max-w-[9rem] sm:max-w-[10rem]',
         layout === 'stacked' && size === 'default' && 'mb-3',
         layout === 'stacked' && size === 'library' && 'mb-2',
         className
