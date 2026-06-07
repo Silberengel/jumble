@@ -518,6 +518,13 @@ export default {
     'Search GIFs': 'Search GIFs',
     'Search memes': 'Search memes',
     'Choose a GIF': 'Choose a GIF',
+    'Find GIF': 'Find GIF',
+    'Import GIF': 'Import GIF',
+    'Search your library and tap a GIF to insert.': 'Search your library and tap a GIF to insert.',
+    'Paste a GIF URL, upload your own file, or search GifBuddy.':
+      'Paste a GIF URL, upload your own file, or search GifBuddy.',
+    'Opens GifBuddy in a new tab. Copy a GIF URL there, then paste it below.':
+      'Opens GifBuddy in a new tab. Copy a GIF URL there, then paste it below.',
     'Choose a meme': 'Choose a meme',
     'Search GifBuddy for more GIFs': 'Search GifBuddy for more GIFs',
     'Add your own GIFs': 'Add your own GIFs',

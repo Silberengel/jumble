@@ -8,6 +8,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useUserReadInboxUrls } from '@/hooks/useUserMailboxRelayUrls'
@@ -41,10 +42,12 @@ const EMPTY_FOLLOWING_PUBKEYS: readonly string[] = []
 const GIFBUDDY_SEARCH_URL = (q: string) =>
   q.trim() ? `${GIFBUDDY_URL}gifsearch?q=${encodeURIComponent(q.trim())}` : GIFBUDDY_URL
 
-/** Lock drawer height at open so mobile keyboard / dvh changes do not resize the sheet. */
+type GifPickerTab = 'find' | 'import'
+
+/** Shorter sheet on mobile — tall drawers fight the post composer and keyboard. */
 function mobileDrawerHeightPx(): number {
   const vh = window.visualViewport?.height ?? window.innerHeight
-  return Math.min(Math.round(vh * 0.88), Math.round(vh - 80))
+  return Math.min(Math.round(vh * 0.6), Math.round(vh - 120))
 }
 
 export default function GifPicker({
@@ -86,6 +89,7 @@ export default function GifPicker({
   const gifbuddyPopupRef = useRef<Window | null>(null)
   const pickerRootRef = useRef<HTMLDivElement>(null)
   const [mobileDrawerHeight, setMobileDrawerHeight] = useState<number | undefined>()
+  const [activeTab, setActiveTab] = useState<GifPickerTab>('find')
   /** Keep drawer content mounted until Vaul's close animation finishes (avoids empty-sheet flicker). */
   const [drawerContentMounted, setDrawerContentMounted] = useState(false)
 
@@ -186,6 +190,13 @@ export default function GifPicker({
     if (open) setDrawerContentMounted(true)
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    setActiveTab('find')
+    setSearchInput('')
+    applyLocalFilter('')
+  }, [open, applyLocalFilter])
+
   const preparePickerClose = useCallback(() => {
     loadGenerationRef.current += 1
     setLoading(false)
@@ -270,7 +281,7 @@ export default function GifPicker({
 
   /** Open GifBuddy in a new tab (not a popup) so the picker doesn't close from focus loss. Listen for postMessage in case GifBuddy adds embed support. */
   const openGifBuddySearch = useCallback(() => {
-    const url = GIFBUDDY_SEARCH_URL(searchInput)
+    const url = GIFBUDDY_SEARCH_URL(pasteUrl || searchInput)
     const w = window.open(url, '_blank', 'noopener,noreferrer')
     gifbuddyPopupRef.current = w ?? null
     const handler = (event: MessageEvent) => {
@@ -293,7 +304,7 @@ export default function GifPicker({
       gifbuddyPopupRef.current = null
     }, 10 * 60 * 1000)
     if (w) w.addEventListener('beforeunload', () => { clearTimeout(t); window.removeEventListener('message', handler) })
-  }, [searchInput, onSelect, handleOpenChange])
+  }, [pasteUrl, searchInput, onSelect, handleOpenChange])
 
   const descriptionForPublish = publishDescription.trim()
 
@@ -375,81 +386,188 @@ export default function GifPicker({
 
   /** In drawer mode we constrain height and make only the GIF grid scroll so the drawer doesn't "sink" */
   const isDrawer = isSmallScreen
-  const gifGrid = loading ? (
-    <div
-      className="grid grid-cols-2 gap-1 p-2 min-h-[200px]"
-      role="status"
-      aria-busy="true"
-      aria-live="polite"
-    >
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="aspect-square w-full rounded" />
-      ))}
-    </div>
-  ) : (
-    <div className="grid grid-cols-2 gap-1 p-2 min-h-[200px] content-start">
-      {gifs.map((gif) => {
-        const showArchive = gifShouldOfferNip94Archive(gif) && isLoggedIn
-        return (
-          <div
-            key={gif.eventId}
-            className="relative aspect-square min-h-0 w-full rounded overflow-hidden [contain:layout]"
-          >
-            <button
-              type="button"
-              className={cn(
-                'absolute inset-0 z-0 rounded overflow-hidden border border-transparent hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-              )}
-              onClick={() => handleSelect(gif)}
+  const renderGifGrid = (items: GifMetadata[], showArchiveActions: boolean) =>
+    loading ? (
+      <div
+        className="grid grid-cols-2 gap-1 p-2 min-h-[120px]"
+        role="status"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="aspect-square w-full rounded" />
+        ))}
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 gap-1 p-2 min-h-[120px] content-start">
+        {items.map((gif) => {
+          const showArchive = showArchiveActions && gifShouldOfferNip94Archive(gif) && isLoggedIn
+          return (
+            <div
+              key={gif.eventId}
+              className="relative aspect-square min-h-0 w-full rounded overflow-hidden [contain:layout]"
             >
-              <img
-                src={gif.url}
-                alt=""
-                className="w-full h-full object-cover pointer-events-none"
-                loading="lazy"
-                onError={(e) => {
-                  const el = e.target as HTMLImageElement
-                  const fallback = gif.fallbackUrl?.trim()
-                  if (fallback && el.dataset.gifFallbackTried !== '1') {
-                    el.dataset.gifFallbackTried = '1'
-                    el.src = fallback
-                    return
-                  }
-                  el.style.display = 'none'
-                }}
-              />
-            </button>
-            <span
-              className="absolute top-1 left-1 z-10 max-w-[calc(100%-2.5rem)] truncate rounded border border-border/80 bg-background/90 px-1 py-px text-[10px] font-medium tabular-nums text-foreground backdrop-blur-sm pointer-events-none shadow-sm"
-              title={gifSourceKindTitle(gif)}
-            >
-              {gifSourceKindShortLabel(gif)}
-            </span>
-            {showArchive && (
-              <Button
+              <button
                 type="button"
-                variant="secondary"
-                size="icon"
-                className="absolute bottom-1 right-1 z-10 h-7 w-7 shadow-md"
-                disabled={archivingEventId === gif.eventId}
-                title={t(
-                  'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                className={cn(
+                  'absolute inset-0 z-0 touch-manipulation rounded overflow-hidden border border-transparent hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:opacity-80'
                 )}
-                aria-label={t(
-                  'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
-                )}
-                onClick={(e) => handleArchiveAndInsert(e, gif)}
+                onClick={() => handleSelect(gif)}
               >
-                <Download className="size-3.5" />
-              </Button>
-            )}
-          </div>
-        )
-      })}
+                <img
+                  src={gif.url}
+                  alt=""
+                  className="w-full h-full object-cover pointer-events-none"
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    const el = e.target as HTMLImageElement
+                    const fallback = gif.fallbackUrl?.trim()
+                    if (fallback && el.dataset.gifFallbackTried !== '1') {
+                      el.dataset.gifFallbackTried = '1'
+                      el.src = fallback
+                      return
+                    }
+                    el.style.display = 'none'
+                  }}
+                />
+              </button>
+              <span
+                className="absolute top-1 left-1 z-10 max-w-[calc(100%-2.5rem)] truncate rounded border border-border/80 bg-background/90 px-1 py-px text-[10px] font-medium tabular-nums text-foreground backdrop-blur-sm pointer-events-none shadow-sm"
+                title={gifSourceKindTitle(gif)}
+              >
+                {gifSourceKindShortLabel(gif)}
+              </span>
+              {showArchive && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="absolute bottom-1 right-1 z-10 h-7 w-7 shadow-md touch-manipulation"
+                  disabled={archivingEventId === gif.eventId}
+                  title={t(
+                    'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                  )}
+                  aria-label={t(
+                    'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                  )}
+                  onClick={(e) => handleArchiveAndInsert(e, gif)}
+                >
+                  <Download className="size-3.5" />
+                </Button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+
+  const scrollableGifGrid = (items: GifMetadata[], showArchiveActions: boolean) =>
+    isDrawer ? (
+      <div
+        className="page-scroll-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border"
+        data-vaul-no-drag
+      >
+        {renderGifGrid(items, showArchiveActions)}
+      </div>
+    ) : (
+      <ScrollArea className="h-[520px] w-full rounded-md border">
+        {renderGifGrid(items, showArchiveActions)}
+      </ScrollArea>
+    )
+
+  const importPanel = (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-muted-foreground">{t('Paste a GIF URL, upload your own file, or search GifBuddy.')}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full touch-manipulation"
+        onClick={openGifBuddySearch}
+      >
+        <ExternalLink className="size-3.5 mr-1.5" />
+        {t('Search on GifBuddy')}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        {t('Opens GifBuddy in a new tab. Copy a GIF URL there, then paste it below.')}
+      </p>
+      <div className="grid gap-1">
+        <Label className="text-xs text-muted-foreground">{t('Paste URL of a GIF')}</Label>
+        <div className="flex gap-1">
+          <Input
+            placeholder="https://..."
+            value={pasteUrl}
+            onChange={(e) => setPasteUrl(e.target.value)}
+            className="flex-1 min-w-0"
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0 touch-manipulation"
+            disabled={!pasteUrl.trim() || publishingPaste}
+            onClick={handlePasteUrlInsert}
+            title={t('Insert URL into your post and publish to Nostr GIF library (NIP-94).')}
+          >
+            {publishingPaste ? t('Adding…') : t('Insert')}
+          </Button>
+        </div>
+      </div>
+      {isLoggedIn && (
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground">
+            {t('Description (optional, for search)')}
+          </Label>
+          <Input
+            placeholder={t('e.g. happy birthday, thumbs up')}
+            value={publishDescription}
+            onChange={(e) => setPublishDescription(e.target.value)}
+            className="min-w-0"
+          />
+        </div>
+      )}
+      {isLoggedIn && (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".gif,image/gif"
+            className="hidden"
+            onChange={handleUpload}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full touch-manipulation"
+            disabled={uploading}
+            onClick={triggerFileUpload}
+          >
+            {uploading ? t('Uploading...') : t('Add your own GIFs')}
+          </Button>
+          {uploadError && <p className="text-xs text-destructive text-center">{uploadError}</p>}
+        </>
+      )}
     </div>
   )
 
-  const content = (
+  const findPanel = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <p className="shrink-0 text-xs text-muted-foreground">
+        {t('Search your library and tap a GIF to insert.')}
+      </p>
+      <Input
+        placeholder={t('Search GIFs')}
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        className="shrink-0"
+      />
+      {error && <p className="shrink-0 px-1 text-sm text-muted-foreground">{error}</p>}
+      {scrollableGifGrid(gifs, !isDrawer)}
+    </div>
+  )
+
+  const tabbedContent = (
     <div
       ref={pickerRootRef}
       data-gif-picker-root
@@ -458,18 +576,13 @@ export default function GifPicker({
         isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
       )}
     >
-      <div className="flex items-center gap-1 shrink-0">
-        <Input
-          placeholder={t('Search GIFs')}
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="flex-1"
-        />
+      <div className="flex shrink-0 items-center gap-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-medium">{t('Choose a GIF')}</p>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="shrink-0 size-8"
+          className={cn('size-8 shrink-0', isDrawer && 'touch-manipulation')}
           onClick={(e) => {
             e.stopPropagation()
             handleOpenChange(false)
@@ -479,99 +592,49 @@ export default function GifPicker({
           <X className="size-4" />
         </Button>
       </div>
-      {error && (
-        <p className="text-sm text-muted-foreground px-1 shrink-0">{error}</p>
-      )}
-      <div
-        className={cn(isDrawer && 'flex min-h-0 flex-1 flex-col')}
-        {...(isDrawer && { 'data-vaul-no-drag': true })}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as GifPickerTab)}
+        className={cn('flex flex-col', isDrawer && 'min-h-0 flex-1')}
       >
-        {isDrawer ? (
-          <div className="page-scroll-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border">
-            {gifGrid}
-          </div>
-        ) : (
-          <ScrollArea className="h-[520px] w-full rounded-md border">{gifGrid}</ScrollArea>
-        )}
-      </div>
-      <div className="flex flex-col gap-2 border-t pt-2 shrink-0">
-        <div className="flex flex-col gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={openGifBuddySearch}
+        <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-0.5 p-1">
+          <TabsTrigger
+            value="find"
+            className={cn('px-1.5 py-1.5 text-xs', isDrawer && 'touch-manipulation')}
           >
-            <ExternalLink className="size-3.5 mr-1.5" />
-            {t('Search on GifBuddy')}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {t('Opens in a new tab. Copy a GIF URL there, then paste below. If this picker closed, click “Insert GIF” again to paste.')}
-          </p>
-          <div className="grid gap-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('Paste URL of a GIF')}
-            </Label>
-            <div className="flex gap-1">
-              <Input
-                placeholder="https://..."
-                value={pasteUrl}
-                onChange={(e) => setPasteUrl(e.target.value)}
-                className="flex-1 min-w-0"
-              />
-              <Button
-                type="button"
-                size="sm"
-                disabled={!pasteUrl.trim() || publishingPaste}
-                onClick={handlePasteUrlInsert}
-                title={t('Insert URL into your post and publish to Nostr GIF library (NIP-94).')}
-              >
-                {publishingPaste ? t('Adding…') : t('Insert')}
-              </Button>
-            </div>
-          </div>
-        </div>
-        {isLoggedIn && (
-          <div className="grid gap-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('Description (optional, for search)')}
-            </Label>
-            <Input
-              placeholder={t('e.g. happy birthday, thumbs up')}
-              value={publishDescription}
-              onChange={(e) => setPublishDescription(e.target.value)}
-              className="min-w-0"
-            />
-          </div>
-        )}
-        {isLoggedIn && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".gif,image/gif"
-              className="hidden"
-              onChange={handleUpload}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              disabled={uploading}
-              onClick={triggerFileUpload}
-            >
-              {uploading ? t('Uploading...') : t('Add your own GIFs')}
-            </Button>
-            {uploadError && (
-              <p className="text-xs text-destructive text-center">{uploadError}</p>
-            )}
-          </>
-        )}
-      </div>
+            {t('Find GIF')}
+          </TabsTrigger>
+          <TabsTrigger
+            value="import"
+            className={cn('px-1.5 py-1.5 text-xs', isDrawer && 'touch-manipulation')}
+          >
+            {t('Import GIF')}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent
+          value="find"
+          className={cn(
+            'mt-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isDrawer ? 'flex min-h-0 flex-1 flex-col' : 'flex flex-col'
+          )}
+        >
+          {findPanel}
+        </TabsContent>
+        <TabsContent
+          value="import"
+          className={cn(
+            'mt-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isDrawer ? 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain' : ''
+          )}
+          {...(isDrawer && { 'data-vaul-no-drag': true })}
+        >
+          {importPanel}
+        </TabsContent>
+      </Tabs>
     </div>
   )
+
+  const content = tabbedContent
 
   if (isSmallScreen) {
     return (
@@ -591,7 +654,7 @@ export default function GifPicker({
           style={
             mobileDrawerHeight != null
               ? { height: mobileDrawerHeight, maxHeight: mobileDrawerHeight }
-              : { maxHeight: 'min(88dvh, calc(100dvh - 5rem))' }
+              : { maxHeight: 'min(60dvh, calc(100dvh - 8rem))' }
           }
           onPointerDownOutside={(e) => {
             const t = e.target as HTMLElement | null
