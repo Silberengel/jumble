@@ -1205,10 +1205,6 @@ export function useMenuActions({
     if (isArticleType) {
       const isMarkdownFormat =
         event.kind === kinds.LongFormArticle || event.kind === ExtendedKind.NOSTR_SPECIFICATION
-      const isAsciidocFormat =
-        event.kind === ExtendedKind.WIKI_ARTICLE ||
-        event.kind === ExtendedKind.PUBLICATION ||
-        event.kind === ExtendedKind.PUBLICATION_CONTENT
 
       if (isMarkdownFormat) {
         advancedSubMenu.push({
@@ -1216,15 +1212,6 @@ export function useMenuActions({
           onClick: () => {
             closeDrawer()
             exportAsMarkdown()
-          }
-        })
-      }
-      if (isAsciidocFormat) {
-        advancedSubMenu.push({
-          label: t('Export as AsciiDoc'),
-          onClick: () => {
-            closeDrawer()
-            exportAsAsciidoc()
           }
         })
       }

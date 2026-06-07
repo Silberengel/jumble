@@ -24,7 +24,6 @@ import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const SEARCH_DEBOUNCE_MS = 300
-const LOAD_TIMEOUT_MS = 120_000
 
 const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelAddresses: new Set(),
@@ -74,6 +73,7 @@ export function useLibraryPublications(isActive: boolean) {
   const [myBooklistTargets, setMyBooklistTargets] = useState(EMPTY_BOOKLIST_TARGETS)
   const [booklistTargetsLoading, setBooklistTargetsLoading] = useState(false)
   const loadGenRef = useRef(0)
+  const indexesReadyGenRef = useRef(0)
   const [mineIndexEntries, setMineIndexEntries] = useState<LibraryPublicationEntry[]>([])
   const [mineFilterComputing, setMineFilterComputing] = useState(false)
   const mineIndexCacheRef = useRef<{
@@ -159,42 +159,42 @@ export function useLibraryPublications(isActive: boolean) {
       }
       try {
         const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-        let timeoutId: number | undefined
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = window.setTimeout(() => reject(new Error('Library load timed out')), LOAD_TIMEOUT_MS)
+        indexesReadyGenRef.current = 0
+        const result = await loadLibraryPublicationIndex(relays, {
+          forceRefresh,
+          viewerPubkey: pubkey || undefined,
+          onIndexesReady: (snapshot) => {
+            if (gen !== loadGenRef.current) return
+            indexesReadyGenRef.current = gen
+            setIndexEvents(snapshot.indexEvents)
+            setAllIndexCount(snapshot.allIndexCount)
+            setTopLevelCount(snapshot.topLevelCount)
+            applyDefaultFeedSlice(snapshot.indexEvents, EMPTY_ENGAGEMENT, 0)
+            setLoading(false)
+            setEngagementLoading(true)
+          }
         })
-        try {
-          const result = await Promise.race([
-            loadLibraryPublicationIndex(relays, {
-              forceRefresh,
-              viewerPubkey: pubkey || undefined,
-              onIndexesReady: (snapshot) => {
-                if (gen !== loadGenRef.current) return
-                setIndexEvents(snapshot.indexEvents)
-                setAllIndexCount(snapshot.allIndexCount)
-                setTopLevelCount(snapshot.topLevelCount)
-                applyDefaultFeedSlice(snapshot.indexEvents, EMPTY_ENGAGEMENT, 0)
-                setLoading(false)
-                setEngagementLoading(true)
-              }
-            }),
-            timeoutPromise
-          ])
-          if (gen !== loadGenRef.current) return
-          setIndexEvents(result.indexEvents)
-          setEngagement(result.engagement)
-          setAllIndexCount(result.allIndexCount)
-          setTopLevelCount(result.topLevelCount)
-          applyDefaultFeedSlice(result.indexEvents, result.engagement, 0)
-        } finally {
-          if (timeoutId != null) window.clearTimeout(timeoutId)
-        }
+        if (gen !== loadGenRef.current) return
+        setIndexEvents(result.indexEvents)
+        setEngagement(result.engagement)
+        setAllIndexCount(result.allIndexCount)
+        setTopLevelCount(result.topLevelCount)
+        applyDefaultFeedSlice(result.indexEvents, result.engagement, 0)
       } catch (e) {
         if (gen !== loadGenRef.current) return
-        const message = e instanceof Error ? e.message : 'Failed to load library'
-        setError(message)
-        if (import.meta.env.DEV) {
-          logger.warn('[Library] page load failed', { message, gen })
+        if (indexesReadyGenRef.current === gen) {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] engagement phase failed after indexes loaded', {
+              message: e instanceof Error ? e.message : String(e),
+              gen
+            })
+          }
+        } else {
+          const message = e instanceof Error ? e.message : 'Failed to load library'
+          setError(message)
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] page load failed', { message, gen })
+          }
         }
       } finally {
         if (gen === loadGenRef.current) {

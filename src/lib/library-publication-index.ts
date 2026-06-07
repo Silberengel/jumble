@@ -50,7 +50,6 @@ const HYDRATE_MISSING_CAP = 64
 export const LIBRARY_PAGE_SIZE = 120
 /** @deprecated Use {@link LIBRARY_PAGE_SIZE} */
 export const LIBRARY_RECENT_FALLBACK_LIMIT = LIBRARY_PAGE_SIZE
-const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
@@ -59,6 +58,12 @@ const PIN_LIST_KIND = 10001
 const QUERY_OPTS = {
   globalTimeout: 18_000,
   eoseTimeout: 3_000,
+  firstRelayResultGraceMs: false as const
+}
+
+const ENGAGEMENT_QUERY_OPTS = {
+  globalTimeout: 45_000,
+  eoseTimeout: 8_000,
   firstRelayResultGraceMs: false as const
 }
 
@@ -308,6 +313,60 @@ export async function buildLibraryRelayUrls(
   return libraryIndexRelayUrls([...urls], blockedRelays)
 }
 
+/** Relay hints from kind-30040 `a` tags (section relay URLs). */
+function collectPublicationRelayHints(indexEvents: Event[]): string[] {
+  const hints = new Set<string>()
+  for (const ev of indexEvents) {
+    for (const tag of ev.tags) {
+      if (tag[0] !== 'a') continue
+      const hint = tag[2]?.trim()
+      if (!hint || !/^wss?:\/\//i.test(hint)) continue
+      const normalized = normalizeUrl(hint) || hint
+      if (normalized) hints.add(normalized)
+    }
+  }
+  return [...hints]
+}
+
+/**
+ * WS/social relays for labels, comments, highlights, bookmarks, and pins.
+ * Index-only HTTP relays (mercury, document mirrors) do not carry engagement kinds.
+ */
+export async function buildLibraryEngagementRelayUrls(
+  userPubkey: string | undefined,
+  indexRelayHints: string[],
+  indexEvents: Event[] = [],
+  blockedRelays: readonly string[] = []
+): Promise<string[]> {
+  const pubHints = collectPublicationRelayHints(indexEvents)
+  const urls = await buildComprehensiveRelayList({
+    userPubkey,
+    relayHints: [...indexRelayHints, ...pubHints],
+    includeUserOwnRelays: true,
+    includeFastReadRelays: true,
+    includeFavoriteRelays: true,
+    includeProfileFetchRelays: true,
+    includeSearchableRelays: false,
+    includeViewerHttpIndexRelays: false,
+    blockedRelays: [...blockedRelays]
+  })
+  return filterBlockedLibraryRelays(
+    urls.map((u) => normalizeLibraryRelayUrl(u) || u).filter(Boolean),
+    blockedRelays
+  )
+}
+
+function engagementMapsSizeSummary(maps: PublicationEngagementMaps): Record<string, number> {
+  return {
+    labels: maps.labelAddresses.size + maps.labelEventIds.size,
+    comments: maps.commentAddresses.size + maps.commentEventIds.size,
+    highlights: maps.highlightAddresses.size + maps.highlightEventIds.size,
+    bookmarks: maps.bookmarkAddresses.size + maps.bookmarkEventIds.size,
+    pins: maps.pinAddresses.size + maps.pinEventIds.size,
+    booklists: maps.booklistAddresses.size + maps.booklistEventIds.size
+  }
+}
+
 export async function fetchLibraryIndexEvents(relayUrls: string[]): Promise<Event[]> {
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   if (indexRelays.length === 0) return []
@@ -526,11 +585,38 @@ async function fetchHttpEngagementByAddresses(
   return out
 }
 
+async function fetchHttpEngagementByEventIds(
+  httpRelays: string[],
+  kind: number,
+  eventIdChunks: string[][]
+): Promise<Event[]> {
+  if (httpRelays.length === 0 || eventIdChunks.length === 0) return []
+  const out: Event[] = []
+  const seen = new Set<string>()
+  for (const relay of httpRelays) {
+    for (const chunk of eventIdChunks) {
+      if (chunk.length === 0) continue
+      const filter = {
+        kinds: [kind],
+        '#e': chunk,
+        limit: Math.min(chunk.length * 10, INDEX_HTTP_PAGE_LIMIT)
+      } as Filter
+      const batch = await queryIndexRelay(relay, filter)
+      for (const ev of batch) {
+        if (seen.has(ev.id)) continue
+        seen.add(ev.id)
+        out.push(ev)
+      }
+    }
+  }
+  return out
+}
+
 export async function fetchPublicationEngagementMaps(
   relayUrls: string[],
   targetAddresses: Set<string>,
   targetEventIds: Set<string>,
-  options?: { httpOnly?: boolean; viewerPubkey?: string | null }
+  options?: { viewerPubkey?: string | null }
 ): Promise<PublicationEngagementMaps> {
   if (relayUrls.length === 0 || targetAddresses.size === 0) {
     return emptyPublicationEngagementMaps()
@@ -539,8 +625,15 @@ export async function fetchPublicationEngagementMaps(
   const addressChunks = chunkArray([...targetAddresses], ENGAGEMENT_ADDRESS_CHUNK)
   const eventIdChunks = chunkArray([...targetEventIds], ENGAGEMENT_EVENT_ID_CHUNK)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(relayUrls)
-  /** Labels/comments/highlights often live on WS relays only — always query them when available. */
   const useWsEngagement = wsRelays.length > 0
+  if (import.meta.env.DEV) {
+    logger.info('[Library] engagement relay split', {
+      wsRelays: wsRelays.length,
+      httpRelays: httpRelays.length,
+      targetAddresses: targetAddresses.size,
+      targetEventIds: targetEventIds.size
+    })
+  }
 
   const highlightFilters = addressChunks.map(
     (chunk): Filter => ({ kinds: [kinds.Highlights], '#a': chunk, limit: chunk.length * 12 })
@@ -575,53 +668,68 @@ export async function fetchPublicationEngagementMaps(
 
   const highlightPromise = Promise.all([
     useWsEngagement && highlightFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, highlightFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, highlightFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     useWsEngagement && highlightEventFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, highlightEventFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, highlightEventFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    fetchHttpEngagementByAddresses(httpRelays, kinds.Highlights, '#a', addressChunks)
-  ]).then(([scoped, byEvent, bulk]) => dedupeEventsById([...scoped, ...byEvent, ...bulk]))
+    fetchHttpEngagementByAddresses(httpRelays, kinds.Highlights, '#a', addressChunks),
+    fetchHttpEngagementByEventIds(httpRelays, kinds.Highlights, eventIdChunks)
+  ]).then(([scoped, byEvent, bulkAddress, bulkEvent]) =>
+    dedupeEventsById([...scoped, ...byEvent, ...bulkAddress, ...bulkEvent])
+  )
 
   const labelPromise = Promise.all([
     useWsEngagement && labelAddressFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, labelAddressFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, labelAddressFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     useWsEngagement && labelEventFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, labelEventFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, labelEventFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.LABEL, '#a', addressChunks)
-  ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
+    fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.LABEL, '#a', addressChunks),
+    fetchHttpEngagementByEventIds(httpRelays, ExtendedKind.LABEL, eventIdChunks)
+  ]).then(([byAddress, byEvent, bulkAddress, bulkEvent]) =>
+    dedupeEventsById([...byAddress, ...byEvent, ...bulkAddress, ...bulkEvent])
+  )
 
   const commentPromise = Promise.all([
     useWsEngagement && commentWsFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, commentWsFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, commentWsFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     useWsEngagement && commentEventFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, commentEventFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, commentEventFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.COMMENT, '#A', addressChunks)
-  ]).then(([scoped, byEvent, bulk]) => dedupeEventsById([...scoped, ...byEvent, ...bulk]))
+    fetchHttpEngagementByAddresses(httpRelays, ExtendedKind.COMMENT, '#A', addressChunks),
+    fetchHttpEngagementByEventIds(httpRelays, ExtendedKind.COMMENT, eventIdChunks)
+  ]).then(([scoped, byEvent, bulkAddress, bulkEvent]) =>
+    dedupeEventsById([...scoped, ...byEvent, ...bulkAddress, ...bulkEvent])
+  )
 
   const bookmarkPromise = Promise.all([
     useWsEngagement && bookmarkAddressFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, bookmarkAddressFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, bookmarkAddressFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     useWsEngagement && bookmarkEventFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, bookmarkEventFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, bookmarkEventFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    fetchHttpEngagementByAddresses(httpRelays, kinds.BookmarkList, '#a', addressChunks)
-  ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
+    fetchHttpEngagementByAddresses(httpRelays, kinds.BookmarkList, '#a', addressChunks),
+    fetchHttpEngagementByEventIds(httpRelays, kinds.BookmarkList, eventIdChunks)
+  ]).then(([byAddress, byEvent, bulkAddress, bulkEvent]) =>
+    dedupeEventsById([...byAddress, ...byEvent, ...bulkAddress, ...bulkEvent])
+  )
 
   const pinPromise = Promise.all([
     useWsEngagement && pinAddressFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, pinAddressFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, pinAddressFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
     useWsEngagement && pinEventFilters.length > 0
-      ? queryService.fetchEvents(wsRelays, pinEventFilters, QUERY_OPTS)
+      ? queryService.fetchEvents(wsRelays, pinEventFilters, ENGAGEMENT_QUERY_OPTS)
       : Promise.resolve([] as Event[]),
-    fetchHttpEngagementByAddresses(httpRelays, PIN_LIST_KIND, '#a', addressChunks)
-  ]).then(([byAddress, byEvent, bulk]) => dedupeEventsById([...byAddress, ...byEvent, ...bulk]))
+    fetchHttpEngagementByAddresses(httpRelays, PIN_LIST_KIND, '#a', addressChunks),
+    fetchHttpEngagementByEventIds(httpRelays, PIN_LIST_KIND, eventIdChunks)
+  ]).then(([byAddress, byEvent, bulkAddress, bulkEvent]) =>
+    dedupeEventsById([...byAddress, ...byEvent, ...bulkAddress, ...bulkEvent])
+  )
 
   const [highlights, labels, comments, bookmarkLists, pinLists] = await Promise.all([
     highlightPromise,
@@ -1162,20 +1270,30 @@ function libraryEntriesFromRoots(
 
 /** Re-fetch engagement maps for the current library index snapshot (e.g. after booklist toggle). */
 export async function refreshLibraryEngagement(
-  relayUrls: string[],
+  indexRelayUrls: string[],
   indexEvents: Event[],
   viewerPubkey?: string | null
 ): Promise<{ engagement: PublicationEngagementMaps; engaged: LibraryPublicationEntry[] }> {
   const indexByAddress = buildIndexByAddress(indexEvents)
   const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
   const targetEventIds = collectPublicationIndexEventIds(indexEvents)
-  const engagement = await fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds, {
-    httpOnly: true,
-    viewerPubkey
-  })
+  const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
+    viewerPubkey ?? undefined,
+    indexRelayUrls,
+    indexEvents
+  )
+  const engagement = await fetchPublicationEngagementMaps(
+    engagementRelayUrls,
+    targetAddresses,
+    targetEventIds,
+    { viewerPubkey }
+  )
   const topLevel = getTopLevelIndexEvents(indexEvents)
   if (sessionCache) {
     sessionCache = { ...sessionCache, engagement, viewerPubkey: viewerPubkey ?? null }
+  }
+  if (import.meta.env.DEV) {
+    logger.info('[Library] engagement refreshed', engagementMapsSizeSummary(engagement))
   }
   return {
     engagement,
@@ -1587,17 +1705,28 @@ function collectTargetAddressesFromIndexes(
 }
 
 async function buildEngagedFromCache(
-  relayUrls: string[],
+  indexRelayUrls: string[],
   indexEvents: Event[],
   indexByAddress: Map<string, Event>,
-  engagement?: PublicationEngagementMaps
+  engagement?: PublicationEngagementMaps,
+  viewerPubkey?: string | null
 ): Promise<LibraryPublicationEntry[]> {
   const topLevel = getTopLevelIndexEvents(indexEvents)
   let maps = engagement
   if (!maps) {
     const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
     const targetEventIds = collectPublicationIndexEventIds(indexEvents)
-    maps = await fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds)
+    const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
+      viewerPubkey ?? undefined,
+      indexRelayUrls,
+      indexEvents
+    )
+    maps = await fetchPublicationEngagementMaps(
+      engagementRelayUrls,
+      targetAddresses,
+      targetEventIds,
+      { viewerPubkey }
+    )
   }
   return pickLibraryPublicationEntries(topLevel, indexByAddress, maps)
 }
@@ -1635,14 +1764,19 @@ export async function loadLibraryPublicationIndex(
         sessionCache.indexByAddress
       )
       const targetEventIds = collectPublicationIndexEventIds(sessionCache.indexEvents)
+      const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
+        viewerPubkey ?? undefined,
+        relayUrls,
+        sessionCache.indexEvents
+      )
       sessionCache = {
         ...sessionCache,
         viewerPubkey,
         engagement: await fetchPublicationEngagementMaps(
-          relayUrls,
+          engagementRelayUrls,
           targetAddresses,
           targetEventIds,
-          { httpOnly: true, viewerPubkey }
+          { viewerPubkey }
         )
       }
     }
@@ -1650,7 +1784,8 @@ export async function loadLibraryPublicationIndex(
       relayUrls,
       sessionCache.indexEvents,
       sessionCache.indexByAddress,
-      sessionCache.engagement
+      sessionCache.engagement,
+      viewerPubkey
     )
     if (import.meta.env.DEV) {
       logger.info('[Library] load from cache', { engaged: engaged.length })
@@ -1701,15 +1836,17 @@ export async function loadLibraryPublicationIndex(
 
   let engagement: PublicationEngagementMaps
   try {
-    engagement = await Promise.race([
-      fetchPublicationEngagementMaps(relayUrls, targetAddresses, targetEventIds, {
-        httpOnly: true,
-        viewerPubkey
-      }),
-      new Promise<PublicationEngagementMaps>((resolve) => {
-        window.setTimeout(() => resolve(emptyPublicationEngagementMaps()), ENGAGEMENT_FETCH_TIMEOUT_MS)
-      })
-    ])
+    const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
+      viewerPubkey ?? undefined,
+      relayUrls,
+      indexEvents
+    )
+    engagement = await fetchPublicationEngagementMaps(
+      engagementRelayUrls,
+      targetAddresses,
+      targetEventIds,
+      { viewerPubkey }
+    )
   } catch (e) {
     if (import.meta.env.DEV) {
       logger.warn('[Library] engagement fetch failed', {
@@ -1719,11 +1856,7 @@ export async function loadLibraryPublicationIndex(
     engagement = emptyPublicationEngagementMaps()
   }
   if (import.meta.env.DEV) {
-    logger.info('[Library] engagement maps built', {
-      labels: engagement.labelAddresses.size + engagement.labelEventIds.size,
-      comments: engagement.commentAddresses.size,
-      highlights: engagement.highlightAddresses.size
-    })
+    logger.info('[Library] engagement maps built', engagementMapsSizeSummary(engagement))
   }
 
   sessionCache = { relayKey: key, viewerPubkey, indexEvents, indexByAddress, engagement }
