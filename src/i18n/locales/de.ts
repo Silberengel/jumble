@@ -1671,6 +1671,8 @@ export default {
     'Publication sections_other': '{{count}} Abschnitte',
     'Publication released': 'Veröffentlicht {{date}}',
     'Publication table of contents': 'Inhalt',
+    'Publication contents loading': 'Inhalt wird geladen…',
+    'Publication contents load failed': 'Inhalt konnte nicht geladen werden',
     'libraryIndexCache.sectionTitle': 'Bibliotheks-Publikationsindex',
     'libraryIndexCache.sectionBlurb':
       'Zwischengespeicherte Kind-30040-Index-Events für den Bibliotheks-Tab. Beim Leeren wird nur der Entdeckungslisten-Cache entfernt — geöffnete Publikationen bleiben im Lese-Cache.',

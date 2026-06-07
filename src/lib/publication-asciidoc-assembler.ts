@@ -55,6 +55,7 @@ function authorFromMetadata(metadata: PublicationIndexMetadata, pubkey: string):
 /** Ordered `a` / `e` refs from index tags (NKBIP-01 section order). */
 export function orderedPublicationRefsFromIndex(event: Event): PublicationSectionRef[] {
   const refs: PublicationSectionRef[] = []
+  let tagOrder = 0
   for (const tag of event.tags) {
     const name = (tag[0] || '').trim().toLowerCase()
     if (name === 'a' && tag[1]) {
@@ -66,10 +67,11 @@ export function orderedPublicationRefsFromIndex(event: Event): PublicationSectio
         kind: parsed.kind,
         pubkey: parsed.pubkey,
         identifier: parsed.identifier,
-        relay: tag[2]
+        relay: tag[2],
+        tagOrder: tagOrder++
       })
     } else if (name === 'e' && tag[1]) {
-      refs.push({ type: 'e', eventId: tag[1], relay: tag[2] })
+      refs.push({ type: 'e', eventId: tag[1], relay: tag[2], tagOrder: tagOrder++ })
     }
   }
   return refs

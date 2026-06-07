@@ -7,13 +7,14 @@ import { toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
-import { BookOpen, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import PublicationCoverFallback from './PublicationCoverFallback'
 import PublicationCoverImage from './PublicationCoverImage'
 import PublicationBooklistButton from './PublicationBooklistButton'
+import PublicationIndexBody from './PublicationIndexBody'
 
 function formatAuthorLine(authors: PublicationAuthor[]): string {
   if (authors.length === 0) return ''
@@ -201,26 +202,7 @@ export default function PublicationIndexMetadata({
         </div>
       ) : null}
 
-      {isFull && metadata.sections.length > 0 ? (
-        <div className="rounded-lg border border-border bg-muted/20 p-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
-            <BookOpen className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            {t('Publication table of contents')}
-          </div>
-          <ol className="max-h-64 space-y-1 overflow-y-auto text-sm text-muted-foreground">
-            {metadata.sections.map((section, index) => (
-              <li key={`${section.coordinate}-${index}`} className="flex min-w-0 gap-2">
-                <span className="shrink-0 tabular-nums text-muted-foreground/80">{index + 1}.</span>
-                <span className="min-w-0 break-words">
-                  {section.label ||
-                    section.coordinate.split(':').pop()?.replace(/-/g, ' ') ||
-                    section.coordinate}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
+      {isFull && metadata.sectionCount > 0 ? <PublicationIndexBody event={event} /> : null}
     </div>
   )
 }

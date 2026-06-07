@@ -15,6 +15,8 @@ export type PublicationSectionRef = {
   pubkey?: string
   identifier?: string
   relay?: string
+  /** Zero-based order among `a` / `e` refs in the index event tag list. */
+  tagOrder?: number
 }
 
 export function publicationRefKey(ref: PublicationSectionRef): string {

@@ -1702,6 +1702,8 @@ export default {
     'Publication sections_other': '{{count}} sections',
     'Publication released': 'Released {{date}}',
     'Publication table of contents': 'Contents',
+    'Publication contents loading': 'Loading contents…',
+    'Publication contents load failed': 'Could not load publication contents',
     'libraryIndexCache.sectionTitle': 'Library publication index',
     'libraryIndexCache.sectionBlurb':
       'Cached kind-30040 index events used to populate the Library tab. Clearing this only removes the discovery list cache—not publications you have opened for reading.',

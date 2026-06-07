@@ -350,12 +350,15 @@ export default function AsciidocArticle({
   event,
   className,
   hideImagesAndInfo = false,
+  hideTitle = false,
   parentImageUrl,
   footnotesContainerId
 }: {
   event: Event
   className?: string
   hideImagesAndInfo?: boolean
+  /** Suppress title headings (e.g. when a parent renders the section title). */
+  hideTitle?: boolean
   parentImageUrl?: string
   footnotesContainerId?: string
 }) {
@@ -1956,8 +1959,8 @@ export default function AsciidocArticle({
       `}</style>
       <div className={`prose prose-zinc max-w-none dark:prose-invert break-words overflow-wrap-anywhere ${className || ''}`}>
         {/* Metadata */}
-        {!hideImagesAndInfo && metadata.title && <h1 className="break-words">{metadata.title}</h1>}
-        {!hideImagesAndInfo && !metadata.title && isBookstrEvent && (
+        {!hideTitle && !hideImagesAndInfo && metadata.title && <h1 className="break-words">{metadata.title}</h1>}
+        {!hideTitle && !hideImagesAndInfo && !metadata.title && isBookstrEvent && (
           <h1 className="break-words">
             {bookMetadata.book
               ? bookMetadata.book
@@ -1984,10 +1987,10 @@ export default function AsciidocArticle({
             <p className="break-words">{metadata.summary}</p>
           </blockquote>
         )}
-        {hideImagesAndInfo && metadata.title && (
+        {!hideTitle && hideImagesAndInfo && metadata.title && (
           <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
         )}
-        {hideImagesAndInfo && !metadata.title && isBookstrEvent && (
+        {!hideTitle && hideImagesAndInfo && !metadata.title && isBookstrEvent && (
           <h2 className="text-2xl font-bold mb-4 leading-tight break-words">
             {bookMetadata.book
               ? bookMetadata.book

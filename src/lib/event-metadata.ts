@@ -717,10 +717,16 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     } else if (name === 'l' && !language) {
       language = value
     } else if (name === 'a') {
-      const label = tag[3]?.trim() || tag[2]?.trim()
+      const label = tag[3]?.trim()
       sections.push({
         coordinate: value,
-        label: label && !label.startsWith('wss://') && !label.startsWith('ws://') ? label : undefined
+        label:
+          label &&
+          !label.startsWith('wss://') &&
+          !label.startsWith('ws://') &&
+          !/^[0-9a-f]{64}$/i.test(label)
+            ? label
+            : undefined
       })
     }
   }
