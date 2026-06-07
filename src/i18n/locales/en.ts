@@ -1676,6 +1676,7 @@ export default {
     'Library show only my publications': 'Show only my publications',
     'Library empty': 'No engaged publications found on your relays yet.',
     'Library empty filtered': 'No publications match your filters.',
+    'Library loading': 'Loading publications from document relays…',
     'Library status line': '{{shown}} shown · {{topLevel}} top-level · {{total}} indexes loaded',
     'Library badge label': 'Label',
     'Library badge comment': 'Comment',

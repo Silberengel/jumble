@@ -67,6 +67,9 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             {error}
           </div>
         ) : null}
+        {loading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
+        ) : null}
         {statusLine ? (
           <p className="mb-4 text-xs text-muted-foreground">{statusLine}</p>
         ) : null}

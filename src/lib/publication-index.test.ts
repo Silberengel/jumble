@@ -3,6 +3,7 @@ import { ExtendedKind } from '@/constants'
 import {
   buildIndexByAddress,
   collectReachableAddresses,
+  collectReachableAddressesCached,
   eventTagAddress,
   filterValidIndexEvents,
   getTopLevelIndexEvents
@@ -40,7 +41,9 @@ describe('publication-index', () => {
     const valid = indexEvent('book', [`30041:${PK}:chapter-1`])
     const withContent = { ...valid, content: 'not empty' }
     const noTitle = { ...valid, tags: [['d', 'book'], ['a', `30041:${PK}:chapter-1`]] }
+    const nullContent = { ...valid, content: null as unknown as string }
     expect(filterValidIndexEvents([valid])).toHaveLength(1)
+    expect(filterValidIndexEvents([nullContent])).toHaveLength(1)
     expect(filterValidIndexEvents([withContent, noTitle])).toHaveLength(0)
   })
 
@@ -53,18 +56,14 @@ describe('publication-index', () => {
     expect(eventTagAddress(top[0])).toBe(`30040:${PK}:book`)
   })
 
-  it('collectReachableAddresses walks nested 30040 and 30041 refs', async () => {
+  it('collectReachableAddressesCached walks nested 30040 and 30041 refs', () => {
     const childAddr = `30040:${PK}:part-1`
     const leafAddr = `30041:${PK}:chapter-1`
     const root = indexEvent('book', [childAddr, `30041:${PK}:intro`])
     const child = indexEvent('part-1', [leafAddr], '2'.repeat(64))
     const indexByAddress = buildIndexByAddress([root, child])
 
-    const reachable = await collectReachableAddresses(
-      root,
-      indexByAddress,
-      async () => null
-    )
+    const reachable = collectReachableAddressesCached(root, indexByAddress)
 
     expect(reachable.has(`30040:${PK}:book`)).toBe(true)
     expect(reachable.has(childAddr)).toBe(true)

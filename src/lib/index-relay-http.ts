@@ -188,7 +188,7 @@ function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
     const created_at = raw.created_at
     const kind = raw.kind
     const tags = raw.tags
-    const content = raw.content
+    const contentRaw = raw.content
     const sig = raw.sig
     if (
       typeof id !== 'string' ||
@@ -196,11 +196,13 @@ function rawToVerifiedEvent(raw: Record<string, unknown>): NEvent | null {
       typeof created_at !== 'number' ||
       typeof kind !== 'number' ||
       !Array.isArray(tags) ||
-      typeof content !== 'string' ||
       typeof sig !== 'string'
     ) {
       return null
     }
+    const content =
+      typeof contentRaw === 'string' ? contentRaw : contentRaw == null ? '' : null
+    if (content === null) return null
     const ev = { id, pubkey, created_at, kind, tags, content, sig } as NEvent
     return verifyEvent(ev) ? ev : null
   } catch {

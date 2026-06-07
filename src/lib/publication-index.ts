@@ -17,8 +17,10 @@ export function filterValidIndexEvents(events: Event[]): Event[] {
   return events.filter((event) => {
     if (event.kind !== ExtendedKind.PUBLICATION) return false
     if (event.content != null && event.content.length > 0) return false
-    const hasTitle = event.tags.some((t) => t[0] === 'title' && t[1])
-    const hasD = event.tags.some((t) => t[0] === 'd' && t[1])
+    const hasTitle = event.tags.some(
+      (t) => (t[0] || '').trim().toLowerCase() === 'title' && t[1]
+    )
+    const hasD = event.tags.some((t) => (t[0] || '').trim().toLowerCase() === 'd' && t[1])
     const hasA = event.tags.some((t) => t[0] === 'a' && t[1])
     const hasE = event.tags.some((t) => t[0] === 'e' && t[1])
     return hasTitle && hasD && (hasA || hasE)
@@ -89,6 +91,85 @@ export function buildIndexByAddress(events: Event[]): Map<string, Event> {
     }
   }
   return map
+}
+
+/** BFS over addresses already present in `indexByAddress` (no network I/O). */
+export function collectReachableAddressesCached(
+  root: Event,
+  indexByAddress: Map<string, Event>
+): Set<string> {
+  const reachable = new Set<string>()
+  const rootAddr = eventTagAddress(root)
+  if (!rootAddr) return reachable
+
+  const queue = [rootAddr]
+  while (queue.length > 0) {
+    const addr = queue.shift()!
+    if (reachable.has(addr)) continue
+    reachable.add(addr)
+
+    const event = indexByAddress.get(addr)
+    if (!event || event.kind !== ExtendedKind.PUBLICATION) continue
+
+    for (const child of collectChildAddressesFromIndex(event)) {
+      if (!reachable.has(child)) queue.push(child)
+    }
+  }
+
+  return reachable
+}
+
+export function collectPublicationIndexEventIds(events: Event[]): Set<string> {
+  return new Set(events.map((ev) => ev.id.toLowerCase()))
+}
+
+export type HydrateNestedIndexOptions = {
+  maxPasses?: number
+  /** Cap missing nested 30040 fetches per pass (library bulk load). */
+  maxMissingPerPass?: number
+  /** When set, only scan these roots for missing nested 30040 refs. */
+  scanRoots?: Event[]
+}
+
+/** Batch-fetch nested kind 30040 indexes referenced by `a` tags but missing from cache. */
+export async function hydrateNestedIndexEvents(
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>,
+  relayUrls: string[],
+  options?: HydrateNestedIndexOptions | number
+): Promise<void> {
+  const opts: HydrateNestedIndexOptions =
+    typeof options === 'number' ? { maxPasses: options } : (options ?? {})
+  const maxPasses = opts.maxPasses ?? 2
+  const maxMissingPerPass = opts.maxMissingPerPass
+  const scanEvents = opts.scanRoots ?? indexEvents
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const missingRefs: PublicationSectionRef[] = []
+    const seenCoords = new Set<string>()
+    for (const event of scanEvents) {
+      if (event.kind !== ExtendedKind.PUBLICATION) continue
+      for (const ref of collectPublicationATagRefs(event)) {
+        if (ref.kind !== ExtendedKind.PUBLICATION || !ref.coordinate) continue
+        if (indexByAddress.has(ref.coordinate) || seenCoords.has(ref.coordinate)) continue
+        seenCoords.add(ref.coordinate)
+        missingRefs.push(ref)
+        if (maxMissingPerPass != null && missingRefs.length >= maxMissingPerPass) break
+      }
+      if (maxMissingPerPass != null && missingRefs.length >= maxMissingPerPass) break
+    }
+    if (missingRefs.length === 0) break
+    const fetched = await batchFetchPublicationSectionEvents(missingRefs, relayUrls)
+    let added = 0
+    for (const ev of fetched.values()) {
+      const addr = eventTagAddress(ev)
+      if (!addr || indexByAddress.has(addr)) continue
+      indexByAddress.set(addr, ev)
+      indexEvents.push(ev)
+      added++
+    }
+    if (added === 0) break
+  }
 }
 
 export async function collectReachableAddresses(

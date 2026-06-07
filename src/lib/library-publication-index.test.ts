@@ -24,7 +24,7 @@ function indexEvent(d: string, aTags: string[], id = d.padEnd(64, '0').slice(0, 
 }
 
 describe('library-publication-index', () => {
-  it('matches engagement on nested 30041 addresses', async () => {
+  it('matches engagement on nested 30041 addresses', () => {
     const leafAddr = `30041:${PK}:chapter-1`
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr])
@@ -42,14 +42,14 @@ describe('library-publication-index', () => {
     }
 
     const engagement = buildEngagementMapsFromEvents([], [], [highlight])
-    const engaged = await filterEngagedPublications([root], indexByAddress, engagement, [])
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
 
     expect(engaged).toHaveLength(1)
     expect(engaged[0].hasHighlight).toBe(true)
     expect(engaged[0].hasLabel).toBe(false)
   })
 
-  it('matches labels by root event id', async () => {
+  it('matches labels by root event id', () => {
     const root = indexEvent('book', [`30041:${PK}:intro`])
     const indexByAddress = buildIndexByAddress([root])
     const label: Event = {
@@ -62,7 +62,7 @@ describe('library-publication-index', () => {
       sig: 'e'.repeat(128)
     }
     const engagement = buildEngagementMapsFromEvents([label], [], [])
-    const engaged = await filterEngagedPublications([root], indexByAddress, engagement, [])
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
     expect(engaged).toHaveLength(1)
     expect(engaged[0].hasLabel).toBe(true)
   })

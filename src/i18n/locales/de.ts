@@ -1653,6 +1653,7 @@ export default {
     'Library show only my publications': 'Nur meine Publikationen',
     'Library empty': 'Noch keine Publikationen mit Interaktionen auf deinen Relays.',
     'Library empty filtered': 'Keine Publikationen entsprechen den Filtern.',
+    'Library loading': 'Publikationen werden von Dokument-Relays geladen…',
     'Library status line': '{{shown}} angezeigt · {{topLevel}} Top-Level · {{total}} Indizes geladen',
     'Library badge label': 'Label',
     'Library badge comment': 'Kommentar',
