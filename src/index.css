@@ -103,8 +103,17 @@
   }
 
   @media (max-width: 768px) {
-    .tiptap .ProseMirror {
-      min-height: min(42vh, 20rem);
+    /* Mobile composer: scroll inside the bordered editor instead of painting past it. */
+    .tiptap.flex-col {
+      min-height: 0;
+    }
+    .tiptap.flex-col .ProseMirror {
+      min-height: 0;
+      max-height: 100%;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      -webkit-overflow-scrolling: touch;
+      overflow-wrap: anywhere;
     }
   }
 

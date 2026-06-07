@@ -180,9 +180,10 @@ const PostTextarea = forwardRef<
       () =>
         cn(
           'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          isSmallScreen && 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain',
           className
         ),
-      [className]
+      [className, isSmallScreen]
     )
 
     const editor = useEditor({
@@ -325,7 +326,7 @@ const PostTextarea = forwardRef<
         value={activeTab}
         onValueChange={setActiveTab}
         className={cn(
-          isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
+          isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden' : 'space-y-2'
         )}
       >
         <div className="flex min-w-0 shrink-0 flex-col gap-2">
@@ -348,12 +349,15 @@ const PostTextarea = forwardRef<
           forceMount
           className={cn(
             'mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && 'flex min-h-0 flex-1 flex-col'
+            isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
           )}
         >
           {editor ? (
             <EditorContent
-              className={cn('tiptap', isSmallScreen && 'flex min-h-0 flex-1 flex-col')}
+              className={cn(
+                'tiptap',
+                isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+              )}
               editor={editor}
             />
           ) : (

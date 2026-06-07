@@ -3379,7 +3379,7 @@ export default function PostContent({
         </div>
       )}
       
-      <div className={cn(isSmallScreen && 'flex min-h-0 min-w-0 flex-1 flex-col')}>
+      <div className={cn(isSmallScreen && 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden')}>
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -3391,7 +3391,7 @@ export default function PostContent({
             isPoll
               ? 'min-h-20'
               : isSmallScreen
-                ? 'min-h-[min(42vh,20rem)]'
+                ? 'min-h-0'
                 : 'min-h-52',
             isDiscussionThread && threadErrors.content && 'border-destructive'
           )}
