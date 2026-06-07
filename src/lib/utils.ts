@@ -82,6 +82,62 @@ export function isPartiallyInViewport(el: HTMLElement) {
   )
 }
 
+/** Nearest ancestor that scrolls — use as IntersectionObserver root in nested panes. */
+export function nearestScrollportRoot(el: HTMLElement | null): Element | undefined {
+  if (!el) return undefined
+  let cur: HTMLElement | null = el.parentElement
+  while (cur && cur !== document.documentElement) {
+    const st = window.getComputedStyle(cur)
+    const oy = st.overflowY
+    const ox = st.overflowX
+    if (
+      oy === 'auto' ||
+      oy === 'scroll' ||
+      oy === 'overlay' ||
+      ox === 'auto' ||
+      ox === 'scroll' ||
+      ox === 'overlay'
+    ) {
+      return cur
+    }
+    cur = cur.parentElement
+  }
+  return undefined
+}
+
+function rectsOverlap(a: DOMRectReadOnly, b: DOMRectReadOnly): boolean {
+  return a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right
+}
+
+/** True when `el` intersects the viewport or its nearest scrollport (with margin). */
+export function elementIsNearVisibleScrollport(el: HTMLElement, marginPx: number): boolean {
+  const elRect = el.getBoundingClientRect()
+  const root = nearestScrollportRoot(el)
+  if (root) {
+    const rootRect = root.getBoundingClientRect()
+    const expanded = {
+      top: rootRect.top - marginPx,
+      bottom: rootRect.bottom + marginPx,
+      left: rootRect.left - marginPx,
+      right: rootRect.right + marginPx
+    }
+    return (
+      elRect.bottom >= expanded.top &&
+      elRect.top <= expanded.bottom &&
+      elRect.right >= expanded.left &&
+      elRect.left <= expanded.right
+    )
+  }
+  const vh = window.innerHeight
+  const vw = window.innerWidth
+  return (
+    elRect.bottom >= -marginPx &&
+    elRect.top <= vh + marginPx &&
+    elRect.right >= -marginPx &&
+    elRect.left <= vw + marginPx
+  )
+}
+
 export function isSupportCheckConnectionType() {
   if (typeof window === 'undefined' || !(navigator as any).connection) return false
   return typeof (navigator as any).connection.type === 'string'

@@ -18,9 +18,20 @@ export function parseGutenbergEbookId(source: string): string | null {
   return null
 }
 
-export function gutenbergCoverImageUrl(ebookId: string): string {
+export type GutenbergCoverSize = 'small' | 'medium'
+
+export function gutenbergCoverImageUrl(ebookId: string, size: GutenbergCoverSize = 'medium'): string {
   const id = ebookId.trim()
-  return `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`
+  return `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.${size}.jpg`
+}
+
+/** Use smaller cover art in library grids (faster download, sufficient at card size). */
+export function gutenbergLibraryCoverImageUrl(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed.toLowerCase().includes('gutenberg')) return trimmed
+  const id = parseGutenbergEbookId(trimmed)
+  if (!id) return trimmed
+  return gutenbergCoverImageUrl(id, 'small')
 }
 
 export function gutenbergEbookPageUrl(ebookId: string): string {

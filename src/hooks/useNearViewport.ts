@@ -1,22 +1,16 @@
+import { elementIsNearVisibleScrollport, nearestScrollportRoot } from '@/lib/utils'
 import { useEffect, useLayoutEffect, useState, type RefObject } from 'react'
 
 /** Pixels beyond the viewport edge to treat as visible (prefetch before scroll lands). */
 export const NEAR_VIEWPORT_MARGIN_PX = 320
 
+/** @deprecated Prefer {@link elementIsNearVisibleScrollport} — respects nested scrollports. */
 export function elementIsNearViewport(el: HTMLElement, marginPx: number): boolean {
-  const rect = el.getBoundingClientRect()
-  const vh = window.innerHeight
-  const vw = window.innerWidth
-  return (
-    rect.bottom >= -marginPx &&
-    rect.top <= vh + marginPx &&
-    rect.right >= -marginPx &&
-    rect.left <= vw + marginPx
-  )
+  return elementIsNearVisibleScrollport(el, marginPx)
 }
 
 /**
- * True when `ref` points at an element intersecting the viewport (with margin).
+ * True when `ref` points at an element intersecting the viewport or nearest scrollport (with margin).
  * When `enabled` is false, returns true immediately (no deferral).
  */
 export function useNearViewport(
@@ -37,7 +31,7 @@ export function useNearViewport(
       setIsNear(false)
       return
     }
-    if (elementIsNearViewport(el, marginPx)) {
+    if (elementIsNearVisibleScrollport(el, marginPx)) {
       setIsNear(true)
       return
     }
@@ -55,13 +49,18 @@ export function useNearViewport(
     const attach = () => {
       const el = ref.current
       if (!el || io) return
+      const scrollRoot = nearestScrollportRoot(el)
       io = new IntersectionObserver(
         (entries) => {
           if (entries.some((e) => e.isIntersecting)) {
             setIsNear(true)
           }
         },
-        { root: null, rootMargin: `${marginPx}px`, threshold: 0.01 }
+        {
+          root: scrollRoot ?? null,
+          rootMargin: `${marginPx}px`,
+          threshold: 0.01
+        }
       )
       io.observe(el)
     }

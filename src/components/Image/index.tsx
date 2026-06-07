@@ -74,6 +74,7 @@ export default function Image({
   style: wrapperStyleProp,
   holdUntilClick = false,
   fetchPriority,
+  loading = 'eager',
   onClick,
   showAltCaption = false,
   caption,
@@ -97,6 +98,8 @@ export default function Image({
   errorPlaceholder?: React.ReactNode
   /** Passed to the inner `<img>` (e.g. profile banner vs avatar load order). */
   fetchPriority?: 'high' | 'low' | 'auto'
+  /** Native lazy loading — use `lazy` for below-the-fold grids; default `eager` for feeds. */
+  loading?: 'lazy' | 'eager'
   /**
    * When true, the full image is not loaded until the user interacts.
    * The first click runs {@link onClick} (e.g. open lightbox) and also reveals the
@@ -386,8 +389,7 @@ export default function Image({
           alt={finalAlt}
           referrerPolicy="no-referrer-when-downgrade"
           decoding="async"
-          // `lazy` often never starts the request inside nested feed scrollers; always-load should fetch eagerly.
-          loading="eager"
+          loading={loading}
           {...(fetchPriority ? { fetchpriority: fetchPriority } : {})}
           draggable={false}
           onLoad={handleLoad}

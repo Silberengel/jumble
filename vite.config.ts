@@ -528,8 +528,31 @@ export default defineConfig(({ mode }) => {
             }
           },
           {
-            // Project Gutenberg covers: bypass SW cache — CacheFirst can serve stale/truncated
-            // HTML error bodies for .jpg URLs and the browser reports "image corrupt or truncated".
+            // Gutenberg cover JPGs are immutable; cache valid image responses only.
+            urlPattern:
+              /^https:\/\/(?:www\.)?gutenberg\.org\/cache\/epub\/\d+\/pg\d+\.cover\.(?:small|medium|large)\.jpg$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gutenberg-covers',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 30 * 24 * 60 * 60
+              },
+              cacheableResponse: { statuses: [200] },
+              plugins: [
+                {
+                  cacheWillUpdate: async ({ response }: { response: Response | undefined }) => {
+                    if (!response?.ok) return null
+                    const ct = (response.headers.get('content-type') ?? '').toLowerCase()
+                    if (!ct.includes('image/')) return null
+                    return response
+                  }
+                }
+              ]
+            }
+          },
+          {
+            // Other Gutenberg pages (ebooks HTML, etc.) — never cache as images.
             urlPattern: /^https:\/\/(?:www\.)?gutenberg\.org\//i,
             handler: 'NetworkOnly'
           },

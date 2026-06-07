@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   gutenbergCoverImageUrl,
   gutenbergEbookPageUrl,
+  gutenbergLibraryCoverImageUrl,
   normalizeGutenbergCoverImageUrl,
   parseGutenbergEbookId,
   parseGutenbergEbookIdFromDTag,
@@ -20,9 +21,23 @@ describe('gutenberg-cover', () => {
     ).toBe('16702')
   })
 
-  it('builds medium cover URL', () => {
+  it('builds medium cover URL by default', () => {
     expect(gutenbergCoverImageUrl('58363')).toBe(
       'https://www.gutenberg.org/cache/epub/58363/pg58363.cover.medium.jpg'
+    )
+    expect(gutenbergCoverImageUrl('58363', 'small')).toBe(
+      'https://www.gutenberg.org/cache/epub/58363/pg58363.cover.small.jpg'
+    )
+  })
+
+  it('gutenbergLibraryCoverImageUrl prefers small covers for library grids', () => {
+    expect(
+      gutenbergLibraryCoverImageUrl(
+        'https://www.gutenberg.org/cache/epub/58363/pg58363.cover.medium.jpg'
+      )
+    ).toBe('https://www.gutenberg.org/cache/epub/58363/pg58363.cover.small.jpg')
+    expect(gutenbergLibraryCoverImageUrl('https://example.com/cover.jpg')).toBe(
+      'https://example.com/cover.jpg'
     )
   })
 
