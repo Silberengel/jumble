@@ -4,6 +4,7 @@ import type { TArchivesInteractionCounts } from '@/types/nostr-archives'
 
 const BATCH_DELAY_MS = 48
 const MAX_BATCH_SIZE = 20
+const PREFETCH_CONCURRENCY = 5
 const RECENT_TTL_MS = 5 * 60_000
 
 const pending = new Set<string>()
@@ -53,19 +54,26 @@ async function flushBatch(): Promise<void> {
     pending.delete(id)
   }
 
-  for (const id of batch) {
-    if (!nostrArchivesApi.isAvailable()) break
-    inFlight.add(id)
-    try {
-      const res = await nostrArchivesApi.getEventInteractions(id)
-      if (res.ok) {
-        markRecent(id)
-        noteStatsService.applyArchivesInteractionCounts(id, res.data)
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < batch.length) {
+      if (!nostrArchivesApi.isAvailable()) return
+      const id = batch[cursor++]!
+      inFlight.add(id)
+      try {
+        const res = await nostrArchivesApi.getEventInteractions(id)
+        if (res.ok) {
+          markRecent(id)
+          noteStatsService.applyArchivesInteractionCounts(id, res.data)
+        }
+      } finally {
+        inFlight.delete(id)
       }
-    } finally {
-      inFlight.delete(id)
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(PREFETCH_CONCURRENCY, batch.length) }, () => worker())
+  )
 
   if (pending.size > 0) scheduleBatch()
 }

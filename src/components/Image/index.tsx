@@ -11,7 +11,7 @@ import {
 import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
-import { ImageOff } from 'lucide-react'
+import { Image as ImageIcon, ImageOff } from 'lucide-react'
 import {
   CSSProperties,
   HTMLAttributes,
@@ -332,16 +332,21 @@ export default function Image({
   }
 
   const hasHoverTip = Boolean(imgTitle)
+  const showTapToRevealChrome = !showErrorState && !revealed && effectiveHoldUntilClick
+  const tapToRevealLabel = t('Click to load image')
 
   return (
     <span className={cn('block w-full not-prose', classNames.wrapper)}>
       <span
         className={cn(
           'relative overflow-hidden block w-full rounded-lg bg-background',
+          showTapToRevealChrome && 'group cursor-zoom-in',
           hasHoverTip && 'cursor-help ring-1 ring-inset ring-dotted ring-muted-foreground/45'
         )}
         style={mergedWrapperStyle}
-        title={imgTitle}
+        title={showTapToRevealChrome ? tapToRevealLabel : imgTitle}
+        role={showTapToRevealChrome ? 'button' : undefined}
+        aria-label={showTapToRevealChrome ? tapToRevealLabel : undefined}
         onClick={handleWrapperClick}
         {...props}
       >
@@ -374,6 +379,19 @@ export default function Image({
             </span>
           )}
         </span>
+      )}
+      {showTapToRevealChrome && (
+        <>
+          <span
+            className="absolute inset-0 z-[15] bg-gradient-to-t from-black/55 via-black/25 to-black/15 pointer-events-none"
+            aria-hidden
+          />
+          <span className="absolute inset-0 z-[20] grid place-items-center pointer-events-none" aria-hidden>
+            <span className="flex size-14 items-center justify-center rounded-full bg-black/55 text-white shadow-md backdrop-blur-[2px] transition-transform group-hover:scale-105">
+              <ImageIcon className="size-7" strokeWidth={2} />
+            </span>
+          </span>
+        </>
       )}
       {!showErrorState && revealed && (
         <img

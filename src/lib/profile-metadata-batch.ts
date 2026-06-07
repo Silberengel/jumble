@@ -53,13 +53,23 @@ export async function fetchProfilesMetadataBatch(pubkeys: readonly string[]): Pr
   try {
     const byPk = new Map<string, TProfile>()
 
-    const relayPromise = client.fetchProfilesForPubkeys(deduped).catch(() => [] as TProfile[])
     const archivesPromise = nostrArchivesApi.isAvailable()
       ? nostrArchivesApi.fetchProfilesMetadata(deduped)
       : Promise.resolve({ ok: false as const, reason: 'disabled' as const })
 
-    const [archivesRes, relayProfiles] = await Promise.all([archivesPromise, relayPromise])
+    const archivesRes = await Promise.race([
+      archivesPromise,
+      new Promise<{ ok: false; reason: 'timeout' }>((resolve) =>
+        setTimeout(() => resolve({ ok: false, reason: 'timeout' }), 400)
+      )
+    ])
     mergeArchivesProfiles(byPk, archivesRes)
+
+    const relayNeeded = deduped.filter((pk) => !byPk.has(pk))
+    const relayProfiles =
+      relayNeeded.length > 0
+        ? await client.fetchProfilesForPubkeys(relayNeeded).catch(() => [] as TProfile[])
+        : []
 
     for (const p of relayProfiles) {
       const pkNorm = p.pubkey.toLowerCase()

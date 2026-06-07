@@ -56,7 +56,10 @@ export async function resolveThreadContextEventFromLocalStores(
     return fromArchive
   }
 
-  const fromArchivesApi = await resolveNoteEventFromArchives(hex)
+  const fromArchivesApi = await Promise.race([
+    resolveNoteEventFromArchives(hex),
+    new Promise<undefined>((resolve) => setTimeout(resolve, 700))
+  ])
   if (fromArchivesApi && !shouldDropEventOnIngest(fromArchivesApi, { explicitNoteLookupHexId: hex })) {
     return fromArchivesApi
   }

@@ -1072,6 +1072,10 @@ const NoteList = forwardRef(
     }, [subRequestsKey, feedSubscriptionKey])
 
     const feedAttestedSuperchatIds = useFeedAttestedSuperchatIds(feedRelayUrls)
+    const feedAttestedSuperchatIdsRef = useRef(feedAttestedSuperchatIds)
+    useEffect(() => {
+      feedAttestedSuperchatIdsRef.current = feedAttestedSuperchatIds
+    }, [feedAttestedSuperchatIds])
 
     const followingFeedDeltaSubRequestsKey = useMemo(
       () =>
@@ -1427,7 +1431,7 @@ const NoteList = forwardRef(
         if (
           !shouldIncludePaymentInFeed(
             evt,
-            feedAttestedSuperchatIds,
+            feedAttestedSuperchatIdsRef.current,
             incomingPaymentRecipientPubkey
           )
         ) {
@@ -1460,7 +1464,6 @@ const NoteList = forwardRef(
         mutePubkeySet,
         pinnedEventHexIdSet,
         isEventDeleted,
-        feedAttestedSuperchatIds,
         incomingPaymentRecipientPubkey,
         extraShouldHideEvent,
         homeFeedActiveSeenOnAllowlist,
@@ -1758,15 +1761,6 @@ const NoteList = forwardRef(
       clientFilteredVisibleCountRef.current = clientFilteredEvents.length
     }, [clientFilteredEvents.length])
 
-    const visibleNoteIdsForStatsPrefetchKey = useMemo(
-      () =>
-        clientFilteredEvents
-          .slice(0, Math.min(120, Math.max(showCount + 64, 64)))
-          .map((e) => e.id)
-          .join('\n'),
-      [clientFilteredEvents, showCount]
-    )
-
     const enqueueFeedProfilePubkeys = useCallback((need: string[]) => {
       if (need.length === 0) return
       const gen = feedProfileBatchGenRef.current
@@ -1829,51 +1823,6 @@ const NoteList = forwardRef(
         })
       })()
     }, [])
-
-    const statsProfilePrefetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const pendingStatsProfilePubkeysRef = useRef<Set<string>>(new Set())
-
-    useEffect(() => {
-      if (!visibleNoteIdsForStatsPrefetchKey) return
-      const ids = visibleNoteIdsForStatsPrefetchKey.split('\n').filter(Boolean)
-
-      const flushStatsProfiles = () => {
-        statsProfilePrefetchDebounceRef.current = null
-        const need = [...pendingStatsProfilePubkeysRef.current].filter(
-          (pk) => !feedProfileLoadedRef.current.has(pk)
-        )
-        pendingStatsProfilePubkeysRef.current.clear()
-        enqueueFeedProfilePubkeys(need)
-      }
-
-      const onStatsUpdate = (noteId: string) => {
-        const candidates = new Set<string>()
-        collectProfilePrefetchPubkeysFromNoteStats(noteStatsService.getNoteStats(noteId), candidates)
-        for (const pk of candidates) {
-          if (!feedProfileLoadedRef.current.has(pk)) {
-            pendingStatsProfilePubkeysRef.current.add(pk)
-          }
-        }
-        if (pendingStatsProfilePubkeysRef.current.size === 0) return
-        if (statsProfilePrefetchDebounceRef.current) {
-          clearTimeout(statsProfilePrefetchDebounceRef.current)
-        }
-        statsProfilePrefetchDebounceRef.current = setTimeout(
-          flushStatsProfiles,
-          FEED_PROFILE_BATCH_DEBOUNCE_MS
-        )
-      }
-
-      const unsubs = ids.map((id) => noteStatsService.subscribeNoteStats(id, () => onStatsUpdate(id)))
-      return () => {
-        unsubs.forEach((u) => u())
-        if (statsProfilePrefetchDebounceRef.current) {
-          clearTimeout(statsProfilePrefetchDebounceRef.current)
-          statsProfilePrefetchDebounceRef.current = null
-        }
-        pendingStatsProfilePubkeysRef.current.clear()
-      }
-    }, [visibleNoteIdsForStatsPrefetchKey, enqueueFeedProfilePubkeys])
 
     const clientFilteredNewEvents = useMemo(
       () =>

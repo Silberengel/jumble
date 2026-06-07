@@ -116,6 +116,8 @@ export default function NoteStats({
     if (!fetchIfNotExisting) return
     if (shouldDeferStatsFetch && !isNearViewport) return
     noteStatsService.prefetchArchivesInteractions(event.id)
+    /** Feed cards: Archives aggregate counts are enough for badges — skip relay REQ storms. */
+    if (!foregroundStats) return
     setLoading(true)
     noteStatsService
       .fetchNoteStats(event, pubkey, statsRelaysRef.current, {
