@@ -22,22 +22,56 @@ let currentComponent: ReactRenderer<MentionListHandle, MentionListProps> | undef
 let currentQuery = ''
 let mentionSearchGeneration = 0
 
-/** Extend range.to to include any trailing word chars (handle, NIP-05) so the full @handle is replaced. Exported for nevent picker. */
-export function extendMentionRangeToEndOfWord(editor: Editor, range: { from: number; to: number }): number {
-  const { doc } = editor.state
-  let pos = range.to
-  while (pos < doc.content.size) {
-    const $pos = doc.resolve(pos)
-    const node = $pos.nodeAfter
-    if (!node || !node.isText) break
-    const text = node.text ?? ''
-    const offset = pos - $pos.start()
-    let i = offset
-    while (i < text.length && /[\w.-]/.test(text[i]!)) i++
-    if (i === offset) break
-    pos += i - offset
+const MENTION_QUERY_CHAR = /[\w.-]/
+
+/** Length of @query (including @) within `text` starting at index 0. */
+export function mentionQueryLengthInText(text: string, mentionChar = MENTION_CHAR): number {
+  if (text.startsWith(mentionChar)) {
+    let i = mentionChar.length
+    while (i < text.length && MENTION_QUERY_CHAR.test(text[i]!)) i++
+    return i
   }
-  return pos
+  let i = 0
+  while (i < text.length && MENTION_QUERY_CHAR.test(text[i]!)) i++
+  return i
+}
+
+/**
+ * Extend range.to through the full @handle typed in the document.
+ * TipTap's range.to is often stale (especially on mouse pick); scanning the doc text avoids leaving a trailing letter.
+ */
+export function extendMentionRangeToEndOfWord(editor: Editor, range: { from: number; to: number }): number {
+  const { doc, selection } = editor.state
+  const scanEnd = Math.min(doc.content.size, range.from + 300)
+  const prefix = doc.textBetween(range.from, scanEnd, '', '')
+
+  let end = range.to
+
+  const queryLen = mentionQueryLengthInText(prefix)
+  if (queryLen > 0) {
+    end = Math.max(end, range.from + queryLen)
+  } else {
+    let pos = range.to
+    while (pos < scanEnd) {
+      const ch = doc.textBetween(pos, pos + 1, '', '')
+      if (!ch || !MENTION_QUERY_CHAR.test(ch)) break
+      pos += 1
+    }
+    end = Math.max(end, pos)
+  }
+
+  // Click-to-select can leave the caret ahead of the last suggestion range update.
+  if (selection.empty && selection.to > end) {
+    let pos = selection.to
+    while (pos < scanEnd) {
+      const ch = doc.textBetween(pos, pos + 1, '', '')
+      if (!ch || !MENTION_QUERY_CHAR.test(ch)) break
+      pos += 1
+    }
+    end = Math.max(end, pos)
+  }
+
+  return end
 }
 
 function mountPopup(
@@ -62,10 +96,18 @@ const suggestion = {
     props: { id: string | null; label?: string | null; mode?: PickerSearchMode }
   }) => {
     if (props.id === NEVENT_NADDR_PICKER_ID) {
+      const to = extendMentionRangeToEndOfWord(editor, range)
+      const insertAt = range.from
+      // Drop @naddr / @nevent trigger text so the suggestion session ends before the dialog opens.
+      editor.chain().focus().deleteRange({ from: range.from, to }).run()
       postEditor.closeSuggestionPopup()
       window.dispatchEvent(
         new CustomEvent(OPEN_NEVENT_PICKER_EVENT, {
-          detail: { editor, range, initialMode: props.mode ?? 'nevent' }
+          detail: {
+            editor,
+            range: { from: insertAt, to: insertAt },
+            initialMode: props.mode ?? 'nevent'
+          }
         })
       )
       return
@@ -84,6 +126,7 @@ const suggestion = {
       ])
       .run()
     editor.view.dom.ownerDocument.defaultView?.getSelection()?.collapseToEnd()
+    postEditor.closeSuggestionPopup()
   },
 
   items: async ({ query }: { query: string }) => {
@@ -125,17 +168,36 @@ const suggestion = {
   render: () => {
     let component: ReactRenderer<MentionListHandle, MentionListProps> | undefined
     let popup: ReturnType<typeof createSuggestionPopup> | undefined
-    let closePopup: () => void
+    let closePopup: (() => void) | undefined
     let exited = false
+
+    const exit = () => {
+      if (exited) return
+      exited = true
+      mentionSearchGeneration += 1
+      postEditor.isSuggestionPopupOpen = false
+      currentComponent = undefined
+      currentQuery = ''
+      popup?.destroy()
+      popup = undefined
+      component?.destroy()
+      component = undefined
+      if (closePopup) {
+        postEditor.removeEventListener('closeSuggestionPopup', closePopup)
+      }
+    }
 
     return {
       onBeforeStart: () => {
-        closePopup = () => {
-          popup?.hide()
-        }
+        closePopup = exit
+        postEditor.removeEventListener('closeSuggestionPopup', closePopup)
         postEditor.addEventListener('closeSuggestionPopup', closePopup)
       },
       onStart: (props: SuggestionProps<MentionListItem>) => {
+        exited = false
+        closePopup = exit
+        postEditor.removeEventListener('closeSuggestionPopup', closePopup)
+        postEditor.addEventListener('closeSuggestionPopup', closePopup)
         popup = createSuggestionPopup(props.editor)
         component = new ReactRenderer(MentionList, {
           props: { ...props, loading: true },
@@ -146,6 +208,7 @@ const suggestion = {
       },
 
       onUpdate(props: SuggestionProps<MentionListItem>) {
+        if (exited) return
         component?.updateProps(props)
         if (popup && component) {
           mountPopup(popup, props, component)
@@ -154,23 +217,14 @@ const suggestion = {
 
       onKeyDown(props: SuggestionKeyDownProps) {
         if (props.event.key === 'Escape') {
-          popup?.hide()
+          exit()
           return true
         }
         return component?.ref?.onKeyDown(props) ?? false
       },
 
       onExit() {
-        if (exited) return
-        exited = true
-        postEditor.isSuggestionPopupOpen = false
-        currentComponent = undefined
-        currentQuery = ''
-        popup?.destroy()
-        popup = undefined
-        component?.destroy()
-        component = undefined
-        postEditor.removeEventListener('closeSuggestionPopup', closePopup)
+        exit()
       }
     }
   }

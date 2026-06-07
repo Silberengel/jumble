@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import UserItem, { UserItemSkeleton } from '@/components/UserItem'
 import { useSearchProfiles } from '@/hooks'
 import { MENTION_NPUB_DROPDOWN_LIMIT } from '@/services/mention-event-search.service'
+import postEditor from '@/services/post-editor.service'
 import { AtSign, FileSearch } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -42,6 +43,7 @@ export function MentionAndEventToolbarButtons({
   const selectNpub = useCallback(
     (npub: string) => {
       insertAtCursor(`nostr:${npub} `)
+      postEditor.closeSuggestionPopup()
       closeMention()
     },
     [insertAtCursor, closeMention]
@@ -114,7 +116,10 @@ export function MentionAndEventToolbarButtons({
         size="icon"
         title={t('Insert event or address')}
         className={btnClass}
-        onClick={() => neventPicker?.openNeventPicker((link) => insertAtCursor(link + ' '))}
+        onClick={() => {
+          postEditor.closeSuggestionPopup()
+          neventPicker?.openNeventPicker((link) => insertAtCursor(link + ' '))
+        }}
       >
         <FileSearch className="h-4 w-4" />
       </Button>

@@ -1,3 +1,4 @@
+import postEditor from '@/services/post-editor.service'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { PickerSearchMode } from '@/services/mention-event-search.service'
@@ -22,6 +23,7 @@ export function NeventPickerProvider({ children }: { children: React.ReactNode }
       const to = extendMentionRangeToEndOfWord(editor, range)
       setOnSelectedRef(() => (link: string) => {
         editor.chain().focus().insertContentAt({ from: range.from, to }, link + ' ').run()
+        postEditor.closeSuggestionPopup()
       })
       setInitialMode(detailMode ?? 'nevent')
       setOpen(true)
@@ -40,6 +42,7 @@ export function NeventPickerProvider({ children }: { children: React.ReactNode }
     (link: string) => {
       onSelectedRef?.(link)
       setOnSelectedRef(null)
+      postEditor.closeSuggestionPopup()
     },
     [onSelectedRef]
   )
