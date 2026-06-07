@@ -21,6 +21,8 @@ const LOAD_TIMEOUT_MS = 120_000
 const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelAddresses: new Set(),
   labelEventIds: new Set(),
+  labelValuesByAddress: new Map(),
+  labelValuesByEventId: new Map(),
   commentAddresses: new Set(),
   highlightAddresses: new Set()
 }

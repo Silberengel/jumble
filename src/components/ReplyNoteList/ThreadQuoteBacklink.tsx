@@ -3,6 +3,7 @@ import { ExtendedKind } from '@/constants'
 import { getKindDescription } from '@/lib/kind-description'
 import { toNote } from '@/lib/link'
 import { stripNostrIdsFromPlainTextSnippet } from '@/lib/snippet-sanitize'
+import { formatNip32LabelSnippet } from '@/lib/nip32-label'
 import { cn } from '@/lib/utils'
 import { FormattedTimestamp } from '@/components/FormattedTimestamp'
 import UserAvatar from '@/components/UserAvatar'
@@ -41,15 +42,8 @@ function quoteBacklinkSnippet(event: Event, maxLen = 96): string {
     }
   }
   if (event.kind === kinds.Label) {
-    const L = event.tags.find((t) => t[0] === 'l' || t[0] === 'L')
-    if (L) {
-      const parts = [L[1], L[2], L[3]].filter(Boolean)
-      if (parts.length) return trim(parts.join(' · '))
-    }
-    if (event.content.trim()) {
-      const out = trim(event.content)
-      if (out) return out
-    }
+    const snippet = formatNip32LabelSnippet(event, maxLen)
+    if (snippet) return trim(snippet)
   }
   if (event.kind === kinds.Report || event.kind === ExtendedKind.REPORT) {
     const rep = event.tags.find((t) => t[0] === 'report' || t[0] === 'Report')?.[1]

@@ -11,7 +11,8 @@ import { BookOpen, ExternalLink } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import Image from '../Image'
+import PublicationCoverFallback from './PublicationCoverFallback'
+import PublicationCoverImage from './PublicationCoverImage'
 
 function formatAuthorLine(authors: PublicationAuthor[]): string {
   if (authors.length === 0) return ''
@@ -120,16 +121,16 @@ export default function PublicationIndexMetadata({
   return (
     <div className={cn('min-w-0 space-y-2', isFull && 'space-y-4', className)}>
       {isFull && metadata.image?.trim() ? (
-        <Image
-          image={{ url: metadata.image.trim(), pubkey: event.pubkey }}
-          className="aspect-[16/10] w-full max-w-xl rounded-lg bg-foreground object-cover"
-          hideIfError
-          holdUntilClick={!autoLoadMedia}
+        <PublicationCoverImage
+          imageUrl={metadata.image.trim()}
+          pubkey={event.pubkey}
+          autoLoadMedia={autoLoadMedia}
+          size="default"
+          layout="stacked"
+          className="mb-0 w-fit max-w-xl"
         />
       ) : isFull ? (
-        <div className="flex aspect-[16/10] w-full max-w-xl items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <BookOpen className="size-14" aria-hidden />
-        </div>
+        <PublicationCoverFallback layout="stacked" size="default" className="w-fit max-w-xl" />
       ) : null}
 
       {showTitle ? (

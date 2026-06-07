@@ -5,6 +5,7 @@ import {
   getLongFormArticleMetadataFromEvent
 } from '@/lib/event-metadata'
 import { tagNameEquals } from '@/lib/tag'
+import { formatNip32LabelSnippet } from '@/lib/nip32-label'
 import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
 import { Event, kinds } from 'nostr-tools'
 
@@ -45,6 +46,11 @@ export function getParentReplyBlurbDisplayText(
 
   const subjectTag = event.tags.find(tagNameEquals('subject'))?.[1]?.trim()
   if (subjectTag) return truncateBlurb(stripMarkupForPreview(subjectTag), maxLen)
+
+  if (event.kind === kinds.Label) {
+    const labelSnippet = formatNip32LabelSnippet(event, maxLen)
+    if (labelSnippet) return labelSnippet
+  }
 
   if (
     event.kind === kinds.LongFormArticle ||

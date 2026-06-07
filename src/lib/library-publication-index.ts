@@ -7,6 +7,7 @@ import {
 } from '@/lib/general-search-text-match'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
+import { extractNip32LabelValues } from '@/lib/nip32-label'
 import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
@@ -57,6 +58,8 @@ const QUERY_OPTS = {
 export type PublicationEngagementMaps = {
   labelAddresses: Set<string>
   labelEventIds: Set<string>
+  labelValuesByAddress: Map<string, Set<string>>
+  labelValuesByEventId: Map<string, Set<string>>
   commentAddresses: Set<string>
   highlightAddresses: Set<string>
 }
@@ -64,6 +67,8 @@ export type PublicationEngagementMaps = {
 export type LibraryPublicationEntry = {
   event: Event
   hasLabel: boolean
+  /** NIP-32 `l` tag values from kind-1985 events (e.g. "booklist"), not `L` namespaces (e.g. "ugc"). */
+  labelNames: string[]
   hasComment: boolean
   hasHighlight: boolean
   engagementCount: number
@@ -301,16 +306,36 @@ export function buildEngagementMapsFromEvents(
 ): PublicationEngagementMaps {
   const labelAddresses = new Set<string>()
   const labelEventIds = new Set<string>()
+  const labelValuesByAddress = new Map<string, Set<string>>()
+  const labelValuesByEventId = new Map<string, Set<string>>()
   const commentAddresses = new Set<string>()
   const highlightAddresses = new Set<string>()
 
   const addressMatches = (addr: string) => !targetAddresses || targetAddresses.has(addr)
   const eventIdMatches = (id: string) => !targetEventIds || targetEventIds.has(id.toLowerCase())
 
+  const addLabelValues = (map: Map<string, Set<string>>, key: string, values: string[]) => {
+    if (values.length === 0) return
+    let set = map.get(key)
+    if (!set) {
+      set = new Set<string>()
+      map.set(key, set)
+    }
+    for (const value of values) set.add(value)
+  }
+
   for (const ev of labels) {
+    const labelValues = extractNip32LabelValues(ev.tags)
     for (const tag of ev.tags) {
-      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) labelAddresses.add(tag[1])
-      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) labelEventIds.add(tag[1].toLowerCase())
+      if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
+        labelAddresses.add(tag[1])
+        addLabelValues(labelValuesByAddress, tag[1], labelValues)
+      }
+      if (tag[0] === 'e' && tag[1] && eventIdMatches(tag[1])) {
+        const eventId = tag[1].toLowerCase()
+        labelEventIds.add(eventId)
+        addLabelValues(labelValuesByEventId, eventId, labelValues)
+      }
     }
   }
 
@@ -326,7 +351,14 @@ export function buildEngagementMapsFromEvents(
     }
   }
 
-  return { labelAddresses, labelEventIds, commentAddresses, highlightAddresses }
+  return {
+    labelAddresses,
+    labelEventIds,
+    labelValuesByAddress,
+    labelValuesByEventId,
+    commentAddresses,
+    highlightAddresses
+  }
 }
 
 async function fetchHttpEngagementByAddresses(
@@ -367,6 +399,8 @@ export async function fetchPublicationEngagementMaps(
     return {
       labelAddresses: new Set(),
       labelEventIds: new Set(),
+      labelValuesByAddress: new Map(),
+      labelValuesByEventId: new Map(),
       commentAddresses: new Set(),
       highlightAddresses: new Set()
     }
@@ -442,6 +476,24 @@ function addressHasEngagement(
   return { hasLabel, hasComment, hasHighlight }
 }
 
+function collectLabelNamesForTarget(
+  address: string,
+  eventId: string | undefined,
+  maps: PublicationEngagementMaps,
+  out: Set<string>
+): void {
+  const byAddress = maps.labelValuesByAddress.get(address)
+  if (byAddress) {
+    for (const value of byAddress) out.add(value)
+  }
+  if (eventId) {
+    const byEventId = maps.labelValuesByEventId.get(eventId.toLowerCase())
+    if (byEventId) {
+      for (const value of byEventId) out.add(value)
+    }
+  }
+}
+
 export function filterEngagedPublications(
   roots: Event[],
   indexByAddress: Map<string, Event>,
@@ -458,11 +510,15 @@ export function filterEngagedPublications(
     let hasComment = false
     let hasHighlight = false
     let engagementCount = 0
+    const labelNames = new Set<string>()
 
     for (const addr of reachable) {
       const indexed = indexByAddress.get(addr)
       const flags = addressHasEngagement(addr, indexed?.id, engagement)
-      if (flags.hasLabel) hasLabel = true
+      if (flags.hasLabel) {
+        hasLabel = true
+        collectLabelNamesForTarget(addr, indexed?.id, engagement, labelNames)
+      }
       if (flags.hasComment) hasComment = true
       if (flags.hasHighlight) hasHighlight = true
       if (flags.hasLabel || flags.hasComment || flags.hasHighlight) engagementCount++
@@ -472,11 +528,15 @@ export function filterEngagedPublications(
     hasLabel = hasLabel || rootFlags.hasLabel
     hasComment = hasComment || rootFlags.hasComment
     hasHighlight = hasHighlight || rootFlags.hasHighlight
+    if (rootFlags.hasLabel) {
+      collectLabelNamesForTarget(rootAddr ?? '', root.id, engagement, labelNames)
+    }
 
     if (hasLabel || hasComment || hasHighlight) {
       out.push({
         event: root,
         hasLabel,
+        labelNames: [...labelNames].sort((a, b) => a.localeCompare(b)),
         hasComment,
         hasHighlight,
         engagementCount: Math.max(engagementCount, 1)
@@ -497,6 +557,7 @@ export function buildRecentPublicationEntries(
     .map((event) => ({
       event,
       hasLabel: false,
+      labelNames: [],
       hasComment: false,
       hasHighlight: false,
       engagementCount: 0
@@ -525,6 +586,8 @@ export function sortLibraryPublications(entries: LibraryPublicationEntry[]): Lib
 const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelAddresses: new Set(),
   labelEventIds: new Set(),
+  labelValuesByAddress: new Map(),
+  labelValuesByEventId: new Map(),
   commentAddresses: new Set(),
   highlightAddresses: new Set()
 }
@@ -596,6 +659,7 @@ function libraryEntriesFromRoots(
     return {
       event: root,
       hasLabel: false,
+      labelNames: [],
       hasComment: false,
       hasHighlight: false,
       engagementCount: 0
@@ -1102,6 +1166,8 @@ export async function loadLibraryPublicationIndex(
             resolve({
               labelAddresses: new Set(),
               labelEventIds: new Set(),
+              labelValuesByAddress: new Map(),
+              labelValuesByEventId: new Map(),
               commentAddresses: new Set(),
               highlightAddresses: new Set()
             }),
@@ -1118,6 +1184,8 @@ export async function loadLibraryPublicationIndex(
     engagement = {
       labelAddresses: new Set(),
       labelEventIds: new Set(),
+      labelValuesByAddress: new Map(),
+      labelValuesByEventId: new Map(),
       commentAddresses: new Set(),
       highlightAddresses: new Set()
     }

@@ -74,6 +74,31 @@ describe('library-publication-index', () => {
     const engaged = filterEngagedPublications([root], indexByAddress, engagement)
     expect(engaged).toHaveLength(1)
     expect(engaged[0].hasLabel).toBe(true)
+    expect(engaged[0].labelNames).toEqual(['MIT'])
+  })
+
+  it('extracts NIP-32 l tag values, not L namespace declarations', () => {
+    const rootAddr = `30040:${PK}:jane-eyre-an-autobiography`
+    const root = indexEvent('jane-eyre-an-autobiography', [`30041:${PK}:intro`])
+    root.tags = [['d', 'jane-eyre-an-autobiography'], ['title', 'Jane Eyre'], ['a', `30041:${PK}:intro`]]
+    const indexByAddress = buildIndexByAddress([root])
+    const label: Event = {
+      id: '5'.repeat(64),
+      kind: ExtendedKind.LABEL,
+      pubkey: 'f'.repeat(64),
+      created_at: 50,
+      content: '',
+      tags: [
+        ['L', 'ugc'],
+        ['l', 'booklist', 'ugc'],
+        ['a', rootAddr, 'wss://theforest.nostr1.com']
+      ],
+      sig: 'e'.repeat(128)
+    }
+    const engagement = buildEngagementMapsFromEvents([label], [], [])
+    const engaged = filterEngagedPublications([root], indexByAddress, engagement)
+    expect(engaged).toHaveLength(1)
+    expect(engaged[0].labelNames).toEqual(['booklist'])
   })
 
   it('filterLibraryPublicationsBySearch matches title', () => {
@@ -82,6 +107,7 @@ describe('library-publication-index', () => {
       {
         event: root,
         hasLabel: true,
+        labelNames: ['MIT'],
         hasComment: false,
         hasHighlight: false,
         engagementCount: 1

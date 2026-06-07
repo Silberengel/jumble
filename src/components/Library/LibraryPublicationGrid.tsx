@@ -11,12 +11,23 @@ function EngagementBadges({ entry }: { entry: LibraryPublicationEntry }) {
 
   return (
     <div className="flex flex-wrap gap-2 px-1 pb-2">
-      {entry.hasLabel && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          <Tag className="size-3" aria-hidden />
-          {t('Library badge label')}
-        </span>
-      )}
+      {entry.hasLabel &&
+        (entry.labelNames.length > 0 ? (
+          entry.labelNames.map((name) => (
+            <span
+              key={name}
+              className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              <Tag className="size-3" aria-hidden />
+              {name}
+            </span>
+          ))
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            <Tag className="size-3" aria-hidden />
+            {t('Library badge label')}
+          </span>
+        ))}
       {entry.hasComment && (
         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           <MessageSquare className="size-3" aria-hidden />
@@ -71,7 +82,7 @@ export default function LibraryPublicationGrid({
             'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
           )}
         >
-          <PublicationCard event={entry.event} className="border-0 shadow-none rounded-none" />
+          <PublicationCard event={entry.event} presentation="library" className="border-0 shadow-none rounded-none" />
           <EngagementBadges entry={entry} />
         </div>
       ))}

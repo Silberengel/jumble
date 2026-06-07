@@ -42,6 +42,7 @@ describe('getPublicationIndexMetadataFromEvent', () => {
       { name: 'Arthur W. Ryder', role: 'translator' }
     ])
     expect(meta.source).toBe('https://www.gutenberg.org/ebooks/21020')
+    expect(meta.image).toBe('https://www.gutenberg.org/cache/epub/21020/pg21020.cover.medium.jpg')
     expect(meta.language).toBe('en')
     expect(meta.releaseDate).toBe('April 10, 2007')
     expect(meta.type).toBe('book')
@@ -57,5 +58,31 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     const meta = getPublicationIndexMetadataFromEvent(event)
     expect(meta.title).toBe('Village Life In China')
     expect(meta.sectionCount).toBe(1)
+  })
+
+  it('uses Project Gutenberg cover when source is gutenberg and image tag is missing', () => {
+    const event = indexEvent([
+      ['d', 'pg58363-sketches-of-indian-character'],
+      ['title', 'Sketches of Indian Character'],
+      ['author', 'James Napier Bailey', 'author'],
+      ['source', 'https://www.gutenberg.org/ebooks/58363'],
+      ['a', `30041:${PK}:intro`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.image).toBe(
+      'https://www.gutenberg.org/cache/epub/58363/pg58363.cover.medium.jpg'
+    )
+  })
+
+  it('keeps explicit image tag over Gutenberg fallback', () => {
+    const event = indexEvent([
+      ['d', 'book'],
+      ['title', 'Book'],
+      ['source', 'https://www.gutenberg.org/ebooks/58363'],
+      ['image', 'https://example.com/cover.jpg'],
+      ['a', `30041:${PK}:intro`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.image).toBe('https://example.com/cover.jpg')
   })
 })

@@ -11,40 +11,31 @@ import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
-import { BookOpen } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import Image from '../Image'
 import ArticleCardCoverImage from './ArticleCardCoverImage'
+import PublicationCoverFallback from './PublicationCoverFallback'
+import PublicationCoverImage from './PublicationCoverImage'
 import PublicationIndexMetadata from './PublicationIndexMetadata'
-
-function PublicationCoverFallback({ layout }: { layout: 'stacked' | 'row' }) {
-  return (
-    <div
-      className={cn(
-        'flex items-center justify-center rounded-lg bg-muted text-muted-foreground',
-        layout === 'stacked'
-          ? 'mb-3 aspect-video w-full max-w-full'
-          : 'aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg xl:aspect-video xl:max-w-[400px]'
-      )}
-    >
-      <BookOpen className={layout === 'stacked' ? 'size-10' : 'size-12'} aria-hidden />
-    </div>
-  )
-}
 
 export default function PublicationCard({
   event,
   className,
-  disableNavigation = false
+  disableNavigation = false,
+  /** Library grid: stacked cover on top, compact cover height. */
+  presentation = 'default'
 }: {
   event: Event
   className?: string
   /** When true (e.g. full note view), card is display-only; no navigate-to-note on click. */
   disableNavigation?: boolean
+  presentation?: 'default' | 'library'
 }) {
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
+  const useStackedLayout = presentation === 'library' || isSmallScreen
+  const coverSize = presentation === 'library' ? 'library' : 'default'
   const { navigateToNote } = useSmartNoteNavigationOptional()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
@@ -57,10 +48,11 @@ export default function PublicationCard({
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
   const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
+  // Kind 30040 is always a publication index (NKBIP-01). Do not treat `T`/`v` tags as bookstr —
+  // they mean topic/version there, not NKBIP-08 bible references.
   const isBookstrEvent =
-    (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) &&
-    !!bookMetadata.book
-  const isPublicationIndex = event.kind === ExtendedKind.PUBLICATION && !isBookstrEvent
+    event.kind === ExtendedKind.PUBLICATION_CONTENT && !!bookMetadata.book
+  const isPublicationIndex = event.kind === ExtendedKind.PUBLICATION
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -115,32 +107,27 @@ export default function PublicationCard({
   ) : null
 
   const cardShellClass = cn(
-    'min-w-0 rounded-lg border p-4 transition-colors',
+    'min-w-0 rounded-lg border transition-colors',
+    presentation === 'library' ? 'border-0 p-3' : 'border p-4',
     disableNavigation ? '' : 'cursor-pointer hover:bg-muted/50'
   )
 
   if (isPublicationIndex && indexMetadata) {
     const coverImage = indexMetadata.image?.trim()
-    const cover =
-      coverImage ? (
-        <Image
-          image={{ url: coverImage, pubkey: event.pubkey }}
-          className={
-            isSmallScreen
-              ? 'mb-3 aspect-video w-full max-w-full'
-              : 'aspect-[4/3] h-44 max-h-44 w-auto max-w-[min(400px,42%)] min-w-0 shrink rounded-lg bg-foreground object-cover xl:aspect-video xl:max-w-[400px]'
-          }
-          classNames={
-            isSmallScreen ? undefined : { wrapper: 'w-auto max-w-[min(400px,42%)] shrink-0 xl:max-w-[400px]' }
-          }
-          hideIfError
-          holdUntilClick={!autoLoadMedia}
-        />
-      ) : (
-        <PublicationCoverFallback layout={isSmallScreen ? 'stacked' : 'row'} />
-      )
+    const coverLayout = useStackedLayout ? 'stacked' : 'row'
+    const cover = coverImage ? (
+      <PublicationCoverImage
+        imageUrl={coverImage}
+        pubkey={event.pubkey}
+        autoLoadMedia={autoLoadMedia}
+        size={coverSize}
+        layout={coverLayout}
+      />
+    ) : (
+      <PublicationCoverFallback layout={coverLayout} size={coverSize} />
+    )
 
-    if (isSmallScreen) {
+    if (useStackedLayout) {
       return (
         <div className={cn('w-full min-w-0', className)}>
           <div className={cardShellClass} onClick={disableNavigation ? undefined : handleCardClick}>
@@ -157,9 +144,9 @@ export default function PublicationCard({
           className={cn(cardShellClass, 'overflow-hidden')}
           onClick={disableNavigation ? undefined : handleCardClick}
         >
-          <div className="flex min-w-0 gap-4">
+          <div className="flex min-w-0 items-start gap-4">
             {cover}
-            <PublicationIndexMetadata event={event} variant="compact" className="min-h-0 min-w-[10rem] flex-1 basis-0" />
+            <PublicationIndexMetadata event={event} variant="compact" className="min-h-0 min-w-0 flex-1 basis-0" />
           </div>
         </div>
       </div>
