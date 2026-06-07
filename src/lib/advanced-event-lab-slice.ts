@@ -1,4 +1,8 @@
 import {
+  mergeContentWarningTagsFromDraftOptions,
+  type TContentWarningDraftOptions
+} from '@/lib/content-warning'
+import {
   applyImwaldAttributionTags,
   collectUploadImetaTagsForContentUrls,
   mergeUploadImetaTagsInto
@@ -17,10 +21,13 @@ export type AdvancedEventLabSlice = {
  */
 export function serializePublishPreviewLabJson(
   slice: AdvancedEventLabSlice,
-  options?: { addClientTag?: boolean }
+  options?: { addClientTag?: boolean; contentWarning?: TContentWarningDraftOptions }
 ): string {
   const tags = slice.tags.map((row) => [...row])
   mergeUploadImetaTagsInto(tags, collectUploadImetaTagsForContentUrls(slice.content))
+  if (options?.contentWarning) {
+    mergeContentWarningTagsFromDraftOptions(tags, options.contentWarning)
+  }
   const draft: TDraftEvent = {
     kind: slice.kind,
     content: slice.content,

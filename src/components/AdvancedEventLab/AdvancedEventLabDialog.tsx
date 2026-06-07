@@ -30,6 +30,7 @@ import {
   serializePublishPreviewLabJson,
   type AdvancedEventLabSlice
 } from '@/lib/advanced-event-lab-slice'
+import type { TContentWarningDraftOptions } from '@/lib/content-warning'
 import { translateAdvancedLabMarkup } from '@/lib/advanced-lab-markup-protect'
 import {
   warmTranslateLanguagesOnce,
@@ -201,6 +202,8 @@ export type AdvancedEventLabDialogProps = {
   previewEmojiTags?: string[][]
   /** When true (default), JSON preview includes the Imwald `client` tag like publish. */
   addClientTag?: boolean
+  /** Composer Advanced panel content-warning settings (merged into JSON preview). */
+  contentWarning?: TContentWarningDraftOptions
 }
 
 function useDarkModeFlag(): boolean {
@@ -234,7 +237,8 @@ export default function AdvancedEventLabDialog({
   draftPersistenceKey = null,
   previewAuthorPubkey = null,
   previewEmojiTags,
-  addClientTag = true
+  addClientTag = true,
+  contentWarning
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   /** `useTranslation().t` can change identity every render; never list it as a layout-effect dep (editor remount loop). */
@@ -316,10 +320,10 @@ export default function AdvancedEventLabDialog({
           content,
           tags: editableRowsToLabTags(labTagRows)
         },
-        { addClientTag }
+        { addClientTag, contentWarning }
       )
     )
-  }, [kindEditable, initial, labTagRows, addClientTag])
+  }, [kindEditable, initial, labTagRows, addClientTag, contentWarning])
 
   useEffect(() => {
     refreshLabJsonPreviewRef.current = refreshLabJsonPreview

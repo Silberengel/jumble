@@ -19,6 +19,7 @@ import {
   Dispatch,
   forwardRef,
   SetStateAction,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -34,6 +35,7 @@ import mentionSuggestion from './Mention/suggestion'
 import Preview from './Preview'
 import { HighlightData } from '../HighlightEditor'
 import { getKindDescription } from '@/lib/kind-description'
+import type { TContentWarningDraftOptions } from '@/lib/content-warning'
 
 export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
@@ -95,6 +97,7 @@ const PostTextarea = forwardRef<
     }
     extraPreviewTags?: string[][]
     addClientTag?: boolean
+    contentWarning?: TContentWarningDraftOptions
   }
 >(
   (
@@ -120,7 +123,8 @@ const PostTextarea = forwardRef<
       articleMetadata,
       musicTrackMetadata,
       extraPreviewTags,
-      addClientTag = true
+      addClientTag = true,
+      contentWarning
     },
     ref
   ) => {
@@ -141,7 +145,22 @@ const PostTextarea = forwardRef<
     const onSubmitRef = useRef(onSubmit)
     onSubmitRef.current = onSubmit
     const [activeTab, setActiveTab] = useState('edit')
+    const activeTabRef = useRef(activeTab)
+    activeTabRef.current = activeTab
+    const [previewContent, setPreviewContent] = useState('')
     const editorRef = useRef<Editor | null>(null)
+
+    const syncPreviewFromEditor = useCallback(() => {
+      const ed = editorRef.current
+      const live = ed ? parseEditorJsonToText(ed.getJSON()) : text
+      setPreviewContent(live)
+      if (ed) setText(live)
+      return live
+    }, [setText, text])
+
+    const previewSurfaceClass = cn(
+      isSmallScreen ? 'min-h-[min(36dvh,17rem)]' : 'min-h-52'
+    )
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
 
@@ -208,11 +227,17 @@ const PostTextarea = forwardRef<
       },
       content: postEditorCache.getPostContentCache({ kind, defaultContent, parentEvent }),
       onUpdate(props) {
-        setText(parseEditorJsonToText(props.editor.getJSON()))
+        const live = parseEditorJsonToText(props.editor.getJSON())
+        setText(live)
+        if (activeTabRef.current === 'preview') {
+          setPreviewContent(live)
+        }
         postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, props.editor.getJSON())
       },
       onCreate(props) {
-        setText(parseEditorJsonToText(props.editor.getJSON()))
+        const live = parseEditorJsonToText(props.editor.getJSON())
+        setText(live)
+        setPreviewContent(live)
       }
     })
 
@@ -284,6 +309,7 @@ const PostTextarea = forwardRef<
           // Also clear the cache
           postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
           setText('')
+          setPreviewContent('')
         }
       },
       syncFromPostCache: () => {
@@ -293,7 +319,9 @@ const PostTextarea = forwardRef<
         if (next === undefined) return
         editor.chain().setContent(next).run()
         const json = editor.getJSON()
-        setText(parseEditorJsonToText(json))
+        const live = parseEditorJsonToText(json)
+        setText(live)
+        setPreviewContent(live)
         postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, json)
       },
       getText: () => {
@@ -312,7 +340,9 @@ const PostTextarea = forwardRef<
         const json = plainTextToTipTapDoc(plain)
         editor.chain().setContent(json).run()
         postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
-        setText(parseEditorJsonToText(editor.getJSON()))
+        const live = parseEditorJsonToText(editor.getJSON())
+        setText(live)
+        setPreviewContent(live)
       }
     }))
 
@@ -324,7 +354,12 @@ const PostTextarea = forwardRef<
     return (
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={(tab) => {
+          if (tab === 'preview') {
+            syncPreviewFromEditor()
+          }
+          setActiveTab(tab)
+        }}
         className={cn(
           isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden' : 'space-y-2'
         )}
@@ -371,15 +406,19 @@ const PostTextarea = forwardRef<
         </TabsContent>
         <TabsContent
           value="preview"
-          className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+          forceMount
+          className={cn(
+            'mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+          )}
         >
-          <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">
+          <div className={cn('space-y-2', isSmallScreen && 'flex min-h-0 flex-1 flex-col')}>
+            <div className="text-xs text-muted-foreground shrink-0">
               kind {kindDescription.number}: {kindDescription.description}
             </div>
             <Preview
-              content={text}
-              className={className}
+              content={previewContent}
+              className={previewSurfaceClass}
               kind={kind}
               highlightData={highlightData}
               pollCreateData={pollCreateData}
@@ -389,6 +428,7 @@ const PostTextarea = forwardRef<
               musicTrackMetadata={musicTrackMetadata}
               extraPreviewTags={extraPreviewTags}
               addClientTag={addClientTag}
+              contentWarning={contentWarning}
             />
           </div>
         </TabsContent>

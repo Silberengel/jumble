@@ -101,7 +101,9 @@ export default function PostEditorAdvancedPanel({
   }
 
   const selectValue = useMemo(() => {
-    if (isPresetContentWarningLabel(contentWarningLabel)) return contentWarningLabel
+    const trimmed = contentWarningLabel.trim()
+    if (!trimmed) return DEFAULT_CONTENT_WARNING_LABEL
+    if (isPresetContentWarningLabel(trimmed)) return trimmed
     return CONTENT_WARNING_CUSTOM_SELECT_VALUE
   }, [contentWarningLabel])
 
@@ -196,8 +198,10 @@ export default function PostEditorAdvancedPanel({
                 checked={isNsfw}
                 onCheckedChange={(checked) => {
                   setIsNsfw(checked)
-                  if (checked && !contentWarningLabel.trim()) {
-                    setContentWarningLabel(DEFAULT_CONTENT_WARNING_LABEL)
+                  if (checked) {
+                    setContentWarningLabel((prev) => prev.trim() || DEFAULT_CONTENT_WARNING_LABEL)
+                  } else {
+                    setContentWarningLabel('')
                   }
                 }}
                 disabled={posting}
@@ -210,7 +214,7 @@ export default function PostEditorAdvancedPanel({
                   value={selectValue}
                   onValueChange={(value) => {
                     if (value === CONTENT_WARNING_CUSTOM_SELECT_VALUE) {
-                      if (isPresetContentWarningLabel(contentWarningLabel)) {
+                      if (isPresetContentWarningLabel(contentWarningLabel.trim())) {
                         setContentWarningLabel('')
                       }
                       return

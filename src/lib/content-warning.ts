@@ -56,6 +56,17 @@ export function contentWarningDraftOptions(
   return { isNsfw: true, contentWarningLabel: normalizeContentWarningLabel(label) }
 }
 
+/** Apply composer content-warning settings over any manual lab tags. */
+export function mergeContentWarningTagsFromDraftOptions(
+  tags: string[][],
+  options: TContentWarningDraftOptions
+): void {
+  for (let i = tags.length - 1; i >= 0; i--) {
+    if (tags[i][0] === 'content-warning') tags.splice(i, 1)
+  }
+  appendContentWarningTagIfNeeded(tags, options)
+}
+
 export function appendContentWarningTagIfNeeded(
   tags: string[][],
   options: TContentWarningDraftOptions

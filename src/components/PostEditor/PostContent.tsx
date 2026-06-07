@@ -42,7 +42,6 @@ import {
 } from '@/lib/draft-event'
 import {
   contentWarningDraftOptions,
-  DEFAULT_CONTENT_WARNING_LABEL,
   normalizeContentWarningLabel
 } from '@/lib/content-warning'
 import {
@@ -301,7 +300,7 @@ export default function PostContent({
   const [addClientTag, setAddClientTag] = useState(() => storage.getAddClientTag())
   const [mentions, setMentions] = useState<string[]>([])
   const [isNsfw, setIsNsfw] = useState(false)
-  const [contentWarningLabel, setContentWarningLabel] = useState(DEFAULT_CONTENT_WARNING_LABEL)
+  const [contentWarningLabel, setContentWarningLabel] = useState('')
   const [isPoll, setIsPoll] = useState(false)
   const [isPublicMessage, setIsPublicMessage] = useState(!!initialPublicMessageTo)
   const [extractedMentions, setExtractedMentions] = useState<string[]>(
@@ -761,9 +760,7 @@ export default function PostContent({
       })
       if (cachedSettings) {
         setIsNsfw(cachedSettings.isNsfw ?? false)
-        setContentWarningLabel(
-          normalizeContentWarningLabel(cachedSettings.contentWarningLabel ?? DEFAULT_CONTENT_WARNING_LABEL)
-        )
+        setContentWarningLabel(cachedSettings.contentWarningLabel?.trim() ?? '')
         setIsPoll(cachedSettings.isPoll ?? false)
         setPollCreateData(
           cachedSettings.pollCreateData ?? {
@@ -902,6 +899,11 @@ export default function PostContent({
         : rssReplyExtraPreviewTags ?? []
     return contextual.length ? contextual : undefined
   }, [isDiscussionThread, parentEvent, discussionPreviewExtraTags, rssReplyExtraPreviewTags])
+
+  const labContentWarning = useMemo(
+    () => contentWarningDraftOptions(isNsfw, contentWarningLabel),
+    [isNsfw, contentWarningLabel]
+  )
 
   // Shared function to create draft event - used by both preview and posting
   const createDraftEvent = useCallback(async (cleanedText: string): Promise<any> => {
@@ -2554,6 +2556,8 @@ export default function PostContent({
       sourceType: 'nostr',
       sourceValue: ''
     })
+    setIsNsfw(false)
+    setContentWarningLabel('')
     uploadedMediaFileMap.current.clear()
     composerImetaTagsRef.current = []
     setUploadProgresses([])
@@ -3443,6 +3447,7 @@ export default function PostContent({
           articleMetadata={articlePreviewMetadata}
           musicTrackMetadata={musicTrackPreviewMetadata}
           addClientTag={addClientTag}
+          contentWarning={labContentWarning}
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
           headerActions={(() => {
@@ -3687,6 +3692,13 @@ export default function PostContent({
           }
         />
       </div>
+      {!showMoreOptions && isNsfw ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          {t('Post editor content warning summary', {
+            label: normalizeContentWarningLabel(contentWarningLabel)
+          })}
+        </p>
+      ) : null}
       {isDiscussionThread && !parentEvent && (
         <div className="flex min-w-0 flex-col gap-1">
           {threadErrors.content && <p className="text-sm text-destructive">{threadErrors.content}</p>}
@@ -4043,6 +4055,7 @@ export default function PostContent({
         contextEventId={parentEvent?.id ?? null}
         previewAuthorPubkey={pubkey ?? null}
         addClientTag={addClientTag}
+        contentWarning={labContentWarning}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
         formatToolbar={

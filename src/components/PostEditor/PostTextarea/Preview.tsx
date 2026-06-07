@@ -11,10 +11,12 @@ import { createFakeEvent } from '@/lib/event'
 import { randomString } from '@/lib/random'
 import { cleanUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import { cn } from '@/lib/utils'
+import { mergeContentWarningTagsFromDraftOptions, type TContentWarningDraftOptions } from '@/lib/content-warning'
 import { TPollCreateData } from '@/types'
 import { kinds, nip19 } from 'nostr-tools'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { useMemo, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import ContentPreview from '../../ContentPreview'
 import Content from '../../Content'
 import Highlight from '../../Note/Highlight'
@@ -34,7 +36,8 @@ export default function Preview({
   articleMetadata,
   musicTrackMetadata,
   extraPreviewTags,
-  addClientTag = true
+  addClientTag = true,
+  contentWarning
 }: { 
   content: string
   className?: string
@@ -68,7 +71,10 @@ export default function Preview({
   extraPreviewTags?: string[][]
   /** When true (default), preview matches publish: Imwald `client` + attribution `alt` tags and badge. */
   addClientTag?: boolean
+  /** Composer Advanced panel content-warning settings. */
+  contentWarning?: TContentWarningDraftOptions
 }) {
+  const { t } = useTranslation()
   const { content: processedContent, emojiTags, highlightTags, pollTags } = useMemo(
     () => {
       // Clean tracking parameters from URLs in the preview
@@ -223,12 +229,15 @@ export default function Preview({
     if (extraPreviewTags?.length) {
       tags.push(...extraPreviewTags)
     }
+    if (contentWarning) {
+      mergeContentWarningTagsFromDraftOptions(tags, contentWarning)
+    }
     const stripped = stripImwaldAttributionTags(tags)
     if (addClientTag) {
       stripped.push(buildClientTag())
     }
     return stripped
-  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, kind, extraPreviewTags, addClientTag])
+  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, kind, extraPreviewTags, addClientTag, contentWarning])
   
   const fakeEvent = useMemo(() => {
     // For voice comments, include the media URL in content if not already there
@@ -244,6 +253,28 @@ export default function Preview({
     })
   }, [processedContent, allTags, kind, mediaUrl])
 
+  const hasPreviewBody = useMemo(() => {
+    if (processedContent.trim()) return true
+    if (mediaUrl?.trim()) return true
+    if (articleMetadata?.title?.trim()) return true
+    if (articleMetadata?.summary?.trim()) return true
+    if (musicTrackMetadata?.title?.trim()) return true
+    if (musicTrackMetadata?.audioUrl?.trim()) return true
+    if (kind === ExtendedKind.POLL && pollCreateData?.options.some((o) => o.trim())) return true
+    if (kind === kinds.Highlights && highlightData?.sourceValue?.trim()) return true
+    if ((mediaImetaTags?.length ?? 0) > 0) return true
+    return false
+  }, [
+    processedContent,
+    mediaUrl,
+    articleMetadata,
+    musicTrackMetadata,
+    kind,
+    pollCreateData,
+    highlightData,
+    mediaImetaTags
+  ])
+
   const selectableClass = 'select-text'
   const withClientBadge = (node: ReactNode) =>
     addClientTag ? (
@@ -256,6 +287,14 @@ export default function Preview({
     ) : (
       node
     )
+
+  if (!hasPreviewBody) {
+    return (
+      <Card className={cn('p-3 text-sm text-muted-foreground', className, selectableClass)}>
+        {t('Post editor preview empty')}
+      </Card>
+    )
+  }
 
   // For polls, use ContentPreview to show poll properly
   if (kind === ExtendedKind.POLL) {

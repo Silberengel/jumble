@@ -2128,9 +2128,13 @@ export default {
     'Content warning hint':
       'Adds a NIP-36 content-warning tag so readers must opt in to view this note.',
     'Content warning preset': 'Warning label',
+    'Content warning preset placeholder': 'Choose a warning label…',
     'Custom label…': 'Custom label…',
     'Content warning custom placeholder': 'e.g. Violence, Trigger warning',
     'Content warning label': '⚠ {{label}}',
+    'Post editor content warning summary':
+      'Content warning added: {{label}}. Open Advanced to change.',
+    'Post editor preview empty': 'Nothing to preview yet.',
     'Maximum {{max}} invitees': 'Maximum {{max}} invitees',
     'Maximum {{max}} invitees allowed': 'Maximum {{max}} invitees allowed',
     Medium: 'Medium',

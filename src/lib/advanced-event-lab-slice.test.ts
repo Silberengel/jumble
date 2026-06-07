@@ -33,4 +33,13 @@ describe('serializePublishPreviewLabJson', () => {
     const o = JSON.parse(json) as { tags: string[][] }
     expect(o.tags.some((t) => t[0] === 'client')).toBe(false)
   })
+
+  it('merges composer content-warning settings into preview tags', () => {
+    const json = serializePublishPreviewLabJson(
+      { kind: 1, content: 'hi', tags: [['content-warning', 'Spoilers']] },
+      { contentWarning: { isNsfw: true, contentWarningLabel: 'Violence' } }
+    )
+    const o = JSON.parse(json) as { tags: string[][] }
+    expect(o.tags.filter((t) => t[0] === 'content-warning')).toEqual([['content-warning', 'Violence']])
+  })
 })
