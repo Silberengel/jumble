@@ -1,4 +1,5 @@
 import { EMOJI_PICKER_DATA_SOURCE } from '@/lib/emoji-picker-data-source'
+import { cn } from '@/lib/utils'
 import { preloadEmojiPickerModule } from '@/lib/emoji-picker-preload'
 import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI, DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
 import { recordEmojiUsed } from '@/lib/recently-used-emojis'
@@ -14,12 +15,16 @@ export { DEFAULT_SUGGESTED_EMOJIS as EMOJI_PICKER_REACTIONS } from '@/lib/like-r
 export default function EmojiPicker({
   onEmojiClick,
   reactionsDefaultOpen,
-  reactions
+  reactions,
+  layout = 'popover'
 }: {
   onEmojiClick: (emoji: string | TEmoji | undefined, event: Event) => void
   reactionsDefaultOpen?: boolean
   reactions?: string[]
+  /** `drawer` fills the mobile sheet; `popover` uses a fixed height for dropdowns. */
+  layout?: 'drawer' | 'popover'
 }) {
+  const inDrawer = layout === 'drawer'
   const { themeSetting } = useTheme()
   const { pubkey } = useNostr()
   const [mode, setMode] = useState<'reactions' | 'full'>(
@@ -66,8 +71,13 @@ export default function EmojiPicker({
       picker.style.width = '100%'
       picker.style.minWidth = '280px'
       picker.style.maxWidth = '350px'
-      picker.style.height = 'min(350px, 50dvh)'
-      picker.style.minHeight = '280px'
+      if (inDrawer) {
+        picker.style.height = '100%'
+        picker.style.minHeight = '0'
+      } else {
+        picker.style.height = 'min(350px, 50dvh)'
+        picker.style.minHeight = '280px'
+      }
       picker.style.setProperty('--num-columns', '8')
 
       const handleClick = (e: Event) => {
@@ -124,7 +134,7 @@ export default function EmojiPicker({
         pickerRef.current = null
       }
     }
-  }, [mode])
+  }, [mode, inDrawer])
 
   useEffect(() => {
     if (pickerRef.current) {
@@ -197,11 +207,19 @@ export default function EmojiPicker({
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col">
+    <div
+      className={cn(
+        'flex w-full min-w-0 flex-col',
+        inDrawer && 'min-h-0 flex-1'
+      )}
+    >
       {ownEmojisRow}
       <div
         ref={containerRef}
-        className="relative h-[min(320px,45dvh)] min-h-[240px] w-full min-w-[280px] max-w-[350px] shrink-0"
+        className={cn(
+          'relative w-full min-w-[280px] max-w-[350px]',
+          inDrawer ? 'min-h-0 flex-1' : 'h-[min(320px,45dvh)] min-h-[240px] shrink-0'
+        )}
       >
         {!pickerReady ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">

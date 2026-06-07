@@ -50,7 +50,7 @@ export default function EmojiPickerDialog({
         <DrawerContent
           dragHandle="vaul"
           portalContainer={portalContainer}
-          className="max-h-[min(60dvh,calc(100dvh-8rem))] px-2 pb-2"
+          className="flex h-[min(72dvh,calc(100dvh-5rem))] max-h-[min(72dvh,calc(100dvh-5rem))] flex-col overflow-hidden px-2"
           onPointerDownOutside={(e) => {
             const t = e.target as HTMLElement | null
             if (t?.closest?.('[data-vaul-overlay]')) return
@@ -60,9 +60,10 @@ export default function EmojiPickerDialog({
           <DrawerHeader className="sr-only">
             <DrawerTitle>Emoji Picker</DrawerTitle>
           </DrawerHeader>
-          <div className="flex w-full max-w-[100vw] min-w-0 min-h-0 flex-col overflow-hidden pb-1">
+          <div className="flex min-h-0 w-full max-w-[100vw] flex-1 flex-col overflow-hidden">
             {pickerMounted ? (
               <EmojiPicker
+                layout="drawer"
                 onEmojiClick={(emoji, e) => {
                   e.stopPropagation()
                   setOpen(false)
