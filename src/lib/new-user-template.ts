@@ -14,6 +14,7 @@ import {
   createProfileDraftEvent,
   createRelayListDraftEvent
 } from '@/lib/draft-event'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { TDraftEvent, TMailboxRelay } from '@/types'
 
 export const NEW_USER_HTTP_RELAY_URL = 'https://mercury-relay.imwald.eu/'
@@ -75,7 +76,7 @@ export function buildNewUserProfileDraft(pubkey: string): TDraftEvent {
 
 export function buildNewUserFavoriteRelaysDraft(): TDraftEvent {
   return createFavoriteRelaysDraftEvent(
-    [...DEFAULT_FAVORITE_RELAYS, NEW_USER_TRENDING_RELAY_URL],
+    dedupeNormalizeRelayUrlsOrdered([...DEFAULT_FAVORITE_RELAYS, NEW_USER_TRENDING_RELAY_URL]),
     []
   )
 }

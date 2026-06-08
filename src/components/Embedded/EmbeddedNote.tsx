@@ -552,9 +552,8 @@ function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
     const x = u.toLowerCase()
     if (x.includes('nos.lol')) return 0
     if (x.includes('nostr.land')) return 1
-    if (x.includes('relay.damus.io')) return 2
-    if (x.includes('relay.primal.net')) return 3
-    if (x.includes('nostr.wine')) return 4
+    if (x.includes('relay.primal.net')) return 2
+    if (x.includes('nostr.wine')) return 3
     return 30
   }
   return [...urls].sort((a, b) => score(a) - score(b) || a.localeCompare(b))

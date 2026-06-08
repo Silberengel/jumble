@@ -30,6 +30,10 @@ function indexRelayPublishUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/events`
 }
 
+function indexRelayPublicationMetadataSearchUrl(baseUrl: string): string {
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/search`
+}
+
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
 function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
   const body: Record<string, unknown> = {}
@@ -418,19 +422,37 @@ export async function queryIndexRelayForLibrary(
   }
 }
 
-/** Kind-30040 discovery search: keeps NIP-50 `search` (unlike bulk {@link queryIndexRelayForLibrary}). */
+/** Kind-30040 filter query via POST /api/events/filter (NIP-01 only — no NIP-50 `search`). */
 export async function queryIndexRelayPublicationSearch(
   baseUrl: string,
   filter: Filter,
   options?: { signal?: AbortSignal }
 ): Promise<TIndexRelayLibraryPage> {
+  return queryIndexRelayForLibrary(baseUrl, filter, options)
+}
+
+function filterForIndexRelay(f: Filter): Filter {
+  const rest = { ...f } as Filter & { search?: unknown }
+  delete rest.search
+  return rest as Filter
+}
+
+/** Kind-30040 metadata search (d / title / author / source) on Mercury-style index relays. */
+export async function queryIndexRelayPublicationMetadataSearch(
+  baseUrl: string,
+  query: string,
+  options?: { limit?: number; signal?: AbortSignal }
+): Promise<TIndexRelayLibraryPage> {
+  const q = query.trim()
+  if (!q) return { events: [], apiRowCount: 0 }
+
   const base = devHttpIndexRelayBaseForFetch(baseUrl)
-  const endpoint = indexRelayFilterUrl(base)
+  const endpoint = indexRelayPublicationMetadataSearchUrl(base)
   if (shouldSkipDevIndexRelayFetch(endpoint)) {
     return { events: [], apiRowCount: 0 }
   }
 
-  const body = nostrFilterToIndexRelayBody(filter)
+  const limit = Math.max(1, Math.min(options?.limit ?? 100, 100))
   try {
     const res = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -438,11 +460,12 @@ export async function queryIndexRelayPublicationSearch(
         Accept: 'application/json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ q, limit }),
       signal: options?.signal,
       timeoutMs: 25_000
     })
     if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }
       if (res.status >= 500) {
         markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
         throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
@@ -472,18 +495,12 @@ export async function queryIndexRelayPublicationSearch(
       handleFilterTransportFailure(endpoint, e)
       throw new IndexRelayTransportError(e)
     }
-    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication search request error', {
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication metadata search request error', {
       endpoint,
       error: e
     })
     return { events: [], apiRowCount: 0 }
   }
-}
-
-function filterForIndexRelay(f: Filter): Filter {
-  const rest = { ...f } as Filter & { search?: unknown }
-  delete rest.search
-  return rest as Filter
 }
 
 export async function publishEventToHttpRelay(

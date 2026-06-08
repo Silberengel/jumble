@@ -8,7 +8,7 @@ import {
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
-import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationSearch } from '@/lib/index-relay-http'
+import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationMetadataSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
   buildStructuralPublicationIndexMap,
@@ -63,6 +63,8 @@ export const LIBRARY_RECENT_FALLBACK_LIMIT = LIBRARY_PAGE_SIZE
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
+/** Max paginated HTTP pages when title/author metadata API is unavailable (Mercury v0.2.0). */
+const LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES = 80
 /** NIP-51 pin list (kind 10001). */
 const PIN_LIST_KIND = 10001
 /** Per-relay WS page fetch — one relay at a time avoids multi-relay onclose resolving after ~1s. */
@@ -1727,6 +1729,15 @@ function normalizePublicationDTag(term: string): string {
     .replace(/^-|-$/g, '')
 }
 
+/** Relay search axis for kind-30040 publication indexes. */
+export type LibraryPublicationRelaySearchAxis = 'd-tag' | 'title' | 'author'
+
+export const LIBRARY_PUBLICATION_RELAY_SEARCH_AXES: LibraryPublicationRelaySearchAxis[] = [
+  'd-tag',
+  'title',
+  'author'
+]
+
 /** d-tag filter values: hyphenated slug variants for relay `#d` REQ. */
 export function publicationQueryDTagVariants(query: string): string[] {
   const raw = query.trim()
@@ -1742,14 +1753,99 @@ export function publicationQueryDTagVariants(query: string): string[] {
   return [...seen]
 }
 
-/**
- * OR-merge REQ filters for kind **30040** publication indexes: `#d` slugs plus NIP-50 `search`
- * (title, author, summary/description on index relays).
- */
-export function buildLibraryPublicationRelaySearchFilters(opts: {
+/** Normalized needles for exact publication metadata tag match (d / title / author). */
+export function publicationQueryNeedles(query: string): string[] {
+  const raw = normalizeGeneralSearchQuery(query.trim())
+  if (!raw) return []
+  const lower = raw.toLowerCase()
+  const normalized = lower.replace(/\s+/g, ' ').trim()
+  const hyphen = lower
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  return [...new Set([lower, normalized, hyphen].filter(Boolean))]
+}
+
+function publicationTagValueMatchesNeedles(tagValue: string, needles: string[]): boolean {
+  const val = tagValue.trim().toLowerCase()
+  const valSpaced = val.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  for (const needle of needles) {
+    if (val === needle) return true
+    const needleSpaced = needle.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+    if (valSpaced === needleSpaced) return true
+  }
+  return false
+}
+
+export function publicationMetadataTagMatchesQuery(
+  event: Event,
+  tagName: 'd' | 'title' | 'author',
   query: string
-  limit?: number
-}): Filter[] {
+): boolean {
+  const needles = publicationQueryNeedles(query)
+  if (needles.length === 0) return false
+  for (const tag of event.tags ?? []) {
+    if ((tag[0] || '').toLowerCase() !== tagName) continue
+    const value = tag[1]?.trim()
+    if (value && publicationTagValueMatchesNeedles(value, needles)) return true
+  }
+  return false
+}
+
+function publicationRelaySearchSourceTerms(query: string): string[] {
+  const raw = query.trim()
+  if (!raw) return []
+  const terms = new Set<string>([raw])
+  const adv = parseAdvancedSearch(raw)
+  if (adv.title) {
+    for (const title of Array.isArray(adv.title) ? adv.title : [adv.title]) {
+      const t = title.trim()
+      if (t) terms.add(t)
+    }
+  }
+  return [...terms]
+}
+
+function publicationRelaySearchTermsForAxis(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+): string[] {
+  const raw = query.trim()
+  if (!raw) return []
+
+  const adv = parseAdvancedSearch(raw)
+  if (axis === 'title' && adv.title) {
+    const titles = Array.isArray(adv.title) ? adv.title : [adv.title]
+    const trimmed = titles.map((t) => t.trim()).filter(Boolean)
+    if (trimmed.length > 0) return [...new Set(trimmed)]
+  }
+  if (axis === 'author' && adv.author) {
+    const authors = Array.isArray(adv.author) ? adv.author : [adv.author]
+    const trimmed = authors.map((a) => a.trim()).filter(Boolean)
+    if (trimmed.length > 0) return [...new Set(trimmed)]
+  }
+  if (axis === 'd-tag') {
+    return publicationRelaySearchSourceTerms(raw)
+  }
+  return [raw]
+}
+
+function addPublicationKindFilter(
+  out: Filter[],
+  seen: Set<string>,
+  filter: Filter
+) {
+  const key = JSON.stringify(filter)
+  if (seen.has(key)) return
+  seen.add(key)
+  out.push(filter)
+}
+
+/** One axis of kind-30040 relay discovery: `#d`, metadata title/author (HTTP), or `authors` for npub. */
+export function buildLibraryPublicationRelaySearchFiltersForAxis(
+  axis: LibraryPublicationRelaySearchAxis,
+  opts: { query: string; limit?: number }
+): Filter[] {
   const searchRaw = opts.query.trim()
   if (!searchRaw) return []
 
@@ -1757,67 +1853,153 @@ export function buildLibraryPublicationRelaySearchFilters(opts: {
   const kind = ExtendedKind.PUBLICATION
   const seen = new Set<string>()
   const out: Filter[] = []
-  const add = (filter: Filter) => {
-    const key = JSON.stringify(filter)
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push(filter)
-  }
 
-  const npub = tryNpubFromQuery(searchRaw)
-  if (npub) {
-    add({ kinds: [kind], authors: [npub], limit })
+  if (axis === 'author') {
+    const npub = tryNpubFromQuery(searchRaw)
+    if (npub) {
+      addPublicationKindFilter(out, seen, { kinds: [kind], authors: [npub], limit })
+      return out
+    }
     return out
   }
 
-  const dTags = publicationQueryDTagVariants(searchRaw)
-  if (dTags.length > 0) {
-    add({ kinds: [kind], '#d': dTags, limit })
+  if (axis === 'title') {
+    return out
   }
 
-  const searchNorm = normalizeGeneralSearchQuery(searchRaw)
-  add({ kinds: [kind], search: searchRaw, limit })
-  if (searchNorm !== searchRaw) {
-    add({ kinds: [kind], search: searchNorm, limit })
-  }
-
-  const adv = parseAdvancedSearch(searchRaw)
-  const titleValues = adv.title
-    ? Array.isArray(adv.title)
-      ? adv.title
-      : [adv.title]
-    : []
-  for (const title of titleValues) {
-    const t = title.trim()
-    if (!t) continue
-    add({ kinds: [kind], search: t, limit })
-    const titleDTags = publicationQueryDTagVariants(t)
-    if (titleDTags.length > 0) {
-      add({ kinds: [kind], '#d': titleDTags, limit })
+  if (axis === 'd-tag') {
+    const dTags = new Set<string>()
+    for (const term of publicationRelaySearchTermsForAxis('d-tag', searchRaw)) {
+      for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
     }
-  }
-
-  const authorValues = adv.author
-    ? Array.isArray(adv.author)
-      ? adv.author
-      : [adv.author]
-    : []
-  for (const author of authorValues) {
-    const a = author.trim()
-    if (a) add({ kinds: [kind], search: a, limit })
-  }
-
-  const descriptionValues = adv.description
-    ? Array.isArray(adv.description)
-      ? adv.description
-      : [adv.description]
-    : []
-  for (const description of descriptionValues) {
-    const d = description.trim()
-    if (d) add({ kinds: [kind], search: d, limit })
+    if (dTags.size === 0) return []
+    addPublicationKindFilter(out, seen, { kinds: [kind], '#d': [...dTags], limit })
+    return out
   }
 
   return out
+}
+
+/**
+ * REQ filters for kind **30040** publication indexes, split by axis (d-tag, title, author).
+ * Title and author text use HTTP metadata search (not NIP-50). Only `#d` and pubkey `authors` use NIP-01 filters.
+ */
+export function buildLibraryPublicationRelaySearchFilters(opts: {
+  query: string
+  limit?: number
+}): Filter[] {
+  const seen = new Set<string>()
+  const out: Filter[] = []
+  for (const axis of LIBRARY_PUBLICATION_RELAY_SEARCH_AXES) {
+    for (const filter of buildLibraryPublicationRelaySearchFiltersForAxis(axis, opts)) {
+      const key = JSON.stringify(filter)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(filter)
+    }
+  }
+  return out
+}
+
+export function filterEventsForPublicationRelaySearchAxis(
+  events: Event[],
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+): Event[] {
+  const terms = publicationRelaySearchTermsForAxis(axis, query)
+  if (terms.length === 0) return []
+
+  return events.filter((event) => {
+    if (event.kind !== ExtendedKind.PUBLICATION) return false
+    if (axis === 'author') {
+      const npub = tryNpubFromQuery(query.trim())
+      if (npub && event.pubkey.toLowerCase() === npub) return true
+    }
+    const tagName = axis === 'd-tag' ? 'd' : axis
+    return terms.some((term) => publicationMetadataTagMatchesQuery(event, tagName, term))
+  })
+}
+
+async function scanHttpIndexRelayForPublicationAxis(
+  httpRelay: string,
+  axis: LibraryPublicationRelaySearchAxis,
+  term: string
+): Promise<Event[]> {
+  const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_HTTP_PAGE_LIMIT }
+  const matched: Event[] = []
+  const seen = new Set<string>()
+
+  const collect = (batch: Event[]) => {
+    for (const ev of filterEventsForPublicationRelaySearchAxis(batch, axis, term)) {
+      if (!seen.has(ev.id)) {
+        seen.add(ev.id)
+        matched.push(ev)
+      }
+    }
+  }
+
+  let firstPage: Event[]
+  try {
+    firstPage = (await queryIndexRelayForLibrary(httpRelay, filter)).events as Event[]
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] HTTP publication scan first page failed', {
+        relay: httpRelay,
+        axis,
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+    return []
+  }
+
+  collect(firstPage)
+  if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT || firstPage.length === 0) {
+    return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+  }
+
+  let until = oldestCreatedAt(firstPage) - 1
+  for (let page = 1; page < LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES; page++) {
+    if (until < 0) break
+    let batch: Event[] = []
+    let apiRowCount = 0
+    try {
+      const pageResult = await queryIndexRelayForLibrary(httpRelay, { ...filter, until })
+      batch = pageResult.events as Event[]
+      apiRowCount = pageResult.apiRowCount
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] HTTP publication scan page failed', {
+          relay: httpRelay,
+          axis,
+          page,
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+      break
+    }
+    if (apiRowCount === 0) break
+    collect(batch)
+    if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
+    if (apiRowCount < INDEX_HTTP_PAGE_LIMIT) break
+    const oldest = oldestCreatedAt(batch)
+    if (oldest === Number.MAX_SAFE_INTEGER) break
+    until = oldest - 1
+  }
+
+  return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+}
+
+async function searchHttpIndexRelayPublicationAxis(
+  httpRelay: string,
+  axis: LibraryPublicationRelaySearchAxis,
+  term: string
+): Promise<Event[]> {
+  const meta = await queryIndexRelayPublicationMetadataSearch(httpRelay, term, {
+    limit: LIBRARY_RELAY_SEARCH_LIMIT
+  })
+  const fromApi = filterEventsForPublicationRelaySearchAxis(meta.events as Event[], axis, term)
+  if (fromApi.length > 0) return fromApi
+  return scanHttpIndexRelayForPublicationAxis(httpRelay, axis, term)
 }
 
 /** Query document relays for kind-30040 indexes matching {@link buildLibraryPublicationRelaySearchFilters}. */
@@ -1852,43 +2034,35 @@ export async function searchLibraryPublicationsOnRelays(
     }
   }
 
-  const filters = buildLibraryPublicationRelaySearchFilters({ query: q })
-  if (filters.length === 0) {
-    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
-  }
-
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
   const batches: Promise<Event[]>[] = []
+  let filterCount = 0
 
-  if (wsRelays.length > 0) {
-    batches.push(
-      queryService
-        .fetchEvents(wsRelays, filters, {
-          globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
-          eoseTimeout: 8_000,
-          firstRelayResultGraceMs: false
-        })
-        .catch((e) => {
-          if (import.meta.env.DEV) {
-            logger.warn('[Library] WS publication search failed', {
-              message: e instanceof Error ? e.message : String(e)
-            })
-          }
-          return [] as Event[]
-        })
-    )
-  }
+  for (const axis of LIBRARY_PUBLICATION_RELAY_SEARCH_AXES) {
+    const npubQuery = tryNpubFromQuery(q)
+    if (npubQuery && axis !== 'author') continue
 
-  for (const httpRelay of httpRelays) {
-    for (const filter of filters) {
+    const axisFilters = buildLibraryPublicationRelaySearchFiltersForAxis(axis, { query: q })
+    const hasNip01Filters = axisFilters.length > 0
+    const hasMetadataSearch = axis === 'title' || (axis === 'author' && !npubQuery)
+    if (!hasNip01Filters && !hasMetadataSearch) continue
+
+    filterCount += axisFilters.length
+
+    if (wsRelays.length > 0 && hasNip01Filters) {
       batches.push(
-        queryIndexRelayPublicationSearch(httpRelay, filter)
-          .then((page) => page.events as Event[])
+        queryService
+          .fetchEvents(wsRelays, axisFilters, {
+            globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
+            eoseTimeout: 8_000,
+            firstRelayResultGraceMs: false
+          })
+          .then((events) => filterEventsForPublicationRelaySearchAxis(events, axis, q))
           .catch((e) => {
             if (import.meta.env.DEV) {
-              logger.warn('[Library] HTTP publication search failed', {
-                relay: httpRelay,
+              logger.warn('[Library] WS publication search failed', {
+                axis,
                 message: e instanceof Error ? e.message : String(e)
               })
             }
@@ -1896,6 +2070,49 @@ export async function searchLibraryPublicationsOnRelays(
           })
       )
     }
+
+    for (const httpRelay of httpRelays) {
+      if (hasNip01Filters) {
+        for (const filter of axisFilters) {
+          batches.push(
+            queryIndexRelayForLibrary(httpRelay, filter)
+              .then((page) => filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q))
+              .catch((e) => {
+                if (import.meta.env.DEV) {
+                  logger.warn('[Library] HTTP publication filter search failed', {
+                    relay: httpRelay,
+                    axis,
+                    message: e instanceof Error ? e.message : String(e)
+                  })
+                }
+                return [] as Event[]
+              })
+          )
+        }
+      }
+
+      if (!hasMetadataSearch) continue
+
+      for (const term of publicationRelaySearchTermsForAxis(axis, q)) {
+        filterCount += 1
+        batches.push(
+          searchHttpIndexRelayPublicationAxis(httpRelay, axis, term).catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] HTTP publication metadata search failed', {
+                relay: httpRelay,
+                axis,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+            return [] as Event[]
+          })
+        )
+      }
+    }
+  }
+
+  if (batches.length === 0) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
   }
 
   const settled = await Promise.all(batches)
@@ -1926,7 +2143,9 @@ export async function searchLibraryPublicationsOnRelays(
 
   if (import.meta.env.DEV) {
     logger.info('[Library] relay search done', {
-      filters: filters.length,
+      axes: LIBRARY_PUBLICATION_RELAY_SEARCH_AXES.length,
+      filters: filterCount,
+      batches: batches.length,
       network: networkEvents.length,
       valid: valid.length,
       roots: roots.length

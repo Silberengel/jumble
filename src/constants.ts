@@ -536,7 +536,6 @@ export const FAST_READ_RELAY_URLS = [
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
 export const FAST_WRITE_RELAY_URLS = [
-  'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
   'wss://nos.lol'
@@ -585,7 +584,6 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
-  'wss://relay.damus.io',
   'wss://thecitadel.nostr1.com',
   'wss://indexer.coracle.social/',
   'wss://purplepag.es'

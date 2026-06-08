@@ -237,7 +237,7 @@ class Nip89Service {
         desktop: 'imwald://note/bech32'
       },
       relays: [
-        'wss://relay.damus.io',
+        'wss://thecitadel.nostr1.com',
         'wss://relay.snort.social',
         'wss://nos.lol'
       ]

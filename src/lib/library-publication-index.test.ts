@@ -3,16 +3,19 @@ import { ExtendedKind } from '@/constants'
 import {
   buildEngagementMapsFromEvents,
   buildLibraryPublicationRelaySearchFilters,
+  buildLibraryPublicationRelaySearchFiltersForAxis,
   buildRecentPublicationEntries,
   clearLibrarySearchSessionCache,
   computeLibraryFeedRootOrder,
   filterEngagedPublications,
+  filterEventsForPublicationRelaySearchAxis,
   filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
   libraryDefaultFeedSlice,
   libraryPublicationEntriesForUserFromIndex,
   LIBRARY_PAGE_SIZE,
   pickLibraryPublicationEntries,
+  publicationMetadataTagMatchesQuery,
   publicationRootBelongsToUser,
   peekLibrarySearchResults,
   publicationIndexMatchesSearchQuery,
@@ -233,20 +236,53 @@ describe('library-publication-index', () => {
     expect(publicationIndexMatchesSearchQuery(root, 'missing')).toBe(false)
   })
 
-  it('buildLibraryPublicationRelaySearchFilters uses kind 30040 for d-tag and search', () => {
+  it('buildLibraryPublicationRelaySearchFilters splits kind 30040 into d-tag, title, and author without NIP-50', () => {
     expect(publicationQueryDTagVariants('Village Life in China')).toContain('village-life-in-china')
 
-    const filters = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
-    expect(filters.length).toBeGreaterThan(0)
-    expect(filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === ExtendedKind.PUBLICATION)).toBe(
-      true
-    )
+    const dTagFilters = buildLibraryPublicationRelaySearchFiltersForAxis('d-tag', {
+      query: 'Village Life in China'
+    })
+    expect(dTagFilters).toHaveLength(1)
+    expect(dTagFilters[0].kinds).toEqual([ExtendedKind.PUBLICATION])
+    expect(dTagFilters[0]['#d']).toContain('village-life-in-china')
+    expect(dTagFilters[0].search).toBeUndefined()
 
-    const dFilter = filters.find((f) => f['#d'])
-    expect(dFilter?.['#d']).toContain('village-life-in-china')
+    const titleFilters = buildLibraryPublicationRelaySearchFiltersForAxis('title', {
+      query: 'Village Life in China'
+    })
+    expect(titleFilters).toHaveLength(0)
 
-    const searchFilter = filters.find((f) => f.search === 'Village Life in China')
-    expect(searchFilter?.kinds).toEqual([ExtendedKind.PUBLICATION])
+    const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
+      query: 'Village Life in China'
+    })
+    expect(authorFilters).toHaveLength(0)
+
+    const merged = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
+    expect(merged).toHaveLength(1)
+    expect(merged[0]['#d']).toContain('village-life-in-china')
+    expect(merged.every((f) => f.search == null)).toBe(true)
+  })
+
+  it('filterEventsForPublicationRelaySearchAxis keeps axis-specific kind-30040 matches', () => {
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`])
+    root.tags = [
+      ['d', 'jane-eyre'],
+      ['title', 'Jane Eyre'],
+      ['author', 'Charlotte Brontë'],
+      ['a', `30041:${PK}:intro`]
+    ]
+
+    const byDTag = filterEventsForPublicationRelaySearchAxis([root], 'd-tag', 'jane-eyre')
+    expect(byDTag).toHaveLength(1)
+
+    const byTitle = filterEventsForPublicationRelaySearchAxis([root], 'title', 'jane eyre')
+    expect(byTitle).toHaveLength(1)
+
+    const byAuthor = filterEventsForPublicationRelaySearchAxis([root], 'author', 'charlotte brontë')
+    expect(byAuthor).toHaveLength(1)
+
+    expect(filterEventsForPublicationRelaySearchAxis([root], 'title', 'charlotte')).toHaveLength(0)
+    expect(publicationMetadataTagMatchesQuery(root, 'title', 'Jane Eyre')).toBe(true)
   })
 
   it('searchLibraryPublications caches results for repeated queries', async () => {

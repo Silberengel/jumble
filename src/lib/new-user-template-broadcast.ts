@@ -65,7 +65,6 @@ function prioritizeNewUserTemplateRelays(urls: string[]): string[] {
     'wss://profiles.nostr1.com',
     'wss://nos.lol',
     'wss://relay.primal.net',
-    'wss://relay.damus.io',
     'wss://thecitadel.nostr1.com'
   ]
   const byKey = new Map(urls.map((u) => [templateRelayKey(u), u]))
