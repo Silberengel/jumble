@@ -1680,6 +1680,7 @@ export default {
     'Library search scope title': 'Searching by title',
     'Library search scope author': 'Searching by author',
     'Library search scope dtag': 'Searching by d-tag',
+    'Library search commit hint': 'Press Enter or choose a search type below',
     'Library show only my publications': 'My publications',
     'Library empty': 'No publications found on your relays yet.',
     'Library empty filtered': 'No publications match your filters.',

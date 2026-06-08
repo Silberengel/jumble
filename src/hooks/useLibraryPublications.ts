@@ -25,6 +25,7 @@ import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const SEARCH_DEBOUNCE_MS = 300
+const RELAY_SEARCH_TIMEOUT_MS = 30_000
 
 const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelAddresses: new Set(),
@@ -60,11 +61,11 @@ export function useLibraryPublications(isActive: boolean) {
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
   const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
   const [searchQuery, setSearchQuery] = useState('')
+  const [committedSearch, setCommittedSearch] = useState('')
   const [searchAxis, setSearchAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showOnlyMine, setShowOnlyMine] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [engagementLoading, setEngagementLoading] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [relaySearchLoading, setRelaySearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<LibraryPublicationEntry[] | null>(null)
@@ -132,15 +133,27 @@ export function useLibraryPublications(isActive: boolean) {
   }, [pubkey])
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(searchQuery), SEARCH_DEBOUNCE_MS)
+    const t = window.setTimeout(() => setDebouncedSearch(committedSearch), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(t)
-  }, [searchQuery])
+  }, [committedSearch])
 
   useEffect(() => {
     if (!searchQuery.trim()) {
+      setCommittedSearch('')
       setSearchAxis(null)
     }
   }, [searchQuery])
+
+  const commitSearch = useCallback(
+    (query: string, axis: LibraryPublicationRelaySearchAxis | null) => {
+      const trimmed = query.trim()
+      if (!trimmed) return
+      setSearchQuery(trimmed)
+      setCommittedSearch(trimmed)
+      setSearchAxis(axis)
+    },
+    []
+  )
 
   useEffect(() => {
     setFeedPageIndex(0)
@@ -179,7 +192,6 @@ export function useLibraryPublications(isActive: boolean) {
     let cancelled = false
     indexesReadyRef.current = false
     setLoading(true)
-    setEngagementLoading(false)
     setError(null)
     setFeedPageIndex(0)
     const forceRefresh = forceRefreshNextLoadRef.current
@@ -207,12 +219,19 @@ export function useLibraryPublications(isActive: boolean) {
             }
             applyIndexesSnapshot(snapshot, EMPTY_ENGAGEMENT, 0)
             setLoading(false)
-            setEngagementLoading(true)
           }
         })
         if (cancelled) return
-        applyIndexesSnapshot(result, result.engagement, 0)
         setEngagement(result.engagement)
+        applyIndexesSnapshot(
+          {
+            indexEvents: result.indexEvents,
+            allIndexCount: result.allIndexCount,
+            topLevelCount: result.topLevelCount
+          },
+          result.engagement,
+          0
+        )
       } catch (e) {
         if (cancelled) return
         if (indexesReadyRef.current) {
@@ -231,7 +250,6 @@ export function useLibraryPublications(isActive: boolean) {
       } finally {
         if (!cancelled) {
           setLoading(false)
-          setEngagementLoading(false)
         }
       }
     })()
@@ -304,16 +322,34 @@ export function useLibraryPublications(isActive: boolean) {
   const searchOnRelays = useCallback(async () => {
     const q = searchQuery.trim()
     if (!q) return
+    setCommittedSearch(q)
     setRelaySearchLoading(true)
     setError(null)
     try {
       const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-      const { events, mergedIndexEvents, fromCache } = await searchLibraryPublicationsOnRelays(
-        q,
-        relays,
-        { indexEvents, engagement },
-        { axis: searchAxis }
-      )
+      let timeoutId: number | undefined
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(
+          () => reject(new Error('Relay search timed out')),
+          RELAY_SEARCH_TIMEOUT_MS
+        )
+      })
+      let events: Event[]
+      let mergedIndexEvents: Event[]
+      let fromCache: boolean
+      try {
+        ;({ events, mergedIndexEvents, fromCache } = await Promise.race([
+          searchLibraryPublicationsOnRelays(
+            q,
+            relays,
+            { indexEvents, engagement },
+            { axis: searchAxis }
+          ),
+          timeoutPromise
+        ]))
+      } finally {
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      }
       setIndexEvents(mergedIndexEvents)
       setAllIndexCount(mergedIndexEvents.length)
       setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
@@ -444,14 +480,14 @@ export function useLibraryPublications(isActive: boolean) {
     entries: filteredEntries,
     searchQuery,
     setSearchQuery,
+    committedSearch,
     searchAxis,
-    setSearchAxis,
+    commitSearch,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading:
       mineFilterComputing || (showOnlyMine && booklistTargetsLoading),
     loading,
-    engagementLoading,
     searchLoading,
     relaySearchLoading,
     error,

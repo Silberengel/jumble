@@ -5,15 +5,10 @@ import { Switch } from '@/components/ui/switch'
 import { normalizeToDTag } from '@/lib/search-parser'
 import type { LibraryPublicationRelaySearchAxis } from '@/lib/library-publication-index'
 import { cn } from '@/lib/utils'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import modalManager from '@/services/modal-manager.service'
-import { randomString } from '@/lib/random'
 import { FileText, Loader2, Search, User, Wifi } from 'lucide-react'
 import {
   HTMLAttributes,
   useCallback,
-  useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -29,8 +24,9 @@ type LibrarySearchOption = {
 export default function LibrarySearchBar({
   searchQuery,
   onSearchQueryChange,
+  committedSearch,
   searchAxis,
-  onSearchAxisChange,
+  onCommitSearch,
   showOnlyMine,
   onShowOnlyMineChange,
   mineFilterLoading,
@@ -40,8 +36,9 @@ export default function LibrarySearchBar({
 }: {
   searchQuery: string
   onSearchQueryChange: (value: string) => void
+  committedSearch: string
   searchAxis: LibraryPublicationRelaySearchAxis | null
-  onSearchAxisChange: (axis: LibraryPublicationRelaySearchAxis | null) => void
+  onCommitSearch: (query: string, axis: LibraryPublicationRelaySearchAxis | null) => void
   showOnlyMine: boolean
   onShowOnlyMineChange: (value: boolean) => void
   mineFilterLoading?: boolean
@@ -50,29 +47,17 @@ export default function LibrarySearchBar({
   disabled?: boolean
 }) {
   const { t } = useTranslation()
-  const { isSmallScreen } = useScreenSize()
   const [searching, setSearching] = useState(false)
-  const [displayList, setDisplayList] = useState(false)
-  const [selectableOptions, setSelectableOptions] = useState<LibrarySearchOption[]>([])
   const [selectedIndex, setSelectedIndex] = useState(-1)
-  const prevSelectableCountRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const barContainerRef = useRef<HTMLDivElement>(null)
-  const [suggestPanelTop, setSuggestPanelTop] = useState(0)
-  const id = useMemo(() => `library-search-${randomString()}`, [])
   const canSearchRelays = searchQuery.trim().length > 0 && !relaySearchLoading
 
-  useEffect(() => {
+  const selectableOptions = useMemo((): LibrarySearchOption[] => {
     const search = searchQuery.trim()
-    if (!search) {
-      setSelectableOptions([])
-      setSelectedIndex(-1)
-      setSearching(false)
-      return
-    }
+    if (!search) return []
 
     const normalizedDTag = normalizeToDTag(search)
-    const options: LibrarySearchOption[] = [
+    return [
       { axis: null, search },
       { axis: 'title', search },
       { axis: 'author', search },
@@ -80,71 +65,23 @@ export default function LibrarySearchBar({
         ? [{ axis: 'd-tag' as const, search: normalizedDTag, input: search }]
         : [])
     ]
-    setSelectableOptions(options)
   }, [searchQuery])
 
-  useEffect(() => {
-    setDisplayList(searching && !!searchQuery.trim())
-  }, [searching, searchQuery])
-
-  useEffect(() => {
-    const trimmed = searchQuery.trim()
-    const len = selectableOptions.length
-    if (!trimmed) {
-      prevSelectableCountRef.current = 0
-      return
-    }
-    if (len > 0 && prevSelectableCountRef.current === 0) {
-      const el = searchInputRef.current
-      if (el && document.activeElement !== el) {
-        queueMicrotask(() => {
-          el.focus({ preventScroll: true })
-        })
-      }
-    }
-    prevSelectableCountRef.current = len
-  }, [searchQuery, selectableOptions])
-
-  useEffect(() => {
-    if (displayList && selectableOptions.length > 0) {
-      modalManager.register(id, () => {
-        setDisplayList(false)
-      })
-    } else {
-      modalManager.unregister(id)
-    }
-  }, [displayList, selectableOptions.length, id])
+  const displayList = searching && selectableOptions.length > 0
 
   const blur = () => {
     setSearching(false)
+    setSelectedIndex(-1)
     searchInputRef.current?.blur()
   }
 
-  const applyOption = (option: LibrarySearchOption) => {
-    onSearchAxisChange(option.axis)
-    if (option.input && option.input !== searchQuery) {
-      onSearchQueryChange(option.input)
-    }
-    blur()
-  }
-
-  const updateSuggestPanelGeometry = useCallback(() => {
-    const el = barContainerRef.current
-    if (!el) return
-    setSuggestPanelTop(el.getBoundingClientRect().bottom)
-  }, [])
-
-  useLayoutEffect(() => {
-    if (!displayList || selectableOptions.length === 0 || !isSmallScreen) return
-    updateSuggestPanelGeometry()
-    const onScrollOrResize = () => updateSuggestPanelGeometry()
-    window.addEventListener('scroll', onScrollOrResize, true)
-    window.addEventListener('resize', onScrollOrResize)
-    return () => {
-      window.removeEventListener('scroll', onScrollOrResize, true)
-      window.removeEventListener('resize', onScrollOrResize)
-    }
-  }, [displayList, selectableOptions.length, isSmallScreen, searchQuery, updateSuggestPanelGeometry])
+  const applyOption = useCallback(
+    (option: LibrarySearchOption) => {
+      onCommitSearch(option.input ?? option.search, option.axis)
+      blur()
+    },
+    [onCommitSearch]
+  )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -173,7 +110,7 @@ export default function LibrarySearchBar({
         blur()
       }
     },
-    [selectableOptions, selectedIndex]
+    [applyOption, selectableOptions, selectedIndex]
   )
 
   const list = useMemo(() => {
@@ -222,61 +159,37 @@ export default function LibrarySearchBar({
         })}
       </>
     )
-  }, [selectableOptions, selectedIndex])
+  }, [applyOption, selectableOptions, selectedIndex])
 
-  const suggestTopPx = Math.max(0, suggestPanelTop - 4)
-  const suggestionsPanel = list ? (
-    <div
-      className={cn(
-        'bg-surface-background shadow-lg',
-        isSmallScreen
-          ? 'fixed left-4 right-4 z-[110] overflow-y-auto rounded-b-lg border border-t-0 border-border/80 pt-1'
-          : 'absolute top-full z-50 -translate-y-1 inset-x-0 rounded-b-lg pt-1'
-      )}
-      style={
-        isSmallScreen
-          ? {
-              top: suggestTopPx,
-              maxHeight: `calc(100dvh - ${suggestTopPx}px - 3.25rem - env(safe-area-inset-bottom, 0px))`
-            }
-          : undefined
-      }
-      onMouseDown={(e) => e.preventDefault()}
-    >
-      <div className="h-fit">{list}</div>
-    </div>
-  ) : null
+  const isCommitted = committedSearch.trim().length > 0 && committedSearch.trim() === searchQuery.trim()
 
   const scopeLabel =
-    searchAxis === 'title'
+    isCommitted && searchAxis === 'title'
       ? t('Library search scope title')
-      : searchAxis === 'author'
+      : isCommitted && searchAxis === 'author'
         ? t('Library search scope author')
-        : searchAxis === 'd-tag'
+        : isCommitted && searchAxis === 'd-tag'
           ? t('Library search scope dtag')
           : null
 
   return (
     <div className="space-y-3">
-      <div ref={barContainerRef} className="relative">
-        {displayList && list && !isSmallScreen && (
-          <>
-            {suggestionsPanel}
-            <div className="fixed inset-0 z-40 w-full h-full" onClick={() => blur()} aria-hidden />
-          </>
-        )}
-        {displayList && list && isSmallScreen && (
-          <>
-            <div className="fixed inset-0 z-[100] w-full h-full" onClick={() => blur()} aria-hidden />
-            {suggestionsPanel}
-          </>
-        )}
+      <div className="relative">
+        {displayList && list ? (
+          <div
+            className="absolute top-full z-50 -translate-y-1 inset-x-0 rounded-b-lg border border-border/80 bg-surface-background pt-1 shadow-lg"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <div className="h-fit">{list}</div>
+          </div>
+        ) : null}
         <SearchInput
           ref={searchInputRef}
           type="search"
           value={searchQuery}
           onChange={(e) => {
             setSearching(true)
+            setSelectedIndex(-1)
             onSearchQueryChange(e.target.value)
           }}
           onPaste={() => setSearching(true)}
@@ -284,17 +197,15 @@ export default function LibrarySearchBar({
           onFocus={() => setSearching(true)}
           onBlur={() => setSearching(false)}
           placeholder={t('Library search placeholder')}
-          className={cn(
-            'bg-surface-background pl-3',
-            displayList && isSmallScreen && 'relative z-[120]',
-            displayList && !isSmallScreen && 'z-50'
-          )}
+          className={cn('bg-surface-background pl-3', displayList && 'z-50')}
           disabled={disabled}
           aria-label={t('Library search placeholder')}
         />
       </div>
       {scopeLabel ? (
         <p className="text-xs text-muted-foreground">{scopeLabel}</p>
+      ) : searchQuery.trim() && !isCommitted ? (
+        <p className="text-xs text-muted-foreground">{t('Library search commit hint')}</p>
       ) : null}
       {onSearchRelays ? (
         <Button

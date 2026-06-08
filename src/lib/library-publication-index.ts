@@ -12,7 +12,6 @@ import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationM
 import {
   buildIndexByAddress,
   buildStructuralPublicationIndexMap,
-  collectPublicationIndexEventIds,
   collectReachableAddressesCached,
   eventTagAddress,
   filterValidIndexEvents,
@@ -55,7 +54,11 @@ const INDEX_MAX_PAGES_PER_RELAY = 100
 const INDEX_VERIFY_CHUNK = 80
 const ENGAGEMENT_ADDRESS_CHUNK = 36
 const ENGAGEMENT_EVENT_ID_CHUNK = 44
-const MAX_TARGET_ADDRESSES = 480
+/** Cap engagement relay queries to the first slice of the catalog (not the full index corpus). */
+const MAX_TARGET_ADDRESSES = 120
+const MAX_TARGET_EVENT_IDS = 160
+const MAX_ENGAGEMENT_HTTP_CHUNKS = 6
+const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 const HYDRATE_MISSING_CAP = 64
 export const LIBRARY_PAGE_SIZE = 120
 /** @deprecated Use {@link LIBRARY_PAGE_SIZE} */
@@ -918,8 +921,21 @@ export async function fetchPublicationEngagementMaps(
     return emptyPublicationEngagementMaps()
   }
 
-  const addressChunks = chunkArray([...targetAddresses], ENGAGEMENT_ADDRESS_CHUNK)
-  const eventIdChunks = chunkArray([...targetEventIds], ENGAGEMENT_EVENT_ID_CHUNK)
+  return withEngagementTimeout(
+    fetchPublicationEngagementMapsInner(relayUrls, targetAddresses, targetEventIds, options),
+    emptyPublicationEngagementMaps(),
+    'maps'
+  )
+}
+
+async function fetchPublicationEngagementMapsInner(
+  relayUrls: string[],
+  targetAddresses: Set<string>,
+  targetEventIds: Set<string>,
+  options?: { viewerPubkey?: string | null }
+): Promise<PublicationEngagementMaps> {
+  const addressChunks = limitEngagementChunks(chunkArray([...targetAddresses], ENGAGEMENT_ADDRESS_CHUNK))
+  const eventIdChunks = limitEngagementChunks(chunkArray([...targetEventIds], ENGAGEMENT_EVENT_ID_CHUNK))
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(relayUrls)
   const useWsEngagement = wsRelays.length > 0
   if (import.meta.env.DEV) {
@@ -1572,8 +1588,10 @@ export async function refreshLibraryEngagement(
   viewerPubkey?: string | null
 ): Promise<{ engagement: PublicationEngagementMaps; engaged: LibraryPublicationEntry[] }> {
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
-  const targetEventIds = collectPublicationIndexEventIds(indexEvents)
+  const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
+    indexEvents,
+    indexByAddress
+  )
   const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
     viewerPubkey ?? undefined,
     indexRelayUrls,
@@ -1598,6 +1616,36 @@ export async function refreshLibraryEngagement(
   }
 }
 
+const LIBRARY_SEARCH_BATCH_SIZE = 80
+
+function collectLibraryPublicationIndexSearchRoots(
+  query: string,
+  indexEvents: Event[],
+  topLevelIds: Set<string>,
+  addressToRoot: Map<string, Event>,
+  axis: LibraryPublicationRelaySearchAxis | null | undefined,
+  roots: Map<string, Event>,
+  start: number,
+  end: number
+): void {
+  const q = query.trim()
+
+  for (let i = start; i < end; i++) {
+    const ev = indexEvents[i]
+    if (ev.kind !== ExtendedKind.PUBLICATION) continue
+    if (!publicationIndexMatchesSearchQueryWithAxis(ev, q, axis)) continue
+
+    if (topLevelIds.has(ev.id)) {
+      roots.set(ev.id, ev)
+      continue
+    }
+
+    const addr = eventTagAddress(ev)
+    const root = addr ? addressToRoot.get(addr) : undefined
+    if (root) roots.set(root.id, root)
+  }
+}
+
 /** Search all cached kind-30040 indexes (library index store), mapping nested hits to top-level roots. */
 export function searchLibraryPublicationIndex(
   query: string,
@@ -1612,22 +1660,60 @@ export function searchLibraryPublicationIndex(
   const topLevelIds = new Set(topLevel.map((ev) => ev.id))
   const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
   const roots = new Map<string, Event>()
-
-  for (const ev of indexEvents) {
-    if (ev.kind !== ExtendedKind.PUBLICATION) continue
-    if (!publicationIndexMatchesSearchQueryWithAxis(ev, q, axis)) continue
-
-    if (topLevelIds.has(ev.id)) {
-      roots.set(ev.id, ev)
-      continue
-    }
-
-    const addr = eventTagAddress(ev)
-    const root = addr ? addressToRoot.get(addr) : undefined
-    if (root) roots.set(root.id, root)
-  }
-
+  collectLibraryPublicationIndexSearchRoots(
+    q,
+    indexEvents,
+    topLevelIds,
+    addressToRoot,
+    axis,
+    roots,
+    0,
+    indexEvents.length
+  )
   return [...roots.values()]
+}
+
+/** Yields between batches so large index scans do not freeze the UI. */
+export function searchLibraryPublicationIndexAsync(
+  query: string,
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>,
+  axis?: LibraryPublicationRelaySearchAxis | null,
+  signal?: { cancelled: boolean }
+): Promise<Event[]> {
+  const q = query.trim()
+  if (!q || indexEvents.length === 0) return Promise.resolve([])
+
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const topLevelIds = new Set(topLevel.map((ev) => ev.id))
+  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const roots = new Map<string, Event>()
+  let i = 0
+
+  return new Promise((resolve) => {
+    const step = () => {
+      if (signal?.cancelled) return
+      const end = Math.min(i + LIBRARY_SEARCH_BATCH_SIZE, indexEvents.length)
+      collectLibraryPublicationIndexSearchRoots(
+        q,
+        indexEvents,
+        topLevelIds,
+        addressToRoot,
+        axis,
+        roots,
+        i,
+        end
+      )
+      i = end
+      if (signal?.cancelled) return
+      if (i < indexEvents.length) {
+        requestAnimationFrame(step)
+      } else {
+        resolve([...roots.values()])
+      }
+    }
+    requestAnimationFrame(step)
+  })
 }
 
 export type LibrarySearchContext = {
@@ -1666,7 +1752,7 @@ export async function searchLibraryPublications(
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const fromIndex = searchLibraryPublicationIndex(q, indexEvents, indexByAddress, axis)
+  const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis)
   const rootMap = new Map<string, Event>()
   for (const root of fromIndex) rootMap.set(root.id, root)
 
@@ -2232,19 +2318,66 @@ function collectTargetAddressesFromIndexes(
   indexEvents: Event[],
   indexByAddress: Map<string, Event>
 ): Set<string> {
+  return collectEngagementTargets(indexEvents, indexByAddress).addresses
+}
+
+/** Capped address + event-id targets for label/comment/highlight relay queries. */
+export function collectEngagementTargets(
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): { addresses: Set<string>; eventIds: Set<string> } {
   const addresses = new Set<string>()
+  const eventIds = new Set<string>()
   outer: for (const root of getTopLevelIndexEvents(indexEvents)) {
+    eventIds.add(root.id.toLowerCase())
+    if (eventIds.size >= MAX_TARGET_EVENT_IDS) break
+
     for (const addr of collectReachableAddressesCached(root, indexByAddress)) {
       addresses.add(addr)
-      if (addresses.size >= MAX_TARGET_ADDRESSES) break outer
+      const indexed = indexByAddress.get(addr)
+      if (indexed) eventIds.add(indexed.id.toLowerCase())
+      if (addresses.size >= MAX_TARGET_ADDRESSES || eventIds.size >= MAX_TARGET_EVENT_IDS) {
+        break outer
+      }
     }
     const rootAddr = eventTagAddress(root)
     if (rootAddr) {
       addresses.add(rootAddr)
-      if (addresses.size >= MAX_TARGET_ADDRESSES) break outer
+      if (addresses.size >= MAX_TARGET_ADDRESSES || eventIds.size >= MAX_TARGET_EVENT_IDS) {
+        break outer
+      }
     }
   }
-  return addresses
+  return { addresses, eventIds }
+}
+
+function limitEngagementChunks<T>(chunks: T[][]): T[][] {
+  return chunks.length <= MAX_ENGAGEMENT_HTTP_CHUNKS
+    ? chunks
+    : chunks.slice(0, MAX_ENGAGEMENT_HTTP_CHUNKS)
+}
+
+async function withEngagementTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] engagement fetch timed out', { label, ms: ENGAGEMENT_FETCH_TIMEOUT_MS })
+          }
+          resolve(fallback)
+        }, ENGAGEMENT_FETCH_TIMEOUT_MS)
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 async function buildEngagedFromCache(
@@ -2257,8 +2390,10 @@ async function buildEngagedFromCache(
   const topLevel = getTopLevelIndexEvents(indexEvents)
   let maps = engagement
   if (!maps) {
-    const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
-    const targetEventIds = collectPublicationIndexEventIds(indexEvents)
+    const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
+      indexEvents,
+      indexByAddress
+    )
     const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
       viewerPubkey ?? undefined,
       indexRelayUrls,
@@ -2335,11 +2470,10 @@ async function runLibraryPublicationIndexLoad(
   if (!options?.forceRefresh && sessionCache?.relayKey === key) {
     const cachedIndexEvents = indexEventsFromCache(sessionCache)
     if (sessionCache.viewerPubkey !== viewerPubkey) {
-      const targetAddresses = collectTargetAddressesFromIndexes(
+      const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
         cachedIndexEvents,
         sessionCache.indexByAddress
       )
-      const targetEventIds = collectPublicationIndexEventIds(cachedIndexEvents)
       const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
         viewerPubkey ?? undefined,
         relayUrls,
@@ -2403,8 +2537,10 @@ async function runLibraryPublicationIndexLoad(
   }
 
   topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
-  const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
-  const targetEventIds = collectPublicationIndexEventIds(indexEvents)
+  const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
+    indexEvents,
+    buildIndexByAddress(indexEvents)
+  )
   if (import.meta.env.DEV) {
     logger.info('[Library] fetching engagement', {
       targetAddresses: targetAddresses.size,

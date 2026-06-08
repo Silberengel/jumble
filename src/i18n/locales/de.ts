@@ -1657,6 +1657,7 @@ export default {
     'Library search scope title': 'Suche nach Titel',
     'Library search scope author': 'Suche nach Autor',
     'Library search scope dtag': 'Suche nach d-Tag',
+    'Library search commit hint': 'Enter drücken oder einen Suchtyp auswählen',
     'Library show only my publications': 'Meine Publikationen',
     'Library empty': 'Noch keine Publikationen auf deinen Relays gefunden.',
     'Library empty filtered': 'Keine Publikationen entsprechen den Filtern.',

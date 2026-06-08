@@ -20,13 +20,13 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     entries,
     searchQuery,
     setSearchQuery,
+    committedSearch,
     searchAxis,
-    setSearchAxis,
+    commitSearch,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading,
     loading,
-    engagementLoading,
     searchLoading,
     relaySearchLoading,
     error,
@@ -70,8 +70,9 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           <LibrarySearchBar
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
+            committedSearch={committedSearch}
             searchAxis={searchAxis}
-            onSearchAxisChange={setSearchAxis}
+            onCommitSearch={commitSearch}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
             mineFilterLoading={mineFilterLoading}
@@ -87,8 +88,6 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         ) : null}
         {loading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
-        ) : engagementLoading ? (
-          <p className="mb-4 text-xs text-muted-foreground">{t('Library engagement loading')}</p>
         ) : searchLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
         ) : mineFilterLoading ? (
@@ -106,7 +105,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             (showOnlyMine && mineFilterLoading)
           }
           emptyMessage={
-            searchQuery.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
+            committedSearch.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }
         />
         {defaultFeedHasMore ? (
