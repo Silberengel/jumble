@@ -1001,6 +1001,7 @@ export const SUPPORTED_KINDS = [
   kinds.LongFormArticle,
   ExtendedKind.RELAY_REVIEW,
   ExtendedKind.DISCUSSION,
+  ExtendedKind.WEB_BOOKMARK,
   ExtendedKind.ZAP_RECEIPT,
   ExtendedKind.CALENDAR_EVENT_DATE,
   ExtendedKind.CALENDAR_EVENT_TIME,

@@ -3,13 +3,14 @@ import { isReplyNoteEvent } from '@/lib/event'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 
-/** Kind 1 OPs, highlights, discussions, photos, voice posts — feed filter “Posts” group. */
+/** Kind 1 OPs, highlights, discussions, photos, voice posts, web bookmarks — feed filter “Posts” group. */
 export const FEED_POSTS_GROUP_KINDS: readonly number[] = [
   kinds.Highlights,
   ExtendedKind.DISCUSSION,
   ExtendedKind.PICTURE,
   ExtendedKind.VOICE,
-  ExtendedKind.MUSIC_TRACK
+  ExtendedKind.MUSIC_TRACK,
+  ExtendedKind.WEB_BOOKMARK
 ]
 
 /** Kind 1 replies, comments, voice comments, superchats — feed filter “Replies” group. */

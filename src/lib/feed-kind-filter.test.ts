@@ -25,7 +25,7 @@ function fakeEvent(partial: Partial<Event> & Pick<Event, 'kind' | 'tags'>): Even
 }
 
 describe('feed kind groups', () => {
-  it('posts group toggles kind 1 OPs, highlights, discussions, photos, and voice posts together', () => {
+  it('posts group toggles kind 1 OPs, highlights, discussions, photos, voice posts, and web bookmarks together', () => {
     const off = applyFeedPostsGroupToggle([], false)
     expect(off.showKind1OPs).toBe(false)
     expect(isFeedPostsGroupEnabled(off.showKind1OPs, off.showKinds)).toBe(false)
@@ -37,6 +37,7 @@ describe('feed kind groups', () => {
     expect(on.showKinds).toContain(ExtendedKind.PICTURE)
     expect(on.showKinds).toContain(ExtendedKind.VOICE)
     expect(on.showKinds).toContain(ExtendedKind.MUSIC_TRACK)
+    expect(on.showKinds).toContain(ExtendedKind.WEB_BOOKMARK)
     expect(isFeedPostsGroupEnabled(on.showKind1OPs, on.showKinds)).toBe(true)
   })
 
