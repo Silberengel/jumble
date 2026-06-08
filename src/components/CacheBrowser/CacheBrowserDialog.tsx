@@ -6,7 +6,6 @@ import { Trash2, RefreshCw, Database, WrapText, Search, X, TriangleAlert, Copy, 
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import indexedDb, { isLikelyCachedNostrEvent, StoreNames, type TCachedEventSearchHit } from '@/services/indexed-db.service'
-import { clearAllLibraryIndexCaches } from '@/lib/library-publication-index'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -42,6 +41,7 @@ export default function CacheBrowserDialog({
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
   const [globalSearchTruncated, setGlobalSearchTruncated] = useState(false)
   const [publicationListFull, setPublicationListFull] = useState(false)
+  const [publicationStoreTotalRows, setPublicationStoreTotalRows] = useState<number | null>(null)
   const globalSearchRequestId = useRef(0)
 
   const loadCacheInfo = async () => {
@@ -63,6 +63,7 @@ export default function CacheBrowserDialog({
     setGlobalSearchHits([])
     setGlobalSearchTruncated(false)
     setPublicationListFull(false)
+    setPublicationStoreTotalRows(null)
     void loadCacheInfo()
   }, [open])
 
@@ -101,13 +102,20 @@ export default function CacheBrowserDialog({
     setSelectedStore(storeName)
     setSearchQuery('')
     setPublicationListFull(false)
+    setPublicationStoreTotalRows(null)
     setLoadingItems(true)
     try {
-      const items =
-        storeName === 'publicationEvents'
-          ? await indexedDb.getPublicationStoreItems(storeName)
-          : await indexedDb.getStoreItems(storeName)
-      setStoreItems(items)
+      if (storeName === StoreNames.PUBLICATION_EVENTS) {
+        const [items, allRows] = await Promise.all([
+          indexedDb.getPublicationStoreItems(storeName),
+          indexedDb.getStoreItems(storeName)
+        ])
+        setPublicationStoreTotalRows(allRows.length)
+        setStoreItems(items)
+      } else {
+        const items = await indexedDb.getStoreItems(storeName)
+        setStoreItems(items)
+      }
     } catch (error) {
       logger.error('Failed to load store items', { error })
       toast.error(t('Failed to load store items'))
@@ -178,11 +186,7 @@ export default function CacheBrowserDialog({
     if (!selectedStore) return
     if (!confirm(t('Are you sure you want to delete all items from this store?'))) return
     try {
-      if (selectedStore === StoreNames.LIBRARY_PUBLICATION_INDEX) {
-        await clearAllLibraryIndexCaches()
-      } else {
-        await indexedDb.clearStore(selectedStore)
-      }
+      await indexedDb.clearStore(selectedStore)
       setStoreItems([])
       void loadCacheInfo()
       toast.success(t('All items deleted successfully'))
@@ -199,12 +203,14 @@ export default function CacheBrowserDialog({
     setLoadingItems(true)
     try {
       const result = await indexedDb.cleanupDuplicateReplaceableEvents(selectedStore)
-      const items = await indexedDb.getStoreItems(selectedStore)
-      setStoreItems(items)
       setSearchQuery('')
       void loadCacheInfo()
-      const itemsAfterCleanup = await indexedDb.getStoreItems(selectedStore)
-      const actualCount = itemsAfterCleanup.length
+      const items =
+        selectedStore === StoreNames.PUBLICATION_EVENTS
+          ? await indexedDb.getPublicationStoreItems(selectedStore)
+          : await indexedDb.getStoreItems(selectedStore)
+      setStoreItems(items)
+      const actualCount = items.length
       if (actualCount !== result.kept) {
         toast.success(
           t('Cleaned up {{deleted}} duplicate entries, kept {{kept}} (total items after cleanup: {{total}})', {
@@ -218,7 +224,8 @@ export default function CacheBrowserDialog({
       }
     } catch (error) {
       logger.error('Failed to cleanup duplicates', { error })
-      if (error instanceof Error && error.message === 'Not a replaceable event store') {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message === 'Not a replaceable event store') {
         toast.error(t('This store does not contain replaceable events'))
       } else {
         toast.error(t('Failed to cleanup duplicates'))
@@ -465,6 +472,11 @@ export default function CacheBrowserDialog({
             <div className="mb-2 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 text-xs text-muted-foreground">
                 {filteredStoreItems.length} {t('of')} {storeItems.length} {t('items')}
+                {selectedStore === StoreNames.PUBLICATION_EVENTS &&
+                publicationStoreTotalRows != null &&
+                publicationStoreTotalRows > storeItems.length
+                  ? ` (${publicationStoreTotalRows} rows incl. nested sections)`
+                  : ''}
                 {searchQuery.trim() && ` ${t('matching')} "${searchQuery}"`}
               </div>
               <div className="flex min-w-0 flex-shrink-0 flex-wrap gap-2 sm:justify-end">

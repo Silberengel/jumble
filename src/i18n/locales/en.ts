@@ -1708,7 +1708,7 @@ export default {
     'Read this book': 'Read this book',
     'libraryIndexCache.sectionTitle': 'Library publication index',
     'libraryIndexCache.sectionBlurb':
-      'Cached kind-30040 index events used to populate the Library tab. Clearing this only removes the discovery list cache—not publications you have opened for reading.',
+      'Kind-30040 catalog rows in your publication cache (same store as opened books). Clearing removes relay-discovered titles only—publications you have opened stay cached with their sections.',
     'libraryIndexCache.defaultsMobile':
       'Default on mobile web: up to {{entries}} indexes, ~{{mb}} MB.',
     'libraryIndexCache.defaultsElectron':
@@ -1720,7 +1720,7 @@ export default {
     'libraryIndexCache.clear': 'Clear library index cache',
     'libraryIndexCache.clearing': 'Clearing…',
     'libraryIndexCache.clearConfirm':
-      'Clear the Library index cache? The Library tab will reload indexes from relays on next visit. Opened publications stay in your publication reading cache.',
+      'Clear relay-discovered library catalog entries? Opened publications and their sections stay in the publication cache.',
     'libraryIndexCache.clearedToast': 'Library index cache cleared.',
     'libraryIndexCache.clearFailed': 'Failed to clear library index cache.',
     'Search page clear': 'Clear',

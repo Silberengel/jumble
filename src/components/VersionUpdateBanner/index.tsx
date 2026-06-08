@@ -1,11 +1,13 @@
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { refreshAppBrowserCacheAndClearServiceWorker } from '@/lib/app-cache-maintenance'
+import logger from '@/lib/logger'
 import {
-  getPwaApplyUpdate,
   initPwaUpdate,
   probePwaWaitingWorker,
   subscribePwaNeedRefresh
 } from '@/lib/pwa-update'
+import { useNostrOptional } from '@/providers/nostr-context'
 import { RefreshCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +23,7 @@ function readVersionUpdateDismissed(): boolean {
 
 export default function VersionUpdateBanner() {
   const { t } = useTranslation()
+  const nostr = useNostrOptional()
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [isDismissed, setIsDismissed] = useState(readVersionUpdateDismissed)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -65,16 +68,18 @@ export default function VersionUpdateBanner() {
     setIsDismissed(true)
     setIsUpdating(true)
 
-    const reload = () => {
+    void (async () => {
+      try {
+        await refreshAppBrowserCacheAndClearServiceWorker({
+          pubkey: nostr?.pubkey,
+          relayList: nostr?.relayList,
+          requestAccountNetworkHydrate: nostr?.requestAccountNetworkHydrate
+        })
+      } catch (error) {
+        logger.warn('[VersionUpdateBanner] Pre-update cache refresh failed', { error })
+      }
       window.location.reload()
-    }
-
-    const apply = getPwaApplyUpdate()
-    if (apply) {
-      void apply().catch(reload)
-      return
-    }
-    reload()
+    })()
   }
 
   const handleDismiss = () => {

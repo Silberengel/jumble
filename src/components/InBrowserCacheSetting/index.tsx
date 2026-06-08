@@ -1,4 +1,8 @@
 import { Button } from '@/components/ui/button'
+import {
+  clearAppServiceWorkerAndCaches,
+  refreshAppBrowserCache
+} from '@/lib/app-cache-maintenance'
 import { clearConsoleLogBuffer } from '@/lib/console-log-buffer'
 import { useConsoleLogBuffer } from '@/hooks/useConsoleLogBuffer'
 import logger from '@/lib/logger'
@@ -15,7 +19,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { toast } from 'sonner'
-import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { useCacheBrowser } from '../../contexts/cache-browser-context'
 
 export default function InBrowserCacheSetting() {
@@ -93,11 +96,11 @@ export default function InBrowserCacheSetting() {
   const handleRefreshCache = async () => {
     try {
       setCacheRefreshBusy(true)
-      await indexedDb.forceDatabaseUpgrade()
-      if (pubkey) {
-        await requestAccountNetworkHydrate()
-        await syncUserDeletionTombstones(pubkey, relayList)
-      }
+      await refreshAppBrowserCache({
+        pubkey,
+        relayList,
+        requestAccountNetworkHydrate
+      })
       toast.success(t('Cache refreshed successfully'))
     } catch (error) {
       logger.error('Failed to refresh cache', { error })
@@ -113,65 +116,7 @@ export default function InBrowserCacheSetting() {
     }
 
     try {
-      const currentOrigin = window.location.origin
-      let unregisteredCount = 0
-      let cacheClearedCount = 0
-
-      if (window.isSecureContext && 'serviceWorker' in navigator) {
-        let registrations: readonly ServiceWorkerRegistration[] = []
-        try {
-          registrations = await navigator.serviceWorker.getRegistrations()
-        } catch (error) {
-          logger.warn('Failed to get service worker registrations', { error })
-        }
-
-        if (registrations.length > 0) {
-          const unregisterPromises = registrations.map(async (registration) => {
-            try {
-              const scope = registration.scope
-              if (scope.startsWith(currentOrigin)) {
-                const result = await registration.unregister()
-                if (result) unregisteredCount++
-                return result
-              }
-              return false
-            } catch (error) {
-              logger.warn('Failed to unregister a service worker', { error })
-              return false
-            }
-          })
-          await Promise.all(unregisterPromises)
-        }
-      }
-
-      if ('caches' in window) {
-        try {
-          const cacheNames = await caches.keys()
-
-          const appCacheNames = [
-            'nostr-images',
-            'satellite-images',
-            'external-images'
-          ]
-
-          const appCaches = cacheNames.filter(name => {
-            if (appCacheNames.includes(name)) return true
-            if (name.startsWith('workbox-') || name.startsWith('precache-')) return true
-            if (name.includes(currentOrigin.replace(/https?:\/\//, '').split('/')[0])) return true
-            return false
-          })
-
-          await Promise.all(appCaches.map(name => {
-            cacheClearedCount++
-            return caches.delete(name).catch(error => {
-              logger.warn(`Failed to delete cache: ${name}`, { error })
-              cacheClearedCount--
-            })
-          }))
-        } catch (error) {
-          logger.warn('Failed to clear some caches', { error })
-        }
-      }
+      const { unregisteredCount, cacheClearedCount } = await clearAppServiceWorkerAndCaches()
 
       if (unregisteredCount > 0 || cacheClearedCount > 0) {
         const message = unregisteredCount > 0 && cacheClearedCount > 0

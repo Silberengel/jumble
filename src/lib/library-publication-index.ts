@@ -2210,7 +2210,7 @@ export function clearLibraryPublicationIndexCache(): void {
   clearLibrarySearchSessionCache()
 }
 
-/** Clears Library tab session + IDB index cache only (publication reading cache is unchanged). */
+/** Clears Library tab session cache and relay-discovered catalog masters (opened publications stay). */
 export async function clearAllLibraryIndexCaches(): Promise<void> {
   sessionCache = null
   indexLoadJob = null

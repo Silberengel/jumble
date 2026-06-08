@@ -1,7 +1,11 @@
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 
 /** Legacy object store names removed in DB migrations (do not re-add to {@link StoreNames}). */
-const LEGACY_DELETED_OBJECT_STORES = ['relayInfoEvents', 'spellListSourceEvents'] as const
+const LEGACY_DELETED_OBJECT_STORES = [
+  'relayInfoEvents',
+  'spellListSourceEvents',
+  'libraryPublicationIndex'
+] as const
 import {
   publicationCoordinateLookupKeys,
   splitPublicationCoordinate
@@ -28,9 +32,7 @@ import logger from '@/lib/logger'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import {
-  eventTagAddress,
   isStructuralPublicationIndex,
-  isVerifiedPublicationIndex,
   pickNewerPublicationIndexEvent,
   type PublicationIndexMap
 } from '@/lib/publication-index'
@@ -71,6 +73,12 @@ type TValue<T = any> = {
   value: T | null
   addedAt: number
   masterPublicationKey?: string // For nested publication events, link to master publication
+  /** 1 when `value` is a kind-30040 library catalog master (indexed for Library tab). */
+  catalogMaster?: 0 | 1
+  /** LRU touch time for catalog masters in {@link StoreNames.PUBLICATION_EVENTS}. */
+  lastAccessAt?: number
+  /** Approximate JSON size for catalog-master LRU pruning. */
+  catalogBytes?: number
 }
 
 /** One matching row from {@link IndexedDbService.searchAllCachedEventsFullText}. */
@@ -150,7 +158,6 @@ export const StoreNames = {
   /** Piper / read-aloud WAV blobs keyed by SHA-256 of endpoint + text + speed. */
   PIPER_TTS_CACHE: 'piperTtsCache',
   /** Library kind-30040 index LRU (rotating cache; separate byte/entry budget from EVENT_ARCHIVE). */
-  LIBRARY_PUBLICATION_INDEX: 'libraryPublicationIndex',
   /** NIP-52 calendar notes (31922/31923). Key: {@link replaceableEventDedupeKey}. Index: `occurrenceStartMs`. */
   CALENDAR_EVENTS: 'calendarEvents',
   /** NIP-52 calendar RSVPs (31925). Key: event id. Index: `parentCoordinate` (`a` tag). */
@@ -182,7 +189,6 @@ export type TCalendarRsvpCacheRow = {
 const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set([
   StoreNames.SETTINGS,
   StoreNames.PIPER_TTS_CACHE,
-  StoreNames.LIBRARY_PUBLICATION_INDEX,
   StoreNames.RELAY_INFOS,
   StoreNames.NIP66_DISCOVERY,
   StoreNames.GIF_CACHE,
@@ -237,7 +243,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 41
+const DB_VERSION = 43
 
 /** Hint age for profile/payment reads (stale rows still returned; background refresh). */
 const PROFILE_AND_PAYMENT_STALE_READ_MS = 5 * 60 * 1000
@@ -253,7 +259,7 @@ function idbEventToError(ev: Parameters<NonNullable<IDBRequest['onerror']>>[0]):
   return new Error(message)
 }
 
-type TLibraryPublicationIndexCacheRow = {
+type TLegacyLibraryPublicationIndexRow = {
   key: string
   value: Event
   addedAt: number
@@ -261,7 +267,7 @@ type TLibraryPublicationIndexCacheRow = {
   approxBytes: number
 }
 
-function approxLibraryPublicationIndexRowBytes(ev: Event): number {
+function approxPublicationCatalogMasterBytes(ev: Event): number {
   try {
     return new Blob([JSON.stringify(ev)]).size
   } catch {
@@ -269,53 +275,125 @@ function approxLibraryPublicationIndexRowBytes(ev: Event): number {
   }
 }
 
-/** v41: re-key library index rows from event id to kind:pubkey:d; dedupe by address. */
-function migrateLibraryPublicationIndexCacheToAddressKeys(transaction: IDBTransaction): void {
-  const store = transaction.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX)
-  const rows: TLibraryPublicationIndexCacheRow[] = []
+function publicationStoreRowKeyForEvent(event: Event): string {
+  const [, d] = event.tags.find(tagNameEquals('d')) ?? []
+  const trimmed = event.pubkey.trim()
+  const canonPk = /^[0-9a-f]{64}$/i.test(trimmed) ? trimmed.toLowerCase() : trimmed
+  return d === undefined ? canonPk : `${canonPk}:${d}`
+}
 
-  const readReq = store.openCursor()
+function buildPublicationStoreRow(
+  key: string,
+  event: Event,
+  prev: TValue<Event> | undefined,
+  masterPublicationKey?: string
+): TValue<Event> {
+  const now = Date.now()
+  const isCatalogMaster = event.kind === ExtendedKind.PUBLICATION && !masterPublicationKey
+  const row: TValue<Event> = {
+    key,
+    value: event,
+    addedAt: prev?.addedAt ?? now,
+    ...(masterPublicationKey ? { masterPublicationKey } : {})
+  }
+  if (isCatalogMaster) {
+    row.catalogMaster = 1
+    row.lastAccessAt = Math.max(prev?.lastAccessAt ?? 0, now)
+    row.catalogBytes = approxPublicationCatalogMasterBytes(event)
+  } else if (storeRowIsPublicationEvent(event)) {
+    row.catalogMaster = 0
+  }
+  return row
+}
+
+function storeRowIsPublicationEvent(event: Event): boolean {
+  return (
+    event.kind === ExtendedKind.PUBLICATION ||
+    event.kind === ExtendedKind.PUBLICATION_CONTENT ||
+    event.kind === ExtendedKind.WIKI_ARTICLE ||
+    event.kind === ExtendedKind.NOSTR_SPECIFICATION ||
+    event.kind === kinds.LongFormArticle
+  )
+}
+
+function ensurePublicationEventsCatalogIndexes(store: IDBObjectStore): void {
+  if (!store.indexNames.contains('catalogMaster')) {
+    store.createIndex('catalogMaster', 'catalogMaster', { unique: false })
+  }
+}
+
+function backfillPublicationCatalogMetadata(store: IDBObjectStore): void {
+  const req = store.openCursor()
+  req.onsuccess = () => {
+    const cursor = req.result as IDBCursorWithValue | null
+    if (!cursor) return
+    const row = cursor.value as TValue<Event>
+    const event = row?.value
+    if (!event || !storeRowIsPublicationEvent(event)) {
+      cursor.continue()
+      return
+    }
+    const isCatalogMaster = event.kind === ExtendedKind.PUBLICATION && !row.masterPublicationKey
+    const next: TValue<Event> = { ...row }
+    if (isCatalogMaster) {
+      next.catalogMaster = 1
+      next.lastAccessAt = row.lastAccessAt ?? row.addedAt ?? Date.now()
+      next.catalogBytes = row.catalogBytes ?? approxPublicationCatalogMasterBytes(event)
+    } else {
+      next.catalogMaster = 0
+    }
+    if (
+      next.catalogMaster !== row.catalogMaster ||
+      next.lastAccessAt !== row.lastAccessAt ||
+      next.catalogBytes !== row.catalogBytes
+    ) {
+      const updateReq = cursor.update(next)
+      updateReq.onsuccess = () => cursor.continue()
+      updateReq.onerror = () => cursor.continue()
+    } else {
+      cursor.continue()
+    }
+  }
+}
+
+/** v43: merge legacy libraryPublicationIndex into publicationEvents; catalogMaster index. */
+function migrateLegacyLibraryPublicationIndexStore(transaction: IDBTransaction, db: IDBDatabase): void {
+  const legacyName = 'libraryPublicationIndex'
+  if (!db.objectStoreNames.contains(legacyName) || !db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+    return
+  }
+  const legacyStore = transaction.objectStore(legacyName)
+  const pubStore = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+  const legacyRows: TLegacyLibraryPublicationIndexRow[] = []
+
+  const readReq = legacyStore.openCursor()
   readReq.onsuccess = () => {
-    const cursor = readReq.result
+    const cursor = readReq.result as IDBCursorWithValue | null
     if (cursor) {
-      rows.push(cursor.value as TLibraryPublicationIndexCacheRow)
+      legacyRows.push(cursor.value as TLegacyLibraryPublicationIndexRow)
       cursor.continue()
       return
     }
 
-    const byAddress = new Map<string, TLibraryPublicationIndexCacheRow>()
-    for (const row of rows) {
+    for (const row of legacyRows) {
       const ev = row?.value
       if (!ev || ev.kind !== ExtendedKind.PUBLICATION || !isStructuralPublicationIndex(ev)) continue
-      const addr = eventTagAddress(ev)
-      if (!addr) continue
-
-      const existing = byAddress.get(addr)
-      if (!existing) {
-        byAddress.set(addr, {
-          key: addr,
-          value: ev,
-          addedAt: row.addedAt ?? Date.now(),
-          lastAccessAt: row.lastAccessAt ?? row.addedAt ?? Date.now(),
-          approxBytes: row.approxBytes ?? approxLibraryPublicationIndexRowBytes(ev)
-        })
-        continue
-      }
-
-      const winner = pickNewerPublicationIndexEvent(existing.value, ev)
-      byAddress.set(addr, {
-        key: addr,
-        value: winner,
-        addedAt: Math.min(existing.addedAt, row.addedAt ?? existing.addedAt),
-        lastAccessAt: Math.max(existing.lastAccessAt, row.lastAccessAt ?? row.addedAt ?? 0),
-        approxBytes: approxLibraryPublicationIndexRowBytes(winner)
-      })
-    }
-
-    const clearReq = store.clear()
-    clearReq.onsuccess = () => {
-      for (const row of byAddress.values()) {
-        store.put(row)
+      const key = publicationStoreRowKeyForEvent(ev)
+      const getReq = pubStore.get(key)
+      getReq.onsuccess = () => {
+        const prev = getReq.result as TValue<Event> | undefined
+        const winner =
+          prev?.value && pickNewerPublicationIndexEvent(prev.value, ev).id === prev.value.id
+            ? prev.value
+            : ev
+        const merged: TValue<Event> = buildPublicationStoreRow(key, winner, prev)
+        merged.addedAt = Math.min(prev?.addedAt ?? row.addedAt ?? Date.now(), row.addedAt ?? Date.now())
+        merged.lastAccessAt = Math.max(
+          prev?.lastAccessAt ?? 0,
+          row.lastAccessAt ?? row.addedAt ?? 0
+        )
+        merged.catalogBytes = approxPublicationCatalogMasterBytes(winner)
+        pubStore.put(merged)
       }
     }
   }
@@ -347,9 +425,11 @@ function ensureMissingObjectStores(db: IDBDatabase): void {
       const pa = db.createObjectStore(storeName, { keyPath: 'key' })
       pa.createIndex('authorPubkey', 'authorPubkey', { unique: false })
       pa.createIndex('targetEventId', 'targetEventId', { unique: false })
-    } else if (storeName === StoreNames.LIBRARY_PUBLICATION_INDEX) {
-      const lib = db.createObjectStore(storeName, { keyPath: 'key' })
-      lib.createIndex('lastAccessAt', 'lastAccessAt', { unique: false })
+    } else if (storeName === StoreNames.PUBLICATION_EVENTS) {
+      const store = db.createObjectStore(storeName, { keyPath: 'key' })
+      ensurePublicationEventsCatalogIndexes(store)
+    } else if (storeName === 'libraryPublicationIndex') {
+      /* dropped in v43 — do not recreate */
     } else {
       db.createObjectStore(storeName, { keyPath: 'key' })
     }
@@ -514,7 +594,8 @@ class IndexedDbService {
             db.createObjectStore(StoreNames.RELAY_INFOS, { keyPath: 'key' })
           }
           if (!db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
-            db.createObjectStore(StoreNames.PUBLICATION_EVENTS, { keyPath: 'key' })
+            const pub = db.createObjectStore(StoreNames.PUBLICATION_EVENTS, { keyPath: 'key' })
+            ensurePublicationEventsCatalogIndexes(pub)
           }
           if (!db.objectStoreNames.contains(StoreNames.PUBLIC_LIVELY_RELAYS)) {
             db.createObjectStore(StoreNames.PUBLIC_LIVELY_RELAYS, { keyPath: 'key' })
@@ -591,15 +672,29 @@ class IndexedDbService {
             }
           }
           if (event.oldVersion < 40) {
-            if (!db.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) {
-              const lib = db.createObjectStore(StoreNames.LIBRARY_PUBLICATION_INDEX, { keyPath: 'key' })
+            if (!db.objectStoreNames.contains('libraryPublicationIndex')) {
+              const lib = db.createObjectStore('libraryPublicationIndex', { keyPath: 'key' })
               lib.createIndex('lastAccessAt', 'lastAccessAt', { unique: false })
             }
           }
           if (event.oldVersion < 41) {
             const tx = (event.target as IDBOpenDBRequest).transaction
-            if (tx && db.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) {
-              migrateLibraryPublicationIndexCacheToAddressKeys(tx)
+            if (tx && db.objectStoreNames.contains('libraryPublicationIndex')) {
+              // v41 migration superseded by v43 consolidation into publicationEvents
+            }
+          }
+          if (event.oldVersion < 43) {
+            const tx = (event.target as IDBOpenDBRequest).transaction
+            if (tx && db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+              const pubStore = tx.objectStore(StoreNames.PUBLICATION_EVENTS)
+              ensurePublicationEventsCatalogIndexes(pubStore)
+              backfillPublicationCatalogMetadata(pubStore)
+            }
+            if (tx) {
+              migrateLegacyLibraryPublicationIndexStore(tx, db)
+            }
+            if (db.objectStoreNames.contains('libraryPublicationIndex')) {
+              db.deleteObjectStore('libraryPublicationIndex')
             }
           }
           ensureMissingObjectStores(db)
@@ -690,7 +785,11 @@ class IndexedDbService {
           return resolve(oldValue.value)
         }
 
-        const putRequest = store.put(this.formatValue(key, cleanEvent))
+        const putRequest = store.put(
+          storeName === StoreNames.PUBLICATION_EVENTS
+            ? buildPublicationStoreRow(key, cleanEvent, oldValue)
+            : this.formatValue(key, cleanEvent)
+        )
         putRequest.onsuccess = () => {
           transaction.commit()
           resolve(cleanEvent)
@@ -1385,16 +1484,14 @@ class IndexedDbService {
         if (oldValue?.value && oldValue.value.created_at > cleanEvent.created_at) {
           // Update master key link even if event is not newer
           if (oldValue.masterPublicationKey !== masterKey) {
-            const value = this.formatValue(key, oldValue.value)
-            value.masterPublicationKey = masterKey
+            const value = buildPublicationStoreRow(key, oldValue.value, oldValue, masterKey)
             store.put(value)
           }
           transaction.commit()
           return resolve(oldValue.value)
         }
         // Store with master key link
-        const value = this.formatValue(key, cleanEvent)
-        value.masterPublicationKey = masterKey
+        const value = buildPublicationStoreRow(key, cleanEvent, oldValue, masterKey)
         const putRequest = store.put(value)
         putRequest.onsuccess = () => {
           transaction.commit()
@@ -1442,8 +1539,7 @@ class IndexedDbService {
       // For non-replaceable events, use event ID as key
       const key = event.id
       // For non-replaceable events, always update with master key link
-      const value = this.formatValue(key, event)
-      value.masterPublicationKey = masterKey
+      const value = buildPublicationStoreRow(key, event, undefined, masterKey)
       const putRequest = store.put(value)
       putRequest.onsuccess = () => {
         transaction.commit()
@@ -2080,7 +2176,7 @@ class IndexedDbService {
           storeInfo[storeName] = req.result
           pending--
           if (pending === 0) {
-            resolve(storeInfo)
+            void this.normalizePublicationStoreInfoCount(storeInfo).then(resolve).catch(reject)
           }
         }
         req.onerror = (ev) => {
@@ -2088,6 +2184,116 @@ class IndexedDbService {
         }
       }
     })
+  }
+
+  /** Master kind-30040 catalog rows in {@link StoreNames.PUBLICATION_EVENTS}. */
+  async countPublicationStoreMasterEvents(): Promise<number> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) return 0
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.PUBLICATION_EVENTS)
+      if (store.indexNames.contains('catalogMaster')) {
+        const req = store.index('catalogMaster').count(IDBKeyRange.only(1))
+        req.onsuccess = () => {
+          tx.commit()
+          resolve(req.result)
+        }
+        req.onerror = (e) => {
+          tx.commit()
+          reject(idbEventToError(e))
+        }
+        return
+      }
+      const req = store.openCursor()
+      let count = 0
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve(count)
+          return
+        }
+        const item = cursor.value as TValue<Event> | undefined
+        if (item?.catalogMaster === 1 || (item?.value?.kind === ExtendedKind.PUBLICATION && !item.masterPublicationKey)) {
+          count += 1
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  /** Kind-30040 library catalog masters in {@link StoreNames.PUBLICATION_EVENTS}. */
+  async getPublicationCatalogIndexEvents(): Promise<Event[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) return []
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const out: Event[] = []
+
+      const collectRow = (row: TValue<Event> | undefined) => {
+        const event = row?.value
+        if (!event || event.kind !== ExtendedKind.PUBLICATION) return
+        if (row?.catalogMaster === 1 || !row.masterPublicationKey) out.push(event)
+      }
+
+      if (store.indexNames.contains('catalogMaster')) {
+        const req = store.index('catalogMaster').openCursor(IDBKeyRange.only(1))
+        req.onsuccess = () => {
+          const cursor = req.result as IDBCursorWithValue | null
+          if (!cursor) {
+            tx.commit()
+            resolve(out)
+            return
+          }
+          collectRow(cursor.value as TValue<Event>)
+          cursor.continue()
+        }
+        req.onerror = (e) => {
+          tx.commit()
+          reject(idbEventToError(e))
+        }
+        return
+      }
+
+      const req = store.openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        collectRow(cursor.value as TValue<Event>)
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  /** @deprecated Use {@link getPublicationCatalogIndexEvents}. */
+  async getMasterPublicationIndexEventsFromReadingCache(): Promise<Event[]> {
+    return this.getPublicationCatalogIndexEvents()
+  }
+
+  private async normalizePublicationStoreInfoCount(storeInfo: Record<string, number>): Promise<Record<string, number>> {
+    if (!storeInfo[StoreNames.PUBLICATION_EVENTS]) return storeInfo
+    try {
+      storeInfo[StoreNames.PUBLICATION_EVENTS] = await this.countPublicationStoreMasterEvents()
+    } catch (e) {
+      logger.warn('[indexedDb] countPublicationStoreMasterEvents failed', { e })
+    }
+    return storeInfo
   }
 
   async getStoreItems(storeName: string): Promise<TValue<any>[]> {
@@ -2287,13 +2493,27 @@ class IndexedDbService {
       return { deleted: 0, kept: 0 }
     }
 
+    if (storeName === StoreNames.PUBLICATION_EVENTS) {
+      return this.cleanupDuplicateEventsByDedupeKey(storeName, (event) =>
+        this.getReplaceableEventKeyFromEvent(event)
+      )
+    }
+
     // Get the kind for this store - only clean up replaceable event stores
     const kind = this.getKindByStoreName(storeName)
     if (!kind || !this.isReplaceableEventKind(kind)) {
-      return Promise.reject('Not a replaceable event store')
+      return Promise.reject(new Error('Not a replaceable event store'))
     }
 
-    // First pass: identify duplicates
+    return this.cleanupDuplicateEventsByDedupeKey(storeName, (event) =>
+      this.getReplaceableEventKeyFromEvent(event)
+    )
+  }
+
+  private async cleanupDuplicateEventsByDedupeKey(
+    storeName: string,
+    dedupeKeyForEvent: (event: Event) => string
+  ): Promise<{ deleted: number; kept: number }> {
     const allItems = await this.getStoreItems(storeName)
     const eventMap = new Map<string, { key: string; event: Event; addedAt: number }>()
     const keysToDelete: string[] = []
@@ -2304,48 +2524,42 @@ class IndexedDbService {
         invalidItemsCount++
         continue
       }
-      
-      // Skip if event doesn't have required fields
+
       if (!item.value.pubkey || !item.value.kind || !item.value.created_at) {
         invalidItemsCount++
         continue
       }
-      
+
       try {
-        const replaceableKey = this.getReplaceableEventKeyFromEvent(item.value)
-        const existing = eventMap.get(replaceableKey)
-        
-        if (!existing || 
-            item.value.created_at > existing.event.created_at ||
-            (item.value.created_at === existing.event.created_at && 
-             item.addedAt > existing.addedAt)) {
-          // This event is newer, mark the old one for deletion if it exists
+        const dedupeKey = dedupeKeyForEvent(item.value)
+        const existing = eventMap.get(dedupeKey)
+
+        if (
+          !existing ||
+          item.value.created_at > existing.event.created_at ||
+          (item.value.created_at === existing.event.created_at && item.addedAt > existing.addedAt)
+        ) {
           if (existing) {
             keysToDelete.push(existing.key)
           }
-          eventMap.set(replaceableKey, {
+          eventMap.set(dedupeKey, {
             key: item.key,
             event: item.value,
             addedAt: item.addedAt
           })
         } else {
-          // This event is older or same, mark it for deletion
           keysToDelete.push(item.key)
         }
       } catch (error) {
-        // If we can't generate a replaceable key, skip this item
-        logger.warn('Failed to get replaceable key for item', { key: item.key, error })
+        logger.warn('Failed to get dedupe key for item', { key: item.key, error })
         invalidItemsCount++
-        continue
       }
     }
 
-    // Second pass: delete duplicates
-    const totalProcessed = eventMap.size + keysToDelete.length
     const actualKept = eventMap.size
-    
+
     if (keysToDelete.length === 0) {
-      // No duplicates found, but verify counts match
+      const totalProcessed = eventMap.size + keysToDelete.length
       if (totalProcessed + invalidItemsCount !== allItems.length) {
         logger.warn('Count mismatch while cleaning up replaceable events', {
           totalItems: allItems.length,
@@ -2353,24 +2567,23 @@ class IndexedDbService {
           invalid: invalidItemsCount
         })
       }
-      return Promise.resolve({ deleted: 0, kept: actualKept })
+      return { deleted: 0, kept: actualKept }
     }
 
     return new Promise((resolve) => {
       const transaction = this.db!.transaction(storeName, 'readwrite')
       const store = transaction.objectStore(storeName)
-      
+
       let deletedCount = 0
       let completedCount = 0
 
-      keysToDelete.forEach(key => {
+      keysToDelete.forEach((key) => {
         const deleteRequest = store.delete(key)
         deleteRequest.onsuccess = () => {
           deletedCount++
           completedCount++
           if (completedCount === keysToDelete.length) {
             transaction.commit()
-            const actualKept = eventMap.size
             const totalProcessed = actualKept + deletedCount
             if (totalProcessed + invalidItemsCount !== allItems.length) {
               logger.warn('Count mismatch after deletion', {
@@ -2387,7 +2600,6 @@ class IndexedDbService {
           completedCount++
           if (completedCount === keysToDelete.length) {
             transaction.commit()
-            const actualKept = eventMap.size
             resolve({ deleted: deletedCount, kept: actualKept })
           }
         }
@@ -3756,22 +3968,19 @@ class IndexedDbService {
     }
   }
 
-  private approxLibraryPublicationIndexBytes(ev: Event): number {
-    try {
-      return new Blob([JSON.stringify(ev)]).size
-    } catch {
-      return 2048
-    }
-  }
-
-  async pruneUnverifiedLibraryPublicationIndexCacheEvents(): Promise<number> {
+  private async listPublicationCatalogMasterRows(): Promise<
+    Array<{ key: string; lastAccessAt: number; bytes: number; hasNested: boolean }>
+  > {
     await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return 0
+    if (!this.db?.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) return []
 
-    const toDelete: string[] = []
+    const nestedMasterKeys = new Set<string>()
+    const masters: Array<{ key: string; lastAccessAt: number; bytes: number }> = []
+
     await new Promise<void>((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      const tx = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = tx.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const req = store.openCursor()
       req.onsuccess = () => {
         const cursor = req.result as IDBCursorWithValue | null
         if (!cursor) {
@@ -3779,53 +3988,19 @@ class IndexedDbService {
           resolve()
           return
         }
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        if (row?.value?.kind === ExtendedKind.PUBLICATION && !isVerifiedPublicationIndex(row.value)) {
-          toDelete.push(cursor.key as string)
-        }
-        cursor.continue()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
-
-    for (const key of toDelete) {
-      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
-    }
-    return toDelete.length
-  }
-
-  /** True when any row is keyed by event id instead of kind:pubkey:d address. */
-  async libraryPublicationIndexCacheHasLegacyKeys(): Promise<boolean> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return false
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
-      req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor) {
-          tx.commit()
-          resolve(false)
-          return
-        }
-        const rowKey = cursor.key as string
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        const ev = row?.value
-        const addr = ev ? eventTagAddress(ev) : null
-        if (
-          !ev ||
-          ev.kind !== ExtendedKind.PUBLICATION ||
-          !isStructuralPublicationIndex(ev) ||
-          !addr ||
-          rowKey !== addr
+        const row = cursor.value as TValue<Event>
+        const key = cursor.key as string
+        if (row?.masterPublicationKey) {
+          nestedMasterKeys.add(row.masterPublicationKey)
+        } else if (
+          row?.catalogMaster === 1 ||
+          (row?.value?.kind === ExtendedKind.PUBLICATION && !row.masterPublicationKey)
         ) {
-          tx.commit()
-          resolve(true)
-          return
+          masters.push({
+            key,
+            lastAccessAt: row.lastAccessAt ?? row.addedAt,
+            bytes: row.catalogBytes ?? approxPublicationCatalogMasterBytes(row.value as Event)
+          })
         }
         cursor.continue()
       }
@@ -3834,241 +4009,94 @@ class IndexedDbService {
         reject(idbEventToError(e))
       }
     })
+
+    return masters.map((row) => ({ ...row, hasNested: nestedMasterKeys.has(row.key) }))
   }
 
-  async getLibraryPublicationIndexCacheEvents(): Promise<Event[]> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return []
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
-      const out: Event[] = []
-      req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor) {
-          tx.commit()
-          resolve(out)
-          return
-        }
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        if (row?.value?.kind === ExtendedKind.PUBLICATION) out.push(row.value)
-        cursor.continue()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
-  }
-
-  async getLibraryPublicationIndexCacheFootprint(): Promise<{ count: number; bytes: number }> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) {
-      return { count: 0, bytes: 0 }
+  async getPublicationCatalogFootprint(): Promise<{ count: number; bytes: number }> {
+    const rows = await this.listPublicationCatalogMasterRows()
+    return {
+      count: rows.length,
+      bytes: rows.reduce((sum, row) => sum + row.bytes, 0)
     }
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
-      let count = 0
-      let bytes = 0
-      req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor) {
-          tx.commit()
-          resolve({ count, bytes })
-          return
-        }
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        count += 1
-        bytes += row.approxBytes ?? this.approxLibraryPublicationIndexBytes(row.value)
-        cursor.continue()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
   }
 
-  async mergeLibraryPublicationIndexCacheEvents(
+  async mergePublicationCatalogIndexEvents(
     events: Event[],
     opts: { maxEntries: number; maxBytes: number }
   ): Promise<void> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX) || events.length === 0) {
-      return
-    }
-
-    const now = Date.now()
-    const storeName = StoreNames.LIBRARY_PUBLICATION_INDEX
-    const rowsToWrite: Array<{ key: string; event: Event }> = []
-
     for (const ev of events) {
       if (ev.kind !== ExtendedKind.PUBLICATION || !isStructuralPublicationIndex(ev)) continue
-      const key = eventTagAddress(ev)
-      if (!key) continue
-      const existing = rowsToWrite.find((row) => row.key === key)
-      if (!existing) {
-        rowsToWrite.push({ key, event: ev })
-        continue
-      }
-      existing.event = pickNewerPublicationIndexEvent(existing.event, ev)
+      await this.putReplaceableEvent(ev)
     }
-
-    if (rowsToWrite.length === 0) return
-
-    await new Promise<void>((resolve, reject) => {
-      const tx = this.db!.transaction(storeName, 'readwrite')
-      const store = tx.objectStore(storeName)
-      let pending = rowsToWrite.length
-
-      const finishOne = () => {
-        pending -= 1
-        if (pending === 0) {
-          tx.commit()
-          resolve()
-        }
-      }
-
-      for (const { key, event: ev } of rowsToWrite) {
-        const get = store.get(key)
-        get.onsuccess = () => {
-          const prev = get.result as TLibraryPublicationIndexCacheRow | undefined
-          if (prev?.value && pickNewerPublicationIndexEvent(prev.value, ev).id === prev.value.id) {
-            finishOne()
-            return
-          }
-          const row: TLibraryPublicationIndexCacheRow = {
-            key,
-            value: ev,
-            addedAt: prev?.addedAt ?? now,
-            lastAccessAt: now,
-            approxBytes: this.approxLibraryPublicationIndexBytes(ev)
-          }
-          const put = store.put(row)
-          put.onsuccess = () => finishOne()
-          put.onerror = (e) => {
-            finishOne()
-            if (pending === 0) reject(idbEventToError(e))
-          }
-        }
-        get.onerror = (e) => {
-          finishOne()
-          if (pending === 0) reject(idbEventToError(e))
-        }
-      }
-    })
-
-    await this.pruneLibraryPublicationIndexCache(opts.maxEntries, opts.maxBytes)
+    await this.prunePublicationCatalogMasters(opts.maxEntries, opts.maxBytes)
   }
 
-  /** Drop invalid, legacy id-keyed, and superseded rows after an address-keyed merge. */
-  async reconcileLibraryPublicationIndexCache(canonical: PublicationIndexMap): Promise<void> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
-
-    const toDelete: string[] = []
-    await new Promise<void>((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
-      req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor) {
-          tx.commit()
-          resolve()
-          return
-        }
-        const rowKey = cursor.key as string
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        const ev = row?.value
-        const addr = ev ? eventTagAddress(ev) : null
-        const canon = addr ? canonical.get(addr) : undefined
-        const invalid =
-          !ev ||
-          ev.kind !== ExtendedKind.PUBLICATION ||
-          !isStructuralPublicationIndex(ev) ||
-          !addr ||
-          rowKey !== addr
-        const superseded = Boolean(canon && canon.id !== ev?.id)
-        if (invalid || superseded) {
-          toDelete.push(rowKey)
-        }
-        cursor.continue()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
-
-    for (const key of toDelete) {
-      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
-    }
-  }
-
-  async pruneLibraryPublicationIndexCache(maxEntries: number, maxBytes: number): Promise<void> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
-
-    const rows: Array<{ key: string; lastAccessAt: number; bytes: number }> = []
-    await new Promise<void>((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
-      req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null
-        if (!cursor) {
-          tx.commit()
-          resolve()
-          return
-        }
-        const row = cursor.value as TLibraryPublicationIndexCacheRow
-        rows.push({
-          key: cursor.key as string,
-          lastAccessAt: row.lastAccessAt ?? row.addedAt,
-          bytes: row.approxBytes ?? this.approxLibraryPublicationIndexBytes(row.value)
-        })
-        cursor.continue()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
-
-    rows.sort((a, b) => a.lastAccessAt - b.lastAccessAt)
-    const toDelete = new Set<string>()
+  async prunePublicationCatalogMasters(maxEntries: number, maxBytes: number): Promise<void> {
+    const rows = await this.listPublicationCatalogMasterRows()
+    const candidates = rows
+      .filter((r) => !r.hasNested)
+      .sort((a, b) => a.lastAccessAt - b.lastAccessAt)
     let totalBytes = rows.reduce((s, r) => s + r.bytes, 0)
     let totalCount = rows.length
-    while (totalCount > maxEntries || totalBytes > maxBytes) {
-      const victim = rows.shift()
-      if (!victim) break
+    const toDelete = new Set<string>()
+
+    for (const victim of candidates) {
+      if (totalCount <= maxEntries && totalBytes <= maxBytes) break
       toDelete.add(victim.key)
       totalBytes -= victim.bytes
       totalCount -= 1
     }
 
     for (const key of toDelete) {
-      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
+      await this.deleteStoreItem(StoreNames.PUBLICATION_EVENTS, key)
     }
   }
 
+  /** Remove relay-discovered catalog masters that were never opened (no nested sections cached). */
+  async clearPublicationCatalogDiscoveryOnly(): Promise<void> {
+    const rows = await this.listPublicationCatalogMasterRows()
+    for (const row of rows) {
+      if (!row.hasNested) {
+        await this.deleteStoreItem(StoreNames.PUBLICATION_EVENTS, row.key)
+      }
+    }
+  }
+
+  /** @deprecated Use {@link getPublicationCatalogFootprint}. */
+  async getLibraryPublicationIndexCacheFootprint(): Promise<{ count: number; bytes: number }> {
+    return this.getPublicationCatalogFootprint()
+  }
+
+  /** @deprecated Use {@link getPublicationCatalogIndexEvents}. */
+  async getLibraryPublicationIndexCacheEvents(): Promise<Event[]> {
+    return this.getPublicationCatalogIndexEvents()
+  }
+
+  /** @deprecated Use {@link mergePublicationCatalogIndexEvents}. */
+  async mergeLibraryPublicationIndexCacheEvents(
+    events: Event[],
+    opts: { maxEntries: number; maxBytes: number }
+  ): Promise<void> {
+    return this.mergePublicationCatalogIndexEvents(events, opts)
+  }
+
+  /** @deprecated Use {@link clearPublicationCatalogDiscoveryOnly}. */
   async clearLibraryPublicationIndexCacheStore(): Promise<void> {
-    await this.initPromise
-    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
-    await new Promise<void>((resolve, reject) => {
-      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readwrite')
-      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).clear()
-      req.onsuccess = () => {
-        tx.commit()
-        resolve()
-      }
-      req.onerror = (e) => {
-        tx.commit()
-        reject(idbEventToError(e))
-      }
-    })
+    return this.clearPublicationCatalogDiscoveryOnly()
+  }
+
+  /** @deprecated No-op after v43 consolidation. */
+  async reconcileLibraryPublicationIndexCache(_canonical: PublicationIndexMap): Promise<void> {}
+
+  /** @deprecated No-op after v43 consolidation. */
+  async libraryPublicationIndexCacheHasLegacyKeys(): Promise<boolean> {
+    return false
+  }
+
+  /** @deprecated No-op after v43 consolidation. */
+  async pruneUnverifiedLibraryPublicationIndexCacheEvents(): Promise<number> {
+    return 0
   }
 
   /**
