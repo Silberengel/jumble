@@ -3,6 +3,7 @@ import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'
+import { useNearViewport } from '@/hooks/useNearViewport'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import { publicationRefKey } from '@/lib/publication-section-fetch'
 import {
@@ -100,26 +101,13 @@ function PublicationSectionNodeView({
   const isMissing = Boolean(refKey && failedKeys.has(refKey))
   const isLoading = Boolean(refKey && loadingKeys.has(refKey))
   const needsLoad = Boolean(refKey && !node.event && !isMissing && !isLoading)
+  const isNear = useNearViewport(sectionElRef, { enabled: needsLoad, marginPx: 480 })
 
   useEffect(() => {
-    if (!needsLoad) return
-    const el = sectionElRef.current
-    if (!el) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          onRequestLoad(node.ref, node.indexEvent)
-          onReadAhead()
-        }
-      },
-      { rootMargin: '720px 0px 480px 0px', threshold: 0 }
-    )
-
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [needsLoad, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
+    if (!needsLoad || !isNear) return
+    onRequestLoad(node.ref, node.indexEvent)
+    onReadAhead()
+  }, [needsLoad, isNear, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
 
   return (
     <section
@@ -179,9 +167,13 @@ function PublicationTableOfContents({
 }) {
   const { t } = useTranslation()
 
-  const scrollToSection = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [])
+  const scrollToSection = useCallback(
+    (id: string) => {
+      if (!readingStarted) return
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    [readingStarted]
+  )
 
   if (entries.length === 0) return null
 

@@ -1,3 +1,4 @@
+import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { indexPublicationEvents } from '@/lib/publication-asciidoc-assembler'
 import {
   collectPendingPublicationSectionLoads,
@@ -8,8 +9,11 @@ import { publicationRefKey, type PublicationSectionRef } from '@/lib/publication
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const INITIAL_PREFETCH_COUNT = 3
-const READ_AHEAD_COUNT = 1
+const READ_AHEAD_COUNT = 2
+
+function initialPrefetchCount(): number {
+  return isMobileBrowserProfile() ? 8 : 5
+}
 
 export function useProgressivePublicationContent(
   rootIndex: Event,
@@ -113,7 +117,7 @@ export function useProgressivePublicationContent(
         failedRef.current,
         inFlightRef.current
       )
-      for (const task of pending.slice(0, INITIAL_PREFETCH_COUNT)) {
+      for (const task of pending.slice(0, initialPrefetchCount())) {
         if (cancelled) return
         await loadSection(task.ref, task.indexEvent)
       }
@@ -133,6 +137,11 @@ export function useProgressivePublicationContent(
     )
     prefetchTasks(pending.slice(0, READ_AHEAD_COUNT))
   }, [prefetchTasks, rootIndex])
+
+  useEffect(() => {
+    if (!enabled) return
+    readAhead()
+  }, [enabled, fetched, failedKeys, readAhead])
 
   return {
     fetched,

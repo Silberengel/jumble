@@ -631,7 +631,7 @@ export async function fetchLibraryIndexEvents(
   )
   indexMap = await mergeValidIndexBatch(indexMap, knownValidIds, firstPageNetwork)
   validMerged = publicationIndexMapValues(indexMap)
-  void persistLibraryIndexCacheEvents(validMerged)
+  void persistLibraryIndexCacheEvents(validMerged, { reconcile: false })
   emitProgress()
 
   if (import.meta.env.DEV) {
@@ -1901,13 +1901,12 @@ export async function searchLibraryPublicationsOnRelays(
   const settled = await Promise.all(batches)
   const networkEvents = dedupeEventsById(settled.flat())
   const valid = filterValidIndexEvents(networkEvents)
-  if (valid.length > 0) {
-    void persistLibraryIndexCacheEvents(valid)
-  }
-
   const mergedIndex = publicationIndexMapValues(
     mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
   )
+  if (valid.length > 0 || mergedIndex.length > 0) {
+    void persistLibraryIndexCacheEvents(mergedIndex)
+  }
   const indexByAddress = buildIndexByAddress(mergedIndex)
   const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress)
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT

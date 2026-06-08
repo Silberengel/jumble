@@ -1,4 +1,3 @@
-import { ExtendedKind } from '@/constants'
 import {
   approxLibraryIndexEventBytes,
   getLibraryIndexCacheBudget
@@ -12,6 +11,13 @@ import {
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
+type PersistLibraryIndexCacheOptions = {
+  /** When false, merge rows only — skip reconcile so partial batches cannot wipe unrelated cache rows. */
+  reconcile?: boolean
+}
+
+let persistQueue: Promise<void> = Promise.resolve()
+
 export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
   try {
     const cached = await indexedDb.getLibraryPublicationIndexCacheEvents()
@@ -22,8 +28,9 @@ export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
     if (structural.length < cached.length) {
       void indexedDb.pruneUnverifiedLibraryPublicationIndexCacheEvents().catch(() => {})
     }
-    if (normalized.length !== cached.length) {
-      void persistLibraryIndexCacheEvents(normalized).catch(() => {})
+    const hasLegacyKeys = await indexedDb.libraryPublicationIndexCacheHasLegacyKeys()
+    if (normalized.length !== cached.length || hasLegacyKeys) {
+      void persistLibraryIndexCacheEvents(normalized, { reconcile: true }).catch(() => {})
     }
     return normalized
   } catch (e) {
@@ -36,21 +43,33 @@ export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
   }
 }
 
-export async function persistLibraryIndexCacheEvents(events: Event[]): Promise<void> {
+export async function persistLibraryIndexCacheEvents(
+  events: Event[],
+  options?: PersistLibraryIndexCacheOptions
+): Promise<void> {
   const map = buildStructuralPublicationIndexMap(filterStructuralIndexEvents(events))
   const normalized = publicationIndexMapValues(map)
   if (normalized.length === 0) return
-  try {
-    const budget = getLibraryIndexCacheBudget()
-    await indexedDb.mergeLibraryPublicationIndexCacheEvents(normalized, budget)
-    await indexedDb.reconcileLibraryPublicationIndexCache(map)
-  } catch (e) {
-    if (import.meta.env.DEV) {
-      logger.warn('[Library] index IDB write failed', {
-        message: e instanceof Error ? e.message : String(e)
-      })
+
+  const reconcile = options?.reconcile !== false
+  const run = async () => {
+    try {
+      const budget = getLibraryIndexCacheBudget()
+      await indexedDb.mergeLibraryPublicationIndexCacheEvents(normalized, budget)
+      if (reconcile) {
+        await indexedDb.reconcileLibraryPublicationIndexCache(map)
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] index IDB write failed', {
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
     }
   }
+
+  persistQueue = persistQueue.then(run, run)
+  return persistQueue
 }
 
 export async function getLibraryIndexCacheFootprint(): Promise<{ count: number; bytes: number }> {

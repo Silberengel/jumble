@@ -2,6 +2,7 @@ import PublicationCard from '@/components/Note/PublicationCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { libraryPublicationGridColumnClass, usePanelMode } from '@/hooks/usePanelMode'
 import type { LibraryPublicationEntry } from '@/lib/library-publication-index'
+import { eventTagAddress } from '@/lib/publication-index'
 import { isBooklistNip32Label } from '@/lib/nip32-label'
 import { cn } from '@/lib/utils'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -137,7 +138,7 @@ export default function LibraryPublicationGrid({
     <div className={cn('grid gap-4', gridCols)}>
       {entries.map((entry) => (
         <div
-          key={entry.event.id}
+          key={eventTagAddress(entry.event) ?? entry.event.id}
           className={cn(
             'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
           )}
