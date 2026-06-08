@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { useNip07ExtensionAvailable } from '@/hooks/useNip07ExtensionAvailable'
 import { useNostr } from '@/providers/NostrProvider'
 import { generateSecretKey } from 'nostr-tools'
 import { nsecEncode } from 'nostr-tools/nip19'
@@ -44,6 +45,7 @@ function AccountManagerNav({
   const { t } = useTranslation()
   const { nip07Login, nsecLogin, accounts, isNip07LoginInFlight, requestAccountNetworkHydrate } =
     useNostr()
+  const nip07ExtensionAvailable = useNip07ExtensionAvailable()
   const [password, setPassword] = useState('')
   const [signingUp, setSigningUp] = useState(false)
   const [extensionLoginPending, setExtensionLoginPending] = useState(false)
@@ -84,7 +86,7 @@ function AccountManagerNav({
           {t('Add an Account')}
         </div>
         <div className="space-y-2 mt-4">
-          {!!window.nostr && (
+          {nip07ExtensionAvailable && (
             <Button
               onClick={() => void handleExtensionLogin()}
               disabled={extensionLoginPending || isNip07LoginInFlight}

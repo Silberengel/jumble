@@ -1,6 +1,11 @@
 import { pubkeyFromNip07Extension } from '@/lib/pubkey'
 import { ISigner, TDraftEvent, TNip07 } from '@/types'
 
+/** Poll interval while waiting for a NIP-07 extension to inject `window.nostr`. */
+export const NIP07_INJECT_CHECK_INTERVAL_MS = 100
+/** Some mobile browsers inject the extension API well after first paint. */
+export const NIP07_INJECT_MAX_ATTEMPTS = 120
+
 /** Fresh extension pubkey (hex), after init + optional enable. */
 export async function getExtensionPubkeyHex(): Promise<string> {
   const signer = new Nip07Signer()
@@ -22,12 +27,7 @@ export class Nip07Signer implements ISigner {
   private pubkey: string | null = null
 
   async init() {
-    const checkInterval = 100
-    // Some browser extensions inject `window.nostr` a bit later during startup/reload.
-    // Keep waiting longer to avoid false "no signer extension" failures on session restore.
-    const maxAttempts = 120
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let attempt = 0; attempt < NIP07_INJECT_MAX_ATTEMPTS; attempt++) {
       if (window.nostr) {
         this.signer = window.nostr
         if (typeof this.signer.enable === 'function') {
@@ -35,7 +35,7 @@ export class Nip07Signer implements ISigner {
         }
         return
       }
-      await new Promise((resolve) => setTimeout(resolve, checkInterval))
+      await new Promise((resolve) => setTimeout(resolve, NIP07_INJECT_CHECK_INTERVAL_MS))
     }
 
     throw new Error(
