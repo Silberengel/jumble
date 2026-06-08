@@ -2,8 +2,9 @@ import AsciidocArticle from '@/components/Note/AsciidocArticle/AsciidocArticle'
 import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
+import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
-import { fetchPublicationTreeForExport } from '@/lib/publication-export'
+import { publicationRefKey } from '@/lib/publication-section-fetch'
 import {
   buildPublicationSectionTree,
   flattenPublicationSectionTreeForToc,
@@ -15,7 +16,7 @@ import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { BookOpen, Loader2 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
@@ -63,11 +64,70 @@ function SectionContent({ event }: { event: Event }) {
   return null
 }
 
-function PublicationSectionNodeView({ node }: { node: PublicationSectionTreeNode }) {
+function SectionLoadingPlaceholder() {
+  return (
+    <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+    </div>
+  )
+}
+
+function SectionMissingPlaceholder() {
+  const { t } = useTranslation()
+  return (
+    <p className="mt-2 text-sm italic text-muted-foreground/80">
+      {t('Publication section missing')}
+    </p>
+  )
+}
+
+function PublicationSectionNodeView({
+  node,
+  failedKeys,
+  loadingKeys,
+  onRequestLoad,
+  onReadAhead
+}: {
+  node: PublicationSectionTreeNode
+  failedKeys: ReadonlySet<string>
+  loadingKeys: ReadonlySet<string>
+  onRequestLoad: (ref: PublicationSectionTreeNode['ref'], indexEvent: Event) => void
+  onReadAhead: () => void
+}) {
   const Heading = `h${Math.min(6, node.depth + 2)}` as HeadingTag
+  const sectionElRef = useRef<HTMLElement>(null)
+  const refKey = publicationRefKey(node.ref)
+  const isMissing = Boolean(refKey && failedKeys.has(refKey))
+  const isLoading = Boolean(refKey && loadingKeys.has(refKey))
+  const needsLoad = Boolean(refKey && !node.event && !isMissing && !isLoading)
+
+  useEffect(() => {
+    if (!needsLoad) return
+    const el = sectionElRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          onRequestLoad(node.ref, node.indexEvent)
+          onReadAhead()
+        }
+      },
+      { rootMargin: '720px 0px 480px 0px', threshold: 0 }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [needsLoad, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
 
   return (
-    <section id={node.sectionId} className="scroll-mt-24 mt-4 first:mt-0">
+    <section
+      ref={sectionElRef}
+      id={node.sectionId}
+      className="scroll-mt-24 mt-4 first:mt-0"
+      aria-busy={isLoading || needsLoad}
+    >
       <SectionHeadingRow title={node.title} event={node.event} Heading={Heading} />
       {node.isPublicationBranch && node.event?.content.trim() ? (
         <div className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">
@@ -78,22 +138,43 @@ function PublicationSectionNodeView({ node }: { node: PublicationSectionTreeNode
         node.children.length > 0 ? (
           <div className="mt-4 border-l border-border pl-4">
             {node.children.map((child) => (
-              <PublicationSectionNodeView key={child.path} node={child} />
+              <PublicationSectionNodeView
+                key={child.path}
+                node={child}
+                failedKeys={failedKeys}
+                loadingKeys={loadingKeys}
+                onRequestLoad={onRequestLoad}
+                onReadAhead={onReadAhead}
+              />
             ))}
           </div>
+        ) : needsLoad || isLoading ? (
+          <SectionLoadingPlaceholder />
+        ) : isMissing ? (
+          <SectionMissingPlaceholder />
         ) : null
+      ) : isMissing ? (
+        <SectionMissingPlaceholder />
+      ) : isLoading || needsLoad ? (
+        <SectionLoadingPlaceholder />
       ) : node.event ? (
         <SectionContent event={node.event} />
-      ) : null}
+      ) : (
+        <SectionMissingPlaceholder />
+      )}
     </section>
   )
 }
 
 function PublicationTableOfContents({
   entries,
+  readingStarted,
+  onStartReading,
   className
 }: {
   entries: ReturnType<typeof flattenPublicationSectionTreeForToc>
+  readingStarted: boolean
+  onStartReading: () => void
   className?: string
 }) {
   const { t } = useTranslation()
@@ -118,8 +199,12 @@ function PublicationTableOfContents({
           <li key={entry.path}>
             <button
               type="button"
-              className="w-full min-w-0 rounded py-1 pr-2 text-left text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className={cn(
+                'w-full min-w-0 rounded py-1 pr-2 text-left text-muted-foreground',
+                readingStarted && 'hover:bg-accent hover:text-accent-foreground'
+              )}
               style={{ paddingLeft: `${8 + entry.depth * 14}px` }}
+              disabled={!readingStarted}
               onClick={() => scrollToSection(entry.id)}
             >
               <span className="break-words">{entry.title}</span>
@@ -127,6 +212,15 @@ function PublicationTableOfContents({
           </li>
         ))}
       </ol>
+      {!readingStarted ? (
+        <button
+          type="button"
+          className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          onClick={onStartReading}
+        >
+          {t('Read this book')}
+        </button>
+      ) : null}
     </nav>
   )
 }
@@ -138,7 +232,6 @@ export default function PublicationIndexBody({
   event: Event
   className?: string
 }) {
-  const { t } = useTranslation()
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { favoriteRelays } = useFavoriteRelays()
   const relayUrls = useMemo(
@@ -155,36 +248,17 @@ export default function PublicationIndexBody({
     [currentBrowsingRelayUrls, favoriteRelays]
   )
 
-  const [fetched, setFetched] = useState<Map<string, Event> | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readingStarted, setReadingStarted] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setFetched(null)
+    setReadingStarted(false)
+  }, [event.id])
 
-    fetchPublicationTreeForExport(event, relayUrls)
-      .then((tree) => {
-        if (cancelled) return
-        setFetched(tree)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [event, relayUrls])
+  const { fetched, failedKeys, loadingKeys, requestLoad, readAhead } =
+    useProgressivePublicationContent(event, relayUrls, { enabled: readingStarted })
 
   const sectionTree = useMemo(
-    () => (fetched ? buildPublicationSectionTree(event, fetched) : []),
+    () => buildPublicationSectionTree(event, fetched),
     [event, fetched]
   )
 
@@ -193,33 +267,42 @@ export default function PublicationIndexBody({
     [sectionTree]
   )
 
+  const startReading = useCallback(() => {
+    setReadingStarted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!readingStarted) return
+    const firstId = tocEntries[0]?.id
+    if (!firstId) return
+    requestAnimationFrame(() => {
+      document.getElementById(firstId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [readingStarted, tocEntries])
+
   const hasRefs = orderedPublicationRefsFromIndex(event).length > 0
   if (!hasRefs) return null
 
   return (
     <div className={cn('min-w-0 space-y-4', className)}>
-      {loading ? (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
-          {t('Publication contents loading')}
+      <PublicationTableOfContents
+        entries={tocEntries}
+        readingStarted={readingStarted}
+        onStartReading={startReading}
+      />
+      {readingStarted ? (
+        <div>
+          {sectionTree.map((node) => (
+            <PublicationSectionNodeView
+              key={node.path}
+              node={node}
+              failedKeys={failedKeys}
+              loadingKeys={loadingKeys}
+              onRequestLoad={requestLoad}
+              onReadAhead={readAhead}
+            />
+          ))}
         </div>
-      ) : null}
-
-      {error ? (
-        <p className="text-sm text-destructive">
-          {t('Publication contents load failed')}: {error}
-        </p>
-      ) : null}
-
-      {fetched && !error ? (
-        <>
-          <PublicationTableOfContents entries={tocEntries} />
-          <div>
-            {sectionTree.map((node) => (
-              <PublicationSectionNodeView key={node.path} node={node} />
-            ))}
-          </div>
-        </>
       ) : null}
     </div>
   )

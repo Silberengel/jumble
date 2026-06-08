@@ -1673,6 +1673,8 @@ export default {
     'Publication table of contents': 'Inhalt',
     'Publication contents loading': 'Inhalt wird geladen…',
     'Publication contents load failed': 'Inhalt konnte nicht geladen werden',
+    'Publication section missing': '[Dieser Abschnitt fehlt.]',
+    'Read this book': 'Dieses Buch lesen',
     'libraryIndexCache.sectionTitle': 'Bibliotheks-Publikationsindex',
     'libraryIndexCache.sectionBlurb':
       'Zwischengespeicherte Kind-30040-Index-Events für den Bibliotheks-Tab. Beim Leeren wird nur der Entdeckungslisten-Cache entfernt — geöffnete Publikationen bleiben im Lese-Cache.',

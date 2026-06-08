@@ -1704,6 +1704,8 @@ export default {
     'Publication table of contents': 'Contents',
     'Publication contents loading': 'Loading contents…',
     'Publication contents load failed': 'Could not load publication contents',
+    'Publication section missing': '[This section is missing.]',
+    'Read this book': 'Read this book',
     'libraryIndexCache.sectionTitle': 'Library publication index',
     'libraryIndexCache.sectionBlurb':
       'Cached kind-30040 index events used to populate the Library tab. Clearing this only removes the discovery list cache—not publications you have opened for reading.',
