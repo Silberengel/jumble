@@ -200,8 +200,13 @@ type LibrarySearchSessionRow = {
 
 const librarySearchSessionCache = new Map<string, LibrarySearchSessionRow>()
 
-function librarySearchQueryKey(query: string): string {
-  return normalizeGeneralSearchQuery(query).toLowerCase()
+function librarySearchQueryKey(
+  query: string,
+  axis?: LibraryPublicationRelaySearchAxis | null
+): string {
+  const base = normalizeGeneralSearchQuery(query).toLowerCase()
+  if (!axis) return base
+  return `${axis}:${base}`
 }
 
 function librarySearchFingerprint(context: LibrarySearchContext): string {
@@ -232,9 +237,9 @@ function librarySearchFingerprint(context: LibrarySearchContext): string {
 function getLibrarySearchSessionRow(
   query: string,
   context: LibrarySearchContext,
-  opts?: { requireRelaySearch?: boolean }
+  opts?: { requireRelaySearch?: boolean; axis?: LibraryPublicationRelaySearchAxis | null }
 ): LibrarySearchSessionRow | null {
-  const key = librarySearchQueryKey(query)
+  const key = librarySearchQueryKey(query, opts?.axis)
   if (!key) return null
   const row = librarySearchSessionCache.get(key)
   if (!row) return null
@@ -246,9 +251,10 @@ function getLibrarySearchSessionRow(
 function putLibrarySearchSessionRow(
   query: string,
   context: LibrarySearchContext,
-  row: Omit<LibrarySearchSessionRow, 'fingerprint'>
+  row: Omit<LibrarySearchSessionRow, 'fingerprint'>,
+  axis?: LibraryPublicationRelaySearchAxis | null
 ): void {
-  const key = librarySearchQueryKey(query)
+  const key = librarySearchQueryKey(query, axis)
   if (!key) return
   librarySearchSessionCache.set(key, {
     ...row,
@@ -259,9 +265,10 @@ function putLibrarySearchSessionRow(
 /** Sync read of cached search hits for the current index + engagement snapshot. */
 export function peekLibrarySearchResults(
   query: string,
-  context: LibrarySearchContext
+  context: LibrarySearchContext,
+  axis?: LibraryPublicationRelaySearchAxis | null
 ): LibraryPublicationEntry[] | null {
-  return getLibrarySearchSessionRow(query, context)?.entries ?? null
+  return getLibrarySearchSessionRow(query, context, { axis })?.entries ?? null
 }
 
 export function clearLibrarySearchSessionCache(): void {
@@ -1595,7 +1602,8 @@ export async function refreshLibraryEngagement(
 export function searchLibraryPublicationIndex(
   query: string,
   indexEvents: Event[],
-  indexByAddress: Map<string, Event>
+  indexByAddress: Map<string, Event>,
+  axis?: LibraryPublicationRelaySearchAxis | null
 ): Event[] {
   const q = query.trim()
   if (!q || indexEvents.length === 0) return []
@@ -1607,7 +1615,7 @@ export function searchLibraryPublicationIndex(
 
   for (const ev of indexEvents) {
     if (ev.kind !== ExtendedKind.PUBLICATION) continue
-    if (!publicationIndexMatchesSearchQuery(ev, q)) continue
+    if (!publicationIndexMatchesSearchQueryWithAxis(ev, q, axis)) continue
 
     if (topLevelIds.has(ev.id)) {
       roots.set(ev.id, ev)
@@ -1633,15 +1641,20 @@ export type LibrarySearchContext = {
  */
 export async function searchLibraryPublications(
   query: string,
-  context: LibrarySearchContext
+  context: LibrarySearchContext,
+  axis?: LibraryPublicationRelaySearchAxis | null
 ): Promise<LibraryPublicationEntry[]> {
   const q = query.trim()
   if (!q) return []
 
-  const cached = getLibrarySearchSessionRow(q, context)
+  const cached = getLibrarySearchSessionRow(q, context, { axis })
   if (cached) {
     if (import.meta.env.DEV) {
-      logger.info('[Library] search cache hit', { query: q, relaySearched: cached.relaySearched })
+      logger.info('[Library] search cache hit', {
+        query: q,
+        axis: axis ?? 'all',
+        relaySearched: cached.relaySearched
+      })
     }
     return cached.entries
   }
@@ -1653,7 +1666,7 @@ export async function searchLibraryPublications(
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const fromIndex = searchLibraryPublicationIndex(q, indexEvents, indexByAddress)
+  const fromIndex = searchLibraryPublicationIndex(q, indexEvents, indexByAddress, axis)
   const rootMap = new Map<string, Event>()
   for (const root of fromIndex) rootMap.set(root.id, root)
 
@@ -1669,7 +1682,7 @@ export async function searchLibraryPublications(
     )
     for (const ev of fromReadingCache) {
       if (ev.kind !== ExtendedKind.PUBLICATION) continue
-      if (!publicationIndexMatchesSearchQuery(ev, q)) continue
+      if (!publicationIndexMatchesSearchQueryWithAxis(ev, q, axis)) continue
       if (rootMap.has(ev.id)) continue
 
       const addr = eventTagAddress(ev)
@@ -1696,12 +1709,17 @@ export async function searchLibraryPublications(
   const entries = sortLibraryPublications(libraryEntriesFromRoots(roots, indexByAddress, engagement))
 
   const searchContext: LibrarySearchContext = { indexEvents, engagement }
-  const prev = getLibrarySearchSessionRow(q, searchContext)
-  putLibrarySearchSessionRow(q, searchContext, {
-    entries,
-    mergedIndexEvents: prev?.mergedIndexEvents ?? indexEvents,
-    relaySearched: prev?.relaySearched ?? false
-  })
+  const prev = getLibrarySearchSessionRow(q, searchContext, { axis })
+  putLibrarySearchSessionRow(
+    q,
+    searchContext,
+    {
+      entries,
+      mergedIndexEvents: prev?.mergedIndexEvents ?? indexEvents,
+      relaySearched: prev?.relaySearched ?? false
+    },
+    axis
+  )
 
   return entries
 }
@@ -1920,6 +1938,15 @@ export function filterEventsForPublicationRelaySearchAxis(
   })
 }
 
+export function publicationIndexMatchesSearchQueryWithAxis(
+  event: Event,
+  query: string,
+  axis?: LibraryPublicationRelaySearchAxis | null
+): boolean {
+  if (!axis) return publicationIndexMatchesSearchQuery(event, query)
+  return filterEventsForPublicationRelaySearchAxis([event], axis, query).length > 0
+}
+
 async function scanHttpIndexRelayForPublicationAxis(
   httpRelay: string,
   axis: LibraryPublicationRelaySearchAxis,
@@ -2007,7 +2034,7 @@ export async function searchLibraryPublicationsOnRelays(
   query: string,
   relayUrls: string[],
   context: LibrarySearchContext,
-  options?: { forceRefresh?: boolean }
+  options?: { forceRefresh?: boolean; axis?: LibraryPublicationRelaySearchAxis | null }
 ): Promise<{
   events: Event[]
   entries: LibraryPublicationEntry[]
@@ -2020,7 +2047,10 @@ export async function searchLibraryPublicationsOnRelays(
   }
 
   if (!options?.forceRefresh) {
-    const cached = getLibrarySearchSessionRow(q, context, { requireRelaySearch: true })
+    const cached = getLibrarySearchSessionRow(q, context, {
+      requireRelaySearch: true,
+      axis: options?.axis
+    })
     if (cached) {
       if (import.meta.env.DEV) {
         logger.info('[Library] relay search cache hit', { query: q })
@@ -2038,8 +2068,9 @@ export async function searchLibraryPublicationsOnRelays(
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
   const batches: Promise<Event[]>[] = []
   let filterCount = 0
+  const axes = options?.axis ? [options.axis] : LIBRARY_PUBLICATION_RELAY_SEARCH_AXES
 
-  for (const axis of LIBRARY_PUBLICATION_RELAY_SEARCH_AXES) {
+  for (const axis of axes) {
     const npubQuery = tryNpubFromQuery(q)
     if (npubQuery && axis !== 'author') continue
 
@@ -2125,7 +2156,7 @@ export async function searchLibraryPublicationsOnRelays(
     void persistLibraryIndexCacheEvents(mergedIndex)
   }
   const indexByAddress = buildIndexByAddress(mergedIndex)
-  const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress)
+  const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const entries = sortLibraryPublications(
     libraryEntriesFromRoots(roots, indexByAddress, engagement)
@@ -2135,11 +2166,16 @@ export async function searchLibraryPublicationsOnRelays(
     indexEvents: mergedIndex,
     engagement
   }
-  putLibrarySearchSessionRow(q, searchContext, {
-    entries,
-    mergedIndexEvents: mergedIndex,
-    relaySearched: true
-  })
+  putLibrarySearchSessionRow(
+    q,
+    searchContext,
+    {
+      entries,
+      mergedIndexEvents: mergedIndex,
+      relaySearched: true
+    },
+    options?.axis
+  )
 
   if (import.meta.env.DEV) {
     logger.info('[Library] relay search done', {

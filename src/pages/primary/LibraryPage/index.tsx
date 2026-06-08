@@ -20,6 +20,8 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     entries,
     searchQuery,
     setSearchQuery,
+    searchAxis,
+    setSearchAxis,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading,
@@ -68,6 +70,8 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           <LibrarySearchBar
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
+            searchAxis={searchAxis}
+            onSearchAxisChange={setSearchAxis}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
             mineFilterLoading={mineFilterLoading}

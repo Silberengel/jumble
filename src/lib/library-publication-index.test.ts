@@ -285,6 +285,35 @@ describe('library-publication-index', () => {
     expect(publicationMetadataTagMatchesQuery(root, 'title', 'Jane Eyre')).toBe(true)
   })
 
+  it('searchLibraryPublications respects author axis and keeps separate cache keys', async () => {
+    clearLibrarySearchSessionCache()
+    const about = indexEvent('about-aristotle', [`30041:${PK}:intro`])
+    about.tags = [
+      ['d', 'about-aristotle'],
+      ['title', 'Aristotle: A Very Short Introduction'],
+      ['author', 'John Smith'],
+      ['a', `30041:${PK}:intro`]
+    ]
+    const fromAuthor = indexEvent('nicomachean-ethics', [`30041:${PK}:ch`])
+    fromAuthor.tags = [
+      ['d', 'nicomachean-ethics'],
+      ['title', 'Nicomachean Ethics'],
+      ['author', 'Aristotle'],
+      ['a', `30041:${PK}:ch`]
+    ]
+    const indexEvents = [about, fromAuthor]
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+
+    const broad = await searchLibraryPublications('aristotle', { indexEvents, engagement })
+    expect(broad.map((e) => e.event.id).sort()).toEqual([about.id, fromAuthor.id].sort())
+
+    const byAuthor = await searchLibraryPublications('aristotle', { indexEvents, engagement }, 'author')
+    expect(byAuthor.map((e) => e.event.id)).toEqual([fromAuthor.id])
+
+    expect(peekLibrarySearchResults('aristotle', { indexEvents, engagement }, 'author')).toHaveLength(1)
+    expect(peekLibrarySearchResults('aristotle', { indexEvents, engagement })).toHaveLength(2)
+  })
+
   it('searchLibraryPublications caches results for repeated queries', async () => {
     clearLibrarySearchSessionCache()
     const root = indexEvent('book', [`30041:${PK}:intro`])

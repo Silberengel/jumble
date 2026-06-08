@@ -10,6 +10,7 @@ import {
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   type LibraryPublicationEntry,
+  type LibraryPublicationRelaySearchAxis,
   type PublicationEngagementMaps,
   type LibraryMineFilterOpts
 } from '@/lib/library-publication-index'
@@ -59,6 +60,7 @@ export function useLibraryPublications(isActive: boolean) {
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
   const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchAxis, setSearchAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showOnlyMine, setShowOnlyMine] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -135,8 +137,14 @@ export function useLibraryPublications(isActive: boolean) {
   }, [searchQuery])
 
   useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchAxis(null)
+    }
+  }, [searchQuery])
+
+  useEffect(() => {
     setFeedPageIndex(0)
-  }, [debouncedSearch, showOnlyMine])
+  }, [debouncedSearch, showOnlyMine, searchAxis])
 
   const applyDefaultFeedSlice = useCallback(
     (indexEventsSlice: Event[], engagementMaps: PublicationEngagementMaps, pageIndex: number) => {
@@ -273,7 +281,7 @@ export function useLibraryPublications(isActive: boolean) {
       return
     }
 
-    const cached = peekLibrarySearchResults(q, { indexEvents, engagement })
+    const cached = peekLibrarySearchResults(q, { indexEvents, engagement }, searchAxis)
     if (cached) {
       setSearchResults(cached)
       setSearchLoading(false)
@@ -282,7 +290,7 @@ export function useLibraryPublications(isActive: boolean) {
 
     let cancelled = false
     setSearchLoading(true)
-    void searchLibraryPublications(q, { indexEvents, engagement }).then((results) => {
+    void searchLibraryPublications(q, { indexEvents, engagement }, searchAxis).then((results) => {
       if (cancelled) return
       setSearchResults(results)
       setSearchLoading(false)
@@ -291,7 +299,7 @@ export function useLibraryPublications(isActive: boolean) {
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, indexEvents, engagement])
+  }, [debouncedSearch, indexEvents, engagement, searchAxis])
 
   const searchOnRelays = useCallback(async () => {
     const q = searchQuery.trim()
@@ -303,7 +311,8 @@ export function useLibraryPublications(isActive: boolean) {
       const { events, mergedIndexEvents, fromCache } = await searchLibraryPublicationsOnRelays(
         q,
         relays,
-        { indexEvents, engagement }
+        { indexEvents, engagement },
+        { axis: searchAxis }
       )
       setIndexEvents(mergedIndexEvents)
       setAllIndexCount(mergedIndexEvents.length)
@@ -325,7 +334,7 @@ export function useLibraryPublications(isActive: boolean) {
       const entries = await searchLibraryPublications(q, {
         indexEvents: mergedIndexEvents,
         engagement: nextEngagement
-      })
+      }, searchAxis)
       setSearchResults(entries)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
@@ -336,7 +345,7 @@ export function useLibraryPublications(isActive: boolean) {
     } finally {
       setRelaySearchLoading(false)
     }
-  }, [searchQuery, pubkey, indexEvents, engagement, blockedRelays])
+  }, [searchQuery, searchAxis, pubkey, indexEvents, engagement, blockedRelays])
 
   const mineFilterOpts = useMemo(
     () => ({
@@ -435,6 +444,8 @@ export function useLibraryPublications(isActive: boolean) {
     entries: filteredEntries,
     searchQuery,
     setSearchQuery,
+    searchAxis,
+    setSearchAxis,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading:
