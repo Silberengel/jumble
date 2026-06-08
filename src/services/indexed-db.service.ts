@@ -27,7 +27,13 @@ import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
-import { isVerifiedPublicationIndex } from '@/lib/publication-index'
+import {
+  eventTagAddress,
+  isStructuralPublicationIndex,
+  isVerifiedPublicationIndex,
+  pickNewerPublicationIndexEvent,
+  type PublicationIndexMap
+} from '@/lib/publication-index'
 import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import {
@@ -3792,16 +3798,26 @@ class IndexedDbService {
 
     const now = Date.now()
     const storeName = StoreNames.LIBRARY_PUBLICATION_INDEX
+    const rowsToWrite: Array<{ key: string; event: Event }> = []
+
+    for (const ev of events) {
+      if (ev.kind !== ExtendedKind.PUBLICATION || !isStructuralPublicationIndex(ev)) continue
+      const key = eventTagAddress(ev)
+      if (!key) continue
+      const existing = rowsToWrite.find((row) => row.key === key)
+      if (!existing) {
+        rowsToWrite.push({ key, event: ev })
+        continue
+      }
+      existing.event = pickNewerPublicationIndexEvent(existing.event, ev)
+    }
+
+    if (rowsToWrite.length === 0) return
 
     await new Promise<void>((resolve, reject) => {
       const tx = this.db!.transaction(storeName, 'readwrite')
       const store = tx.objectStore(storeName)
-      let pending = events.length
-      if (pending === 0) {
-        tx.commit()
-        resolve()
-        return
-      }
+      let pending = rowsToWrite.length
 
       const finishOne = () => {
         pending -= 1
@@ -3811,12 +3827,16 @@ class IndexedDbService {
         }
       }
 
-      for (const ev of events) {
-        const get = store.get(ev.id)
+      for (const { key, event: ev } of rowsToWrite) {
+        const get = store.get(key)
         get.onsuccess = () => {
           const prev = get.result as TLibraryPublicationIndexCacheRow | undefined
+          if (prev?.value && pickNewerPublicationIndexEvent(prev.value, ev).id === prev.value.id) {
+            finishOne()
+            return
+          }
           const row: TLibraryPublicationIndexCacheRow = {
-            key: ev.id,
+            key,
             value: ev,
             addedAt: prev?.addedAt ?? now,
             lastAccessAt: now,
@@ -3837,6 +3857,51 @@ class IndexedDbService {
     })
 
     await this.pruneLibraryPublicationIndexCache(opts.maxEntries, opts.maxBytes)
+  }
+
+  /** Drop invalid, legacy id-keyed, and superseded rows after an address-keyed merge. */
+  async reconcileLibraryPublicationIndexCache(canonical: PublicationIndexMap): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.LIBRARY_PUBLICATION_INDEX)) return
+
+    const toDelete: string[] = []
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.LIBRARY_PUBLICATION_INDEX, 'readonly')
+      const req = tx.objectStore(StoreNames.LIBRARY_PUBLICATION_INDEX).openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve()
+          return
+        }
+        const rowKey = cursor.key as string
+        const row = cursor.value as TLibraryPublicationIndexCacheRow
+        const ev = row?.value
+        const addr = ev ? eventTagAddress(ev) : null
+        const canon = addr ? canonical.get(addr) : undefined
+        if (
+          !ev ||
+          ev.kind !== ExtendedKind.PUBLICATION ||
+          !isStructuralPublicationIndex(ev) ||
+          !addr ||
+          rowKey !== addr ||
+          !canon ||
+          canon.id !== ev.id
+        ) {
+          toDelete.push(rowKey)
+        }
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+
+    for (const key of toDelete) {
+      await this.deleteStoreItem(StoreNames.LIBRARY_PUBLICATION_INDEX, key)
+    }
   }
 
   async pruneLibraryPublicationIndexCache(maxEntries: number, maxBytes: number): Promise<void> {

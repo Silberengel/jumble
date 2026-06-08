@@ -11,13 +11,18 @@ import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label
 import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
+  buildStructuralPublicationIndexMap,
   collectPublicationIndexEventIds,
   collectReachableAddressesCached,
   eventTagAddress,
   filterValidIndexEvents,
   getReferencedChild30040Addresses,
   getTopLevelIndexEvents,
-  hydrateNestedIndexEvents
+  getTopLevelIndexEventsFromMap,
+  hydrateNestedIndexEvents,
+  mergePublicationIndexMaps,
+  publicationIndexMapValues,
+  type PublicationIndexMap
 } from '@/lib/publication-index'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { verifyEvent } from 'nostr-tools'
@@ -124,8 +129,7 @@ export type LibraryPublicationEntry = {
 type LibraryIndexCache = {
   relayKey: string
   viewerPubkey: string | null
-  indexEvents: Event[]
-  indexByAddress: Map<string, Event>
+  indexByAddress: PublicationIndexMap
   engagement: PublicationEngagementMaps
 }
 
@@ -147,18 +151,22 @@ type LibraryIndexLoadJob = {
   forceRefresh: boolean
   promise: Promise<LibraryIndexLoadResult>
   onIndexesReadyListeners: Array<(snapshot: LibraryIndexLoadSnapshot) => void>
-  lastProgressEvents: Event[] | null
+  lastProgressIndex: PublicationIndexMap | null
 }
 
 let indexLoadJob: LibraryIndexLoadJob | null = null
 
+function indexEventsFromCache(cache: LibraryIndexCache): Event[] {
+  return publicationIndexMapValues(cache.indexByAddress)
+}
+
 function emitIndexesReadySnapshot(
   listeners: Array<(snapshot: LibraryIndexLoadSnapshot) => void>,
-  indexEvents: Event[]
+  indexByAddress: PublicationIndexMap
 ) {
   if (listeners.length === 0) return
-  const indexByAddress = buildIndexByAddress(indexEvents)
-  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const indexEvents = publicationIndexMapValues(indexByAddress)
+  const topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
   const snapshot: LibraryIndexLoadSnapshot = {
     engaged: buildRecentPublicationEntries(topLevel, indexByAddress, emptyPublicationEngagementMaps()),
     allIndexCount: indexEvents.length,
@@ -176,8 +184,8 @@ function registerIndexesReadyListener(
 ) {
   if (!listener) return
   job.onIndexesReadyListeners.push(listener)
-  if (job.lastProgressEvents) {
-    emitIndexesReadySnapshot([listener], job.lastProgressEvents)
+  if (job.lastProgressIndex) {
+    emitIndexesReadySnapshot([listener], job.lastProgressIndex)
   }
 }
 
@@ -570,14 +578,14 @@ async function filterValidNewIndexEvents(
 }
 
 async function mergeValidIndexBatch(
-  existing: Event[],
+  existing: PublicationIndexMap,
   knownIds: Set<string>,
   incoming: Event[]
-): Promise<Event[]> {
+): Promise<PublicationIndexMap> {
   const newValid = await filterValidNewIndexEvents(incoming, knownIds)
   if (newValid.length === 0) return existing
   for (const event of newValid) knownIds.add(event.id)
-  return dedupeEventsById([...existing, ...newValid])
+  return mergePublicationIndexMaps(existing, newValid)
 }
 
 export async function fetchLibraryIndexEvents(
@@ -588,7 +596,8 @@ export async function fetchLibraryIndexEvents(
   if (indexRelays.length === 0) return []
 
   const cached = await loadLibraryIndexCacheEvents()
-  let validMerged = dedupeEventsById(cached)
+  let indexMap = buildStructuralPublicationIndexMap(cached)
+  let validMerged = publicationIndexMapValues(indexMap)
   const knownValidIds = new Set(validMerged.map((event) => event.id))
   const emitProgress = () => {
     options?.onProgress?.(validMerged)
@@ -620,7 +629,8 @@ export async function fetchLibraryIndexEvents(
   const firstPageNetwork = dedupeEventsById(
     firstSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
   )
-  validMerged = await mergeValidIndexBatch(validMerged, knownValidIds, firstPageNetwork)
+  indexMap = await mergeValidIndexBatch(indexMap, knownValidIds, firstPageNetwork)
+  validMerged = publicationIndexMapValues(indexMap)
   void persistLibraryIndexCacheEvents(validMerged)
   emitProgress()
 
@@ -668,7 +678,8 @@ export async function fetchLibraryIndexEvents(
   const deepNetwork = dedupeEventsById(
     deepSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
   )
-  validMerged = await mergeValidIndexBatch(validMerged, knownValidIds, deepNetwork)
+  indexMap = await mergeValidIndexBatch(indexMap, knownValidIds, deepNetwork)
+  validMerged = publicationIndexMapValues(indexMap)
   void persistLibraryIndexCacheEvents(validMerged)
   emitProgress()
 
@@ -1265,8 +1276,9 @@ export function computeLibraryFeedRootOrder(
   const seen = new Set<string>()
   const ordered: Event[] = []
   for (const root of [...sortedEngaged, ...restRoots]) {
-    if (seen.has(root.id)) continue
-    seen.add(root.id)
+    const dedupeKey = eventTagAddress(root) ?? root.id
+    if (seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
     ordered.push(root)
   }
   return ordered
@@ -1634,8 +1646,7 @@ export async function searchLibraryPublications(
 
   let indexEvents = context.indexEvents
   if (indexEvents.length === 0) {
-    const cachedIndex = await loadLibraryIndexCacheEvents()
-    indexEvents = filterValidIndexEvents(cachedIndex)
+    indexEvents = await loadLibraryIndexCacheEvents()
   }
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
@@ -1894,7 +1905,9 @@ export async function searchLibraryPublicationsOnRelays(
     void persistLibraryIndexCacheEvents(valid)
   }
 
-  const mergedIndex = dedupeEventsById([...(context.indexEvents ?? []), ...valid])
+  const mergedIndex = publicationIndexMapValues(
+    mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
+  )
   const indexByAddress = buildIndexByAddress(mergedIndex)
   const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress)
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
@@ -2024,7 +2037,7 @@ export async function loadLibraryPublicationIndex(
     if (import.meta.env.DEV) {
       logger.info('[Library] load joined in-flight', {
         relayCount: relayUrls.length,
-        hasProgress: indexLoadJob.lastProgressEvents != null
+        hasProgress: indexLoadJob.lastProgressIndex != null
       })
     }
     return indexLoadJob.promise
@@ -2034,7 +2047,7 @@ export async function loadLibraryPublicationIndex(
     relayKey,
     forceRefresh,
     onIndexesReadyListeners: [],
-    lastProgressEvents: null,
+    lastProgressIndex: null,
     promise: Promise.resolve(null as unknown as LibraryIndexLoadResult)
   }
   registerIndexesReadyListener(job, options?.onIndexesReady)
@@ -2060,22 +2073,23 @@ async function runLibraryPublicationIndexLoad(
     logger.info('[Library] load start', { relayCount: relayUrls.length, cached: sessionCache?.relayKey === key })
   }
 
-  const emitIndexesReady = (indexEvents: Event[]) => {
-    job.lastProgressEvents = indexEvents
-    emitIndexesReadySnapshot(job.onIndexesReadyListeners, indexEvents)
+  const emitIndexesReady = (indexByAddress: PublicationIndexMap) => {
+    job.lastProgressIndex = indexByAddress
+    emitIndexesReadySnapshot(job.onIndexesReadyListeners, indexByAddress)
   }
 
   if (!options?.forceRefresh && sessionCache?.relayKey === key) {
+    const cachedIndexEvents = indexEventsFromCache(sessionCache)
     if (sessionCache.viewerPubkey !== viewerPubkey) {
       const targetAddresses = collectTargetAddressesFromIndexes(
-        sessionCache.indexEvents,
+        cachedIndexEvents,
         sessionCache.indexByAddress
       )
-      const targetEventIds = collectPublicationIndexEventIds(sessionCache.indexEvents)
+      const targetEventIds = collectPublicationIndexEventIds(cachedIndexEvents)
       const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
         viewerPubkey ?? undefined,
         relayUrls,
-        sessionCache.indexEvents
+        cachedIndexEvents
       )
       sessionCache = {
         ...sessionCache,
@@ -2090,7 +2104,7 @@ async function runLibraryPublicationIndexLoad(
     }
     const engaged = await buildEngagedFromCache(
       relayUrls,
-      sessionCache.indexEvents,
+      cachedIndexEvents,
       sessionCache.indexByAddress,
       sessionCache.engagement,
       viewerPubkey
@@ -2098,39 +2112,43 @@ async function runLibraryPublicationIndexLoad(
     if (import.meta.env.DEV) {
       logger.info('[Library] load from cache', { engaged: engaged.length })
     }
-    emitIndexesReady(sessionCache.indexEvents)
+    emitIndexesReady(sessionCache.indexByAddress)
     return {
       engaged,
-      allIndexCount: sessionCache.indexEvents.length,
-      topLevelCount: getTopLevelIndexEvents(sessionCache.indexEvents).length,
-      indexEvents: sessionCache.indexEvents,
+      allIndexCount: cachedIndexEvents.length,
+      topLevelCount: getTopLevelIndexEventsFromMap(sessionCache.indexByAddress).length,
+      indexEvents: cachedIndexEvents,
       engagement: sessionCache.engagement
     }
   }
 
-  const indexEvents = await fetchLibraryIndexEvents(relayUrls, {
-    onProgress: emitIndexesReady
-  })
+  let indexByAddress = buildStructuralPublicationIndexMap(
+    await fetchLibraryIndexEvents(relayUrls, {
+      onProgress: (events) => emitIndexesReady(buildStructuralPublicationIndexMap(events))
+    })
+  )
+  let indexEvents = publicationIndexMapValues(indexByAddress)
   if (import.meta.env.DEV) {
     logger.info('[Library] indexes fetched', { validCount: indexEvents.length })
   }
 
-  const indexByAddress = buildIndexByAddress(indexEvents)
-  let topLevel = getTopLevelIndexEvents(indexEvents)
+  let topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
 
-  emitIndexesReady(indexEvents)
+  emitIndexesReady(indexByAddress)
 
   const topLevelForHydrate = topLevel
-  await hydrateNestedIndexEvents(indexEvents, indexByAddress, relayUrls, {
+  await hydrateNestedIndexEvents(indexByAddress, relayUrls, {
     maxPasses: 1,
     maxMissingPerPass: HYDRATE_MISSING_CAP,
     scanRoots: topLevelForHydrate
   })
+  indexEvents = publicationIndexMapValues(indexByAddress)
+  void persistLibraryIndexCacheEvents(indexEvents)
   if (import.meta.env.DEV) {
     logger.info('[Library] nested hydrate done', { indexCount: indexEvents.length })
   }
 
-  topLevel = getTopLevelIndexEvents(indexEvents)
+  topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
   const targetAddresses = collectTargetAddressesFromIndexes(indexEvents, indexByAddress)
   const targetEventIds = collectPublicationIndexEventIds(indexEvents)
   if (import.meta.env.DEV) {
@@ -2165,7 +2183,7 @@ async function runLibraryPublicationIndexLoad(
     logger.info('[Library] engagement maps built', engagementMapsSizeSummary(engagement))
   }
 
-  sessionCache = { relayKey: key, viewerPubkey, indexEvents, indexByAddress, engagement }
+  sessionCache = { relayKey: key, viewerPubkey, indexByAddress, engagement }
 
   const engaged = pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
 

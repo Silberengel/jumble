@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildIndexByAddress,
+  buildPublicationIndexMap,
   collectReachableAddresses,
   collectReachableAddressesCached,
   eventTagAddress,
   filterValidIndexEvents,
-  getTopLevelIndexEvents
+  getTopLevelIndexEvents,
+  pickNewerPublicationIndexEvent,
+  publicationIndexMapValues
 } from '@/lib/publication-index'
 import type { Event } from 'nostr-tools'
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools'
@@ -92,5 +95,53 @@ describe('publication-index', () => {
   it('eventTagAddress uses lowercase pubkey', () => {
     const ev = contentEvent('section-a')
     expect(eventTagAddress(ev)).toBe(`30041:${PK}:section-a`)
+  })
+
+  it('buildPublicationIndexMap keeps newest valid row per kind:pubkey:d', () => {
+    const older = indexEvent('same-book', [`30041:${PK}:intro`])
+    older.created_at = 10
+    const newer = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION,
+        created_at: 20,
+        content: '',
+        tags: [
+          ['d', 'same-book'],
+          ['title', 'Revised title'],
+          ['a', `30041:${PK}:intro`]
+        ]
+      },
+      sk
+    )
+    const invalid = { ...older, content: 'not empty' }
+
+    const map = buildPublicationIndexMap([older, newer, invalid])
+    expect(publicationIndexMapValues(map)).toHaveLength(1)
+    expect(map.get(`30040:${PK}:same-book`)?.id).toBe(newer.id)
+    expect(getTopLevelIndexEvents([older, newer, invalid])).toHaveLength(1)
+    expect(getTopLevelIndexEvents([older, newer, invalid])[0].id).toBe(newer.id)
+  })
+
+  it('pickNewerPublicationIndexEvent breaks created_at ties by event id', () => {
+    const first = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION,
+        created_at: 50,
+        content: '',
+        tags: [['d', 'tie-book'], ['title', 'First'], ['a', `30041:${PK}:a`]]
+      },
+      sk
+    )
+    const second = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION,
+        created_at: 50,
+        content: '',
+        tags: [['d', 'tie-book'], ['title', 'Second'], ['a', `30041:${PK}:b`]]
+      },
+      sk
+    )
+    const chosen = pickNewerPublicationIndexEvent(first, second)
+    expect(chosen.id).toBe(first.id > second.id ? first.id : second.id)
   })
 })

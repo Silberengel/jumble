@@ -22,20 +22,25 @@ import {
 } from '@/lib/library-publication-index'
 import { buildIndexByAddress } from '@/lib/publication-index'
 import type { Event } from 'nostr-tools'
-import { kinds } from 'nostr-tools'
+import { finalizeEvent, generateSecretKey, getPublicKey, kinds } from 'nostr-tools'
 
-const PK = 'a'.repeat(64)
+const sk = generateSecretKey()
+const PK = getPublicKey(sk)
 
-function indexEvent(d: string, aTags: string[], id = d.padEnd(64, '0').slice(0, 64)): Event {
-  return {
-    id,
-    kind: ExtendedKind.PUBLICATION,
-    pubkey: PK,
-    created_at: 100,
-    content: '',
-    tags: [['d', d], ['title', `Title ${d}`], ...aTags.map((a) => ['a', a] as [string, string])],
-    sig: 'c'.repeat(128)
-  }
+function indexEvent(
+  d: string,
+  aTags: string[],
+  opts?: { created_at?: number }
+): Event {
+  return finalizeEvent(
+    {
+      kind: ExtendedKind.PUBLICATION,
+      created_at: opts?.created_at ?? 100,
+      content: '',
+      tags: [['d', d], ['title', `Title ${d}`], ...aTags.map((a) => ['a', a] as [string, string])]
+    },
+    sk
+  )
 }
 
 describe('library-publication-index', () => {

@@ -4,21 +4,28 @@ import {
   getLibraryIndexCacheBudget
 } from '@/lib/library-index-cache-config'
 import logger from '@/lib/logger'
-import { filterStructuralIndexEvents } from '@/lib/publication-index'
+import {
+  buildStructuralPublicationIndexMap,
+  filterStructuralIndexEvents,
+  publicationIndexMapValues
+} from '@/lib/publication-index'
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
 export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
   try {
     const cached = await indexedDb.getLibraryPublicationIndexCacheEvents()
-    // IDB rows were verified on write; structural re-check only (avoid ~5k verifyEvent on read).
+    // Structural re-check + address dedupe only — avoid ~5k verifyEvent on read (main-thread hang).
     const structural = filterStructuralIndexEvents(cached)
+    const map = buildStructuralPublicationIndexMap(structural)
+    const normalized = publicationIndexMapValues(map)
     if (structural.length < cached.length) {
-      void indexedDb
-        .pruneUnverifiedLibraryPublicationIndexCacheEvents()
-        .catch(() => {})
+      void indexedDb.pruneUnverifiedLibraryPublicationIndexCacheEvents().catch(() => {})
     }
-    return structural
+    if (normalized.length !== cached.length) {
+      void persistLibraryIndexCacheEvents(normalized).catch(() => {})
+    }
+    return normalized
   } catch (e) {
     if (import.meta.env.DEV) {
       logger.warn('[Library] index IDB read failed', {
@@ -30,11 +37,13 @@ export async function loadLibraryIndexCacheEvents(): Promise<Event[]> {
 }
 
 export async function persistLibraryIndexCacheEvents(events: Event[]): Promise<void> {
-  const kind30040 = events.filter((ev) => ev.kind === ExtendedKind.PUBLICATION)
-  if (kind30040.length === 0) return
+  const map = buildStructuralPublicationIndexMap(filterStructuralIndexEvents(events))
+  const normalized = publicationIndexMapValues(map)
+  if (normalized.length === 0) return
   try {
     const budget = getLibraryIndexCacheBudget()
-    await indexedDb.mergeLibraryPublicationIndexCacheEvents(kind30040, budget)
+    await indexedDb.mergeLibraryPublicationIndexCacheEvents(normalized, budget)
+    await indexedDb.reconcileLibraryPublicationIndexCache(map)
   } catch (e) {
     if (import.meta.env.DEV) {
       logger.warn('[Library] index IDB write failed', {

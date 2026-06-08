@@ -48,9 +48,82 @@ export function filterStructuralIndexEvents(events: Event[]): Event[] {
 
 /** Removes kind 30040 index events that don't comply with NKBIP-01 (includes signature check). */
 export function filterValidIndexEvents(events: Event[]): Event[] {
-  return events.filter(
-    (event) => isStructuralPublicationIndex(event) && isVerifiedPublicationIndex(event)
-  )
+  return events.filter(isValidPublicationIndexEvent)
+}
+
+export function isValidPublicationIndexEvent(event: Event): boolean {
+  return isStructuralPublicationIndex(event) && isVerifiedPublicationIndex(event)
+}
+
+/** Canonical library index: `kind:pubkey:d` → newest valid kind-30040 row. */
+export type PublicationIndexMap = Map<string, Event>
+
+export function pickNewerPublicationIndexEvent(prev: Event, next: Event): Event {
+  if (next.created_at > prev.created_at) return next
+  if (next.created_at < prev.created_at) return prev
+  return next.id > prev.id ? next : prev
+}
+
+/** Upsert by address using NKBIP-01 shape checks only (no signature verify — safe for large IDB reads). */
+export function upsertStructuralPublicationIndexMap(map: PublicationIndexMap, event: Event): boolean {
+  if (!isStructuralPublicationIndex(event)) return false
+  const addr = eventTagAddress(event)
+  if (!addr) return false
+  const prev = map.get(addr)
+  if (!prev) {
+    map.set(addr, event)
+    return true
+  }
+  const chosen = pickNewerPublicationIndexEvent(prev, event)
+  if (chosen.id === prev.id) return false
+  map.set(addr, chosen)
+  return true
+}
+
+/** Build address map from cached rows without verifyEvent (rows were verified on write). */
+export function buildStructuralPublicationIndexMap(events: Iterable<Event>): PublicationIndexMap {
+  const map: PublicationIndexMap = new Map()
+  for (const event of events) {
+    upsertStructuralPublicationIndexMap(map, event)
+  }
+  return map
+}
+
+export function upsertPublicationIndexMap(map: PublicationIndexMap, event: Event): boolean {
+  if (!isValidPublicationIndexEvent(event)) return false
+  return upsertStructuralPublicationIndexMap(map, event)
+}
+
+/** Build the canonical index map from any event list (invalid rows dropped; includes verify). */
+export function buildPublicationIndexMap(events: Iterable<Event>): PublicationIndexMap {
+  const map: PublicationIndexMap = new Map()
+  for (const event of events) {
+    upsertPublicationIndexMap(map, event)
+  }
+  return map
+}
+
+/** Merge pre-validated network rows into a map (skips re-verifying signatures). */
+export function mergeValidatedPublicationIndexMaps(
+  base: PublicationIndexMap,
+  incoming: Iterable<Event>
+): PublicationIndexMap {
+  const out: PublicationIndexMap = new Map(base)
+  for (const event of incoming) {
+    upsertStructuralPublicationIndexMap(out, event)
+  }
+  return out
+}
+
+export function mergePublicationIndexMaps(
+  base: PublicationIndexMap,
+  incoming: Iterable<Event>
+): PublicationIndexMap {
+  return mergeValidatedPublicationIndexMaps(base, incoming)
+}
+
+export function publicationIndexMapValues(map: PublicationIndexMap): Event[] {
+  return [...map.values()]
 }
 
 export function collectPublicationATagRefs(event: Event): PublicationSectionRef[] {
@@ -99,11 +172,16 @@ export function getReferencedChild30040Addresses(events: Event[]): Set<string> {
 }
 
 export function getTopLevelIndexEvents(events: Event[]): Event[] {
-  const referenced = getReferencedChild30040Addresses(events)
-  return events.filter((event) => {
+  const normalized = publicationIndexMapValues(buildStructuralPublicationIndexMap(events))
+  const referenced = getReferencedChild30040Addresses(normalized)
+  return normalized.filter((event) => {
     const addr = eventTagAddress(event)
     return addr && !referenced.has(addr)
   })
+}
+
+export function getTopLevelIndexEventsFromMap(map: PublicationIndexMap): Event[] {
+  return getTopLevelIndexEvents(publicationIndexMapValues(map))
 }
 
 export function buildIndexByAddress(events: Event[]): Map<string, Event> {
@@ -112,9 +190,11 @@ export function buildIndexByAddress(events: Event[]): Map<string, Event> {
     const addr = eventTagAddress(event)
     if (!addr) continue
     const prev = map.get(addr)
-    if (!prev || event.created_at > prev.created_at) {
+    if (!prev) {
       map.set(addr, event)
+      continue
     }
+    map.set(addr, pickNewerPublicationIndexEvent(prev, event))
   }
   return map
 }
@@ -159,8 +239,7 @@ export type HydrateNestedIndexOptions = {
 
 /** Batch-fetch nested kind 30040 indexes referenced by `a` tags but missing from cache. */
 export async function hydrateNestedIndexEvents(
-  indexEvents: Event[],
-  indexByAddress: Map<string, Event>,
+  indexByAddress: PublicationIndexMap,
   relayUrls: string[],
   options?: HydrateNestedIndexOptions | number
 ): Promise<void> {
@@ -168,7 +247,7 @@ export async function hydrateNestedIndexEvents(
     typeof options === 'number' ? { maxPasses: options } : (options ?? {})
   const maxPasses = opts.maxPasses ?? 2
   const maxMissingPerPass = opts.maxMissingPerPass
-  const scanEvents = opts.scanRoots ?? indexEvents
+  const scanEvents = opts.scanRoots ?? publicationIndexMapValues(indexByAddress)
 
   for (let pass = 0; pass < maxPasses; pass++) {
     const missingRefs: PublicationSectionRef[] = []
@@ -188,11 +267,7 @@ export async function hydrateNestedIndexEvents(
     const fetched = await batchFetchPublicationSectionEvents(missingRefs, relayUrls)
     let added = 0
     for (const ev of fetched.values()) {
-      const addr = eventTagAddress(ev)
-      if (!addr || indexByAddress.has(addr)) continue
-      indexByAddress.set(addr, ev)
-      indexEvents.push(ev)
-      added++
+      if (upsertPublicationIndexMap(indexByAddress, ev)) added++
     }
     if (added === 0) break
   }
