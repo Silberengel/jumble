@@ -60,6 +60,8 @@ const RssArticlePage = forwardRef(
     const { rssFeedListEvent } = useNostr()
     const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
     const [contentKey, setContentKey] = useState(0)
+    const [threadRefreshToken, setThreadRefreshToken] = useState(0)
+    const bumpThreadRefresh = useCallback(() => setThreadRefreshToken((n) => n + 1), [])
     const [allCachedItems, setAllCachedItems] = useState<TRssFeedItem[]>([])
     const [loading, setLoading] = useState(true)
     const [selectedSource, setSelectedSource] = useState<'all' | string>('all')
@@ -294,7 +296,7 @@ const RssArticlePage = forwardRef(
             ) : null}
             {isHttpArticleUrl(articleUrl) ? (
               <div className="w-full pt-1">
-                <RssArticleWebBookmarks articleUrl={articleUrl} />
+                <RssArticleWebBookmarks articleUrl={articleUrl} onPublished={bumpThreadRefresh} />
               </div>
             ) : null}
             {showNostrThread && syntheticRoot ? (
@@ -316,6 +318,7 @@ const RssArticlePage = forwardRef(
                   event={syntheticRoot}
                   showQuotes={false}
                   statsForeground
+                  refreshToken={threadRefreshToken}
                 />
               ) : null}
             </div>
@@ -388,7 +391,7 @@ const RssArticlePage = forwardRef(
             </div>
             {isHttpArticleUrl(articleUrl) ? (
               <div className="pt-2">
-                <RssArticleWebBookmarks articleUrl={articleUrl} />
+                <RssArticleWebBookmarks articleUrl={articleUrl} onPublished={bumpThreadRefresh} />
               </div>
             ) : null}
           </div>
@@ -411,6 +414,7 @@ const RssArticlePage = forwardRef(
                 event={syntheticRoot}
                 showQuotes={false}
                 statsForeground
+                refreshToken={threadRefreshToken}
               />
             ) : null}
           </div>

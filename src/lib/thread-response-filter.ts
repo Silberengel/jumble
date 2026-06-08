@@ -1,7 +1,8 @@
 import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
+import { getReactionPageUrlFromRTags } from '@/lib/rss-article'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeUrl } from '@/lib/url'
-import type { Event } from 'nostr-tools'
+import { kinds, type Event } from 'nostr-tools'
 
 /** Lowercase normalized URLs for comparing user-blocked relays (e.g. before REQ). */
 export function buildNormalizedBlockedRelaySet(blockedRelays: readonly string[] | undefined): Set<string> {
@@ -43,10 +44,18 @@ export const shouldHideOwnReactionInOthersThread = shouldHideOwnReactionThreadRo
 export function shouldHideThreadResponseEvent(
   evt: Event,
   mutePubkeySet: Set<string>,
-  hideContentMentioningMutedUsers: boolean | undefined
+  hideContentMentioningMutedUsers: boolean | undefined,
+  options?: { allowPageTargetedReactions?: boolean }
 ): boolean {
   if (isThreadBoosterOnlyRow(evt)) return true
-  if (isThreadReactionOnlyRow(evt)) return true
+  if (isThreadReactionOnlyRow(evt)) {
+    const pageUrl = getReactionPageUrlFromRTags(evt)
+    if (options?.allowPageTargetedReactions && evt.kind === kinds.Reaction && pageUrl) {
+      // NIP-73 page likes on RSS/Web URL threads are listed under “Antworten”.
+    } else {
+      return true
+    }
+  }
   if (muteSetHas(mutePubkeySet, evt.pubkey)) return true
   if (hideContentMentioningMutedUsers === true && isMentioningMutedUsers(evt, mutePubkeySet)) return true
   return false

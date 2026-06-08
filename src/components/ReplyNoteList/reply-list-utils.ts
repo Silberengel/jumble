@@ -4,7 +4,11 @@ import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import type { TRepliesMap } from '@/lib/reply-index'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
-import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
+import { isRssArticleUrlThreadInteraction, isRssUrlThreadAntwortenTailKind } from '@/lib/rss-web-feed'
+import {
+  collapseStaleAddressableRevisions,
+  upsertEventMapPreferNewestAddressable
+} from '@/lib/replaceable-revision'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
 import noteStatsService from '@/services/note-stats.service'
@@ -15,6 +19,10 @@ import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import type { TFunction } from 'i18next'
 import type { TRootInfo } from './types'
 import { THREAD_REPLY_LIMIT } from './types'
+
+export function threadResponseFilterOptions(rootInfo: TRootInfo | undefined) {
+  return rootInfo?.type === 'I' ? { allowPageTargetedReactions: true as const } : undefined
+}
 
 export type { TRootInfo } from './types'
 export {
@@ -56,7 +64,7 @@ function dedupeEventsFromRepliesMap(repliesMap: TRepliesMap): NEvent[] {
   const byId = new Map<string, NEvent>()
   for (const { events } of repliesMap.values()) {
     for (const evt of events) {
-      byId.set(evt.id, evt)
+      upsertEventMapPreferNewestAddressable(byId, evt)
     }
   }
   return [...byId.values()]
@@ -106,21 +114,23 @@ export function buildRepliesListAlignedWithNoteStats(
   repliesMap: TRepliesMap,
   threadDisplayed: NEvent[],
   mutePubkeySet: Set<string>,
-  hideContentMentioningMutedUsers: boolean | undefined
+  hideContentMentioningMutedUsers: boolean | undefined,
+  rootInfo?: TRootInfo
 ): NEvent[] {
   const statsIds = buildNoteStatsReplyIdSet(statsReplies)
   const byId = new Map<string, NEvent>()
+  const hideOpts = threadResponseFilterOptions(rootInfo)
 
   const keep = (evt: NEvent) => {
     if (isPollVoteKind(evt)) return false
-    return !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+    return !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, hideOpts)
   }
 
   for (const evt of resolveEventsForStatsReplyIds(statsReplies, repliesMap)) {
-    if (keep(evt)) byId.set(evt.id, evt)
+    if (keep(evt)) upsertEventMapPreferNewestAddressable(byId, evt)
   }
   for (const evt of threadDisplayed) {
-    if (keep(evt)) byId.set(evt.id, evt)
+    if (keep(evt)) upsertEventMapPreferNewestAddressable(byId, evt)
   }
 
   const ordered: NEvent[] = []
@@ -137,7 +147,7 @@ export function buildRepliesListAlignedWithNoteStats(
     seen.add(evt.id)
     ordered.push(evt)
   }
-  return ordered
+  return collapseStaleAddressableRevisions(ordered)
 }
 
 /** Replies to show under “Antworten” for the opened note (direct + nested, not sibling branches). */
@@ -171,7 +181,7 @@ export function collectDisplayedThreadReplies(
     for (const evt of threadWalk.values()) {
       if (seen.has(evt.id)) continue
       if (isPollVoteKind(evt)) continue
-      if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+      if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) continue
       if (statsReplyIds?.has(evt.id)) {
         seen.add(evt.id)
         out.push(evt)
@@ -188,7 +198,7 @@ export function collectDisplayedThreadReplies(
       seen.add(evt.id)
       out.push(evt)
     }
-    return out
+    return collapseStaleAddressableRevisions(out)
   }
 
   const opHex = openNoteHexId(opEvent)
@@ -205,7 +215,7 @@ export function collectDisplayedThreadReplies(
   for (const evt of threadWalk.values()) {
     if (seen.has(evt.id)) continue
     if (isPollVoteKind(evt)) continue
-    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) continue
+    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) continue
     if (statsReplyIds?.has(evt.id)) {
       seen.add(evt.id)
       out.push(evt)
@@ -218,7 +228,7 @@ export function collectDisplayedThreadReplies(
     seen.add(evt.id)
     out.push(evt)
   }
-  return out
+  return collapseStaleAddressableRevisions(out)
 }
 
 /** Session LRU + publication store + archive: paint thread replies before relay round-trip. */
@@ -250,7 +260,7 @@ export async function loadThreadRepliesFromLocalStores(
   const threadWalk = new Map(local.map((e) => [e.id.toLowerCase(), e] as const))
   return local.filter((evt) => {
     if (isPollVoteKind(evt)) return false
-    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)) return false
+    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) return false
     if (rootInfo.type === 'I') {
       return isRssArticleUrlThreadInteraction(evt, rootInfo.id)
     }
@@ -602,6 +612,9 @@ export function isPollVoteKind(evt: Pick<NEvent, 'kind'>): boolean {
 
 export function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string {
   if (item.kind === kinds.Highlights) return t('highlighted this note')
+  if (item.kind === ExtendedKind.WEB_BOOKMARK) {
+    return t('saved a web bookmark', { defaultValue: 'Saved a web bookmark' })
+  }
   if (item.kind === kinds.ShortTextNote) return t('quoted this note')
   if (
     item.kind === kinds.LongFormArticle ||

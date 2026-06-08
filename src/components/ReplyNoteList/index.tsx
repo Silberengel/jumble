@@ -42,7 +42,11 @@ import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } from '@/lib/thread-interaction-req'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
-import { buildRssWebNostrQueryRelayUrls, isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
+import {
+  buildRssWebNostrQueryRelayUrls,
+  isRssArticleUrlThreadInteraction,
+  isRssUrlThreadAntwortenTailKind
+} from '@/lib/rss-web-feed'
 import type { TProfile } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
@@ -69,7 +73,6 @@ import {
   hydrateThreadRepliesFromStats,
   isEaThreadTailBacklinkCandidate,
   isPollVoteKind,
-  isWebThreadTailKind,
   loadThreadRepliesFromLocalStores,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
   moveReportsToEndPreserveOrder,
@@ -79,7 +82,8 @@ import {
   replyFeedZapsFirst,
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
-  threadBacklinkRelationLabel
+  threadBacklinkRelationLabel,
+  threadResponseFilterOptions
 } from './reply-list-utils'
 import { useThreadRootInfo } from './useThreadRootInfo'
 import { useThreadAttestedPayments } from './useThreadAttestedPayments'
@@ -143,6 +147,10 @@ function ReplyNoteList({
     () => buildNoteStatsReplyIdSet(noteStats?.replies),
     [noteStats?.replies, noteStats?.updatedAt]
   )
+  const threadResponseHideOpts = useMemo(
+    () => threadResponseFilterOptions(rootInfo),
+    [rootInfo?.type]
+  )
 
   const replies: NEvent[] = useMemo(() => {
     const threadDisplayed = collectDisplayedThreadReplies(
@@ -159,7 +167,8 @@ function ReplyNoteList({
       repliesMap,
       threadDisplayed,
       mutePubkeySet,
-      hideContentMentioningMutedUsers
+      hideContentMentioningMutedUsers,
+      rootInfo
     )
     const replyIdSet = new Set(replyEvents.map((r) => r.id))
 
@@ -173,7 +182,12 @@ function ReplyNoteList({
     const includeThreadReply = (evt: NEvent) => {
       if (isPollVoteKind(evt)) return false
       if (
-        shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+        shouldHideThreadResponseEvent(
+          evt,
+          mutePubkeySet,
+          hideContentMentioningMutedUsers,
+          threadResponseHideOpts
+        )
       ) {
         return false
       }
@@ -321,7 +335,7 @@ function ReplyNoteList({
     }
     if (rootInfo?.type === 'I') {
       for (const r of replies) {
-        if (EA_THREAD_TAIL_REFERENCE_KINDS.has(r.kind)) s.add(r.id)
+        if (isRssUrlThreadAntwortenTailKind(r.kind)) s.add(r.id)
       }
     }
     return s
@@ -358,8 +372,8 @@ function ReplyNoteList({
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
     if (rootInfo?.type === 'I') {
       const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replies, attestedPaymentIds)
-      const middle = nonZaps.filter((e) => !isWebThreadTailKind(e.kind))
-      const tailFromReplies = nonZaps.filter((e) => isWebThreadTailKind(e.kind))
+      const middle = nonZaps.filter((e) => !isRssUrlThreadAntwortenTailKind(e.kind))
+      const tailFromReplies = nonZaps.filter((e) => isRssUrlThreadAntwortenTailKind(e.kind))
       const tailSeen = new Set<string>()
       const tail: NEvent[] = []
       const pushTail = (e: NEvent) => {
@@ -567,7 +581,8 @@ function ReplyNoteList({
       repliesMap,
       [],
       mutePubkeySet,
-      hideContentMentioningMutedUsers
+      hideContentMentioningMutedUsers,
+      rootInfo
     )
     if (resolved.length >= statsLen) return
 
@@ -589,7 +604,12 @@ function ReplyNoteList({
           if (isPollVoteKind(evt)) return
           if (!statsReplyIds.has(evt.id)) return
           if (
-            shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+            shouldHideThreadResponseEvent(
+              evt,
+              mutePubkeySet,
+              hideContentMentioningMutedUsers,
+              threadResponseHideOpts
+            )
           ) {
             return
           }
@@ -602,7 +622,12 @@ function ReplyNoteList({
           (evt) =>
             statsReplyIds.has(evt.id) &&
             !isPollVoteKind(evt) &&
-            !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+            !shouldHideThreadResponseEvent(
+              evt,
+              mutePubkeySet,
+              hideContentMentioningMutedUsers,
+              threadResponseHideOpts
+            )
         )
         if (ok.length > 0) addReplies(ok)
       })
@@ -644,7 +669,8 @@ function ReplyNoteList({
         shouldHideThreadResponseEvent(
           evt,
           mutePubkeySet,
-          hideContentMentioningMutedUsers
+          hideContentMentioningMutedUsers,
+          threadResponseHideOpts
         )
       ) {
         return
@@ -816,7 +842,14 @@ function ReplyNoteList({
             if (rootInfo.type === 'I') {
               if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) return
             }
-            if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+            if (
+              shouldHideThreadResponseEvent(
+                evt,
+                mutePubkeySet,
+                hideContentMentioningMutedUsers,
+                threadResponseHideOpts
+              )
+            )
               return
             streamWalk.set(evt.id.toLowerCase(), evt)
             if (statsIdsStream.has(evt.id)) {
@@ -893,7 +926,8 @@ function ReplyNoteList({
               shouldHideThreadResponseEvent(
                 evt,
                 mutePubkeySet,
-                hideContentMentioningMutedUsers
+                hideContentMentioningMutedUsers,
+                threadResponseHideOpts
               )
             ) {
               return false
@@ -997,7 +1031,14 @@ function ReplyNoteList({
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
                     if (isPollVoteKind(evt)) return
-                    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+                    if (
+                      shouldHideThreadResponseEvent(
+                        evt,
+                        mutePubkeySet,
+                        hideContentMentioningMutedUsers,
+                        threadResponseHideOpts
+                      )
+                    )
                       return
                     addReplies([evt])
                   }
@@ -1008,7 +1049,12 @@ function ReplyNoteList({
               const validNested = nestedAccum.filter(
                 (evt) =>
                   !isPollVoteKind(evt) &&
-                  !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers)
+                  !shouldHideThreadResponseEvent(
+              evt,
+              mutePubkeySet,
+              hideContentMentioningMutedUsers,
+              threadResponseHideOpts
+            )
               )
               if (validNested.length > 0) {
                 discussionFeedCache.setCachedReplies(rootInfo, validNested)
@@ -1069,7 +1115,14 @@ function ReplyNoteList({
                   onevent: (evt: NEvent) => {
                     if (fetchGeneration !== replyFetchGenRef.current) return
                     if (isPollVoteKind(evt)) return
-                    if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers))
+                    if (
+                      shouldHideThreadResponseEvent(
+                        evt,
+                        mutePubkeySet,
+                        hideContentMentioningMutedUsers,
+                        threadResponseHideOpts
+                      )
+                    )
                       return
                     streamWalkById.set(evt.id.toLowerCase(), evt)
                     if (!replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, streamWalkById)) return
@@ -1084,7 +1137,12 @@ function ReplyNoteList({
               const validNested = nestedAccum.filter(
                 (evt) =>
                   !isPollVoteKind(evt) &&
-                  !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers) &&
+                  !shouldHideThreadResponseEvent(
+              evt,
+              mutePubkeySet,
+              hideContentMentioningMutedUsers,
+              threadResponseHideOpts
+            ) &&
                   replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
               )
               if (validNested.length > 0) {
@@ -1185,7 +1243,14 @@ function ReplyNoteList({
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {
       if (isPollVoteKind(item)) return false
-      if (shouldHideThreadResponseEvent(item, mutePubkeySet, hideContentMentioningMutedUsers)) {
+      if (
+        shouldHideThreadResponseEvent(
+          item,
+          mutePubkeySet,
+          hideContentMentioningMutedUsers,
+          threadResponseHideOpts
+        )
+      ) {
         return false
       }
       const isQuote = quoteUiIdSet.has(item.id)

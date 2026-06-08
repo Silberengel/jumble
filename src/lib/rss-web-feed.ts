@@ -1,7 +1,6 @@
 import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
-import { isReplyNoteEvent } from '@/lib/event'
 import {
   articleUrlMatchesThreadScope,
   canonicalizeRssArticleUrl,
@@ -12,6 +11,7 @@ import {
   getWebBookmarkArticleUrl,
   getWebExternalReactionTargetUrl
 } from '@/lib/rss-article'
+import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
 import logger from '@/lib/logger'
 import { isImage, isLocalNetworkUrl, isMedia, isVideo, normalizeUrl } from '@/lib/url'
 import { eventService, queryService } from '@/services/client.service'
@@ -231,6 +231,22 @@ export function isRssWebUnifiedClutterUrl(url: string): boolean {
   return false
 }
 
+/** Kinds shown under “Antworten” on RSS/Web URL threads. */
+export const RSS_URL_THREAD_ANTWORTEN_KINDS: readonly number[] = [
+  ExtendedKind.COMMENT,
+  ExtendedKind.VOICE_COMMENT,
+  kinds.Highlights,
+  ExtendedKind.WEB_BOOKMARK,
+  kinds.Reaction
+]
+
+const RSS_URL_THREAD_ANTWORTEN_KIND_SET = new Set(RSS_URL_THREAD_ANTWORTEN_KINDS)
+
+/** Highlights, web bookmarks, and page-targeted reactions — backlinks tail on URL threads. */
+export function isRssUrlThreadAntwortenTailKind(kind: number): boolean {
+  return kind === kinds.Highlights || kind === ExtendedKind.WEB_BOOKMARK || kind === kinds.Reaction
+}
+
 /**
  * Split filters: `social` uses kinds that match {@link relayFilterIncludesSocialKindBlockedKind} and therefore omit
  * {@link SOCIAL_KIND_BLOCKED_RELAY_URLS}; `nonSocial` keeps reactions / `#r` on batches that do not apply that strip.
@@ -243,20 +259,24 @@ export function buildRssArticleUrlThreadInteractionFilterGroups(
   const canonical = canonicalizeRssArticleUrl(canonicalArticleUrl)
   const tagVals = expandArticleUrlThreadQueryValues(canonical)
   const iFilterVals = tagVals.length > 0 ? tagVals : [canonical]
+  const dFilterVals = expandWebBookmarkDTagQueryValues(canonical)
+  const rFilterVals = tagVals.length > 0 ? tagVals : [canonical]
   const social: Filter[] = [
     { '#i': iFilterVals, kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT], limit },
     { '#I': iFilterVals, kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT], limit }
   ]
   const nonSocial: Filter[] = [
-    { '#i': iFilterVals, kinds: [ExtendedKind.EXTERNAL_REACTION], limit },
-    { '#I': iFilterVals, kinds: [ExtendedKind.EXTERNAL_REACTION], limit }
+    { '#r': rFilterVals, kinds: [kinds.Highlights], limit },
+    { '#r': rFilterVals, kinds: [kinds.Reaction], limit }
   ]
-  if (tagVals.length > 0) {
-    nonSocial.push(
-      { '#r': tagVals, kinds: [kinds.Highlights], limit },
-      { '#r': tagVals, kinds: [kinds.Reaction], limit }
-    )
+  if (dFilterVals.length > 0) {
+    nonSocial.push({ '#d': dFilterVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit })
   }
+  // Legacy bookmarks that still carry i/I URL tags.
+  nonSocial.push(
+    { '#i': iFilterVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit },
+    { '#I': iFilterVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit }
+  )
   return { nonSocial, social }
 }
 
@@ -272,24 +292,27 @@ export function buildRssArticleUrlThreadInteractionFilters(
   return [...nonSocial, ...social]
 }
 
-/** Whether `evt` belongs to the URL-scoped article thread (comments / voice / highlight / reactions on this page). */
+/** Whether `evt` belongs to the URL-scoped article thread responses (kinds 1111, 9802, 39701, 7). */
 export function isRssArticleUrlThreadInteraction(evt: Event, canonicalArticleUrl: string): boolean {
+  if (!RSS_URL_THREAD_ANTWORTEN_KIND_SET.has(evt.kind)) return false
   const key = canonicalizeRssArticleUrl(canonicalArticleUrl)
   if (evt.kind === kinds.Highlights) {
     const hu = getHighlightSourceHttpUrl(evt)
     return !!hu && articleUrlMatchesThreadScope(hu, key)
   }
-  if (evt.kind === ExtendedKind.EXTERNAL_REACTION) {
-    const u = getWebExternalReactionTargetUrl(evt)
+  if (evt.kind === ExtendedKind.WEB_BOOKMARK) {
+    const u = getWebBookmarkArticleUrl(evt)
     return !!u && articleUrlMatchesThreadScope(u, key)
   }
   if (evt.kind === kinds.Reaction) {
     const u = getReactionPageUrlFromRTags(evt)
     return !!u && articleUrlMatchesThreadScope(u, key)
   }
-  if (!isReplyNoteEvent(evt)) return false
-  const u = getArticleUrlFromCommentITags(evt)
-  return !!u && articleUrlMatchesThreadScope(u, key)
+  if (evt.kind === ExtendedKind.COMMENT || evt.kind === ExtendedKind.VOICE_COMMENT) {
+    const u = getArticleUrlFromCommentITags(evt)
+    return !!u && articleUrlMatchesThreadScope(u, key)
+  }
+  return false
 }
 
 /**

@@ -32,6 +32,7 @@ import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal
 import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { collapseStaleAddressableRevisions } from '@/lib/replaceable-revision'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
@@ -365,9 +366,10 @@ function mergeEventBatchesById(
   for (const e of incoming) {
     byId.set(e.id, e)
   }
-  return Array.from(byId.values())
-    .sort((a, b) => b.created_at - a.created_at)
-    .slice(0, cap)
+  return collapseStaleAddressableRevisions(
+    Array.from(byId.values())
+      .sort((a, b) => b.created_at - a.created_at)
+  ).slice(0, cap)
 }
 
 /** Multi-layer search: keep all existing rows, add new ids only; newer `created_at` wins on duplicate id. No cap. */

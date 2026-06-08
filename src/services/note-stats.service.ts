@@ -1415,9 +1415,25 @@ class NoteStatsService {
     const targetId = this.statsKey(rssArticleStableEventId(canonicalizeRssArticleUrl(url)))
     const old = this.noteStatsMap.get(targetId) || {}
     const bookmarkPubkeySet = old.bookmarkPubkeySet ?? new Set<string>()
-    if (bookmarkPubkeySet.has(evt.pubkey)) return targetId
+    const replies = [...(old.replies ?? [])]
+
+    const existingIdx = replies.findIndex((r) => r.pubkey === evt.pubkey)
+    if (existingIdx >= 0) {
+      const existing = replies[existingIdx]
+      if (
+        existing.created_at > evt.created_at ||
+        (existing.created_at === evt.created_at && existing.id.localeCompare(evt.id) >= 0)
+      ) {
+        return targetId
+      }
+      replies.splice(existingIdx, 1)
+    }
+
     bookmarkPubkeySet.add(evt.pubkey)
-    this.noteStatsMap.set(targetId, { ...old, bookmarkPubkeySet })
+    if (!replies.some((r) => r.id === evt.id)) {
+      replies.push({ id: evt.id, pubkey: evt.pubkey, created_at: evt.created_at })
+    }
+    this.noteStatsMap.set(targetId, { ...old, bookmarkPubkeySet, replies })
     this.notifyNoteStats(targetId)
     return targetId
   }

@@ -454,6 +454,7 @@ export default function Note({
   } else if (event.kind === ExtendedKind.WEB_BOOKMARK) {
     const href = getWebBookmarkArticleUrl(displayEvent)
     const title = displayEvent.tags.find((tag) => tag[0] === 'title')?.[1]?.trim()
+    const description = displayEvent.content?.trim()
     content = (
       <>
         {title ? (
@@ -472,7 +473,9 @@ export default function Note({
             <WebPreview url={href} className="w-full" authorPubkey={event.pubkey} sourceEvent={event} />
           </div>
         ) : null}
-        {displayEvent.content?.trim() ? renderEventContent({ hideMetadata: true }) : null}
+        {description ? (
+          <p className="mt-2 text-base whitespace-pre-wrap break-words">{description}</p>
+        ) : null}
       </>
     )
   } else if (event.kind === ExtendedKind.WIKI_ARTICLE) {

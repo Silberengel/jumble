@@ -15,7 +15,9 @@ import {
   getWebBookmarkArticleUrl
 } from '@/lib/rss-article'
 import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
+import { dedupeLatestAddressableEvents } from '@/lib/replaceable-revision'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
@@ -29,9 +31,17 @@ import { useTranslation } from 'react-i18next'
  * NIP-B0 (kind 39701) web bookmarks for the current article URL: list, add, and remove (replaceable tombstone).
  * Shown under URL cards on {@link RssArticlePage}, separate from NIP-51 bookmark lists.
  */
-export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: string }) {
+export default function RssArticleWebBookmarks({
+  articleUrl,
+  onPublished
+}: {
+  articleUrl: string
+  /** Bump RSS/Web thread reply refetch after a local publish. */
+  onPublished?: () => void
+}) {
   const { t } = useTranslation()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const { isEventDeleted } = useDeletedEventSafe()
   const { pubkey, publish, attemptDelete, relayList, cacheRelayListEvent, account } = useNostr()
 
   const canonical = useMemo(() => canonicalizeRssArticleUrl(articleUrl), [articleUrl])
@@ -71,24 +81,21 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
       const batches = await Promise.all(
         filters.map((f) => client.fetchEvents(relayUrls, f, { cache: false }).catch(() => [] as Event[]))
       )
-      const byKey = new Map<string, Event>()
-      for (const ev of batches.flat()) {
-        if (ev.pubkey !== pubkey) continue
+      const matched = batches.flat().filter((ev) => {
+        if (ev.pubkey !== pubkey) return false
+        if (isEventDeleted(ev)) return false
         const u = getWebBookmarkArticleUrl(ev)
-        if (!u || canonicalizeRssArticleUrl(u) !== canonical) continue
-        const d = ev.tags.find((t) => t[0] === 'd')?.[1]
-        const key = d ? `wb:${pubkey}:${d}` : ev.id
-        const prev = byKey.get(key)
-        if (!prev || ev.created_at > prev.created_at) byKey.set(key, ev)
-      }
-      setMine([...byKey.values()].sort((a, b) => b.created_at - a.created_at))
+        return !!u && canonicalizeRssArticleUrl(u) === canonical
+      })
+      const latest = dedupeLatestAddressableEvents(matched)
+      setMine(latest.sort((a, b) => b.created_at - a.created_at))
     } catch (e) {
       logger.warn('[RssArticleWebBookmarks] fetch failed', e)
       setMine([])
     } finally {
       setLoading(false)
     }
-  }, [pubkey, relayUrls, iVals, dVals, canonical])
+  }, [pubkey, relayUrls, iVals, dVals, canonical, isEventDeleted])
 
   useEffect(() => {
     void reload()
@@ -115,6 +122,7 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
       noteStatsService.updateNoteStatsByEvents([ev], undefined, {
         interactionTargetNoteId: rssRootId
       })
+      onPublished?.()
     } catch (e) {
       showPublishingError(e instanceof Error ? e : new Error(String(e)))
     } finally {
