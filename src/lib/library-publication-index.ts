@@ -2321,13 +2321,6 @@ export function filterLibraryPublicationsByUser(
   )
 }
 
-function collectTargetAddressesFromIndexes(
-  indexEvents: Event[],
-  indexByAddress: Map<string, Event>
-): Set<string> {
-  return collectEngagementTargets(indexEvents, indexByAddress).addresses
-}
-
 /** Capped address + event-id targets for label/comment/highlight relay queries. */
 export function collectEngagementTargets(
   indexEvents: Event[],
