@@ -65,7 +65,6 @@ import {
 import {
   backlinkRunSectionClass,
   buildVisibleBacklinkRows,
-  EA_THREAD_TAIL_REFERENCE_KINDS,
   buildNoteStatsReplyIdSet,
   buildRepliesListAlignedWithNoteStats,
   collectDisplayedThreadReplies,

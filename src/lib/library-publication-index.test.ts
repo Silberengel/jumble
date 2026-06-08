@@ -107,7 +107,7 @@ describe('library-publication-index', () => {
     const leafAddr = `30041:${PK}:chapter-1`
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr])
-    const child = indexEvent('part-1', [leafAddr], '2'.repeat(64))
+    const child = indexEvent('part-1', [leafAddr])
     const indexByAddress = buildIndexByAddress([root, child])
 
     const highlight: Event = {
@@ -291,7 +291,7 @@ describe('library-publication-index', () => {
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr])
     root.tags = [['d', 'book'], ['title', 'Root Book Title'], ['a', childAddr]]
-    const child = indexEvent('part-1', [leafAddr], '2'.repeat(64))
+    const child = indexEvent('part-1', [leafAddr])
     child.tags = [
       ['d', 'part-1'],
       ['title', 'Part One'],
@@ -308,9 +308,9 @@ describe('library-publication-index', () => {
   })
 
   it('pickLibraryPublicationEntries falls back to newest roots without engagement', () => {
-    const older = indexEvent('old-book', [`30041:${PK}:a`], '1'.repeat(64))
+    const older = indexEvent('old-book', [`30041:${PK}:a`])
     older.created_at = 10
-    const newer = indexEvent('new-book', [`30041:${PK}:b`], '2'.repeat(64))
+    const newer = indexEvent('new-book', [`30041:${PK}:b`])
     newer.created_at = 20
     const indexByAddress = buildIndexByAddress([older, newer])
     const engagement = buildEngagementMapsFromEvents([], [], [])
@@ -323,10 +323,10 @@ describe('library-publication-index', () => {
   })
 
   it('pickLibraryPublicationEntries merges engaged roots with recent feed', () => {
-    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`], '1'.repeat(64))
+    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`])
     engagedRoot.created_at = 5
     const recentRoots = Array.from({ length: 5 }, (_, i) => {
-      const ev = indexEvent(`recent-${i}`, [`30041:${PK}:r-${i}`], String(i + 2).padEnd(64, '0').slice(0, 64))
+      const ev = indexEvent(`recent-${i}`, [`30041:${PK}:r-${i}`])
       ev.created_at = 100 + i
       return ev
     })
@@ -352,7 +352,7 @@ describe('library-publication-index', () => {
 
   it('buildRecentPublicationEntries caps at limit', () => {
     const roots = Array.from({ length: 12 }, (_, i) => {
-      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`], String(i).padEnd(64, '0').slice(0, 64))
+      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`])
       ev.created_at = i
       return ev
     })
@@ -364,7 +364,7 @@ describe('library-publication-index', () => {
 
   it('libraryDefaultFeedSlice pages through the feed in chunks of LIBRARY_PAGE_SIZE', () => {
     const roots = Array.from({ length: 250 }, (_, i) => {
-      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`], `${String(i).padStart(64, '0')}`)
+      const ev = indexEvent(`book-${i}`, [`30041:${PK}:ch-${i}`])
       ev.created_at = i
       return ev
     })
@@ -387,9 +387,9 @@ describe('library-publication-index', () => {
   })
 
   it('computeLibraryFeedRootOrder keeps engaged roots before recent ones', () => {
-    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`], '1'.repeat(64))
+    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`])
     engagedRoot.created_at = 1
-    const recentRoot = indexEvent('recent', [`30041:${PK}:b`], '2'.repeat(64))
+    const recentRoot = indexEvent('recent', [`30041:${PK}:b`])
     recentRoot.created_at = 100
     const indexByAddress = buildIndexByAddress([engagedRoot, recentRoot])
     const label: Event = {
@@ -408,11 +408,11 @@ describe('library-publication-index', () => {
 
   it('filterLibraryPublicationsByUser includes authored, booklist, bookmarked, and commented', () => {
     const viewerPk = 'f'.repeat(64)
-    const authored = indexEvent('mine', [`30041:${PK}:ch`], '1'.repeat(64))
+    const authored = indexEvent('mine', [`30041:${PK}:ch`])
     authored.pubkey = viewerPk
-    const booklisted = indexEvent('booklisted', [`30041:${PK}:ch2`], '2'.repeat(64))
-    const commented = indexEvent('commented', [`30041:${PK}:ch3`], '3'.repeat(64))
-    const unrelated = indexEvent('other', [`30041:${PK}:ch4`], '4'.repeat(64))
+    const booklisted = indexEvent('booklisted', [`30041:${PK}:ch2`])
+    const commented = indexEvent('commented', [`30041:${PK}:ch3`])
+    const unrelated = indexEvent('other', [`30041:${PK}:ch4`])
     const entries = [
       {
         event: authored,
@@ -494,7 +494,7 @@ describe('library-publication-index', () => {
     clearLibrarySearchSessionCache()
     const viewerPk = 'f'.repeat(64)
     const rootAddr = `30040:${PK}:jane-eyre`
-    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`])
     root.tags = [['d', 'jane-eyre'], ['title', 'Jane Eyre'], ['a', `30041:${PK}:intro`]]
     const label: Event = {
       id: '7'.repeat(64),
@@ -514,9 +514,9 @@ describe('library-publication-index', () => {
 
   it('libraryPublicationEntriesForUserFromIndex builds only matching roots', () => {
     const viewerPk = 'f'.repeat(64)
-    const mine = indexEvent('mine', [`30041:${PK}:a`], '1'.repeat(64))
+    const mine = indexEvent('mine', [`30041:${PK}:a`])
     mine.pubkey = viewerPk
-    const other = indexEvent('other', [`30041:${PK}:b`], '2'.repeat(64))
+    const other = indexEvent('other', [`30041:${PK}:b`])
     const indexEvents = [mine, other]
     const engagement = buildEngagementMapsFromEvents([], [], [])
     const entries = libraryPublicationEntriesForUserFromIndex(indexEvents, engagement, viewerPk, {
@@ -529,7 +529,7 @@ describe('library-publication-index', () => {
   it('publicationRootBelongsToUser matches booklist address without building entries', () => {
     const viewerPk = 'f'.repeat(64)
     const rootAddr = `30040:${PK}:jane-eyre`
-    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`])
     const indexByAddress = buildIndexByAddress([root])
     const engagement = buildEngagementMapsFromEvents([], [], [])
     expect(
@@ -542,7 +542,7 @@ describe('library-publication-index', () => {
   it('filterLibraryPublicationsByUser matches myBooklistAddresses without engagement flags', () => {
     const viewerPk = 'f'.repeat(64)
     const rootAddr = `30040:${PK}:jane-eyre`
-    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`], '9'.repeat(64))
+    const root = indexEvent('jane-eyre', [`30041:${PK}:intro`])
     const entry = {
       event: root,
       hasLabel: false,

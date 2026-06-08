@@ -4,7 +4,7 @@ import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import type { TRepliesMap } from '@/lib/reply-index'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
-import { isRssArticleUrlThreadInteraction, isRssUrlThreadAntwortenTailKind } from '@/lib/rss-web-feed'
+import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
 import {
   collapseStaleAddressableRevisions,
   upsertEventMapPreferNewestAddressable

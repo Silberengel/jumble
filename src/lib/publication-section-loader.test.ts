@@ -38,7 +38,6 @@ describe('publication-section-loader', () => {
     const s2 = `30041:${PK}:s2`
     const childAddr = `30040:${PK}:part`
     const root = indexEvent('book', [s1, childAddr, s2])
-    const child = indexEvent('part', [s2])
     const fetched = new Map<string, Event>([
       [root.id, root],
       [publicationRefKey({ type: 'a', coordinate: s1 })!, contentEvent('s1')]
