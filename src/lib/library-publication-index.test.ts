@@ -282,7 +282,24 @@ describe('library-publication-index', () => {
     expect(byAuthor).toHaveLength(1)
 
     expect(filterEventsForPublicationRelaySearchAxis([root], 'title', 'charlotte')).toHaveLength(0)
+    expect(filterEventsForPublicationRelaySearchAxis([root], 'author', 'charlotte')).toHaveLength(1)
     expect(publicationMetadataTagMatchesQuery(root, 'title', 'Jane Eyre')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(root, 'author', 'Brontë')).toBe(true)
+  })
+
+  it('author and title axes match partial metadata text but d-tag stays exact', () => {
+    const root = indexEvent('faust', [`30041:${PK}:intro`])
+    root.tags = [
+      ['d', 'faust-part-one'],
+      ['title', 'Faust: Der Tragödie erster Teil'],
+      ['author', 'Johann Wolfgang von Goethe'],
+      ['a', `30041:${PK}:intro`]
+    ]
+
+    expect(publicationMetadataTagMatchesQuery(root, 'author', 'goethe')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(root, 'title', 'tragödie')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust')).toBe(false)
+    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust-part-one')).toBe(true)
   })
 
   it('searchLibraryPublications respects author axis and keeps separate cache keys', async () => {

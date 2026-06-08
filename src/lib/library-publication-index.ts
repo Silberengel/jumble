@@ -1857,7 +1857,7 @@ export function publicationQueryDTagVariants(query: string): string[] {
   return [...seen]
 }
 
-/** Normalized needles for exact publication metadata tag match (d / title / author). */
+/** Normalized needles for publication metadata tag match (d / title / author). */
 export function publicationQueryNeedles(query: string): string[] {
   const raw = normalizeGeneralSearchQuery(query.trim())
   if (!raw) return []
@@ -1870,13 +1870,19 @@ export function publicationQueryNeedles(query: string): string[] {
   return [...new Set([lower, normalized, hyphen].filter(Boolean))]
 }
 
-function publicationTagValueMatchesNeedles(tagValue: string, needles: string[]): boolean {
+function publicationTagValueMatchesNeedles(
+  tagValue: string,
+  needles: string[],
+  exactOnly: boolean
+): boolean {
   const val = tagValue.trim().toLowerCase()
   const valSpaced = val.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
   for (const needle of needles) {
-    if (val === needle) return true
+    if (!needle) continue
     const needleSpaced = needle.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
-    if (valSpaced === needleSpaced) return true
+    if (val === needle || valSpaced === needleSpaced) return true
+    if (exactOnly || needle.length < 2) continue
+    if (val.includes(needle) || valSpaced.includes(needleSpaced)) return true
   }
   return false
 }
@@ -1888,10 +1894,11 @@ export function publicationMetadataTagMatchesQuery(
 ): boolean {
   const needles = publicationQueryNeedles(query)
   if (needles.length === 0) return false
+  const exactOnly = tagName === 'd'
   for (const tag of event.tags ?? []) {
     if ((tag[0] || '').toLowerCase() !== tagName) continue
     const value = tag[1]?.trim()
-    if (value && publicationTagValueMatchesNeedles(value, needles)) return true
+    if (value && publicationTagValueMatchesNeedles(value, needles, exactOnly)) return true
   }
   return false
 }

@@ -23,6 +23,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const SEARCH_DEBOUNCE_MS = 300
 const RELAY_SEARCH_TIMEOUT_MS = 30_000
@@ -53,6 +54,7 @@ const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
 const EMPTY_BOOKLIST_TARGETS = { addresses: new Set<string>(), eventIds: new Set<string>() }
 
 export function useLibraryPublications(isActive: boolean) {
+  const { t } = useTranslation()
   const { pubkey, bookmarkListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const [entries, setEntries] = useState<LibraryPublicationEntry[]>([])
@@ -374,14 +376,22 @@ export function useLibraryPublications(isActive: boolean) {
       setSearchResults(entries)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
-      setError(message)
+      const local = await searchLibraryPublications(q, { indexEvents, engagement }, searchAxis)
+      if (local.length > 0) {
+        setSearchResults(local)
+        setError(null)
+      } else {
+        setError(
+          message === 'Relay search timed out' ? t('Library relay search timed out') : message
+        )
+      }
       if (import.meta.env.DEV) {
-        logger.warn('[Library] relay search failed', { message })
+        logger.warn('[Library] relay search failed', { message, localFallback: local.length })
       }
     } finally {
       setRelaySearchLoading(false)
     }
-  }, [searchQuery, searchAxis, pubkey, indexEvents, engagement, blockedRelays])
+  }, [searchQuery, searchAxis, pubkey, indexEvents, engagement, blockedRelays, t])
 
   const mineFilterOpts = useMemo(
     () => ({
