@@ -1048,10 +1048,11 @@ export function createReplaceablePersonalListDraftEvent(
   }
 }
 
-/** NIP-B0 (kind 39701): parameterized web bookmark; `d` = URL without scheme, `i`/`I` = canonical http(s) URL. */
+/** NIP-B0 (kind 39701): parameterized web bookmark; required `d` = URL without scheme. */
 export function createWebBookmarkDraftEvent(options: {
   url: string
   title?: string
+  /** NIP-B0 `.content` — detailed description (optional). */
   note?: string
   /** Preserve first publication time when editing (unix seconds string). */
   publishedAtUnix?: string
@@ -1060,26 +1061,23 @@ export function createWebBookmarkDraftEvent(options: {
   const raw = options.url.trim()
   if (!raw) throw new Error('Web bookmark URL is required')
   const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
-  const canonical = canonicalizeHttpUrlForITags(canonicalizeRssArticleUrl(href))
+  const canonical = canonicalizeRssArticleUrl(href)
   const d = urlToWebBookmarkDTag(canonical)
   if (!d) throw new Error('Invalid web bookmark URL')
 
-  const tags: string[][] = [
-    ['d', d],
-    ['I', canonical],
-    ['i', canonical]
-  ]
+  const tags: string[][] = [['d', d]]
   const title = options.title?.trim()
   if (title) tags.push(['title', title])
 
-  const now = dayjs().unix()
-  tags.push(['published_at', options.publishedAtUnix ?? String(now)])
+  const publishedAt = options.publishedAtUnix?.trim()
+  if (publishedAt) tags.push(['published_at', publishedAt])
 
   for (const topic of options.topicTags ?? []) {
     const n = normalizeTopic(topic)
     if (n) tags.push(['t', n])
   }
 
+  const now = dayjs().unix()
   return {
     kind: ExtendedKind.WEB_BOOKMARK,
     content: options.note?.trim() ?? '',

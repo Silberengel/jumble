@@ -14,6 +14,7 @@ import {
   expandArticleUrlThreadQueryValues,
   getWebBookmarkArticleUrl
 } from '@/lib/rss-article'
+import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
 import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -38,6 +39,7 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
     const v = expandArticleUrlThreadQueryValues(canonical)
     return v.length > 0 ? v : [canonical]
   }, [canonical])
+  const dVals = useMemo(() => expandWebBookmarkDTagQueryValues(canonical), [canonical])
 
   const relayUrls = useMemo(() => {
     const read = userReadInboxUrls(relayList, cacheRelayListEvent)
@@ -61,7 +63,10 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
     try {
       const filters = [
         { authors: [pubkey], kinds: [ExtendedKind.WEB_BOOKMARK], '#i': iVals, limit: 40 },
-        { authors: [pubkey], kinds: [ExtendedKind.WEB_BOOKMARK], '#I': iVals, limit: 40 }
+        { authors: [pubkey], kinds: [ExtendedKind.WEB_BOOKMARK], '#I': iVals, limit: 40 },
+        ...(dVals.length
+          ? [{ authors: [pubkey], kinds: [ExtendedKind.WEB_BOOKMARK], '#d': dVals, limit: 40 }]
+          : [])
       ]
       const batches = await Promise.all(
         filters.map((f) => client.fetchEvents(relayUrls, f, { cache: false }).catch(() => [] as Event[]))
@@ -83,7 +88,7 @@ export default function RssArticleWebBookmarks({ articleUrl }: { articleUrl: str
     } finally {
       setLoading(false)
     }
-  }, [pubkey, relayUrls, iVals, canonical])
+  }, [pubkey, relayUrls, iVals, dVals, canonical])
 
   useEffect(() => {
     void reload()

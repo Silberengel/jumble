@@ -20,6 +20,7 @@ import {
   getWebExternalReactionTargetUrl,
   rssArticleStableEventId
 } from '@/lib/rss-article'
+import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { filterRelaysToUserAllowlist, isRelayInUserAllowlist } from '@/lib/relay-allowlist'
@@ -733,12 +734,16 @@ class NoteStatsService {
       const canonical = canonicalizeRssArticleUrl(url)
       const tagVals = expandArticleUrlThreadQueryValues(canonical)
       const iVals = tagVals.length > 0 ? tagVals : [canonical]
+      const dVals = expandWebBookmarkDTagQueryValues(canonical)
       const nonSocial: Filter[] = [
         { '#i': iVals, kinds: [ExtendedKind.EXTERNAL_REACTION], limit: reactionLimit },
         { '#I': iVals, kinds: [ExtendedKind.EXTERNAL_REACTION], limit: reactionLimit },
         { '#i': iVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit: 200 },
         { '#I': iVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit: 200 }
       ]
+      if (dVals.length > 0) {
+        nonSocial.push({ '#d': dVals, kinds: [ExtendedKind.WEB_BOOKMARK], limit: 200 })
+      }
       if (tagVals.length > 0) {
         nonSocial.push(
           { '#r': tagVals, kinds: [kinds.Highlights], limit: interactionLimit },

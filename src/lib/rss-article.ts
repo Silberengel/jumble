@@ -81,7 +81,7 @@ export function getArticleUrlFromCommentITags(event: Event): string | undefined 
   return event.tags.find((t) => t[0] === 'i')?.[1]
 }
 
-/** HTTP(S) URL from kind 39701 web bookmarks (`i`/`I`/`r` tags). */
+/** HTTP(S) URL from kind 39701 web bookmarks (`d` tag per NIP-B0; legacy `i`/`I`/`r` supported). */
 export function getWebBookmarkArticleUrl(event: Pick<Event, 'kind' | 'tags'>): string | undefined {
   if (event.kind !== ExtendedKind.WEB_BOOKMARK) return undefined
   const fromII = getArticleUrlFromCommentITags(event as Event)
@@ -95,6 +95,11 @@ export function getWebBookmarkArticleUrl(event: Pick<Event, 'kind' | 'tags'>): s
       const u = t[1].trim()
       if (u.startsWith('http://') || u.startsWith('https://')) return canonicalizeRssArticleUrl(u)
     }
+  }
+  const dTag = event.tags.find((t) => t[0] === 'd')?.[1]?.trim()
+  if (dTag) {
+    const fromD = normalizeHttpArticleUrl(dTag)
+    if (fromD) return fromD
   }
   return undefined
 }
