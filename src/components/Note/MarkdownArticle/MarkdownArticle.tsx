@@ -5446,6 +5446,7 @@ export default function MarkdownArticle({
   event,
   className,
   hideMetadata = false,
+  hideTitle = false,
   lazyMedia = true,
   parentImageUrl,
   fullCalendarInvite,
@@ -5454,6 +5455,8 @@ export default function MarkdownArticle({
   event: Event
   className?: string
   hideMetadata?: boolean
+  /** Suppress title headings (e.g. when a parent renders the section title). */
+  hideTitle?: boolean
   /**
    * When true (default), images in the note are held as blur/skeleton placeholders
    * until the user opens them in the lightbox. Set to false in full/detail views
@@ -6296,13 +6299,16 @@ export default function MarkdownArticle({
           </div>
         )}
         {/* Metadata */}
-                {!hideMetadata && metadata.title && <h1 className="break-words">{metadata.title}</h1>}
+                {!hideTitle && !hideMetadata && metadata.title && (
+                  <h1 className="break-words">{metadata.title}</h1>
+                )}
                 {!hideMetadata && metadata.summary && (
                   <blockquote>
                     <p className="break-words">{metadata.summary}</p>
                   </blockquote>
                 )}
-                {!hideMetadata &&
+                {!hideTitle &&
+                  !hideMetadata &&
                   event.kind === kinds.LongFormArticle &&
                   !metadata.image?.trim() && (
                     <div className="not-prose my-4 flex max-w-[400px] justify-center rounded-lg bg-muted p-6">
@@ -6314,13 +6320,15 @@ export default function MarkdownArticle({
                       />
                     </div>
                   )}
-                {hideMetadata &&
+                {!hideTitle &&
+                  hideMetadata &&
                   metadata.title &&
                   event.kind !== ExtendedKind.DISCUSSION &&
                   !isNip52CalendarCardKind(event.kind) && (
                   <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
                 )}
-                {hideMetadata &&
+                {!hideTitle &&
+                  hideMetadata &&
                   metadata.title &&
                   event.kind === kinds.LongFormArticle &&
                   !metadata.image?.trim() &&

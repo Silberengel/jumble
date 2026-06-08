@@ -53,7 +53,7 @@ function SectionContent({ event }: { event: Event }) {
     )
   }
   if (event.kind === kinds.LongFormArticle) {
-    return <MarkdownArticle className="mt-2" event={event} hideMetadata />
+    return <MarkdownArticle className="mt-2" event={event} hideMetadata hideTitle />
   }
   if ((event.content ?? '').trim()) {
     return (
