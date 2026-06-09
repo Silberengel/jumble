@@ -2,9 +2,11 @@ import { ExtendedKind } from '@/constants'
 import { describe, expect, it } from 'vitest'
 import {
   formatXmrAmount,
+  formatPiconeroLineAmount,
   getMoneroTipInfo,
   getMoneroTipSortAmount,
-  isMoneroTipKind
+  isMoneroTipKind,
+  xmrToPiconeros
 } from './monero-tip'
 
 describe('monero-tip', () => {
@@ -61,5 +63,11 @@ describe('monero-tip', () => {
   it('formats XMR amounts', () => {
     expect(formatXmrAmount(0.5)).toContain('0.5')
     expect(formatXmrAmount(2)).toContain('2')
+  })
+
+  it('converts XMR to piconeros and formats compact lines', () => {
+    expect(xmrToPiconeros(0.5)).toBe(500_000_000_000)
+    expect(formatPiconeroLineAmount(420)).toBe('420')
+    expect(formatPiconeroLineAmount(1_500_000_000)).toBe('1.5M')
   })
 })

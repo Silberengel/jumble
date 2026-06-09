@@ -11,12 +11,14 @@ import {
   isDiscussionUpvoteEmoji
 } from '@/lib/discussion-votes'
 import {
-  aggregateZapsByPubkey,
+  aggregateMoneroTipsByPubkey,
+  aggregateSatoshiPaymentsByPubkey,
   dedupeBoostersByPubkey,
   emojiStatsKey,
   groupReactionsByEmoji,
   MAX_NOTE_STATS_INTERACTORS_SHOWN
 } from '@/lib/note-stats-interactors'
+import { formatPiconeroLineAmount } from '@/lib/monero-tip'
 import { cn } from '@/lib/utils'
 import type { TNoteStats } from '@/services/note-stats.service'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
@@ -340,27 +342,62 @@ export function ZapCountHover({
 }) {
   const { t } = useTranslation()
   const zappers = useMemo(() => {
-    const filtered = noteStats?.zaps ?? []
-    return aggregateZapsByPubkey(filtered)
-  }, [noteStats?.zaps])
+    return aggregateSatoshiPaymentsByPubkey(
+      noteStats?.zaps ?? [],
+      noteStats?.paymentNotifications ?? []
+    )
+  }, [noteStats?.zaps, noteStats?.paymentNotifications])
+  const moneroTippers = useMemo(() => {
+    const filtered = noteStats?.moneroTips ?? []
+    return aggregateMoneroTipsByPubkey(filtered)
+  }, [noteStats?.moneroTips])
+
+  const formatSatoshiLabel = (amount: number) => {
+    const unit = amount === 1 ? t('satoshi') : t('satoshis')
+    return `${formatZapLineAmount(amount)} ${unit}`
+  }
+
+  const formatPiconeroLabel = (amountPiconero: number) => {
+    const unit = amountPiconero === 1 ? t('piconero') : t('piconeros')
+    return `${formatPiconeroLineAmount(amountPiconero)} ${unit}`
+  }
 
   return (
     <NoteStatsCountHover
-      enabled={zappers.length > 0}
+      enabled={zappers.length > 0 || moneroTippers.length > 0}
       content={
-        <InteractorList
-          pubkeys={zappers.map((z) => z.pubkey)}
-          title={t('Zapped by:')}
-          suffixForPubkey={(pk) => {
-            const row = zappers.find((z) => z.pubkey.toLowerCase() === pk.toLowerCase())
-            if (!row?.amount) return null
-            return (
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {formatZapLineAmount(row.amount)} {t('sats')}
-              </span>
-            )
-          }}
-        />
+        <div className="space-y-3">
+          {zappers.length > 0 ? (
+            <InteractorList
+              pubkeys={zappers.map((z) => z.pubkey)}
+              title={t('Lightning zapped by:')}
+              suffixForPubkey={(pk) => {
+                const row = zappers.find((z) => z.pubkey.toLowerCase() === pk.toLowerCase())
+                if (!row?.amount) return null
+                return (
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatSatoshiLabel(row.amount)}
+                  </span>
+                )
+              }}
+            />
+          ) : null}
+          {moneroTippers.length > 0 ? (
+            <InteractorList
+              pubkeys={moneroTippers.map((z) => z.pubkey)}
+              title={t('Monero tipped by:')}
+              suffixForPubkey={(pk) => {
+                const row = moneroTippers.find((z) => z.pubkey.toLowerCase() === pk.toLowerCase())
+                if (!row?.amountPiconero) return null
+                return (
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatPiconeroLabel(row.amountPiconero)}
+                  </span>
+                )
+              }}
+            />
+          ) : null}
+        </div>
       }
     >
       {children}

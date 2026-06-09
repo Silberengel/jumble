@@ -532,7 +532,8 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://nostr21.com',
   'wss://primus.nostr1.com',
-  'wss://relay.sovbit.host'
+  'wss://relay.sovbit.host',
+  'wss://nosmero.com/nip78-relay'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)

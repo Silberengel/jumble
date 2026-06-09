@@ -22,6 +22,7 @@ describe('metadata-policy-curated-relays', () => {
   it('active read grant includes search and discovery stacks', () => {
     expect(isMetadataPolicyActiveReadGrantRelay('wss://search.nos.today/')).toBe(true)
     expect(isMetadataPolicyActiveReadGrantRelay('wss://nostr21.com/')).toBe(true)
+    expect(isMetadataPolicyActiveReadGrantRelay('wss://nosmero.com/nip78-relay')).toBe(true)
     expect(isMetadataPolicyActiveReadGrantRelay('wss://relay.primal.net/')).toBe(false)
     expect(isMetadataPolicyActiveReadGrantRelay('wss://nostr.wirednet.jp/')).toBe(false)
   })

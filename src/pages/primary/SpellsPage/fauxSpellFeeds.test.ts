@@ -21,5 +21,6 @@ describe('buildNotificationSpellRelayUrls', () => {
     const out = buildNotificationSpellRelayUrls([])
     expect(out.length).toBeGreaterThan(0)
     expect(out.some((u) => u.includes('theforest.nostr1.com') || u.includes('nostr.land'))).toBe(true)
+    expect(out.some((u) => u.includes('nosmero.com'))).toBe(true)
   })
 })

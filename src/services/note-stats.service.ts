@@ -9,6 +9,9 @@ import {
   isReplaceableEvent
 } from '@/lib/event'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
+import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
+import { getMoneroTipInfo, xmrToPiconeros } from '@/lib/monero-tip'
+import { getPaymentNotificationInfo } from '@/lib/superchat'
 import logger from '@/lib/logger'
 import {
   canonicalizeRssArticleUrl,
@@ -44,6 +47,13 @@ import dayjs from 'dayjs'
 import { Event, Filter, kinds } from 'nostr-tools'
 import type { TArchivesInteractionCounts } from '@/types/nostr-archives'
 
+const NOTE_STATS_ZAP_AND_MONERO_KINDS = [
+  kinds.Zap,
+  ExtendedKind.PAYMENT_NOTIFICATION,
+  ExtendedKind.MONERO_TIP_DISCLOSURE,
+  ExtendedKind.MONERO_TIP_RECEIPT
+] as const
+
 export type TNoteStats = {
   likeIdSet: Set<string>
   likes: { id: string; pubkey: string; created_at: number; emoji: TEmoji | string }[]
@@ -51,6 +61,22 @@ export type TNoteStats = {
   reposts: { id: string; pubkey: string; created_at: number }[]
   zapPrSet: Set<string>
   zaps: { pr: string; pubkey: string; amount: number; created_at: number; comment?: string }[]
+  moneroTipIdSet?: Set<string>
+  moneroTips?: {
+    id: string
+    pubkey: string
+    amountPiconero: number
+    created_at: number
+    comment?: string
+  }[]
+  paymentNotificationIdSet?: Set<string>
+  paymentNotifications?: {
+    id: string
+    pubkey: string
+    amountSats: number
+    created_at: number
+    comment?: string
+  }[]
   replyIdSet: Set<string>
   replies: { id: string; pubkey: string; created_at: number }[]
   quoteIdSet: Set<string>
@@ -301,7 +327,9 @@ class NoteStatsService {
     _pubkey?: string | null,
     opts?: { foreground?: boolean; threadRootHexId?: string }
   ): Promise<void> {
-    const urls = prependAggrNostrLandIfViewerEligible((relayUrls ?? []).filter(Boolean))
+    const urls = prependAggrNostrLandIfViewerEligible(
+      appendMoneroNostrRelays(sanitizeRelayUrlsForFetch((relayUrls ?? []).filter(Boolean)))
+    )
     const hexReplies: Event[] = []
     const replaceableReplies: Event[] = []
     const oddIdReplies: Event[] = []
@@ -347,31 +375,36 @@ class NoteStatsService {
     }
 
     try {
-      if (hexIds.length > 0 && urls.length > 0) {
-        const { nonSocial, social } = this.buildBatchFilterGroupsForHexNoteTargets(hexIds)
-        const fetchOpts = {
-          eoseTimeout: 10_000,
-          globalTimeout: 28_000,
-          firstRelayResultGraceMs: false as const
-        }
+      if (hexIds.length > 0) {
         const onStatsEvent = (evt: Event) => {
           this.updateNoteStatsByEvents([evt], undefined)
         }
-        const { queryService } = await import('@/services/client.service')
-        await Promise.all([
-          nonSocial.length > 0
-            ? queryService.fetchEvents(urls, nonSocial, {
-                ...fetchOpts,
-                onevent: onStatsEvent
-              })
-            : Promise.resolve([] as Event[]),
-          social.length > 0
-            ? queryService.fetchEvents(urls, social, {
-                ...fetchOpts,
-                onevent: onStatsEvent
-              })
-            : Promise.resolve([] as Event[])
-        ])
+        if (urls.length > 0) {
+          const { nonSocial, social } = this.buildBatchFilterGroupsForHexNoteTargets(hexIds)
+          const fetchOpts = {
+            eoseTimeout: 10_000,
+            globalTimeout: 28_000,
+            firstRelayResultGraceMs: false as const
+          }
+          const { queryService } = await import('@/services/client.service')
+          await Promise.all([
+            nonSocial.length > 0
+              ? queryService.fetchEvents(urls, nonSocial, {
+                  ...fetchOpts,
+                  onevent: onStatsEvent
+                })
+              : Promise.resolve([] as Event[]),
+            social.length > 0
+              ? queryService.fetchEvents(urls, social, {
+                  ...fetchOpts,
+                  onevent: onStatsEvent
+                })
+              : Promise.resolve([] as Event[]),
+            this.fetchMoneroPaymentStatsForHexTargets(hexIds, onStatsEvent)
+          ])
+        } else {
+          await this.fetchMoneroPaymentStatsForHexTargets(hexIds, onStatsEvent)
+        }
       }
     } catch (err) {
       logger.warn('[NoteStats] fetchThreadReplyNoteStatsBatch failed', {
@@ -423,7 +456,8 @@ class NoteStatsService {
       nonSocial.push(
         { '#e': ch, kinds: [kinds.Reaction], limit: reactionLimit },
         { '#E': ch, kinds: [kinds.Reaction], limit: reactionLimit },
-        { '#e': ch, kinds: [kinds.Zap], limit: 100 }
+        { '#e': ch, kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 },
+        { '#E': ch, kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 }
       )
       social.push(
         {
@@ -598,7 +632,8 @@ class NoteStatsService {
               ...fetchOpts,
               onevent: onStatsEvent
             })
-          : Promise.resolve([] as Event[])
+          : Promise.resolve([] as Event[]),
+        this.fetchMoneroPaymentStatsForNoteTarget(resolvedEvent, onStatsEvent)
       ])
 
       if (resolvedEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) {
@@ -644,7 +679,9 @@ class NoteStatsService {
   /** Stats REQs: dedupe, user-blocked strip, then prepend {@link AGGR_NOSTR_LAND_WSS} when eligible. */
   private finalizeNoteStatsRelayUrls(urls: readonly string[]): string[] {
     return prependAggrNostrLandIfViewerEligible(
-      sanitizeRelayUrlsForFetch(dedupeNormalizeRelayUrlsOrdered(urls))
+      appendMoneroNostrRelays(
+        sanitizeRelayUrlsForFetch(dedupeNormalizeRelayUrlsOrdered(urls))
+      )
     )
   }
 
@@ -666,11 +703,13 @@ class NoteStatsService {
       const onAllowlist = (u: string) => isRelayInUserAllowlist(u, relayAllowlist)
       // Match home feed timeline policy: allowlisted stats must not hit aggr.nostr.land.
       return stripNostrLandAggrFromRelayUrls(
-        sanitizeRelayUrlsForFetch(
-          dedupeNormalizeRelayUrlsOrdered(
-            filterRelaysToUserAllowlist(
-              [...relayAllowlist, ...relayHints.filter(onAllowlist)],
-              relayAllowlist
+        appendMoneroNostrRelays(
+          sanitizeRelayUrlsForFetch(
+            dedupeNormalizeRelayUrlsOrdered(
+              filterRelaysToUserAllowlist(
+                [...relayAllowlist, ...relayHints.filter(onAllowlist)],
+                relayAllowlist
+              )
             )
           )
         )
@@ -761,7 +800,8 @@ class NoteStatsService {
     const nonSocial: Filter[] = [
       { '#e': [rootId], kinds: [kinds.Reaction], limit: reactionLimit },
       { '#E': [rootId], kinds: [kinds.Reaction], limit: reactionLimit },
-      { '#e': [rootId], kinds: [kinds.Zap], limit: 100 }
+      { '#e': [rootId], kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 },
+      { '#E': [rootId], kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 }
     ]
 
     const qKindsHex = Array.from(
@@ -813,7 +853,8 @@ class NoteStatsService {
       nonSocial.push(
         { '#a': [replaceableCoordinate], kinds: [kinds.Reaction], limit: reactionLimit },
         { '#A': [replaceableCoordinate], kinds: [kinds.Reaction], limit: reactionLimit },
-        { '#a': [replaceableCoordinate], kinds: [kinds.Zap], limit: 100 }
+        { '#a': [replaceableCoordinate], kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 },
+        { '#A': [replaceableCoordinate], kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 }
       )
       social.push(
         {
@@ -970,6 +1011,66 @@ class NoteStatsService {
     return key
   }
 
+  addMoneroTip(
+    pubkey: string,
+    eventId: string,
+    tipEventId: string,
+    amountPiconero: number,
+    comment?: string,
+    created_at: number = dayjs().unix(),
+    notify: boolean = true
+  ) {
+    const key = this.statsKey(eventId)
+    const old = this.noteStatsMap.get(key) || {}
+    const moneroTipIdSet = old.moneroTipIdSet || new Set<string>()
+    const moneroTips = old.moneroTips || []
+    if (moneroTipIdSet.has(tipEventId)) return
+
+    moneroTipIdSet.add(tipEventId)
+    moneroTips.push({
+      id: tipEventId,
+      pubkey,
+      amountPiconero,
+      comment,
+      created_at
+    })
+    this.noteStatsMap.set(key, { ...old, moneroTipIdSet, moneroTips })
+    if (notify) {
+      this.notifyNoteStats(key)
+    }
+    return key
+  }
+
+  addPaymentNotification(
+    pubkey: string,
+    eventId: string,
+    notificationEventId: string,
+    amountSats: number,
+    comment?: string,
+    created_at: number = dayjs().unix(),
+    notify: boolean = true
+  ) {
+    const key = this.statsKey(eventId)
+    const old = this.noteStatsMap.get(key) || {}
+    const paymentNotificationIdSet = old.paymentNotificationIdSet || new Set<string>()
+    const paymentNotifications = old.paymentNotifications || []
+    if (paymentNotificationIdSet.has(notificationEventId)) return
+
+    paymentNotificationIdSet.add(notificationEventId)
+    paymentNotifications.push({
+      id: notificationEventId,
+      pubkey,
+      amountSats,
+      comment,
+      created_at
+    })
+    this.noteStatsMap.set(key, { ...old, paymentNotificationIdSet, paymentNotifications })
+    if (notify) {
+      this.notifyNoteStats(key)
+    }
+    return key
+  }
+
   /**
    * @param mergeOpts When the UI just published a single interaction, pass the note id the user acted on
    *   so stats merge even if `e` tag shape varies (extensions, multiple ancestors).
@@ -1035,6 +1136,13 @@ class NoteStatsService {
       push(this.addRepostByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId))
     } else if (evt.kind === kinds.Zap) {
       push(this.addZapByEvent(evt, originalEventAuthor))
+    } else if (evt.kind === ExtendedKind.PAYMENT_NOTIFICATION) {
+      push(this.addPaymentNotificationByEvent(evt, originalEventAuthor, mergeOpts?.interactionTargetNoteId))
+    } else if (
+      evt.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
+      evt.kind === ExtendedKind.MONERO_TIP_RECEIPT
+    ) {
+      push(this.addMoneroTipByEvent(evt, originalEventAuthor))
     } else if (evt.kind === kinds.ShortTextNote || evt.kind === ExtendedKind.COMMENT || evt.kind === ExtendedKind.VOICE_COMMENT) {
       const isQuote = this.isQuoteByEvent(evt)
       if (isQuote) {
@@ -1108,6 +1216,80 @@ class NoteStatsService {
   }
 
   /** Second pass when the main stats wave returned no kind-7 rows (common on direct note open). */
+  private buildMoneroPaymentStatsFilters(rootId: string, replaceableCoordinate?: string): Filter[] {
+    const filters: Filter[] = [
+      { '#e': [rootId], kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 }
+    ]
+    if (replaceableCoordinate) {
+      filters.push({
+        '#a': [replaceableCoordinate],
+        kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS],
+        limit: 100
+      })
+    }
+    return filters
+  }
+
+  /** PMNR / Nosmero only — lowercase `#e` / `#a` filters; not blocked by personal-relay policy. */
+  private async fetchMoneroPaymentStatsForNoteTarget(
+    rootEvent: Event,
+    onStatsEvent: (evt: Event) => void
+  ): Promise<void> {
+    const rootId = this.statsKey(rootEvent.id)
+    if (!this.hexNoteStatsIdRe.test(rootId)) return
+
+    const moneroUrls = appendMoneroNostrRelays([])
+    if (moneroUrls.length === 0) return
+
+    const replaceableCoordinate = isReplaceableEvent(rootEvent.kind)
+      ? getReplaceableCoordinateFromEvent(rootEvent)
+      : undefined
+
+    const { queryService } = await import('@/services/client.service')
+    try {
+      await queryService.fetchEvents(
+        moneroUrls,
+        this.buildMoneroPaymentStatsFilters(rootId, replaceableCoordinate),
+        {
+          eoseTimeout: 8_000,
+          globalTimeout: 18_000,
+          firstRelayResultGraceMs: false,
+          foreground: true,
+          onevent: onStatsEvent
+        }
+      )
+    } catch {
+      /* optional */
+    }
+  }
+
+  private async fetchMoneroPaymentStatsForHexTargets(
+    hexIds: string[],
+    onStatsEvent: (evt: Event) => void
+  ): Promise<void> {
+    const moneroUrls = appendMoneroNostrRelays([])
+    if (moneroUrls.length === 0 || hexIds.length === 0) return
+
+    const filters: Filter[] = []
+    for (let off = 0; off < hexIds.length; off += this.THREAD_REPLY_STATS_BATCH_HEX_CHUNK) {
+      const ch = hexIds.slice(off, off + this.THREAD_REPLY_STATS_BATCH_HEX_CHUNK)
+      filters.push({ '#e': ch, kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 })
+    }
+
+    const { queryService } = await import('@/services/client.service')
+    try {
+      await queryService.fetchEvents(moneroUrls, filters, {
+        eoseTimeout: 8_000,
+        globalTimeout: 18_000,
+        firstRelayResultGraceMs: false,
+        foreground: true,
+        onevent: onStatsEvent
+      })
+    } catch {
+      /* optional */
+    }
+  }
+
   private async fetchReactionsForNoteTarget(rootEvent: Event, relayUrls: string[]): Promise<void> {
     const rootHex = this.statsKey(rootEvent.id)
     if (!/^[0-9a-f]{64}$/i.test(rootHex)) return
@@ -1238,6 +1420,63 @@ class NoteStatsService {
       invoice!,
       amount,
       comment,
+      evt.created_at,
+      false
+    )
+  }
+
+  private addMoneroTipByEvent(evt: Event, originalEventAuthor?: string) {
+    const info = getMoneroTipInfo(evt)
+    if (!info) return
+
+    const eTag = evt.tags.find((t) => t[0] === 'e' || t[0] === 'E')
+    const targetHex = eTag?.[1]?.trim().toLowerCase()
+    if (!targetHex || !/^[0-9a-f]{64}$/.test(targetHex)) return
+
+    const senderPubkey = info.senderPubkey.toLowerCase()
+    if (originalEventAuthor && originalEventAuthor.toLowerCase() === senderPubkey) {
+      return
+    }
+
+    const amountPiconero = info.amountXmr ? xmrToPiconeros(info.amountXmr) : 0
+
+    return this.addMoneroTip(
+      senderPubkey,
+      targetHex,
+      evt.id,
+      amountPiconero,
+      info.comment,
+      evt.created_at,
+      false
+    )
+  }
+
+  private addPaymentNotificationByEvent(
+    evt: Event,
+    originalEventAuthor?: string,
+    forcedTargetEventId?: string
+  ) {
+    const info = getPaymentNotificationInfo(evt)
+    if (!info) return
+
+    const forced = forcedTargetEventId?.trim().toLowerCase()
+    const targetHex =
+      forced && /^[0-9a-f]{64}$/.test(forced)
+        ? forced
+        : info.referencedEventId?.trim().toLowerCase()
+    if (!targetHex || !/^[0-9a-f]{64}$/.test(targetHex)) return
+
+    const senderPubkey = info.senderPubkey.toLowerCase()
+    if (originalEventAuthor && originalEventAuthor.toLowerCase() === senderPubkey) {
+      return
+    }
+
+    return this.addPaymentNotification(
+      senderPubkey,
+      targetHex,
+      evt.id,
+      info.amountSats,
+      info.comment,
       evt.created_at,
       false
     )

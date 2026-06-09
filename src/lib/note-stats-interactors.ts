@@ -70,3 +70,53 @@ export function aggregateZapsByPubkey(
     .map(([pubkey, v]) => ({ pubkey, ...v }))
     .sort((a, b) => b.amount - a.amount || b.created_at - a.created_at)
 }
+
+/** Merge Lightning zaps (9735) and payment notifications (9740) per pubkey, highest total first. */
+export function aggregateSatoshiPaymentsByPubkey(
+  zaps: NonNullable<TNoteStats['zaps']>,
+  paymentNotifications: NonNullable<TNoteStats['paymentNotifications']> = []
+): { pubkey: string; amount: number; created_at: number }[] {
+  const byPk = new Map<string, { amount: number; created_at: number }>()
+
+  const add = (pubkey: string, amount: number, created_at: number) => {
+    const pk = pubkey.toLowerCase()
+    const cur = byPk.get(pk)
+    if (!cur) {
+      byPk.set(pk, { amount, created_at })
+      return
+    }
+    byPk.set(pk, {
+      amount: cur.amount + amount,
+      created_at: Math.max(cur.created_at, created_at)
+    })
+  }
+
+  for (const z of zaps) add(z.pubkey, z.amount, z.created_at)
+  for (const p of paymentNotifications) add(p.pubkey, p.amountSats, p.created_at)
+
+  return [...byPk.entries()]
+    .map(([pubkey, v]) => ({ pubkey, ...v }))
+    .sort((a, b) => b.amount - a.amount || b.created_at - a.created_at)
+}
+
+/** Sum piconeros per pubkey, highest total first. */
+export function aggregateMoneroTipsByPubkey(
+  tips: NonNullable<TNoteStats['moneroTips']>
+): { pubkey: string; amountPiconero: number; created_at: number }[] {
+  const byPk = new Map<string, { amountPiconero: number; created_at: number }>()
+  for (const tip of tips) {
+    const pk = tip.pubkey.toLowerCase()
+    const cur = byPk.get(pk)
+    if (!cur) {
+      byPk.set(pk, { amountPiconero: tip.amountPiconero, created_at: tip.created_at })
+    } else {
+      byPk.set(pk, {
+        amountPiconero: cur.amountPiconero + tip.amountPiconero,
+        created_at: Math.max(cur.created_at, tip.created_at)
+      })
+    }
+  }
+  return [...byPk.entries()]
+    .map(([pubkey, v]) => ({ pubkey, ...v }))
+    .sort((a, b) => b.amountPiconero - a.amountPiconero || b.created_at - a.created_at)
+}

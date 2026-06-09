@@ -116,6 +116,23 @@ export function getMoneroTipSortAmount(event: Event): number {
   return Math.round(info.amountXmr * 1e8)
 }
 
+/** 1 XMR = 10¹² piconeros (Monero atomic units). */
+export const PICONEROS_PER_XMR = 1_000_000_000_000
+
+export function xmrToPiconeros(amountXmr: number): number {
+  if (!Number.isFinite(amountXmr) || amountXmr <= 0) return 0
+  return Math.round(amountXmr * PICONEROS_PER_XMR)
+}
+
+/** Compact piconero display for interactors list (similar to zap sat grouping). */
+export function formatPiconeroLineAmount(piconeros: number): string {
+  if (!Number.isFinite(piconeros) || piconeros <= 0) return '0'
+  if (piconeros < 1000) return String(piconeros)
+  if (piconeros < 1_000_000_000_000) return `${Math.round(piconeros / 100_000_000) / 10}M`
+  if (piconeros < 1_000_000_000_000_000) return `${Math.round(piconeros / 100_000_000_000) / 10}B`
+  return `${Math.round(piconeros / 100_000_000_000_000) / 10}T`
+}
+
 export function formatXmrAmount(amountXmr: number): string {
   if (!Number.isFinite(amountXmr) || amountXmr <= 0) return '0'
   if (amountXmr >= 1) {

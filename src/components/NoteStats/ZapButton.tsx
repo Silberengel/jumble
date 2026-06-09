@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useRecipientAlternativePayments'
 import { getPaymentInfoFromEvent, getProfileFromEvent } from '@/lib/event-metadata'
 import { shouldDeferPerPubkeyProfileNetwork } from '@/lib/profile-batch-coordinator'
+import { formatXmrAmount, PICONEROS_PER_XMR } from '@/lib/monero-tip'
 import { cn } from '@/lib/utils'
 import { useNoteFeedProfileContext } from '@/providers/NoteFeedProfileContext'
 import { useNostr } from '@/providers/NostrProvider'
@@ -129,13 +130,30 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
   const { pubkey } = useNostr()
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const statsLoaded = noteStatsHasResolvableCounts(noteStats)
-  const { zapAmount, hasZapped } = useMemo(() => {
-    return {
-      zapAmount: displayZapSatsWithArchives(noteStats?.zaps, noteStats?.archivesInteractions),
-      hasZapped: pubkey ? noteStats?.zaps?.some((zap) => zap.pubkey === pubkey) : false
-    }
-  }, [noteStats, pubkey])
-  const showZapAmount = !hideCount && (statsLoaded || (zapAmount ?? 0) > 0)
+  const { zapAmount, hasZapped, hasMoneroTip, moneroPiconerosTotal, hasPaymentHoverContent } =
+    useMemo(() => {
+      const moneroTips = noteStats?.moneroTips ?? []
+      const moneroPiconerosTotal = moneroTips.reduce((acc, tip) => acc + tip.amountPiconero, 0)
+      return {
+        zapAmount: displayZapSatsWithArchives(noteStats?.zaps, noteStats?.archivesInteractions),
+        hasZapped: pubkey ? noteStats?.zaps?.some((zap) => zap.pubkey === pubkey) : false,
+        hasMoneroTip: moneroPiconerosTotal > 0,
+        moneroPiconerosTotal,
+        hasPaymentHoverContent:
+          (noteStats?.zaps?.length ?? 0) > 0 ||
+          (noteStats?.paymentNotifications?.length ?? 0) > 0 ||
+          moneroTips.length > 0
+      }
+    }, [noteStats, pubkey])
+  const showTipAmount =
+    !hideCount &&
+    (statsLoaded || (zapAmount ?? 0) > 0 || hasPaymentHoverContent || moneroPiconerosTotal > 0)
+  const tipAmountLabel =
+    (zapAmount ?? 0) > 0
+      ? formatAmount(zapAmount ?? 0)
+      : moneroPiconerosTotal > 0
+        ? formatXmrAmount(moneroPiconerosTotal / PICONEROS_PER_XMR)
+        : formatAmount(0)
   const authorPubkey = event.pubkey.toLowerCase()
   const isSelf = !!pubkey && pubkey.toLowerCase() === authorPubkey
   const feedProfiles = useNoteFeedProfileContext()
@@ -243,20 +261,20 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
                 ? 'text-muted-foreground/40'
                 : cn(
                     'text-muted-foreground group-hover:text-yellow-400',
-                    hasZapped && 'text-yellow-400'
+                    (hasZapped || hasMoneroTip) && 'text-yellow-400'
                   )
             )}
           />
         </button>
-        {showZapAmount ? (
+        {showTipAmount ? (
           <ZapCountHover noteStats={noteStats}>
             <div
               className={cn(
                 'pr-1 text-sm tabular-nums',
-                hasZapped ? 'text-yellow-400' : 'text-muted-foreground'
+                hasZapped || hasMoneroTip ? 'text-yellow-400' : 'text-muted-foreground'
               )}
             >
-              {formatAmount(zapAmount ?? 0)}
+              {tipAmountLabel}
             </div>
           </ZapCountHover>
         ) : (

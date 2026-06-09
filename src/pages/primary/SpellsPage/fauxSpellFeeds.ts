@@ -32,6 +32,7 @@ import {
 } from '@/lib/notification-thread-watch'
 import { userIdToPubkey } from '@/lib/pubkey'
 import { pinHttpIndexRelaysInRelayCap, pinMentionRelaysInRelayCap } from '@/lib/feed-relay-urls'
+import { pinMoneroNostrRelaysInRelayCap } from '@/lib/monero-nostr-relays'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
 import { type Event, type Filter } from 'nostr-tools'
@@ -80,11 +81,14 @@ export function buildNotificationSpellRelayUrls(
       allowThirdPartyLocalRelays: true
     }
   )
-  return pinMentionRelaysInRelayCap(
-    capped,
-    mentionIndex,
-    FAUX_SPELL_MAX_RELAYS,
-    Math.min(NOTIFICATION_MENTION_RELAY_PIN_COUNT, mentionIndex.length)
+  return pinMoneroNostrRelaysInRelayCap(
+    pinMentionRelaysInRelayCap(
+      capped,
+      mentionIndex,
+      FAUX_SPELL_MAX_RELAYS,
+      Math.min(NOTIFICATION_MENTION_RELAY_PIN_COUNT, mentionIndex.length)
+    ),
+    FAUX_SPELL_MAX_RELAYS
   )
 }
 
