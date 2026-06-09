@@ -351,6 +351,12 @@ class RelaySessionStrikes {
     return true
   }
 
+  private publishStrikeThresholdForKey(key: string, url: string): number {
+    if (this.cacheRelayKeys.has(key)) return CACHE_RELAY_STRIKE_FAILURES_THRESHOLD
+    if (isLocalNetworkUrl(url)) return LOCAL_NETWORK_STRIKE_FAILURES_THRESHOLD
+    return STRIKE_FAILURES_THRESHOLD
+  }
+
   recordPublishFailure(url: string, errorMessage?: string): void {
     if (errorMessage) {
       if (isRelayPublishPolicyRejection(errorMessage)) return
@@ -364,14 +370,17 @@ class RelaySessionStrikes {
     const now = Date.now()
     const e = this.getEntry(key)
     if (now < e.rateLimitUntil && !this.cacheRelayKeys.has(key)) return
-    if (!this.cacheRelayKeys.has(key)) {
+    const isCacheRelay = this.cacheRelayKeys.has(key)
+    const isLocalPublish = isLocalNetworkUrl(url)
+    if (!isCacheRelay && !isLocalPublish) {
       if (now - e.publishLastStrikeIncrementAt < STRIKE_INCREMENT_DEBOUNCE_MS) return
       e.publishLastStrikeIncrementAt = now
     }
     e.publishFailures += 1
-    if (e.publishFailures >= STRIKE_FAILURES_THRESHOLD) {
+    const threshold = this.publishStrikeThresholdForKey(key, url)
+    if (e.publishFailures >= threshold) {
       e.publishStrikeSkipUntil = Math.max(e.publishStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.warn('[RelayStrikes] publish path strike skip', { key, publishFailures: e.publishFailures })
+      logger.warn('[RelayStrikes] publish path strike skip', { key, publishFailures: e.publishFailures, threshold })
     }
     this.emitChange()
   }

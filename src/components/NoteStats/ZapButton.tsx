@@ -143,7 +143,7 @@ export function ZapButtonWithStats({ event, hideCount = false, noteStats }: ZapB
           (noteStats?.zaps?.length ?? 0) > 0 ||
           (noteStats?.paymentNotifications?.length ?? 0) > 0 ||
           moneroTips.length > 0,
-        totalTipSats: displayTotalTipSats(noteStats, { btcUsd, xmrUsd })
+        totalTipSats: displayTotalTipSats(noteStats, { btcUsd, xmrUsd }, event.id)
       }
     }, [noteStats, pubkey, btcUsd, xmrUsd])
   const showTipAmount =

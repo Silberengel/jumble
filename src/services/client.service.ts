@@ -1972,16 +1972,13 @@ class ClientService extends EventTarget {
           /** ACK wait: pool sets {@link RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS}; outer race uses {@link publishAckBudgetCapMs} for multi-relay. */
           const publishAckBudgetMs = isLocal ? 5_000 : publishAckBudgetCapMs
           const httpPublishBudgetMs = isLocal ? 5_000 : 8_000
+          /** Hard cap so a hung `ensureRelay` / NIP-42 auth chain cannot block {@link publishEvent} forever. */
+          const relayHardBudgetMs = connectionTimeout + publishAckBudgetMs + 4_000
 
-          // Set up a per-relay timeout to ensure we always reach the finally block
-          const relayTimeout = setTimeout(() => {
-            logger.warn(`[PublishEvent] Per-relay watchdog fired for ${url}`, {
-              connectionTimeout,
-              publishAckBudgetMs
-            })
-          }, connectionTimeout + publishAckBudgetMs + 2_000)
-          
           try {
+            await Promise.race([
+              (async () => {
+                try {
             if (urlMatchesConfiguredHttpIndexRelay(url, httpIndexBasesForPublish)) {
               const base = normalizeHttpRelayUrl(url) || url
               logger.debug(`[PublishEvent] Publishing to kind 10243 HTTP index relay`, { url: base })
@@ -2157,7 +2154,7 @@ class ClientService extends EventTarget {
                 await new Promise((r) => setTimeout(r, 400))
               }
             }
-          } catch (error) {
+                } catch (error) {
             const softHttpDown =
               urlMatchesConfiguredHttpIndexRelay(url, httpIndexBasesForPublish) &&
               (error instanceof IndexRelayTransportError || isIndexRelayTransportFailure(error))
@@ -2184,8 +2181,26 @@ class ClientService extends EventTarget {
             } else {
               relaySessionStrikes.recordPublishFailure(url, errMsg)
             }
+                }
+              })(),
+              new Promise<never>((_, reject) =>
+                setTimeout(
+                  () =>
+                    reject(new Error(`Relay operation timed out after ${relayHardBudgetMs}ms`)),
+                  relayHardBudgetMs
+                )
+              )
+            ])
+          } catch (error) {
+            const alreadyRecorded = relayStatuses.some((rs) => rs.url === url)
+            if (!alreadyRecorded) {
+              const errMsg = error instanceof Error ? error.message : 'Connection failed'
+              logger.warn('[PublishEvent] Relay hard timeout', { url, error: errMsg })
+              errors.push({ url, error })
+              relayStatuses.push({ url, success: false, error: errMsg })
+              relaySessionStrikes.recordPublishFailure(url, errMsg)
+            }
           } finally {
-            clearTimeout(relayTimeout)
             const currentFinished = ++finishedCount
             logger.debug(`[PublishEvent] Relay finished`, { 
               url, 

@@ -1,3 +1,4 @@
+import { PUBLISH_TOAST_MAX_WAIT_MS } from '@/constants'
 import storage from '@/services/local-storage.service'
 import RelayStatusDisplay from '@/components/RelayStatusDisplay'
 import { CheckCircle2 } from 'lucide-react'
@@ -164,25 +165,35 @@ type PublishPromiseToastOptions = {
 }
 
 /**
- * Like `toast.promise` for publish/republish flows: respects {@link storage.getShowPublishSuccessToasts}
- * (no green success toast when disabled). Loading and error toasts still appear.
+ * Publish/republish loading toasts: always dismiss the spinner (even when {@link ClientService.publishEvent}
+ * hangs on a dead relay). Respects {@link storage.getShowPublishSuccessToasts} for success styling.
  */
 export function toastPublishPromise<T>(promise: Promise<T>, opts: PublishPromiseToastOptions): void {
-  if (!publishSuccessToastsEnabled()) {
-    const id = toast.loading(opts.loading)
-    promise
-      .then(() => {
-        toast.dismiss(id)
+  const loadingId = toast.loading(opts.loading)
+  const bounded = Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Publish operation timed out')),
+        PUBLISH_TOAST_MAX_WAIT_MS
+      )
+    )
+  ])
+
+  void bounded
+    .then(() => {
+      toast.dismiss(loadingId)
+      if (publishSuccessToastsEnabled()) {
         const label = resolvePromiseSuccessLabel(opts.success)
-        emitPublishSuccessSubtle(label)
-      })
-      .catch((err: unknown) => {
-        toast.dismiss(id)
-        const e = err instanceof Error ? err : new Error(String(err))
-        toast.error(opts.error(e))
-      })
-    return
-  }
-  toast.promise(promise, opts)
+        if (label) toast.success(label)
+      } else {
+        emitPublishSuccessSubtle(resolvePromiseSuccessLabel(opts.success))
+      }
+    })
+    .catch((err: unknown) => {
+      toast.dismiss(loadingId)
+      const e = err instanceof Error ? err : new Error(String(err))
+      toast.error(opts.error(e))
+    })
 }
 

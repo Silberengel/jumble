@@ -97,30 +97,79 @@ export function noteStatsHasResolvableCounts(stats?: Partial<TNoteStats>): boole
   return stats?.updatedAt != null || stats?.archivesInteractions != null
 }
 
+type TPeakDisplayCounts = {
+  replies: number
+  reactions: number
+  reposts: number
+  zapSats: number
+}
+
+/** Monotonic display floors so opening a note panel cannot zero counts already shown in the feed. */
+const peakDisplayCountsByKey = new Map<string, TPeakDisplayCounts>()
+
+function bumpPeakDisplayCounts(rawKey: string, stats?: Partial<TNoteStats>): void {
+  if (!stats) return
+  const key = /^[0-9a-f]{64}$/i.test(rawKey) ? rawKey.toLowerCase() : rawKey
+  const arch = stats.archivesInteractions
+  const prev = peakDisplayCountsByKey.get(key) ?? {
+    replies: 0,
+    reactions: 0,
+    reposts: 0,
+    zapSats: 0
+  }
+  const fromZaps = stats.zaps?.reduce((acc, zap) => acc + zap.amount, 0) ?? 0
+  peakDisplayCountsByKey.set(key, {
+    replies: Math.max(prev.replies, stats.replies?.length ?? 0, arch?.replies ?? 0),
+    reactions: Math.max(prev.reactions, stats.likes?.length ?? 0, arch?.reactions ?? 0),
+    reposts: Math.max(prev.reposts, stats.reposts?.length ?? 0, arch?.reposts ?? 0),
+    zapSats: Math.max(prev.zapSats, fromZaps, arch?.zap_sats ?? 0)
+  })
+}
+
+function peakListCount(
+  noteId: string | undefined,
+  field: 'reactions' | 'replies' | 'reposts'
+): number {
+  if (!noteId) return 0
+  const key = /^[0-9a-f]{64}$/i.test(noteId) ? noteId.toLowerCase() : noteId
+  const peak = peakDisplayCountsByKey.get(key)
+  if (!peak) return 0
+  return peak[field]
+}
+
+function peakZapSats(noteId: string | undefined): number {
+  if (!noteId) return 0
+  const key = /^[0-9a-f]{64}$/i.test(noteId) ? noteId.toLowerCase() : noteId
+  return peakDisplayCountsByKey.get(key)?.zapSats ?? 0
+}
+
 export function displayListCountWithArchives(
   listLen: number | undefined,
   archives: TArchivesInteractionCounts | undefined,
-  field: 'reactions' | 'replies' | 'reposts'
+  field: 'reactions' | 'replies' | 'reposts',
+  noteId?: string
 ): number {
-  return Math.max(listLen ?? 0, archives?.[field] ?? 0)
+  return Math.max(listLen ?? 0, archives?.[field] ?? 0, peakListCount(noteId, field))
 }
 
 export function displayZapSatsWithArchives(
   zaps: TNoteStats['zaps'] | undefined,
-  archives: TArchivesInteractionCounts | undefined
+  archives: TArchivesInteractionCounts | undefined,
+  noteId?: string
 ): number {
   const fromList = zaps?.reduce((acc, zap) => acc + zap.amount, 0) ?? 0
-  return Math.max(fromList, archives?.zap_sats ?? 0)
+  return Math.max(fromList, archives?.zap_sats ?? 0, peakZapSats(noteId))
 }
 
 /** Lightning + payment notifications + Monero tips (USD spot → sats) for the zap stat label. */
 export function displayTotalTipSats(
   stats: Partial<TNoteStats> | undefined,
-  rates?: { btcUsd?: number | null; xmrUsd?: number | null }
+  rates?: { btcUsd?: number | null; xmrUsd?: number | null },
+  noteId?: string
 ): number {
   const btcUsd = rates?.btcUsd ?? getCachedBtcUsdRate()
   const xmrUsd = rates?.xmrUsd ?? getCachedXmrUsdRate()
-  const lightningSats = displayZapSatsWithArchives(stats?.zaps, stats?.archivesInteractions)
+  const lightningSats = displayZapSatsWithArchives(stats?.zaps, stats?.archivesInteractions, noteId)
   const notificationSats =
     stats?.paymentNotifications?.reduce((acc, row) => acc + row.amountSats, 0) ?? 0
   const moneroPiconeros =
@@ -162,6 +211,8 @@ class NoteStatsService {
   private pendingEvents = new Set<string>()
   /** Open note / explicit UI: drained before {@link pendingEvents} so detail pages are not stuck behind feed cards. */
   private pendingForeground = new Set<string>()
+  /** Matches {@link pendingForeground}: relay REQs must pass `foreground: true` so panel open does not abort them. */
+  private pendingForegroundFetchOrigins = new Set<string>()
   /** If a foreground fetch hit {@link processingCache}, re-queue here so the follow-up run uses the priority lane. */
   private deferredRequeueForeground = new Set<string>()
   /** Favorite relays passed from the last fetchNoteStats call per note (used in processSingleEvent). */
@@ -300,6 +351,7 @@ class NoteStatsService {
       if (foreground) {
         this.pendingEvents.delete(eventId)
         this.pendingForeground.add(eventId)
+        this.pendingForegroundFetchOrigins.add(eventId)
       }
       this.maybeFlushStatsBatch(foreground)
       return
@@ -327,6 +379,7 @@ class NoteStatsService {
     }
     if (foreground) {
       this.pendingForeground.add(eventId)
+      this.pendingForegroundFetchOrigins.add(eventId)
     } else {
       this.pendingEvents.add(eventId)
     }
@@ -406,7 +459,8 @@ class NoteStatsService {
           const fetchOpts = {
             eoseTimeout: 10_000,
             globalTimeout: 28_000,
-            firstRelayResultGraceMs: false as const
+            firstRelayResultGraceMs: false as const,
+            ...(opts?.foreground ? { foreground: true as const } : {})
           }
           const { queryService } = await import('@/services/client.service')
           await Promise.all([
@@ -422,7 +476,7 @@ class NoteStatsService {
                   onevent: onStatsEvent
                 })
               : Promise.resolve([] as Event[]),
-            this.fetchMoneroPaymentStatsForHexTargets(hexIds, onStatsEvent)
+            this.fetchMoneroPaymentStatsForHexTargets(hexIds, onStatsEvent, opts?.foreground === true)
           ])
         } else {
           await this.fetchMoneroPaymentStatsForHexTargets(hexIds, onStatsEvent)
@@ -564,6 +618,9 @@ class NoteStatsService {
       return
     }
 
+    const isForegroundFetch = this.pendingForegroundFetchOrigins.has(eventId)
+    this.pendingForegroundFetchOrigins.delete(eventId)
+
     this.processingCache.add(eventId)
 
     const favoriteRelays = this.pendingFetchFavoriteRelays.get(eventId)
@@ -630,7 +687,8 @@ class NoteStatsService {
       const fetchOpts = {
         eoseTimeout: 10_000,
         globalTimeout: 28_000,
-        firstRelayResultGraceMs: false as const
+        firstRelayResultGraceMs: false as const,
+        ...(isForegroundFetch ? { foreground: true as const } : {})
       }
 
       const { queryService } = await import('@/services/client.service')
@@ -661,7 +719,7 @@ class NoteStatsService {
       if (resolvedEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) {
         const likeCount = this.noteStatsMap.get(rootHex)?.likes?.length ?? 0
         if (likeCount === 0) {
-          await this.fetchReactionsForNoteTarget(resolvedEvent, finalRelayUrls)
+          await this.fetchReactionsForNoteTarget(resolvedEvent, finalRelayUrls, isForegroundFetch)
         }
       }
 
@@ -689,6 +747,7 @@ class NoteStatsService {
             this.pendingFetchFavoriteRelays.set(eventId, deferred)
             if (requeueForeground) {
               this.pendingForeground.add(eventId)
+              this.pendingForegroundFetchOrigins.add(eventId)
             } else {
               this.pendingEvents.add(eventId)
             }
@@ -955,6 +1014,7 @@ class NoteStatsService {
 
   private notifyNoteStats(noteId: string) {
     const key = this.statsKey(noteId)
+    bumpPeakDisplayCounts(key, this.noteStatsMap.get(key))
     this.noteStatsUiEpochByKey.set(key, (this.noteStatsUiEpochByKey.get(key) ?? 0) + 1)
     this.subscriberNotifyKeys.add(key)
     if (this.subscriberNotifyMicrotaskQueued) return
@@ -1287,7 +1347,8 @@ class NoteStatsService {
 
   private async fetchMoneroPaymentStatsForHexTargets(
     hexIds: string[],
-    onStatsEvent: (evt: Event) => void
+    onStatsEvent: (evt: Event) => void,
+    foreground = false
   ): Promise<void> {
     const moneroUrls = appendMoneroNostrRelays([])
     if (moneroUrls.length === 0 || hexIds.length === 0) return
@@ -1312,7 +1373,11 @@ class NoteStatsService {
     }
   }
 
-  private async fetchReactionsForNoteTarget(rootEvent: Event, relayUrls: string[]): Promise<void> {
+  private async fetchReactionsForNoteTarget(
+    rootEvent: Event,
+    relayUrls: string[],
+    foreground = false
+  ): Promise<void> {
     const rootHex = this.statsKey(rootEvent.id)
     if (!/^[0-9a-f]{64}$/i.test(rootHex)) return
 
@@ -1329,6 +1394,7 @@ class NoteStatsService {
       eoseTimeout: 12_000,
       globalTimeout: 22_000,
       firstRelayResultGraceMs: false,
+      ...(foreground ? { foreground: true as const } : {}),
       onevent: (evt: Event) => {
         this.updateNoteStatsByEvents([evt], rootEvent.pubkey, {
           statsRootEvent: rootEvent,

@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { displayTotalTipSats } from '@/services/note-stats.service'
+import noteStatsService, {
+  displayListCountWithArchives,
+  displayTotalTipSats
+} from '@/services/note-stats.service'
+
+describe('displayListCountWithArchives peak floor', () => {
+  it('never drops below counts already shown in the feed', () => {
+    const noteId = 'a'.repeat(64)
+    noteStatsService.updateNoteStatsByEvents([])
+    noteStatsService.applyArchivesInteractionCounts(noteId, { replies: 7, reactions: 0, reposts: 0, zap_sats: 0 })
+    expect(
+      displayListCountWithArchives(undefined, undefined, 'replies', noteId)
+    ).toBe(7)
+  })
+})
 
 describe('displayTotalTipSats', () => {
   const rates = { btcUsd: 100_000, xmrUsd: 200 }

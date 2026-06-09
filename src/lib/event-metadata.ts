@@ -22,7 +22,6 @@ import {
   normalizeHttpUrl,
   normalizeUrl
 } from './url'
-import { isTorBrowser } from './utils'
 import logger from '@/lib/logger'
 import { buildPaytoUri } from '@/lib/payto'
 import { getCanonicalPaytoType, getPaytoEditorTypeLabel } from '@/lib/payto-registry'
@@ -89,9 +88,8 @@ export function getRelayListFromEvent(
     }
   }
 
-  const torBrowserDetected = isTorBrowser()
   const relayList = { write: [], read: [], originalRelays: [] } as Pick<TRelayList, 'write' | 'read' | 'originalRelays'>
-  
+
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
     // Filter out empty, invalid, or malformed URLs
     if (!url || typeof url !== 'string' || url.trim() === '' || url === 'ws://' || url === 'wss://') return
@@ -104,9 +102,6 @@ export function getRelayListFromEvent(
 
     const scope = type === 'read' ? 'read' : type === 'write' ? 'write' : 'both'
     relayList.originalRelays.push({ url: normalizedUrl, scope })
-
-    // Filter out .onion URLs if not using Tor browser
-    if (normalizedUrl.endsWith('.onion/') && !torBrowserDetected) return
 
     if (type === 'write') {
       relayList.write.push(normalizedUrl)
@@ -150,7 +145,6 @@ export function getRelayListReadFromEventNoFastFallback(
 ): string[] {
   if (!event) return []
 
-  const torBrowserDetected = isTorBrowser()
   const read: string[] = []
 
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
@@ -160,7 +154,6 @@ export function getRelayListReadFromEventNoFastFallback(
     const normalizedUrl = normalizeUrl(url)
     if (!normalizedUrl) return
     if (isRelayBlockedByUser(normalizedUrl, blockedRelays)) return
-    if (normalizedUrl.endsWith('.onion/') && !torBrowserDetected) return
 
     if (type === 'write') return
     if (type === 'read') {
@@ -184,7 +177,6 @@ export function getHttpRelayListFromEvent(event?: Event | null, blockedRelays?: 
   }
   if (!event) return out
 
-  const torBrowserDetected = isTorBrowser()
   event.tags.filter(tagNameEquals('r')).forEach(([, url, type]) => {
     if (!url || typeof url !== 'string' || url.trim() === '') return
     if (!isKind10243HttpRelayTagUrl(url)) return
@@ -196,8 +188,6 @@ export function getHttpRelayListFromEvent(event?: Event | null, blockedRelays?: 
 
     const scope = type === 'read' ? 'read' : type === 'write' ? 'write' : 'both'
     out.httpOriginalRelays.push({ url: normalizedUrl, scope })
-
-    if ((normalizedUrl.includes('.onion') || normalizedUrl.endsWith('.onion/')) && !torBrowserDetected) return
 
     if (type === 'write') {
       out.httpWrite.push(normalizedUrl)

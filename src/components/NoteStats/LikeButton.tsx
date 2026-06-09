@@ -99,7 +99,7 @@ export function LikeButtonWithStats({
       myLastEmoji: myLike?.emoji,
       likeCount: showDiscussionVotes
         ? likes?.length
-        : displayListCountWithArchives(likes?.length, stats.archivesInteractions, 'reactions'),
+        : displayListCountWithArchives(likes?.length, stats.archivesInteractions, 'reactions', event.id),
       upVoteCount,
       downVoteCount
     }

@@ -126,6 +126,9 @@ export const OUTBOX_PUBLISH_RETRY_DELAY_MS = 5000
  */
 export const EARLY_PUBLISH_SUCCESS_GRACE_MS = 900
 
+/** Upper bound for republish / broadcast loading toasts when {@link ClientService.publishEvent} never settles. */
+export const PUBLISH_TOAST_MAX_WAIT_MS = 90_000
+
 /**
  * Budget for `fetchRelayLists` / NIP-65 resolution on the publish path. Longer waits block the reply button
  * while relays stall; shorter values fall back to IndexedDB + deduped picker order sooner (still correct).

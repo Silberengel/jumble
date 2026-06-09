@@ -58,7 +58,8 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
       repostCount: displayListCountWithArchives(
         noteStats?.reposts?.length,
         noteStats?.archivesInteractions,
-        'reposts'
+        'reposts',
+        event.id
       ),
       hasReposted: pubkey ? noteStats?.repostPubkeySet?.has(pubkey) : false
     }

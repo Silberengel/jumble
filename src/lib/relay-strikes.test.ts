@@ -93,6 +93,14 @@ describe('relaySessionStrikes cache and localhost', () => {
     relaySessionStrikes.recordReadFailure(url, 'connection')
     expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
   })
+
+  it('session-skips localhost after two publish failures', () => {
+    const url = 'ws://localhost:4869/'
+    relaySessionStrikes.recordPublishFailure(url, 'connection failed')
+    expect(relaySessionStrikes.isPublishSkipped(url)).toBe(false)
+    relaySessionStrikes.recordPublishFailure(url, 'connection failed')
+    expect(relaySessionStrikes.isPublishSkipped(url)).toBe(true)
+  })
 })
 
 describe('relaySessionStrikes.clearKey', () => {

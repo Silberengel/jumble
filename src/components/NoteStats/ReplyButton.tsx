@@ -12,7 +12,6 @@ import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PostEditor from '../PostEditor'
-import { formatCount } from './utils'
 
 type ReplyButtonProps = {
   event: Event
@@ -33,17 +32,16 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
       replyCount: displayListCountWithArchives(
         noteStats?.replies?.length,
         noteStats?.archivesInteractions,
-        'replies'
+        'replies',
+        event.id
       ),
       hasReplied
     }
   }, [noteStats, event.id, pubkey])
   const statsLoaded = noteStatsHasResolvableCounts(noteStats)
-  const replyCountLabel = statsLoaded
-    ? replyCount >= 100
-      ? '99+'
-      : String(replyCount)
-    : formatCount(replyCount)
+  const showReplyCount = !hideCount && (statsLoaded || replyCount > 0)
+  const replyCountLabel =
+    replyCount >= 100 ? '99+' : replyCount > 0 || statsLoaded ? String(replyCount) : ''
   const [open, setOpen] = useState(false)
 
   return (
@@ -63,7 +61,7 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
         {...signControlProps({ title: t('Reply') })}
       >
         <MessageCircle />
-        {!hideCount && replyCountLabel !== '' && (
+        {!showReplyCount ? null : (
           <div className="text-sm tabular-nums">{replyCountLabel}</div>
         )}
       </button>
