@@ -30,6 +30,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { AccountQuickSwitchMenuItems } from '@/components/AccountQuickSwitchMenuItems'
 import { AnonUserAvatar } from '@/components/AnonUserAvatar'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
+import UserStatusBadge from '@/components/UserStatusBadge'
 import { ArrowDownUp, Database, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -170,8 +171,11 @@ function SidebarAccountMenu({
               </AvatarFallback>
             </Avatar>
           )}
-          <span className="truncate max-xl:hidden">
-            {isAnonSession ? t('accountSwitch.anon') : username}
+          <span className="flex min-w-0 max-xl:hidden flex-col items-start gap-0.5 truncate">
+            <span className="truncate w-full">{isAnonSession ? t('accountSwitch.anon') : username}</span>
+            {!isAnonSession && pubkey ? (
+              <UserStatusBadge userId={pubkey} className="w-full text-[11px]" quiet />
+            ) : null}
           </span>
         </Button>
       </DropdownMenuTrigger>

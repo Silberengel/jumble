@@ -1,4 +1,5 @@
 import Nip05AffiliationBadges from '@/components/Nip05AffiliationBadges'
+import UserStatusBadge from '@/components/UserStatusBadge'
 import { FormattedTimestamp } from '@/components/FormattedTimestamp'
 import EventPowLabel from '@/components/EventPowLabel'
 import Username from '@/components/Username'
@@ -31,6 +32,7 @@ export default function NoteAuthorMetaLine({
       <span className="inline-flex min-w-0 shrink-0 items-center gap-x-1.5 text-sm text-muted-foreground">
         <FormattedTimestamp timestamp={timestamp} className="shrink-0" short={timestampShort} />
         <Nip05AffiliationBadges userId={userId} />
+        <UserStatusBadge userId={userId} quiet />
         {powEvent ? <EventPowLabel event={powEvent} /> : null}
       </span>
     </div>

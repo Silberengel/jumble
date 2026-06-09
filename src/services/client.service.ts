@@ -5308,6 +5308,19 @@ class ClientService extends EventTarget {
     return this.replaceableEventService.fetchPaymentInfoEvent(pubkey)
   }
 
+  /** NIP-38 user status for `d` = `general`, `music`, etc. */
+  async fetchUserStatusEvent(pubkey: string, statusType: string) {
+    return this.replaceableEventService.fetchReplaceableEvent(
+      pubkey,
+      ExtendedKind.USER_STATUS,
+      statusType.trim()
+    )
+  }
+
+  async updateUserStatusCache(evt: NEvent) {
+    await this.replaceableEventService.updateReplaceableEventCache(evt)
+  }
+
   async updatePaymentInfoCache(evt: NEvent) {
     await this.replaceableEventService.updateReplaceableEventCache(evt)
   }

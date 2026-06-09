@@ -989,6 +989,22 @@ export function createPaymentInfoDraftEvent(content: string, tags: string[][] = 
   }
 }
 
+/** NIP-38 user status (kind 30315). Empty `content` clears the status. */
+export function createUserStatusDraftEvent(
+  type: string,
+  content: string,
+  tags: string[][] = []
+): TDraftEvent {
+  const d = type.trim()
+  const merged = [['d', d], ...tags.filter((t) => t[0] !== 'd')]
+  return {
+    kind: ExtendedKind.USER_STATUS,
+    content,
+    tags: merged,
+    created_at: dayjs().unix()
+  }
+}
+
 export function createFavoriteRelaysDraftEvent(
   favoriteRelays: string[],
   relaySetEventsOrATags: Event[] | string[][]

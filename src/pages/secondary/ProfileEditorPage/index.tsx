@@ -36,6 +36,7 @@ import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
 import { EditorSortableList, SortableEditorRow } from '@/components/EditorSortableList'
 import PaymentMethodRow from '@/components/ProfileEditor/PaymentMethodRow'
+import UserStatusEditor from '@/components/ProfileEditor/UserStatusEditor'
 import { arrayMove } from '@dnd-kit/sortable'
 import { PAYTO_EDITOR_OTHER_OPTION } from '@/lib/payto'
 import { normalizePaypalAuthority } from '@/lib/payto-paypal-url'
@@ -140,6 +141,7 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
   const paymentInfoDraftContentRef = useRef('{}')
   const [savingPaymentInfo, setSavingPaymentInfo] = useState(false)
   const savingPaymentInfoRef = useRef(false)
+  const [userStatusEditOpen, setUserStatusEditOpen] = useState(false)
   const [profileEventJson, setProfileEventJson] = useState<string>('')
   const [savingFullProfile, setSavingFullProfile] = useState(false)
   const [refreshingCache, setRefreshingCache] = useState(false)
@@ -726,6 +728,22 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           </Item>
         )}
 
+        {/* ── User status (NIP-38 / kind 30315) ── */}
+        <Item>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label className="text-muted-foreground shrink-0">{t('User status')} (NIP-38)</Label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setUserStatusEditOpen(true)}
+              className="shrink-0"
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              {t('Edit user status')}
+            </Button>
+          </div>
+        </Item>
+
         {/* ── Payment info (kind 10133) ── */}
         <Item>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -779,6 +797,15 @@ const ProfileEditorPage = forwardRef(({ index }: { index?: number }, ref) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {account?.pubkey ? (
+        <UserStatusEditor
+          open={userStatusEditOpen}
+          onOpenChange={setUserStatusEditOpen}
+          pubkey={account.pubkey}
+          publish={publish}
+        />
+      ) : null}
 
       {/* Edit payment info */}
       <Dialog open={paymentInfoEditOpen} onOpenChange={setPaymentInfoEditOpen}>

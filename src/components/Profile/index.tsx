@@ -63,6 +63,7 @@ import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 import { AlexandriaEventsSearchEmptyCta } from '@/components/AlexandriaEventsSearchEmptyCta'
 import NotFound from '../NotFound'
+import UserStatusBadge from '@/components/UserStatusBadge'
 import ProfileBadges from './ProfileBadges'
 import ProfileFeed from './ProfileFeed'
 import ProfileReportsDialog from './ProfileReportsDialog'
@@ -540,8 +541,9 @@ export default function Profile({
             ) : null}
           </div>
           <div className="pt-2 pb-4">
-            <div className="flex flex-wrap gap-2 items-center min-w-0">
+            <div className="flex flex-wrap gap-x-2 gap-y-1 items-center min-w-0">
               <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
+              <UserStatusBadge userId={pubkey} className="text-sm" onClickStop={false} />
             </div>
             <Nip05 pubkey={pubkey} nip05={profile.nip05} />
             {/* Display multiple NIP-05 values if available, with verification */}

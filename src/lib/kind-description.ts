@@ -143,6 +143,8 @@ export function getKindDescription(
       return { number: 1621, description: 'Git issue' }
     case ExtendedKind.GIT_RELEASE:
       return { number: 1642, description: 'Git release' }
+    case ExtendedKind.USER_STATUS:
+      return { number: 30315, description: 'User status' }
     default:
       return { number: kind, description: `Event (kind ${kind})` }
   }

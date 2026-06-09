@@ -696,7 +696,9 @@ export const ExtendedKind = {
    * Imwald: replaceable list (`e` / `a` refs) of thread roots whose replies you do not want in
    * notifications (e.g. noisy or hostile threads).
    */
-  EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132
+  EVENTS_I_MUTED_NOTIFICATIONS_LIST: 19132,
+  /** NIP-38: user status (addressable; `d` = status type such as `general` or `music`). */
+  USER_STATUS: 30315
 }
 
 /** WebLN wallet connect + pay BOLT11; NIP-57 zaps when LNURL-pay supports nostr. */
