@@ -20,6 +20,7 @@ import {
   publicationRootBelongsToUser,
   peekLibrarySearchResults,
   publicationIndexMatchesSearchQuery,
+  dTagSlugContainsHyphenNeedle,
   publicationQueryDTagVariants,
   searchLibraryPublicationIndex,
   searchLibraryPublications
@@ -255,9 +256,15 @@ describe('library-publication-index', () => {
 
     const docDTag = buildDocumentRelayPublicationFilters('d-tag', 'redacted-science')
     expect(docDTag[0]?.['#d']).toContain('redacted-science')
+    expect(docDTag.some((f) => f.search === 'redacted-science')).toBe(true)
+
+    const docDTagSingle = buildDocumentRelayPublicationFilters('d-tag', 'faust')
+    expect(docDTagSingle.some((f) => f['#d']?.includes('faust'))).toBe(true)
+    expect(docDTagSingle.some((f) => f.search === 'faust')).toBe(true)
 
     const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
-    expect(docTitle[0]?.['#d']).toContain('redacted-science')
+    expect(docTitle.some((f) => f['#d']?.includes('redacted-science'))).toBe(true)
+    expect(docTitle.some((f) => f.search === 'Redacted Science')).toBe(true)
 
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
       query: 'Village Life in China'
@@ -294,7 +301,7 @@ describe('library-publication-index', () => {
     expect(publicationMetadataTagMatchesQuery(root, 'author', 'Brontë')).toBe(true)
   })
 
-  it('author and title axes match partial metadata text but d-tag stays exact', () => {
+  it('author and title axes match partial metadata text; d-tags match slug prefixes and segments', () => {
     const root = indexEvent('faust', [`30041:${PK}:intro`])
     root.tags = [
       ['d', 'faust-part-one'],
@@ -305,8 +312,74 @@ describe('library-publication-index', () => {
 
     expect(publicationMetadataTagMatchesQuery(root, 'author', 'goethe')).toBe(true)
     expect(publicationMetadataTagMatchesQuery(root, 'title', 'tragödie')).toBe(true)
-    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust')).toBe(false)
+    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust')).toBe(true)
     expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust-part-one')).toBe(true)
+    expect(dTagSlugContainsHyphenNeedle('faust-part-one', 'faust')).toBe(true)
+    expect(dTagSlugContainsHyphenNeedle('pg25732-the-faust-legend-and-goethes-faust', 'faust')).toBe(
+      true
+    )
+  })
+
+  it('matches Gutenberg-style d-tags when the query is an embedded segment', () => {
+    const faustLegend: Event = {
+      id: '280ced75267bb121789f5b45cd6a33d19e81fa89377c92831116c0bbacdeb2cf',
+      kind: ExtendedKind.PUBLICATION,
+      pubkey: '3e1ad0f3a5d3c12245db7788546c43ade3d97c6e046c594f6017cd6cd4164690',
+      created_at: 1780737217,
+      content: '',
+      tags: [
+        ['d', 'pg25732-the-faust-legend-and-goethes-faust'],
+        ['title', "The Faust-Legend and Goethe's 'Faust'"],
+        ['author', 'H. B. Cotterill', 'author'],
+        ['a', `30041:3e1ad0f3a5d3c12245db7788546c43ade3d97c6e046c594f6017cd6cd4164690:pg25732-chapter-1-preface`]
+      ],
+      sig: 'a6d5f170d2fa3d1100142af3ac4e8898a53468ef0c07a285781b76cc893cca97bbb16ec1d03e6fcba16952a05f29d42dd9de73662dc9fe85d0c8d652fd08723a'
+    }
+
+    expect(publicationMetadataTagMatchesQuery(faustLegend, 'd', 'faust')).toBe(true)
+    expect(filterEventsForPublicationRelaySearchAxis([faustLegend], 'd-tag', 'faust')).toHaveLength(1)
+    expect(publicationIndexMatchesSearchQuery(faustLegend, 'faust')).toBe(true)
+  })
+
+  it('matches long Alexandria-style d-tags by prefix and title substring', () => {
+    const janeEyre: Event = {
+      id: 'b74c3b256e343cb282e5987b9ec45ef84d5063604db41a56d8a49b3357889178',
+      kind: ExtendedKind.PUBLICATION,
+      pubkey: 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1',
+      created_at: 1742502230,
+      content: '',
+      tags: [
+        ['d', 'jane-eyre-an-autobiography-by-charlotte-brontë-v-3rd-edition'],
+        ['title', 'Jane Eyre, an Autobiography'],
+        ['author', 'Charlotte Brontë'],
+        ['a', '30041:fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1:jane-eyre-an-autobiography-preface-1-by-charlotte-brontë-v-3rd-edition']
+      ],
+      sig: '0f58db8ac9a9daba0c2a2c5096b82ea374cefded39bea751f54069ec2cea1d983a361185db6a8152764e084eb83f99bd47b5f7ffcc5e8e6efe79e16657cbe7d2'
+    }
+
+    expect(publicationMetadataTagMatchesQuery(janeEyre, 'title', 'jane eyre')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(janeEyre, 'd', 'jane-eyre')).toBe(true)
+    expect(publicationIndexMatchesSearchQuery(janeEyre, 'jane eyre')).toBe(true)
+    expect(filterEventsForPublicationRelaySearchAxis([janeEyre], 'd-tag', 'jane-eyre')).toHaveLength(1)
+    expect(filterEventsForPublicationRelaySearchAxis([janeEyre], 'title', 'jane eyre')).toHaveLength(1)
+
+    const condensed: Event = {
+      ...janeEyre,
+      id: 'c'.repeat(64),
+      tags: [
+        ['d', 'an-autobiography-jane-eyre-condensed'],
+        ['title', 'An Autobiography of Jane Eyre, condensed'],
+        ['author', 'Charlotte Brontë'],
+        ['a', '30041:fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1:chapter-1']
+      ]
+    }
+
+    expect(dTagSlugContainsHyphenNeedle('an-autobiography-jane-eyre-condensed', 'jane-eyre')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(condensed, 'd', 'jane-eyre')).toBe(true)
+    expect(publicationMetadataTagMatchesQuery(condensed, 'title', 'jane eyre')).toBe(true)
+    expect(filterEventsForPublicationRelaySearchAxis([condensed], 'd-tag', 'jane eyre')).toHaveLength(1)
+    expect(filterEventsForPublicationRelaySearchAxis([condensed], 'title', 'jane eyre')).toHaveLength(1)
+    expect(publicationIndexMatchesSearchQuery(condensed, 'jane eyre')).toBe(true)
   })
 
   it('searchLibraryPublications respects author axis and keeps separate cache keys', async () => {

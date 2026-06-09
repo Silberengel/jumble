@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SEARCH_DEBOUNCE_MS = 300
+const SEARCH_INDEX_SETTLE_MS = 400
 const RELAY_SEARCH_TIMEOUT_MS = 30_000
 
 const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
@@ -78,6 +79,7 @@ export function useLibraryPublications(isActive: boolean) {
   const [myBooklistTargets, setMyBooklistTargets] = useState(EMPTY_BOOKLIST_TARGETS)
   const [booklistTargetsLoading, setBooklistTargetsLoading] = useState(false)
   const [reloadNonce, setReloadNonce] = useState(0)
+  const [settledIndexCount, setSettledIndexCount] = useState(0)
   const forceRefreshNextLoadRef = useRef(false)
   const indexesReadyRef = useRef(false)
   const [mineIndexEntries, setMineIndexEntries] = useState<LibraryPublicationEntry[]>([])
@@ -160,6 +162,15 @@ export function useLibraryPublications(isActive: boolean) {
   useEffect(() => {
     setFeedPageIndex(0)
   }, [debouncedSearch, showOnlyMine, searchAxis])
+
+  useEffect(() => {
+    if (indexEvents.length === 0) {
+      setSettledIndexCount(0)
+      return
+    }
+    const t = window.setTimeout(() => setSettledIndexCount(indexEvents.length), SEARCH_INDEX_SETTLE_MS)
+    return () => window.clearTimeout(t)
+  }, [indexEvents.length])
 
   const applyDefaultFeedSlice = useCallback(
     (indexEventsSlice: Event[], engagementMaps: PublicationEngagementMaps, pageIndex: number) => {
@@ -287,6 +298,11 @@ export function useLibraryPublications(isActive: boolean) {
       return
     }
 
+    if (settledIndexCount === 0 && indexEvents.length === 0) {
+      setSearchLoading(true)
+      return
+    }
+
     const cached = peekLibrarySearchResults(q, { indexEvents, engagement }, searchAxis)
     if (cached) {
       setSearchResults(cached)
@@ -325,7 +341,9 @@ export function useLibraryPublications(isActive: boolean) {
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, indexEvents, engagement, searchAxis, blockedRelays])
+    // indexEvents intentionally omitted — settledIndexCount debounces progressive index growth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [debouncedSearch, settledIndexCount, engagement, searchAxis, blockedRelays])
 
   const searchOnRelays = useCallback(async () => {
     const q = searchQuery.trim()

@@ -49,8 +49,10 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     [refresh]
   )
 
+  const isSearchPending = searchLoading || relaySearchLoading
+
   const statusLine =
-    !loading && !error
+    !loading && !error && !isSearchPending
       ? t('Library status line', {
           shown: entries.length,
           topLevel: topLevelCount,
@@ -102,7 +104,8 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           entries={entries}
           loading={
             (loading && entries.length === 0 && !hasIndexData) ||
-            (showOnlyMine && mineFilterLoading)
+            (showOnlyMine && mineFilterLoading) ||
+            isSearchPending
           }
           emptyMessage={
             committedSearch.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')

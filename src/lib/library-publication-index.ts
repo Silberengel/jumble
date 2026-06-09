@@ -149,6 +149,23 @@ type LibraryIndexCache = {
 
 let sessionCache: LibraryIndexCache | null = null
 
+/** Merge relay-discovered kind-30040 rows into the session index and IndexedDB catalog. */
+async function persistRelayDiscoveredLibraryIndexes(newEvents: Event[]): Promise<void> {
+  if (newEvents.length === 0) return
+
+  const incomingMap = buildStructuralPublicationIndexMap(newEvents)
+  if (incomingMap.size === 0) return
+
+  if (sessionCache) {
+    sessionCache = {
+      ...sessionCache,
+      indexByAddress: mergePublicationIndexMaps(sessionCache.indexByAddress, incomingMap.values())
+    }
+  }
+
+  await persistLibraryIndexCacheEvents([...incomingMap.values()])
+}
+
 type LibraryIndexLoadSnapshot = {
   engaged: LibraryPublicationEntry[]
   allIndexCount: number
@@ -1849,6 +1866,27 @@ export function publicationQueryNeedles(query: string): string[] {
   return [...new Set([lower, normalized, hyphen].filter(Boolean))]
 }
 
+/** True when `needle` matches a d-tag slug exactly or as one / more hyphen-delimited segments. */
+export function dTagSlugContainsHyphenNeedle(tagValue: string, needle: string): boolean {
+  const val = needle.trim().toLowerCase()
+  const slug = tagValue.trim().toLowerCase()
+  if (!val || !slug) return false
+  if (slug === val) return true
+
+  const segments = slug.split('-').filter(Boolean)
+  const needleSegments = val.split('-').filter(Boolean)
+  if (segments.length === 0 || needleSegments.length === 0) return false
+
+  if (needleSegments.length === 1) {
+    return segments.some((seg) => seg === needleSegments[0])
+  }
+
+  for (let i = 0; i <= segments.length - needleSegments.length; i++) {
+    if (needleSegments.every((seg, j) => segments[i + j] === seg)) return true
+  }
+  return false
+}
+
 function publicationTagValueMatchesNeedles(
   tagValue: string,
   needles: string[],
@@ -1860,7 +1898,11 @@ function publicationTagValueMatchesNeedles(
     if (!needle) continue
     const needleSpaced = needle.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
     if (val === needle || valSpaced === needleSpaced) return true
-    if (exactOnly || needle.length < 2) continue
+    if (exactOnly) {
+      if (dTagSlugContainsHyphenNeedle(val, needle)) return true
+      continue
+    }
+    if (needle.length < 2) continue
     if (val.includes(needle) || valSpaced.includes(needleSpaced)) return true
   }
   return false
@@ -1931,7 +1973,7 @@ function addPublicationKindFilter(
   out.push(filter)
 }
 
-/** `#d` / `authors` filters for document relays (NIP-01 only — no HTTP index scan). */
+/** `#d` / `authors` / NIP-50 `search` filters for document relays. */
 export function buildDocumentRelayPublicationFilters(
   axis: LibraryPublicationRelaySearchAxis,
   query: string
@@ -1941,11 +1983,13 @@ export function buildDocumentRelayPublicationFilters(
 
   const limit = Math.max(1, Math.min(LIBRARY_RELAY_SEARCH_LIMIT, 100))
   const kind = ExtendedKind.PUBLICATION
+  const filters: Filter[] = []
 
   if (axis === 'author') {
     const npub = tryNpubFromQuery(searchRaw)
     if (npub) return [{ kinds: [kind], authors: [npub], limit }]
-    return []
+    filters.push({ kinds: [kind], search: searchRaw, limit })
+    return filters
   }
 
   const dTags = new Set<string>()
@@ -1956,8 +2000,16 @@ export function buildDocumentRelayPublicationFilters(
   for (const term of terms) {
     for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
   }
-  if (dTags.size === 0) return []
-  return [{ kinds: [kind], '#d': [...dTags], limit }]
+  if (dTags.size > 0) {
+    filters.push({ kinds: [kind], '#d': [...dTags], limit })
+  }
+
+  // Title text and d-tag prefixes need NIP-50 — exact `#d` misses slugs like faust-part-one / Alexandria books.
+  if (axis === 'title' || axis === 'd-tag') {
+    filters.push({ kinds: [kind], search: searchRaw, limit })
+  }
+
+  return filters
 }
 
 function documentRelayUrlsForSearch(blockedRelays: readonly string[] = []): string[] {
@@ -2202,7 +2254,7 @@ export async function searchLibraryPublicationsViaDocumentRelays(
   const mergedIndex = publicationIndexMapValues(
     mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
   )
-  void persistLibraryIndexCacheEvents(mergedIndex)
+  await persistRelayDiscoveredLibraryIndexes(valid)
   const indexByAddress = buildIndexByAddress(mergedIndex)
   const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, axis)
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
@@ -2361,8 +2413,8 @@ export async function searchLibraryPublicationsOnRelays(
   const mergedIndex = publicationIndexMapValues(
     mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
   )
-  if (valid.length > 0 || mergedIndex.length > 0) {
-    void persistLibraryIndexCacheEvents(mergedIndex)
+  if (valid.length > 0) {
+    await persistRelayDiscoveredLibraryIndexes(valid)
   }
   const indexByAddress = buildIndexByAddress(mergedIndex)
   const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)
@@ -2614,6 +2666,14 @@ async function runLibraryPublicationIndexLoad(
         topLevelCount
       })
     }
+  }
+
+  // Pick up relay-discovered rows that finished persisting while this load was in flight.
+  const freshCached = await loadLibraryIndexCacheEvents()
+  if (freshCached.length > 0) {
+    indexByAddress = mergePublicationIndexMaps(indexByAddress, freshCached)
+    indexEvents = publicationIndexMapValues(indexByAddress)
+    topLevelCount = getTopLevelIndexEventsFromMap(indexByAddress).length
   }
 
   sessionCache = { relayKey: key, viewerPubkey, indexByAddress, engagement }
