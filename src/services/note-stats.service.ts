@@ -11,6 +11,9 @@ import {
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { getMoneroTipInfo, xmrToPiconeros } from '@/lib/monero-tip'
+import { piconerosToSats } from '@/lib/sats-fiat'
+import { getCachedBtcUsdRate } from '@/lib/btc-usd-rate'
+import { getCachedXmrUsdRate } from '@/lib/xmr-usd-rate'
 import { getPaymentNotificationInfo } from '@/lib/superchat'
 import logger from '@/lib/logger'
 import {
@@ -108,6 +111,25 @@ export function displayZapSatsWithArchives(
 ): number {
   const fromList = zaps?.reduce((acc, zap) => acc + zap.amount, 0) ?? 0
   return Math.max(fromList, archives?.zap_sats ?? 0)
+}
+
+/** Lightning + payment notifications + Monero tips (USD spot → sats) for the zap stat label. */
+export function displayTotalTipSats(
+  stats: Partial<TNoteStats> | undefined,
+  rates?: { btcUsd?: number | null; xmrUsd?: number | null }
+): number {
+  const btcUsd = rates?.btcUsd ?? getCachedBtcUsdRate()
+  const xmrUsd = rates?.xmrUsd ?? getCachedXmrUsdRate()
+  const lightningSats = displayZapSatsWithArchives(stats?.zaps, stats?.archivesInteractions)
+  const notificationSats =
+    stats?.paymentNotifications?.reduce((acc, row) => acc + row.amountSats, 0) ?? 0
+  const moneroPiconeros =
+    stats?.moneroTips?.reduce((acc, tip) => acc + tip.amountPiconero, 0) ?? 0
+  const moneroSats =
+    moneroPiconeros > 0 && btcUsd != null && xmrUsd != null && btcUsd > 0 && xmrUsd > 0
+      ? piconerosToSats(moneroPiconeros, btcUsd, xmrUsd)
+      : 0
+  return lightningSats + notificationSats + moneroSats
 }
 
 class NoteStatsService {

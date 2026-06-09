@@ -13,6 +13,25 @@ export function satsToXmr(sats: number, btcUsd: number, xmrUsd: number): number 
   return satsToUsd(sats, btcUsd) / xmrUsd
 }
 
+/** Inverse of {@link satsToXmr} — approximate sats for an XMR amount at spot rates. */
+export function xmrToSats(xmr: number, btcUsd: number, xmrUsd: number): number {
+  if (!Number.isFinite(xmr) || xmr <= 0) return 0
+  if (!Number.isFinite(btcUsd) || btcUsd <= 0) return 0
+  if (!Number.isFinite(xmrUsd) || xmrUsd <= 0) return 0
+  return Math.round(((xmr * xmrUsd) / btcUsd) * SATS_PER_BTC)
+}
+
+/** Monero atomic units → approximate sats at spot rates. */
+export function piconerosToSats(
+  piconeros: number,
+  btcUsd: number,
+  xmrUsd: number,
+  piconerosPerXmr = 1_000_000_000_000
+): number {
+  if (!Number.isFinite(piconeros) || piconeros <= 0) return 0
+  return xmrToSats(piconeros / piconerosPerXmr, btcUsd, xmrUsd)
+}
+
 /** Human-readable BTC equivalent (e.g. 0.0021 BTC). */
 export function formatBtcFromSats(sats: number): string {
   const btc = satsToBtc(sats)

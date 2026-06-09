@@ -15,7 +15,6 @@ function statusEvent(overrides: Partial<Event> & { content: string; d: string })
     sig: 'c'.repeat(128),
     created_at: 100,
     kind: ExtendedKind.USER_STATUS,
-    content: overrides.content,
     tags: overrides.tags ?? [['d', overrides.d]],
     ...overrides
   }

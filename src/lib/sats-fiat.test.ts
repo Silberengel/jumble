@@ -4,9 +4,11 @@ import {
   formatUsdFromSats,
   formatXmrFromSats,
   formatSatsEquivalentsParts,
+  piconerosToSats,
   satsToBtc,
   satsToUsd,
-  satsToXmr
+  satsToXmr,
+  xmrToSats
 } from './sats-fiat'
 
 describe('sats-fiat', () => {
@@ -32,6 +34,8 @@ describe('sats-fiat', () => {
     expect(formatXmrFromSats(100_000_000, 100_000, null)).toBeNull()
     expect(formatXmrFromSats(100_000_000, 100_000, 200)).toContain('XMR')
     expect(satsToXmr(100_000_000, 100_000, 200)).toBe(500)
+    expect(xmrToSats(500, 100_000, 200)).toBe(100_000_000)
+    expect(piconerosToSats(500_000_000_000_000, 100_000, 200)).toBe(100_000_000)
   })
 
   it('builds equivalent parts in usd btc xmr order', () => {

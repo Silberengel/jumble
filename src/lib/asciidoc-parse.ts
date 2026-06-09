@@ -1,5 +1,7 @@
 /** AsciiDoc → HTML conversion with issue capture and plain-text fallback helpers. */
 
+import type { LoggerMessage } from '@asciidoctor/core'
+
 export const ASCIIDOC_ARTICLE_CONVERT_ATTRIBUTES: Record<string, unknown> = {
   showtitle: true,
   sectanchors: true,
@@ -239,15 +241,9 @@ export function resolveRelativeImagesInAsciidocHtml(
   })
 }
 
-function formatLoggerMessage(message: {
-  getSeverity?: () => unknown
-  getText?: () => string
-  severity?: unknown
-  text?: string
-  message?: { text?: string }
-}): string {
-  const severity = String(message.getSeverity?.() ?? message.severity ?? 'INFO')
-  const text = String(message.getText?.() ?? message.text ?? message.message?.text ?? '')
+function formatLoggerMessage(message: LoggerMessage): string {
+  const severity = message.getSeverity?.() ?? 'INFO'
+  const text = message.getText?.() ?? message.text ?? message.message ?? ''
   return text ? `${severity}: ${text}` : severity
 }
 
