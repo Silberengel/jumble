@@ -5,7 +5,7 @@ import {
   isSitesProxyUnavailableThisSession,
   markSitesProxyUnavailableFromHttpStatus
 } from '@/lib/optional-proxy-session'
-import { buildViteProxySitesFetchUrl } from '@/lib/vite-proxy-url'
+import { buildDevLocalSitesFetchUrl, buildViteProxySitesFetchUrl } from '@/lib/vite-proxy-url'
 import { hexPubkeysEqual, isValidPubkey, normalizeHexPubkey, userIdToPubkey } from './pubkey'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
@@ -18,7 +18,7 @@ type TVerifyNip05Result = {
 }
 
 /** Bumps when verification rules change so LRU does not serve stale false negatives. */
-const VERIFY_CACHE_SCHEMA = 8
+const VERIFY_CACHE_SCHEMA = 9
 
 /** Bumps when well-known fetch/parse rules change so stale empty cache entries are not reused. */
 const WELL_KNOWN_CACHE_SCHEMA = 5
@@ -229,15 +229,12 @@ function pickRelayListForPubkey(
   return undefined
 }
 
-const verifyNip05ResultCache = new LRUCache<string, TVerifyNip05Result>({
-  max: 1000,
-  fetchMethod: (key) => {
-    const parsed = JSON.parse(key) as { s?: number; nip05?: unknown; pubkey?: unknown }
-    const nip05 = asNip05LookupString(parsed.nip05).trim()
-    const pubkey = typeof parsed.pubkey === 'string' ? parsed.pubkey.trim() : ''
-    return _verifyNip05(nip05, pubkey)
-  }
-})
+/** Only successful verifications are cached — failed fetches must not stick when well-known loads later. */
+const verifyNip05ResultCache = new LRUCache<string, TVerifyNip05Result>({ max: 1000 })
+
+function verifyNip05CacheKey(nip05: string, pubkey: string): string {
+  return JSON.stringify({ s: VERIFY_CACHE_SCHEMA, nip05, pubkey })
+}
 
 export function verifyNip05AgainstWellKnown(
   json: Record<string, unknown> | null,
@@ -293,16 +290,15 @@ async function _verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05
 export async function verifyNip05(nip05: string, pubkey: string): Promise<TVerifyNip05Result> {
   const nip05Str = asNip05LookupString(nip05).trim()
   const pubkeyNorm = normalizePubkeyForNip05Lookup(pubkey) ?? pubkey.trim()
-  const cached = await verifyNip05ResultCache.fetch(
-    JSON.stringify({ s: VERIFY_CACHE_SCHEMA, nip05: nip05Str, pubkey: pubkeyNorm })
-  )
-  if (cached) return cached
-  const split = splitNip05Identifier(nip05Str)
-  return {
-    isVerified: false,
-    nip05Name: split?.name ?? '',
-    nip05Domain: split?.domain ?? ''
+  const cacheKey = verifyNip05CacheKey(nip05Str, pubkeyNorm)
+  const cached = verifyNip05ResultCache.get(cacheKey)
+  if (cached?.isVerified) return cached
+
+  const result = await _verifyNip05(nip05Str, pubkeyNorm)
+  if (result.isVerified) {
+    verifyNip05ResultCache.set(cacheKey, result)
   }
+  return result
 }
 
 export function getWellKnownNip05Url(domain: string, name?: string): string {
@@ -395,7 +391,7 @@ async function fetchWellKnownNostrJsonDirect(targetUrl: string): Promise<Record<
 
 /**
  * Fetch `/.well-known/nostr.json` in the browser without tripping third-party CORS:
- * direct first (NIP-05 hosts usually allow *), then optional `/sites` proxy, then public CORS proxy in dev.
+ * direct first (NIP-05 hosts usually allow *), then dev `/sites` proxy, configured proxy, then public CORS proxies in dev.
  */
 async function fetchWellKnownNostrJsonOnce(
   domain: string,
@@ -406,8 +402,9 @@ async function fetchWellKnownNostrJsonOnce(
   const direct = await fetchWellKnownNostrJsonDirect(targetUrl)
   if (direct) return direct
 
+  const proxyDown = isSitesProxyUnavailableThisSession()
   const proxyServer = import.meta.env.VITE_PROXY_SERVER?.trim()
-  if (proxyServer && !isSitesProxyUnavailableThisSession()) {
+  if (proxyServer && !proxyDown) {
     const viaProxy = await fetchWellKnownNostrJsonFromUrl(
       buildViteProxySitesFetchUrl(targetUrl, proxyServer),
       { viaProxy: true }
@@ -415,10 +412,20 @@ async function fetchWellKnownNostrJsonOnce(
     if (viaProxy) return viaProxy
   }
 
-  if (!import.meta.env.PROD) {
-    return fetchWellKnownNostrJsonFromUrl(
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
-    )
+  if (import.meta.env.DEV) {
+    const devSitesUrl = buildDevLocalSitesFetchUrl(targetUrl)
+    if (devSitesUrl && !proxyDown) {
+      const viaDev = await fetchWellKnownNostrJsonFromUrl(devSitesUrl, { viaProxy: true })
+      if (viaDev) return viaDev
+    }
+
+    for (const fetchUrl of [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+      `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+    ]) {
+      const viaPublic = await fetchWellKnownNostrJsonFromUrl(fetchUrl)
+      if (viaPublic) return viaPublic
+    }
   }
 
   return null

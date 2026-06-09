@@ -33,8 +33,19 @@ const THEFOREST_WELL_KNOWN = {
 } as const
 
 const SILBERENGEL_HEX = 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1'
+const LAESERIN_HEX = 'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
 
 describe('verifyNip05AgainstWellKnown', () => {
+  it('verifies laeserin on theforest.nostr1.com', () => {
+    const base = {
+      isVerified: false,
+      nip05Name: 'laeserin',
+      nip05Domain: 'theforest.nostr1.com'
+    }
+    const out = verifyNip05AgainstWellKnown(THEFOREST_WELL_KNOWN, 'laeserin', LAESERIN_HEX, base)
+    expect(out.isVerified).toBe(true)
+  })
+
   it('fails on nostr.land-style empty full document', () => {
     const base = { isVerified: false, nip05Name: 'silberengel', nip05Domain: 'nostr.land' }
     const out = verifyNip05AgainstWellKnown(

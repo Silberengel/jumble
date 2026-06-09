@@ -1,6 +1,5 @@
 import FollowButton from '@/components/FollowButton'
 import Nip05 from '@/components/Nip05'
-import Nip05List from '@/components/Nip05List'
 import NpubQrCode from '@/components/NpubQrCode'
 import ProfileAbout from '@/components/ProfileAbout'
 import ProfileBanner from '@/components/ProfileBanner'
@@ -541,15 +540,13 @@ export default function Profile({
             ) : null}
           </div>
           <div className="pt-2 pb-4">
-            <div className="flex flex-wrap gap-x-2 gap-y-1 items-center min-w-0">
+            <div className="min-w-0">
               <div className="text-xl font-semibold truncate select-text max-w-full">{username}</div>
-              <UserStatusBadge userId={pubkey} className="text-sm" onClickStop={false} />
+              <UserStatusBadge userId={pubkey} className="mt-0.5 text-sm" onClickStop={false} />
             </div>
-            <Nip05 pubkey={pubkey} nip05={profile.nip05} />
-            {/* Display multiple NIP-05 values if available, with verification */}
-            {nip05List && nip05List.length > 1 && (
-              <Nip05List nip05List={nip05List.slice(1)} pubkey={pubkey} />
-            )}
+            {(nip05List?.length ? nip05List : profile.nip05 ? [profile.nip05] : []).map((nip05) => (
+              <Nip05 key={nip05} pubkey={pubkey} nip05={nip05} />
+            ))}
             <div className="flex flex-wrap gap-1 mt-1 min-w-0">
               <PubkeyCopy pubkey={pubkey} showFull />
               <NpubQrCode pubkey={pubkey} />
