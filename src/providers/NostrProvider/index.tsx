@@ -307,7 +307,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
 
       hydrationGenForThisRun = accountHydrationGenerationRef.current += 1
-      setIsAccountSessionHydrating(true)
       logger.debug('[NostrProvider] Account session hydrate: loading cache and relays…', {
         pubkeySlice: account.pubkey.slice(0, 12),
         hydrationGen: hydrationGenForThisRun
@@ -478,6 +477,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
             Date.now() - lastNetworkHydrateAt < ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS))
 
       if (!skipNetworkHydrate) {
+        /** Only block interactive UI when the user explicitly requested a full network refresh. */
+        if (userForcedAccountNetworkHydrate) {
+          setIsAccountSessionHydrating(true)
+        }
         /** Personal-relay policy must be synced before network REQs so profile index relays stay allowed. */
         await client.syncViewerPersonalRelayKeys(account.pubkey)
         const hydrateNetworkRelays = buildAccountSessionNetworkHydrateRelayUrls({
