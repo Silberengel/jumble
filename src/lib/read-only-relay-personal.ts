@@ -8,6 +8,7 @@ import {
   relayUrlIsAggrNostrLand
 } from '@/lib/nostr-land-relay-eligibility'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
+import { isViewerRelayBlocked } from '@/lib/viewer-blocked-relays'
 import { filterViewerBlockedRelaysForFetch } from '@/lib/viewer-blocked-relays'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 
@@ -122,6 +123,7 @@ export function resetRelayConnectionOperationScopeForTests(): void {
 /** Block read-side pool connects / HTTP index fetches when personal-relay policy is on. */
 export function isRelayConnectionAllowedForViewer(url: string): boolean {
   if (isSingleRelayExplicitPolicyActive()) return true
+  if (isViewerRelayBlocked(url)) return false
   if (!isMetadataRelaysOnlyPolicyActive()) return true
   return isRelayAllowedUnderMetadataOnlyPolicy(url)
 }

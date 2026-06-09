@@ -3,16 +3,17 @@ import { normalizeUrl } from '@/lib/url'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 
 /**
- * Site favicon for nostr.sovbit (same as the browser tab icon on `/invoices` and the rest of the host).
- * @see https://nostr.sovbit.host/invoices
+ * Sovbit operator mark — relay subdomains serve HTML that references `/favicon.ico` but that path 404s;
+ * the working asset lives on the main site.
+ * @see https://sovbit.host/
  */
-export const NOSTR_SOVBIT_ICON_SRC = 'https://nostr.sovbit.host/favicon.ico'
+export const SOVBIT_HOST_ICON_SRC = 'https://sovbit.host/images/favicon.ico'
 
-/**
- * Free relay slice — distinct branding from paid nostr.sovbit.
- * @see https://freelay.sovbit.host/
- */
-export const FREELAY_SOVBIT_ICON_SRC = 'https://freelay.sovbit.host/favicon.ico'
+/** @deprecated Use {@link SOVBIT_HOST_ICON_SRC} */
+export const RELAY_SOVBIT_ICON_SRC = SOVBIT_HOST_ICON_SRC
+
+/** @deprecated Use {@link SOVBIT_HOST_ICON_SRC} */
+export const FREELAY_SOVBIT_ICON_SRC = SOVBIT_HOST_ICON_SRC
 
 /**
  * Nostr Archives front-site favicon for trending shards, search relay, and related hosts.
@@ -56,11 +57,8 @@ export function getRelayIconOverrideSrc(url: string | undefined): string | undef
   if (!url) return undefined
   const host = parseRelayHostname(url)
   if (!host) return undefined
-  if (host === 'nostr.sovbit.host') {
-    return NOSTR_SOVBIT_ICON_SRC
-  }
-  if (host === 'freelay.sovbit.host') {
-    return FREELAY_SOVBIT_ICON_SRC
+  if (host === 'relay.sovbit.host' || host === 'freelay.sovbit.host') {
+    return SOVBIT_HOST_ICON_SRC
   }
   if (isNostrArchivesBrandedRelayUrl(url)) {
     return NOSTRARCHIVES_SITE_ICON_SRC

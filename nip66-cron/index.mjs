@@ -55,6 +55,7 @@ const DEFAULT_RELAYS_TO_MONITOR = [
   'wss://nos.lol',
   'wss://relay.gifbuddy.lol',
   'wss://freelay.sovbit.host',
+  'wss://relay.sovbit.host',
   'wss://search.nos.today',
   'wss://relay.snort.social',
   'wss://nostr.mom',

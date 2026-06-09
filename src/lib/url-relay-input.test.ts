@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looksLikeRelayUrlInput } from '@/lib/url'
+import { looksLikeRelayUrlInput, normalizeAnyRelayUrl } from '@/lib/url'
 
 describe('looksLikeRelayUrlInput', () => {
   it('rejects profile names and partial username typing', () => {
@@ -20,5 +20,11 @@ describe('looksLikeRelayUrlInput', () => {
     expect(
       looksLikeRelayUrlInput('npub1uq6dv4yq94704gk5r22jsqg9gy2wpxkk5dft9q5gugc8tj53nq2qg5q22d')
     ).toBe(false)
+  })
+})
+
+describe('normalizeAnyRelayUrl relay hostname aliases', () => {
+  it('rewrites nostr.sovbit.host to relay.sovbit.host', () => {
+    expect(normalizeAnyRelayUrl('wss://nostr.sovbit.host/')).toBe('wss://relay.sovbit.host/')
   })
 })

@@ -12,7 +12,7 @@ function filterUsesCapitalLetterTagKey(f: Filter): boolean {
 
 /**
  * True if any filter object includes a tag filter whose key starts with `#` and an uppercase ASCII letter
- * (e.g. `#E`, `#A`, `#I`). Some relays (notably nostr.sovbit.host) reject those keys entirely.
+ * (e.g. `#E`, `#A`, `#I`). Some relays (notably relay.sovbit.host) reject those keys entirely.
  */
 export function relayFiltersUseCapitalLetterTagKeys(filter: Filter | Filter[]): boolean {
   const filters = Array.isArray(filter) ? filter : [filter]

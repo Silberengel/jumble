@@ -70,6 +70,26 @@ describe('read-only-relay-personal', () => {
     ).toEqual(['wss://relay.damus.io/'])
   })
 
+  it('sanitizeRelayUrlsForFetch drops renamed sovbit host when old name is blocked', () => {
+    setViewerBlockedRelayUrls(['wss://nostr.sovbit.host/'])
+    expect(
+      sanitizeRelayUrlsForFetch(['wss://relay.sovbit.host/', 'wss://relay.damus.io/'])
+    ).toEqual(['wss://relay.damus.io/'])
+  })
+
+  it('isRelayConnectionAllowedForViewer rejects blocked relays outside explicit browse', () => {
+    setViewerBlockedRelayUrls(['wss://nostr.sovbit.host/'])
+    expect(isRelayConnectionAllowedForViewer('wss://relay.sovbit.host/')).toBe(false)
+    expect(isRelayConnectionAllowedForViewer('wss://relay.damus.io/')).toBe(true)
+  })
+
+  it('isRelayConnectionAllowedForViewer allows blocked relay on explicit browse page', () => {
+    setViewerBlockedRelayUrls(['wss://relay.layer.systems/'])
+    enterSingleRelayExplicitBrowse()
+    expect(isRelayConnectionAllowedForViewer('wss://relay.layer.systems/')).toBe(true)
+    leaveSingleRelayExplicitBrowse()
+  })
+
   it('keeps filter.nostr.wine when on the viewer personal list', () => {
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://filter.nostr.wine/']), { viewerActive: true })
     const urls = ['wss://relay.damus.io/', 'wss://filter.nostr.wine/']

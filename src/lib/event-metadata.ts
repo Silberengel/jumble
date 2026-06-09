@@ -41,6 +41,11 @@ export type GetRelayListFromEventOptions = {
   globalReadWriteFallback?: boolean
 }
 
+function filterDefaultRelayUrls(urls: readonly string[], blockedRelays?: readonly string[]): string[] {
+  if (!blockedRelays?.length) return [...urls]
+  return urls.filter((url) => !isRelayBlockedByUser(url, blockedRelays))
+}
+
 /**
  * Merge kind-10432 (cache relays) from a network fetch with IndexedDB for session hydrate.
  * Some mirrors return an empty or malformed 10432 with a newer `created_at` than good local data; prefer any
@@ -77,8 +82,8 @@ export function getRelayListFromEvent(
       }
     }
     return {
-      write: FAST_WRITE_RELAY_URLS,
-      read: FAST_READ_RELAY_URLS,
+      write: filterDefaultRelayUrls(FAST_WRITE_RELAY_URLS, blockedRelays),
+      read: filterDefaultRelayUrls(FAST_READ_RELAY_URLS, blockedRelays),
       originalRelays: [],
       ...emptyHttpRelayListFields
     }
@@ -119,13 +124,13 @@ export function getRelayListFromEvent(
     relayList.read.length && relayList.read.length <= 8
       ? relayList.read
       : globalFb
-        ? FAST_READ_RELAY_URLS
+        ? filterDefaultRelayUrls(FAST_READ_RELAY_URLS, blockedRelays)
         : relayList.read.slice(0, 8)
   const writeOut =
     relayList.write.length && relayList.write.length <= 8
       ? relayList.write
       : globalFb
-        ? FAST_WRITE_RELAY_URLS
+        ? filterDefaultRelayUrls(FAST_WRITE_RELAY_URLS, blockedRelays)
         : relayList.write.slice(0, 8)
   return {
     write: writeOut,

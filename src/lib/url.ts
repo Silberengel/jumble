@@ -146,6 +146,15 @@ export function relayUrlHasExplicitScheme(url: string): boolean {
   return /^(https?|wss?):\/\//i.test(url.trim())
 }
 
+/** Renamed relay hostnames → current canonical host (applied during URL normalization). */
+const RELAY_HOSTNAME_ALIASES: Record<string, string> = {
+  'nostr.sovbit.host': 'relay.sovbit.host'
+}
+
+function applyRelayHostnameAliases(hostname: string): string {
+  return RELAY_HOSTNAME_ALIASES[hostname.toLowerCase()] ?? hostname
+}
+
 /** Normalize WebSocket relay URLs (`ws:` / `wss:`) for REQ pools and feed layers. */
 export function normalizeAnyRelayUrl(url: string): string {
   return normalizeUrl(url)
@@ -257,6 +266,7 @@ export function normalizeUrl(url: string): string {
 
     const p = new URL(trimmed)
     stripTrailingCommasFromHostname(p)
+    p.hostname = applyRelayHostnameAliases(p.hostname)
 
     if (p.protocol !== 'ws:' && p.protocol !== 'wss:') {
       return ''
@@ -312,6 +322,7 @@ export function normalizeHttpUrl(url: string): string {
     }
     const p = new URL(trimmed)
     stripTrailingCommasFromHostname(p)
+    p.hostname = applyRelayHostnameAliases(p.hostname)
     if (p.protocol !== 'http:' && p.protocol !== 'https:') {
       return ''
     }

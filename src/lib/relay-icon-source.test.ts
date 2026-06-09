@@ -9,9 +9,16 @@ import {
 } from '@/lib/relay-icon-source'
 
 describe('relay icon branding', () => {
-  it('uses favicon override for sovbit hosts', () => {
-    expect(getRelayIconOverrideSrc('wss://nostr.sovbit.host/')).toContain('nostr.sovbit.host')
-    expect(getRelayIconOverrideSrc('wss://freelay.sovbit.host/')).toContain('freelay.sovbit.host')
+  it('uses sovbit.host favicon override for sovbit relay hosts', () => {
+    expect(getRelayIconOverrideSrc('wss://relay.sovbit.host/')).toBe(
+      'https://sovbit.host/images/favicon.ico'
+    )
+    expect(getRelayIconOverrideSrc('wss://freelay.sovbit.host/')).toBe(
+      'https://sovbit.host/images/favicon.ico'
+    )
+    expect(getRelayIconOverrideSrc('wss://nostr.sovbit.host/')).toBe(
+      'https://sovbit.host/images/favicon.ico'
+    )
   })
 
   it('uses purple circle fallback glyph for purplepag.es', () => {

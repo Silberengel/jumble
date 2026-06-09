@@ -100,7 +100,7 @@ export const MAX_CONCURRENT_SUBS_PER_RELAY = 7
 /**
  * How many timeline shards may open relay subscriptions at once. Each shard sends one REQ per relay
  * in its list; with 6 shards in parallel a popular relay can see 6+ SUBs from this app alone, and a
- * second feed wave (remount / strict mode) pushes past strict relay caps (e.g. nostr.sovbit.host ≤10).
+ * second feed wave (remount / strict mode) pushes past strict relay caps (e.g. relay.sovbit.host ≤10).
  * 5 balances faster multi-shard home loads against per-relay SUB caps (see {@link MAX_CONCURRENT_SUBS_PER_RELAY}).
  */
 export const TIMELINE_SHARD_SUBSCRIBE_CONCURRENCY = 5
@@ -301,7 +301,8 @@ export const NIP05_AFFILIATION_DOMAINS: readonly TNip05AffiliationDomain[] = [
   { domain: 'nostr.land', emoji: '🌐', label: 'Land' },
   { domain: 'theforest.nostr1.com', emoji: '🌲', label: 'TheForest' },
   { domain: 'gitcitadel.com', emoji: '🛡️', label: 'GitCitadel' },
-  { domain: 'blog.imwald.eu', emoji: '✍🏼', label: 'Imwald' }
+  { domain: 'blog.imwald.eu', emoji: '✍🏼', label: 'Imwald' },
+  { domain: 'sovbit.host', emoji: '💻', label: 'Sovbit' }
 ] as const
 
 /** @internal — built from {@link NIP05_AFFILIATION_DOMAINS} for O(1) domain lookup. */
@@ -531,7 +532,7 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://nostr21.com',
   'wss://primus.nostr1.com',
-  'wss://nostr.sovbit.host'
+  'wss://relay.sovbit.host'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
