@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, USER_STATUS_BACKGROUND_REFRESH_MS } from '@/constants'
 import {
   NIP38_USER_STATUS_TYPES,
   parseUserStatusEvent,
@@ -7,7 +7,6 @@ import {
 } from '@/lib/nip38-user-status'
 import { userIdToPubkey } from '@/lib/pubkey'
 import client from '@/services/client.service'
-import indexedDb from '@/services/indexed-db.service'
 import { useCallback, useEffect, useState } from 'react'
 
 export type UserStatusSnapshot = {
@@ -23,12 +22,19 @@ const EMPTY_SNAPSHOT: UserStatusSnapshot = {
 }
 
 async function loadStatusFromCache(pubkey: string, type: Nip38UserStatusType): Promise<TUserStatus | null> {
-  try {
-    const ev = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.USER_STATUS, type)
-    return ev ? parseUserStatusEvent(ev) : null
-  } catch {
-    return null
+  const cached = client.getCachedUserStatusEvent(pubkey, type)
+  if (cached) {
+    return parseUserStatusEvent(cached)
   }
+  const session = client.eventService.findSessionReplaceableByNaddr({
+    pubkey,
+    kind: ExtendedKind.USER_STATUS,
+    identifier: type
+  })
+  if (session) {
+    return parseUserStatusEvent(session)
+  }
+  return null
 }
 
 async function fetchStatusFromNetwork(pubkey: string, type: Nip38UserStatusType): Promise<TUserStatus | null> {
@@ -79,6 +85,26 @@ export function useUserStatus(userId: string | undefined) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    const pubkey = userId ? userIdToPubkey(userId) : ''
+    if (!pubkey) return
+
+    const refresh = () => {
+      void load({ network: true })
+    }
+
+    const intervalId = window.setInterval(refresh, USER_STATUS_BACKGROUND_REFRESH_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [userId, load])
 
   const hasStatus = snapshot.general != null || snapshot.music != null
 

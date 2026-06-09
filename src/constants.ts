@@ -702,6 +702,18 @@ export const ExtendedKind = {
   USER_STATUS: 30315
 }
 
+/**
+ * Replaceable kinds kept in session + in-memory cache only (no IndexedDB object store).
+ * NIP-38 statuses are live/ephemeral and refetched regularly.
+ */
+export const SESSION_ONLY_REPLACEABLE_KINDS: ReadonlySet<number> = new Set([ExtendedKind.USER_STATUS])
+
+/** In-memory TTL for {@link ExtendedKind.USER_STATUS} rows in {@link ReplaceableEventService}. */
+export const USER_STATUS_MEMORY_CACHE_TTL_MS = 5 * 60 * 1000
+
+/** While a profile/status hook is mounted, re-query relays at this interval. */
+export const USER_STATUS_BACKGROUND_REFRESH_MS = 5 * 60 * 1000
+
 /** WebLN wallet connect + pay BOLT11; NIP-57 zaps when LNURL-pay supports nostr. */
 export const LIGHTNING_WALLET_PAY_ENABLED = true
 

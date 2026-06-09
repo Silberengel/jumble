@@ -1,4 +1,4 @@
-import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
+import { CALENDAR_EVENT_KINDS, ExtendedKind, SESSION_ONLY_REPLACEABLE_KINDS } from '@/constants'
 
 /** Legacy object store names removed in DB migrations (do not re-add to {@link StoreNames}). */
 const LEGACY_DELETED_OBJECT_STORES = [
@@ -729,6 +729,9 @@ class IndexedDbService {
     
     const storeName = this.getStoreNameByKind(cleanEvent.kind)
     if (!storeName) {
+      if (SESSION_ONLY_REPLACEABLE_KINDS.has(cleanEvent.kind)) {
+        return cleanEvent
+      }
       logger.error('[IndexedDB] Store name not found for kind', { kind: cleanEvent.kind })
       return Promise.reject('store name not found')
     }
@@ -829,6 +832,9 @@ class IndexedDbService {
   ): Promise<Event | undefined | null> {
     const storeName = this.getStoreNameByKind(kind)
     if (!storeName) {
+      if (SESSION_ONLY_REPLACEABLE_KINDS.has(kind)) {
+        return Promise.resolve(undefined)
+      }
       return Promise.reject('store name not found')
     }
     await this.initPromise
@@ -887,6 +893,9 @@ class IndexedDbService {
   ): Promise<number | undefined> {
     const storeName = this.getStoreNameByKind(kind)
     if (!storeName) {
+      if (SESSION_ONLY_REPLACEABLE_KINDS.has(kind)) {
+        return Promise.resolve(undefined)
+      }
       return Promise.resolve(undefined)
     }
     await this.initPromise
@@ -921,6 +930,9 @@ class IndexedDbService {
   ): Promise<(Event | undefined | null)[]> {
     const storeName = this.getStoreNameByKind(kind)
     if (!storeName) {
+      if (SESSION_ONLY_REPLACEABLE_KINDS.has(kind)) {
+        return Promise.resolve(new Array(pubkeys.length).fill(undefined))
+      }
       return Promise.reject('store name not found')
     }
     await this.initPromise
@@ -1453,6 +1465,9 @@ class IndexedDbService {
     
     const storeName = this.getStoreNameByKind(cleanEvent.kind)
     if (!storeName) {
+      if (SESSION_ONLY_REPLACEABLE_KINDS.has(cleanEvent.kind)) {
+        return cleanEvent
+      }
       return Promise.reject('store name not found')
     }
     await this.initPromise

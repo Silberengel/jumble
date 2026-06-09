@@ -2,6 +2,8 @@ import {
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   DOCUMENT_RELAY_URLS,
   ExtendedKind,
+  SESSION_ONLY_REPLACEABLE_KINDS,
+  USER_STATUS_MEMORY_CACHE_TTL_MS,
   FAST_READ_RELAY_URLS,
   FEED_PROFILE_BATCH_FETCH_TIMEOUT_MS,
   MAX_CONCURRENT_RELAY_CONNECTIONS,
@@ -138,6 +140,11 @@ export class ReplaceableEventService {
   /** Coalesce IDB-hit background refreshes so feed paint does not open one REQ per row per 100ms window. */
   private backgroundRefreshByKey = new Map<string, { pubkey: string; kind: number; d?: string }>()
   private backgroundRefreshFlushTimer: ReturnType<typeof setTimeout> | null = null
+  /** NIP-38 (kind 30315) — session-scoped; short TTL because statuses are live. */
+  private userStatusByKey = new LRUCache<string, NEvent>({
+    max: 256,
+    ttl: USER_STATUS_MEMORY_CACHE_TTL_MS
+  })
   private replaceableEventFromBigRelaysDataloader: DataLoader<
     { pubkey: string; kind: number },
     NEvent | null,
@@ -177,6 +184,27 @@ export class ReplaceableEventService {
     )
   }
 
+
+  private userStatusCacheKey(pubkey: string, statusType: string): string {
+    return `${pubkey.trim().toLowerCase()}:${statusType.trim().toLowerCase()}`
+  }
+
+  /** In-memory NIP-38 cache (no IndexedDB). */
+  getCachedUserStatusEvent(pubkey: string, statusType: string): NEvent | undefined {
+    return this.userStatusByKey.get(this.userStatusCacheKey(pubkey, statusType))
+  }
+
+  private cacheUserStatusEvent(event: NEvent): void {
+    if (event.kind !== ExtendedKind.USER_STATUS || shouldDropEventOnIngest(event)) return
+    const d = event.tags.find((t) => t[0] === 'd')?.[1]?.trim()
+    if (!d) return
+    this.userStatusByKey.set(this.userStatusCacheKey(event.pubkey, d), event)
+    this.replaceableEventDataLoader.clear({ pubkey: event.pubkey, kind: event.kind, d })
+    this.replaceableEventDataLoader.prime(
+      { pubkey: event.pubkey, kind: event.kind, d },
+      Promise.resolve(event)
+    )
+  }
 
   /**
    * Build comprehensive relay list: author's outboxes + user's inboxes + relay hints + defaults
@@ -242,6 +270,23 @@ export class ReplaceableEventService {
             Promise.resolve(sessionEv)
           )
           return sessionEv
+        }
+      }
+
+      if (kind === ExtendedKind.USER_STATUS && d) {
+        const cached = this.getCachedUserStatusEvent(pubkey, d)
+        if (cached && !shouldDropEventOnIngest(cached)) {
+          return cached
+        }
+        const session = client.eventService.findSessionReplaceableByNaddr({
+          pubkey,
+          kind,
+          identifier: d
+        })
+        if (session && !shouldDropEventOnIngest(session)) {
+          this.cacheUserStatusEvent(session)
+          this.refreshInBackground(pubkey, kind, d)
+          return session
         }
       }
 
@@ -513,6 +558,7 @@ export class ReplaceableEventService {
   clearCaches(): void {
     this.replaceableEventFromBigRelaysDataloader.clearAll()
     this.replaceableEventDataLoader.clearAll()
+    this.userStatusByKey.clear()
   }
 
   /**
@@ -850,6 +896,13 @@ export class ReplaceableEventService {
           results[index] = null
           return
         }
+        if (kind === ExtendedKind.USER_STATUS) {
+          const cached = this.getCachedUserStatusEvent(pubkey, d)
+          if (cached && !shouldDropEventOnIngest(cached)) {
+            results[index] = cached
+            return
+          }
+        }
         try {
           const idb = await indexedDb.getReplaceableEvent(pubkey, kind, d)
           if (idb && idb.kind === kind && !shouldDropEventOnIngest(idb)) {
@@ -923,7 +976,11 @@ export class ReplaceableEventService {
       const event = eventsMap.get(eventKey)
       if (event) {
         results[index] = event
-        void indexedDb.putReplaceableEvent(event)
+        if (SESSION_ONLY_REPLACEABLE_KINDS.has(event.kind)) {
+          this.cacheUserStatusEvent(event)
+        } else {
+          void indexedDb.putReplaceableEvent(event)
+        }
       }
     }
 
@@ -961,6 +1018,10 @@ export class ReplaceableEventService {
    * Private: Update cache for replaceable event from big relays
    */
   private async updateReplaceableEventFromBigRelaysCache(event: NEvent): Promise<void> {
+    if (SESSION_ONLY_REPLACEABLE_KINDS.has(event.kind)) {
+      this.cacheUserStatusEvent(event)
+      return
+    }
     if (!indexedDb.hasReplaceableEventStoreForKind(event.kind)) {
       return
     }

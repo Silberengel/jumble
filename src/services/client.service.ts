@@ -5317,6 +5317,10 @@ class ClientService extends EventTarget {
     )
   }
 
+  getCachedUserStatusEvent(pubkey: string, statusType: string) {
+    return this.replaceableEventService.getCachedUserStatusEvent(pubkey, statusType)
+  }
+
   async updateUserStatusCache(evt: NEvent) {
     await this.replaceableEventService.updateReplaceableEventCache(evt)
   }
