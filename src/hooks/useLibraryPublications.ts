@@ -313,7 +313,25 @@ export function useLibraryPublications(isActive: boolean) {
     let cancelled = false
     setSearchLoading(true)
     void (async () => {
-      let results = await searchLibraryPublications(q, { indexEvents, engagement }, searchAxis)
+      const applyProgress = (entries: LibraryPublicationEntry[], mergedIndexEvents?: Event[]) => {
+        if (cancelled) return
+        setSearchResults(entries)
+        if (mergedIndexEvents) {
+          setIndexEvents(mergedIndexEvents)
+          setAllIndexCount(mergedIndexEvents.length)
+          setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+        }
+      }
+
+      let results = await searchLibraryPublications(
+        q,
+        { indexEvents, engagement },
+        searchAxis,
+        {
+          onProgress: ({ entries, mergedIndexEvents }) => applyProgress(entries, mergedIndexEvents)
+        }
+      )
+
       if (
         !cancelled &&
         results.length === 0 &&
@@ -324,13 +342,14 @@ export function useLibraryPublications(isActive: boolean) {
           q,
           { indexEvents, engagement },
           searchAxis,
-          blockedRelays ?? []
+          blockedRelays ?? [],
+          {
+            onProgress: ({ entries, mergedIndexEvents }) =>
+              applyProgress(entries, mergedIndexEvents)
+          }
         )
         if (doc.entries.length > 0) {
           results = doc.entries
-          setIndexEvents(doc.mergedIndexEvents)
-          setAllIndexCount(doc.mergedIndexEvents.length)
-          setTopLevelCount(getTopLevelIndexEvents(doc.mergedIndexEvents).length)
         }
       }
       if (cancelled) return
@@ -342,7 +361,6 @@ export function useLibraryPublications(isActive: boolean) {
       cancelled = true
     }
     // indexEvents intentionally omitted — settledIndexCount debounces progressive index growth.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [debouncedSearch, settledIndexCount, engagement, searchAxis, blockedRelays])
 
   const searchOnRelays = useCallback(async () => {
@@ -351,31 +369,21 @@ export function useLibraryPublications(isActive: boolean) {
     setCommittedSearch(q)
     setRelaySearchLoading(true)
     setError(null)
+
+    const applyRelayProgress = (progress: {
+      entries: LibraryPublicationEntry[]
+      mergedIndexEvents?: Event[]
+    }) => {
+      setSearchResults(progress.entries)
+      if (progress.mergedIndexEvents) {
+        setIndexEvents(progress.mergedIndexEvents)
+        setAllIndexCount(progress.mergedIndexEvents.length)
+        setTopLevelCount(getTopLevelIndexEvents(progress.mergedIndexEvents).length)
+      }
+    }
+
     try {
       const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-
-      if (searchAxis) {
-        const doc = await searchLibraryPublicationsViaDocumentRelays(
-          q,
-          { indexEvents, engagement },
-          searchAxis,
-          blockedRelays ?? []
-        )
-        if (doc.entries.length > 0) {
-          setIndexEvents(doc.mergedIndexEvents)
-          setAllIndexCount(doc.mergedIndexEvents.length)
-          setTopLevelCount(getTopLevelIndexEvents(doc.mergedIndexEvents).length)
-          setSearchResults(doc.entries)
-          if (import.meta.env.DEV) {
-            logger.info('[Library] relay search satisfied by document relays', {
-              query: q,
-              axis: searchAxis,
-              count: doc.entries.length
-            })
-          }
-          return
-        }
-      }
 
       let timeoutId: number | undefined
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -385,36 +393,26 @@ export function useLibraryPublications(isActive: boolean) {
         )
       })
       let events: Event[]
-      let mergedIndexEvents: Event[]
       let fromCache: boolean
       try {
-        ;({ events, mergedIndexEvents, fromCache } = await Promise.race([
-          searchLibraryPublicationsOnRelays(
-            q,
-            relays,
-            { indexEvents, engagement },
-            { axis: searchAxis, blockedRelays: blockedRelays ?? [], forceRefresh: true }
-          ),
+        ;({ events, fromCache } = await Promise.race([
+          searchLibraryPublicationsOnRelays(q, relays, { indexEvents, engagement }, {
+            axis: searchAxis,
+            blockedRelays: blockedRelays ?? [],
+            forceRefresh: true,
+            onProgress: applyRelayProgress
+          }),
           timeoutPromise
         ]))
       } finally {
         if (timeoutId !== undefined) window.clearTimeout(timeoutId)
       }
-      setIndexEvents(mergedIndexEvents)
-      setAllIndexCount(mergedIndexEvents.length)
-      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
       if (import.meta.env.DEV) {
         logger.info('[Library] relay search merged', {
           newEvents: events.length,
           fromCache
         })
       }
-
-      const entries = await searchLibraryPublications(q, {
-        indexEvents: mergedIndexEvents,
-        engagement: EMPTY_ENGAGEMENT
-      }, searchAxis)
-      setSearchResults(entries)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
       const local = await searchLibraryPublications(q, { indexEvents, engagement }, searchAxis)

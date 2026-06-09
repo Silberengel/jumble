@@ -256,15 +256,20 @@ describe('library-publication-index', () => {
 
     const docDTag = buildDocumentRelayPublicationFilters('d-tag', 'redacted-science')
     expect(docDTag[0]?.['#d']).toContain('redacted-science')
-    expect(docDTag.some((f) => f.search === 'redacted-science')).toBe(true)
+    expect(docDTag.every((f) => f.search == null)).toBe(true)
 
     const docDTagSingle = buildDocumentRelayPublicationFilters('d-tag', 'faust')
     expect(docDTagSingle.some((f) => f['#d']?.includes('faust'))).toBe(true)
-    expect(docDTagSingle.some((f) => f.search === 'faust')).toBe(true)
+    expect(docDTagSingle.every((f) => f.search == null)).toBe(true)
 
     const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
     expect(docTitle.some((f) => f['#d']?.includes('redacted-science'))).toBe(true)
-    expect(docTitle.some((f) => f.search === 'Redacted Science')).toBe(true)
+    expect(docTitle.some((f) => f['#title']?.includes('Redacted Science'))).toBe(true)
+    expect(docTitle.every((f) => f.search == null)).toBe(true)
+
+    const docAuthor = buildDocumentRelayPublicationFilters('author', 'Jane Austen')
+    expect(docAuthor.some((f) => f['#author']?.includes('Jane Austen'))).toBe(true)
+    expect(docAuthor.every((f) => f.search == null)).toBe(true)
 
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
       query: 'Village Life in China'

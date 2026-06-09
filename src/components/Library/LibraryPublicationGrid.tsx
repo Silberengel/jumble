@@ -105,10 +105,13 @@ function EngagementBadges({ entry }: { entry: LibraryPublicationEntry }) {
 export default function LibraryPublicationGrid({
   entries,
   loading,
+  searchPending,
   emptyMessage
 }: {
   entries: LibraryPublicationEntry[]
   loading?: boolean
+  /** More results may still arrive — show a small tail skeleton without hiding current rows. */
+  searchPending?: boolean
   emptyMessage?: string
 }) {
   const { t } = useTranslation()
@@ -126,7 +129,7 @@ export default function LibraryPublicationGrid({
     )
   }
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !loading) {
     return (
       <div className="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
         {emptyMessage ?? t('Library empty')}
@@ -135,18 +138,25 @@ export default function LibraryPublicationGrid({
   }
 
   return (
-    <div className={cn('grid gap-4', gridCols)}>
-      {entries.map((entry) => (
-        <div
-          key={eventTagAddress(entry.event) ?? entry.event.id}
-          className={cn(
-            'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
-          )}
-        >
-          <PublicationCard event={entry.event} presentation="library" className="border-0 shadow-none rounded-none" />
-          <EngagementBadges entry={entry} />
-        </div>
-      ))}
+    <div className="space-y-4">
+      <div className={cn('grid gap-4', gridCols)}>
+        {entries.map((entry) => (
+          <div
+            key={eventTagAddress(entry.event) ?? entry.event.id}
+            className={cn(
+              'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
+            )}
+          >
+            <PublicationCard event={entry.event} presentation="library" className="border-0 shadow-none rounded-none" />
+            <EngagementBadges entry={entry} />
+          </div>
+        ))}
+        {searchPending
+          ? Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={`pending-${i}`} className="h-48 w-full rounded-lg" />
+            ))
+          : null}
+      </div>
     </div>
   )
 }

@@ -50,9 +50,10 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
   )
 
   const isSearchPending = searchLoading || relaySearchLoading
+  const showSearchStatus = isSearchPending && entries.length > 0
 
   const statusLine =
-    !loading && !error && !isSearchPending
+    !loading && !error && entries.length > 0
       ? t('Library status line', {
           shown: entries.length,
           topLevel: topLevelCount,
@@ -90,11 +91,14 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         ) : null}
         {loading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
-        ) : searchLoading ? (
+        ) : null}
+        {showSearchStatus ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
-        ) : mineFilterLoading ? (
+        ) : !loading && searchLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
+        ) : !loading && mineFilterLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library mine filter loading')}</p>
-        ) : relaySearchLoading ? (
+        ) : !loading && relaySearchLoading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library relay search loading')}</p>
         ) : null}
         {statusLine ? (
@@ -105,8 +109,9 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           loading={
             (loading && entries.length === 0 && !hasIndexData) ||
             (showOnlyMine && mineFilterLoading) ||
-            isSearchPending
+            (isSearchPending && entries.length === 0)
           }
+          searchPending={isSearchPending && entries.length > 0}
           emptyMessage={
             committedSearch.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
           }

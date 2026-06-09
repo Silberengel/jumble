@@ -18,7 +18,6 @@ import {
   getReferencedChild30040Addresses,
   getTopLevelIndexEvents,
   getTopLevelIndexEventsFromMap,
-  hydrateNestedIndexEvents,
   mergePublicationIndexMaps,
   publicationIndexMapValues,
   type PublicationIndexMap
@@ -59,13 +58,15 @@ const MAX_TARGET_ADDRESSES = 120
 const MAX_TARGET_EVENT_IDS = 160
 const MAX_ENGAGEMENT_HTTP_CHUNKS = 6
 const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
-const HYDRATE_MISSING_CAP = 64
 export const LIBRARY_PAGE_SIZE = 120
 /** @deprecated Use {@link LIBRARY_PAGE_SIZE} */
 export const LIBRARY_RECENT_FALLBACK_LIMIT = LIBRARY_PAGE_SIZE
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
+
+/** Max paginated WS pages per document relay when tag filters miss (no NIP-50 on document relays). */
+const LIBRARY_DOCUMENT_RELAY_SCAN_MAX_PAGES = 15
 
 /** Targeted kind-30040 lookup on document relays (thecitadel, etc.) — fast, per-relay, early return. */
 const LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS = {
@@ -77,6 +78,10 @@ const LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS = {
 } as const
 /** Max paginated HTTP pages when title/author metadata API is unavailable (Mercury v0.2.0). */
 const LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES = 80
+/** Title/author/d-tag substring search fallback when metadata API is unavailable or capped. */
+const LIBRARY_TITLE_HTTP_SCAN_MAX_PAGES = 20
+/** Cap parallel POST /api/publications/search needles per query. */
+const LIBRARY_HTTP_METADATA_SEARCH_TERM_CAP = 10
 /** NIP-51 pin list (kind 10001). */
 const PIN_LIST_KIND = 10001
 /** Per-relay WS page fetch — one relay at a time avoids multi-relay onclose resolving after ~1s. */
@@ -583,17 +588,6 @@ export async function buildLibraryEngagementRelayUrls(
     urls.map((u) => normalizeLibraryRelayUrl(u) || u).filter(Boolean),
     blockedRelays
   )
-}
-
-function engagementMapsSizeSummary(maps: PublicationEngagementMaps): Record<string, number> {
-  return {
-    labels: maps.labelAddresses.size + maps.labelEventIds.size,
-    comments: maps.commentAddresses.size + maps.commentEventIds.size,
-    highlights: maps.highlightAddresses.size + maps.highlightEventIds.size,
-    bookmarks: maps.bookmarkAddresses.size + maps.bookmarkEventIds.size,
-    pins: maps.pinAddresses.size + maps.pinEventIds.size,
-    booklists: maps.booklistAddresses.size + maps.booklistEventIds.size
-  }
 }
 
 export type FetchLibraryIndexEventsOptions = {
@@ -1675,7 +1669,7 @@ export function searchLibraryPublicationIndexAsync(
   indexEvents: Event[],
   indexByAddress: Map<string, Event>,
   axis?: LibraryPublicationRelaySearchAxis | null,
-  signal?: { cancelled: boolean }
+  options?: { signal?: { cancelled: boolean }; onProgress?: (roots: Event[]) => void }
 ): Promise<Event[]> {
   const q = query.trim()
   if (!q || indexEvents.length === 0) return Promise.resolve([])
@@ -1685,6 +1679,7 @@ export function searchLibraryPublicationIndexAsync(
   const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
   const roots = new Map<string, Event>()
   let i = 0
+  const signal = options?.signal
 
   return new Promise((resolve) => {
     const step = () => {
@@ -1702,6 +1697,7 @@ export function searchLibraryPublicationIndexAsync(
       )
       i = end
       if (signal?.cancelled) return
+      options?.onProgress?.([...roots.values()])
       if (i < indexEvents.length) {
         requestAnimationFrame(step)
       } else {
@@ -1710,6 +1706,12 @@ export function searchLibraryPublicationIndexAsync(
     }
     requestAnimationFrame(step)
   })
+}
+
+export type LibrarySearchProgress = {
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents?: Event[]
+  networkEventCount?: number
 }
 
 export type LibrarySearchContext = {
@@ -1724,10 +1726,20 @@ export type LibrarySearchContext = {
 export async function searchLibraryPublications(
   query: string,
   context: LibrarySearchContext,
-  axis?: LibraryPublicationRelaySearchAxis | null
+  axis?: LibraryPublicationRelaySearchAxis | null,
+  options?: { onProgress?: (progress: LibrarySearchProgress) => void }
 ): Promise<LibraryPublicationEntry[]> {
   const q = query.trim()
   if (!q) return []
+
+  const report = (roots: Event[], indexEvents: Event[]) => {
+    const indexByAddress = buildIndexByAddress(indexEvents)
+    const entries = sortLibraryPublications(
+      libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT)
+    )
+    options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
+    return entries
+  }
 
   const cached = getLibrarySearchSessionRow(q, context, { axis })
   if (cached) {
@@ -1738,6 +1750,7 @@ export async function searchLibraryPublications(
         relaySearched: cached.relaySearched
       })
     }
+    options?.onProgress?.({ entries: cached.entries, mergedIndexEvents: cached.mergedIndexEvents })
     return cached.entries
   }
 
@@ -1748,7 +1761,11 @@ export async function searchLibraryPublications(
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis)
+  const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis, {
+    onProgress: (roots) => {
+      report(roots, indexEvents)
+    }
+  })
   const rootMap = new Map<string, Event>()
   for (const root of fromIndex) rootMap.set(root.id, root)
 
@@ -1788,7 +1805,7 @@ export async function searchLibraryPublications(
   }
 
   const roots = [...rootMap.values()]
-  const entries = sortLibraryPublications(libraryEntriesFromRoots(roots, indexByAddress, engagement))
+  const entries = report(roots, indexEvents)
 
   const searchContext: LibrarySearchContext = { indexEvents, engagement }
   const prev = getLibrarySearchSessionRow(q, searchContext, { axis })
@@ -1962,6 +1979,35 @@ function publicationRelaySearchTermsForAxis(
   return [raw]
 }
 
+/**
+ * Needles for gc_index_relay `POST /api/publications/search` (substring + exact metadata match on d/title/author/source).
+ * Jumble re-applies {@link publicationMetadataTagMatchesQuery} on axis-filtered results; these terms widen API hits
+ * (hyphen variants, advanced-search fields, long tokens).
+ */
+export function publicationMetadataSearchTermsForHttpRelay(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+): string[] {
+  const seen = new Set<string>()
+  const add = (value: string) => {
+    const t = value.trim()
+    if (t) seen.add(t)
+  }
+
+  for (const source of publicationRelaySearchTermsForAxis(axis, query)) {
+    add(source)
+    for (const needle of publicationQueryNeedles(source)) add(needle)
+  }
+
+  if (axis === 'title' || axis === 'author') {
+    for (const word of generalSearchQueryTerms(query)) {
+      if (word.length >= 4) add(word)
+    }
+  }
+
+  return [...seen].slice(0, LIBRARY_HTTP_METADATA_SEARCH_TERM_CAP)
+}
+
 function addPublicationKindFilter(
   out: Filter[],
   seen: Set<string>,
@@ -1973,7 +2019,7 @@ function addPublicationKindFilter(
   out.push(filter)
 }
 
-/** `#d` / `authors` / NIP-50 `search` filters for document relays. */
+/** NIP-01 `#d` / `#title` / `#author` / `authors` filters for document relays (no NIP-50). */
 export function buildDocumentRelayPublicationFilters(
   axis: LibraryPublicationRelaySearchAxis,
   query: string
@@ -1984,31 +2030,46 @@ export function buildDocumentRelayPublicationFilters(
   const limit = Math.max(1, Math.min(LIBRARY_RELAY_SEARCH_LIMIT, 100))
   const kind = ExtendedKind.PUBLICATION
   const filters: Filter[] = []
+  const seen = new Set<string>()
+  const add = (filter: Filter) => {
+    const key = JSON.stringify(filter)
+    if (seen.has(key)) return
+    seen.add(key)
+    filters.push(filter)
+  }
 
   if (axis === 'author') {
     const npub = tryNpubFromQuery(searchRaw)
     if (npub) return [{ kinds: [kind], authors: [npub], limit }]
-    filters.push({ kinds: [kind], search: searchRaw, limit })
+    const authors = publicationMetadataSearchTermsForHttpRelay('author', searchRaw)
+    if (authors.length > 0) {
+      add({ kinds: [kind], '#author': authors, limit })
+    }
+    return filters
+  }
+
+  if (axis === 'title') {
+    const titles = publicationMetadataSearchTermsForHttpRelay('title', searchRaw)
+    if (titles.length > 0) {
+      add({ kinds: [kind], '#title': titles, limit })
+    }
+    const dTags = new Set<string>()
+    for (const term of [...publicationRelaySearchTermsForAxis('title', searchRaw), searchRaw]) {
+      for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
+    }
+    if (dTags.size > 0) {
+      add({ kinds: [kind], '#d': [...dTags], limit })
+    }
     return filters
   }
 
   const dTags = new Set<string>()
-  const terms =
-    axis === 'title'
-      ? [...publicationRelaySearchTermsForAxis('title', searchRaw), searchRaw]
-      : publicationRelaySearchTermsForAxis(axis, searchRaw)
-  for (const term of terms) {
+  for (const term of publicationRelaySearchTermsForAxis('d-tag', searchRaw)) {
     for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
   }
   if (dTags.size > 0) {
-    filters.push({ kinds: [kind], '#d': [...dTags], limit })
+    add({ kinds: [kind], '#d': [...dTags], limit })
   }
-
-  // Title text and d-tag prefixes need NIP-50 — exact `#d` misses slugs like faust-part-one / Alexandria books.
-  if (axis === 'title' || axis === 'd-tag') {
-    filters.push({ kinds: [kind], search: searchRaw, limit })
-  }
-
   return filters
 }
 
@@ -2022,39 +2083,158 @@ function documentRelayUrlsForSearch(blockedRelays: readonly string[] = []): stri
 }
 
 /**
- * Query {@link DOCUMENT_RELAY_URLS} in parallel for a publication index by `#d` (or `authors` for npub).
- * Document relays (e.g. thecitadel) are the source of truth for NKBIP-01 books; the mercury HTTP index
- * may not list them and broad multi-relay REQ batches often time out before thecitadel responds.
+ * Query {@link DOCUMENT_RELAY_URLS} for kind-30040 indexes by `#d`, `#title`, `#author`, or `authors`.
+ * Document relays do not support NIP-50; when tag filters miss, paginates kind 30040 and matches client-side.
  */
 export async function fetchPublicationIndexesFromDocumentRelays(
   axis: LibraryPublicationRelaySearchAxis,
   query: string,
-  blockedRelays: readonly string[] = []
+  blockedRelays: readonly string[] = [],
+  options?: { onPartialEvents?: (events: Event[]) => void }
 ): Promise<Event[]> {
   const filters = buildDocumentRelayPublicationFilters(axis, query)
-  if (filters.length === 0) return []
+  const relays = documentRelayUrlsForSearch(blockedRelays)
+  if (relays.length === 0) return []
 
+  const matched: Event[] = []
+  const seen = new Set<string>()
+  const addMatches = (batch: Event[]) => {
+    const fresh: Event[] = []
+    for (const ev of batch) {
+      if (seen.has(ev.id)) continue
+      seen.add(ev.id)
+      matched.push(ev)
+      fresh.push(ev)
+    }
+    if (fresh.length > 0) options?.onPartialEvents?.(fresh)
+  }
+
+  if (filters.length > 0) {
+    await Promise.all(
+      relays.map((relay) =>
+        queryService
+          .fetchEvents([relay], filters, LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS)
+          .then((events) =>
+            filterEventsForPublicationRelaySearchAxis(events, axis, query)
+          )
+          .then((events) => {
+            addMatches(events)
+            return events
+          })
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] document relay publication search failed', {
+                relay,
+                axis,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+            return [] as Event[]
+          })
+      )
+    )
+  }
+
+  if (matched.length > 0) return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+
+  return scanDocumentRelaysForPublicationAxis(axis, query, blockedRelays, {
+    onPartialEvents: options?.onPartialEvents
+  })
+}
+
+async function scanWsRelayForPublicationAxis(
+  relay: string,
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string,
+  options?: { maxPages?: number; onPartialEvents?: (events: Event[]) => void }
+): Promise<Event[]> {
+  const pageLimit = Math.min(100, INDEX_HTTP_PAGE_LIMIT)
+  const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: pageLimit }
+  const matched: Event[] = []
+  const seen = new Set<string>()
+  const maxPages = Math.max(1, options?.maxPages ?? LIBRARY_DOCUMENT_RELAY_SCAN_MAX_PAGES)
+
+  const collect = (batch: Event[]) => {
+    const fresh: Event[] = []
+    for (const ev of filterEventsForPublicationRelaySearchAxis(batch, axis, query)) {
+      if (seen.has(ev.id)) continue
+      seen.add(ev.id)
+      matched.push(ev)
+      fresh.push(ev)
+      if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
+    }
+    if (fresh.length > 0) options?.onPartialEvents?.(fresh)
+  }
+
+  let firstPage: Event[] = []
+  try {
+    firstPage = await queryService.fetchEvents([relay], [filter], LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS)
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      logger.warn('[Library] document relay publication scan first page failed', {
+        relay,
+        axis,
+        message: e instanceof Error ? e.message : String(e)
+      })
+    }
+    return []
+  }
+
+  collect(firstPage)
+  if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT || firstPage.length === 0) {
+    return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+  }
+
+  let until = oldestCreatedAt(firstPage) - 1
+  for (let page = 1; page < maxPages; page++) {
+    if (until < 0) break
+    let batch: Event[] = []
+    try {
+      batch = await queryService.fetchEvents(
+        [relay],
+        [{ ...filter, until }],
+        LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS
+      )
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] document relay publication scan page failed', {
+          relay,
+          axis,
+          page,
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+      break
+    }
+    if (batch.length === 0) break
+    collect(batch)
+    if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
+    if (batch.length < pageLimit) break
+    const oldest = oldestCreatedAt(batch)
+    if (oldest === Number.MAX_SAFE_INTEGER) break
+    until = oldest - 1
+  }
+
+  return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+}
+
+async function scanDocumentRelaysForPublicationAxis(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string,
+  blockedRelays: readonly string[] = [],
+  options?: { onPartialEvents?: (events: Event[]) => void }
+): Promise<Event[]> {
   const relays = documentRelayUrlsForSearch(blockedRelays)
   if (relays.length === 0) return []
 
   const settled = await Promise.all(
     relays.map((relay) =>
-      queryService
-        .fetchEvents([relay], filters, LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS)
-        .catch((e) => {
-          if (import.meta.env.DEV) {
-            logger.warn('[Library] document relay publication search failed', {
-              relay,
-              axis,
-              message: e instanceof Error ? e.message : String(e)
-            })
-          }
-          return [] as Event[]
-        })
+      scanWsRelayForPublicationAxis(relay, axis, query, {
+        onPartialEvents: options?.onPartialEvents
+      })
     )
   )
-  const raw = dedupeEventsById(settled.flat())
-  return filterEventsForPublicationRelaySearchAxis(raw, axis, query)
+  return dedupeEventsById(settled.flat()).slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
 }
 
 /** One axis of kind-30040 relay discovery: `#d`, metadata title/author (HTTP), or `authors` for npub. */
@@ -2148,19 +2328,24 @@ export function publicationIndexMatchesSearchQueryWithAxis(
 async function scanHttpIndexRelayForPublicationAxis(
   httpRelay: string,
   axis: LibraryPublicationRelaySearchAxis,
-  term: string
+  term: string,
+  options?: { maxPages?: number; onPartialEvents?: (events: Event[]) => void }
 ): Promise<Event[]> {
   const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_HTTP_PAGE_LIMIT }
   const matched: Event[] = []
   const seen = new Set<string>()
+  const maxPages = Math.max(1, options?.maxPages ?? LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES)
 
   const collect = (batch: Event[]) => {
+    const fresh: Event[] = []
     for (const ev of filterEventsForPublicationRelaySearchAxis(batch, axis, term)) {
-      if (!seen.has(ev.id)) {
-        seen.add(ev.id)
-        matched.push(ev)
-      }
+      if (seen.has(ev.id)) continue
+      seen.add(ev.id)
+      matched.push(ev)
+      fresh.push(ev)
+      if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
     }
+    if (fresh.length > 0) options?.onPartialEvents?.(fresh)
   }
 
   let firstPage: Event[]
@@ -2183,7 +2368,7 @@ async function scanHttpIndexRelayForPublicationAxis(
   }
 
   let until = oldestCreatedAt(firstPage) - 1
-  for (let page = 1; page < LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES; page++) {
+  for (let page = 1; page < maxPages; page++) {
     if (until < 0) break
     let batch: Event[] = []
     let apiRowCount = 0
@@ -2217,16 +2402,51 @@ async function scanHttpIndexRelayForPublicationAxis(
 async function searchHttpIndexRelayPublicationAxis(
   httpRelay: string,
   axis: LibraryPublicationRelaySearchAxis,
-  term: string,
-  options?: { allowFullScan?: boolean }
+  query: string,
+  options?: {
+    allowFullScan?: boolean
+    fullScanMaxPages?: number
+    onPartialEvents?: (events: Event[]) => void
+  }
 ): Promise<Event[]> {
-  const meta = await queryIndexRelayPublicationMetadataSearch(httpRelay, term, {
-    limit: LIBRARY_RELAY_SEARCH_LIMIT
-  })
-  const fromApi = filterEventsForPublicationRelaySearchAxis(meta.events as Event[], axis, term)
-  if (fromApi.length > 0) return fromApi
+  const terms = publicationMetadataSearchTermsForHttpRelay(axis, query)
+  const matched: Event[] = []
+  const seen = new Set<string>()
+
+  const addFiltered = (events: Event[]) => {
+    const fresh: Event[] = []
+    for (const ev of filterEventsForPublicationRelaySearchAxis(events, axis, query)) {
+      if (seen.has(ev.id)) continue
+      seen.add(ev.id)
+      matched.push(ev)
+      fresh.push(ev)
+      if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
+    }
+    if (fresh.length > 0) options?.onPartialEvents?.(fresh)
+  }
+
+  await Promise.all(
+    terms.map((term) =>
+      queryIndexRelayPublicationMetadataSearch(httpRelay, term, {
+        limit: LIBRARY_RELAY_SEARCH_LIMIT
+      })
+        .then((page) => {
+          addFiltered(page.events as Event[])
+        })
+        .catch(() => undefined)
+    )
+  )
+  if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) {
+    return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+  }
+  if (matched.length > 0) return matched
+
   if (options?.allowFullScan === false) return []
-  return scanHttpIndexRelayForPublicationAxis(httpRelay, axis, term)
+
+  return scanHttpIndexRelayForPublicationAxis(httpRelay, axis, query, {
+    maxPages: options?.fullScanMaxPages,
+    onPartialEvents: options?.onPartialEvents
+  })
 }
 
 /** Fast path: document relays only, merge into index, return library entries. */
@@ -2234,7 +2454,8 @@ export async function searchLibraryPublicationsViaDocumentRelays(
   query: string,
   context: LibrarySearchContext,
   axis: LibraryPublicationRelaySearchAxis,
-  blockedRelays: readonly string[] = []
+  blockedRelays: readonly string[] = [],
+  options?: { onProgress?: (progress: LibrarySearchProgress) => void }
 ): Promise<{
   events: Event[]
   entries: LibraryPublicationEntry[]
@@ -2245,20 +2466,42 @@ export async function searchLibraryPublicationsViaDocumentRelays(
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
   }
 
-  const networkEvents = await fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays)
+  let structuralMap = buildStructuralPublicationIndexMap(context.indexEvents ?? [])
+  const accumulated = new Map<string, Event>()
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+
+  const emitProgress = () => {
+    const mergedIndex = publicationIndexMapValues(structuralMap)
+    const indexByAddress = buildIndexByAddress(mergedIndex)
+    const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, axis)
+    const entries = sortLibraryPublications(
+      libraryEntriesFromRoots(roots, indexByAddress, engagement)
+    )
+    options?.onProgress?.({ entries, mergedIndexEvents: mergedIndex })
+    return { mergedIndex, entries }
+  }
+
+  const networkEvents = await fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays, {
+    onPartialEvents: (batch) => {
+      const valid = filterValidIndexEvents(batch)
+      if (valid.length === 0) return
+      for (const ev of valid) accumulated.set(ev.id, ev)
+      structuralMap = mergePublicationIndexMaps(structuralMap, valid)
+      emitProgress()
+    }
+  })
   const valid = filterValidIndexEvents(networkEvents)
   if (valid.length === 0) {
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
   }
 
-  const mergedIndex = publicationIndexMapValues(
-    mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
+  for (const ev of valid) accumulated.set(ev.id, ev)
+  structuralMap = mergePublicationIndexMaps(
+    buildStructuralPublicationIndexMap(context.indexEvents ?? []),
+    valid
   )
   await persistRelayDiscoveredLibraryIndexes(valid)
-  const indexByAddress = buildIndexByAddress(mergedIndex)
-  const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, axis)
-  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
-  const entries = sortLibraryPublications(libraryEntriesFromRoots(roots, indexByAddress, engagement))
+  const { mergedIndex, entries } = emitProgress()
 
   putLibrarySearchSessionRow(
     q,
@@ -2272,7 +2515,7 @@ export async function searchLibraryPublicationsViaDocumentRelays(
       query: q,
       axis,
       network: valid.length,
-      roots: roots.length
+      entries: entries.length
     })
   }
 
@@ -2288,6 +2531,7 @@ export async function searchLibraryPublicationsOnRelays(
     forceRefresh?: boolean
     axis?: LibraryPublicationRelaySearchAxis | null
     blockedRelays?: readonly string[]
+    onProgress?: (progress: LibrarySearchProgress) => void
   }
 ): Promise<{
   events: Event[]
@@ -2309,6 +2553,10 @@ export async function searchLibraryPublicationsOnRelays(
       if (import.meta.env.DEV) {
         logger.info('[Library] relay search cache hit', { query: q })
       }
+      options?.onProgress?.({
+        entries: cached.entries,
+        mergedIndexEvents: cached.mergedIndexEvents
+      })
       return {
         events: [],
         entries: cached.entries,
@@ -2321,6 +2569,32 @@ export async function searchLibraryPublicationsOnRelays(
   const blockedRelays = options?.blockedRelays ?? []
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  let structuralMap = buildStructuralPublicationIndexMap(context.indexEvents ?? [])
+  const accumulatedValid = new Map<string, Event>()
+
+  const buildProgress = (): LibrarySearchProgress => {
+    const mergedIndex = publicationIndexMapValues(structuralMap)
+    const indexByAddress = buildIndexByAddress(mergedIndex)
+    const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)
+    const entries = sortLibraryPublications(
+      libraryEntriesFromRoots(roots, indexByAddress, engagement)
+    )
+    return {
+      entries,
+      mergedIndexEvents: mergedIndex,
+      networkEventCount: accumulatedValid.size
+    }
+  }
+
+  const reportBatch = (batchEvents: Event[]) => {
+    const valid = filterValidIndexEvents(batchEvents)
+    if (valid.length === 0) return
+    for (const ev of valid) accumulatedValid.set(ev.id, ev)
+    structuralMap = mergePublicationIndexMaps(structuralMap, valid)
+    options?.onProgress?.(buildProgress())
+  }
+
   const batches: Promise<Event[]>[] = []
   let filterCount = 0
   const axes = options?.axis ? [options.axis] : LIBRARY_PUBLICATION_RELAY_SEARCH_AXES
@@ -2330,12 +2604,17 @@ export async function searchLibraryPublicationsOnRelays(
     if (npubQuery && axis !== 'author') continue
 
     if (axis === 'd-tag' || axis === 'title' || (axis === 'author' && npubQuery)) {
-      batches.push(fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays))
+      batches.push(
+        fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays, {
+          onPartialEvents: reportBatch
+        }).catch(() => [] as Event[])
+      )
     }
 
     const axisFilters = buildLibraryPublicationRelaySearchFiltersForAxis(axis, { query: q })
     const hasNip01Filters = axisFilters.length > 0
-    const hasMetadataSearch = axis === 'title' || (axis === 'author' && !npubQuery)
+    const hasMetadataSearch =
+      axis === 'title' || axis === 'd-tag' || (axis === 'author' && !npubQuery)
     if (!hasNip01Filters && !hasMetadataSearch) continue
 
     filterCount += axisFilters.length
@@ -2349,6 +2628,10 @@ export async function searchLibraryPublicationsOnRelays(
             firstRelayResultGraceMs: axis === 'd-tag' ? 2_000 : false
           })
           .then((events) => filterEventsForPublicationRelaySearchAxis(events, axis, q))
+          .then((events) => {
+            reportBatch(events)
+            return events
+          })
           .catch((e) => {
             if (import.meta.env.DEV) {
               logger.warn('[Library] WS publication search failed', {
@@ -2366,7 +2649,13 @@ export async function searchLibraryPublicationsOnRelays(
         for (const filter of axisFilters) {
           batches.push(
             queryIndexRelayForLibrary(httpRelay, filter)
-              .then((page) => filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q))
+              .then((page) =>
+                filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q)
+              )
+              .then((events) => {
+                reportBatch(events)
+                return events
+              })
               .catch((e) => {
                 if (import.meta.env.DEV) {
                   logger.warn('[Library] HTTP publication filter search failed', {
@@ -2383,42 +2672,44 @@ export async function searchLibraryPublicationsOnRelays(
 
       if (!hasMetadataSearch) continue
 
-      for (const term of publicationRelaySearchTermsForAxis(axis, q)) {
-        filterCount += 1
-        batches.push(
-          searchHttpIndexRelayPublicationAxis(httpRelay, axis, term, {
-            allowFullScan: axis !== 'title'
-          }).catch((e) => {
-            if (import.meta.env.DEV) {
-              logger.warn('[Library] HTTP publication metadata search failed', {
-                relay: httpRelay,
-                axis,
-                message: e instanceof Error ? e.message : String(e)
-              })
-            }
-            return [] as Event[]
-          })
-        )
-      }
+      filterCount += 1
+      batches.push(
+        searchHttpIndexRelayPublicationAxis(httpRelay, axis, q, {
+          allowFullScan: true,
+          fullScanMaxPages:
+            axis === 'title' ? LIBRARY_TITLE_HTTP_SCAN_MAX_PAGES : LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES,
+          onPartialEvents: reportBatch
+        }).catch((e) => {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] HTTP publication metadata search failed', {
+              relay: httpRelay,
+              axis,
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+          return [] as Event[]
+        })
+      )
     }
   }
 
   if (batches.length === 0) {
+    options?.onProgress?.(buildProgress())
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
   }
 
-  const settled = await Promise.all(batches)
-  const networkEvents = dedupeEventsById(settled.flat())
+  options?.onProgress?.(buildProgress())
+
+  await Promise.all(batches)
+
+  const networkEvents = [...accumulatedValid.values()]
   const valid = filterValidIndexEvents(networkEvents)
-  const mergedIndex = publicationIndexMapValues(
-    mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
-  )
+  const mergedIndex = publicationIndexMapValues(structuralMap)
   if (valid.length > 0) {
     await persistRelayDiscoveredLibraryIndexes(valid)
   }
   const indexByAddress = buildIndexByAddress(mergedIndex)
   const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)
-  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const entries = sortLibraryPublications(
     libraryEntriesFromRoots(roots, indexByAddress, engagement)
   )
@@ -2440,6 +2731,9 @@ export async function searchLibraryPublicationsOnRelays(
       options?.axis
     )
   }
+
+  const finalProgress = buildProgress()
+  options?.onProgress?.(finalProgress)
 
   if (import.meta.env.DEV) {
     logger.info('[Library] relay search done', {
