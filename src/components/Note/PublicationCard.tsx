@@ -1,6 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
+import { extractBookMetadata, isNkbip08BookstrEvent } from '@/lib/bookstr-parser'
 import {
   getLongFormArticleMetadataFromEvent,
   getPublicationIndexMetadataFromEvent
@@ -47,11 +47,11 @@ export default function PublicationCard({
   )
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
-  const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
-  // Kind 30040 is always a publication index (NKBIP-01). Do not treat `T`/`v` tags as bookstr —
-  // they mean topic/version there, not NKBIP-08 bible references.
-  const isBookstrEvent =
-    event.kind === ExtendedKind.PUBLICATION_CONTENT && !!bookMetadata.book
+  const isBookstrEvent = isNkbip08BookstrEvent(event)
+  const bookMetadata = useMemo(
+    () => (isBookstrEvent ? extractBookMetadata(event) : {}),
+    [event, isBookstrEvent]
+  )
   const isPublicationIndex = event.kind === ExtendedKind.PUBLICATION
 
   const handleCardClick = (e: React.MouseEvent) => {

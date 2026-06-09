@@ -41,8 +41,12 @@ import {
 } from '@/lib/content-patterns'
 import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
 import logger from '@/lib/logger'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
-import { ExtendedKind } from '@/constants'
+import {
+  convertAsciiDocSource,
+  plainAsciiDocSourceToHtml
+} from '@/lib/asciidoc-parse'
+import { extractBookMetadata, isNkbip08BookstrEvent } from '@/lib/bookstr-parser'
+import { useTranslation } from 'react-i18next'
 import katex from 'katex'
 import '@/styles/katex-bundle.css'
 import { WS_URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
@@ -366,9 +370,10 @@ export default function AsciidocArticle({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const { navigateToHashtag } = useSmartHashtagNavigationOptional()
   const { navigateToRelay } = useSmartRelayNavigationOptional()
+  const { t } = useTranslation()
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
-  const isBookstrEvent = (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) && !!bookMetadata.book
+  const isBookstrEvent = isNkbip08BookstrEvent(event)
   const contentRef = useRef<HTMLDivElement>(null)
   
   // Preprocess content: convert all markdown to AsciiDoc syntax
@@ -641,6 +646,7 @@ export default function AsciidocArticle({
   
   // Parse AsciiDoc content and post-process for nostr: links and hashtags
   const [parsedHtml, setParsedHtml] = useState<string>('')
+  const [parseIssues, setParseIssues] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   
   useEffect(() => {
@@ -648,44 +654,22 @@ export default function AsciidocArticle({
     
     const parseAsciidoc = async () => {
       setIsLoading(true)
+      setParseIssues([])
+      let rawConvertedHtml = ''
       try {
-        const Asciidoctor = await import('@asciidoctor/core')
-        const asciidoctor = Asciidoctor.default()
+        const conversion = await convertAsciiDocSource(processedContent)
         
         if (cancelled) return
-        
-        const html = asciidoctor.convert(processedContent, {
-          safe: 'safe',
-          backend: 'html5',
-          doctype: 'article',
-          attributes: {
-            'showtitle': true,
-            'sectanchors': true,
-            'sectlinks': true,
-            'toc': 'left',
-            'toclevels': 6,
-            'toc-title': 'Table of Contents',
-            'source-highlighter': 'highlight.js',
-            'stem': 'latexmath',
-            'data-uri': true,
-            'imagesdir': '',
-            'linkcss': false,
-            'stylesheet': '',
-            'stylesdir': '',
-            'prewrap': true,
-            'sectnums': false,
-            'sectnumlevels': 6,
-            'experimental': true,
-            'compat-mode': false,
-            'attribute-missing': 'warn',
-            'attribute-undefined': 'warn',
-            'skip-front-matter': true
-          }
-        })
-        
-        if (cancelled) return
-        
-        let htmlString = typeof html === 'string' ? html : html.toString()
+
+        if (conversion.failed || !conversion.html.trim()) {
+          setParseIssues(conversion.issues)
+          setParsedHtml(plainAsciiDocSourceToHtml(event.content))
+          return
+        }
+
+        rawConvertedHtml = conversion.html
+        let htmlString = conversion.html
+        const collectedIssues = [...conversion.issues]
         
         // Debug: log HTML to check if passthrough markers are preserved
         if (process.env.NODE_ENV === 'development') {
@@ -971,10 +955,15 @@ export default function AsciidocArticle({
           return `>${replacedText}<`
         })
         
+        setParseIssues(collectedIssues)
         setParsedHtml(htmlString)
       } catch (error) {
         logger.error('Failed to parse AsciiDoc', error as Error)
-        setParsedHtml('<p>Error parsing AsciiDoc content</p>')
+        const message = error instanceof Error ? error.message : String(error)
+        setParseIssues([`ERROR: ${message}`])
+        setParsedHtml(
+          rawConvertedHtml.trim() ? rawConvertedHtml : plainAsciiDocSourceToHtml(event.content)
+        )
       } finally {
         if (!cancelled) {
           setIsLoading(false)
@@ -987,7 +976,7 @@ export default function AsciidocArticle({
     return () => {
       cancelled = true
     }
-  }, [processedContent])
+  }, [processedContent, event.content])
   
   // Store React roots for cleanup
   const reactRootsRef = useRef<Map<Element, Root>>(new Map())
@@ -2107,6 +2096,16 @@ export default function AsciidocArticle({
           </div>
         )}
         
+        {parseIssues.length > 0 ? (
+          <div
+            role="status"
+            className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+          >
+            <p className="font-medium">{t('Asciidoc parse warning title')}</p>
+            <p className="mt-1 text-muted-foreground">{t('Asciidoc parse warning body')}</p>
+          </div>
+        ) : null}
+
         {/* Parsed AsciiDoc content */}
         {isLoading ? (
           <div>Loading content...</div>

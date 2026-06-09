@@ -1714,6 +1714,9 @@ export default {
     'Publication contents loading': 'Loading contents…',
     'Publication contents load failed': 'Could not load publication contents',
     'Publication section missing': '[This section is missing.]',
+    'Asciidoc parse warning title': 'AsciiDoc could not be fully parsed',
+    'Asciidoc parse warning body':
+      'Some AsciiDoc in this section is invalid or uses unsupported syntax. The text below is shown as-is where possible.',
     'Read this book': 'Read this book',
     'libraryIndexCache.sectionTitle': 'Library publication index',
     'libraryIndexCache.sectionBlurb':

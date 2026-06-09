@@ -131,6 +131,28 @@ export function parseBookWikilink(wikilink: string): { references: BookReference
   return { references, versions, bookType: inferredBookType }
 }
 
+import { ExtendedKind } from '@/constants'
+
+/**
+ * True when an event is NKBIP-08 bookstr (bible wikistr), not NKBIP-01 publication content.
+ * Publication indexes (30040) and sections with `type: book` reuse C/T/s tags for catalog metadata.
+ */
+export function isNkbip08BookstrEvent(event: {
+  kind: number
+  tags: string[][]
+  content?: string
+}): boolean {
+  if (event.kind === ExtendedKind.PUBLICATION) return false
+  if (event.kind !== ExtendedKind.PUBLICATION_CONTENT) return false
+
+  const pubType = event.tags.find((tag) => tag[0] === 'type')?.[1]?.trim().toLowerCase()
+  if (pubType === 'book') return false
+
+  if (event.content?.includes('[[book::')) return true
+
+  return !!extractBookMetadata(event).book
+}
+
 /**
  * Extract book metadata from event tags
  * Tags: C (collection), T (title), c (chapter), s (section), v (version)
