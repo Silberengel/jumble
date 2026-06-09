@@ -1,4 +1,5 @@
-import { NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
+import { MONERO_NOSTR_RELAY_URLS, NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
+import { normalizeFaviconDomain } from '@/lib/favicon-fail-cache'
 import { normalizeUrl } from '@/lib/url'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 
@@ -21,6 +22,47 @@ export const FREELAY_SOVBIT_ICON_SRC = SOVBIT_HOST_ICON_SRC
  */
 export const NOSTRARCHIVES_SITE_ICON_SRC = 'https://nostrarchives.com/favicon.ico'
 
+/**
+ * Nerostr / PMNR relay mark — NIP-11 omits `icon`; landing pages use `/static/assets/nerostr.webp`.
+ * @see https://nostr.xmr.rocks/
+ */
+export const NEROST_RELAY_ICON_SRC = 'https://nostr.xmr.rocks/static/assets/nerostr.webp'
+
+/**
+ * nostr.land mark from NIP-11 — `/favicon.ico` 404s; relay serves icon on nostr.build CDN.
+ * @see https://nostr.land/
+ */
+export const NOSTR_LAND_ICON_SRC = 'https://i.nostr.build/j6xguiCQRrdk6MsL.jpg'
+
+function hostMatchesDomainSuffix(host: string, suffix: string): boolean {
+  return host === suffix || host.endsWith(`.${suffix}`)
+}
+
+function isSovbitBrandedHost(host: string): boolean {
+  return hostMatchesDomainSuffix(host, 'sovbit.host')
+}
+
+function isNostrArchivesBrandedHost(host: string): boolean {
+  return hostMatchesDomainSuffix(host, 'nostrarchives.com')
+}
+
+function isNostrLandBrandedHost(host: string): boolean {
+  return hostMatchesDomainSuffix(host, 'nostr.land')
+}
+
+/** NIP-05 apex domains and relay hostnames for PMNR / Nosmero branding. */
+const MONERO_NOSTR_BRANDED_DOMAIN_SUFFIXES = [
+  'xmr.rocks',
+  'usenostr.org',
+  'ithurtswhenip.ee',
+  'nosmero.com'
+] as const
+
+function isMoneroNostrBrandedHost(host: string): boolean {
+  if (MONERO_NOSTR_RELAY_HOSTS.has(host)) return true
+  return MONERO_NOSTR_BRANDED_DOMAIN_SUFFIXES.some((suffix) => hostMatchesDomainSuffix(host, suffix))
+}
+
 /** Same branding as Wisp trending — nostrarchives.com favicon in {@link RelayIcon}. */
 export function isNostrArchivesBrandedRelayUrl(url: string | undefined): boolean {
   if (!url) return false
@@ -30,11 +72,7 @@ export function isNostrArchivesBrandedRelayUrl(url: string | undefined): boolean
     return true
   }
   const host = parseRelayHostname(url)
-  return (
-    host === 'feeds.nostrarchives.com' ||
-    host === 'nostrarchives.com' ||
-    host === 'search.nostrarchives.com'
-  )
+  return host != null && isNostrArchivesBrandedHost(host)
 }
 
 export type RelayIconLucideFallback = 'search' | 'home'
@@ -49,21 +87,43 @@ function parseRelayHostname(url: string): string | undefined {
   }
 }
 
+const MONERO_NOSTR_RELAY_HOSTS = new Set(
+  MONERO_NOSTR_RELAY_URLS.map((relayUrl) => parseRelayHostname(relayUrl)).filter(
+    (host): host is string => Boolean(host)
+  )
+)
+
+/** Paid Monero Nostr relays (PMNR) and Nosmero tip-disclosure relay. */
+export function isMoneroNostrBrandedRelayUrl(url: string | undefined): boolean {
+  const host = parseRelayHostname(url ?? '')
+  return host != null && isMoneroNostrBrandedHost(host)
+}
+
+/**
+ * Static icon URL for NIP-05 domains and other site hostnames where `/favicon.ico` is wrong or missing.
+ * Used by {@link Favicon} and {@link getRelayIconOverrideSrc}.
+ */
+export function getDomainIconOverrideSrc(domain: string | undefined): string | undefined {
+  const host = domain ? normalizeFaviconDomain(domain) : undefined
+  if (!host) return undefined
+  if (isSovbitBrandedHost(host)) return SOVBIT_HOST_ICON_SRC
+  if (isNostrArchivesBrandedHost(host)) return NOSTRARCHIVES_SITE_ICON_SRC
+  if (isNostrLandBrandedHost(host)) return NOSTR_LAND_ICON_SRC
+  if (isMoneroNostrBrandedHost(host)) return NEROST_RELAY_ICON_SRC
+  return undefined
+}
+
 /**
  * Static icon URL for relays where NIP-11 is missing or we want a consistent mark (tab favicon).
  * Checked before NIP-11 `icon` in {@link RelayIcon}.
  */
 export function getRelayIconOverrideSrc(url: string | undefined): string | undefined {
   if (!url) return undefined
-  const host = parseRelayHostname(url)
-  if (!host) return undefined
-  if (host === 'relay.sovbit.host' || host === 'freelay.sovbit.host') {
-    return SOVBIT_HOST_ICON_SRC
-  }
   if (isNostrArchivesBrandedRelayUrl(url)) {
     return NOSTRARCHIVES_SITE_ICON_SRC
   }
-  return undefined
+  const host = parseRelayHostname(url)
+  return host ? getDomainIconOverrideSrc(host) : undefined
 }
 
 /** Loopback dev/cache relays (localhost, 127.0.0.1, ::1) — not broader LAN ranges. */

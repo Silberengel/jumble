@@ -9,6 +9,13 @@ export function affiliationForNip05Domain(domain: string): TNip05AffiliationDoma
   return NIP05_AFFILIATION_BY_DOMAIN.get(normalizeNip05AffiliationDomain(domain))
 }
 
+/** Unicode badge for NIP-05 domains that should not use `/favicon.ico` (shown in {@link Favicon}). */
+export function getDomainIconFallbackGlyph(domain: string | undefined): string | undefined {
+  const affiliation = domain ? affiliationForNip05Domain(domain) : undefined
+  if (affiliation?.domain === 'theforest.nostr1.com') return affiliation.emoji
+  return undefined
+}
+
 /** Unique NIP-05 identifiers from kind-0 primary + list fields. */
 export function collectProfileNip05Identifiers(
   nip05?: string,

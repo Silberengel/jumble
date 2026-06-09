@@ -9,7 +9,7 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { useFetchRelayInfo } from '@/hooks'
 import { getNostrWatchRelayUrl, openExternalUrl } from '@/lib/link'
-import { normalizeHttpUrl } from '@/lib/url'
+import { deriveRelayHomepageUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
@@ -49,6 +49,11 @@ export default function RelayInfo({ url, className }: { url: string; className?:
     })
     return () => { cancelled = true }
   }, [url])
+
+  const homepageUrl = useMemo(
+    () => (relayInfo ? deriveRelayHomepageUrl(relayInfo.url) : ''),
+    [relayInfo?.url]
+  )
 
   if (isFetching || !relayInfo) {
     return null
@@ -91,16 +96,19 @@ export default function RelayInfo({ url, className }: { url: string; className?:
           )}
         </div>
 
-        <div className="space-y-2">
-          <div className="text-sm font-semibold text-muted-foreground">{t('Homepage')}</div>
-          <a
-            href={normalizeHttpUrl(relayInfo.url)}
-            target="_blank"
-            className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors select-text truncate block"
-          >
-            {normalizeHttpUrl(relayInfo.url)}
-          </a>
-        </div>
+        {homepageUrl ? (
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-muted-foreground">{t('Homepage')}</div>
+            <a
+              href={homepageUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors select-text truncate block"
+            >
+              {homepageUrl}
+            </a>
+          </div>
+        ) : null}
 
         <ScrollArea className="overflow-x-auto">
           <div className="flex gap-8 pb-2">

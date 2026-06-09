@@ -363,23 +363,29 @@ async function fetchWellKnownNostrJsonFromUrl(
   opts?: { viaProxy?: boolean }
 ): Promise<Record<string, unknown> | null> {
   try {
+    // Direct cross-origin fetches must stay "simple" (no custom Accept) so hosts with broken
+    // OPTIONS handlers (e.g. theforest.nostr1.com returns 500 on preflight) still load via GET.
     const res = await fetchWithTimeout(fetchUrl, {
       credentials: 'omit',
-      headers: {
-        Accept: 'application/nostr+json, application/json;q=0.9, text/plain;q=0.8, */*;q=0.1'
-      },
+      ...(opts?.viaProxy
+        ? {
+            headers: {
+              Accept: 'application/nostr+json, application/json;q=0.9, text/plain;q=0.8, */*;q=0.1'
+            }
+          }
+        : {}),
       timeoutMs: 15_000,
       mode: 'cors'
     })
-    if (!res.ok) {
-      if (opts?.viaProxy && !res.redirected) {
-        markSitesProxyUnavailableFromHttpStatus(res.status)
-      }
-      return null
-    }
     const json = await readWellKnownNostrJsonResponse(res)
-    if (json && opts?.viaProxy) clearSitesProxyUnavailableThisSession()
-    return json
+    if (json) {
+      if (opts?.viaProxy && res.ok) clearSitesProxyUnavailableThisSession()
+      return json
+    }
+    if (!res.ok && opts?.viaProxy && !res.redirected) {
+      markSitesProxyUnavailableFromHttpStatus(res.status)
+    }
+    return null
   } catch {
     return null
   }

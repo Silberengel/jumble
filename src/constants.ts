@@ -492,7 +492,8 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://primus.nostr1.com',
   'wss://feeds.nostrarchives.com',
   'wss://spatia-arcana.com',
-  'wss://search.nostrarchives.com'
+  'wss://search.nostrarchives.com',
+  'wss://nosmero.com/nip78-relay',
 ]
 
 /**
@@ -522,7 +523,8 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://relay.wikifreedia.xyz',
   'wss://relay.gifbuddy.lol',
   'wss://hist.nostr.land',
-  'wss://essayist.decentnewsroom.com'
+  'wss://essayist.decentnewsroom.com',
+  'wss://nosmero.com/nip78-relay'
 ]
 
 // Optimized relay list for read operations
@@ -533,7 +535,7 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr21.com',
   'wss://primus.nostr1.com',
   'wss://relay.sovbit.host',
-  'wss://nosmero.com/nip78-relay'
+  'wss://nostr.xmr.rocks'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -549,11 +551,9 @@ export const FAST_WRITE_RELAY_URLS = [
  * @see https://pmnr.xmr.rocks/
  */
 export const MONERO_NOSTR_RELAY_URLS = [
-  'wss://xmr.usenostr.org',
-  'wss://nostr.xmr.rocks',
-  'wss://nerostr.xmr.rocks',
-  'wss://xmr.ithurtswhenip.ee',
-  'wss://nosmero.com/nip78-relay'
+
+  'wss://nosmero.com/nip78-relay',
+  'wss://nostr.xmr.rocks'
 ] as const
 
 /** Relays used for NIP-94 file metadata (kind 1063) / GIF discovery and publish.

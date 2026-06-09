@@ -1,10 +1,13 @@
-import { NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
+import { MONERO_NOSTR_RELAY_URLS, NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
 import { describe, expect, it } from 'vitest'
 import {
+  getDomainIconOverrideSrc,
   getRelayIconFallbackGlyph,
   getRelayIconLucideFallback,
   getRelayIconOverrideSrc,
   isLoopbackRelayUrl,
+  NEROST_RELAY_ICON_SRC,
+  NOSTR_LAND_ICON_SRC,
   NOSTRARCHIVES_SITE_ICON_SRC
 } from '@/lib/relay-icon-source'
 
@@ -28,6 +31,26 @@ describe('relay icon branding', () => {
 
   it('uses nostrarchives favicon for search relay (same as trending)', () => {
     expect(getRelayIconOverrideSrc(NOSTR_ARCHIVES_SEARCH_RELAY_URL)).toBe(NOSTRARCHIVES_SITE_ICON_SRC)
+  })
+
+  it('uses nerostr.webp for PMNR / Nosmero monero relays', () => {
+    for (const relayUrl of MONERO_NOSTR_RELAY_URLS) {
+      expect(getRelayIconOverrideSrc(relayUrl)).toBe(NEROST_RELAY_ICON_SRC)
+    }
+  })
+
+  it('uses nostr.land NIP-11 icon for relay and NIP-05 domain', () => {
+    expect(getRelayIconOverrideSrc('wss://nostr.land/')).toBe(NOSTR_LAND_ICON_SRC)
+    expect(getDomainIconOverrideSrc('nostr.land')).toBe(NOSTR_LAND_ICON_SRC)
+  })
+
+  it('uses branded icon overrides for associated NIP-05 domains', () => {
+    expect(getDomainIconOverrideSrc('sovbit.host')).toBe('https://sovbit.host/images/favicon.ico')
+    expect(getDomainIconOverrideSrc('xmr.rocks')).toBe(NEROST_RELAY_ICON_SRC)
+    expect(getDomainIconOverrideSrc('nostr.xmr.rocks')).toBe(NEROST_RELAY_ICON_SRC)
+    expect(getDomainIconOverrideSrc('nosmero.com')).toBe(NEROST_RELAY_ICON_SRC)
+    expect(getDomainIconOverrideSrc('nostrarchives.com')).toBe(NOSTRARCHIVES_SITE_ICON_SRC)
+    expect(getDomainIconOverrideSrc('example.com')).toBeUndefined()
   })
 
   it('uses search lucide fallback for search.nos.today', () => {

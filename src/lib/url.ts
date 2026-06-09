@@ -343,6 +343,17 @@ export function normalizeHttpUrl(url: string): string {
   }
 }
 
+/** Relay WebSocket URL → HTTPS homepage (NIP-11 document origin). */
+export function deriveRelayHomepageUrl(relayUrl: string): string {
+  const trimmed = relayUrl.trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed)) return normalizeHttpUrl(trimmed)
+  const httpCandidate = trimmed
+    .replace(/^ws:\/\//i, 'http://')
+    .replace(/^wss:\/\//i, 'https://')
+  return normalizeHttpUrl(httpCandidate)
+}
+
 export function simplifyUrl(url: string): string {
   return url
     .replace('wss://', '')

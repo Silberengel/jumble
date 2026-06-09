@@ -22,7 +22,10 @@ const THEFOREST_WELL_KNOWN = {
     superuserdo: '5b0867ea4a23b3b04fe17d0ed52d4529661514b4d84d4a1d86f98eb7c175aab1',
     daniel: 'ee6ea13ab9fe5c4a68eaf9b1a34fe014a66b40117c50ee2a614f4cda959b6e74',
     orange: 'de599d3d84a30f8dcb1dd86658655b1ee0318880dc9e53cdc6c367c0b9498700',
-    ThatWhichisNotSeen: 'cf8f07ebffbdce4976ea8ab830cfd6036ffb6203e67ba8eb7a9a448a742a6eaa'
+    ThatWhichisNotSeen: 'cf8f07ebffbdce4976ea8ab830cfd6036ffb6203e67ba8eb7a9a448a742a6eaa',
+    theforester: '5766ace618ab3443c1e8bca2f77d8b268353bda304d45e5c7d14b75238c741c1',
+    imwald: '6d9717bc8758ddf99bc1b0e325d60bf5c41418dc122d81de6cd1a35138e51fe3',
+    silberengel: 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1'
   },
   relays: {
     '137': [],
@@ -84,8 +87,8 @@ describe('getWellKnownNip05Url', () => {
 describe('parseNip05NamePubkeysFromWellKnownJson', () => {
   it('parses theforest.nostr1.com well-known names', () => {
     const rows = parseNip05NamePubkeysFromWellKnownJson(THEFOREST_WELL_KNOWN)
-    expect(rows).toHaveLength(14)
-    expect(new Set(rows.map((r) => r.pubkey)).size).toBe(14)
+    expect(rows).toHaveLength(17)
+    expect(new Set(rows.map((r) => r.pubkey)).size).toBe(17)
     expect(rows.find((r) => r.name === 'laeserin')?.pubkey).toBe(
       'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
     )

@@ -10,11 +10,18 @@ describe('favicon-fail-cache', () => {
     expect(normalizeFaviconDomain(' Example.COM. ')).toBe('example.com')
   })
 
-  it('remembers failed domains for the session', () => {
-    const host = `fail-cache-test-${Date.now()}.example`
-    expect(isFaviconLoadFailed(host)).toBe(false)
-    markFaviconLoadFailed(host)
-    expect(isFaviconLoadFailed(host)).toBe(true)
-    expect(isFaviconLoadFailed(host.toUpperCase())).toBe(true)
+  it('remembers failed icon URLs for the session', () => {
+    const iconSrc = `https://fail-cache-test-${Date.now()}.example/favicon.ico`
+    expect(isFaviconLoadFailed(iconSrc)).toBe(false)
+    markFaviconLoadFailed(iconSrc)
+    expect(isFaviconLoadFailed(iconSrc)).toBe(true)
+  })
+
+  it('does not block override URLs when default favicon failed for the same domain', () => {
+    const defaultSrc = 'https://xmr.rocks/favicon.ico'
+    const overrideSrc = 'https://nostr.xmr.rocks/static/assets/nerostr.webp'
+    markFaviconLoadFailed(defaultSrc)
+    expect(isFaviconLoadFailed(defaultSrc)).toBe(true)
+    expect(isFaviconLoadFailed(overrideSrc)).toBe(false)
   })
 })
