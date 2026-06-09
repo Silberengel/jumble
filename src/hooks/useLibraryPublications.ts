@@ -6,9 +6,9 @@ import {
   libraryDefaultFeedSlice,
   loadLibraryPublicationIndex,
   peekLibrarySearchResults,
-  refreshLibraryEngagement,
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
+  searchLibraryPublicationsViaDocumentRelays,
   type LibraryPublicationEntry,
   type LibraryPublicationRelaySearchAxis,
   type PublicationEngagementMaps,
@@ -61,7 +61,7 @@ export function useLibraryPublications(isActive: boolean) {
   const [feedPageIndex, setFeedPageIndex] = useState(0)
   const [feedTotalCount, setFeedTotalCount] = useState(0)
   const [indexEvents, setIndexEvents] = useState<Event[]>([])
-  const [engagement, setEngagement] = useState<PublicationEngagementMaps>(EMPTY_ENGAGEMENT)
+  const engagement = EMPTY_ENGAGEMENT
   const [searchQuery, setSearchQuery] = useState('')
   const [committedSearch, setCommittedSearch] = useState('')
   const [searchAxis, setSearchAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
@@ -224,25 +224,18 @@ export function useLibraryPublications(isActive: boolean) {
           }
         })
         if (cancelled) return
-        setEngagement(result.engagement)
         applyIndexesSnapshot(
           {
             indexEvents: result.indexEvents,
             allIndexCount: result.allIndexCount,
             topLevelCount: result.topLevelCount
           },
-          result.engagement,
+          EMPTY_ENGAGEMENT,
           0
         )
       } catch (e) {
         if (cancelled) return
-        if (indexesReadyRef.current) {
-          if (import.meta.env.DEV) {
-            logger.warn('[Library] engagement phase failed after indexes loaded', {
-              message: e instanceof Error ? e.message : String(e)
-            })
-          }
-        } else {
+        if (!indexesReadyRef.current) {
           const message = e instanceof Error ? e.message : 'Failed to load library'
           setError(message)
           if (import.meta.env.DEV) {
@@ -272,17 +265,10 @@ export function useLibraryPublications(isActive: boolean) {
     const onBooklistUpdated = () => {
       void (async () => {
         await loadMyBooklistTargets()
-        const relays = await buildLibraryRelayUrls(pubkey, blockedRelays ?? [])
-        const { engagement: nextEngagement } = await refreshLibraryEngagement(
-          relays,
-          indexEvents,
-          pubkey
-        )
         if (cancelled) return
-        setEngagement(nextEngagement)
         if (!debouncedSearch.trim()) {
           setFeedPageIndex(0)
-          applyDefaultFeedSlice(indexEvents, nextEngagement, 0)
+          applyDefaultFeedSlice(indexEvents, EMPTY_ENGAGEMENT, 0)
         }
       })()
     }
@@ -291,7 +277,7 @@ export function useLibraryPublications(isActive: boolean) {
       cancelled = true
       window.removeEventListener(BOOKLIST_LABEL_UPDATED_EVENT, onBooklistUpdated)
     }
-  }, [isActive, pubkey, indexEvents, debouncedSearch, loadMyBooklistTargets, blockedRelays, applyDefaultFeedSlice])
+  }, [isActive, pubkey, indexEvents, debouncedSearch, loadMyBooklistTargets, applyDefaultFeedSlice])
 
   useEffect(() => {
     const q = debouncedSearch.trim()
@@ -310,16 +296,36 @@ export function useLibraryPublications(isActive: boolean) {
 
     let cancelled = false
     setSearchLoading(true)
-    void searchLibraryPublications(q, { indexEvents, engagement }, searchAxis).then((results) => {
+    void (async () => {
+      let results = await searchLibraryPublications(q, { indexEvents, engagement }, searchAxis)
+      if (
+        !cancelled &&
+        results.length === 0 &&
+        searchAxis &&
+        (searchAxis === 'd-tag' || searchAxis === 'title' || searchAxis === 'author')
+      ) {
+        const doc = await searchLibraryPublicationsViaDocumentRelays(
+          q,
+          { indexEvents, engagement },
+          searchAxis,
+          blockedRelays ?? []
+        )
+        if (doc.entries.length > 0) {
+          results = doc.entries
+          setIndexEvents(doc.mergedIndexEvents)
+          setAllIndexCount(doc.mergedIndexEvents.length)
+          setTopLevelCount(getTopLevelIndexEvents(doc.mergedIndexEvents).length)
+        }
+      }
       if (cancelled) return
       setSearchResults(results)
       setSearchLoading(false)
-    })
+    })()
 
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, indexEvents, engagement, searchAxis])
+  }, [debouncedSearch, indexEvents, engagement, searchAxis, blockedRelays])
 
   const searchOnRelays = useCallback(async () => {
     const q = searchQuery.trim()
@@ -329,6 +335,30 @@ export function useLibraryPublications(isActive: boolean) {
     setError(null)
     try {
       const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+
+      if (searchAxis) {
+        const doc = await searchLibraryPublicationsViaDocumentRelays(
+          q,
+          { indexEvents, engagement },
+          searchAxis,
+          blockedRelays ?? []
+        )
+        if (doc.entries.length > 0) {
+          setIndexEvents(doc.mergedIndexEvents)
+          setAllIndexCount(doc.mergedIndexEvents.length)
+          setTopLevelCount(getTopLevelIndexEvents(doc.mergedIndexEvents).length)
+          setSearchResults(doc.entries)
+          if (import.meta.env.DEV) {
+            logger.info('[Library] relay search satisfied by document relays', {
+              query: q,
+              axis: searchAxis,
+              count: doc.entries.length
+            })
+          }
+          return
+        }
+      }
+
       let timeoutId: number | undefined
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(
@@ -345,7 +375,7 @@ export function useLibraryPublications(isActive: boolean) {
             q,
             relays,
             { indexEvents, engagement },
-            { axis: searchAxis }
+            { axis: searchAxis, blockedRelays: blockedRelays ?? [], forceRefresh: true }
           ),
           timeoutPromise
         ]))
@@ -362,16 +392,9 @@ export function useLibraryPublications(isActive: boolean) {
         })
       }
 
-      let nextEngagement = engagement
-      if (pubkey) {
-        const refreshed = await refreshLibraryEngagement(relays, mergedIndexEvents, pubkey)
-        nextEngagement = refreshed.engagement
-        setEngagement(nextEngagement)
-      }
-
       const entries = await searchLibraryPublications(q, {
         indexEvents: mergedIndexEvents,
-        engagement: nextEngagement
+        engagement: EMPTY_ENGAGEMENT
       }, searchAxis)
       setSearchResults(entries)
     } catch (e) {

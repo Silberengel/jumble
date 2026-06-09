@@ -1,4 +1,4 @@
-import { ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
+import { DOCUMENT_RELAY_URLS, ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
 import {
   eventMatchesGeneralSearchQuery,
   generalSearchHaystack,
@@ -66,6 +66,15 @@ export const LIBRARY_RECENT_FALLBACK_LIMIT = LIBRARY_PAGE_SIZE
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
+
+/** Targeted kind-30040 lookup on document relays (thecitadel, etc.) — fast, per-relay, early return. */
+const LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS = {
+  globalTimeout: 12_000,
+  eoseTimeout: 4_000,
+  firstRelayResultGraceMs: 2_000,
+  foreground: true,
+  relayOpSource: 'library-publication-document-relay-search'
+} as const
 /** Max paginated HTTP pages when title/author metadata API is unavailable (Mercury v0.2.0). */
 const LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES = 80
 /** NIP-51 pin list (kind 10001). */
@@ -271,7 +280,11 @@ export function peekLibrarySearchResults(
   context: LibrarySearchContext,
   axis?: LibraryPublicationRelaySearchAxis | null
 ): LibraryPublicationEntry[] | null {
-  return getLibrarySearchSessionRow(query, context, { axis })?.entries ?? null
+  const row = getLibrarySearchSessionRow(query, context, { axis })
+  if (!row) return null
+  // Empty local-only results are not final — relay/document search may still find matches.
+  if (row.entries.length === 0 && !row.relaySearched) return null
+  return row.entries
 }
 
 export function clearLibrarySearchSessionCache(): void {
@@ -569,6 +582,8 @@ function engagementMapsSizeSummary(maps: PublicationEngagementMaps): Record<stri
 export type FetchLibraryIndexEventsOptions = {
   /** Called when IDB cache and each network batch are ready — unblocks the library grid early. */
   onProgress?: (events: Event[]) => void
+  /** Skip deep pagination — only fetch the first page from each relay (enough to top up a short local cache). */
+  firstPageOnly?: boolean
 }
 
 async function filterValidNewIndexEvents(
@@ -666,47 +681,54 @@ export async function fetchLibraryIndexEvents(
     })
   }
 
-  const deepBatches: Promise<{ relay: string; events: Event[] }>[] = []
-  for (const wsRelay of wsRelays) {
-    if (!isLibraryDeepIndexRelay(wsRelay)) continue
-    deepBatches.push(
-      fetchRemainingPagesFromWsIndexRelay(wsRelay, filter, firstPageByRelay.get(wsRelay) ?? []).then(
-        (events) => ({ relay: wsRelay, events })
+  if (!options?.firstPageOnly) {
+    const deepBatches: Promise<{ relay: string; events: Event[] }>[] = []
+    for (const wsRelay of wsRelays) {
+      if (!isLibraryDeepIndexRelay(wsRelay)) continue
+      deepBatches.push(
+        fetchRemainingPagesFromWsIndexRelay(wsRelay, filter, firstPageByRelay.get(wsRelay) ?? []).then(
+          (events) => ({ relay: wsRelay, events })
+        )
       )
-    )
-  }
-  for (const httpRelay of httpRelays) {
-    if (!isLibraryDeepIndexRelay(httpRelay)) continue
-    deepBatches.push(
-      fetchRemainingPagesFromHttpIndexRelay(
-        httpRelay,
-        filter,
-        firstPageByRelay.get(httpRelay) ?? []
-      ).then((events) => ({ relay: httpRelay, events }))
-    )
-  }
+    }
+    for (const httpRelay of httpRelays) {
+      if (!isLibraryDeepIndexRelay(httpRelay)) continue
+      deepBatches.push(
+        fetchRemainingPagesFromHttpIndexRelay(
+          httpRelay,
+          filter,
+          firstPageByRelay.get(httpRelay) ?? []
+        ).then((events) => ({ relay: httpRelay, events }))
+      )
+    }
 
-  const deepSettled = await Promise.allSettled(deepBatches)
-  const deepNetwork = dedupeEventsById(
-    deepSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
-  )
-  indexMap = await mergeValidIndexBatch(indexMap, knownValidIds, deepNetwork)
-  validMerged = publicationIndexMapValues(indexMap)
-  void persistLibraryIndexCacheEvents(validMerged)
-  emitProgress()
-
-  if (import.meta.env.DEV) {
-    const perRelayDeepCounts = deepSettled.map((r) =>
-      r.status === 'fulfilled'
-        ? { relay: r.value.relay, count: r.value.events.length }
-        : { relay: 'unknown', count: 0 }
+    const deepSettled = await Promise.allSettled(deepBatches)
+    const deepNetwork = dedupeEventsById(
+      deepSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value.events : []))
     )
-    logger.info('[Library] index fetch complete', {
-      deepPageCount: deepNetwork.length,
+    indexMap = await mergeValidIndexBatch(indexMap, knownValidIds, deepNetwork)
+    validMerged = publicationIndexMapValues(indexMap)
+    void persistLibraryIndexCacheEvents(validMerged)
+    emitProgress()
+
+    if (import.meta.env.DEV) {
+      const perRelayDeepCounts = deepSettled.map((r) =>
+        r.status === 'fulfilled'
+          ? { relay: r.value.relay, count: r.value.events.length }
+          : { relay: 'unknown', count: 0 }
+      )
+      logger.info('[Library] index fetch complete', {
+        deepPageCount: deepNetwork.length,
+        mergedCount: validMerged.length,
+        validCount: validMerged.length,
+        topLevelCount: getTopLevelIndexEvents(validMerged).length,
+        perRelayDeepCounts
+      })
+    }
+  } else if (import.meta.env.DEV) {
+    logger.info('[Library] index first page only', {
       mergedCount: validMerged.length,
-      validCount: validMerged.length,
-      topLevelCount: getTopLevelIndexEvents(validMerged).length,
-      perRelayDeepCounts
+      topLevelCount: getTopLevelIndexEvents(validMerged).length
     })
   }
   return validMerged
@@ -1276,31 +1298,15 @@ export function buildRecentPublicationEntries(
     .map((event) => buildLibraryPublicationEntry(event, indexByAddress, engagement))
 }
 
-/** Full default-feed order: engaged publications first, then newest top-level indexes. */
+/** Default feed order: newest top-level indexes first. */
 export function computeLibraryFeedRootOrder(
   roots: Event[],
-  indexByAddress: Map<string, Event>,
-  engagement: PublicationEngagementMaps
+  _indexByAddress: Map<string, Event>,
+  _engagement: PublicationEngagementMaps
 ): Event[] {
-  const topLevel = getTopLevelIndexEvents(roots)
-  const engagedRoots: Event[] = []
-  const restRoots: Event[] = []
-  for (const root of topLevel) {
-    const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
-    if (publicationEntryHasEngagement(entry)) {
-      engagedRoots.push(root)
-    } else {
-      restRoots.push(root)
-    }
-  }
-  const sortedEngaged = sortLibraryPublications(
-    engagedRoots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
-  ).map((entry) => entry.event)
-  restRoots.sort((a, b) => b.created_at - a.created_at)
-
   const seen = new Set<string>()
   const ordered: Event[] = []
-  for (const root of [...sortedEngaged, ...restRoots]) {
+  for (const root of [...getTopLevelIndexEvents(roots)].sort((a, b) => b.created_at - a.created_at)) {
     const dedupeKey = eventTagAddress(root) ?? root.id
     if (seen.has(dedupeKey)) continue
     seen.add(dedupeKey)
@@ -1350,24 +1356,17 @@ export function libraryDefaultFeedSlice(
   }
 }
 
-/** First page of the default library feed (engaged first, then recent). */
+/** First page of the default library feed (newest top-level indexes). */
 export function pickLibraryPublicationEntries(
   roots: Event[],
   indexByAddress: Map<string, Event>,
   engagement: PublicationEngagementMaps
 ): LibraryPublicationEntry[] {
-  const ordered = computeLibraryFeedRootOrder(roots, indexByAddress, engagement)
-  return libraryFeedEntriesThroughPage(ordered, indexByAddress, engagement, 0)
+  return buildRecentPublicationEntries(roots, indexByAddress, engagement, LIBRARY_PAGE_SIZE)
 }
 
 export function sortLibraryPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
-  return [...entries].sort((a, b) => {
-    const aEngaged = publicationEntryHasEngagement(a)
-    const bEngaged = publicationEntryHasEngagement(b)
-    if (aEngaged !== bEngaged) return aEngaged ? -1 : 1
-    if (a.engagementCount !== b.engagementCount) return b.engagementCount - a.engagementCount
-    return b.event.created_at - a.event.created_at
-  })
+  return [...entries].sort((a, b) => b.event.created_at - a.event.created_at)
 }
 
 const EMPTY_ENGAGEMENT = emptyPublicationEngagementMaps()
@@ -1581,35 +1580,15 @@ function libraryEntriesFromRoots(
   return roots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
 }
 
-/** Re-fetch engagement maps for the current library index snapshot (e.g. after booklist toggle). */
+/** @deprecated Engagement maps are no longer fetched — returns empty maps and re-slices the feed. */
 export async function refreshLibraryEngagement(
-  indexRelayUrls: string[],
+  _indexRelayUrls: string[],
   indexEvents: Event[],
-  viewerPubkey?: string | null
+  _viewerPubkey?: string | null
 ): Promise<{ engagement: PublicationEngagementMaps; engaged: LibraryPublicationEntry[] }> {
   const indexByAddress = buildIndexByAddress(indexEvents)
-  const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
-    indexEvents,
-    indexByAddress
-  )
-  const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
-    viewerPubkey ?? undefined,
-    indexRelayUrls,
-    indexEvents
-  )
-  const engagement = await fetchPublicationEngagementMaps(
-    engagementRelayUrls,
-    targetAddresses,
-    targetEventIds,
-    { viewerPubkey }
-  )
+  const engagement = emptyPublicationEngagementMaps()
   const topLevel = getTopLevelIndexEvents(indexEvents)
-  if (sessionCache) {
-    sessionCache = { ...sessionCache, engagement, viewerPubkey: viewerPubkey ?? null }
-  }
-  if (import.meta.env.DEV) {
-    logger.info('[Library] engagement refreshed', engagementMapsSizeSummary(engagement))
-  }
   return {
     engagement,
     engaged: pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
@@ -1952,6 +1931,80 @@ function addPublicationKindFilter(
   out.push(filter)
 }
 
+/** `#d` / `authors` filters for document relays (NIP-01 only — no HTTP index scan). */
+export function buildDocumentRelayPublicationFilters(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+): Filter[] {
+  const searchRaw = query.trim()
+  if (!searchRaw) return []
+
+  const limit = Math.max(1, Math.min(LIBRARY_RELAY_SEARCH_LIMIT, 100))
+  const kind = ExtendedKind.PUBLICATION
+
+  if (axis === 'author') {
+    const npub = tryNpubFromQuery(searchRaw)
+    if (npub) return [{ kinds: [kind], authors: [npub], limit }]
+    return []
+  }
+
+  const dTags = new Set<string>()
+  const terms =
+    axis === 'title'
+      ? [...publicationRelaySearchTermsForAxis('title', searchRaw), searchRaw]
+      : publicationRelaySearchTermsForAxis(axis, searchRaw)
+  for (const term of terms) {
+    for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
+  }
+  if (dTags.size === 0) return []
+  return [{ kinds: [kind], '#d': [...dTags], limit }]
+}
+
+function documentRelayUrlsForSearch(blockedRelays: readonly string[] = []): string[] {
+  return stripLocalNetworkRelaysForWssReq(
+    filterBlockedLibraryRelays(
+      DOCUMENT_RELAY_URLS.map(normalizeLibraryRelayUrl).filter(Boolean),
+      blockedRelays
+    )
+  )
+}
+
+/**
+ * Query {@link DOCUMENT_RELAY_URLS} in parallel for a publication index by `#d` (or `authors` for npub).
+ * Document relays (e.g. thecitadel) are the source of truth for NKBIP-01 books; the mercury HTTP index
+ * may not list them and broad multi-relay REQ batches often time out before thecitadel responds.
+ */
+export async function fetchPublicationIndexesFromDocumentRelays(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string,
+  blockedRelays: readonly string[] = []
+): Promise<Event[]> {
+  const filters = buildDocumentRelayPublicationFilters(axis, query)
+  if (filters.length === 0) return []
+
+  const relays = documentRelayUrlsForSearch(blockedRelays)
+  if (relays.length === 0) return []
+
+  const settled = await Promise.all(
+    relays.map((relay) =>
+      queryService
+        .fetchEvents([relay], filters, LIBRARY_DOCUMENT_RELAY_SEARCH_OPTS)
+        .catch((e) => {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] document relay publication search failed', {
+              relay,
+              axis,
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+          return [] as Event[]
+        })
+    )
+  )
+  const raw = dedupeEventsById(settled.flat())
+  return filterEventsForPublicationRelaySearchAxis(raw, axis, query)
+}
+
 /** One axis of kind-30040 relay discovery: `#d`, metadata title/author (HTTP), or `authors` for npub. */
 export function buildLibraryPublicationRelaySearchFiltersForAxis(
   axis: LibraryPublicationRelaySearchAxis,
@@ -2112,14 +2165,66 @@ async function scanHttpIndexRelayForPublicationAxis(
 async function searchHttpIndexRelayPublicationAxis(
   httpRelay: string,
   axis: LibraryPublicationRelaySearchAxis,
-  term: string
+  term: string,
+  options?: { allowFullScan?: boolean }
 ): Promise<Event[]> {
   const meta = await queryIndexRelayPublicationMetadataSearch(httpRelay, term, {
     limit: LIBRARY_RELAY_SEARCH_LIMIT
   })
   const fromApi = filterEventsForPublicationRelaySearchAxis(meta.events as Event[], axis, term)
   if (fromApi.length > 0) return fromApi
+  if (options?.allowFullScan === false) return []
   return scanHttpIndexRelayForPublicationAxis(httpRelay, axis, term)
+}
+
+/** Fast path: document relays only, merge into index, return library entries. */
+export async function searchLibraryPublicationsViaDocumentRelays(
+  query: string,
+  context: LibrarySearchContext,
+  axis: LibraryPublicationRelaySearchAxis,
+  blockedRelays: readonly string[] = []
+): Promise<{
+  events: Event[]
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents: Event[]
+}> {
+  const q = query.trim()
+  if (!q) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  const networkEvents = await fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays)
+  const valid = filterValidIndexEvents(networkEvents)
+  if (valid.length === 0) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  const mergedIndex = publicationIndexMapValues(
+    mergePublicationIndexMaps(buildStructuralPublicationIndexMap(context.indexEvents ?? []), valid)
+  )
+  void persistLibraryIndexCacheEvents(mergedIndex)
+  const indexByAddress = buildIndexByAddress(mergedIndex)
+  const roots = searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, axis)
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  const entries = sortLibraryPublications(libraryEntriesFromRoots(roots, indexByAddress, engagement))
+
+  putLibrarySearchSessionRow(
+    q,
+    { indexEvents: mergedIndex, engagement },
+    { entries, mergedIndexEvents: mergedIndex, relaySearched: true },
+    axis
+  )
+
+  if (import.meta.env.DEV) {
+    logger.info('[Library] document relay search done', {
+      query: q,
+      axis,
+      network: valid.length,
+      roots: roots.length
+    })
+  }
+
+  return { events: valid, entries, mergedIndexEvents: mergedIndex }
 }
 
 /** Query document relays for kind-30040 indexes matching {@link buildLibraryPublicationRelaySearchFilters}. */
@@ -2127,7 +2232,11 @@ export async function searchLibraryPublicationsOnRelays(
   query: string,
   relayUrls: string[],
   context: LibrarySearchContext,
-  options?: { forceRefresh?: boolean; axis?: LibraryPublicationRelaySearchAxis | null }
+  options?: {
+    forceRefresh?: boolean
+    axis?: LibraryPublicationRelaySearchAxis | null
+    blockedRelays?: readonly string[]
+  }
 ): Promise<{
   events: Event[]
   entries: LibraryPublicationEntry[]
@@ -2157,6 +2266,7 @@ export async function searchLibraryPublicationsOnRelays(
     }
   }
 
+  const blockedRelays = options?.blockedRelays ?? []
   const indexRelays = libraryIndexRelayUrls(relayUrls)
   const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
   const batches: Promise<Event[]>[] = []
@@ -2166,6 +2276,10 @@ export async function searchLibraryPublicationsOnRelays(
   for (const axis of axes) {
     const npubQuery = tryNpubFromQuery(q)
     if (npubQuery && axis !== 'author') continue
+
+    if (axis === 'd-tag' || axis === 'title' || (axis === 'author' && npubQuery)) {
+      batches.push(fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays))
+    }
 
     const axisFilters = buildLibraryPublicationRelaySearchFiltersForAxis(axis, { query: q })
     const hasNip01Filters = axisFilters.length > 0
@@ -2179,8 +2293,8 @@ export async function searchLibraryPublicationsOnRelays(
         queryService
           .fetchEvents(wsRelays, axisFilters, {
             globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
-            eoseTimeout: 8_000,
-            firstRelayResultGraceMs: false
+            eoseTimeout: axis === 'd-tag' ? 5_000 : 8_000,
+            firstRelayResultGraceMs: axis === 'd-tag' ? 2_000 : false
           })
           .then((events) => filterEventsForPublicationRelaySearchAxis(events, axis, q))
           .catch((e) => {
@@ -2220,7 +2334,9 @@ export async function searchLibraryPublicationsOnRelays(
       for (const term of publicationRelaySearchTermsForAxis(axis, q)) {
         filterCount += 1
         batches.push(
-          searchHttpIndexRelayPublicationAxis(httpRelay, axis, term).catch((e) => {
+          searchHttpIndexRelayPublicationAxis(httpRelay, axis, term, {
+            allowFullScan: axis !== 'title'
+          }).catch((e) => {
             if (import.meta.env.DEV) {
               logger.warn('[Library] HTTP publication metadata search failed', {
                 relay: httpRelay,
@@ -2259,16 +2375,19 @@ export async function searchLibraryPublicationsOnRelays(
     indexEvents: mergedIndex,
     engagement
   }
-  putLibrarySearchSessionRow(
-    q,
-    searchContext,
-    {
-      entries,
-      mergedIndexEvents: mergedIndex,
-      relaySearched: true
-    },
-    options?.axis
-  )
+  const relaySearchHit = valid.length > 0 || entries.length > 0
+  if (relaySearchHit) {
+    putLibrarySearchSessionRow(
+      q,
+      searchContext,
+      {
+        entries,
+        mergedIndexEvents: mergedIndex,
+        relaySearched: true
+      },
+      options?.axis
+    )
+  }
 
   if (import.meta.env.DEV) {
     logger.info('[Library] relay search done', {
@@ -2380,33 +2499,15 @@ async function withEngagementTimeout<T>(
   }
 }
 
-async function buildEngagedFromCache(
-  indexRelayUrls: string[],
+function buildFeedFromIndex(
   indexEvents: Event[],
-  indexByAddress: Map<string, Event>,
-  engagement?: PublicationEngagementMaps,
-  viewerPubkey?: string | null
-): Promise<LibraryPublicationEntry[]> {
-  const topLevel = getTopLevelIndexEvents(indexEvents)
-  let maps = engagement
-  if (!maps) {
-    const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
-      indexEvents,
-      indexByAddress
-    )
-    const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
-      viewerPubkey ?? undefined,
-      indexRelayUrls,
-      indexEvents
-    )
-    maps = await fetchPublicationEngagementMaps(
-      engagementRelayUrls,
-      targetAddresses,
-      targetEventIds,
-      { viewerPubkey }
-    )
-  }
-  return pickLibraryPublicationEntries(topLevel, indexByAddress, maps)
+  indexByAddress: Map<string, Event>
+): LibraryPublicationEntry[] {
+  return pickLibraryPublicationEntries(
+    getTopLevelIndexEvents(indexEvents),
+    indexByAddress,
+    emptyPublicationEngagementMaps()
+  )
 }
 
 export async function loadLibraryPublicationIndex(
@@ -2467,38 +2568,14 @@ async function runLibraryPublicationIndexLoad(
     emitIndexesReadySnapshot(job.onIndexesReadyListeners, indexByAddress)
   }
 
+  const engagement = emptyPublicationEngagementMaps()
+
   if (!options?.forceRefresh && sessionCache?.relayKey === key) {
     const cachedIndexEvents = indexEventsFromCache(sessionCache)
-    if (sessionCache.viewerPubkey !== viewerPubkey) {
-      const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
-        cachedIndexEvents,
-        sessionCache.indexByAddress
-      )
-      const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
-        viewerPubkey ?? undefined,
-        relayUrls,
-        cachedIndexEvents
-      )
-      sessionCache = {
-        ...sessionCache,
-        viewerPubkey,
-        engagement: await fetchPublicationEngagementMaps(
-          engagementRelayUrls,
-          targetAddresses,
-          targetEventIds,
-          { viewerPubkey }
-        )
-      }
-    }
-    const engaged = await buildEngagedFromCache(
-      relayUrls,
-      cachedIndexEvents,
-      sessionCache.indexByAddress,
-      sessionCache.engagement,
-      viewerPubkey
-    )
+    sessionCache = { ...sessionCache, viewerPubkey, engagement }
+    const engaged = buildFeedFromIndex(cachedIndexEvents, sessionCache.indexByAddress)
     if (import.meta.env.DEV) {
-      logger.info('[Library] load from cache', { engaged: engaged.length })
+      logger.info('[Library] load from session cache', { engaged: engaged.length })
     }
     emitIndexesReady(sessionCache.indexByAddress)
     return {
@@ -2506,90 +2583,55 @@ async function runLibraryPublicationIndexLoad(
       allIndexCount: cachedIndexEvents.length,
       topLevelCount: getTopLevelIndexEventsFromMap(sessionCache.indexByAddress).length,
       indexEvents: cachedIndexEvents,
-      engagement: sessionCache.engagement
+      engagement
     }
   }
 
-  let indexByAddress = buildStructuralPublicationIndexMap(
-    await fetchLibraryIndexEvents(relayUrls, {
-      onProgress: (events) => emitIndexesReady(buildStructuralPublicationIndexMap(events))
-    })
-  )
+  const cached = await loadLibraryIndexCacheEvents()
+  let indexByAddress = buildStructuralPublicationIndexMap(cached)
   let indexEvents = publicationIndexMapValues(indexByAddress)
-  if (import.meta.env.DEV) {
-    logger.info('[Library] indexes fetched', { validCount: indexEvents.length })
-  }
-
-  let topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
-
+  let topLevelCount = getTopLevelIndexEventsFromMap(indexByAddress).length
   emitIndexesReady(indexByAddress)
 
-  const topLevelForHydrate = topLevel
-  await hydrateNestedIndexEvents(indexByAddress, relayUrls, {
-    maxPasses: 1,
-    maxMissingPerPass: HYDRATE_MISSING_CAP,
-    scanRoots: topLevelForHydrate
-  })
-  indexEvents = publicationIndexMapValues(indexByAddress)
-  void persistLibraryIndexCacheEvents(indexEvents)
   if (import.meta.env.DEV) {
-    logger.info('[Library] nested hydrate done', { indexCount: indexEvents.length })
-  }
-
-  topLevel = getTopLevelIndexEventsFromMap(indexByAddress)
-  const { addresses: targetAddresses, eventIds: targetEventIds } = collectEngagementTargets(
-    indexEvents,
-    buildIndexByAddress(indexEvents)
-  )
-  if (import.meta.env.DEV) {
-    logger.info('[Library] fetching engagement', {
-      targetAddresses: targetAddresses.size,
-      targetEventIds: targetEventIds.size
+    logger.info('[Library] local index ready', {
+      cachedCount: cached.length,
+      topLevelCount
     })
   }
 
-  let engagement: PublicationEngagementMaps
-  try {
-    const engagementRelayUrls = await buildLibraryEngagementRelayUrls(
-      viewerPubkey ?? undefined,
-      relayUrls,
-      indexEvents
-    )
-    engagement = await fetchPublicationEngagementMaps(
-      engagementRelayUrls,
-      targetAddresses,
-      targetEventIds,
-      { viewerPubkey }
-    )
-  } catch (e) {
+  const needsRelayTopUp = options?.forceRefresh || topLevelCount < LIBRARY_PAGE_SIZE
+  if (needsRelayTopUp) {
+    indexEvents = await fetchLibraryIndexEvents(relayUrls, {
+      firstPageOnly: true,
+      onProgress: (events) => emitIndexesReady(buildStructuralPublicationIndexMap(events))
+    })
+    indexByAddress = buildStructuralPublicationIndexMap(indexEvents)
+    topLevelCount = getTopLevelIndexEventsFromMap(indexByAddress).length
     if (import.meta.env.DEV) {
-      logger.warn('[Library] engagement fetch failed', {
-        message: e instanceof Error ? e.message : String(e)
+      logger.info('[Library] relay top-up done', {
+        indexCount: indexEvents.length,
+        topLevelCount
       })
     }
-    engagement = emptyPublicationEngagementMaps()
-  }
-  if (import.meta.env.DEV) {
-    logger.info('[Library] engagement maps built', engagementMapsSizeSummary(engagement))
   }
 
   sessionCache = { relayKey: key, viewerPubkey, indexByAddress, engagement }
-
-  const engaged = pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
+  const engaged = buildFeedFromIndex(indexEvents, indexByAddress)
 
   if (import.meta.env.DEV) {
     logger.info('[Library] load done', {
       engaged: engaged.length,
-      topLevel: topLevel.length,
+      topLevel: topLevelCount,
       allIndexCount: indexEvents.length,
-      recentFallback: engaged.length > 0 && engaged.every((e) => e.engagementCount === 0)
+      relayTopUp: needsRelayTopUp
     })
   }
 
   return {
     engaged,
     allIndexCount: indexEvents.length,
-    topLevelCount: topLevel.length,
+    topLevelCount,
     indexEvents,
     engagement
   }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildEngagementMapsFromEvents,
+  buildDocumentRelayPublicationFilters,
   buildLibraryPublicationRelaySearchFilters,
   buildLibraryPublicationRelaySearchFiltersForAxis,
   buildRecentPublicationEntries,
@@ -252,6 +253,12 @@ describe('library-publication-index', () => {
     })
     expect(titleFilters).toHaveLength(0)
 
+    const docDTag = buildDocumentRelayPublicationFilters('d-tag', 'redacted-science')
+    expect(docDTag[0]?.['#d']).toContain('redacted-science')
+
+    const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
+    expect(docTitle[0]?.['#d']).toContain('redacted-science')
+
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
       query: 'Village Life in China'
     })
@@ -404,32 +411,18 @@ describe('library-publication-index', () => {
     expect(picked.every((e) => e.engagementCount === 0)).toBe(true)
   })
 
-  it('pickLibraryPublicationEntries merges engaged roots with recent feed', () => {
-    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`])
-    engagedRoot.created_at = 5
-    const recentRoots = Array.from({ length: 5 }, (_, i) => {
-      const ev = indexEvent(`recent-${i}`, [`30041:${PK}:r-${i}`])
-      ev.created_at = 100 + i
-      return ev
-    })
-    const roots = [engagedRoot, ...recentRoots]
+  it('pickLibraryPublicationEntries orders by newest created_at', () => {
+    const older = indexEvent('older', [`30041:${PK}:a`])
+    older.created_at = 5
+    const newer = indexEvent('newer', [`30041:${PK}:b`])
+    newer.created_at = 100
+    const roots = [older, newer]
     const indexByAddress = buildIndexByAddress(roots)
-    const label: Event = {
-      id: '4'.repeat(64),
-      kind: ExtendedKind.LABEL,
-      pubkey: 'f'.repeat(64),
-      created_at: 50,
-      content: '',
-      tags: [['L', 'ugc'], ['l', 'booklist', 'ugc'], ['e', engagedRoot.id]],
-      sig: 'e'.repeat(128)
-    }
-    const engagement = buildEngagementMapsFromEvents([label], [], [])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
 
     const picked = pickLibraryPublicationEntries(roots, indexByAddress, engagement)
 
-    expect(picked.length).toBeGreaterThan(1)
-    expect(picked.some((e) => e.event.id === engagedRoot.id && e.hasBooklistLabel)).toBe(true)
-    expect(picked.some((e) => e.event.id === recentRoots[4].id)).toBe(true)
+    expect(picked.map((e) => e.event.id)).toEqual([newer.id, older.id])
   })
 
   it('buildRecentPublicationEntries caps at limit', () => {
@@ -468,24 +461,15 @@ describe('library-publication-index', () => {
     expect(lastPage.hasMore).toBe(false)
   })
 
-  it('computeLibraryFeedRootOrder keeps engaged roots before recent ones', () => {
-    const engagedRoot = indexEvent('engaged', [`30041:${PK}:a`])
-    engagedRoot.created_at = 1
-    const recentRoot = indexEvent('recent', [`30041:${PK}:b`])
-    recentRoot.created_at = 100
-    const indexByAddress = buildIndexByAddress([engagedRoot, recentRoot])
-    const label: Event = {
-      id: '4'.repeat(64),
-      kind: ExtendedKind.LABEL,
-      pubkey: 'f'.repeat(64),
-      created_at: 50,
-      content: '',
-      tags: [['L', 'ugc'], ['l', 'booklist', 'ugc'], ['e', engagedRoot.id]],
-      sig: 'e'.repeat(128)
-    }
-    const engagement = buildEngagementMapsFromEvents([label], [], [])
-    const ordered = computeLibraryFeedRootOrder([engagedRoot, recentRoot], indexByAddress, engagement)
-    expect(ordered.map((e) => e.id)).toEqual([engagedRoot.id, recentRoot.id])
+  it('computeLibraryFeedRootOrder sorts by newest created_at', () => {
+    const older = indexEvent('older', [`30041:${PK}:a`])
+    older.created_at = 1
+    const newer = indexEvent('newer', [`30041:${PK}:b`])
+    newer.created_at = 100
+    const indexByAddress = buildIndexByAddress([older, newer])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const ordered = computeLibraryFeedRootOrder([older, newer], indexByAddress, engagement)
+    expect(ordered.map((e) => e.id)).toEqual([newer.id, older.id])
   })
 
   it('filterLibraryPublicationsByUser includes authored, booklist, bookmarked, and commented', () => {
