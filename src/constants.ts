@@ -539,7 +539,8 @@ export const FAST_READ_RELAY_URLS = [
 export const FAST_WRITE_RELAY_URLS = [
   'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
-  'wss://nos.lol'
+  'wss://nos.lol',
+  'wss://freelay.sovbit.host'
 ]
 
 /**

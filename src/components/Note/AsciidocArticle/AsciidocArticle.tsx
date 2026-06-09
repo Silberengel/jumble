@@ -43,7 +43,8 @@ import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-br
 import logger from '@/lib/logger'
 import {
   convertAsciiDocSource,
-  plainAsciiDocSourceToHtml
+  plainAsciiDocSourceToHtml,
+  resolveRelativeImagesInAsciidocHtml
 } from '@/lib/asciidoc-parse'
 import { extractBookMetadata, isNkbip08BookstrEvent } from '@/lib/bookstr-parser'
 import { useTranslation } from 'react-i18next'
@@ -651,24 +652,38 @@ export default function AsciidocArticle({
   
   useEffect(() => {
     let cancelled = false
-    
+    const fallbackImageUrls = allImages.map((img) => img.url)
+
     const parseAsciidoc = async () => {
       setIsLoading(true)
       setParseIssues([])
       let rawConvertedHtml = ''
       try {
-        const conversion = await convertAsciiDocSource(processedContent)
-        
+        let conversion = await convertAsciiDocSource(processedContent)
+
         if (cancelled) return
 
         if (conversion.failed || !conversion.html.trim()) {
+          const rawConversion = await convertAsciiDocSource(event.content)
+          if (!rawConversion.failed && rawConversion.html.trim()) {
+            conversion = rawConversion
+          }
+        }
+
+        if (conversion.failed || !conversion.html.trim()) {
           setParseIssues(conversion.issues)
-          setParsedHtml(plainAsciiDocSourceToHtml(event.content))
+          setParsedHtml(
+            plainAsciiDocSourceToHtml(event.content, { imageUrls: fallbackImageUrls })
+          )
           return
         }
 
         rawConvertedHtml = conversion.html
-        let htmlString = conversion.html
+        let htmlString = resolveRelativeImagesInAsciidocHtml(
+          conversion.html,
+          event.content,
+          fallbackImageUrls
+        )
         const collectedIssues = [...conversion.issues]
         
         // Debug: log HTML to check if passthrough markers are preserved
@@ -962,7 +977,9 @@ export default function AsciidocArticle({
         const message = error instanceof Error ? error.message : String(error)
         setParseIssues([`ERROR: ${message}`])
         setParsedHtml(
-          rawConvertedHtml.trim() ? rawConvertedHtml : plainAsciiDocSourceToHtml(event.content)
+          rawConvertedHtml.trim()
+            ? resolveRelativeImagesInAsciidocHtml(rawConvertedHtml, event.content, fallbackImageUrls)
+            : plainAsciiDocSourceToHtml(event.content, { imageUrls: fallbackImageUrls })
         )
       } finally {
         if (!cancelled) {
@@ -976,7 +993,7 @@ export default function AsciidocArticle({
     return () => {
       cancelled = true
     }
-  }, [processedContent, event.content])
+  }, [processedContent, event.content, allImages])
   
   // Store React roots for cleanup
   const reactRootsRef = useRef<Map<Element, Root>>(new Map())
