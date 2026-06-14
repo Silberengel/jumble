@@ -5,7 +5,6 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Sheet,
   SheetContent,
@@ -150,7 +149,7 @@ export default function PostEditor({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full overflow-hidden"
+        className="flex max-h-[min(90dvh,900px)] flex-col overflow-hidden p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         withoutClose
         onInteractOutside={(e) => {
           if (blockDismissForAccountSwitch) e.preventDefault()
@@ -165,18 +164,13 @@ export default function PostEditor({
           }
         }}
       >
-        <ScrollArea
-          className="px-4 max-h-[min(90dvh,900px)] min-w-0"
-          scrollBarClassName="opacity-100"
-        >
-          <div className="space-y-4 px-2 pr-4 py-6 min-w-0">
-            <DialogHeader className="sr-only">
-              <DialogTitle>Post Editor</DialogTitle>
-              <DialogDescription>Create a new post or reply</DialogDescription>
-            </DialogHeader>
-            {content}
-          </div>
-        </ScrollArea>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Post Editor</DialogTitle>
+            <DialogDescription>Create a new post or reply</DialogDescription>
+          </DialogHeader>
+          {content}
+        </div>
       </DialogContent>
     </Dialog>
   )

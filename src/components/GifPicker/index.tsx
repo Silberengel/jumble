@@ -28,7 +28,7 @@ import {
 import mediaUpload from '@/services/media-upload.service'
 import { Download, ExternalLink, X } from 'lucide-react'
 import { kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 
 /** In-session cache: survives Drawer/Dropdown open↔close without a relay re-fetch. */
@@ -44,11 +44,15 @@ const GIFBUDDY_SEARCH_URL = (q: string) =>
 
 type GifPickerTab = 'find' | 'import'
 
-/** Shorter sheet on mobile — tall drawers fight the post composer and keyboard. */
-function mobileDrawerHeightPx(): number {
+/** Tall enough to browse the grid; still leaves room above the post composer. */
+function mobileDrawerMaxHeightStyle(): CSSProperties {
   const vh = window.visualViewport?.height ?? window.innerHeight
-  return Math.min(Math.round(vh * 0.6), Math.round(vh - 120))
+  const maxPx = Math.min(Math.round(vh * 0.88), Math.round(vh - 48))
+  return { maxHeight: maxPx, height: maxPx }
 }
+
+const MOBILE_GIF_GRID_SCROLL_CLASS =
+  'page-scroll-y min-h-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border'
 
 export default function GifPicker({
   children,
@@ -88,7 +92,7 @@ export default function GifPicker({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const gifbuddyPopupRef = useRef<Window | null>(null)
   const pickerRootRef = useRef<HTMLDivElement>(null)
-  const [mobileDrawerHeight, setMobileDrawerHeight] = useState<number | undefined>()
+  const [mobileDrawerStyle, setMobileDrawerStyle] = useState<CSSProperties | undefined>()
   const [activeTab, setActiveTab] = useState<GifPickerTab>('find')
   /** Keep drawer content mounted until Vaul's close animation finishes (avoids empty-sheet flicker). */
   const [drawerContentMounted, setDrawerContentMounted] = useState(false)
@@ -183,7 +187,15 @@ export default function GifPicker({
 
   useEffect(() => {
     if (!open || !isSmallScreen) return
-    setMobileDrawerHeight(mobileDrawerHeightPx())
+    const syncHeight = () => setMobileDrawerStyle(mobileDrawerMaxHeightStyle())
+    syncHeight()
+    const vv = window.visualViewport
+    vv?.addEventListener('resize', syncHeight)
+    window.addEventListener('resize', syncHeight)
+    return () => {
+      vv?.removeEventListener('resize', syncHeight)
+      window.removeEventListener('resize', syncHeight)
+    }
   }, [open, isSmallScreen])
 
   useEffect(() => {
@@ -217,7 +229,7 @@ export default function GifPicker({
   const handleDrawerAnimationEnd = useCallback((isOpen: boolean) => {
     if (!isOpen) {
       setDrawerContentMounted(false)
-      setMobileDrawerHeight(undefined)
+      setMobileDrawerStyle(undefined)
     }
   }, [])
 
@@ -464,10 +476,7 @@ export default function GifPicker({
 
   const scrollableGifGrid = (items: GifMetadata[], showArchiveActions: boolean) =>
     isDrawer ? (
-      <div
-        className="page-scroll-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border"
-        data-vaul-no-drag
-      >
+      <div className={MOBILE_GIF_GRID_SCROLL_CLASS} data-vaul-no-drag>
         {renderGifGrid(items, showArchiveActions)}
       </div>
     ) : (
@@ -475,6 +484,29 @@ export default function GifPicker({
         {renderGifGrid(items, showArchiveActions)}
       </ScrollArea>
     )
+
+  const findPanel = (
+    <div className="flex min-h-0 flex-1 basis-0 flex-col gap-2">
+      {!isDrawer ? (
+        <p className="shrink-0 text-xs text-muted-foreground">
+          {t('Search your library and tap a GIF to insert.')}
+        </p>
+      ) : null}
+      <Input
+        placeholder={t('Search GIFs')}
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        className="shrink-0"
+      />
+      {!loading && gifs.length > 0 ? (
+        <p className="shrink-0 text-xs text-muted-foreground">
+          {t('{{count}} GIFs', { count: gifs.length, defaultValue: '{{count}} GIFs' })}
+        </p>
+      ) : null}
+      {error && <p className="shrink-0 px-1 text-sm text-muted-foreground">{error}</p>}
+      {scrollableGifGrid(gifs, !isDrawer)}
+    </div>
+  )
 
   const importPanel = (
     <div className="flex flex-col gap-3">
@@ -551,29 +583,13 @@ export default function GifPicker({
     </div>
   )
 
-  const findPanel = (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <p className="shrink-0 text-xs text-muted-foreground">
-        {t('Search your library and tap a GIF to insert.')}
-      </p>
-      <Input
-        placeholder={t('Search GIFs')}
-        value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
-        className="shrink-0"
-      />
-      {error && <p className="shrink-0 px-1 text-sm text-muted-foreground">{error}</p>}
-      {scrollableGifGrid(gifs, !isDrawer)}
-    </div>
-  )
-
   const tabbedContent = (
     <div
       ref={pickerRootRef}
       data-gif-picker-root
       className={cn(
         'flex min-w-0 w-full flex-col gap-2 p-2',
-        isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
+        isDrawer ? 'min-h-0 flex-1 basis-0 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
       )}
     >
       <div className="flex shrink-0 items-center gap-2">
@@ -595,7 +611,7 @@ export default function GifPicker({
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as GifPickerTab)}
-        className={cn('flex flex-col', isDrawer && 'min-h-0 flex-1')}
+        className={cn('flex flex-col', isDrawer && 'min-h-0 flex-1 basis-0 overflow-hidden')}
       >
         <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-0.5 p-1">
           <TabsTrigger
@@ -615,7 +631,7 @@ export default function GifPicker({
           value="find"
           className={cn(
             'mt-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isDrawer ? 'flex min-h-0 flex-1 flex-col' : 'flex flex-col'
+            isDrawer ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden' : 'flex flex-col'
           )}
         >
           {findPanel}
@@ -650,12 +666,8 @@ export default function GifPicker({
         <DrawerContent
           dragHandle="vaul"
           portalContainer={portalContainer}
-          className="px-2 pb-2"
-          style={
-            mobileDrawerHeight != null
-              ? { height: mobileDrawerHeight, maxHeight: mobileDrawerHeight }
-              : { maxHeight: 'min(60dvh, calc(100dvh - 8rem))' }
-          }
+          className="flex flex-col px-2 pb-2"
+          style={mobileDrawerStyle ?? { maxHeight: 'min(88dvh, calc(100dvh - 3rem))' }}
           onPointerDownOutside={(e) => {
             const t = e.target as HTMLElement | null
             if (t?.closest?.('[data-vaul-overlay]')) return
@@ -665,7 +677,7 @@ export default function GifPicker({
           <DrawerHeader className="sr-only">
             <DrawerTitle>{t('Choose a GIF')}</DrawerTitle>
           </DrawerHeader>
-          <div className="flex h-full min-h-0 w-full min-w-0 max-w-[100vw] flex-col overflow-hidden">
+          <div className="flex h-full min-h-0 w-full min-w-0 max-w-[100vw] flex-1 basis-0 flex-col overflow-hidden">
             {drawerContentMounted ? content : null}
           </div>
         </DrawerContent>

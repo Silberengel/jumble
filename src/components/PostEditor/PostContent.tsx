@@ -2568,14 +2568,16 @@ export default function PostContent({
     <div
       className={cn(
         'min-w-0',
-        isSmallScreen ? 'flex min-h-0 flex-1 flex-col' : 'space-y-2'
+        isSmallScreen ? 'flex min-h-0 flex-1 flex-col' : 'flex min-h-0 flex-1 max-h-full flex-col'
       )}
     >
       <NeventPickerProvider>
         <div
           className={cn(
             'min-w-0',
-            isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
+            isSmallScreen
+              ? 'flex min-h-0 flex-1 flex-col gap-2'
+              : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y pr-1'
           )}
         >
           <ComposerHeaderScroll enabled={isSmallScreen}>
@@ -3792,9 +3794,10 @@ export default function PostContent({
         </div>
       <div
         className={cn(
-          'space-y-2 min-w-0',
-          isSmallScreen &&
-            'z-10 shrink-0 border-t border-border bg-background pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]'
+          'min-w-0 shrink-0 space-y-2 border-t border-border bg-background pt-3',
+          isSmallScreen
+            ? 'z-10 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]'
+            : 'pb-2'
         )}
       >
       <div className="flex min-w-0 w-full items-center gap-1.5">
