@@ -5,6 +5,11 @@ import {
   ensureHomeFeedTrendingRelay,
   stripNostrLandAggrFromRelayUrls
 } from '@/lib/home-feed-relays'
+import {
+  homeFeedSourceLabel,
+  normalizeHomeFeedRelaySource,
+  resolveHomeFeedPrimaryRelayUrls
+} from '@/lib/home-feed-relay-source'
 import logger from '@/lib/logger'
 import {
   syncViewerRelayStackNostrLandAggrEligible,
@@ -15,11 +20,13 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
 import { collectUserWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
+import storage from '@/services/local-storage.service'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { FeedContext } from './feed-context'
 import { useFavoriteRelays } from './FavoriteRelaysProvider'
 import { useNostr } from './NostrProvider'
+import { useTranslation } from 'react-i18next'
 
 export type { TFeedContext } from './feed-context'
 
@@ -61,22 +68,52 @@ function buildHomeReplyFeedRelayUrls(
 }
 
 export function FeedProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const { isInitialized, relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
+  const [homeFeedRelaySource, setHomeFeedRelaySourceState] = useState(() =>
+    normalizeHomeFeedRelaySource(storage.getHomeFeedRelaySource(), storage.getRelaySets())
+  )
+
+  const effectiveHomeFeedRelaySource = useMemo(
+    () => normalizeHomeFeedRelaySource(homeFeedRelaySource, relaySets),
+    [homeFeedRelaySource, relaySets]
+  )
+
+  useEffect(() => {
+    if (effectiveHomeFeedRelaySource !== homeFeedRelaySource) {
+      setHomeFeedRelaySourceState(effectiveHomeFeedRelaySource)
+      storage.setHomeFeedRelaySource(effectiveHomeFeedRelaySource)
+    }
+  }, [effectiveHomeFeedRelaySource, homeFeedRelaySource])
+
+  const setHomeFeedRelaySource = useCallback((source: string) => {
+    const normalized = normalizeHomeFeedRelaySource(source, relaySets)
+    setHomeFeedRelaySourceState(normalized)
+    storage.setHomeFeedRelaySource(normalized)
+  }, [relaySets])
+
+  const homeFeedPrimaryRelayUrls = useMemo(() => {
+    return resolveHomeFeedPrimaryRelayUrls(
+      effectiveHomeFeedRelaySource,
+      favoriteRelays,
+      relaySets
+    ).urls
+  }, [effectiveHomeFeedRelaySource, favoriteRelays, relaySets])
+
+  const homeFeedSourceLabelText = useMemo(
+    () => homeFeedSourceLabel(effectiveHomeFeedRelaySource, relaySets, t),
+    [effectiveHomeFeedRelaySource, relaySets, t]
+  )
 
   const useGlobalRelayDefaults = useMemo(
     () =>
       viewerUsesGlobalRelayDefaults({
         viewerPubkey: pubkey,
-        favoriteRelayUrls: [...favoriteRelays, ...relaySets.flatMap((relaySet) => relaySet.relayUrls)],
+        favoriteRelayUrls: homeFeedPrimaryRelayUrls,
         relayList
       }),
-    [pubkey, favoriteRelays, relaySets, relayList]
-  )
-
-  const favoriteFeedRelayUrls = useMemo(
-    () => [...favoriteRelays, ...relaySets.flatMap((relaySet) => relaySet.relayUrls)],
-    [favoriteRelays, relaySets]
+    [pubkey, homeFeedPrimaryRelayUrls, relayList]
   )
 
   /** Read-side layers merged into {@link replyRelayUrls}; {@link outboxRelayUrls} is only for aggr eligibility sync. */
@@ -135,19 +172,19 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     syncViewerRelayStackNostrLandAggrEligible(
       urlsForViewerNostrLandAggrEligibilitySync({
-        favoriteRelayUrls: favoriteFeedRelayUrls,
+        favoriteRelayUrls: homeFeedPrimaryRelayUrls,
         relayListRead: replyExtraRelayLayers.inboxRelayUrls,
         relayListWrite: replyExtraRelayLayers.outboxRelayUrls,
         cacheRelayRead: replyExtraRelayLayers.cacheRelayUrls,
         httpRelayRead: replyExtraRelayLayers.httpRelayUrls
       })
     )
-  }, [favoriteFeedRelayUrls, replyExtraRelayLayers])
+  }, [homeFeedPrimaryRelayUrls, replyExtraRelayLayers])
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {
     const primaryRelays = buildAllFavoritesFeedRelayUrls(
-      favoriteFeedRelayUrls,
+      homeFeedPrimaryRelayUrls,
       blockedRelays,
       [],
       useGlobalRelayDefaults
@@ -171,16 +208,16 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
     setUrlStateIfChanged(setRelayUrls, primaryRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
-  }, [favoriteFeedRelayUrls, blockedRelays, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
+  }, [homeFeedPrimaryRelayUrls, blockedRelays, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
 
   const favoriteRelaysIdentity = useMemo(
     () =>
-      [...favoriteFeedRelayUrls]
+      [...homeFeedPrimaryRelayUrls]
         .map((u) => normalizeAnyRelayUrl(u) || u.trim())
         .filter(Boolean)
         .sort()
         .join('|'),
-    [favoriteFeedRelayUrls]
+    [homeFeedPrimaryRelayUrls]
   )
   const blockedRelaysIdentity = useMemo(
     () =>
@@ -211,9 +248,10 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initKey = [
       isInitialized ? '1' : '0',
+      effectiveHomeFeedRelaySource,
       favoriteRelays.length,
       relaySets.length,
-      favoriteFeedRelayUrls.length - favoriteRelays.length,
+      homeFeedPrimaryRelayUrls.length,
       replyExtraRelayLayers.inboxRelayUrls.length,
       replyExtraRelayLayers.cacheRelayUrls.length,
       replyExtraRelayLayers.httpRelayUrls.length,
@@ -225,9 +263,10 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         lastRelayInitDebugKey.current = initKey
         logger.debug('FeedProvider relay init:', {
           isInitialized,
+          homeFeedRelaySource: effectiveHomeFeedRelaySource,
           favoriteRelays: favoriteRelays.length,
           relaySets: relaySets.length,
-          relaySetRelays: favoriteFeedRelayUrls.length - favoriteRelays.length,
+          primaryFeedRelays: homeFeedPrimaryRelayUrls.length,
           inboxRelays: replyExtraRelayLayers.inboxRelayUrls.length,
           cacheRelays: replyExtraRelayLayers.cacheRelayUrls.length,
           httpRelays: replyExtraRelayLayers.httpRelayUrls.length,
@@ -235,11 +274,11 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         })
       }
 
-      const hasFavoriteRelays = favoriteFeedRelayUrls.length > 0
+      const hasFavoriteRelays = homeFeedPrimaryRelayUrls.length > 0
       const prevHad = lastHadFavoriteRelaysRef.current
       lastHadFavoriteRelaysRef.current = hasFavoriteRelays
       if (!hasFavoriteRelays && prevHad !== false) {
-        logger.debug('FeedProvider: no favorite or relay-set relays, using defaults')
+        logger.debug('FeedProvider: no home feed relays for current source, using defaults')
       }
 
       updateFeedRelayUrls()
@@ -259,16 +298,32 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         relayUrlDebounceTimerRef.current = null
       }
     }
-  }, [isInitialized, favoriteRelaysIdentity, blockedRelaysIdentity, replyExtraRelaysIdentity, updateFeedRelayUrls])
+  }, [
+    isInitialized,
+    effectiveHomeFeedRelaySource,
+    favoriteRelaysIdentity,
+    blockedRelaysIdentity,
+    replyExtraRelaysIdentity,
+    updateFeedRelayUrls
+  ])
 
   return (
     <FeedContext.Provider
       value={useMemo(
         () => ({
           relayUrls,
-          replyRelayUrls
+          replyRelayUrls,
+          homeFeedRelaySource: effectiveHomeFeedRelaySource,
+          setHomeFeedRelaySource,
+          homeFeedSourceLabel: homeFeedSourceLabelText
         }),
-        [relayUrls, replyRelayUrls]
+        [
+          relayUrls,
+          replyRelayUrls,
+          effectiveHomeFeedRelaySource,
+          setHomeFeedRelaySource,
+          homeFeedSourceLabelText
+        ]
       )}
     >
       {children}

@@ -1,6 +1,7 @@
 import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
+import { homeFeedSubscriptionKeys } from '@/lib/home-feed-relay-source'
 import { checkAlgoRelay } from '@/lib/relay'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeUrl } from '@/lib/url'
@@ -19,7 +20,7 @@ const RelaysFeed = forwardRef<
     kindsOverride?: number[]
   }
 >(function RelaysFeed({ setSubHeader, onSubHeaderRefresh, kindsOverride }, ref) {
-  const { relayUrls, replyRelayUrls } = useFeed()
+  const { relayUrls, replyRelayUrls, homeFeedRelaySource } = useFeed()
   const { showKinds } = useKindFilterOrDefaults()
   const [areAlgoRelays, setAreAlgoRelays] = useState(false)
   /** Timeline REQs must not wait on NIP-11; cache/IDB serves algo detection in the background. */
@@ -123,6 +124,11 @@ const RelaysFeed = forwardRef<
     defaultKinds
   ])
 
+  const { subscriptionKey: feedSubscriptionKey, timelineScopeKey: feedTimelineScopeKey } = useMemo(
+    () => homeFeedSubscriptionKeys(homeFeedRelaySource),
+    [homeFeedRelaySource]
+  )
+
   if (!canRenderFeed) {
     return null
   }
@@ -139,8 +145,8 @@ const RelaysFeed = forwardRef<
       onSubHeaderRefresh={onSubHeaderRefresh}
       preserveTimelineOnSubRequestsChange
       repliesSubRequests={repliesSubRequests}
-      feedSubscriptionKey="home-all-favorites"
-      feedTimelineScopeKey="all-favorites"
+      feedSubscriptionKey={feedSubscriptionKey}
+      feedTimelineScopeKey={feedTimelineScopeKey}
       homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}
       homeFeedSeenOnAllowlistReplies={homeFeedSeenOnAllowlistReplies}
       showFeedClientFilter

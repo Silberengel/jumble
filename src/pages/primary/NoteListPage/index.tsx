@@ -20,17 +20,17 @@ import React, {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import Logo from '@/assets/Logo'
+import HomeFeedRelaySourceSelect from '@/components/HomeFeedRelaySourceSelect'
 import { DiscussionsTitlebarButton } from '@/components/Sidebar/DiscussionsButton'
 import { LibraryTitlebarButton } from '@/components/Sidebar/LibraryButton'
 import RelaysFeed from './RelaysFeed'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 const NoteListPage = forwardRef<TPageRef>((_, ref) => {
-  const { t } = useTranslation()
   const { addRelayUrls, removeRelayUrls } = useCurrentRelays()
   const layoutRef = useRef<TPageRef>(null)
   const feedRef = useRef<TNoteListRef>(null)
-  const { relayUrls } = useFeed()
+  const { relayUrls, homeFeedSourceLabel } = useFeed()
   const relayUrlsKey = useMemo(
     () =>
       [...relayUrls]
@@ -72,12 +72,15 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
     }
   }, [relayUrlsKey, addRelayUrls, removeRelayUrls])
 
-  const feedPageTitle = t('Favorite Relays')
+  const feedPageTitle = homeFeedSourceLabel
 
   const subHeader = (
     <>
       <div className="w-full min-w-0 border-b border-border/80 bg-background px-3 py-2.5 sm:px-4 sm:py-3">
-        <h1 className="app-chrome-title leading-tight tracking-tight">{feedPageTitle}</h1>
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="app-chrome-title min-w-0 leading-tight tracking-tight">{feedPageTitle}</h1>
+          <HomeFeedRelaySourceSelect />
+        </div>
       </div>
       {homeSubHeader}
     </>

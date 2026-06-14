@@ -429,7 +429,9 @@ export const StorageKey = {
   ACCOUNT_MUTE_DECRYPTED_TAGS_MAP: 'accountMuteDecryptedTagsMap', // deprecated
   ACCOUNT_PROFILE_EVENT_MAP: 'accountProfileEventMap', // deprecated
   ACTIVE_RELAY_SET_ID: 'activeRelaySetId', // deprecated
-  FEED_TYPE: 'feedType' // deprecated
+  FEED_TYPE: 'feedType', // deprecated
+  /** Home feed relay source: `favorites` or a relay-set id. */
+  HOME_FEED_RELAY_SOURCE: 'homeFeedRelaySource'
 }
 
 export const FONT_SIZE = {

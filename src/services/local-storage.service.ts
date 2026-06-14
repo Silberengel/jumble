@@ -81,7 +81,8 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
   StorageKey.SHOW_RSS_FEED,
   StorageKey.USE_NOSTR_ARCHIVES_API,
-  StorageKey.PANE_MODE
+  StorageKey.PANE_MODE,
+  StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
 
 class LocalStorageService {
@@ -122,6 +123,7 @@ class LocalStorageService {
   /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
   private useNostrArchivesApi: boolean = true
   private panelMode: 'single' | 'double' = 'single'
+  private homeFeedRelaySource: string = 'favorites'
   private addRandomRelaysToPublish: boolean = true
   private showPublishSuccessToasts: boolean = false
   private showDetailedPublishToasts: boolean = true
@@ -621,6 +623,10 @@ class LocalStorageService {
     if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
     const paneStr = get(StorageKey.PANE_MODE)
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
+    const homeFeedRelaySourceStr = get(StorageKey.HOME_FEED_RELAY_SOURCE)
+    if (homeFeedRelaySourceStr?.trim()) {
+      this.homeFeedRelaySource = homeFeedRelaySourceStr.trim()
+    }
   }
 
   getRelaySets() {
@@ -675,6 +681,16 @@ class LocalStorageService {
   setNoteListMode(mode: TNoteListMode) {
     this.persistSetting(StorageKey.NOTE_LIST_MODE, mode)
     this.noteListMode = mode
+  }
+
+  getHomeFeedRelaySource() {
+    return this.homeFeedRelaySource
+  }
+
+  setHomeFeedRelaySource(source: string) {
+    const trimmed = source.trim() || 'favorites'
+    this.homeFeedRelaySource = trimmed
+    this.persistSetting(StorageKey.HOME_FEED_RELAY_SOURCE, trimmed)
   }
 
   getAccounts() {

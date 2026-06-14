@@ -9,9 +9,14 @@ export type TFeedContext = {
   relayUrls: string[]
   /**
    * Home Replies + Gallery: same OP base, then NIP-65 read inboxes (FAST_READ when empty), kind 10432 cache
-   * read relays, HTTP read index — never aggr (aggr is for side-panel threads, profiles, and spells only).
+   * read relays, HTTP index — never aggr (aggr is for side-panel threads, profiles, and spells only).
    */
   replyRelayUrls: string[]
+  /** `favorites` or a relay-set id. */
+  homeFeedRelaySource: string
+  setHomeFeedRelaySource: (source: string) => void
+  /** Human-readable label for the active home feed relay source. */
+  homeFeedSourceLabel: string
 }
 
 export const FeedContext = createContext<TFeedContext | undefined>(undefined)

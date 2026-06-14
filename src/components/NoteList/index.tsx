@@ -118,6 +118,7 @@ import {
   ensureHomeFeedTrendingRelay,
   stripNostrLandAggrFromTimelineSubRequests
 } from '@/lib/home-feed-relays'
+import { isHomePrimaryFeedSubscriptionKey } from '@/lib/home-feed-relay-source'
 import { createFetchEventsFeedRuntimeLoader } from '@/features/feed/client-loader'
 import { FeedRuntime } from '@/features/feed/runtime'
 import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/feed/diagnostics'
@@ -1067,7 +1068,7 @@ const NoteList = forwardRef(
 
     const feedRelayUrls = useMemo(() => {
       const urls = uniqueRelayUrlsFromSubRequests(subRequests)
-      if (feedSubscriptionKey === 'home-all-favorites') {
+      if (isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) {
         return ensureHomeFeedTrendingRelay(urls)
       }
       return urls
@@ -1201,7 +1202,7 @@ const NoteList = forwardRef(
     )
 
     const homeFeedActiveSeenOnAllowlist = useMemo(() => {
-      if (feedSubscriptionKey !== 'home-all-favorites') return undefined
+      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return undefined
       if (homeFeedListMode === 'postsAndReplies' || homeFeedListMode === 'media') {
         return homeFeedSeenOnAllowlistRepliesKey ? homeFeedSeenOnAllowlistReplies : undefined
       }
@@ -4137,7 +4138,7 @@ const NoteList = forwardRef(
       if (relayAuthoritativeFeedOnly) return
       if (!timelinePublicReadFallback) return
       if (isMetadataRelaysOnlyPolicyActive()) return
-      if (feedSubscriptionKey === 'home-all-favorites') return
+      if (isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return
       if (feedFullSearchEvents !== null) return

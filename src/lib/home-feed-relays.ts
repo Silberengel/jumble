@@ -1,6 +1,7 @@
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { isHomePrimaryFeedSubscriptionKey } from '@/lib/home-feed-relay-source'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import {
   ensureTrendingInFavoriteRelayList,
@@ -18,7 +19,7 @@ export function stripNostrLandAggrFromTimelineSubRequests<T extends { urls: stri
   feedSubscriptionKey: string | undefined,
   requests: readonly T[]
 ): T[] {
-  if (feedSubscriptionKey !== 'home-all-favorites') {
+  if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) {
     return requests.slice() as T[]
   }
   return requests.map((r) => ({
