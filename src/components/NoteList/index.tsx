@@ -118,7 +118,10 @@ import {
   ensureHomeFeedTrendingRelay,
   stripNostrLandAggrFromTimelineSubRequests
 } from '@/lib/home-feed-relays'
-import { isHomePrimaryFeedSubscriptionKey } from '@/lib/home-feed-relay-source'
+import {
+  HOME_FAVORITES_FEED_SUBSCRIPTION_KEY,
+  isHomePrimaryFeedSubscriptionKey
+} from '@/lib/home-feed-relay-source'
 import { createFetchEventsFeedRuntimeLoader } from '@/features/feed/client-loader'
 import { FeedRuntime } from '@/features/feed/runtime'
 import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/feed/diagnostics'
@@ -1068,7 +1071,7 @@ const NoteList = forwardRef(
 
     const feedRelayUrls = useMemo(() => {
       const urls = uniqueRelayUrlsFromSubRequests(subRequests)
-      if (isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) {
+      if (feedSubscriptionKey === HOME_FAVORITES_FEED_SUBSCRIPTION_KEY) {
         return ensureHomeFeedTrendingRelay(urls)
       }
       return urls
@@ -2279,9 +2282,7 @@ const NoteList = forwardRef(
       const prevFeedScope = feedTimelineScopePrevRef.current
       const feedScopeKey = feedTimelineScopeKey
       const feedScopeChanged =
-        feedScopeKey !== undefined &&
-        prevFeedScope !== undefined &&
-        prevFeedScope !== feedScopeKey
+        feedScopeKey !== undefined && prevFeedScope !== feedScopeKey
       if (feedScopeKey !== undefined) {
         feedTimelineScopePrevRef.current = feedScopeKey
       } else {

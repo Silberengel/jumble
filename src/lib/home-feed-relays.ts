@@ -2,7 +2,10 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { isHomePrimaryFeedSubscriptionKey } from '@/lib/home-feed-relay-source'
+import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 import {
   ensureTrendingInFavoriteRelayList,
   isWispTrendingNotesRelayUrl
@@ -28,9 +31,21 @@ export function stripNostrLandAggrFromTimelineSubRequests<T extends { urls: stri
   })) as T[]
 }
 
-/** Home Notes / Replies / Gallery: always include the Wisp trending path relay (deduped). */
+/** Home favorites feed only: include the Wisp trending path relay (deduped). */
 export function ensureHomeFeedTrendingRelay(urls: readonly string[]): string[] {
   return ensureTrendingInFavoriteRelayList(urls, { forFeed: true })
+}
+
+/** Relay-set home feed: selected set URLs only (no trending, no NIP-65 inbox widen). */
+export function buildHomeRelaySetFeedRelayUrls(
+  relayUrls: readonly string[],
+  blockedRelays: readonly string[]
+): string[] {
+  const visible = relayUrls.filter((url) => {
+    const key = normalizeAnyRelayUrl(url) || url.trim()
+    return key && !isRelayBlockedByUser(url, blockedRelays)
+  })
+  return dedupeNormalizeRelayUrlsOrdered(visible)
 }
 
 export function buildAllFavoritesFeedRelayUrls(

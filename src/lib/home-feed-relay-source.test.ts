@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   HOME_FEED_RELAY_SOURCE_FAVORITES,
   homeFeedSubscriptionKeys,
+  isHomeFeedRelaySetSource,
   isHomePrimaryFeedSubscriptionKey,
   normalizeHomeFeedRelaySource,
   resolveHomeFeedPrimaryRelayUrls
@@ -43,6 +44,11 @@ describe('home-feed-relay-source', () => {
     expect(isHomePrimaryFeedSubscriptionKey('home-all-favorites')).toBe(true)
     expect(isHomePrimaryFeedSubscriptionKey('home-relay-set:abc')).toBe(true)
     expect(isHomePrimaryFeedSubscriptionKey('profile:abc')).toBe(false)
+  })
+
+  it('detects relay-set-only home feed mode', () => {
+    expect(isHomeFeedRelaySetSource(HOME_FEED_RELAY_SOURCE_FAVORITES)).toBe(false)
+    expect(isHomeFeedRelaySetSource('set-1')).toBe(true)
   })
 
   it('normalizes invalid relay-set selections', () => {

@@ -1,7 +1,10 @@
 import NormalFeed from '@/components/NormalFeed'
 import type { TNoteListRef } from '@/components/NoteList'
 import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
-import { homeFeedSubscriptionKeys } from '@/lib/home-feed-relay-source'
+import {
+  HOME_FEED_RELAY_SOURCE_FAVORITES,
+  homeFeedSubscriptionKeys
+} from '@/lib/home-feed-relay-source'
 import { checkAlgoRelay } from '@/lib/relay'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeUrl } from '@/lib/url'
@@ -9,7 +12,7 @@ import { useFeed } from '@/providers/feed-context'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import relayInfoService from '@/services/relay-info.service'
 import { kinds } from 'nostr-tools'
-import React, { forwardRef, useEffect, useMemo, useState } from 'react'
+import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 
 const RelaysFeed = forwardRef<
   TNoteListRef,
@@ -89,26 +92,34 @@ const RelaysFeed = forwardRef<
   const defaultKindsKey = useMemo(() => JSON.stringify(defaultKinds), [defaultKinds])
 
   const canRenderFeed = stableRelayUrls.length > 0
+  const widenFavoritesHomeFeed = homeFeedRelaySource === HOME_FEED_RELAY_SOURCE_FAVORITES
+  const homeFeedReqUrls = useCallback(
+    (urls: string[]) =>
+      dedupeNormalizeRelayUrlsOrdered(
+        widenFavoritesHomeFeed ? ensureHomeFeedTrendingRelay(urls) : urls
+      ),
+    [widenFavoritesHomeFeed]
+  )
 
   // Hooks must run every render — never place useMemo after conditional returns.
   const subRequests = useMemo(() => {
     if (!canRenderFeed) return []
     return [
       {
-        urls: dedupeNormalizeRelayUrlsOrdered(ensureHomeFeedTrendingRelay(stableRelayUrls)),
+        urls: homeFeedReqUrls(stableRelayUrls),
         filter: {
           kinds: defaultKinds
         }
       }
     ]
-  }, [canRenderFeed, relayUrlsKey, stableRelayUrls, defaultKindsKey, defaultKinds])
+  }, [canRenderFeed, relayUrlsKey, stableRelayUrls, defaultKindsKey, defaultKinds, homeFeedReqUrls])
   const repliesSubRequests = useMemo(() => {
     if (!canRenderFeed) return []
     const replyUrls =
       stableReplyRelayUrls.length > 0 ? stableReplyRelayUrls : stableRelayUrls
     return [
       {
-        urls: dedupeNormalizeRelayUrlsOrdered(ensureHomeFeedTrendingRelay(replyUrls)),
+        urls: homeFeedReqUrls(replyUrls),
         filter: {
           kinds: defaultKinds
         }

@@ -1,6 +1,11 @@
 import type { TRelaySet } from '@/types'
 
 export const HOME_FEED_RELAY_SOURCE_FAVORITES = 'favorites'
+
+/** True when the home feed should query only the selected relay set (no trending, no NIP-65 inboxes). */
+export function isHomeFeedRelaySetSource(source: string): boolean {
+  return source !== HOME_FEED_RELAY_SOURCE_FAVORITES
+}
 export const HOME_FAVORITES_FEED_SUBSCRIPTION_KEY = 'home-all-favorites'
 export const HOME_FAVORITES_FEED_TIMELINE_SCOPE_KEY = 'all-favorites'
 

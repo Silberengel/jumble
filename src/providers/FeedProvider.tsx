@@ -2,11 +2,13 @@ import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import {
   buildAllFavoritesFeedRelayUrls,
+  buildHomeRelaySetFeedRelayUrls,
   ensureHomeFeedTrendingRelay,
   stripNostrLandAggrFromRelayUrls
 } from '@/lib/home-feed-relays'
 import {
   homeFeedSourceLabel,
+  isHomeFeedRelaySetSource,
   normalizeHomeFeedRelaySource,
   resolveHomeFeedPrimaryRelayUrls
 } from '@/lib/home-feed-relay-source'
@@ -183,19 +185,24 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {
-    const primaryRelays = buildAllFavoritesFeedRelayUrls(
-      homeFeedPrimaryRelayUrls,
-      blockedRelays,
-      [],
-      useGlobalRelayDefaults
-    )
-    const replyRelays = buildHomeReplyFeedRelayUrls(
-      primaryRelays,
-      replyExtraRelayLayers.inboxRelayUrls,
-      replyExtraRelayLayers.cacheRelayUrls,
-      replyExtraRelayLayers.httpRelayUrls,
-      blockedRelays
-    )
+    const usingRelaySet = isHomeFeedRelaySetSource(effectiveHomeFeedRelaySource)
+    const primaryRelays = usingRelaySet
+      ? buildHomeRelaySetFeedRelayUrls(homeFeedPrimaryRelayUrls, blockedRelays)
+      : buildAllFavoritesFeedRelayUrls(
+          homeFeedPrimaryRelayUrls,
+          blockedRelays,
+          [],
+          useGlobalRelayDefaults
+        )
+    const replyRelays = usingRelaySet
+      ? primaryRelays
+      : buildHomeReplyFeedRelayUrls(
+          primaryRelays,
+          replyExtraRelayLayers.inboxRelayUrls,
+          replyExtraRelayLayers.cacheRelayUrls,
+          replyExtraRelayLayers.httpRelayUrls,
+          blockedRelays
+        )
     const primaryId = relayUrlListIdentity(primaryRelays)
     const replyId = relayUrlListIdentity(replyRelays)
     const prevUrls = lastHomeFeedUrlLogRef.current
@@ -208,7 +215,14 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     }
     setUrlStateIfChanged(setRelayUrls, primaryRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
-  }, [homeFeedPrimaryRelayUrls, blockedRelays, replyExtraRelayLayers, setUrlStateIfChanged, useGlobalRelayDefaults])
+  }, [
+    effectiveHomeFeedRelaySource,
+    homeFeedPrimaryRelayUrls,
+    blockedRelays,
+    replyExtraRelayLayers,
+    setUrlStateIfChanged,
+    useGlobalRelayDefaults
+  ])
 
   const favoriteRelaysIdentity = useMemo(
     () =>

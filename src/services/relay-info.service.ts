@@ -1,4 +1,5 @@
 import { isViewerRelayBlocked } from '@/lib/viewer-blocked-relays'
+import { isHiddenNetworkRelayUrl } from '@/lib/hidden-network-relay'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
   devProxyCorsProblematicHttpsIndexRelayBase,
@@ -172,6 +173,10 @@ class RelayInfoService {
   private async fetchRelayNip11(url: string) {
     // Path-based WS trending feed — no NIP-11 document at the derived https URL (avoids CORS noise).
     if (isWispTrendingNotesRelayUrl(url)) {
+      return undefined
+    }
+    // Tor/I2P hosts are not reachable from the browser for HTTP NIP-11 (no SOCKS in fetch).
+    if (typeof window !== 'undefined' && isHiddenNetworkRelayUrl(url)) {
       return undefined
     }
     try {

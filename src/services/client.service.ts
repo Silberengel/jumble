@@ -239,10 +239,10 @@ import {
   nip19,
   Event as NEvent,
   Relay,
-  SimplePool,
   VerifiedEvent,
   verifyEvent
 } from 'nostr-tools'
+import { SimplePool } from 'nostr-tools/pool'
 import { AbstractRelay } from 'nostr-tools/abstract-relay'
 import indexedDb from './indexed-db.service'
 import postEditorService from './post-editor.service'
