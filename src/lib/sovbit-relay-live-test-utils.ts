@@ -1,12 +1,17 @@
 /**
  * Live Sovbit relay round-trip helpers (clearnet / Tor / I2P).
- * Used by {@link ./sovbit-relay-live.integration.test.ts} — not imported from app runtime.
+ * Uses {@link installNodeHiddenNetworkRelayWebSocket} from the app transport layer.
  */
-import WebSocket from 'ws'
-import { SocksProxyAgent } from 'socks-proxy-agent'
 import { finalizeEvent, nip19 } from 'nostr-tools'
-import { SimplePool, useWebSocketImplementation } from 'nostr-tools/pool'
+import { SimplePool } from 'nostr-tools/pool'
 import type { EventTemplate } from 'nostr-tools'
+import { resolveHiddenNetworkRelayConnectPlan } from '@/lib/hidden-network-relay'
+import { installNodeHiddenNetworkRelayWebSocket } from '@/lib/hidden-network-relay.node'
+
+export {
+  DEFAULT_I2P_SOCKS_URL as DEFAULT_I2P_SOCKS,
+  DEFAULT_TOR_SOCKS_URL as DEFAULT_TOR_SOCKS
+} from '@/lib/hidden-network-relay'
 
 export const SOVBIT_RELAY_CLEARNET = 'wss://relay.sovbit.host'
 export const SOVBIT_RELAY_TOR =
@@ -14,13 +19,9 @@ export const SOVBIT_RELAY_TOR =
 export const SOVBIT_RELAY_I2P =
   'ws://hfv334dgnndidbgdi2rbbvrtimp2fqy5unpys5tumixhrr7gi2sa.b32.i2p:7778'
 
-export const DEFAULT_TOR_SOCKS = 'socks5://127.0.0.1:9050'
-export const DEFAULT_I2P_SOCKS = 'socks5://127.0.0.1:7657'
-
 export type SovbitRelayEndpoint = {
   label: 'clearnet' | 'tor' | 'i2p'
   url: string
-  /** When set, WebSocket connects through this SOCKS proxy (Tor / I2P router). */
   socksProxyUrl?: string
 }
 
@@ -34,27 +35,19 @@ export function loadSovbitLiveTestSecretKey(): Uint8Array | null {
   return data
 }
 
-function createWebSocketViaSocks(socksProxyUrl: string): typeof WebSocket {
-  const agent = new SocksProxyAgent(socksProxyUrl)
-  class SocksWebSocket extends WebSocket {
-    constructor(url: string | URL, protocols?: string | string[]) {
-      super(url, protocols, { agent })
-    }
-  }
-  return SocksWebSocket as unknown as typeof WebSocket
-}
-
-export function installRelayWebSocketTransport(socksProxyUrl?: string): void {
-  useWebSocketImplementation(
-    socksProxyUrl ? createWebSocketViaSocks(socksProxyUrl) : (WebSocket as unknown as typeof globalThis.WebSocket)
-  )
+export function installSovbitLiveTestRelayTransport(): void {
+  installNodeHiddenNetworkRelayWebSocket()
 }
 
 export async function probeRelayConnection(
   relayUrl: string,
   opts?: { socksProxyUrl?: string; timeoutMs?: number }
 ): Promise<boolean> {
-  installRelayWebSocketTransport(opts?.socksProxyUrl)
+  if (opts?.socksProxyUrl) {
+    const kind = relayUrl.includes('.onion') ? 'IMWALD_TOR_SOCKS' : 'IMWALD_I2P_SOCKS'
+    process.env[kind] = opts.socksProxyUrl
+  }
+  installSovbitLiveTestRelayTransport()
   const pool = new SimplePool({ enableReconnect: false })
   try {
     await pool.ensureRelay(relayUrl, { connectionTimeout: opts?.timeoutMs ?? 15_000 })
@@ -74,7 +67,17 @@ export async function relayReadWriteRoundTrip(opts: {
   connectionTimeoutMs?: number
   queryWaitMs?: number
 }): Promise<{ eventId: string; content: string }> {
-  installRelayWebSocketTransport(opts.socksProxyUrl)
+  if (opts.socksProxyUrl) {
+    const envKey = opts.relayUrl.includes('.onion') ? 'IMWALD_TOR_SOCKS' : 'IMWALD_I2P_SOCKS'
+    process.env[envKey] = opts.socksProxyUrl
+  }
+  installSovbitLiveTestRelayTransport()
+
+  const plan = resolveHiddenNetworkRelayConnectPlan(opts.relayUrl)
+  if (plan.viaTestGateway) {
+    // Gateway mode: logical onion/i2p URL, dial clearnet gateway (same Sovbit backend).
+  }
+
   const pool = new SimplePool({ enableReconnect: false })
   const connectionTimeout = opts.connectionTimeoutMs ?? 45_000
   const queryWaitMs = opts.queryWaitMs ?? 20_000

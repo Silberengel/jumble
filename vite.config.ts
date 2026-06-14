@@ -6,6 +6,7 @@ import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
 import packageJson from './package.json'
+import { hiddenRelayDevProxyPlugin } from './vite-hidden-relay-dev-proxy'
 /// <reference types="vitest" />
 
 const getGitHash = () => {
@@ -480,6 +481,7 @@ export default defineConfig(({ mode }) => {
   },
   plugins: [
     react(),
+    hiddenRelayDevProxyPlugin(),
     fullReloadOnProvidersAndPages(),
     quietOptionalDevProxyErrors(),
     VitePWA({

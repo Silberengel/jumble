@@ -151,6 +151,8 @@ import {
   getRelayUrlFromRelayReviewEvent
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { hiddenNetworkRelayUnavailableReason } from '@/lib/hidden-network-relay'
+import { installBrowserHiddenNetworkRelayWebSocket } from '@/lib/hidden-network-relay.browser'
 import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
@@ -475,6 +477,7 @@ class ClientService extends EventTarget {
 
   constructor() {
     super()
+    installBrowserHiddenNetworkRelayWebSocket()
     this.pool = new SimplePool()
     this.pool.trackRelays = true
     const rawEnsureRelay = this.pool.ensureRelay.bind(this.pool)
@@ -487,6 +490,10 @@ class ClientService extends EventTarget {
       // every part of the app (feeds, profile lookups, relay-list fetches, etc.).
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
+      }
+      const hiddenNetworkBlock = hiddenNetworkRelayUnavailableReason(url)
+      if (hiddenNetworkBlock) {
+        throw new Error(hiddenNetworkBlock)
       }
       if (params?.purpose !== 'write' && !isRelayConnectionAllowedForViewer(url)) {
         throw new Error(`[metadata-relays-only] skipping relay ${url}`)
@@ -520,7 +527,8 @@ class ClientService extends EventTarget {
           msg.includes('[relay-strike]') ||
           msg.includes('[relay-rate-limit]') ||
           msg.includes('[offline]') ||
-          msg.includes('[http-index-relay]')
+          msg.includes('[http-index-relay]') ||
+          msg.includes('[hidden-network-relay]')
         if (
           !skipStrike &&
           (params?.purpose !== 'write' || isLocalNetworkUrl(url))
