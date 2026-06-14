@@ -159,13 +159,31 @@ const PostTextarea = forwardRef<
       return live
     }, [setText, text])
 
-    const previewSurfaceClass = cn(
-      kind === ExtendedKind.POLL
-        ? 'min-h-20'
-        : isSmallScreen
-          ? 'min-h-[min(36dvh,17rem)]'
-          : 'min-h-52'
+    const composerPaneHeightClass = useMemo(
+      () =>
+        kind === ExtendedKind.POLL
+          ? isSmallScreen
+            ? 'flex-1 min-h-0 max-h-40'
+            : 'h-32'
+          : isSmallScreen
+            ? 'flex-1 min-h-0'
+            : 'h-[min(58vh,520px)]',
+      [isSmallScreen, kind]
     )
+
+    const composerBodyScrollClass = cn(
+      composerPaneHeightClass,
+      'min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y',
+      'border rounded-lg focus-within:ring-1 focus-within:ring-ring',
+      className
+    )
+
+    const previewBodyScrollClass = cn(
+      composerPaneHeightClass,
+      'min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y'
+    )
+
+    const previewSurfaceClass = 'min-h-0'
 
     const kindDescription = useMemo(() => getKindDescription(kind), [kind])
 
@@ -201,13 +219,8 @@ const PostTextarea = forwardRef<
     )
 
     const editorSurfaceClass = useMemo(
-      () =>
-        cn(
-          'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          isSmallScreen && 'h-full min-h-0 flex-1 overflow-y-auto overscroll-y-contain',
-          className
-        ),
-      [className, isSmallScreen]
+      () => cn('min-h-full p-3 focus-visible:outline-none'),
+      []
     )
 
     const editor = useEditor({
@@ -351,10 +364,7 @@ const PostTextarea = forwardRef<
       }
     }))
 
-    const editorShellClass = cn(
-      'border rounded-lg p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-      className
-    )
+    const editorShellClass = 'min-h-full p-3 text-muted-foreground'
 
     return (
       <Tabs
@@ -366,7 +376,8 @@ const PostTextarea = forwardRef<
           setActiveTab(tab)
         }}
         className={cn(
-          isSmallScreen ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden' : 'space-y-2'
+          'flex min-h-0 flex-col gap-2 overflow-hidden',
+          isSmallScreen ? 'flex-1' : undefined
         )}
       >
         <div className="flex min-w-0 shrink-0 flex-col gap-2">
@@ -388,53 +399,48 @@ const PostTextarea = forwardRef<
           value="edit"
           forceMount
           className={cn(
-            'mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+            'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isSmallScreen && 'flex-1 overflow-hidden'
           )}
         >
-          {editor ? (
-            <EditorContent
-              className={cn(
-                'tiptap',
-                isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
-              )}
-              editor={editor}
-            />
-          ) : (
-            <div
-              className={cn(editorShellClass, 'text-muted-foreground')}
-              aria-hidden
-            >
-              {placeholderText}
-            </div>
-          )}
+          <div className={composerBodyScrollClass}>
+            {editor ? (
+              <EditorContent className="tiptap" editor={editor} />
+            ) : (
+              <div className={editorShellClass} aria-hidden>
+                {placeholderText}
+              </div>
+            )}
+          </div>
         </TabsContent>
         <TabsContent
           value="preview"
           forceMount
           className={cn(
-            'mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+            'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
+            isSmallScreen && 'flex-1 overflow-hidden'
           )}
         >
-          <div className={cn('space-y-2', isSmallScreen && 'flex min-h-0 flex-1 flex-col')}>
-            <div className="text-xs text-muted-foreground shrink-0">
+          <div className={cn('flex min-h-0 flex-col gap-2', isSmallScreen && 'flex-1')}>
+            <div className="shrink-0 text-xs text-muted-foreground">
               kind {kindDescription.number}: {kindDescription.description}
             </div>
-            <Preview
-              content={previewContent}
-              className={previewSurfaceClass}
-              kind={kind}
-              highlightData={highlightData}
-              pollCreateData={pollCreateData}
-              mediaImetaTags={mediaImetaTags}
-              mediaUrl={mediaUrl}
-              articleMetadata={articleMetadata}
-              musicTrackMetadata={musicTrackMetadata}
-              extraPreviewTags={extraPreviewTags}
-              addClientTag={addClientTag}
-              contentWarning={contentWarning}
-            />
+            <div className={previewBodyScrollClass}>
+              <Preview
+                content={previewContent}
+                className={previewSurfaceClass}
+                kind={kind}
+                highlightData={highlightData}
+                pollCreateData={pollCreateData}
+                mediaImetaTags={mediaImetaTags}
+                mediaUrl={mediaUrl}
+                articleMetadata={articleMetadata}
+                musicTrackMetadata={musicTrackMetadata}
+                extraPreviewTags={extraPreviewTags}
+                addClientTag={addClientTag}
+                contentWarning={contentWarning}
+              />
+            </div>
           </div>
         </TabsContent>
       </Tabs>

@@ -3417,7 +3417,8 @@ export default function PostContent({
 
       <div
         className={cn(
-          isSmallScreen && 'flex min-h-[min(36dvh,17rem)] min-w-0 flex-1 flex-col overflow-hidden'
+          'flex min-w-0 flex-col overflow-hidden',
+          isSmallScreen && 'min-h-0 flex-1'
         )}
       >
       <PostTextarea
@@ -3427,14 +3428,7 @@ export default function PostContent({
           defaultContent={defaultContent}
           parentEvent={isDiscussionThread && !parentEvent ? THREAD_POST_EDITOR_PARENT : parentEvent}
           onSubmit={() => post()}
-          className={cn(
-            isPoll
-              ? 'min-h-20'
-              : isSmallScreen
-                ? 'h-full min-h-0'
-                : 'min-h-52',
-            isDiscussionThread && threadErrors.content && 'border-destructive'
-          )}
+          className={cn(isDiscussionThread && threadErrors.content && 'border-destructive')}
           onUploadStart={handleUploadStart}
           onUploadProgress={handleUploadProgress}
           onUploadEnd={handleUploadEnd}
