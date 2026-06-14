@@ -1365,7 +1365,7 @@ class NoteStatsService {
         eoseTimeout: 8_000,
         globalTimeout: 18_000,
         firstRelayResultGraceMs: false,
-        foreground: true,
+        ...(foreground ? { foreground: true as const } : {}),
         onevent: onStatsEvent
       })
     } catch {
