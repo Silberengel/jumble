@@ -14,8 +14,8 @@ import {
 export { stripNostrLandAggrFromRelayUrls }
 
 /**
- * Home timeline REQs (Notes, Replies, and Gallery tabs on `home-all-favorites`) must never hit aggr — only
- * favorites + Wisp trending (+ widened read layers on Replies/Gallery without aggr). Side-panel threads,
+ * Home timeline REQs (Notes and Replies on `home-all-favorites`) must never hit aggr — only
+ * favorites + Wisp trending (+ widened read layers on Replies without aggr). Side-panel threads,
  * reply blurbs, backlinks, embeds, and profiles use {@link feedRelayPolicyUrls} / comprehensive lists instead.
  */
 export function stripNostrLandAggrFromTimelineSubRequests<T extends { urls: string[] }>(

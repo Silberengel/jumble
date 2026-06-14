@@ -5,8 +5,6 @@ import {
   ExtendedKind,
   FAST_READ_RELAY_URLS,
   FIRST_RELAY_RESULT_GRACE_MS,
-  HOME_GALLERY_TAB_KINDS,
-  HOME_GALLERY_TAB_KIND_SET,
   SINGLE_RELAY_KINDLESS_EOSE_TIMEOUT_MS,
   SINGLE_RELAY_KINDLESS_REQ_LIMIT
 } from '@/constants'
@@ -741,15 +739,11 @@ const NoteList = forwardRef(
        * relay URL set is a strict superset of the old one (which would otherwise keep stale rows).
        */
       feedTimelineScopeKey,
-      /**
-       * Home {@link NormalFeed} surface: Notes / Replies / Gallery. Gallery uses fixed media REQ kinds; without
-       * this, {@link timelineResubscribeKindKey} still tracks the Notes kind picker and tears the live sub on
-       * unrelated picker churn — stale grid + refresh feeling broken.
-       */
+      /** Home {@link NormalFeed} surface: Notes vs Replies (posts vs postsAndReplies). */
       homeFeedListMode,
       /** Home favorites: relays allowed for “Seen on” + stats on the Notes tab (favorites + trending). */
       homeFeedSeenOnAllowlistOp,
-      /** Home favorites: wider stack for Replies / Gallery (adds NIP-65, cache, HTTP index). */
+      /** Home favorites: wider stack for Replies (adds NIP-65, cache, HTTP index). */
       homeFeedSeenOnAllowlistReplies,
       /** Spells page: bumps when user picks a feed; used with {@link onSpellFeedFirstPaint}. */
       spellFeedInstrumentToken,
@@ -1206,7 +1200,7 @@ const NoteList = forwardRef(
 
     const homeFeedActiveSeenOnAllowlist = useMemo(() => {
       if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return undefined
-      if (homeFeedListMode === 'postsAndReplies' || homeFeedListMode === 'media') {
+      if (homeFeedListMode === 'postsAndReplies') {
         return homeFeedSeenOnAllowlistRepliesKey ? homeFeedSeenOnAllowlistReplies : undefined
       }
       return homeFeedSeenOnAllowlistOpKey ? homeFeedSeenOnAllowlistOp : undefined
@@ -1324,11 +1318,9 @@ const NoteList = forwardRef(
     /** Kindless relay explore ignores the feed kind picker; avoid re-subscribing when it changes. */
     const timelineResubscribeKindKey = useMemo(() => {
       if (allowKindlessRelayExplore) return 'kindless-relay-explore'
-      if (homeFeedListMode === 'media') return 'home-surface-media'
       return `${showKindsKey}|${showKind1OPs}|${showKind1Replies}|${showKind1111}`
     }, [
       allowKindlessRelayExplore,
-      homeFeedListMode,
       showKindsKey,
       showKind1OPs,
       showKind1Replies,
@@ -1446,13 +1438,9 @@ const NoteList = forwardRef(
 
         if (extraShouldHideEvent?.(evt)) return true
 
-        if (homeFeedListMode === 'media' && !HOME_GALLERY_TAB_KIND_SET.has(evt.kind)) {
-          return true
-        }
-
         if (
           homeFeedActiveSeenOnAllowlist &&
-          homeFeedListMode === 'posts' &&
+          (homeFeedListMode === 'posts' || relayAuthoritativeFeedOnly) &&
           !eventSeenOnMatchesAllowlist(
             client.getSeenEventRelayUrls(evt.id),
             homeFeedActiveSeenOnAllowlist
@@ -1473,7 +1461,8 @@ const NoteList = forwardRef(
         incomingPaymentRecipientPubkey,
         extraShouldHideEvent,
         homeFeedActiveSeenOnAllowlist,
-        homeFeedListMode
+        homeFeedListMode,
+        relayAuthoritativeFeedOnly
       ]
     )
 
@@ -2681,72 +2670,6 @@ const NoteList = forwardRef(
             })
         }
 
-        /**
-         * Home Galerie: paint session + IndexedDB media hits immediately so the grid is not blank while relay
-         * waves stall (dead localhost relay, NIP-42, etc.). Merges before/alongside disk timeline prime.
-         */
-        const startHomeGalleryLocalWarmup = () => {
-          if (!gridLayoutRef.current) return
-          if (hostPrimaryPageNameRef.current !== 'feed') return
-          if (oneShotFetch || mappedSubRequests.length === 0) return
-
-          const mergeLayer = (incoming: Event[], variant: string) => {
-            if (!effectActive || timelineEffectStale()) return
-            const narrowed = narrowLiveBatch(incoming)
-            if (!narrowed.length) return
-            setEvents((prev) => {
-              const boot = timelineMergeBootstrapRef.current
-              const base = boot !== null ? boot : prev
-              const next = collapseDuplicateNip18RepostTimelineRows(
-                mergeEventBatchesById(base, narrowed, eventCapEarly, areAlgoRelays)
-              )
-              if (next.length > 0) {
-                timelineMergeBootstrapRef.current = next.slice()
-                lastEventsForTimelinePrefetchRef.current = next
-              }
-              return next
-            })
-            setNewEvents([])
-            setShowCount(revealBatchSize ?? SHOW_COUNT)
-            if (!feedPaintLiveRelayDoneRef.current) {
-              setLoading(false)
-              feedPaintRelayPendingRef.current = true
-              feedPaintRelayMetaRef.current = {
-                variant,
-                mergedCount: narrowed.length
-              }
-              setFeedEmptyToastGateTick((n) => n + 1)
-              setFeedTimelineEmptyUiReady(true)
-            }
-          }
-
-          try {
-            const hits = client.eventService.listSessionEventsByKinds([...HOME_GALLERY_TAB_KINDS], {
-              limit: 800
-            })
-            mergeLayer(hits as Event[], 'gallery_session_local')
-          } catch {
-            /* ignore */
-          }
-
-          void (async () => {
-            try {
-              const since = dayjs().subtract(120, 'day').unix()
-              const rows = await indexedDb.scanEventArchiveByKinds({
-                kinds: [...HOME_GALLERY_TAB_KINDS],
-                since,
-                maxRowsScanned: 28_000,
-                maxMatches: 220
-              })
-              if (!effectActive || timelineEffectStale()) return
-              if (!gridLayoutRef.current || hostPrimaryPageNameRef.current !== 'feed') return
-              mergeLayer(rows as Event[], 'gallery_archive_local')
-            } catch {
-              /* ignore */
-            }
-          })()
-        }
-
         if (!keepExistingTimelineEvents) {
           if (restoredFromSession && sessionSnap && sessionSnap.length > 0) {
             feedPaintSessionPendingRef.current = true
@@ -3106,7 +3029,6 @@ const NoteList = forwardRef(
         }
 
         if (!oneShotFetch && mappedSubRequests.length > 0) {
-          startHomeGalleryLocalWarmup()
           startNonBlockingTimelineDiskPrime()
         }
 
@@ -3260,7 +3182,7 @@ const NoteList = forwardRef(
                   ...(runtimeSnapshot.rawCount === 0
                     ? {
                         emptyHint:
-                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (Gallery uses kinds 20, 21, 22, 34235 only).'
+                          'All sub-batches returned 0 events: relays may not index these kinds for this author, the query may have timed out before slow relays EOSEd, or posts are kind 1 with links (profile Media tab uses native media kinds only).'
                       }
                     : {})
                 })

@@ -3,7 +3,8 @@ import type { TNoteListRef } from '@/components/NoteList'
 import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
 import {
   HOME_FEED_RELAY_SOURCE_FAVORITES,
-  homeFeedSubscriptionKeys
+  homeFeedSubscriptionKeys,
+  isHomeFeedRelaySetSource
 } from '@/lib/home-feed-relay-source'
 import { checkAlgoRelay } from '@/lib/relay'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
@@ -92,6 +93,7 @@ const RelaysFeed = forwardRef<
   const defaultKindsKey = useMemo(() => JSON.stringify(defaultKinds), [defaultKinds])
 
   const canRenderFeed = stableRelayUrls.length > 0
+  const relaySetFeedOnly = isHomeFeedRelaySetSource(homeFeedRelaySource)
   const widenFavoritesHomeFeed = homeFeedRelaySource === HOME_FEED_RELAY_SOURCE_FAVORITES
   const homeFeedReqUrls = useCallback(
     (urls: string[]) =>
@@ -154,12 +156,13 @@ const RelaysFeed = forwardRef<
       isMainFeed
       setSubHeader={setSubHeader}
       onSubHeaderRefresh={onSubHeaderRefresh}
-      preserveTimelineOnSubRequestsChange
+      preserveTimelineOnSubRequestsChange={!relaySetFeedOnly}
       repliesSubRequests={repliesSubRequests}
       feedSubscriptionKey={feedSubscriptionKey}
       feedTimelineScopeKey={feedTimelineScopeKey}
       homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}
       homeFeedSeenOnAllowlistReplies={homeFeedSeenOnAllowlistReplies}
+      relayAuthoritativeFeedOnly={relaySetFeedOnly}
       showFeedClientFilter
       hostPrimaryPageName="feed"
     />

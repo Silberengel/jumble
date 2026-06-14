@@ -1073,14 +1073,7 @@ export const PROFILE_MEDIA_TAB_KINDS: readonly number[] = [
   ExtendedKind.MUSIC_TRACK
 ]
 
-/** Home feed Gallery tab: picture + NIP-71 video only (20, 21, 22, 34235). */
-export const HOME_GALLERY_TAB_KINDS: readonly number[] = [
-  ExtendedKind.PICTURE,
-  ...NIP71_VIDEO_KINDS
-]
-
 const PROFILE_MEDIA_TAB_KIND_SET = new Set<number>(PROFILE_MEDIA_TAB_KINDS)
-export const HOME_GALLERY_TAB_KIND_SET = new Set<number>(HOME_GALLERY_TAB_KINDS)
 
 /**
  * Kinds subscribed on the profile Posts tab only. Omits publication kinds and native media kinds so those

@@ -47,7 +47,7 @@ function buildHomeReplyFeedRelayUrls(
   httpRelayUrls: string[],
   blockedRelays: string[]
 ): string[] {
-  /** Home Replies/Gallery: never prepend aggr (reserved for side-panel threads, profiles, spells). */
+  /** Home Replies: never prepend aggr (reserved for side-panel threads, profiles, spells). */
   return ensureHomeFeedTrendingRelay(
     stripNostrLandAggrFromRelayUrls(
       feedRelayPolicyUrls(

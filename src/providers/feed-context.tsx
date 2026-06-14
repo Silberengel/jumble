@@ -8,7 +8,7 @@ export type TFeedContext = {
   /** Home Notes (OP): favorites plus Wisp trending only — no aggr, no FAST_READ padding. */
   relayUrls: string[]
   /**
-   * Home Replies + Gallery: same OP base, then NIP-65 read inboxes (FAST_READ when empty), kind 10432 cache
+   * Home Replies: same OP base, then NIP-65 read inboxes (FAST_READ when empty), kind 10432 cache
    * read relays, HTTP index — never aggr (aggr is for side-panel threads, profiles, and spells only).
    */
   replyRelayUrls: string[]
