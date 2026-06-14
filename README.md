@@ -101,6 +101,56 @@ npm run electron:pack
 
 Outputs land in `release/` (`.deb`, `.AppImage`). Upload those files when you create or edit a GitHub Release for that version.
 
+## Tor & I2P relays (operators and power users)
+
+Browsers cannot open SOCKS connections or resolve `.onion` / `.i2p` hostnames. Imwald therefore **terminates hidden-network WebSocket relays on your machine** and forwards them through local Tor/I2P SOCKS.
+
+### Where it works
+
+| Runtime | Hidden relays |
+|---------|----------------|
+| `npm run dev` | Yes — Vite dev server SOCKS bridge (`/__imwald/hidden-relay`) |
+| Desktop app (`.deb` / AppImage) | Yes — Electron loopback proxy on `127.0.0.1:45280` |
+| Public website (`jumble.imwald.eu`) | **No** — use clearnet `wss://` relays or the desktop app |
+
+Check status under **Settings → Relays and Storage → Tor & I2P**.
+
+### Local requirements
+
+1. **Tor** — system daemon on `127.0.0.1:9050`, *or* Tor Browser on `127.0.0.1:9150` (auto-detected; daemon is tried first).
+2. **I2P** — router SOCKS outproxy on `127.0.0.1:7657` (default for Java I2P).
+
+Example relay URL forms:
+
+```text
+ws://your-relay.onion:7778
+ws://abcdef…b32.i2p:7778
+```
+
+Add them to **Read & Write relays** or **Favorite relays** like any clearnet URL.
+
+### SOCKS overrides
+
+If your router uses non-default ports:
+
+```bash
+export IMWALD_TOR_SOCKS=socks5://127.0.0.1:9150
+export IMWALD_I2P_SOCKS=socks5://127.0.0.1:7657
+npm run dev
+```
+
+### Verify connectivity
+
+```bash
+# Unit + gateway integration tests
+npm run test:run -- src/lib/hidden-network-relay.test.ts
+
+# Live read/write (needs SCRIPTORIUM_KEY); SOCKS suite skips unless Tor/I2P ports are open
+SCRIPTORIUM_KEY=nsec1… npm run test:run -- src/lib/sovbit-relay-live.integration.test.ts
+```
+
+First hidden-network connections can take **30–90 seconds** while Tor/I2P builds circuits.
+
 ## License
 
 MIT

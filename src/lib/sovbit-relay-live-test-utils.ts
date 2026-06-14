@@ -39,6 +39,32 @@ export function installSovbitLiveTestRelayTransport(): void {
   installNodeHiddenNetworkRelayWebSocket()
 }
 
+export async function isLocalTcpPortOpen(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  const net = await import('node:net')
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port })
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('error', () => resolve(false))
+    socket.once('timeout', () => {
+      socket.destroy()
+      resolve(false)
+    })
+  })
+}
+
+export async function localHiddenNetworkSocksAvailability(): Promise<{ tor: boolean; i2p: boolean }> {
+  const [torDaemon, torBrowser, i2p] = await Promise.all([
+    isLocalTcpPortOpen('127.0.0.1', 9050),
+    isLocalTcpPortOpen('127.0.0.1', 9150),
+    isLocalTcpPortOpen('127.0.0.1', 7657)
+  ])
+  return { tor: torDaemon || torBrowser, i2p }
+}
+
 export async function probeRelayConnection(
   relayUrl: string,
   opts?: { socksProxyUrl?: string; timeoutMs?: number }

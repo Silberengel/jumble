@@ -1,4 +1,5 @@
 import CacheRelaysSetting from '@/components/CacheRelaysSetting'
+import HiddenNetworkRelayStatusSetting from '@/components/HiddenNetworkRelayStatusSetting'
 import HttpRelaysSetting from '@/components/HttpRelaysSetting'
 import JsonViewDialog from '@/components/JsonViewDialog'
 import MailboxSetting from '@/components/MailboxSetting'
@@ -95,6 +96,9 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
       case '#cache-relays':
         setTabValue('cache-relays')
         break
+      case '#hidden-network':
+        setTabValue('hidden-network')
+        break
     }
   }, [account?.pubkey])
 
@@ -146,6 +150,7 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
           <TabsTrigger value="http-relays" className="w-full sm:w-auto">{t('HTTP relays')}</TabsTrigger>
           <TabsTrigger value="cache-relays" className="w-full sm:w-auto">{t('Cache Relays')}</TabsTrigger>
           <TabsTrigger value="session-relays" className="w-full sm:w-auto">{t('Session relays')}</TabsTrigger>
+          <TabsTrigger value="hidden-network" className="w-full sm:w-auto">{t('Tor & I2P')}</TabsTrigger>
         </TabsList>
         <TabsContent value="favorite-relays" className="space-y-4">
           <RelaySettingsKindNotice kinds={FAVORITE_TAB_KINDS} />
@@ -166,6 +171,9 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
         <TabsContent value="session-relays" className="space-y-4">
           <RelaySettingsKindNotice kinds={[]} variant="session" />
           <SessionRelaysTab />
+        </TabsContent>
+        <TabsContent value="hidden-network" className="space-y-4">
+          <HiddenNetworkRelayStatusSetting />
         </TabsContent>
       </Tabs>
     </SecondaryPageLayout>

@@ -5,10 +5,12 @@
  * Requires:
  *   SCRIPTORIUM_KEY=nsec1…   (signing key with write access to relay.sovbit.host)
  *
- * Hidden-network (Tor/I2P) tests dial through IMWALD_HIDDEN_RELAY_TEST_GATEWAY when set
- * (defaults to the clearnet Sovbit URL — same backend, three addresses).
+ * Gateway mode (default in this file's first suite): hidden URLs dial clearnet Sovbit
+ * (same backend, three addresses). Set IMWALD_HIDDEN_RELAY_TEST_GATEWAY yourself to override.
  *
- * Optional real SOCKS (when gateway unset):
+ * Real SOCKS suite (second suite): requires local Tor (9050) and/or I2P (7657) with gateway unset.
+ *
+ * Optional SOCKS overrides:
  *   SCRIPTORIUM_TOR_SOCKS=socks5://127.0.0.1:9050
  *   SCRIPTORIUM_I2P_SOCKS=socks5://127.0.0.1:7657
  *
@@ -18,6 +20,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   loadSovbitLiveTestSecretKey,
+  localHiddenNetworkSocksAvailability,
   relayReadWriteRoundTrip,
   SOVBIT_RELAY_CLEARNET,
   SOVBIT_RELAY_I2P,
@@ -81,4 +84,41 @@ describe.runIf(secretKey == null)('Sovbit relay live read/write (SCRIPTORIUM_KEY
   it('skips live relay tests when SCRIPTORIUM_KEY is unset', () => {
     expect(process.env.SCRIPTORIUM_KEY?.trim()).toBeFalsy()
   })
+})
+
+describe.runIf(secretKey != null)('Sovbit relay live read/write via SOCKS (SCRIPTORIUM_KEY)', () => {
+  const sk = secretKey!
+
+  beforeAll(() => {
+    delete process.env.IMWALD_HIDDEN_RELAY_TEST_GATEWAY
+    installSovbitLiveTestRelayTransport()
+  })
+
+  it(
+    'Tor onion relay publishes and reads back through local SOCKS',
+    async ({ skip }) => {
+      const { tor } = await localHiddenNetworkSocksAvailability()
+      if (!tor) skip()
+      const { eventId } = await relayReadWriteRoundTrip({
+        relayUrl: SOVBIT_RELAY_TOR,
+        secretKey: sk
+      })
+      expect(eventId).toMatch(/^[0-9a-f]{64}$/)
+    },
+    180_000
+  )
+
+  it(
+    'I2P b32 relay publishes and reads back through local SOCKS',
+    async ({ skip }) => {
+      const { i2p } = await localHiddenNetworkSocksAvailability()
+      if (!i2p) skip()
+      const { eventId } = await relayReadWriteRoundTrip({
+        relayUrl: SOVBIT_RELAY_I2P,
+        secretKey: sk
+      })
+      expect(eventId).toMatch(/^[0-9a-f]{64}$/)
+    },
+    180_000
+  )
 })

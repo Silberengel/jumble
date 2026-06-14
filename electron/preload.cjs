@@ -5,6 +5,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 try {
   contextBridge.exposeInMainWorld('imwaldElectron', {
     isElectron: true,
+    /** Loopback SOCKS bridge for `.onion` / `.i2p` relay URLs (packaged desktop). */
+    hiddenRelayProxyBase: () => ipcRenderer.sendSync('imwald:get-hidden-relay-proxy-base'),
+    getHiddenNetworkRelayStatus: (payload) =>
+      ipcRenderer.invoke('imwald:hidden-network-relay-status', payload ?? {}),
     reloadApp: () => ipcRenderer.invoke('imwald:reload-app'),
     /**
      * Same-origin translate / LanguageTool from the renderer hits CORS when the shell is loopback.

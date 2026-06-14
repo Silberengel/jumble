@@ -4,7 +4,9 @@ import {
   isHiddenNetworkRelayUrl,
   isI2pRelayHostname,
   isOnionRelayHostname,
-  resolveHiddenNetworkRelayConnectPlan
+  resolveHiddenNetworkRelayConnectPlan,
+  setHiddenNetworkSocksSnapshot,
+  torSocksProxyUrl
 } from '@/lib/hidden-network-relay'
 
 const CLEARNET = 'wss://relay.sovbit.host'
@@ -55,10 +57,44 @@ describe('hidden-network-relay', () => {
     }
   })
 
+  it('routes hidden URLs through a loopback proxy base when provided', () => {
+    const prevGateway = process.env.IMWALD_HIDDEN_RELAY_TEST_GATEWAY
+    delete process.env.IMWALD_HIDDEN_RELAY_TEST_GATEWAY
+    try {
+      const torPlan = resolveHiddenNetworkRelayConnectPlan(ONION, {
+        proxyBase: 'ws://127.0.0.1:45280/__imwald/hidden-relay'
+      })
+      expect(torPlan.viaDevProxy).toBe(true)
+      expect(torPlan.dialUrl).toContain('target=')
+      expect(torPlan.dialUrl).toContain('.onion')
+      expect(torPlan.socksProxyUrl).toBeUndefined()
+    } finally {
+      if (prevGateway == null) delete process.env.IMWALD_HIDDEN_RELAY_TEST_GATEWAY
+      else process.env.IMWALD_HIDDEN_RELAY_TEST_GATEWAY = prevGateway
+    }
+  })
+
   it('leaves clearnet URLs unchanged', () => {
     const plan = resolveHiddenNetworkRelayConnectPlan(CLEARNET)
     expect(plan.kind).toBeNull()
     expect(plan.dialUrl).toContain('relay.sovbit.host')
     expect(plan.viaTestGateway).toBe(false)
+  })
+
+  it('prefers probed Tor Browser SOCKS in snapshot over default daemon port', () => {
+    const prevTor = process.env.IMWALD_TOR_SOCKS
+    const prevScriptorium = process.env.SCRIPTORIUM_TOR_SOCKS
+    delete process.env.IMWALD_TOR_SOCKS
+    delete process.env.SCRIPTORIUM_TOR_SOCKS
+    try {
+      setHiddenNetworkSocksSnapshot({ tor: 'socks5://127.0.0.1:9150' })
+      expect(torSocksProxyUrl()).toBe('socks5://127.0.0.1:9150')
+    } finally {
+      setHiddenNetworkSocksSnapshot({})
+      if (prevTor == null) delete process.env.IMWALD_TOR_SOCKS
+      else process.env.IMWALD_TOR_SOCKS = prevTor
+      if (prevScriptorium == null) delete process.env.SCRIPTORIUM_TOR_SOCKS
+      else process.env.SCRIPTORIUM_TOR_SOCKS = prevScriptorium
+    }
   })
 })

@@ -4,6 +4,11 @@ const { app, BrowserWindow, ipcMain, shell, Menu, session, net } = require('elec
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
+const { startHiddenRelayProxyServer } = require('./hidden-relay-proxy.cjs')
+const {
+  getHiddenNetworkSocksStatus,
+  buildHiddenNetworkRelayStatusPayload
+} = require('./hidden-network-socks.cjs')
 
 // Linux WM_CLASS / Wayland app_id: must differ from the Qt Imwald desktop client (`imwald-desktop`)
 // and from generic `imwald` (package.json name) or GNOME groups windows as one application.
@@ -42,6 +47,11 @@ let packagedStaticServer = null
 let packagedStaticBaseUrl = null
 /** @type {Promise<string> | null} */
 let packagedStaticStartPromise = null
+/** @type {import('http').Server | null} */
+let hiddenRelayProxyServer = null
+/** @type {string | null} */
+let hiddenRelayProxyBaseUrl = null
+const HIDDEN_RELAY_PROXY_PORT = 45280
 
 function resolveUnderDist(distDir, pathname) {
   let rel = pathname
@@ -314,6 +324,43 @@ async function requestImwaldBackend(urlString, { method, headers, body }) {
   }
 }
 
+function ensureHiddenRelayProxyServer() {
+  if (isDev || hiddenRelayProxyBaseUrl) return Promise.resolve(hiddenRelayProxyBaseUrl)
+  return startHiddenRelayProxyServer(HIDDEN_RELAY_PROXY_PORT)
+    .then(({ server, baseUrl }) => {
+      hiddenRelayProxyServer = server
+      hiddenRelayProxyBaseUrl = baseUrl
+      return baseUrl
+    })
+    .catch((err) => {
+      console.error('[imwald] hidden relay proxy failed to start', err)
+      return null
+    })
+}
+
+function registerHiddenRelayProxyIpc() {
+  try {
+    ipcMain.removeHandler('imwald:hidden-relay-proxy-base')
+  } catch {
+    /* ignore */
+  }
+  try {
+    ipcMain.removeHandler('imwald:hidden-network-relay-status')
+  } catch {
+    /* ignore */
+  }
+  ipcMain.removeAllListeners('imwald:get-hidden-relay-proxy-base')
+  ipcMain.on('imwald:get-hidden-relay-proxy-base', (event) => {
+    event.returnValue = hiddenRelayProxyBaseUrl
+  })
+  ipcMain.handle('imwald:hidden-relay-proxy-base', async () => hiddenRelayProxyBaseUrl)
+  ipcMain.handle('imwald:hidden-network-relay-status', async (_event, payload) => {
+    const force = payload && payload.force === true
+    await getHiddenNetworkSocksStatus({ force })
+    return buildHiddenNetworkRelayStatusPayload('electron')
+  })
+}
+
 function registerImwaldBackendRequestIpc() {
   try {
     ipcMain.removeHandler('imwald:backend-request')
@@ -396,9 +443,13 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   relaxCorsForRendererSubresources()
+  registerHiddenRelayProxyIpc()
   registerImwaldBackendRequestIpc()
+  if (!isDev) {
+    await ensureHiddenRelayProxyServer()
+  }
 
   ipcMain.handle('imwald:reload-app', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -414,6 +465,15 @@ app.whenReady().then(() => {
 })
 
 app.on('will-quit', () => {
+  if (hiddenRelayProxyServer) {
+    try {
+      hiddenRelayProxyServer.close()
+    } catch {
+      // ignore
+    }
+    hiddenRelayProxyServer = null
+    hiddenRelayProxyBaseUrl = null
+  }
   if (packagedStaticServer) {
     try {
       packagedStaticServer.close()

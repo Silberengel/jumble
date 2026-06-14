@@ -13,6 +13,15 @@ declare global {
     /** Set by {@link electron/preload.cjs} when running inside Electron. */
     imwaldElectron?: {
       isElectron: true
+      /** Loopback SOCKS bridge for `.onion` / `.i2p` relay URLs (packaged desktop). */
+      hiddenRelayProxyBase?: (() => string | null) | string | null
+      getHiddenNetworkRelayStatus?: (payload?: { force?: boolean }) => Promise<{
+        runtime: string
+        proxyAvailable: boolean
+        tor: { reachable: boolean; socksUrl: string; source: string }
+        i2p: { reachable: boolean; socksUrl: string; source: string }
+        checkedAt: number
+      }>
       /** Ask Electron main to reload index safely (avoids file:// history path reload issues). */
       reloadApp?: () => Promise<boolean>
       /**

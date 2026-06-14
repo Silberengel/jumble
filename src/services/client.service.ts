@@ -152,6 +152,7 @@ import {
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { hiddenNetworkRelayUnavailableReason } from '@/lib/hidden-network-relay'
+import { fetchHiddenNetworkRelayStatus } from '@/lib/hidden-network-relay-status'
 import { installBrowserHiddenNetworkRelayWebSocket } from '@/lib/hidden-network-relay.browser'
 import { patchPoolRelayAuthRaceAndFeedback } from '@/lib/nostr-relay-auth-patch'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
@@ -478,6 +479,7 @@ class ClientService extends EventTarget {
   constructor() {
     super()
     installBrowserHiddenNetworkRelayWebSocket()
+    void fetchHiddenNetworkRelayStatus({ force: true })
     this.pool = new SimplePool()
     this.pool.trackRelays = true
     const rawEnsureRelay = this.pool.ensureRelay.bind(this.pool)
