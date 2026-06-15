@@ -1,6 +1,6 @@
 import { EMOJI_PICKER_DATA_SOURCE } from '@/lib/emoji-picker-data-source'
 import { cn } from '@/lib/utils'
-import { preloadEmojiPickerModule } from '@/lib/emoji-picker-preload'
+import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
 import { DEFAULT_LIKE_REACTION_CONTENT, DEFAULT_LIKE_REACTION_DISPLAY_EMOJI, DEFAULT_SUGGESTED_EMOJIS } from '@/lib/like-reaction-emojis'
 import { recordEmojiUsed } from '@/lib/recently-used-emojis'
 import { useNostr } from '@/providers/NostrProvider'
@@ -33,7 +33,13 @@ export default function EmojiPicker({
   const [customEmojiTick, setCustomEmojiTick] = useState(0)
   const [pickerReady, setPickerReady] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const pickerRef = useRef<(HTMLElement & { customEmoji: unknown[] }) | null>(null)
+  const pickerRef = useRef<
+    (HTMLElement & { customEmoji: unknown[]; database?: { ready(): Promise<void> } }) | null
+  >(null)
+
+  useEffect(() => {
+    void preloadEmojiPicker()
+  }, [])
 
   useEffect(() => customEmojiService.subscribeIndexUpdate(() => setCustomEmojiTick((t) => t + 1)), [])
 
@@ -53,78 +59,80 @@ export default function EmojiPicker({
     let cancelled = false
     setPickerReady(false)
 
-    preloadEmojiPickerModule().then(({ Picker }) => {
-      if (cancelled || !containerRef.current) return
+    preloadEmojiPicker()
+      .then(([{ Picker }]) => {
+        if (cancelled || !containerRef.current) return
 
-      const picker = new Picker({
-        dataSource: EMOJI_PICKER_DATA_SOURCE,
-        customEmoji: customEmojis
-      }) as HTMLElement & { customEmoji: unknown[] }
-      pickerRef.current = picker
+        const picker = new Picker({
+          dataSource: EMOJI_PICKER_DATA_SOURCE,
+          customEmoji: customEmojis
+        }) as HTMLElement & { customEmoji: unknown[]; database?: { ready(): Promise<void> } }
+        pickerRef.current = picker
 
-      if (themeSetting === 'dark') {
-        picker.className = 'dark'
-      } else if (themeSetting === 'light') {
-        picker.className = 'light'
-      }
+        if (themeSetting === 'dark') {
+          picker.className = 'dark'
+        } else if (themeSetting === 'light') {
+          picker.className = 'light'
+        }
 
-      picker.style.width = '100%'
-      picker.style.minWidth = '280px'
-      picker.style.maxWidth = '350px'
-      if (inDrawer) {
+        picker.style.width = '100%'
+        picker.style.minWidth = '280px'
+        picker.style.maxWidth = '350px'
         picker.style.height = '100%'
         picker.style.minHeight = '0'
-      } else {
-        picker.style.height = 'min(350px, 50dvh)'
-        picker.style.minHeight = '280px'
-      }
-      picker.style.setProperty('--num-columns', '8')
+        picker.style.setProperty('--num-columns', '8')
 
-      const handleClick = (e: Event) => {
-        const detail = (e as CustomEvent).detail as {
-          unicode?: string
-          emoji?: {
-            custom?: boolean
+        const handleClick = (e: Event) => {
+          const detail = (e as CustomEvent).detail as {
             unicode?: string
-            name?: string
-            shortcodes?: string[]
-            url?: string
-          }
-        }
-        let result: string | TEmoji | undefined
-        /**
-         * emoji-picker-element only puts `unicode` on the event detail when `skinTonedUnicode` is truthy
-         * (see getDetailForClickEvent in picker.js). Native picks often expose the sequence on `detail.emoji.unicode`
-         * instead, so we must fall back — otherwise `insertEmoji` receives undefined and “most emojis don’t work”.
-         */
-        const top = typeof detail.unicode === 'string' && detail.unicode.length > 0 ? detail.unicode : undefined
-        const nested =
-          typeof detail.emoji?.unicode === 'string' && detail.emoji.unicode.length > 0
-            ? detail.emoji.unicode
-            : undefined
-        const nativeUnicode = top ?? nested
-        if (nativeUnicode) {
-          result = nativeUnicode
-        } else {
-          const em = detail.emoji
-          // Custom entries: `url` (+ shortcodes / name); avoid treating native `unicode` as custom.
-          if (em?.url && !em.unicode) {
-            const shortcode = em.shortcodes?.[0] ?? em.name
-            if (shortcode) {
-              result = { shortcode, url: em.url }
+            emoji?: {
+              custom?: boolean
+              unicode?: string
+              name?: string
+              shortcodes?: string[]
+              url?: string
             }
-          } else if (em?.custom && em.shortcodes?.[0] && em.url) {
-            result = { shortcode: em.shortcodes[0], url: em.url }
           }
+          let result: string | TEmoji | undefined
+          /**
+           * emoji-picker-element only puts `unicode` on the event detail when `skinTonedUnicode` is truthy
+           * (see getDetailForClickEvent in picker.js). Native picks often expose the sequence on `detail.emoji.unicode`
+           * instead, so we must fall back — otherwise `insertEmoji` receives undefined and “most emojis don’t work”.
+           */
+          const top = typeof detail.unicode === 'string' && detail.unicode.length > 0 ? detail.unicode : undefined
+          const nested =
+            typeof detail.emoji?.unicode === 'string' && detail.emoji.unicode.length > 0
+              ? detail.emoji.unicode
+              : undefined
+          const nativeUnicode = top ?? nested
+          if (nativeUnicode) {
+            result = nativeUnicode
+          } else {
+            const em = detail.emoji
+            // Custom entries: `url` (+ shortcodes / name); avoid treating native `unicode` as custom.
+            if (em?.url && !em.unicode) {
+              const shortcode = em.shortcodes?.[0] ?? em.name
+              if (shortcode) {
+                result = { shortcode, url: em.url }
+              }
+            } else if (em?.custom && em.shortcodes?.[0] && em.url) {
+              result = { shortcode: em.shortcodes[0], url: em.url }
+            }
+          }
+          if (result !== undefined) recordEmojiUsed(result)
+          onEmojiClick(result, e)
         }
-        if (result !== undefined) recordEmojiUsed(result)
-        onEmojiClick(result, e)
-      }
 
-      picker.addEventListener('emoji-click', handleClick)
-      containerRef.current.appendChild(picker)
-      if (!cancelled) setPickerReady(true)
-    })
+        picker.addEventListener('emoji-click', handleClick)
+        containerRef.current.appendChild(picker)
+        return picker.database?.ready()
+      })
+      .then(() => {
+        if (!cancelled) setPickerReady(true)
+      })
+      .catch(() => {
+        if (!cancelled) setPickerReady(true)
+      })
 
     return () => {
       cancelled = true
@@ -223,7 +231,7 @@ export default function EmojiPicker({
       >
         {!pickerReady ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-            …
+            Loading emojis…
           </div>
         ) : null}
       </div>

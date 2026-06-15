@@ -33,7 +33,7 @@ import {
 import { TEmoji } from '@/types'
 import { SmilePlus } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import logger from '@/lib/logger'
 import { useTranslation } from 'react-i18next'
 import Emoji, { EMOJI_IMG_INLINE_CLASS } from '../Emoji'
@@ -46,6 +46,7 @@ import {
   showSimplePublishSuccess
 } from '@/lib/publishing-feedback'
 import { LoginRequiredError } from '@/lib/nostr-errors'
+import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
 import { cn } from '@/lib/utils'
 import { WEB_EXTERNAL_REACTION_PUBLISHED_EVENT } from '@/lib/rss-web-feed'
 
@@ -72,6 +73,10 @@ export function LikeButtonWithStats({
   const { relays: statsRelays } = useNoteStatsRelayHints()
   const [liking, setLiking] = useState(false)
   const [isEmojiReactionsOpen, setIsEmojiReactionsOpen] = useState(false)
+
+  useEffect(() => {
+    if (isEmojiReactionsOpen) void preloadEmojiPicker()
+  }, [isEmojiReactionsOpen])
   const isDiscussion = event.kind === ExtendedKind.DISCUSSION
   const isReplyToDiscussion = isReplyToDiscussionProp ?? false
   const showDiscussionVotes = isDiscussion || isReplyToDiscussion

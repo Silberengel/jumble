@@ -9,8 +9,8 @@ export const GITREPUBLIC_WEB_BASE_URL = (
 
 /**
  * Piper TTS (same contract as `POST /api/piper-tts`: JSON `{ text, voice?, speed? }`, body `audio/wav`).
- * Default production: `/api/piper-tts` (same origin; reverse-proxy to Wyoming — e.g. `services/piper-tts-proxy` or any host implementing that path — see PROXY_SETUP.md).
- * For cross-origin aitherboard instead, set full URL and configure CORS on that host.
+ * Default production: `/api/piper-tts` (same origin; reverse-proxy to Wyoming — see PROXY_SETUP.md).
+ * Dev: Vite proxies `/api/piper-tts` to jumble.imwald.eu by default (`npm run dev:all` for local Piper).
  * If empty, read-aloud uses the Web Speech API only.
  */
 export const READ_ALOUD_TTS_URL =
@@ -18,7 +18,7 @@ export const READ_ALOUD_TTS_URL =
 
 /**
  * Self-hosted LanguageTool HTTP API (same-origin proxy recommended; path is base URL without `/v2/check`).
- * Example: `/api/languagetool` proxied to `http://127.0.0.1:8010`. Empty disables grammar hints in the advanced lab.
+ * Example: `/api/languagetool`. Dev: proxied to jumble.imwald.eu by default. Empty disables grammar hints in the advanced lab.
  */
 export const LANGUAGE_TOOL_URL =
   (import.meta.env.VITE_LANGUAGE_TOOL_URL as string | undefined)?.trim() || ''
@@ -31,7 +31,7 @@ export const TRANSLATE_URL =
 
 /**
  * Wikistr/unfold AsciiDoctor sidecar for EPUB/PDF export (`POST /convert/{epub|pdf|html5}`).
- * Dev default: `/api/asciidoctor` (Vite proxy → localhost:8091). Production: set full URL or same-origin path.
+ * Dev: `/api/asciidoctor` proxied to jumble.imwald.eu by default. Production: same-origin path or full URL.
  */
 export const ASCIIDOCTOR_SERVER_URL =
   (import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL as string | undefined)?.trim() || ''

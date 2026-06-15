@@ -1,7 +1,7 @@
 import { EMOJI_PICKER_DATA_SOURCE } from '@/lib/emoji-picker-data-source'
 
 let modulePromise: Promise<typeof import('emoji-picker-element')> | null = null
-let dataPromise: Promise<unknown> | null = null
+let dbReadyPromise: Promise<void> | null = null
 
 /** Warm the emoji-picker-element chunk while the composer is open. */
 export function preloadEmojiPickerModule() {
@@ -11,12 +11,15 @@ export function preloadEmojiPickerModule() {
   return modulePromise
 }
 
-/** Prime the bundled emoji database so the web component's fetch hits cache. */
+/** Prime IndexedDB so the emoji grid is ready on first open (fetch alone does not help). */
 export function preloadEmojiPickerData() {
-  if (!dataPromise) {
-    dataPromise = fetch(EMOJI_PICKER_DATA_SOURCE).then((r) => r.json())
+  if (!dbReadyPromise) {
+    dbReadyPromise = import('emoji-picker-element/database').then(({ default: Database }) => {
+      const db = new Database({ dataSource: EMOJI_PICKER_DATA_SOURCE })
+      return db.ready()
+    })
   }
-  return dataPromise
+  return dbReadyPromise
 }
 
 export function preloadEmojiPicker() {

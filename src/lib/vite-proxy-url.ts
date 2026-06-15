@@ -16,7 +16,7 @@ export function urlLooksLikeViteProxyRequest(url: string): boolean {
   return url.includes('/sites/') || url.includes('/sites/?url=')
 }
 
-/** Same-origin Vite dev proxy (`vite.config.ts` → :8090 OG scraper). */
+/** Same-origin Vite dev proxy (`/sites` → jumble.imwald.eu by default, or local :8090 with `dev:all`). */
 export function buildDevLocalSitesFetchUrl(originalUrl: string): string | null {
   if (typeof window === 'undefined') return null
   return `${window.location.origin}/sites/?url=${encodeURIComponent(originalUrl)}`

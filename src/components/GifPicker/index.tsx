@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { DialogContext } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +29,9 @@ import {
 import mediaUpload from '@/services/media-upload.service'
 import { Download, ExternalLink, X } from 'lucide-react'
 import { kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Slot } from '@radix-ui/react-slot'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 
 /** In-session cache: survives Drawer/Dropdown open↔close without a relay re-fetch. */
@@ -54,6 +57,17 @@ function mobileDrawerMaxHeightStyle(): CSSProperties {
 const MOBILE_GIF_GRID_SCROLL_CLASS =
   'page-scroll-y min-h-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-y-contain touch-pan-y rounded-md border'
 
+const DESKTOP_GIF_GRID_SCROLL_CLASS =
+  'h-[min(480px,55dvh)] w-full shrink-0 rounded-md border'
+
+function listFocusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => !el.hasAttribute('disabled'))
+}
+
 export default function GifPicker({
   children,
   onSelect,
@@ -66,6 +80,9 @@ export default function GifPicker({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
+  const inDialog = useContext(DialogContext)
+  /** Post composer on desktop: centered portal panel (not dropdown/dialog). */
+  const useDialogShell = inDialog && !isSmallScreen
   const { publish, pubkey } = useNostr()
   const followList = useFollowListOptional()
   const followingPubkeys = useMemo(
@@ -92,6 +109,9 @@ export default function GifPicker({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const gifbuddyPopupRef = useRef<Window | null>(null)
   const pickerRootRef = useRef<HTMLDivElement>(null)
+  const composerPanelRef = useRef<HTMLDivElement>(null)
+  const searchFieldRef = useRef<HTMLInputElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
   const [mobileDrawerStyle, setMobileDrawerStyle] = useState<CSSProperties | undefined>()
   const [activeTab, setActiveTab] = useState<GifPickerTab>('find')
   /** Keep drawer content mounted until Vaul's close animation finishes (avoids empty-sheet flicker). */
@@ -220,11 +240,84 @@ export default function GifPicker({
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (!next) preparePickerClose()
+      if (next && useDialogShell) {
+        restoreFocusRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
+      if (!next) {
+        preparePickerClose()
+        if (useDialogShell) {
+          const restore = restoreFocusRef.current
+          restoreFocusRef.current = null
+          if (restore?.isConnected) {
+            requestAnimationFrame(() => restore.focus())
+          }
+        }
+      }
       setOpen(next)
     },
-    [preparePickerClose]
+    [preparePickerClose, useDialogShell]
   )
+
+  /** Composer portal: focus search and keep tab cycles inside the picker. */
+  useEffect(() => {
+    if (!open || !useDialogShell) return
+
+    const focusSearch = () => searchFieldRef.current?.focus({ preventScroll: true })
+    let raf = 0
+    let timer = 0
+    if (activeTab === 'find') {
+      raf = requestAnimationFrame(focusSearch)
+      timer = window.setTimeout(focusSearch, 0)
+    }
+
+    const panel = composerPanelRef.current
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !panel) return
+      const focusables = listFocusableElements(panel)
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          event.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !panel.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    const onFocusIn = (event: FocusEvent) => {
+      const livePanel = composerPanelRef.current
+      const target = event.target
+      if (!livePanel || !(target instanceof Node) || livePanel.contains(target)) return
+      window.setTimeout(focusSearch, 0)
+    }
+    document.addEventListener('focusin', onFocusIn, true)
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      if (timer) window.clearTimeout(timer)
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('focusin', onFocusIn, true)
+    }
+  }, [open, useDialogShell, activeTab])
+
+  /** Escape closes the in-composer panel without dismissing the post editor dialog. */
+  useEffect(() => {
+    if (!open || !useDialogShell) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      handleOpenChange(false)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [open, useDialogShell, handleOpenChange])
 
   const handleDrawerAnimationEnd = useCallback((isOpen: boolean) => {
     if (!isOpen) {
@@ -480,19 +573,20 @@ export default function GifPicker({
         {renderGifGrid(items, showArchiveActions)}
       </div>
     ) : (
-      <ScrollArea className="h-[520px] w-full rounded-md border">
+      <ScrollArea className={DESKTOP_GIF_GRID_SCROLL_CLASS} scrollBarClassName="opacity-100">
         {renderGifGrid(items, showArchiveActions)}
       </ScrollArea>
     )
 
   const findPanel = (
-    <div className="flex min-h-0 flex-1 basis-0 flex-col gap-2">
+    <div className={cn('flex flex-col gap-2', isDrawer && 'min-h-0 flex-1 basis-0')}>
       {!isDrawer ? (
         <p className="shrink-0 text-xs text-muted-foreground">
           {t('Search your library and tap a GIF to insert.')}
         </p>
       ) : null}
       <Input
+        ref={searchFieldRef}
         placeholder={t('Search GIFs')}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
@@ -650,8 +744,6 @@ export default function GifPicker({
     </div>
   )
 
-  const content = tabbedContent
-
   if (isSmallScreen) {
     return (
       <Drawer
@@ -678,18 +770,62 @@ export default function GifPicker({
             <DrawerTitle>{t('Choose a GIF')}</DrawerTitle>
           </DrawerHeader>
           <div className="flex h-full min-h-0 w-full min-w-0 max-w-[100vw] flex-1 basis-0 flex-col overflow-hidden">
-            {drawerContentMounted ? content : null}
+            {drawerContentMounted ? tabbedContent : null}
           </div>
         </DrawerContent>
       </Drawer>
     )
   }
 
+  if (useDialogShell) {
+    const portalTarget = portalContainer ?? (typeof document !== 'undefined' ? document.body : null)
+    return (
+      <>
+        <Slot
+          onClick={(event: React.MouseEvent) => {
+            event.stopPropagation()
+            handleOpenChange(true)
+          }}
+        >
+          {children}
+        </Slot>
+        {open && portalTarget
+          ? createPortal(
+              <div className="fixed inset-0 z-[290] flex items-center justify-center p-4">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={t('Close')}
+                  className="absolute inset-0 cursor-default border-0 bg-transparent p-0"
+                  onClick={() => handleOpenChange(false)}
+                />
+                <div
+                  ref={composerPanelRef}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={t('Choose a GIF')}
+                  className="relative flex max-h-[min(85dvh,640px)] w-[min(360px,calc(100vw-2rem))] max-w-[360px] flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg outline-none"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{tabbedContent}</div>
+                </div>
+              </div>,
+              portalTarget
+            )
+          : null}
+      </>
+    )
+  }
+
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent side="top" className="p-0" portalContainer={portalContainer}>
-        {content}
+      <DropdownMenuContent
+        side="top"
+        className="max-h-[min(560px,70dvh)] overflow-hidden p-0"
+        portalContainer={portalContainer}
+      >
+        {tabbedContent}
       </DropdownMenuContent>
     </DropdownMenu>
   )

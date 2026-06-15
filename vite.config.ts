@@ -149,6 +149,110 @@ function jsonProxyErrorHandler(status: number, body: Record<string, unknown>) {
   }
 }
 
+const DEV_ANCILLARY_REMOTE_DEFAULT = 'https://jumble.imwald.eu'
+
+/** Prod-like same-origin paths in `.env.development`; Vite forwards them in dev (see `devAncillaryProxy`). */
+const DEV_ANCILLARY_PROXY_ROUTES = [
+  {
+    path: '/api/piper-tts',
+    service: 'Read-aloud Piper TTS',
+    localPort: 9876,
+    unreachableError: 'piper_proxy_unreachable',
+    unreachableHint: 'Start Piper TTS on :9876 — see PROXY_SETUP.md (or use default remote dev proxy)'
+  },
+  {
+    path: '/api/languagetool',
+    service: 'LanguageTool grammar',
+    localPort: 8010,
+    stripApiPrefix: '/api/languagetool',
+    unreachableError: 'languagetool_proxy_unreachable',
+    unreachableHint: 'Start LanguageTool on :8010 — see PROXY_SETUP.md (or use default remote dev proxy)'
+  },
+  {
+    path: '/api/translate',
+    service: 'LibreTranslate',
+    localPort: 5000,
+    stripApiPrefix: '/api/translate',
+    unreachableError: 'translate_proxy_unreachable',
+    unreachableHint: 'Start LibreTranslate on :5000 — see PROXY_SETUP.md (or use default remote dev proxy)'
+  },
+  {
+    path: '/api/asciidoctor',
+    service: 'AsciiDoctor EPUB/PDF export',
+    localPort: 8091,
+    stripApiPrefix: '/api/asciidoctor',
+    unreachableError: 'asciidoctor_proxy_unreachable',
+    unreachableHint:
+      'Start the Wikistr AsciiDoctor server on :8091 (see ../wikistr/deployment) (or use default remote dev proxy)'
+  },
+  {
+    path: '/sites',
+    service: 'OG link preview (Puppeteer scraper)',
+    localPort: 8090,
+    unreachableError: 'og_proxy_unreachable',
+    unreachableHint: 'Start OG scraper on :8090 — see PROXY_SETUP.md (or use default remote dev proxy)'
+  }
+] as const
+
+/**
+ * Where Vite proxies optional editor APIs (/api/translate, /api/languagetool, …) and /sites in dev.
+ * - unset or `remote` → jumble.imwald.eu (prod-like, no local Docker)
+ * - `local` → loopback sidecars (npm run dev:all)
+ * - any https origin → that host (same path layout as prod)
+ */
+function resolveDevAncillaryRemoteOrigin(env: Record<string, string>): string | null {
+  const raw = env.VITE_DEV_ANCILLARY_PROXY?.trim() ?? ''
+  const norm = raw.toLowerCase()
+  if (norm === 'local' || norm === '127.0.0.1' || norm === 'localhost') {
+    return null
+  }
+  if (!raw || norm === 'remote') {
+    return DEV_ANCILLARY_REMOTE_DEFAULT
+  }
+  return raw.replace(/\/+$/, '')
+}
+
+type DevAncillaryProxySpec = {
+  localPort: number
+  stripApiPrefix?: string
+  unreachableHint: string
+  unreachableError: string
+}
+
+function devAncillaryProxy(remoteOrigin: string | null, spec: DevAncillaryProxySpec) {
+  if (remoteOrigin) {
+    return {
+      target: remoteOrigin,
+      changeOrigin: true,
+      secure: true
+    }
+  }
+  return {
+    target: `http://127.0.0.1:${spec.localPort}`,
+    changeOrigin: true,
+    ...(spec.stripApiPrefix
+      ? { rewrite: (p: string) => p.replace(new RegExp(`^${spec.stripApiPrefix}`), '') || '/' }
+      : {}),
+    configure: jsonProxyErrorHandler(503, {
+      ok: false,
+      error: spec.unreachableError,
+      hint: spec.unreachableHint
+    })
+  }
+}
+
+function logDevAncillaryProxyTarget(remoteOrigin: string | null): Plugin {
+  return {
+    name: 'log-dev-ancillary-proxy-target',
+    apply: 'serve',
+    configureServer(server) {
+      const target = remoteOrigin ?? 'local Docker sidecars (127.0.0.1)'
+      const services = DEV_ANCILLARY_PROXY_ROUTES.map((r) => `${r.path} (${r.service})`).join(', ')
+      server.config.logger.info(`[dev] Optional services → ${target}\n[dev]   ${services}`)
+    }
+  }
+}
+
 /**
  * Loopback / RFC1918 / ULA — mirrors `isLocalNetworkUrl` in `src/lib/url.ts` without importing it
  * (Vite's config bundle does not resolve `@/` for transitive deps).
@@ -187,6 +291,8 @@ export default defineConfig(({ mode }) => {
     (/^https:\/\//i.test(devIndexRelayTarget)
       ? devIndexRelayTarget.replace(/\/+$/, '')
       : 'https://mercury-relay.imwald.eu')
+  /** Default: prod-like remote sidecars; `VITE_DEV_ANCILLARY_PROXY=local` for npm run dev:all. */
+  const devAncillaryRemoteOrigin = resolveDevAncillaryRemoteOrigin(env)
 
   /**
    * Desktop shell (`vite build --mode electron`): always bake public Imwald API origins into the bundle.
@@ -235,55 +341,12 @@ export default defineConfig(({ mode }) => {
       // OG/link preview uses `/sites/?url=…`. Without this, Vite serves `index.html` and WebService parses the app shell.
       // Run the scraper on 8090 per PROXY_SETUP.md, or rely on allorigins fallback in dev (web.service.ts).
       proxy: {
-        // Read-aloud Piper: same path as production Apache → aitherboard (avoid cross-origin CORS in dev).
-        '/api/piper-tts': {
-          target: 'http://127.0.0.1:9876',
-          changeOrigin: true,
-          configure: jsonProxyErrorHandler(503, {
-            ok: false,
-            error: 'piper_proxy_unreachable',
-            hint: 'Start Piper TTS on :9876 — see PROXY_SETUP.md'
-          })
-        },
-        '/api/languagetool': {
-          target: 'http://127.0.0.1:8010',
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/languagetool/u, '') || '/',
-          configure: jsonProxyErrorHandler(503, {
-            ok: false,
-            error: 'languagetool_proxy_unreachable',
-            hint: 'Start LanguageTool on :8010 — see PROXY_SETUP.md'
-          })
-        },
-        '/api/translate': {
-          target: 'http://127.0.0.1:5000',
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/translate/u, '') || '/',
-          configure: jsonProxyErrorHandler(503, {
-            ok: false,
-            error: 'translate_proxy_unreachable',
-            hint: 'Start LibreTranslate (or compatible API) on :5000 — see PROXY_SETUP.md'
-          })
-        },
-        '/api/asciidoctor': {
-          target: 'http://127.0.0.1:8091',
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/asciidoctor/u, '') || '/',
-          configure: jsonProxyErrorHandler(503, {
-            ok: false,
-            error: 'asciidoctor_proxy_unreachable',
-            hint: 'Start the Wikistr AsciiDoctor server on :8091 (see ../wikistr/deployment)'
-          })
-        },
-        '/sites': {
-          target: 'http://127.0.0.1:8090',
-          changeOrigin: true,
-          configure: jsonProxyErrorHandler(502, {
-            ok: false,
-            error: 'og_proxy_unreachable',
-            hint: 'Start OG scraper on :8090 (see PROXY_SETUP.md)'
-          })
-        },
+        ...Object.fromEntries(
+          DEV_ANCILLARY_PROXY_ROUTES.map((route) => [
+            route.path,
+            devAncillaryProxy(devAncillaryRemoteOrigin, route)
+          ])
+        ),
         // Loopback HTTP index relay: `import.meta.env.DEV` rewrites kind 10243 URLs through this path.
         '/dev-index-relay': {
           target: devIndexRelayTarget,
@@ -480,6 +543,7 @@ export default defineConfig(({ mode }) => {
     setupFiles: './src/test/setup.ts'
   },
   plugins: [
+    logDevAncillaryProxyTarget(devAncillaryRemoteOrigin),
     react(),
     hiddenRelayDevProxyPlugin(),
     fullReloadOnProvidersAndPages(),

@@ -27,7 +27,7 @@ export type LabCitationDisplayType =
   | 'prompt-end'
   | 'prompt-inline'
 
-export function buildCitationWikiMacro(displayType: LabCitationDisplayType, nostrLink: string): string {
+function buildCitationWikiMacro(displayType: LabCitationDisplayType, nostrLink: string): string {
   let id = nostrLink.trim()
   if (id.toLowerCase().startsWith('nostr:')) id = id.slice(6)
   return `[[citation::${displayType}::${id}]]`

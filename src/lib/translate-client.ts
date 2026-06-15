@@ -11,6 +11,13 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24
 /** After `/languages` or `/translate` hits 502/503/504, skip further translate HTTP this tab (optional dev proxy). */
 let translateBackendGoneThisSession = false
 
+const TRANSLATE_UNAVAILABLE_MESSAGE =
+  'Translation service is unavailable. With npm run dev, optional services (/api/translate, /api/languagetool, /sites, …) are proxied to jumble.imwald.eu by default; use npm run dev:all for local sidecars.'
+
+function throwTranslateUnavailable(): never {
+  throw new Error(TRANSLATE_UNAVAILABLE_MESSAGE)
+}
+
 const translateOptionalLoggedKeys = new Set<string>()
 
 function translateDevLogOnce(key: string, message: string, payload?: Record<string, unknown>): void {
@@ -244,7 +251,7 @@ export async function translatePlainText(
       'translate-post-skip',
       '[Translate] Skipping translate POST — optional backend unavailable this session.'
     )
-    return text
+    throwTranslateUnavailable()
   }
 
   /** LibreTranslate often trims `q` / `translatedText`; keep edge whitespace so markup segments still join cleanly. */
@@ -307,7 +314,7 @@ export async function translatePlainText(
       translateDevLogOnce('translate-post-fail', '[Translate] Optional translate proxy offline; skipping further translate HTTP this session.', {
         status: res.status
       })
-      return text
+      throwTranslateUnavailable()
     }
     const err = await res.text().catch(() => '')
     logger.warn('[Translate] HTTP error', { status: res.status, err: err.slice(0, 200) })
