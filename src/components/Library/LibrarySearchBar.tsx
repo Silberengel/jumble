@@ -5,7 +5,7 @@ import { Switch } from '@/components/ui/switch'
 import { normalizeToDTag } from '@/lib/search-parser'
 import type { LibraryPublicationRelaySearchAxis } from '@/lib/library-publication-index'
 import { cn } from '@/lib/utils'
-import { FileText, Loader2, Search, User, Wifi } from 'lucide-react'
+import { FileText, Loader2, Search, User } from 'lucide-react'
 import {
   HTMLAttributes,
   useCallback,
@@ -174,55 +174,57 @@ export default function LibrarySearchBar({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        {displayList && list ? (
-          <div
-            className="absolute top-full z-50 -translate-y-1 inset-x-0 rounded-b-lg border border-border/80 bg-surface-background pt-1 shadow-lg"
-            onMouseDown={(e) => e.preventDefault()}
+      <div className="flex items-start gap-2">
+        <div className="relative min-w-0 flex-1">
+          {displayList && list ? (
+            <div
+              className="absolute top-full z-50 -translate-y-1 inset-x-0 rounded-b-lg border border-border/80 bg-surface-background pt-1 shadow-lg"
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <div className="h-fit">{list}</div>
+            </div>
+          ) : null}
+          <SearchInput
+            ref={searchInputRef}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearching(true)
+              setSelectedIndex(-1)
+              onSearchQueryChange(e.target.value)
+            }}
+            onPaste={() => setSearching(true)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setSearching(true)}
+            onBlur={() => setSearching(false)}
+            placeholder={t('Library search placeholder')}
+            className={cn('bg-surface-background pl-3', displayList && 'z-50')}
+            disabled={disabled}
+            aria-label={t('Library search placeholder')}
+          />
+        </div>
+        {onSearchRelays ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0"
+            disabled={disabled || !canSearchRelays}
+            onClick={onSearchRelays}
           >
-            <div className="h-fit">{list}</div>
-          </div>
+            {relaySearchLoading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Search className="size-4" aria-hidden />
+            )}
+            {t('Search')}
+          </Button>
         ) : null}
-        <SearchInput
-          ref={searchInputRef}
-          type="search"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearching(true)
-            setSelectedIndex(-1)
-            onSearchQueryChange(e.target.value)
-          }}
-          onPaste={() => setSearching(true)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => setSearching(true)}
-          onBlur={() => setSearching(false)}
-          placeholder={t('Library search placeholder')}
-          className={cn('bg-surface-background pl-3', displayList && 'z-50')}
-          disabled={disabled}
-          aria-label={t('Library search placeholder')}
-        />
       </div>
       {scopeLabel ? (
         <p className="text-xs text-muted-foreground">{scopeLabel}</p>
       ) : searchQuery.trim() && !isCommitted ? (
         <p className="text-xs text-muted-foreground">{t('Library search commit hint')}</p>
-      ) : null}
-      {onSearchRelays ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full sm:w-auto"
-          disabled={disabled || !canSearchRelays}
-          onClick={onSearchRelays}
-        >
-          {relaySearchLoading ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : (
-            <Wifi className="size-4" aria-hidden />
-          )}
-          {t('Library search relays')}
-        </Button>
       ) : null}
       <div className="flex items-center gap-2">
         <Switch
