@@ -791,6 +791,68 @@ export function cleanUrl(url: string): string {
 }
 
 /**
+ * After {@link URL_REGEX} matches a prefix ending before `(`, extend through balanced `(…)` segments
+ * (common in Wikipedia paths like `…/Empire_(paintings)`).
+ */
+export function extendHttpUrlPrefixWithBalancedParens(
+  content: string,
+  startIndex: number,
+  prefix: string
+): string {
+  let url = prefix
+  let i = startIndex + prefix.length
+  while (i < content.length && content[i] === '(') {
+    let depth = 0
+    let j = i
+    let closed = false
+    for (; j < content.length; j++) {
+      const c = content[j]
+      if (c === '(') depth++
+      else if (c === ')') {
+        depth--
+        if (depth === 0) {
+          url += content.slice(i, j + 1)
+          i = j + 1
+          closed = true
+          break
+        }
+      } else if (/\s/.test(c)) {
+        break
+      }
+    }
+    if (!closed || depth !== 0) break
+  }
+  return url
+}
+
+/** Find http(s) URLs in plain text, extending Wikipedia-style `(…)` path segments. */
+export function findHttpUrlsInText(content: string): Array<{ url: string; index: number }> {
+  const out: Array<{ url: string; index: number }> = []
+  const re = new RegExp(URL_REGEX.source, URL_REGEX.flags)
+  let match: RegExpExecArray | null
+  while ((match = re.exec(content)) !== null) {
+    const index = match.index
+    const url = extendHttpUrlPrefixWithBalancedParens(content, index, match[0])
+    out.push({ url, index })
+    if (url.length > match[0].length) {
+      re.lastIndex = index + url.length
+    }
+  }
+  return out
+}
+
+/**
+ * Markdown `[url](url)` breaks when `url` contains `)`; use GFM angle-bracket autolinks instead.
+ * Media uses `![](<url>)` for the same reason.
+ */
+export function formatBareHttpUrlForMarkdownAutolink(url: string, asMedia = false): string {
+  if (/[()]/.test(url)) {
+    return asMedia ? `![](<${url}>)` : `<${url}>`
+  }
+  return asMedia ? `![](${url})` : `[${url}](${url})`
+}
+
+/**
  * Rewrite http(s) URLs in a plain string using {@link URL_REGEX} (same boundary rules as the feed parser), then
  * {@link cleanUrl}. Avoids greedy `https?:\\/\\/[^\\s]+`, which swallows trailing punctuation like `https://a.com, and`.
  */
@@ -798,14 +860,18 @@ export function rewritePlainTextHttpUrls(
   content: string,
   transform: (url: string) => string = cleanUrl
 ): string {
-  const re = new RegExp(URL_REGEX.source, URL_REGEX.flags)
-  return content.replace(re, (match) => {
+  const matches = findHttpUrlsInText(content)
+  let result = content
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { url, index } = matches[i]
     try {
-      return transform(match)
+      const replacement = transform(url)
+      result = result.substring(0, index) + replacement + result.substring(index + url.length)
     } catch {
-      return match
+      /* keep original */
     }
-  })
+  }
+  return result
 }
 
 /**

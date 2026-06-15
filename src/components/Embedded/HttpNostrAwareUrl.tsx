@@ -107,6 +107,17 @@ export function HttpNostrAwareUrl({
     )
   }
 
+  if (renderMode === 'article') {
+    return (
+      <WebPreview
+        url={cleaned}
+        className={cn('mt-2', className)}
+        authorPubkey={containingEvent?.pubkey}
+        sourceEvent={containingEvent}
+      />
+    )
+  }
+
   if (expandableTarget) {
     return (
       <ExpandableExternalNostrLink
@@ -118,10 +129,6 @@ export function HttpNostrAwareUrl({
         expandLabel={t('link.expandNostrEmbed')}
       />
     )
-  }
-
-  if (renderMode === 'article') {
-    return <WebPreview url={cleaned} className={cn('mt-2', className)} />
   }
 
   return <EmbeddedNormalUrl url={url} />

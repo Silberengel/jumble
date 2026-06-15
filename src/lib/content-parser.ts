@@ -1,7 +1,6 @@
 import {
   HASHTAG_REGEX,
   LN_INVOICE_REGEX,
-  URL_REGEX,
   WS_URL_REGEX,
   YOUTUBE_URL_REGEX
 } from '@/constants'
@@ -13,7 +12,7 @@ import {
 import { PAYTO_URI_REGEX } from '@/lib/payto'
 import { parseAboutContentWithCoinPayto } from '@/lib/payto-about-coin-lines'
 import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
-import { isImage, isMedia, isHlsPlaylistUrl, isBlossomBudBlobUrl } from './url'
+import { findHttpUrlsInText, isBlossomBudBlobUrl, isHlsPlaylistUrl, isImage, isMedia } from '@/lib/url'
 import { isSpotifyOpenUrl } from './spotify-url'
 import { isFountainOpenUrl } from './fountain-url'
 import { isWavlakeOpenUrl } from './wavlake-url'
@@ -93,7 +92,7 @@ export const EmbeddedPaytoParser: TContentParser = {
 export const EmbeddedAboutCoinPaytoParser: TContentParser = parseAboutContentWithCoinPayto
 
 export const EmbeddedUrlParser: TContentParser = (content: string) => {
-  const matches = content.matchAll(URL_REGEX)
+  const matches = findHttpUrlsInText(content)
   const result: TEmbeddedNode[] = []
   let lastIndex = 0
   
@@ -105,8 +104,7 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
     return regex.test(url)
   }
   
-  for (const match of matches) {
-    const matchStart = match.index!
+  for (const { url, index: matchStart } of matches) {
     // Add text before the match
     if (matchStart > lastIndex) {
       result.push({
@@ -115,7 +113,6 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
       })
     }
 
-    const url = match[0]
     let type: TEmbeddedNodeType = 'url'
     if (isImage(url)) {
       type = 'image'

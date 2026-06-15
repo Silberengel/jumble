@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Event } from 'nostr-tools'
-import { translateNoteForDisplay } from '@/lib/translate-note-for-menu'
+import {
+  collectRelatedNoteTranslateTargets,
+  translateNoteForDisplay
+} from '@/lib/translate-note-for-menu'
 
 const BLOCKQUOTE_THREE_LINES =
   'Intro paragraph.\n\n' +
@@ -81,5 +84,24 @@ describe('translateNoteForDisplay', () => {
     )
     expect(merged).toBeDefined()
     expect(merged).toContain('John should not have been fired')
+  })
+})
+
+describe('collectRelatedNoteTranslateTargets', () => {
+  it('does not include the reply parent from e-tags', () => {
+    const parentHex = 'b'.repeat(64)
+    const ev = {
+      id: 'c'.repeat(64),
+      pubkey: '1'.repeat(64),
+      kind: 1111,
+      content: 'This article is also available on my blog.',
+      tags: [['e', parentHex, '', '', 'a'.repeat(64)]],
+      created_at: 0,
+      sig: ''
+    } as Event
+    const { hexIds, nip19Pointers } = collectRelatedNoteTranslateTargets(ev)
+    expect(hexIds).not.toContain(parentHex)
+    expect(hexIds).toHaveLength(0)
+    expect(nip19Pointers).toHaveLength(0)
   })
 })

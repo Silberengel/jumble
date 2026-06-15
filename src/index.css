@@ -456,6 +456,20 @@
   font-size: var(--content-font-size, 1rem);
 }
 
+/* Link preview cards (WebPreview) — scale with Settings → font size like note body */
+.web-preview-card {
+  font-size: var(--content-font-size, 1rem);
+  line-height: 1.5;
+}
+
+.web-preview-card .web-preview-title {
+  font-size: 1em;
+}
+
+.web-preview-card .web-preview-muted {
+  font-size: 0.875em;
+}
+
 /* AsciiDoc Table of Contents Styling */
 #toc {
   @apply bg-muted/30 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6;

@@ -15,6 +15,7 @@ import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { getMoneroTipInfo } from '@/lib/monero-tip'
 import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
 import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
+import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -98,6 +99,12 @@ export default function ReplyNote({
     }
     return true
   }, [showMuted, mutePubkeySet, event, hideContentMentioningMutedUsers])
+
+  const noteTranslation = useNoteTranslation(event.id)
+  const displayEvent = useMemo(
+    () => mergeTranslatedNote(event, noteTranslation),
+    [event, noteTranslation]
+  )
 
   return (
     <div
@@ -192,7 +199,7 @@ export default function ReplyNote({
             ) : isNip18RepostKind(event.kind) ? null : (
               <MarkdownArticle
                 className="mt-2"
-                event={event}
+                event={displayEvent}
                 hideMetadata={true}
                 lazyMedia={false}
                 duplicateWebPreviewCleanedUrlHints={duplicateWebPreviewCleanedUrlHints}

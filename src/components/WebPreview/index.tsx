@@ -23,6 +23,9 @@ import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
 import AsciidocArticle from '../Note/AsciidocArticle/AsciidocArticle'
 import ProfileAbout from '@/components/ProfileAbout'
 
+/** Scales with Settings → font size via `--content-font-size` (see index.css). */
+const WEB_PREVIEW_CARD = 'web-preview-card'
+
 // Helper function to get event type name
 function getEventTypeName(kind: number): string {
   switch (kind) {
@@ -480,7 +483,7 @@ export default function WebPreview({
   if (!isInternalAppLink && ogLoading) {
     return (
       <div
-        className={cn('p-2 flex w-full border rounded-lg overflow-hidden gap-2 max-w-full', className)}
+        className={cn(WEB_PREVIEW_CARD, 'p-2 flex w-full border rounded-lg overflow-hidden gap-2 max-w-full', className)}
         onClick={(e) => e.stopPropagation()}
       >
         <Skeleton className="h-20 w-20 sm:w-40 shrink-0 rounded-l-md rounded-r-none" />
@@ -532,6 +535,7 @@ export default function WebPreview({
       return (
         <div
           className={cn(
+            WEB_PREVIEW_CARD,
             'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-0 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
             className
           )}
@@ -553,7 +557,7 @@ export default function WebPreview({
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 {fetchedEvent ? (
                   <>
-                    <Username userId={fetchedEvent.pubkey} className="text-xs" />
+                    <Username userId={fetchedEvent.pubkey} className="web-preview-muted" />
                     {eventAuthorProfile?.avatar && (
                       <img
                         src={eventAuthorProfile.avatar}
@@ -564,11 +568,11 @@ export default function WebPreview({
                         }}
                       />
                     )}
-                    <span className="text-xs text-muted-foreground flex-shrink-0">•</span>
-                    <span className="text-xs text-muted-foreground truncate">{eventTypeName}</span>
+                    <span className="web-preview-muted text-muted-foreground flex-shrink-0">•</span>
+                    <span className="web-preview-muted text-muted-foreground truncate">{eventTypeName}</span>
                   </>
                 ) : (
-                  <span className="text-xs text-muted-foreground truncate">
+                  <span className="web-preview-muted text-muted-foreground truncate">
                     {isFetchingEventFinal ? 'Loading event...' : 'Event'}
                   </span>
                 )}
@@ -587,12 +591,12 @@ export default function WebPreview({
               <>
                 {/* Always show title in card header, hide it in content preview */}
                 {eventTitle && (
-                  <div className="font-display font-semibold text-sm line-clamp-2 mb-1 text-brand-wordmark">
+                  <div className="web-preview-title font-display font-semibold line-clamp-2 mb-1 text-brand-wordmark">
                     {eventTitle}
                   </div>
                 )}
                 {isBookstrEvent && bookMetadata && (
-                  <div className="text-xs text-muted-foreground space-x-2 mb-1">
+                  <div className="web-preview-muted text-muted-foreground space-x-2 mb-1">
                     {bookMetadata.type && <span>Type: {bookMetadata.type}</span>}
                     {bookMetadata.book && <span>Book: {formatBookName(bookMetadata.book)}</span>}
                     {bookMetadata.chapter && <span>Chapter: {bookMetadata.chapter}</span>}
@@ -601,10 +605,10 @@ export default function WebPreview({
                   </div>
                 )}
                 {eventSummary && !showContentPreview && (
-                  <div className="text-base text-muted-foreground line-clamp-2 mb-1">{eventSummary}</div>
+                  <div className="web-preview-muted text-muted-foreground line-clamp-2 mb-1">{eventSummary}</div>
                 )}
                 {showContentPreview && (
-                  <div className="my-2 text-sm line-clamp-6 overflow-hidden [&_img]:hidden [&_h1]:hidden [&_h2]:hidden">
+                  <div className="my-2 web-preview-muted line-clamp-6 overflow-hidden [&_img]:hidden [&_h1]:hidden [&_h2]:hidden">
                     {isAsciidocEvent ? (
                       <AsciidocArticle 
                         event={previewEvent} 
@@ -628,7 +632,7 @@ export default function WebPreview({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
+              className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
             >
               {truncatedUrl}
             </a>
@@ -645,6 +649,7 @@ export default function WebPreview({
       return (
         <div
           className={cn(
+            WEB_PREVIEW_CARD,
             'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-0 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
             className
           )}
@@ -666,13 +671,13 @@ export default function WebPreview({
                     <Username userId={fetchedProfile.pubkey} />
                     {fetchedProfile.nip05 && (
                       <>
-                        <span className="text-xs text-muted-foreground flex-shrink-0">•</span>
-                        <span className="text-xs text-primary truncate">{fetchedProfile.nip05}</span>
+                        <span className="web-preview-muted text-muted-foreground flex-shrink-0">•</span>
+                        <span className="web-preview-muted text-primary truncate">{fetchedProfile.nip05}</span>
                       </>
                     )}
                   </>
                 ) : (
-                  <span className="text-sm text-muted-foreground truncate">
+                  <span className="web-preview-muted text-muted-foreground truncate">
                     {isFetchingProfile ? 'Loading profile...' : 'Profile'}
                   </span>
                 )}
@@ -689,7 +694,7 @@ export default function WebPreview({
             </div>
             <ProfileAbout
               about={fetchedProfile?.about}
-              className="text-base text-muted-foreground line-clamp-2 mb-1 mt-1 break-words"
+              className="web-preview-muted text-muted-foreground line-clamp-2 mb-1 mt-1 break-words"
             />
             <hr className="mt-4 mb-2 border-t border-border" />
             <a
@@ -697,7 +702,7 @@ export default function WebPreview({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
+              className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
             >
               {truncatedUrl}
             </a>
@@ -720,6 +725,7 @@ export default function WebPreview({
     return (
       <div
         className={cn(
+          WEB_PREVIEW_CARD,
           'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-3 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
           className
         )}
@@ -727,11 +733,11 @@ export default function WebPreview({
         <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-start gap-2 mb-1">
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-display font-semibold text-brand-wordmark truncate">
+              <div className="web-preview-title font-display font-semibold text-brand-wordmark truncate">
                 {imwaldPreview ? imwaldPreview.ogTitle : hostname}
               </div>
               {imwaldPreview && (
-                <div className="text-xs text-muted-foreground line-clamp-3 mt-0.5">{imwaldPreview.description}</div>
+                <div className="web-preview-muted text-muted-foreground line-clamp-3 mt-0.5">{imwaldPreview.description}</div>
               )}
             </div>
             <a
@@ -750,7 +756,7 @@ export default function WebPreview({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
+            className="web-preview-muted text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
           >
             {cleanedUrl}
           </a>
@@ -764,7 +770,7 @@ export default function WebPreview({
   if (isSmallScreen && image && isSafeMediaUrl(image)) {
     // Small screen: always use horizontal layout with image on left
     return (
-      <div className="rounded-lg border mt-2 overflow-hidden flex w-full">
+      <div className={cn(WEB_PREVIEW_CARD, 'rounded-lg border mt-2 overflow-hidden flex w-full')}>
         <div className={cn(
           "flex-shrink-0 bg-muted flex items-center justify-center rounded-l-lg overflow-hidden",
           ogImageAspectRatio !== null && ogImageAspectRatio > 1 ? "w-24 max-w-[120px]" : "w-20 max-w-[80px]"
@@ -773,7 +779,7 @@ export default function WebPreview({
         </div>
         <div className="bg-muted p-2 flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="text-xs text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
+            <div className="web-preview-muted text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
             <a
               href={cleanedUrl}
               target="_blank"
@@ -784,15 +790,15 @@ export default function WebPreview({
               <ExternalLink className="w-3 h-3 text-muted-foreground" />
             </a>
           </div>
-          {title && <div className="font-semibold line-clamp-1 break-words">{title}</div>}
-          {!title && description && <div className="font-semibold line-clamp-1 break-words">{description}</div>}
+          {title && <div className="web-preview-title font-semibold line-clamp-1 break-words">{title}</div>}
+          {!title && description && <div className="web-preview-title font-semibold line-clamp-1 break-words">{description}</div>}
           <hr className="mt-4 mb-2 border-t border-border" />
           <a
             href={cleanedUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
+            className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
           >
             {url}
           </a>
@@ -803,7 +809,7 @@ export default function WebPreview({
 
   // Render all OG images on left side, crop wider ones
   return (
-    <div className={cn('p-2 flex w-full border rounded-lg overflow-hidden gap-0 max-w-full', className)}>
+    <div className={cn(WEB_PREVIEW_CARD, 'p-2 flex w-full border rounded-lg overflow-hidden gap-0 max-w-full', className)}>
       {image && isSafeMediaUrl(image) && (
         <div className={cn(
           "flex-shrink-0 bg-muted flex items-center justify-center -my-2 -ml-2 -mr-0 rounded-l-lg overflow-hidden",
@@ -818,7 +824,7 @@ export default function WebPreview({
       )}
       <div className="flex-1 min-w-0 p-2 pl-2 overflow-hidden">
         <div className="flex items-center gap-2 mb-1">
-          <div className="text-xs text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
+          <div className="web-preview-muted text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
           <a
             href={cleanedUrl}
             target="_blank"
@@ -829,14 +835,14 @@ export default function WebPreview({
             <ExternalLink className="w-3 h-3 text-muted-foreground" />
           </a>
         </div>
-        {title && <div className="font-semibold line-clamp-2 mb-1 break-words">{title}</div>}
+        {title && <div className="web-preview-title font-semibold line-clamp-2 mb-1 break-words">{title}</div>}
         {description && (
-          <div className={cn("line-clamp-3 mb-1 break-words", title ? "text-xs text-muted-foreground" : "text-sm font-semibold")}>
+          <div className={cn('line-clamp-3 mb-1 break-words', title ? 'web-preview-muted text-muted-foreground' : 'web-preview-title font-semibold')}>
             {description}
           </div>
         )}
         {!title && !description && (
-          <div className="text-xs text-muted-foreground mb-1">No description available</div>
+          <div className="web-preview-muted text-muted-foreground mb-1">No description available</div>
         )}
         <hr className="mt-4 mb-2 border-t border-border" />
         <a
@@ -844,7 +850,7 @@ export default function WebPreview({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-xs text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
+          className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
         >
           {url}
         </a>

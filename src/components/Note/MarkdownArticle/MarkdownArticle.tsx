@@ -24,7 +24,8 @@ import {
   isPseudoNostrHttpsUrl,
   isSafeMediaUrl,
   isHlsPlaylistUrl,
-  isBlossomBudBlobUrl
+  isBlossomBudBlobUrl,
+  findHttpUrlsInText
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
@@ -3298,6 +3299,8 @@ function parseMarkdownContentMarked(
     fullCalendarInvite?: { naddr: string; event: Event }
     suppressStandaloneWebPreviewCleanedUrls?: ReadonlySet<string>
     containingEvent?: Event
+    webPreviewAuthorPubkey?: string
+    webPreviewSourceEvent?: Event
     /** Hold images as placeholders until clicked (lightbox). False in detail/full views. */
     lazyMedia?: boolean
     resolveImetaForImageUrl?: (cleaned: string) => TImetaInfo | undefined
@@ -3316,9 +3319,15 @@ function parseMarkdownContentMarked(
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
     containingEvent,
+    webPreviewAuthorPubkey,
+    webPreviewSourceEvent,
     lazyMedia = true,
     resolveImetaForImageUrl
   } = options
+  const webPreviewEventProps = {
+    authorPubkey: webPreviewAuthorPubkey ?? containingEvent?.pubkey ?? eventPubkey,
+    sourceEvent: webPreviewSourceEvent ?? containingEvent
+  }
   const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
 
   /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview skips OG fetch when autoLoadMedia is off but still shows a link card. */
@@ -3936,7 +3945,13 @@ function parseMarkdownContentMarked(
                     </p>
                   )
                 }
-                return <WebPreview key={`${key}-line-webpreview-${lineIdx}`} url={cleaned} />
+                return (
+                  <WebPreview
+                    key={`${key}-line-webpreview-${lineIdx}`}
+                    url={cleaned}
+                    {...webPreviewEventProps}
+                  />
+                )
               }
             }
 
@@ -4123,7 +4138,7 @@ function parseMarkdownContentMarked(
             </p>
           )
         }
-        return <WebPreview key={`${key}-webpreview`} url={cleaned} />
+        return <WebPreview key={`${key}-webpreview`} url={cleaned} {...webPreviewEventProps} />
       }
     }
 
@@ -4185,6 +4200,43 @@ function parseMarkdownContentMarked(
               blurHash={mediaBlurHashMap?.get(soleHref)}
             />
           </div>
+        )
+      }
+      if (
+        soleHref &&
+        (soleHref.startsWith('http://') || soleHref.startsWith('https://'))
+      ) {
+        if (isPseudoNostrHttpsUrl(soleHref)) {
+          return (
+            <div key={`${key}-sole-http-nostr`} className="my-2 not-prose max-w-full">
+              <HttpNostrAwareUrl
+                url={soleHref}
+                renderMode="article"
+                containingEvent={containingEvent}
+              />
+            </div>
+          )
+        }
+        if (suppressStandaloneWebPreviewCleanedUrls?.has(soleHref)) {
+          return (
+            <p key={`${key}-sole-link-suppressed`} className="mb-1 last:mb-0">
+              <a
+                href={soleHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn('inline', URI_LINK_CLASS)}
+              >
+                {soleHref}
+              </a>
+            </p>
+          )
+        }
+        return (
+          <WebPreview
+            key={`${key}-sole-link-webpreview`}
+            url={soleHref}
+            {...webPreviewEventProps}
+          />
         )
       }
     }
@@ -5442,6 +5494,30 @@ function parseInlineMarkdownLegacy(
   return parts
 }
 
+/** URLs on their own line already get an inline WebPreview during body render — skip duplicate cards at bottom. */
+function collectStandaloneWebPreviewUrlHints(content: string): Set<string> {
+  const hints = new Set<string>()
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const wholeLineMd = trimmed.match(/^\[([^\]]*)\]\(([^)]+)\)$/)
+    if (wholeLineMd) {
+      const cleaned = cleanUrl(wholeLineMd[2])
+      if (cleaned) hints.add(cleaned)
+      continue
+    }
+    for (const { url } of findHttpUrlsInText(trimmed)) {
+      const cleaned = cleanUrl(url)
+      if (!cleaned) continue
+      const remainder = trimmed.replace(url, '').trim()
+      if (remainder.length === 0 || /^[.,;:!?)]+$/.test(remainder)) {
+        hints.add(cleaned)
+      }
+    }
+  }
+  return hints
+}
+
 export default function MarkdownArticle({
   event,
   className,
@@ -5822,10 +5898,7 @@ export default function MarkdownArticle({
   const mediaUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
     const imageIdentifiers = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         urls.add(cleaned)
@@ -5844,10 +5917,7 @@ export default function MarkdownArticle({
   // Extract YouTube URLs from content
   const youtubeUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (cleaned && isYouTubeUrl(cleaned)) {
         urls.add(cleaned)
@@ -5858,10 +5928,7 @@ export default function MarkdownArticle({
 
   const spotifyUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (cleaned && isSpotifyUrl(cleaned)) {
         urls.add(cleaned)
@@ -5872,10 +5939,7 @@ export default function MarkdownArticle({
 
   const wavlakeUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (cleaned && isWavlakeUrl(cleaned)) {
         urls.add(cleaned)
@@ -5886,10 +5950,7 @@ export default function MarkdownArticle({
 
   const fountainUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (cleaned && isFountainUrl(cleaned)) {
         urls.add(cleaned)
@@ -5900,10 +5961,7 @@ export default function MarkdownArticle({
 
   const zapstreamUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (!cleaned) continue
       const c = canonicalZapStreamWatchUrl(cleaned)
@@ -5916,12 +5974,10 @@ export default function MarkdownArticle({
   const contentLinks = useMemo(() => {
     const links: string[] = []
     const seenUrls = new Set<string>()
-    const urlRegex = /https?:\/\/[^\s<>"']+/g
-    let match
-    while ((match = urlRegex.exec(event.content)) !== null) {
-      const url = match[0]
+    for (const { url } of findHttpUrlsInText(event.content)) {
       if (
         (url.startsWith('http://') || url.startsWith('https://')) &&
+        !isPseudoNostrHttpsUrl(url) &&
         !isImage(url) &&
         !isMedia(url) &&
         !isHlsPlaylistUrl(url) &&
@@ -5940,6 +5996,36 @@ export default function MarkdownArticle({
     }
     return links
   }, [event.content])
+
+  const iArticleCleaned = useMemo(
+    () => (iArticleUrl ? cleanUrl(iArticleUrl) : null),
+    [iArticleUrl]
+  )
+
+  /** Inline prose links get WebPreview cards at the bottom (standalone line URLs already render inline). */
+  const bottomContentLinks = useMemo(() => {
+    const standaloneHints = collectStandaloneWebPreviewUrlHints(event.content)
+    return contentLinks.filter((url) => {
+      const cleaned = cleanUrl(url)
+      if (!cleaned) return false
+      if (standaloneHints.has(cleaned)) return false
+      if (webPreviewSuppressCleanedSet.has(cleaned)) return false
+      if (
+        (url.startsWith('http://') || url.startsWith('https://')) &&
+        webPreviewSuppressCleanedSet.has(canonicalizeRssArticleUrl(url))
+      ) {
+        return false
+      }
+      if (iArticleCleaned && cleaned === iArticleCleaned && !suppressITagArticleWebPreview) return false
+      return true
+    })
+  }, [
+    contentLinks,
+    event.content,
+    webPreviewSuppressCleanedSet,
+    iArticleCleaned,
+    suppressITagArticleWebPreview
+  ])
   
   // Image gallery state — portal mounts only while active so feed re-renders don't run N closed Lightboxes on body.
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -6157,6 +6243,8 @@ export default function MarkdownArticle({
       emojiInfos,
       fullCalendarInvite,
       containingEvent: event,
+      webPreviewAuthorPubkey: event.pubkey,
+      webPreviewSourceEvent: event,
       lazyMedia,
       resolveImetaForImageUrl,
       suppressStandaloneWebPreviewCleanedUrls:
@@ -6295,7 +6383,12 @@ export default function MarkdownArticle({
       >
         {iArticleUrl && !suppressITagArticleWebPreview && (
           <div className="not-prose mb-4 max-w-full">
-            <WebPreview url={iArticleUrl} className="w-full" />
+            <WebPreview
+              url={iArticleUrl}
+              className="w-full"
+              authorPubkey={event.pubkey}
+              sourceEvent={event}
+            />
           </div>
         )}
         {/* Metadata */}
@@ -6519,12 +6612,32 @@ export default function MarkdownArticle({
         </div>
       )}
 
+        {/* WebPreview cards for inline links (standalone line URLs render inline above) */}
+        {bottomContentLinks.length > 0 && (
+          <div className="not-prose space-y-3 mt-6">
+            {bottomContentLinks.map((url, index) => (
+              <WebPreview
+                key={`content-${index}-${url}`}
+                url={url}
+                className="w-full"
+                authorPubkey={event.pubkey}
+                sourceEvent={event}
+              />
+            ))}
+          </div>
+        )}
+
         {/* WebPreview cards for links from tags (only if not already in content) */}
-        {/* Note: Links in content are already rendered as green hyperlinks above, so we don't show WebPreview for them */}
         {leftoverTagLinks.length > 0 && (
-          <div className="space-y-3 mt-6">
+          <div className="not-prose space-y-3 mt-6">
             {leftoverTagLinks.map((url, index) => (
-            <WebPreview key={`tag-${index}-${url}`} url={url} className="w-full" />
+            <WebPreview
+              key={`tag-${index}-${url}`}
+              url={url}
+              className="w-full"
+              authorPubkey={event.pubkey}
+              sourceEvent={event}
+            />
           ))}
         </div>
       )}

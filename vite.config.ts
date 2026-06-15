@@ -83,7 +83,9 @@ function isDevProxyConnectivityNoise(blob: string): boolean {
     blob.includes('ECONNREFUSED') ||
     blob.includes('ETIMEDOUT') ||
     blob.includes('ECONNRESET') ||
-    blob.includes('EHOSTUNREACH')
+    blob.includes('EHOSTUNREACH') ||
+    blob.includes('ENOTFOUND') ||
+    blob.includes('EAI_AGAIN')
   )
 }
 
@@ -220,11 +222,24 @@ type DevAncillaryProxySpec = {
 }
 
 function devAncillaryProxy(remoteOrigin: string | null, spec: DevAncillaryProxySpec) {
+  const unreachableBody = remoteOrigin
+    ? {
+        ok: false,
+        error: `${spec.unreachableError}_remote`,
+        hint: `Cannot reach ${new URL(remoteOrigin).host} — check network/DNS or set VITE_DEV_ANCILLARY_PROXY=local in .env.local`
+      }
+    : {
+        ok: false,
+        error: spec.unreachableError,
+        hint: spec.unreachableHint
+      }
+
   if (remoteOrigin) {
     return {
       target: remoteOrigin,
       changeOrigin: true,
-      secure: true
+      secure: true,
+      configure: jsonProxyErrorHandler(502, unreachableBody)
     }
   }
   return {
@@ -233,11 +248,7 @@ function devAncillaryProxy(remoteOrigin: string | null, spec: DevAncillaryProxyS
     ...(spec.stripApiPrefix
       ? { rewrite: (p: string) => p.replace(new RegExp(`^${spec.stripApiPrefix}`), '') || '/' }
       : {}),
-    configure: jsonProxyErrorHandler(503, {
-      ok: false,
-      error: spec.unreachableError,
-      hint: spec.unreachableHint
-    })
+    configure: jsonProxyErrorHandler(503, unreachableBody)
   }
 }
 

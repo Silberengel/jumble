@@ -8,7 +8,7 @@ import type { Event } from 'nostr-tools'
  * - `["textquoteselector", prefix, suffix]` (3 items)
  * - `["textquoteselector", "-", prefix, suffix]` — leading "-" = empty slot (Hypothesis-style)
  */
-function parseTextQuoteSelectorParts(tag: readonly string[]): { prefix: string; suffix: string } {
+export function parseTextQuoteSelectorParts(tag: readonly string[]): { prefix: string; suffix: string } {
   if (tag.length < 2 || tag[0] !== 'textquoteselector') {
     return { prefix: '', suffix: '' }
   }

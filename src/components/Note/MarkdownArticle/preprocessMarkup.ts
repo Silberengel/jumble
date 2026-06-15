@@ -1,10 +1,21 @@
 import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
-import { isImage, isVideo, isAudio } from '@/lib/url'
-import { URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
+import { findHttpUrlsInText, formatBareHttpUrlForMarkdownAutolink, isImage, isVideo, isAudio } from '@/lib/url'
+import { YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
+
+/** Bare http(s) URL occupies a line by itself (optional trailing punctuation) — leave for WebPreview embed. */
+function isBareUrlOnOwnLine(content: string, url: string, index: number): boolean {
+  const lineStart = content.lastIndexOf('\n', index - 1) + 1
+  const lineEndRaw = content.indexOf('\n', index + url.length)
+  const lineEnd = lineEndRaw === -1 ? content.length : lineEndRaw
+  const line = content.substring(lineStart, lineEnd).trim()
+  if (line === url) return true
+  const withoutTrail = line.replace(/[.,;:!?)]+$/, '')
+  return withoutTrail === url
+}
 
 /**
  * Check if a URL is a YouTube URL
@@ -27,31 +38,18 @@ export function preprocessMarkdownMediaLinks(content: string): string {
   let processed = content
   
   // First, handle angle bracket URLs: <https://example.com> -> https://example.com
-  // These should be converted to plain URLs so they can be processed by the URL regex
-  const angleBracketUrlRegex = /<((?:https?|ftp):\/\/[^\s<>"']+)>/g
-  processed = processed.replace(angleBracketUrlRegex, (_match, url) => {
-    // Just remove the angle brackets, leaving the URL for the main URL processor to handle
-    return url
-  })
-  
-  // Find all URLs but process them in reverse order to preserve indices
-  const allMatches: Array<{ url: string; index: number }> = []
-  
-  let match
-  const regex = new RegExp(URL_REGEX.source, URL_REGEX.flags)
-  while ((match = regex.exec(processed)) !== null) {
-    const index = match.index
-    const url = match[0]
+  // These should be converted to plain URLs so they can be processed by the main URL processor to handle
+  const angleBracketUrlRegex = /<((?:https?|ftp):\/\/[^>]+)>/g
+  processed = processed.replace(angleBracketUrlRegex, (_match, url) => url)
+
+  const allMatches = findHttpUrlsInText(processed).filter(({ url, index }) => {
     const before = processed.substring(Math.max(0, index - 20), index)
-    
-    // Check if this URL is already part of markdown syntax
-    // Skip if preceded by: [text](url, ![text](url, or ](url
+    // Skip if already part of markdown syntax
     if (before.match(/\[[^\]]*$/) || before.match(/\]\([^)]*$/) || before.match(/!\[[^\]]*$/)) {
-      continue
+      return false
     }
-    
-    allMatches.push({ url, index })
-  }
+    return true
+  })
   
   // Process in reverse order to preserve indices
   for (let i = allMatches.length - 1; i >= 0; i--) {
@@ -105,14 +103,17 @@ export function preprocessMarkdownMediaLinks(content: string): string {
     if (isZapStreamWatchUrl(url)) {
       continue
     }
+
+    // Standalone line URLs stay bare so MarkdownArticle renders WebPreview (not `[url](url)` green links).
+    if (isBareUrlOnOwnLine(processed, url, index)) {
+      continue
+    }
     
     let replacement: string
     if (isImageUrl || isVideoUrl || isAudioUrl) {
-      // Media URLs: convert to ![](url)
-      replacement = `![](${url})`
+      replacement = formatBareHttpUrlForMarkdownAutolink(url, true)
     } else {
-      // Regular hyperlinks: convert to [url](url) format
-      replacement = `[${url}](${url})`
+      replacement = formatBareHttpUrlForMarkdownAutolink(url, false)
     }
     
     // Replace the URL
@@ -163,45 +164,33 @@ export function preprocessAsciidocMediaLinks(content: string): string {
   }
   
   // Find all URLs but process them in reverse order to preserve indices
-  const allMatches: Array<{ url: string; index: number }> = []
-  
-  let match
-  const regex = new RegExp(URL_REGEX.source, URL_REGEX.flags)
-  while ((match = regex.exec(content)) !== null) {
-    const index = match.index
-    const url = match[0]
+  const allMatches = findHttpUrlsInText(content).filter(({ url, index }) => {
     const urlEnd = index + url.length
-    
-    // Skip URLs that are inside wikilinks (already processed as passthrough markers)
-    // Check if URL is inside a passthrough marker
     const beforeUrl = content.substring(Math.max(0, index - 100), index)
     const afterUrl = content.substring(urlEnd, Math.min(content.length, urlEnd + 100))
-    if (beforeUrl.includes('BOOKSTR_START:') || beforeUrl.includes('WIKILINK:') || 
+    if (beforeUrl.includes('BOOKSTR_START:') || beforeUrl.includes('WIKILINK:') ||
         afterUrl.includes(':BOOKSTR_END') || afterUrl.includes('+++')) {
-      continue
+      return false
     }
-    
+    return true
+  }).filter(({ url, index }) => {
+    const urlEnd = index + url.length
     // Check if this URL is part of an AsciiDoc link format url[text]
-    // If URL is immediately followed by [text], it's already an AsciiDoc link - skip it
     const contextAfter = content.substring(urlEnd, Math.min(content.length, urlEnd + 50))
     if (contextAfter.match(/^\s*\[[^\]]+\]/)) {
-      continue
+      return false
     }
-    
     const before = content.substring(Math.max(0, index - 30), index)
-    
     // Check if this URL is already part of AsciiDoc syntax
-    // Skip if preceded by: image::, video::, audio::, or link:
-    if (before.match(/image::\s*$/) || 
-        before.match(/video::\s*$/) || 
+    if (before.match(/image::\s*$/) ||
+        before.match(/video::\s*$/) ||
         before.match(/audio::\s*$/) ||
         before.match(/link:\S+\[/) ||
         before.match(/https?:\/\/[^\s]*\[/)) {
-      continue
+      return false
     }
-    
-    allMatches.push({ url, index })
-  }
+    return true
+  })
   
   // Process in reverse order to preserve indices
   for (let i = allMatches.length - 1; i >= 0; i--) {

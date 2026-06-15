@@ -6,10 +6,10 @@ import {
 } from '@/lib/advanced-lab-markup-protect'
 import { EMBEDDED_EVENT_REGEX } from '@/lib/content-patterns'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
-import { getParentEventHexId } from '@/lib/event'
+import { parseTextQuoteSelectorParts } from '@/lib/nip84-highlight-display'
 import { setNoteTranslation } from '@/lib/note-translation-display'
 import { normalizeTranslateLangCode } from '@/lib/translate-client'
-import { nip19, type Event } from 'nostr-tools'
+import { kinds, nip19, type Event } from 'nostr-tools'
 
 const CHUNK_MAX = 2500
 
@@ -197,7 +197,13 @@ async function translateLongProtectedBody(
 export async function translateNoteForDisplay(
   event: Event,
   targetCode: string
-): Promise<{ content: string; title?: string }> {
+): Promise<{
+  content: string
+  title?: string
+  context?: string
+  textQuotePrefix?: string
+  textQuoteSuffix?: string
+}> {
   const target = normalizeTranslateLangCode(targetCode)
   const markupMode: AdvancedLabMarkupMode = isAsciidocMarkupKind(event.kind) ? 'asciidoc' : 'markdown'
   const meta = getLongFormArticleMetadataFromEvent(event)
@@ -209,11 +215,39 @@ export async function translateNoteForDisplay(
   const content = rawContent.trim()
     ? await translateLongProtectedBody(rawContent, target, markupMode)
     : rawContent
-  return { content: content || rawContent, title }
+
+  let context: string | undefined
+  let textQuotePrefix: string | undefined
+  let textQuoteSuffix: string | undefined
+
+  if (event.kind === kinds.Highlights) {
+    const contextBody = event.tags.find((tag) => tag[0] === 'context')?.[1]?.trim()
+    if (contextBody) {
+      context = await translateAdvancedLabMarkup(contextBody, target, 'auto', markupMode)
+    }
+    const textQuoteTag = event.tags.find((tag) => tag[0] === 'textquoteselector')
+    if (textQuoteTag) {
+      const { prefix, suffix } = parseTextQuoteSelectorParts(textQuoteTag)
+      if (prefix.trim()) {
+        textQuotePrefix = await translateAdvancedLabMarkup(prefix, target, 'auto', markupMode)
+      }
+      if (suffix.trim()) {
+        textQuoteSuffix = await translateAdvancedLabMarkup(suffix, target, 'auto', markupMode)
+      }
+    }
+  }
+
+  return {
+    content: content || rawContent,
+    title,
+    context,
+    textQuotePrefix,
+    textQuoteSuffix
+  }
 }
 
 /**
- * Parent (`e` reply) and `nostr:…` embeds in the body — same scope as prefetch, but not every thread `e` tag.
+ * `nostr:…` embeds in the body — not thread parents (translate those from their own ⋯ menu).
  */
 export function collectRelatedNoteTranslateTargets(event: Event): {
   hexIds: string[]
@@ -227,8 +261,6 @@ export function collectRelatedNoteTranslateTargets(event: Event): {
     const h = id.trim().toLowerCase()
     if (/^[0-9a-f]{64}$/.test(h) && h !== self) hexSet.add(h)
   }
-
-  addHex(getParentEventHexId(event))
 
   const body = event.content ?? ''
   for (const full of body.match(EMBEDDED_EVENT_REGEX) ?? []) {
@@ -250,7 +282,7 @@ export function collectRelatedNoteTranslateTargets(event: Event): {
 }
 
 /**
- * Translates the note body/title and any reply-parent / embedded notes shown with it, then updates the translation store.
+ * Translates the note body/title and any `nostr:…` embeds in its content, then updates the translation store.
  */
 export async function translateNoteAndRelatedForDisplay(
   event: Event,
@@ -275,7 +307,10 @@ export async function translateNoteAndRelatedForDisplay(
         lang: targetCode,
         langLabel,
         content: out.content,
-        title: out.title
+        title: out.title,
+        context: out.context,
+        textQuotePrefix: out.textQuotePrefix,
+        textQuoteSuffix: out.textQuoteSuffix
       })
       coIds.push(rel.id)
     } catch {
@@ -297,6 +332,9 @@ export async function translateNoteAndRelatedForDisplay(
     langLabel,
     content: mainOut.content,
     title: mainOut.title,
+    context: mainOut.context,
+    textQuotePrefix: mainOut.textQuotePrefix,
+    textQuoteSuffix: mainOut.textQuoteSuffix,
     coTranslatedIds: coIds.length > 0 ? coIds : undefined
   })
 }
