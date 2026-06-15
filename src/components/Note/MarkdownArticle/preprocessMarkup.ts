@@ -42,7 +42,7 @@ export function preprocessMarkdownMediaLinks(content: string): string {
   const angleBracketUrlRegex = /<((?:https?|ftp):\/\/[^>]+)>/g
   processed = processed.replace(angleBracketUrlRegex, (_match, url) => url)
 
-  const allMatches = findHttpUrlsInText(processed).filter(({ url, index }) => {
+  const allMatches = findHttpUrlsInText(processed).filter(({ index }) => {
     const before = processed.substring(Math.max(0, index - 20), index)
     // Skip if already part of markdown syntax
     if (before.match(/\[[^\]]*$/) || before.match(/\]\([^)]*$/) || before.match(/!\[[^\]]*$/)) {
