@@ -174,6 +174,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [profileEvent, setProfileEvent] = useState<Event | null>(null)
   const [relayList, setRelayList] = useState<TRelayList | null>(null)
   const [cacheRelayListEvent, setCacheRelayListEvent] = useState<Event | null>(null)
+  const [cacheRelaysEnabled, setCacheRelaysEnabledState] = useState(() => storage.getCacheRelaysEnabled())
   const [httpRelayListEvent, setHttpRelayListEvent] = useState<Event | null | undefined>(undefined)
   const [followListEvent, setFollowListEvent] = useState<Event | null>(null)
   const [muteListEvent, setMuteListEvent] = useState<Event | null>(null)
@@ -393,7 +394,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           httpOriginalRelays: httpSlice.httpOriginalRelays
         }
 
-        if (storedCacheRelayListEvent) {
+        if (storedCacheRelayListEvent && storage.getCacheRelaysEnabled()) {
           const cacheRelayList = getRelayListFromEvent(storedCacheRelayListEvent)
 
           const mergedRead = [...cacheRelayList.read, ...baseRelayList.read]
@@ -2057,8 +2058,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     client.interruptBackgroundQueries()
     noteStatsService.beginPublishPriority()
     let publishRelayCandidates: string[] = []
+    const publishTrace = options.publishTrace
     try {
+      publishTrace?.step('sign event done', { eventId: event.id?.slice(0, 12), kind: event.kind })
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
+      publishTrace?.step('determineTargetRelays')
       const favoriteRelayUrls = favoriteRelayUrlsForPublish(
         favoriteRelaysEvent,
         account.pubkey,
@@ -2071,20 +2075,30 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent)
       })
       const relays = publishRelayCandidates
+      publishTrace?.step('determineTargetRelays done', {
+        relayCount: relays.length,
+        relays: relays.slice(0, 6).map((u) => {
+          try {
+            return new URL(u).host
+          } catch {
+            return u.slice(0, 40)
+          }
+        })
+      })
       logger.debug('[Publish] Target relays determined', { relayCount: relays.length, relays: relays.slice(0, 5) })
 
       logger.debug('[Publish] Calling client.publishEvent()...', { relayCount: relays.length, eventId: event.id?.substring(0, 8) })
+      publishTrace?.step('publishEvent', { relayCount: relays.length })
       const publishExtras = {
         favoriteRelayUrls,
         /** Picker / `specifiedRelayUrls` is the authoritative target list — do not prepend full NIP-65 outbox again. */
-        skipOutboxRetry: (options.specifiedRelayUrls?.length ?? 0) > 0
+        skipOutboxRetry: (options.specifiedRelayUrls?.length ?? 0) > 0,
+        publishTrace
       }
       const publishResult = await client.publishEvent(relays, event, publishExtras)
-      logger.debug('[Publish] publishEvent completed', {
-        success: publishResult.success,
+      publishTrace?.step('publishEvent returned', {
         successCount: publishResult.successCount,
-        totalCount: publishResult.totalCount,
-        relayStatuses: publishResult.relayStatuses
+        totalCount: publishResult.totalCount
       })
       
       // Store relay status temporarily for display (but don't persist it on the event)
@@ -2319,6 +2333,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     // This ensures kind 10002 and 10432 remain separate and are only merged when publishing/using
   }
 
+  const setCacheRelaysEnabled = async (enabled: boolean) => {
+    storage.setCacheRelaysEnabled(enabled)
+    setCacheRelaysEnabledState(enabled)
+    const pk = account?.pubkey
+    if (!pk) return
+    client.clearRelayListCache(pk)
+    await client.syncViewerPersonalRelayKeys(pk)
+    const mergedRelayList = await client.peekRelayListFromStorage(pk)
+    setRelayList(mergedRelayList)
+  }
+
   const updateHttpRelayListEvent = async (httpRelayEvent: Event) => {
     await indexedDb.putReplaceableEvent(httpRelayEvent)
     if (account?.pubkey) {
@@ -2501,6 +2526,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const signEventStable = useEventCallback(signEvent)
   const updateRelayListEventStable = useEventCallback(updateRelayListEvent)
   const updateCacheRelayListEventStable = useEventCallback(updateCacheRelayListEvent)
+  const setCacheRelaysEnabledStable = useEventCallback(setCacheRelaysEnabled)
   const updateHttpRelayListEventStable = useEventCallback(updateHttpRelayListEvent)
   const updateProfileEventStable = useEventCallback(updateProfileEvent)
   const updateFollowListEventStable = useEventCallback(updateFollowListEvent)
@@ -2522,6 +2548,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       profileEvent,
       relayList,
       cacheRelayListEvent,
+      cacheRelaysEnabled,
       httpRelayListEvent,
       followListEvent,
       muteListEvent,
@@ -2560,6 +2587,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       signEvent: signEventStable,
       updateRelayListEvent: updateRelayListEventStable,
       updateCacheRelayListEvent: updateCacheRelayListEventStable,
+      setCacheRelaysEnabled: setCacheRelaysEnabledStable,
       updateHttpRelayListEvent: updateHttpRelayListEventStable,
       updateProfileEvent: updateProfileEventStable,
       updateFollowListEvent: updateFollowListEventStable,
@@ -2583,6 +2611,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       bookmarkListEvent,
       bunkerLoginStable,
       cacheRelayListEvent,
+      cacheRelaysEnabled,
       checkLoginStable,
       favoriteRelaysEvent,
       followListEvent,
@@ -2616,6 +2645,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       updateBlockedRelaysEventStable,
       updateBookmarkListEventStable,
       updateCacheRelayListEventStable,
+      setCacheRelaysEnabledStable,
       updateFavoriteRelaysEventStable,
       updateFollowListEventStable,
       updateHttpRelayListEventStable,

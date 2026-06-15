@@ -38,6 +38,7 @@ import {
 import { archivesMetadataListToProfiles } from '@/lib/archives-profile-metadata'
 import { createEphemeralSigner } from '@/lib/anon-session'
 import { getCacheRelayUrls } from '@/lib/private-relays'
+import storage from '@/services/local-storage.service'
 import {
   collectReadInboxUrlsFromRelayList,
   collectRemoteReadInboxUrlsFromRelayList,
@@ -151,6 +152,7 @@ import {
   getRelayUrlFromRelayReviewEvent
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import type { PublishTrace } from '@/lib/publish-trace'
 import { hiddenNetworkRelayUnavailableReason } from '@/lib/hidden-network-relay'
 import { fetchHiddenNetworkRelayStatus } from '@/lib/hidden-network-relay-status'
 import { installBrowserHiddenNetworkRelayWebSocket } from '@/lib/hidden-network-relay.browser'
@@ -759,7 +761,9 @@ class ClientService extends EventTarget {
     this.viewerHttpIndexRelayBases = filterViewerBlockedRelaysForFetch(storageUrls.httpIndexBases)
     setViewerPersonalRelayKeys(buildPersonalRelayKeySet(storageUrls.all), { viewerActive: true })
     syncViewerRelayStackNostrLandAggrEligible(storageUrls.all)
-    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(storageUrls.cacheRelayEvent)
+    relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(
+      storage.getCacheRelaysEnabled() ? storageUrls.cacheRelayEvent : null
+    )
     this.closeMetadataPolicyDisallowedRelayConnections()
     this.closeViewerBlockedRelayConnections()
 
@@ -1253,10 +1257,20 @@ class ClientService extends EventTarget {
    */
   async determineTargetRelays(
     event: NEvent,
-    { specifiedRelayUrls, additionalRelayUrls, favoriteRelayUrls, blockedRelayUrls }: TPublishOptions = {}
+    {
+      specifiedRelayUrls,
+      additionalRelayUrls,
+      favoriteRelayUrls,
+      blockedRelayUrls,
+      publishTrace
+    }: TPublishOptions = {}
   ) {
     this.publishTransientRelayUrls.clear()
     const finish = (relays: string[]): string[] => {
+      publishTrace?.step('determineTargetRelays picked', {
+        relayCount: relays.length,
+        kind: event.kind
+      })
       this.stagePublishTransientRelays(relays)
       return relays
     }
@@ -1753,11 +1767,14 @@ class ClientService extends EventTarget {
   }
 
   async publishEvent(relayUrls: string[], event: NEvent, publishExtras?: TPublishEventExtras) {
+    const trace: PublishTrace | undefined = publishExtras?.publishTrace
     const skipOutboxRetry = publishExtras?.skipOutboxRetry === true
+    trace?.step('publishEvent begin', { pickerRelays: relayUrls.length, skipOutboxRetry })
     let userOutboxUrls: string[] = []
     let mergedRelayUrls = relayUrls
     if (!skipOutboxRetry) {
       userOutboxUrls = await this.getUserOutboxRelayUrlsForPublish(event)
+      trace?.step('outbox relays loaded', { count: userOutboxUrls.length })
       mergedRelayUrls =
         userOutboxUrls.length > 0
           ? dedupeNormalizeRelayUrlsOrdered([...userOutboxUrls, ...relayUrls])
@@ -1775,6 +1792,11 @@ class ClientService extends EventTarget {
 
     const uniqueRelayUrls = filtered
     const publishTargetUrls = relaySessionStrikes.filterPublishUrls(uniqueRelayUrls)
+    trace?.step('publishEvent targets ready', {
+      afterOutboxMerge: mergedRelayUrls.length,
+      afterFilters: countAfterFiltersBeforeCap,
+      contacted: publishTargetUrls.length
+    })
     /** Single-relay publish: force a fresh socket so explorer / one-relay flows still try hard. */
     if (publishTargetUrls.length === 1) {
       try {
@@ -1900,6 +1922,11 @@ class ClientService extends EventTarget {
         relayCount: publishTargetUrls.length,
         slotCap
       })
+      trace?.step('publishEvent waiting for relays', {
+        relayCount: publishTargetUrls.length,
+        publishGlobalDeadlineMs,
+        earlyGraceMs: EARLY_PUBLISH_SUCCESS_GRACE_MS
+      })
       let hasResolved = false
       let earlyGraceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1948,6 +1975,12 @@ class ClientService extends EventTarget {
             earlyGraceTimer = null
           }
           hasResolved = true
+          trace?.step('publishEvent resolve', {
+            reason: 'global_timeout',
+            successCount,
+            finishedCount,
+            totalRelays: publishTargetUrls.length
+          })
           maybeEmitNewEventForLiveFeeds()
           logger.debug('[PublishEvent] Resolving due to timeout', {
             success: successCount >= publishTargetUrls.length / 3,
@@ -1971,6 +2004,13 @@ class ClientService extends EventTarget {
           // eslint-disable-next-line @typescript-eslint/no-this-alias
           const that = this
           const startMs = Date.now()
+          const relayLabel = (() => {
+            try {
+              return new URL(url).host
+            } catch {
+              return url.slice(0, 48)
+            }
+          })()
           logger.debug(`[PublishEvent] Starting relay ${index + 1}/${publishTargetUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
           /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
@@ -1984,6 +2024,13 @@ class ClientService extends EventTarget {
           const httpPublishBudgetMs = isLocal ? 5_000 : 8_000
           /** Hard cap so a hung `ensureRelay` / NIP-42 auth chain cannot block {@link publishEvent} forever. */
           const relayHardBudgetMs = connectionTimeout + publishAckBudgetMs + 4_000
+          trace?.step(`relay ${index + 1}/${publishTargetUrls.length} begin`, {
+            host: relayLabel,
+            isLocal,
+            connectionTimeoutMs: connectionTimeout,
+            publishAckBudgetMs,
+            relayHardBudgetMs
+          })
 
           try {
             await Promise.race([
@@ -2212,6 +2259,13 @@ class ClientService extends EventTarget {
             }
           } finally {
             const currentFinished = ++finishedCount
+            const rs = relayStatuses.find((r) => r.url === url)
+            trace?.step(`relay ${index + 1}/${publishTargetUrls.length} end`, {
+              host: relayLabel,
+              ok: rs?.success === true,
+              ms: Date.now() - startMs,
+              error: rs?.error
+            })
             logger.debug(`[PublishEvent] Relay finished`, { 
               url, 
               finishedCount: currentFinished, 
@@ -2226,6 +2280,12 @@ class ClientService extends EventTarget {
                 earlyGraceTimer = null
               }
               hasResolved = true
+              trace?.step('publishEvent resolve', {
+                reason: 'all_relays_finished',
+                successCount,
+                finishedCount: currentFinished,
+                totalRelays: publishTargetUrls.length
+              })
               logger.debug('[PublishEvent] All relays finished, resolving', {
                 success: successCount >= publishTargetUrls.length / 3,
                 successCount,
@@ -2247,6 +2307,12 @@ class ClientService extends EventTarget {
                 hasResolved = true
                 clearTimeout(globalTimeout)
                 flushPublishOpBatch('early_any_success_grace')
+                trace?.step('publishEvent resolve', {
+                  reason: 'early_any_success_grace',
+                  successCount,
+                  finishedRelays: currentFinished,
+                  graceMs: EARLY_PUBLISH_SUCCESS_GRACE_MS
+                })
                 logger.debug('[PublishEvent] Resolving after first success grace', {
                   success: successCount >= publishTargetUrls.length / 3,
                   successCount,
@@ -4915,7 +4981,9 @@ class ClientService extends EventTarget {
         this.pubkey != null && hexPubkeysEqual(this.pubkey, userIdToPubkey(targetPubkey))
 
       const storedCacheEvent = storedCacheRelayEvents[index]
-      const cacheEvent = cacheRelayEvents[index] || storedCacheEvent
+      const cacheEventRaw = cacheRelayEvents[index] || storedCacheEvent
+      const cacheEvent =
+        isOwnRelayList && !storage.getCacheRelaysEnabled() ? undefined : cacheEventRaw
 
       const httpRelayEvent = httpRelayEvents[index] || storedHttpRelayEvents[index]
 
@@ -5011,7 +5079,9 @@ class ClientService extends EventTarget {
       if (i >= 0) {
         const storedCacheEvent = storedCacheRelayEvents[i]
         const cacheResolved = cacheRelayEvents[i] || storedCacheEvent
-        relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(cacheResolved ?? null)
+        relaySessionStrikes.setSessionCacheRelayKeysFromKind10432(
+          storage.getCacheRelaysEnabled() ? (cacheResolved ?? null) : null
+        )
       }
     }
     return mergedLists

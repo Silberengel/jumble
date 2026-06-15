@@ -81,6 +81,7 @@ const SETTINGS_KEYS = [
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
   StorageKey.SHOW_RSS_FEED,
   StorageKey.USE_NOSTR_ARCHIVES_API,
+  StorageKey.CACHE_RELAYS_ENABLED,
   StorageKey.PANE_MODE,
   StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
@@ -122,6 +123,8 @@ class LocalStorageService {
   private showRssFeed: boolean = true
   /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
   private useNostrArchivesApi: boolean = true
+  /** Kind 10432 cache relays on this device. Default on; set `'false'` to skip localhost cache relays. */
+  private cacheRelaysEnabled: boolean = true
   private panelMode: 'single' | 'double' = 'single'
   private homeFeedRelaySource: string = 'favorites'
   private addRandomRelaysToPublish: boolean = true
@@ -430,6 +433,9 @@ class LocalStorageService {
     const showLiveActivitiesStr = window.localStorage.getItem(StorageKey.SHOW_LIVE_ACTIVITIES_BANNER)
     this.showLiveActivitiesBanner = showLiveActivitiesStr !== 'false'
 
+    const cacheRelaysEnabledStr = window.localStorage.getItem(StorageKey.CACHE_RELAYS_ENABLED)
+    this.cacheRelaysEnabled = cacheRelaysEnabledStr !== 'false'
+
     // Clean up deprecated data
     window.localStorage.removeItem(StorageKey.ACCOUNT_PROFILE_EVENT_MAP)
     window.localStorage.removeItem(StorageKey.ACCOUNT_FOLLOW_LIST_EVENT_MAP)
@@ -621,6 +627,8 @@ class LocalStorageService {
     if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const archivesApiStr = get(StorageKey.USE_NOSTR_ARCHIVES_API)
     if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
+    const cacheRelaysEnabledStr = get(StorageKey.CACHE_RELAYS_ENABLED)
+    if (cacheRelaysEnabledStr != null) this.cacheRelaysEnabled = cacheRelaysEnabledStr !== 'false'
     const paneStr = get(StorageKey.PANE_MODE)
     if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
     const homeFeedRelaySourceStr = get(StorageKey.HOME_FEED_RELAY_SOURCE)
@@ -1028,6 +1036,15 @@ class LocalStorageService {
   setUseNostrArchivesApi(enabled: boolean) {
     this.useNostrArchivesApi = enabled
     this.persistSetting(StorageKey.USE_NOSTR_ARCHIVES_API, enabled ? 'true' : 'false')
+  }
+
+  getCacheRelaysEnabled(): boolean {
+    return this.cacheRelaysEnabled
+  }
+
+  setCacheRelaysEnabled(enabled: boolean) {
+    this.cacheRelaysEnabled = enabled
+    this.persistSetting(StorageKey.CACHE_RELAYS_ENABLED, enabled ? 'true' : 'false')
   }
 
   getShowPublishSuccessToasts(): boolean {

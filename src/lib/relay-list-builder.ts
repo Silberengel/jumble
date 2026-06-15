@@ -11,6 +11,7 @@
 
 import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import storage from '@/services/local-storage.service'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
 import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
@@ -67,7 +68,7 @@ export function buildAccountSessionNetworkHydrateRelayUrls(options: {
       push(u)
     }
   }
-  if (options.cacheRelayListEvent) {
+  if (options.cacheRelayListEvent && storage.getCacheRelaysEnabled()) {
     const crl = getRelayListFromEvent(options.cacheRelayListEvent)
     for (const u of [...crl.read, ...crl.write]) push(u)
   }

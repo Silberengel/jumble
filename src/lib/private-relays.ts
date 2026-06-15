@@ -4,11 +4,13 @@ import {
   viewerHasWriteOutboxes
 } from '@/lib/viewer-write-outboxes'
 import indexedDb from '@/services/indexed-db.service'
+import storage from '@/services/local-storage.service'
 import { ExtendedKind } from '@/constants'
 import type { Event } from 'nostr-tools'
 
-/** Kind 10432 relay tag URLs from an in-memory event (sync). */
+/** Kind 10432 relay tag URLs from an in-memory event (sync). Respects device-local disable toggle. */
 export function getCacheRelayUrlsFromEvent(event: Event | null | undefined): string[] {
+  if (!storage.getCacheRelaysEnabled()) return []
   if (!event) return []
   const relayUrls: string[] = []
   event.tags.forEach((tag) => {
@@ -41,6 +43,7 @@ export async function getPrivateRelayUrls(pubkey: string): Promise<string[]> {
  * @returns Promise<string[]> - Array of cache relay URLs
  */
 export async function getCacheRelayUrls(pubkey: string): Promise<string[]> {
+  if (!storage.getCacheRelaysEnabled()) return []
   const cacheRelayEvent = await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)
   return getCacheRelayUrlsFromEvent(cacheRelayEvent)
 }

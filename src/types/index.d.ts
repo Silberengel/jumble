@@ -213,6 +213,8 @@ export type TPublishOptions = {
   disableFallbacks?: boolean // If true, don't use fallback relays when publishing fails
   /** Override global "Add client tag" preference for this publish (default: read from localStorage) */
   addClientTag?: boolean
+  /** Phased `[PublishTrace]` INFO logs for publish stalls (dev reply/post debugging). */
+  publishTrace?: import('@/lib/publish-trace').PublishTrace
 }
 
 /** Options for {@link ClientService.publishEvent} (second argument bundle in code: favorites + internal retry pass). */
@@ -222,6 +224,7 @@ export type TPublishEventExtras = {
   skipOutboxRetry?: boolean
   /** Shown in relay batch logs and an info line (e.g. "NIP-65 outbox retry — 2nd attempt"). */
   publishBatchLabel?: string
+  publishTrace?: import('@/lib/publish-trace').PublishTrace
 }
 
 export type TNoteListMode = 'posts' | 'postsAndReplies' | 'media'

@@ -431,7 +431,9 @@ export const StorageKey = {
   ACTIVE_RELAY_SET_ID: 'activeRelaySetId', // deprecated
   FEED_TYPE: 'feedType', // deprecated
   /** Home feed relay source: `favorites` or a relay-set id. */
-  HOME_FEED_RELAY_SOURCE: 'homeFeedRelaySource'
+  HOME_FEED_RELAY_SOURCE: 'homeFeedRelaySource',
+  /** When `'false'`, kind 10432 cache relays are ignored on this device (list stays in IndexedDB). */
+  CACHE_RELAYS_ENABLED: 'cacheRelaysEnabled'
 }
 
 export const FONT_SIZE = {

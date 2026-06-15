@@ -1963,6 +1963,9 @@ export default {
     'Cache refreshed successfully': 'Cache refreshed successfully',
     'Cache relays are used to store and retrieve events locally. These relays are merged with your inbox and outbox relays.':
       'Cache relays are used to store and retrieve events locally. These relays are merged with your inbox and outbox relays.',
+    'Use cache relays on this device': 'Cache-Relays auf diesem Gerät nutzen',
+    'Use cache relays on this device hint':
+      'Auf Computern ohne lokalen Cache-Relay (z. B. ws://localhost:4869) ausschalten. Die Relay-Liste bleibt gespeichert; nur dieses Gerät verbindet sich nicht mehr.',
     'Cache relays must be local network URLs only (e.g., ws://localhost:4869 or ws://127.0.0.1:4869)':
       'Cache relays must be local network URLs only (e.g., ws://localhost:4869 or ws://127.0.0.1:4869)',
     'Cache relays saved': 'Cache relays saved',

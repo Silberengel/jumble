@@ -21,6 +21,9 @@ export type TNostrContext = {
   profileEvent: Event | null
   relayList: TRelayList | null
   cacheRelayListEvent: Event | null
+  /** Device-local: when false, kind 10432 cache relays are not contacted on this machine. */
+  cacheRelaysEnabled: boolean
+  setCacheRelaysEnabled: (enabled: boolean) => Promise<void>
   /** Kind 10243 (HTTPS index relays); null if none, undefined while not loaded. */
   httpRelayListEvent: Event | null | undefined
   followListEvent: Event | null

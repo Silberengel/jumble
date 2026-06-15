@@ -1,4 +1,6 @@
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { normalizeUrl, isLocalNetworkUrl } from '@/lib/url'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
@@ -37,6 +39,8 @@ export default function CacheRelaysSetting() {
   const {
     pubkey,
     cacheRelayListEvent,
+    cacheRelaysEnabled,
+    setCacheRelaysEnabled,
     checkLogin,
     publish,
     updateCacheRelayListEvent,
@@ -205,12 +209,27 @@ export default function CacheRelaysSetting() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-between select-none items-center px-2 min-h-9 gap-4">
+        <Label htmlFor="cache-relays-enabled" className="text-base font-normal flex-1">
+          <div>{t('Use cache relays on this device')}</div>
+          <div className="text-sm text-muted-foreground font-normal">
+            {t('Use cache relays on this device hint')}
+          </div>
+        </Label>
+        <Switch
+          id="cache-relays-enabled"
+          checked={cacheRelaysEnabled}
+          onCheckedChange={(checked) => {
+            void setCacheRelaysEnabled(checked)
+          }}
+        />
+      </div>
       <div className="text-xs text-muted-foreground space-y-1">
         <div>{t('Cache relays are used to store and retrieve events locally. These relays are merged with your inbox and outbox relays.')}</div>
       </div>
       <DiscoveredRelays onAdd={handleAddDiscoveredRelays} localOnly={true} />
       <RelayCountWarning relays={relays} />
-      <Button className="w-full" disabled={!pubkey || pushing || !hasChange} onClick={save}>
+      <Button className="w-full" disabled={!pubkey || pushing || !hasChange || !cacheRelaysEnabled} onClick={save}>
         {pushing ? <Skeleton className="size-4 shrink-0 rounded-sm" aria-hidden /> : <CloudUpload />}
         {t('Save')}
       </Button>
@@ -221,7 +240,7 @@ export default function CacheRelaysSetting() {
         modifiers={[restrictToVerticalAxis, restrictToParentElement]}
       >
         <SortableContext items={relays.map((r) => r.url)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
+          <div className={`space-y-2 ${cacheRelaysEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
             {relays.map((relay) => (
               <MailboxRelay
                 key={relay.url}
@@ -233,7 +252,9 @@ export default function CacheRelaysSetting() {
           </div>
         </SortableContext>
       </DndContext>
-      <NewMailboxRelayInput saveNewMailboxRelay={saveNewCacheRelay} />
+      <div className={cacheRelaysEnabled ? undefined : 'opacity-50 pointer-events-none'}>
+        <NewMailboxRelayInput saveNewMailboxRelay={saveNewCacheRelay} />
+      </div>
     </div>
   )
 }

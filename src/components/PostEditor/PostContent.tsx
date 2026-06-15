@@ -56,6 +56,7 @@ import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
+import { startPublishTrace } from '@/lib/publish-trace'
 import { LoginRequiredError } from '@/lib/nostr-errors'
 import postEditorCache from '@/services/post-editor-cache.service'
 import { TPollCreateData } from '@/types'
@@ -1449,11 +1450,13 @@ export default function PostContent({
       // })
 
       setPosting(true)
+      const publishTrace = startPublishTrace(parentEvent ? 'reply' : 'post')
       let newEvent: any = null
       let draftEvent: any = null
 
       // Allow "Publishing…" (and other posting UI) to paint before draft build + network work.
       await yieldForPaintBeforeHeavyWork()
+      publishTrace.step('UI painted')
 
       try {
         // Clean tracking parameters from URLs in the post content
@@ -1469,6 +1472,11 @@ export default function PostContent({
 
         // Create draft event using shared function
         draftEvent = await finalizeDraftEvent(cleanedText)
+        publishTrace.step('draft built', {
+          kind: draftEvent.kind,
+          contentChars: (draftEvent.content ?? '').length,
+          tagCount: draftEvent.tags?.length ?? 0
+        })
 
         const publishSuccessMessage = parentEvent
           ? t('Reply published')
@@ -1491,7 +1499,12 @@ export default function PostContent({
             isPrivateEvent ||
             isPublicMessage ||
             parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE,
-          addClientTag
+          addClientTag,
+          publishTrace
+        })
+        publishTrace.step('publish() returned', {
+          eventId: newEvent?.id?.slice(0, 12),
+          relayStatusCount: (newEvent as { relayStatuses?: unknown[] })?.relayStatuses?.length
         })
         // console.log('Published event:', newEvent)
         
@@ -1539,6 +1552,9 @@ export default function PostContent({
         onPublishSuccess?.()
         close()
       } catch (error) {
+        publishTrace.step('publish failed', {
+          error: error instanceof Error ? error.message : String(error)
+        })
         if (error instanceof LoginRequiredError) {
           toast.error(t('readOnlySession.cannotPublish'))
           return
@@ -1623,6 +1639,7 @@ export default function PostContent({
           // Don't close form on complete failure - let user try again
         }
       } finally {
+        publishTrace.end({ posted: Boolean(newEvent?.id) })
         setPosting(false)
       }
     })
