@@ -23,6 +23,17 @@ import { useNostr } from '@/providers/NostrProvider'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
 
+function isNestedPickerTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], emoji-picker-element'
+      )
+    )
+  )
+}
+
 export default function PostEditor({
   defaultContent = '',
   parentEvent,
@@ -52,6 +63,7 @@ export default function PostEditor({
   /** Lock sheet height at open so the mobile keyboard does not resize/jank the composer. */
   const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
   const wasOpenRef = useRef(false)
+  const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     if (open && isSmallScreen && !wasOpenRef.current) {
@@ -95,6 +107,7 @@ export default function PostEditor({
         initialPublicMessageTo={initialPublicMessageTo}
         onPublishSuccess={onPublishSuccess}
         discussionDynamicTopics={discussionDynamicTopics}
+        pickerPortalContainer={pickerPortalContainer}
       />
     )
   }, [
@@ -106,7 +119,8 @@ export default function PostEditor({
     initialHighlightData,
     initialPublicMessageTo,
     onPublishSuccess,
-    discussionDynamicTopics
+    discussionDynamicTopics,
+    pickerPortalContainer
   ])
 
   if (isSmallScreen) {
@@ -122,10 +136,13 @@ export default function PostEditor({
           side="bottom"
           hideClose
           onInteractOutside={(e) => {
-            if (blockDismissForAccountSwitch) e.preventDefault()
+            if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
           }}
           onPointerDownOutside={(e) => {
-            if (blockDismissForAccountSwitch) e.preventDefault()
+            if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+          }}
+          onFocusOutside={(e) => {
+            if (isNestedPickerTarget(e.target)) e.preventDefault()
           }}
           onEscapeKeyDown={(e) => {
             if (postEditor.isSuggestionPopupOpen) {
@@ -134,12 +151,18 @@ export default function PostEditor({
             }
           }}
         >
-          <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2 min-w-0 overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2 min-w-0 overflow-hidden">
             <SheetHeader className="sr-only">
               <SheetTitle>Post Editor</SheetTitle>
               <SheetDescription>Create a new post or reply</SheetDescription>
             </SheetHeader>
             {content}
+            <div
+              ref={setPickerPortalContainer}
+              data-nested-picker-portal
+              className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
+              aria-hidden={false}
+            />
           </div>
         </SheetContent>
       </Sheet>
@@ -152,10 +175,13 @@ export default function PostEditor({
         className="flex max-h-[min(90dvh,900px)] flex-col overflow-hidden p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         withoutClose
         onInteractOutside={(e) => {
-          if (blockDismissForAccountSwitch) e.preventDefault()
+          if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
         }}
         onPointerDownOutside={(e) => {
-          if (blockDismissForAccountSwitch) e.preventDefault()
+          if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+        }}
+        onFocusOutside={(e) => {
+          if (isNestedPickerTarget(e.target)) e.preventDefault()
         }}
         onEscapeKeyDown={(e) => {
           if (postEditor.isSuggestionPopupOpen) {
@@ -164,12 +190,18 @@ export default function PostEditor({
           }
         }}
       >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
           <DialogHeader className="sr-only">
             <DialogTitle>Post Editor</DialogTitle>
             <DialogDescription>Create a new post or reply</DialogDescription>
           </DialogHeader>
           {content}
+          <div
+            ref={setPickerPortalContainer}
+            data-nested-picker-portal
+            className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
+            aria-hidden={false}
+          />
         </div>
       </DialogContent>
     </Dialog>

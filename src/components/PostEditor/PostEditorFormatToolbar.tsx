@@ -28,6 +28,8 @@ export type PostEditorFormatToolbarProps = {
   audioButtonHighlighted: boolean
   showMoreOptions: boolean
   onToggleMoreOptions: () => void
+  /** When set (reply/post dialog), pickers portal here so Radix does not mark them inert. */
+  pickerPortalContainer?: HTMLElement | null
 }
 
 /**
@@ -42,7 +44,8 @@ export function PostEditorFormatToolbar({
   audioUploadTitle,
   audioButtonHighlighted,
   showMoreOptions,
-  onToggleMoreOptions
+  onToggleMoreOptions,
+  pickerPortalContainer
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
 
@@ -86,6 +89,7 @@ export function PostEditorFormatToolbar({
       </Uploader>
       <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
       <EmojiPickerDialog
+        portalContainer={pickerPortalContainer}
         onEmojiClick={(emoji) => {
           if (emoji == null) return
           insertEmoji(emoji)
@@ -95,12 +99,12 @@ export function PostEditorFormatToolbar({
           <Smile />
         </Button>
       </EmojiPickerDialog>
-      <GifPicker onSelect={(gifUrl) => insertText(gifUrl)}>
+      <GifPicker portalContainer={pickerPortalContainer} onSelect={(gifUrl) => insertText(gifUrl)}>
         <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert GIF')}>
           <Film className="h-4 w-4" />
         </Button>
       </GifPicker>
-      <MemePicker onSelect={(memeUrl) => insertText(memeUrl)}>
+      <MemePicker portalContainer={pickerPortalContainer} onSelect={(memeUrl) => insertText(memeUrl)}>
         <Button type="button" variant="ghost" size="icon" className={iconBtnClass} title={t('Insert meme')}>
           <Laugh className="h-4 w-4" />
         </Button>

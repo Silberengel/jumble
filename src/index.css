@@ -102,6 +102,13 @@
       sans-serif;
   }
 
+  /* emoji-picker-element grid (shadow DOM inherits --font-family on :host). */
+  emoji-picker-element {
+    --font-family:
+      'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Noto Emoji',
+      sans-serif;
+  }
+
   @media (max-width: 768px) {
     /* Mobile composer: fill the editor slot and scroll inside the bordered surface. */
     .tiptap.flex-col {

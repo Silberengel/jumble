@@ -468,13 +468,18 @@ export async function loadGifPoolFromRelays(options: LoadGifPoolOptions): Promis
     if (userKey) knownAuthors.add(userKey)
     for (const pk of followAuthors) knownAuthors.add(pk.toLowerCase())
 
+    /** Own + follows' 1063 may live on inbox relays, not only GIF hubs. */
+    const personal1063Relays = dedupeRelayUrls([...relays1063, ...noteFallbackRelays])
+
     if (userPubkey) {
-      const ownEvents = await fetch1063Paginated(relays1063, fetchOpts, { authors: [userPubkey] })
+      const ownEvents = await fetch1063Paginated(personal1063Relays, fetchOpts, {
+        authors: [userPubkey]
+      })
       mergeGifEventsIntoPool(ownEvents, pool)
     }
 
     for (const chunk of chunkPubkeys(followAuthors, METADATA_BATCH_AUTHORS_CHUNK)) {
-      const followEvents = await fetch1063Paginated(relays1063, fetchOpts, { authors: chunk })
+      const followEvents = await fetch1063Paginated(personal1063Relays, fetchOpts, { authors: chunk })
       mergeGifEventsIntoPool(followEvents, pool)
     }
 
@@ -514,9 +519,24 @@ export async function loadGifPoolFromRelays(options: LoadGifPoolOptions): Promis
   }
 }
 
+/** Merge one or more GIF rows into IndexedDB (e.g. after a local kind-1063 publish). */
+export async function cachePublishedGif(gif: GifMetadata): Promise<void> {
+  await persistGifPool([gif])
+}
+
 async function persistGifPool(gifs: GifMetadata[]): Promise<void> {
   if (gifs.length === 0) return
-  await indexedDb.setGifCache(gifs, Date.now())
+  let existing: GifMetadata[] = []
+  try {
+    const row = await indexedDb.getGifCache()
+    if (row?.gifs?.length) {
+      existing = row.gifs.map((g) => normalizeCachedGif(g as GifMetadata))
+    }
+  } catch {
+    /* ignore */
+  }
+  const merged = dedupeGifsByUrl([...gifs, ...existing])
+  await indexedDb.setGifCache(merged, Date.now())
 }
 
 export function gifMetadataMatchesSearch(gif: GifMetadata, query: string): boolean {
@@ -603,6 +623,8 @@ export async function fetchGifs(options: FetchGifsOptions): Promise<GifMetadata[
     if (pool.length > 0) {
       await persistGifPool(pool)
     }
+    const merged = await getAllCachedGifsForSearch(userPubkey, followingPubkeys)
+    if (merged.length > 0) return merged
     return pool
   } catch (err) {
     if (staleFallback?.length) {
@@ -684,6 +706,5 @@ export async function searchGifs(
 
 /** @deprecated Merges by URL with a hard cap; prefer {@link persistGifPool}. */
 export async function mergeGifsIntoIdbCache(incoming: GifMetadata[]): Promise<void> {
-  if (incoming.length === 0) return
-  await indexedDb.setGifCache(incoming, Date.now())
+  await persistGifPool(incoming)
 }

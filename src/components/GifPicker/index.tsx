@@ -17,6 +17,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { ExtendedKind } from '@/constants'
 import { cn } from '@/lib/utils'
 import {
+  cachePublishedGif,
   fetchGifs,
   getAllCachedGifsForSearch,
   getGif1063RelayUrls,
@@ -95,7 +96,7 @@ export default function GifPicker({
   // Initialise from the module-level session cache so re-opens are instant
   const [gifs, setGifsState] = useState<GifMetadata[]>(() => _sessionGifs)
   const gifsRef = useRef<GifMetadata[]>(_sessionGifs)
-  const gifPoolRef = useRef<GifMetadata[]>([])
+  const gifPoolRef = useRef<GifMetadata[]>(_sessionGifs)
   const searchInputRef = useRef(searchInput)
   searchInputRef.current = searchInput
   const [loading, setLoading] = useState(false)
@@ -152,23 +153,27 @@ export default function GifPicker({
     async (forceRefresh = false) => {
       const generation = ++loadGenerationRef.current
       setError(null)
+      let cachedCount = gifPoolRef.current.length
 
-      if (gifPoolRef.current.length === 0) {
-        try {
-          const cached = await refreshGifPoolFromIdb()
-          if (generation !== loadGenerationRef.current) return
-          if (cached.length > 0) {
-            applyLocalFilter(searchInputRef.current)
-          }
-        } catch {
-          /* ignore */
+      try {
+        const cached = await refreshGifPoolFromIdb()
+        if (generation !== loadGenerationRef.current) return
+        cachedCount = cached.length
+        if (cached.length > 0) {
+          applyLocalFilter(searchInputRef.current)
+        } else if (gifPoolRef.current.length === 0) {
+          setLoading(true)
         }
+      } catch {
         if (gifPoolRef.current.length === 0) setLoading(true)
       }
 
+      // Sparse IDB (e.g. after a partial relay write) should top up from relays on open.
+      const sparseCache = cachedCount > 0 && cachedCount < 10
+
       try {
         await fetchGifs({
-          forceRefresh: forceRefresh || Boolean(pubkey),
+          forceRefresh: forceRefresh || sparseCache,
           userPubkey: pubkey ?? null,
           followingPubkeys,
           noteFallbackRelays: userReadRelays
@@ -291,18 +296,10 @@ export default function GifPicker({
     }
 
     document.addEventListener('keydown', onKeyDown, true)
-    const onFocusIn = (event: FocusEvent) => {
-      const livePanel = composerPanelRef.current
-      const target = event.target
-      if (!livePanel || !(target instanceof Node) || livePanel.contains(target)) return
-      window.setTimeout(focusSearch, 0)
-    }
-    document.addEventListener('focusin', onFocusIn, true)
     return () => {
       if (raf) cancelAnimationFrame(raf)
       if (timer) window.clearTimeout(timer)
       document.removeEventListener('keydown', onKeyDown, true)
-      document.removeEventListener('focusin', onFocusIn, true)
     }
   }, [open, useDialogShell, activeTab])
 
@@ -337,7 +334,19 @@ export default function GifPicker({
       // Fire-and-forget: waiting on every relay can freeze the UI when relays are down.
       void publish(buildKind1063GifPublishDraft(url, desc), {
         specifiedRelayUrls: gif1063PublishRelayUrls
-      }).catch(() => {})
+      })
+        .then((event) =>
+          cachePublishedGif({
+            url,
+            mimeType: 'image/gif',
+            description: desc || undefined,
+            sourceKind: ExtendedKind.FILE_METADATA,
+            eventId: event.id,
+            pubkey: event.pubkey,
+            createdAt: event.created_at
+          })
+        )
+        .catch(() => {})
       if (desc) setPublishDescription('')
     },
     [pubkey, onSelect, publish, gif1063PublishRelayUrls, publishDescription, handleOpenChange]
@@ -368,7 +377,16 @@ export default function GifPicker({
         tags,
         created_at: Math.floor(Date.now() / 1000)
       }
-      await publish(draft, { specifiedRelayUrls: gif1063PublishRelayUrls })
+      const published = await publish(draft, { specifiedRelayUrls: gif1063PublishRelayUrls })
+      await cachePublishedGif({
+        url,
+        mimeType: file.type || 'image/gif',
+        description: desc || undefined,
+        sourceKind: ExtendedKind.FILE_METADATA,
+        eventId: published.id,
+        pubkey: published.pubkey,
+        createdAt: published.created_at
+      })
       setPublishDescription('')
       setSearchInput('')
       await loadGifs(true)
@@ -423,8 +441,17 @@ export default function GifPicker({
     if (pubkey) {
       setPublishingPaste(true)
       try {
-        await publish(buildKind1063GifPublishDraft(url, descriptionForPublish), {
+        const published = await publish(buildKind1063GifPublishDraft(url, descriptionForPublish), {
           specifiedRelayUrls: gif1063PublishRelayUrls
+        })
+        await cachePublishedGif({
+          url,
+          mimeType: 'image/gif',
+          description: descriptionForPublish || undefined,
+          sourceKind: ExtendedKind.FILE_METADATA,
+          eventId: published.id,
+          pubkey: published.pubkey,
+          createdAt: published.created_at
         })
         setPublishDescription('')
       } catch {
@@ -779,6 +806,7 @@ export default function GifPicker({
 
   if (useDialogShell) {
     const portalTarget = portalContainer ?? (typeof document !== 'undefined' ? document.body : null)
+    const overlayPositionClass = portalContainer ? 'absolute inset-0' : 'fixed inset-0'
     return (
       <>
         <Slot
@@ -791,12 +819,18 @@ export default function GifPicker({
         </Slot>
         {open && portalTarget
           ? createPortal(
-              <div className="fixed inset-0 z-[290] flex items-center justify-center p-4">
+              <div
+                data-gif-picker-shell
+                className={cn(
+                  'pointer-events-none z-[290] flex items-center justify-center p-4',
+                  overlayPositionClass
+                )}
+              >
                 <button
                   type="button"
                   tabIndex={-1}
                   aria-label={t('Close')}
-                  className="absolute inset-0 cursor-default border-0 bg-transparent p-0"
+                  className="pointer-events-auto absolute inset-0 z-0 cursor-default border-0 bg-transparent p-0"
                   onClick={() => handleOpenChange(false)}
                 />
                 <div
@@ -804,7 +838,7 @@ export default function GifPicker({
                   role="dialog"
                   aria-modal="true"
                   aria-label={t('Choose a GIF')}
-                  className="relative flex max-h-[min(85dvh,640px)] w-[min(360px,calc(100vw-2rem))] max-w-[360px] flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg outline-none"
+                  className="pointer-events-auto relative z-10 flex max-h-[min(85dvh,640px)] w-[min(360px,calc(100vw-2rem))] max-w-[360px] flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg outline-none"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{tabbedContent}</div>

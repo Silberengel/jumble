@@ -32,6 +32,7 @@ export default function EmojiPicker({
   )
   const [customEmojiTick, setCustomEmojiTick] = useState(0)
   const [pickerReady, setPickerReady] = useState(false)
+  const [pickerError, setPickerError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<
     (HTMLElement & { customEmoji: unknown[]; database?: { ready(): Promise<void> } }) | null
@@ -58,10 +59,14 @@ export default function EmojiPicker({
 
     let cancelled = false
     setPickerReady(false)
+    setPickerError(null)
+
+    const popoverHeightPx = Math.min(320, Math.round((window.visualViewport?.height ?? window.innerHeight) * 0.45))
 
     preloadEmojiPicker()
-      .then(([{ Picker }]) => {
+      .then(async ([mod]) => {
         if (cancelled || !containerRef.current) return
+        const { Picker } = mod
 
         const picker = new Picker({
           dataSource: EMOJI_PICKER_DATA_SOURCE,
@@ -78,8 +83,8 @@ export default function EmojiPicker({
         picker.style.width = '100%'
         picker.style.minWidth = '280px'
         picker.style.maxWidth = '350px'
-        picker.style.height = '100%'
-        picker.style.minHeight = '0'
+        picker.style.height = inDrawer ? '100%' : `${popoverHeightPx}px`
+        picker.style.minHeight = inDrawer ? '0' : `${popoverHeightPx}px`
         picker.style.setProperty('--num-columns', '8')
 
         const handleClick = (e: Event) => {
@@ -130,8 +135,10 @@ export default function EmojiPicker({
       .then(() => {
         if (!cancelled) setPickerReady(true)
       })
-      .catch(() => {
-        if (!cancelled) setPickerReady(true)
+      .catch((err) => {
+        if (!cancelled) {
+          setPickerError(err instanceof Error ? err.message : 'Failed to load emojis')
+        }
       })
 
     return () => {
@@ -224,14 +231,21 @@ export default function EmojiPicker({
       {ownEmojisRow}
       <div
         ref={containerRef}
+        data-emoji-picker-root
         className={cn(
           'relative w-full min-w-[280px] max-w-[350px]',
-          inDrawer ? 'min-h-0 flex-1' : 'h-[min(320px,45dvh)] min-h-[240px] shrink-0'
+          inDrawer ? 'min-h-0 flex-1' : 'shrink-0'
         )}
+        style={inDrawer ? undefined : { height: 'min(320px, 45dvh)', minHeight: 240 }}
       >
-        {!pickerReady ? (
+        {!pickerReady && !pickerError ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
             Loading emojis…
+          </div>
+        ) : null}
+        {pickerError ? (
+          <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-sm text-muted-foreground">
+            {pickerError}
           </div>
         ) : null}
       </div>

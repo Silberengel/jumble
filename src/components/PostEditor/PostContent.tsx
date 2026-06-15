@@ -204,7 +204,8 @@ export default function PostContent({
   initialHighlightData,
   initialPublicMessageTo,
   onPublishSuccess,
-  discussionDynamicTopics
+  discussionDynamicTopics,
+  pickerPortalContainer
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
   open: boolean
@@ -219,6 +220,8 @@ export default function PostContent({
   onPublishSuccess?: () => void
   /** Optional hot/discussion topics (e.g. from Discussions spell) for the thread composer. */
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
+  /** Portal mount for emoji/GIF/meme pickers so they stay inside the modal (not inert). */
+  pickerPortalContainer?: HTMLElement | null
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
@@ -3831,6 +3834,7 @@ export default function PostContent({
             }
             showMoreOptions={showMoreOptions}
             onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
+            pickerPortalContainer={pickerPortalContainer}
           />
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -4099,6 +4103,7 @@ export default function PostContent({
             }
             showMoreOptions={showMoreOptions}
             onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
+            pickerPortalContainer={pickerPortalContainer}
           />
         }
         onApply={(payload) => {

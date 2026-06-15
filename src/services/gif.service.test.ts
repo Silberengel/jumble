@@ -72,4 +72,47 @@ describe('gif.service', () => {
     expect(dedupeGifsByUrl([note, comment, fileMeta])).toEqual([fileMeta])
     expect(dedupeGifsByUrl([note, comment])).toEqual([comment])
   })
+
+  it('dedupeGifsByUrl merge keeps unique URLs from both relay and existing cache', () => {
+    const existing = [
+      {
+        url: 'https://cdn.example/a.gif',
+        sourceKind: ExtendedKind.FILE_METADATA,
+        eventId: 'a',
+        pubkey: 'a'.repeat(64),
+        createdAt: 100
+      },
+      {
+        url: 'https://cdn.example/b.gif',
+        sourceKind: ExtendedKind.FILE_METADATA,
+        eventId: 'b',
+        pubkey: 'a'.repeat(64),
+        createdAt: 200
+      }
+    ]
+    const incoming = [
+      {
+        url: 'https://cdn.example/b.gif',
+        sourceKind: ExtendedKind.FILE_METADATA,
+        eventId: 'b-new',
+        pubkey: 'b'.repeat(64),
+        createdAt: 300
+      },
+      {
+        url: 'https://cdn.example/c.gif',
+        sourceKind: ExtendedKind.FILE_METADATA,
+        eventId: 'c',
+        pubkey: 'c'.repeat(64),
+        createdAt: 400
+      }
+    ]
+    const merged = dedupeGifsByUrl([...incoming, ...existing])
+    expect(merged).toHaveLength(3)
+    expect(merged.map((g) => g.url).sort()).toEqual([
+      'https://cdn.example/a.gif',
+      'https://cdn.example/b.gif',
+      'https://cdn.example/c.gif'
+    ])
+    expect(merged.find((g) => g.url === 'https://cdn.example/b.gif')?.eventId).toBe('b-new')
+  })
 })
