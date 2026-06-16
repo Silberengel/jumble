@@ -41,9 +41,9 @@ export default function PaymentMethodRow({ row, onChange, onRemove }: PaymentMet
   const customTypeInputValue = row.type === PAYTO_EDITOR_OTHER_OPTION ? '' : row.type
 
   return (
-    <div className="flex gap-2 items-start">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
       {isCustomType ? (
-        <div className="w-[11.5rem] shrink-0 space-y-1">
+        <div className="w-full sm:w-[11.5rem] shrink-0 space-y-1">
           <Input
             value={customTypeInputValue}
             onChange={(e) => onChange({ ...row, type: e.target.value })}
@@ -80,7 +80,7 @@ export default function PaymentMethodRow({ row, onChange, onRemove }: PaymentMet
             }
           }}
         >
-          <SelectTrigger className="w-[11.5rem] shrink-0 font-medium text-sm">
+          <SelectTrigger className="w-full sm:w-[11.5rem] shrink-0 font-medium text-sm">
             <SelectValue placeholder={t('Payment type')} />
           </SelectTrigger>
           <SelectContent className="max-h-[min(20rem,70vh)]">
@@ -95,7 +95,7 @@ export default function PaymentMethodRow({ row, onChange, onRemove }: PaymentMet
         </Select>
       )}
 
-      <div className="flex-1 min-w-0 space-y-1">
+      <div className="w-full min-w-0 flex-1 space-y-1">
         <Input
           value={row.authority}
           onChange={(e) => onChange({ ...row, authority: e.target.value })}
@@ -114,7 +114,7 @@ export default function PaymentMethodRow({ row, onChange, onRemove }: PaymentMet
         type="button"
         variant="ghost"
         size="icon"
-        className="shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
+        className="shrink-0 self-end text-muted-foreground hover:text-destructive sm:mt-0.5"
         onClick={onRemove}
         aria-label={t('Remove')}
       >

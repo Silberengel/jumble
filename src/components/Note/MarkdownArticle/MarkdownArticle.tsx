@@ -27,6 +27,11 @@ import {
   isBlossomBudBlobUrl,
   findHttpUrlsInText
 } from '@/lib/url'
+import {
+  collectMediaUrlKeysInText,
+  getImageUrlIdentity,
+  imageIdentitySetKey
+} from '@/lib/image-url-identity'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 import { buildImetaDimMap, type ImetaDim } from '@/lib/imeta-display'
@@ -83,7 +88,7 @@ function resolveImetaForMarkdownImageUrl(
   args: {
     resolveFromExtractedMedia?: (cleaned: string) => TImetaInfo | undefined
     containingEvent?: Event
-    getImageIdentifier?: (url: string) => string | null
+    getImageUrlIdentity?: (url: string) => string | null
   }
 ): TImetaInfo {
   const fromExtracted = args.resolveFromExtractedMedia?.(cleaned)
@@ -93,12 +98,12 @@ function resolveImetaForMarkdownImageUrl(
     const infos = getImetaInfosFromEvent(args.containingEvent)
     const hit = infos.find((i) => cleanUrl(i.url) === cleaned)
     if (hit) return { ...hit, url: cleaned }
-    if (args.getImageIdentifier) {
-      const id = args.getImageIdentifier(cleaned)
+    if (args.getImageUrlIdentity) {
+      const id = args.getImageUrlIdentity(cleaned)
       if (id) {
         const byId = infos.find((i) => {
           const ic = cleanUrl(i.url)
-          return !!ic && args.getImageIdentifier!(ic) === id
+          return !!ic && args.getImageUrlIdentity!(ic) === id
         })
         if (byId) return { ...byId, url: cleaned }
       }
@@ -751,7 +756,7 @@ function parseMarkdownContentLegacy(
     /** Cleaned media URL → NIP-94 `dim` for aspect-ratio placeholders. */
     mediaDimMap?: Map<string, ImetaDim>
     imageThumbnailMap?: Map<string, string>
-    getImageIdentifier?: (url: string) => string | null
+    getImageUrlIdentity?: (url: string) => string | null
     emojiInfos?: TEmoji[]
     /** When viewing a kind-24 invite, render full calendar card with RSVP instead of EmbeddedNote for this naddr */
     fullCalendarInvite?: { naddr: string; event: Event }
@@ -775,7 +780,7 @@ function parseMarkdownContentLegacy(
     mediaBlurHashMap,
     mediaDimMap,
     imageThumbnailMap,
-    getImageIdentifier,
+    getImageUrlIdentity,
     emojiInfos = [],
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
@@ -794,7 +799,7 @@ function parseMarkdownContentLegacy(
     resolveImetaForMarkdownImageUrl(cleaned, eventPubkey, {
       resolveFromExtractedMedia: resolveImetaForImageUrl,
       containingEvent,
-      getImageIdentifier
+      getImageUrlIdentity
     })
 
   // Helper function to check if an index range falls within any block-level pattern
@@ -1929,20 +1934,20 @@ function parseMarkdownContentLegacy(
                   // Render the image
                   if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
                     let imageIndex = imageIndexMap.get(cleaned)
-                    if (imageIndex === undefined && getImageIdentifier) {
-                      const identifier = getImageIdentifier(cleaned)
+                    if (imageIndex === undefined && getImageUrlIdentity) {
+                      const identifier = getImageUrlIdentity(cleaned)
                       if (identifier) {
-                        imageIndex = imageIndexMap.get(`__img_id:${identifier}`)
+                        imageIndex = imageIndexMap.get(imageIdentitySetKey(identifier))
                       }
                     }
                     
                     let thumbnailUrl: string | undefined
                     if (imageThumbnailMap) {
                       thumbnailUrl = imageThumbnailMap.get(cleaned)
-                      if (!thumbnailUrl && getImageIdentifier) {
-                        const identifier = getImageIdentifier(cleaned)
+                      if (!thumbnailUrl && getImageUrlIdentity) {
+                        const identifier = getImageUrlIdentity(cleaned)
                         if (identifier) {
-                          thumbnailUrl = imageThumbnailMap.get(`__img_id:${identifier}`)
+                          thumbnailUrl = imageThumbnailMap.get(imageIdentitySetKey(identifier))
                         }
                       }
                     }
@@ -2066,10 +2071,10 @@ function parseMarkdownContentLegacy(
       const cleaned = cleanUrl(url)
       // Look up image index - try by URL first, then by identifier for cross-domain matching
       let imageIndex = imageIndexMap.get(cleaned)
-      if (imageIndex === undefined && getImageIdentifier) {
-        const identifier = getImageIdentifier(cleaned)
+      if (imageIndex === undefined && getImageUrlIdentity) {
+        const identifier = getImageUrlIdentity(cleaned)
         if (identifier) {
-          imageIndex = imageIndexMap.get(`__img_id:${identifier}`)
+          imageIndex = imageIndexMap.get(imageIdentitySetKey(identifier))
         }
       }
       
@@ -2123,10 +2128,10 @@ function parseMarkdownContentLegacy(
           if (imageThumbnailMap) {
             thumbnailUrl = imageThumbnailMap.get(cleaned)
             // Also check by identifier for cross-domain matching
-            if (!thumbnailUrl && getImageIdentifier) {
-              const identifier = getImageIdentifier(cleaned)
+            if (!thumbnailUrl && getImageUrlIdentity) {
+              const identifier = getImageUrlIdentity(cleaned)
               if (identifier) {
-                thumbnailUrl = imageThumbnailMap.get(`__img_id:${identifier}`)
+                thumbnailUrl = imageThumbnailMap.get(imageIdentitySetKey(identifier))
               }
             }
           }
@@ -2757,10 +2762,10 @@ function parseMarkdownContentLegacy(
             // Render the image
             if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
               let imageIndex = imageIndexMap.get(cleaned)
-              if (imageIndex === undefined && getImageIdentifier) {
-                const identifier = getImageIdentifier(cleaned)
+              if (imageIndex === undefined && getImageUrlIdentity) {
+                const identifier = getImageUrlIdentity(cleaned)
                 if (identifier) {
-                  imageIndex = imageIndexMap.get(`__img_id:${identifier}`)
+                  imageIndex = imageIndexMap.get(imageIdentitySetKey(identifier))
                 }
               }
 
@@ -3179,7 +3184,7 @@ function parseMarkdownContentMarked(
     mediaBlurHashMap?: Map<string, string>
     mediaDimMap?: Map<string, ImetaDim>
     imageThumbnailMap?: Map<string, string>
-    getImageIdentifier?: (url: string) => string | null
+    getImageUrlIdentity?: (url: string) => string | null
     emojiInfos?: TEmoji[]
     fullCalendarInvite?: { naddr: string; event: Event }
     suppressStandaloneWebPreviewCleanedUrls?: ReadonlySet<string>
@@ -3199,7 +3204,7 @@ function parseMarkdownContentMarked(
     videoPosterMap,
     mediaBlurHashMap,
     mediaDimMap,
-    getImageIdentifier,
+    getImageUrlIdentity,
     emojiInfos = [],
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
@@ -3216,15 +3221,15 @@ function parseMarkdownContentMarked(
     resolveImetaForMarkdownImageUrl(cleaned, eventPubkey, {
       resolveFromExtractedMedia: resolveImetaForImageUrl,
       containingEvent,
-      getImageIdentifier
+      getImageUrlIdentity
     })
 
   const renderStandaloneHttpsImageBlock = (cleaned: string, reactKey: string) => {
     let imageIndex = imageIndexMap.get(cleaned)
-    if (imageIndex === undefined && getImageIdentifier) {
-      const identifier = getImageIdentifier(cleaned)
+    if (imageIndex === undefined && getImageUrlIdentity) {
+      const identifier = getImageUrlIdentity(cleaned)
       if (identifier) {
-        imageIndex = imageIndexMap.get(`__img_id:${identifier}`)
+        imageIndex = imageIndexMap.get(imageIdentitySetKey(identifier))
       }
     }
     return (
@@ -3542,9 +3547,9 @@ function parseMarkdownContentMarked(
           // `![](url)` has empty alt — a plain <a>{label}</a> was invisible. Use Image like block paragraphs.
           const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
           let imageIdx = imageIndexMap.get(cleaned)
-          if (imageIdx === undefined && getImageIdentifier) {
-            const id = getImageIdentifier(cleaned)
-            if (id) imageIdx = imageIndexMap.get(`__img_id:${id}`)
+          if (imageIdx === undefined && getImageUrlIdentity) {
+            const id = getImageUrlIdentity(cleaned)
+            if (id) imageIdx = imageIndexMap.get(imageIdentitySetKey(id))
           }
           out.push(
             <Image
@@ -3628,9 +3633,9 @@ function parseMarkdownContentMarked(
       if (cleaned && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) && isSafeMediaUrl(cleaned)) {
         const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
         let imageIdx = imageIndexMap.get(cleaned)
-        if (imageIdx === undefined && getImageIdentifier) {
-          const id = getImageIdentifier(cleaned)
-          if (id) imageIdx = imageIndexMap.get(`__img_id:${id}`)
+        if (imageIdx === undefined && getImageUrlIdentity) {
+          const id = getImageUrlIdentity(cleaned)
+          if (id) imageIdx = imageIndexMap.get(imageIdentitySetKey(id))
         }
         const alt = recoveredMdImage.alt || 'image'
         const imageTip =
@@ -5742,76 +5747,40 @@ export default function MarkdownArticle({
     () => allImages.map((img) => lightboxSlideFromImeta(img)),
     [allImages]
   )
-  
-  // Helper function to extract image filename/hash from URL for comparison
-  // This helps identify the same image hosted on different domains
-  const getImageIdentifier = useMemo(() => {
-    return (url: string): string | null => {
-      try {
-        const cleaned = cleanUrl(url)
-        if (!cleaned) return null
-        const parsed = new URL(cleaned)
-        const pathname = parsed.pathname
-        // Extract the filename (last segment of the path)
-        const filename = pathname.split('/').pop() || ''
-        if (filename && /^[a-f0-9]{64}$/i.test(filename)) {
-          return `blossom-sha256:${filename.toLowerCase()}`
-        }
-        // If the filename looks like a hash (hex string), use it for comparison
-        // Also use the full pathname as a fallback
-        if (filename && /^[a-f0-9]{32,}\.(png|jpg|jpeg|gif|webp|svg)$/i.test(filename)) {
-          return filename.toLowerCase()
-        }
-        // Fallback to cleaned URL for non-hash filenames
-        return cleaned
-      } catch {
-        return cleanUrl(url) || null
-      }
-    }
-  }, [])
-  
+
   // Create image index map for lightbox
-  // Maps image URLs (and identifiers) to their index in allImages
   const imageIndexMap = useMemo(() => {
     const map = new Map<string, number>()
     allImages.forEach((img, index) => {
       const cleaned = cleanUrl(img.url)
       if (cleaned) {
         map.set(cleaned, index)
-        // Also map by identifier for cross-domain matching
-        const identifier = getImageIdentifier(cleaned)
+        const identifier = getImageUrlIdentity(cleaned)
         if (identifier && identifier !== cleaned) {
-          // Only add identifier mapping if it's different from the cleaned URL
-          // This helps match images across different domains
-          if (!map.has(`__img_id:${identifier}`)) {
-            map.set(`__img_id:${identifier}`, index)
+          const key = imageIdentitySetKey(identifier)
+          if (!map.has(key)) {
+            map.set(key, index)
           }
         }
       }
     })
     return map
-  }, [allImages, getImageIdentifier])
-
+  }, [allImages])
+  
   // Parse content to find media URLs that are already rendered
-  // Store both cleaned URLs and image identifiers for comparison
   const mediaUrlsInContent = useMemo(() => {
-    const urls = new Set<string>()
-    const imageIdentifiers = new Set<string>()
+    const urls = collectMediaUrlKeysInText(event.content)
     for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
-      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned) || isBlossomBudBlobUrl(cleaned))) {
+      if (
+        cleaned &&
+        (isVideo(cleaned) || isAudio(cleaned) || isHlsPlaylistUrl(cleaned))
+      ) {
         urls.add(cleaned)
-        // Also add image identifier for filename-based matching
-        const identifier = getImageIdentifier(cleaned)
-        if (identifier) {
-          imageIdentifiers.add(identifier)
-        }
       }
     }
-    // Store identifiers in the Set as well (using a prefix to distinguish)
-    imageIdentifiers.forEach(id => urls.add(`__img_id:${id}`))
     return urls
-  }, [event.content, getImageIdentifier])
+  }, [event.content])
   
   // Extract YouTube URLs from content
   const youtubeUrlsInContent = useMemo(() => {
@@ -5960,8 +5929,8 @@ export default function MarkdownArticle({
       if (mediaUrlsInContent.has(cleaned)) return false
       
       // Also check by image identifier (filename/hash) for same image on different domains
-      const identifier = getImageIdentifier(cleaned)
-      if (identifier && mediaUrlsInContent.has(`__img_id:${identifier}`)) return false
+      const identifier = getImageUrlIdentity(cleaned)
+      if (identifier && mediaUrlsInContent.has(imageIdentitySetKey(identifier))) return false
       
       // Skip if this is the metadata image (shown separately)
       if (metadataImageUrl && cleaned === metadataImageUrl && !hideMetadata) return false
@@ -6106,15 +6075,15 @@ export default function MarkdownArticle({
         if (cleaned && info.thumb) {
           map.set(cleaned, info.thumb)
           // Also map by identifier for cross-domain matching
-          const identifier = getImageIdentifier(cleaned)
+          const identifier = getImageUrlIdentity(cleaned)
           if (identifier) {
-            map.set(`__img_id:${identifier}`, info.thumb)
+            map.set(imageIdentitySetKey(identifier), info.thumb)
           }
         }
       }
     })
     return map
-  }, [event.id, JSON.stringify(event.tags), getImageIdentifier])
+  }, [event.id, JSON.stringify(event.tags), getImageUrlIdentity])
   
   // Maps cleaned media URL → blurhash (any imeta with blurHash / bh — images, video, audio)
   const imageBlurHashMap = useMemo(() => {
@@ -6145,8 +6114,8 @@ export default function MarkdownArticle({
         const ic = cleanUrl(img.url)
         if (!ic) continue
         if (ic === cleaned) return { ...img, url: cleaned }
-        const idC = getImageIdentifier(cleaned)
-        const idI = getImageIdentifier(ic)
+        const idC = getImageUrlIdentity(cleaned)
+        const idI = getImageUrlIdentity(ic)
         if (idC && idI && idC === idI) return { ...img, url: cleaned }
       }
       return undefined
@@ -6162,7 +6131,7 @@ export default function MarkdownArticle({
       mediaBlurHashMap: imageBlurHashMap,
       mediaDimMap,
       imageThumbnailMap,
-      getImageIdentifier,
+      getImageUrlIdentity,
       emojiInfos,
       fullCalendarInvite,
       containingEvent: event,
@@ -6193,7 +6162,7 @@ export default function MarkdownArticle({
     imageBlurHashMap,
     mediaDimMap,
     imageThumbnailMap,
-    getImageIdentifier,
+    getImageUrlIdentity,
     emojiInfos,
     fullCalendarInvite,
     lazyMedia,
@@ -6362,8 +6331,8 @@ export default function MarkdownArticle({
           // Don't show if already in content (check by URL and by identifier)
           if (cleanedMetadataImage) {
             if (mediaUrlsInContent.has(cleanedMetadataImage)) return null
-            const identifier = getImageIdentifier(cleanedMetadataImage)
-            if (identifier && mediaUrlsInContent.has(`__img_id:${identifier}`)) return null
+            const identifier = getImageUrlIdentity(cleanedMetadataImage)
+            if (identifier && mediaUrlsInContent.has(imageIdentitySetKey(identifier))) return null
           }
           
           // Don't show if it matches the parent publication's image (to avoid duplicate cover images)

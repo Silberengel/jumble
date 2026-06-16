@@ -15,6 +15,12 @@ import {
   isWebsocketUrl,
   isBlossomBudBlobUrl
 } from '@/lib/url'
+import {
+  collectMediaUrlKeysInText,
+  getImageUrlIdentity,
+  imageIdentitySetKey,
+  isImageUrlPresentInText
+} from '@/lib/image-url-identity'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 import type { ImetaDim } from '@/lib/imeta-display'
@@ -567,13 +573,13 @@ export default function AsciidocArticle({
   
   // Parse content to find media URLs that are already rendered
   const mediaUrlsInContent = useMemo(() => {
-    const urls = new Set<string>()
+    const urls = collectMediaUrlKeysInText(event.content)
     const urlRegex = /https?:\/\/[^\s<>"']+/g
     let match
     while ((match = urlRegex.exec(event.content)) !== null) {
       const url = match[0]
       const cleaned = cleanUrl(url)
-      if (cleaned && (isImage(cleaned) || isVideo(cleaned) || isAudio(cleaned))) {
+      if (cleaned && (isVideo(cleaned) || isAudio(cleaned))) {
         urls.add(cleaned)
       }
     }
@@ -621,6 +627,9 @@ export default function AsciidocArticle({
       if (!cleaned) return false
       // Skip if already in content
       if (mediaUrlsInContent.has(cleaned)) return false
+      const identifier = getImageUrlIdentity(cleaned)
+      if (identifier && mediaUrlsInContent.has(imageIdentitySetKey(identifier))) return false
+      if (media.type === 'image' && isImageUrlPresentInText(event.content, media.url)) return false
       // Skip if this is the metadata image (shown separately)
       if (metadataImageUrl && cleaned === metadataImageUrl && !effectiveHideImagesAndInfo) return false
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
@@ -628,7 +637,7 @@ export default function AsciidocArticle({
       if (media.source === 'imeta' && suppressedImetaUrls.has(cleaned)) return false
       return true
     })
-  }, [tagMedia, mediaUrlsInContent, metadata.image, effectiveHideImagesAndInfo, parentImageUrl, suppressedImetaUrls])
+  }, [tagMedia, mediaUrlsInContent, metadata.image, effectiveHideImagesAndInfo, parentImageUrl, suppressedImetaUrls, event.content])
 
   const suppressedImetaMedia = useMemo(
     () => getSuppressedImetaMedia(event, event.content),
@@ -1883,8 +1892,11 @@ export default function AsciidocArticle({
         {showArticleChrome && !effectiveHideImagesAndInfo && metadata.image && (() => {
           const cleanedMetadataImage = cleanUrl(metadata.image)
           const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
-          // Don't show if already in content
+          // Don't show if already in content (by URL or same asset identity)
           if (cleanedMetadataImage && mediaUrlsInContent.has(cleanedMetadataImage)) {
+            return null
+          }
+          if (isImageUrlPresentInText(event.content, metadata.image)) {
             return null
           }
           // Don't show if it matches the parent publication's image (to avoid duplicate cover images)
