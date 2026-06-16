@@ -11,6 +11,15 @@ export function stableSpellFeedFilterKey(filter: Filter): string {
   return JSON.stringify(Object.fromEntries(entries))
 }
 
+/** Normalize filter from spell keys (string) or {@link legacyFeedSubscriptionKey} payloads (object). */
+function feedRequestFilterIdentityKey(filter: unknown): string {
+  if (typeof filter === 'string') return filter
+  if (filter && typeof filter === 'object') {
+    return stableSpellFeedFilterKey(filter as Filter)
+  }
+  return String(filter)
+}
+
 /**
  * Single string identity for spell / faux-spell `subRequests`.
  * Pass from SpellsPage into NoteList as `feedSubscriptionKey` so timeline subscription does not
@@ -51,13 +60,15 @@ export function computeKind777SpellFeedSubscriptionKey(spell: Event, subRequests
 export function isRelayUrlStrictSupersetIdentityKey(prevKey: string | null, nextKey: string): boolean {
   if (!prevKey || prevKey === nextKey) return false
   try {
-    type Item = { urls: string[]; filter: string }
+    type Item = { urls: string[]; filter: unknown }
     const prev = JSON.parse(prevKey) as Item[]
     const next = JSON.parse(nextKey) as Item[]
     if (!Array.isArray(prev) || !Array.isArray(next) || prev.length !== next.length) return false
     let sawStrictGrowth = false
     for (let i = 0; i < prev.length; i++) {
-      if (prev[i].filter !== next[i].filter) return false
+      if (feedRequestFilterIdentityKey(prev[i].filter) !== feedRequestFilterIdentityKey(next[i].filter)) {
+        return false
+      }
       const ps = new Set(prev[i].urls)
       const ns = new Set(next[i].urls)
       for (const u of ps) {
@@ -83,12 +94,14 @@ export function isSpellSubRequestsSameFiltersDifferentRelays(
 ): boolean {
   if (!prevKey || prevKey === nextKey) return false
   try {
-    type Item = { urls: string[]; filter: string }
+    type Item = { urls: string[]; filter: unknown }
     const prev = JSON.parse(prevKey) as Item[]
     const next = JSON.parse(nextKey) as Item[]
     if (!Array.isArray(prev) || !Array.isArray(next) || prev.length !== next.length) return false
     for (let i = 0; i < prev.length; i++) {
-      if (prev[i].filter !== next[i].filter) return false
+      if (feedRequestFilterIdentityKey(prev[i].filter) !== feedRequestFilterIdentityKey(next[i].filter)) {
+        return false
+      }
     }
     return true
   } catch {
@@ -103,12 +116,12 @@ export function isSpellSubRequestsSameFiltersDifferentRelays(
 export function isSpellSubRequestsFilterSuperset(prevKey: string | null, nextKey: string): boolean {
   if (!prevKey || prevKey === nextKey) return false
   try {
-    type Item = { urls: string[]; filter: string }
+    type Item = { urls: string[]; filter: unknown }
     const prev = JSON.parse(prevKey) as Item[]
     const next = JSON.parse(nextKey) as Item[]
     if (!Array.isArray(prev) || !Array.isArray(next) || next.length < prev.length) return false
-    const nextFilters = new Set(next.map((item) => item.filter))
-    return prev.every((item) => nextFilters.has(item.filter))
+    const nextFilters = new Set(next.map((item) => feedRequestFilterIdentityKey(item.filter)))
+    return prev.every((item) => nextFilters.has(feedRequestFilterIdentityKey(item.filter)))
   } catch {
     return false
   }

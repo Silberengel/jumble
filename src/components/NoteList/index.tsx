@@ -2151,7 +2151,6 @@ const NoteList = forwardRef(
           timelineResubscribeKindKey,
           seeAllFeedEvents ? '1' : '0',
           useFilterAsIs ? '1' : '0',
-          areAlgoRelays ? '1' : '0',
           allowKindlessRelayExplore ? '1' : '0',
           clientSideKindFilter ? '1' : '0',
           showAllKinds ? '1' : '0',
@@ -2169,7 +2168,6 @@ const NoteList = forwardRef(
         timelineResubscribeKindKey,
         seeAllFeedEvents,
         useFilterAsIs,
-        areAlgoRelays,
         allowKindlessRelayExplore,
         clientSideKindFilter,
         showAllKinds,
@@ -3684,14 +3682,12 @@ const NoteList = forwardRef(
           followingFeedDeltaSubRequestsKey,
           timelineKey ?? '',
           feedSubscriptionKey ?? '',
-          areAlgoRelays ? '1' : '0',
           pauseTimelineForPrimaryFreeze ? 'frozen' : 'live'
         ].join('\x1e'),
       [
         followingFeedDeltaSubRequestsKey,
         timelineKey,
         feedSubscriptionKey,
-        areAlgoRelays,
         pauseTimelineForPrimaryFreeze
       ]
     )
