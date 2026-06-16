@@ -75,8 +75,9 @@ export function useAdvancedEventLabComposer({
 
   const openLab = useCallback(
     (live: AdvancedEventLabSlice) => {
-      setAdvancedLabInitial(resolveSliceForOpen(live))
+      const slice = resolveSliceForOpen(live)
       onOpenChange?.(true)
+      setAdvancedLabInitial(slice)
       setAdvancedLabOpen(true)
     },
     [resolveSliceForOpen, onOpenChange]

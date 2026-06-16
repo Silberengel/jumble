@@ -63,7 +63,7 @@ export function createSuggestionPopup(editor: Editor): SuggestionPopupController
 
     popup = tippy(document.body, {
       ...rectProps,
-      appendTo: () => document.body,
+      appendTo: () => postEditor.getSuggestionPopupAppendTo(),
       content: props.content,
       showOnCreate: true,
       interactive: true,
@@ -73,6 +73,10 @@ export function createSuggestionPopup(editor: Editor): SuggestionPopupController
       maxWidth: 'none',
       zIndex: SUGGESTION_POPUP_Z_INDEX,
       touch: true,
+      onMount(instance) {
+        instance.popper.setAttribute('data-suggestion-popup', '')
+        instance.popper.classList.add('pointer-events-auto')
+      },
       onShow() {
         postEditor.isSuggestionPopupOpen = true
       },

@@ -50,7 +50,7 @@ const suggestion = {
 
         popup = tippy('body', {
           getReferenceClientRect: props.clientRect as GetReferenceClientRect,
-          appendTo: () => document.body,
+          appendTo: () => postEditor.getSuggestionPopupAppendTo(),
           content: component.element,
           showOnCreate: true,
           interactive: true,
@@ -58,6 +58,11 @@ const suggestion = {
           placement: 'bottom-start',
           hideOnClick: true,
           touch: true,
+          zIndex: 350,
+          onMount(instance) {
+            instance.popper.setAttribute('data-suggestion-popup', '')
+            instance.popper.classList.add('pointer-events-auto')
+          },
           onShow() {
             postEditor.isSuggestionPopupOpen = true
           },

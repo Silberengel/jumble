@@ -1134,6 +1134,7 @@ export default function AdvancedEventLabDialog({
         overlayClassName="z-[300] pointer-events-auto"
         className={cnDialogShell(Boolean(portalContainer))}
         aria-describedby={undefined}
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => {
           if (portalContainer) e.preventDefault()
         }}

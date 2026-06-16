@@ -28,7 +28,7 @@ function isNestedPickerTarget(target: EventTarget | null): boolean {
     target instanceof HTMLElement &&
     Boolean(
       target.closest(
-        '[data-advanced-lab-shell], [data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
+        '[data-advanced-lab-shell], [data-suggestion-popup], [data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
       )
     )
   )
@@ -68,9 +68,18 @@ export default function PostEditor({
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
 
+  const setPickerPortal = useCallback((el: HTMLElement | null) => {
+    setPickerPortalContainer(el)
+    postEditorService.setSuggestionPopupPortal(el)
+  }, [])
+
   useEffect(() => {
     if (!open) setAdvancedLabOpen(false)
   }, [open])
+
+  useEffect(() => {
+    return () => postEditorService.setSuggestionPopupPortal(null)
+  }, [])
 
   const handleComposerOpenChange = useCallback(
     (next: boolean) => {
@@ -113,38 +122,25 @@ export default function PostEditor({
     return defaultContent
   }, [initialPublicMessageTo, defaultContent])
 
-  const content = useMemo(() => {
-    return (
-      <PostContent
-        open={open}
-        defaultContent={effectiveDefaultContent}
-        parentEvent={parentEvent}
-        close={() => setOpen(false)}
-        openFrom={openFrom}
-        initialHighlightData={initialHighlightData}
-        initialPublicMessageTo={initialPublicMessageTo}
-        onPublishSuccess={onPublishSuccess}
-        discussionDynamicTopics={discussionDynamicTopics}
-        pickerPortalContainer={pickerPortalContainer}
-        onAdvancedLabOpenChange={setAdvancedLabOpen}
-      />
-    )
-  }, [
-    open,
-    effectiveDefaultContent,
-    parentEvent,
-    openFrom,
-    setOpen,
-    initialHighlightData,
-    initialPublicMessageTo,
-    onPublishSuccess,
-    discussionDynamicTopics,
-    pickerPortalContainer
-  ])
+  const composerShell = (
+    <PostContent
+      open={open}
+      defaultContent={effectiveDefaultContent}
+      parentEvent={parentEvent}
+      close={() => setOpen(false)}
+      openFrom={openFrom}
+      initialHighlightData={initialHighlightData}
+      initialPublicMessageTo={initialPublicMessageTo}
+      onPublishSuccess={onPublishSuccess}
+      discussionDynamicTopics={discussionDynamicTopics}
+      pickerPortalContainer={pickerPortalContainer}
+      onAdvancedLabOpenChange={setAdvancedLabOpen}
+    />
+  )
 
   if (isSmallScreen) {
     return (
-      <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={!advancedLabOpen}>
+      <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={false}>
         <SheetContent
           className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
@@ -171,7 +167,7 @@ export default function PostEditor({
           }}
         >
           <div
-            ref={setPickerPortalContainer}
+            ref={setPickerPortal}
             data-nested-picker-portal
             className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
             aria-hidden={false}
@@ -181,7 +177,7 @@ export default function PostEditor({
               <SheetTitle>Post Editor</SheetTitle>
               <SheetDescription>Create a new post or reply</SheetDescription>
             </SheetHeader>
-            {content}
+            {composerShell}
           </div>
         </SheetContent>
       </Sheet>
@@ -189,7 +185,7 @@ export default function PostEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={!advancedLabOpen}>
+    <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={false}>
       <DialogContent
         className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         overlayClassName="z-[200]"
@@ -211,7 +207,7 @@ export default function PostEditor({
         }}
       >
         <div
-          ref={setPickerPortalContainer}
+          ref={setPickerPortal}
           data-nested-picker-portal
           className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
           aria-hidden={false}
@@ -221,7 +217,7 @@ export default function PostEditor({
               <DialogTitle>Post Editor</DialogTitle>
               <DialogDescription>Create a new post or reply</DialogDescription>
             </DialogHeader>
-            {content}
+            {composerShell}
           </div>
       </DialogContent>
     </Dialog>

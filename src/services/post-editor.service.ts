@@ -4,6 +4,8 @@ class PostEditorService extends EventTarget {
   static instance: PostEditorService
 
   isSuggestionPopupOpen = false
+  /** In-dialog portal for @-mention / :emoji tippy popups (avoids Radix modal `inert` on `document.body`). */
+  suggestionPopupPortal: HTMLElement | null = null
   /** Ref-count of open PostEditor / Sheet shells (reply, new post, etc.). */
   private composerShellOpenCount = 0
 
@@ -42,6 +44,14 @@ class PostEditorService extends EventTarget {
 
   setReplyParentEvent(event?: Event) {
     this.replyParentEvent = event
+  }
+
+  setSuggestionPopupPortal(container: HTMLElement | null) {
+    this.suggestionPopupPortal = container
+  }
+
+  getSuggestionPopupAppendTo(): HTMLElement {
+    return this.suggestionPopupPortal ?? document.body
   }
 }
 

@@ -1317,30 +1317,25 @@ export default function PostContent({
     [createDraftEvent, applyPersistedLabTagsToDraft, advancedLabPersistenceKey]
   )
 
-  const handleOpenAdvancedLab = useCallback(async () => {
-    try {
-      await checkLogin(async () => {
-        if (!pubkey) {
-          toast.error(t('Log in to publish'))
-          return
-        }
-        try {
-          await yieldForPaintBeforeHeavyWork()
-          const body = textareaRef.current?.getText() ?? text
-          const cleanedText = rewritePlainTextHttpUrls(body)
-          const d = await finalizeDraftEvent(cleanedText)
-          openLab({
-            kind: d.kind,
-            content: d.content,
-            tags: d.tags ?? []
-          })
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : String(e))
-        }
-      })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e))
-    }
+  const handleOpenAdvancedLab = useCallback(() => {
+    void checkLogin(async () => {
+      if (!pubkey) {
+        toast.error(t('Log in to publish'))
+        return
+      }
+      try {
+        const body = textareaRef.current?.getText() ?? text
+        const cleanedText = rewritePlainTextHttpUrls(body)
+        const d = await finalizeDraftEvent(cleanedText)
+        openLab({
+          kind: d.kind,
+          content: d.content,
+          tags: d.tags ?? []
+        })
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    })
   }, [
     checkLogin,
     pubkey,
@@ -4085,6 +4080,7 @@ export default function PostContent({
         contentWarning={labContentWarning}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
+        portalContainer={pickerPortalContainer}
         renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
           renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
         }
