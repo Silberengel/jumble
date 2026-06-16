@@ -35,6 +35,8 @@ export type PostEditorFormatToolbarProps = {
   pickerPortalContainer?: HTMLElement | null
   /** Hide create-citation when the composer itself is a citation event. */
   showCitationCreate?: boolean
+  /** When false, hide the settings (advanced options) toggle. */
+  showAdvancedSettings?: boolean
 }
 
 /**
@@ -51,7 +53,8 @@ export function PostEditorFormatToolbar({
   showMoreOptions,
   onToggleMoreOptions,
   pickerPortalContainer,
-  showCitationCreate = true
+  showCitationCreate = true,
+  showAdvancedSettings = true
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
   const [citationDialogOpen, setCitationDialogOpen] = useState(false)
@@ -141,16 +144,18 @@ export function PostEditorFormatToolbar({
           />
         </>
       ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title={t('Advanced')}
-        className={cn(iconBtnClass, showMoreOptions && 'bg-accent')}
-        onClick={onToggleMoreOptions}
-      >
-        <Settings />
-      </Button>
+      {showAdvancedSettings ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={t('Advanced')}
+          className={cn(iconBtnClass, showMoreOptions && 'bg-accent')}
+          onClick={onToggleMoreOptions}
+        >
+          <Settings />
+        </Button>
+      ) : null}
     </div>
   )
 }

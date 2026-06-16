@@ -37,8 +37,7 @@ import {
   createCitationPromptDraftEvent,
   createMusicTrackDraftEvent,
   collectUploadImetaTagsForContentUrls,
-  mergeUploadImetaTagsInto,
-  stripImwaldAttributionTags
+  mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
 import {
   contentWarningDraftOptions,
@@ -126,20 +125,14 @@ import { NeventPickerProvider } from './PostTextarea/Mention/NeventPickerProvide
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'
-import AdvancedEventLabDialog, {
-  type AdvancedLabBodyHandle
-} from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
+import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
 import {
   PostEditorFormatToolbar,
   type PostEditorFormatToolbarUploadHandlers
 } from './PostEditorFormatToolbar'
-import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
-import {
-  formatLabInsertText,
-  formatMarkupImageAppend,
-  imageUrlLooksLikeHttpImage
-} from '@/lib/composer-markup-insert'
+import { useAdvancedEventLabComposer } from '@/hooks/useAdvancedEventLabComposer'
+import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
 
 /** Let the UI paint before heavy work. `requestAnimationFrame` alone can stall indefinitely in hidden or throttled documents. */
 function yieldForPaintBeforeHeavyWork(): Promise<void> {
@@ -253,17 +246,6 @@ export default function PostContent({
   )
   const [text, setText] = useState('')
   const textareaRef = useRef<TPostTextareaHandle>(null)
-  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
-  const advancedLabOpenRef = useRef(false)
-  useEffect(() => {
-    advancedLabOpenRef.current = advancedLabOpen
-  }, [advancedLabOpen])
-  const advancedLabBodyApiRef = useRef<AdvancedLabBodyHandle | null>(null)
-  const getActiveComposerBody = () =>
-    advancedLabOpenRef.current && advancedLabBodyApiRef.current
-      ? advancedLabBodyApiRef.current
-      : textareaRef.current
-  const [advancedLabInitial, setAdvancedLabInitial] = useState<AdvancedEventLabSlice | null>(null)
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
   const [uploadProgresses, setUploadProgresses] = useState<
@@ -711,17 +693,36 @@ export default function PostContent({
   const getDeterminedKindRef = useRef(getDeterminedKind)
   getDeterminedKindRef.current = getDeterminedKind
 
+  const advancedLabPersistenceKey = useMemo(
+    () =>
+      postEditorCache.generateCacheKey({
+        kind: getDeterminedKind,
+        defaultContent,
+        parentEvent
+      }),
+    [getDeterminedKind, defaultContent, parentEvent]
+  )
+
+  const {
+    advancedLabOpen,
+    advancedLabOpenRef,
+    advancedLabBodyApiRef,
+    advancedLabInitial,
+    openLab,
+    persistLabDraft,
+    applyToTipTap,
+    handleLabOpenChange,
+    insertComposerText,
+    insertComposerEmoji,
+    appendUploadedUrl
+  } = useAdvancedEventLabComposer({
+    persistenceKey: advancedLabPersistenceKey,
+    textareaRef,
+    getKind: () => getDeterminedKindRef.current
+  })
+
   const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
-    const ed = getActiveComposerBody()
-    if (!ed || ed.getText().includes(url)) return
-    if (ed === advancedLabBodyApiRef.current && treatAsImage) {
-      ed.appendText(
-        formatMarkupImageAppend(url, isAsciidocMarkupKind(getDeterminedKindRef.current)),
-        false
-      )
-      return
-    }
-    ed.appendText(url, true)
+    appendUploadedUrl(url, treatAsImage)
   }
 
   useEffect(() => {
@@ -1293,16 +1294,6 @@ export default function PostContent({
     t
   ])
 
-  const advancedLabPersistenceKey = useMemo(
-    () =>
-      postEditorCache.generateCacheKey({
-        kind: getDeterminedKind,
-        defaultContent,
-        parentEvent
-      }),
-    [getDeterminedKind, defaultContent, parentEvent]
-  )
-
   const applyPersistedLabTagsToDraft = useCallback(
     (draft: TDraftEvent, labKey: string): TDraftEvent => {
       const saved = postEditorCache.getAdvancedLabDraft(labKey)
@@ -1334,24 +1325,12 @@ export default function PostContent({
         await yieldForPaintBeforeHeavyWork()
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
-        let d = await finalizeDraftEvent(cleanedText)
-        const saved = postEditorCache.getAdvancedLabDraft(advancedLabPersistenceKey)
-        // Prefer live composer text; only restore a persisted lab body when the composer is empty.
-        const useSavedLabBody = !d.content.trim() && saved && saved.kind === d.kind
-        setAdvancedLabInitial(
-          useSavedLabBody
-            ? {
-                kind: saved.kind,
-                content: saved.content,
-                tags: stripImwaldAttributionTags(saved.tags).map((row: string[]) => [...row])
-              }
-            : {
-                kind: d.kind,
-                content: d.content,
-                tags: stripImwaldAttributionTags(d.tags ?? []).map((row: string[]) => [...row])
-              }
-        )
-        setAdvancedLabOpen(true)
+        const d = await finalizeDraftEvent(cleanedText)
+        openLab({
+          kind: d.kind,
+          content: d.content,
+          tags: d.tags ?? []
+        })
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))
       }
@@ -1361,7 +1340,7 @@ export default function PostContent({
     pubkey,
     text,
     finalizeDraftEvent,
-    advancedLabPersistenceKey,
+    openLab,
     t
   ])
 
@@ -2396,24 +2375,6 @@ export default function PostContent({
       !isCitationPrompt,
     [isCitationInternal, isCitationExternal, isCitationHardcopy, isCitationPrompt]
   )
-
-  const insertComposerText = useCallback(
-    (txt: string) => {
-      const lab = advancedLabOpenRef.current ? advancedLabBodyApiRef.current : null
-      if (lab) {
-        lab.insertText(
-          formatLabInsertText(txt, isAsciidocMarkupKind(getDeterminedKindRef.current))
-        )
-        return
-      }
-      textareaRef.current?.insertText(txt)
-    },
-    []
-  )
-
-  const insertComposerEmoji = useCallback((em: Parameters<TPostTextareaHandle['insertEmoji']>[0]) => {
-    getActiveComposerBody()?.insertEmoji(em)
-  }, [])
 
   const renderComposerFormatToolbar = useCallback(
     (portalOverride?: HTMLElement | null) => (
@@ -4120,13 +4081,7 @@ export default function PostContent({
       </Dialog>
       <AdvancedEventLabDialog
         open={advancedLabOpen}
-        onOpenChange={(o) => {
-          setAdvancedLabOpen(o)
-          if (!o) {
-            setAdvancedLabInitial(null)
-            setShowMoreOptions(false)
-          }
-        }}
+        onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
         initial={advancedLabInitial}
         kindEditable={false}
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
@@ -4142,13 +4097,8 @@ export default function PostContent({
         }
         composerToolbarPanel={composerAdvancedPanel}
         onApply={(payload) => {
-          postEditorCache.setAdvancedLabDraft(advancedLabPersistenceKey, {
-            kind: payload.kind,
-            content: payload.content,
-            tags: payload.tags.map((r) => [...r])
-          })
-          postEditorCache.flushPersist()
-          textareaRef.current?.setDocumentFromPlainText(payload.content)
+          persistLabDraft(payload)
+          applyToTipTap(payload.content)
         }}
       />
       <EditOrCloneEventDialog
