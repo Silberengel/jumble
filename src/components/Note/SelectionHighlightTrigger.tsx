@@ -1,10 +1,15 @@
 import { buildHighlightDataFromEvent } from '@/lib/build-highlight-data'
+import {
+  readSelectionInContainer,
+  selectionIntersectsContainer
+} from '@/lib/selection-in-container'
 import { useCreateHighlight } from './CreateHighlightContext'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Event } from 'nostr-tools'
 import { Highlighter } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
@@ -13,60 +18,6 @@ const MOBILE_TOUCH_END_SETTLE_MS = 600
 /** After selection stops changing, wait before opening the drawer so handles can extend the range. */
 const MOBILE_SELECTION_STABLE_MS = 1600
 const DESKTOP_SELECTION_DELAY_MS = 50
-
-function getParagraphContextFromRange(range: Range): string {
-  let node: Node | null = range.commonAncestorContainer
-  if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement
-  let el = node as Element | null
-  while (el) {
-    const tag = el.tagName?.toLowerCase()
-    if (tag === 'p' || (tag?.startsWith('h') && /^h[1-6]$/.test(tag))) {
-      return el.textContent?.trim() || range.toString().trim()
-    }
-    el = el.parentElement
-  }
-  return range.toString().trim()
-}
-
-function isRangeInContainer(range: Range, container: HTMLElement): boolean {
-  const commonAncestor = range.commonAncestorContainer
-  if (commonAncestor.nodeType === Node.ELEMENT_NODE) {
-    if (container.contains(commonAncestor as Element)) return true
-  } else {
-    const parent = commonAncestor.parentElement
-    if (parent && container.contains(parent)) return true
-  }
-  try {
-    const contentRect = container.getBoundingClientRect()
-    const rangeRect = range.getBoundingClientRect()
-    return !(
-      rangeRect.bottom < contentRect.top ||
-      rangeRect.top > contentRect.bottom ||
-      rangeRect.right < contentRect.left ||
-      rangeRect.left > contentRect.right
-    )
-  } catch {
-    return false
-  }
-}
-
-function readSelectionInContainer(container: HTMLElement): {
-  selectedText: string
-  paragraphContext: string
-  rect: DOMRect
-} | null {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
-  const range = selection.getRangeAt(0)
-  if (!isRangeInContainer(range, container)) return null
-  const selectedText = selection.toString().trim()
-  if (!selectedText) return null
-  return {
-    selectedText,
-    paragraphContext: getParagraphContextFromRange(range),
-    rect: range.getBoundingClientRect()
-  }
-}
 
 export default function SelectionHighlightTrigger({
   event,
@@ -89,10 +40,12 @@ export default function SelectionHighlightTrigger({
   const selectionStableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSelectingRef = useRef(false)
   const lastSelectionChangeRef = useRef(0)
+  const activeToolbarRef = useRef(false)
   /** Skip drawer dismiss cleanup while opening the highlight composer. */
   const openingHighlightRef = useRef(false)
 
   const clearUi = useCallback(() => {
+    activeToolbarRef.current = false
     setSelectedText('')
     setParagraphContext('')
     setToolbarPos(null)
@@ -104,7 +57,7 @@ export default function SelectionHighlightTrigger({
       if (!openHighlight || !containerRef.current) return
       const hit = readSelectionInContainer(containerRef.current)
       if (!hit) {
-        clearUi()
+        if (activeToolbarRef.current) clearUi()
         return
       }
 
@@ -113,6 +66,7 @@ export default function SelectionHighlightTrigger({
 
       if (isSmallScreen) {
         if (forceShow || !isSelectingRef.current) {
+          activeToolbarRef.current = true
           setShowMobileDrawer(true)
           setToolbarPos(null)
         }
@@ -125,6 +79,7 @@ export default function SelectionHighlightTrigger({
         hit.rect.top - toolbarHeight < margin ? hit.rect.bottom + margin : hit.rect.top - toolbarHeight
       const rawLeft = hit.rect.left + hit.rect.width / 2 - 80
       const left = Math.max(margin, Math.min(rawLeft, window.innerWidth - 176 - margin))
+      activeToolbarRef.current = true
       setToolbarPos({ top, left })
       setShowMobileDrawer(false)
     },
@@ -147,14 +102,22 @@ export default function SelectionHighlightTrigger({
     }, MOBILE_SELECTION_STABLE_MS)
   }, [applySelection])
 
+  const handlePointerUpInContainer = useCallback(() => {
+    if (isSmallScreen || !containerRef.current) return
+    if (!selectionIntersectsContainer(containerRef.current)) return
+    scheduleDesktopSelection()
+  }, [isSmallScreen, scheduleDesktopSelection])
+
   useEffect(() => {
     if (!openHighlight) return
 
     const onMouseUp = (e: MouseEvent) => {
-      if (isSmallScreen) return
+      if (isSmallScreen || !containerRef.current) return
       const el =
         e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null
       if (el?.closest('[data-selection-highlight-ui]')) return
+      const targetInContainer = Boolean(el && containerRef.current.contains(el))
+      if (!targetInContainer && !selectionIntersectsContainer(containerRef.current)) return
       scheduleDesktopSelection()
     }
 
@@ -203,6 +166,23 @@ export default function SelectionHighlightTrigger({
         return
       }
 
+      if (!containerRef.current) return
+
+      const selection = window.getSelection()
+      const hasSelection =
+        selection &&
+        !selection.isCollapsed &&
+        selection.rangeCount > 0 &&
+        selection.toString().trim().length > 0
+
+      if (!hasSelection) {
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        if (activeToolbarRef.current) clearUi()
+        return
+      }
+
+      if (!selectionIntersectsContainer(containerRef.current)) return
+
       scheduleDesktopSelection()
     }
 
@@ -247,6 +227,7 @@ export default function SelectionHighlightTrigger({
     const excerpt = selectedText
     openHighlight(highlightData, excerpt)
     window.getSelection()?.removeAllRanges()
+    activeToolbarRef.current = false
     setSelectedText('')
     setParagraphContext('')
     setToolbarPos(null)
@@ -266,51 +247,60 @@ export default function SelectionHighlightTrigger({
 
   const showDesktopToolbar = !isSmallScreen && selectedText && toolbarPos
 
-  return (
-    <div ref={containerRef} className="relative select-text">
-      {children}
-      {showDesktopToolbar ? (
-        <>
-          <div
-            className="highlight-button-container fixed z-[150] flex items-center gap-1 rounded-md border bg-background px-2 py-1.5 shadow-lg"
-            data-selection-highlight-ui
-            style={{ top: toolbarPos.top, left: toolbarPos.left }}
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleCreateHighlight()
-              }}
+  const desktopToolbar =
+    showDesktopToolbar && typeof document !== 'undefined'
+      ? createPortal(
+          <>
+            <div
+              className="highlight-button-container fixed z-[220] flex items-center gap-1 rounded-md border bg-background px-2 py-1.5 shadow-lg"
+              data-selection-highlight-ui
+              style={{ top: toolbarPos.top, left: toolbarPos.left }}
             >
-              <Highlighter className="h-4 w-4" />
-              {t('Create Highlight')}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDismiss()
-              }}
-            >
-              {t('Cancel')}
-            </Button>
-          </div>
-          <div
-            className="fixed inset-0 z-[149]"
-            aria-hidden
-            data-selection-highlight-ui
-            onClick={handleDismiss}
-          />
-        </>
-      ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCreateHighlight()
+                }}
+              >
+                <Highlighter className="h-4 w-4" />
+                {t('Create Highlight')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleDismiss()
+                }}
+              >
+                {t('Cancel')}
+              </Button>
+            </div>
+            <div
+              className="fixed inset-0 z-[219]"
+              aria-hidden
+              data-selection-highlight-ui
+              onClick={handleDismiss}
+            />
+          </>,
+          document.body
+        )
+      : null
 
+  return (
+    <div
+      ref={containerRef}
+      className="relative select-text"
+      onPointerUp={handlePointerUpInContainer}
+    >
+      {children}
+      {desktopToolbar}
       {isSmallScreen ? (
         <Drawer
           open={showMobileDrawer && selectedText.length > 0}

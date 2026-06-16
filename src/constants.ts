@@ -556,7 +556,8 @@ export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://thecitadel.nostr1.com',
   'wss://indexer.coracle.social/',
-  'wss://purplepag.es'
+  'wss://purplepag.es',
+  'wss://nos.lol'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [
