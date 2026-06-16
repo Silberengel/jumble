@@ -845,6 +845,7 @@ export default function Content({
               url={url}
               containingEvent={event}
               block
+              ogCardOnly
             />
           ))}
         </div>

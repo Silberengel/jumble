@@ -6556,6 +6556,7 @@ export default function MarkdownArticle({
                 url={url}
                 containingEvent={event}
                 block
+                ogCardOnly
                 className="w-full"
               />
             ))}
@@ -6570,6 +6571,7 @@ export default function MarkdownArticle({
               url={url}
               containingEvent={event}
               block
+              ogCardOnly
               className="w-full"
             />
           ))}

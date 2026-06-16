@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { kinds, type Event } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
+import type { TRepliesMap } from '@/lib/reply-index'
 import {
   classifyUnresolvedStatsReplyMissingPlacement,
   insertMissingStatsReplyPlaceholders,
@@ -20,13 +21,17 @@ function note(id: string, created_at: number, kind = kinds.ShortTextNote, tags: 
   }
 }
 
-const eRoot: TRootInfo = { type: 'E', id: 'f'.repeat(64) }
+function repliesBucket(events: Event[]) {
+  return { events, eventIdSet: new Set(events.map((e) => e.id)) }
+}
+
+const eRoot: TRootInfo = { type: 'E', id: 'f'.repeat(64), pubkey: 'p'.repeat(64) }
 
 describe('classifyUnresolvedStatsReplyMissingPlacement', () => {
   it('places bookmark/list op-reference kinds in tail when peeked', () => {
     const id = 'b'.repeat(64)
     const bookmark = note(id, 100, kinds.BookmarkList)
-    const repliesMap = new Map([[id, { events: [bookmark], parentId: eRoot.id }]])
+    const repliesMap: TRepliesMap = new Map([[eRoot.id, repliesBucket([bookmark])]])
     const placement = classifyUnresolvedStatsReplyMissingPlacement(
       { id, pubkey: bookmark.pubkey },
       eRoot,
@@ -60,7 +65,7 @@ describe('classifyUnresolvedStatsReplyMissingPlacement', () => {
   it('keeps kind-1 replies in the reply middle', () => {
     const id = '1'.repeat(64)
     const reply = note(id, 100, kinds.ShortTextNote, [['e', eRoot.id]])
-    const repliesMap = new Map([[id, { events: [reply], parentId: eRoot.id }]])
+    const repliesMap: TRepliesMap = new Map([[eRoot.id, repliesBucket([reply])]])
     const placement = classifyUnresolvedStatsReplyMissingPlacement(
       { id, pubkey: reply.pubkey },
       eRoot,
@@ -80,9 +85,8 @@ describe('partitionStatsRepliesForMissingPlaceholders', () => {
       { id: bookmarkId, pubkey: '2'.repeat(64), created_at: 200 }
     ]
     const bookmark = note(bookmarkId, 200, kinds.BookmarkList)
-    const repliesMap = new Map([
-      [bookmarkId, { events: [bookmark], parentId: eRoot.id }],
-      [replyId, { events: [note(replyId, 100, ExtendedKind.COMMENT)], parentId: eRoot.id }]
+    const repliesMap: TRepliesMap = new Map([
+      [eRoot.id, repliesBucket([bookmark, note(replyId, 100, ExtendedKind.COMMENT)])]
     ])
     const { replyThread, tail } = partitionStatsRepliesForMissingPlaceholders(
       stats,

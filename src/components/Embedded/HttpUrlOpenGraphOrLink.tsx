@@ -10,24 +10,49 @@ import { EmbeddedNormalUrl } from './EmbeddedNormalUrl'
 /**
  * Renders a plain http(s) URL as a hyperlink, or as a WebPreview card when OG metadata exists —
  * never both (avoids redundant link + card).
+ *
+ * When `ogCardOnly` is set (feed/note tail previews), render nothing unless OG metadata exists —
+ * the URL is already shown inline in the note body.
  */
 export function HttpUrlOpenGraphOrLink({
   url,
   containingEvent,
   className,
-  block = false
+  block = false,
+  ogCardOnly = false
 }: {
   url: string
   containingEvent?: Event
   className?: string
   /** Block layout for tag-only links; inline for prose autolinks. */
   block?: boolean
+  /** Bottom-of-note previews: OpenGraph card only, no bare URL fallback. */
+  ogCardOnly?: boolean
 }) {
   const cleaned = cleanUrl(url) || url
   const autoLoadMedia = useShouldAutoLoadMedia(containingEvent?.pubkey, containingEvent)
   const fetchEnabled = autoLoadMedia && isLikelyWebPageUrl(cleaned)
   const { title, description, image, ogLoading } = useFetchWebMetadata(cleaned, { fetchEnabled })
   const hasOg = hasUsableOpenGraphMetadata({ title, description, image })
+
+  if (ogCardOnly) {
+    if (!fetchEnabled || ogLoading || !hasOg) return null
+    return (
+      <div className={cn('not-prose max-w-full', block && 'mt-2', className)}>
+        <WebPreview
+          url={cleaned}
+          className="w-full"
+          authorPubkey={containingEvent?.pubkey}
+          sourceEvent={containingEvent}
+          prefetchedOpenGraph={{
+            title: title ?? undefined,
+            description: description ?? undefined,
+            image: image ?? undefined
+          }}
+        />
+      </div>
+    )
+  }
 
   if (!fetchEnabled || ogLoading || !hasOg) {
     const link = <EmbeddedNormalUrl url={url} />
