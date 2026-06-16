@@ -327,13 +327,24 @@ class LocalStorageService {
           showKinds.push(ExtendedKind.MUSIC_TRACK)
         }
       }
+      if (showKindsVersion < 16) {
+        // Add LEARNING_RESOURCE (30142) for users who already have article kinds enabled.
+        if (
+          (showKinds.includes(kinds.LongFormArticle) ||
+            showKinds.includes(ExtendedKind.WIKI_ARTICLE) ||
+            showKinds.includes(ExtendedKind.NOSTR_SPECIFICATION)) &&
+          !showKinds.includes(ExtendedKind.LEARNING_RESOURCE)
+        ) {
+          showKinds.push(ExtendedKind.LEARNING_RESOURCE)
+        }
+      }
       // v9: boosts are optional in the same filter list as other kinds; do not auto-enable (leave absent).
       this.showKinds = showKinds
       // Only persist when we read from localStorage. If SHOW_KINDS is missing here (migrated to IDB and
       // keys cleared), persisting would write DEFAULT_FEED_SHOW_KINDS to IndexedDB and wipe the user's
       // saved filter before initAsync/applySettings runs.
       this.persistSetting(StorageKey.SHOW_KINDS, JSON.stringify(this.showKinds))
-      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '15')
+      this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '16')
     }
 
     // Feed filter: kind 1 OPs, kind 1 replies, kind 1111 (migrate from legacy showRepliesAndComments if set)

@@ -29,7 +29,15 @@ const KIND_1 = kinds.ShortTextNote
 const KIND_1111 = ExtendedKind.COMMENT
 
 const KIND_FILTER_OPTIONS = [
-  { kindGroup: [kinds.LongFormArticle, ExtendedKind.WIKI_ARTICLE, ExtendedKind.NOSTR_SPECIFICATION], label: 'Articles' },
+  {
+    kindGroup: [
+      kinds.LongFormArticle,
+      ExtendedKind.WIKI_ARTICLE,
+      ExtendedKind.NOSTR_SPECIFICATION,
+      ExtendedKind.LEARNING_RESOURCE
+    ],
+    label: 'Articles'
+  },
   { kindGroup: [ExtendedKind.POLL], label: 'Polls' },
   { kindGroup: [...NIP71_VIDEO_KINDS], label: 'Video Posts' },
   { kindGroup: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME], label: 'Calendar Events' },
