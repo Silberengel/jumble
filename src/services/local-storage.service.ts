@@ -3,7 +3,6 @@ import {
   DEFAULT_NIP_96_SERVICE,
   ExtendedKind,
   MEDIA_AUTO_LOAD_POLICY,
-  NOTIFICATION_LIST_STYLE,
   StorageKey
 } from '@/constants'
 import { kinds } from 'nostr-tools'
@@ -19,7 +18,6 @@ import {
   TMediaAutoLoadPolicy,
   TMediaUploadServiceConfig,
   TNoteListMode,
-  TNotificationStyle,
   TRelaySet,
   TTheme,
   TThemeSetting,
@@ -56,7 +54,6 @@ const SETTINGS_KEYS = [
   StorageKey.SHOW_KIND_1111,
   StorageKey.FEED_KIND_FILTER_BYPASS,
   StorageKey.HIDE_CONTENT_MENTIONING_MUTED_USERS,
-  StorageKey.NOTIFICATION_LIST_STYLE,
   StorageKey.MEDIA_AUTO_LOAD_POLICY,
   StorageKey.SHOWN_CREATE_WALLET_GUIDE_TOAST_PUBKEYS,
   StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL,
@@ -100,7 +97,6 @@ class LocalStorageService {
   /** Omit kinds in feed REQ + skip client kind filtering (testing). */
   private feedKindFilterBypass: boolean = false
   private hideContentMentioningMutedUsers: boolean = false
-  private notificationListStyle: TNotificationStyle = NOTIFICATION_LIST_STYLE.DETAILED
   private mediaAutoLoadPolicy: TMediaAutoLoadPolicy = MEDIA_AUTO_LOAD_POLICY.FOLLOWS_ONLY
   private showRecommendedRelaysPanel: boolean = false
   private shownCreateWalletGuideToastPubkeys: Set<string> = new Set()
@@ -347,28 +343,30 @@ class LocalStorageService {
       this.persistSetting(StorageKey.SHOW_KINDS_VERSION, '16')
     }
 
-    // Feed filter: kind 1 OPs, kind 1 replies, kind 1111 (migrate from legacy showRepliesAndComments if set)
+    // Feed filter: kind 1 OPs, kind 1 replies, kind 1111 (migrate from legacy showRepliesAndComments if set).
+    // When SHOW_KINDS lives only in IndexedDB, keep constructor defaults until initAsync applySettings.
+    const showKindsLoadedFromLocalStorage = showKindsStr != null && showKindsStr.length > 0
     const showKind1OPsStr = window.localStorage.getItem(StorageKey.SHOW_KIND_1_OPs)
     const showRepliesStr = window.localStorage.getItem(StorageKey.SHOW_REPLIES_AND_COMMENTS)
     const showKind1RepliesStr = window.localStorage.getItem(StorageKey.SHOW_KIND_1_REPLIES)
     const showKind1111Str = window.localStorage.getItem(StorageKey.SHOW_KIND_1111)
     if (showKind1OPsStr !== null) {
       this.showKind1OPs = showKind1OPsStr === 'true'
-    } else {
+    } else if (showKindsLoadedFromLocalStorage) {
       this.showKind1OPs = this.showKinds.includes(kinds.ShortTextNote)
     }
     if (showKind1RepliesStr !== null) {
       this.showKind1Replies = showKind1RepliesStr === 'true'
     } else if (showRepliesStr !== null) {
       this.showKind1Replies = showRepliesStr === 'true'
-    } else {
+    } else if (showKindsLoadedFromLocalStorage) {
       this.showKind1Replies = this.showKinds.includes(kinds.ShortTextNote)
     }
     if (showKind1111Str !== null) {
       this.showKind1111 = showKind1111Str === 'true'
     } else if (showRepliesStr !== null) {
       this.showKind1111 = showRepliesStr === 'true'
-    } else {
+    } else if (showKindsLoadedFromLocalStorage) {
       this.showKind1111 = this.showKinds.includes(ExtendedKind.COMMENT)
     }
 
@@ -377,12 +375,6 @@ class LocalStorageService {
 
     this.hideContentMentioningMutedUsers =
       window.localStorage.getItem(StorageKey.HIDE_CONTENT_MENTIONING_MUTED_USERS) === 'true'
-
-    this.notificationListStyle =
-      window.localStorage.getItem(StorageKey.NOTIFICATION_LIST_STYLE) ===
-      NOTIFICATION_LIST_STYLE.COMPACT
-        ? NOTIFICATION_LIST_STYLE.COMPACT
-        : NOTIFICATION_LIST_STYLE.DETAILED
 
     const mediaAutoLoadPolicy = window.localStorage.getItem(StorageKey.MEDIA_AUTO_LOAD_POLICY)
     if (
@@ -603,8 +595,6 @@ class LocalStorageService {
     const feedKindFilterBypassStr = get(StorageKey.FEED_KIND_FILTER_BYPASS)
     if (feedKindFilterBypassStr != null) this.feedKindFilterBypass = feedKindFilterBypassStr === 'true'
     this.hideContentMentioningMutedUsers = get(StorageKey.HIDE_CONTENT_MENTIONING_MUTED_USERS) === 'true'
-    const notifStyle = get(StorageKey.NOTIFICATION_LIST_STYLE)
-    if (notifStyle != null) this.notificationListStyle = notifStyle === NOTIFICATION_LIST_STYLE.COMPACT ? NOTIFICATION_LIST_STYLE.COMPACT : NOTIFICATION_LIST_STYLE.DETAILED
     const mediaPolicy = get(StorageKey.MEDIA_AUTO_LOAD_POLICY)
     if (mediaPolicy != null && Object.values(MEDIA_AUTO_LOAD_POLICY).includes(mediaPolicy as TMediaAutoLoadPolicy)) {
       this.mediaAutoLoadPolicy = mediaPolicy as TMediaAutoLoadPolicy
@@ -956,15 +946,6 @@ class LocalStorageService {
   setHideContentMentioningMutedUsers(hide: boolean) {
     this.hideContentMentioningMutedUsers = hide
     this.persistSetting(StorageKey.HIDE_CONTENT_MENTIONING_MUTED_USERS, hide.toString())
-  }
-
-  getNotificationListStyle() {
-    return this.notificationListStyle
-  }
-
-  setNotificationListStyle(style: TNotificationStyle) {
-    this.notificationListStyle = style
-    this.persistSetting(StorageKey.NOTIFICATION_LIST_STYLE, style)
   }
 
   getMediaAutoLoadPolicy() {

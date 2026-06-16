@@ -12,6 +12,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 export { DEFAULT_SUGGESTED_EMOJIS as EMOJI_PICKER_REACTIONS } from '@/lib/like-reaction-emojis'
 
+/** Cap custom emoji in the grid so the picker stays responsive with a large network index. */
+const CUSTOM_EMOJI_PICKER_LIMIT = 300
+
+type PickerElement = HTMLElement & {
+  customEmoji: unknown[]
+  database?: { ready(): Promise<void> }
+}
+
 export default function EmojiPicker({
   onEmojiClick,
   reactionsDefaultOpen,
@@ -34,9 +42,9 @@ export default function EmojiPicker({
   const [pickerReady, setPickerReady] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const pickerRef = useRef<
-    (HTMLElement & { customEmoji: unknown[]; database?: { ready(): Promise<void> } }) | null
-  >(null)
+  const pickerRef = useRef<PickerElement | null>(null)
+  const onEmojiClickRef = useRef(onEmojiClick)
+  onEmojiClickRef.current = onEmojiClick
 
   useEffect(() => {
     void preloadEmojiPicker()
@@ -45,7 +53,10 @@ export default function EmojiPicker({
   useEffect(() => customEmojiService.subscribeIndexUpdate(() => setCustomEmojiTick((t) => t + 1)), [])
 
   const customEmojis = useMemo(
-    () => customEmojiService.getAllCustomEmojisForPicker(pubkey ?? null),
+    () =>
+      customEmojiService
+        .getAllCustomEmojisForPicker(pubkey ?? null)
+        .slice(0, CUSTOM_EMOJI_PICKER_LIMIT),
     [pubkey, customEmojiTick]
   )
 
@@ -54,24 +65,20 @@ export default function EmojiPicker({
     [pubkey, customEmojiTick]
   )
 
+  // Create the web component once; keep it mounted (hide off-screen in reactions mode) so
+  // switching to the full grid and reopening the popover does not cold-start IndexedDB again.
   useEffect(() => {
-    if (mode !== 'full') return
-
     let cancelled = false
-    setPickerReady(false)
-    setPickerError(null)
-
-    const popoverHeightPx = Math.min(320, Math.round((window.visualViewport?.height ?? window.innerHeight) * 0.45))
 
     preloadEmojiPicker()
       .then(async ([mod]) => {
-        if (cancelled || !containerRef.current) return
+        if (cancelled || !containerRef.current || pickerRef.current) return
         const { Picker } = mod
 
         const picker = new Picker({
           dataSource: EMOJI_PICKER_DATA_SOURCE,
           customEmoji: customEmojis
-        }) as HTMLElement & { customEmoji: unknown[]; database?: { ready(): Promise<void> } }
+        }) as PickerElement
         pickerRef.current = picker
 
         if (themeSetting === 'dark') {
@@ -79,13 +86,6 @@ export default function EmojiPicker({
         } else if (themeSetting === 'light') {
           picker.className = 'light'
         }
-
-        picker.style.width = '100%'
-        picker.style.minWidth = '280px'
-        picker.style.maxWidth = '350px'
-        picker.style.height = inDrawer ? '100%' : `${popoverHeightPx}px`
-        picker.style.minHeight = inDrawer ? '0' : `${popoverHeightPx}px`
-        picker.style.setProperty('--num-columns', '8')
 
         const handleClick = (e: Event) => {
           const detail = (e as CustomEvent).detail as {
@@ -125,7 +125,7 @@ export default function EmojiPicker({
             }
           }
           if (result !== undefined) recordEmojiUsed(result)
-          onEmojiClick(result, e)
+          onEmojiClickRef.current(result, e)
         }
 
         picker.addEventListener('emoji-click', handleClick)
@@ -149,7 +149,7 @@ export default function EmojiPicker({
         pickerRef.current = null
       }
     }
-  }, [mode, inDrawer])
+  }, [])
 
   useEffect(() => {
     if (pickerRef.current) {
@@ -190,65 +190,64 @@ export default function EmojiPicker({
       </div>
     ) : null
 
-  if (mode === 'reactions') {
-    return (
-      <div className="flex w-full min-w-0 flex-col">
-        {ownEmojisRow}
-        <div className="flex flex-wrap items-center gap-1 p-2">
-        {reactionsList.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            className="text-2xl p-1 rounded hover:bg-muted leading-none"
-            onClick={(e) => {
-              recordEmojiUsed(emoji)
-              onEmojiClick(emoji, e.nativeEvent)
-            }}
-          >
-            {emoji === DEFAULT_LIKE_REACTION_CONTENT ? DEFAULT_LIKE_REACTION_DISPLAY_EMOJI : emoji}
-          </button>
-        ))}
-        <button
-          type="button"
-          title="More emojis"
-          className="p-1 rounded hover:bg-muted text-muted-foreground flex items-center justify-center"
-          onClick={() => setMode('full')}
-        >
-          <Plus size={20} />
-        </button>
+  const pickerHost = (
+    <div
+      ref={containerRef}
+      data-emoji-picker-root
+      className={cn(
+        'relative w-full min-w-0 max-w-[350px]',
+        inDrawer ? 'min-h-0 flex-1 flex flex-col' : 'h-[min(320px,45dvh)] min-h-[240px] shrink-0',
+        mode === 'reactions' &&
+          'pointer-events-none fixed left-[-9999px] top-0 h-[320px] w-[350px] overflow-hidden opacity-0'
+      )}
+    >
+      {!pickerReady && !pickerError && mode === 'full' ? (
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+          Loading emojis…
         </div>
-      </div>
-    )
-  }
+      ) : null}
+      {pickerError && mode === 'full' ? (
+        <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-sm text-muted-foreground">
+          {pickerError}
+        </div>
+      ) : null}
+    </div>
+  )
 
   return (
     <div
       className={cn(
         'flex w-full min-w-0 flex-col',
-        inDrawer && 'min-h-0 flex-1'
+        inDrawer && mode === 'full' && 'min-h-0 flex-1'
       )}
     >
       {ownEmojisRow}
-      <div
-        ref={containerRef}
-        data-emoji-picker-root
-        className={cn(
-          'relative w-full min-w-[280px] max-w-[350px]',
-          inDrawer ? 'min-h-0 flex-1' : 'shrink-0'
-        )}
-        style={inDrawer ? undefined : { height: 'min(320px, 45dvh)', minHeight: 240 }}
-      >
-        {!pickerReady && !pickerError ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-            Loading emojis…
-          </div>
-        ) : null}
-        {pickerError ? (
-          <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-sm text-muted-foreground">
-            {pickerError}
-          </div>
-        ) : null}
-      </div>
+      {mode === 'reactions' ? (
+        <div className="flex flex-wrap items-center gap-1 p-2">
+          {reactionsList.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className="text-2xl p-1 rounded hover:bg-muted leading-none"
+              onClick={(e) => {
+                recordEmojiUsed(emoji)
+                onEmojiClick(emoji, e.nativeEvent)
+              }}
+            >
+              {emoji === DEFAULT_LIKE_REACTION_CONTENT ? DEFAULT_LIKE_REACTION_DISPLAY_EMOJI : emoji}
+            </button>
+          ))}
+          <button
+            type="button"
+            title="More emojis"
+            className="p-1 rounded hover:bg-muted text-muted-foreground flex items-center justify-center"
+            onClick={() => setMode('full')}
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      ) : null}
+      {pickerHost}
     </div>
   )
 }

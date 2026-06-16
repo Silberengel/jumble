@@ -88,6 +88,39 @@ export function getSessionFeedSnapshot(key: string): Event[] | undefined {
   return rows
 }
 
+/**
+ * When the exact snapshot key misses (e.g. kind-picker identity changed after reload), reuse the
+ * largest in-tab snapshot for the same feed subscription key so home does not flash empty.
+ */
+export function getSessionFeedSnapshotWithFeedFallback(
+  identityKey: string,
+  feedKey: string
+): Event[] | undefined {
+  const direct = getSessionFeedSnapshot(identityKey)
+  if (direct?.length) return direct
+  if (!feedKey) return undefined
+  let bestKey: string | undefined
+  let bestRows: Event[] | undefined
+  for (const [key, rows] of snapshots) {
+    if (key === identityKey || !rows?.length) continue
+    try {
+      const parsed = JSON.parse(key) as { feed?: string }
+      if (parsed.feed !== feedKey) continue
+      if (!bestRows || rows.length > bestRows.length) {
+        bestKey = key
+        bestRows = rows
+      }
+    } catch {
+      /* ignore malformed keys */
+    }
+  }
+  if (bestKey && bestRows?.length) {
+    bumpAccess(bestKey)
+    return bestRows
+  }
+  return undefined
+}
+
 export function setSessionFeedSnapshot(
   key: string,
   events: readonly Event[],

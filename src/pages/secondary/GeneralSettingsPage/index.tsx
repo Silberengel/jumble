@@ -6,7 +6,6 @@ import {
   DEFAULT_FONT_SIZE,
   FONT_SIZE,
   MEDIA_AUTO_LOAD_POLICY,
-  NOTIFICATION_LIST_STYLE,
   RANDOM_PUBLISH_RELAY_COUNT
 } from '@/constants'
 import { changeAppLanguage, SUPPORTED_APP_LANGUAGE_CODES, TLanguage } from '@/i18n'
@@ -45,8 +44,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
     setMediaAutoLoadPolicy
   } = useContentPolicy()
   const {
-    notificationListStyle,
-    updateNotificationListStyle,
     addRandomRelaysToPublish,
     updateAddRandomRelaysToPublish,
     showLiveActivitiesBanner,
@@ -123,29 +120,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
               <SelectItem value={FONT_SIZE.SMALL}>{t('Small')}</SelectItem>
               <SelectItem value={FONT_SIZE.MEDIUM}>{t('Medium')}</SelectItem>
               <SelectItem value={FONT_SIZE.LARGE}>{t('Large')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingItem>
-        <SettingItem>
-          <Label htmlFor="notification-list-style" className="text-base font-normal">
-            <div>{t('Notification list style')}</div>
-            <div className="text-muted-foreground">
-              {notificationListStyle === NOTIFICATION_LIST_STYLE.DETAILED
-                ? t('See extra info for each notification')
-                : t('See more notifications at a glance')}
-            </div>
-          </Label>
-          <Select
-            defaultValue={NOTIFICATION_LIST_STYLE.DETAILED}
-            value={notificationListStyle}
-            onValueChange={updateNotificationListStyle}
-          >
-            <SelectTrigger id="notification-list-style" className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NOTIFICATION_LIST_STYLE.DETAILED}>{t('Detailed')}</SelectItem>
-              <SelectItem value={NOTIFICATION_LIST_STYLE.COMPACT}>{t('Compact')}</SelectItem>
             </SelectContent>
           </Select>
         </SettingItem>

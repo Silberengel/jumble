@@ -82,16 +82,22 @@ export default function EmojiPickerDialog({
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"
-        className="pointer-events-auto !max-h-none h-auto overflow-visible p-0 w-[min(100vw-1rem,350px)] max-w-[calc(100vw-1rem)] flex flex-col"
+        align="start"
+        disableScrollShell
+        collisionBoundary={portalContainer ?? undefined}
+        collisionPadding={12}
+        className="pointer-events-auto !max-h-none h-auto w-[min(100%,350px)] max-w-[350px] flex flex-col"
         portalContainer={portalContainer}
       >
-        <EmojiPicker
-          onEmojiClick={(emoji, e) => {
-            e.stopPropagation()
-            setOpen(false)
-            onEmojiClick?.(emoji)
-          }}
-        />
+        {pickerMounted ? (
+          <EmojiPicker
+            onEmojiClick={(emoji, e) => {
+              e.stopPropagation()
+              setOpen(false)
+              onEmojiClick?.(emoji)
+            }}
+          />
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )

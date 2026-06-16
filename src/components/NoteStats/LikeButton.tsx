@@ -73,6 +73,11 @@ export function LikeButtonWithStats({
   const { relays: statsRelays } = useNoteStatsRelayHints()
   const [liking, setLiking] = useState(false)
   const [isEmojiReactionsOpen, setIsEmojiReactionsOpen] = useState(false)
+  const [pickerMounted, setPickerMounted] = useState(false)
+
+  useEffect(() => {
+    if (isEmojiReactionsOpen) setPickerMounted(true)
+  }, [isEmojiReactionsOpen])
 
   useEffect(() => {
     if (isEmojiReactionsOpen) void preloadEmojiPicker()
@@ -368,7 +373,7 @@ export function LikeButtonWithStats({
               <DrawerTitle>React</DrawerTitle>
             </DrawerHeader>
             <div className="flex min-h-0 w-full max-h-[min(72dvh,calc(100dvh-6rem))] flex-col overflow-hidden px-1 pb-1">
-              {isEmojiReactionsOpen ? likeEmojiPicker : null}
+              {pickerMounted ? likeEmojiPicker : null}
             </div>
           </DrawerContent>
         </Drawer>
@@ -384,7 +389,7 @@ export function LikeButtonWithStats({
           side="top"
           className="p-0 w-[min(100vw-1rem,350px)] max-w-[calc(100vw-1rem)] overflow-hidden"
         >
-          {likeEmojiPicker}
+          {pickerMounted ? likeEmojiPicker : null}
         </DropdownMenuContent>
       </DropdownMenu>
       {likeCountLabel}

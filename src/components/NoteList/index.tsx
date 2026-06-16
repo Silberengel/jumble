@@ -53,6 +53,7 @@ import noteStatsService from '@/services/note-stats.service'
 import indexedDb from '@/services/indexed-db.service'
 import {
   getSessionFeedSnapshot,
+  getSessionFeedSnapshotWithFeedFallback,
   hardReloadPreservingFeedSnapshots,
   setSessionFeedSnapshot
 } from '@/services/session-feed-snapshot.service'
@@ -2359,7 +2360,13 @@ const NoteList = forwardRef(
         const sessionSnap =
           !userPulledRefresh &&
           (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeEarly)
-            ? getSessionFeedSnapshot(sessionSnapshotIdentityKey)
+            ? (getSessionFeedSnapshot(sessionSnapshotIdentityKey) ??
+                (hostPrimaryPageNameRef.current === 'feed'
+                  ? getSessionFeedSnapshotWithFeedFallback(
+                      sessionSnapshotIdentityKey,
+                      timelineSubscriptionKey
+                    )
+                  : undefined))
             : undefined
         const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
 
@@ -2434,6 +2441,16 @@ const NoteList = forwardRef(
             return byPicker
           }
           return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
+        }
+
+        /** Home feed: paint IndexedDB/session rows matching the REQ filter; kind picker applies in UI only. */
+        const narrowLiveBatchForLocalWarmup = (evs: Event[]) => {
+          if (hostPrimaryPageNameRef.current !== 'feed') return narrowLiveBatch(evs)
+          const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
+          if (shardFilters.length === 0) return narrowLiveBatch(evs)
+          return evs.filter((ev) =>
+            shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
+          )
         }
 
         const eventMatchesProfileTimelineRequest = (event: Event) =>
@@ -2962,7 +2979,7 @@ const NoteList = forwardRef(
                   .sort((a, b) => b.created_at - a.created_at)
 
                 if (!timelineEffectStale() && sessionHits.length > 0) {
-                  const narrowedS = narrowLiveBatch(sessionHits)
+                  const narrowedS = narrowLiveBatchForLocalWarmup(sessionHits)
                   if (narrowedS.length > 0) {
                     const mergedS = collapseDuplicateNip18RepostTimelineRows(
                       mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
@@ -3010,7 +3027,7 @@ const NoteList = forwardRef(
                     }
                     combinedRaw.sort((a, b) => b.created_at - a.created_at)
                     if (combinedRaw.length > 0) {
-                      const diskNarrowed = narrowLiveBatch(combinedRaw)
+                      const diskNarrowed = narrowLiveBatchForLocalWarmup(combinedRaw)
                       if (diskNarrowed.length > 0) {
                         const merged = collapseDuplicateNip18RepostTimelineRows(
                           mergeEventBatchesById(localMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)

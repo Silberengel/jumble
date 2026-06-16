@@ -1,10 +1,7 @@
 import storage from '@/services/local-storage.service'
-import { TNotificationStyle } from '@/types'
 import { createContext, useContext, useState } from 'react'
 
 type TUserPreferencesContext = {
-  notificationListStyle: TNotificationStyle
-  updateNotificationListStyle: (style: TNotificationStyle) => void
   addRandomRelaysToPublish: boolean
   updateAddRandomRelaysToPublish: (value: boolean) => void
   showLiveActivitiesBanner: boolean
@@ -27,10 +24,6 @@ export function useUserPreferencesOptional(): TUserPreferencesContext | undefine
 }
 
 export function UserPreferencesProvider({ children }: { children: React.ReactNode }) {
-  const [notificationListStyle, setNotificationListStyle] = useState(
-    storage.getNotificationListStyle()
-  )
-
   const [addRandomRelaysToPublish, setAddRandomRelaysToPublish] = useState(
     storage.getAddRandomRelaysToPublish()
   )
@@ -38,11 +31,6 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
   const [showLiveActivitiesBanner, setShowLiveActivitiesBanner] = useState(
     storage.getShowLiveActivitiesBanner()
   )
-
-  const updateNotificationListStyle = (style: TNotificationStyle) => {
-    setNotificationListStyle(style)
-    storage.setNotificationListStyle(style)
-  }
 
   const updateAddRandomRelaysToPublish = (value: boolean) => {
     setAddRandomRelaysToPublish(value)
@@ -57,8 +45,6 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
   return (
     <UserPreferencesContext.Provider
       value={{
-        notificationListStyle,
-        updateNotificationListStyle,
         addRandomRelaysToPublish,
         updateAddRandomRelaysToPublish,
         showLiveActivitiesBanner,

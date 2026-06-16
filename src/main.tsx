@@ -15,6 +15,7 @@ import { restorePersistedFeedSnapshots } from './services/session-feed-snapshot.
 import { installStaleBuildChunkRecovery } from './lib/stale-chunk-recovery'
 import { initPwaUpdate } from './lib/pwa-update'
 import { installViewportHeightListeners } from './lib/viewport-height'
+import { preloadEmojiPicker } from './lib/emoji-picker-preload'
 
 installStaleBuildChunkRecovery()
 initPwaUpdate()
@@ -50,6 +51,12 @@ async function bootstrap() {
       </ErrorBoundary>
     </StrictMode>
   )
+  const warmEmojiPicker = () => void preloadEmojiPicker()
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(warmEmojiPicker, { timeout: 4000 })
+  } else {
+    setTimeout(warmEmojiPicker, 1500)
+  }
   void (async () => {
     try {
       const r = await fetchWithTimeout('/config.json', { timeoutMs: 10_000 })

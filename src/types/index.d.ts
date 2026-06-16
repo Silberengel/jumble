@@ -1,5 +1,5 @@
 import { Event, Filter, VerifiedEvent } from 'nostr-tools'
-import { MEDIA_AUTO_LOAD_POLICY, NOTIFICATION_LIST_STYLE, POLL_TYPE } from '../constants'
+import { MEDIA_AUTO_LOAD_POLICY, POLL_TYPE } from '../constants'
 
 export type TSubRequestFilter = Omit<Filter, 'since' | 'until'> & { limit: number }
 
@@ -281,9 +281,6 @@ export type TSearchParams = {
   /** Present for profile rows from typeahead; avoids redundant fetch and shows cached avatar/name immediately. */
   profile?: TProfile
 }
-
-export type TNotificationStyle =
-  (typeof NOTIFICATION_LIST_STYLE)[keyof typeof NOTIFICATION_LIST_STYLE]
 
 export type TAwesomeRelayCollection = {
   id: string

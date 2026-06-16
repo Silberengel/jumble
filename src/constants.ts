@@ -359,7 +359,6 @@ export const StorageKey = {
   /** @deprecated use SHOW_KIND_1_REPLIES + SHOW_KIND_1111 */
   SHOW_REPLIES_AND_COMMENTS: 'showRepliesAndComments',
   HIDE_CONTENT_MENTIONING_MUTED_USERS: 'hideContentMentioningMutedUsers',
-  NOTIFICATION_LIST_STYLE: 'notificationListStyle',
   MEDIA_AUTO_LOAD_POLICY: 'mediaAutoLoadPolicy',
   SHOWN_CREATE_WALLET_GUIDE_TOAST_PUBKEYS: 'shownCreateWalletGuideToastPubkeys',
   SHOW_RECOMMENDED_RELAYS_PANEL: 'showRecommendedRelaysPanel',
@@ -1134,11 +1133,6 @@ export const DEFAULT_NOSTRCONNECT_RELAY = [
 export const POLL_TYPE = {
   MULTIPLE_CHOICE: 'multiplechoice',
   SINGLE_CHOICE: 'singlechoice'
-} as const
-
-export const NOTIFICATION_LIST_STYLE = {
-  COMPACT: 'compact',
-  DETAILED: 'detailed'
 } as const
 
 export const MEDIA_AUTO_LOAD_POLICY = {

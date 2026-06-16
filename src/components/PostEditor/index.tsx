@@ -28,7 +28,7 @@ function isNestedPickerTarget(target: EventTarget | null): boolean {
     target instanceof HTMLElement &&
     Boolean(
       target.closest(
-        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], emoji-picker-element'
+        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], emoji-picker'
       )
     )
   )
@@ -127,7 +127,7 @@ export default function PostEditor({
     return (
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          className="flex w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
+          className="relative flex w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
             mobileSheetHeightPx != null
               ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
@@ -151,18 +151,18 @@ export default function PostEditor({
             }
           }}
         >
+          <div
+            ref={setPickerPortalContainer}
+            data-nested-picker-portal
+            className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
+            aria-hidden={false}
+          />
           <div className="relative flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2 min-w-0 overflow-hidden">
             <SheetHeader className="sr-only">
               <SheetTitle>Post Editor</SheetTitle>
               <SheetDescription>Create a new post or reply</SheetDescription>
             </SheetHeader>
             {content}
-            <div
-              ref={setPickerPortalContainer}
-              data-nested-picker-portal
-              className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
-              aria-hidden={false}
-            />
           </div>
         </SheetContent>
       </Sheet>
@@ -172,7 +172,7 @@ export default function PostEditor({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="flex max-h-[min(90dvh,900px)] flex-col overflow-hidden p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
+        className="relative flex max-h-[min(90dvh,900px)] flex-col overflow-hidden p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         withoutClose
         onInteractOutside={(e) => {
           if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
@@ -190,18 +190,18 @@ export default function PostEditor({
           }
         }}
       >
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
+        <div
+          ref={setPickerPortalContainer}
+          data-nested-picker-portal
+          className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
+          aria-hidden={false}
+        />
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
           <DialogHeader className="sr-only">
             <DialogTitle>Post Editor</DialogTitle>
             <DialogDescription>Create a new post or reply</DialogDescription>
           </DialogHeader>
           {content}
-          <div
-            ref={setPickerPortalContainer}
-            data-nested-picker-portal
-            className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
-            aria-hidden={false}
-          />
         </div>
       </DialogContent>
     </Dialog>

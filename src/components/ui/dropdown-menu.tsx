@@ -183,8 +183,10 @@ const DropdownMenuContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content> & {
     showScrollButtons?: boolean
     portalContainer?: HTMLElement | null
+    /** Skip inner scroll shell — for full-size pickers that manage their own layout/overflow. */
+    disableScrollShell?: boolean
   }
->(({ className, sideOffset = 4, showScrollButtons = false, portalContainer, ...props }, ref) => {
+>(({ className, sideOffset = 4, showScrollButtons = false, portalContainer, disableScrollShell = false, children, ...props }, ref) => {
   const [canScrollUp, setCanScrollUp] = React.useState(false)
   const [canScrollDown, setCanScrollDown] = React.useState(false)
   const contentRef = React.useRef<HTMLDivElement>(null)
@@ -224,58 +226,72 @@ const DropdownMenuContent = React.forwardRef<
 
   const inDialog = React.useContext(DialogContext)
 
+  const shellClassName = disableScrollShell
+    ? cn(
+        'overflow-visible rounded-lg border bg-popover text-popover-foreground shadow-md p-0 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        className,
+        inDialog ? 'pointer-events-auto z-[290]' : 'z-[100]'
+      )
+    : cn(
+        'relative min-w-52 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        floatingPanelMaxWidthClass,
+        inDialog ? 'pointer-events-auto z-[290]' : 'z-[100]'
+      )
+
   return (
     <DropdownMenuPrimitive.Portal container={portalContainer}>
       <DropdownMenuPrimitive.Content
         ref={contentRef}
         sideOffset={sideOffset}
-        className={cn(
-          'relative min-w-52 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          floatingPanelMaxWidthClass,
-          inDialog ? 'pointer-events-auto z-[290]' : 'z-[100]'
-        )}
-        onAnimationEnd={checkScrollability}
+        className={shellClassName}
+        onAnimationEnd={disableScrollShell ? undefined : checkScrollability}
         collisionPadding={16}
         {...props}
       >
-        {showScrollButtons && canScrollUp && (
-          <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
-            <button
-              onClick={scrollUp}
-              onMouseEnter={scrollUp}
-              className="flex items-center justify-center w-full h-6 hover:bg-accent rounded-sm transition-colors"
-              type="button"
-            >
-              <ChevronUp className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        {disableScrollShell ? (
+          children
+        ) : (
+          <>
+            {showScrollButtons && canScrollUp && (
+              <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
+                <button
+                  onClick={scrollUp}
+                  onMouseEnter={scrollUp}
+                  className="flex items-center justify-center w-full h-6 hover:bg-accent rounded-sm transition-colors"
+                  type="button"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+              </div>
+            )}
 
-        <div
-          ref={scrollAreaRef}
-          className={cn(
-            'p-1',
-            floatingPanelScrollClass,
-            dropdownMenuMaxHeightClass,
-            floatingPanelMaxWidthClass,
-            className
-          )}
-          onScroll={checkScrollability}
-        >
-          {props.children}
-        </div>
-
-        {showScrollButtons && canScrollDown && (
-          <div className="absolute bottom-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
-            <button
-              onClick={scrollDown}
-              onMouseEnter={scrollDown}
-              className="flex items-center justify-center w-full h-6 hover:bg-accent rounded-sm transition-colors"
-              type="button"
+            <div
+              ref={scrollAreaRef}
+              className={cn(
+                'p-1',
+                floatingPanelScrollClass,
+                dropdownMenuMaxHeightClass,
+                floatingPanelMaxWidthClass,
+                className
+              )}
+              onScroll={checkScrollability}
             >
-              <ChevronDown className="h-4 w-4" />
-            </button>
-          </div>
+              {children}
+            </div>
+
+            {showScrollButtons && canScrollDown && (
+              <div className="absolute bottom-0 inset-x-0 z-10 flex items-center justify-center bg-popover">
+                <button
+                  onClick={scrollDown}
+                  onMouseEnter={scrollDown}
+                  className="flex items-center justify-center w-full h-6 hover:bg-accent rounded-sm transition-colors"
+                  type="button"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
