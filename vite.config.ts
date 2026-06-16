@@ -552,7 +552,17 @@ export default defineConfig(({ mode }) => {
           '**/node_modules/**',
           '**/*.map',
           '**/sw.js',
-          '**/workbox-*.js'
+          '**/workbox-*.js',
+          // Lazy-loaded editor / locale chunks — precache on first use instead of blocking SW install.
+          '**/vendor-asciidoctor*.js',
+          '**/vendor-codemirror*.js',
+          '**/vendor-tiptap*.js',
+          '**/vendor-prosemirror*.js',
+          '**/vendor-katex*.js',
+          '**/vendor-highlight*.js',
+          '**/vendor-marked*.js',
+          '**/vendor-lightbox*.js',
+          '**/i18n-locale-*.js'
         ],
         runtimeCaching: [
           {

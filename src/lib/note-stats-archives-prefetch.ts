@@ -1,8 +1,10 @@
+import { scrollActivity } from '@/lib/scroll-activity.service'
 import nostrArchivesApi from '@/services/nostr-archives-api.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { TArchivesInteractionCounts } from '@/types/nostr-archives'
 
 const BATCH_DELAY_MS = 48
+const SCROLL_DEFER_DELAY_MS = 220
 const MAX_BATCH_SIZE = 20
 const PREFETCH_CONCURRENCY = 5
 const RECENT_TTL_MS = 5 * 60_000
@@ -29,13 +31,18 @@ function markRecent(id: string): void {
 
 function scheduleBatch(): void {
   if (batchTimer != null) return
+  const delay = scrollActivity.isActive ? SCROLL_DEFER_DELAY_MS : BATCH_DELAY_MS
   batchTimer = setTimeout(() => {
     batchTimer = null
     void flushBatch()
-  }, BATCH_DELAY_MS)
+  }, delay)
 }
 
 async function flushBatch(): Promise<void> {
+  if (scrollActivity.isActive) {
+    scheduleBatch()
+    return
+  }
   if (!nostrArchivesApi.isAvailable()) {
     pending.clear()
     return

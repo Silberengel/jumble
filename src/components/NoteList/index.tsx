@@ -37,6 +37,10 @@ import { fetchProfilesMetadataBatch } from '@/lib/profile-metadata-batch'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds'
 import { shouldIncludePaymentInFeed } from '@/lib/superchat'
+import {
+  applyPersistedFeedSinceToSubRequests,
+  persistFeedSince
+} from '@/lib/feed-since-persist'
 import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
@@ -2324,18 +2328,28 @@ const NoteList = forwardRef(
 
         const seeAllNoSpell = seeAllFeedEventsRef.current && !useFilterAsIsRef.current
 
-        const mappedSubRequests = stripNostrLandAggrFromTimelineSubRequests(
-          feedSubscriptionKey,
-          mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
-        )
-          .map((req) =>
-            isOfflineRef.current
-              ? { ...req, urls: req.urls.filter((u) => isLocalNetworkUrl(u)) }
-              : req
+        const mappedSubRequests = applyPersistedFeedSinceToSubRequests(
+          stripNostrLandAggrFromTimelineSubRequests(
+            feedSubscriptionKey,
+            mapLiveSubRequestsForTimelineRef.current(subRequestsRef.current)
           )
-          // Drop shards whose every relay was filtered out; avoids timeline-cache
-          // key collisions where all offline relay-specific views share the same key.
-          .filter((req) => req.urls.length > 0)
+            .map((req) =>
+              isOfflineRef.current
+                ? { ...req, urls: req.urls.filter((u) => isLocalNetworkUrl(u)) }
+                : req
+            )
+            // Drop shards whose every relay was filtered out; avoids timeline-cache
+            // key collisions where all offline relay-specific views share the same key.
+            .filter((req) => req.urls.length > 0),
+          {
+            scopeKey: feedTimelineScopeKey,
+            skip:
+              userPulledRefresh ||
+              oneShotFetch ||
+              areAlgoRelays ||
+              !!progressiveWarmupQueryRef.current?.trim()
+          }
+        )
 
         const strictSingleRelayAuthoritativeEarly =
           mappedSubRequests.length === 1 &&
@@ -3420,6 +3434,9 @@ const NoteList = forwardRef(
                   setHasMore(false)
                 } else if (eosed) {
                   setLoading(false)
+                  if (feedTimelineScopeKey && !oneShotFetch) {
+                    persistFeedSince(feedTimelineScopeKey, eventsRef.current)
+                  }
                   // CRITICAL FIX: For non-algo feeds, always assume there might be more events
                   // The initial load might only return a few events due to filtering or relay limits
                   // We should still try to load more on scroll - the loadMore logic will handle stopping
@@ -3621,6 +3638,9 @@ const NoteList = forwardRef(
             (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
         if (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeCleanup) {
           setSessionFeedSnapshot(snapshotKeyForCleanup, eventsRef.current)
+        }
+        if (feedTimelineScopeKey && !oneShotFetch) {
+          persistFeedSince(feedTimelineScopeKey, eventsRef.current)
         }
         if (kindlessEoseTimeoutRef.current) {
           clearTimeout(kindlessEoseTimeoutRef.current)
@@ -3927,9 +3947,19 @@ const NoteList = forwardRef(
       if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
       const timer = window.setTimeout(() => {
         setSessionFeedSnapshot(sessionSnapshotIdentityKey, events)
+        if (feedTimelineScopeKey && !oneShotFetch) {
+          persistFeedSince(feedTimelineScopeKey, events)
+        }
       }, 400)
       return () => window.clearTimeout(timer)
-    }, [events, sessionSnapshotIdentityKey, allowKindlessRelayExplore, useFilterAsIs])
+    }, [
+      events,
+      sessionSnapshotIdentityKey,
+      allowKindlessRelayExplore,
+      useFilterAsIs,
+      feedTimelineScopeKey,
+      oneShotFetch
+    ])
 
     useEffect(() => {
       newEventsRef.current = newEvents

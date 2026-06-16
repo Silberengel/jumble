@@ -31,25 +31,10 @@ const SESSION_STORAGE_KEY = 'jumble:session'
 async function bootstrap() {
   // Always defined: fetch does not throw on 4xx/5xx, so non-OK responses must not leave this unset.
   window.__RUNTIME_CONFIG__ = {}
-  console.info('[imwald] Boot: opening storage and loading config…')
-  await Promise.all([
-    initI18n(),
-    storage.initAsync(),
-    (async () => {
-      try {
-        const r = await fetchWithTimeout('/config.json', { timeoutMs: 10_000 })
-        if (r.ok) {
-          window.__RUNTIME_CONFIG__ = (await r.json()) as {
-            NIP66_MONITOR_NPUB?: string
-          }
-        }
-      } catch {
-        window.__RUNTIME_CONFIG__ = {}
-      }
-    })()
-  ])
-  console.info('[imwald] Boot: mounting React (UI shell will appear; Nostr session restores next)')
+  console.info('[imwald] Boot: loading i18n (sync settings already read from localStorage)…')
+  await initI18n()
   restorePersistedFeedSnapshots()
+  console.info('[imwald] Boot: mounting React (UI shell will appear; IndexedDB settings migrate next)')
   // Mark session storage as used so it's visible in DevTools; VersionUpdateBanner and NotePage also use it.
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, String(Date.now()))
@@ -63,6 +48,22 @@ async function bootstrap() {
       </ErrorBoundary>
     </StrictMode>
   )
+  // Defer IndexedDB migration until after first paint — sync localStorage init already ran in storage constructor.
+  requestAnimationFrame(() => {
+    void storage.initAsync()
+  })
+  void (async () => {
+    try {
+      const r = await fetchWithTimeout('/config.json', { timeoutMs: 10_000 })
+      if (r.ok) {
+        window.__RUNTIME_CONFIG__ = (await r.json()) as {
+          NIP66_MONITOR_NPUB?: string
+        }
+      }
+    } catch {
+      window.__RUNTIME_CONFIG__ = {}
+    }
+  })()
 }
 
 bootstrap()

@@ -3,6 +3,9 @@ import { cn } from '@/lib/utils'
 import { useDeepBrowsing } from '@/providers/DeepBrowsingProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { ChevronUp } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+const SHOW_ABOVE_PX = 800
 
 export default function ScrollToTopButton({
   scrollAreaRef,
@@ -12,8 +15,39 @@ export default function ScrollToTopButton({
   className?: string
 }) {
   const { isSmallScreen } = useScreenSize()
-  const { deepBrowsing, lastScrollTop } = useDeepBrowsing()
-  const visible = !deepBrowsing && lastScrollTop > 800
+  const { deepBrowsing, getLastScrollTop } = useDeepBrowsing()
+  const [scrollTopVisible, setScrollTopVisible] = useState(() => getLastScrollTop() > SHOW_ABOVE_PX)
+
+  useEffect(() => {
+    const readTop = () =>
+      scrollAreaRef?.current != null ? scrollAreaRef.current.scrollTop : window.scrollY
+
+    const syncVisibility = () => {
+      const top = readTop()
+      setScrollTopVisible((prev) => {
+        const next = top > SHOW_ABOVE_PX
+        return prev === next ? prev : next
+      })
+    }
+
+    syncVisibility()
+    const target: HTMLElement | Window = scrollAreaRef?.current ?? window
+    let rafId = 0
+    const onScroll = () => {
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        rafId = 0
+        syncVisibility()
+      })
+    }
+    target.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      target.removeEventListener('scroll', onScroll)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
+  }, [scrollAreaRef])
+
+  const visible = !deepBrowsing && scrollTopVisible
 
   const handleScrollToTop = () => {
     if (!scrollAreaRef) {
