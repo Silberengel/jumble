@@ -51,7 +51,8 @@ export function relayUrlsMentionNostrLandDomain(urls: readonly string[]): boolea
 let viewerStackMentionsNostrLand = false
 
 /**
- * Synced from the logged-in viewer’s favorites and NIP-65 / cache / HTTP relay lists.
+ * Synced from the logged-in viewer’s kind 10012 favorites, kind 30002 relay sets, and kind
+ * 10002 / 10243 / 10432 relay lists.
  * When true, {@link AGGR_NOSTR_LAND_WSS} is treated as a search relay and inbox-tier read relay.
  */
 export function syncViewerRelayStackNostrLandAggrEligible(urls: readonly string[]): boolean {
@@ -96,20 +97,26 @@ export function filterAggrNostrLandUnlessViewerEligible(urls: readonly string[])
   return urls.filter((u) => !relayUrlIsAggrNostrLand(u))
 }
 
-/** URLs to pass to {@link syncViewerRelayStackNostrLandAggrEligible} (favorites + NIP-65 + cache + HTTP lists). */
+/** URLs to pass to {@link syncViewerRelayStackNostrLandAggrEligible} (favorites + relay sets + NIP-65 + cache + HTTP). */
 export function urlsForViewerNostrLandAggrEligibilitySync(options: {
   favoriteRelayUrls?: readonly string[]
+  relaySetUrls?: readonly string[]
   relayListRead?: readonly string[]
   relayListWrite?: readonly string[]
   cacheRelayRead?: readonly string[]
+  cacheRelayWrite?: readonly string[]
   httpRelayRead?: readonly string[]
+  httpRelayWrite?: readonly string[]
 }): string[] {
   return [
     ...(options.favoriteRelayUrls ?? []),
+    ...(options.relaySetUrls ?? []),
     ...(options.relayListRead ?? []),
     ...(options.relayListWrite ?? []),
     ...(options.cacheRelayRead ?? []),
-    ...(options.httpRelayRead ?? [])
+    ...(options.cacheRelayWrite ?? []),
+    ...(options.httpRelayRead ?? []),
+    ...(options.httpRelayWrite ?? [])
   ]
 }
 

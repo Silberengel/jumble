@@ -4,10 +4,12 @@ import {
   filterAggrNostrLandUnlessViewerEligible,
   getAggrAwareSearchRelayUrls,
   getViewerNostrLandAggrSearchRelayUrls,
+  getViewerRelayStackNostrLandAggrEligible,
   prependAggrForEventLookupRelayUrls,
   prependAggrNostrLandIfViewerEligible,
   relayUrlsIncludeCanonicalNostrLandRelay,
-  syncViewerRelayStackNostrLandAggrEligible
+  syncViewerRelayStackNostrLandAggrEligible,
+  urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
 
 afterEach(() => {
@@ -15,6 +17,19 @@ afterEach(() => {
 })
 
 describe('nostr.land aggr eligibility', () => {
+  it('enables aggr when wss://nostr.land is only on a relay set', () => {
+    syncViewerRelayStackNostrLandAggrEligible(
+      urlsForViewerNostrLandAggrEligibilitySync({
+        favoriteRelayUrls: ['wss://relay.example/'],
+        relaySetUrls: ['wss://nostr.land/']
+      })
+    )
+    expect(getViewerRelayStackNostrLandAggrEligible()).toBe(true)
+    expect(prependAggrNostrLandIfViewerEligible(['wss://inbox.example/'])[0]).toMatch(
+      /^wss:\/\/aggr\.nostr\.land\/?$/
+    )
+  })
+
   it('enables aggr only when wss://nostr.land is on favorites or relay lists', () => {
     expect(relayUrlsIncludeCanonicalNostrLandRelay(['wss://nostr.land/'])).toBe(true)
     expect(relayUrlsIncludeCanonicalNostrLandRelay(['wss://aggr.nostr.land/'])).toBe(false)

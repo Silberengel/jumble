@@ -811,6 +811,13 @@ class ClientService extends EventTarget {
     } catch {
       cacheRelayEvent = undefined
     }
+    try {
+      for (const set of storage.getRelaySets()) {
+        urls.push(...set.relayUrls)
+      }
+    } catch {
+      // ignore
+    }
     const all = Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean)))
     return { all, httpIndexBases, cacheRelayEvent }
   }

@@ -1,9 +1,11 @@
 import UserAvatar from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
-import { toSearch } from '@/lib/link'
-import { useSecondaryPage } from '@/PageManager'
+import { Skeleton } from '@/components/ui/skeleton'
+import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import client from '@/services/client.service'
 import { Search } from 'lucide-react'
-import { nip19 } from 'nostr-tools'
+import { nip19, type Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -11,15 +13,19 @@ import { toast } from 'sonner'
 export default function MissingThreadReply({
   id,
   pubkey,
-  createdAt
+  createdAt,
+  onFound
 }: {
   id: string
   pubkey: string
   createdAt: number
+  /** Called when the note is found on search relays — thread list should ingest the event. */
+  onFound?: (event: Event) => void
 }) {
   const { t } = useTranslation()
-  const { push } = useSecondaryPage()
   const [copied, setCopied] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [triedSearch, setTriedSearch] = useState(false)
 
   const nevent = useMemo(() => nip19.neventEncode({ id, author: pubkey }), [id, pubkey])
 
@@ -34,8 +40,36 @@ export default function MissingThreadReply({
     }
   }
 
-  const onSearch = () => {
-    push(toSearch({ type: 'note', search: nevent, input: nevent }))
+  const onSearch = async () => {
+    if (searching) return
+    setSearching(true)
+    setTriedSearch(false)
+    try {
+      const relayUrls = sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+      const found = await client.fetchEventWithExternalRelays(nevent, relayUrls)
+      if (found) {
+        const hex = /^[0-9a-f]{64}$/i.test(found.id) ? found.id.toLowerCase() : id.toLowerCase()
+        client.addEventToCache(found, { explicitNoteLookupHexId: hex })
+        onFound?.(found)
+        toast.success(t('Note found', { defaultValue: 'Note found' }))
+        return
+      }
+      setTriedSearch(true)
+      toast.error(
+        t('Note not found on search relays', {
+          defaultValue: 'Note not found on search relays'
+        })
+      )
+    } catch {
+      setTriedSearch(true)
+      toast.error(
+        t('Search relay query failed', {
+          defaultValue: 'Search relay query failed'
+        })
+      )
+    } finally {
+      setSearching(false)
+    }
   }
 
   return (
@@ -52,14 +86,30 @@ export default function MissingThreadReply({
             <code className="block break-all text-xs text-foreground/90">{nevent}</code>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onCopy}>
+            <Button type="button" variant="outline" size="sm" onClick={onCopy} disabled={searching}>
               {copied ? t('Copied!') : t('Copy nevent', { defaultValue: 'Copy nevent' })}
             </Button>
-            <Button type="button" variant="default" size="sm" onClick={onSearch}>
-              <Search className="mr-1.5 size-3.5" aria-hidden />
-              {t('Search for this note', { defaultValue: 'Search for this note' })}
+            <Button type="button" variant="default" size="sm" onClick={() => void onSearch()} disabled={searching}>
+              {searching ? (
+                <>
+                  <Skeleton className="mr-1.5 size-3.5 shrink-0 rounded-sm" aria-hidden />
+                  {t('Searching search relays…', { defaultValue: 'Searching search relays…' })}
+                </>
+              ) : (
+                <>
+                  <Search className="mr-1.5 size-3.5" aria-hidden />
+                  {t('Search for this note', { defaultValue: 'Search for this note' })}
+                </>
+              )}
             </Button>
           </div>
+          {triedSearch && !searching ? (
+            <p className="text-xs text-muted-foreground">
+              {t('Note not found on search relays', {
+                defaultValue: 'Note not found on search relays'
+              })}
+            </p>
+          ) : null}
           {createdAt > 0 ? (
             <p className="text-xs text-muted-foreground tabular-nums">
               {t('Stats timestamp', { defaultValue: 'Counted at' })}{' '}

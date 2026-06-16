@@ -232,6 +232,7 @@ export default function Note({
   deferAuthorAvatar = false,
   /** When true, parent list already prefetches embeds — skip per-row duplicate fetches. */
   skipEmbedPrefetch = false,
+  hidePollOptions = false,
   showPaymentAttestationAction = false,
   pinned = false,
   seenOnAllowlist
@@ -254,6 +255,8 @@ export default function Note({
   deferAuthorAvatar?: boolean
   /** Skip embedded-note prefetch when the feed list handles it in batch. */
   skipEmbedPrefetch?: boolean
+  /** Thread context above a reply: poll question only, no option rows or vote controls. */
+  hidePollOptions?: boolean
   /** Notifications feed: show attest-superchat action on incoming payments. */
   showPaymentAttestationAction?: boolean
   /** When set (home favorites feed), relay list in ⋯ menu matches the feed allowlist. */
@@ -538,7 +541,12 @@ export default function Note({
     content = (
       <>
         {renderEventContent({ hideMetadata: true })}
-        <Poll className="mt-2" event={displayEvent} eagerFetchResults={Boolean(embedded)} />
+        <Poll
+          className="mt-2"
+          event={displayEvent}
+          eagerFetchResults={Boolean(embedded)}
+          hidePollOptions={hidePollOptions}
+        />
       </>
     )
   } else if (event.kind === ExtendedKind.VOICE) {

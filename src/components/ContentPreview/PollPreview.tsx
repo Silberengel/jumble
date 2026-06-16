@@ -9,7 +9,16 @@ import { useTranslation } from 'react-i18next'
 import PollOptionContent from '@/components/Note/PollOptionContent'
 import Content from './Content'
 
-export default function PollPreview({ event, className }: { event: Event; className?: string }) {
+export default function PollPreview({
+  event,
+  className,
+  hideOptions = false
+}: {
+  event: Event
+  className?: string
+  /** Thread context: show poll question only, not option rows. */
+  hideOptions?: boolean
+}) {
   const { t } = useTranslation()
   const emojiInfos = useEmojiInfosForEvent(event)
   const poll = useMemo(() => getPollMetadataFromEvent(event), [event])
@@ -32,7 +41,7 @@ export default function PollPreview({ event, className }: { event: Event; classN
           />
         </div>
       ) : null}
-      {poll && poll.options.length > 0 ? (
+      {poll && poll.options.length > 0 && !hideOptions ? (
         <div className="grid gap-2">
           {poll.options.map((option) => {
             const optLabel = option.label || t('Option')
@@ -58,15 +67,13 @@ export default function PollPreview({ event, className }: { event: Event; classN
             )
           })}
         </div>
-      ) : poll ? (
+      ) : poll && !hideOptions ? (
         <div className="text-sm text-muted-foreground italic">
           {t('Poll with no options')}
         </div>
-      ) : (
-        <div className="text-sm text-muted-foreground italic">
-          {content || t('Poll')}
-        </div>
-      )}
+      ) : !content ? (
+        <div className="text-sm text-muted-foreground italic">{t('Poll')}</div>
+      ) : null}
     </div>
   )
 }

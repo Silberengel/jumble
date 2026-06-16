@@ -1334,7 +1334,12 @@ function ReplyNoteList({
           if (row.type === 'missing-reply') {
             return (
               <div key={`missing-reply-${row.id}`} className="scroll-mt-12">
-                <MissingThreadReply id={row.id} pubkey={row.pubkey} createdAt={row.created_at} />
+                <MissingThreadReply
+                  id={row.id}
+                  pubkey={row.pubkey}
+                  createdAt={row.created_at}
+                  onFound={(ev) => addReplies([ev])}
+                />
               </div>
             )
           }

@@ -170,18 +170,24 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     []
   )
 
+  const nostrLandAggrEligibilityUrls = useMemo(() => {
+    const cacheRelayUrls = getCacheRelayUrlsFromEvent(cacheRelayListEvent)
+    return urlsForViewerNostrLandAggrEligibilitySync({
+      favoriteRelayUrls: favoriteRelays,
+      relaySetUrls: relaySets.flatMap((set) => set.relayUrls),
+      relayListRead: relayList?.read ?? [],
+      relayListWrite: relayList?.write ?? [],
+      cacheRelayRead: cacheRelayUrls,
+      cacheRelayWrite: cacheRelayUrls,
+      httpRelayRead: relayList?.httpRead ?? [],
+      httpRelayWrite: relayList?.httpWrite ?? []
+    })
+  }, [favoriteRelays, relaySets, relayList, cacheRelayListEvent])
+
   /** Keeps {@link getViewerRelayStackNostrLandAggrEligible} in sync for non-home reads (threads, profiles, etc.). */
   useEffect(() => {
-    syncViewerRelayStackNostrLandAggrEligible(
-      urlsForViewerNostrLandAggrEligibilitySync({
-        favoriteRelayUrls: homeFeedPrimaryRelayUrls,
-        relayListRead: replyExtraRelayLayers.inboxRelayUrls,
-        relayListWrite: replyExtraRelayLayers.outboxRelayUrls,
-        cacheRelayRead: replyExtraRelayLayers.cacheRelayUrls,
-        httpRelayRead: replyExtraRelayLayers.httpRelayUrls
-      })
-    )
-  }, [homeFeedPrimaryRelayUrls, replyExtraRelayLayers])
+    syncViewerRelayStackNostrLandAggrEligible(nostrLandAggrEligibilityUrls)
+  }, [nostrLandAggrEligibilityUrls])
 
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {

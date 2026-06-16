@@ -25,8 +25,10 @@ import {
 import {
   sanitizeRelayUrlsForFetch
 } from '@/lib/read-only-relay-personal'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
+import { useNostr } from '@/providers/NostrProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -221,7 +223,8 @@ function EmbeddedNoteFetched({
   const { t } = useTranslation()
   const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReply()
-  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const { inboxRelayUrls } = useViewerInboxRelayUrls()
   const [event, setEvent] = useState<Event | undefined>(undefined)
   const [isFetching, setIsFetching] = useState(true)
@@ -243,13 +246,20 @@ function EmbeddedNoteFetched({
     [favoriteRelays, blockedRelays]
   )
   useEffect(() => {
+    const cacheRelayUrls = getCacheRelayUrlsFromEvent(cacheRelayListEvent)
     syncViewerRelayStackNostrLandAggrEligible(
       urlsForViewerNostrLandAggrEligibilitySync({
         favoriteRelayUrls: favoriteRelays,
-        relayListRead: inboxRelayUrls
+        relaySetUrls: relaySets.flatMap((set) => set.relayUrls),
+        relayListRead: relayList?.read ?? inboxRelayUrls,
+        relayListWrite: relayList?.write ?? [],
+        cacheRelayRead: cacheRelayUrls,
+        cacheRelayWrite: cacheRelayUrls,
+        httpRelayRead: relayList?.httpRead ?? [],
+        httpRelayWrite: relayList?.httpWrite ?? []
       })
     )
-  }, [favoriteRelays, inboxRelayUrls])
+  }, [favoriteRelays, relaySets, relayList, cacheRelayListEvent, inboxRelayUrls])
 
   const wideRelaysStatic = useMemo(
     () =>

@@ -69,11 +69,14 @@ export default function Poll({
    * When the poll is shown inside another card (nostr: embed), fetch results on mount:
    * viewport-only IntersectionObserver often never fires in nested / overflow layouts.
    */
-  eagerFetchResults = false
+  eagerFetchResults = false,
+  /** Thread context above a reply: show poll text only, not option rows or vote controls. */
+  hidePollOptions = false
 }: {
   event: Event
   className?: string
   eagerFetchResults?: boolean
+  hidePollOptions?: boolean
 }) {
   const { t } = useTranslation()
   const nostr = useNostrOptional()
@@ -234,6 +237,10 @@ export default function Poll({
   }, [poll, isExpired, fetchResults, event.id])
 
   if (!poll) {
+    return null
+  }
+
+  if (hidePollOptions) {
     return null
   }
 

@@ -76,12 +76,15 @@ export default function ContentPreview({
   /** Inline parent lines (e.g. reply thread): zap receipts match compact thread styling. */
   previewDensity,
   /** Reply-to-parent strip: polls show a short question snippet instead of full poll UI. */
-  forParentReplyBlurb = false
+  forParentReplyBlurb = false,
+  /** Thread context above a reply: poll question only, no option rows. */
+  hidePollOptions = false
 }: {
   event?: Event
   className?: string
   previewDensity?: 'default' | 'compact'
   forParentReplyBlurb?: boolean
+  hidePollOptions?: boolean
 }) {
   const { t } = useTranslation()
   const noteTr = useNoteTranslation(event?.id ?? '')
@@ -216,7 +219,7 @@ export default function ContentPreview({
         </div>
       )
     }
-    return withKindRow(<PollPreview event={previewEvent} />)
+    return withKindRow(<PollPreview event={previewEvent} hideOptions={hidePollOptions} />)
   }
 
   if (event.kind === kinds.LongFormArticle) {

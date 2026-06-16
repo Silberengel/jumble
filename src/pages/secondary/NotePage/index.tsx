@@ -590,7 +590,7 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
               {!isConsecutive(rootEventForStrip, parentEventForStrip) ? (
                 <Ellipsis className="ml-3.5 mb-1 text-muted-foreground/60 size-3" />
               ) : null}
-              <Note event={parentEventForStrip} hideParentNotePreview showFull />
+              <Note event={parentEventForStrip} hideParentNotePreview showFull hidePollOptions />
               <div className="ml-5 w-px h-3 bg-border" />
             </div>
           ) : isFetchingParentEvent ? (
@@ -730,7 +730,7 @@ function ParentNote({
           className="truncate flex-1"
           onClick={navigate}
         >
-          <ContentPreview event={event} />
+          <ContentPreview event={event} hidePollOptions />
         </div>
       </div>
       {isConsecutive ? (

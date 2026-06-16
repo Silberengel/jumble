@@ -545,7 +545,9 @@ export const SEARCHABLE_RELAY_URLS = [
   NOSTR_ARCHIVES_SEARCH_RELAY_URL,
   'wss://search.nos.today',
   'wss://relay.noswhere.com',
-  'wss://nostr-pub.wellorder.net'
+  'wss://nostr-pub.wellorder.net',
+  'wss://nos.lol',
+  'wss://relay.primal.net'
 ]
 
 /**
