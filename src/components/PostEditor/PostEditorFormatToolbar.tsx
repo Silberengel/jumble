@@ -9,9 +9,6 @@ import { Film, ImageUp, Laugh, Mic, Settings, Smile } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import Uploader from './Uploader'
 import { MentionAndEventToolbarButtons } from './PostTextarea/Mention/MentionAndEventToolbarButtons'
-import CitationCreateDialog from './CitationCreateDialog'
-import { BookMarked } from 'lucide-react'
-import { useState } from 'react'
 
 export type PostEditorFormatToolbarUploadHandlers = {
   onUploadSuccess: (result: { url: string; tags: string[][]; file?: File }) => void
@@ -33,14 +30,13 @@ export type PostEditorFormatToolbarProps = {
   onToggleMoreOptions: () => void
   /** When set (reply/post dialog), pickers portal here so Radix does not mark them inert. */
   pickerPortalContainer?: HTMLElement | null
-  /** Hide create-citation when the composer itself is a citation event. */
-  showCitationCreate?: boolean
   /** When false, hide the settings (advanced options) toggle. */
   showAdvancedSettings?: boolean
 }
 
 /**
  * Icon row under the composer: media upload, emoji/GIF/meme, npub + nevent/naddr, more options.
+ * Citations are available from {@link AdvancedEventLabMarkupToolbar} in the Advanced event lab only.
  * Must render inside {@link NeventPickerProvider} when using mention/event buttons.
  */
 export function PostEditorFormatToolbar({
@@ -53,11 +49,9 @@ export function PostEditorFormatToolbar({
   showMoreOptions,
   onToggleMoreOptions,
   pickerPortalContainer,
-  showCitationCreate = true,
   showAdvancedSettings = true
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
-  const [citationDialogOpen, setCitationDialogOpen] = useState(false)
 
   const iconBtnClass = 'h-8 w-8 shrink-0 p-0'
 
@@ -125,25 +119,6 @@ export function PostEditorFormatToolbar({
         variant="ghost"
         buttonClassName={iconBtnClass}
       />
-      {showCitationCreate ? (
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            title={t('Insert citation')}
-            className={iconBtnClass}
-            onClick={() => setCitationDialogOpen(true)}
-          >
-            <BookMarked className="h-4 w-4" />
-          </Button>
-          <CitationCreateDialog
-            open={citationDialogOpen}
-            onOpenChange={setCitationDialogOpen}
-            onInsert={insertText}
-          />
-        </>
-      ) : null}
       {showAdvancedSettings ? (
         <Button
           type="button"

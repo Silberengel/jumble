@@ -1,38 +1,48 @@
 /**
  * Navigation Service
- * 
+ *
  * Centralized navigation management for the application.
  * Handles all navigation logic in a clean, testable way.
  */
 
 import React, { lazy, ReactNode, Suspense } from 'react'
+import NotePageRoute from '@/pages/secondary/NotePage/NotePageRoute'
 
-// Page components
-import SettingsPage from '@/pages/secondary/SettingsPage'
-import RelaySettingsPage from '@/pages/secondary/RelaySettingsPage'
-import WalletPage from '@/pages/secondary/WalletPage'
-import PostSettingsPage from '@/pages/secondary/PostSettingsPage'
-import GeneralSettingsPage from '@/pages/secondary/GeneralSettingsPage'
-import RssFeedSettingsPage from '@/pages/secondary/RssFeedSettingsPage'
-import FollowSetsSettingsPage from '@/pages/secondary/FollowSetsSettingsPage'
-import EmojiSetsSettingsPage from '@/pages/secondary/EmojiSetsSettingsPage'
-import CacheSettingsPage from '@/pages/secondary/CacheSettingsPage'
-import PersonalListsSettingsPage from '@/pages/secondary/PersonalListsSettingsPage'
-import NotePage from '@/pages/secondary/NotePage'
-import SecondaryProfilePage from '@/pages/secondary/ProfilePage'
-import FollowingListPage from '@/pages/secondary/FollowingListPage'
-import FollowersListPage from '@/pages/secondary/FollowersListPage'
-import MuteListPage from '@/pages/secondary/MuteListPage'
-import OthersRelaySettingsPage from '@/pages/secondary/OthersRelaySettingsPage'
-import SecondaryRelayPage from '@/pages/secondary/RelayPage'
-/** Lazy avoids: NavigationService → NoteListPage → NormalFeed → NoteList → PageManager → navigation.service */
-const SecondaryNoteListPageLazy = lazy(() => import('@/pages/secondary/NoteListPage'))
+/** Lazy page chunks — must not static-import the same modules that routes.tsx lazy-loads. */
+const SettingsPageLazy = lazy(() => import('@/pages/secondary/SettingsPage'))
+const RelaySettingsPageLazy = lazy(() => import('@/pages/secondary/RelaySettingsPage'))
+const WalletPageLazy = lazy(() => import('@/pages/secondary/WalletPage'))
+const PostSettingsPageLazy = lazy(() => import('@/pages/secondary/PostSettingsPage'))
+const GeneralSettingsPageLazy = lazy(() => import('@/pages/secondary/GeneralSettingsPage'))
+const RssFeedSettingsPageLazy = lazy(() => import('@/pages/secondary/RssFeedSettingsPage'))
+const FollowSetsSettingsPageLazy = lazy(() => import('@/pages/secondary/FollowSetsSettingsPage'))
+const EmojiSetsSettingsPageLazy = lazy(() => import('@/pages/secondary/EmojiSetsSettingsPage'))
+const CacheSettingsPageLazy = lazy(() => import('@/pages/secondary/CacheSettingsPage'))
+const PersonalListsSettingsPageLazy = lazy(() => import('@/pages/secondary/PersonalListsSettingsPage'))
+const ProfilePageLazy = lazy(() => import('@/pages/secondary/ProfilePage'))
+const FollowingListPageLazy = lazy(() => import('@/pages/secondary/FollowingListPage'))
+const FollowersListPageLazy = lazy(() => import('@/pages/secondary/FollowersListPage'))
+const MuteListPageLazy = lazy(() => import('@/pages/secondary/MuteListPage'))
+const OthersRelaySettingsPageLazy = lazy(() => import('@/pages/secondary/OthersRelaySettingsPage'))
+const RelayPageLazy = lazy(() => import('@/pages/secondary/RelayPage'))
+const NoteListPageLazy = lazy(() => import('@/pages/secondary/NoteListPage'))
 
 const navLazyFallback = React.createElement(
   'div',
   { className: 'flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground' },
   'Loading…'
 )
+
+function navLazyPage(
+  Lazy: React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
+  props: Record<string, unknown>
+): ReactNode {
+  return React.createElement(
+    Suspense,
+    { fallback: navLazyFallback },
+    React.createElement(Lazy, props)
+  )
+}
 
 export type ViewType =
   | 'note'
@@ -117,67 +127,64 @@ export class URLParser {
  */
 export class ComponentFactory {
   static createNotePage(noteId: string): ReactNode {
-    return React.createElement(NotePage, { id: noteId, index: 0, hideTitlebar: true })
+    return React.createElement(NotePageRoute, { id: noteId, index: 0, hideTitlebar: true })
   }
 
   static createRelayPage(relayUrl: string): ReactNode {
-    return React.createElement(SecondaryRelayPage, { url: relayUrl, index: 0 })
+    return navLazyPage(RelayPageLazy, { url: relayUrl, index: 0 })
   }
 
   static createProfilePage(profileId: string): ReactNode {
-    return React.createElement(SecondaryProfilePage, { id: profileId, index: 0, hideTitlebar: true })
+    return navLazyPage(ProfilePageLazy, { id: profileId, index: 0, hideTitlebar: true })
   }
 
   static createHashtagPage(): ReactNode {
-    return React.createElement(
-      Suspense,
-      { fallback: navLazyFallback },
-      React.createElement(SecondaryNoteListPageLazy, { hideTitlebar: true })
-    )
+    return navLazyPage(NoteListPageLazy, { hideTitlebar: true })
   }
 
   static createFollowingListPage(profileId: string): ReactNode {
-    return React.createElement(FollowingListPage, { id: profileId, index: 0, hideTitlebar: true })
+    return navLazyPage(FollowingListPageLazy, { id: profileId, index: 0, hideTitlebar: true })
   }
 
   static createFollowersListPage(profileId: string): ReactNode {
-    return React.createElement(FollowersListPage, { id: profileId, index: 0, hideTitlebar: true })
+    return navLazyPage(FollowersListPageLazy, { id: profileId, index: 0, hideTitlebar: true })
   }
 
   static createMuteListPage(_profileId: string): ReactNode {
-    return React.createElement(MuteListPage, { index: 0, hideTitlebar: true })
+    return navLazyPage(MuteListPageLazy, { index: 0, hideTitlebar: true })
   }
 
   static createOthersRelaySettingsPage(profileId: string): ReactNode {
-    return React.createElement(OthersRelaySettingsPage, { id: profileId, index: 0, hideTitlebar: true })
+    return navLazyPage(OthersRelaySettingsPageLazy, { id: profileId, index: 0, hideTitlebar: true })
   }
 
   static createSettingsPage(): ReactNode {
-    return React.createElement(SettingsPage, { index: 0, hideTitlebar: true })
+    return navLazyPage(SettingsPageLazy, { index: 0, hideTitlebar: true })
   }
 
   static createSettingsSubPage(type: string): ReactNode {
+    const shell = { index: 0, hideTitlebar: true as const }
     switch (type) {
       case 'relays':
-        return React.createElement(RelaySettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(RelaySettingsPageLazy, shell)
       case 'wallet':
-        return React.createElement(WalletPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(WalletPageLazy, shell)
       case 'posts':
-        return React.createElement(PostSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(PostSettingsPageLazy, shell)
       case 'general':
-        return React.createElement(GeneralSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(GeneralSettingsPageLazy, shell)
       case 'rss-feeds':
-        return React.createElement(RssFeedSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(RssFeedSettingsPageLazy, shell)
       case 'follow-sets':
-        return React.createElement(FollowSetsSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(FollowSetsSettingsPageLazy, shell)
       case 'emoji-sets':
-        return React.createElement(EmojiSetsSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(EmojiSetsSettingsPageLazy, shell)
       case 'cache':
-        return React.createElement(CacheSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(CacheSettingsPageLazy, shell)
       case 'personal-lists':
-        return React.createElement(PersonalListsSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(PersonalListsSettingsPageLazy, shell)
       default:
-        return React.createElement(GeneralSettingsPage, { index: 0, hideTitlebar: true })
+        return navLazyPage(GeneralSettingsPageLazy, shell)
     }
   }
 }
@@ -353,19 +360,19 @@ export function createNavigationHook(service: NavigationService) {
     useSmartNoteNavigation: () => ({
       navigateToNote: (url: string) => service.navigateToNote(url)
     }),
-    
+
     useSmartRelayNavigation: () => ({
       navigateToRelay: (url: string) => service.navigateToRelay(url)
     }),
-    
+
     useSmartProfileNavigation: () => ({
       navigateToProfile: (url: string) => service.navigateToProfile(url)
     }),
-    
+
     useSmartHashtagNavigation: () => ({
       navigateToHashtag: (url: string) => service.navigateToHashtag(url)
     }),
-    
+
     useSmartFollowingListNavigation: () => ({
       navigateToFollowingList: (url: string) => service.navigateToFollowingList(url)
     }),
@@ -373,15 +380,15 @@ export function createNavigationHook(service: NavigationService) {
     useSmartFollowersListNavigation: () => ({
       navigateToFollowersList: (url: string) => service.navigateToFollowersList(url)
     }),
-    
+
     useSmartMuteListNavigation: () => ({
       navigateToMuteList: (url: string) => service.navigateToMuteList(url)
     }),
-    
+
     useSmartOthersRelaySettingsNavigation: () => ({
       navigateToOthersRelaySettings: (url: string) => service.navigateToOthersRelaySettings(url)
     }),
-    
+
     useSmartSettingsNavigation: () => ({
       navigateToSettings: (url: string) => service.navigateToSettings(url)
     })

@@ -25,22 +25,10 @@ import {
   TTheme,
   TThemeSetting,
 } from '@/types'
-/**
- * Lazy-load IndexedDB service to avoid a static import cycle: `indexed-db` pulls modules that can
- * re-import this file during evaluation; the `indexedDb` binding would still be in the TDZ when
- * {@link LocalStorageService} runs its eager constructor.
- */
-let indexedDbSingletonPromise: ReturnType<typeof importIndexedDbModule> | null = null
+import indexedDb from './indexed-db.service'
 
-function importIndexedDbModule() {
-  return import('./indexed-db.service').then((m) => m.default)
-}
-
-function loadIndexedDb() {
-  if (!indexedDbSingletonPromise) {
-    indexedDbSingletonPromise = importIndexedDbModule()
-  }
-  return indexedDbSingletonPromise
+function loadIndexedDb(): Promise<typeof indexedDb> {
+  return Promise.resolve(indexedDb)
 }
 
 /** Keys we persist to IndexedDB (and migrate from localStorage when IDB is empty). */

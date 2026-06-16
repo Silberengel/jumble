@@ -365,6 +365,8 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
+    /** Vendor + app entry chunks are intentionally large after manualChunks splitting. */
+    chunkSizeWarningLimit: 2000,
     rolldownOptions: {
       output: {
         manualChunks(id) {
@@ -509,15 +511,6 @@ export default defineConfig(({ mode }) => {
 
           return 'vendor-misc'
         }
-      },
-      onwarn(warning, warn) {
-        // Suppress vite:reporter warnings about mixed static/dynamic imports
-        // These are informational warnings about code splitting, not errors
-        if (warning.plugin === 'vite:reporter' && warning.message.includes('dynamically imported') && warning.message.includes('statically imported')) {
-          return
-        }
-        // Use default warning handler for other warnings
-        warn(warning)
       }
     }
   },

@@ -17,6 +17,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { createReportDraftEvent } from '@/lib/draft-event'
+import { showPublishingFeedback } from '@/lib/publishing-feedback'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { NostrEvent } from 'nostr-tools'
@@ -94,7 +95,6 @@ function ReportContent({ event, closeDialog }: { event: NostrEvent; closeDialog:
       
       // Show publishing feedback with relay messages
       if ((publishedEvent as any)?.relayStatuses) {
-        const { showPublishingFeedback } = await import('@/lib/publishing-feedback')
         showPublishingFeedback({
           success: true,
           relayStatuses: (publishedEvent as any).relayStatuses,

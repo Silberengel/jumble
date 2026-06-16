@@ -2367,15 +2367,6 @@ export default function PostContent({
     ]
   )
 
-  const showCitationCreate = useMemo(
-    () =>
-      !isCitationInternal &&
-      !isCitationExternal &&
-      !isCitationHardcopy &&
-      !isCitationPrompt,
-    [isCitationInternal, isCitationExternal, isCitationHardcopy, isCitationPrompt]
-  )
-
   const renderComposerFormatToolbar = useCallback(
     (portalOverride?: HTMLElement | null) => (
       <PostEditorFormatToolbar
@@ -2391,7 +2382,6 @@ export default function PostContent({
         showMoreOptions={showMoreOptions}
         onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
         pickerPortalContainer={portalOverride ?? pickerPortalContainer}
-        showCitationCreate={showCitationCreate}
       />
     ),
     [
@@ -2403,7 +2393,6 @@ export default function PostContent({
       mediaNoteKind,
       showMoreOptions,
       pickerPortalContainer,
-      showCitationCreate,
       t
     ]
   )
