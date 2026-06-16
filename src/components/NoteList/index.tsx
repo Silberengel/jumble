@@ -149,11 +149,13 @@ if (import.meta.env.DEV && import.meta.hot) {
 const SHOW_COUNT = 36 // Initial visible-row quota (filtered); higher = more rows on first paint
 /** Extra visible-row quota each time the user reaches the bottom while draining an already-loaded timeline. */
 const REVEAL_BATCH_STEP = 64
+/** Minimum new visible rows per bottom approach / load-more (network or buffer reveal). */
+const MIN_LOAD_MORE_VISIBLE = 25
 /**
  * One “load more” chains relay pages until at least this many **new** events (after kind filter + id de-dupe) are
  * collected, so sparse kind filters do not feel stuck at ~10 rows per scroll.
  */
-const LOAD_MORE_MIN_NEW_EVENTS = 22
+const LOAD_MORE_MIN_NEW_EVENTS = MIN_LOAD_MORE_VISIBLE
 const LOAD_MORE_MAX_CHAIN_PAGES = 12
 /** Wall-clock cap for chained load-more fetches (sparse filters + slow relays). */
 const LOAD_MORE_CHAIN_BUDGET_MS = 5_000
@@ -166,11 +168,11 @@ const LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX = 3200
  * When the user scrolls down inside the feed scroll container and is within this distance of the bottom (px),
  * start load-more (uses viewport height of that container, with a floor).
  */
-const LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT = 2.35
+const LOAD_MORE_SCROLL_PREFETCH_VIEWPORT_MULT = 1.35
 
 const LOAD_MORE_SCROLL_PREFETCH_MIN_PX = 960
 /** Min ms between scroll-driven load-more attempts (loadMore also throttles internally). */
-const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 180
+const LOAD_MORE_SCROLL_PREFETCH_COOLDOWN_MS = 100
 /** When the scroll container is within this many px of the top, auto-merge pending live notes (see {@link NewNotesButton}). */
 const AUTO_MERGE_NEW_EVENTS_TOP_PX = 280
 /** Coalesce live `onNew` timeline updates to one React commit per frame burst. */
@@ -966,6 +968,8 @@ const NoteList = forwardRef(
     const bottomRef = useRef<HTMLDivElement | null>(null)
     /** List root for intersection / load-more wiring (outer NoteList shell). */
     const feedRootRef = useRef<HTMLDivElement | null>(null)
+    const loadMoreInvokerRef = useRef<(() => void) | null>(null)
+    const bottomIntersectionObserverRef = useRef<IntersectionObserver | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
     const spellFeedFirstPaintLoggedKeyRef = useRef('')
     const consecutiveEmptyRef = useRef(0) // Track consecutive empty results to prevent infinite retries
@@ -4257,16 +4261,40 @@ const NoteList = forwardRef(
       return () => document.removeEventListener('visibilitychange', onVisibility)
     }, [refresh])
 
-    useEffect(() => {
-      const options: IntersectionObserverInit = {
-        root: null,
-        rootMargin: `0px 0px ${LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX}px 0px`,
-        threshold: 0
+    const bindBottomSentinelRef = useCallback((node: HTMLDivElement | null) => {
+      bottomRef.current = node
+      bottomIntersectionObserverRef.current?.disconnect()
+      bottomIntersectionObserverRef.current = null
+      if (!node) return
+
+      const attach = () => {
+        bottomIntersectionObserverRef.current?.disconnect()
+        const scrollRoot = getNearestScrollableAncestor(feedRootRef.current)
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (!entries[0]?.isIntersecting || loadingRef.current) return
+            const ev = eventsRef.current
+            const sc = showCountRef.current
+            if (sc < ev.length || hasMoreRef.current || bufferExhaustedForVisibleQuotaRef.current) {
+              loadMoreInvokerRef.current?.()
+            }
+          },
+          {
+            root: scrollRoot,
+            rootMargin: `0px 0px ${LOAD_MORE_IO_ROOT_MARGIN_BOTTOM_PX}px 0px`,
+            threshold: 0
+          }
+        )
+        bottomIntersectionObserverRef.current = observer
+        observer.observe(node)
       }
 
+      attach()
+      requestAnimationFrame(attach)
+    }, [])
+
+    useEffect(() => {
       const loadMore = async (): Promise<void> => {
-        const currentEvents = displayTimelineSourceRef.current
-        const currentShowCount = showCountRef.current
         const currentLoading = loadingRef.current
         const currentHasMore = hasMoreRef.current
         const currentTimelineKey = timelineKeyRef.current
@@ -4276,37 +4304,19 @@ const NoteList = forwardRef(
           return // Already scheduled, skip
         }
         
-        // Show more events immediately if we have them cached
-        if (currentShowCount < currentEvents.length) {
-          const remaining = currentEvents.length - currentShowCount
-          const step = revealBatchSize ?? REVEAL_BATCH_STEP
-          const increment = Math.min(step, remaining)
-          const exhausted = bufferExhaustedForVisibleQuotaRef.current
-          const noVisibleRowsYet = clientFilteredVisibleCountRef.current === 0
-          // Revealing more raw buffer rows cannot surface visible cards (aggressive filters / seen-on gate).
-          if (!(exhausted && noVisibleRowsYet)) {
-            setShowCount((prev) => prev + increment)
-          }
-          // `showCount` is a *visible-row quota*, not an offset into the raw merged timeline. Skipping relay
-          // fetch when `events.length - showCount` is large breaks sparse feeds (e.g. only zap receipts): the
-          // buffer can hold many raw events while every visible row is already shown — we must still REQ.
-          if (
-            !exhausted &&
-            currentEvents.length >= 50 &&
-            currentEvents.length - currentShowCount > LIMIT * 0.75
-          ) {
-            return
-          }
-          if (currentEvents.length < 50) {
-            // Continue to loadMore below even if we have cached events
-            // This ensures we keep loading when filtering is aggressive
-          }
+        // Reveal more visible rows from the already-loaded buffer before paging relays / IndexedDB.
+        if (!bufferExhaustedForVisibleQuotaRef.current) {
+          const step = Math.max(revealBatchSize ?? REVEAL_BATCH_STEP, MIN_LOAD_MORE_VISIBLE)
+          setShowCount((prev) => prev + step)
+          return
         }
 
         if (feedFullSearchEventsRef.current !== null) return
 
-        const canLoadFromTimeline = !!currentTimelineKey && currentHasMore
-        if (currentLoading || (!canLoadFromTimeline && currentShowCount >= currentEvents.length)) return
+        if (!currentTimelineKey) return
+        if (currentLoading) return
+        // When the visible quota drained the buffer, keep paging even if a prior empty relay wave set hasMore false.
+        if (!currentHasMore && !bufferExhaustedForVisibleQuotaRef.current) return
         
         // Schedule loadMore with a small delay to throttle rapid calls
         loadMoreTimeoutRef.current = setTimeout(async () => {
@@ -4316,12 +4326,14 @@ const NoteList = forwardRef(
           const latestLoading = loadingRef.current
           const latestHasMore = hasMoreRef.current
           
-          if (!latestTimelineKey || latestLoading || !latestHasMore) return
+          if (!latestTimelineKey || latestLoading) return
+          if (!latestHasMore && !bufferExhaustedForVisibleQuotaRef.current) return
           
           setLoading(true)
           let newEvents: Event[] = []
           try {
             const until = latestEvents.length ? latestEvents[latestEvents.length - 1].created_at - 1 : dayjs().unix()
+            const existingIds = new Set(latestEvents.map((e) => e.id))
             const pageRuntime = new FeedRuntime({
               descriptorKey: `timeline:${latestTimelineKey}`,
               sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
@@ -4329,7 +4341,12 @@ const NoteList = forwardRef(
             pageRuntime.seed(latestEvents, { hasMore: latestHasMore, nextCursor: until })
             const pageSnapshot = await pageRuntime.loadMore(
               async ({ cursor }) => {
-                newEvents = await client.loadMoreTimeline(latestTimelineKey, cursor ?? until, LIMIT)
+                newEvents = await client.loadMoreTimeline(
+                  latestTimelineKey,
+                  cursor ?? until,
+                  LIMIT,
+                  existingIds
+                )
                 return {
                   relayEvents: newEvents,
                   hasMore: newEvents.length > 0,
@@ -4357,11 +4374,24 @@ const NoteList = forwardRef(
               })
             )
             
+            if (newEvents.length === 0) {
+              const localFirstPage = await client.getLocalFeedEventsOlderThan(
+                subRequestsRef.current as Array<{ urls: string[]; filter: TSubRequestFilter }>,
+                until,
+                LIMIT,
+                existingIds
+              )
+              if (localFirstPage.length > 0) {
+                newEvents = localFirstPage
+              }
+            }
+
             // CRITICAL FIX: Be extremely conservative about stopping the feed
             // Only stop if we're absolutely certain there are no more events
             if (newEvents.length === 0) {
               // Check if timeline has more cached refs that we haven't loaded yet
-              const hasMoreCached = client.hasMoreTimelineEvents?.(latestTimelineKey, until) ?? false
+              const hasMoreCached =
+                client.hasMoreTimelineEvents?.(latestTimelineKey, until, existingIds) ?? false
               
               if (hasMoreCached) {
                 // There are more cached events, keep hasMore true and try again
@@ -4402,7 +4432,6 @@ const NoteList = forwardRef(
               withKindFilterRef.current &&
               (!allowKindlessRelayExploreRef.current || !showAllKindsRef.current)
 
-            const existingIds = new Set(latestEvents.map((e) => e.id))
             const kindPasses = (e: Event) => {
               if (withKindFilterRef.current && !showAllKindsRef.current) {
                 return eventPassesNoteListKindPicker(
@@ -4439,12 +4468,27 @@ const NoteList = forwardRef(
               if (fetchBatch.length === 0) break
               if (Date.now() >= chainDeadlineMs) break
               const skipUntil = Math.min(...fetchBatch.map((e) => e.created_at)) - 1
-              fetchBatch = await client.loadMoreTimeline(latestTimelineKey, skipUntil, LIMIT)
+              fetchBatch = await client.loadMoreTimeline(latestTimelineKey, skipUntil, LIMIT, existingIds)
               if (fetchBatch.length === 0) break
               accumulated.push(...noveltyFromBatch(fetchBatch))
             }
 
-            const toAppend = accumulated
+            let toAppend = accumulated
+
+            if (toAppend.length < LOAD_MORE_MIN_NEW_EVENTS) {
+              const oldestLoaded = latestEvents.length
+                ? latestEvents[latestEvents.length - 1]!.created_at - 1
+                : dayjs().unix()
+              const localOlder = await client.getLocalFeedEventsOlderThan(
+                subRequestsRef.current as Array<{ urls: string[]; filter: TSubRequestFilter }>,
+                oldestLoaded,
+                LIMIT,
+                existingIds
+              )
+              if (localOlder.length > 0) {
+                toAppend = [...toAppend, ...noveltyFromBatch(localOlder)]
+              }
+            }
 
             if (toAppend.length === 0) {
               consecutiveEmptyRef.current += 1
@@ -4459,17 +4503,20 @@ const NoteList = forwardRef(
 
             consecutiveEmptyRef.current = 0
 
+            setHasMore(true)
+
             setEvents((oldEvents) =>
               collapseDuplicateNip18RepostTimelineRows([...oldEvents, ...toAppend])
             )
+            setShowCount((prev) => prev + Math.max(toAppend.length, MIN_LOAD_MORE_VISIBLE))
             
             // After appending, the bottom sentinel may have moved below the fold. Re-check after
             // paint: if it's still in/near view, trigger loadMore again so user doesn't have to scroll.
             setTimeout(() => {
               const bottomEl = bottomRef.current
               if (bottomEl && hasMoreRef.current && !loadingRef.current) {
-                const rect = bottomEl.getBoundingClientRect()
-                if (rect.top < window.innerHeight + 200) {
+                const scrollRoot = getNearestScrollableAncestor(feedRootRef.current) ?? window
+                if (distanceFromScrollBottom(scrollRoot) < 200) {
                   loadMore()
                 }
               }
@@ -4500,6 +4547,8 @@ const NoteList = forwardRef(
           }
         }, 50) // Reduced delay from 100ms to 50ms for more responsive scrolling
       }
+
+      loadMoreInvokerRef.current = loadMore
 
       let scrollPrefetchTarget: HTMLElement | Window | null = null
       let scrollPrefetchRafId = 0
@@ -4549,7 +4598,7 @@ const NoteList = forwardRef(
           lastScrollPrefetchInvokeMs = now
           const ev = eventsRef.current
           const sc = showCountRef.current
-          if (sc < ev.length || hasMoreRef.current) {
+          if (sc < ev.length || hasMoreRef.current || bufferExhaustedForVisibleQuotaRef.current) {
             loadMore()
           }
         })
@@ -4574,30 +4623,10 @@ const NoteList = forwardRef(
         wireScrollPrefetch()
       }, 0)
 
-      const observerInstance = new IntersectionObserver((entries) => {
-        if (!entries[0].isIntersecting || loadingRef.current) return
-        const ev = eventsRef.current
-        const sc = showCountRef.current
-        if (sc < ev.length || hasMoreRef.current) {
-          if (
-            sc < ev.length &&
-            !hasMoreRef.current &&
-            bufferExhaustedForVisibleQuotaRef.current &&
-            clientFilteredVisibleCountRef.current === 0
-          ) {
-            return
-          }
-          loadMore()
-        }
-      }, options)
-
-      const currentBottomRef = bottomRef.current
-
-      if (currentBottomRef) {
-        observerInstance.observe(currentBottomRef)
-      }
-
       return () => {
+        loadMoreInvokerRef.current = null
+        bottomIntersectionObserverRef.current?.disconnect()
+        bottomIntersectionObserverRef.current = null
         if (scrollPrefetchRafId) {
           cancelAnimationFrame(scrollPrefetchRafId)
           scrollPrefetchRafId = 0
@@ -4607,9 +4636,6 @@ const NoteList = forwardRef(
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
           scrollPrefetchTarget.removeEventListener('scroll', onScrollFlushNewNotesAtTop)
           scrollPrefetchTarget = null
-        }
-        if (observerInstance && currentBottomRef) {
-          observerInstance.unobserve(currentBottomRef)
         }
         // Clean up timeout on unmount
         if (loadMoreTimeoutRef.current) {
@@ -4987,7 +5013,7 @@ const NoteList = forwardRef(
         )}
         {showFeedInitialLoading ? (
           <div
-            ref={bottomRef}
+            ref={bindBottomSentinelRef}
             className={gridLayout ? 'grid grid-cols-3 gap-0.5 pr-4 min-h-[40vh]' : 'min-h-[40vh] space-y-2 px-1 py-4'}
             role="status"
             aria-live="polite"
@@ -5007,7 +5033,7 @@ const NoteList = forwardRef(
         ) : listSourceEvents.length > 0 &&
           (feedFullSearchActive ? showCount < listSourceEvents.length : hasMore) ? (
           <div
-            ref={bottomRef}
+            ref={bindBottomSentinelRef}
             className={
               filteredEvents.length === 0 && !loading
                 ? 'min-h-[35vh] py-4'
@@ -5032,7 +5058,7 @@ const NoteList = forwardRef(
           feedTimelineEmptyUiReady &&
           subRequests.length > 0 ? (
           <div
-            ref={bottomRef}
+            ref={bindBottomSentinelRef}
             className="mt-6 flex min-h-[35vh] flex-col items-center justify-start gap-4 px-4 text-center text-sm text-muted-foreground"
             role="status"
           >
@@ -5056,7 +5082,7 @@ const NoteList = forwardRef(
             </Button>
           </div>
         ) : (
-          <div ref={bottomRef} className="mt-2 min-h-4" aria-hidden />
+          <div ref={bindBottomSentinelRef} className="mt-2 min-h-4" aria-hidden />
         )}
       </div>
     )

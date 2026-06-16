@@ -315,6 +315,9 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.GIT_COMMIT': getGitHash(),
       'import.meta.env.APP_VERSION': getAppVersion()
     },
+    optimizeDeps: {
+      include: ['highlight.js/lib/common', 'highlight.js/lib/core']
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src')

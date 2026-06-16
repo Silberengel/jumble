@@ -486,13 +486,13 @@ function CodeBlock({ id, code, language }: { id: string; code: string; language:
     const initHighlight = async () => {
       if (typeof window === 'undefined') return
       try {
-        const hljs = await import('@/lib/highlight')
+        const hljs = await (await import('@/lib/highlight')).getHighlightJs()
         if (cancelled) return
         const root = codeRef.current
         if (!root) return
         const codeElement = root.querySelector('code')
         if (codeElement) {
-          hljs.default.highlightElement(codeElement)
+          hljs.highlightElement(codeElement)
         }
       } catch (error) {
         if (!cancelled) {

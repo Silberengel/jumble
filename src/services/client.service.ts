@@ -90,6 +90,7 @@ function canonicalSeenOnEventId(eventId: string): string {
 }
 
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
+import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import {
   getHttpRelayListFromEvent,
@@ -2507,6 +2508,49 @@ class ClientService extends EventTarget {
       .slice(0, maxMatches)
   }
 
+  /**
+   * Older-than-cursor page from session + timeline shards + archive/publication stores (no relay REQ).
+   * Used when relay pagination returns empty but IndexedDB still has matching rows.
+   */
+  async getLocalFeedEventsOlderThan(
+    subRequests: { urls: string[]; filter: TSubRequestFilter }[],
+    until: number,
+    limit: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ): Promise<NEvent[]> {
+    if (!subRequests.length || limit <= 0) return []
+    const filters = subRequests.map(({ filter }) => ({ ...(filter as Filter), until })) as Filter[]
+    const maxMatches = Math.min(Math.max(limit * 6, limit + 80), 800)
+    const byId = new Map<string, NEvent>()
+    const add = (rows: NEvent[]) => {
+      for (const event of rows) {
+        if (shouldDropEventOnIngest(event)) continue
+        if (event.created_at > until || excludeIds.has(event.id)) continue
+        if (!eventMatchesAnyLocalFeedFilter(event, filters)) continue
+        if (!byId.has(event.id)) byId.set(event.id, event)
+      }
+    }
+
+    add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
+
+    const [timelineRows, archiveRows, publicationRows] = await Promise.all([
+      this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[]),
+      indexedDb
+        .scanEventArchiveByFilters(filters, { maxRowsScanned: 28_000, maxMatches })
+        .catch(() => [] as NEvent[]),
+      indexedDb
+        .scanPublicationEventsByFilters(filters, { maxRowsScanned: 18_000, maxMatches })
+        .catch(() => [] as NEvent[])
+    ])
+    add(timelineRows)
+    add(archiveRows)
+    add(publicationRows)
+
+    return [...byId.values()]
+      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .slice(0, limit)
+  }
+
   async subscribeTimeline(
     subRequests: { urls: string[]; filter: TSubRequestFilter }[],
     {
@@ -2733,35 +2777,43 @@ class ClientService extends EventTarget {
   /**
    * Check if a timeline has more events available (either cached or from network)
    */
-  hasMoreTimelineEvents(key: string, until: number): boolean {
+  hasMoreTimelineEvents(
+    key: string,
+    until: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ): boolean {
     const timeline = this.timelines[key]
     if (!timeline) return false
+
+    const refsHaveOlder = (refs: TTimelineRef[]) =>
+      refs.some(([id, createdAt]) => createdAt <= until && !excludeIds.has(id))
 
     if (Array.isArray(timeline)) {
       // For multiple timelines, check if any has more events
       return timeline.some((subKey) => {
         const subTimeline = this.timelines[subKey]
         if (!subTimeline || Array.isArray(subTimeline)) return false
-        const { refs } = subTimeline
-        // Check if there are refs with created_at <= until that we haven't loaded
-        return refs.some(([, createdAt]) => createdAt <= until)
+        return refsHaveOlder(subTimeline.refs)
       })
     }
 
-    const { refs } = timeline
-    // Check if there are refs with created_at <= until that we haven't loaded
-    return refs.some(([, createdAt]) => createdAt <= until)
+    return refsHaveOlder(timeline.refs)
   }
 
-  async loadMoreTimeline(key: string, until: number, limit: number) {
+  async loadMoreTimeline(
+    key: string,
+    until: number,
+    limit: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ) {
     const timeline = this.timelines[key]
     if (!timeline) return []
 
     if (!Array.isArray(timeline)) {
-      return this._loadMoreTimeline(key, until, limit)
+      return this._loadMoreTimeline(key, until, limit, excludeIds)
     }
     const timelines = await Promise.all(
-      timeline.map((key) => this._loadMoreTimeline(key, until, limit))
+      timeline.map((leafKey) => this._loadMoreTimeline(leafKey, until, limit, excludeIds))
     )
 
     const eventIdSet = new Set<string>()
@@ -3361,6 +3413,10 @@ class ClientService extends EventTarget {
       if (!relayAuthoritativeTimeline) {
         const st = await indexedDb.getTimelinePersistedState(key)
         if (st?.refs?.length) {
+          const tl = that.timelines[key]
+          if (tl && !Array.isArray(tl) && tl.refs.length === 0) {
+            tl.refs = [...st.refs].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          }
           const hexIds = st.refs.map((r) => r[0])
           const list = await indexedDb.getArchivedEventsByIds(hexIds)
           for (const ev of list) {
@@ -3517,10 +3573,23 @@ class ClientService extends EventTarget {
         const newRefs = events
           .filter((evt) => evt.created_at > firstRefCreatedAt)
           .map((evt) => [evt.id, evt.created_at] as TTimelineRef)
+        const mergeTimelineRefs = (incoming: TTimelineRef[]) => {
+          const byId = new Map<string, number>()
+          for (const [id, createdAt] of tl!.refs) {
+            byId.set(id, createdAt)
+          }
+          for (const [id, createdAt] of incoming) {
+            const prev = byId.get(id)
+            if (prev === undefined || createdAt > prev) byId.set(id, createdAt)
+          }
+          tl!.refs = [...byId.entries()]
+            .map(([id, createdAt]) => [id, createdAt] as TTimelineRef)
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        }
         if (events.length >= filter.limit) {
-          tl.refs = newRefs
+          mergeTimelineRefs(newRefs)
         } else {
-          tl.refs = newRefs.concat(tl.refs)
+          mergeTimelineRefs(newRefs)
         }
       }
       armHttpTimelinePollingAfterInitial()
@@ -3592,7 +3661,50 @@ class ClientService extends EventTarget {
     }
   }
 
-  private async _loadMoreTimeline(key: string, until: number, limit: number) {
+  private async _loadMoreTimelineFromLocalRefs(
+    key: string,
+    until: number,
+    limit: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ): Promise<NEvent[]> {
+    const timeline = this.timelines[key]
+    if (!timeline || Array.isArray(timeline)) return []
+
+    const candidateRefs: TTimelineRef[] = []
+    const seenIds = new Set<string>()
+    const addRef = ([id, createdAt]: TTimelineRef) => {
+      if (createdAt > until || seenIds.has(id) || excludeIds.has(id)) return
+      seenIds.add(id)
+      candidateRefs.push([id, createdAt])
+    }
+
+    for (const ref of timeline.refs) addRef(ref)
+
+    if (!timeline.disablePersist) {
+      try {
+        const st = await indexedDb.getTimelinePersistedState(key)
+        for (const ref of st?.refs ?? []) addRef(ref)
+      } catch {
+        /* optional */
+      }
+    }
+
+    if (candidateRefs.length === 0) return []
+
+    candidateRefs.sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))
+    const events = await resolveLocalEventsByHexIds(candidateRefs.slice(0, limit).map((r) => r[0]))
+    return events
+      .filter((e) => !shouldDropEventOnIngest(e) && e.created_at <= until)
+      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .slice(0, limit)
+  }
+
+  private async _loadMoreTimeline(
+    key: string,
+    until: number,
+    limit: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ) {
     const timeline = this.timelines[key]
     if (!timeline || Array.isArray(timeline)) return []
 
@@ -3603,6 +3715,9 @@ class ClientService extends EventTarget {
       globalTimeout: 25_000,
       eoseTimeout: 2500
     })
+    if (events.length === 0) {
+      events = await this._loadMoreTimelineFromLocalRefs(key, until, limit, excludeIds)
+    }
     events.forEach((evt) => {
       this.addEventToCache(evt)
     })

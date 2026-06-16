@@ -10,6 +10,7 @@
 import { ExtendedKind } from '@/constants'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
 import logger from '@/lib/logger'
+import { relaySessionStrikes } from '@/lib/relay-strikes'
 import {
   devProxyCorsProblematicHttpsIndexRelayBase,
   devProxyLoopbackHttpRelayBase,
@@ -35,19 +36,29 @@ function indexRelayPublicationMetadataSearchUrl(baseUrl: string): string {
 }
 
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
-function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> {
+function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> | null {
   const body: Record<string, unknown> = {}
   const lim = f.limit
-  const capped = lim == null || lim < 1 ? 100 : Math.min(100, lim)
+  const capped = lim == null || lim < 1 ? 100 : Math.min(100, Math.max(1, Number(lim) || 100))
   body.limit = capped
-  if (f.ids?.length) body.ids = f.ids
-  if (f.authors?.length) body.authors = f.authors
+  if (f.ids?.length) {
+    const ids = f.ids
+      .map((id) => id.trim().toLowerCase())
+      .filter((id) => /^[0-9a-f]{64}$/.test(id))
+    if (ids.length === 0) return null
+    body.ids = ids
+  }
+  if (f.authors?.length) {
+    const authors = f.authors
+      .map((author) => author.trim().toLowerCase())
+      .filter((author) => /^[0-9a-f]{64}$/.test(author))
+    if (authors.length === 0) return null
+    body.authors = authors
+  }
   if (f.kinds?.length) body.kinds = f.kinds
   if (f.since != null) body.since = f.since
   if (f.until != null) body.until = f.until
-  if (typeof f.search === 'string' && f.search.trim()) {
-    body.search = f.search.trim()
-  }
+  /** NIP-50 `search` is not supported on Mercury `/api/events/filter` (400 Unknown filter key). */
   /** Index relays expect NIP-01 lowercase single-letter tag keys (`#e` not `#E`). */
   const tagBuckets = new Map<string, string[]>()
   for (const key of Object.keys(f)) {
@@ -294,6 +305,7 @@ export async function queryIndexRelay(
   }
   for (const f of filters) {
     const body = nostrFilterToIndexRelayBody(filterForIndexRelay(f))
+    if (!body) continue
     try {
       const res = await fetchWithTimeout(endpoint, {
         method: 'POST',
@@ -322,6 +334,9 @@ export async function queryIndexRelay(
               status: res.status,
               detail: detail || undefined
             })
+          }
+          if (res.status >= 400 && res.status < 500) {
+            relaySessionStrikes.recordReadFailure(baseUrl, 'http')
           }
         } else {
           warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] filter request failed', {
@@ -373,6 +388,9 @@ export async function queryIndexRelayForLibrary(
   }
 
   const body = nostrFilterToIndexRelayBody(filterForIndexRelay(filter))
+  if (!body) {
+    return { events: [], apiRowCount: 0 }
+  }
   try {
     const res = await fetchWithTimeout(endpoint, {
       method: 'POST',

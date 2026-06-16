@@ -1684,15 +1684,19 @@ export default function AsciidocArticle({
   useEffect(() => {
     const initHighlight = async () => {
       if (typeof window !== 'undefined') {
-        const hljs = await import('@/lib/highlight')
-        if (contentRef.current) {
-          contentRef.current.querySelectorAll('pre code').forEach((block) => {
-            const element = block as HTMLElement
-            element.style.color = 'inherit'
-            element.classList.add('text-gray-900', 'dark:text-gray-100')
-            hljs.default.highlightElement(element)
-            element.style.color = 'inherit'
-          })
+        try {
+          const hljs = await (await import('@/lib/highlight')).getHighlightJs()
+          if (contentRef.current) {
+            contentRef.current.querySelectorAll('pre code').forEach((block) => {
+              const element = block as HTMLElement
+              element.style.color = 'inherit'
+              element.classList.add('text-gray-900', 'dark:text-gray-100')
+              hljs.highlightElement(element)
+              element.style.color = 'inherit'
+            })
+          }
+        } catch {
+          /* optional — code blocks still render without colors */
         }
       }
     }
