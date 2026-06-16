@@ -1,2 +1,0 @@
-export { BookstrContent } from './BookstrContent'
-

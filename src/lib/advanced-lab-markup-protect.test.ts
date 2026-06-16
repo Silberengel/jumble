@@ -120,11 +120,10 @@ describe('getMarkupProtectRanges', () => {
     expect(rangeIntersectsMerged(s, 'stem:[\\alpha]'.length, merged)).toBe(true)
   })
 
-  it('freezes wiki double-bracket spans (bookstr, citation, wikis)', () => {
-    const t = '[[wikis|Nostr]] [[book::genesis]] [[citation::inline::x]]'
+  it('freezes wiki double-bracket spans (citation, wikis)', () => {
+    const t = '[[wikis|Nostr]] [[citation::inline::x]]'
     const merged = getMarkupProtectRanges(t, 'markdown')
     expect(merged.some(([a, b]) => t.slice(a, b) === '[[wikis|Nostr]]')).toBe(true)
-    expect(merged.some(([a, b]) => t.slice(a, b) === '[[book::genesis]]')).toBe(true)
     expect(merged.some(([a, b]) => t.slice(a, b).startsWith('[[citation::'))).toBe(true)
   })
 
@@ -151,11 +150,9 @@ describe('getMarkupProtectRanges', () => {
     expect(rangeIntersectsMerged(t.indexOf('.gif'), 4, merged)).toBe(true)
   })
 
-  it('freezes BOOKSTR_MARKER passthrough and WIKILINK marker', () => {
-    const book = 'BOOKSTR_MARKER:foo:BOOKSTR_END'
+  it('freezes WIKILINK marker', () => {
     const wiki = 'WIKILINK:my-page[My Page]'
-    const merged = getMarkupProtectRanges(`${book} ${wiki}`, 'markdown')
-    expect(merged.some(([a, b]) => a === 0 && b === book.length)).toBe(true)
+    const merged = getMarkupProtectRanges(wiki, 'markdown')
     expect(merged.some(([a, b]) => b - a === wiki.length)).toBe(true)
   })
 

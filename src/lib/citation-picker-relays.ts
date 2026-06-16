@@ -1,5 +1,4 @@
 import {
-  BOOKSTR_RELAY_URLS,
   DOCUMENT_RELAY_URLS,
   FAST_READ_RELAY_URLS,
   NIP66_DISCOVERY_RELAY_URLS,
@@ -57,7 +56,6 @@ export async function buildCitationPickerSearchRelayUrls(): Promise<string[]> {
       normList(SEARCHABLE_RELAY_URLS),
       normList(DOCUMENT_RELAY_URLS),
       normList(NIP66_DISCOVERY_RELAY_URLS),
-      normList(BOOKSTR_RELAY_URLS),
       nip66Search,
       normList(FAST_READ_RELAY_URLS)
     ],

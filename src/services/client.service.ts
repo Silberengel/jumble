@@ -266,7 +266,6 @@ import {
 import { NIP50_QUERY_GLOBAL_TIMEOUT_FLOOR_MS, QueryService } from './client-query.service'
 import { EventService } from './client-events.service'
 import { ReplaceableEventService } from './client-replaceable-events.service'
-import { MacroService, createBookstrService } from './client-macro.service'
 
 /** Live timeline REQ: EOSE caps “connected but silent” relays. */
 const SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS = 4800
@@ -424,7 +423,6 @@ class ClientService extends EventTarget {
   public readonly queryService: QueryService
   public readonly eventService: EventService
   public readonly replaceableEventService: ReplaceableEventService
-  public readonly bookstrService: MacroService
 
   private timelines: Record<
     string,
@@ -578,7 +576,6 @@ class ClientService extends EventTarget {
         }
       }
     })
-    this.bookstrService = createBookstrService(this.queryService)
 
     initRelayPoolIdle(this.pool, (relayKeyOrUrl) =>
       this.queryService.relayHasActiveSubscriptions(relayKeyOrUrl)
@@ -5487,33 +5484,6 @@ class ClientService extends EventTarget {
     return this.replaceableEventService.fetchFollowingFavoriteRelays(pubkey)
   }
 
-  /** =========== Macro Events (Delegated to MacroService) =========== */
-
-  // Delegate to MacroService
-  async fetchBookstrEvents(filters: {
-    type?: string
-    book?: string
-    chapter?: number
-    verse?: string
-    version?: string
-  }): Promise<NEvent[]> {
-    return this.bookstrService.fetchMacroEvents(filters)
-  }
-
-  // Delegate to MacroService
-  async getCachedBookstrEvents(filters: {
-    type?: string
-    book?: string
-    chapter?: number
-    verse?: string
-    version?: string
-  }): Promise<NEvent[]> {
-    return this.bookstrService.getCachedMacroEvents(filters)
-  }
-
-  // Legacy implementations removed - now delegated to MacroService
-
-
   // ================= Utils =================
 
   async generateSubRequestsForPubkeys(pubkeys: string[], myPubkey?: string | null) {
@@ -5565,8 +5535,6 @@ class ClientService extends EventTarget {
     }))
   }
 
-  // Legacy Bookstr implementations removed - now in MacroService
-
 }
 const instance = ClientService.getInstance()
 export default instance
@@ -5575,4 +5543,3 @@ export default instance
 export const queryService = instance.queryService
 export const eventService = instance.eventService
 export const replaceableEventService = instance.replaceableEventService
-export const macroService = instance.bookstrService

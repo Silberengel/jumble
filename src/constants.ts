@@ -428,11 +428,6 @@ export const NIP66_DISCOVERY_RELAY_URLS = [
   'wss://relaypag.es'
 ]
 
-// Relay with bookstr composite index support
-export const BOOKSTR_RELAY_URLS = [
-  'wss://thecitadel.nostr1.com'
-]
-
 /**
  * Primary document relay for long-form/wiki/publication kinds:
  * 30023, 30818, 30817, 30041, 30040.

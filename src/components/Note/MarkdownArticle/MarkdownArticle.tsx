@@ -1,10 +1,10 @@
+import OrphanedImetaMediaSection from '@/components/OrphanedImetaMedia/OrphanedImetaMediaSection'
 import { useSecondaryPageOptional, useSmartHashtagNavigationOptional, useSmartRelayNavigationOptional } from '@/PageManager'
 import Image from '@/components/Image'
 import UserAvatar from '@/components/UserAvatar'
 import { MediaAutoLoadEventProvider } from '@/providers/MediaAutoLoadEventContext'
 import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
-import { BookstrContent } from '@/components/Bookstr'
 import WebPreview from '@/components/WebPreview'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
@@ -28,6 +28,7 @@ import {
   findHttpUrlsInText
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
+import { getOrphanedImetaMedia, shouldHideOrphanedImetaInAccordion } from '@/lib/imeta-content-match'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
@@ -1180,13 +1181,6 @@ function parseMarkdownContentLegacy(
         return
       }
       
-      // Skip if the URL is a bookstr URL (contains book%3A%3A or book::)
-      const linkUrl = match[2]
-      const isBookstrUrl = /(?:book%3A%3A|book::)/i.test(linkUrl)
-      if (isBookstrUrl) {
-        return
-      }
-      
       // Check if link is standalone (on its own line, not part of a sentence/list/quote)
       const isStandalone = (() => {
         // Get the line containing this link
@@ -1440,93 +1434,6 @@ function parseMarkdownContentLegacy(
     }
   })
   
-  // Bookstr URLs: detect markdown links containing bookstr URLs first, then standalone bookstr URLs
-  // This must be detected before regular markdown links to avoid conflicts
-  const markdownLinkWithBookstrRegex = /\[([^\]]+)\]\((https?:\/\/[^\s]*(?:book%3A%3A|book::)([^\/\?\#\&\s]+))\)/gi
-  const markdownBookstrMatches = Array.from(content.matchAll(markdownLinkWithBookstrRegex))
-  markdownBookstrMatches.forEach(match => {
-    if (match.index !== undefined) {
-      const fullUrl = match[2]
-      const searchTermEncoded = match[3]
-      const start = match.index
-      const end = match.index + match[0].length
-      
-      // Only add if not already covered by other patterns and not in block pattern
-      const isInOther = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || 
-         p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url') && 
-        start >= p.index && 
-        start < p.end
-      )
-      
-      if (!isInOther && !isWithinBlockPattern(start, end, blockPatterns)) {
-        try {
-          // Decode the URL-encoded search term
-          const decodedSearchTerm = decodeURIComponent(searchTermEncoded)
-          
-          // Check if it starts with book:: (it should, but handle both cases)
-          let bookstrWikilink = decodedSearchTerm
-          if (!bookstrWikilink.startsWith('book::')) {
-            // If it doesn't start with book::, add it
-            bookstrWikilink = `book::${bookstrWikilink}`
-          }
-          
-          patterns.push({
-            index: start,
-            end: end,
-            type: 'bookstr-url',
-            data: { wikilink: bookstrWikilink.trim(), sourceUrl: fullUrl }
-          })
-        } catch (err) {
-          // If decoding fails, skip this URL (will be handled as regular URL)
-        }
-      }
-    }
-  })
-  
-  // Standalone bookstr URLs (not in markdown links): any URL containing book%3A%3A or book:: pattern
-  const bookstrUrlRegex = /(https?:\/\/[^\s]*(?:book%3A%3A|book::)([^\/\?\#\&\s]+))/gi
-  const bookstrUrlMatches = Array.from(content.matchAll(bookstrUrlRegex))
-  bookstrUrlMatches.forEach(match => {
-    if (match.index !== undefined) {
-      const fullUrl = match[1]
-      const searchTermEncoded = match[2]
-      const start = match.index
-      const end = match.index + match[0].length
-      
-      // Only add if not already covered by other patterns (including markdown links with bookstr URLs) and not in block pattern
-      const isInOther = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || 
-         p.type === 'relay-url' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'zapstream-url' || p.type === 'bookstr-url') && 
-        start >= p.index && 
-        start < p.end
-      )
-      
-      if (!isInOther && !isWithinBlockPattern(start, end, blockPatterns)) {
-        try {
-          // Decode the URL-encoded search term
-          const decodedSearchTerm = decodeURIComponent(searchTermEncoded)
-          
-          // Check if it starts with book:: (it should, but handle both cases)
-          let bookstrWikilink = decodedSearchTerm
-          if (!bookstrWikilink.startsWith('book::')) {
-            // If it doesn't start with book::, add it
-            bookstrWikilink = `book::${bookstrWikilink}`
-          }
-          
-          patterns.push({
-            index: start,
-            end: end,
-            type: 'bookstr-url',
-            data: { wikilink: bookstrWikilink.trim(), sourceUrl: fullUrl }
-          })
-        } catch (err) {
-          // If decoding fails, skip this URL (will be handled as regular URL)
-        }
-      }
-    }
-  })
-  
   // Citation markup: [[citation::type::nevent...]]
   const citationRegex = /\[\[citation::(end|foot|foot-end|inline|quote|prompt-end|prompt-inline)::([^\]]+)\]\]/g
   const citationMatches = Array.from(content.matchAll(citationRegex))
@@ -1609,7 +1516,6 @@ function parseMarkdownContentLegacy(
   
   // Wikilinks ([[link]] or [[link|display]]) - but not inside markdown links
   // Exclude citations ([[citation::...]]) from wikilink processing
-  // Note: bookstr links ([[book::...]]) are included as wikilink type and handled in rendering
   const wikilinkRegex = /\[\[([^\]]+)\]\]/g
   const wikilinkMatches = Array.from(content.matchAll(wikilinkRegex))
   wikilinkMatches.forEach(match => {
@@ -1623,7 +1529,6 @@ function parseMarkdownContentLegacy(
         return
       }
       
-      // Include bookstr links as wikilink type - they'll be handled in rendering
       // Only add if not already covered by another pattern and not in block pattern
       const isInOther = patterns.some(p => 
         start >= p.index && 
@@ -2784,25 +2689,10 @@ function parseMarkdownContentLegacy(
       if (shouldAddSpace) {
         parts.push(<span key={`hashtag-space-${patternIdx}`} className="whitespace-pre"> </span>)
       }
-    } else if (pattern.type === 'bookstr-url') {
-      const { wikilink, sourceUrl } = pattern.data
-      parts.push(
-        <BookstrContent key={`bookstr-url-${patternIdx}`} wikilink={wikilink} sourceUrl={sourceUrl} />
-      )
     } else if (pattern.type === 'wikilink') {
       const linkContent = pattern.data
       
-      // Check if this is a bookstr wikilink (NKBIP-08 format: book::...)
-      const isBookstrLink = linkContent.startsWith('book::')
-      
-      if (isBookstrLink) {
-        // Extract the bookstr content (already in book:: format)
-        const bookstrContent = linkContent.trim()
-        parts.push(
-          <BookstrContent key={`bookstr-${patternIdx}`} wikilink={bookstrContent} />
-        )
-      } else {
-        // Regular wikilink
+      // Regular wikilink
       let target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent.trim()
       let displayText = linkContent.includes('|') ? linkContent.split('|')[1].trim() : linkContent.trim()
       
@@ -2811,7 +2701,6 @@ function parseMarkdownContentLegacy(
       parts.push(
         <Wikilink key={`wikilink-${patternIdx}`} dTag={dtag} displayText={displayText} />
       )
-      }
     }
     
     lastIndex = pattern.end
@@ -3804,9 +3693,6 @@ function parseMarkdownContentMarked(
     const wiki = paragraphText.match(/^\[\[([^\]]+)\]\]$/)
     if (wiki) {
       const linkContent = wiki[1].trim()
-      if (linkContent.startsWith('book::')) {
-        return <BookstrContent key={`${key}-bookstr`} wikilink={linkContent} />
-      }
       const target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent
       const displayText = linkContent.includes('|') ? linkContent.split('|')[1].trim() : linkContent
       const dTag = target.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -5591,6 +5477,7 @@ export default function MarkdownArticle({
       type: 'image' | 'video' | 'audio'
       poster?: string
       blurHash?: string
+      source: 'imeta' | 'r' | 'image'
     }> = []
     
     // Extract from imeta tags
@@ -5619,17 +5506,19 @@ export default function MarkdownArticle({
           url: info.url,
           type: 'video',
           poster: info.image || info.thumb,
-          blurHash: info.blurHash
+          blurHash: info.blurHash,
+          source: 'imeta'
         })
       } else if (info.m?.startsWith('audio/') || isAudio(cleaned)) {
         media.push({
           url: info.url,
           type: 'audio',
           poster: info.thumb,
-          blurHash: info.blurHash
+          blurHash: info.blurHash,
+          source: 'imeta'
         })
       } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
-        media.push({ url: info.url, type: 'image' })
+        media.push({ url: info.url, type: 'image', source: 'imeta' })
       }
     })
     
@@ -5642,11 +5531,11 @@ export default function MarkdownArticle({
 
       seenUrls.add(cleaned)
       if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
-        media.push({ url, type: 'image' })
+        media.push({ url, type: 'image', source: 'r' })
       } else if (isVideo(cleaned) || isHlsPlaylistUrl(cleaned)) {
-        media.push({ url, type: 'video' })
+        media.push({ url, type: 'video', source: 'r' })
       } else if (isAudio(cleaned)) {
-        media.push({ url, type: 'audio' })
+        media.push({ url, type: 'audio', source: 'r' })
       }
     })
     
@@ -5656,7 +5545,7 @@ export default function MarkdownArticle({
       const cleaned = cleanUrl(imageTag[1])
       if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
-        media.push({ url: imageTag[1], type: 'image' })
+        media.push({ url: imageTag[1], type: 'image', source: 'image' })
       }
     }
     
@@ -6066,6 +5955,16 @@ export default function MarkdownArticle({
       return true
     })
   }, [tagMedia, mediaUrlsInContent, metadata.image, hideMetadata, parentImageUrl])
+
+  const hideOrphanedImetaInAccordion = shouldHideOrphanedImetaInAccordion(event.kind, event.content)
+  const orphanedImetaMedia = useMemo(
+    () => (hideOrphanedImetaInAccordion ? getOrphanedImetaMedia(event, event.content) : []),
+    [event, hideOrphanedImetaInAccordion]
+  )
+  const inlineLeftoverTagMedia = useMemo(() => {
+    if (!hideOrphanedImetaInAccordion) return leftoverTagMedia
+    return leftoverTagMedia.filter((media) => media.source !== 'imeta')
+  }, [leftoverTagMedia, hideOrphanedImetaInAccordion])
   
   // Filter tag YouTube URLs to only show what's not in content
   const leftoverTagYouTubeUrls = useMemo(() => {
@@ -6472,9 +6371,9 @@ export default function MarkdownArticle({
       })()}
         
         {/* Media from tags (only if not in content) */}
-        {leftoverTagMedia.length > 0 && (
+        {inlineLeftoverTagMedia.length > 0 && (
           <div className="space-y-4 mb-6">
-            {leftoverTagMedia.map((media) => {
+            {inlineLeftoverTagMedia.map((media) => {
               const cleaned = cleanUrl(media.url)
               const mediaIndex = imageIndexMap.get(cleaned)
               
@@ -6592,6 +6491,22 @@ export default function MarkdownArticle({
         <div className="break-words">
           {parsedContent}
         </div>
+
+        {orphanedImetaMedia.length > 0 && (
+          <OrphanedImetaMediaSection
+            className="mt-4 mb-2"
+            items={orphanedImetaMedia}
+            authorPubkey={event.pubkey}
+            mustLoadMedia={!lazyMedia}
+            onImageClick={(url) => {
+              const cleaned = cleanUrl(url)
+              const mediaIndex = cleaned ? imageIndexMap.get(cleaned) : undefined
+              if (mediaIndex !== undefined) {
+                openLightbox(mediaIndex)
+              }
+            }}
+          />
+        )}
         
         {/* Hashtags from metadata (only if not already in content) */}
         {leftoverMetadataTags.length > 0 && (

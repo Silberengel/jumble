@@ -709,6 +709,9 @@ export default {
       'There isn’t a dedicated card for this event type yet. Here’s a readable preview.',
     'No text content in event': 'No text in this event.',
     'Technical details': 'Technical details',
+    'View additional media': 'View additional media',
+    'Orphaned imeta media notice':
+      'This media was found in the tags, but is either duplicate or different from the one found in the content. Please contact the developer of the client that created this event, to correct this bug.',
     'Event kind and time': 'Kind {{kind}} · {{time}}',
     'Event kind label': 'Kind {{kind}}',
     'Note kind label line': 'KIND: {{kind}} · {{description}}',

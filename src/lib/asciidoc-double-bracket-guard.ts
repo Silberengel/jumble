@@ -1,5 +1,5 @@
 /**
- * `[[inner]]` is both a wiki link (Nostr / bookstr) and valid AsciiDoc (block anchor, biblio id, etc.).
+ * `[[inner]]` is both a wiki link and valid AsciiDoc (block anchor, biblio id, etc.).
  * When we rewrite every `[[…]]` to a wiki passthrough, AsciiDoc `[[id]]` anchors break; prefer `[#id]` before a block to avoid clashing with `[[wikilink]]`.
  *
  * Leave the original brackets for Asciidoctor when this looks like an AsciiDoc anchor, not a wiki slug.

@@ -3,8 +3,7 @@
  * Covers Advanced Event Lab toolbar constructs: headings, lists, quotes, tables, code fences,
  * math ($ / $$), Markdown links/images (structure only), task items, footnotes, inline code,
  * emphasis/strike delimiters, and AsciiDoc blocks, macros, stem, passthrough, xref.
- * Also: wiki `[[…]]` (incl. `book::`, `citation::`), `wikilink:`, `BOOKSTR_MARKER:…:BOOKSTR_END`,
- * `nostr:…` / bare NIP-19 bech32 (`npub1`…, `nprofile1`…, etc.), and `link:url[text]` macros.
+ * Also: wiki `[[…]]` (incl. `citation::`), `wikilink:`, `nostr:…` / bare NIP-19 bech32 (`npub1`…, etc.), and `link:url[text]` macros.
  * Raw `http://` / `https://` URLs (so blossom-style hosts `https://npub1….band/…/file.gif` are not split for translation).
  * NIP-style custom/native emoji shortcodes `:shortcode:` (see {@link EMOJI_SHORT_CODE_REGEX}).
  * Markdown `#hashtag` tokens (Unicode letters/numbers/mark, `_`, `-`).
@@ -707,7 +706,7 @@ function collectAsciiDocTriplePlusPassthrough(text: string, merged: [number, num
   return ranges
 }
 
-/** `[[page]]`, `[[page|label]]`, `[[book::…]]`, `[[citation::…]]`, AsciiDoc `[[id]]`. */
+/** `[[page]]`, `[[page|label]]`, `[[citation::…]]`, AsciiDoc `[[id]]`. */
 function collectWikiDoubleBracketRanges(text: string, merged: [number, number][]): [number, number][] {
   const ranges: [number, number][] = []
   let i = 0
@@ -728,31 +727,7 @@ function collectWikiDoubleBracketRanges(text: string, merged: [number, number][]
   return ranges
 }
 
-/** Passthrough markers from article preprocessing (AsciiDoc / Markdown pipelines). */
-function collectBookstrMarkerPassthrough(text: string, merged: [number, number][]): [number, number][] {
-  const ranges: [number, number][] = []
-  const head = 'BOOKSTR_MARKER:'
-  const tail = ':BOOKSTR_END'
-  let i = 0
-  while (i < text.length) {
-    if (posInMerged(i, merged)) {
-      i++
-      continue
-    }
-    const s = text.indexOf(head, i)
-    if (s < 0) break
-    const e = text.indexOf(tail, s + head.length)
-    if (e < 0) {
-      i = s + 1
-      continue
-    }
-    if (!posInMerged(s, merged)) ranges.push([s, e + tail.length])
-    i = e + tail.length
-  }
-  return ranges
-}
-
-/** `wikilink:dtag[label]` (post-processed wiki / bookstr). */
+/** `wikilink:dtag[label]` (post-processed wiki). */
 function collectWikilinkMarkerRanges(text: string, merged: [number, number][]): [number, number][] {
   const ranges: [number, number][] = []
   const re = /\bWIKILINK:([^\s[\n]+)(?:\[[^\]]*\])?/g
@@ -942,9 +917,8 @@ export function getMarkupProtectRanges(text: string, mode: AdvancedLabMarkupMode
 
   const wiki = collectWikiDoubleBracketRanges(text, merged)
   merged = mergeSortedRanges([...merged, ...wiki])
-  const bookstrPass = collectBookstrMarkerPassthrough(text, merged)
   const wikilinkM = collectWikilinkMarkerRanges(text, merged)
-  merged = mergeSortedRanges([...merged, ...bookstrPass, ...wikilinkM])
+  merged = mergeSortedRanges([...merged, ...wikilinkM])
   const linkMenu = collectLinkMenuColonMacros(text, merged)
   merged = mergeSortedRanges([...merged, ...linkMenu])
   const rawHttpUrls = collectRawHttpUrlRanges(text, merged)

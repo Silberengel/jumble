@@ -1,11 +1,11 @@
 /**
  * Audit: t('...') keys in src vs en translation.
- * Run: npx tsx scripts/i18n-audit.ts
+ * Run: node --experimental-strip-types scripts/i18n-audit.ts
  */
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import en from '../src/i18n/locales/en'
+import en from '../src/i18n/locales/en.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

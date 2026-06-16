@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { execSync } from 'child_process'
 import path from 'path'
-import type { Plugin } from 'vite'
+import type { Plugin, ProxyOptions } from 'vite'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -134,8 +134,11 @@ function quietOptionalDevProxyErrors(): Plugin {
   }
 }
 
-function jsonProxyErrorHandler(status: number, body: Record<string, unknown>) {
-  return (proxy: { on: (event: string, handler: (...args: unknown[]) => void) => void }) => {
+function jsonProxyErrorHandler(
+  status: number,
+  body: Record<string, unknown>
+): NonNullable<ProxyOptions['configure']> {
+  return (proxy, _options) => {
     proxy.on('error', (_err, _req, res) => {
       const r = res as {
         headersSent?: boolean
@@ -362,7 +365,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         manualChunks(id) {
           const norm = id.replace(/\\/g, '/')

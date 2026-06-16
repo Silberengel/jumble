@@ -3,7 +3,6 @@ import { useFetchEvent } from '@/hooks/useFetchEvent'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { ExtendedKind } from '@/constants'
 import { getLongFormArticleMetadataFromEvent, dTagToTitleCase } from '@/lib/event-metadata'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
 import { cn } from '@/lib/utils'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -507,17 +506,6 @@ export default function WebPreview({
       // The OG image is already converted to absolute URL by useFetchWebMetadata
       // Prioritize: event image tag > OG image from URL metadata (not favicon)
       const displayImage = eventImageThumbnail || image
-
-      // Extract bookstr metadata if applicable
-      const bookMetadata = fetchedEvent ? extractBookMetadata(fetchedEvent) : null
-      const isBookstrEvent = fetchedEvent && (fetchedEvent.kind === ExtendedKind.PUBLICATION || fetchedEvent.kind === ExtendedKind.PUBLICATION_CONTENT) && !!bookMetadata?.book
-
-      const formatBookName = (book: string) => {
-        return book
-          .split('-')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ')
-      }
       
       // Truncate original URL to 150 characters
       const truncatedUrl = url.length > 150 ? url.substring(0, 150) + '...' : url
@@ -593,15 +581,6 @@ export default function WebPreview({
                 {eventTitle && (
                   <div className="web-preview-title font-display font-semibold line-clamp-2 mb-1 text-brand-wordmark">
                     {eventTitle}
-                  </div>
-                )}
-                {isBookstrEvent && bookMetadata && (
-                  <div className="web-preview-muted text-muted-foreground space-x-2 mb-1">
-                    {bookMetadata.type && <span>Type: {bookMetadata.type}</span>}
-                    {bookMetadata.book && <span>Book: {formatBookName(bookMetadata.book)}</span>}
-                    {bookMetadata.chapter && <span>Chapter: {bookMetadata.chapter}</span>}
-                    {bookMetadata.verse && <span>Verse: {bookMetadata.verse}</span>}
-                    {bookMetadata.version && <span>Version: {bookMetadata.version.toUpperCase()}</span>}
                   </div>
                 )}
                 {eventSummary && !showContentPreview && (

@@ -138,21 +138,9 @@ export function preprocessAsciidocMediaLinks(content: string): string {
   // to prevent AsciiDoc from converting them to regular links. We skip wikilink processing here.
   
   // Skip any remaining wikilinks (they should already be processed, but safety check)
-  // Check for passthrough markers to avoid double-processing
-  if (processed.includes('BOOKSTR_START:') || processed.includes('WIKILINK:')) {
-    // Wikilinks already processed, skip
-  } else {
-    // Fallback: protect bookstr wikilinks if they weren't processed yet
-    processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (_match, bookContent) => {
-      const cleanContent = bookContent.trim()
-      return `+++BOOKSTR_MARKER:${cleanContent}:BOOKSTR_END+++`
-    })
-    
+  if (!processed.includes('WIKILINK:')) {
     // Fallback: protect regular wikilinks if they weren't processed yet
     processed = processed.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
-      if (linkContent.startsWith('book::')) {
-        return match
-      }
       if (linkContent.startsWith('citation::')) {
         return match
       }
@@ -168,8 +156,7 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     const urlEnd = index + url.length
     const beforeUrl = content.substring(Math.max(0, index - 100), index)
     const afterUrl = content.substring(urlEnd, Math.min(content.length, urlEnd + 100))
-    if (beforeUrl.includes('BOOKSTR_START:') || beforeUrl.includes('WIKILINK:') ||
-        afterUrl.includes(':BOOKSTR_END') || afterUrl.includes('+++')) {
+    if (beforeUrl.includes('WIKILINK:') || afterUrl.includes('+++')) {
       return false
     }
     return true

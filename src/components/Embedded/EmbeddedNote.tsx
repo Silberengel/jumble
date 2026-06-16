@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import ExternalLink from '@/components/ExternalLink'
-import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS, ExtendedKind } from '@/constants'
+import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isCalendarEventKind } from '@/lib/calendar-event'
@@ -37,11 +37,6 @@ import MainNoteCard from '../NoteCard/MainNoteCard'
 import UnknownNote from '../Note/UnknownNote'
 import { EmbeddedCalendarEvent } from './EmbeddedCalendarEvent'
 import logger from '@/lib/logger'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
-import { contentParserService } from '@/services/content-parser.service'
-import { useSmartNoteNavigationOptional } from '@/PageManager'
-import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
-import { toNote } from '@/lib/link'
 import {
   type EmbeddedNoteIdValidation,
   validateEmbeddedNotePointer
@@ -451,24 +446,6 @@ function EmbeddedNoteFetched({
     return <SuppressedLiveStreamEmbed noteId={noteId} className={className} />
   }
 
-  // Check if this event has bookstr tags (at least "book" tag)
-  const bookMetadata = extractBookMetadata(finalEvent)
-  const hasBookstrTags = !!bookMetadata.book
-
-  // If it has bookstr tags, render directly as bookstr content (no need to search)
-  if (hasBookstrTags) {
-    return (
-      <div
-        data-embedded-note
-        data-bookstr
-        className="not-prose max-w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <EmbeddedBookstrEvent event={finalEvent} originalNoteId={noteId} className={className} />
-      </div>
-    )
-  }
-
   // NIP-52 calendar notes (kinds 31922 / 31923) – render as calendar card
   if (isCalendarEventKind(finalEvent.kind)) {
     return (
@@ -703,84 +680,6 @@ function EmbeddedNoteSkeleton({ className }: { className?: string }) {
       </div>
       <Skeleton className="w-full h-4 my-1 mt-2" />
       <Skeleton className="w-2/3 h-4 my-1" />
-    </div>
-  )
-}
-
-/**
- * Render a single bookstr event directly (no searching needed)
- */
-function EmbeddedBookstrEvent({ event, originalNoteId, className }: { event: Event; originalNoteId?: string; className?: string }) {
-  const [parsedContent, setParsedContent] = useState<string | null>(null)
-  const bookMetadata = extractBookMetadata(event)
-  const { navigateToNote } = useSmartNoteNavigationOptional()
-
-  useEffect(() => {
-    const parseContent = async () => {
-      try {
-        const result = await contentParserService.parseContent(event.content, {
-          eventKind: ExtendedKind.PUBLICATION_CONTENT
-        })
-        setParsedContent(result.html)
-      } catch (err) {
-        logger.warn('Error parsing bookstr event content', { error: err, eventId: event.id.substring(0, 8) })
-        setParsedContent(event.content)
-      }
-    }
-    parseContent()
-  }, [event])
-
-  const chapterNum = bookMetadata.chapter
-  const verseNum = bookMetadata.verse
-  const version = bookMetadata.version
-  const bookName = bookMetadata.book 
-    ? bookMetadata.book
-        .split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ')
-    : ''
-
-  const content = parsedContent || event.content
-
-  return (
-    <div 
-      className={cn('border rounded-lg p-3 bg-muted/30 clickable', className)}
-      data-event-id={event.id}
-      onClick={(e) => {
-        // Don't navigate if clicking on interactive elements
-        const target = e.target as HTMLElement
-        if (target.closest('button') || target.closest('[role="button"]') || target.closest('a')) {
-          return
-        }
-        e.stopPropagation()
-        const noteUrl = toNote(
-          originalNoteId ?? event,
-          typeof originalNoteId === 'string' && /^[0-9a-f]{64}$/i.test(originalNoteId.trim())
-            ? event
-            : undefined
-        )
-        navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-2">
-        <h4 className="font-semibold text-sm">
-          {bookName}
-          {chapterNum && ` ${chapterNum}`}
-          {verseNum && `:${verseNum}`}
-          {version && ` (${version.toUpperCase()})`}
-        </h4>
-      </div>
-
-      {/* Content */}
-      <div className="flex gap-2 text-sm leading-relaxed items-baseline">
-        {/* Verse number on the left - only show verse number, not chapter:verse */}
-        <span className="font-semibold text-muted-foreground shrink-0 min-w-[2.5rem] text-right">
-          {verseNum || null}
-        </span>
-        {/* Content on the right */}
-        <span className="flex-1" dangerouslySetInnerHTML={{ __html: content }} />
-      </div>
     </div>
   )
 }

@@ -2,21 +2,21 @@
  * Merge t() keys from src into en, then regenerate all locale files with the same key set.
  * Missing non-English strings fall back to English.
  *
- * Run: npx tsx scripts/sync-i18n-locales.ts && npx prettier --write "src/i18n/locales/*.ts"
+ * Run: node --experimental-strip-types scripts/sync-i18n-locales.ts && npx prettier --write "src/i18n/locales/*.ts"
  */
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import cs from '../src/i18n/locales/cs'
-import de from '../src/i18n/locales/de'
-import en from '../src/i18n/locales/en'
-import es from '../src/i18n/locales/es'
-import fr from '../src/i18n/locales/fr'
-import nl from '../src/i18n/locales/nl'
-import pl from '../src/i18n/locales/pl'
-import ru from '../src/i18n/locales/ru'
-import tr from '../src/i18n/locales/tr'
-import zh from '../src/i18n/locales/zh'
+import cs from '../src/i18n/locales/cs.ts'
+import de from '../src/i18n/locales/de.ts'
+import en from '../src/i18n/locales/en.ts'
+import es from '../src/i18n/locales/es.ts'
+import fr from '../src/i18n/locales/fr.ts'
+import nl from '../src/i18n/locales/nl.ts'
+import pl from '../src/i18n/locales/pl.ts'
+import ru from '../src/i18n/locales/ru.ts'
+import tr from '../src/i18n/locales/tr.ts'
+import zh from '../src/i18n/locales/zh.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const srcDir = path.join(__dirname, '..', 'src')

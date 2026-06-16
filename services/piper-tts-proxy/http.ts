@@ -3,7 +3,7 @@
  * (JSON `{ text, speed?, voice? }` → `audio/wav`), forwarding to Wyoming Piper over TCP.
  */
 import http from 'node:http'
-import { handlePiperTtsPost } from './server'
+import { handlePiperTtsPost } from './server.ts'
 
 const PORT = Number(process.env.PORT || 9876)
 

@@ -2,7 +2,6 @@ import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useTranslation } from 'react-i18next'
 import ClientSelect from '../ClientSelect'
-import { extractBookMetadata } from '@/lib/bookstr-parser'
 import { ExtendedKind } from '@/constants'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { getKindDescription } from '@/lib/kind-description'
@@ -147,7 +146,6 @@ export default function UnknownNote({
 }) {
   const { t } = useTranslation()
   const [technicalOpen, setTechnicalOpen] = useState(false)
-  const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
   const displayEvent = useMemo(() => {
     if (event.kind !== ExtendedKind.RSS_THREAD_ROOT) return event
     const raw = getArticleUrlFromCommentITags(event)
@@ -156,14 +154,6 @@ export default function UnknownNote({
     if (c === raw) return event
     return { ...event, tags: [['i', c], ['I', c]] as Event['tags'] }
   }, [event])
-  const isBookstrEvent = (event.kind === ExtendedKind.PUBLICATION || event.kind === ExtendedKind.PUBLICATION_CONTENT) && !!bookMetadata.book
-
-  const formatBookName = (book: string) => {
-    return book
-      .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ')
-  }
 
   const kindLabel = getKindDescription(event.kind, event)
   const contentRaw = event.content?.trim() ?? ''
@@ -211,7 +201,7 @@ export default function UnknownNote({
     elevated.imageUrls.length > 0
 
   const showNoTextPlaceholder =
-    !contentRaw && !hasAnyElevatedCopy && !isBookstrEvent
+    !contentRaw && !hasAnyElevatedCopy
 
   const proseClass =
     'text-xs leading-snug whitespace-pre-wrap break-words text-foreground/95'
@@ -324,16 +314,6 @@ export default function UnknownNote({
             <p className={proseClass}>{truncatePreview(elevated.tagContent, CONTENT_PREVIEW_MAX)}</p>
           </div>
         ) : null}
-
-        {isBookstrEvent && (
-          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-            {bookMetadata.type && <span>{t('Type')}: {bookMetadata.type}</span>}
-            {bookMetadata.book && <span>{t('Book')}: {formatBookName(bookMetadata.book)}</span>}
-            {bookMetadata.chapter && <span>{t('Chapter')}: {bookMetadata.chapter}</span>}
-            {bookMetadata.verse && <span>{t('Verse')}: {bookMetadata.verse}</span>}
-            {bookMetadata.version && <span>{t('Version')}: {bookMetadata.version.toUpperCase()}</span>}
-          </div>
-        )}
 
         {showMainContent ? (
           <p className={proseClass}>{truncatePreview(contentRaw, CONTENT_PREVIEW_MAX)}</p>

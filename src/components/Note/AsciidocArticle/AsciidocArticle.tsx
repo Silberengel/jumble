@@ -1,4 +1,5 @@
 import { useSecondaryPageOptional, useSmartHashtagNavigationOptional, useSmartRelayNavigationOptional } from '@/PageManager'
+import OrphanedImetaMediaSection from '@/components/OrphanedImetaMedia/OrphanedImetaMediaSection'
 import Image from '@/components/Image'
 import MediaPlayer from '@/components/MediaPlayer'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
@@ -15,6 +16,7 @@ import {
   isBlossomBudBlobUrl
 } from '@/lib/url'
 import { getImetaInfosFromEvent } from '@/lib/event'
+import { getOrphanedImetaMedia, shouldHideOrphanedImetaInAccordion } from '@/lib/imeta-content-match'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -32,7 +34,6 @@ import EmbeddedNoteProviders from '@/components/Embedded/EmbeddedNoteProviders'
 import { DeletedEventProvider } from '@/providers/DeletedEventProvider'
 import { ReplyProvider } from '@/providers/ReplyProvider'
 import Wikilink from '@/components/UniversalContent/Wikilink'
-import { BookstrContent } from '@/components/Bookstr'
 import { preprocessAsciidocMediaLinks } from '../MarkdownArticle/preprocessMarkup'
 import {
   NOSTR_ASCIIDOC_EARLY_LINK_REGEX,
@@ -40,13 +41,13 @@ import {
   NOSTR_HTML_BECH32_RELAXED
 } from '@/lib/content-patterns'
 import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
+import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import {
   convertAsciiDocSource,
   plainAsciiDocSourceToHtml,
   resolveRelativeImagesInAsciidocHtml
 } from '@/lib/asciidoc-parse'
-import { extractBookMetadata, isNkbip08BookstrEvent } from '@/lib/bookstr-parser'
 import { useTranslation } from 'react-i18next'
 import katex from 'katex'
 import '@/styles/katex-bundle.css'
@@ -356,6 +357,8 @@ export default function AsciidocArticle({
   className,
   hideImagesAndInfo = false,
   hideTitle = false,
+  /** Inline embed: parsed body only (embedded publication sections). */
+  contentOnly = false,
   parentImageUrl,
   footnotesContainerId
 }: {
@@ -364,17 +367,19 @@ export default function AsciidocArticle({
   hideImagesAndInfo?: boolean
   /** Suppress title headings (e.g. when a parent renders the section title). */
   hideTitle?: boolean
+  contentOnly?: boolean
   parentImageUrl?: string
   footnotesContainerId?: string
 }) {
+  const effectiveHideTitle = hideTitle || contentOnly
+  const effectiveHideImagesAndInfo = hideImagesAndInfo || contentOnly
+  const showArticleChrome = !contentOnly
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const { navigateToHashtag } = useSmartHashtagNavigationOptional()
   const { navigateToRelay } = useSmartRelayNavigationOptional()
   const { t } = useTranslation()
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
-  const bookMetadata = useMemo(() => extractBookMetadata(event), [event])
-  const isBookstrEvent = isNkbip08BookstrEvent(event)
   const contentRef = useRef<HTMLDivElement>(null)
   
   // Preprocess content: convert all markdown to AsciiDoc syntax
@@ -386,14 +391,6 @@ export default function AsciidocArticle({
     
     // PROTECT WIKILINKS FIRST before any other processing
     // This prevents AsciiDoc or other processors from converting them to regular links
-    // First, protect bookstr wikilinks by converting them to passthrough format
-    // Don't use [[...]] inside passthrough as AsciiDoc processes it - use a plain marker instead
-    content = content.replace(/\[\[book::([^\]]+)\]\]/g, (_match, bookContent) => {
-      const cleanContent = bookContent.trim()
-      // Use AsciiDoc passthrough without brackets - AsciiDoc processes [[...]] even in passthrough
-      // Use a unique marker format that won't conflict with other content
-      return `+++BOOKSTR_MARKER:${cleanContent}:BOOKSTR_END+++`
-    })
     
     // Protect citations by converting them to passthrough format
     // Don't use [[...]] inside passthrough as AsciiDoc processes it - use a plain marker instead
@@ -410,10 +407,6 @@ export default function AsciidocArticle({
     // Then protect regular wikilinks by converting them to passthrough format
     // This prevents AsciiDoc from processing them and prevents URLs inside from being processed
     content = content.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
-      // Skip if this was already processed as a bookstr wikilink (shouldn't happen, but safety check)
-      if (linkContent.startsWith('book::')) {
-        return match
-      }
       // Skip citations - they're already processed above
       if (linkContent.startsWith('citation::')) {
         return match
@@ -446,7 +439,7 @@ export default function AsciidocArticle({
   // Extract media from tags only (for display at top)
   const tagMedia = useMemo(() => {
     const seenUrls = new Set<string>()
-    const media: Array<{ url: string; type: 'image' | 'video' | 'audio'; poster?: string }> = []
+    const media: Array<{ url: string; type: 'image' | 'video' | 'audio'; poster?: string; source: 'imeta' | 'r' | 'image' }> = []
     
     // Extract from imeta tags
     const imetaInfos = getImetaInfosFromEvent(event)
@@ -458,11 +451,11 @@ export default function AsciidocArticle({
 
       seenUrls.add(cleaned)
       if (info.m?.startsWith('video/') || isVideo(cleaned)) {
-        media.push({ url: info.url, type: 'video', poster: info.image })
+        media.push({ url: info.url, type: 'video', poster: info.image, source: 'imeta' })
       } else if (info.m?.startsWith('audio/') || isAudio(cleaned)) {
-        media.push({ url: info.url, type: 'audio' })
+        media.push({ url: info.url, type: 'audio', source: 'imeta' })
       } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
-        media.push({ url: info.url, type: 'image' })
+        media.push({ url: info.url, type: 'image', source: 'imeta' })
       }
     })
 
@@ -475,11 +468,11 @@ export default function AsciidocArticle({
 
       seenUrls.add(cleaned)
       if (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
-        media.push({ url, type: 'image' })
+        media.push({ url, type: 'image', source: 'r' })
       } else if (isVideo(cleaned)) {
-        media.push({ url, type: 'video' })
+        media.push({ url, type: 'video', source: 'r' })
       } else if (isAudio(cleaned)) {
-        media.push({ url, type: 'audio' })
+        media.push({ url, type: 'audio', source: 'r' })
       }
     })
     
@@ -489,7 +482,7 @@ export default function AsciidocArticle({
       const cleaned = cleanUrl(imageTag[1])
       if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
-        media.push({ url: imageTag[1], type: 'image' })
+        media.push({ url: imageTag[1], type: 'image', source: 'image' })
       }
     }
     
@@ -612,12 +605,22 @@ export default function AsciidocArticle({
       // Skip if already in content
       if (mediaUrlsInContent.has(cleaned)) return false
       // Skip if this is the metadata image (shown separately)
-      if (metadataImageUrl && cleaned === metadataImageUrl && !hideImagesAndInfo) return false
+      if (metadataImageUrl && cleaned === metadataImageUrl && !effectiveHideImagesAndInfo) return false
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
       if (parentImageUrlCleaned && cleaned === parentImageUrlCleaned) return false
       return true
     })
-  }, [tagMedia, mediaUrlsInContent, metadata.image, hideImagesAndInfo, parentImageUrl])
+  }, [tagMedia, mediaUrlsInContent, metadata.image, effectiveHideImagesAndInfo, parentImageUrl])
+
+  const hideOrphanedImetaInAccordion = shouldHideOrphanedImetaInAccordion(event.kind, event.content)
+  const orphanedImetaMedia = useMemo(
+    () => (hideOrphanedImetaInAccordion ? getOrphanedImetaMedia(event, event.content) : []),
+    [event, hideOrphanedImetaInAccordion]
+  )
+  const inlineLeftoverTagMedia = useMemo(() => {
+    if (!hideOrphanedImetaInAccordion) return leftoverTagMedia
+    return leftoverTagMedia.filter((media) => media.source !== 'imeta')
+  }, [leftoverTagMedia, hideOrphanedImetaInAccordion])
   
   // Filter tag YouTube URLs to only show what's not in content
   const leftoverTagYouTubeUrls = useMemo(() => {
@@ -688,10 +691,8 @@ export default function AsciidocArticle({
         
         // Debug: log HTML to check if passthrough markers are preserved
         if (process.env.NODE_ENV === 'development') {
-          const hasBookstrMarker = htmlString.includes('BOOKSTR_START') || htmlString.includes('BOOKSTR')
           const hasWikilinkMarker = htmlString.includes('WIKILINK')
           logger.debug('AsciidocArticle: HTML contains markers', { 
-            hasBookstrMarker, 
             hasWikilinkMarker,
             htmlPreview: htmlString.substring(0, 2000)
           })
@@ -839,45 +840,18 @@ export default function AsciidocArticle({
           return `<div data-latex-block="${escaped}" class="latex-block-placeholder my-4"></div>`
         })
         
-        // Handle bookstr markers - convert passthrough markers to placeholders
-        // AsciiDoc passthrough +++BOOKSTR_MARKER:...:BOOKSTR_END+++ outputs BOOKSTR_MARKER:...:BOOKSTR_END in HTML
-        // Match the delimited format to extract the exact content
-        // IMPORTANT: Process this BEFORE any other pattern matching
-        htmlString = htmlString.replace(/BOOKSTR_MARKER:\s*(.+?)\s*:BOOKSTR_END/g, (_match, bookContent) => {
-          // Trim whitespace and escape special characters for HTML attributes
-          const cleanContent = bookContent.trim()
-          const escaped = cleanContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          logger.debug('BookstrContent: Found bookstr marker in HTML', { cleanContent, escaped })
-          return `<span data-bookstr="${escaped}" class="bookstr-placeholder"></span>`
-        })
-        
-        // Also handle if AsciiDoc converted it to WIKILINK: format (fallback)
-        htmlString = htmlString.replace(/WIKILINK:bookstr::([^<>\s]+)/g, (_match, bookContent) => {
-          const cleanContent = bookContent.trim()
-          const escaped = cleanContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          logger.debug('BookstrContent: Found bookstr in WIKILINK format', { cleanContent, escaped })
-          return `<span data-bookstr="${escaped}" class="bookstr-placeholder"></span>`
-        })
-        
         // Handle wikilinks - convert passthrough markers to placeholders
         // AsciiDoc passthrough +++WIKILINK:link|display+++ outputs just WIKILINK:link|display in HTML
         // Match WIKILINK: followed by any characters (including |) until end of text or HTML tag
-        // IMPORTANT: Skip any [[bookstr::...]] patterns that might have been missed
         htmlString = htmlString.replace(/WIKILINK:([^<>\s]+)/g, (_match, linkContent) => {
-          // Skip if this is a bookstr wikilink
-          if (linkContent.includes('bookstr::')) {
-            return _match
-          }
           // Escape special characters for HTML attributes
           const escaped = linkContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `<span data-wikilink="${escaped}" class="wikilink-placeholder"></span>`
         })
         
         // Handle YouTube URLs and relay URLs in links
-        // Also check for bookstr content that might have been converted to links
         // Only replace links that need special handling - leave AsciiDoc-generated links alone
         const linkMatches: Array<{ match: string; href: string; linkText: string; index: number }> = []
-        const bookstrLinkMatches: Array<{ match: string; bookContent: string; index: number }> = []
         const linkRegex = /<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/g
         let linkMatch
         while ((linkMatch = linkRegex.exec(htmlString)) !== null) {
@@ -886,32 +860,11 @@ export default function AsciidocArticle({
           const linkText = linkMatch[2]
           const index = linkMatch.index
           
-          // Check if this link contains bookstr content (might have been converted by AsciiDoc)
-          if (linkText.includes('bookstr::') || href.includes('bookstr::')) {
-            // Extract bookstr content from link text or href
-            const bookstrMatch = linkText.match(/bookstr::([^\]]+)/) || href.match(/bookstr::([^\]]+)/)
-            if (bookstrMatch) {
-              const bookContent = bookstrMatch[1].trim()
-              bookstrLinkMatches.push({ match, bookContent, index })
-              continue
-            }
-          }
-          
           // Only process links that need special handling (YouTube, relay URLs)
           // Leave regular HTTP/HTTPS links as-is since AsciiDoc already formatted them correctly
           if (isYouTubeUrl(href) || isWebsocketUrl(href)) {
             linkMatches.push({ match, href, linkText, index })
           }
-        }
-        
-        // Replace bookstr links in reverse order to preserve indices
-        for (let i = bookstrLinkMatches.length - 1; i >= 0; i--) {
-          const { match, bookContent, index } = bookstrLinkMatches[i]
-          const escaped = bookContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          logger.debug('BookstrContent: Found bookstr in converted link', { bookContent, escaped })
-          htmlString = htmlString.substring(0, index) + 
-            `<span data-bookstr="${escaped}" class="bookstr-placeholder"></span>` + 
-            htmlString.substring(index + match.length)
         }
         
         // Replace only special links in reverse order to preserve indices
@@ -1567,87 +1520,11 @@ export default function AsciidocArticle({
       reactRootsRef.current.set(container, root)
     })
     
-    // Process bookstr wikilinks - replace placeholders with React components
-    // Only process elements that are still placeholders (not already converted to containers)
-    const bookstrPlaceholders = contentRef.current.querySelectorAll('.bookstr-placeholder[data-bookstr]')
-    bookstrPlaceholders.forEach((element) => {
-      const bookstrContent = element.getAttribute('data-bookstr')
-      if (!bookstrContent) return
-      
-      // Create a unique key for this placeholder
-      const placeholderKey = `bookstr-${bookstrContent}`
-      
-      // Check if this placeholder has already been converted to a container
-      // Look for a sibling or nearby container with the same key
-      const parent = element.parentElement
-      if (parent) {
-        // Escape the attribute value for use in CSS selector
-        // If the value contains double quotes, use single quotes for the selector
-        // Otherwise escape double quotes and backslashes
-        let selector: string
-        if (placeholderKey.includes('"')) {
-          // Use single quotes and escape any single quotes in the value
-          const escapedValue = placeholderKey.replace(/'/g, "\\'")
-          selector = `.bookstr-container[data-bookstr-key='${escapedValue}']`
-        } else {
-          // Use double quotes and escape any double quotes and backslashes
-          const escapedValue = placeholderKey.replace(/["\\]/g, '\\$&')
-          selector = `.bookstr-container[data-bookstr-key="${escapedValue}"]`
-        }
-        const existingContainer = parent.querySelector(selector)
-        if (existingContainer) {
-          // Container already exists - check if it has a React root
-          if (reactRootsRef.current.has(existingContainer)) {
-            // Already has a React root, just remove this duplicate placeholder
-            element.remove()
-            return
-          } else {
-            // Container exists but no root - this shouldn't happen, but clean it up
-            existingContainer.remove()
-          }
-        }
-      }
-      
-      // Skip if already processed (to avoid duplicate processing)
-      if (processedPlaceholdersRef.current.has(placeholderKey)) {
-        // If we've processed this but the element still exists, remove it
-        element.remove()
-        return
-      }
-      
-      // Mark as processed
-      processedPlaceholdersRef.current.add(placeholderKey)
-      
-      // Prepend book:: prefix since BookstrContent expects it
-      const wikilink = `book::${bookstrContent}`
-      
-      logger.debug('BookstrContent: Rendering component', { bookstrContent, wikilink })
-      
-      // Create a container for React component
-      const container = document.createElement('div')
-      container.className = 'bookstr-container'
-      container.setAttribute('data-bookstr-key', placeholderKey)
-      element.parentNode?.replaceChild(container, element)
-      
-      // Use React to render the component - only render once per container
-      // Check if this container already has a root to avoid re-rendering
-      if (!reactRootsRef.current.has(container)) {
-        const root = createRoot(container)
-        root.render(<BookstrContent wikilink={wikilink} skipWebPreview={true} />)
-        reactRootsRef.current.set(container, root)
-      }
-    })
-    
     // Process wikilinks - replace placeholders with React components
     const wikilinks = contentRef.current.querySelectorAll('.wikilink-placeholder[data-wikilink]')
     wikilinks.forEach((element) => {
       const linkContent = element.getAttribute('data-wikilink')
       if (!linkContent) return
-      
-      // Skip if this is a bookstr wikilink (already processed)
-      if (linkContent.startsWith('book::')) {
-        return
-      }
       
       // Parse wikilink: extract target and display text
       let target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent.trim()
@@ -1963,64 +1840,29 @@ export default function AsciidocArticle({
           padding-left: 1.5rem !important;
         }
       `}</style>
-      <div className={`prose prose-zinc max-w-none dark:prose-invert break-words overflow-wrap-anywhere ${className || ''}`}>
+      <div
+        className={cn(
+          contentOnly
+            ? 'break-words overflow-wrap-anywhere'
+            : 'prose prose-zinc max-w-none dark:prose-invert break-words overflow-wrap-anywhere',
+          className
+        )}
+      >
         {/* Metadata */}
-        {!hideTitle && !hideImagesAndInfo && metadata.title && <h1 className="break-words">{metadata.title}</h1>}
-        {!hideTitle && !hideImagesAndInfo && !metadata.title && isBookstrEvent && (
-          <h1 className="break-words">
-            {bookMetadata.book
-              ? bookMetadata.book
-                  .split('-')
-                  .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                  .join(' ')
-              : 'Bookstr Publication'}
-          </h1>
+        {showArticleChrome && !effectiveHideTitle && !effectiveHideImagesAndInfo && metadata.title && (
+          <h1 className="break-words">{metadata.title}</h1>
         )}
-        {!hideImagesAndInfo && isBookstrEvent && (
-          <div className="text-xs text-muted-foreground space-x-2 mb-2">
-            {bookMetadata.type && <span>Type: {bookMetadata.type}</span>}
-            {bookMetadata.book && <span>Book: {bookMetadata.book
-              .split('-')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-              .join(' ')}</span>}
-            {bookMetadata.chapter && <span>Chapter: {bookMetadata.chapter}</span>}
-            {bookMetadata.verse && <span>Verse: {bookMetadata.verse}</span>}
-            {bookMetadata.version && <span>Version: {bookMetadata.version.toUpperCase()}</span>}
-          </div>
-        )}
-        {!hideImagesAndInfo && metadata.summary && (
+        {showArticleChrome && !effectiveHideImagesAndInfo && metadata.summary && (
           <blockquote>
             <p className="break-words">{metadata.summary}</p>
           </blockquote>
         )}
-        {!hideTitle && hideImagesAndInfo && metadata.title && (
+        {showArticleChrome && !effectiveHideTitle && effectiveHideImagesAndInfo && metadata.title && (
           <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
-        )}
-        {!hideTitle && hideImagesAndInfo && !metadata.title && isBookstrEvent && (
-          <h2 className="text-2xl font-bold mb-4 leading-tight break-words">
-            {bookMetadata.book
-              ? bookMetadata.book
-                  .split('-')
-                  .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                  .join(' ')
-              : 'Bookstr Publication'}
-          </h2>
-        )}
-        {hideImagesAndInfo && isBookstrEvent && (
-          <div className="text-xs text-muted-foreground space-x-2 mb-2">
-            {bookMetadata.type && <span>Type: {bookMetadata.type}</span>}
-            {bookMetadata.book && <span>Book: {bookMetadata.book
-              .split('-')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-              .join(' ')}</span>}
-            {bookMetadata.chapter && <span>Chapter: {bookMetadata.chapter}</span>}
-            {bookMetadata.verse && <span>Verse: {bookMetadata.verse}</span>}
-            {bookMetadata.version && <span>Version: {bookMetadata.version.toUpperCase()}</span>}
-          </div>
         )}
         
         {/* Metadata image */}
-        {!hideImagesAndInfo && metadata.image && (() => {
+        {showArticleChrome && !effectiveHideImagesAndInfo && metadata.image && (() => {
           const cleanedMetadataImage = cleanUrl(metadata.image)
           const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
           // Don't show if already in content
@@ -2053,9 +1895,9 @@ export default function AsciidocArticle({
         })()}
         
         {/* Media from tags (only if not in content) */}
-        {leftoverTagMedia.length > 0 && (
+        {showArticleChrome && inlineLeftoverTagMedia.length > 0 && (
           <div className="space-y-4 mb-6">
-            {leftoverTagMedia.map((media) => {
+            {inlineLeftoverTagMedia.map((media) => {
               const cleaned = cleanUrl(media.url)
               const mediaIndex = imageIndexMap.get(cleaned)
               
@@ -2096,7 +1938,7 @@ export default function AsciidocArticle({
         )}
         
         {/* YouTube URLs from tags (only if not in content) */}
-        {leftoverTagYouTubeUrls.length > 0 && (
+        {showArticleChrome && leftoverTagYouTubeUrls.length > 0 && (
           <div className="space-y-4 mb-6">
             {leftoverTagYouTubeUrls.map((url) => {
               const cleaned = cleanUrl(url)
@@ -2113,7 +1955,7 @@ export default function AsciidocArticle({
           </div>
         )}
         
-        {parseIssues.length > 0 ? (
+        {showArticleChrome && parseIssues.length > 0 ? (
           <div
             role="status"
             className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
@@ -2134,8 +1976,24 @@ export default function AsciidocArticle({
           />
         )}
         
+        {showArticleChrome && orphanedImetaMedia.length > 0 && (
+          <OrphanedImetaMediaSection
+            className="mt-4 mb-2"
+            items={orphanedImetaMedia}
+            authorPubkey={event.pubkey}
+            mustLoadMedia
+            onImageClick={(url) => {
+              const cleaned = cleanUrl(url)
+              const mediaIndex = cleaned ? imageIndexMap.get(cleaned) : undefined
+              if (mediaIndex !== undefined) {
+                openLightbox(mediaIndex)
+              }
+            }}
+          />
+        )}
+
         {/* Hashtags from metadata (only if not already in content) */}
-        {!hideImagesAndInfo && leftoverMetadataTags.length > 0 && (
+        {showArticleChrome && !effectiveHideImagesAndInfo && leftoverMetadataTags.length > 0 && (
           <div className="flex gap-2 flex-wrap pb-2 mt-4">
             {leftoverMetadataTags.map((tag) => (
               <div
@@ -2154,8 +2012,12 @@ export default function AsciidocArticle({
         )}
         
         {/* Footnotes and References sections - rendered via useEffect after citations are processed */}
-        <div id="footnotes-section-container"></div>
-        <div id="references-section-container"></div>
+        {showArticleChrome ? (
+          <>
+            <div id="footnotes-section-container"></div>
+            <div id="references-section-container"></div>
+          </>
+        ) : null}
 
       </div>
       
