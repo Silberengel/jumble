@@ -116,11 +116,8 @@ export default function Image({
   loading?: 'lazy' | 'eager'
   /**
    * When true, the full image is not loaded until the user interacts.
-   * The first click runs {@link onClick} (e.g. open lightbox) and also reveals the
-   * inline `<img>` so after the lightbox closes the real image can show from cache.
-   *
-   * Under {@link ContentPolicyProvider}, the user’s media auto-load setting overrides a stale
-   * `holdUntilClick` from parents (e.g. MarkdownArticle’s default `lazyMedia`).
+   * The first click reveals the inline `<img>` only; a second click runs {@link onClick}
+   * (e.g. open lightbox). Auto-load policy from {@link ContentPolicyProvider} overrides this.
    */
   holdUntilClick?: boolean
 }) {
@@ -336,20 +333,24 @@ export default function Image({
   }
 
   const handleWrapperClick = (e: React.MouseEvent<HTMLSpanElement>) => {
-    if (effectiveHoldUntilClick && !revealed) handleReveal()
+    if (effectiveHoldUntilClick && !revealed) {
+      handleReveal()
+      return
+    }
     onClick?.(e)
   }
 
   const hasHoverTip = Boolean(imgTitle)
   const showTapToRevealChrome = !showErrorState && !revealed && effectiveHoldUntilClick
   const tapToRevealLabel = t('Click to load image')
+  const showLightboxCursor = Boolean(onClick) && (revealed || !effectiveHoldUntilClick)
 
   return (
     <span className={cn('block w-full not-prose', classNames.wrapper)}>
       <span
         className={cn(
           'relative overflow-hidden block w-full rounded-lg bg-background',
-          showTapToRevealChrome && 'group cursor-zoom-in',
+          (showTapToRevealChrome || showLightboxCursor) && 'group cursor-zoom-in',
           hasHoverTip && 'cursor-help ring-1 ring-inset ring-dotted ring-muted-foreground/45'
         )}
         style={mergedWrapperStyle}

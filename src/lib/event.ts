@@ -1,4 +1,5 @@
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
+import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
@@ -656,6 +657,9 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
   if (event.kind === ExtendedKind.DISCUSSION) {
     addHex(event.id)
   }
+
+  const bookmarkNaddr = getWebBookmarkReplaceableEventNaddr(event)
+  if (bookmarkNaddr) nip19Set.add(bookmarkNaddr)
 
   return {
     hexIds: Array.from(hexSet),

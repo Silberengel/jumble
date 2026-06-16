@@ -7,7 +7,7 @@ import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { cn } from '@/lib/utils'
 import { getHttpUrlFromITags } from '@/lib/event'
 import { httpUrlSkipsBottomWebPreview } from '@/lib/nostr-from-http-url'
-import { cleanUrl, isImage, isMedia, isAudio, isVideo, isHlsPlaylistUrl, isPseudoNostrHttpsUrl } from '@/lib/url'
+import { cleanUrl, isImage, isMedia, isAudio, isVideo, isHlsPlaylistUrl, isPseudoNostrHttpsUrl, isRenderableMediaUrl } from '@/lib/url'
 import { lightboxSlideFromImeta } from '@/lib/lightbox-slides'
 import { randomString } from '@/lib/random'
 import modalManager from '@/services/modal-manager.service'
@@ -462,15 +462,30 @@ export default function Content({
 
     const carouselImages = extractedMedia.images.filter((img: TImetaInfo) => {
       const cleaned = cleanUrl(img.url)
-      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
+      return (
+        cleaned &&
+        isRenderableMediaUrl(cleaned) &&
+        !mediaInContent.has(cleaned) &&
+        !suppressedImetaUrls.has(cleaned)
+      )
     })
     const videosFromTags = extractedMedia.videos.filter((video: TImetaInfo) => {
       const cleaned = cleanUrl(video.url)
-      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
+      return (
+        cleaned &&
+        isRenderableMediaUrl(cleaned) &&
+        !mediaInContent.has(cleaned) &&
+        !suppressedImetaUrls.has(cleaned)
+      )
     })
     const audioFromTags = extractedMedia.audio.filter((audio: TImetaInfo) => {
       const cleaned = cleanUrl(audio.url)
-      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
+      return (
+        cleaned &&
+        isRenderableMediaUrl(cleaned) &&
+        !mediaInContent.has(cleaned) &&
+        !suppressedImetaUrls.has(cleaned)
+      )
     })
 
     return {

@@ -81,6 +81,10 @@ function embedIngestOptsForNoteKey(noteKey: string): ShouldDropEventOnIngestOpti
   return hex ? { explicitNoteLookupHexId: hex } : undefined
 }
 
+/** Background retries after a miss — hint-only, capped (no infinite wide-relay hammering). */
+const EMBED_BACKGROUND_RETRY_MAX = 3
+const EMBED_BACKGROUND_RETRY_MS = 30_000
+
 /** True if `fetchEventWithExternalRelays(noteId, …)` can build a REQ filter (hex, note, nevent, naddr). */
 function canSearchOnExternalRelays(noteId: string): boolean {
   if (hexEventIdFromNoteId(noteId)) return true
@@ -334,33 +338,32 @@ function EmbeddedNoteFetched({
 
     const runParallelFetch = async () => {
       const { fetchRelayOpts: opts, wideRelaysStatic: wideUrls } = embedFetchCtxRef.current
+      const hintRelays = opts?.relayHints?.filter(Boolean) ?? []
+      const hasParentHints = hintRelays.length > 0
       const hex = hexEventIdFromNoteId(noteKey)
       const isUsable = (e: Event) =>
         !isEventDeletedRef.current(e) && !shouldDropEventOnIngest(e, ingestOpts)
       try {
-        const chosen = await firstResolvedUsableEmbedEvent(
-          [
-            () => promiseWithTimeout(client.fetchEvent(noteKey, opts), 12_000),
-            () =>
-              hex && /^[0-9a-f]{64}$/i.test(hex)
-                ? indexedDb
-                    .getEventFromPublicationStore(hex.toLowerCase())
-                    .catch(() => undefined)
-                : Promise.resolve(undefined),
-            () => runWidePass(wideUrls)
-          ],
-          isUsable
+        const tasks: Array<() => Promise<Event | undefined>> = []
+        if (hasParentHints) {
+          tasks.push(() =>
+            promiseWithTimeout(client.fetchEventWithExternalRelays(noteKey, hintRelays), 12_000)
+          )
+        }
+        tasks.push(() => promiseWithTimeout(client.fetchEvent(noteKey, opts), 12_000))
+        tasks.push(() =>
+          hex && /^[0-9a-f]{64}$/i.test(hex)
+            ? indexedDb.getEventFromPublicationStore(hex.toLowerCase()).catch(() => undefined)
+            : Promise.resolve(undefined)
         )
+        // Parent `a`/`e` relay hints are authoritative — skip index-relay fan-out (feed perf).
+        if (!hasParentHints) {
+          tasks.push(() => runWidePass(wideUrls))
+        }
+        const chosen = await firstResolvedUsableEmbedEvent(tasks, isUsable)
         if (cancelled) return
         if (chosen) {
           resolve(chosen)
-          return
-        }
-        const hintRelays = opts?.relayHints?.filter(Boolean) ?? []
-        if (hintRelays.length > 0) {
-          const fromHints = await client.fetchEventWithExternalRelays(noteKey, hintRelays)
-          if (cancelled) return
-          if (fromHints && resolve(fromHints)) return
         }
       } finally {
         if (!cancelled) setIsFetching(false)
@@ -374,13 +377,17 @@ function EmbeddedNoteFetched({
     }
 
     void (async () => {
+      const parentHints = embedFetchCtxRef.current.fetchRelayOpts?.relayHints ?? []
+      if (parentHints.length > 0) return
       if (tryShortcuts() || eventRef.current) return
       const extra = await loadAsyncEmbedRelayHints(noteKey, containingEventRef.current)
       if (cancelled || eventRef.current) return
       const wide0 = embedFetchCtxRef.current.wideRelaysStatic
-      const wideMerged = preferPublicIndexRelaysFirst(dedupeRelayUrls([...wide0, ...extra]))
+      const alreadyTried = new Set(dedupeRelayUrls([...wide0, ...parentHints]))
+      const novel = extra.filter((r) => !alreadyTried.has(normalizeUrl(r) || r))
+      if (novel.length === 0) return
       const ev = await runWidePass(
-        feedRelayPolicyUrls([{ source: 'fallback', urls: wideMerged }], {
+        feedRelayPolicyUrls([{ source: 'fallback', urls: novel }], {
           operation: 'read',
           blockedRelays,
           applySocialKindBlockedFilter: false,
@@ -403,14 +410,32 @@ function EmbeddedNoteFetched({
       }
     }
 
+    let retryCount = 0
     retryIntervalRef.current = setInterval(() => {
-      if (cancelled || eventRef.current) return
+      if (cancelled || eventRef.current) {
+        if (retryIntervalRef.current) {
+          clearInterval(retryIntervalRef.current)
+          retryIntervalRef.current = null
+        }
+        return
+      }
+      if (retryCount >= EMBED_BACKGROUND_RETRY_MAX) {
+        if (retryIntervalRef.current) {
+          clearInterval(retryIntervalRef.current)
+          retryIntervalRef.current = null
+        }
+        return
+      }
+      retryCount++
       void (async () => {
-        const opts = embedFetchCtxRef.current.fetchRelayOpts
-        const ev = await client.fetchEventForceRetry(noteKey, opts)
+        const hints = embedFetchCtxRef.current.fetchRelayOpts?.relayHints?.filter(Boolean) ?? []
+        const ev =
+          hints.length > 0
+            ? await client.fetchEventWithExternalRelays(noteKey, hints)
+            : await client.fetchEventForceRetry(noteKey, embedFetchCtxRef.current.fetchRelayOpts)
         if (!cancelled && ev) resolve(ev)
       })()
-    }, 8000)
+    }, EMBED_BACKGROUND_RETRY_MS)
 
     return () => {
       cancelled = true

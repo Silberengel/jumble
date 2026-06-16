@@ -537,7 +537,19 @@ export class EventService {
           await this.prefetchHexEventIds(hexIds, { relayHints, relayHintsOnly: opts?.relayHintsOnly })
         }
         await Promise.all(
-          nip19Pointers.map((pointer) => this.fetchEvent(pointer, fetchOpts))
+          nip19Pointers.map(async (pointer) => {
+            if (opts?.relayHintsOnly && relayHints.length > 0) {
+              const ev = await this.fetchEventWithExternalRelays(pointer, relayHints)
+              if (ev) {
+                const hex = ev.id?.toLowerCase()
+                const ingestOpts =
+                  hex && /^[0-9a-f]{64}$/.test(hex) ? { explicitNoteLookupHexId: hex } : undefined
+                this.addEventToCache(ev, ingestOpts)
+              }
+              return
+            }
+            await this.fetchEvent(pointer, fetchOpts)
+          })
         )
       } catch {
         for (const id of hexIds) this.embeddedPrefetchHexScheduled.delete(id)

@@ -3,6 +3,17 @@ import { replaceableEventDedupeKey } from '@/lib/event'
 import { generateBech32IdFromATag, tagNameEquals } from '@/lib/tag'
 import { Event } from 'nostr-tools'
 
+function dedupePreserveOrder(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    if (seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+  }
+  return out
+}
+
 /** NIP-52 collaborative calendar (addressable kind). */
 export const NIP52_CALENDAR_KIND = 31924
 
@@ -45,13 +56,16 @@ export function getNip52CalendarEventTagExtras(event: Event): Nip52CalendarTagEx
     .filter(tagNameEquals('location'))
     .map((t) => t[1]?.trim())
     .filter((x): x is string => !!x)
-  const rTags: Nip52CalendarRTag[] = event.tags
-    .filter(tagNameEquals('r'))
-    .map((t) => {
-      const v = t[1]?.trim() ?? ''
-      return { value: v, isHttpUrl: /^https?:\/\//i.test(v) }
-    })
-    .filter((e) => e.value.length > 0)
+  const rTagValues = dedupePreserveOrder(
+    event.tags
+      .filter(tagNameEquals('r'))
+      .map((t) => t[1]?.trim() ?? '')
+      .filter((v) => v.length > 0)
+  )
+  const rTags: Nip52CalendarRTag[] = rTagValues.map((v) => ({
+    value: v,
+    isHttpUrl: /^https?:\/\//i.test(v)
+  }))
   const dayGranularities = event.tags
     .filter((t) => t[0] === 'D')
     .map((t) => t[1]?.trim())
@@ -125,10 +139,12 @@ export function getCalendarEventMeta(event: Event): CalendarEventMeta {
   const geo = event.tags.find(tagNameEquals('g'))?.[1] ?? ''
   const startTzid = event.tags.find(tagNameEquals('start_tzid'))?.[1] ?? ''
   const endTzid = event.tags.find(tagNameEquals('end_tzid'))?.[1] ?? ''
-  const rUrls = event.tags
-    .filter(tagNameEquals('r'))
-    .map((t) => t[1]?.trim())
-    .filter((u): u is string => !!u && (u.startsWith('http://') || u.startsWith('https://')))
+  const rUrls = dedupePreserveOrder(
+    event.tags
+      .filter(tagNameEquals('r'))
+      .map((t) => t[1]?.trim())
+      .filter((u): u is string => !!u && (u.startsWith('http://') || u.startsWith('https://')))
+  )
   const rUrl = rUrls[0] ?? ''
   const joinUrl = rUrl
   const topics = event.tags.filter(tagNameEquals('t')).map((t) => t[1]?.trim()).filter(Boolean)

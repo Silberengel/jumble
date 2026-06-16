@@ -89,8 +89,8 @@ export function EmbeddedCalendarEvent({
           </Collapsible>
         </>
       ) : null}
-      {rUrls.map((url) => (
-        <Button key={url} variant="secondary" size="sm" className="w-full gap-2 mt-1" asChild>
+      {rUrls.map((url, idx) => (
+        <Button key={`${idx}-${url}`} variant="secondary" size="sm" className="w-full gap-2 mt-1" asChild>
           <a href={url} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="size-4 shrink-0" />
             {t('Open link')}

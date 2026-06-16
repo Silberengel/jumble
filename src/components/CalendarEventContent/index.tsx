@@ -85,7 +85,9 @@ export default function CalendarEventContent({
     const httpRs = getNip52CalendarEventTagExtras(event)
       .rTags.filter((r) => r.isHttpUrl)
       .map((r) => r.value)
-    return [...httpRs, ...(meta.image?.trim() ? [meta.image.trim()] : [])]
+    const imageHint = meta.image?.trim()
+    const hints = imageHint ? [...httpRs, imageHint] : httpRs
+    return [...new Set(hints)]
   }, [meta, event])
 
   const myPk = myPubkey?.toLowerCase()
@@ -280,9 +282,9 @@ export default function CalendarEventContent({
       ) : null}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 pt-2">
         {!showFull &&
-          rUrls.map((url) => (
+          rUrls.map((url, idx) => (
             <a
-              key={url}
+              key={`${idx}-${url}`}
               href={url}
               target="_blank"
               rel="noopener noreferrer"

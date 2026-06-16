@@ -1,4 +1,5 @@
 import { aspectRatioStyleFromDim, type ImetaDim } from '@/lib/imeta-display'
+import { isRenderableMediaUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { resolveMediaBlurPlaceholder } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
@@ -91,7 +92,8 @@ function MediaPlaceholderLayers({
 }) {
   const kind = mediaKind ?? guessMediaKindFromUrl(src)
   const hash = resolveMediaBlurPlaceholder(src, blurHash)
-  const poster = posterUrl?.trim()
+  const posterRaw = posterUrl?.trim()
+  const poster = posterRaw && isRenderableMediaUrl(posterRaw) ? posterRaw : undefined
 
   return (
     <>

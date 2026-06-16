@@ -1,6 +1,7 @@
 import {
   isHlsPlaylistUrl,
   isImage,
+  isRenderableMediaUrl,
   isZapStreamWatchPageUrl,
   primalR2aMirrorForBlossomPrimalUrl,
   resolvePrimalBlossomPlayableUrl
@@ -85,6 +86,7 @@ export default function MediaPlayer({
 
   const playableSrc = useMemo(() => {
     const raw = src.trim()
+    if (!isRenderableMediaUrl(raw)) return ''
     if (preferCanonicalBlossomUrl) return raw
     return resolvePrimalBlossomPlayableUrl(src)
   }, [src, preferCanonicalBlossomUrl])
@@ -214,6 +216,10 @@ export default function MediaPlayer({
     }
     return undefined
   }, [showEmbed, effectiveMediaType, embedPainted, playableSrc, t])
+
+  if (!isRenderableMediaUrl(src.trim())) {
+    return null
+  }
 
   if (!mustLoad && !showEmbed) {
     return (

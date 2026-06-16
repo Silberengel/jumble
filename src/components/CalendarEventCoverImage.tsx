@@ -1,6 +1,6 @@
 import { useFetchProfile } from '@/hooks'
 import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
-import { isVideo } from '@/lib/url'
+import { isSafeMediaUrl, isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { Calendar } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -28,18 +28,19 @@ export function CalendarEventCoverImage({
   iconClassName?: string
 }) {
   const trimmedCover = coverUrl?.trim() ?? ''
+  const safeCover = isSafeMediaUrl(trimmedCover) ? trimmedCover : ''
   const { profile } = useFetchProfile(pubkey)
   const profileThumb = useMemo(() => profileAvatarThumbUrl(profile?.avatar), [profile?.avatar])
 
   const [profileImgFailed, setProfileImgFailed] = useState(false)
   useEffect(() => {
     setProfileImgFailed(false)
-  }, [profileThumb, trimmedCover, pubkey])
+  }, [profileThumb, safeCover, pubkey])
 
-  if (trimmedCover) {
+  if (safeCover) {
     return (
       <img
-        src={trimmedCover}
+        src={safeCover}
         alt=""
         loading="lazy"
         referrerPolicy="no-referrer"
