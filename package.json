@@ -1,10 +1,9 @@
 {
   "name": "imwald",
-  "version": "23.22.1",
+  "version": "23.23.0",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",
-  "main": "electron/main.cjs",
   "author": "Silberengel",
   "license": "MIT",
   "repository": {
@@ -33,9 +32,6 @@
     "i18n:audit": "tsx scripts/i18n-audit.ts",
     "i18n:gaps": "tsx scripts/export-en-parity-gaps.ts",
     "i18n:translate-de": "PYTHONUNBUFFERED=1 .venv-i18n/bin/python scripts/auto_translate_i18n.py de",
-    "electron:dev": "concurrently -k -n vite,electron -c blue,green \"vite --host\" \"wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development electron .\"",
-    "build:electron": "tsc -b && vite build --mode electron",
-    "electron:pack": "npm run build:electron && electron-builder",
     "og:image": "node scripts/generate-og-png.mjs"
   },
   "dependencies": {
@@ -134,7 +130,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^10.0.3",
     "cross-env": "^7.0.3",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -153,41 +148,7 @@
     "vite": "^6.0.3",
     "vite-plugin-pwa": "^0.21.1",
     "vitest": "^4.0.8",
-    "wait-on": "^8.0.1",
     "ws": "^8.21.0"
-  },
-  "optionalDependencies": {
-    "electron": "^41.1.1",
-    "electron-builder": "^26.8.1"
-  },
-  "build": {
-    "appId": "eu.imwald.app",
-    "productName": "Imwald",
-    "copyright": "Copyright © Silberengel",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "electron/**/*"
-    ],
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Network",
-      "maintainer": "Silberengel",
-      "icon": "public/pwa-512x512.png",
-      "executableName": "imwald-jumble",
-      "desktop": {
-        "StartupWMClass": "imwald-jumble"
-      }
-    }
   },
   "overrides": {
     "sucrase": {

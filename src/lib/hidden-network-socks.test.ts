@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url)
 const {
   getTorSocksProxyUrlSync,
   refreshHiddenNetworkSocksCache
-} = require('../../electron/hidden-network-socks.cjs') as {
+} = require('../../server/hidden-network-socks.cjs') as {
   getTorSocksProxyUrlSync: () => string
   refreshHiddenNetworkSocksCache: () => Promise<{
     tor: { reachable: boolean; socksUrl: string; source: string }

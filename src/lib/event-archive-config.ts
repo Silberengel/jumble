@@ -1,5 +1,5 @@
 import { StorageKey } from '@/constants'
-import { isImwaldElectron, isMobileBrowserProfile } from '@/lib/client-platform'
+import { isMobileBrowserProfile } from '@/lib/client-platform'
 
 /** Removed from settings; strip so manual `localStorage` edits cannot flip archive behavior. */
 const LEGACY_EVENT_ARCHIVE_ENABLED_KEY = 'eventArchiveEnabled'
@@ -9,12 +9,9 @@ let legacyEventArchiveEnabledKeyRemoved = false
 export const EVENT_ARCHIVE_DEFAULTS = {
   sessionLruMobile: 100,
   sessionLruDesktopBrowser: 2500,
-  sessionLruElectron: 5000,
   maxMbMobile: 48,
-  maxMbElectron: 512,
   maxMbDesktopBrowser: 2048,
   maxEventsMobile: 500,
-  maxEventsElectron: 400_000,
   maxEventsDesktopBrowser: 80_000
 } as const
 
@@ -37,19 +34,16 @@ function readPositiveInt(key: string, fallback: number): number {
 }
 
 function defaultSessionLruMax(): number {
-  if (isImwaldElectron()) return EVENT_ARCHIVE_DEFAULTS.sessionLruElectron
   if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.sessionLruMobile
   return EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser
 }
 
 function defaultMaxMb(): number {
-  if (isImwaldElectron()) return EVENT_ARCHIVE_DEFAULTS.maxMbElectron
   if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.maxMbMobile
   return EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser
 }
 
 function defaultMaxEvents(): number {
-  if (isImwaldElectron()) return EVENT_ARCHIVE_DEFAULTS.maxEventsElectron
   if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
   return EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
 }

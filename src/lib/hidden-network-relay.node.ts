@@ -9,7 +9,7 @@ const {
   getTorSocksProxyUrlSync,
   getI2pSocksProxyUrlSync,
   refreshHiddenNetworkSocksCache
-} = require('../../electron/hidden-network-socks.cjs') as {
+} = require('../../server/hidden-network-socks.cjs') as {
   getTorSocksProxyUrlSync: () => string
   getI2pSocksProxyUrlSync: () => string
   refreshHiddenNetworkSocksCache: () => Promise<{

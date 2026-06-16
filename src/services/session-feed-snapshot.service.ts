@@ -1,6 +1,5 @@
 import type { Event } from 'nostr-tools'
 import logger from '@/lib/logger'
-import { isImwaldElectron } from '@/lib/client-platform'
 
 /** Max events stored per feed key (matches typical initial timeline cap). */
 const MAX_EVENTS_PER_FEED = 120
@@ -137,10 +136,6 @@ export function restorePersistedFeedSnapshots(): void {
  */
 export function hardReloadPreservingFeedSnapshots(): void {
   persistFeedSnapshotsToSessionStorage()
-  if (isImwaldElectron() && typeof window.imwaldElectron?.reloadApp === 'function') {
-    void window.imwaldElectron.reloadApp()
-    return
-  }
   window.location.reload()
 }
 

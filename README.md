@@ -85,22 +85,6 @@ docker compose up --build -d
 
 Then open: http://localhost:8089
 
-## Linux desktop (`.deb` / AppImage)
-
-Built packages are **not** committed to this repository (only source). They are published as **release assets** when a maintainer uploads them.
-
-- **Download:** [GitHub Releases — latest](https://github.com/Silberengel/jumble/releases/latest) — get the `*.deb` (or AppImage) attached to a release.
-- **Install the `.deb`:** `sudo apt install ./Imwald_*_amd64.deb` (use the exact filename from the download folder; `./` is required so `apt` uses the local file). After install, Imwald should appear in your app menu (often under **Network**).
-
-**Maintainers — build artifacts locally:**
-
-```bash
-npm install
-npm run electron:pack
-```
-
-Outputs land in `release/` (`.deb`, `.AppImage`). Upload those files when you create or edit a GitHub Release for that version.
-
 ## Tor & I2P relays (operators and power users)
 
 Browsers cannot open SOCKS connections or resolve `.onion` / `.i2p` hostnames. Imwald therefore **terminates hidden-network WebSocket relays on your machine** and forwards them through local Tor/I2P SOCKS.
@@ -110,8 +94,7 @@ Browsers cannot open SOCKS connections or resolve `.onion` / `.i2p` hostnames. I
 | Runtime | Hidden relays |
 |---------|----------------|
 | `npm run dev` | Yes — Vite dev server SOCKS bridge (`/__imwald/hidden-relay`) |
-| Desktop app (`.deb` / AppImage) | Yes — Electron loopback proxy on `127.0.0.1:45280` |
-| Public website (`jumble.imwald.eu`) | **No** — use clearnet `wss://` relays or the desktop app |
+| Public website (`jumble.imwald.eu`) | **No** — use clearnet `wss://` relays |
 
 Check status under **Settings → Relays and Storage → Tor & I2P**.
 

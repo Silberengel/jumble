@@ -1,4 +1,3 @@
-import { isImwaldElectron } from '@/lib/client-platform'
 import { isHlsPlaylistUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useContentPolicy } from '@/providers/ContentPolicyProvider'
@@ -72,8 +71,7 @@ export default function VideoPlayer({
     if (!video) return
 
     const hls = new Hls({
-      // `file:` packaged Electron cannot load bundled worker URLs reliably; main-thread demux is fine here.
-      enableWorker: !isImwaldElectron(),
+      enableWorker: true,
       lowLatencyMode: true
     })
     hls.loadSource(src)

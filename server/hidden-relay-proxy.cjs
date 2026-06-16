@@ -1,6 +1,5 @@
 'use strict'
 
-const http = require('http')
 const WebSocket = require('ws')
 const { WebSocketServer } = require('ws')
 const { SocksProxyAgent } = require('socks-proxy-agent')
@@ -39,10 +38,6 @@ function socksForTarget(targetUrl) {
   if (kind === 'tor') return getTorSocksProxyUrlSync()
   if (kind === 'i2p') return getI2pSocksProxyUrlSync()
   return undefined
-}
-
-function proxyBaseUrl(host, port) {
-  return `ws://${host}:${port}${PROXY_PATH}`
 }
 
 async function handleHiddenRelayStatusRequest(req, res, runtime) {
@@ -113,69 +108,11 @@ function attachHiddenRelayProxyUpgradeHandler(httpServer, wss = new WebSocketSer
   return wss
 }
 
-function attachHiddenRelayHttpHandler(
-  handler = async (req, res, runtime) => handleHiddenRelayStatusRequest(req, res, runtime)
-) {
-  return async (req, res) => {
-    const pathname = (() => {
-      try {
-        return new URL(req.url ?? '/', 'http://127.0.0.1').pathname
-      } catch {
-        return ''
-      }
-    })()
-    if (pathname === STATUS_PATH) {
-      await handler(req, res, 'electron')
-      return
-    }
-    res.writeHead(404).end()
-  }
-}
-
-function startHiddenRelayProxyServer(preferredPort) {
-  return new Promise((resolve, reject) => {
-    void refreshHiddenNetworkSocksCache()
-    const server = http.createServer((req, res) => {
-      void attachHiddenRelayHttpHandler()(req, res)
-    })
-    attachHiddenRelayProxyUpgradeHandler(server)
-
-    const listenOn = (port, attempt) => {
-      if (attempt >= 40) {
-        reject(new Error('No free port for hidden relay proxy'))
-        return
-      }
-      const onErr = (err) => {
-        server.removeListener('error', onErr)
-        if (err && err.code === 'EADDRINUSE') {
-          listenOn(port + 1, attempt + 1)
-        } else {
-          reject(err)
-        }
-      }
-      server.on('error', onErr)
-      server.listen(port, '127.0.0.1', () => {
-        server.removeListener('error', onErr)
-        const addr = server.address()
-        const boundPort = typeof addr === 'object' && addr ? addr.port : port
-        resolve({
-          server,
-          baseUrl: proxyBaseUrl('127.0.0.1', boundPort)
-        })
-      })
-    }
-
-    listenOn(preferredPort, 0)
-  })
-}
-
 module.exports = {
   PROXY_PATH,
   STATUS_PATH,
   attachHiddenRelayProxyUpgradeHandler,
-  attachHiddenRelayHttpHandler,
   handleHiddenRelayStatusRequest,
-  startHiddenRelayProxyServer,
   refreshHiddenNetworkSocksCache,
   buildHiddenNetworkRelayStatusPayload,
   getHiddenNetworkSocksStatus

@@ -13,7 +13,6 @@ import FavoritesButton from './FavoritesButton'
 import DiscussionsButton from './DiscussionsButton'
 import SpellsButton from './SpellsButton'
 import PaneModeToggle from './PaneModeToggle'
-import DownloadDesktopSidebarButton from './DownloadDesktopSidebarButton'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import SidebarCalendarWeekWidget from './SidebarCalendarWeekWidget'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
@@ -57,7 +56,6 @@ export default function PrimaryPageSidebar() {
         <div className={`shrink-0 space-y-2 pt-2 ${sidebarInsetX}`}>
           <HelpAndAccountMenu variant="sidebar" />
           <PaneModeToggle />
-          <DownloadDesktopSidebarButton />
         </div>
       </div>
     </div>

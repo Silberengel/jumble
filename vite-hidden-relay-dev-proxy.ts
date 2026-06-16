@@ -13,7 +13,7 @@ const {
   PROXY_PATH,
   STATUS_PATH,
   refreshHiddenNetworkSocksCache
-} = require('./electron/hidden-relay-proxy.cjs') as {
+} = require('./server/hidden-relay-proxy.cjs') as {
   attachHiddenRelayProxyUpgradeHandler: (server: Server) => unknown
   handleHiddenRelayStatusRequest: (
     req: IncomingMessage,

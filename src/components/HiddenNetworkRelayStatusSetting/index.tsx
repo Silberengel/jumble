@@ -28,8 +28,6 @@ function runtimeLabel(t: (key: string) => string, status: HiddenNetworkRelayStat
   switch (status.runtime) {
     case 'dev-proxy':
       return t('hiddenNetworkRuntimeDev')
-    case 'electron':
-      return t('hiddenNetworkRuntimeDesktop')
     default:
       return t('hiddenNetworkRuntimeWeb')
   }

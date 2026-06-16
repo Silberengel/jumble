@@ -154,24 +154,6 @@ function isNodeLikeRuntime(): boolean {
   return typeof window === 'undefined'
 }
 
-let electronHiddenRelayProxyBaseCache: string | null | undefined
-
-function readElectronHiddenRelayProxyBase(): string | null {
-  if (typeof window === 'undefined') return null
-  if (electronHiddenRelayProxyBaseCache !== undefined) {
-    return electronHiddenRelayProxyBaseCache
-  }
-  const bridge = window.imwaldElectron
-  const raw =
-    typeof bridge?.hiddenRelayProxyBase === 'function'
-      ? bridge.hiddenRelayProxyBase()
-      : typeof bridge?.hiddenRelayProxyBase === 'string'
-        ? bridge.hiddenRelayProxyBase
-        : null
-  electronHiddenRelayProxyBaseCache = raw?.trim() || null
-  return electronHiddenRelayProxyBaseCache
-}
-
 /** Same-origin dev proxy path (Vite plugin terminates SOCKS on the server). */
 export function browserHiddenRelayDevProxyBase(): string | null {
   if (typeof window === 'undefined') return null
@@ -184,14 +166,9 @@ export function browserHiddenRelayDevProxyBase(): string | null {
   }
 }
 
-/** Loopback desktop proxy (Electron main process terminates SOCKS). */
-export function browserHiddenRelayElectronProxyBase(): string | null {
-  return readElectronHiddenRelayProxyBase()
-}
-
-/** Dev same-origin proxy or packaged Electron loopback proxy. */
+/** Dev same-origin proxy for hidden-network relays. */
 export function browserHiddenRelayProxyBase(): string | null {
-  return browserHiddenRelayDevProxyBase() ?? browserHiddenRelayElectronProxyBase()
+  return browserHiddenRelayDevProxyBase()
 }
 
 /** When set, explains why a hidden-network relay cannot be opened in this runtime. */
@@ -204,7 +181,7 @@ export function hiddenNetworkRelayUnavailableReason(relayUrl: string): string | 
   if (plan.socksProxyUrl && isNodeLikeRuntime()) return null
   return (
     '[hidden-network-relay] Tor or I2P router required for ' +
-    `${relayHostname(relayUrl)} — add a clearnet relay URL, run Tor/I2P with SOCKS, or use the desktop app`
+    `${relayHostname(relayUrl)} — add a clearnet relay URL, run Tor/I2P with SOCKS, or use npm run dev locally`
   )
 }
 

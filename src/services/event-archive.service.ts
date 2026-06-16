@@ -135,7 +135,7 @@ function scheduleFlush(): void {
   }, 450)
 }
 
-/** Queue a non-replaceable event for IndexedDB archive (Electron + mobile + desktop web; caps differ). */
+/** Queue a non-replaceable event for IndexedDB archive (mobile + desktop web; caps differ). */
 export function queuePersistSeenEvent(ev: Event): void {
   if (shouldSkipArchiving(ev)) return
   const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id

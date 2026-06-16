@@ -5,10 +5,6 @@ vi.mock('@/constants', () => ({
   TRANSLATE_URL: 'http://test/translate'
 }))
 
-vi.mock('@/lib/electron-aware-fetch', () => ({
-  electronAwareFetch: vi.fn()
-}))
-
 describe('shouldSkipMachineTranslatePlainCore', () => {
   it('returns true for one or more ASCII hashtags with spaces', () => {
     expect(shouldSkipMachineTranslatePlainCore('#meme #memes #memestr #plebchain')).toBe(true)
@@ -26,14 +22,12 @@ describe('shouldSkipMachineTranslatePlainCore', () => {
 })
 
 describe('translatePlainText', () => {
-  afterEach(async () => {
-    vi.resetModules()
-    vi.clearAllMocks()
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('throws when the translate proxy returns 503 instead of returning the source text', async () => {
-    const { electronAwareFetch } = await import('@/lib/electron-aware-fetch')
-    vi.mocked(electronAwareFetch).mockResolvedValue(
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: false }), { status: 503 })
     )
 

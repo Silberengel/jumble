@@ -1,8 +1,4 @@
-import {
-  browserHiddenRelayDevProxyBase,
-  browserHiddenRelayElectronProxyBase,
-  setHiddenNetworkSocksSnapshot
-} from '@/lib/hidden-network-relay'
+import { browserHiddenRelayDevProxyBase, setHiddenNetworkSocksSnapshot } from '@/lib/hidden-network-relay'
 
 export type HiddenNetworkSocksSource =
   | 'env'
@@ -17,7 +13,7 @@ export type HiddenNetworkSocksEndpointStatus = {
   source: HiddenNetworkSocksSource
 }
 
-export type HiddenNetworkRelayRuntime = 'dev-proxy' | 'electron' | 'browser-only' | 'node'
+export type HiddenNetworkRelayRuntime = 'dev-proxy' | 'browser-only' | 'node'
 
 export type HiddenNetworkRelayStatus = {
   runtime: HiddenNetworkRelayRuntime
@@ -37,7 +33,6 @@ const EMPTY_STATUS: HiddenNetworkRelayStatus = {
 
 function currentRuntime(): HiddenNetworkRelayRuntime {
   if (browserHiddenRelayDevProxyBase()) return 'dev-proxy'
-  if (browserHiddenRelayElectronProxyBase()) return 'electron'
   return 'browser-only'
 }
 
@@ -77,14 +72,6 @@ export async function fetchHiddenNetworkRelayStatus(opts?: {
   force?: boolean
 }): Promise<HiddenNetworkRelayStatus> {
   const runtime = currentRuntime()
-
-  if (runtime === 'electron') {
-    const bridge = window.imwaldElectron
-    if (typeof bridge?.getHiddenNetworkRelayStatus === 'function') {
-      const raw = await bridge.getHiddenNetworkRelayStatus({ force: opts?.force === true })
-      return applyStatusSnapshot(normalizePayload(raw, 'electron'))
-    }
-  }
 
   if (runtime === 'dev-proxy') {
     try {

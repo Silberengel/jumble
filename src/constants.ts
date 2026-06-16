@@ -40,43 +40,11 @@ export const ASCIIDOCTOR_SERVER_URL =
 export const HIVETALK_BASE_URL =
   (import.meta.env.VITE_HIVETALK_BASE_URL as string | undefined) ?? 'https://honey.hivetalk.org'
 
-/**
- * Stable reference to this module's URL at load time.
- * `import.meta.url` alone is left untouched by Vite (only `new URL(path, import.meta.url)`
- * with a literal/template path gets transformed into a static asset map).
- * In the Electron build (dist/assets/*.js) this is something like:
- *   file:///path/to/dist/assets/index-abc.js
- */
-const _moduleHref: string = import.meta.url
-
-/**
- * URL for a file from `public/` (banner, favicon, payto logos, etc.).
- * Uses Vite `base`: `/` for web and packaged Electron (renderer is served from `http://127.0.0.1:*`; see
- * `electron/main.cjs`). The `file:` branch remains for opening `dist/index.html` directly from disk.
- *
- * For `file:` we derive the `dist/` root from the chunk's own URL. The chunk lives at
- * `dist/assets/*.js`, so `/assets/` marks the boundary: everything before it is the dist root.
- * Vite would transform `new URL(\`../${dynamic}\`, import.meta.url)` into a static glob map that
- * does NOT include `public/` copies, so we must NOT use that pattern here.
- */
+/** URL for a file from `public/` (banner, favicon, payto logos, etc.). Uses Vite `base`. */
 export function publicAssetUrl(assetPath: string): string {
   const trimmed = assetPath.replace(/^\//, '')
-  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-    const assetsIdx = _moduleHref.lastIndexOf('/assets/')
-    if (assetsIdx !== -1) {
-      // e.g. "file:///path/to/dist/" + "banner.png"
-      return _moduleHref.slice(0, assetsIdx + 1) + trimmed
-    }
-  }
   return `${import.meta.env.BASE_URL}${trimmed}`
 }
-
-/**
- * Default URL for the sidebar “Download desktop app” entry (e.g. GitHub Releases with AppImage/deb).
- * Override per deploy with `DESKTOP_DOWNLOAD_URL` in `/config.json` (empty string hides the entry).
- */
-export const DESKTOP_APP_DOWNLOAD_URL_DEFAULT =
-  'https://github.com/Silberengel/jumble/releases'
 
 export const DEFAULT_FAVORITE_RELAYS = [
   'wss://theforest.nostr1.com',

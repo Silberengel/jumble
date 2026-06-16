@@ -1,19 +1,13 @@
 import { Button } from '@/components/ui/button'
 import { getLibraryIndexCacheFootprint, getLibraryIndexCacheBudget } from '@/lib/library-index-idb-cache'
 import { clearAllLibraryIndexCaches } from '@/lib/library-publication-index'
-import { isImwaldElectron, isMobileBrowserProfile } from '@/lib/client-platform'
+import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 function formatMb(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1)
-}
-
-function platformLabel(): string {
-  if (isImwaldElectron()) return 'desktop-app'
-  if (isMobileBrowserProfile()) return 'mobile-web'
-  return 'desktop-web'
 }
 
 export default function LibraryIndexCacheSettings() {
@@ -50,15 +44,8 @@ export default function LibraryIndexCacheSettings() {
   }
 
   const defaultsHint = useMemo(() => {
-    const p = platformLabel()
-    if (p === 'mobile-web') {
+    if (isMobileBrowserProfile()) {
       return t('libraryIndexCache.defaultsMobile', {
-        entries: budget.maxEntries,
-        mb: Math.round(budget.maxBytes / (1024 * 1024))
-      })
-    }
-    if (p === 'desktop-app') {
-      return t('libraryIndexCache.defaultsElectron', {
         entries: budget.maxEntries,
         mb: Math.round(budget.maxBytes / (1024 * 1024))
       })

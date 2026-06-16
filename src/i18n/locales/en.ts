@@ -581,9 +581,9 @@ export default {
       'The number of read and write servers should ideally be kept between 2 and 4.',
     'Tor & I2P': 'Tor & I2P',
     hiddenNetworkRelaysIntro:
-      'Tor (.onion) and I2P (.i2p) relay URLs need a local SOCKS proxy. Imwald routes them through a loopback bridge in dev mode or the desktop app.',
+      'Tor (.onion) and I2P (.i2p) relay URLs need a local SOCKS proxy. Imwald routes them through a loopback bridge when you run npm run dev locally.',
     hiddenNetworkRelaysWebLimit:
-      'The public website cannot reach hidden-network relays directly. Use clearnet relay URLs here, or run the desktop app with Tor/I2P locally.',
+      'The public website cannot reach hidden-network relays directly. Use clearnet relay URLs here, or run npm run dev locally with Tor/I2P.',
     hiddenNetworkRuntimeLabel: 'Runtime',
     hiddenNetworkRuntimeDev: 'Dev server (local SOCKS bridge)',
     hiddenNetworkRuntimeDesktop: 'Desktop app (local SOCKS bridge)',
@@ -599,7 +599,7 @@ export default {
     hiddenNetworkSocksSourceI2pRouter: 'Detected I2P router SOCKS on 127.0.0.1:7657',
     hiddenNetworkSocksSourceUnavailable: 'No local SOCKS listener found',
     hiddenNetworkBrowserOnlyNotice:
-      'Install and run the Imwald desktop app, or use npm run dev locally, to connect to .onion and .i2p relays.',
+      'Use npm run dev locally to connect to .onion and .i2p relays.',
     hiddenNetworkStartRoutersHint:
       'Start Tor (9050 or Tor Browser 9150) and/or I2P (7657), then press Refresh. First connections can take up to a minute while circuits build.',
     hiddenNetworkReadyHint:

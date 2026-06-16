@@ -6,18 +6,12 @@ import {
   EVENT_ARCHIVE_DEFAULTS,
   getEventArchiveConfig
 } from '@/lib/event-archive-config'
-import { isImwaldElectron, isMobileBrowserProfile } from '@/lib/client-platform'
+import { isMobileBrowserProfile } from '@/lib/client-platform'
 import client from '@/services/client.service'
 import { invalidateArchiveFootprintCache } from '@/services/event-archive.service'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-function platformLabel(): string {
-  if (isImwaldElectron()) return 'desktop-app'
-  if (isMobileBrowserProfile()) return 'mobile-web'
-  return 'desktop-web'
-}
 
 export default function EventArchiveCacheSettings() {
   const { t } = useTranslation()
@@ -26,19 +20,11 @@ export default function EventArchiveCacheSettings() {
   const [sessionLru, setSessionLru] = useState('')
 
   const defaultsHint = useMemo(() => {
-    const p = platformLabel()
-    if (p === 'mobile-web') {
+    if (isMobileBrowserProfile()) {
       return t('eventArchive.defaultsMobile', {
         lru: EVENT_ARCHIVE_DEFAULTS.sessionLruMobile,
         mb: EVENT_ARCHIVE_DEFAULTS.maxMbMobile,
         ev: EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
-      })
-    }
-    if (p === 'desktop-app') {
-      return t('eventArchive.defaultsElectron', {
-        lru: EVENT_ARCHIVE_DEFAULTS.sessionLruElectron,
-        mb: EVENT_ARCHIVE_DEFAULTS.maxMbElectron,
-        ev: EVENT_ARCHIVE_DEFAULTS.maxEventsElectron
       })
     }
     return t('eventArchive.defaultsDesktopWeb', {
@@ -86,11 +72,9 @@ export default function EventArchiveCacheSettings() {
             id="archive-max-mb"
             inputMode="numeric"
             placeholder={String(
-              isImwaldElectron()
-                ? EVENT_ARCHIVE_DEFAULTS.maxMbElectron
-                : isMobileBrowserProfile()
-                  ? EVENT_ARCHIVE_DEFAULTS.maxMbMobile
-                  : EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser
+              isMobileBrowserProfile()
+                ? EVENT_ARCHIVE_DEFAULTS.maxMbMobile
+                : EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser
             )}
             value={maxMb}
             onChange={(e) => setMaxMb(e.target.value)}
@@ -104,11 +88,9 @@ export default function EventArchiveCacheSettings() {
             id="archive-max-events"
             inputMode="numeric"
             placeholder={String(
-              isImwaldElectron()
-                ? EVENT_ARCHIVE_DEFAULTS.maxEventsElectron
-                : isMobileBrowserProfile()
-                  ? EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
-                  : EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
+              isMobileBrowserProfile()
+                ? EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
+                : EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
             )}
             value={maxEvents}
             onChange={(e) => setMaxEvents(e.target.value)}
@@ -124,11 +106,9 @@ export default function EventArchiveCacheSettings() {
           id="session-lru"
           inputMode="numeric"
           placeholder={String(
-            isImwaldElectron()
-              ? EVENT_ARCHIVE_DEFAULTS.sessionLruElectron
-              : isMobileBrowserProfile()
-                ? EVENT_ARCHIVE_DEFAULTS.sessionLruMobile
-                : EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser
+            isMobileBrowserProfile()
+              ? EVENT_ARCHIVE_DEFAULTS.sessionLruMobile
+              : EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser
           )}
           value={sessionLru}
           onChange={(e) => setSessionLru(e.target.value)}

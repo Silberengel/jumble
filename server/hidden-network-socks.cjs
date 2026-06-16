@@ -127,7 +127,7 @@ function buildHiddenNetworkRelayStatusPayload(runtime) {
   }
   return {
     runtime,
-    proxyAvailable: runtime === 'dev-proxy' || runtime === 'electron',
+    proxyAvailable: runtime === 'dev-proxy',
     tor: snapshot.tor,
     i2p: snapshot.i2p,
     checkedAt: snapshot.checkedAt

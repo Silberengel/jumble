@@ -641,7 +641,7 @@ export function isSafeMediaUrl(url: string): boolean {
 
 /**
  * True if the URL may be used as an `<img src>` in-app: http(s), `data:image/…` (e.g. pubkey
- * placeholders), `blob:`, or `file:` (Electron). Use {@link isSafeMediaUrl} for user-openable links only.
+ * placeholders), or `blob:`. Use {@link isSafeMediaUrl} for user-openable links only.
  */
 export function isRenderableMediaUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false

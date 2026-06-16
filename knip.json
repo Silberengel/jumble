@@ -1,7 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["electron/preload.cjs!", "nip66-cron/index.mjs!"],
+  "entry": ["nip66-cron/index.mjs!"],
   "ignore": ["src/global-polyfill-types.d.ts", "src/types/**/*.d.ts"],
-  "ignoreBinaries": ["electron", "electron-builder"],
   "ignoreDependencies": ["ws"]
 }

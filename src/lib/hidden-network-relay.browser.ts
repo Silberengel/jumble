@@ -16,7 +16,7 @@ function createBrowserHiddenNetworkWebSocketClass(): typeof WebSocket {
   } as typeof WebSocket
 }
 
-/** Browser: dev/Electron loopback proxy or test gateway; clearnet uses native WebSocket. */
+/** Browser: dev loopback proxy or test gateway; clearnet uses native WebSocket. */
 export function installBrowserHiddenNetworkRelayWebSocket(): void {
   useWebSocketImplementation(createBrowserHiddenNetworkWebSocketClass())
 }

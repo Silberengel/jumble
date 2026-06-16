@@ -1,4 +1,3 @@
-import { isImwaldElectron } from '@/lib/client-platform'
 import { ensureYouTubeIframeApi } from '@/lib/youtube-iframe-api'
 import { parseYoutubeUrl } from '@/lib/youtube-url'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
@@ -35,29 +34,6 @@ export default function YoutubeEmbeddedPlayer({
 
   const showEmbed = mustLoad || autoLoadMedia || userClickedLoad
 
-  /**
-   * YouTube in Electron:
-   * - **Iframe API** (`YT.Player`) against `http(s)://localhost` often ends in error **153** (player configuration)
-   *   in recent Chromium/Electron builds; it worked more reliably in plain browsers only.
-   * - **Native `/embed/` iframe** works if the `origin` query param matches the real page origin (dev server,
-   *   or packaged app: loopback static server — see `electron/main.cjs`). On raw **`file:`** omit `origin`
-   *   (a fake `https://…` origin caused **150**).
-   * Non-Electron: keep the Iframe API (unchanged from pre–Electron-split behavior).
-   */
-  const useNativeEmbed = isImwaldElectron()
-
-  const nativeEmbedSrc = useMemo(() => {
-    if (!videoId || !isImwaldElectron()) return null
-    const params = new URLSearchParams({ playsinline: '1', rel: '0' })
-    if (typeof window !== 'undefined') {
-      const { protocol, origin } = window.location
-      if (protocol === 'http:' || protocol === 'https:') {
-        params.set('origin', origin)
-      }
-    }
-    return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${params}`
-  }, [videoId])
-
   const posterUrl = useMemo(
     () => (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
     [videoId]
@@ -73,7 +49,6 @@ export default function YoutubeEmbeddedPlayer({
   )
 
   useEffect(() => {
-    if (useNativeEmbed) return
     if (!videoId || !containerRef.current || !showEmbed) return
 
     let cancelled = false
@@ -118,9 +93,9 @@ export default function YoutubeEmbeddedPlayer({
         // React often removes the host node first when auto-load media is turned off; YT then hits removeChild errors.
       }
     }
-  }, [videoId, showEmbed, useNativeEmbed])
+  }, [videoId, showEmbed])
 
-  if (error && !useNativeEmbed) {
+  if (error) {
     return <ExternalLink url={url} />
   }
 
@@ -138,25 +113,6 @@ export default function YoutubeEmbeddedPlayer({
 
   if (!videoId && !initSuccess) {
     return <ExternalLink url={url} />
-  }
-
-  if (useNativeEmbed && nativeEmbedSrc) {
-    return (
-      <div
-        className={cn(
-          'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
-          frameClassName
-        )}
-      >
-        <iframe
-          className="h-full w-full min-h-[12rem] border-0"
-          src={nativeEmbedSrc}
-          title="YouTube video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
-      </div>
-    )
   }
 
   return (

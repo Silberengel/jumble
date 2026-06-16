@@ -1,5 +1,4 @@
 import { LANGUAGE_TOOL_URL } from '@/constants'
-import { electronAwareFetch } from '@/lib/electron-aware-fetch'
 import logger from '@/lib/logger'
 
 /** After proxy/backend 502/503/504, skip further grammar HTTP this tab (optional dev proxy). */
@@ -44,7 +43,7 @@ export async function languageToolCheck(
   body.set('language', language)
   body.set('enabledOnly', 'false')
 
-  const res = await electronAwareFetch(url, {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
