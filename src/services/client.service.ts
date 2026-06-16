@@ -91,7 +91,7 @@ function canonicalSeenOnEventId(eventId: string): string {
 
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
-import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
+import { bindLocalEventResolveSessionPeek, resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import {
   getHttpRelayListFromEvent,
   getProfileFromEvent,
@@ -5640,6 +5640,7 @@ class ClientService extends EventTarget {
 
 }
 const instance = ClientService.getInstance()
+bindLocalEventResolveSessionPeek((id) => instance.peekSessionCachedEvent(id))
 export default instance
 
 // Export sub-services for direct access

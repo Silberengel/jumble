@@ -10,12 +10,6 @@ const { peekSessionCachedEvent, getArchivedEventsByIds, findStoredReplaceableEve
   })
 )
 
-vi.mock('@/services/client.service', () => ({
-  default: {
-    peekSessionCachedEvent
-  }
-}))
-
 vi.mock('@/services/indexed-db.service', () => ({
   default: {
     getArchivedEventsByIds,
@@ -24,7 +18,7 @@ vi.mock('@/services/indexed-db.service', () => ({
   }
 }))
 
-import { resolveLocalEventsByHexIds } from './local-event-resolve'
+import { bindLocalEventResolveSessionPeek, resolveLocalEventsByHexIds } from './local-event-resolve'
 
 function note(id: string): Event {
   return {
@@ -41,6 +35,7 @@ function note(id: string): Event {
 describe('resolveLocalEventsByHexIds', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    bindLocalEventResolveSessionPeek(peekSessionCachedEvent)
   })
 
   it('returns session LRU hits first', async () => {

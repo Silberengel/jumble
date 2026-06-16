@@ -28,7 +28,7 @@ function isNestedPickerTarget(target: EventTarget | null): boolean {
     target instanceof HTMLElement &&
     Boolean(
       target.closest(
-        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
+        '[data-advanced-lab-shell], [data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
       )
     )
   )
@@ -64,6 +64,12 @@ export default function PostEditor({
   const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
   const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
+  /** Advanced lab / other child overlays portaled outside the shell — disable modal inert on the composer. */
+  const [childOverlayOpen, setChildOverlayOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) setChildOverlayOpen(false)
+  }, [open])
 
   useEffect(() => {
     if (open && isSmallScreen && !wasOpenRef.current) {
@@ -108,6 +114,7 @@ export default function PostEditor({
         onPublishSuccess={onPublishSuccess}
         discussionDynamicTopics={discussionDynamicTopics}
         pickerPortalContainer={pickerPortalContainer}
+        onChildOverlayOpenChange={setChildOverlayOpen}
       />
     )
   }, [
@@ -120,12 +127,13 @@ export default function PostEditor({
     initialPublicMessageTo,
     onPublishSuccess,
     discussionDynamicTopics,
-    pickerPortalContainer
+    pickerPortalContainer,
+    setChildOverlayOpen
   ])
 
   if (isSmallScreen) {
     return (
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet open={open} onOpenChange={setOpen} modal={!childOverlayOpen}>
         <SheetContent
           className="relative flex w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
@@ -170,7 +178,7 @@ export default function PostEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={!childOverlayOpen}>
       <DialogContent
         className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         overlayClassName="z-[200]"

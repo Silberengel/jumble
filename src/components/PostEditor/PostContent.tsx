@@ -167,7 +167,8 @@ export default function PostContent({
   initialPublicMessageTo,
   onPublishSuccess,
   discussionDynamicTopics,
-  pickerPortalContainer
+  pickerPortalContainer,
+  onChildOverlayOpenChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
   open: boolean
@@ -184,6 +185,8 @@ export default function PostContent({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
   /** Portal mount for emoji/GIF/meme pickers so they stay inside the modal (not inert). */
   pickerPortalContainer?: HTMLElement | null
+  /** Notify when a child overlay (advanced lab) opens — parent disables modal inert. */
+  onChildOverlayOpenChange?: (open: boolean) => void
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
@@ -719,6 +722,10 @@ export default function PostContent({
     textareaRef,
     getKind: () => getDeterminedKindRef.current
   })
+
+  useEffect(() => {
+    onChildOverlayOpenChange?.(advancedLabOpen)
+  }, [advancedLabOpen, onChildOverlayOpenChange])
 
   const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
     appendUploadedUrl(url, treatAsImage)
@@ -1314,32 +1321,37 @@ export default function PostContent({
   )
 
   const handleOpenAdvancedLab = useCallback(async () => {
-    await checkLogin(async () => {
-      if (!pubkey) {
-        toast.error(t('Log in to publish'))
-        return
-      }
-      try {
-        // Let the browser paint any loading/disabled UI before draft build + CodeMirror mount (can be heavy).
-        await yieldForPaintBeforeHeavyWork()
-        const body = textareaRef.current?.getText() ?? text
-        const cleanedText = rewritePlainTextHttpUrls(body)
-        const d = await finalizeDraftEvent(cleanedText)
-        openLab({
-          kind: d.kind,
-          content: d.content,
-          tags: d.tags ?? []
-        })
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e))
-      }
-    })
+    try {
+      await checkLogin(async () => {
+        if (!pubkey) {
+          toast.error(t('Log in to publish'))
+          return
+        }
+        try {
+          await yieldForPaintBeforeHeavyWork()
+          const body = textareaRef.current?.getText() ?? text
+          const cleanedText = rewritePlainTextHttpUrls(body)
+          const d = await finalizeDraftEvent(cleanedText)
+          onChildOverlayOpenChange?.(true)
+          openLab({
+            kind: d.kind,
+            content: d.content,
+            tags: d.tags ?? []
+          })
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : String(e))
+        }
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
   }, [
     checkLogin,
     pubkey,
     text,
     finalizeDraftEvent,
     openLab,
+    onChildOverlayOpenChange,
     t
   ])
 
@@ -3551,7 +3563,10 @@ export default function PostContent({
                     variant="outline"
                     size="sm"
                     className="h-8 shrink-0 gap-1 px-2 text-xs font-normal sm:text-sm"
-                    onClick={() => void handleOpenAdvancedLab()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleOpenAdvancedLab()
+                    }}
                     title={t('Advanced event lab')}
                   >
                     <Code2 className="h-3.5 w-3.5 shrink-0" />
@@ -4069,7 +4084,6 @@ export default function PostContent({
         open={advancedLabOpen}
         onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
         initial={advancedLabInitial}
-        portalContainer={pickerPortalContainer}
         kindEditable={false}
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}

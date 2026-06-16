@@ -48,7 +48,7 @@ import {
 } from '@/lib/tag'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { getViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
-import client, { eventService } from '@/services/client.service'
+import client, { eventService, queryService } from '@/services/client.service'
 import { TEmoji } from '@/types'
 import dayjs from 'dayjs'
 import { Event, Filter, kinds } from 'nostr-tools'
@@ -466,7 +466,6 @@ class NoteStatsService {
             firstRelayResultGraceMs: false as const,
             ...(opts?.foreground ? { foreground: true as const } : {})
           }
-          const { queryService } = await import('@/services/client.service')
           await Promise.all([
             nonSocial.length > 0
               ? queryService.fetchEvents(urls, nonSocial, {
@@ -695,7 +694,6 @@ class NoteStatsService {
         ...(isForegroundFetch ? { foreground: true as const } : {})
       }
 
-      const { queryService } = await import('@/services/client.service')
       const rootHex = this.statsKey(resolvedEvent.id)
       const onStatsEvent = (evt: Event) => {
         this.updateNoteStatsByEvents([evt], resolvedEvent!.pubkey, {
@@ -1336,7 +1334,6 @@ class NoteStatsService {
       ? getReplaceableCoordinateFromEvent(rootEvent)
       : undefined
 
-    const { queryService } = await import('@/services/client.service')
     try {
       await queryService.fetchEvents(
         moneroUrls,
@@ -1368,7 +1365,6 @@ class NoteStatsService {
       filters.push({ '#e': ch, kinds: [...NOTE_STATS_ZAP_AND_MONERO_KINDS], limit: 100 })
     }
 
-    const { queryService } = await import('@/services/client.service')
     try {
       await queryService.fetchEvents(moneroUrls, filters, {
         eoseTimeout: 8_000,
@@ -1398,7 +1394,7 @@ class NoteStatsService {
       { '#e': [rootHex], kinds: [kinds.Reaction], limit: 500 },
       { '#E': [rootHex], kinds: [kinds.Reaction], limit: 500 }
     ]
-    const { queryService } = await import('@/services/client.service')
+
     await queryService.fetchEvents(urls, filters, {
       eoseTimeout: 12_000,
       globalTimeout: 22_000,

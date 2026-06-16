@@ -209,8 +209,6 @@ export type AdvancedEventLabDialogProps = {
   addClientTag?: boolean
   /** Composer Advanced panel content-warning settings (merged into JSON preview). */
   contentWarning?: TContentWarningDraftOptions
-  /** When set (reply/post composer), portal into the parent dialog layer so Radix does not mark this inert. */
-  portalContainer?: HTMLElement | null
 }
 
 function useDarkModeFlag(): boolean {
@@ -246,8 +244,7 @@ export default function AdvancedEventLabDialog({
   previewAuthorPubkey = null,
   previewEmojiTags,
   addClientTag = true,
-  contentWarning,
-  portalContainer = null
+  contentWarning
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   const [labPickerPortalContainer, setLabPickerPortalContainer] = useState<HTMLElement | null>(null)
@@ -944,9 +941,9 @@ export default function AdvancedEventLabDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent
-        portalContainer={portalContainer}
+        composerNestedShell
         overlayClassName="z-[205] pointer-events-auto"
-        className={cnDialogShell(Boolean(portalContainer))}
+        className={cnDialogShell()}
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0 px-4 pt-4 pb-2 pr-12 border-b">
@@ -1248,13 +1245,7 @@ export default function AdvancedEventLabDialog({
 }
 
 /** Responsive shell: ~5× prior max width cap and ~3× vertical use of viewport (still clamped). */
-function cnDialogShell(nestedInComposer = false): string {
-  if (nestedInComposer) {
-    return [
-      'z-[250] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0',
-      'absolute inset-2 sm:inset-3 w-auto h-auto max-h-none !translate-x-0 !translate-y-0 left-auto top-auto'
-    ].join(' ')
-  }
+function cnDialogShell(): string {
   return [
     'z-[250] !flex max-w-none flex-col gap-0 overflow-hidden p-0',
     'w-[min(98vw,calc(72rem*5))]',

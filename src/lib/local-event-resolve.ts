@@ -1,6 +1,15 @@
 import indexedDb from '@/services/indexed-db.service'
 import type { Event } from 'nostr-tools'
 
+type SessionEventPeek = (hexId: string) => Event | undefined
+
+/** Wired from client.service at init — avoids a static import cycle with client.service. */
+let peekSessionCachedEvent: SessionEventPeek | null = null
+
+export function bindLocalEventResolveSessionPeek(peek: SessionEventPeek) {
+  peekSessionCachedEvent = peek
+}
+
 function normalizeHexIds(ids: readonly string[]): string[] {
   return [
     ...new Set(
@@ -19,13 +28,13 @@ export async function resolveLocalEventsByHexIds(ids: readonly string[]): Promis
   const wanted = normalizeHexIds(ids)
   if (wanted.length === 0) return []
 
-  const { default: client } = await import('@/services/client.service')
-
   const byId = new Map<string, Event>()
 
-  for (const id of wanted) {
-    const sess = client.peekSessionCachedEvent(id)
-    if (sess) byId.set(id, sess)
+  if (peekSessionCachedEvent) {
+    for (const id of wanted) {
+      const sess = peekSessionCachedEvent(id)
+      if (sess) byId.set(id, sess)
+    }
   }
 
   const missingArchive = wanted.filter((id) => !byId.has(id))
