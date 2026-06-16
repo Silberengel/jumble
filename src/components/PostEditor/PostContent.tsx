@@ -106,7 +106,8 @@ import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
@@ -169,6 +170,7 @@ export default function PostContent({
   discussionDynamicTopics,
   pickerPortalContainer,
   advancedLabPortalContainer,
+  advancedLabPortalRef,
   onAdvancedLabOpenChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
@@ -188,6 +190,8 @@ export default function PostContent({
   pickerPortalContainer?: HTMLElement | null
   /** Full-viewport portal for the advanced lab (outside the composer dialog bounds). */
   advancedLabPortalContainer?: HTMLElement | null
+  /** Sync ref to the lab portal shell (available before React state commits). */
+  advancedLabPortalRef?: RefObject<HTMLElement | null>
   /** Notifies the composer shell when the full-screen advanced lab opens or closes. */
   onAdvancedLabOpenChange?: (open: boolean) => void
 }) {
@@ -1330,13 +1334,18 @@ export default function PostContent({
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
         const d = await finalizeDraftEvent(cleanedText)
-        // Defer until after Radix/tab focus settles (avoids composer dismiss on same gesture).
+        const slice = {
+          kind: d.kind,
+          content: d.content,
+          tags: d.tags ?? []
+        }
+        for (let i = 0; i < 120; i++) {
+          if (advancedLabPortalRef?.current ?? advancedLabPortalContainer) break
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        }
+        if (!advancedLabPortalRef?.current && !advancedLabPortalContainer) return
         requestAnimationFrame(() => {
-          openLab({
-            kind: d.kind,
-            content: d.content,
-            tags: d.tags ?? []
-          })
+          openLab(slice)
         })
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))
@@ -1348,6 +1357,8 @@ export default function PostContent({
     text,
     finalizeDraftEvent,
     openLab,
+    advancedLabPortalContainer,
+    advancedLabPortalRef,
     t
   ])
 
@@ -4073,30 +4084,37 @@ export default function PostContent({
           </div>
         </DialogContent>
       </Dialog>
-      <AdvancedEventLabDialog
-        open={advancedLabOpen}
-        onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
-        initial={advancedLabInitial}
-        kindEditable={false}
-        markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
-        i18nLanguage={i18n.language}
-        contextEventId={parentEvent?.id ?? null}
-        previewAuthorPubkey={pubkey ?? null}
-        addClientTag={addClientTag}
-        contentWarning={labContentWarning}
-        draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
-        bodyApiRef={advancedLabBodyApiRef}
-        portalContainer={advancedLabPortalContainer}
-        portalBackdrop
-        renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
-          renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
-        }
-        composerToolbarPanel={composerAdvancedPanel}
-        onApply={(payload) => {
-          persistLabDraft(payload)
-          applyToTipTap(payload.content)
-        }}
-      />
+      {advancedLabOpen &&
+      advancedLabInitial &&
+      advancedLabPortalContainer
+        ? createPortal(
+            <AdvancedEventLabDialog
+              open={advancedLabOpen}
+              onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
+              initial={advancedLabInitial}
+              kindEditable={false}
+              markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
+              i18nLanguage={i18n.language}
+              contextEventId={parentEvent?.id ?? null}
+              previewAuthorPubkey={pubkey ?? null}
+              addClientTag={addClientTag}
+              contentWarning={labContentWarning}
+              draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
+              bodyApiRef={advancedLabBodyApiRef}
+              portalContainer={advancedLabPortalContainer}
+              portalBackdrop
+              renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
+                renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
+              }
+              composerToolbarPanel={composerAdvancedPanel}
+              onApply={(payload) => {
+                persistLabDraft(payload)
+                applyToTipTap(payload.content)
+              }}
+            />,
+            advancedLabPortalContainer
+          )
+        : null}
       <EditOrCloneEventDialog
         open={createCustomEventOpen}
         onOpenChange={setCreateCustomEventOpen}

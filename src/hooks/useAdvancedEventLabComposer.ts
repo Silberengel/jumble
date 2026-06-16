@@ -77,11 +77,11 @@ export function useAdvancedEventLabComposer({
   const openLab = useCallback(
     (live: AdvancedEventLabSlice) => {
       const slice = resolveSliceForOpen(live)
-      if (onOpenChange) {
-        flushSync(() => onOpenChange(true))
-      }
-      setAdvancedLabInitial(slice)
-      setAdvancedLabOpen(true)
+      flushSync(() => {
+        onOpenChange?.(true)
+        setAdvancedLabInitial(slice)
+        setAdvancedLabOpen(true)
+      })
     },
     [resolveSliceForOpen, onOpenChange]
   )
@@ -108,7 +108,13 @@ export function useAdvancedEventLabComposer({
 
   const handleLabOpenChange = useCallback(
     (open: boolean, onClose?: () => void) => {
-      onOpenChange?.(open)
+      if (open) {
+        if (onOpenChange) {
+          flushSync(() => onOpenChange(true))
+        }
+      } else {
+        onOpenChange?.(false)
+      }
       setAdvancedLabOpen(open)
       if (!open) {
         setAdvancedLabInitial(null)

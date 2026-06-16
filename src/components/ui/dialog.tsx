@@ -8,11 +8,21 @@ import modalManager from '@/services/modal-manager.service'
 
 export const DialogContext = React.createContext(false)
 
-const Dialog = ({ children, open, onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
+const Dialog = ({
+  children,
+  open,
+  onOpenChange,
+  registerWithModalManager = true,
+  ...props
+}: DialogPrimitive.DialogProps & {
+  /** When false, skip modalManager (nested overlays that must not fight browser-back / stack pop). */
+  registerWithModalManager?: boolean
+}) => {
   const [innerOpen, setInnerOpen] = React.useState(open ?? false)
   const id = React.useMemo(() => `dialog-${randomString()}`, [])
 
   React.useEffect(() => {
+    if (!registerWithModalManager) return
     if (open) {
       modalManager.register(id, () => {
         onOpenChange?.(false)
@@ -20,9 +30,10 @@ const Dialog = ({ children, open, onOpenChange, ...props }: DialogPrimitive.Dial
     } else {
       modalManager.unregister(id)
     }
-  }, [open])
+  }, [open, registerWithModalManager])
 
   React.useEffect(() => {
+    if (!registerWithModalManager) return
     if (open !== undefined) {
       return
     }
@@ -34,7 +45,7 @@ const Dialog = ({ children, open, onOpenChange, ...props }: DialogPrimitive.Dial
     } else {
       modalManager.unregister(id)
     }
-  }, [innerOpen])
+  }, [innerOpen, open, registerWithModalManager])
 
   return (
     <DialogPrimitive.Root

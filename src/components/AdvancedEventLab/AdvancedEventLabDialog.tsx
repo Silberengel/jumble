@@ -1130,7 +1130,12 @@ export default function AdvancedEventLabDialog({
   )
 
   return (
-    <Dialog open={open} onOpenChange={handleDialogOpenChange} modal={!portalContainer}>
+    <Dialog
+      open={open}
+      onOpenChange={handleDialogOpenChange}
+      modal={portalBackdrop ? false : !portalContainer}
+      registerWithModalManager={!(portalContainer && portalBackdrop)}
+    >
       <DialogContent
         portalContainer={portalContainer}
         composerNestedShell={Boolean(portalContainer)}
@@ -1143,10 +1148,17 @@ export default function AdvancedEventLabDialog({
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => {
-          if (portalContainer) e.preventDefault()
+          if (portalContainer || portalBackdrop) e.preventDefault()
         }}
         onPointerDownOutside={(e) => {
-          if (portalContainer) e.preventDefault()
+          if (portalContainer || portalBackdrop) e.preventDefault()
+        }}
+        onFocusOutside={(e) => {
+          // Lab blocks auto-focus; focus can remain on the composer trigger and Radix would dismiss immediately.
+          if (portalContainer || portalBackdrop) e.preventDefault()
+        }}
+        onCloseAutoFocus={(e) => {
+          if (portalBackdrop) e.preventDefault()
         }}
       >
         <DialogHeader className="shrink-0 border-b px-3 py-2 pr-12 sm:px-4 sm:py-3">

@@ -67,9 +67,9 @@ export default function PostEditor({
   const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
   const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
+  const advancedLabPortalRef = useRef<HTMLElement | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const advancedLabOpenRef = useRef(false)
-  const [bodyPortalReady, setBodyPortalReady] = useState(false)
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
 
@@ -88,11 +88,8 @@ export default function PostEditor({
   }, [])
 
   const setAdvancedLabPortal = useCallback((el: HTMLElement | null) => {
+    advancedLabPortalRef.current = el
     setAdvancedLabPortalContainer(el)
-  }, [])
-
-  useEffect(() => {
-    setBodyPortalReady(true)
   }, [])
 
   useEffect(() => {
@@ -151,7 +148,10 @@ export default function PostEditor({
       open={open}
       defaultContent={effectiveDefaultContent}
       parentEvent={parentEvent}
-      close={() => setOpen(false)}
+      close={() => {
+        if (advancedLabOpenRef.current) return
+        setOpen(false)
+      }}
       openFrom={openFrom}
       initialHighlightData={initialHighlightData}
       initialPublicMessageTo={initialPublicMessageTo}
@@ -159,6 +159,7 @@ export default function PostEditor({
       discussionDynamicTopics={discussionDynamicTopics}
       pickerPortalContainer={pickerPortalContainer}
       advancedLabPortalContainer={advancedLabPortalContainer}
+      advancedLabPortalRef={advancedLabPortalRef}
       onAdvancedLabOpenChange={handleAdvancedLabOpenChange}
     />
   )
@@ -167,27 +168,23 @@ export default function PostEditor({
     <div
       ref={setAdvancedLabPortal}
       data-advanced-lab-shell
-      className="pointer-events-none fixed inset-0 z-[400] h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]"
+      className={cn(
+        'fixed inset-0 z-[400] h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]',
+        advancedLabOpen ? 'pointer-events-auto' : 'pointer-events-none'
+      )}
       aria-hidden={!advancedLabOpen}
     />
   )
 
   const advancedLabPortal =
-    bodyPortalReady && typeof document !== 'undefined'
-      ? createPortal(advancedLabPortalEl, document.body)
-      : null
-
-  const composerHiddenWhileLab = advancedLabOpen
+    typeof document !== 'undefined' ? createPortal(advancedLabPortalEl, document.body) : null
 
   if (isSmallScreen) {
     return (
       <>
       <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={false}>
         <SheetContent
-          className={cn(
-            'z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200',
-            composerHiddenWhileLab && 'invisible pointer-events-none'
-          )}
+          className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
             mobileSheetHeightPx != null
               ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
@@ -235,11 +232,8 @@ export default function PostEditor({
     <>
     <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={false}>
       <DialogContent
-        className={cn(
-          'z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full',
-          composerHiddenWhileLab && 'invisible pointer-events-none'
-        )}
-        overlayClassName={cn('z-[200]', composerHiddenWhileLab && 'invisible pointer-events-none')}
+        className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
+        overlayClassName="z-[200]"
         withoutClose
         onInteractOutside={(e) => {
           if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
