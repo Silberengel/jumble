@@ -1,6 +1,7 @@
 import { cleanUrl, isImage, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
 import type { TImetaInfo } from '@/types'
 import type { CSSProperties } from 'react'
+import { mediaBlobIdentityKey } from '@/lib/imeta-content-match'
 
 export type ImetaDim = { width: number; height: number }
 
@@ -38,4 +39,36 @@ export function buildImetaDimMap(infos: Pick<TImetaInfo, 'url' | 'dim'>[]): Map<
     map.set(cleaned, info.dim)
   }
   return map
+}
+
+/** Resolve imeta row for a media URL (exact match, then same blob via `x` / blossom path). */
+export function resolveImetaInfoForUrl(url: string, infos: readonly TImetaInfo[]): TImetaInfo | undefined {
+  const cleaned = cleanUrl(url)
+  if (!cleaned) return undefined
+
+  for (const info of infos) {
+    const ic = cleanUrl(info.url)
+    if (ic === cleaned) return { ...info, url: cleaned }
+  }
+
+  const blobKey = mediaBlobIdentityKey(cleaned)
+  if (!blobKey) return undefined
+
+  for (const info of infos) {
+    const ic = cleanUrl(info.url)
+    if (!ic) continue
+    if (mediaBlobIdentityKey(ic, info.x) === blobKey) {
+      return { ...info, url: cleaned }
+    }
+  }
+
+  return undefined
+}
+
+/** Poster still for video/audio placeholders — skips non-image `thumb` (e.g. .mp4). */
+export function mediaPosterUrlFromImeta(
+  info: Pick<TImetaInfo, 'url' | 'thumb' | 'image'> | undefined
+): string | undefined {
+  if (!info) return undefined
+  return imetaPreviewImageUrl(info)
 }

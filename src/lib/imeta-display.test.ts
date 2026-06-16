@@ -34,13 +34,14 @@ describe('imetaPreviewImageUrl', () => {
     expect(imetaPreviewImageUrl({ url, thumb: url })).toBeUndefined()
   })
 
-  it('skips video thumb urls', () => {
+  it('skips video thumb urls and uses image poster', () => {
     expect(
       imetaPreviewImageUrl({
         url: 'https://example.com/video.mp4',
-        thumb: 'https://example.com/video.mp4'
+        thumb: 'https://example.com/video.mp4',
+        image: 'https://example.com/poster.jpg'
       })
-    ).toBeUndefined()
+    ).toBe('https://example.com/poster.jpg')
   })
 })
 

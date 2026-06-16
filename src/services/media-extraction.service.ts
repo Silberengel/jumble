@@ -1,7 +1,7 @@
 import { Event } from 'nostr-tools'
 import { getImetaInfosFromEvent } from '@/lib/event'
+import { mediaBlobIdentityKey } from '@/lib/imeta-content-match'
 import {
-  blossomSha256FromBlobUrl,
   cleanUrl,
   isImage,
   isMedia,
@@ -163,46 +163,27 @@ export function extractAllMediaFromEvent(
     }
   }
 
-  // 6. Try to match content URLs with imeta tags for better metadata (alt, dim, blurHash, m)
-  const imageIdentityKey = (url: string): string | null => {
-    try {
-      const u = cleanUrl(url)
-      if (!u) return null
-      const blossom = blossomSha256FromBlobUrl(u)
-      if (blossom) {
-        return `blossom-sha256:${blossom}`
-      }
-      const pathname = new URL(u).pathname
-      const filename = pathname.split('/').pop() || ''
-      if (filename && /^[a-f0-9]{32,}\.(png|jpg|jpeg|gif|webp|svg|avif|apng)$/i.test(filename)) {
-        return filename.toLowerCase()
-      }
-      return u
-    } catch {
-      return cleanUrl(url) || null
-    }
-  }
-
+  // 6. Match content URLs with imeta tags for metadata (alt, dim, blurHash, poster image, m).
   imetaInfos.forEach((imeta) => {
     const imetaUrl = cleanUrl(imeta.url)
-    const imetaKey = imetaUrl ? imageIdentityKey(imetaUrl) : null
-    const x = imeta.x?.trim()
-    const imetaKeyFromX = x && /^[a-f0-9]{64}$/i.test(x) ? `blossom-sha256:${x.toLowerCase()}` : null
+    const imetaBlobKey = imetaUrl ? mediaBlobIdentityKey(imetaUrl, imeta.x) : null
     allMedia.forEach((media, index) => {
       if (imetaUrl && imetaUrl === media.url) {
         allMedia[index] = { ...media, ...imeta, url: media.url }
-      } else if (imetaKey && imetaKey === imageIdentityKey(media.url)) {
-        allMedia[index] = { ...media, ...imeta, url: media.url }
-      } else if (imetaKeyFromX && imetaKeyFromX === imageIdentityKey(media.url)) {
-        allMedia[index] = { ...media, ...imeta, url: media.url }
-      } else {
-        // Try to get imeta from media upload service
-        const tag = mediaUpload.getImetaTagByUrl(media.url)
-        if (tag) {
-          const parsedImeta = getImetaInfoFromImetaTag(tag, event.pubkey)
-          if (parsedImeta) {
-            allMedia[index] = { ...media, ...parsedImeta, url: media.url }
-          }
+        return
+      }
+      if (imetaBlobKey) {
+        const mediaBlobKey = mediaBlobIdentityKey(media.url)
+        if (mediaBlobKey && mediaBlobKey === imetaBlobKey) {
+          allMedia[index] = { ...media, ...imeta, url: media.url }
+          return
+        }
+      }
+      const tag = mediaUpload.getImetaTagByUrl(media.url)
+      if (tag) {
+        const parsedImeta = getImetaInfoFromImetaTag(tag, event.pubkey)
+        if (parsedImeta) {
+          allMedia[index] = { ...media, ...parsedImeta, url: media.url }
         }
       }
     })

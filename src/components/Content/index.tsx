@@ -46,6 +46,7 @@ import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import { mediaPosterUrlFromImeta, resolveImetaInfoForUrl } from '@/lib/imeta-display'
 
 // Helper function to check if a URL is a YouTube URL
 function isYouTubeUrl(url: string): boolean {
@@ -511,6 +512,12 @@ export default function Content({
     audioFromTags
   } = contentMediaLayout
 
+  const resolveMediaInfo = (url: string): TImetaInfo | undefined => {
+    const cleaned = cleanUrl(url)
+    if (!cleaned) return undefined
+    return mediaMap.get(cleaned) ?? resolveImetaInfoForUrl(cleaned, extractedMedia.all)
+  }
+
   // Track which images/media have been rendered individually to prevent duplicates
   const renderedUrls = new Set<string>()
   
@@ -557,7 +564,7 @@ export default function Content({
             mustLoad={mustLoadMedia}
           authorPubkey={authorPubkey}
             deferLoadUntilClick={deferLongVideoLoad}
-            poster={video.image || video.thumb}
+            poster={mediaPosterUrlFromImeta(video)}
             blurHash={video.blurHash}
             dim={video.dim}
           />
@@ -572,7 +579,7 @@ export default function Content({
           className="mt-2"
           mustLoad={mustLoadMedia}
           authorPubkey={authorPubkey}
-          poster={audio.thumb}
+          poster={mediaPosterUrlFromImeta(audio)}
           blurHash={audio.blurHash}
           dim={audio.dim}
         />
@@ -649,7 +656,7 @@ export default function Content({
             return null
           }
           renderedUrls.add(cleanedUrl)
-          const tagMediaInfo = mediaMap.get(cleanedUrl)
+          const tagMediaInfo = resolveMediaInfo(cleanedUrl)
           return (
             <MediaPlayer
               className="mt-2"
@@ -658,7 +665,7 @@ export default function Content({
               mustLoad={mustLoadMedia}
           authorPubkey={authorPubkey}
               deferLoadUntilClick={deferLongVideoLoad}
-              poster={tagMediaInfo?.image || tagMediaInfo?.thumb}
+              poster={mediaPosterUrlFromImeta(tagMediaInfo)}
               blurHash={tagMediaInfo?.blurHash}
               dim={tagMediaInfo?.dim}
             />
@@ -679,8 +686,7 @@ export default function Content({
           // Check video/audio/HLS first - never put them in ImageGallery
           if (isVideoUrl || isAudioUrl || isHlsPlaylistUrl(cleanedUrl) || mediaMap.has(cleanedUrl)) {
             renderedUrls.add(cleanedUrl)
-            const mediaInfo = mediaMap.get(cleanedUrl)
-            const poster = mediaInfo?.image || mediaInfo?.thumb
+            const mediaInfo = resolveMediaInfo(cleanedUrl)
             return (
               <MediaPlayer
                 className="mt-2"
@@ -689,7 +695,7 @@ export default function Content({
                 mustLoad={mustLoadMedia}
           authorPubkey={authorPubkey}
                 deferLoadUntilClick={deferLongVideoLoad}
-                poster={poster}
+                poster={mediaPosterUrlFromImeta(mediaInfo)}
                 blurHash={mediaInfo?.blurHash}
                 dim={mediaInfo?.dim}
               />
