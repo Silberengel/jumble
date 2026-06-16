@@ -9,6 +9,7 @@ import {
   preferredLiveJoinUrlForEvent
 } from '@/lib/live-activities'
 import { cn } from '@/lib/utils'
+import { isZapStreamWatchPageUrl } from '@/lib/url'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useLiveActivitiesOptional } from '@/providers/useLiveActivities'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
@@ -30,6 +31,8 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
   const metadata = useMemo(() => getLiveEventMetadataFromEvent(event), [event])
   const playback = useMemo(() => liveEventInlinePlaybackFromEvent(event), [event])
   const joinUrl = useMemo(() => preferredLiveJoinUrlForEvent(event), [event])
+  /** zap.stream is listed in ClientSelect for kind 30311 — skip duplicate “Open in browser”. */
+  const showBrowserJoinLink = joinUrl != null && !isZapStreamWatchPageUrl(joinUrl)
   const zapStreamFallbackUrl = useMemo(() => liveEventZapStreamWatchUrl(event), [event])
   /** Video/HLS: prefer `thumb`, then `image`. Audio: prefer NIP-53 `image`, then `thumb` (still on the player). */
   const posterUrl = metadata.thumb ?? metadata.image
@@ -174,7 +177,7 @@ export default function LiveEvent({ event, className }: { event: Event; classNam
       ) : null}
 
       <div className="flex min-w-0 w-full flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-        {joinUrl ? (
+        {showBrowserJoinLink ? (
           <Button variant="secondary" size="sm" className="h-auto min-h-9 w-full max-w-full justify-center py-2 whitespace-normal" asChild>
             <a
               href={joinUrl}

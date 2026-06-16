@@ -1546,6 +1546,137 @@ class IndexedDbService {
     })
   }
 
+  /** Replaceable list rows keyed by pubkey — find stored revisions whose `event.id` is in `ids`. */
+  async findStoredReplaceableEventsByIds(ids: readonly string[]): Promise<Event[]> {
+    const wanted = new Set(
+      ids
+        .map((x) => x.trim().toLowerCase())
+        .filter((x) => /^[0-9a-f]{64}$/.test(x))
+    )
+    if (wanted.size === 0) return []
+
+    const stores = [StoreNames.BOOKMARK_LIST_EVENTS, StoreNames.PIN_LIST_EVENTS] as const
+
+    await this.initPromise
+    if (!this.db) return []
+
+    const found: Event[] = []
+    const foundIds = new Set<string>()
+
+    for (const storeName of stores) {
+      if (wanted.size === foundIds.size) break
+      if (!this.db.objectStoreNames.contains(storeName)) continue
+
+      await new Promise<void>((resolve) => {
+        const tx = this.db!.transaction(storeName, 'readonly')
+        const store = tx.objectStore(storeName)
+        let scanned = 0
+        const maxScan = 12_000
+        const req = store.openCursor()
+        req.onsuccess = () => {
+          const cursor = req.result as IDBCursorWithValue | null
+          if (!cursor || scanned >= maxScan || wanted.size === foundIds.size) {
+            try {
+              tx.commit()
+            } catch {
+              /* optional */
+            }
+            resolve()
+            return
+          }
+          scanned++
+          const row = cursor.value as TValue<Event> | undefined
+          const ev = row?.value
+          const id = ev?.id?.trim().toLowerCase()
+          if (ev && id && wanted.has(id) && !foundIds.has(id)) {
+            foundIds.add(id)
+            found.push(ev)
+          }
+          cursor.continue()
+        }
+        req.onerror = () => {
+          try {
+            tx.commit()
+          } catch {
+            /* optional */
+          }
+          resolve()
+        }
+      })
+    }
+
+    return found
+  }
+
+  /**
+   * Scan replaceable list stores (bookmark / pin lists) for rows matching feed filters.
+   * These kinds are not in {@link StoreNames.EVENT_ARCHIVE}.
+   */
+  async scanReplaceableListEventsMatchingFilters(
+    filters: readonly Filter[],
+    options: { maxRowsScanned: number; maxMatches: number }
+  ): Promise<Event[]> {
+    if (filters.length === 0 || options.maxMatches <= 0) return []
+
+    const stores = [StoreNames.BOOKMARK_LIST_EVENTS, StoreNames.PIN_LIST_EVENTS] as const
+    const maxRows = Math.min(Math.max(options.maxRowsScanned, 1), 20_000)
+    const maxMatches = Math.min(Math.max(options.maxMatches, 1), 500)
+
+    await this.initPromise
+    if (!this.db) return []
+
+    const buf: Event[] = []
+    const seen = new Set<string>()
+
+    for (const storeName of stores) {
+      if (buf.length >= maxMatches) break
+      if (!this.db.objectStoreNames.contains(storeName)) continue
+
+      await new Promise<void>((resolve) => {
+        let scanned = 0
+        const tx = this.db!.transaction(storeName, 'readonly')
+        const store = tx.objectStore(storeName)
+        const req = store.openCursor()
+        req.onsuccess = () => {
+          const cursor = req.result as IDBCursorWithValue | null
+          if (!cursor || scanned >= maxRows || buf.length >= maxMatches) {
+            try {
+              tx.commit()
+            } catch {
+              /* optional */
+            }
+            resolve()
+            return
+          }
+          scanned++
+          const row = cursor.value as TValue<Event> | undefined
+          const ev = row?.value
+          if (
+            ev &&
+            !shouldDropEventOnIngest(ev) &&
+            !seen.has(ev.id) &&
+            eventMatchesAnyLocalFeedFilter(ev, filters)
+          ) {
+            seen.add(ev.id)
+            buf.push(ev)
+          }
+          cursor.continue()
+        }
+        req.onerror = () => {
+          try {
+            tx.commit()
+          } catch {
+            /* optional */
+          }
+          resolve()
+        }
+      })
+    }
+
+    buf.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+    return buf.slice(0, maxMatches)
+  }
+
   /**
    * Cached long-form / wiki / publication rows for a profile author (same store as {@link putReplaceableEvent} for
    * those kinds). Used to hydrate the profile “Articles and publications” tab before relay SUB results arrive.

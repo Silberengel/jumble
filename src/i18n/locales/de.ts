@@ -1625,6 +1625,7 @@ export default {
     'Click to load image': 'Klicken, um Bild zu laden',
     'Click to load media': 'Klicken, um Medien zu laden',
     'Click to load YouTube video': 'Klicken, um YouTube-Video zu laden',
+    'Open transcript on youtubetotranscript.com': 'Transkript auf youtubetotranscript.com öffnen',
     '{{count}} reviews': '{{count}} Bewertungen',
     'Write a review': 'Eine Bewertung schreiben',
     'No reviews yet. Be the first to write one!':

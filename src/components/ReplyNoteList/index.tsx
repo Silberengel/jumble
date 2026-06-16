@@ -34,6 +34,7 @@ import {
   useNoteFeedProfileContext
 } from '@/providers/NoteFeedProfileContext'
 import client, { eventService, queryService } from '@/services/client.service'
+import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import noteStatsService from '@/services/note-stats.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
@@ -86,6 +87,8 @@ import {
   threadResponseFilterOptions,
   eventsToThreadFeedItems,
   insertMissingStatsReplyPlaceholders,
+  partitionStatsRepliesForMissingPlaceholders,
+  peekThreadStatsReplyEvent,
   type TThreadFeedItem
 } from './reply-list-utils'
 import MissingThreadReply from './MissingThreadReply'
@@ -350,14 +353,38 @@ function ReplyNoteList({
     }
     return s
   }, [replies, rootInfo])
+  const bookmarkAuthorPubkeys = useMemo(
+    () => noteStats?.bookmarkPubkeySet,
+    [noteStats?.bookmarkPubkeySet, noteStats?.updatedAt]
+  )
   const withMissingPlaceholders = useCallback(
-    (events: readonly NEvent[]) =>
-      insertMissingStatsReplyPlaceholders(events, noteStats?.replies, sort, {
+    (
+      events: readonly NEvent[],
+      statsSubset?: ReadonlyArray<{ id: string; pubkey: string; created_at: number }>
+    ) =>
+      insertMissingStatsReplyPlaceholders(events, statsSubset ?? noteStats?.replies, sort, {
         isEventDeleted,
         mutePubkeySet
       }),
     [noteStats?.replies, noteStats?.updatedAt, sort, isEventDeleted, mutePubkeySet, tombstoneEpoch]
   )
+  const statsMissingPartition = useMemo(() => {
+    const resolvedIds = new Set(replies.map((r) => r.id))
+    return partitionStatsRepliesForMissingPlaceholders(
+      noteStats?.replies,
+      resolvedIds,
+      rootInfo,
+      repliesMap,
+      { bookmarkAuthorPubkeys }
+    )
+  }, [
+    noteStats?.replies,
+    noteStats?.updatedAt,
+    replies,
+    rootInfo,
+    repliesMap,
+    bookmarkAuthorPubkeys
+  ])
   const mergedFeed = useMemo((): TThreadFeedItem[] => {
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
@@ -368,7 +395,7 @@ function ReplyNoteList({
       return moveReportsToEndPreserveOrder(replyFeedSuperchatsFirst(sortedNon, superchats))
     }
 
-    if (!showQuotes) return withMissingPlaceholders(replies)
+    if (!showQuotes) return withMissingPlaceholders(replies, statsMissingPartition.replyThread)
 
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
@@ -385,7 +412,12 @@ function ReplyNoteList({
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
       const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
-      return [...withMissingPlaceholders(orderedMiddle), ...eventsToThreadFeedItems(tailSorted)]
+      const tailMissing = withMissingPlaceholders([], statsMissingPartition.tail)
+      return [
+        ...withMissingPlaceholders(orderedMiddle, statsMissingPartition.replyThread),
+        ...eventsToThreadFeedItems(tailSorted),
+        ...tailMissing
+      ]
     }
 
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
@@ -403,17 +435,22 @@ function ReplyNoteList({
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
       const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
-      return [...withMissingPlaceholders(orderedMiddle), ...eventsToThreadFeedItems(tailSorted)]
+      const tailMissing = withMissingPlaceholders([], statsMissingPartition.tail)
+      return [
+        ...withMissingPlaceholders(orderedMiddle, statsMissingPartition.replyThread),
+        ...eventsToThreadFeedItems(tailSorted),
+        ...tailMissing
+      ]
     }
 
     const merged = [...replies]
-    if (sort === 'oldest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'asc'))
-    if (sort === 'newest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'))
+    if (sort === 'oldest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'asc'), statsMissingPartition.replyThread)
+    if (sort === 'newest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'), statsMissingPartition.replyThread)
     if (sort === 'top' || sort === 'controversial' || sort === 'most-zapped') {
-      return withMissingPlaceholders(replies)
+      return withMissingPlaceholders(replies, statsMissingPartition.replyThread)
     }
-    return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'))
-  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, withMissingPlaceholders])
+    return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'), statsMissingPartition.replyThread)
+  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, withMissingPlaceholders, statsMissingPartition])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -562,19 +599,31 @@ function ReplyNoteList({
     )
     if (candidates.length === 0) return
 
-    const relayUrls = threadRelayUrlsRef.current
-    if (!relayUrls.length) return
-
     let cancelled = false
-    ;(async () => {
-      for (const { id } of candidates) statsHydratedReplyIdsRef.current.add(id)
-      const batch = await hydrateThreadRepliesFromStats(candidates, {
+    void (async () => {
+      const unresolved = candidates.filter((r) => !statsHydratedReplyIdsRef.current.has(r.id))
+      if (unresolved.length === 0) return
+      for (const { id } of unresolved) statsHydratedReplyIdsRef.current.add(id)
+
+      const fromArchive = await resolveLocalEventsByHexIds(unresolved.map((r) => r.id))
+      if (!cancelled && fromArchive.length > 0) addReplies(fromArchive)
+
+      const relayUrls = threadRelayUrlsRef.current
+      const stillMissing = unresolved.filter(
+        (r) =>
+          !replyIdPresentInRepliesMap(repliesMap, r.id) &&
+          !client.peekSessionCachedEvent(r.id) &&
+          !fromArchive.some((e) => e.id === r.id)
+      )
+      if (stillMissing.length === 0) return
+
+      const batch = await hydrateThreadRepliesFromStats(stillMissing, {
         relayUrls,
         mutePubkeySet,
         hideContentMentioningMutedUsers
       })
       if (cancelled) return
-      for (const { id } of candidates) {
+      for (const { id } of stillMissing) {
         if (!batch.some((e) => e.id === id)) statsHydratedReplyIdsRef.current.delete(id)
       }
       if (batch.length > 0) addReplies(batch)
@@ -732,24 +781,7 @@ function ReplyNoteList({
 
     const init = async () => {
       const cachedStatsReplies = noteStatsService.getNoteStats(event.id)?.replies
-      const statsIdSetInit = buildNoteStatsReplyIdSet(cachedStatsReplies)
-
-      // Session LRU (timeline / note-stats / prior panels): thread replies before relay round-trip
-      if (rootInfo.type === 'E' || rootInfo.type === 'A') {
-        const fromSession = eventService.getSessionThreadInteractionEvents(
-          rootInfo,
-          openNoteHexId(event)
-        )
-        if (fromSession.length > 0) {
-          addReplies(fromSession)
-        }
-        if (statsIdSetInit.size > 0) {
-          const statsSessionHits = eventService
-            .getSessionEventsForNoteStatsTarget(event, { maxScan: 40_000 })
-            .filter((e) => statsIdSetInit.has(e.id))
-          if (statsSessionHits.length > 0) addReplies(statsSessionHits)
-        }
-      }
+      const statsIdList = cachedStatsReplies?.map((r) => r.id) ?? []
 
       // Check cache next — discussion cache merges with relay results
       const cachedData = discussionFeedCache.getCachedReplies(rootInfo)
@@ -773,7 +805,8 @@ function ReplyNoteList({
           event,
           isDiscussionRoot,
           mutePubkeySet,
-          hideContentMentioningMutedUsers
+          hideContentMentioningMutedUsers,
+          { statsReplyIds: statsIdList }
         )
         if (fetchGeneration !== replyFetchGenRef.current) return
         if (localRows.length > 0) {
@@ -1261,14 +1294,19 @@ function ReplyNoteList({
     const main: TThreadFeedItem[] = []
     for (const item of mergedFeed) {
       if (item.type === 'missing') {
-        main.push(item)
+        const peek = peekThreadStatsReplyEvent(item.id, repliesMap)
+        const tailMissing =
+          (rootInfo?.type === 'E' || rootInfo?.type === 'A') &&
+          (!peek || isEaThreadTailBacklinkCandidate(peek, rootInfo))
+        if (tailMissing) backlinks.push(item)
+        else main.push(item)
         continue
       }
       if (quoteUiIdSet.has(item.event.id)) backlinks.push(item)
       else main.push(item)
     }
     return [...main.slice(0, showCount), ...backlinks]
-  }, [mergedFeed, showCount, quoteUiIdSet])
+  }, [mergedFeed, showCount, quoteUiIdSet, rootInfo, repliesMap])
 
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {

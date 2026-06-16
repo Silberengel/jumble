@@ -1700,6 +1700,7 @@ export default {
     'Click to load image': 'Click to load image',
     'Click to load media': 'Click to load media',
     'Click to load YouTube video': 'Click to load YouTube video',
+    'Open transcript on youtubetotranscript.com': 'Open transcript on youtubetotranscript.com',
     '{{count}} reviews': '{{count}} reviews',
     'Write a review': 'Write a review',
     'No reviews yet. Be the first to write one!': 'No reviews yet. Be the first to write one!',

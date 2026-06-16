@@ -1,13 +1,47 @@
 import { ensureYouTubeIframeApi } from '@/lib/youtube-iframe-api'
 import { parseYoutubeUrl } from '@/lib/youtube-url'
+import { buildYoutubeTranscriptThirdPartyUrl } from '@/lib/youtube-transcript'
+import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { cn } from '@/lib/utils'
 import mediaManager from '@/services/media-manager.service'
 import { YouTubePlayer } from '@/types/youtube'
+import { ExternalLink as ExternalLinkIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ExternalLink from '../ExternalLink'
 import LazyMediaTapPlaceholder from '../MediaPlayer/LazyMediaTapPlaceholder'
 import logger from '@/lib/logger'
+
+function YoutubePlayerShell({
+  videoId,
+  children
+}: {
+  videoId: string
+  children: React.ReactNode
+}) {
+  const { t } = useTranslation()
+  const transcriptUrl = buildYoutubeTranscriptThirdPartyUrl(videoId)
+
+  return (
+    <div className="not-prose w-full max-w-[400px] space-y-1">
+      {children}
+      <a
+        href={transcriptUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          URI_LINK_CLASS,
+          'inline-flex items-center gap-1.5 text-xs no-underline hover:underline'
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden />
+        {t('Open transcript on youtubetotranscript.com')}
+      </a>
+    </div>
+  )
+}
 
 export default function YoutubeEmbeddedPlayer({
   url,
@@ -96,18 +130,36 @@ export default function YoutubeEmbeddedPlayer({
   }, [videoId, showEmbed])
 
   if (error) {
-    return <ExternalLink url={url} />
+    if (!videoId) return <ExternalLink url={url} />
+    return (
+      <YoutubePlayerShell videoId={videoId}>
+        <ExternalLink url={url} />
+      </YoutubePlayerShell>
+    )
   }
 
   if (!mustLoad && !showEmbed) {
+    if (!videoId) {
+      return (
+        <LazyMediaTapPlaceholder
+          src={url}
+          mediaKind="video"
+          posterUrl={posterUrl}
+          onActivate={() => setUserClickedLoad(true)}
+          className={frameClassName}
+        />
+      )
+    }
     return (
-      <LazyMediaTapPlaceholder
-        src={url}
-        mediaKind="video"
-        posterUrl={posterUrl}
-        onActivate={() => setUserClickedLoad(true)}
-        className={frameClassName}
-      />
+      <YoutubePlayerShell videoId={videoId}>
+        <LazyMediaTapPlaceholder
+          src={url}
+          mediaKind="video"
+          posterUrl={posterUrl}
+          onActivate={() => setUserClickedLoad(true)}
+          className={frameClassName}
+        />
+      </YoutubePlayerShell>
     )
   }
 
@@ -115,14 +167,29 @@ export default function YoutubeEmbeddedPlayer({
     return <ExternalLink url={url} />
   }
 
+  if (!videoId) {
+    return (
+      <div
+        className={cn(
+          'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
+          frameClassName
+        )}
+      >
+        <div ref={containerRef} className="w-full h-full" />
+      </div>
+    )
+  }
+
   return (
-    <div
-      className={cn(
-        'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
-        frameClassName
-      )}
-    >
-      <div ref={containerRef} className="w-full h-full" />
-    </div>
+    <YoutubePlayerShell videoId={videoId}>
+      <div
+        className={cn(
+          'not-prose rounded-lg border overflow-hidden w-full max-w-[400px]',
+          frameClassName
+        )}
+      >
+        <div ref={containerRef} className="w-full h-full" />
+      </div>
+    </YoutubePlayerShell>
   )
 }

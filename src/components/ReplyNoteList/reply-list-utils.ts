@@ -13,9 +13,9 @@ import {
 } from '@/lib/replaceable-revision'
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
+import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import noteStatsService from '@/services/note-stats.service'
 import client, { eventService, queryService } from '@/services/client.service'
-import indexedDb from '@/services/indexed-db.service'
 import type { TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import type { TFunction } from 'i18next'
@@ -101,10 +101,70 @@ export function resolveEventsForStatsReplyIds(
       out.push(mapped)
       continue
     }
-    const peek = client.peekSessionCachedEvent(id)
+    const peek = peekThreadStatsReplyEvent(id, repliesMap)
     if (peek) out.push(peek)
   }
   return out
+}
+
+/** Map + session LRU lookup for a stats reply id (no network). */
+export function peekThreadStatsReplyEvent(id: string, repliesMap: TRepliesMap): NEvent | undefined {
+  const fromMap = dedupeEventsFromRepliesMap(repliesMap).find((e) => e.id === id)
+  if (fromMap) return fromMap
+  return client.peekSessionCachedEvent(id)
+}
+
+export type TStatsMissingPlacement = 'reply-middle' | 'tail'
+
+/**
+ * Where an unresolved stats reply id should appear when shown as a missing placeholder.
+ * Bookmarks, lists, quotes, etc. belong in the backlinks tail — not the reply thread.
+ */
+export function classifyUnresolvedStatsReplyMissingPlacement(
+  meta: { id: string; pubkey: string },
+  rootInfo: TRootInfo | undefined,
+  repliesMap: TRepliesMap,
+  opts?: { bookmarkAuthorPubkeys?: ReadonlySet<string> }
+): TStatsMissingPlacement {
+  const peek = peekThreadStatsReplyEvent(meta.id, repliesMap)
+  if (peek) {
+    if (rootInfo && isEaThreadTailBacklinkCandidate(peek, rootInfo)) return 'tail'
+    if (
+      peek.kind === kinds.ShortTextNote ||
+      peek.kind === ExtendedKind.COMMENT ||
+      peek.kind === ExtendedKind.VOICE_COMMENT
+    ) {
+      return 'reply-middle'
+    }
+    if (NOTE_STATS_OP_REFERENCE_KINDS.includes(peek.kind)) return 'tail'
+    return 'reply-middle'
+  }
+  if (opts?.bookmarkAuthorPubkeys?.has(meta.pubkey)) return 'tail'
+  if (rootInfo?.type === 'E' || rootInfo?.type === 'A') return 'tail'
+  return 'reply-middle'
+}
+
+export function partitionStatsRepliesForMissingPlaceholders(
+  statsReplies: ReadonlyArray<{ id: string; pubkey: string; created_at: number }> | undefined,
+  resolvedIds: ReadonlySet<string>,
+  rootInfo: TRootInfo | undefined,
+  repliesMap: TRepliesMap,
+  opts?: { bookmarkAuthorPubkeys?: ReadonlySet<string> }
+): {
+  replyThread: Array<{ id: string; pubkey: string; created_at: number }>
+  tail: Array<{ id: string; pubkey: string; created_at: number }>
+} {
+  const replyThread: Array<{ id: string; pubkey: string; created_at: number }> = []
+  const tail: Array<{ id: string; pubkey: string; created_at: number }> = []
+  for (const meta of statsReplies ?? []) {
+    if (resolvedIds.has(meta.id)) continue
+    if (classifyUnresolvedStatsReplyMissingPlacement(meta, rootInfo, repliesMap, opts) === 'tail') {
+      tail.push(meta)
+    } else {
+      replyThread.push(meta)
+    }
+  }
+  return { replyThread, tail }
 }
 
 /**
@@ -324,13 +384,14 @@ export function collectDisplayedThreadReplies(
   return collapseStaleAddressableRevisions(out)
 }
 
-/** Session LRU + publication store + archive: paint thread replies before relay round-trip. */
+/** Session LRU + publication store + archive + replaceable lists: paint thread replies before relay round-trip. */
 export async function loadThreadRepliesFromLocalStores(
   rootInfo: TRootInfo,
   opEvent: NEvent,
   isDiscussionRoot: boolean,
   mutePubkeySet: Set<string>,
-  hideContentMentioningMutedUsers: boolean | undefined
+  hideContentMentioningMutedUsers: boolean | undefined,
+  opts?: { statsReplyIds?: readonly string[] }
 ): Promise<NEvent[]> {
   const filters = buildThreadInteractionFilters({
     root: rootInfo,
@@ -338,18 +399,42 @@ export async function loadThreadRepliesFromLocalStores(
     opEventHexId: openNoteHexId(opEvent),
     limit: THREAD_REPLY_LIMIT
   })
-  if (!filters.length) return []
+  if (!filters.length && !opts?.statsReplyIds?.length) return []
 
-  let local: NEvent[] = []
-  try {
-    local = await client.getLocalFeedEvents(
-      filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
-      { maxMatches: THREAD_REPLY_LIMIT, maxRowsScanned: 28_000 }
-    )
-  } catch {
-    return []
+  const byId = new Map<string, NEvent>()
+  const push = (rows: NEvent[]) => {
+    for (const evt of rows) {
+      if (!byId.has(evt.id)) byId.set(evt.id, evt)
+    }
   }
 
+  push(
+    eventService.getSessionEventsForNoteStatsTarget(opEvent, { maxScan: 40_000 })
+  )
+  if (rootInfo.type === 'E' || rootInfo.type === 'A') {
+    push(
+      eventService.getSessionThreadInteractionEvents(rootInfo, openNoteHexId(opEvent))
+    )
+  }
+
+  if (opts?.statsReplyIds?.length) {
+    push(await resolveLocalEventsByHexIds(opts.statsReplyIds))
+  }
+
+  if (filters.length > 0) {
+    try {
+      push(
+        await client.getLocalFeedEvents(
+          filters.map((filter) => ({ urls: [], filter: filter as TSubRequestFilter })),
+          { maxMatches: THREAD_REPLY_LIMIT, maxRowsScanned: 28_000 }
+        )
+      )
+    } catch {
+      /* optional */
+    }
+  }
+
+  const local = [...byId.values()]
   const threadWalk = new Map(local.map((e) => [e.id.toLowerCase(), e] as const))
   return local.filter((evt) => {
     if (isPollVoteKind(evt)) return false
@@ -361,7 +446,6 @@ export async function loadThreadRepliesFromLocalStores(
   })
 }
 
-const STATS_HYDRATE_ARCHIVE_CHUNK = 80
 const STATS_HYDRATE_FETCH_CHUNK = 40
 const STATS_HYDRATE_RELAY_IDS_CHUNK = 200
 
@@ -392,20 +476,8 @@ export async function hydrateThreadRepliesFromStats(
 
   const byId = new Map<string, NEvent>()
 
-  for (let i = 0; i < ids.length; i += STATS_HYDRATE_ARCHIVE_CHUNK) {
-    const chunk = ids.slice(i, i + STATS_HYDRATE_ARCHIVE_CHUNK)
-    try {
-      const archived = await indexedDb.getArchivedEventsByIds(chunk)
-      for (const e of archived) byId.set(e.id, e)
-    } catch {
-      /* optional */
-    }
-  }
-
-  for (const id of ids) {
-    if (byId.has(id)) continue
-    const cached = client.peekSessionCachedEvent(id)
-    if (cached) byId.set(cached.id, cached)
+  for (const ev of await resolveLocalEventsByHexIds(ids)) {
+    byId.set(ev.id, ev)
   }
 
   const missingAfterLocal = ids.filter((id) => !byId.has(id))

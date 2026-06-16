@@ -90,6 +90,7 @@ function canonicalSeenOnEventId(eventId: string): string {
 }
 
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
+import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import {
   getHttpRelayListFromEvent,
   getProfileFromEvent,
@@ -2400,20 +2401,12 @@ class ClientService extends EventTarget {
         const st = await indexedDb.getTimelinePersistedState(key)
         if (!st?.refs?.length) return
         const hexIds = st.refs.map((r) => r[0])
-        const list = await indexedDb.getArchivedEventsByIds(hexIds)
-        for (const ev of list) {
+        const localEvents = await resolveLocalEventsByHexIds(hexIds)
+        for (const ev of localEvents) {
           if (shouldDropEventOnIngest(ev)) continue
           if (eventIdSet.has(ev.id)) continue
           eventIdSet.add(ev.id)
           merged.push(ev)
-        }
-        for (const refId of hexIds) {
-          if (eventIdSet.has(refId)) continue
-          const sess = this.eventService.peekSessionCachedEvent(refId)
-          if (sess && !shouldDropEventOnIngest(sess)) {
-            eventIdSet.add(refId)
-            merged.push(sess)
-          }
         }
       } catch (err) {
         logger.debug('[ClientService] Timeline disk snapshot shard read failed', { err })
@@ -2490,6 +2483,20 @@ class ClientService extends EventTarget {
     ])
     add(archiveRows)
     add(publicationRows)
+
+    const scanReplaceableLists = filters.some((f) =>
+      Object.keys(f).some((k) => k === '#e' || k === '#E' || k === '#a' || k === '#A')
+    )
+    if (scanReplaceableLists) {
+      add(
+        await indexedDb
+          .scanReplaceableListEventsMatchingFilters(filters, {
+            maxRowsScanned: Math.min(maxRowsScanned, 12_000),
+            maxMatches: Math.min(maxMatches, 120)
+          })
+          .catch(() => [] as NEvent[])
+      )
+    }
 
     return [...byId.values()]
       .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))

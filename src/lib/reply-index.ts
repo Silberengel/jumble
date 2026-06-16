@@ -14,11 +14,34 @@ import {
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import { getFirstHexEventIdFromETags } from '@/lib/tag'
+import { NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
+import { isNostrTargetWebBookmark } from '@/lib/web-bookmark-nip'
 import client from '@/services/client.service'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 
 export type TRepliesMap = Map<string, { events: Event[]; eventIdSet: Set<string> }>
+
+/** Index bookmark/list/op-reference rows under each `e` / `a` / `q` target they tag. */
+function indexOpReferenceReplyTargets(reply: Event, newReplyEventMap: Map<string, Event[]>) {
+  const isOpRef =
+    NOTE_STATS_OP_REFERENCE_KINDS.includes(reply.kind) || isNostrTargetWebBookmark(reply)
+  if (!isOpRef) return
+
+  for (const t of reply.tags) {
+    const name = t[0]
+    const v = typeof t[1] === 'string' ? t[1].trim() : ''
+    if (!v) continue
+    if (name === 'e' || name === 'E') {
+      if (/^[0-9a-f]{64}$/i.test(v)) {
+        const key = v.toLowerCase()
+        newReplyEventMap.set(key, [...(newReplyEventMap.get(key) || []), reply])
+      }
+    } else if (name === 'a' || name === 'A' || name === 'q' || name === 'Q') {
+      newReplyEventMap.set(v, [...(newReplyEventMap.get(v) || []), reply])
+    }
+  }
+}
 
 /** Index reply events under root / parent / quote keys (shared by global and per-thread maps). */
 export function mergeRepliesIntoMap(prev: TRepliesMap, replies: Event[]): TRepliesMap {
@@ -89,6 +112,8 @@ export function mergeRepliesIntoMap(prev: TRepliesMap, replies: Event[]): TRepli
         newReplyEventMap.set(key, [...(newReplyEventMap.get(key) || []), reply])
       }
     }
+
+    indexOpReferenceReplyTargets(reply, newReplyEventMap)
   }
 
   if (newReplyEventMap.size === 0) return prev
