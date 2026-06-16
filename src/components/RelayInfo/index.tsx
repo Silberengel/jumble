@@ -18,7 +18,7 @@ import { Activity, Check, Copy, Ellipsis, ExternalLink, GitBranch, Link, Mail, S
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import PostEditor from '../PostEditor'
+import PostEditor from '../PostEditor/LazyPostEditor'
 import RelayIcon from '../RelayIcon'
 import SaveRelayDropdownMenu from '../SaveRelayDropdownMenu'
 import UserAvatar from '../UserAvatar'

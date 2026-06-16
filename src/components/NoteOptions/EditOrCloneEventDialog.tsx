@@ -25,8 +25,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import Content from '@/components/Content'
 import ContentPreview from '@/components/ContentPreview'
 import Highlight from '@/components/Note/Highlight'
-import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
-import AsciidocArticle from '@/components/Note/AsciidocArticle/AsciidocArticle'
+import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
+import AsciidocArticle from '@/components/Note/LazyAsciidocArticle'
 import ClientTag from '@/components/ClientTag'
 import {
   ExtendedKind,

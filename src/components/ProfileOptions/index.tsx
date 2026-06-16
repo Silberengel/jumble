@@ -38,7 +38,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import { createReactionDraftEvent } from '@/lib/draft-event'
-import PostEditor from '@/components/PostEditor'
+import PostEditor from '@/components/PostEditor/LazyPostEditor'
 import { showSimplePublishSuccess, toastPublishPromise } from '@/lib/publishing-feedback'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'

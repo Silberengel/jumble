@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next'
 import ClientSelect from '../ClientSelect'
 import Image from '../Image'
 import MediaPlayer from '../MediaPlayer'
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from './LazyMarkdownArticle'
 
 export default function LiveEvent({ event, className }: { event: Event; className?: string }) {
   const { t } = useTranslation()

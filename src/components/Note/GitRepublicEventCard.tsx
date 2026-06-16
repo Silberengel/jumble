@@ -9,7 +9,7 @@ import { Event, nip19 } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, GitBranch, CircleDot, Tag } from 'lucide-react'
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from './LazyMarkdownArticle'
 
 function repoHeadline(ctx: GitRepublicRepoContext): string {
   const name = ctx.displayName || ctx.repoId

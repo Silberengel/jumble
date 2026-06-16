@@ -2,7 +2,7 @@ import { superchatCommentBodyClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from './LazyMarkdownArticle'
 
 export default function SuperchatCommentMarkdown({
   event,

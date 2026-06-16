@@ -70,7 +70,7 @@ import SmartFollowers from './SmartFollowers'
 import SmartFollowings from './SmartFollowings'
 import SmartMuteLink from './SmartMuteLink'
 import SmartRelays from './SmartRelays'
-import PostEditor from '@/components/PostEditor'
+import PostEditor from '@/components/PostEditor/LazyPostEditor'
 import {
   ScheduleVideoCallDialog,
   ScheduleInPersonMeetingDialog

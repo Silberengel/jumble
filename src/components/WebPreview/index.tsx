@@ -19,8 +19,8 @@ import { tagNameEquals } from '@/lib/tag'
 import { queryService } from '@/services/client.service'
 import { FAST_READ_RELAY_URLS } from '@/constants'
 import { getImetaInfosFromEvent } from '@/lib/event'
-import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
-import AsciidocArticle from '../Note/AsciidocArticle/AsciidocArticle'
+import MarkdownArticle from '../Note/LazyMarkdownArticle'
+import AsciidocArticle from '../Note/LazyAsciidocArticle'
 import ProfileAbout from '@/components/ProfileAbout'
 
 /** Scales with Settings → font size via `--content-font-size` (see index.css). */

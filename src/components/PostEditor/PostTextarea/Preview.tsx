@@ -21,8 +21,8 @@ import ContentPreview from '../../ContentPreview'
 import Content from '../../Content'
 import Highlight from '../../Note/Highlight'
 import MusicTrackNote from '../../Note/MusicTrackNote'
-import MarkdownArticle from '../../Note/MarkdownArticle/MarkdownArticle'
-import AsciidocArticle from '../../Note/AsciidocArticle/AsciidocArticle'
+import MarkdownArticle from '../../Note/LazyMarkdownArticle'
+import AsciidocArticle from '../../Note/LazyAsciidocArticle'
 import { HighlightData } from '../HighlightEditor'
 
 export default function Preview({ 

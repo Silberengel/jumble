@@ -1,5 +1,5 @@
-import AsciidocArticle from '@/components/Note/AsciidocArticle/AsciidocArticle'
-import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
+import AsciidocArticle from '@/components/Note/LazyAsciidocArticle'
+import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
 import { Card } from '@/components/ui/card'
 import { ExtendedKind } from '@/constants'
 import { createFakeEvent } from '@/lib/event'

@@ -12,7 +12,7 @@ import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { Event } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from './LazyMarkdownArticle'
 import MediaPlayer from '../MediaPlayer'
 
 /** Tags already shown on the music card — omit from caption markdown so they are not rendered twice. */

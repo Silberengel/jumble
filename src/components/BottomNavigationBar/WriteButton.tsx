@@ -1,4 +1,4 @@
-import PostEditor from '@/components/PostEditor'
+import PostEditor from '@/components/PostEditor/LazyPostEditor'
 import { useNostr } from '@/providers/NostrProvider'
 import postEditorService from '@/services/post-editor.service'
 import { PencilLine } from 'lucide-react'

@@ -1,5 +1,5 @@
-import AsciidocArticle from '@/components/Note/AsciidocArticle/AsciidocArticle'
-import MarkdownArticle from '@/components/Note/MarkdownArticle/MarkdownArticle'
+import AsciidocArticle from '@/components/Note/LazyAsciidocArticle'
+import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'

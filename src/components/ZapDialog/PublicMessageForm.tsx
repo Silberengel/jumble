@@ -12,7 +12,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from '../Note/LazyMarkdownArticle'
 
 const TIP_NOTICE_DEFAULT_KEY = 'I just sent you a tip!'
 

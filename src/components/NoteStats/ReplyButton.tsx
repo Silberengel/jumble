@@ -11,7 +11,7 @@ import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import PostEditor from '../PostEditor'
+import PostEditor from '../PostEditor/LazyPostEditor'
 
 type ReplyButtonProps = {
   event: Event

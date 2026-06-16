@@ -33,7 +33,7 @@ import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, lazy, Suspense, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import {
@@ -88,14 +88,9 @@ import FollowPackPreview from '../ContentPreview/FollowPackPreview'
 import CalendarEventContent from '../CalendarEventContent'
 import GitRepublicEventCard from './GitRepublicEventCard'
 import LearningResourceCard from './LearningResourceCard'
-
-const PostEditor = lazy(() => import('../PostEditor'))
-const MarkdownArticle = lazy(() => import('./MarkdownArticle/MarkdownArticle'))
-const AsciidocArticle = lazy(() => import('./AsciidocArticle/AsciidocArticle'))
-
-function ArticleSuspense({ children }: { children: ReactNode }) {
-  return <Suspense fallback={null}>{children}</Suspense>
-}
+import MarkdownArticle from './LazyMarkdownArticle'
+import AsciidocArticle from './LazyAsciidocArticle'
+import PostEditor from '../PostEditor/LazyPostEditor'
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
   ExtendedKind.PUBLICATION_CONTENT,
@@ -195,14 +190,12 @@ function StringifiedNostrEventContent({
   return (
     <div className={cn('space-y-2', className)}>
       {textEvent ? (
-        <ArticleSuspense>
-          <MarkdownArticle
-            event={textEvent}
-            hideMetadata={hideMetadata}
-            lazyMedia={!autoLoadMedia}
-            fullCalendarInvite={fullCalendarInvite}
-          />
-        </ArticleSuspense>
+        <MarkdownArticle
+          event={textEvent}
+          hideMetadata={hideMetadata}
+          lazyMedia={!autoLoadMedia}
+          fullCalendarInvite={fullCalendarInvite}
+        />
       ) : null}
       <StringifiedNostrEventPreviewCard
         hostEvent={hostEvent}
@@ -395,13 +388,11 @@ export default function Note({
       }
       if (ASCIIDOC_CONTENT_KINDS.has(displayEvent.kind)) {
         return (
-          <ArticleSuspense>
-            <AsciidocArticle
-              className={className}
-              event={displayEvent}
-              hideImagesAndInfo={hideMetadata}
-            />
-          </ArticleSuspense>
+          <AsciidocArticle
+            className={className}
+            event={displayEvent}
+            hideImagesAndInfo={hideMetadata}
+          />
         )
       }
       if (
@@ -427,19 +418,17 @@ export default function Note({
         }
       }
       return (
-        <ArticleSuspense>
-          <MarkdownArticle
-            className={className}
-            event={
-              isNip18RepostKind(displayEvent.kind)
-                ? { ...displayEvent, content: '' }
-                : displayEvent
-            }
-            hideMetadata={hideMetadata}
-            lazyMedia={!autoLoadMedia}
-            fullCalendarInvite={fullCalendarInvite}
-          />
-        </ArticleSuspense>
+        <MarkdownArticle
+          className={className}
+          event={
+            isNip18RepostKind(displayEvent.kind)
+              ? { ...displayEvent, content: '' }
+              : displayEvent
+          }
+          hideMetadata={hideMetadata}
+          lazyMedia={!autoLoadMedia}
+          fullCalendarInvite={fullCalendarInvite}
+        />
       )
     },
     [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents, deferAuthorAvatar]
@@ -828,23 +817,21 @@ export default function Note({
         {wrappedContent}
       </div>
       {postEditorOpen ? (
-        <Suspense fallback={null}>
-          <PostEditor
-            open={postEditorOpen}
-            setOpen={(open) => {
-              setPostEditorOpen(open)
-              if (!open) {
-                setHighlightData(undefined)
-                setHighlightDefaultContent('')
-                setPublicMessageTo(null)
-                setCallInviteContent(null)
-              }
-            }}
-            defaultContent={callInviteContent ?? highlightDefaultContent}
-            initialHighlightData={highlightData}
-            initialPublicMessageTo={publicMessageTo ?? undefined}
-          />
-        </Suspense>
+        <PostEditor
+          open={postEditorOpen}
+          setOpen={(open) => {
+            setPostEditorOpen(open)
+            if (!open) {
+              setHighlightData(undefined)
+              setHighlightDefaultContent('')
+              setPublicMessageTo(null)
+              setCallInviteContent(null)
+            }
+          }}
+          defaultContent={callInviteContent ?? highlightDefaultContent}
+          initialHighlightData={highlightData}
+          initialPublicMessageTo={publicMessageTo ?? undefined}
+        />
       ) : null}
     </CreateHighlightContext.Provider>
   )

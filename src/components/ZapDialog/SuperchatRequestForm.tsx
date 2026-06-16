@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import SatsAmountEquivalents from '@/components/SatsAmountEquivalents'
-import MarkdownArticle from '../Note/MarkdownArticle/MarkdownArticle'
+import MarkdownArticle from '../Note/LazyMarkdownArticle'
 import SuperchatPaymentMethodLabel from '../Note/SuperchatPaymentMethodLabel'
 
 export default function SuperchatRequestForm({
