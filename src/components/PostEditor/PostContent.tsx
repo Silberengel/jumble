@@ -135,6 +135,11 @@ import {
 } from './PostEditorFormatToolbar'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
+import {
+  formatLabInsertText,
+  formatMarkupImageAppend,
+  imageUrlLooksLikeHttpImage
+} from '@/lib/composer-markup-insert'
 
 /** Let the UI paint before heavy work. `requestAnimationFrame` alone can stall indefinitely in hidden or throttled documents. */
 function yieldForPaintBeforeHeavyWork(): Promise<void> {
@@ -142,41 +147,6 @@ function yieldForPaintBeforeHeavyWork(): Promise<void> {
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     new Promise<void>((resolve) => setTimeout(resolve, 50))
   ])
-}
-
-function stripUrlForImageExtensionCheck(url: string): string {
-  return url.trim().split(/[#?]/)[0].toLowerCase()
-}
-
-function imageUrlLooksLikeHttpImage(url: string): boolean {
-  return /\.(gif|jpe?g|png|webp|avif|bmp|svg)$/i.test(stripUrlForImageExtensionCheck(url))
-}
-
-function labInsertShouldBecomeMarkupImage(txt: string): boolean {
-  const t = txt.trim()
-  if (!/^https?:\/\//i.test(t)) return false
-  if (/^\s*!\[/.test(t)) return false
-  if (/^\s*image::/i.test(t)) return false
-  if (imageUrlLooksLikeHttpImage(t)) return true
-  try {
-    const host = new URL(t).hostname.toLowerCase()
-    if (host.endsWith('tenor.com') || host.endsWith('giphy.com')) return true
-  } catch {
-    /* ignore */
-  }
-  return false
-}
-
-function formatMarkupImageAppend(url: string, asciidoc: boolean): string {
-  const safe = url.trim()
-  if (asciidoc) return `\nimage::${safe}[Image]\n`
-  return `\n![image](${safe})\n`
-}
-
-function formatMarkupImageAtCursor(url: string, asciidoc: boolean): string {
-  const safe = url.trim()
-  if (asciidoc) return `image::${safe}[Image]`
-  return `![image](${safe})`
 }
 
 /** On mobile, title + kind-specific fields scroll in a capped header; the editor keeps the rest. */
@@ -2418,6 +2388,128 @@ export default function PostContent({
     ]
   )
 
+  const showCitationCreate = useMemo(
+    () =>
+      !isCitationInternal &&
+      !isCitationExternal &&
+      !isCitationHardcopy &&
+      !isCitationPrompt,
+    [isCitationInternal, isCitationExternal, isCitationHardcopy, isCitationPrompt]
+  )
+
+  const insertComposerText = useCallback(
+    (txt: string) => {
+      const lab = advancedLabOpenRef.current ? advancedLabBodyApiRef.current : null
+      if (lab) {
+        lab.insertText(
+          formatLabInsertText(txt, isAsciidocMarkupKind(getDeterminedKindRef.current))
+        )
+        return
+      }
+      textareaRef.current?.insertText(txt)
+    },
+    []
+  )
+
+  const insertComposerEmoji = useCallback((em: Parameters<TPostTextareaHandle['insertEmoji']>[0]) => {
+    getActiveComposerBody()?.insertEmoji(em)
+  }, [])
+
+  const renderComposerFormatToolbar = useCallback(
+    (portalOverride?: HTMLElement | null) => (
+      <PostEditorFormatToolbar
+        insertText={insertComposerText}
+        insertEmoji={insertComposerEmoji}
+        upload={toolbarUploadHandlers}
+        showAudioUpload={Boolean(parentEvent || isPublicMessage)}
+        audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
+        audioButtonHighlighted={
+          mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
+          (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
+        }
+        showMoreOptions={showMoreOptions}
+        onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
+        pickerPortalContainer={portalOverride ?? pickerPortalContainer}
+        showCitationCreate={showCitationCreate}
+      />
+    ),
+    [
+      insertComposerText,
+      insertComposerEmoji,
+      toolbarUploadHandlers,
+      parentEvent,
+      isPublicMessage,
+      mediaNoteKind,
+      showMoreOptions,
+      pickerPortalContainer,
+      showCitationCreate,
+      t
+    ]
+  )
+
+  const composerAdvancedPanel = useMemo(
+    () => (
+      <PostEditorAdvancedPanel
+        show={showMoreOptions}
+        posting={posting}
+        addClientTag={addClientTag}
+        setAddClientTag={setAddClientTag}
+        isNsfw={isNsfw}
+        setIsNsfw={setIsNsfw}
+        contentWarningLabel={contentWarningLabel}
+        setContentWarningLabel={setContentWarningLabel}
+        minPow={minPow}
+        setMinPow={setMinPow}
+        showMentionsPicker={!isHighlight}
+        mentionsContent={text}
+        mentionsParentEvent={isPublicMessage ? undefined : parentEvent}
+        mentions={isPublicMessage ? extractedMentions : mentions}
+        setMentions={isPublicMessage ? setExtractedMentions : setMentions}
+        showRelayPicker={
+          !isPublicationContent &&
+          !isCitationInternal &&
+          !isCitationExternal &&
+          !isCitationHardcopy &&
+          !isCitationPrompt
+        }
+        setAdditionalRelayUrls={setAdditionalRelayUrls}
+        onRelayPublishCapChange={handleRelayPublishCapChange}
+        relayParentEvent={parentEvent}
+        relayOpenFrom={openFrom}
+        relayContent={text}
+        relayIsPublicMessage={isPublicMessage}
+        relayMentions={extractedMentions}
+        relayCapBlockInfo={relayCapBlockInfo}
+        discussionThreadRelayError={threadErrors.relay}
+        isDiscussionThread={isDiscussionThread}
+      />
+    ),
+    [
+      showMoreOptions,
+      posting,
+      addClientTag,
+      isNsfw,
+      contentWarningLabel,
+      minPow,
+      isHighlight,
+      text,
+      isPublicMessage,
+      parentEvent,
+      extractedMentions,
+      mentions,
+      isPublicationContent,
+      isCitationInternal,
+      isCitationExternal,
+      isCitationHardcopy,
+      isCitationPrompt,
+      openFrom,
+      relayCapBlockInfo,
+      threadErrors.relay,
+      isDiscussionThread,
+      handleRelayPublishCapChange
+    ]
+  )
+
   const handleArticleToggle = (type: 'longform' | 'wiki' | 'nostr-specification' | 'publication') => {
     if (parentEvent) return // Can't create articles as replies
     
@@ -2596,8 +2688,13 @@ export default function PostContent({
           className={cn(
             'min-w-0',
             isSmallScreen
-              ? 'flex min-h-0 flex-1 flex-col gap-2'
-              : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y pr-1'
+              ? cn('flex min-h-0 flex-1 flex-col gap-2', isHighlight && 'overflow-hidden')
+              : cn(
+                  'flex min-h-0 flex-1 flex-col gap-2 pr-1',
+                  isHighlight
+                    ? 'overflow-hidden'
+                    : 'overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y'
+                )
           )}
         >
           <ComposerHeaderScroll enabled={isSmallScreen}>
@@ -3439,10 +3536,13 @@ export default function PostContent({
 
       <div
         className={cn(
-          'flex min-w-0 flex-col overflow-hidden',
-          isSmallScreen && 'min-h-0 flex-1'
+          isHighlight
+            ? 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden'
+            : 'flex min-w-0 flex-col overflow-hidden',
+          !isHighlight && isSmallScreen && 'min-h-0 flex-1'
         )}
       >
+      <div className={cn(isHighlight && 'min-w-0 shrink-0')}>
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -3709,6 +3809,16 @@ export default function PostContent({
           }
         />
       </div>
+      {isHighlight ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain popover-scroll-y">
+          <HighlightEditor
+            highlightData={highlightData}
+            setHighlightData={setHighlightData}
+            setIsHighlight={setIsHighlight}
+          />
+        </div>
+      ) : null}
+      </div>
       {!showMoreOptions && isNsfw ? (
         <p className="text-xs text-muted-foreground" role="status">
           {t('Post editor content warning summary', {
@@ -3729,13 +3839,6 @@ export default function PostContent({
           pollCreateData={pollCreateData}
           setPollCreateData={setPollCreateData}
           setIsPoll={setIsPoll}
-        />
-      )}
-      {isHighlight && (
-        <HighlightEditor
-          highlightData={highlightData}
-          setHighlightData={setHighlightData}
-          setIsHighlight={setIsHighlight}
         />
       )}
       {isPublicMessage && (
@@ -3822,20 +3925,7 @@ export default function PostContent({
       >
       <div className="flex min-w-0 w-full items-center gap-1.5">
         <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
-          <PostEditorFormatToolbar
-            insertText={(txt) => textareaRef.current?.insertText(txt)}
-            insertEmoji={(em) => textareaRef.current?.insertEmoji(em)}
-            upload={toolbarUploadHandlers}
-            showAudioUpload={Boolean(parentEvent || isPublicMessage)}
-            audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
-            audioButtonHighlighted={
-              mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
-              (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
-            }
-            showMoreOptions={showMoreOptions}
-            onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
-            pickerPortalContainer={pickerPortalContainer}
-          />
+          {renderComposerFormatToolbar()}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <div className="flex gap-2 items-center max-sm:hidden">
@@ -3889,40 +3979,7 @@ export default function PostContent({
           </div>
         </div>
       </div>
-      <PostEditorAdvancedPanel
-        show={showMoreOptions}
-        posting={posting}
-        addClientTag={addClientTag}
-        setAddClientTag={setAddClientTag}
-        isNsfw={isNsfw}
-        setIsNsfw={setIsNsfw}
-        contentWarningLabel={contentWarningLabel}
-        setContentWarningLabel={setContentWarningLabel}
-        minPow={minPow}
-        setMinPow={setMinPow}
-        showMentionsPicker={!isHighlight}
-        mentionsContent={text}
-        mentionsParentEvent={isPublicMessage ? undefined : parentEvent}
-        mentions={isPublicMessage ? extractedMentions : mentions}
-        setMentions={isPublicMessage ? setExtractedMentions : setMentions}
-        showRelayPicker={
-          !isPublicationContent &&
-          !isCitationInternal &&
-          !isCitationExternal &&
-          !isCitationHardcopy &&
-          !isCitationPrompt
-        }
-        setAdditionalRelayUrls={setAdditionalRelayUrls}
-        onRelayPublishCapChange={handleRelayPublishCapChange}
-        relayParentEvent={parentEvent}
-        relayOpenFrom={openFrom}
-        relayContent={text}
-        relayIsPublicMessage={isPublicMessage}
-        relayMentions={extractedMentions}
-        relayCapBlockInfo={relayCapBlockInfo}
-        discussionThreadRelayError={threadErrors.relay}
-        isDiscussionThread={isDiscussionThread}
-      />
+      {!advancedLabOpen ? composerAdvancedPanel : null}
       <div className="flex gap-2 items-center justify-around sm:hidden">
         <Button
           type="button"
@@ -4065,7 +4122,10 @@ export default function PostContent({
         open={advancedLabOpen}
         onOpenChange={(o) => {
           setAdvancedLabOpen(o)
-          if (!o) setAdvancedLabInitial(null)
+          if (!o) {
+            setAdvancedLabInitial(null)
+            setShowMoreOptions(false)
+          }
         }}
         initial={advancedLabInitial}
         kindEditable={false}
@@ -4077,35 +4137,10 @@ export default function PostContent({
         contentWarning={labContentWarning}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
-        formatToolbar={
-          <PostEditorFormatToolbar
-            insertText={(txt) => {
-              const lab = advancedLabBodyApiRef.current
-              if (!lab) return
-              if (labInsertShouldBecomeMarkupImage(txt)) {
-                lab.insertText(
-                  formatMarkupImageAtCursor(
-                    txt,
-                    isAsciidocMarkupKind(getDeterminedKindRef.current)
-                  )
-                )
-              } else {
-                lab.insertText(txt)
-              }
-            }}
-            insertEmoji={(em) => advancedLabBodyApiRef.current?.insertEmoji(em)}
-            upload={toolbarUploadHandlers}
-            showAudioUpload={Boolean(parentEvent || isPublicMessage)}
-            audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
-            audioButtonHighlighted={
-              mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
-              (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
-            }
-            showMoreOptions={showMoreOptions}
-            onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
-            pickerPortalContainer={pickerPortalContainer}
-          />
+        renderFormatToolbar={({ pickerPortalContainer: labPickerPortal }) =>
+          renderComposerFormatToolbar(labPickerPortal)
         }
+        composerToolbarPanel={composerAdvancedPanel}
         onApply={(payload) => {
           postEditorCache.setAdvancedLabDraft(advancedLabPersistenceKey, {
             kind: payload.kind,

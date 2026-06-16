@@ -51,6 +51,7 @@ import WebPreview from '../WebPreview'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import NoteOptions from '../NoteOptions'
+import PostEditor from '../PostEditor'
 import EventPowLabel from '../EventPowLabel'
 import ParentNotePreview from '../ParentNotePreview'
 import UserAvatar from '../UserAvatar'
@@ -308,7 +309,10 @@ export default function Note({
     setHighlightDefaultContent(eventContent ?? '')
     setPublicMessageTo(null)
     setCallInviteContent(null)
-    setPostEditorOpen(true)
+    // Defer until the selection drawer has closed (avoids vaul/Radix sheet fighting on mobile).
+    requestAnimationFrame(() => {
+      setPostEditorOpen(true)
+    })
   }, [])
 
   const openPublicMessage = useCallback((pubkey: string) => {
@@ -770,20 +774,8 @@ export default function Note({
                   'py-1 shrink-0',
                   size === 'small' ? '[&_svg]:size-4' : '[&_svg]:size-5'
                 )}
-                initialHighlightData={highlightData}
-                highlightDefaultContent={highlightDefaultContent}
-                isPostEditorOpen={postEditorOpen}
-                onPostEditorClose={() => {
-                  setPostEditorOpen(false)
-                  setHighlightData(undefined)
-                  setHighlightDefaultContent('')
-                  setPublicMessageTo(null)
-                  setCallInviteContent(null)
-                }}
                 onOpenPublicMessage={openPublicMessage}
-                initialPublicMessageTo={publicMessageTo}
                 onOpenCallInvite={openCallInvite}
-                initialDefaultContent={callInviteContent}
               />
             )}
           </div>
@@ -811,6 +803,21 @@ export default function Note({
         <IValue event={event} className="mt-2" />
         {wrappedContent}
       </div>
+      <PostEditor
+        open={postEditorOpen}
+        setOpen={(open) => {
+          setPostEditorOpen(open)
+          if (!open) {
+            setHighlightData(undefined)
+            setHighlightDefaultContent('')
+            setPublicMessageTo(null)
+            setCallInviteContent(null)
+          }
+        }}
+        defaultContent={callInviteContent ?? highlightDefaultContent}
+        initialHighlightData={highlightData}
+        initialPublicMessageTo={publicMessageTo ?? undefined}
+      />
     </CreateHighlightContext.Provider>
   )
 }

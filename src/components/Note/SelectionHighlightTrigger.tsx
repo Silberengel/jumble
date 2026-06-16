@@ -89,6 +89,8 @@ export default function SelectionHighlightTrigger({
   const selectionStableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSelectingRef = useRef(false)
   const lastSelectionChangeRef = useRef(0)
+  /** Skip drawer dismiss cleanup while opening the highlight composer. */
+  const openingHighlightRef = useRef(false)
 
   const clearUi = useCallback(() => {
     setSelectedText('')
@@ -240,13 +242,22 @@ export default function SelectionHighlightTrigger({
 
   const handleCreateHighlight = useCallback(() => {
     if (!selectedText || !openHighlight) return
+    openingHighlightRef.current = true
     const highlightData = buildHighlightDataFromEvent(event, paragraphContext)
-    openHighlight(highlightData, selectedText)
-    clearUi()
+    const excerpt = selectedText
+    openHighlight(highlightData, excerpt)
     window.getSelection()?.removeAllRanges()
-  }, [clearUi, event, openHighlight, paragraphContext, selectedText])
+    setSelectedText('')
+    setParagraphContext('')
+    setToolbarPos(null)
+    setShowMobileDrawer(false)
+    window.setTimeout(() => {
+      openingHighlightRef.current = false
+    }, 400)
+  }, [event, openHighlight, paragraphContext, selectedText])
 
   const handleDismiss = useCallback(() => {
+    if (openingHighlightRef.current) return
     clearUi()
     window.getSelection()?.removeAllRanges()
   }, [clearUi])
@@ -304,6 +315,10 @@ export default function SelectionHighlightTrigger({
         <Drawer
           open={showMobileDrawer && selectedText.length > 0}
           onOpenChange={(open) => {
+            if (!open && openingHighlightRef.current) {
+              setShowMobileDrawer(false)
+              return
+            }
             setShowMobileDrawer(open)
             if (!open) handleDismiss()
           }}

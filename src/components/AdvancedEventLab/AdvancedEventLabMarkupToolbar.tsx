@@ -48,6 +48,7 @@ import {
   labInsertSnippet,
   labWrapOrSnippet
 } from './markup-insert'
+import CitationCreateDialog from '@/components/PostEditor/CitationCreateDialog'
 
 /** Languages for fenced / source blocks (labels are English; widely recognized by highlighters). */
 const CODE_LANGUAGES = [
@@ -127,6 +128,7 @@ export function AdvancedEventLabMarkupToolbar({
   /** Code-fence / source-block picker uses plain Buttons; close explicitly after insert (Radix). */
   const [codeLangMenuOpen, setCodeLangMenuOpen] = useState(false)
   const [citationPickerOpen, setCitationPickerOpen] = useState(false)
+  const [citationCreateOpen, setCitationCreateOpen] = useState(false)
   const [citationDisplayType, setCitationDisplayType] = useState<LabCitationDisplayType>('inline')
 
   const openCitationPicker = (displayType: LabCitationDisplayType) => {
@@ -147,14 +149,23 @@ export function AdvancedEventLabMarkupToolbar({
   }
 
   const citationPicker = (
-    <AdvancedLabCitationPickerDialog
-      open={citationPickerOpen}
-      onOpenChange={setCitationPickerOpen}
-      displayType={citationDisplayType}
-      onInsertMacro={(macro) =>
-        run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `${macro}\n`))
-      }
-    />
+    <>
+      <AdvancedLabCitationPickerDialog
+        open={citationPickerOpen}
+        onOpenChange={setCitationPickerOpen}
+        displayType={citationDisplayType}
+        onInsertMacro={(macro) =>
+          run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `${macro}\n`))
+        }
+      />
+      <CitationCreateDialog
+        open={citationCreateOpen}
+        onOpenChange={setCitationCreateOpen}
+        onInsert={(link) =>
+          run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `${link}\n`))
+        }
+      />
+    </>
   )
 
   const outlineTbClass =
@@ -178,6 +189,10 @@ export function AdvancedEventLabMarkupToolbar({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
         <DropdownMenuLabel>{t('Advanced lab tb citationsHint')}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => setCitationCreateOpen(true)}>
+          {t('Create and insert citation')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {LAB_CITATION_MENU_ITEMS.map(({ type, labelKey }) => (
           <DropdownMenuItem key={type} onSelect={() => openCitationPicker(type)}>
             {t(labelKey)}

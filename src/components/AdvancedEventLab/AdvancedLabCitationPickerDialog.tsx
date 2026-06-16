@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SimpleUsername } from '@/components/Username'
 import { getNoteBech32Id } from '@/lib/event'
+import { buildCitationWikiMacro, type CitationDisplayType } from '@/lib/citation-macro'
 import { CITATION_PICKER_KINDS, searchCitationEventsForPicker } from '@/services/mention-event-search.service'
 import client from '@/services/client.service'
 import { Search } from 'lucide-react'
@@ -17,21 +18,7 @@ import { nip19, type Event as NostrEvent } from 'nostr-tools'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-/** Matches {@link MarkdownArticle} / AsciiDoc citation token `[[citation::type::…]]`. */
-export type LabCitationDisplayType =
-  | 'end'
-  | 'foot'
-  | 'foot-end'
-  | 'inline'
-  | 'quote'
-  | 'prompt-end'
-  | 'prompt-inline'
-
-function buildCitationWikiMacro(displayType: LabCitationDisplayType, nostrLink: string): string {
-  let id = nostrLink.trim()
-  if (id.toLowerCase().startsWith('nostr:')) id = id.slice(6)
-  return `[[citation::${displayType}::${id}]]`
-}
+export type { CitationDisplayType as LabCitationDisplayType } from '@/lib/citation-macro'
 
 function isCitationKind(kind: number): boolean {
   return (CITATION_PICKER_KINDS as readonly number[]).includes(kind)
@@ -45,7 +32,7 @@ export function AdvancedLabCitationPickerDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  displayType: LabCitationDisplayType
+  displayType: CitationDisplayType
   onInsertMacro: (macro: string) => void
 }) {
   const { t } = useTranslation()

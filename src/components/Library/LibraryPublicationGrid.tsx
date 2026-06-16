@@ -1,6 +1,5 @@
 import PublicationCard from '@/components/Note/PublicationCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { libraryPublicationGridColumnClass, usePanelMode } from '@/hooks/usePanelMode'
 import type { LibraryPublicationEntry } from '@/lib/library-publication-index'
 import { eventTagAddress } from '@/lib/publication-index'
 import { isBooklistNip32Label } from '@/lib/nip32-label'
@@ -116,8 +115,7 @@ export default function LibraryPublicationGrid({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  const panelMode = usePanelMode()
-  const gridCols = libraryPublicationGridColumnClass(isSmallScreen, panelMode)
+  const gridCols = isSmallScreen ? 'grid-cols-1' : 'grid-cols-2'
 
   if (loading) {
     return (

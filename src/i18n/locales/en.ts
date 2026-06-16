@@ -2203,7 +2203,16 @@ export default {
     'Insert URL into your post and publish kind 1063 (NIP-94) with hashtag memeamigo for discoverability.':
       'Insert URL into your post and publish kind 1063 (NIP-94) with hashtag memeamigo for discoverability.',
     'Insert event or address': 'Insert event or address',
+    'Insert citation': 'Insert citation',
     'Insert mention': 'Insert mention',
+    'Create citation dialog title': 'Create citation',
+    'Create citation dialog hint':
+      'Publish a NIP-32 citation to your private relays, then insert a [[citation::type::nevent…]] reference into this post.',
+    'Create and insert citation': 'Create & insert',
+    'Citation display': 'Citation display',
+    'Cited excerpt': 'Cited excerpt',
+    'Quoted or referenced text (optional)': 'Quoted or referenced text (optional)',
+    'Citation published': 'Citation published',
     'Internal Citation': 'Internal Citation',
     'Internal Citation Settings': 'Internal Citation Settings',
     'Invalid Event': 'Invalid Event',

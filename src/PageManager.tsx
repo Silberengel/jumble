@@ -2,7 +2,6 @@
 // making it incompatible with Vite's Fast Refresh auto-detection. Opting into explicit
 // full-reload mode to suppress the "incompatible export" HMR warning.
 // @refresh reset
-import storage from '@/services/local-storage.service'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -12,20 +11,17 @@ import {
   peekMobilePrimaryFeedScroll
 } from '@/lib/mobile-primary-feed-scroll'
 import { useMobileSwipeBackOnElement } from '@/lib/mobile-swipe-back'
-import { preventRadixSheetCloseForPortaledOverlay } from '@/lib/sheet-dismiss-guard'
 import { ChevronLeft } from 'lucide-react'
 import { NavigationService } from '@/services/navigation.service'
 // Page imports needed for primary note view
 import { ImwaldBrandBar } from '@/assets/Logo'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
-import NoteDrawer from '@/components/NoteDrawer'
 import { APP_RESET_TO_LANDING_EVENT, PROFILE_SECONDARY_PANEL_DEFER_MS } from '@/constants'
 import { extendProfileNetworkDeferral } from '@/lib/profile-batch-coordinator'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import type { Event } from 'nostr-tools'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { CurrentRelaysProvider } from '@/providers/CurrentRelaysProvider'
 // DEPRECATED: useUserPreferences removed - double-panel functionality disabled
 import { TPageRef } from '@/types'
@@ -65,7 +61,6 @@ import modalManager from './services/modal-manager.service'
 import { decodeRssArticlePathSegment, encodeRssArticlePathSegment } from '@/lib/rss-article'
 import { matchAppRoute } from './routes'
 import { useScreenSize, useScreenSizeOptional } from './providers/ScreenSizeProvider'
-import { NoteDrawerContext, useNoteDrawer, useNoteDrawerOptional } from '@/contexts/note-drawer-context'
 import {
   PrimaryNoteViewContext,
   usePrimaryNoteView,
@@ -407,28 +402,6 @@ function spellPropsFromSearch(search: string): { spell: string } | undefined {
   return spell ? { spell } : undefined
 }
 
-/** Primary URL for drawer/overlay restore when we only have pathname + optional full URL for query. */
-function restoredPrimaryBrowserUrl(pathname: string, fullUrlForQuery: string): string {
-  const popSegments = pathname.split('/').filter(Boolean)
-  const popFirstSeg = popSegments[0] ?? ''
-  if (popSegments.length === 0) {
-    return '/'
-  }
-  if (popSegments.length === 1 && popFirstSeg === 'home') {
-    return '/explore'
-  }
-  if (popSegments.length === 1 && popFirstSeg === 'spells') {
-    try {
-      const sp = new URL(fullUrlForQuery, window.location.origin).searchParams.get('spell')?.trim()
-      return buildPrimaryPageUrl('spells', sp ? { spell: sp } : undefined)
-    } catch {
-      return '/spells'
-    }
-  }
-  if (popSegments.length === 1) return `/${popFirstSeg}`
-  return pathname
-}
-
 // Helper function to extract noteId and context from URL
 function extractValidNoteId(raw: string): string | null {
   const decoded = (() => {
@@ -473,14 +446,12 @@ function parseNoteUrl(url: string): { noteId: string; context?: string } | null 
   return null
 }
 
-// Fixed: Note navigation uses full-screen stack on mobile, sheet (single-pane) or side panel (double-pane) on desktop
+// Note navigation: full-screen stack on mobile, side panel on desktop.
 export function useSmartNoteNavigation() {
   const { push: pushSecondaryPage } = useSecondaryPage()
-  const { isSmallScreen } = useScreenSize()
   const { current: currentPrimaryPage } = usePrimaryPage()
   
   const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
-    // Extract noteId from URL (handles both /notes/{id} and /{context}/notes/{id})
     const parsed = parseNoteUrl(url)
     if (!parsed) {
       logger.warn('navigateToNote ignored invalid note URL', { url })
@@ -490,23 +461,8 @@ export function useSmartNoteNavigation() {
 
     primeNoteNavigationCache(noteId, event, relatedEvents)
 
-    // Build contextual URL based on current page
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
-    
-    if (isSmallScreen) {
-      // Mobile: full-screen secondary stack (no sheet drawer — overlay hid the stack and showed black).
-      pushSecondaryPage(contextualUrl)
-    } else {
-      // Desktop: check panel mode
-      const currentPanelMode = storage.getPanelMode()
-      if (currentPanelMode === 'single') {
-        // Single-pane desktop: one sheet driven by the secondary stack (same as relays/settings).
-        pushSecondaryPage(contextualUrl)
-      } else {
-        // Double-pane: use secondary panel
-        pushSecondaryPage(contextualUrl)
-      }
-    }
+    pushSecondaryPage(contextualUrl)
   }
   
   return { navigateToNote }
@@ -527,7 +483,6 @@ export function useSmartNoteNavigationOptional() {
   }
 
   const { push } = pushSecondaryPage
-  const { isSmallScreen } = screenSize
   const { current: currentPrimaryPage } = primaryPage
 
   const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
@@ -539,16 +494,7 @@ export function useSmartNoteNavigationOptional() {
     const { noteId } = parsed
     primeNoteNavigationCache(noteId, event, relatedEvents)
     const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
-    if (isSmallScreen) {
-      push(contextualUrl)
-    } else {
-      const currentPanelMode = storage.getPanelMode()
-      if (currentPanelMode === 'single') {
-        push(contextualUrl)
-      } else {
-        push(contextualUrl)
-      }
-    }
+    push(contextualUrl)
   }
   return { navigateToNote }
 }
@@ -600,47 +546,22 @@ export function useSmartRelayNavigationOptional() {
   return { navigateToRelay }
 }
 
-// Fixed: Profile navigation now uses primary note view on mobile, secondary routing on desktop
+// Profile navigation: primary overlay on mobile, secondary panel on desktop.
 export function useSmartProfileNavigation() {
   const { setPrimaryNoteView } = usePrimaryNoteView()
   const { push: pushSecondaryPage } = useSecondaryPage()
   const { isSmallScreen } = useScreenSize()
-  const { closeDrawer, isDrawerOpen } = useNoteDrawer()
   
   const navigateToProfile = (url: string) => {
-    // Close drawer if open (profiles aren't shown in drawers)
-    // Navigate after drawer closes to avoid URL being restored by drawer's onOpenChange
-    if (isDrawerOpen) {
-      closeDrawer()
-      // Wait for drawer to close (350ms animation) before navigating
-      setTimeout(() => {
-        if (isSmallScreen) {
-          // Use primary note view on mobile
-          const profileId = url.replace('/users/', '')
-          window.history.pushState(null, '', url)
-          setPrimaryNoteView(
-            suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
-            'profile'
-          )
-        } else {
-          // Use secondary routing on desktop
-          pushSecondaryPage(url)
-        }
-      }, 400) // Slightly longer than drawer close animation (350ms)
+    if (isSmallScreen) {
+      const profileId = url.replace('/users/', '')
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
+        'profile'
+      )
     } else {
-      // No drawer open, navigate immediately
-      if (isSmallScreen) {
-        // Use primary note view on mobile
-        const profileId = url.replace('/users/', '')
-        window.history.pushState(null, '', url)
-        setPrimaryNoteView(
-          suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
-          'profile'
-        )
-      } else {
-        // Use secondary routing on desktop
-        pushSecondaryPage(url)
-      }
+      pushSecondaryPage(url)
     }
   }
   
@@ -652,9 +573,8 @@ export function useSmartProfileNavigationOptional() {
   const primaryNoteView = usePrimaryNoteViewOptional()
   const secondaryPage = useSecondaryPageOptional()
   const screenSize = useScreenSizeOptional()
-  const noteDrawer = useNoteDrawerOptional()
 
-  if (!primaryNoteView || !secondaryPage || !screenSize || !noteDrawer) {
+  if (!primaryNoteView || !secondaryPage || !screenSize) {
     return {
       navigateToProfile: (url: string) => {
         window.location.href = url
@@ -665,40 +585,23 @@ export function useSmartProfileNavigationOptional() {
   const { setPrimaryNoteView } = primaryNoteView
   const { push: pushSecondaryPage } = secondaryPage
   const { isSmallScreen } = screenSize
-  const { closeDrawer, isDrawerOpen } = noteDrawer
 
   const navigateToProfile = (url: string) => {
-    if (isDrawerOpen) {
-      closeDrawer()
-      setTimeout(() => {
-        if (isSmallScreen) {
-          const profileId = url.replace('/users/', '')
-          window.history.pushState(null, '', url)
-          setPrimaryNoteView(
-            suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
-            'profile'
-          )
-        } else {
-          pushSecondaryPage(url)
-        }
-      }, 400)
+    if (isSmallScreen) {
+      const profileId = url.replace('/users/', '')
+      window.history.pushState(null, '', url)
+      setPrimaryNoteView(
+        suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
+        'profile'
+      )
     } else {
-      if (isSmallScreen) {
-        const profileId = url.replace('/users/', '')
-        window.history.pushState(null, '', url)
-        setPrimaryNoteView(
-          suspensePrimaryPage(<SecondaryProfilePageLazy id={profileId} index={0} hideTitlebar={true} />),
-          'profile'
-        )
-      } else {
-        pushSecondaryPage(url)
-      }
+      pushSecondaryPage(url)
     }
   }
   return { navigateToProfile }
 }
 
-// Hashtag / d-tag note list opens on the secondary stack (right panel or single-pane sheet), same as other search routes.
+// Hashtag / d-tag note list opens on the secondary stack (right panel), same as other search routes.
 export function useSmartHashtagNavigation() {
   const { push: pushSecondaryPage } = useSecondaryPage()
 
@@ -1110,11 +1013,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const [primaryNoteView, setPrimaryNoteViewState] = useState<ReactNode | null>(null)
   const [primaryViewType, setPrimaryViewType] = useState<TPrimaryOverlayViewType | null>(null)
   const [savedPrimaryPage, setSavedPrimaryPage] = useState<TPrimaryPageName | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerNoteId, setDrawerNoteId] = useState<string | null>(null)
-  const [singlePaneSheetOpen, setSinglePaneSheetOpen] = useState(false)
-  const [panelMode, setPanelMode] = useState<'single' | 'double'>(() => storage.getPanelMode())
-  /** Latest primary page for async callbacks (drawer-close timer) without resubscribing effects on every primary change. */
+  /** Latest primary page for async callbacks without resubscribing effects on every primary change. */
   const currentPrimaryPageRef = useRef<TPrimaryPageName>(currentPrimaryPage)
   useLayoutEffect(() => {
     currentPrimaryPageRef.current = currentPrimaryPage
@@ -1122,12 +1021,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const navigationCounterRef = useRef(0)
   const goBackRef = useRef<() => void>(() => {})
   const popSecondaryPageRef = useRef<() => void>(() => {})
-  const drawerOpenRef = useRef(drawerOpen)
   const [mobilePrimarySwipeRoot, setMobilePrimarySwipeRoot] = useState<HTMLElement | null>(null)
   const [mobileSecondarySwipeRoot, setMobileSecondarySwipeRoot] = useState<HTMLElement | null>(null)
-  useLayoutEffect(() => {
-    drawerOpenRef.current = drawerOpen
-  }, [drawerOpen])
   const primaryPanelRefreshRef = useRef<(() => void) | null>(null)
   const registerPrimaryPanelRefresh = useCallback((fn: (() => void) | null) => {
     primaryPanelRefreshRef.current = fn
@@ -1145,7 +1040,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     return entry?.props as object | undefined
   }, [primaryPages, currentPrimaryPage])
 
-  /** Keeps spell query (?spell=) and other primary props for URL restore after drawer/popstate — refs were never written before. */
+  /** Keeps spell query (?spell=) and other primary props for URL restore after popstate — refs were never written before. */
   useEffect(() => {
     const m = primaryPagePropsRef.current
     for (const p of primaryPages) {
@@ -1207,58 +1102,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
   }
 
-  // Drawer handlers
-  const [drawerInitialEvent, setDrawerInitialEvent] = useState<Event | null>(null)
-  const openDrawer = useCallback((noteId: string, initialEvent?: Event) => {
-    // Mobile uses the full-screen secondary stack; the sheet drawer only applies to desktop single-pane.
-    if (isSmallScreen || panelMode !== 'single') return
-    noteStatsService.setBackgroundStatsPaused(true)
-    client.interruptBackgroundQueries()
-    setDrawerNoteId(noteId)
-    setDrawerInitialEvent(initialEvent ?? null)
-    setDrawerOpen(true)
-  }, [isSmallScreen, panelMode])
-
-  const closeDrawer = useCallback(() => {
-    if (!drawerOpen) return // Already closed
-    setDrawerOpen(false)
-    // Don't clear noteId here — scheduled in the drawer-close effect after the sheet animation.
-  }, [drawerOpen])
   const ignorePopStateRef = useRef(false)
-  /** When set before closing the note drawer, replaceState uses this URL instead of buildPrimaryPageUrl (popstate edge cases). */
-  const pendingDrawerCloseUrlRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const useDrawer = isSmallScreen || panelMode === 'single'
-    if (!useDrawer || drawerOpen || !drawerNoteId) return
-
-    // Drawer close runs replaceState to the primary URL but used to leave the secondary stack populated,
-    // which re-opens the single-pane sheet (URL is / while the note panel stays visible).
-    secondaryStackRef.current = []
-    setSecondaryStack([])
-    setSinglePaneSheetOpen(false)
-
-    const timer = window.setTimeout(() => {
-      const pending = pendingDrawerCloseUrlRef.current
-      pendingDrawerCloseUrlRef.current = null
-      if (pending) {
-        window.history.replaceState(null, '', pending)
-      } else {
-        const page = currentPrimaryPageRef.current
-        replaceHistoryWithPrimaryPageUrl(
-          page,
-          primaryPagePropsRef.current.get(page) as { spell?: string } | undefined
-        )
-      }
-      setDrawerNoteId(null)
-      setDrawerInitialEvent(null)
-    }, 350)
-
-    return () => {
-      window.clearTimeout(timer)
-      pendingDrawerCloseUrlRef.current = null
-    }
-  }, [drawerOpen, drawerNoteId, isSmallScreen, panelMode])
 
   // Handle browser back button for primary note view
   useEffect(() => {
@@ -1268,15 +1112,14 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         return
       }
       
-      // If we have a primary note view open (and drawer is not open), close it
-      if (primaryNoteView && !drawerOpen) {
+      if (primaryNoteView) {
         setPrimaryNoteView(null)
       }
     }
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [primaryNoteView, drawerOpen])
+  }, [primaryNoteView])
 
   useEffect(() => {
     if (historyLocationSeedApplied) return
@@ -1353,36 +1196,15 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             const resolved = noteContextToPrimaryEntry(pageContext)
             if (resolved) {
               primaryForNoteUrl = resolved.name
-              // Open drawer immediately, then load background page asynchronously
-              // This prevents the background page loading from blocking the drawer
-              if (isSmallScreen || panelMode === 'single') {
-                // Seed stack so in-note navigation (e.g. quotes → back) can pop to this note
-                pushNoteUrlOnStack(buildNoteUrl(noteId, resolved.name))
-
-                setTimeout(() => {
-                  setCurrentPrimaryPage(resolved.name)
-                  setPrimaryPages((prev) => mergePrimaryPageEntry(prev, resolved))
-                  setSavedPrimaryPage(resolved.name)
-                }, 0)
-                return
-              } else {
-                // Double-pane mode: set page immediately (no drawer)
-                setCurrentPrimaryPage(resolved.name)
-                setPrimaryPages((prev) => mergePrimaryPageEntry(prev, resolved))
-                setSavedPrimaryPage(resolved.name)
-              }
+              setCurrentPrimaryPage(resolved.name)
+              setPrimaryPages((prev) => mergePrimaryPageEntry(prev, resolved))
+              setSavedPrimaryPage(resolved.name)
             }
           }
 
           const contextualUrl = buildNoteUrl(noteId, primaryForNoteUrl)
-
-          if (isSmallScreen || panelMode === 'single') {
-            pushNoteUrlOnStack(contextualUrl)
-            return
-          } else {
-            pushNoteUrlOnStack(contextualUrl)
-            return
-          }
+          pushNoteUrlOnStack(contextualUrl)
+          return
         }
       }
 
@@ -1413,11 +1235,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             setSavedPrimaryPage(rssPrimaryEntry.name)
           }
 
-          if (isSmallScreen || panelMode === 'single') {
-            setTimeout(applyRssPrimary, 0)
-          } else {
-            applyRssPrimary()
-          }
+          applyRssPrimary()
 
           const contextualRssUrl = buildRssArticleUrl(decodedArticleUrl, rssPrimaryEntry.name)
 
@@ -1477,8 +1295,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         return
       }
       
-      // For relay URLs and other non-note URLs, push to secondary stack
-      // (will be rendered in drawer in single-pane mode, side panel in double-pane mode)
+      // For relay URLs and other non-note URLs, push to secondary stack (side panel on desktop).
       const pathOnlyForSecondary = pathname.split('?')[0].split('#')[0]
       if (pathOnlyForSecondary.startsWith('/settings/') && pathOnlyForSecondary !== '/settings') {
         setCurrentPrimaryPage('settings')
@@ -1596,14 +1413,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       const browserPathOnly = window.location.pathname.split('?')[0].split('#')[0]
       if (
         isPrimaryOnlyPathname(browserPathOnly) &&
-        (secondaryStackRef.current.length > 0 || drawerOpenRef.current)
+        secondaryStackRef.current.length > 0
       ) {
-        if (drawerOpenRef.current) {
-          setDrawerOpen(false)
-          setDrawerNoteId(null)
-          setDrawerInitialEvent(null)
-        }
-        setSinglePaneSheetOpen(false)
         secondaryStackRef.current = []
         setSecondaryStack([])
         restorePrimaryTabAfterSecondaryClose()
@@ -1618,7 +1429,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           ? state.url
           : window.location.pathname + window.location.search + window.location.hash
       
-      // Check if it's a note URL (we'll update drawer after stack is synced)
+      // Check if it's a note URL (stack sync below)
       const noteUrlMatch = urlToCheck.match(/\/(discussions|search|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/) || 
                           urlToCheck.match(/\/notes\/(.+)$/)
       const noteIdToShow = noteUrlMatch ? noteUrlMatch[noteUrlMatch.length - 1].split('?')[0].split('#')[0] : null
@@ -1655,12 +1466,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           setPrimaryPages((prev) => mergePrimaryPageEntry(prev, { name: 'rss' }))
           setSavedPrimaryPage('rss')
         }
-      }
-      
-      // If not a note URL and drawer is open - close the drawer immediately
-      // Only in single-pane mode or mobile
-      if (!noteIdToShow && drawerOpen && (isSmallScreen || panelMode === 'single')) {
-        setDrawerOpen(false)
       }
 
       setSecondaryStack((pre) => {
@@ -1750,11 +1555,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           
           // If it's a primary page URL, return empty stack (right panel will close)
           if (isPrimaryPage) {
-            // On mobile or single-pane: if drawer is open, close it
-            if (drawerOpen && (isSmallScreen || panelMode === 'single')) {
-              pendingDrawerCloseUrlRef.current = restoredPrimaryBrowserUrl(pathname, state!.url)
-              setDrawerOpen(false)
-            }
             return []
           }
           
@@ -1763,17 +1563,14 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                               state.url.match(/\/notes\/(.+)$/)
           if (noteUrlMatch) {
             const noteId = noteUrlMatch[noteUrlMatch.length - 1].split('?')[0].split('#')[0]
-            if (noteId) {
-              if (isSmallScreen || panelMode === 'single') {
-                const built = findAndCreateComponent(state.url, state.index)
-                if (built.component) {
-                  return [
-                    { index: state.index, url: state.url, component: built.component, ref: built.ref }
-                  ]
-                }
-                return syncSecondaryStackWhenPopStateStateIsNull(pre, state.url)
+            if (noteId && isSmallScreen) {
+              const built = findAndCreateComponent(state.url, state.index)
+              if (built.component) {
+                return [
+                  { index: state.index, url: state.url, component: built.component, ref: built.ref }
+                ]
               }
-              // Double-pane mode: continue with stack creation
+              return syncSecondaryStackWhenPopStateStateIsNull(pre, state.url)
             }
           }
           // Create a new stack item if it's a secondary route (e.g., /mutes)
@@ -1786,11 +1583,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               ref
             })
           } else {
-            // No component found - likely a primary page, return empty stack
-            // On mobile or single-pane: if drawer is open, close it
-            if (drawerOpen && (isSmallScreen || panelMode === 'single')) {
-              closeDrawer()
-            }
             return []
           }
         } else if (!topItem.component) {
@@ -1802,13 +1594,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           }
         }
         if (newStack.length === 0) {
-          // On mobile or single-pane: if drawer is open, close it
-          if (drawerOpen && (isSmallScreen || panelMode === 'single')) {
-            closeDrawer()
-          }
           // DO NOT update URL when closing panel - closing should NEVER affect the main page
         }
-        // If newStack.length === 0, we're closing - don't reopen the drawer
         return newStack
       })
     }
@@ -1818,14 +1605,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     return () => {
       window.removeEventListener('popstate', onPopState)
     }
-  }, [
-    isSmallScreen,
-    openDrawer,
-    closeDrawer,
-    panelMode,
-    drawerOpen,
-    drawerNoteId /* keep in sync while drawer stays open (quote→note); stale id broke Back in single-pane */
-  ])
+  }, [isSmallScreen])
 
   // Listen for tab state changes from components
   useEffect(() => {
@@ -1840,19 +1620,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
   }, [])
 
-  // Listen for panel mode changes from toggle
-  useEffect(() => {
-    const handlePanelModeChange = (e: CustomEvent<{ mode: 'single' | 'double' }>) => {
-      setPanelMode(e.detail.mode)
-      logger.debug('PageManager: Panel mode changed', { mode: e.detail.mode })
-    }
-    
-    window.addEventListener('panelModeChanged', handlePanelModeChange as EventListener)
-    return () => {
-      window.removeEventListener('panelModeChanged', handlePanelModeChange as EventListener)
-    }
-  }, [])
-  
   // Restore tab state when returning to primary page from browser back button
   useEffect(() => {
     if (secondaryStack.length === 0 && currentPrimaryPage) {
@@ -2099,11 +1866,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }
 
   const hardCloseSecondaryPanel = () => {
-    if (secondaryStackRef.current.length === 0 && !drawerOpenRef.current) {
+    if (secondaryStackRef.current.length === 0) {
       return
     }
-    if (drawerOpenRef.current) setDrawerOpen(false)
-    setSinglePaneSheetOpen(false)
     secondaryStackRef.current = []
     queueMicrotask(() => {
       setSecondaryStack([])
@@ -2118,7 +1883,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   /** Logout / session clear: drop note overlays and replace the current URL (e.g. `/feed/notes/…`) with `/`. */
   const resetToLandingPage = () => {
     ignorePopStateRef.current = true
-    pendingDrawerCloseUrlRef.current = '/'
 
     setSavedPrimaryPage(null)
     savedPrimaryPagePropsRef.current = undefined
@@ -2127,10 +1891,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
     noteStatsService.setBackgroundStatsPaused(false)
 
-    if (drawerOpenRef.current) {
-      setDrawerOpen(false)
-    }
-    setSinglePaneSheetOpen(false)
     secondaryStackRef.current = []
     setSecondaryStack([])
 
@@ -2141,12 +1901,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     setCurrentPrimaryPage('feed')
 
     window.history.replaceState(null, '', '/')
-
-    window.setTimeout(() => {
-      setDrawerNoteId(null)
-      setDrawerInitialEvent(null)
-      pendingDrawerCloseUrlRef.current = null
-    }, 400)
   }
 
   const resetToLandingPageStable = useEventCallback(resetToLandingPage)
@@ -2182,55 +1936,45 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
     const stackLen = secondaryStackRef.current.length
 
-    // Mobile / single-pane: one code path — stack drives the overlay (sheet on desktop, full-screen on mobile)
-    if (isSmallScreen || panelMode === 'single') {
+    if (isSmallScreen) {
       if (stackLen > 1) {
         popOneSecondaryStackFrame()
         ignorePopStateRef.current = true
         window.history.back()
       } else {
-        // replaceState in hardClose already points at the primary URL — do not history.back()
-        // afterward or the browser returns to the note entry and popstate/sync reopens the panel.
         hardCloseSecondaryPanel()
       }
       return
     }
 
-    // In double-pane mode, never open drawer - just pop from stack
-    if (panelMode === 'double' && !isSmallScreen) {
-      if (stackLen === 1) {
-        secondaryStackRef.current = []
-        queueMicrotask(() => {
-          setSecondaryStack([])
-        })
-        replaceHistoryWithPrimaryPageUrl(
-          currentPrimaryPage,
-          primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
-        )
+    if (stackLen === 1) {
+      secondaryStackRef.current = []
+      queueMicrotask(() => {
+        setSecondaryStack([])
+      })
+      replaceHistoryWithPrimaryPageUrl(
+        currentPrimaryPage,
+        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
+      )
 
-        const savedFeedState = savedFeedStateRef.current.get(currentPrimaryPage)
+      const savedFeedState = savedFeedStateRef.current.get(currentPrimaryPage)
 
-        // Restore tab state first
-        if (savedFeedState?.tab) {
-          logger.info('PageManager: Desktop - Restoring tab state', { page: currentPrimaryPage, tab: savedFeedState.tab })
-          window.dispatchEvent(new CustomEvent('restorePageTab', { 
-            detail: { page: currentPrimaryPage, tab: savedFeedState.tab } 
-          }))
-          currentTabStateRef.current.set(currentPrimaryPage, savedFeedState.tab)
-        }
-      } else if (stackLen > 1) {
-        popOneSecondaryStackFrame()
-        ignorePopStateRef.current = true
-        window.history.back()
-      } else {
-        // Stack empty but user hit back/close: align URL to primary without history.go(-1), which
-        // changes the address bar but does not run our stack sync (panel/URL desync + double-click).
-        replaceHistoryWithPrimaryPageUrl(
-          currentPrimaryPage,
-          primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
-        )
+      if (savedFeedState?.tab) {
+        logger.info('PageManager: Desktop - Restoring tab state', { page: currentPrimaryPage, tab: savedFeedState.tab })
+        window.dispatchEvent(new CustomEvent('restorePageTab', { 
+          detail: { page: currentPrimaryPage, tab: savedFeedState.tab } 
+        }))
+        currentTabStateRef.current.set(currentPrimaryPage, savedFeedState.tab)
       }
-      return
+    } else if (stackLen > 1) {
+      popOneSecondaryStackFrame()
+      ignorePopStateRef.current = true
+      window.history.back()
+    } else {
+      replaceHistoryWithPrimaryPageUrl(
+        currentPrimaryPage,
+        primaryPagePropsRef.current.get(currentPrimaryPage) as { spell?: string } | undefined
+      )
     }
   }
 
@@ -2248,16 +1992,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     enabled: mobileSecondaryPanelOpen
   })
 
-  useEffect(() => {
-    const shouldBeOpen =
-      panelMode === 'single' &&
-      !isSmallScreen &&
-      secondaryStack.length > 0
-    setSinglePaneSheetOpen(shouldBeOpen)
-  }, [panelMode, isSmallScreen, secondaryStack.length])
-
   const primaryObscured =
-    secondaryStack.length > 0 || drawerOpen || primaryNoteView != null
+    secondaryStack.length > 0 || primaryNoteView != null
 
   const primaryFrozen = primaryObscured
 
@@ -2266,42 +2002,40 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     isSmallScreen && secondaryStack.length > 0 && primaryNoteView == null
 
   const primaryFeedStillVisible =
-    panelMode === 'double' || !primaryObscured || mobileSecondaryOverlaysFeed
+    !isSmallScreen || !primaryObscured || mobileSecondaryOverlaysFeed
 
   useLayoutEffect(() => {
     const pauseBackgroundStats = primaryObscured && !primaryFeedStillVisible
     noteStatsService.setBackgroundStatsPaused(pauseBackgroundStats)
     if (primaryFrozen) {
       extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
-      // Keep in-flight REQ on double-pane and mobile feed overlay; interrupt only when primary is unmounted.
-      const shouldInterrupt = isSmallScreen ? primaryNoteView != null : panelMode === 'single'
-      if (shouldInterrupt) {
+      if (isSmallScreen && primaryNoteView != null) {
         client.interruptBackgroundQueries()
       }
     }
-  }, [primaryObscured, primaryFeedStillVisible, isSmallScreen, panelMode, primaryNoteView])
+  }, [primaryObscured, primaryFeedStillVisible, isSmallScreen, primaryNoteView])
 
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({
       navigate: navigatePrimaryPageStable,
       current: currentPrimaryPage,
       currentPageProps,
-      /** Double-pane and mobile secondary overlay keep the feed mounted (frozen); full-screen mobile overlays unmount it. */
-      display: panelMode === 'double' || !primaryObscured || mobileSecondaryOverlaysFeed,
+      /** Desktop double-pane and mobile secondary overlay keep the feed mounted (frozen). */
+      display: !isSmallScreen || !primaryObscured || mobileSecondaryOverlaysFeed,
       frozen: primaryFrozen
     }),
     [
       navigatePrimaryPageStable,
       currentPrimaryPage,
       currentPageProps,
-      panelMode,
+      isSmallScreen,
       primaryObscured,
       primaryFrozen,
       mobileSecondaryOverlaysFeed
     ]
   )
 
-  const isSidePanelOpen = secondaryStack.length > 0 || drawerOpen
+  const isSidePanelOpen = secondaryStack.length > 0
 
   const secondaryPageContextValue = useMemo(
     (): SecondaryPageContextValue => ({
@@ -2339,7 +2073,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                 triggerPrimaryPanelRefresh
               }}
             >
-            <NoteDrawerContext.Provider value={{ openDrawer, closeDrawer, isDrawerOpen: drawerOpen, drawerNoteId, drawerInitialEvent }}>
             <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-content-canvas">
             <LiveActivitiesStrip placement="mobile" />
             {primaryNoteView ? (
@@ -2405,7 +2138,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             <Suspense fallback={null}>
               <PostSignupBackupRedirectLazy />
             </Suspense>
-            </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>
         </CurrentRelaysProvider>
         </SecondaryPageContext.Provider>
@@ -2425,7 +2157,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                 triggerPrimaryPanelRefresh
               }}
             >
-            <NoteDrawerContext.Provider value={{ openDrawer, closeDrawer, isDrawerOpen: drawerOpen, drawerNoteId, drawerInitialEvent }}>
             <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-content-canvas">
               <div
                 className="mx-auto flex h-full min-h-0 w-full max-w-[1920px] flex-1 bg-content-canvas"
@@ -2433,106 +2164,39 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
                 <Suspense fallback={null}>
                   <SidebarLazy />
                 </Suspense>
-                {(() => {
-                  if (panelMode === 'double') {
-                    // Double-pane mode: show feed on left (flexible, maintains width), secondary stack on right (1042px, same as drawer)
-                    return (
-                      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                        {/* Left: primary column — must be a flex column so MainContentArea flex-1 gets height */}
-                        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border">
-                          <MainContentArea
-                            primaryPages={primaryPages}
-                            currentPrimaryPage={currentPrimaryPage}
-                            primaryNoteView={primaryNoteView}
-                            primaryViewType={primaryViewType}
-                            goBack={goBack}
-                            onPrimaryPanelRefresh={triggerPrimaryPanelRefresh}
-                          />
-                        </div>
-                        {/* Right: secondary stack — max width so left pane keeps space on small desktops */}
-                        <div className="flex h-full min-h-0 w-[min(1042px,50vw)] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/25 px-2 pt-3 pb-2">
-                          {secondaryStack.length > 0 ? (
-                            <TopSecondaryStackPane
-                              item={secondaryStack[secondaryStack.length - 1]!}
-                              className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                            />
-                          ) : (
-                            <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
-                              <p>{t('doublePane.secondaryEmpty')}</p>
-                              <p className="text-xs opacity-80">{t('doublePane.secondaryEmptyHint')}</p>
-                            </div>
-                          )}
-                        </div>
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border">
+                    <MainContentArea
+                      primaryPages={primaryPages}
+                      currentPrimaryPage={currentPrimaryPage}
+                      primaryNoteView={primaryNoteView}
+                      primaryViewType={primaryViewType}
+                      goBack={goBack}
+                      onPrimaryPanelRefresh={triggerPrimaryPanelRefresh}
+                    />
+                  </div>
+                  <div className="flex h-full min-h-0 w-[min(1042px,50vw)] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/25 px-2 pt-3 pb-2">
+                    {secondaryStack.length > 0 ? (
+                      <TopSecondaryStackPane
+                        item={secondaryStack[secondaryStack.length - 1]!}
+                        className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                      />
+                    ) : (
+                      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
+                        <p>{t('doublePane.secondaryEmpty')}</p>
+                        <p className="text-xs opacity-80">{t('doublePane.secondaryEmptyHint')}</p>
                       </div>
-                    )
-                  } else {
-                    // Single-pane mode: show feed only, drawer overlay for notes
-                    return (
-                      <div className="flex-1 flex flex-col min-h-0 min-w-0">
-                        <MainContentArea 
-                          primaryPages={primaryPages}
-                          currentPrimaryPage={currentPrimaryPage}
-                          primaryNoteView={primaryNoteView}
-                          primaryViewType={primaryViewType}
-                          goBack={goBack}
-                          onPrimaryPanelRefresh={triggerPrimaryPanelRefresh}
-                        />
-                      </div>
-                    )
-                  }
-                })()}
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-            {drawerNoteId && (
-              <NoteDrawer
-                open={drawerOpen}
-                initialEvent={drawerInitialEvent}
-                onOpenChange={(open) => {
-                  if (open) {
-                    setDrawerOpen(true)
-                    return
-                  }
-                  hardCloseSecondaryPanel()
-                }}
-                noteId={drawerNoteId}
-              />
-            )}
-            {/* Generic drawer for secondary stack in single-pane mode (for relay pages, etc.) */}
-            {panelMode === 'single' &&
-              !isSmallScreen &&
-              secondaryStack.length > 0 && (
-              <Sheet
-                open={singlePaneSheetOpen}
-                registerWithModalManager={false}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    setSinglePaneSheetOpen(false)
-                    // Close side panel immediately and clear the whole secondary stack.
-                    hardCloseSecondaryPanel()
-                  }
-                }}
-              >
-                <SheetContent
-                  side="right"
-                  className="flex h-full w-full flex-col overflow-hidden p-0 sm:max-w-[1042px]"
-                  hideClose
-                  onPointerDownOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
-                  onInteractOutside={(e) => preventRadixSheetCloseForPortaledOverlay(e)}
-                >
-                  <TopSecondaryStackPane
-                    item={secondaryStack[secondaryStack.length - 1]!}
-                    className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                  />
-                </SheetContent>
-              </Sheet>
-            )}
             <Suspense fallback={null}>
               <TooManyRelaysAlertDialogLazy />
             </Suspense>
             <Suspense fallback={null}>
               <PostSignupBackupRedirectLazy />
             </Suspense>
-            </NoteDrawerContext.Provider>
             </PrimaryNoteViewContext.Provider>
         </CurrentRelaysProvider>
       </SecondaryPageContext.Provider>

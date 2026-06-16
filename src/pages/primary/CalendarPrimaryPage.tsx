@@ -1,4 +1,3 @@
-import storage from '@/services/local-storage.service'
 import PrimaryPageLayout, { type TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import {
   calendarOccurrenceOverlapsRange,
@@ -18,7 +17,6 @@ import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpel
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 import { useNostr } from '@/providers/NostrProvider'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
@@ -77,22 +75,11 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
   const followList = useFollowListOptional()
   const { navigateToNote } = useSmartNoteNavigation()
   const { push } = useSecondaryPage()
-  const { isSmallScreen } = useScreenSize()
-  const [panelMode, setPanelMode] = useState<'single' | 'double'>(() => storage.getPanelMode())
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
-    const onPanelMode = (ev: Event) => {
-      const d = (ev as CustomEvent<{ mode: 'single' | 'double' }>).detail?.mode
-      if (d === 'single' || d === 'double') setPanelMode(d)
-    }
-    window.addEventListener('panelModeChanged', onPanelMode)
-    return () => window.removeEventListener('panelModeChanged', onPanelMode)
-  }, [])
-
-  /** Month grid is unreadable in the narrow primary column of double-pane; use the same vertical layout as mobile. */
-  const useVerticalMonthCalendar = isSmallScreen || panelMode === 'double'
+  /** Month grid is unreadable in the narrow primary column; use the same vertical layout as mobile. */
+  const useVerticalMonthCalendar = true
 
   const [activeWeekOffset, setActiveWeekOffset] = useState(weekOffsetProp)
   useEffect(() => {

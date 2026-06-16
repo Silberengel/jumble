@@ -108,15 +108,15 @@ export default function HighlightEditor({
   }, [sourceInput, context, setHighlightData, t])
 
   return (
-    <div className="rounded-lg border bg-muted/40 p-4 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="rounded-lg border bg-muted/40 p-3 sm:p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-medium">{t('Highlight Settings')}</div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           title={t('Close highlight editor')}
-          className="h-6 w-6"
+          className="h-6 w-6 shrink-0"
           onClick={() => setIsHighlight(false)}
         >
           <X className="h-4 w-4" />
@@ -151,22 +151,24 @@ export default function HighlightEditor({
           value={context}
           onChange={(e) => setContext(e.target.value)}
           placeholder={t('Paste the entire original passage that contains your highlight')}
-          rows={12}
+          rows={4}
+          className="min-h-[5.5rem] max-h-48 resize-y"
         />
         <p className="text-xs text-muted-foreground">
           {t('The main editor above should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.')}
         </p>
       </div>
 
-      <div className="text-xs text-muted-foreground bg-background/50 rounded p-2">
-        <p className="font-medium mb-1">{t('How to Create a Highlight (NIP-84)')}</p>
-        <ol className="list-decimal list-inside space-y-1 mt-2">
+      <details className="text-xs text-muted-foreground rounded border border-border/60 bg-background/50 px-3 py-2">
+        <summary className="cursor-pointer font-medium text-foreground/90 select-none">
+          {t('How to Create a Highlight (NIP-84)')}
+        </summary>
+        <ol className="mt-2 list-decimal list-inside space-y-1 pl-0.5">
           <li>{t('Enter the specific text you want to highlight in the main content area above')}</li>
           <li>{t('Add the source (where this text is from)')}</li>
           <li>{t('Optionally, add the full quote/context to show your highlight within it')}</li>
         </ol>
-      </div>
+      </details>
     </div>
   )
 }
-

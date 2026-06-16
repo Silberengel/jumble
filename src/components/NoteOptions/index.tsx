@@ -14,20 +14,11 @@ import NoteOptionsMetaHeader from './NoteOptionsMetaHeader'
 import RawEventDialog from './RawEventDialog'
 import ReportDialog from './ReportDialog'
 import { SubMenuAction, useMenuActions, type ShowSubMenuOptions } from './useMenuActions'
-import PostEditor from '../PostEditor'
-import type { HighlightData } from '../PostEditor/HighlightEditor'
-
 export default function NoteOptions({
   event,
   className,
-  initialHighlightData,
-  highlightDefaultContent,
-  isPostEditorOpen,
-  onPostEditorClose,
   onOpenPublicMessage,
-  initialPublicMessageTo,
   onOpenCallInvite,
-  initialDefaultContent,
   pinned = false,
   seenOnAllowlist
 }: {
@@ -37,18 +28,10 @@ export default function NoteOptions({
   pinned?: boolean
   /** When set (home favorites feed), relay list in the menu matches the feed allowlist. */
   seenOnAllowlist?: readonly string[]
-  initialHighlightData?: HighlightData
-  highlightDefaultContent?: string
-  isPostEditorOpen?: boolean
-  onPostEditorClose?: () => void
   /** Opens the post editor in public message mode with the given pubkey in the mention list. */
   onOpenPublicMessage?: (pubkey: string) => void
-  /** When set, the post editor is opened in public message mode with this pubkey pre-filled. */
-  initialPublicMessageTo?: string | null
   /** Opens the post editor with the given content (e.g. call invite URL). */
   onOpenCallInvite?: (url: string) => void
-  /** Default content when opening the editor (e.g. call invite URL). */
-  initialDefaultContent?: string | null
 }) {
   const { t } = useTranslation()
   const { pubkey } = useNostr()
@@ -196,17 +179,6 @@ export default function NoteOptions({
         sourceEvent={event}
         mode={editCloneMode}
       />
-      {onPostEditorClose != null && (
-        <PostEditor
-          open={isPostEditorOpen ?? false}
-          setOpen={(open) => {
-            if (!open) onPostEditorClose()
-          }}
-          defaultContent={initialDefaultContent ?? highlightDefaultContent ?? ''}
-          initialHighlightData={initialHighlightData}
-          initialPublicMessageTo={initialPublicMessageTo ?? undefined}
-        />
-      )}
     </div>
   )
 }

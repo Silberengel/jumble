@@ -125,11 +125,8 @@ npm run dev
 ### Verify connectivity
 
 ```bash
-# Unit + gateway integration tests
+# Hidden-network relay URL planning + gateway tests (no live publish)
 npm run test:run -- src/lib/hidden-network-relay.test.ts
-
-# Live read/write (needs SCRIPTORIUM_KEY); SOCKS suite skips unless Tor/I2P ports are open
-SCRIPTORIUM_KEY=nsec1… npm run test:run -- src/lib/sovbit-relay-live.integration.test.ts
 ```
 
 First hidden-network connections can take **30–90 seconds** while Tor/I2P builds circuits.

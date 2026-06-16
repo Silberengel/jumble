@@ -1127,7 +1127,7 @@ const NoteList = forwardRef(
     const primaryFeedDisplayed = primaryPageCtx?.display ?? true
     /**
      * Pause timelines only when the active primary feed is hidden (e.g. mobile note takeover,
-     * single-pane sheet). Double-pane and mobile feed overlay keep `display` true — keep loading.
+     * Desktop double-pane and mobile feed overlay keep `display` true — keep loading.
      */
     const pauseTimelineForPrimaryFreeze =
       primaryPanelFrozen &&

@@ -14,7 +14,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Text from '@tiptap/extension-text'
 import { TextSelection } from '@tiptap/pm/state'
 import { Editor, EditorContent, useEditor } from '@tiptap/react'
-import { Event } from 'nostr-tools'
+import { Event, kinds } from 'nostr-tools'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import {
   Dispatch,
@@ -165,9 +165,13 @@ const PostTextarea = forwardRef<
           ? isSmallScreen
             ? 'flex-1 min-h-0 max-h-40'
             : 'h-32'
-          : isSmallScreen
-            ? 'flex-1 min-h-0'
-            : 'h-[min(58vh,520px)]',
+          : kind === kinds.Highlights
+            ? isSmallScreen
+              ? 'min-h-[4.5rem] max-h-[min(22dvh,9rem)] shrink-0'
+              : 'h-32 max-h-36 shrink-0'
+            : isSmallScreen
+              ? 'flex-1 min-h-0'
+              : 'h-[min(58vh,520px)]',
       [isSmallScreen, kind]
     )
 
@@ -377,7 +381,7 @@ const PostTextarea = forwardRef<
         }}
         className={cn(
           'flex min-h-0 flex-col gap-2 overflow-hidden',
-          isSmallScreen ? 'flex-1' : undefined
+          isSmallScreen && kind !== kinds.Highlights && 'flex-1'
         )}
       >
         <div className="flex min-w-0 shrink-0 flex-col gap-2">
@@ -400,7 +404,7 @@ const PostTextarea = forwardRef<
           forceMount
           className={cn(
             'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && 'flex-1 overflow-hidden'
+            isSmallScreen && kind !== kinds.Highlights && 'flex-1 overflow-hidden'
           )}
         >
           <div className={composerBodyScrollClass}>
@@ -418,10 +422,10 @@ const PostTextarea = forwardRef<
           forceMount
           className={cn(
             'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && 'flex-1 overflow-hidden'
+            isSmallScreen && kind !== kinds.Highlights && 'flex-1 overflow-hidden'
           )}
         >
-          <div className={cn('flex min-h-0 flex-col gap-2', isSmallScreen && 'flex-1')}>
+          <div className={cn('flex min-h-0 flex-col gap-2', isSmallScreen && kind !== kinds.Highlights && 'flex-1')}>
             <div className="shrink-0 text-xs text-muted-foreground">
               kind {kindDescription.number}: {kindDescription.description}
             </div>

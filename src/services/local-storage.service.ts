@@ -82,7 +82,6 @@ const SETTINGS_KEYS = [
   StorageKey.SHOW_RSS_FEED,
   StorageKey.USE_NOSTR_ARCHIVES_API,
   StorageKey.CACHE_RELAYS_ENABLED,
-  StorageKey.PANE_MODE,
   StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
 
@@ -125,7 +124,6 @@ class LocalStorageService {
   private useNostrArchivesApi: boolean = true
   /** Kind 10432 cache relays on this device. Default on; set `'false'` to skip localhost cache relays. */
   private cacheRelaysEnabled: boolean = true
-  private panelMode: 'single' | 'double' = 'single'
   private homeFeedRelaySource: string = 'favorites'
   private addRandomRelaysToPublish: boolean = true
   private showPublishSuccessToasts: boolean = false
@@ -417,9 +415,6 @@ class LocalStorageService {
     const showRssFeedStr = window.localStorage.getItem(StorageKey.SHOW_RSS_FEED)
     this.showRssFeed = showRssFeedStr === null ? true : showRssFeedStr === 'true' // Default to true
 
-    const panelModeStr = window.localStorage.getItem(StorageKey.PANE_MODE)
-    this.panelMode = panelModeStr === 'double' ? 'double' : 'single' // Default to 'single'
-
     const addRandomRelaysStr = window.localStorage.getItem(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH)
     this.addRandomRelaysToPublish = addRandomRelaysStr === null ? true : addRandomRelaysStr === 'true'
 
@@ -629,8 +624,6 @@ class LocalStorageService {
     if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
     const cacheRelaysEnabledStr = get(StorageKey.CACHE_RELAYS_ENABLED)
     if (cacheRelaysEnabledStr != null) this.cacheRelaysEnabled = cacheRelaysEnabledStr !== 'false'
-    const paneStr = get(StorageKey.PANE_MODE)
-    if (paneStr === 'single' || paneStr === 'double') this.panelMode = paneStr
     const homeFeedRelaySourceStr = get(StorageKey.HOME_FEED_RELAY_SOURCE)
     if (homeFeedRelaySourceStr?.trim()) {
       this.homeFeedRelaySource = homeFeedRelaySourceStr.trim()
@@ -1063,15 +1056,6 @@ class LocalStorageService {
   setShowDetailedPublishToasts(show: boolean) {
     this.showDetailedPublishToasts = show
     this.persistSetting(StorageKey.SHOW_DETAILED_PUBLISH_TOASTS, show.toString())
-  }
-
-  getPanelMode(): 'single' | 'double' {
-    return this.panelMode
-  }
-
-  setPanelMode(mode: 'single' | 'double') {
-    this.panelMode = mode
-    this.persistSetting(StorageKey.PANE_MODE, mode)
   }
 
   getAccountNetworkHydrateAt(pubkey: string): number | undefined {

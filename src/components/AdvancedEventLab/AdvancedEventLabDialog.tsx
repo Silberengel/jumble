@@ -190,7 +190,12 @@ export type AdvancedEventLabDialogProps = {
   /** Filled while the markup editor is mounted (for uploads / shared toolbar). */
   bodyApiRef?: MutableRefObject<AdvancedLabBodyHandle | null>
   /** Same icon row as the main composer; should use {@link bodyApiRef} for inserts. */
-  formatToolbar?: ReactNode
+  renderFormatToolbar?: (ctx: {
+    /** Portal target inside this dialog so pickers stay interactive above the lab shell. */
+    pickerPortalContainer: HTMLElement | null
+  }) => ReactNode
+  /** Settings / advanced composer options panel (shown below {@link renderFormatToolbar}). */
+  composerToolbarPanel?: ReactNode
   /**
    * When set, lab markup/tags are debounced to the post-editor draft store (same persistence as TipTap)
    * so a **reload** can restore in-progress lab work. The draft is kept on dismiss; clear happens on publish or composer Clear.
@@ -233,7 +238,8 @@ export default function AdvancedEventLabDialog({
   contextEventId,
   onApply,
   bodyApiRef,
-  formatToolbar,
+  renderFormatToolbar,
+  composerToolbarPanel,
   draftPersistenceKey = null,
   previewAuthorPubkey = null,
   previewEmojiTags,
@@ -241,6 +247,7 @@ export default function AdvancedEventLabDialog({
   contentWarning
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
+  const [labPickerPortalContainer, setLabPickerPortalContainer] = useState<HTMLElement | null>(null)
   /** `useTranslation().t` can change identity every render; never list it as a layout-effect dep (editor remount loop). */
   const labTRef = useRef(t)
   labTRef.current = t
@@ -942,6 +949,7 @@ export default function AdvancedEventLabDialog({
           <DialogTitle>{t('Advanced event lab')}</DialogTitle>
         </DialogHeader>
 
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 max-h-[calc(90dvh-3.25rem)] overflow-y-auto overscroll-y-contain">
           <div className="flex shrink-0 flex-col px-4 py-2 pb-4">
             <div className="mb-2 flex flex-wrap gap-2">
@@ -1026,9 +1034,13 @@ export default function AdvancedEventLabDialog({
           </Tabs>
         </div>
 
-          {formatToolbar ? (
-          <div className="mt-2 border-t bg-muted/20 px-2 py-2">{formatToolbar}</div>
+          {renderFormatToolbar ? (
+          <div className="mt-2 border-t bg-muted/20 px-2 py-2">
+            {renderFormatToolbar({ pickerPortalContainer: labPickerPortalContainer })}
+          </div>
         ) : null}
+
+          {composerToolbarPanel}
 
           <div className="mt-2 border-t bg-background px-4 py-3 space-y-3">
             <AdvancedEventLabTagsEditor rows={labTagRows} onChange={syncLabTagsFromRows} />
@@ -1218,6 +1230,13 @@ export default function AdvancedEventLabDialog({
                           ) : null}
             </div>
           </div>
+        </div>
+          <div
+            ref={setLabPickerPortalContainer}
+            data-nested-picker-portal
+            className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
+            aria-hidden={false}
+          />
         </div>
       </DialogContent>
     </Dialog>
