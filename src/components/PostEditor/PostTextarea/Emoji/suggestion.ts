@@ -1,50 +1,15 @@
 import client from '@/services/client.service'
-import customEmojiService from '@/services/custom-emoji.service'
 import postEditor from '@/services/post-editor.service'
 import type { Editor } from '@tiptap/core'
 import { ReactRenderer } from '@tiptap/react'
 import { SuggestionKeyDownProps } from '@tiptap/suggestion'
 import tippy, { GetReferenceClientRect, Instance, Props } from 'tippy.js'
-import { emojis } from '@tiptap/extension-emoji'
+import { buildEmojiSuggestionItems } from './emoji-suggestion-items'
 import { EmojiList, EmojiListHandler, EmojiListProps } from './EmojiList'
-
-const STANDARD_EMOJI_LIMIT = 20
-
-function searchStandardEmojiShortcodes(query: string): string[] {
-  const q = query.toLowerCase().trim()
-  if (!q) return []
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const item of emojis) {
-    const shortcodes = item.shortcodes ?? []
-    const tags = item.tags ?? []
-    const name = item.name ?? ''
-    const match =
-      shortcodes.some((s) => String(s).toLowerCase().includes(q)) ||
-      tags.some((t) => String(t).toLowerCase().includes(q)) ||
-      name.toLowerCase().includes(q)
-    if (match) {
-      const shortcode = shortcodes[0] ?? name
-      if (shortcode && !seen.has(shortcode)) {
-        seen.add(shortcode)
-        out.push(shortcode)
-        if (out.length >= STANDARD_EMOJI_LIMIT) break
-      }
-    }
-  }
-  return out
-}
 
 const suggestion = {
   items: async ({ query }: { query: string }) => {
-    const customIds = await customEmojiService.searchEmojis(query, client.pubkey ?? null)
-    const customShortcodes = new Set(
-      customIds
-        .map((id) => customEmojiService.getEmojiById(id)?.shortcode)
-        .filter((s): s is string => Boolean(s))
-    )
-    const standard = searchStandardEmojiShortcodes(query).filter((s) => !customShortcodes.has(s))
-    return [...customIds, ...standard].slice(0, 50)
+    return buildEmojiSuggestionItems(query, client.pubkey ?? null)
   },
 
   render: () => {
