@@ -330,9 +330,11 @@ function EmbeddedNoteFetched({
       return false
     }
 
-    const runWidePass = async (relayUrls: string[]) => {
+    const runWidePass = async (relayUrls: string[], eventTagRelayHints = false) => {
       if (!canSearchOnExternalRelays(noteKey) || relayUrls.length === 0) return undefined
-      const ev = await client.fetchEventWithExternalRelays(noteKey, relayUrls)
+      const ev = await client.fetchEventWithExternalRelays(noteKey, relayUrls, {
+        eventTagRelayHints
+      })
       return ev
     }
 
@@ -347,7 +349,10 @@ function EmbeddedNoteFetched({
         const tasks: Array<() => Promise<Event | undefined>> = []
         if (hasParentHints) {
           tasks.push(() =>
-            promiseWithTimeout(client.fetchEventWithExternalRelays(noteKey, hintRelays), 12_000)
+            promiseWithTimeout(
+              client.fetchEventWithExternalRelays(noteKey, hintRelays, { eventTagRelayHints: true }),
+              12_000
+            )
           )
         }
         tasks.push(() => promiseWithTimeout(client.fetchEvent(noteKey, opts), 12_000))
@@ -392,7 +397,8 @@ function EmbeddedNoteFetched({
           blockedRelays,
           applySocialKindBlockedFilter: false,
           allowThirdPartyLocalRelays: false
-        })
+        }),
+        Boolean(containingEventRef.current)
       )
       if (cancelled || !ev) return
       resolve(ev)
@@ -431,7 +437,7 @@ function EmbeddedNoteFetched({
         const hints = embedFetchCtxRef.current.fetchRelayOpts?.relayHints?.filter(Boolean) ?? []
         const ev =
           hints.length > 0
-            ? await client.fetchEventWithExternalRelays(noteKey, hints)
+            ? await client.fetchEventWithExternalRelays(noteKey, hints, { eventTagRelayHints: true })
             : await client.fetchEventForceRetry(noteKey, embedFetchCtxRef.current.fetchRelayOpts)
         if (!cancelled && ev) resolve(ev)
       })()

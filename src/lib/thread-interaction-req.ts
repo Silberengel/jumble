@@ -4,6 +4,7 @@ import {
   NOTE_STATS_OP_REFERENCE_KINDS_WITHOUT_HIGHLIGHT
 } from '@/constants'
 import { buildRssArticleUrlThreadInteractionFilters } from '@/lib/rss-web-feed'
+import { webBookmarkNostrTargetInteractionFilters } from '@/lib/web-bookmark-nip'
 import { kinds, type Filter } from 'nostr-tools'
 
 /** Thread root shapes used by {@link buildThreadInteractionFilters} (matches ReplyNoteList `rootInfo`). */
@@ -133,6 +134,7 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
     kindsOnQTag,
     limit
   )
+  filters.push(...webBookmarkNostrTargetInteractionFilters(root.id, limit))
   return filters
 }
 

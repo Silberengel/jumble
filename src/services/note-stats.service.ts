@@ -26,7 +26,11 @@ import {
   getWebExternalReactionTargetUrl,
   rssArticleStableEventId
 } from '@/lib/rss-article'
-import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
+import {
+  expandWebBookmarkDTagQueryValues,
+  isNostrTargetWebBookmark,
+  webBookmarkNostrTargetInteractionFilters
+} from '@/lib/web-bookmark-nip'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
 import { filterRelaysToUserAllowlist, isRelayInUserAllowlist } from '@/lib/relay-allowlist'
@@ -965,6 +969,7 @@ class NoteStatsService {
           limit: 50
         }
       )
+      nonSocial.push(...webBookmarkNostrTargetInteractionFilters(replaceableCoordinate, 200))
     }
 
     return { nonSocial, social }
@@ -1243,7 +1248,11 @@ class NoteStatsService {
     } else if (evt.kind === kinds.Highlights) {
       push(this.addHighlightByEvent(evt, originalEventAuthor))
     } else if (evt.kind === ExtendedKind.WEB_BOOKMARK) {
-      push(this.addWebBookmarkByArticleUrlEvent(evt))
+      if (mergeOpts?.statsRootEvent && isNostrTargetWebBookmark(evt)) {
+        pushMany(this.addOpReferenceAsThreadResponse(evt, originalEventAuthor, mergeOpts.statsRootEvent))
+      } else {
+        push(this.addWebBookmarkByArticleUrlEvent(evt))
+      }
     } else if (evt.kind === kinds.BookmarkList) {
       this.addBookmarkListRefsByEvent(evt)
     }

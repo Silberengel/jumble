@@ -6,6 +6,7 @@ import { muteSetHas } from '@/lib/mute-set'
 import type { TRepliesMap } from '@/lib/reply-index'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
+import { isNostrTargetWebBookmark } from '@/lib/web-bookmark-nip'
 import {
   collapseStaleAddressableRevisions,
   upsertEventMapPreferNewestAddressable
@@ -706,6 +707,13 @@ export function replyMatchesThreadForList(
   ) {
     return true
   }
+  if (
+    (rootInfo.type === 'E' || rootInfo.type === 'A') &&
+    isNostrTargetWebBookmark(evt) &&
+    eventReferencesThreadTarget(evt, rootInfo)
+  ) {
+    return true
+  }
   return false
 }
 
@@ -743,5 +751,6 @@ export function threadBacklinkRelationLabel(item: NEvent, t: TFunction): string 
 export function isEaThreadTailBacklinkCandidate(evt: NEvent, root: TRootInfo): boolean {
   if (root.type !== 'E' && root.type !== 'A') return false
   if (evt.kind === kinds.ShortTextNote && kind1QuotesThreadRoot(evt, root)) return true
+  if (isNostrTargetWebBookmark(evt) && eventReferencesThreadTarget(evt, root)) return true
   return EA_THREAD_TAIL_REFERENCE_KINDS.has(evt.kind)
 }

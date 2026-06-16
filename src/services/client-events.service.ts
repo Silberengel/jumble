@@ -648,7 +648,11 @@ export class EventService {
   /**
    * Fetch event with external relays (hex, note1, nevent1, or naddr1)
    */
-  async fetchEventWithExternalRelays(noteId: string, externalRelays: string[]): Promise<NEvent | undefined> {
+  async fetchEventWithExternalRelays(
+    noteId: string,
+    externalRelays: string[],
+    opts?: { eventTagRelayHints?: boolean }
+  ): Promise<NEvent | undefined> {
     if (!externalRelays || externalRelays.length === 0) {
       logger.warn('fetchEventWithExternalRelays: No external relays provided', { noteId })
       return undefined
@@ -670,7 +674,8 @@ export class EventService {
     const events = await this.queryService.query(externalRelays, filter, undefined, {
       eoseTimeout: EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS,
       globalTimeout: EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
-      immediateReturn: false
+      immediateReturn: false,
+      eventTagRelayHints: opts?.eventTagRelayHints === true
     })
 
     const usable = events
@@ -1270,12 +1275,13 @@ export class EventService {
     let filter: Filter | undefined
     let relays: string[] = []
     let authorHintPubkey: string | undefined
+    const dedupeRelayUrls = (urls: string[]) =>
+      [...new Set(urls.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u)))]
     const normalizeRelayList = (urls: string[]) =>
-      sanitizeRelayUrlsForFetch(
-        [...new Set(urls.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u)))]
-      )
+      sanitizeRelayUrlsForFetch(dedupeRelayUrls(urls))
+    const hasEventTagRelayHints = Boolean(extraRelayHints?.length)
     if (extraRelayHints?.length) {
-      relays = normalizeRelayList(prependAggrForEventLookupRelayUrls(extraRelayHints))
+      relays = dedupeRelayUrls(prependAggrForEventLookupRelayUrls(extraRelayHints))
     }
 
     if (/^[0-9a-f]{64}$/i.test(id)) {
@@ -1371,7 +1377,8 @@ export class EventService {
       const hintedEvents = await this.queryService.query(relays, filter, undefined, {
         immediateReturn: true,
         eoseTimeout: HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS,
-        globalTimeout: HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS
+        globalTimeout: HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
+        eventTagRelayHints: hasEventTagRelayHints
       })
       const hinted = hintedEvents
         .filter((e) => !shouldDropEventOnIngest(e, ingestOpts))

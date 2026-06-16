@@ -4,10 +4,14 @@ import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
 import {
   expandWebBookmarkDTagQueryValues,
   getWebBookmarkReplaceableEventNaddr,
+  isNostrTargetWebBookmark,
   urlToWebBookmarkDTag,
-  webBookmarkDTagToUrl
+  webBookmarkDTagToUrl,
+  webBookmarkNostrTargetInteractionFilters
 } from '@/lib/web-bookmark-nip'
 import { relayHintsForEmbeddedNotePointer } from '@/lib/event'
+import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
+import { threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import { describe, expect, it } from 'vitest'
 import type { Event } from 'nostr-tools'
 
@@ -121,5 +125,46 @@ describe('web bookmark NIP-B0 d-tag', () => {
     const naddr = getWebBookmarkReplaceableEventNaddr(bookmark)!
     const hints = relayHintsForEmbeddedNotePointer(naddr, bookmark)
     expect(hints[0]).toMatch(/dev\.relay\.edufeed\.org/i)
+  })
+
+  it('builds nostr-target bookmark REQ filters on replaceable coordinate', () => {
+    const coord =
+      '30023:5a12b41ec15b466321e88c371be2dc47d9193f9c8bba4ab09fc50045bd35aedf:4g2mkzxv'
+    const filters = webBookmarkNostrTargetInteractionFilters(coord, 50)
+    expect(filters).toHaveLength(3)
+    expect(filters.every((f) => f.kinds?.includes(ExtendedKind.WEB_BOOKMARK))).toBe(true)
+    expect(filters.some((f) => f['#a']?.includes(coord))).toBe(true)
+    expect(filters.some((f) => f['#d']?.includes(coord))).toBe(true)
+  })
+
+  it('matches article thread root via a-tag coordinate', () => {
+    const coord =
+      '30023:5a12b41ec15b466321e88c371be2dc47d9193f9c8bba4ab09fc50045bd35aedf:4g2mkzxv'
+    const article = {
+      kind: 30023,
+      id: 'a'.repeat(64),
+      pubkey: '5a12b41ec15b466321e88c371be2dc47d9193f9c8bba4ab09fc50045bd35aedf',
+      created_at: 1,
+      sig: 'sig',
+      content: 'article body',
+      tags: [['d', '4g2mkzxv']]
+    } as Event
+    const bookmark = {
+      kind: ExtendedKind.WEB_BOOKMARK,
+      id: '0'.repeat(64),
+      pubkey: '1'.repeat(64),
+      created_at: 1,
+      sig: 'sig',
+      content: '',
+      tags: [
+        ['d', coord],
+        ['a', coord, 'wss://dev.relay.edufeed.org/'],
+        ['title', 'Community Hub Framework']
+      ]
+    } as Event
+    expect(isNostrTargetWebBookmark(bookmark)).toBe(true)
+    const rootRef = threadRootRefFromStatsRootEvent(article)
+    expect(rootRef).toBeDefined()
+    expect(eventReferencesThreadTarget(bookmark, rootRef!)).toBe(true)
   })
 })

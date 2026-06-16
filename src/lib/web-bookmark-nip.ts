@@ -5,7 +5,7 @@ import {
   expandArticleUrlThreadQueryValues,
   normalizeHttpArticleUrl
 } from '@/lib/rss-article'
-import { nip19, type Event } from 'nostr-tools'
+import { nip19, type Event, type Filter } from 'nostr-tools'
 
 const REPLACEABLE_COORDINATE_RE = /^(\d+):([0-9a-f]{64}):(.*)$/i
 
@@ -50,6 +50,28 @@ export function getWebBookmarkReplaceableEventNaddr(
   } catch {
     return undefined
   }
+}
+
+/** True when kind 39701 bookmarks a Nostr replaceable event (not an http(s) page). */
+export function isNostrTargetWebBookmark(event: Pick<Event, 'kind' | 'tags'>): boolean {
+  return getWebBookmarkReplaceableEventNaddr(event) !== undefined
+}
+
+/**
+ * REQ filters for kind 39701 bookmarks that reference a replaceable coordinate via `a` / `d`
+ * (Edufeed and similar clients store the full coordinate in `d` and relay-hinted `a`).
+ */
+export function webBookmarkNostrTargetInteractionFilters(
+  replaceableCoordinate: string,
+  limit: number
+): Filter[] {
+  const coord = replaceableCoordinate.trim()
+  if (!coord) return []
+  return [
+    { '#a': [coord], kinds: [ExtendedKind.WEB_BOOKMARK], limit },
+    { '#A': [coord], kinds: [ExtendedKind.WEB_BOOKMARK], limit },
+    { '#d': [coord], kinds: [ExtendedKind.WEB_BOOKMARK], limit }
+  ]
 }
 
 /**

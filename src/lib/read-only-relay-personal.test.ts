@@ -5,6 +5,7 @@ import {
   buildPersonalRelayKeySet,
   filterReadOnlyRelaysUnlessPersonal,
   grantRelayConnectionOperationScope,
+  grantEventTagRelayHintScope,
   isPersonalListRequiredReadOnlyRelay,
   isRelayConnectionAllowedForViewer,
   resetRelayConnectionOperationScopeForTests,
@@ -191,5 +192,14 @@ describe('read-only-relay-personal', () => {
     expect(isRelayConnectionAllowedForViewer(target)).toBe(true)
     revokeScope()
     leaveFetchScope()
+  })
+
+  it('event tag relay hint scope grants non-list relays from a/e tag hints', () => {
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: true })
+    const target = 'wss://dev.relay.edufeed.org/'
+    const revoke = grantEventTagRelayHintScope([target])
+    expect(sanitizeRelayUrlsForFetch([target])).toEqual([target])
+    expect(isRelayConnectionAllowedForViewer(target)).toBe(true)
+    revoke()
   })
 })

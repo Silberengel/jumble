@@ -476,7 +476,7 @@ export default function Note({
             noteId={embeddedNaddr}
             className="mt-2"
             containingEvent={event}
-            showFull={showFull}
+            showFull={false}
           />
         ) : href ? (
           <div className="mt-2 not-prose max-w-full space-y-2">

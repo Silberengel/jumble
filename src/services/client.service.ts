@@ -3948,8 +3948,12 @@ class ClientService extends EventTarget {
     this.eventService.prefetchEmbeddedEventsForParents(parents, opts)
   }
 
-  async fetchEventWithExternalRelays(eventId: string, externalRelays: string[]): Promise<NEvent | undefined> {
-    return this.eventService.fetchEventWithExternalRelays(eventId, externalRelays)
+  async fetchEventWithExternalRelays(
+    eventId: string,
+    externalRelays: string[],
+    opts?: { eventTagRelayHints?: boolean }
+  ): Promise<NEvent | undefined> {
+    return this.eventService.fetchEventWithExternalRelays(eventId, externalRelays, opts)
   }
 
   addEventToCache(event: NEvent, ingestOpts?: ShouldDropEventOnIngestOptions) {

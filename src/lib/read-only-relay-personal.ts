@@ -115,6 +115,25 @@ export function grantRelayConnectionOperationScope(urls: readonly string[]): () 
   }
 }
 
+/**
+ * Short-lived read access for relay URLs from event tag hints (`a`/`e`/`q` position 3, naddr relays).
+ * Used when resolving a missing embedded note — the publisher pointed at these relays explicitly.
+ */
+export function grantEventTagRelayHintScope(urls: readonly string[]): () => void {
+  if (!isMetadataRelaysOnlyPolicyActive()) return () => {}
+  const added: string[] = []
+  for (const raw of urls) {
+    if (!urlIsNonLocalForRemoteViewer(raw)) continue
+    const key = relayUrlKey(raw)
+    if (!key || operationScopedRelayKeys.has(key)) continue
+    operationScopedRelayKeys.add(key)
+    added.push(key)
+  }
+  return () => {
+    for (const key of added) operationScopedRelayKeys.delete(key)
+  }
+}
+
 /** @internal */
 export function resetRelayConnectionOperationScopeForTests(): void {
   operationScopedRelayKeys.clear()

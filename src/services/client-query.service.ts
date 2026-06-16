@@ -42,7 +42,13 @@ import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
-import { sanitizeRelayUrlsForFetch, isRelayConnectionAllowedForViewer, grantRelayConnectionOperationScope } from '@/lib/read-only-relay-personal'
+import {
+  sanitizeRelayUrlsForFetch,
+  isRelayConnectionAllowedForViewer,
+  grantRelayConnectionOperationScope,
+  grantEventTagRelayHintScope,
+  enterSingleRelayExplicitFetchScope
+} from '@/lib/read-only-relay-personal'
 import { filterViewerBlockedRelaysForFetch } from '@/lib/viewer-blocked-relays'
 import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
@@ -257,6 +263,8 @@ export interface QueryOptions {
    * (e.g. session-start GIF cache preload).
    */
   backgroundInterruptImmune?: boolean
+  /** Relay URLs from event tag hints — honor them even when not on the viewer's personal relay lists. */
+  eventTagRelayHints?: boolean
 }
 
 export interface SubscribeCallbacks {
@@ -453,32 +461,47 @@ export class QueryService {
     options?: QueryOptions
   ): Promise<NEvent[]> {
     const originalUrls = [...urls]
-    const revokeOperationScope = grantRelayConnectionOperationScope(originalUrls)
-    urls = sanitizeRelayUrlsForFetch(originalUrls)
+    const eventTagHints = options?.eventTagRelayHints === true
+    const revokeFetchScope =
+      eventTagHints && originalUrls.length === 1 ? enterSingleRelayExplicitFetchScope() : () => {}
+    const revokeOperationScope = eventTagHints
+      ? grantEventTagRelayHintScope(originalUrls)
+      : grantRelayConnectionOperationScope(originalUrls)
+    const endRelayScope = () => {
+      revokeFetchScope()
+      revokeOperationScope()
+    }
+    urls = sanitizeRelayUrlsForFetch(originalUrls, undefined, {
+      preserveExplicitSingleRelay: eventTagHints && originalUrls.length === 1
+    })
     const sanitizedFilters = sanitizeFiltersBeforeReq(filter)
     if (sanitizedFilters.length === 0) {
-      revokeOperationScope()
+      endRelayScope()
       return []
     }
     if (options?.signal?.aborted) {
-      revokeOperationScope()
+      endRelayScope()
       return []
     }
 
     const maxFilters = RELAY_REQ_MAX_FILTERS_PER_MESSAGE
     if (sanitizedFilters.length > maxFilters) {
-      const merged: NEvent[] = []
-      const seen = new Set<string>()
-      for (let i = 0; i < sanitizedFilters.length; i += maxFilters) {
-        const slice = sanitizedFilters.slice(i, i + maxFilters)
-        const part = await this.query(urls, slice, onevent, options)
-        for (const e of part) {
-          if (seen.has(e.id)) continue
-          seen.add(e.id)
-          merged.push(e)
+      try {
+        const merged: NEvent[] = []
+        const seen = new Set<string>()
+        for (let i = 0; i < sanitizedFilters.length; i += maxFilters) {
+          const slice = sanitizedFilters.slice(i, i + maxFilters)
+          const part = await this.query(urls, slice, onevent, options)
+          for (const e of part) {
+            if (seen.has(e.id)) continue
+            seen.add(e.id)
+            merged.push(e)
+          }
         }
+        return merged
+      } finally {
+        endRelayScope()
       }
-      return merged
     }
 
     /** One chunk → pass a single Filter (compat); several (e.g. kinds split) → full array for WS + HTTP. */
@@ -549,7 +572,10 @@ export class QueryService {
         : null
     if (dedupKey) {
       const inflight = this.queryInFlightByKey.get(dedupKey)
-      if (inflight) return inflight
+      if (inflight) {
+        endRelayScope()
+        return inflight
+      }
     }
 
     const resultPromise = new Promise<NEvent[]>((resolve) => {
@@ -661,7 +687,7 @@ export class QueryService {
           }
           cancelAbortRegistrations.length = 0
           resolved = true
-          revokeOperationScope()
+          endRelayScope()
           closeRelayPoolSocketsIfIdle([...wsQueryUrls, ...httpRelayBases])
           if (resolveTimeout) clearTimeout(resolveTimeout)
           if (firstResultGraceTimeoutId) clearTimeout(firstResultGraceTimeoutId)
