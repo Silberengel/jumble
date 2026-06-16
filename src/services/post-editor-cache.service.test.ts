@@ -20,4 +20,16 @@ describe('PostEditorCacheService — quote / defaultContent', () => {
     postEditorCache.setPostContentCache(params, plainTextToTipTapDoc(''))
     expect(postEditorCache.getPostContentCache(params)).toContain('nostr:')
   })
+
+  it('quote seed does not reuse a blank new-note draft cache', () => {
+    postEditorCache.setPostContentCache({ kind: 1 }, plainTextToTipTapDoc('Its the spam filter draft'))
+    const quoteParams = {
+      kind: 1 as const,
+      defaultContent: '\nnostr:nevent1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    }
+    const got = postEditorCache.getPostContentCache(quoteParams)
+    expect(typeof got).toBe('string')
+    expect(String(got)).toContain('nostr:nevent1')
+    expect(String(got)).not.toContain('spam filter')
+  })
 })

@@ -10,6 +10,7 @@ import { stripImwaldAttributionTags } from '@/lib/draft-event'
 import postEditorCache from '@/services/post-editor-cache.service'
 import type { TEmoji } from '@/types'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 
 export type ComposerBodyHandle = Pick<
   TPostTextareaHandle,
@@ -76,7 +77,9 @@ export function useAdvancedEventLabComposer({
   const openLab = useCallback(
     (live: AdvancedEventLabSlice) => {
       const slice = resolveSliceForOpen(live)
-      onOpenChange?.(true)
+      if (onOpenChange) {
+        flushSync(() => onOpenChange(true))
+      }
       setAdvancedLabInitial(slice)
       setAdvancedLabOpen(true)
     },

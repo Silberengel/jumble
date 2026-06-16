@@ -1330,10 +1330,13 @@ export default function PostContent({
         const body = textareaRef.current?.getText() ?? text
         const cleanedText = rewritePlainTextHttpUrls(body)
         const d = await finalizeDraftEvent(cleanedText)
-        openLab({
-          kind: d.kind,
-          content: d.content,
-          tags: d.tags ?? []
+        // Defer until after Radix/tab focus settles (avoids composer dismiss on same gesture).
+        requestAnimationFrame(() => {
+          openLab({
+            kind: d.kind,
+            content: d.content,
+            tags: d.tags ?? []
+          })
         })
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))

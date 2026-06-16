@@ -68,9 +68,19 @@ export default function PostEditor({
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
   const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const advancedLabOpenRef = useRef(false)
   const [bodyPortalReady, setBodyPortalReady] = useState(false)
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
+
+  useEffect(() => {
+    advancedLabOpenRef.current = advancedLabOpen
+  }, [advancedLabOpen])
+
+  const handleAdvancedLabOpenChange = useCallback((next: boolean) => {
+    advancedLabOpenRef.current = next
+    setAdvancedLabOpen(next)
+  }, [])
 
   const setPickerPortal = useCallback((el: HTMLElement | null) => {
     setPickerPortalContainer(el)
@@ -86,8 +96,8 @@ export default function PostEditor({
   }, [])
 
   useEffect(() => {
-    if (!open) setAdvancedLabOpen(false)
-  }, [open])
+    if (!open) handleAdvancedLabOpenChange(false)
+  }, [open, handleAdvancedLabOpenChange])
 
   useEffect(() => {
     return () => postEditorService.setSuggestionPopupPortal(null)
@@ -95,16 +105,18 @@ export default function PostEditor({
 
   const handleComposerOpenChange = useCallback(
     (next: boolean) => {
-      if (!next && advancedLabOpen) return
+      if (!next && advancedLabOpenRef.current) return
       setOpen(next)
     },
-    [advancedLabOpen, setOpen]
+    [setOpen]
   )
 
   const shouldBlockComposerOutsideDismiss = useCallback(
     (target: EventTarget | null) =>
-      advancedLabOpen || blockDismissForAccountSwitch || isNestedPickerTarget(target),
-    [advancedLabOpen, blockDismissForAccountSwitch]
+      advancedLabOpenRef.current ||
+      blockDismissForAccountSwitch ||
+      isNestedPickerTarget(target),
+    [blockDismissForAccountSwitch]
   )
 
   useEffect(() => {
@@ -147,7 +159,7 @@ export default function PostEditor({
       discussionDynamicTopics={discussionDynamicTopics}
       pickerPortalContainer={pickerPortalContainer}
       advancedLabPortalContainer={advancedLabPortalContainer}
-      onAdvancedLabOpenChange={setAdvancedLabOpen}
+      onAdvancedLabOpenChange={handleAdvancedLabOpenChange}
     />
   )
 
@@ -190,7 +202,7 @@ export default function PostEditor({
             if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
           }}
           onFocusOutside={(e) => {
-            if (isNestedPickerTarget(e.target)) e.preventDefault()
+            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
           }}
           onEscapeKeyDown={(e) => {
             if (postEditor.isSuggestionPopupOpen) {
@@ -236,7 +248,7 @@ export default function PostEditor({
           if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
         }}
         onFocusOutside={(e) => {
-          if (isNestedPickerTarget(e.target)) e.preventDefault()
+          if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
         }}
         onEscapeKeyDown={(e) => {
           if (postEditor.isSuggestionPopupOpen) {

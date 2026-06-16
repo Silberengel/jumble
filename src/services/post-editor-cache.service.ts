@@ -288,8 +288,27 @@ class PostEditorCacheService {
     this.schedulePersist()
   }
 
-  generateCacheKey({ kind, parentEvent }: TCacheKeyParams): string {
-    if (!parentEvent?.id) return `${kind}:`
+  /** Stable suffix for composers opened with pre-filled content (quote, highlight, PM). */
+  private seedCacheSuffix(defaultContent: string): string {
+    const trimmed = defaultContent.trim()
+    if (!trimmed) return ''
+    const nostrRef = trimmed.match(/nostr:(note1|nevent1|naddr1|npub1)[a-z0-9]+/i)?.[0]
+    if (nostrRef) return nostrRef.toLowerCase()
+    let h = 5381
+    for (let i = 0; i < trimmed.length; i++) {
+      h = ((h << 5) + h) ^ trimmed.charCodeAt(i)
+    }
+    return `h${(h >>> 0).toString(36)}`
+  }
+
+  generateCacheKey({ kind, defaultContent, parentEvent }: TCacheKeyParams): string {
+    if (!parentEvent?.id) {
+      const trimmed = defaultContent?.trim() ?? ''
+      if (trimmed) {
+        return `${kind}:seed:${this.seedCacheSuffix(defaultContent!)}`
+      }
+      return `${kind}:`
+    }
     const id = parentEvent.id.trim()
     const parentPart = /^[0-9a-f]{64}$/i.test(id) ? id.toLowerCase() : id
     return `${kind}:${parentPart}`

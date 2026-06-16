@@ -33,6 +33,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 import PostEditor from '../PostEditor/LazyPostEditor'
+import { preloadPostEditorChunk } from '../PostEditor/preload-post-editor-chunk'
 import { BoostCountHover } from './NoteStatsCountHover'
 import { formatCount } from './utils'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
@@ -182,7 +183,9 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                   e.stopPropagation()
                   setIsDrawerOpen(false)
                   checkLogin(() => {
-                    setIsPostDialogOpen(true)
+                    void preloadPostEditorChunk().then(() => {
+                      setIsPostDialogOpen(true)
+                    })
                   })
                 }}
                 {...signControlProps()}
@@ -219,7 +222,9 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
             onClick={(e) => {
               e.stopPropagation()
               checkLogin(() => {
-                setIsPostDialogOpen(true)
+                void preloadPostEditorChunk().then(() => {
+                  setIsPostDialogOpen(true)
+                })
               })
             }}
             disabled={!canSignEvents}
