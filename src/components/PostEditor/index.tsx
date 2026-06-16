@@ -18,7 +18,7 @@ import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
 import postEditor from '@/services/post-editor.service'
 import { Event } from 'nostr-tools'
 import postEditorService from '@/services/post-editor.service'
-import { Dispatch, useEffect, useMemo, useRef, useState } from 'react'
+import { Dispatch, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNostr } from '@/providers/NostrProvider'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
@@ -64,12 +64,19 @@ export default function PostEditor({
   const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
   const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
-  /** Advanced lab / other child overlays portaled outside the shell — disable modal inert on the composer. */
   const [childOverlayOpen, setChildOverlayOpen] = useState(false)
 
   useEffect(() => {
     if (!open) setChildOverlayOpen(false)
   }, [open])
+
+  const handleComposerOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && childOverlayOpen) return
+      setOpen(next)
+    },
+    [childOverlayOpen, setOpen]
+  )
 
   useEffect(() => {
     if (open && isSmallScreen && !wasOpenRef.current) {
@@ -133,9 +140,9 @@ export default function PostEditor({
 
   if (isSmallScreen) {
     return (
-      <Sheet open={open} onOpenChange={setOpen} modal={!childOverlayOpen}>
+      <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          className="relative flex w-full max-w-full flex-col p-0 border-none overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
+          className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
             mobileSheetHeightPx != null
               ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
@@ -178,16 +185,18 @@ export default function PostEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen} modal={!childOverlayOpen}>
+    <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={!childOverlayOpen}>
       <DialogContent
         className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         overlayClassName="z-[200]"
         withoutClose
         onInteractOutside={(e) => {
-          if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+          if (blockDismissForAccountSwitch || childOverlayOpen || isNestedPickerTarget(e.target))
+            e.preventDefault()
         }}
         onPointerDownOutside={(e) => {
-          if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+          if (blockDismissForAccountSwitch || childOverlayOpen || isNestedPickerTarget(e.target))
+            e.preventDefault()
         }}
         onFocusOutside={(e) => {
           if (isNestedPickerTarget(e.target)) e.preventDefault()

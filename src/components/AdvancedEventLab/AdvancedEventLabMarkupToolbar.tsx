@@ -115,12 +115,15 @@ export type AdvancedEventLabMarkupToolbarProps = {
   markupMode: 'markdown' | 'asciidoc'
   viewRef: MutableRefObject<EditorView | null>
   sliceRef: MutableRefObject<AdvancedEventLabSlice | null>
+  /** Horizontal bar (default) or vertical sidebar beside the editor. */
+  orientation?: 'horizontal' | 'vertical'
 }
 
 export function AdvancedEventLabMarkupToolbar({
   markupMode,
   viewRef,
-  sliceRef
+  sliceRef,
+  orientation = 'horizontal'
 }: AdvancedEventLabMarkupToolbarProps) {
   const { t } = useTranslation()
   const [codeFilter, setCodeFilter] = useState('')
@@ -168,8 +171,16 @@ export function AdvancedEventLabMarkupToolbar({
     </>
   )
 
-  const outlineTbClass =
-    'h-8 shrink-0 gap-1 text-xs max-md:w-9 max-md:min-w-9 max-md:justify-center max-md:gap-0 max-md:px-0'
+  const outlineTbClass = cn(
+    'h-8 shrink-0 gap-1 text-xs max-md:w-9 max-md:min-w-9 max-md:justify-center max-md:gap-0 max-md:px-0',
+    orientation === 'vertical' && 'w-full justify-start px-2 max-md:w-full max-md:min-w-0'
+  )
+
+  const barShellClass = cn(
+    orientation === 'vertical'
+      ? 'flex flex-col items-stretch gap-1 min-w-0 overflow-y-auto overflow-x-hidden border-r bg-muted/30 px-2 py-2'
+      : 'flex max-md:sticky max-md:top-0 max-md:z-[25] max-md:bg-muted/95 max-md:backdrop-blur-sm flex-wrap items-center gap-1.5 min-w-0 overflow-x-auto border-b bg-muted/30 px-2 py-2'
+  )
 
   const citationDropdown = (
     <DropdownMenu>
@@ -234,7 +245,7 @@ export function AdvancedEventLabMarkupToolbar({
   if (markupMode === 'markdown') {
     return (
       <Fragment>
-      <div className="flex max-md:sticky max-md:top-0 max-md:z-[25] max-md:bg-muted/95 max-md:backdrop-blur-sm flex-wrap items-center gap-1.5 min-w-0 overflow-x-auto border-b bg-muted/30 px-2 py-2">
+      <div className={barShellClass}>
         <span className="mr-1 hidden shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:inline">
           {t('Advanced lab tb markup tools')}
         </span>
@@ -728,7 +739,7 @@ export function AdvancedEventLabMarkupToolbar({
   /* AsciiDoc */
   return (
     <Fragment>
-    <div className="flex max-md:sticky max-md:top-0 max-md:z-[25] max-md:bg-muted/95 max-md:backdrop-blur-sm flex-wrap items-center gap-1.5 min-w-0 overflow-x-auto border-b bg-muted/30 px-2 py-2">
+    <div className={barShellClass}>
       <span className="mr-1 hidden shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:inline">
         {t('Advanced lab tb markup tools')}
       </span>

@@ -61,9 +61,10 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
         onFocus={() => preloadPostEditorChunk()}
         onClick={(e) => {
           e.stopPropagation()
-          preloadPostEditorChunk()
-          checkLogin(() => {
-            setOpen(true)
+          void preloadPostEditorChunk().then(() => {
+            checkLogin(() => {
+              setOpen(true)
+            })
           })
         }}
         {...signControlProps({ title: t('Reply') })}

@@ -193,6 +193,7 @@ export type AdvancedEventLabDialogProps = {
   renderFormatToolbar?: (ctx: {
     /** Portal target inside this dialog so pickers stay interactive above the lab shell. */
     pickerPortalContainer: HTMLElement | null
+    toolbarOrientation?: 'horizontal' | 'vertical'
   }) => ReactNode
   /** Settings / advanced composer options panel (shown below {@link renderFormatToolbar}). */
   composerToolbarPanel?: ReactNode
@@ -209,6 +210,8 @@ export type AdvancedEventLabDialogProps = {
   addClientTag?: boolean
   /** Composer Advanced panel content-warning settings (merged into JSON preview). */
   contentWarning?: TContentWarningDraftOptions
+  /** When set (reply/post composer), portal into the parent dialog layer so Radix does not mark this inert. */
+  portalContainer?: HTMLElement | null
 }
 
 function useDarkModeFlag(): boolean {
@@ -244,7 +247,8 @@ export default function AdvancedEventLabDialog({
   previewAuthorPubkey = null,
   previewEmojiTags,
   addClientTag = true,
-  contentWarning
+  contentWarning,
+  portalContainer = null
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   const [labPickerPortalContainer, setLabPickerPortalContainer] = useState<HTMLElement | null>(null)
@@ -938,12 +942,197 @@ export default function AdvancedEventLabDialog({
     toast.success(t('Advanced lab read aloud buffer set'))
   }
 
+  const labFormSidebar = (
+    <div className="flex flex-col gap-3">
+      {renderFormatToolbar ? (
+        <div className="rounded-md border border-border bg-muted/20 px-2 py-2">
+          {renderFormatToolbar({
+            pickerPortalContainer: labPickerPortalContainer,
+            toolbarOrientation: 'horizontal'
+          })}
+        </div>
+      ) : null}
+      {composerToolbarPanel}
+      <AdvancedEventLabTagsEditor rows={labTagRows} onChange={syncLabTagsFromRows} />
+      <div className="flex flex-col gap-2">
+        <Button type="button" onClick={handleApply}>
+          {t('Apply')}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
+          {t('Advanced lab cancel undo')}
+        </Button>
+      </div>
+      {isLanguageToolConfigured() ? (
+        <div className="space-y-1">
+          <Label htmlFor="lt-lang">{t('Advanced lab grammar language')}</Label>
+          <Select
+            value={ltLang}
+            onValueChange={(code) => {
+              logger.info('[AdvancedLab] grammar language changed', { from: ltLang, to: code })
+              setLtLang(code)
+            }}
+          >
+            <SelectTrigger id="lt-lang" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              className="z-[300] max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <div
+                className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <Input
+                  type="search"
+                  value={ltLangFilter}
+                  onChange={(e) => setLtLangFilter(e.target.value)}
+                  placeholder={t('Language list filter placeholder')}
+                  className="h-8"
+                  aria-label={t('Language list filter placeholder')}
+                />
+              </div>
+              <div className="py-1">
+                {ltListFiltered.map((code) => (
+                  <SelectItem key={code} value={code} className="items-start py-2.5 whitespace-normal">
+                    <LanguageSelectOptionLines tag={code} className="w-full" />
+                  </SelectItem>
+                ))}
+              </div>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+      {isTranslateConfigured() ? (
+        <div className="flex flex-col gap-2 min-w-0">
+          {translateLoad === 'idle' || translateLoad === 'loading' ? (
+            <p className="text-xs text-muted-foreground">{t('Advanced lab translation languages loading')}</p>
+          ) : null}
+          {translateLoad === 'ready' ? (
+            <div className="flex flex-col gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="tr-src">{t('Advanced lab translation source')}</Label>
+                <Select
+                  value={translateSource}
+                  onValueChange={(v) => {
+                    logger.info('[AdvancedLab] translation source language changed', {
+                      from: translateSource,
+                      to: v
+                    })
+                    setTranslateSource(v)
+                    if (v !== 'auto' && v === translateTarget) {
+                      const alt = translateLangs.find((l) => l.code !== v)?.code
+                      if (alt) setTranslateTarget(alt)
+                    }
+                  }}
+                >
+                  <SelectTrigger id="tr-src" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    className="z-[300] max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
+                    <div
+                      className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <Input
+                        type="search"
+                        value={translateSrcFilter}
+                        onChange={(e) => setTranslateSrcFilter(e.target.value)}
+                        placeholder={t('Language list filter placeholder')}
+                        className="h-8"
+                        aria-label={t('Language list filter placeholder')}
+                      />
+                    </div>
+                    <div className="py-1">
+                      {showTranslateSourceAuto ? (
+                        <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
+                      ) : null}
+                      {translateLangsFilteredSrc.map((l) => (
+                        <SelectItem key={l.code} value={l.code} className="items-start py-2.5 whitespace-normal">
+                          <LanguageSelectOptionLines tag={l.code} className="w-full" />
+                        </SelectItem>
+                      ))}
+                    </div>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="tr-tgt">{t('Advanced lab translation target')}</Label>
+                <Select
+                  value={translateTarget}
+                  onValueChange={(v) => {
+                    logger.info('[AdvancedLab] translation target language changed', {
+                      from: translateTarget,
+                      to: v
+                    })
+                    setTranslateTarget(v)
+                    if (translateSource !== 'auto' && v === translateSource) {
+                      setTranslateSource('auto')
+                    }
+                  }}
+                >
+                  <SelectTrigger id="tr-tgt" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    className="z-[300] max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
+                    <div
+                      className="sticky top-0 z-10 border-b border-border bg-popover p-2"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <Input
+                        type="search"
+                        value={translateTgtFilter}
+                        onChange={(e) => setTranslateTgtFilter(e.target.value)}
+                        placeholder={t('Language list filter placeholder')}
+                        className="h-8"
+                        aria-label={t('Language list filter placeholder')}
+                      />
+                    </div>
+                    <div className="py-1">
+                      {translateLangsFilteredTgt.map((l) => (
+                        <SelectItem key={l.code} value={l.code} className="items-start py-2.5 whitespace-normal">
+                          <LanguageSelectOptionLines tag={l.code} className="w-full" />
+                        </SelectItem>
+                      ))}
+                    </div>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void handleTranslate()}>
+                {t('Advanced lab translate')}
+              </Button>
+            </div>
+          ) : null}
+          {translateLoad === 'empty' ? (
+            <p className="text-xs text-destructive">{t('Advanced lab translation languages empty')}</p>
+          ) : null}
+          {translateLoad === 'error' ? (
+            <p className="text-xs text-destructive">{t('Advanced lab translation languages error')}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {contextEventId && isTranslateConfigured() ? (
+        <Button type="button" variant="outline" size="sm" onClick={handleReadAloudBuffer}>
+          {t('Advanced lab use translation read aloud')}
+        </Button>
+      ) : null}
+    </div>
+  )
+
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent
-        composerNestedShell
+        portalContainer={portalContainer}
+        composerNestedShell={Boolean(portalContainer)}
+        hideOverlay={Boolean(portalContainer)}
         overlayClassName="z-[205] pointer-events-auto"
-        className={cnDialogShell()}
+        className={cnDialogShell(Boolean(portalContainer))}
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0 px-4 pt-4 pb-2 pr-12 border-b">
@@ -951,287 +1140,105 @@ export default function AdvancedEventLabDialog({
         </DialogHeader>
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 max-h-[calc(90dvh-3.25rem)] overflow-y-auto overscroll-y-contain">
-          <div className="flex shrink-0 flex-col px-4 py-2 pb-4">
-            <div className="mb-2 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canUndoCheckpoint}
-                title={t('Advanced lab undo checkpoint hint')}
-                onClick={handleUndoCheckpoint}
-              >
-                <Undo2 className="mr-1 inline h-4 w-4" />
-                {t('Advanced lab undo checkpoint')}
-              </Button>
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+            <aside className="hidden min-h-0 w-72 shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r bg-muted/10 px-4 py-3 lg:w-80 md:flex">
+              {labFormSidebar}
+            </aside>
 
-            <Tabs
-            value={labBodyTab}
-            onValueChange={(v) => {
-              const next = v as 'edit' | 'preview' | 'json'
-              if (next === 'preview') flushPreviewDocNow()
-              if (next === 'json') refreshLabJsonPreview()
-              setLabBodyTab(next)
-            }}
-            className="flex flex-col gap-2"
-          >
-            <TabsList className="h-auto w-auto shrink-0 flex-wrap justify-start gap-1 p-1">
-              <TabsTrigger value="edit" className="shrink-0">
-                {t(
-                  markupMode === 'asciidoc'
-                    ? 'Advanced lab markup label asciidoc'
-                    : 'Advanced lab markup label markdown'
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="preview" className="shrink-0">
-                {t('Advanced lab preview')}
-              </TabsTrigger>
-              <TabsTrigger value="json" className="shrink-0">
-                {t('Advanced lab json preview')}
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-2">
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canUndoCheckpoint}
+                    title={t('Advanced lab undo checkpoint hint')}
+                    onClick={handleUndoCheckpoint}
+                  >
+                    <Undo2 className="mr-1 inline h-4 w-4" />
+                    {t('Advanced lab undo checkpoint')}
+                  </Button>
+                </div>
 
-            <TabsContent
-              value="edit"
-              forceMount
-              className="mt-0 flex flex-col gap-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-            >
-              <AdvancedEventLabMarkupToolbar markupMode={markupMode} viewRef={markupView} sliceRef={sliceRef} />
-              <div
-                ref={markupHost}
-                className="min-h-[16rem] h-[min(56vh,37.5rem)] overflow-hidden rounded-md border bg-muted/20"
-              />
-            </TabsContent>
+                <Tabs
+                  value={labBodyTab}
+                  onValueChange={(v) => {
+                    const next = v as 'edit' | 'preview' | 'json'
+                    if (next === 'preview') flushPreviewDocNow()
+                    if (next === 'json') refreshLabJsonPreview()
+                    setLabBodyTab(next)
+                  }}
+                  className="flex flex-col gap-2"
+                >
+                  <TabsList className="h-auto w-auto shrink-0 flex-wrap justify-start gap-1 p-1">
+                    <TabsTrigger value="edit" className="shrink-0">
+                      {t(
+                        markupMode === 'asciidoc'
+                          ? 'Advanced lab markup label asciidoc'
+                          : 'Advanced lab markup label markdown'
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="preview" className="shrink-0">
+                      {t('Advanced lab preview')}
+                    </TabsTrigger>
+                    <TabsTrigger value="json" className="shrink-0">
+                      {t('Advanced lab json preview')}
+                    </TabsTrigger>
+                  </TabsList>
 
-            <TabsContent
-              value="preview"
-              className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-            >
-              <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
-                <AdvancedEventLabPreviewPane
-                  markupMode={markupMode}
-                  source={previewDoc}
-                  previewAuthorPubkey={previewAuthorPubkey}
-                  previewEmojiTags={mergedLabPreviewEmojiTags}
-                />
+                  <TabsContent
+                    value="edit"
+                    forceMount
+                    className="mt-0 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                  >
+                    <AdvancedEventLabMarkupToolbar
+                      markupMode={markupMode}
+                      viewRef={markupView}
+                      sliceRef={sliceRef}
+                    />
+                    <div
+                      ref={markupHost}
+                      className="min-h-[16rem] min-w-0 flex-1 overflow-hidden rounded-md border bg-muted/20 h-[min(56vh,37.5rem)] md:min-h-[calc(100dvh-12rem)] md:h-auto"
+                    />
+                  </TabsContent>
+
+                  <TabsContent
+                    value="preview"
+                    className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                  >
+                    <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
+                      <AdvancedEventLabPreviewPane
+                        markupMode={markupMode}
+                        source={previewDoc}
+                        previewAuthorPubkey={previewAuthorPubkey}
+                        previewEmojiTags={mergedLabPreviewEmojiTags}
+                      />
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent
+                    value="json"
+                    className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                  >
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {t('Advanced lab json preview hint')}
+                    </p>
+                    <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-auto rounded-md border border-border bg-muted/20 p-3">
+                      <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text text-foreground">
+                        {labJsonPreview || '{}'}
+                      </pre>
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
-            </TabsContent>
 
-            <TabsContent
-              value="json"
-              className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-            >
-              <p className="text-xs text-muted-foreground mb-2">
-                {t('Advanced lab json preview hint')}
-              </p>
-              <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-auto rounded-md border border-border bg-muted/20 p-3">
-                <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text text-foreground">
-                  {labJsonPreview || '{}'}
-                </pre>
+              <div className="max-h-[45dvh] shrink-0 overflow-y-auto overscroll-y-contain border-t bg-background px-4 py-3 md:hidden">
+                {labFormSidebar}
               </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-
-          {renderFormatToolbar ? (
-          <div className="mt-2 border-t bg-muted/20 px-2 py-2">
-            {renderFormatToolbar({ pickerPortalContainer: labPickerPortalContainer })}
-          </div>
-        ) : null}
-
-          {composerToolbarPanel}
-
-          <div className="mt-2 border-t bg-background px-4 py-3 space-y-3">
-            <AdvancedEventLabTagsEditor rows={labTagRows} onChange={syncLabTagsFromRows} />
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
-                {t('Advanced lab cancel undo')}
-              </Button>
-              <Button type="button" onClick={handleApply}>
-                {t('Apply')}
-              </Button>
             </div>
           </div>
 
-          <div className="border-t bg-background px-4 pb-4 pt-3">
-            <div className="flex flex-wrap items-end gap-3">
-              {isLanguageToolConfigured() ? (
-                <div className="min-w-[10rem] space-y-1">
-                              <Label htmlFor="lt-lang">{t('Advanced lab grammar language')}</Label>
-                              <Select
-                                value={ltLang}
-                                onValueChange={(code) => {
-                                  logger.info('[AdvancedLab] grammar language changed', { from: ltLang, to: code })
-                                  setLtLang(code)
-                                }}
-                              >
-                                <SelectTrigger id="lt-lang" className="min-w-[220px] max-w-md w-auto">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent
-                                  className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
-                                  onCloseAutoFocus={(e) => e.preventDefault()}
-                                >
-                                  <div
-                                    className="sticky top-0 z-10 border-b border-border bg-popover p-2"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                  >
-                                    <Input
-                                      type="search"
-                                      value={ltLangFilter}
-                                      onChange={(e) => setLtLangFilter(e.target.value)}
-                                      placeholder={t('Language list filter placeholder')}
-                                      className="h-8"
-                                      aria-label={t('Language list filter placeholder')}
-                                    />
-                                  </div>
-                                  <div className="py-1">
-                                    {ltListFiltered.map((code) => (
-                                      <SelectItem
-                                        key={code}
-                                        value={code}
-                                        className="items-start py-2.5 whitespace-normal"
-                                      >
-                                        <LanguageSelectOptionLines tag={code} className="w-full" />
-                                      </SelectItem>
-                                    ))}
-                                  </div>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ) : null}
-                          {isTranslateConfigured() ? (
-                            <div className="flex flex-col gap-2 min-w-0">
-                              {translateLoad === 'idle' || translateLoad === 'loading' ? (
-                                <p className="text-xs text-muted-foreground">{t('Advanced lab translation languages loading')}</p>
-                              ) : null}
-                              {translateLoad === 'ready' ? (
-                                <div className="flex flex-wrap items-end gap-3">
-                                  <div className="space-y-1 min-w-[10rem]">
-                                    <Label htmlFor="tr-src">{t('Advanced lab translation source')}</Label>
-                                    <Select
-                                      value={translateSource}
-                                      onValueChange={(v) => {
-                                        logger.info('[AdvancedLab] translation source language changed', {
-                                          from: translateSource,
-                                          to: v
-                                        })
-                                        setTranslateSource(v)
-                                        if (v !== 'auto' && v === translateTarget) {
-                                          const alt = translateLangs.find((l) => l.code !== v)?.code
-                                          if (alt) setTranslateTarget(alt)
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger id="tr-src" className="min-w-[220px] max-w-md w-auto">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent
-                                        className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
-                                        onCloseAutoFocus={(e) => e.preventDefault()}
-                                      >
-                                        <div
-                                          className="sticky top-0 z-10 border-b border-border bg-popover p-2"
-                                          onPointerDown={(e) => e.stopPropagation()}
-                                        >
-                                          <Input
-                                            type="search"
-                                            value={translateSrcFilter}
-                                            onChange={(e) => setTranslateSrcFilter(e.target.value)}
-                                            placeholder={t('Language list filter placeholder')}
-                                            className="h-8"
-                                            aria-label={t('Language list filter placeholder')}
-                                          />
-                                        </div>
-                                        <div className="py-1">
-                                          {showTranslateSourceAuto ? (
-                                            <SelectItem value="auto">{t('Advanced lab translation source auto')}</SelectItem>
-                                          ) : null}
-                                          {translateLangsFilteredSrc.map((l) => (
-                                            <SelectItem
-                                              key={l.code}
-                                              value={l.code}
-                                              className="items-start py-2.5 whitespace-normal"
-                                            >
-                                              <LanguageSelectOptionLines tag={l.code} className="w-full" />
-                                            </SelectItem>
-                                          ))}
-                                        </div>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-1 min-w-[10rem]">
-                                    <Label htmlFor="tr-tgt">{t('Advanced lab translation target')}</Label>
-                                    <Select
-                                      value={translateTarget}
-                                      onValueChange={(v) => {
-                                        logger.info('[AdvancedLab] translation target language changed', {
-                                          from: translateTarget,
-                                          to: v
-                                        })
-                                        setTranslateTarget(v)
-                                        if (translateSource !== 'auto' && v === translateSource) {
-                                          setTranslateSource('auto')
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger id="tr-tgt" className="min-w-[220px] max-w-md w-auto">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent
-                                        className="max-h-64 min-w-[var(--radix-select-trigger-width)] p-0"
-                                        onCloseAutoFocus={(e) => e.preventDefault()}
-                                      >
-                                        <div
-                                          className="sticky top-0 z-10 border-b border-border bg-popover p-2"
-                                          onPointerDown={(e) => e.stopPropagation()}
-                                        >
-                                          <Input
-                                            type="search"
-                                            value={translateTgtFilter}
-                                            onChange={(e) => setTranslateTgtFilter(e.target.value)}
-                                            placeholder={t('Language list filter placeholder')}
-                                            className="h-8"
-                                            aria-label={t('Language list filter placeholder')}
-                                          />
-                                        </div>
-                                        <div className="py-1">
-                                          {translateLangsFilteredTgt.map((l) => (
-                                            <SelectItem
-                                              key={l.code}
-                                              value={l.code}
-                                              className="items-start py-2.5 whitespace-normal"
-                                            >
-                                              <LanguageSelectOptionLines tag={l.code} className="w-full" />
-                                            </SelectItem>
-                                          ))}
-                                        </div>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleTranslate()}>
-                                    {t('Advanced lab translate')}
-                                  </Button>
-                                </div>
-                              ) : null}
-                              {translateLoad === 'empty' ? (
-                                <p className="text-xs text-destructive">{t('Advanced lab translation languages empty')}</p>
-                              ) : null}
-                              {translateLoad === 'error' ? (
-                                <p className="text-xs text-destructive">{t('Advanced lab translation languages error')}</p>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {contextEventId && isTranslateConfigured() ? (
-                            <Button type="button" variant="outline" size="sm" onClick={handleReadAloudBuffer}>
-                              {t('Advanced lab use translation read aloud')}
-                            </Button>
-                          ) : null}
-            </div>
-          </div>
-        </div>
           <div
             ref={setLabPickerPortalContainer}
             data-nested-picker-portal
@@ -1245,12 +1252,15 @@ export default function AdvancedEventLabDialog({
 }
 
 /** Responsive shell: ~5× prior max width cap and ~3× vertical use of viewport (still clamped). */
-function cnDialogShell(): string {
+function cnDialogShell(nestedInComposer = false): string {
+  if (nestedInComposer) {
+    return [
+      'z-[250] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
+      'absolute inset-0 h-full w-full max-h-full !translate-x-0 !translate-y-0'
+    ].join(' ')
+  }
   return [
-    'z-[250] !flex max-w-none flex-col gap-0 overflow-hidden p-0',
-    'w-[min(98vw,calc(72rem*5))]',
-    'max-h-[min(96vh,90dvh)]',
-    'top-[max(0.5rem,env(safe-area-inset-top,0px))] !translate-y-0',
-    'sm:top-[50%] sm:!translate-y-[-50%]'
+    'z-[250] pointer-events-auto !fixed !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
+    'inset-0 h-[100dvh] w-screen max-h-[100dvh] !translate-x-0 !translate-y-0 top-0 left-0'
   ].join(' ')
 }

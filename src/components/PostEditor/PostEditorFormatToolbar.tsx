@@ -32,6 +32,8 @@ export type PostEditorFormatToolbarProps = {
   pickerPortalContainer?: HTMLElement | null
   /** When false, hide the settings (advanced options) toggle. */
   showAdvancedSettings?: boolean
+  /** Stack icons in a column (advanced lab sidebar). */
+  orientation?: 'horizontal' | 'vertical'
 }
 
 /**
@@ -49,14 +51,22 @@ export function PostEditorFormatToolbar({
   showMoreOptions,
   onToggleMoreOptions,
   pickerPortalContainer,
-  showAdvancedSettings = true
+  showAdvancedSettings = true,
+  orientation = 'horizontal'
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
 
-  const iconBtnClass = 'h-8 w-8 shrink-0 p-0'
+  const vertical = orientation === 'vertical'
+  const iconBtnClass = cn('h-8 w-8 shrink-0 p-0', vertical && 'w-full')
 
   return (
-    <div className="flex flex-nowrap items-center gap-0.5 min-w-0">
+    <div
+      className={cn(
+        vertical
+          ? 'flex flex-col items-stretch gap-0.5'
+          : 'flex min-w-0 flex-nowrap items-center gap-0.5'
+      )}
+    >
       {showAudioUpload && (
         <Uploader
           onUploadSuccess={upload.onUploadSuccess}
@@ -91,7 +101,10 @@ export function PostEditorFormatToolbar({
           <ImageUp />
         </Button>
       </Uploader>
-      <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
+      <Separator
+        orientation={vertical ? 'horizontal' : 'vertical'}
+        className={cn(vertical ? 'my-0.5 w-full shrink-0' : 'mx-0.5 h-5 shrink-0 max-sm:hidden')}
+      />
       <EmojiPickerDialog
         portalContainer={pickerPortalContainer}
         onEmojiClick={(emoji) => {
@@ -113,7 +126,10 @@ export function PostEditorFormatToolbar({
           <Laugh className="h-4 w-4" />
         </Button>
       </MemePicker>
-      <Separator orientation="vertical" className="mx-0.5 h-5 shrink-0 max-sm:hidden" />
+      <Separator
+        orientation={vertical ? 'horizontal' : 'vertical'}
+        className={cn(vertical ? 'my-0.5 w-full shrink-0' : 'mx-0.5 h-5 shrink-0 max-sm:hidden')}
+      />
       <MentionAndEventToolbarButtons
         insertAtCursor={insertText}
         variant="ghost"

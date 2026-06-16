@@ -106,7 +106,7 @@ import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
@@ -185,7 +185,7 @@ export default function PostContent({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
   /** Portal mount for emoji/GIF/meme pickers so they stay inside the modal (not inert). */
   pickerPortalContainer?: HTMLElement | null
-  /** Notify when a child overlay (advanced lab) opens — parent disables modal inert. */
+  /** Desktop: lab portaled to body — disable composer modal inert while lab is open. */
   onChildOverlayOpenChange?: (open: boolean) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -723,9 +723,9 @@ export default function PostContent({
     getKind: () => getDeterminedKindRef.current
   })
 
-  useEffect(() => {
-    onChildOverlayOpenChange?.(advancedLabOpen)
-  }, [advancedLabOpen, onChildOverlayOpenChange])
+  useLayoutEffect(() => {
+    if (!isSmallScreen) onChildOverlayOpenChange?.(advancedLabOpen)
+  }, [advancedLabOpen, onChildOverlayOpenChange, isSmallScreen])
 
   const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
     appendUploadedUrl(url, treatAsImage)
@@ -1332,7 +1332,6 @@ export default function PostContent({
           const body = textareaRef.current?.getText() ?? text
           const cleanedText = rewritePlainTextHttpUrls(body)
           const d = await finalizeDraftEvent(cleanedText)
-          onChildOverlayOpenChange?.(true)
           openLab({
             kind: d.kind,
             content: d.content,
@@ -1351,7 +1350,6 @@ export default function PostContent({
     text,
     finalizeDraftEvent,
     openLab,
-    onChildOverlayOpenChange,
     t
   ])
 
@@ -2379,7 +2377,10 @@ export default function PostContent({
   )
 
   const renderComposerFormatToolbar = useCallback(
-    (portalOverride?: HTMLElement | null) => (
+    (
+      portalOverride?: HTMLElement | null,
+      toolbarOrientation: 'horizontal' | 'vertical' = 'horizontal'
+    ) => (
       <PostEditorFormatToolbar
         insertText={insertComposerText}
         insertEmoji={insertComposerEmoji}
@@ -2393,6 +2394,7 @@ export default function PostContent({
         showMoreOptions={showMoreOptions}
         onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
         pickerPortalContainer={portalOverride ?? pickerPortalContainer}
+        orientation={toolbarOrientation}
       />
     ),
     [
@@ -4084,6 +4086,7 @@ export default function PostContent({
         open={advancedLabOpen}
         onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
         initial={advancedLabInitial}
+        portalContainer={isSmallScreen ? pickerPortalContainer : null}
         kindEditable={false}
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}
@@ -4093,8 +4096,8 @@ export default function PostContent({
         contentWarning={labContentWarning}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
-        renderFormatToolbar={({ pickerPortalContainer: labPickerPortal }) =>
-          renderComposerFormatToolbar(labPickerPortal)
+        renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
+          renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
         }
         composerToolbarPanel={composerAdvancedPanel}
         onApply={(payload) => {

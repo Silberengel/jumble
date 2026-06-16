@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
@@ -157,18 +156,24 @@ export default function CitationCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col gap-0 p-0 z-[280]" overlayClassName="z-[275]">
-        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+      <DialogContent
+        className={cn(
+          'z-[280] !flex w-[calc(100vw-1.5rem)] max-w-lg flex-col gap-0 overflow-hidden p-0',
+          'max-h-[min(90dvh,720px)] sm:w-full'
+        )}
+        overlayClassName="z-[275]"
+      >
+        <DialogHeader className="shrink-0 space-y-1 px-4 pt-4 pb-2 sm:px-6 sm:pt-6">
           <DialogTitle>{t('Create citation dialog title')}</DialogTitle>
           <p className="text-sm text-muted-foreground">{t('Create citation dialog hint')}</p>
         </DialogHeader>
 
         {privateRelaysOk === false ? (
-          <p className="px-6 pb-4 text-sm text-muted-foreground">
+          <p className="shrink-0 px-4 pb-4 text-sm text-muted-foreground sm:px-6">
             {t('Citations require private relays (NIP-65).')}
           </p>
         ) : (
-          <ScrollArea className="min-h-0 flex-1 max-h-[min(60vh,32rem)] px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 sm:px-6">
             <div className="space-y-4 pb-4">
               <div className="space-y-2">
                 <Label htmlFor="citation-create-type">{t('Citation')}</Label>
@@ -233,7 +238,7 @@ export default function CitationCreateDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 {isPrompt && (
                   <>
                     <div className="space-y-2 sm:col-span-2">
@@ -475,10 +480,10 @@ export default function CitationCreateDialog({
                 </div>
               </div>
             </div>
-          </ScrollArea>
+          </div>
         )}
 
-        <DialogFooter className="px-6 py-4 border-t shrink-0 gap-2 sm:gap-0">
+        <DialogFooter className="shrink-0 flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:gap-0 sm:px-6 sm:py-4">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={publishing}>
             {t('Cancel')}
           </Button>
