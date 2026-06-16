@@ -61,7 +61,10 @@ export default function OrphanedImetaMediaSection({
                     url: info.url,
                     pubkey: info.pubkey ?? authorPubkey,
                     blurHash: info.blurHash,
-                    alt: info.alt
+                    alt: info.alt,
+                    dim: info.dim,
+                    thumb: info.thumb,
+                    image: info.image
                   }}
                   className="w-full rounded-lg cursor-zoom-in"
                   classNames={{
@@ -92,6 +95,7 @@ export default function OrphanedImetaMediaSection({
                   deferLoadUntilClick={deferLongVideoLoad}
                   poster={info.image || info.thumb}
                   blurHash={info.blurHash}
+                  dim={info.dim}
                 />
               </div>
             )

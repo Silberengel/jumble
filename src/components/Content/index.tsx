@@ -544,6 +544,7 @@ export default function Content({
             deferLoadUntilClick={deferLongVideoLoad}
             poster={video.image || video.thumb}
             blurHash={video.blurHash}
+            dim={video.dim}
           />
         </div>
       ))}
@@ -558,6 +559,7 @@ export default function Content({
           authorPubkey={authorPubkey}
           poster={audio.thumb}
           blurHash={audio.blurHash}
+          dim={audio.dim}
         />
       ))}
       
@@ -643,6 +645,7 @@ export default function Content({
               deferLoadUntilClick={deferLongVideoLoad}
               poster={tagMediaInfo?.image || tagMediaInfo?.thumb}
               blurHash={tagMediaInfo?.blurHash}
+              dim={tagMediaInfo?.dim}
             />
           )
         }
@@ -673,6 +676,7 @@ export default function Content({
                 deferLoadUntilClick={deferLongVideoLoad}
                 poster={poster}
                 blurHash={mediaInfo?.blurHash}
+                dim={mediaInfo?.dim}
               />
             )
           }

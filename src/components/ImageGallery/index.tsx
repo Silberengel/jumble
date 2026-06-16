@@ -1,3 +1,4 @@
+import { aspectRatioStyleFromDim } from '@/lib/imeta-display'
 import { randomString } from '@/lib/random'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
@@ -64,6 +65,9 @@ export default function ImageGallery({
   }
 
   const displayImages = images.slice(start, end)
+  const gridUsesNaturalAspect = displayImages.every(
+    (img) => img.dim && img.dim.width > 0 && img.dim.height > 0
+  )
   /** Tap-to-load: no shared grid lightbox — each image uses {@link ImageWithLightbox}. */
   const tapToLoadGallery = !mustLoad && !autoLoadMedia
 
@@ -109,7 +113,11 @@ export default function ImageGallery({
         {displayImages.map((image, i) => (
           <Image
             key={i}
-            className="aspect-square w-full cursor-zoom-in"
+            className={cn(
+              'w-full cursor-zoom-in',
+              gridUsesNaturalAspect ? 'object-cover' : 'aspect-square'
+            )}
+            style={gridUsesNaturalAspect ? aspectRatioStyleFromDim(image.dim) : undefined}
             image={image}
             onClick={(e) => handlePhotoClick(e, i)}
           />
@@ -122,7 +130,11 @@ export default function ImageGallery({
         {displayImages.map((image, i) => (
           <Image
             key={i}
-            className="aspect-square w-full cursor-zoom-in"
+            className={cn(
+              'w-full cursor-zoom-in',
+              gridUsesNaturalAspect ? 'object-cover' : 'aspect-square'
+            )}
+            style={gridUsesNaturalAspect ? aspectRatioStyleFromDim(image.dim) : undefined}
             image={image}
             onClick={(e) => handlePhotoClick(e, i)}
           />

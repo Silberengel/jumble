@@ -17,6 +17,7 @@ import {
 } from '@/lib/url'
 import { getImetaInfosFromEvent } from '@/lib/event'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import type { ImetaDim } from '@/lib/imeta-display'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -439,7 +440,14 @@ export default function AsciidocArticle({
   // Extract media from tags only (for display at top)
   const tagMedia = useMemo(() => {
     const seenUrls = new Set<string>()
-    const media: Array<{ url: string; type: 'image' | 'video' | 'audio'; poster?: string; source: 'imeta' | 'r' | 'image' }> = []
+    const media: Array<{
+      url: string
+      type: 'image' | 'video' | 'audio'
+      poster?: string
+      blurHash?: string
+      dim?: ImetaDim
+      source: 'imeta' | 'r' | 'image'
+    }> = []
     
     // Extract from imeta tags
     const imetaInfos = getImetaInfosFromEvent(event)
@@ -451,9 +459,22 @@ export default function AsciidocArticle({
 
       seenUrls.add(cleaned)
       if (info.m?.startsWith('video/') || isVideo(cleaned)) {
-        media.push({ url: info.url, type: 'video', poster: info.image, source: 'imeta' })
+        media.push({
+          url: info.url,
+          type: 'video',
+          poster: info.image || info.thumb,
+          blurHash: info.blurHash,
+          dim: info.dim,
+          source: 'imeta'
+        })
       } else if (info.m?.startsWith('audio/') || isAudio(cleaned)) {
-        media.push({ url: info.url, type: 'audio', source: 'imeta' })
+        media.push({
+          url: info.url,
+          type: 'audio',
+          blurHash: info.blurHash,
+          dim: info.dim,
+          source: 'imeta'
+        })
       } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
         media.push({ url: info.url, type: 'image', source: 'imeta' })
       }
@@ -1931,6 +1952,8 @@ export default function AsciidocArticle({
                       className="max-w-full sm:max-w-[400px] w-full"
                       mustLoad={true}
                       poster={media.poster}
+                      blurHash={media.blurHash}
+                      dim={media.dim}
                     />
                   </div>
                 )

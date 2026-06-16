@@ -1,4 +1,5 @@
 import AudioPlayer from '@/components/AudioPlayer'
+import ImageWithLightbox from '@/components/ImageWithLightbox'
 import {
   getMusicTrackFromEvent,
   musicTrackCaptionContent,
@@ -73,26 +74,27 @@ export default function MusicTrackNote({
   return (
     <div className={cn('min-w-0', className)}>
       <div className="not-prose w-full max-w-[400px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-        <div className="flex gap-3 p-3">
-          {track.imageUrl ? (
-            <img
-              src={track.imageUrl}
-              alt=""
-              className="size-16 shrink-0 rounded-md object-cover shadow-sm"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              draggable={false}
-            />
+        {track.imageUrl ? (
+          <ImageWithLightbox
+            variant="cover"
+            className="border-b border-border"
+            mustLoad
+            image={{
+              url: track.imageUrl,
+              pubkey: event.pubkey,
+              alt: track.alt ?? `${track.title}${track.artist ? ` — ${track.artist}` : ''}`,
+              m: 'image/jpeg'
+            }}
+          />
+        ) : null}
+        <div className="p-3">
+          <p className="line-clamp-2 text-sm font-semibold leading-snug">{track.title}</p>
+          {track.artist ? (
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{track.artist}</p>
           ) : null}
-          <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 text-sm font-semibold leading-snug">{track.title}</p>
-            {track.artist ? (
-              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{track.artist}</p>
-            ) : null}
-            {metaLine ? (
-              <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{metaLine}</p>
-            ) : null}
-          </div>
+          {metaLine ? (
+            <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{metaLine}</p>
+          ) : null}
         </div>
         <div className="border-t border-border px-2 pb-2.5 pt-1.5">
           <AudioPlayer

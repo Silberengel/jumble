@@ -51,7 +51,8 @@ export default function MediaPlayer({
   authorPubkey,
   poster,
   blurHash,
-  fallbackPageUrl
+  fallbackPageUrl,
+  dim
 }: {
   src: string
   className?: string
@@ -68,6 +69,8 @@ export default function MediaPlayer({
   blurHash?: string
   /** Passed to {@link VideoPlayer} when HLS/video playback fails (e.g. NIP-53 zap.stream join URL). */
   fallbackPageUrl?: string
+  /** NIP-94 `dim` — reserve correct aspect ratio before the player loads. */
+  dim?: { width: number; height: number }
 }) {
   const { t } = useTranslation()
   const authorAutoLoad = useShouldAutoLoadMedia(authorPubkey)
@@ -218,6 +221,7 @@ export default function MediaPlayer({
         src={playableSrc}
         posterUrl={imagePoster}
         blurHash={blurHash}
+        dim={dim}
         onActivate={() => setUserClickedLoad(true)}
         className={className}
       />
@@ -234,6 +238,7 @@ export default function MediaPlayer({
         src={playableSrc}
         posterUrl={imagePoster}
         blurHash={blurHash}
+        dim={dim}
         className={className}
         loadingHint={blurLoadingHint}
       />
@@ -251,6 +256,7 @@ export default function MediaPlayer({
             src={playableSrc}
             posterUrl={imagePoster}
             blurHash={blurHash}
+            dim={dim}
             className={className}
             loadingHint={blurLoadingHint}
           />

@@ -8,6 +8,7 @@ import {
   primalR2aUploads2UrlFromSha256,
   resolvePrimalBlossomPlayableUrl
 } from '@/lib/url'
+import { aspectRatioStyleFromDim, imetaPreviewImageUrl } from '@/lib/imeta-display'
 import { TImetaInfo } from '@/types'
 import { blurHashPlaceholderForMediaUrl } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
@@ -40,9 +41,8 @@ function wrapperReserveStyle(
   useMinHeightPlaceholder: boolean
 ): CSSProperties | undefined {
   if (showError) return undefined
-  if (dim && dim.width > 0 && dim.height > 0) {
-    return { aspectRatio: `${dim.width} / ${dim.height}` }
-  }
+  const ar = aspectRatioStyleFromDim(dim)
+  if (ar) return ar
   if (useMinHeightPlaceholder) {
     return { minHeight: 'min(30vh, 280px)' }
   }
@@ -65,7 +65,18 @@ function extensionWithDotFromUrl(url: string): string {
 }
 
 export default function Image({
-  image: { url, blurHash, dim, alt: imetaAlt, fallback, size: fileSizeBytes, x: imetaHash, pubkey },
+  image: {
+    url,
+    blurHash,
+    dim,
+    alt: imetaAlt,
+    fallback,
+    size: fileSizeBytes,
+    x: imetaHash,
+    pubkey,
+    thumb,
+    image: imetaPoster
+  },
   alt,
   className = '',
   classNames = {},
@@ -182,6 +193,11 @@ export default function Image({
     if (!u) return undefined
     return blurHashPlaceholderForMediaUrl(u)
   }, [blurHash, url])
+
+  const previewUrl = useMemo(
+    () => imetaPreviewImageUrl({ url, thumb, image: imetaPoster }),
+    [url, thumb, imetaPoster]
+  )
 
   const clearLoadWatch = () => {
     if (loadWatchRef.current != null) {
@@ -355,6 +371,15 @@ export default function Image({
                 !revealed || isLoading ? 'opacity-100' : 'opacity-0'
               )}
             />
+          ) : previewUrl && (!revealed || isLoading) ? (
+            <img
+              src={previewUrl}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 z-[1] m-0 h-full w-full max-w-none rounded-lg object-cover object-center"
+              loading="eager"
+              decoding="async"
+            />
           ) : !revealed && !isLoading ? (
             // Static bg when held — no shimmer animation flashing indefinitely
             <span className="absolute inset-0 h-full w-full rounded-lg bg-muted" />
@@ -375,6 +400,16 @@ export default function Image({
       )}
       {showTapToRevealChrome && (
         <>
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 z-[12] m-0 h-full w-full max-w-none rounded-lg object-cover object-center"
+              loading="eager"
+              decoding="async"
+            />
+          ) : null}
           <span
             className="absolute inset-0 z-[15] bg-gradient-to-t from-black/55 via-black/25 to-black/15 pointer-events-none"
             aria-hidden

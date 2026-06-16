@@ -29,6 +29,7 @@ import {
 } from '@/lib/url'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import { buildImetaDimMap, type ImetaDim } from '@/lib/imeta-display'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
 import { cn } from '@/lib/utils'
@@ -758,6 +759,8 @@ function parseMarkdownContentLegacy(
     videoPosterMap?: Map<string, string>
     /** Cleaned media URL → blurhash (from any imeta with `blurhash` / `bh`, incl. video/audio). */
     mediaBlurHashMap?: Map<string, string>
+    /** Cleaned media URL → NIP-94 `dim` for aspect-ratio placeholders. */
+    mediaDimMap?: Map<string, ImetaDim>
     imageThumbnailMap?: Map<string, string>
     getImageIdentifier?: (url: string) => string | null
     emojiInfos?: TEmoji[]
@@ -781,6 +784,7 @@ function parseMarkdownContentLegacy(
     navigateToRelay,
     videoPosterMap,
     mediaBlurHashMap,
+    mediaDimMap,
     imageThumbnailMap,
     getImageIdentifier,
     emojiInfos = [],
@@ -2110,6 +2114,7 @@ function parseMarkdownContentLegacy(
               mustLoad={!lazyMedia}
               poster={poster}
               blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
             />
           </div>
         )
@@ -2209,6 +2214,7 @@ function parseMarkdownContentLegacy(
               mustLoad={!lazyMedia}
               poster={poster}
               blurHash={mediaBlurHashMap?.get(cleanedStandalone)}
+              dim={mediaDimMap?.get(cleanedStandalone)}
             />
           </div>
         )
@@ -3182,6 +3188,7 @@ function parseMarkdownContentMarked(
     navigateToRelay: (url: string) => void
     videoPosterMap?: Map<string, string>
     mediaBlurHashMap?: Map<string, string>
+    mediaDimMap?: Map<string, ImetaDim>
     imageThumbnailMap?: Map<string, string>
     getImageIdentifier?: (url: string) => string | null
     emojiInfos?: TEmoji[]
@@ -3203,6 +3210,7 @@ function parseMarkdownContentMarked(
     navigateToRelay,
     videoPosterMap,
     mediaBlurHashMap,
+    mediaDimMap,
     getImageIdentifier,
     emojiInfos = [],
     fullCalendarInvite,
@@ -3267,6 +3275,7 @@ function parseMarkdownContentMarked(
             src={cleaned}
             poster={poster}
             blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+            dim={mediaDimMap?.get(cleaned) ?? im.dim}
             className="max-w-[400px]"
             mustLoad={!lazyMedia}
           />
@@ -3279,6 +3288,7 @@ function parseMarkdownContentMarked(
           <MediaPlayer
             src={cleaned}
             blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+            dim={mediaDimMap?.get(cleaned) ?? im.dim}
             className="max-w-[400px]"
             mustLoad={!lazyMedia}
           />
@@ -3441,6 +3451,7 @@ function parseMarkdownContentMarked(
                       src={cleaned}
                       poster={poster}
                       blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                       className="max-w-[400px]"
                       mustLoad={!lazyMedia}
                     />
@@ -3509,6 +3520,7 @@ function parseMarkdownContentMarked(
                   src={cleaned}
                   poster={poster}
                   blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                   className="max-w-[400px]"
                   mustLoad={!lazyMedia}
                 />
@@ -3526,6 +3538,7 @@ function parseMarkdownContentMarked(
                     src={cleaned}
                     poster={poster}
                     blurHash={mediaBlurHashMap?.get(cleaned) ?? baseImeta.blurHash}
+                    dim={mediaDimMap?.get(cleaned) ?? baseImeta.dim}
                     className="max-w-[400px]"
                     mustLoad={!lazyMedia}
                   />
@@ -3801,6 +3814,7 @@ function parseMarkdownContentMarked(
                         src={cleaned}
                         poster={poster}
                         blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                         className="max-w-[400px]"
                         mustLoad={!lazyMedia}
                       />
@@ -3994,6 +4008,7 @@ function parseMarkdownContentMarked(
                 src={cleaned}
                 poster={poster}
                 blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                 className="max-w-[400px]"
                 mustLoad={!lazyMedia}
               />
@@ -4084,6 +4099,7 @@ function parseMarkdownContentMarked(
               mustLoad={!lazyMedia}
               poster={poster}
               blurHash={mediaBlurHashMap?.get(soleHref)}
+              dim={mediaDimMap?.get(soleHref)}
             />
           </div>
         )
@@ -4229,6 +4245,7 @@ function parseMarkdownContentMarked(
                     src={cleaned}
                     poster={poster}
                     blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                     className="max-w-[400px]"
                     mustLoad={!lazyMedia}
                   />
@@ -4255,6 +4272,7 @@ function parseMarkdownContentMarked(
                 src={cleaned}
                 poster={poster}
                 blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                 className="max-w-[400px]"
                 mustLoad={!lazyMedia}
               />
@@ -4421,6 +4439,7 @@ function parseMarkdownContentMarked(
                 src={cleaned}
                 poster={poster}
                 blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                 className="max-w-[400px]"
                 mustLoad={!lazyMedia}
               />
@@ -4450,6 +4469,7 @@ function parseMarkdownContentMarked(
                 src={cleaned}
                 poster={poster}
                 blurHash={mediaBlurHashMap?.get(cleaned)}
+              dim={mediaDimMap?.get(cleaned)}
                 className="max-w-[400px]"
                 mustLoad={!lazyMedia}
               />
@@ -4466,6 +4486,7 @@ function parseMarkdownContentMarked(
                   src={cleaned}
                   poster={poster}
                   blurHash={mediaBlurHashMap?.get(cleaned) ?? im.blurHash}
+            dim={mediaDimMap?.get(cleaned) ?? im.dim}
                   className="max-w-[400px]"
                   mustLoad={!lazyMedia}
                 />
@@ -5477,6 +5498,7 @@ export default function MarkdownArticle({
       type: 'image' | 'video' | 'audio'
       poster?: string
       blurHash?: string
+      dim?: ImetaDim
       source: 'imeta' | 'r' | 'image'
     }> = []
     
@@ -5507,6 +5529,7 @@ export default function MarkdownArticle({
           type: 'video',
           poster: info.image || info.thumb,
           blurHash: info.blurHash,
+          dim: info.dim,
           source: 'imeta'
         })
       } else if (info.m?.startsWith('audio/') || isAudio(cleaned)) {
@@ -5515,6 +5538,7 @@ export default function MarkdownArticle({
           type: 'audio',
           poster: info.thumb,
           blurHash: info.blurHash,
+          dim: info.dim,
           source: 'imeta'
         })
       } else if (info.m?.startsWith('image/') || isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) {
@@ -6118,6 +6142,16 @@ export default function MarkdownArticle({
     return map
   }, [event.id, JSON.stringify(event.tags)])
 
+  const mediaDimMap = useMemo(() => {
+    const map = buildImetaDimMap(getImetaInfosFromEvent(event))
+    for (const info of extractedMedia.all) {
+      const cleaned = cleanUrl(info.url)
+      if (!cleaned || !info.dim?.width || !info.dim?.height || map.has(cleaned)) continue
+      map.set(cleaned, info.dim)
+    }
+    return map
+  }, [event.id, JSON.stringify(event.tags), extractedMedia.all])
+
   // Parse markdown content with post-processing for nostr: links and hashtags
   const { nodes: parsedContent, hashtagsInContent } = useMemo(() => {
     const resolveImetaForImageUrl = (cleaned: string): TImetaInfo | undefined => {
@@ -6140,6 +6174,7 @@ export default function MarkdownArticle({
       navigateToRelay,
       videoPosterMap,
       mediaBlurHashMap: imageBlurHashMap,
+      mediaDimMap,
       imageThumbnailMap,
       getImageIdentifier,
       emojiInfos,
@@ -6171,6 +6206,7 @@ export default function MarkdownArticle({
     navigateToRelay,
     videoPosterMap,
     imageBlurHashMap,
+    mediaDimMap,
     imageThumbnailMap,
     getImageIdentifier,
     emojiInfos,
@@ -6409,6 +6445,7 @@ export default function MarkdownArticle({
                       mustLoad={!lazyMedia}
                       poster={media.poster ?? videoPosterMap?.get(cleaned)}
                       blurHash={media.blurHash}
+                      dim={media.dim ?? mediaDimMap?.get(cleaned)}
                     />
                   </div>
                 )

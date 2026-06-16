@@ -1,8 +1,9 @@
+import { aspectRatioStyleFromDim, type ImetaDim } from '@/lib/imeta-display'
 import { cn } from '@/lib/utils'
 import { resolveMediaBlurPlaceholder } from '@/lib/media-placeholder-blurhash'
 import { decode } from 'blurhash'
 import { Loader2, Music2, Play } from 'lucide-react'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const CANVAS_W = 32
@@ -56,14 +57,23 @@ function BlurHashLayer({ blurHash, className }: { blurHash: string; className?: 
   )
 }
 
-const frameClass = (kind: 'video' | 'audio', className?: string) =>
+const frameClass = (
+  kind: 'video' | 'audio',
+  className?: string,
+  dim?: ImetaDim
+) =>
   cn(
     // `not-prose`: poster <img> lives inside MarkdownArticle `.prose`; typography adds img margins
     // that break `absolute inset-0` layout and show a blurhash band above the still.
     'not-prose relative w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm',
-    kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
+    !aspectRatioStyleFromDim(dim) &&
+      (kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]'),
     className
   )
+
+function mediaFrameStyle(dim?: ImetaDim): CSSProperties | undefined {
+  return aspectRatioStyleFromDim(dim)
+}
 
 function MediaPlaceholderLayers({
   src,
@@ -122,7 +132,8 @@ export function MediaEmbedBlurFrame({
   blurHash,
   className,
   mediaKind,
-  loadingHint
+  loadingHint,
+  dim
 }: {
   src: string
   posterUrl?: string
@@ -131,11 +142,13 @@ export function MediaEmbedBlurFrame({
   mediaKind?: 'video' | 'audio'
   /** Shown over the frame (e.g. live HLS) so long stalls are not a silent blank. */
   loadingHint?: string
+  dim?: ImetaDim
 }) {
   const kind = mediaKind ?? guessMediaKindFromUrl(src)
   return (
     <div
-      className={cn(frameClass(kind, className), 'pointer-events-none select-none')}
+      className={cn(frameClass(kind, className, dim), 'pointer-events-none select-none')}
+      style={mediaFrameStyle(dim)}
       aria-hidden={loadingHint ? undefined : true}
       aria-busy={loadingHint ? true : undefined}
     >
@@ -170,7 +183,8 @@ export default function LazyMediaTapPlaceholder({
   blurHash,
   onActivate,
   className,
-  mediaKind
+  mediaKind,
+  dim
 }: {
   src: string
   posterUrl?: string
@@ -178,10 +192,12 @@ export default function LazyMediaTapPlaceholder({
   onActivate: () => void
   className?: string
   mediaKind?: 'video' | 'audio'
+  dim?: ImetaDim
 }) {
   const { t } = useTranslation()
   const kind = mediaKind ?? guessMediaKindFromUrl(src)
   const label = t('Click to load media')
+  const dimStyle = mediaFrameStyle(dim)
 
   return (
     <button
@@ -191,9 +207,10 @@ export default function LazyMediaTapPlaceholder({
         // absolutely positioned children that shifts the stack and the play icon looks bottom-heavy.
         // `not-prose`: see frameClass — poster img must not inherit prose img margins inside notes.
         'not-prose group relative block w-full max-w-[400px] shrink-0 self-start overflow-hidden rounded-lg border border-border bg-muted/30 p-0 text-left leading-none shadow-sm outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
-        kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]',
+        !dimStyle && (kind === 'video' ? 'aspect-video' : 'min-h-[7.5rem] aspect-[21/9]'),
         className
       )}
+      style={dimStyle}
       onClick={(e) => {
         e.stopPropagation()
         e.preventDefault()
