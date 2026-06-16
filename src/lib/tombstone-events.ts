@@ -7,9 +7,19 @@ import type { TRelayList } from '@/types'
 /** Dispatched after tombstones in IndexedDB change (kind-5 sync or local apply). */
 export const TOMBSTONES_UPDATED_EVENT = 'jumble:tombstonesUpdated'
 
-export function dispatchTombstonesUpdated(): void {
+export type TombstonesUpdatedDetail = {
+  /** Keys written in this update — merged into UI state before IDB hydrate completes. */
+  keys?: string[]
+}
+
+export function dispatchTombstonesUpdated(keys?: Iterable<string>): void {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(TOMBSTONES_UPDATED_EVENT))
+  const keyList = keys ? [...keys] : undefined
+  window.dispatchEvent(
+    new CustomEvent<TombstonesUpdatedDetail>(TOMBSTONES_UPDATED_EVENT, {
+      detail: keyList?.length ? { keys: keyList } : undefined
+    })
+  )
 }
 
 /** Relay set for querying the current user's kind-5 events (aligned with login sync). */

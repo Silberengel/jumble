@@ -95,7 +95,7 @@ import { toast } from 'sonner'
 import RelayIcon from '../RelayIcon'
 import { useSecondaryPage } from '@/PageManager'
 import { PrimaryPageContext } from '@/contexts/primary-page-context'
-import { showPublishingFeedback, toastPublishPromise } from '@/lib/publishing-feedback'
+import { showPublishingError, showPublishingFeedback, toastPublishPromise } from '@/lib/publishing-feedback'
 import type { TEditOrCloneMode } from './EditOrCloneEventDialog'
 
 export interface SubMenuAction {
@@ -1445,7 +1445,9 @@ export function useMenuActions({
         label: t('Try deleting this note'),
         onClick: () => {
           closeDrawer()
-          attemptDelete(event)
+          void attemptDelete(event).catch((err) => {
+            showPublishingError(err instanceof Error ? err : new Error(String(err)))
+          })
         },
         className: 'text-destructive focus:text-destructive'
       })

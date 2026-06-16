@@ -115,13 +115,15 @@ export function buildRepliesListAlignedWithNoteStats(
   threadDisplayed: NEvent[],
   mutePubkeySet: Set<string>,
   hideContentMentioningMutedUsers: boolean | undefined,
-  rootInfo?: TRootInfo
+  rootInfo?: TRootInfo,
+  isEventDeleted?: (event: NEvent) => boolean
 ): NEvent[] {
   const statsIds = buildNoteStatsReplyIdSet(statsReplies)
   const byId = new Map<string, NEvent>()
   const hideOpts = threadResponseFilterOptions(rootInfo)
 
   const keep = (evt: NEvent) => {
+    if (isEventDeleted?.(evt)) return false
     if (isPollVoteKind(evt)) return false
     return !shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, hideOpts)
   }
@@ -159,7 +161,8 @@ export function collectDisplayedThreadReplies(
   mutePubkeySet: Set<string>,
   hideContentMentioningMutedUsers: boolean | undefined,
   /** Reply ids already counted on this note in note-stats — always show when loaded. */
-  statsReplyIds?: ReadonlySet<string>
+  statsReplyIds?: ReadonlySet<string>,
+  isEventDeleted?: (event: NEvent) => boolean
 ): NEvent[] {
   const threadWalk = new Map<string, NEvent>()
   for (const evt of dedupeEventsFromRepliesMap(repliesMap)) {
@@ -180,6 +183,7 @@ export function collectDisplayedThreadReplies(
     const seen = new Set<string>()
     for (const evt of threadWalk.values()) {
       if (seen.has(evt.id)) continue
+      if (isEventDeleted?.(evt)) continue
       if (isPollVoteKind(evt)) continue
       if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) continue
       if (statsReplyIds?.has(evt.id)) {
@@ -214,6 +218,7 @@ export function collectDisplayedThreadReplies(
   const seen = new Set<string>()
   for (const evt of threadWalk.values()) {
     if (seen.has(evt.id)) continue
+    if (isEventDeleted?.(evt)) continue
     if (isPollVoteKind(evt)) continue
     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) continue
     if (statsReplyIds?.has(evt.id)) {

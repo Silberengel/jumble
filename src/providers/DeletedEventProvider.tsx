@@ -1,6 +1,6 @@
 import { getKeyForDeletedLookup } from '@/lib/deleted-event-key'
 import { isTombstoneKeyForEvent } from '@/lib/event'
-import { TOMBSTONES_UPDATED_EVENT } from '@/lib/tombstone-events'
+import { TOMBSTONES_UPDATED_EVENT, type TombstonesUpdatedDetail } from '@/lib/tombstone-events'
 import indexedDb from '@/services/indexed-db.service'
 import { NostrEvent } from 'nostr-tools'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
@@ -68,7 +68,16 @@ export function DeletedEventProvider({ children }: { children: React.ReactNode }
   }, [hydrateFromIndexedDb])
 
   useEffect(() => {
-    const onUpdate = () => {
+    const onUpdate = (ev: Event) => {
+      const keys = (ev as CustomEvent<TombstonesUpdatedDetail>).detail?.keys
+      if (keys?.length) {
+        setTombstoneKeys((prev) => {
+          const next = new Set(prev)
+          for (const key of keys) next.add(key)
+          return next
+        })
+        setTombstoneEpoch((e) => e + 1)
+      }
       void hydrateFromIndexedDb()
     }
     window.addEventListener(TOMBSTONES_UPDATED_EVENT, onUpdate)

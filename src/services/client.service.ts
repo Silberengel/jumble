@@ -168,6 +168,7 @@ import {
   RelayAuthAccessDeniedError
 } from '@/lib/relay-nip42-auth'
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
+import { getKeyForDeletedLookup } from '@/lib/deleted-event-key'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
 import { hexPubkeysEqual, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { collectNip05ValuesFromKind0, profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
@@ -4440,32 +4441,51 @@ class ClientService extends EventTarget {
    */
   /**
    * Record a kind-5 deletion in the local tombstone store (no network).
-   * Call after publishing a deletion so cache updates without waiting for a fetch.
+   * Call immediately after signing so the UI hides the target before relay ACKs.
    */
-  async applyDeletionRequestToLocalCache(deletionEvent: NEvent): Promise<void> {
-    await this.addTombstoneEntriesFromDeletionEvent(deletionEvent)
+  async applyDeletionRequestToLocalCache(deletionEvent: NEvent, targetEvent?: NEvent): Promise<string[]> {
+    const keys = this.collectTombstoneKeysFromDeletion(deletionEvent, targetEvent)
+    for (const key of keys) {
+      await indexedDb.addTombstone(key)
+    }
     const removed = await indexedDb.removeTombstonedFromCache()
     if (removed > 0) {
       logger.info('[ClientService] Removed tombstoned events from cache', { count: removed })
     }
     invalidateArchiveFootprintCache()
-    dispatchTombstonesUpdated()
+    dispatchTombstonesUpdated(keys)
+    return keys
+  }
+
+  private collectTombstoneKeysFromDeletion(deletionEvent: NEvent, targetEvent?: NEvent): string[] {
+    const keys = new Set<string>()
+    if (targetEvent) {
+      keys.add(getKeyForDeletedLookup(targetEvent))
+    }
+    let hasETagOrATag = false
+    for (const tag of deletionEvent.tags) {
+      if (tag[0] === 'e' && tag[1]) {
+        keys.add(tag[1])
+        hasETagOrATag = true
+      }
+      if (tag[0] === 'a' && tag[1]) {
+        keys.add(tag[1])
+        hasETagOrATag = true
+      }
+    }
+    if (!hasETagOrATag) {
+      const kTag = deletionEvent.tags.find((tag) => tag[0] === 'k')
+      if (kTag?.[1] && deletionEvent.pubkey) {
+        const kind = parseInt(kTag[1], 10)
+        if (!isNaN(kind)) keys.add(`${kind}:${deletionEvent.pubkey}`)
+      }
+    }
+    return [...keys]
   }
 
   private async addTombstoneEntriesFromDeletionEvent(deletionEvent: NEvent): Promise<void> {
-    const eTag = deletionEvent.tags.find((tag) => tag[0] === 'e')
-    const aTag = deletionEvent.tags.find((tag) => tag[0] === 'a')
-    const kTag = deletionEvent.tags.find((tag) => tag[0] === 'k')
-
-    if (eTag?.[1]) {
-      await indexedDb.addTombstone(eTag[1])
-    } else if (aTag?.[1]) {
-      await indexedDb.addTombstone(aTag[1])
-    } else if (kTag?.[1] && deletionEvent.pubkey) {
-      const kind = parseInt(kTag[1], 10)
-      if (!isNaN(kind)) {
-        await indexedDb.addTombstone(`${kind}:${deletionEvent.pubkey}`)
-      }
+    for (const key of this.collectTombstoneKeysFromDeletion(deletionEvent)) {
+      await indexedDb.addTombstone(key)
     }
   }
 

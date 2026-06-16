@@ -24,6 +24,7 @@ import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
+import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -119,6 +120,7 @@ function ReplyNoteList({
     useContentPolicyOptional()?.hideContentMentioningMutedUsers ??
     storage.getHideContentMentioningMutedUsers()
   const { pubkey: userPubkey } = useNostr()
+  const { isEventDeleted, tombstoneEpoch } = useDeletedEventSafe()
   const { blockedRelays, favoriteRelays } = useFavoriteRelays()
   const { relayUrls: browsingRelayUrls } = useCurrentRelays()
   const relayAuthoritativeRead =
@@ -159,7 +161,8 @@ function ReplyNoteList({
       isDiscussionRoot,
       mutePubkeySet,
       hideContentMentioningMutedUsers,
-      statsReplyIds
+      statsReplyIds,
+      isEventDeleted
     )
     const replyEvents = buildRepliesListAlignedWithNoteStats(
       noteStats?.replies,
@@ -167,7 +170,8 @@ function ReplyNoteList({
       threadDisplayed,
       mutePubkeySet,
       hideContentMentioningMutedUsers,
-      rootInfo
+      rootInfo,
+      isEventDeleted
     )
     const replyIdSet = new Set(replyEvents.map((r) => r.id))
 
@@ -179,6 +183,7 @@ function ReplyNoteList({
     }
 
     const includeThreadReply = (evt: NEvent) => {
+      if (isEventDeleted(evt)) return false
       if (isPollVoteKind(evt)) return false
       if (
         shouldHideThreadResponseEvent(
@@ -320,7 +325,9 @@ function ReplyNoteList({
     event.kind,
     statsReplyIds,
     noteStats?.replies,
-    noteStats?.updatedAt
+    noteStats?.updatedAt,
+    isEventDeleted,
+    tombstoneEpoch
   ])
 
   const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
@@ -581,7 +588,8 @@ function ReplyNoteList({
       [],
       mutePubkeySet,
       hideContentMentioningMutedUsers,
-      rootInfo
+      rootInfo,
+      isEventDeleted
     )
     if (resolved.length >= statsLen) return
 

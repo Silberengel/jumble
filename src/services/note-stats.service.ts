@@ -1464,6 +1464,28 @@ class NoteStatsService {
     return key
   }
 
+  /** Remove tombstoned reply ids from all note stats (local kind-5 apply). */
+  dropTombstonedReplies(tombstoneKeys: readonly string[]): void {
+    const deletedEventIds = new Set<string>()
+    for (const key of tombstoneKeys) {
+      if (/^[0-9a-f]{64}$/i.test(key)) deletedEventIds.add(key.toLowerCase())
+    }
+    if (deletedEventIds.size === 0) return
+
+    for (const [noteKey, stats] of this.noteStatsMap.entries()) {
+      const replyIdSet = stats.replyIdSet ?? new Set<string>()
+      const replies = stats.replies ?? []
+      let touched = false
+      for (const id of deletedEventIds) {
+        if (replyIdSet.delete(id)) touched = true
+      }
+      if (!touched) continue
+      const nextReplies = replies.filter((r) => !deletedEventIds.has(r.id.toLowerCase()))
+      this.noteStatsMap.set(noteKey, { ...stats, replyIdSet, replies: nextReplies })
+      this.notifyNoteStats(noteKey)
+    }
+  }
+
   /** Target id for repost stats: `e` first (NIP-18 for both kind 6 and 16), then embedded JSON, then `a` (generic only). */
   private repostStatsTargetId(evt: Event, forcedTargetEventId?: string): string | undefined {
     const forced = forcedTargetEventId?.trim()

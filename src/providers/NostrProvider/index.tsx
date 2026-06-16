@@ -2060,6 +2060,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     let publishRelayCandidates: string[] = []
     const publishTrace = options.publishTrace
     try {
+      if (event.kind === kinds.EventDeletion) {
+        const tombstoneKeys = await client.applyDeletionRequestToLocalCache(event)
+        noteStatsService.dropTombstonedReplies(tombstoneKeys)
+      }
       publishTrace?.step('sign event done', { eventId: event.id?.slice(0, 12), kind: event.kind })
       logger.debug('[Publish] Determining target relays...', { kind: event.kind, pubkey: event.pubkey?.substring(0, 8) })
       publishTrace?.step('determineTargetRelays')
@@ -2222,6 +2226,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
     const deletionRequest = await signEvent(createDeletionRequestDraftEvent(targetEvent))
 
+    const tombstoneKeys = await client.applyDeletionRequestToLocalCache(deletionRequest, targetEvent)
+    noteStatsService.dropTombstonedReplies(tombstoneKeys)
+
     client.interruptBackgroundQueries()
 
     // Privacy: Only use user's own relays, never connect to "seen on" relays
@@ -2237,8 +2244,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     })
 
     const result = await client.publishEvent(relays, deletionRequest, { favoriteRelayUrls: favUrls })
-
-    await client.applyDeletionRequestToLocalCache(deletionRequest)
 
     // Show publishing feedback
     if (result.relayStatuses) {
