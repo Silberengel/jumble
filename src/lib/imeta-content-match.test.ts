@@ -1,14 +1,17 @@
 import { ExtendedKind } from '@/constants'
-import { describe, expect, it } from 'vitest'
 import {
   collectMediaUrlsInContent,
   getOrphanedImetaMedia,
+  getSuppressedImetaMedia,
   hasImageUrlInContent,
+  hasMediaUrlInContent,
   isNip71MediaKind,
   mediaBlobIdentityKey,
+  redundantImetaUrlSet,
   shouldHideOrphanedImetaInAccordion
 } from '@/lib/imeta-content-match'
 import type { Event } from 'nostr-tools'
+import { describe, expect, it } from 'vitest'
 
 function fakeEvent(overrides: Partial<Event> & Pick<Event, 'kind' | 'content' | 'tags'>): Event {
   return {
@@ -35,7 +38,7 @@ describe('imeta-content-match', () => {
     expect(urls.has(url)).toBe(true)
   })
 
-  it('getOrphanedImetaMedia returns imeta when URL differs from content', () => {
+  it('getOrphanedImetaMedia is empty when imeta mirrors content blob via x tag', () => {
     const hash = 'a4cdb7f9adb8800e5c776900bee6670482fee585fd78fbe888e558d059efa305'
     const blossom = `https://npub1gluh6ns2vsxg493a87n3m8c2d2ketzh62p07lhkad4ffaaqj9mesu6d3sz.blossom.band/${hash}.mp4`
     const nostrBuild = 'https://v.nostr.build/0lLUd9zqfNdIz7py.mp4'
@@ -49,6 +52,44 @@ describe('imeta-content-match', () => {
           'm video/mp4',
           `x ${hash}`,
           `ox ${hash}`
+        ]
+      ]
+    })
+    expect(getOrphanedImetaMedia(event)).toHaveLength(0)
+    expect(redundantImetaUrlSet(event).has(nostrBuild)).toBe(true)
+    expect(getSuppressedImetaMedia(event)).toHaveLength(1)
+    expect(getSuppressedImetaMedia(event)[0]?.url).toBe(nostrBuild)
+  })
+
+  it('getSuppressedImetaMedia includes redundant mirror on kind 1 with image in content', () => {
+    const hash = 'a4cdb7f9adb8800e5c776900bee6670482fee585fd78fbe888e558d059efa305'
+    const blossom = `https://example.com/${hash}.jpg`
+    const mirror = 'https://v.nostr.build/mirror.jpg'
+    const event = fakeEvent({
+      kind: 1,
+      content: blossom,
+      tags: [['imeta', `url ${mirror}`, 'm image/jpeg', `x ${hash}`]]
+    })
+    expect(shouldHideOrphanedImetaInAccordion(1, blossom)).toBe(false)
+    expect(getSuppressedImetaMedia(event)).toHaveLength(1)
+    expect(getSuppressedImetaMedia(event)[0]?.url).toBe(mirror)
+  })
+
+  it('getOrphanedImetaMedia returns imeta when URL and blob differ from content', () => {
+    const hash = 'a4cdb7f9adb8800e5c776900bee6670482fee585fd78fbe888e558d059efa305'
+    const blossom = `https://npub1gluh6ns2vsxg493a87n3m8c2d2ketzh62p07lhkad4ffaaqj9mesu6d3sz.blossom.band/${hash}.mp4`
+    const nostrBuild = 'https://v.nostr.build/0lLUd9zqfNdIz7py.mp4'
+    const otherHash = 'b'.repeat(64)
+    const event = fakeEvent({
+      kind: ExtendedKind.SHORT_VIDEO,
+      content: blossom,
+      tags: [
+        [
+          'imeta',
+          `url ${nostrBuild}`,
+          'm video/mp4',
+          `x ${otherHash}`,
+          `ox ${otherHash}`
         ]
       ]
     })
@@ -88,10 +129,17 @@ describe('imeta-content-match', () => {
     expect(hasImageUrlInContent(blossom)).toBe(false)
   })
 
-  it('shouldHideOrphanedImetaInAccordion: kind 22 with video-only content renders inline', () => {
+  it('hasMediaUrlInContent includes video URLs', () => {
     const hash = 'a4cdb7f9adb8800e5c776900bee6670482fee585fd78fbe888e558d059efa305'
     const video = `https://example.com/${hash}.mp4`
-    expect(shouldHideOrphanedImetaInAccordion(ExtendedKind.SHORT_VIDEO, video)).toBe(false)
+    expect(hasMediaUrlInContent(video)).toBe(true)
+    expect(hasImageUrlInContent(video)).toBe(false)
+  })
+
+  it('shouldHideOrphanedImetaInAccordion: kind 22 with video-only content uses accordion', () => {
+    const hash = 'a4cdb7f9adb8800e5c776900bee6670482fee585fd78fbe888e558d059efa305'
+    const video = `https://example.com/${hash}.mp4`
+    expect(shouldHideOrphanedImetaInAccordion(ExtendedKind.SHORT_VIDEO, video)).toBe(true)
   })
 
   it('shouldHideOrphanedImetaInAccordion: kind 22 with image in content uses accordion', () => {
@@ -103,7 +151,7 @@ describe('imeta-content-match', () => {
     ).toBe(true)
   })
 
-  it('shouldHideOrphanedImetaInAccordion: kind 1 without image uses accordion', () => {
+  it('shouldHideOrphanedImetaInAccordion: kind 1 without media uses accordion', () => {
     expect(shouldHideOrphanedImetaInAccordion(1, 'hello world')).toBe(true)
   })
 

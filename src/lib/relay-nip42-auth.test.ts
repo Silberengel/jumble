@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { isRelayAuthAccessDeniedMessage } from './relay-nip42-auth'
+import {
+  isRelayAuthAccessDeniedMessage,
+  isRelayAuthTransientFailureMessage
+} from './relay-nip42-auth'
 
 describe('isRelayAuthAccessDeniedMessage', () => {
   it('detects Essayist-style membership restriction', () => {
@@ -22,5 +25,31 @@ describe('isRelayAuthAccessDeniedMessage', () => {
   it('ignores empty messages', () => {
     expect(isRelayAuthAccessDeniedMessage('')).toBe(false)
     expect(isRelayAuthAccessDeniedMessage('   ')).toBe(false)
+  })
+
+  it('does not treat transient membership backend errors as access denied', () => {
+    expect(isRelayAuthAccessDeniedMessage('error: membership check temporarily unavailable')).toBe(
+      false
+    )
+  })
+})
+
+describe('isRelayAuthTransientFailureMessage', () => {
+  it('detects Essayist-style transient membership check failure', () => {
+    expect(
+      isRelayAuthTransientFailureMessage('error: membership check temporarily unavailable')
+    ).toBe(true)
+  })
+
+  it('detects other transient outage patterns', () => {
+    expect(isRelayAuthTransientFailureMessage('service unavailable')).toBe(true)
+    expect(isRelayAuthTransientFailureMessage('try again later')).toBe(true)
+  })
+
+  it('does not treat permanent denial as transient', () => {
+    expect(isRelayAuthTransientFailureMessage('membership required')).toBe(false)
+    expect(isRelayAuthTransientFailureMessage('restricted: active Essayist membership required')).toBe(
+      false
+    )
   })
 })

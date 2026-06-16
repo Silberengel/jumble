@@ -45,14 +45,27 @@ export function hasImageUrlInContent(content: string): boolean {
   return collectImageUrlsInContent(content).size > 0
 }
 
+export function hasMediaUrlInContent(content: string): boolean {
+  return collectMediaUrlsInContent(content).size > 0
+}
+
+function collectContentBlobIdentityKeys(content: string): Set<string> {
+  const keys = new Set<string>()
+  for (const url of collectMediaUrlsInContent(content)) {
+    const key = mediaBlobIdentityKey(url)
+    if (key) keys.add(key)
+  }
+  return keys
+}
+
 /**
  * Orphaned `imeta` (URL not literally in content) goes behind the accordion when true.
- * - Kinds 20–22: accordion only when the body already contains an image URL.
- * - All other kinds: accordion when the body has no image URL.
+ * - Kinds 20–22: accordion when the body already contains an embeddable media URL (image, video, audio, …).
+ * - All other kinds: accordion when the body has no embeddable media URL.
  */
 export function shouldHideOrphanedImetaInAccordion(kind: number, content?: string): boolean {
-  const hasImage = hasImageUrlInContent(content ?? '')
-  return isNip71MediaKind(kind) ? hasImage : !hasImage
+  const hasMedia = hasMediaUrlInContent(content ?? '')
+  return isNip71MediaKind(kind) ? hasMedia : !hasMedia
 }
 
 function isEmbeddableMediaUrl(cleaned: string): boolean {
@@ -94,12 +107,41 @@ export function collectMediaUrlsInContent(content: string): Set<string> {
 }
 
 /**
+ * `imeta` rows for the “View additional media” accordion — every tag URL suppressed from inline
+ * rendering ({@link suppressImetaUrlSet}), including redundant mirrors and orphaned hosts.
+ */
+export function getSuppressedImetaMedia(event: Event, content?: string): TImetaInfo[] {
+  const text = content ?? event.content ?? ''
+  const hideOrphaned = shouldHideOrphanedImetaInAccordion(event.kind, text)
+  const suppressedUrls = suppressImetaUrlSet(event, text, hideOrphaned)
+  if (suppressedUrls.size === 0) return []
+
+  const out: TImetaInfo[] = []
+  const seen = new Set<string>()
+  for (const info of getImetaInfosFromEvent(event)) {
+    const cleaned = cleanUrl(info.url)
+    if (!cleaned || seen.has(cleaned)) continue
+    if (!suppressedUrls.has(cleaned)) continue
+    if (!isEmbeddableImeta(info, cleaned)) continue
+    seen.add(cleaned)
+    out.push({ ...info, url: cleaned })
+  }
+  return out
+}
+
+/** @deprecated Use {@link getSuppressedImetaMedia}. */
+export function getAccordionImetaMedia(event: Event, content?: string): TImetaInfo[] {
+  return getSuppressedImetaMedia(event, content)
+}
+
+/**
  * NIP-94 `imeta` rows whose `url` is not literally present in the event content.
- * Same blob with a different URL (e.g. nostr.build vs blossom) counts as orphaned.
+ * Same blob with a different URL (e.g. nostr.build vs blossom) is redundant — not orphaned.
  */
 export function getOrphanedImetaMedia(event: Event, content?: string): TImetaInfo[] {
   const text = content ?? event.content ?? ''
   const contentUrls = collectMediaUrlsInContent(text)
+  const contentBlobKeys = collectContentBlobIdentityKeys(text)
   const out: TImetaInfo[] = []
   const seen = new Set<string>()
 
@@ -107,12 +149,52 @@ export function getOrphanedImetaMedia(event: Event, content?: string): TImetaInf
     const cleaned = cleanUrl(info.url)
     if (!cleaned || seen.has(cleaned)) continue
     if (contentUrls.has(cleaned)) continue
+    const blobKey = mediaBlobIdentityKey(cleaned, info.x)
+    if (blobKey && contentBlobKeys.has(blobKey)) continue
     if (!isEmbeddableImeta(info, cleaned)) continue
     seen.add(cleaned)
     out.push({ ...info, url: cleaned })
   }
 
   return out
+}
+
+/**
+ * `imeta` URLs that duplicate media already in the note body (literal URL or same blob hash).
+ * Suppressed from inline rendering; mirror URLs appear in the accordion when it applies.
+ */
+export function redundantImetaUrlSet(event: Event, content?: string): Set<string> {
+  const text = content ?? event.content ?? ''
+  const contentUrls = collectMediaUrlsInContent(text)
+  const contentBlobKeys = collectContentBlobIdentityKeys(text)
+  const out = new Set<string>()
+
+  for (const info of getImetaInfosFromEvent(event)) {
+    const cleaned = cleanUrl(info.url)
+    if (!cleaned) continue
+    if (contentUrls.has(cleaned)) {
+      out.add(cleaned)
+      continue
+    }
+    const blobKey = mediaBlobIdentityKey(cleaned, info.x)
+    if (blobKey && contentBlobKeys.has(blobKey)) {
+      out.add(cleaned)
+    }
+  }
+
+  return out
+}
+
+/** URLs to hide from inline imeta rendering (redundant mirrors + orphaned rows when accordion applies). */
+export function suppressImetaUrlSet(
+  event: Event,
+  content?: string,
+  hideOrphanedInAccordion = false
+): Set<string> {
+  const redundant = redundantImetaUrlSet(event, content)
+  if (!hideOrphanedInAccordion) return redundant
+  const orphaned = orphanedImetaUrlSet(event, content)
+  return new Set([...redundant, ...orphaned])
 }
 
 export function orphanedImetaUrlSet(event: Event, content?: string): Set<string> {

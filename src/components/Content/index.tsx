@@ -45,7 +45,7 @@ import { isFountainOpenUrl } from '@/lib/fountain-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
-import { getOrphanedImetaMedia, orphanedImetaUrlSet, shouldHideOrphanedImetaInAccordion } from '@/lib/imeta-content-match'
+import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 
 // Helper function to check if a URL is a YouTube URL
 function isYouTubeUrl(url: string): boolean {
@@ -107,12 +107,15 @@ export default function Content({
   const hideOrphanedImetaInAccordion = event
     ? shouldHideOrphanedImetaInAccordion(event.kind, _content)
     : false
-  const orphanedImetaMedia = useMemo(
-    () => (event && hideOrphanedImetaInAccordion ? getOrphanedImetaMedia(event, _content) : []),
+  const suppressedImetaUrls = useMemo(
+    () =>
+      event
+        ? suppressImetaUrlSet(event, _content, hideOrphanedImetaInAccordion)
+        : new Set<string>(),
     [event, _content, hideOrphanedImetaInAccordion]
   )
-  const orphanedImetaUrls = useMemo(
-    () => (hideOrphanedImetaInAccordion && event ? orphanedImetaUrlSet(event, _content) : new Set<string>()),
+  const suppressedImetaMedia = useMemo(
+    () => (event ? getSuppressedImetaMedia(event, _content) : []),
     [event, _content, hideOrphanedImetaInAccordion]
   )
 
@@ -459,15 +462,15 @@ export default function Content({
 
     const carouselImages = extractedMedia.images.filter((img: TImetaInfo) => {
       const cleaned = cleanUrl(img.url)
-      return cleaned && !mediaInContent.has(cleaned) && !orphanedImetaUrls.has(cleaned)
+      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
     })
     const videosFromTags = extractedMedia.videos.filter((video: TImetaInfo) => {
       const cleaned = cleanUrl(video.url)
-      return cleaned && !mediaInContent.has(cleaned) && !orphanedImetaUrls.has(cleaned)
+      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
     })
     const audioFromTags = extractedMedia.audio.filter((audio: TImetaInfo) => {
       const cleaned = cleanUrl(audio.url)
-      return cleaned && !mediaInContent.has(cleaned) && !orphanedImetaUrls.has(cleaned)
+      return cleaned && !mediaInContent.has(cleaned) && !suppressedImetaUrls.has(cleaned)
     })
 
     return {
@@ -479,7 +482,7 @@ export default function Content({
       videosFromTags,
       audioFromTags
     }
-  }, [nodes, extractedMedia, event?.pubkey, iArticleUrl, orphanedImetaUrls])
+  }, [nodes, extractedMedia, event?.pubkey, iArticleUrl, suppressedImetaUrls])
 
   if (!contentMediaLayout) return null
 
@@ -806,10 +809,10 @@ export default function Content({
         return null
       })}
 
-      {orphanedImetaMedia.length > 0 && (
+      {suppressedImetaMedia.length > 0 && (
         <OrphanedImetaMediaSection
           className="mt-4"
-          items={orphanedImetaMedia}
+          items={suppressedImetaMedia}
           authorPubkey={authorPubkey}
           mustLoadMedia={mustLoadMedia}
           deferLongVideoLoad={deferLongVideoLoad}

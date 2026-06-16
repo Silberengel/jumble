@@ -83,8 +83,12 @@ import {
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
   threadBacklinkRelationLabel,
-  threadResponseFilterOptions
+  threadResponseFilterOptions,
+  eventsToThreadFeedItems,
+  insertMissingStatsReplyPlaceholders,
+  type TThreadFeedItem
 } from './reply-list-utils'
+import MissingThreadReply from './MissingThreadReply'
 import { useThreadRootInfo } from './useThreadRootInfo'
 import { useThreadAttestedPayments } from './useThreadAttestedPayments'
 
@@ -346,7 +350,15 @@ function ReplyNoteList({
     }
     return s
   }, [replies, rootInfo])
-  const mergedFeed = useMemo(() => {
+  const withMissingPlaceholders = useCallback(
+    (events: readonly NEvent[]) =>
+      insertMissingStatsReplyPlaceholders(events, noteStats?.replies, sort, {
+        isEventDeleted,
+        mutePubkeySet
+      }),
+    [noteStats?.replies, noteStats?.updatedAt, sort, isEventDeleted, mutePubkeySet, tombstoneEpoch]
+  )
+  const mergedFeed = useMemo((): TThreadFeedItem[] => {
     /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
     const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
       const { superchats, rest: nonZaps } = partitionAttestedSuperchats(merged, attestedPaymentIds)
@@ -356,7 +368,7 @@ function ReplyNoteList({
       return moveReportsToEndPreserveOrder(replyFeedSuperchatsFirst(sortedNon, superchats))
     }
 
-    if (!showQuotes) return replies
+    if (!showQuotes) return withMissingPlaceholders(replies)
 
     // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
     if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
@@ -372,7 +384,8 @@ function ReplyNoteList({
       }
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedSuperchatsFirst(middle, superchats), ...tailSorted]
+      const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
+      return [...withMissingPlaceholders(orderedMiddle), ...eventsToThreadFeedItems(tailSorted)]
     }
 
     // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
@@ -389,17 +402,18 @@ function ReplyNoteList({
       }
       for (const e of tailFromReplies) pushTail(e)
       const tailSorted = partitionAndSortBacklinkTail(tail)
-      return [...replyFeedSuperchatsFirst(middle, superchats), ...tailSorted]
+      const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
+      return [...withMissingPlaceholders(orderedMiddle), ...eventsToThreadFeedItems(tailSorted)]
     }
 
     const merged = [...replies]
-    if (sort === 'oldest') return zapsThenTimeSorted(merged, 'asc')
-    if (sort === 'newest') return zapsThenTimeSorted(merged, 'desc')
+    if (sort === 'oldest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'asc'))
+    if (sort === 'newest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'))
     if (sort === 'top' || sort === 'controversial' || sort === 'most-zapped') {
-      return [...replies]
+      return withMissingPlaceholders(replies)
     }
-    return zapsThenTimeSorted(merged, 'desc')
-  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds])
+    return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'))
+  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, withMissingPlaceholders])
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -428,10 +442,15 @@ function ReplyNoteList({
     }
   }, [parentNoteFeed, threadProfileBatch])
 
+  const mergedFeedEvents = useMemo(
+    () => mergedFeed.flatMap((item) => (item.type === 'event' ? [item.event] : [])),
+    [mergedFeed]
+  )
+
   useEffect(() => {
     const handle = window.setTimeout(() => {
       const gen = threadProfileBatchGenRef.current
-      const candidates = new Set(collectProfilePubkeysFromEvents([event, ...mergedFeed]))
+      const candidates = new Set(collectProfilePubkeysFromEvents([event, ...mergedFeedEvents]))
 
       const parentProfiles = parentNoteFeed?.profiles
       const parentPending = parentNoteFeed?.pendingPubkeys
@@ -504,7 +523,7 @@ function ReplyNoteList({
     return () => window.clearTimeout(handle)
   }, [
     event,
-    mergedFeed,
+    mergedFeedEvents,
     parentNoteFeed?.profiles,
     parentNoteFeed?.pendingPubkeys
   ])
@@ -1238,10 +1257,14 @@ function ReplyNoteList({
 
   /** Paginate replies only; always show the backlinks tail (quotes, highlights, bookmarks, …). */
   const visibleFeed = useMemo(() => {
-    const backlinks: NEvent[] = []
-    const main: NEvent[] = []
+    const backlinks: TThreadFeedItem[] = []
+    const main: TThreadFeedItem[] = []
     for (const item of mergedFeed) {
-      if (quoteUiIdSet.has(item.id)) backlinks.push(item)
+      if (item.type === 'missing') {
+        main.push(item)
+        continue
+      }
+      if (quoteUiIdSet.has(item.event.id)) backlinks.push(item)
       else main.push(item)
     }
     return [...main.slice(0, showCount), ...backlinks]
@@ -1285,7 +1308,9 @@ function ReplyNoteList({
 
   const visibleForRender = useMemo(
     () =>
-      visibleFeed.filter((e) => {
+      visibleFeed.filter((item) => {
+        if (item.type === 'missing') return true
+        const e = item.event
         if (!shouldShowFeedItem(e)) return false
         if (e.id === event.id) return false
         if (threadRootHex && e.id.toLowerCase() === threadRootHex) return false
@@ -1306,6 +1331,13 @@ function ReplyNoteList({
       <div>
         {displayRows.map((row, ri) => {
           const prevRow = ri > 0 ? displayRows[ri - 1] : undefined
+          if (row.type === 'missing-reply') {
+            return (
+              <div key={`missing-reply-${row.id}`} className="scroll-mt-12">
+                <MissingThreadReply id={row.id} pubkey={row.pubkey} createdAt={row.created_at} />
+              </div>
+            )
+          }
           if (row.type === 'reply') {
             const reply = row.event
             const parentETag = getParentETag(reply)
@@ -1345,7 +1377,9 @@ function ReplyNoteList({
                   }}
                   onClickReply={belongsToSameThread ? (replyEvent) => {
                     // Highlight only — do not push history (null pushState desynced stack vs URL on Back).
-                    const replyIndex = mergedFeed.findIndex((r) => r.id === replyEvent.id)
+                    const replyIndex = mergedFeed.findIndex(
+                      (r) => r.type === 'event' && r.event.id === replyEvent.id
+                    )
                     if (replyIndex >= 0 && replyIndex >= showCount) {
                       setShowCount(replyIndex + 1)
                     }

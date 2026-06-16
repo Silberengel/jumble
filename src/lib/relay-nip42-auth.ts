@@ -16,6 +16,7 @@ export class RelayAuthAccessDeniedError extends Error {
 export function isRelayAuthAccessDeniedMessage(message: string): boolean {
   const trimmed = message.trim()
   if (!trimmed) return false
+  if (isRelayAuthTransientFailureMessage(trimmed)) return false
   if (isRelayAuthRequiredCloseReason(trimmed) || isRelayAuthRequiredErrorMessage(trimmed)) {
     return false
   }
@@ -28,6 +29,19 @@ export function isRelayAuthAccessDeniedMessage(message: string): boolean {
     /access denied/i.test(trimmed) ||
     /not authorized/i.test(trimmed) ||
     /not allowed/i.test(trimmed)
+  )
+}
+
+/** Relay membership / auth backend outage — retry later; not a permanent pubkey denial. */
+export function isRelayAuthTransientFailureMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed) return false
+  const lower = trimmed.toLowerCase()
+  return (
+    /temporarily unavailable/i.test(lower) ||
+    /try again later/i.test(lower) ||
+    /service unavailable/i.test(lower) ||
+    /membership check.*unavailable/i.test(lower)
   )
 }
 

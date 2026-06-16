@@ -1,7 +1,8 @@
-import { notifyRelayNip42Accepted, notifyRelayNip42Rejected } from '@/lib/relay-auth-feedback'
+import { notifyRelayNip42Accepted, notifyRelayNip42Rejected, notifyRelayNip42TransientFailure } from '@/lib/relay-auth-feedback'
 import {
   NIP42_AUTH_ACCESS_DENIED,
-  isRelayAuthAccessDeniedMessage
+  isRelayAuthAccessDeniedMessage,
+  isRelayAuthTransientFailureMessage
 } from '@/lib/relay-nip42-auth'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
@@ -92,6 +93,11 @@ export function patchPoolRelayAuthRaceAndFeedback(relay: object): void {
           msg.includes('relay connection closed before AUTH') ||
           /relay connection closed/i.test(msg)
         if (benignRace) {
+          r.authPromise = undefined
+          return ''
+        }
+        if (isRelayAuthTransientFailureMessage(msg)) {
+          notifyRelayNip42TransientFailure(url, msg)
           r.authPromise = undefined
           return ''
         }

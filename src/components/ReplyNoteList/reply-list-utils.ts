@@ -2,6 +2,7 @@ import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
 import { getParentEventHexId, isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
 import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
+import { muteSetHas } from '@/lib/mute-set'
 import type { TRepliesMap } from '@/lib/reply-index'
 import { replyBelongsToNoteThread } from '@/lib/thread-reply-root-match'
 import { isRssArticleUrlThreadInteraction } from '@/lib/rss-web-feed'
@@ -150,6 +151,92 @@ export function buildRepliesListAlignedWithNoteStats(
     ordered.push(evt)
   }
   return collapseStaleAddressableRevisions(ordered)
+}
+
+export type TThreadFeedItem =
+  | { type: 'event'; event: NEvent }
+  | { type: 'missing'; id: string; pubkey: string; created_at: number }
+
+export function threadFeedItemCreatedAt(item: TThreadFeedItem): number {
+  return item.type === 'event' ? item.event.created_at : item.created_at
+}
+
+export function threadFeedItemId(item: TThreadFeedItem): string {
+  return item.type === 'event' ? item.event.id : item.id
+}
+
+export function eventsToThreadFeedItems(events: readonly NEvent[]): TThreadFeedItem[] {
+  return events.map((event) => ({ type: 'event', event }))
+}
+
+/** Insert placeholder rows for stats reply ids that are not in the resolved thread list. */
+export function insertMissingStatsReplyPlaceholders(
+  sortedResolved: readonly NEvent[],
+  statsReplies: ReadonlyArray<{ id: string; pubkey: string; created_at: number }> | undefined,
+  sort: 'newest' | 'oldest' | 'top' | 'controversial' | 'most-zapped',
+  opts?: {
+    isEventDeleted?: (event: NEvent) => boolean
+    mutePubkeySet?: Set<string>
+  }
+): TThreadFeedItem[] {
+  const base = eventsToThreadFeedItems(sortedResolved)
+  if (!statsReplies?.length) return base
+
+  const resolvedIds = new Set(sortedResolved.map((r) => r.id))
+  const missing: Extract<TThreadFeedItem, { type: 'missing' }>[] = []
+
+  for (const meta of statsReplies) {
+    if (resolvedIds.has(meta.id)) continue
+    if (!/^[0-9a-f]{64}$/i.test(meta.id)) continue
+    if (opts?.mutePubkeySet && muteSetHas(opts.mutePubkeySet, meta.pubkey)) continue
+    if (opts?.isEventDeleted) {
+      const stub = {
+        id: meta.id,
+        pubkey: meta.pubkey,
+        kind: kinds.ShortTextNote,
+        tags: [],
+        content: '',
+        created_at: meta.created_at,
+        sig: ''
+      } as NEvent
+      if (opts.isEventDeleted(stub)) continue
+    }
+    if (missing.some((m) => m.id === meta.id)) continue
+    missing.push({
+      type: 'missing',
+      id: meta.id,
+      pubkey: meta.pubkey,
+      created_at: meta.created_at
+    })
+  }
+
+  if (missing.length === 0) return base
+
+  const out: TThreadFeedItem[] = [...base]
+  const timeSort = sort === 'oldest' || sort === 'newest'
+
+  for (const item of missing) {
+    if (timeSort) {
+      let insertAt = out.length
+      for (let i = 0; i < out.length; i++) {
+        const createdAt = threadFeedItemCreatedAt(out[i]!)
+        if (sort === 'oldest') {
+          if (item.created_at < createdAt) {
+            insertAt = i
+            break
+          }
+        } else if (item.created_at > createdAt) {
+          insertAt = i
+          break
+        }
+      }
+      out.splice(insertAt, 0, item)
+    } else {
+      out.push(item)
+    }
+  }
+
+  return out
 }
 
 /** Replies to show under “Antworten” for the opened note (direct + nested, not sibling branches). */
@@ -456,29 +543,41 @@ export function partitionAndSortBacklinkTail(tail: NEvent[]): NEvent[] {
 
 export type TBacklinkDisplayRow =
   | { type: 'reply'; event: NEvent }
+  | { type: 'missing-reply'; id: string; pubkey: string; created_at: number }
   | { type: 'backlink-run'; subsection: TBacklinkSubsection; events: NEvent[] }
 
 export function buildVisibleBacklinkRows(
-  visibleFeed: NEvent[],
+  visibleFeed: TThreadFeedItem[],
   quoteUiIdSet: Set<string>
 ): TBacklinkDisplayRow[] {
   const rows: TBacklinkDisplayRow[] = []
   let i = 0
   while (i < visibleFeed.length) {
-    const item = visibleFeed[i]
-    if (!quoteUiIdSet.has(item.id)) {
-      rows.push({ type: 'reply', event: item })
+    const item = visibleFeed[i]!
+    if (item.type === 'missing') {
+      rows.push({
+        type: 'missing-reply',
+        id: item.id,
+        pubkey: item.pubkey,
+        created_at: item.created_at
+      })
       i++
       continue
     }
-    const sub = backlinkTailSubsection(item)
+    const evt = item.event
+    if (!quoteUiIdSet.has(evt.id)) {
+      rows.push({ type: 'reply', event: evt })
+      i++
+      continue
+    }
+    const sub = backlinkTailSubsection(evt)
     const run: NEvent[] = []
-    while (
-      i < visibleFeed.length &&
-      quoteUiIdSet.has(visibleFeed[i].id) &&
-      backlinkTailSubsection(visibleFeed[i]) === sub
-    ) {
-      run.push(visibleFeed[i])
+    while (i < visibleFeed.length) {
+      const cur = visibleFeed[i]
+      if (cur?.type !== 'event') break
+      if (!quoteUiIdSet.has(cur.event.id)) break
+      if (backlinkTailSubsection(cur.event) !== sub) break
+      run.push(cur.event)
       i++
     }
     if (run.length > 0) {
@@ -497,7 +596,7 @@ export function backlinkRunSectionClass(
       ? 'mb-3 pt-1'
       : 'mb-3 pt-1'
   }
-  if (prev.type === 'reply') {
+  if (prev.type === 'reply' || prev.type === 'missing-reply') {
     return subsection === 'report'
       ? 'mt-8 mb-3 border-t border-amber-500/40 pt-6 dark:border-amber-400/30'
       : 'mt-8 mb-3 border-t border-border/60 pt-6'

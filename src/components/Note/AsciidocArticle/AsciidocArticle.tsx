@@ -16,7 +16,7 @@ import {
   isBlossomBudBlobUrl
 } from '@/lib/url'
 import { getImetaInfosFromEvent } from '@/lib/event'
-import { getOrphanedImetaMedia, shouldHideOrphanedImetaInAccordion } from '@/lib/imeta-content-match'
+import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -595,6 +595,12 @@ export default function AsciidocArticle({
     setLightboxPortalActive(true)
   }, [])
   
+  const hideOrphanedImetaInAccordion = shouldHideOrphanedImetaInAccordion(event.kind, event.content)
+  const suppressedImetaUrls = useMemo(
+    () => suppressImetaUrlSet(event, event.content, hideOrphanedImetaInAccordion),
+    [event, hideOrphanedImetaInAccordion]
+  )
+
   // Filter tag media to only show what's not in content
   const leftoverTagMedia = useMemo(() => {
     const metadataImageUrl = metadata.image ? cleanUrl(metadata.image) : null
@@ -608,19 +614,16 @@ export default function AsciidocArticle({
       if (metadataImageUrl && cleaned === metadataImageUrl && !effectiveHideImagesAndInfo) return false
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
       if (parentImageUrlCleaned && cleaned === parentImageUrlCleaned) return false
+      if (media.source === 'imeta' && suppressedImetaUrls.has(cleaned)) return false
       return true
     })
-  }, [tagMedia, mediaUrlsInContent, metadata.image, effectiveHideImagesAndInfo, parentImageUrl])
+  }, [tagMedia, mediaUrlsInContent, metadata.image, effectiveHideImagesAndInfo, parentImageUrl, suppressedImetaUrls])
 
-  const hideOrphanedImetaInAccordion = shouldHideOrphanedImetaInAccordion(event.kind, event.content)
-  const orphanedImetaMedia = useMemo(
-    () => (hideOrphanedImetaInAccordion ? getOrphanedImetaMedia(event, event.content) : []),
+  const suppressedImetaMedia = useMemo(
+    () => getSuppressedImetaMedia(event, event.content),
     [event, hideOrphanedImetaInAccordion]
   )
-  const inlineLeftoverTagMedia = useMemo(() => {
-    if (!hideOrphanedImetaInAccordion) return leftoverTagMedia
-    return leftoverTagMedia.filter((media) => media.source !== 'imeta')
-  }, [leftoverTagMedia, hideOrphanedImetaInAccordion])
+  const inlineLeftoverTagMedia = leftoverTagMedia
   
   // Filter tag YouTube URLs to only show what's not in content
   const leftoverTagYouTubeUrls = useMemo(() => {
@@ -1976,10 +1979,10 @@ export default function AsciidocArticle({
           />
         )}
         
-        {showArticleChrome && orphanedImetaMedia.length > 0 && (
+        {showArticleChrome && suppressedImetaMedia.length > 0 && (
           <OrphanedImetaMediaSection
             className="mt-4 mb-2"
-            items={orphanedImetaMedia}
+            items={suppressedImetaMedia}
             authorPubkey={event.pubkey}
             mustLoadMedia
             onImageClick={(url) => {
