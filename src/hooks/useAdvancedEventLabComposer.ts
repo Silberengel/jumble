@@ -20,12 +20,15 @@ export type UseAdvancedEventLabComposerOptions = {
   persistenceKey: string | null
   textareaRef: RefObject<TPostTextareaHandle | null>
   getKind: () => number
+  /** Called synchronously when the lab opens or closes (before React state commits). */
+  onOpenChange?: (open: boolean) => void
 }
 
 export function useAdvancedEventLabComposer({
   persistenceKey,
   textareaRef,
-  getKind
+  getKind,
+  onOpenChange
 }: UseAdvancedEventLabComposerOptions) {
   const getKindRef = useRef(getKind)
   getKindRef.current = getKind
@@ -73,9 +76,10 @@ export function useAdvancedEventLabComposer({
   const openLab = useCallback(
     (live: AdvancedEventLabSlice) => {
       setAdvancedLabInitial(resolveSliceForOpen(live))
+      onOpenChange?.(true)
       setAdvancedLabOpen(true)
     },
-    [resolveSliceForOpen]
+    [resolveSliceForOpen, onOpenChange]
   )
 
   const persistLabDraft = useCallback(
@@ -98,13 +102,17 @@ export function useAdvancedEventLabComposer({
     [textareaRef]
   )
 
-  const handleLabOpenChange = useCallback((open: boolean, onClose?: () => void) => {
-    setAdvancedLabOpen(open)
-    if (!open) {
-      setAdvancedLabInitial(null)
-      onClose?.()
-    }
-  }, [])
+  const handleLabOpenChange = useCallback(
+    (open: boolean, onClose?: () => void) => {
+      onOpenChange?.(open)
+      setAdvancedLabOpen(open)
+      if (!open) {
+        setAdvancedLabInitial(null)
+        onClose?.()
+      }
+    },
+    [onOpenChange]
+  )
 
   const insertComposerText = useCallback(
     (txt: string) => {

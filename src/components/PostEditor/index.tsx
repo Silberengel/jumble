@@ -64,18 +64,26 @@ export default function PostEditor({
   const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
   const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
-  const [childOverlayOpen, setChildOverlayOpen] = useState(false)
+  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const blockDismissForAccountSwitch =
+    isAccountSessionHydrating || isNip07LoginInFlight
 
   useEffect(() => {
-    if (!open) setChildOverlayOpen(false)
+    if (!open) setAdvancedLabOpen(false)
   }, [open])
 
   const handleComposerOpenChange = useCallback(
     (next: boolean) => {
-      if (!next && childOverlayOpen) return
+      if (!next && advancedLabOpen) return
       setOpen(next)
     },
-    [childOverlayOpen, setOpen]
+    [advancedLabOpen, setOpen]
+  )
+
+  const shouldBlockComposerOutsideDismiss = useCallback(
+    (target: EventTarget | null) =>
+      advancedLabOpen || blockDismissForAccountSwitch || isNestedPickerTarget(target),
+    [advancedLabOpen, blockDismissForAccountSwitch]
   )
 
   useEffect(() => {
@@ -95,9 +103,6 @@ export default function PostEditor({
     void preloadEmojiPicker()
     return () => postEditorService.setComposerShellOpen(false)
   }, [open])
-
-  const blockDismissForAccountSwitch =
-    isAccountSessionHydrating || isNip07LoginInFlight
 
   const effectiveDefaultContent = useMemo(() => {
     if (initialPublicMessageTo) {
@@ -121,7 +126,7 @@ export default function PostEditor({
         onPublishSuccess={onPublishSuccess}
         discussionDynamicTopics={discussionDynamicTopics}
         pickerPortalContainer={pickerPortalContainer}
-        onChildOverlayOpenChange={setChildOverlayOpen}
+        onAdvancedLabOpenChange={setAdvancedLabOpen}
       />
     )
   }, [
@@ -134,13 +139,12 @@ export default function PostEditor({
     initialPublicMessageTo,
     onPublishSuccess,
     discussionDynamicTopics,
-    pickerPortalContainer,
-    setChildOverlayOpen
+    pickerPortalContainer
   ])
 
   if (isSmallScreen) {
     return (
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={!advancedLabOpen}>
         <SheetContent
           className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
           style={
@@ -151,10 +155,10 @@ export default function PostEditor({
           side="bottom"
           hideClose
           onInteractOutside={(e) => {
-            if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
           }}
           onPointerDownOutside={(e) => {
-            if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
+            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
           }}
           onFocusOutside={(e) => {
             if (isNestedPickerTarget(e.target)) e.preventDefault()
@@ -185,18 +189,16 @@ export default function PostEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={!childOverlayOpen}>
+    <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={!advancedLabOpen}>
       <DialogContent
         className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
         overlayClassName="z-[200]"
         withoutClose
         onInteractOutside={(e) => {
-          if (blockDismissForAccountSwitch || childOverlayOpen || isNestedPickerTarget(e.target))
-            e.preventDefault()
+          if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
         }}
         onPointerDownOutside={(e) => {
-          if (blockDismissForAccountSwitch || childOverlayOpen || isNestedPickerTarget(e.target))
-            e.preventDefault()
+          if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
         }}
         onFocusOutside={(e) => {
           if (isNestedPickerTarget(e.target)) e.preventDefault()

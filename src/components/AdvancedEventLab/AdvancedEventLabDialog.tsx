@@ -1126,28 +1126,34 @@ export default function AdvancedEventLabDialog({
   )
 
   return (
-    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange} modal={!portalContainer}>
       <DialogContent
         portalContainer={portalContainer}
         composerNestedShell={Boolean(portalContainer)}
         hideOverlay={Boolean(portalContainer)}
-        overlayClassName="z-[205] pointer-events-auto"
+        overlayClassName="z-[300] pointer-events-auto"
         className={cnDialogShell(Boolean(portalContainer))}
         aria-describedby={undefined}
+        onInteractOutside={(e) => {
+          if (portalContainer) e.preventDefault()
+        }}
+        onPointerDownOutside={(e) => {
+          if (portalContainer) e.preventDefault()
+        }}
       >
-        <DialogHeader className="shrink-0 px-4 pt-4 pb-2 pr-12 border-b">
+        <DialogHeader className="shrink-0 border-b px-3 py-2 pr-12 sm:px-4 sm:py-3">
           <DialogTitle>{t('Advanced event lab')}</DialogTitle>
         </DialogHeader>
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-            <aside className="hidden min-h-0 w-72 shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r bg-muted/10 px-4 py-3 lg:w-80 md:flex">
+          <div className="flex min-h-0 flex-1 overflow-hidden md:flex-row">
+            <aside className="hidden min-h-0 w-[min(100%,18rem)] shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r bg-muted/10 px-3 py-3 sm:w-72 sm:px-4 lg:w-80 xl:w-96 md:flex">
               {labFormSidebar}
             </aside>
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-2">
-                <div className="mb-2 flex flex-wrap gap-2">
+              <div className="shrink-0 px-3 pt-2 sm:px-4">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -1160,80 +1166,80 @@ export default function AdvancedEventLabDialog({
                     {t('Advanced lab undo checkpoint')}
                   </Button>
                 </div>
-
-                <Tabs
-                  value={labBodyTab}
-                  onValueChange={(v) => {
-                    const next = v as 'edit' | 'preview' | 'json'
-                    if (next === 'preview') flushPreviewDocNow()
-                    if (next === 'json') refreshLabJsonPreview()
-                    setLabBodyTab(next)
-                  }}
-                  className="flex flex-col gap-2"
-                >
-                  <TabsList className="h-auto w-auto shrink-0 flex-wrap justify-start gap-1 p-1">
-                    <TabsTrigger value="edit" className="shrink-0">
-                      {t(
-                        markupMode === 'asciidoc'
-                          ? 'Advanced lab markup label asciidoc'
-                          : 'Advanced lab markup label markdown'
-                      )}
-                    </TabsTrigger>
-                    <TabsTrigger value="preview" className="shrink-0">
-                      {t('Advanced lab preview')}
-                    </TabsTrigger>
-                    <TabsTrigger value="json" className="shrink-0">
-                      {t('Advanced lab json preview')}
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent
-                    value="edit"
-                    forceMount
-                    className="mt-0 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-                  >
-                    <AdvancedEventLabMarkupToolbar
-                      markupMode={markupMode}
-                      viewRef={markupView}
-                      sliceRef={sliceRef}
-                    />
-                    <div
-                      ref={markupHost}
-                      className="min-h-[16rem] min-w-0 flex-1 overflow-hidden rounded-md border bg-muted/20 h-[min(56vh,37.5rem)] md:min-h-[calc(100dvh-12rem)] md:h-auto"
-                    />
-                  </TabsContent>
-
-                  <TabsContent
-                    value="preview"
-                    className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-                  >
-                    <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
-                      <AdvancedEventLabPreviewPane
-                        markupMode={markupMode}
-                        source={previewDoc}
-                        previewAuthorPubkey={previewAuthorPubkey}
-                        previewEmojiTags={mergedLabPreviewEmojiTags}
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent
-                    value="json"
-                    className="mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-                  >
-                    <p className="text-xs text-muted-foreground mb-2">
-                      {t('Advanced lab json preview hint')}
-                    </p>
-                    <div className="min-h-[24rem] h-[min(84vh,56rem)] overflow-auto rounded-md border border-border bg-muted/20 p-3">
-                      <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text text-foreground">
-                        {labJsonPreview || '{}'}
-                      </pre>
-                    </div>
-                  </TabsContent>
-                </Tabs>
               </div>
 
-              <div className="max-h-[45dvh] shrink-0 overflow-y-auto overscroll-y-contain border-t bg-background px-4 py-3 md:hidden">
+              <Tabs
+                value={labBodyTab}
+                onValueChange={(v) => {
+                  const next = v as 'edit' | 'preview' | 'json'
+                  if (next === 'preview') flushPreviewDocNow()
+                  if (next === 'json') refreshLabJsonPreview()
+                  setLabBodyTab(next)
+                }}
+                className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-1 sm:px-4 sm:pb-3"
+              >
+                <TabsList className="h-auto w-auto shrink-0 flex-wrap justify-start gap-1 p-1">
+                  <TabsTrigger value="edit" className="shrink-0">
+                    {t(
+                      markupMode === 'asciidoc'
+                        ? 'Advanced lab markup label asciidoc'
+                        : 'Advanced lab markup label markdown'
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="preview" className="shrink-0">
+                    {t('Advanced lab preview')}
+                  </TabsTrigger>
+                  <TabsTrigger value="json" className="shrink-0">
+                    {t('Advanced lab json preview')}
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent
+                  value="edit"
+                  forceMount
+                  className="mt-0 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                >
+                  <AdvancedEventLabMarkupToolbar
+                    markupMode={markupMode}
+                    viewRef={markupView}
+                    sliceRef={sliceRef}
+                  />
+                  <div
+                    ref={markupHost}
+                    className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border bg-muted/20"
+                  />
+                </TabsContent>
+
+                <TabsContent
+                  value="preview"
+                  className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                >
+                  <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
+                    <AdvancedEventLabPreviewPane
+                      markupMode={markupMode}
+                      source={previewDoc}
+                      previewAuthorPubkey={previewAuthorPubkey}
+                      previewEmojiTags={mergedLabPreviewEmojiTags}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent
+                  value="json"
+                  className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
+                >
+                  <p className="shrink-0 text-xs text-muted-foreground mb-2">
+                    {t('Advanced lab json preview hint')}
+                  </p>
+                  <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/20 p-3">
+                    <pre className="text-xs whitespace-pre-wrap break-words font-mono select-text text-foreground">
+                      {labJsonPreview || '{}'}
+                    </pre>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="max-h-[min(45dvh,24rem)] shrink-0 overflow-y-auto overscroll-y-contain border-t bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-4 md:hidden">
                 {labFormSidebar}
               </div>
             </div>
@@ -1251,16 +1257,16 @@ export default function AdvancedEventLabDialog({
   )
 }
 
-/** Responsive shell: ~5× prior max width cap and ~3× vertical use of viewport (still clamped). */
+/** Full-viewport shell when body-portaled; fills composer layer when nested. */
 function cnDialogShell(nestedInComposer = false): string {
   if (nestedInComposer) {
     return [
-      'z-[250] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
+      'z-[301] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
       'absolute inset-0 h-full w-full max-h-full !translate-x-0 !translate-y-0'
     ].join(' ')
   }
   return [
-    'z-[250] pointer-events-auto !fixed !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
-    'inset-0 h-[100dvh] w-screen max-h-[100dvh] !translate-x-0 !translate-y-0 top-0 left-0'
+    'z-[301] pointer-events-auto !fixed !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
+    'inset-0 h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw] !translate-x-0 !translate-y-0 top-0 left-0'
   ].join(' ')
 }

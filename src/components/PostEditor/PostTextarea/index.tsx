@@ -169,14 +169,16 @@ const PostTextarea = forwardRef<
             ? isSmallScreen
               ? 'min-h-[4.5rem] max-h-[min(22dvh,9rem)] shrink-0'
               : 'h-32 max-h-36 shrink-0'
-            : isSmallScreen
-              ? 'flex-1 min-h-0'
-              : 'h-[min(58vh,520px)]',
+            : 'flex-1 min-h-[14rem]',
       [isSmallScreen, kind]
     )
 
+    const composerFillsShell =
+      kind !== ExtendedKind.POLL && kind !== kinds.Highlights
+
     const composerBodyScrollClass = cn(
       composerPaneHeightClass,
+      composerFillsShell && 'flex flex-col',
       'min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y',
       'border rounded-lg focus-within:ring-1 focus-within:ring-ring',
       className
@@ -381,7 +383,7 @@ const PostTextarea = forwardRef<
         }}
         className={cn(
           'flex min-h-0 flex-col gap-2 overflow-hidden',
-          isSmallScreen && kind !== kinds.Highlights && 'flex-1'
+          composerFillsShell && 'min-h-[14rem] flex-1'
         )}
       >
         <div className="flex min-w-0 shrink-0 flex-col gap-2">
@@ -404,12 +406,12 @@ const PostTextarea = forwardRef<
           forceMount
           className={cn(
             'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && kind !== kinds.Highlights && 'flex-1 overflow-hidden'
+            composerFillsShell && 'flex-1 overflow-hidden'
           )}
         >
           <div className={composerBodyScrollClass}>
             {editor ? (
-              <EditorContent className="tiptap" editor={editor} />
+              <EditorContent className="tiptap flex min-h-0 flex-1 flex-col" editor={editor} />
             ) : (
               <div className={editorShellClass} aria-hidden>
                 {placeholderText}
@@ -422,10 +424,10 @@ const PostTextarea = forwardRef<
           forceMount
           className={cn(
             'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            isSmallScreen && kind !== kinds.Highlights && 'flex-1 overflow-hidden'
+            composerFillsShell && 'flex-1 overflow-hidden'
           )}
         >
-          <div className={cn('flex min-h-0 flex-col gap-2', isSmallScreen && kind !== kinds.Highlights && 'flex-1')}>
+          <div className={cn('flex min-h-0 flex-col gap-2', composerFillsShell && 'flex-1')}>
             <div className="shrink-0 text-xs text-muted-foreground">
               kind {kindDescription.number}: {kindDescription.description}
             </div>

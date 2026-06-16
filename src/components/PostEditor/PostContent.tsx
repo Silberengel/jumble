@@ -106,7 +106,7 @@ import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
@@ -168,7 +168,7 @@ export default function PostContent({
   onPublishSuccess,
   discussionDynamicTopics,
   pickerPortalContainer,
-  onChildOverlayOpenChange
+  onAdvancedLabOpenChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
   open: boolean
@@ -185,8 +185,8 @@ export default function PostContent({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
   /** Portal mount for emoji/GIF/meme pickers so they stay inside the modal (not inert). */
   pickerPortalContainer?: HTMLElement | null
-  /** Desktop: lab portaled to body — disable composer modal inert while lab is open. */
-  onChildOverlayOpenChange?: (open: boolean) => void
+  /** Notifies the composer shell when the full-screen advanced lab opens or closes. */
+  onAdvancedLabOpenChange?: (open: boolean) => void
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
@@ -720,12 +720,9 @@ export default function PostContent({
   } = useAdvancedEventLabComposer({
     persistenceKey: advancedLabPersistenceKey,
     textareaRef,
-    getKind: () => getDeterminedKindRef.current
+    getKind: () => getDeterminedKindRef.current,
+    onOpenChange: onAdvancedLabOpenChange
   })
-
-  useLayoutEffect(() => {
-    if (!isSmallScreen) onChildOverlayOpenChange?.(advancedLabOpen)
-  }, [advancedLabOpen, onChildOverlayOpenChange, isSmallScreen])
 
   const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
     appendUploadedUrl(url, treatAsImage)
@@ -2652,15 +2649,10 @@ export default function PostContent({
             'min-w-0',
             isSmallScreen
               ? cn('flex min-h-0 flex-1 flex-col gap-2', isHighlight && 'overflow-hidden')
-              : cn(
-                  'flex min-h-0 flex-1 flex-col gap-2 pr-1',
-                  isHighlight
-                    ? 'overflow-hidden'
-                    : 'overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y'
-                )
+              : 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pr-1'
           )}
         >
-          <ComposerHeaderScroll enabled={isSmallScreen}>
+          <ComposerHeaderScroll enabled={isSmallScreen || (isDiscussionThread && !parentEvent)}>
       {/* Dynamic Title based on mode */}
       <div className="text-lg font-semibold">
         {(() => {
@@ -3497,13 +3489,11 @@ export default function PostContent({
 
       <div
         className={cn(
-          isHighlight
-            ? 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden'
-            : 'flex min-w-0 flex-col overflow-hidden',
-          !isHighlight && isSmallScreen && 'min-h-0 flex-1'
+          'flex min-w-0 flex-col overflow-hidden',
+          isHighlight ? 'min-h-0 min-w-0 flex-1 gap-2' : 'min-h-0 flex-1'
         )}
       >
-      <div className={cn(isHighlight && 'min-w-0 shrink-0')}>
+      <div className={cn('flex min-h-0 flex-col', !isHighlight && 'min-h-0 flex-1')}>
       <PostTextarea
           ref={textareaRef}
           text={text}
@@ -4086,7 +4076,6 @@ export default function PostContent({
         open={advancedLabOpen}
         onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
         initial={advancedLabInitial}
-        portalContainer={isSmallScreen ? pickerPortalContainer : null}
         kindEditable={false}
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}
