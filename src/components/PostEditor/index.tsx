@@ -25,6 +25,17 @@ import { cn } from '@/lib/utils'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
 
+function isOverlayDismissTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        '[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper], [data-vaul-drawer-wrapper]'
+      )
+    )
+  )
+}
+
 function isNestedPickerTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
@@ -70,8 +81,15 @@ export default function PostEditor({
   const advancedLabPortalRef = useRef<HTMLElement | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const advancedLabOpenRef = useRef(false)
+  const composerDismissGuardUntilRef = useRef(0)
+  const prevOpenPropRef = useRef(open)
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
+
+  if (open && !prevOpenPropRef.current) {
+    composerDismissGuardUntilRef.current = performance.now() + 500
+  }
+  prevOpenPropRef.current = open
 
   useEffect(() => {
     advancedLabOpenRef.current = advancedLabOpen
@@ -79,6 +97,9 @@ export default function PostEditor({
 
   const handleAdvancedLabOpenChange = useCallback((next: boolean) => {
     advancedLabOpenRef.current = next
+    if (next) {
+      composerDismissGuardUntilRef.current = performance.now() + 500
+    }
     setAdvancedLabOpen(next)
   }, [])
 
@@ -102,7 +123,11 @@ export default function PostEditor({
 
   const handleComposerOpenChange = useCallback(
     (next: boolean) => {
+      if (next) {
+        composerDismissGuardUntilRef.current = performance.now() + 500
+      }
       if (!next && advancedLabOpenRef.current) return
+      if (!next && performance.now() < composerDismissGuardUntilRef.current) return
       setOpen(next)
     },
     [setOpen]
@@ -110,8 +135,10 @@ export default function PostEditor({
 
   const shouldBlockComposerOutsideDismiss = useCallback(
     (target: EventTarget | null) =>
+      performance.now() < composerDismissGuardUntilRef.current ||
       advancedLabOpenRef.current ||
       blockDismissForAccountSwitch ||
+      isOverlayDismissTarget(target) ||
       isNestedPickerTarget(target),
     [blockDismissForAccountSwitch]
   )

@@ -33,7 +33,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 import PostEditor from '../PostEditor/LazyPostEditor'
-import { preloadPostEditorChunk } from '../PostEditor/preload-post-editor-chunk'
+import { openComposerAfterOverlay } from '../PostEditor/open-composer-after-overlay'
 import { BoostCountHover } from './NoteStatsCountHover'
 import { formatCount } from './utils'
 import { showPublishingFeedback, showSimplePublishSuccess } from '@/lib/publishing-feedback'
@@ -183,9 +183,7 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
                   e.stopPropagation()
                   setIsDrawerOpen(false)
                   checkLogin(() => {
-                    void preloadPostEditorChunk().then(() => {
-                      setIsPostDialogOpen(true)
-                    })
+                    openComposerAfterOverlay(setIsPostDialogOpen)
                   })
                 }}
                 {...signControlProps()}
@@ -219,12 +217,9 @@ export function RepostButtonWithStats({ event, hideCount = false, noteStats }: R
             <Repeat /> {t('Boost')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation()
+            onSelect={() => {
               checkLogin(() => {
-                void preloadPostEditorChunk().then(() => {
-                  setIsPostDialogOpen(true)
-                })
+                openComposerAfterOverlay(setIsPostDialogOpen)
               })
             }}
             disabled={!canSignEvents}
