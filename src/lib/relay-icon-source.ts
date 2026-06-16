@@ -10,12 +10,6 @@ import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
  */
 export const SOVBIT_HOST_ICON_SRC = 'https://sovbit.host/images/favicon.ico'
 
-/** @deprecated Use {@link SOVBIT_HOST_ICON_SRC} */
-export const RELAY_SOVBIT_ICON_SRC = SOVBIT_HOST_ICON_SRC
-
-/** @deprecated Use {@link SOVBIT_HOST_ICON_SRC} */
-export const FREELAY_SOVBIT_ICON_SRC = SOVBIT_HOST_ICON_SRC
-
 /**
  * Nostr Archives front-site favicon for trending shards, search relay, and related hosts.
  * @see https://nostrarchives.com/

@@ -1,6 +1,6 @@
 import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
 import { findHttpUrlsInText, formatBareHttpUrlForMarkdownAutolink, isImage, isVideo, isAudio } from '@/lib/url'
-import { YOUTUBE_URL_REGEX } from '@/constants'
+import { isYouTubeUrl } from '@/lib/youtube-url'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
@@ -15,16 +15,6 @@ function isBareUrlOnOwnLine(content: string, url: string, index: number): boolea
   if (line === url) return true
   const withoutTrail = line.replace(/[.,;:!?)]+$/, '')
   return withoutTrail === url
-}
-
-/**
- * Check if a URL is a YouTube URL
- */
-function isYouTubeUrl(url: string): boolean {
-  // Create a new regex instance to avoid state issues with global regex
-  const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
-  const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
-  return regex.test(url)
 }
 
 /**

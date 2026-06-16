@@ -36,3 +36,5 @@ public/.og-image.raster.svg
 .local-piper-data
 .local-libretranslate
 scripts/i18n-overrides/.gaps
+__pycache__/
+*.pyc

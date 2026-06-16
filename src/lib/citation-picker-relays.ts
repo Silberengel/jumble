@@ -9,7 +9,7 @@ import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
-import nip66Service from '@/services/nip66.service'
+import { nip66Service } from '@/services/nip66.service'
 
 /** Cap NIP-66 “supports search” relays so we do not open hundreds of sockets. */
 const CITATION_SEARCH_NIP66_NIP50_CAP = 42

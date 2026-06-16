@@ -23,7 +23,6 @@ import noteStatsService from '@/services/note-stats.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
 import type { Event } from 'nostr-tools'
 import { CurrentRelaysProvider } from '@/providers/CurrentRelaysProvider'
-// DEPRECATED: useUserPreferences removed - double-panel functionality disabled
 import { TPageRef } from '@/types'
 import {
   cloneElement,
@@ -881,17 +880,13 @@ export function useSmartSettingsNavigation() {
   return { navigateToSettings }
 }
 
-// DEPRECATED: ConditionalHomePage removed - double-panel functionality disabled
-
-// Helper function to get page title based on view type and URL
 function getPageTitle(viewType: TPrimaryOverlayViewType | null, pathname: string): string {
   // Create a temporary navigation service instance to use the getPageTitle method
   const tempService = new NavigationService({ setPrimaryNoteView: () => {} })
   return tempService.getPageTitle(viewType, pathname)
 }
 
-// DEPRECATED: Double-panel functionality removed - simplified to single column layout
-function MainContentArea({ 
+function MainContentArea({
   primaryPages, 
   currentPrimaryPage, 
   primaryNoteView,
@@ -984,7 +979,6 @@ function MainContentArea({
           </div>
         )}
       </div>
-      {/* DEPRECATED: Secondary panel removed - double-panel functionality disabled */}
     </div>
   )
 }
@@ -992,7 +986,6 @@ function MainContentArea({
 export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
-  // DEPRECATED: showRecommendedRelaysPanel removed - double-panel functionality disabled
   const [currentPrimaryPage, setCurrentPrimaryPage] = useState<TPrimaryPageName>('feed')
   const [primaryPages, setPrimaryPages] = useState<
     { name: TPrimaryPageName; element: ReactNode; props?: any }[]

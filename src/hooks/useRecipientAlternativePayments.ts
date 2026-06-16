@@ -14,9 +14,6 @@ export type RecipientPaymentData = {
   canReceiveTip: boolean
 }
 
-/** @deprecated Use {@link RecipientPaymentData} */
-export type RecipientZapPaymentData = RecipientPaymentData
-
 export function buildRecipientPaymentData(
   paymentInfo: TPaymentInfo | null,
   profile: TProfile | null,
@@ -29,9 +26,6 @@ export function buildRecipientPaymentData(
     canReceiveTip: recipientHasAnyPaymentOptions(paymentInfo, profile, profileEvent)
   }
 }
-
-/** @deprecated Use {@link buildRecipientPaymentData} */
-export const buildRecipientZapPaymentData = buildRecipientPaymentData
 
 export function mergeRecipientPaymentData(
   partial: RecipientPaymentData | null | undefined,
@@ -50,9 +44,6 @@ export function mergeRecipientPaymentData(
 
   return buildRecipientPaymentData(paymentInfo, profile ?? null, profileEvent)
 }
-
-/** @deprecated Use {@link mergeRecipientPaymentData} */
-export const mergeRecipientZapPaymentData = mergeRecipientPaymentData
 
 function pickRicherPaymentInfo(
   a: TPaymentInfo | null | undefined,
@@ -109,6 +100,3 @@ export function useRecipientPaymentData(
     [paymentInfo, profile, profileEvent]
   )
 }
-
-/** @deprecated Use {@link useRecipientPaymentData} */
-export const useRecipientZapPaymentData = useRecipientPaymentData

@@ -1,8 +1,8 @@
 import {
   FAST_READ_RELAY_URLS,
   FAST_WRITE_RELAY_URLS,
-  MAX_PUBLISH_RELAYS,
-  MAX_REQ_RELAY_URLS
+  MAX_CONCURRENT_RELAY_CONNECTIONS,
+  MAX_PUBLISH_RELAYS
 } from '@/constants'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import {
@@ -12,8 +12,6 @@ import {
   normalizeRelayUrlByScheme,
   normalizeUrl
 } from '@/lib/url'
-
-export { MAX_REQ_RELAY_URLS }
 
 export function dedupeNormalizeRelayUrlsOrdered(urls: readonly string[]): string[] {
   const seen = new Set<string>()
@@ -113,7 +111,7 @@ export function buildPrioritizedReadRelayUrls(opts: {
   /** Default true: append global FAST_READ tier. */
   includeGlobalFastRead?: boolean
 }): string[] {
-  const max = opts.maxRelays ?? MAX_REQ_RELAY_URLS
+  const max = opts.maxRelays ?? MAX_CONCURRENT_RELAY_CONNECTIONS
   const applySocial = opts.applySocialKindBlockedFilter !== false
   const exemptFromSocial = new Set<string>()
   for (const u of opts.userReadRelays ?? []) {

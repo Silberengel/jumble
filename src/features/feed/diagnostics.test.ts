@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { homeFeedDescriptor } from './adapters'
+import { createFeedDescriptor } from './descriptor'
 import { buildFeedDiagnosticsSnapshot } from './diagnostics'
 import type { FeedRuntimeSnapshot } from './runtime'
 
 describe('buildFeedDiagnosticsSnapshot', () => {
   it('includes relay policy, empty-state, and pagination diagnostics', () => {
-    const descriptor = homeFeedDescriptor([
-      { urls: ['wss://relay.example/'], filter: { kinds: [1], limit: 20 } }
-    ])
+    const descriptor = createFeedDescriptor({
+      surface: 'home',
+      requests: [{ urls: ['wss://relay.example/'], filter: { kinds: [1], limit: 20 } }],
+      source: { cache: 'stale-while-refresh', publicReadFallback: true },
+      pagination: { enabled: true }
+    })
     const runtime: FeedRuntimeSnapshot = {
       generation: 1,
       status: 'ready',

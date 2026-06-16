@@ -55,13 +55,20 @@ class LightningService {
   >()
   private nip57EnabledAddressCache = new Map<string, { fetchedAt: number; addrs: string[] }>()
 
+  private bitcoinConnectInitialized = false
+
+  private ensureBitcoinConnectInitialized() {
+    if (this.bitcoinConnectInitialized) return
+    this.bitcoinConnectInitialized = true
+    init({
+      appName: 'Imwald',
+      showBalance: false
+    })
+  }
+
   constructor() {
     if (!LightningService.instance) {
       LightningService.instance = this
-      init({
-        appName: 'Imwald',
-        showBalance: false
-      })
     }
     return LightningService.instance
   }
@@ -75,6 +82,7 @@ class LightningService {
     onPaymentFlowComplete?: (result: PaymentFlowResult) => void,
     zapLightning?: { address?: string; candidates?: string[] }
   ): Promise<PaymentFlowResult> {
+    this.ensureBitcoinConnectInitialized()
     if (!client.signer && client.signerType !== 'anon') {
       throw new Error('You need to be logged in to zap')
     }
@@ -161,6 +169,7 @@ class LightningService {
       }
     }
 
+    this.ensureBitcoinConnectInitialized()
     return new Promise((resolve) => {
       runAfterReleasingRadixScrollLock(closeOuterModel, () => {
         closeModal()
@@ -307,6 +316,7 @@ class LightningService {
       }
     }
 
+    this.ensureBitcoinConnectInitialized()
     return new Promise((resolve) => {
       runAfterReleasingRadixScrollLock(closeOuterModel, () => {
         closeModal()

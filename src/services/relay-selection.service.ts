@@ -21,7 +21,7 @@ import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-me
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
 import { isProtectedEvent } from '@/lib/event'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
-import nip66Service from '@/services/nip66.service'
+import { nip66Service } from '@/services/nip66.service'
 
 export interface RelaySelectionContext {
   // User's own relays

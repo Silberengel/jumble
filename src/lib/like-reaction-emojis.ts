@@ -155,6 +155,3 @@ export function isGenericStatsReactionEmoji(emoji: TEmoji | string): boolean {
 export function isGenericStatsReactionContent(content: string): boolean {
   return isGenericStatsReactionEmoji(content)
 }
-
-/** @deprecated Use {@link isGenericStatsReactionContent}. */
-export const isLowEffortCollapsedReactionContent = isGenericStatsReactionContent

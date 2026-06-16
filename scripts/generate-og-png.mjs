@@ -3,6 +3,8 @@
  * ImageMagick/Inkscape copy the SVG to /tmp, so @font-face + file URLs often never load;
  * we outline "Imwald" with opentype.js so the PNG is font-independent.
  *
+ * Marketing assets in resources/ are source copies; public/ holds deployed static files (banner, favicon, og-image).
+ *
  * Wordmark fill + weight are read from the `#og-imwald` <text> in the SVG so PNG matches
  * the green-tinged off-white you see in the browser (rasterizers often look harsher than live text).
  */

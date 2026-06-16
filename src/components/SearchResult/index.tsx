@@ -1,4 +1,4 @@
-import { FAST_READ_RELAY_URLS, GENERAL_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS, NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { TSearchParams } from '@/types'
 import NormalFeed from '../NormalFeed'
 import FullTextSearchByRelay from './FullTextSearchByRelay'
@@ -92,7 +92,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     return (
       <FullTextSearchByRelay
         searchQuery={searchParams.search}
-        kinds={GENERAL_SEARCH_PAGE_KINDS}
+        kinds={NIP_SEARCH_PAGE_KINDS}
         alexandriaEmptyHref={alexandriaEmptyHref}
       />
     )

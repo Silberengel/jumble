@@ -29,6 +29,5 @@
     /* Type resolution */
     "types": ["node"]
   },
-  "include": ["src"],
-  "exclude": ["**/*.refactored.ts"]
+  "include": ["src"]
 }

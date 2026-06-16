@@ -13,7 +13,7 @@ import { Dispatch, SetStateAction, useCallback, useEffect, useState, useMemo, us
 import { useTranslation } from 'react-i18next'
 import RelayIcon from '../RelayIcon'
 import { useUserPreferences } from '@/providers/UserPreferencesProvider'
-import nip66Service from '@/services/nip66.service'
+import { nip66Service } from '@/services/nip66.service'
 import relaySelectionService, { type RelaySourceType } from '@/services/relay-selection.service'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'

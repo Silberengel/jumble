@@ -29,17 +29,6 @@ export function isThreadReactionOnlyRow(evt: Event): boolean {
   return isNip25ReactionKind(evt.kind)
 }
 
-/** @deprecated Use {@link isThreadReactionOnlyRow} / {@link shouldHideThreadResponseEvent}. */
-export function shouldHideOwnReactionThreadRow(
-  item: Event,
-  _viewerPubkey?: string | null
-): boolean {
-  return isThreadReactionOnlyRow(item)
-}
-
-/** @deprecated Use {@link shouldHideOwnReactionThreadRow}. */
-export const shouldHideOwnReactionInOthersThread = shouldHideOwnReactionThreadRow
-
 /** Hide thread replies / backlinks: boosts, reactions, muted author, or mute mentions. */
 export function shouldHideThreadResponseEvent(
   evt: Event,

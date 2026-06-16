@@ -39,7 +39,7 @@ import WavlakeEmbeddedPlayer from '../WavlakeEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '../ZapStreamLiveEventEmbed'
 import { toNote } from '@/lib/link'
-import { YOUTUBE_URL_REGEX } from '@/constants'
+import { isYouTubeUrl } from '@/lib/youtube-url'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
@@ -47,15 +47,6 @@ import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-strea
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
 import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 import { mediaPosterUrlFromImeta, resolveImetaInfoForUrl } from '@/lib/imeta-display'
-
-// Helper function to check if a URL is a YouTube URL
-function isYouTubeUrl(url: string): boolean {
-  if (!url) return false
-  // Create a new regex instance without global flag for testing
-  const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
-  const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
-  return regex.test(url)
-}
 
 const REDIRECT_REGEX = /Read (naddr1[a-z0-9]+) instead\./i
 

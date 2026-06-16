@@ -67,9 +67,6 @@ export function compareMergedGeneralSearchHits(
   return compareEventsForDTagQuery(needle, a.event, b.event)
 }
 
-/** @deprecated Use {@link compareMergedGeneralSearchHits}. */
-export const compareMergedNip50SearchHits = compareMergedGeneralSearchHits
-
 /** For merged lists: better d-tag match first; tie-break newest first. Kind 30041 sinks unless `d` equals the needle. */
 export function compareEventsForDTagQuery(needle: string, a: Event, b: Event): number {
   const nl = needle.trim().toLowerCase()

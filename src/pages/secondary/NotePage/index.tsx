@@ -56,53 +56,10 @@ import {
   SITE_NAME,
   updateMetaTag
 } from '@/lib/document-meta'
+import { getEventTypeName } from '@/lib/content/event-type-name'
 import NotFound from './NotFound'
 import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
 import { ThreadReplyProvider } from '@/providers/ThreadReplyProvider'
-
-// Helper function to get event type name (matching WebPreview)
-function getEventTypeName(kind: number): string {
-  switch (kind) {
-    case kinds.ShortTextNote:
-      return 'Text Post'
-    case kinds.LongFormArticle:
-      return 'Longform Article'
-    case ExtendedKind.PICTURE:
-      return 'Picture'
-    case ExtendedKind.VIDEO:
-    case ExtendedKind.VIDEO_ADDRESSABLE:
-      return 'Video'
-    case ExtendedKind.SHORT_VIDEO:
-      return 'Short Video'
-    case ExtendedKind.POLL:
-      return 'Poll'
-    case ExtendedKind.COMMENT:
-      return 'Comment'
-    case ExtendedKind.VOICE:
-      return 'Voice Post'
-    case ExtendedKind.MUSIC_TRACK:
-      return 'Music Track'
-    case ExtendedKind.VOICE_COMMENT:
-      return 'Voice Comment'
-    case kinds.Highlights:
-      return 'Highlight'
-    case ExtendedKind.PUBLICATION:
-      return 'Publication'
-    case ExtendedKind.PUBLICATION_CONTENT:
-      return 'Publication Content'
-    case ExtendedKind.WIKI_ARTICLE:
-      return 'Wiki Article'
-    case ExtendedKind.NOSTR_SPECIFICATION:
-      return 'Nostr Specification'
-    case ExtendedKind.DISCUSSION:
-      return 'Discussion'
-    case ExtendedKind.CALENDAR_EVENT_TIME:
-    case ExtendedKind.CALENDAR_EVENT_DATE:
-      return 'Calendar Event'
-    default:
-      return `Event (kind ${kind})`
-  }
-}
 
 function eventPointerHexId(pointer: string | undefined): string | undefined {
   const raw = pointer?.trim()

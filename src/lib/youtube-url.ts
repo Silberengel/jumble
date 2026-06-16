@@ -2,6 +2,8 @@
  * Parse a YouTube watch / Shorts / Live / embed / youtu.be URL for the player API.
  * Covers common host variants (www, m, music, youtube-nocookie).
  */
+import { YOUTUBE_URL_REGEX } from '@/constants'
+
 export function parseYoutubeUrl(url: string): { videoId: string | null; isShort: boolean } {
   try {
     const u = new URL(url.trim())
@@ -52,4 +54,12 @@ export function parseYoutubeUrl(url: string): { videoId: string | null; isShort:
 /** True when the in-app YouTube player can embed this URL (watch, Shorts, live, youtu.be, embed). */
 export function isEmbeddableYoutubeUrl(url: string): boolean {
   return parseYoutubeUrl(url).videoId != null
+}
+
+/** Check whether a URL points at YouTube (watch, embed, shorts, youtu.be). */
+export function isYouTubeUrl(url: string): boolean {
+  if (!url) return false
+  const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
+  const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
+  return regex.test(url)
 }

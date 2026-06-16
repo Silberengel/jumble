@@ -1,18 +1,16 @@
+import { TSearchBarRef } from '@/components/SearchBar'
 import { RefreshButton } from '@/components/RefreshButton'
-import SearchBar, { TSearchBarRef } from '@/components/SearchBar'
-import SearchResult from '@/components/SearchResult'
 import PrimaryPageLayout, { TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
+import { SearchPageContent } from '@/pages/search/SearchPageContent'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { TPageRef, TSearchParams } from '@/types'
-import { BookOpen, Search } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Search } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const SearchPage = forwardRef<TPageRef>((_props, ref) => {
-  const { t } = useTranslation()
   const { current, display } = usePrimaryPage()
   const { pubkey, relayList } = useNostr()
   const [input, setInput] = useState('')
@@ -59,31 +57,15 @@ const SearchPage = forwardRef<TPageRef>((_props, ref) => {
       titlebar={<SearchPageTitlebar onRefresh={bumpResults} />}
       displayScrollToTopButton
     >
-      <div className="min-w-0 pt-4 px-4 pb-4">
-        <div className="mb-4 space-y-2 relative z-40">
-          <div className="min-w-0">
-            <SearchBar ref={searchBarRef} onSearch={onSearch} input={input} setInput={setInput} />
-          </div>
-          <Button
-            variant="ghost"
-            className="h-9 w-full justify-start text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-md px-3 gap-2 sm:w-auto"
-            asChild
-          >
-            <a
-              href="https://next-alexandria.gitcitadel.eu/events"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <BookOpen className="h-4 w-4 shrink-0" />
-              <span className="text-sm">{t('Search on Alexandria')}</span>
-            </a>
-          </Button>
-        </div>
-        <div className="h-4"></div>
-        <div key={resultRefreshKey} className="min-w-0">
-          <SearchResult searchParams={searchParams} />
-        </div>
-      </div>
+      <SearchPageContent
+        className="min-w-0 pt-4 px-4 pb-4"
+        searchParams={searchParams}
+        resultRefreshKey={resultRefreshKey}
+        input={input}
+        setInput={setInput}
+        onSearch={onSearch}
+        searchBarRef={searchBarRef}
+      />
     </PrimaryPageLayout>
   )
 })

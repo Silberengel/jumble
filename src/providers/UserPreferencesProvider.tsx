@@ -5,8 +5,6 @@ import { createContext, useContext, useState } from 'react'
 type TUserPreferencesContext = {
   notificationListStyle: TNotificationStyle
   updateNotificationListStyle: (style: TNotificationStyle) => void
-  showRecommendedRelaysPanel: boolean
-  updateShowRecommendedRelaysPanel: (show: boolean) => void
   addRandomRelaysToPublish: boolean
   updateAddRandomRelaysToPublish: (value: boolean) => void
   showLiveActivitiesBanner: boolean
@@ -32,9 +30,6 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
   const [notificationListStyle, setNotificationListStyle] = useState(
     storage.getNotificationListStyle()
   )
-  // DEPRECATED: Double-panel functionality removed for technical debt reduction
-  // Keeping for backward compatibility in case we miss any references
-  const [showRecommendedRelaysPanel] = useState(false)
 
   const [addRandomRelaysToPublish, setAddRandomRelaysToPublish] = useState(
     storage.getAddRandomRelaysToPublish()
@@ -44,16 +39,9 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
     storage.getShowLiveActivitiesBanner()
   )
 
-  // DEPRECATED: Mobile panel forcing removed - double-panel functionality disabled
-
   const updateNotificationListStyle = (style: TNotificationStyle) => {
     setNotificationListStyle(style)
     storage.setNotificationListStyle(style)
-  }
-
-  // DEPRECATED: Double-panel functionality disabled - always returns false
-  const updateShowRecommendedRelaysPanel = (_show: boolean) => {
-    // No-op: double-panel functionality has been removed
   }
 
   const updateAddRandomRelaysToPublish = (value: boolean) => {
@@ -71,8 +59,6 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
       value={{
         notificationListStyle,
         updateNotificationListStyle,
-        showRecommendedRelaysPanel,
-        updateShowRecommendedRelaysPanel,
         addRandomRelaysToPublish,
         updateAddRandomRelaysToPublish,
         showLiveActivitiesBanner,

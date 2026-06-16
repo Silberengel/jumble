@@ -1,7 +1,7 @@
 import { RefreshButton } from '@/components/RefreshButton'
-import SearchBar, { TSearchBarRef } from '@/components/SearchBar'
-import SearchResult from '@/components/SearchResult'
+import { TSearchBarRef } from '@/components/SearchBar'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
+import { SearchPageContent } from '@/pages/search/SearchPageContent'
 import { toNote, toNoteList, toSearch } from '@/lib/link'
 import {
   pickArchivesResolvedOverHexDefault,
@@ -14,14 +14,10 @@ import { useSecondaryPage, useSmartHashtagNavigation, useSmartNoteNavigation } f
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
 import { useNostr } from '@/providers/NostrProvider'
-import { BookOpen } from 'lucide-react'
 import { TSearchParams } from '@/types'
-import { Button } from '@/components/ui/button'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 
 const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number; hideTitlebar?: boolean }, ref) => {
-  const { t } = useTranslation()
   const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
   const { push } = useSecondaryPage()
   const { navigateToNote } = useSmartNoteNavigation()
@@ -214,29 +210,14 @@ const SearchPage = forwardRef(({ index, hideTitlebar = false }: { index?: number
         <div className="mb-4">
           <div className="text-2xl font-bold">Search Nostr</div>
         </div>
-        <div className="mb-4 space-y-2 relative z-40">
-          <div className="min-w-0">
-            <SearchBar ref={searchBarRef} input={input} setInput={setInput} onSearch={onSearch} />
-          </div>
-          <Button
-            variant="ghost"
-            className="h-9 w-full justify-start text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-md px-3 gap-2 sm:w-auto"
-            asChild
-          >
-            <a
-              href="https://next-alexandria.gitcitadel.eu/events"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <BookOpen className="h-4 w-4 shrink-0" />
-              <span className="text-sm">{t('Search on Alexandria')}</span>
-            </a>
-          </Button>
-        </div>
-        <div className="h-4"></div>
-        <div key={resultRefreshKey} className="min-w-0">
-          <SearchResult searchParams={searchParams} />
-        </div>
+        <SearchPageContent
+          searchParams={searchParams}
+          resultRefreshKey={resultRefreshKey}
+          input={input}
+          setInput={setInput}
+          onSearch={onSearch}
+          searchBarRef={searchBarRef}
+        />
       </div>
     </SecondaryPageLayout>
   )

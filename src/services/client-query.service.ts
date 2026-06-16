@@ -52,7 +52,7 @@ import {
 import { filterViewerBlockedRelaysForFetch } from '@/lib/viewer-blocked-relays'
 import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
-import nip66Service from './nip66.service'
+import { nip66Service } from './nip66.service'
 import type { ISigner, TSignerType } from '@/types'
 
 /** NIP-01 filter keys only; NIP-50 adds `search` which non-searchable relays reject. */

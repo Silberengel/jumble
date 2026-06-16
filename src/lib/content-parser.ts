@@ -1,8 +1,8 @@
+import { isYouTubeUrl } from '@/lib/youtube-url'
 import {
   HASHTAG_REGEX,
   LN_INVOICE_REGEX,
-  WS_URL_REGEX,
-  YOUTUBE_URL_REGEX
+  WS_URL_REGEX
 } from '@/constants'
 import {
   EMBEDDED_EVENT_REGEX,
@@ -95,14 +95,6 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
   const matches = findHttpUrlsInText(content)
   const result: TEmbeddedNode[] = []
   let lastIndex = 0
-  
-  // Helper function to check if URL is YouTube (use non-global regex to avoid state issues)
-  const isYouTubeUrl = (url: string): boolean => {
-    if (!url) return false
-    const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
-    const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
-    return regex.test(url)
-  }
   
   for (const { url, index: matchStart } of matches) {
     // Add text before the match

@@ -33,7 +33,7 @@ import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, lazy, Suspense, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import {
@@ -53,7 +53,6 @@ import { HttpUrlOpenGraphOrLink } from '../Embedded'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import NoteOptions from '../NoteOptions'
-import PostEditor from '../PostEditor'
 import EventPowLabel from '../EventPowLabel'
 import ParentNotePreview from '../ParentNotePreview'
 import UserAvatar from '../UserAvatar'
@@ -66,8 +65,6 @@ import ContentPreview from '../ContentPreview'
 
 import IValue from './IValue'
 import LiveEvent from './LiveEvent'
-import MarkdownArticle from './MarkdownArticle/MarkdownArticle'
-import AsciidocArticle from './AsciidocArticle/AsciidocArticle'
 import PublicationCard from './PublicationCard'
 import PublicationIndexMetadata from './PublicationIndexMetadata'
 import NostrSpecCard from './NostrSpecCard'
@@ -91,6 +88,14 @@ import FollowPackPreview from '../ContentPreview/FollowPackPreview'
 import CalendarEventContent from '../CalendarEventContent'
 import GitRepublicEventCard from './GitRepublicEventCard'
 import LearningResourceCard from './LearningResourceCard'
+
+const PostEditor = lazy(() => import('../PostEditor'))
+const MarkdownArticle = lazy(() => import('./MarkdownArticle/MarkdownArticle'))
+const AsciidocArticle = lazy(() => import('./AsciidocArticle/AsciidocArticle'))
+
+function ArticleSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>
+}
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
   ExtendedKind.PUBLICATION_CONTENT,
@@ -190,12 +195,14 @@ function StringifiedNostrEventContent({
   return (
     <div className={cn('space-y-2', className)}>
       {textEvent ? (
-        <MarkdownArticle
-          event={textEvent}
-          hideMetadata={hideMetadata}
-          lazyMedia={!autoLoadMedia}
-          fullCalendarInvite={fullCalendarInvite}
-        />
+        <ArticleSuspense>
+          <MarkdownArticle
+            event={textEvent}
+            hideMetadata={hideMetadata}
+            lazyMedia={!autoLoadMedia}
+            fullCalendarInvite={fullCalendarInvite}
+          />
+        </ArticleSuspense>
       ) : null}
       <StringifiedNostrEventPreviewCard
         hostEvent={hostEvent}
@@ -388,11 +395,13 @@ export default function Note({
       }
       if (ASCIIDOC_CONTENT_KINDS.has(displayEvent.kind)) {
         return (
-          <AsciidocArticle
-            className={className}
-            event={displayEvent}
-            hideImagesAndInfo={hideMetadata}
-          />
+          <ArticleSuspense>
+            <AsciidocArticle
+              className={className}
+              event={displayEvent}
+              hideImagesAndInfo={hideMetadata}
+            />
+          </ArticleSuspense>
         )
       }
       if (
@@ -418,17 +427,19 @@ export default function Note({
         }
       }
       return (
-        <MarkdownArticle
-          className={className}
-          event={
-            isNip18RepostKind(displayEvent.kind)
-              ? { ...displayEvent, content: '' }
-              : displayEvent
-          }
-          hideMetadata={hideMetadata}
-          lazyMedia={!autoLoadMedia}
-          fullCalendarInvite={fullCalendarInvite}
-        />
+        <ArticleSuspense>
+          <MarkdownArticle
+            className={className}
+            event={
+              isNip18RepostKind(displayEvent.kind)
+                ? { ...displayEvent, content: '' }
+                : displayEvent
+            }
+            hideMetadata={hideMetadata}
+            lazyMedia={!autoLoadMedia}
+            fullCalendarInvite={fullCalendarInvite}
+          />
+        </ArticleSuspense>
       )
     },
     [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents, deferAuthorAvatar]
@@ -816,21 +827,25 @@ export default function Note({
         <IValue event={event} className="mt-2" />
         {wrappedContent}
       </div>
-      <PostEditor
-        open={postEditorOpen}
-        setOpen={(open) => {
-          setPostEditorOpen(open)
-          if (!open) {
-            setHighlightData(undefined)
-            setHighlightDefaultContent('')
-            setPublicMessageTo(null)
-            setCallInviteContent(null)
-          }
-        }}
-        defaultContent={callInviteContent ?? highlightDefaultContent}
-        initialHighlightData={highlightData}
-        initialPublicMessageTo={publicMessageTo ?? undefined}
-      />
+      {postEditorOpen ? (
+        <Suspense fallback={null}>
+          <PostEditor
+            open={postEditorOpen}
+            setOpen={(open) => {
+              setPostEditorOpen(open)
+              if (!open) {
+                setHighlightData(undefined)
+                setHighlightDefaultContent('')
+                setPublicMessageTo(null)
+                setCallInviteContent(null)
+              }
+            }}
+            defaultContent={callInviteContent ?? highlightDefaultContent}
+            initialHighlightData={highlightData}
+            initialPublicMessageTo={publicMessageTo ?? undefined}
+          />
+        </Suspense>
+      ) : null}
     </CreateHighlightContext.Provider>
   )
 }

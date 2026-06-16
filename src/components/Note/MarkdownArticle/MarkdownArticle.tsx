@@ -49,7 +49,7 @@ import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
-import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
+import { isEmbeddableYoutubeUrl, isYouTubeUrl } from '@/lib/youtube-url'
 import { EMOJI_SHORT_CODE_REGEX, NOSTR_URI_INLINE_REGEX } from '@/lib/content-patterns'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { TEmoji, TImetaInfo } from '@/types'
@@ -429,17 +429,6 @@ function unescapeJsonContent(content: string): string {
   })
   
   return unescaped
-}
-
-/**
- * Check if a URL is a YouTube URL
- */
-function isYouTubeUrl(url: string): boolean {
-  // Create a new regex instance to avoid state issues with global regex
-  // Keep the 'i' flag for case-insensitivity but remove 'g' to avoid state issues
-  const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
-  const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
-  return regex.test(url)
 }
 
 function isSpotifyUrl(url: string): boolean {

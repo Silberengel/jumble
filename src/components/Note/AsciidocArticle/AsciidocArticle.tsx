@@ -52,6 +52,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import katex from 'katex'
 import '@/styles/katex-bundle.css'
+import { isYouTubeUrl } from '@/lib/youtube-url'
 import { WS_URL_REGEX, YOUTUBE_URL_REGEX } from '@/constants'
 
 /**
@@ -62,17 +63,6 @@ function truncateLinkText(text: string, maxLength: number = 200): string {
     return text
   }
   return text.substring(0, maxLength) + '...'
-}
-
-/**
- * Check if a URL is a YouTube URL
- */
-function isYouTubeUrl(url: string): boolean {
-  // Create a new regex instance to avoid state issues with global regex
-  // Keep the 'i' flag for case-insensitivity but remove 'g' to avoid state issues
-  const flags = YOUTUBE_URL_REGEX.flags.replace('g', '')
-  const regex = new RegExp(YOUTUBE_URL_REGEX.source, flags)
-  return regex.test(url)
 }
 
 /**

@@ -8,7 +8,7 @@ import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
-import { nip19, kinds, type Event } from 'nostr-tools'
+import { nip19, type Event } from 'nostr-tools'
 import { useMemo, useEffect, useState } from 'react'
 import Image from '../Image'
 import Username from '../Username'
@@ -26,48 +26,7 @@ import ProfileAbout from '@/components/ProfileAbout'
 /** Scales with Settings → font size via `--content-font-size` (see index.css). */
 const WEB_PREVIEW_CARD = 'web-preview-card'
 
-// Helper function to get event type name
-function getEventTypeName(kind: number): string {
-  switch (kind) {
-    case kinds.ShortTextNote:
-      return 'Text Post'
-    case kinds.LongFormArticle:
-      return 'Longform Article'
-    case ExtendedKind.PICTURE:
-      return 'Picture'
-    case ExtendedKind.VIDEO:
-    case ExtendedKind.VIDEO_ADDRESSABLE:
-      return 'Video'
-    case ExtendedKind.SHORT_VIDEO:
-      return 'Short Video'
-    case ExtendedKind.POLL:
-      return 'Poll'
-    case ExtendedKind.COMMENT:
-      return 'Comment'
-    case ExtendedKind.VOICE:
-      return 'Voice Post'
-    case ExtendedKind.MUSIC_TRACK:
-      return 'Music Track'
-    case ExtendedKind.VOICE_COMMENT:
-      return 'Voice Comment'
-    case kinds.Highlights:
-      return 'Highlight'
-    case ExtendedKind.PUBLICATION:
-      return 'Publication'
-    case ExtendedKind.PUBLICATION_CONTENT:
-      return 'Publication Content'
-    case ExtendedKind.WIKI_ARTICLE:
-      return 'Wiki Article'
-    case ExtendedKind.NOSTR_SPECIFICATION:
-      return 'Nostr Specification'
-    case ExtendedKind.DISCUSSION:
-      return 'Discussion'
-    default:
-      return `Event (kind ${kind})`
-  }
-}
-
-// Helper function to extract first header from content
+import { getEventTypeName } from '@/lib/content/event-type-name'
 function extractFirstHeader(content: string): string | null {
   if (!content) return null
   

@@ -5,6 +5,7 @@ import type { Plugin, ProxyOptions } from 'vite'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
+import { visualizer } from 'rollup-plugin-visualizer'
 import packageJson from './package.json'
 import { hiddenRelayDevProxyPlugin } from './vite-hidden-relay-dev-proxy'
 /// <reference types="vitest" />
@@ -434,6 +435,14 @@ export default defineConfig(({ mode }) => {
             return 'vendor-highlight'
           }
 
+          if (norm.includes('/marked/') || norm.includes('node_modules/marked')) {
+            return 'vendor-marked'
+          }
+
+          if (norm.includes('@codemirror/')) {
+            return 'vendor-codemirror'
+          }
+
           if (norm.includes('flexsearch')) {
             return 'vendor-flexsearch'
           }
@@ -666,7 +675,13 @@ export default defineConfig(({ mode }) => {
         enabled: false,
         type: 'module'
       }
-    })
-  ]
+    }),
+    process.env.ANALYZE === 'true' &&
+      visualizer({
+        filename: 'dist/stats.html',
+        gzipSize: true,
+        open: false
+      })
+  ].filter(Boolean)
   }
 })

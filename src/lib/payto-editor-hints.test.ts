@@ -5,6 +5,7 @@ import {
   getPaytoLogoPath,
   getPaytoEditorTypeLabel,
   getPaytoTypeInfo,
+  getPaytoTypeRecord,
   isLightningPaytoType,
   isPaytoEditorCustomType,
   PAYTO_EDITOR_OTHER_OPTION,
@@ -71,9 +72,13 @@ describe('isPaytoEditorCustomType', () => {
 })
 
 describe('getPaytoLogoPath', () => {
-  it('resolves ethereum logo from catalog asset path', () => {
-    const url = getPaytoLogoPath('ethereum')
+  it('resolves ethereum logo from catalog asset path', async () => {
+    const { loadPaytoLogoAssetPath } = await import('./payto-logos')
+    const assetPath = getPaytoTypeRecord('ethereum')?.logoAssetPath
+    expect(assetPath).toBeTruthy()
+    const url = await loadPaytoLogoAssetPath(assetPath)
     expect(url).toBeTruthy()
     expect(url!.length).toBeGreaterThan(10)
+    expect(getPaytoLogoPath('ethereum')).toBe(url)
   })
 })

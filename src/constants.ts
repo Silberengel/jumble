@@ -131,9 +131,6 @@ export const MULTI_RELAY_PUBLISH_ACK_CAP_MS = 16_000
  */
 export const PUBLISH_MULTI_RELAY_CONNECTION_CAP_MS = 12_000
 
-/** Max merged URLs per REQ / timeline relay list (see `relay-url-priority`). */
-export const MAX_REQ_RELAY_URLS = MAX_CONCURRENT_RELAY_CONNECTIONS
-
 /** Session-park relays that finish REQ waves much slower than peers (see {@link relaySessionStrikes}). */
 export const RELAY_SLOW_PARK_ABSOLUTE_MS = 10_000
 /** Multiplier over batch median EOSE latency to count a relay as slow in multi-relay waves. */
@@ -912,14 +909,10 @@ export const NIP_SEARCH_DOCUMENT_KINDS: readonly number[] = [
 
 /**
  * Primary Search page note kinds: profiles, short notes, and document kinds.
- * {@link GENERAL_SEARCH_PAGE_KINDS} is an alias for the same set.
  */
 export const NIP_SEARCH_PAGE_KINDS: readonly number[] = Array.from(
   new Set<number>([kinds.Metadata, kinds.ShortTextNote, ...NIP_SEARCH_DOCUMENT_KINDS])
 ).sort((a, b) => a - b)
-
-/** Alias for {@link NIP_SEARCH_PAGE_KINDS} (general search UI). */
-export const GENERAL_SEARCH_PAGE_KINDS = NIP_SEARCH_PAGE_KINDS
 
 export function relayFilterIncludesDocumentRelayKind(filter: Filter): boolean {
   const k = filter.kinds

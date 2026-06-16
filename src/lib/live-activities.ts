@@ -1,10 +1,9 @@
-import { FAST_READ_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS, MAX_CONCURRENT_RELAY_CONNECTIONS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { isAudio, isHlsPlaylistUrl, isVideo } from '@/lib/url'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import {
   dedupeNormalizeRelayUrlsOrdered,
-  MAX_REQ_RELAY_URLS,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
 import { viewerIncludeGlobalFastReadRelayLayer } from '@/lib/read-only-relay-personal'
@@ -691,7 +690,7 @@ export function buildLiveActivitiesRelayUrls(options: {
     return feedRelayPolicyUrls(layers, {
       operation: 'read',
       blockedRelays,
-      maxRelays: MAX_REQ_RELAY_URLS,
+      maxRelays: MAX_CONCURRENT_RELAY_CONNECTIONS,
       applySocialKindBlockedFilter: true,
       allowThirdPartyLocalRelays: true
     })
@@ -708,7 +707,7 @@ export function buildLiveActivitiesRelayUrls(options: {
     {
       operation: 'read',
       blockedRelays,
-      maxRelays: MAX_REQ_RELAY_URLS,
+      maxRelays: MAX_CONCURRENT_RELAY_CONNECTIONS,
       applySocialKindBlockedFilter: true,
       allowThirdPartyLocalRelays: true
     }

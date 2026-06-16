@@ -243,4 +243,3 @@ class Nip66Service {
 }
 
 export const nip66Service = Nip66Service.getInstance()
-export default nip66Service

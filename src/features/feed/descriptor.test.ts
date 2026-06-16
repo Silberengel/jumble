@@ -74,3 +74,140 @@ describe('FeedDescriptor canonicalization', () => {
     )
   })
 })
+
+const requests = [{ urls: ['wss://relay.example/'], filter: { kinds: [1], limit: 20 } }]
+
+function homeDescriptor() {
+  return createFeedDescriptor({
+    surface: 'home',
+    requests,
+    source: { cache: 'stale-while-refresh', publicReadFallback: true },
+    pagination: { enabled: true }
+  })
+}
+
+function favoritesDescriptor() {
+  return createFeedDescriptor({
+    surface: 'favorites',
+    id: 'favorites',
+    requests,
+    source: { cache: 'stale-while-refresh' },
+    pagination: { enabled: true }
+  })
+}
+
+function relayDescriptor() {
+  return createFeedDescriptor({
+    surface: 'relay',
+    id: 'wss://relay.example/',
+    requests,
+    source: { cache: 'stale-while-refresh', preserveRowsOnRelayChange: true },
+    pagination: { enabled: true }
+  })
+}
+
+function profileDescriptor() {
+  return createFeedDescriptor({
+    surface: 'profile',
+    id: 'pubkey',
+    requests,
+    source: { cache: 'stale-while-refresh', publicReadFallback: true },
+    pagination: { enabled: true }
+  })
+}
+
+function spellsDescriptor() {
+  return createFeedDescriptor({
+    surface: 'spells',
+    id: 'spells',
+    requests,
+    source: { cache: 'stale-while-refresh', publicReadFallback: true },
+    pagination: { enabled: true }
+  })
+}
+
+function calendarDescriptor() {
+  return createFeedDescriptor({
+    surface: 'calendar',
+    id: 'calendar',
+    requests,
+    source: { cache: 'stale-while-refresh', publicReadFallback: true },
+    pagination: { enabled: true }
+  })
+}
+
+function repliesDescriptor() {
+  return createFeedDescriptor({
+    surface: 'replies',
+    id: 'reply-root',
+    mode: 'one-shot',
+    requests,
+    source: { cache: 'stale-while-refresh' },
+    pagination: { enabled: false }
+  })
+}
+
+function threadDescriptor() {
+  return createFeedDescriptor({
+    surface: 'thread',
+    id: 'thread-root',
+    mode: 'one-shot',
+    requests,
+    source: { cache: 'stale-while-refresh' },
+    pagination: { enabled: false }
+  })
+}
+
+function embedDescriptor() {
+  return createFeedDescriptor({
+    surface: 'embed',
+    id: 'embedded-note',
+    mode: 'one-shot',
+    requests,
+    source: { cache: 'fresh-required', publicReadFallback: true },
+    pagination: { enabled: false }
+  })
+}
+
+function searchDescriptor() {
+  return createFeedDescriptor({
+    surface: 'search',
+    id: 'search:nostr',
+    mode: 'one-shot',
+    requests,
+    source: { cache: 'fresh-required', publicReadFallback: true },
+    pagination: { enabled: true }
+  })
+}
+
+describe('feed surface descriptors', () => {
+  it('marks timeline surfaces as live and paginated by default', () => {
+    for (const descriptor of [
+      homeDescriptor(),
+      favoritesDescriptor(),
+      relayDescriptor(),
+      profileDescriptor(),
+      spellsDescriptor(),
+      calendarDescriptor()
+    ]) {
+      expect(descriptor.mode).toBe('live')
+      expect(descriptor.pagination.enabled).toBe(true)
+      expect(descriptor.source.cache).toBe('stale-while-refresh')
+    }
+  })
+
+  it('marks focused fetch surfaces as one-shot', () => {
+    for (const descriptor of [
+      repliesDescriptor(),
+      threadDescriptor(),
+      embedDescriptor(),
+      searchDescriptor()
+    ]) {
+      expect(descriptor.mode).toBe('one-shot')
+    }
+  })
+
+  it('keeps surface identity separate for equivalent requests', () => {
+    expect(homeDescriptor().key).not.toBe(favoritesDescriptor().key)
+  })
+})

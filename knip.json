@@ -1,6 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["nip66-cron/index.mjs!"],
-  "ignore": ["src/global-polyfill-types.d.ts", "src/types/**/*.d.ts"],
-  "ignoreDependencies": ["ws"]
+  "entry": [
+    "nip66-cron/index.mjs!",
+    "services/piper-tts-proxy/http.ts!",
+    "vite-hidden-relay-dev-proxy.ts!"
+  ],
+  "ignore": ["src/global-polyfill-types.d.ts", "src/types/**/*.d.ts", "server/**"]
 }

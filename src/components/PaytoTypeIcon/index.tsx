@@ -2,11 +2,14 @@ import {
   getCanonicalPaytoType,
   getPaytoIconChar,
   getPaytoLogoPath,
+  getPaytoTypeRecord,
   isLightningPaytoType
-} from '@/lib/payto'
+} from '@/lib/payto-registry'
+import { loadPaytoLogoAssetPath } from '@/lib/payto-logos'
 import { superchatLightningAccentClass } from '@/lib/superchat-ui'
 import { cn } from '@/lib/utils'
 import { HelpCircle, Zap as ZapIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 export default function PaytoTypeIcon({
   type,
@@ -18,9 +21,29 @@ export default function PaytoTypeIcon({
   imgClassName?: string
 }) {
   const canonical = getCanonicalPaytoType(type)
-  const logoPath = getPaytoLogoPath(canonical)
+  const [logoPath, setLogoPath] = useState<string | null>(() => getPaytoLogoPath(canonical))
   const iconChar = getPaytoIconChar(canonical)
   const isLightning = isLightningPaytoType(canonical)
+
+  useEffect(() => {
+    const assetPath = getPaytoTypeRecord(canonical)?.logoAssetPath
+    if (!assetPath) {
+      setLogoPath(null)
+      return
+    }
+    const existing = getPaytoLogoPath(canonical)
+    if (existing) {
+      setLogoPath(existing)
+      return
+    }
+    let cancelled = false
+    void loadPaytoLogoAssetPath(assetPath).then((url) => {
+      if (!cancelled) setLogoPath(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [canonical])
 
   return (
     <span

@@ -13,9 +13,9 @@ import {
   buildPrioritizedReadRelayUrls,
   buildReadRelayPriorityLayers,
   dedupeNormalizeRelayUrlsOrdered,
-  MAX_REQ_RELAY_URLS,
   relayUrlsLocalsFirst
 } from '@/lib/relay-url-priority'
+import { MAX_CONCURRENT_RELAY_CONNECTIONS } from '@/constants'
 import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
@@ -308,7 +308,7 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
   userInboxReadRelays: string[],
   options?: ReadRelayPriorityOptions
 ): TFeedSubRequest[] {
-  const max = options?.maxRelays ?? MAX_REQ_RELAY_URLS
+  const max = options?.maxRelays ?? MAX_CONCURRENT_RELAY_CONNECTIONS
   const userReadSocialExempt = new Set<string>()
   for (const u of userInboxReadRelays) {
     const n = normalizeAnyRelayUrl(u) || u.trim()
