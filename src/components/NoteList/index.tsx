@@ -4932,6 +4932,7 @@ const NoteList = forwardRef(
               filterMutedNotes={filterMutedNotes}
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
               deferAuthorAvatar
+              hideEngagementChrome
               seenOnAllowlist={homeFeedActiveSeenOnAllowlist}
               showPaymentAttestationAction={showPaymentAttestationAction}
             />

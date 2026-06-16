@@ -21,7 +21,8 @@ const NoteCard = memo(function NoteCard({
   deferAuthorAvatar = true,
   searchListPreview = false,
   seenOnAllowlist,
-  showPaymentAttestationAction = false
+  showPaymentAttestationAction = false,
+  hideEngagementChrome = false
 }: {
   event: Event
   className?: string
@@ -36,6 +37,7 @@ const NoteCard = memo(function NoteCard({
   searchListPreview?: boolean
   seenOnAllowlist?: readonly string[]
   showPaymentAttestationAction?: boolean
+  hideEngagementChrome?: boolean
 }) {
   const { mutePubkeySet } = useMuteList()
   const hideContentMentioningMutedUsers =
@@ -65,6 +67,8 @@ const NoteCard = memo(function NoteCard({
         bottomNoteLabel={bottomNoteLabel}
         deferAuthorAvatar={deferAuthorAvatar}
         seenOnAllowlist={seenOnAllowlist}
+        hideEngagementChrome={hideEngagementChrome}
+        fetchNoteStatsIfMissing={hideEngagementChrome ? false : fetchNoteStatsIfMissing}
       />
     )
   }
@@ -75,11 +79,12 @@ const NoteCard = memo(function NoteCard({
       pinned={pinned}
       hideParentNotePreview={hideParentNotePreview}
       bottomNoteLabel={bottomNoteLabel}
-      fetchNoteStatsIfMissing={fetchNoteStatsIfMissing}
+      fetchNoteStatsIfMissing={hideEngagementChrome ? false : fetchNoteStatsIfMissing}
       deferAuthorAvatar={deferAuthorAvatar}
       searchListPreview={searchListPreview}
       seenOnAllowlist={seenOnAllowlist}
       showPaymentAttestationAction={showPaymentAttestationAction}
+      hideEngagementChrome={hideEngagementChrome}
     />
   )
 }, (prevProps, nextProps) => {
@@ -96,7 +101,8 @@ const NoteCard = memo(function NoteCard({
     prevProps.seenOnAllowlist === nextProps.seenOnAllowlist &&
     prevProps.deferAuthorAvatar === nextProps.deferAuthorAvatar &&
     prevProps.searchListPreview === nextProps.searchListPreview &&
-    prevProps.showPaymentAttestationAction === nextProps.showPaymentAttestationAction
+    prevProps.showPaymentAttestationAction === nextProps.showPaymentAttestationAction &&
+    prevProps.hideEngagementChrome === nextProps.hideEngagementChrome
   )
 })
 

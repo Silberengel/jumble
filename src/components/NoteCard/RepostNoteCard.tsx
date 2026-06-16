@@ -18,7 +18,9 @@ export default function RepostNoteCard({
   pinned = false,
   bottomNoteLabel,
   deferAuthorAvatar = true,
-  seenOnAllowlist
+  seenOnAllowlist,
+  fetchNoteStatsIfMissing = true,
+  hideEngagementChrome = false
 }: {
   event: Event
   className?: string
@@ -27,6 +29,8 @@ export default function RepostNoteCard({
   bottomNoteLabel?: string
   deferAuthorAvatar?: boolean
   seenOnAllowlist?: readonly string[]
+  fetchNoteStatsIfMissing?: boolean
+  hideEngagementChrome?: boolean
 }) {
   const { mutePubkeySet } = useMuteList()
   const hideContentMentioningMutedUsers =
@@ -108,6 +112,8 @@ export default function RepostNoteCard({
       bottomNoteLabel={bottomNoteLabel}
       deferAuthorAvatar={deferAuthorAvatar}
       seenOnAllowlist={seenOnAllowlist}
+      fetchNoteStatsIfMissing={fetchNoteStatsIfMissing}
+      hideEngagementChrome={hideEngagementChrome}
     />
   )
 }

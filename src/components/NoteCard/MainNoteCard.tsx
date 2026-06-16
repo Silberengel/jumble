@@ -31,7 +31,8 @@ export default memo(MainNoteCard, (prev, next) => {
     prev.deferAuthorAvatar === next.deferAuthorAvatar &&
     prev.searchListPreview === next.searchListPreview &&
     prev.seenOnAllowlist === next.seenOnAllowlist &&
-    prev.showPaymentAttestationAction === next.showPaymentAttestationAction
+    prev.showPaymentAttestationAction === next.showPaymentAttestationAction &&
+    prev.hideEngagementChrome === next.hideEngagementChrome
   )
 })
 
@@ -49,7 +50,8 @@ function MainNoteCard({
   deferAuthorAvatar = false,
   searchListPreview = false,
   seenOnAllowlist,
-  showPaymentAttestationAction = false
+  showPaymentAttestationAction = false,
+  hideEngagementChrome = false
 }: {
   event: Event
   className?: string
@@ -70,6 +72,8 @@ function MainNoteCard({
   searchListPreview?: boolean
   seenOnAllowlist?: readonly string[]
   showPaymentAttestationAction?: boolean
+  /** Timeline feed: hide reply/repost/zap bar and “Boosted by” strip; note page keeps full chrome. */
+  hideEngagementChrome?: boolean
 }) {
   const { t } = useTranslation()
   const { navigateToNote } = useSmartNoteNavigationOptional()
@@ -78,7 +82,7 @@ function MainNoteCard({
   /** NIP-52 kinds 31922 / 31923: card-level {@link Collapsible} clips the stats row; description collapses inside the card. */
   const isCalendarNoteKind = isNip52CalendarCardKind(event.kind)
   const showNoteStatsRow =
-    !searchListPreview && (!embedded || isZapFeedCard)
+    !hideEngagementChrome && !searchListPreview && (!embedded || isZapFeedCard)
   const notePadX = searchListPreview ? 'px-3' : 'px-4'
   const innerY = searchListPreview ? 'py-2' : 'py-3'
 
@@ -154,7 +158,9 @@ function MainNoteCard({
             seenOnAllowlist={seenOnAllowlist}
           />
         </Collapsible>
-        {!embedded && !searchListPreview ? <NoteBoostBadges event={event} className={`mt-2 ${notePadX}`} /> : null}
+        {!embedded && !searchListPreview && !hideEngagementChrome ? (
+          <NoteBoostBadges event={event} className={`mt-2 ${notePadX}`} />
+        ) : null}
         {showNoteStatsRow ? (
           <NoteStats
             className={embedded ? 'mt-2 px-2 sm:px-3' : `mt-3 ${notePadX}`}
