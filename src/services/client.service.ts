@@ -444,6 +444,9 @@ class ClientService extends EventTarget {
       if (hiddenNetworkBlock) {
         throw new Error(hiddenNetworkBlock)
       }
+      if (!isSingleRelayExplicitPolicyActive() && isViewerRelayBlocked(url)) {
+        throw new Error(`[viewer-blocked-relay] skipping relay ${url}`)
+      }
       if (params?.purpose !== 'write' && !isRelayConnectionAllowedForViewer(url)) {
         throw new Error(`[metadata-relays-only] skipping relay ${url}`)
       }
@@ -473,6 +476,7 @@ class ClientService extends EventTarget {
         const msg = err instanceof Error ? err.message : String(err)
         const skipStrike =
           msg.includes('[metadata-relays-only]') ||
+          msg.includes('[viewer-blocked-relay]') ||
           msg.includes('[relay-strike]') ||
           msg.includes('[relay-rate-limit]') ||
           msg.includes('[offline]') ||
@@ -4971,6 +4975,7 @@ class ClientService extends EventTarget {
       const relayEvent = relayEvents[index] || storedRelayEvent
 
       const emptyHttp = { httpRead: [] as string[], httpWrite: [] as string[], httpOriginalRelays: [] as TMailboxRelay[] }
+      const viewerBlocked = isOwnRelayList ? [...getViewerBlockedRelayUrls()] : undefined
 
       const mergeKind10243 = (list: TRelayList): TRelayList => {
         if (!httpRelayEvent) {
@@ -4981,11 +4986,11 @@ class ClientService extends EventTarget {
             httpOriginalRelays: list.httpOriginalRelays ?? []
           }
         }
-        const h = getHttpRelayListFromEvent(httpRelayEvent)
+        const h = getHttpRelayListFromEvent(httpRelayEvent, viewerBlocked)
         return { ...list, httpRead: h.httpRead, httpWrite: h.httpWrite, httpOriginalRelays: h.httpOriginalRelays }
       }
 
-      const relayListFrom10002 = relayEvent ? getRelayListFromEvent(relayEvent) : {
+      const relayListFrom10002 = relayEvent ? getRelayListFromEvent(relayEvent, viewerBlocked) : {
         write: [],
         read: [],
         originalRelays: [],
@@ -4995,7 +5000,7 @@ class ClientService extends EventTarget {
       const relayList = stripLocalNetworkRelaysFromRelayList(relayListFrom10002)
 
       if (isOwnRelayList && cacheEvent) {
-        const cacheRelayList = getRelayListFromEvent(cacheEvent)
+        const cacheRelayList = getRelayListFromEvent(cacheEvent, viewerBlocked)
 
         const mergedRead = [...cacheRelayList.read, ...relayList.read]
         const mergedWrite = [...cacheRelayList.write, ...relayList.write]
@@ -5020,7 +5025,7 @@ class ClientService extends EventTarget {
 
       if (!relayEvent) {
         if (isOwnRelayList && storedCacheEvent) {
-          const cacheRelayList = getRelayListFromEvent(storedCacheEvent)
+          const cacheRelayList = getRelayListFromEvent(storedCacheEvent, viewerBlocked)
           return mergeKind10243({
             write: cacheRelayList.write.length > 0 ? cacheRelayList.write : PROFILE_RELAY_URLS,
             read: cacheRelayList.read.length > 0 ? cacheRelayList.read : PROFILE_RELAY_URLS,

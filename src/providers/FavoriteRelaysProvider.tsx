@@ -6,7 +6,7 @@ import { getReplaceableEventIdentifier } from '@/lib/event'
 import { getRelaySetFromEvent } from '@/lib/event-metadata'
 import { randomString } from '@/lib/random'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
-import { setViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
+import { parseBlockedRelayUrlsFromEvent, setViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
 import client, { queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { TRelaySet } from '@/types'
@@ -22,6 +22,8 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
   const { favoriteRelaysEvent, blockedRelaysEvent, updateFavoriteRelaysEvent, updateBlockedRelaysEvent, pubkey, relayList, publish } = useNostr()
   const [favoriteRelays, setFavoriteRelays] = useState<string[]>([])
   const [blockedRelays, setBlockedRelays] = useState<string[]>([])
+  /** False until kind 10006 is read from context or IndexedDB — avoids wiping the global block filter during boot. */
+  const [blockedRelaysHydrated, setBlockedRelaysHydrated] = useState(false)
   const [relaySetEvents, setRelaySetEvents] = useState<Event[]>([])
   const [relaySets, setRelaySets] = useState<TRelaySet[]>([])
 
@@ -173,27 +175,36 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
   }, [favoriteRelaysEvent, pubkey, relayList])
 
   useEffect(() => {
-    if (!blockedRelaysEvent) {
-      setBlockedRelays([])
+    if (blockedRelaysEvent) {
+      setBlockedRelays(parseBlockedRelayUrlsFromEvent(blockedRelaysEvent))
+      setBlockedRelaysHydrated(true)
       return
     }
 
-    const relays: string[] = []
-    blockedRelaysEvent.tags.forEach(([tagName, tagValue]) => {
-      if (tagName === 'relay' && tagValue) {
-        const normalizedUrl = normalizeAnyRelayUrl(tagValue)
-        if (normalizedUrl && !relays.includes(normalizedUrl)) {
-          relays.push(normalizedUrl)
-        }
-      }
+    if (!pubkey) {
+      setBlockedRelays([])
+      setBlockedRelaysHydrated(true)
+      return
+    }
+
+    setBlockedRelaysHydrated(false)
+    let cancelled = false
+    void indexedDb.getReplaceableEvent(pubkey, ExtendedKind.BLOCKED_RELAYS).then((stored) => {
+      if (cancelled) return
+      setBlockedRelays(parseBlockedRelayUrlsFromEvent(stored ?? null))
+      setBlockedRelaysHydrated(true)
     })
-    setBlockedRelays(relays)
-  }, [blockedRelaysEvent])
+
+    return () => {
+      cancelled = true
+    }
+  }, [blockedRelaysEvent, pubkey])
 
   useEffect(() => {
+    if (!blockedRelaysHydrated) return
     setViewerBlockedRelayUrls(blockedRelays)
     client.closeViewerBlockedRelayConnections()
-  }, [blockedRelays])
+  }, [blockedRelays, blockedRelaysHydrated])
 
   useEffect(() => {
     setRelaySets(

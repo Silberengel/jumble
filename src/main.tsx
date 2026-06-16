@@ -34,7 +34,9 @@ async function bootstrap() {
   console.info('[imwald] Boot: loading i18n (sync settings already read from localStorage)…')
   await initI18n()
   restorePersistedFeedSnapshots()
-  console.info('[imwald] Boot: mounting React (UI shell will appear; IndexedDB settings migrate next)')
+  console.info('[imwald] Boot: hydrating settings from IndexedDB…')
+  await storage.initAsync()
+  console.info('[imwald] Boot: mounting React')
   // Mark session storage as used so it's visible in DevTools; VersionUpdateBanner and NotePage also use it.
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, String(Date.now()))
@@ -48,10 +50,6 @@ async function bootstrap() {
       </ErrorBoundary>
     </StrictMode>
   )
-  // Defer IndexedDB migration until after first paint — sync localStorage init already ran in storage constructor.
-  requestAnimationFrame(() => {
-    void storage.initAsync()
-  })
   void (async () => {
     try {
       const r = await fetchWithTimeout('/config.json', { timeoutMs: 10_000 })

@@ -4,7 +4,6 @@ import {
   ExtendedKind,
   MEDIA_AUTO_LOAD_POLICY,
   NOTIFICATION_LIST_STYLE,
-  DEFAULT_FEED_SHOW_KINDS,
   StorageKey
 } from '@/constants'
 import { kinds } from 'nostr-tools'
@@ -216,7 +215,8 @@ class LocalStorageService {
 
     const showKindsStr = window.localStorage.getItem(StorageKey.SHOW_KINDS)
     if (!showKindsStr) {
-      this.showKinds = [...DEFAULT_FEED_SHOW_KINDS]
+      // SHOW_KINDS may already live in IndexedDB (localStorage cleared after migrate). initAsync applies it.
+      this.showKinds = []
     } else {
       const showKindsVersionStr = window.localStorage.getItem(StorageKey.SHOW_KINDS_VERSION)
       const showKindsVersion = showKindsVersionStr ? parseInt(showKindsVersionStr) : 0

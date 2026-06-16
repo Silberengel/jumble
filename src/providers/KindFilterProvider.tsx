@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import storage from '@/services/local-storage.service'
 import { DEFAULT_FEED_SHOW_KINDS, ExtendedKind } from '@/constants'
@@ -95,6 +95,18 @@ export function KindFilterProvider({ children }: { children: ReactNode }) {
   const [showKind1Replies, setShowKind1RepliesState] = useState(storedShowKind1Replies)
   const [showKind1111, setShowKind1111State] = useState(storedShowKind1111)
   const [feedKindFilterBypass, setFeedKindFilterBypassState] = useState(storedFeedKindFilterBypass)
+
+  /** Re-sync after IndexedDB hydration (HMR / any initAsync after first paint). */
+  useEffect(() => {
+    void storage.initAsync().then(() => {
+      const kinds = storage.getShowKinds()
+      setShowKindsState(kinds.length > 0 ? kinds : defaultShowKinds)
+      setShowKind1OPsState(storage.getShowKind1OPs())
+      setShowKind1RepliesState(storage.getShowKind1Replies())
+      setShowKind1111State(storage.getShowKind1111())
+      setFeedKindFilterBypassState(storage.getFeedKindFilterBypass())
+    })
+  }, [defaultShowKinds])
 
   const updateShowKinds = useCallback(
     (
