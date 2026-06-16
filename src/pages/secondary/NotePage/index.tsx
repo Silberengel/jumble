@@ -60,6 +60,7 @@ import { getEventTypeName } from '@/lib/content/event-type-name'
 import NotFound from './NotFound'
 import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
 import { ThreadReplyProvider } from '@/providers/ThreadReplyProvider'
+import { preloadPostEditorChunk } from '@/components/PostEditor/preload-post-editor-chunk'
 
 function eventPointerHexId(pointer: string | undefined): string | undefined {
   const raw = pointer?.trim()
@@ -157,6 +158,10 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
     parentEvent && selfHex && parentEvent.id.toLowerCase() !== selfHex ? parentEvent : undefined
   const { pubkey } = useNostr()
   const { relays: statsRelays, currentRelaysKey } = useNoteStatsRelayHints()
+
+  useEffect(() => {
+    preloadPostEditorChunk()
+  }, [])
 
   useEffect(() => {
     if (!rootEventForStrip) return

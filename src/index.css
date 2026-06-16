@@ -126,6 +126,15 @@
     min-height: 0;
   }
 
+  [data-emoji-picker-shell] [data-emoji-picker-root] {
+    min-height: 240px;
+    height: 100%;
+  }
+
+  [data-emoji-picker-shell] emoji-picker {
+    min-height: 240px;
+  }
+
   @media (max-width: 768px) {
     /* Mobile composer: fill the editor slot and scroll inside the bordered surface. */
     .tiptap.flex-col {

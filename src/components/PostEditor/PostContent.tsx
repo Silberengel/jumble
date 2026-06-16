@@ -1,8 +1,6 @@
 import storage from '@/services/local-storage.service'
 import StoredAccountSwitchSelect from '@/components/StoredAccountSwitchSelect'
-import Note from '@/components/Note'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -52,6 +50,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
+import { getParentReplyBlurbDisplayText } from '@/lib/parent-reply-blurb'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
@@ -2697,11 +2696,9 @@ export default function PostContent({
       </div>
       
       {parentEvent && (
-        <ScrollArea className="flex max-h-32 sm:max-h-48 flex-col overflow-y-auto rounded-lg border bg-muted/40">
-          <div className="p-2 sm:p-3 pointer-events-none">
-            <Note size="small" event={parentEvent} hideParentNotePreview />
-          </div>
-        </ScrollArea>
+        <div className="shrink-0 max-h-32 overflow-y-auto rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          {getParentReplyBlurbDisplayText(parentEvent, 320)}
+        </div>
       )}
 
       {isDiscussionThread && !parentEvent && (
@@ -4072,6 +4069,7 @@ export default function PostContent({
         open={advancedLabOpen}
         onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
         initial={advancedLabInitial}
+        portalContainer={pickerPortalContainer}
         kindEditable={false}
         markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
         i18nLanguage={i18n.language}

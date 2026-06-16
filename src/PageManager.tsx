@@ -2321,9 +2321,10 @@ function TopSecondaryStackPane({
   item: TStackItem
   className?: string
 }) {
+  const resolved = ensureStackItemComponent(item)
   return (
-    <div key={item.index} className={className}>
-      {item.component}
+    <div key={resolved.index} className={className}>
+      {resolved.component}
     </div>
   )
 }

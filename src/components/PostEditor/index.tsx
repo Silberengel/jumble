@@ -28,7 +28,7 @@ function isNestedPickerTarget(target: EventTarget | null): boolean {
     target instanceof HTMLElement &&
     Boolean(
       target.closest(
-        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], emoji-picker'
+        '[data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
       )
     )
   )
@@ -172,7 +172,8 @@ export default function PostEditor({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="relative flex max-h-[min(90dvh,900px)] flex-col overflow-hidden p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
+        className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
+        overlayClassName="z-[200]"
         withoutClose
         onInteractOutside={(e) => {
           if (blockDismissForAccountSwitch || isNestedPickerTarget(e.target)) e.preventDefault()
@@ -196,13 +197,13 @@ export default function PostEditor({
           className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
           aria-hidden={false}
         />
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Post Editor</DialogTitle>
-            <DialogDescription>Create a new post or reply</DialogDescription>
-          </DialogHeader>
-          {content}
-        </div>
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Post Editor</DialogTitle>
+              <DialogDescription>Create a new post or reply</DialogDescription>
+            </DialogHeader>
+            {content}
+          </div>
       </DialogContent>
     </Dialog>
   )

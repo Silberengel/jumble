@@ -9,9 +9,10 @@ import {
 } from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PostEditor from '../PostEditor/LazyPostEditor'
+import { preloadPostEditorChunk } from '../PostEditor/preload-post-editor-chunk'
 
 type ReplyButtonProps = {
   event: Event
@@ -44,6 +45,10 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
     replyCount >= 100 ? '99+' : replyCount > 0 || statsLoaded ? String(replyCount) : ''
   const [open, setOpen] = useState(false)
 
+  useEffect(() => {
+    preloadPostEditorChunk()
+  }, [])
+
   return (
     <>
       <button
@@ -52,8 +57,11 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
           'flex gap-1.5 items-center enabled:hover:text-blue-400 px-2 h-full min-h-11 touch-manipulation',
           hasReplied ? 'text-blue-400' : 'text-muted-foreground'
         )}
+        onPointerEnter={() => preloadPostEditorChunk()}
+        onFocus={() => preloadPostEditorChunk()}
         onClick={(e) => {
           e.stopPropagation()
+          preloadPostEditorChunk()
           checkLogin(() => {
             setOpen(true)
           })

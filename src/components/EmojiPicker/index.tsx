@@ -15,9 +15,25 @@ export { DEFAULT_SUGGESTED_EMOJIS as EMOJI_PICKER_REACTIONS } from '@/lib/like-r
 /** Cap custom emoji in the grid so the picker stays responsive with a large network index. */
 const CUSTOM_EMOJI_PICKER_LIMIT = 300
 
+const POPOVER_PICKER_HEIGHT_PX = 320
+const POPOVER_PICKER_MIN_HEIGHT_PX = 240
+
 type PickerElement = HTMLElement & {
   customEmoji: unknown[]
   database?: { ready(): Promise<void> }
+}
+
+function syncPickerElementHeight(host: HTMLElement, picker: PickerElement, inDrawer: boolean): void {
+  const height = Math.round(host.getBoundingClientRect().height)
+  if (height >= 120) {
+    picker.style.height = `${height}px`
+    picker.style.minHeight = `${height}px`
+    return
+  }
+  if (!inDrawer) {
+    picker.style.height = `${POPOVER_PICKER_HEIGHT_PX}px`
+    picker.style.minHeight = `${POPOVER_PICKER_MIN_HEIGHT_PX}px`
+  }
 }
 
 export default function EmojiPicker({
@@ -29,7 +45,7 @@ export default function EmojiPicker({
   onEmojiClick: (emoji: string | TEmoji | undefined, event: Event) => void
   reactionsDefaultOpen?: boolean
   reactions?: string[]
-  /** `drawer` fills the mobile sheet; `popover` uses a fixed height for dropdowns. */
+  /** `drawer` fills the mobile sheet / composer dialog shell; `popover` uses a fixed height. */
   layout?: 'drawer' | 'popover'
 }) {
   const inDrawer = layout === 'drawer'
@@ -43,6 +59,7 @@ export default function EmojiPicker({
   const [pickerError, setPickerError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<PickerElement | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const onEmojiClickRef = useRef(onEmojiClick)
   onEmojiClickRef.current = onEmojiClick
 
@@ -65,15 +82,18 @@ export default function EmojiPicker({
     [pubkey, customEmojiTick]
   )
 
-  // Create the web component once; keep it mounted (hide off-screen in reactions mode) so
-  // switching to the full grid and reopening the popover does not cold-start IndexedDB again.
   useEffect(() => {
+    if (mode !== 'full') return
+
     let cancelled = false
+    setPickerReady(false)
+    setPickerError(null)
 
     preloadEmojiPicker()
       .then(async ([mod]) => {
         if (cancelled || !containerRef.current || pickerRef.current) return
         const { Picker } = mod
+        const host = containerRef.current
 
         const picker = new Picker({
           dataSource: EMOJI_PICKER_DATA_SOURCE,
@@ -87,6 +107,11 @@ export default function EmojiPicker({
           picker.className = 'light'
         }
 
+        picker.style.width = '100%'
+        picker.style.minWidth = '280px'
+        picker.style.maxWidth = '350px'
+        picker.style.setProperty('--num-columns', '8')
+
         const handleClick = (e: Event) => {
           const detail = (e as CustomEvent).detail as {
             unicode?: string
@@ -99,11 +124,6 @@ export default function EmojiPicker({
             }
           }
           let result: string | TEmoji | undefined
-          /**
-           * emoji-picker-element only puts `unicode` on the event detail when `skinTonedUnicode` is truthy
-           * (see getDetailForClickEvent in picker.js). Native picks often expose the sequence on `detail.emoji.unicode`
-           * instead, so we must fall back — otherwise `insertEmoji` receives undefined and “most emojis don’t work”.
-           */
           const top = typeof detail.unicode === 'string' && detail.unicode.length > 0 ? detail.unicode : undefined
           const nested =
             typeof detail.emoji?.unicode === 'string' && detail.emoji.unicode.length > 0
@@ -114,7 +134,6 @@ export default function EmojiPicker({
             result = nativeUnicode
           } else {
             const em = detail.emoji
-            // Custom entries: `url` (+ shortcodes / name); avoid treating native `unicode` as custom.
             if (em?.url && !em.unicode) {
               const shortcode = em.shortcodes?.[0] ?? em.name
               if (shortcode) {
@@ -129,7 +148,20 @@ export default function EmojiPicker({
         }
 
         picker.addEventListener('emoji-click', handleClick)
-        containerRef.current.appendChild(picker)
+        host.appendChild(picker)
+
+        const syncHeight = () => {
+          if (cancelled || !pickerRef.current || !containerRef.current) return
+          syncPickerElementHeight(containerRef.current, pickerRef.current, inDrawer)
+        }
+
+        syncHeight()
+        requestAnimationFrame(syncHeight)
+        resizeObserverRef.current?.disconnect()
+        const ro = new ResizeObserver(syncHeight)
+        resizeObserverRef.current = ro
+        ro.observe(host)
+
         return picker.database?.ready()
       })
       .then(() => {
@@ -143,13 +175,15 @@ export default function EmojiPicker({
 
     return () => {
       cancelled = true
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
       setPickerReady(false)
       if (pickerRef.current) {
         pickerRef.current.remove()
         pickerRef.current = null
       }
     }
-  }, [])
+  }, [mode, inDrawer])
 
   useEffect(() => {
     if (pickerRef.current) {
@@ -172,63 +206,34 @@ export default function EmojiPicker({
 
   const ownEmojisRow =
     ownEmojis.length > 0 ? (
-      <div className="flex shrink-0 items-center gap-0.5 px-1 py-1 border-b overflow-x-auto scrollbar-hide">
+      <div className="flex shrink-0 items-center gap-0.5 border-b px-1 py-1 overflow-x-auto scrollbar-hide">
         {ownEmojis.map((emoji) => (
           <button
             key={emoji.shortcode}
             type="button"
             title={`:${emoji.shortcode}:`}
-            className="shrink-0 w-8 h-8 rounded hover:bg-muted flex items-center justify-center"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted"
             onClick={(e) => {
               recordEmojiUsed(emoji)
               onEmojiClick(emoji, e.nativeEvent)
             }}
           >
-            <img src={emoji.url} alt={emoji.shortcode} className="w-6 h-6 object-contain" />
+            <img src={emoji.url} alt={emoji.shortcode} className="h-6 w-6 object-contain" />
           </button>
         ))}
       </div>
     ) : null
 
-  const pickerHost = (
-    <div
-      ref={containerRef}
-      data-emoji-picker-root
-      className={cn(
-        'relative w-full min-w-0 max-w-[350px]',
-        inDrawer ? 'min-h-0 flex-1 flex flex-col' : 'h-[min(320px,45dvh)] min-h-[240px] shrink-0',
-        mode === 'reactions' &&
-          'pointer-events-none fixed left-[-9999px] top-0 h-[320px] w-[350px] overflow-hidden opacity-0'
-      )}
-    >
-      {!pickerReady && !pickerError && mode === 'full' ? (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-          Loading emojis…
-        </div>
-      ) : null}
-      {pickerError && mode === 'full' ? (
-        <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-sm text-muted-foreground">
-          {pickerError}
-        </div>
-      ) : null}
-    </div>
-  )
-
-  return (
-    <div
-      className={cn(
-        'flex w-full min-w-0 flex-col',
-        inDrawer && mode === 'full' && 'min-h-0 flex-1'
-      )}
-    >
-      {ownEmojisRow}
-      {mode === 'reactions' ? (
+  if (mode === 'reactions') {
+    return (
+      <div className="flex w-full min-w-0 flex-col">
+        {ownEmojisRow}
         <div className="flex flex-wrap items-center gap-1 p-2">
           {reactionsList.map((emoji) => (
             <button
               key={emoji}
               type="button"
-              className="text-2xl p-1 rounded hover:bg-muted leading-none"
+              className="rounded p-1 text-2xl leading-none hover:bg-muted"
               onClick={(e) => {
                 recordEmojiUsed(emoji)
                 onEmojiClick(emoji, e.nativeEvent)
@@ -240,14 +245,40 @@ export default function EmojiPicker({
           <button
             type="button"
             title="More emojis"
-            className="p-1 rounded hover:bg-muted text-muted-foreground flex items-center justify-center"
+            className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-muted"
             onClick={() => setMode('full')}
           >
             <Plus size={20} />
           </button>
         </div>
-      ) : null}
-      {pickerHost}
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('flex w-full min-w-0 flex-col', inDrawer && 'min-h-0 flex-1')}>
+      {ownEmojisRow}
+      <div
+        ref={containerRef}
+        data-emoji-picker-root
+        className={cn(
+          'relative w-full min-w-[280px] max-w-[350px]',
+          inDrawer
+            ? 'min-h-0 flex-1'
+            : 'h-[min(320px,45dvh)] min-h-[240px] shrink-0'
+        )}
+      >
+        {!pickerReady && !pickerError ? (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+            Loading emojis…
+          </div>
+        ) : null}
+        {pickerError ? (
+          <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-sm text-muted-foreground">
+            {pickerError}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
