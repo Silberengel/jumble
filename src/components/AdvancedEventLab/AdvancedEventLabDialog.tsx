@@ -16,6 +16,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import logger from '@/lib/logger'
+import { cn } from '@/lib/utils'
 import { isLanguageToolConfigured } from '@/lib/languagetool-client'
 import { languageToolLintExtension, LT_GRAMMAR_MARK_CLASS, requestAdvancedLabGrammarLint } from '@/lib/languagetool-cm-linter'
 import { pickLanguageToolCodeForTranslateTarget } from '@/lib/languagetool-language-order'
@@ -212,6 +213,8 @@ export type AdvancedEventLabDialogProps = {
   contentWarning?: TContentWarningDraftOptions
   /** When set (reply/post composer), portal into the parent dialog layer so Radix does not mark this inert. */
   portalContainer?: HTMLElement | null
+  /** Solid full-viewport backdrop when portaled (hides the composer underneath). */
+  portalBackdrop?: boolean
 }
 
 function useDarkModeFlag(): boolean {
@@ -248,7 +251,8 @@ export default function AdvancedEventLabDialog({
   previewEmojiTags,
   addClientTag = true,
   contentWarning,
-  portalContainer = null
+  portalContainer = null,
+  portalBackdrop = false
 }: AdvancedEventLabDialogProps) {
   const { t, i18n } = useTranslation()
   const [labPickerPortalContainer, setLabPickerPortalContainer] = useState<HTMLElement | null>(null)
@@ -1130,8 +1134,11 @@ export default function AdvancedEventLabDialog({
       <DialogContent
         portalContainer={portalContainer}
         composerNestedShell={Boolean(portalContainer)}
-        hideOverlay={Boolean(portalContainer)}
-        overlayClassName="z-[300] pointer-events-auto"
+        hideOverlay={Boolean(portalContainer) && !portalBackdrop}
+        overlayClassName={cn(
+          portalContainer && 'absolute inset-0 pointer-events-auto',
+          portalBackdrop ? 'z-[300] bg-background' : 'z-[300] pointer-events-auto'
+        )}
         className={cnDialogShell(Boolean(portalContainer))}
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -1240,7 +1247,7 @@ export default function AdvancedEventLabDialog({
                 </TabsContent>
               </Tabs>
 
-              <div className="max-h-[min(45dvh,24rem)] shrink-0 overflow-y-auto overscroll-y-contain border-t bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-4 md:hidden">
+              <div className="max-h-[min(50dvh,28rem)] shrink-0 overflow-y-auto overscroll-y-contain border-t bg-background px-3 py-3 sm:px-4 md:hidden">
                 {labFormSidebar}
               </div>
             </div>
@@ -1258,16 +1265,13 @@ export default function AdvancedEventLabDialog({
   )
 }
 
-/** Full-viewport shell when body-portaled; fills composer layer when nested. */
+/** Full-viewport shell; nested portal host should also be fixed inset-0 (see PostEditor). */
 function cnDialogShell(nestedInComposer = false): string {
-  if (nestedInComposer) {
-    return [
-      'z-[301] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
-      'absolute inset-0 h-full w-full max-h-full !translate-x-0 !translate-y-0'
-    ].join(' ')
-  }
   return [
-    'z-[301] pointer-events-auto !fixed !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
-    'inset-0 h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw] !translate-x-0 !translate-y-0 top-0 left-0'
+    'z-[301] pointer-events-auto !flex max-w-none flex-col gap-0 overflow-hidden p-0 rounded-none',
+    '!translate-x-0 !translate-y-0',
+    'h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]',
+    'pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]',
+    nestedInComposer ? 'absolute inset-0' : '!fixed inset-0 top-0 left-0'
   ].join(' ')
 }

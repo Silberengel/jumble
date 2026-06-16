@@ -168,6 +168,7 @@ export default function PostContent({
   onPublishSuccess,
   discussionDynamicTopics,
   pickerPortalContainer,
+  advancedLabPortalContainer,
   onAdvancedLabOpenChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
@@ -185,6 +186,8 @@ export default function PostContent({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
   /** Portal mount for emoji/GIF/meme pickers so they stay inside the modal (not inert). */
   pickerPortalContainer?: HTMLElement | null
+  /** Full-viewport portal for the advanced lab (outside the composer dialog bounds). */
+  advancedLabPortalContainer?: HTMLElement | null
   /** Notifies the composer shell when the full-screen advanced lab opens or closes. */
   onAdvancedLabOpenChange?: (open: boolean) => void
 }) {
@@ -4080,7 +4083,8 @@ export default function PostContent({
         contentWarning={labContentWarning}
         draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
         bodyApiRef={advancedLabBodyApiRef}
-        portalContainer={pickerPortalContainer}
+        portalContainer={advancedLabPortalContainer}
+        portalBackdrop
         renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
           renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
         }

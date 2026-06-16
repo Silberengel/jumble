@@ -19,7 +19,9 @@ import postEditor from '@/services/post-editor.service'
 import { Event } from 'nostr-tools'
 import postEditorService from '@/services/post-editor.service'
 import { Dispatch, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNostr } from '@/providers/NostrProvider'
+import { cn } from '@/lib/utils'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
 
@@ -64,13 +66,23 @@ export default function PostEditor({
   const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
   const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
+  const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const [bodyPortalReady, setBodyPortalReady] = useState(false)
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
 
   const setPickerPortal = useCallback((el: HTMLElement | null) => {
     setPickerPortalContainer(el)
     postEditorService.setSuggestionPopupPortal(el)
+  }, [])
+
+  const setAdvancedLabPortal = useCallback((el: HTMLElement | null) => {
+    setAdvancedLabPortalContainer(el)
+  }, [])
+
+  useEffect(() => {
+    setBodyPortalReady(true)
   }, [])
 
   useEffect(() => {
@@ -134,15 +146,36 @@ export default function PostEditor({
       onPublishSuccess={onPublishSuccess}
       discussionDynamicTopics={discussionDynamicTopics}
       pickerPortalContainer={pickerPortalContainer}
+      advancedLabPortalContainer={advancedLabPortalContainer}
       onAdvancedLabOpenChange={setAdvancedLabOpen}
     />
   )
 
+  const advancedLabPortalEl = (
+    <div
+      ref={setAdvancedLabPortal}
+      data-advanced-lab-shell
+      className="pointer-events-none fixed inset-0 z-[400] h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]"
+      aria-hidden={!advancedLabOpen}
+    />
+  )
+
+  const advancedLabPortal =
+    bodyPortalReady && typeof document !== 'undefined'
+      ? createPortal(advancedLabPortalEl, document.body)
+      : null
+
+  const composerHiddenWhileLab = advancedLabOpen
+
   if (isSmallScreen) {
     return (
+      <>
       <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={false}>
         <SheetContent
-          className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
+          className={cn(
+            'z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200',
+            composerHiddenWhileLab && 'invisible pointer-events-none'
+          )}
           style={
             mobileSheetHeightPx != null
               ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
@@ -181,14 +214,20 @@ export default function PostEditor({
           </div>
         </SheetContent>
       </Sheet>
+      {advancedLabPortal}
+      </>
     )
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleComposerOpenChange} modal={false}>
       <DialogContent
-        className="z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full"
-        overlayClassName="z-[200]"
+        className={cn(
+          'z-[201] flex h-[min(90dvh,900px)] max-h-[min(90dvh,900px)] flex-col overflow-hidden bg-background p-0 max-w-2xl w-[calc(100vw-2rem)] sm:w-full',
+          composerHiddenWhileLab && 'invisible pointer-events-none'
+        )}
+        overlayClassName={cn('z-[200]', composerHiddenWhileLab && 'invisible pointer-events-none')}
         withoutClose
         onInteractOutside={(e) => {
           if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
@@ -221,5 +260,7 @@ export default function PostEditor({
           </div>
       </DialogContent>
     </Dialog>
+    {advancedLabPortal}
+    </>
   )
 }
