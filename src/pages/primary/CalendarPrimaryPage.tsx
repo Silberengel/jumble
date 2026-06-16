@@ -6,20 +6,18 @@ import {
   getLocalMondayWeekBounds,
   getLocalMonthRangeMs
 } from '@/lib/calendar-event'
+import { startCalendarFeedLoad } from '@/lib/calendar-feed-load'
 import { replaceableEventDedupeKey } from '@/lib/event'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { setCalendarDayPanelEvents } from '@/lib/calendar-day-panel-cache'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPage } from '@/contexts/secondary-page-context'
 import { useSmartNoteNavigation } from '@/PageManager'
-import { appendCuratedReadOnlyRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
+import { buildCalendarReadRelayUrls } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 import { useNostr } from '@/providers/NostrProvider'
-import client from '@/services/client.service'
-import indexedDb from '@/services/indexed-db.service'
-import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { TPageRef } from '@/types'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { RefreshButton } from '@/components/RefreshButton'
@@ -38,11 +36,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 const FETCH_LIMIT = 1200
-const FOLLOWING_CALENDAR_AUTHORS_CAP = 200
-const FOLLOWING_CALENDAR_AUTHORS_CHUNK = 80
-const FOLLOWING_CALENDAR_CHUNK_LIMIT = 350
 const SESSION_CALENDAR_MERGE_CAP = 5000
-const SIDEBAR_CALENDAR_MAX_RELAYS = 24
 const MONTH_IDB_MAX_SCAN = 12_000
 const PAD_DAYS = 7
 
@@ -104,18 +98,17 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
   const [rawEvents, setRawEvents] = useState<NostrEvent[]>([])
   const [loading, setLoading] = useState(false)
 
-  const relayUrls = useMemo(() => {
-    const base = getRelayUrlsWithFavoritesFastReadAndInbox(
-      favoriteRelays,
-      blockedRelays,
-      userReadInboxUrls(relayList, cacheRelayListEvent),
-      {
-        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
-        applySocialKindBlockedFilter: false
-      }
-    )
-    return appendCuratedReadOnlyRelays(base, blockedRelays).slice(0, SIDEBAR_CALENDAR_MAX_RELAYS)
-  }, [favoriteRelays, blockedRelays, relayList])
+  const relayUrls = useMemo(
+    () =>
+      buildCalendarReadRelayUrls(
+        favoriteRelays,
+        blockedRelays,
+        userReadInboxUrls(relayList, cacheRelayListEvent),
+        userWriteOutboxUrls(relayList, cacheRelayListEvent),
+        { includeReadOnlyMirrors: true }
+      ),
+    [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
+  )
 
   const relayKey = useMemo(() => [...relayUrls].sort().join('|'), [relayUrls])
 
@@ -141,180 +134,44 @@ const CalendarPrimaryPage = forwardRef<TPageRef, CalendarPrimaryPageProps>(funct
 
   useEffect(() => {
     const fetchGen = ++calendarFetchGenRef.current
-    let cancelled = false
-    let lateMergeTimer: number | null = null
-    const stale = () => cancelled || calendarFetchGenRef.current !== fetchGen
+    const stale = () => calendarFetchGenRef.current !== fetchGen
     const { rangeStartMs, rangeEndExclusiveMs } = paddedMonthRange
 
-    const replacePool = (pool: NostrEvent[]) => {
-      if (stale()) return
-      setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange(pool, rangeStartMs, rangeEndExclusiveMs))
-      setLoading(false)
-    }
+    setLoading(true)
 
-    const mergeIntoPool = (incoming: NostrEvent[]) => {
-      if (stale()) return
-      setRawEvents((prev) =>
-        dedupeCalendarEventsPreferringOccurrenceRange(
-          [...prev, ...incoming],
-          rangeStartMs,
-          rangeEndExclusiveMs
-        )
-      )
-    }
-
-    /** Same-tick paint from in-memory session (no await) — IDB + relays merge in the async block below. */
-    const fromSessionSync = client.getSessionEventsMatchingSearch(
-      '',
-      SESSION_CALENDAR_MERGE_CAP,
-      [...CALENDAR_EVENT_KINDS]
-    )
-    replacePool(
-      dedupeCalendarEventsPreferringOccurrenceRange(fromSessionSync, rangeStartMs, rangeEndExclusiveMs)
-    )
-
-    const scheduleLateSessionMerge = () => {
-      lateMergeTimer = window.setTimeout(() => {
-        lateMergeTimer = null
-        if (stale()) return
-        const later = client.getSessionEventsMatchingSearch(
-          '',
-          SESSION_CALENDAR_MERGE_CAP,
-          [...CALENDAR_EVENT_KINDS]
-        )
-        mergeIntoPool(later)
-      }, 2500)
-    }
-
-    void (async () => {
-      try {
-        const idbP = Promise.all([
-          indexedDb.getCalendarEventsForOccurrenceWindow(
+    const cleanup = startCalendarFeedLoad({
+      relayUrls,
+      rangeStartMs,
+      rangeEndExclusiveMs,
+      followAuthorsKey,
+      fetchLimit: FETCH_LIMIT,
+      sessionMergeCap: SESSION_CALENDAR_MERGE_CAP,
+      idbMaxScan: MONTH_IDB_MAX_SCAN,
+      archiveMaxScan: 55_000,
+      archiveMaxMatches: 2500,
+      mainFetchGlobalTimeout: 22_000,
+      mainFetchEoseTimeout: 3500,
+      chunkFetchGlobalTimeout: 12_000,
+      chunkFetchEoseTimeout: 2200,
+      isStale: stale,
+      onReplace: (pool) => {
+        setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange(pool, rangeStartMs, rangeEndExclusiveMs))
+        setLoading(false)
+      },
+      onMerge: (incoming) => {
+        setRawEvents((prev) =>
+          dedupeCalendarEventsPreferringOccurrenceRange(
+            [...prev, ...incoming],
             rangeStartMs,
-            rangeEndExclusiveMs,
-            MONTH_IDB_MAX_SCAN
-          ),
-          indexedDb.getArchivedCalendarEventsOverlappingWindow(
-            rangeStartMs,
-            rangeEndExclusiveMs,
-            55_000,
-            2500
-          )
-        ])
-          .then(([fromIdb, fromArchive]) =>
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...fromIdb, ...fromArchive],
-              rangeStartMs,
-              rangeEndExclusiveMs
-            )
-          )
-          .catch((): NostrEvent[] => [])
-
-        if (stale()) return
-
-        if (!relayUrls.length) {
-          const localBaseline = await idbP
-          if (stale()) return
-          const fromSession = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          replacePool([...localBaseline, ...fromSession])
-          scheduleLateSessionMerge()
-          return
-        }
-
-        const mainFetchOpts = {
-          cache: true as const,
-          globalTimeout: 22_000,
-          eoseTimeout: 3500,
-          firstRelayResultGraceMs: false as const
-        }
-        const chunkFetchOpts = {
-          cache: true as const,
-          globalTimeout: 12_000,
-          eoseTimeout: 2200,
-          firstRelayResultGraceMs: false as const
-        }
-
-        const authorList = followAuthorsKey
-          ? followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
-          : []
-        const authorChunks: string[][] = []
-        for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
-          authorChunks.push(authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK))
-        }
-
-        const mainReq = client.fetchEvents(
-          relayUrls,
-          {
-            kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-            limit: FETCH_LIMIT
-          },
-          mainFetchOpts
-        )
-        const chunkReqs = authorChunks.map((authors) =>
-          client.fetchEvents(
-            relayUrls,
-            {
-              kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-              authors,
-              limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
-            },
-            chunkFetchOpts
+            rangeEndExclusiveMs
           )
         )
-
-        const relayMergedP = Promise.all([mainReq, ...chunkReqs])
-          .then((merged) => {
-            const batch = merged[0] ?? []
-            const fromFollowing: NostrEvent[] = []
-            for (let i = 1; i < merged.length; i++) {
-              fromFollowing.push(...(merged[i] ?? []))
-            }
-            return { batch, fromFollowing }
-          })
-          .catch(() => ({ batch: [] as NostrEvent[], fromFollowing: [] as NostrEvent[] }))
-
-        const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
-        if (stale()) return
-
-        const fromSession = client.getSessionEventsMatchingSearch(
-          '',
-          SESSION_CALENDAR_MERGE_CAP,
-          [...CALENDAR_EVENT_KINDS]
-        )
-        replacePool([...localBaseline, ...fromSession, ...batch, ...fromFollowing])
-        scheduleLateSessionMerge()
-      } catch {
-        if (!stale()) {
-          try {
-            const rs = rangeStartMs
-            const re = rangeEndExclusiveMs
-            const [idb, arc] = await Promise.all([
-              indexedDb.getCalendarEventsForOccurrenceWindow(rs, re, MONTH_IDB_MAX_SCAN),
-              indexedDb.getArchivedCalendarEventsOverlappingWindow(rs, re, 55_000, 2500)
-            ])
-            const salvage = dedupeCalendarEventsPreferringOccurrenceRange([...idb, ...arc], rs, re)
-            const fromSession = client.getSessionEventsMatchingSearch(
-              '',
-              SESSION_CALENDAR_MERGE_CAP,
-              [...CALENDAR_EVENT_KINDS]
-            )
-            setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange([...salvage, ...fromSession], rs, re))
-          } catch {
-            setRawEvents([])
-          }
-          setLoading(false)
-        }
+        setLoading(false)
       }
-    })()
-    return () => {
-      cancelled = true
-      if (lateMergeTimer != null) window.clearTimeout(lateMergeTimer)
-    }
-  }, [relayKey, followAuthorsKey, paddedMonthRange, relayUrls.length, refreshKey])
+    })
+
+    return cleanup
+  }, [relayKey, followAuthorsKey, paddedMonthRange, relayUrls, refreshKey])
 
   const weekdayLabels = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(i18n.language, { weekday: 'short' })

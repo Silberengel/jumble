@@ -364,6 +364,32 @@ export function formatCalendarDateRange(startDate: string, endDate: string): str
 /** Seconds per day for NIP-52 `D` tags: `floor(unix_seconds / 86400)`. */
 const NIP52_SECONDS_PER_DAY = 86400
 
+/** Max `#D` values in one calendar REQ (relays vary; month + pad stays under this). */
+export const NIP52_CALENDAR_REQ_MAX_DAY_INDICES = 48
+
+/**
+ * UTC day indices (`floor(unix_seconds / 86400)`) covering a local-time half-open range.
+ * Used for NIP-52 `#D` relay filters so month/week views do not depend on a global `limit` slice.
+ */
+export function nip52UtcDayIndicesForLocalRange(
+  rangeStartMs: number,
+  rangeEndExclusiveMs: number,
+  padDays = 1
+): string[] {
+  if (!Number.isFinite(rangeStartMs) || !Number.isFinite(rangeEndExclusiveMs)) return []
+  const padSec = Math.max(0, padDays) * NIP52_SECONDS_PER_DAY
+  const loSec = Math.floor((rangeStartMs - padSec * 1000) / 1000)
+  const hiSec = Math.floor((rangeEndExclusiveMs + padSec * 1000 - 1) / 1000)
+  const loDay = Math.floor(loSec / NIP52_SECONDS_PER_DAY)
+  const hiDay = Math.floor(hiSec / NIP52_SECONDS_PER_DAY)
+  if (hiDay < loDay) return []
+  const out: string[] = []
+  for (let d = loDay; d <= hiDay && out.length < NIP52_CALENDAR_REQ_MAX_DAY_INDICES; d++) {
+    out.push(String(d))
+  }
+  return out
+}
+
 function nip52DayIndexToUtcCalendarParts(dayIndex: number): { month: string; day: string; year: string } {
   const ms = dayIndex * NIP52_SECONDS_PER_DAY * 1000
   if (!Number.isFinite(ms)) {

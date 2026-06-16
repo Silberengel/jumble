@@ -1,11 +1,14 @@
 import { FAST_WRITE_RELAY_URLS } from '@/constants'
 import { describe, expect, it } from 'vitest'
 import {
+  buildCalendarReadRelayUrls,
   buildDiscussionsSpellRelayUrls,
   buildNotificationSpellRelayUrls,
+  CALENDAR_READ_MAX_RELAYS,
   FAUX_SPELL_MAX_RELAYS,
   notificationMentionIndexRelayUrls
 } from './fauxSpellFeeds'
+import { nip52UtcDayIndicesForLocalRange } from '@/lib/calendar-event'
 
 describe('buildNotificationSpellRelayUrls', () => {
   it('pins mention index relays even when personal inbox fills the cap', () => {
@@ -46,5 +49,27 @@ describe('buildDiscussionsSpellRelayUrls', () => {
     const blocked = ['wss://nos.lol/']
     const out = buildDiscussionsSpellRelayUrls([], blocked)
     expect(out.some((u) => u.includes('nos.lol'))).toBe(false)
+  })
+})
+
+describe('buildCalendarReadRelayUrls', () => {
+  it('pins at least two FAST_READ relays when personal stack is empty', () => {
+    const out = buildCalendarReadRelayUrls([], [], [], [], { includeReadOnlyMirrors: false })
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.length).toBeLessThanOrEqual(CALENDAR_READ_MAX_RELAYS)
+    const fastReadCount = out.filter(
+      (u) => u.includes('theforest.nostr1.com') || u.includes('nostr.land') || u.includes('nostr.wine')
+    ).length
+    expect(fastReadCount).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('nip52UtcDayIndicesForLocalRange', () => {
+  it('returns consecutive UTC day indices for a week', () => {
+    const start = new Date(2026, 5, 16, 0, 0, 0, 0).getTime()
+    const end = start + 7 * 86_400_000
+    const indices = nip52UtcDayIndicesForLocalRange(start, end, 0)
+    expect(indices.length).toBeGreaterThanOrEqual(7)
+    expect(indices.length).toBeLessThanOrEqual(9)
   })
 })

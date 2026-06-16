@@ -19,7 +19,7 @@ import {
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { RENDERABLE_NOTE_KINDS_SORTED } from '@/lib/note-renderable-kinds'
-import { buildProfileAugmentedReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfileAugmentedReadRelayUrls, getRelayUrlsWithFavoritesFastReadAndInbox } from '@/lib/favorites-feed-relays'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeTopic } from '@/lib/discussion-topics'
@@ -197,6 +197,52 @@ export function ensureFauxSpellRelayStackTouchesFastRead(urls: string[]): string
     allowThirdPartyLocalRelays: true
   })
   return pinHttpIndexRelaysInRelayCap(capped, sourceUrls, FAUX_SPELL_MAX_RELAYS)
+}
+
+/** Max relay URLs for calendar month view + sidebar widget. */
+export const CALENDAR_READ_MAX_RELAYS = 24
+
+/**
+ * Calendar reads: inbox → favorites → {@link FAST_READ_RELAY_URLS}, with fast-read pinning.
+ * Optional read-only mirrors for the full calendar page (sidebar skips them to avoid idle sockets).
+ */
+export function buildCalendarReadRelayUrls(
+  favoriteRelays: string[],
+  blockedRelays: string[],
+  userInboxReadRelays: string[],
+  userWriteRelays: string[],
+  options?: { includeReadOnlyMirrors?: boolean }
+): string[] {
+  const base = ensureFauxSpellRelayStackTouchesFastRead(
+    getRelayUrlsWithFavoritesFastReadAndInbox(
+      favoriteRelays,
+      blockedRelays,
+      userInboxReadRelays,
+      {
+        userWriteRelays,
+        applySocialKindBlockedFilter: false
+      }
+    )
+  )
+  if (!options?.includeReadOnlyMirrors) {
+    return base.slice(0, CALENDAR_READ_MAX_RELAYS)
+  }
+  const mirrors = dedupeNormalizeRelayUrlsOrdered(
+    READ_ONLY_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+  )
+  const merged = feedRelayPolicyUrls(
+    [
+      { source: 'read-only', urls: mirrors },
+      { source: 'fallback', urls: base }
+    ],
+    {
+      operation: 'read',
+      maxRelays: CALENDAR_READ_MAX_RELAYS,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }
+  )
+  return ensureFauxSpellRelayStackTouchesFastRead(merged)
 }
 
 /** Dedupe curated read relays and drop user-blocked URLs (no {@link READ_ONLY_RELAY_URLS} prepend). */

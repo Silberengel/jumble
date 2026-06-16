@@ -7,19 +7,18 @@ import {
   getCalendarOccurrenceWindowMs,
   getLocalMondayWeekBounds
 } from '@/lib/calendar-event'
-import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
+import { startCalendarFeedLoad } from '@/lib/calendar-feed-load'
 import { replaceableEventDedupeKey } from '@/lib/event'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { useSmartNoteNavigation } from '@/PageManager'
+import { buildCalendarReadRelayUrls } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useFollowListOptional } from '@/providers/follow-list-context'
 import { useNostr } from '@/providers/NostrProvider'
-import client from '@/services/client.service'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { registerSessionInteractivePrewarmListener } from '@/services/session-interactive-prewarm-bridge'
-import indexedDb from '@/services/indexed-db.service'
-import { CALENDAR_EVENT_KINDS, ExtendedKind } from '@/constants'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
@@ -27,17 +26,10 @@ import { useTranslation } from 'react-i18next'
 import { CalendarEventCoverImage } from '@/components/CalendarEventCoverImage'
 import { Button } from '@/components/ui/button'
 
-/** Global calendar REQ: relays often cap; larger limit reduces “missing” older-published rows for this week. */
 const FETCH_LIMIT = 400
-/** Supplementary `authors` REQ: community calls (e.g. Edufeed) may not appear in the global slice. */
-const FOLLOWING_CALENDAR_AUTHORS_CAP = 200
-const FOLLOWING_CALENDAR_AUTHORS_CHUNK = 80
-const FOLLOWING_CALENDAR_CHUNK_LIMIT = 350
+const SESSION_CALENDAR_MERGE_CAP = 1200
 /** ~5 note rows at ~48px each */
 const LIST_MAX_HEIGHT_PX = 240
-const SIDEBAR_CALENDAR_MAX_RELAYS = 24
-/** Merge session cache so events already loaded in feeds (but missed by this REQ) still appear. */
-const SESSION_CALENDAR_MERGE_CAP = 1200
 
 export default function SidebarCalendarWeekWidget() {
   const { t } = useTranslation()
@@ -58,19 +50,17 @@ export default function SidebarCalendarWeekWidget() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [rawEvents, setRawEvents] = useState<Event[]>([])
 
-  const relayUrls = useMemo(() => {
-    const base = getRelayUrlsWithFavoritesFastReadAndInbox(
-      favoriteRelays,
-      blockedRelays,
-      userReadInboxUrls(relayList, cacheRelayListEvent),
-      {
-        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
-        applySocialKindBlockedFilter: false
-      }
-    )
-    /** Sidebar only: avoid prepending {@link READ_ONLY_RELAY_URLS} so idle shell does not open aggregator sockets. */
-    return base.slice(0, SIDEBAR_CALENDAR_MAX_RELAYS)
-  }, [favoriteRelays, blockedRelays, relayList])
+  const relayUrls = useMemo(
+    () =>
+      buildCalendarReadRelayUrls(
+        favoriteRelays,
+        blockedRelays,
+        userReadInboxUrls(relayList, cacheRelayListEvent),
+        userWriteOutboxUrls(relayList, cacheRelayListEvent),
+        { includeReadOnlyMirrors: false }
+      ),
+    [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
+  )
 
   const relayKey = useMemo(() => [...relayUrls].sort().join('|'), [relayUrls])
 
@@ -107,164 +97,42 @@ export default function SidebarCalendarWeekWidget() {
 
   useEffect(() => {
     const fetchGen = ++fetchGenRef.current
-    let cancelled = false
-    let lateMergeTimer: number | null = null
-    const stale = () => cancelled || fetchGenRef.current !== fetchGen
+    const stale = () => fetchGenRef.current !== fetchGen
+    const { weekStartMs, weekEndExclusiveMs } = getLocalMondayWeekBounds(weekOffset)
 
-    const weekBounds = () => getLocalMondayWeekBounds(weekOffset)
-
-    const replacePool = (pool: Event[]) => {
-      if (stale()) return
-      const { weekStartMs, weekEndExclusiveMs } = weekBounds()
-      setRawEvents(dedupeCalendarEventsPreferringOccurrenceRange(pool, weekStartMs, weekEndExclusiveMs))
-    }
-
-    const mergeIntoPool = (incoming: Event[]) => {
-      if (stale()) return
-      const { weekStartMs, weekEndExclusiveMs } = weekBounds()
-      setRawEvents((prev) =>
-        dedupeCalendarEventsPreferringOccurrenceRange([...prev, ...incoming], weekStartMs, weekEndExclusiveMs)
-      )
-    }
-
-    const { weekStartMs, weekEndExclusiveMs } = weekBounds()
-    const fromSessionSync = client.getSessionEventsMatchingSearch(
-      '',
-      SESSION_CALENDAR_MERGE_CAP,
-      [...CALENDAR_EVENT_KINDS]
-    )
-    replacePool(
-      dedupeCalendarEventsPreferringOccurrenceRange(fromSessionSync, weekStartMs, weekEndExclusiveMs)
-    )
-
-    const scheduleLateSessionMerge = () => {
-      lateMergeTimer = window.setTimeout(() => {
-        lateMergeTimer = null
-        if (stale()) return
-        const later = client.getSessionEventsMatchingSearch(
-          '',
-          SESSION_CALENDAR_MERGE_CAP,
-          [...CALENDAR_EVENT_KINDS]
+    const cleanup = startCalendarFeedLoad({
+      relayUrls,
+      rangeStartMs: weekStartMs,
+      rangeEndExclusiveMs: weekEndExclusiveMs,
+      followAuthorsKey,
+      fetchLimit: FETCH_LIMIT,
+      sessionMergeCap: SESSION_CALENDAR_MERGE_CAP,
+      idbMaxScan: 8000,
+      archiveMaxScan: 25_000,
+      archiveMaxMatches: 400,
+      mainFetchGlobalTimeout: 22_000,
+      mainFetchEoseTimeout: 3500,
+      chunkFetchGlobalTimeout: 16_000,
+      chunkFetchEoseTimeout: 2800,
+      isStale: stale,
+      onReplace: (pool) => {
+        setRawEvents(
+          dedupeCalendarEventsPreferringOccurrenceRange(pool, weekStartMs, weekEndExclusiveMs)
         )
-        mergeIntoPool(later)
-      }, 2500)
-    }
-
-    void (async () => {
-      try {
-        const idbP = Promise.all([
-          indexedDb.getCalendarEventsForOccurrenceWindow(weekStartMs, weekEndExclusiveMs, 8000),
-          indexedDb.getArchivedCalendarEventsOverlappingWindow(weekStartMs, weekEndExclusiveMs, 25_000, 400)
-        ])
-          .then(([fromIdb, fromArchive]) =>
-            dedupeCalendarEventsPreferringOccurrenceRange(
-              [...fromIdb, ...fromArchive],
-              weekStartMs,
-              weekEndExclusiveMs
-            )
-          )
-          .catch((): Event[] => [])
-
-        if (stale()) return
-
-        if (!relayUrls.length) {
-          const localBaseline = await idbP
-          if (stale()) return
-          const fromSession = client.getSessionEventsMatchingSearch(
-            '',
-            SESSION_CALENDAR_MERGE_CAP,
-            [...CALENDAR_EVENT_KINDS]
-          )
-          replacePool([...localBaseline, ...fromSession])
-          scheduleLateSessionMerge()
-          return
-        }
-
-        const authorList = followAuthorsKey
-          ? followAuthorsKey.split('|').filter(Boolean).slice(0, FOLLOWING_CALENDAR_AUTHORS_CAP)
-          : []
-        const authorChunks: string[][] = []
-        for (let i = 0; i < authorList.length; i += FOLLOWING_CALENDAR_AUTHORS_CHUNK) {
-          authorChunks.push(authorList.slice(i, i + FOLLOWING_CALENDAR_AUTHORS_CHUNK))
-        }
-
-        const mainReq = client.fetchEvents(
-          relayUrls,
-          {
-            kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-            limit: FETCH_LIMIT
-          },
-          {
-            cache: true,
-            globalTimeout: 22_000,
-            eoseTimeout: 3500,
-            firstRelayResultGraceMs: false
-          }
-        )
-        const chunkReqs = authorChunks.map((authors) =>
-          client.fetchEvents(
-            relayUrls,
-            {
-              kinds: [ExtendedKind.CALENDAR_EVENT_DATE, ExtendedKind.CALENDAR_EVENT_TIME],
-              authors,
-              limit: FOLLOWING_CALENDAR_CHUNK_LIMIT
-            },
-            {
-              cache: true,
-              globalTimeout: 16_000,
-              eoseTimeout: 2800,
-              firstRelayResultGraceMs: false
-            }
+      },
+      onMerge: (incoming) => {
+        setRawEvents((prev) =>
+          dedupeCalendarEventsPreferringOccurrenceRange(
+            [...prev, ...incoming],
+            weekStartMs,
+            weekEndExclusiveMs
           )
         )
-
-        const relayMergedP = Promise.all([mainReq, ...chunkReqs])
-          .then((merged) => {
-            const batch = merged[0] ?? []
-            const fromFollowing: Event[] = []
-            for (let i = 1; i < merged.length; i++) {
-              fromFollowing.push(...(merged[i] ?? []))
-            }
-            return { batch, fromFollowing }
-          })
-          .catch(() => ({ batch: [] as Event[], fromFollowing: [] as Event[] }))
-
-        const [{ batch, fromFollowing }, localBaseline] = await Promise.all([relayMergedP, idbP])
-        if (stale()) return
-
-        const fromSessionAfterNet = client.getSessionEventsMatchingSearch(
-          '',
-          SESSION_CALENDAR_MERGE_CAP,
-          [...CALENDAR_EVENT_KINDS]
-        )
-        replacePool([...localBaseline, ...fromSessionAfterNet, ...batch, ...fromFollowing])
-        scheduleLateSessionMerge()
-      } catch {
-        if (!stale()) {
-          try {
-            const { weekStartMs: ws, weekEndExclusiveMs: we } = weekBounds()
-            const [idb, arc] = await Promise.all([
-              indexedDb.getCalendarEventsForOccurrenceWindow(ws, we),
-              indexedDb.getArchivedCalendarEventsOverlappingWindow(ws, we, 25_000, 400)
-            ])
-            const salvage = dedupeCalendarEventsPreferringOccurrenceRange([...idb, ...arc], ws, we)
-            const fromSession = client.getSessionEventsMatchingSearch(
-              '',
-              SESSION_CALENDAR_MERGE_CAP,
-              [...CALENDAR_EVENT_KINDS]
-            )
-            replacePool([...salvage, ...fromSession])
-          } catch {
-            if (!stale()) setRawEvents([])
-          }
-        }
       }
-    })()
-    return () => {
-      cancelled = true
-      if (lateMergeTimer != null) window.clearTimeout(lateMergeTimer)
-    }
-  }, [relayKey, followAuthorsKey, weekOffset, prewarmRefreshKey])
+    })
+
+    return cleanup
+  }, [relayKey, followAuthorsKey, weekOffset, prewarmRefreshKey, relayUrls])
 
   const openEvent = useCallback(
     (ev: Event) => {
