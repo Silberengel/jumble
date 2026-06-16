@@ -57,6 +57,7 @@
 
   /* Allow text selection in note content */
   [data-note-content],
+  [data-highlight-container],
   .note-content,
   article,
   .markdown-content,

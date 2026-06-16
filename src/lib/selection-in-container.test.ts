@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { isRangeInContainer } from '@/lib/selection-in-container'
+import { describe, expect, it, vi, afterEach } from 'vitest'
+import {
+  isRangeInContainer,
+  readSelectionInContainer,
+  readSelectionInContainerWithRetry
+} from '@/lib/selection-in-container'
 
 function mount(html: string): { root: HTMLElement; container: HTMLElement } {
   const root = document.createElement('div')
@@ -18,6 +22,17 @@ function selectText(node: Node, start: number, end: number): Range {
   selection?.addRange(range)
   return range
 }
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  vi.useRealTimers()
+})
 
 describe('isRangeInContainer', () => {
   it('returns true when both range endpoints are inside the container', () => {
@@ -58,6 +73,37 @@ describe('isRangeInContainer', () => {
     selection?.addRange(range)
 
     expect(isRangeInContainer(range, container)).toBe(true)
+
+    root.remove()
+  })
+})
+
+describe('readSelectionInContainerWithRetry', () => {
+  it('calls onHit after the selection is readable', async () => {
+    const { root, container } = mount('<div data-container><p>Hello world</p></div>')
+    const text = container.querySelector('p')!.firstChild!
+    selectText(text, 0, 5)
+
+    const onHit = vi.fn()
+    readSelectionInContainerWithRetry(container, onHit)
+
+    await nextFrame()
+    await nextFrame()
+    await new Promise((r) => setTimeout(r, 250))
+
+    expect(onHit).toHaveBeenCalledTimes(1)
+    expect(onHit.mock.calls[0][0].selectedText).toBe('Hello')
+
+    root.remove()
+  })
+
+  it('reads range.toString when selection.toString is empty', () => {
+    const { root, container } = mount('<div data-container><p>Fallback text</p></div>')
+    const text = container.querySelector('p')!.firstChild!
+    selectText(text, 0, 8)
+
+    const hit = readSelectionInContainer(container)
+    expect(hit?.selectedText).toBe('Fallback')
 
     root.remove()
   })

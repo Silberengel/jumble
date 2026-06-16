@@ -629,12 +629,6 @@ export default function Note({
 
   const isSyntheticRssParent = isRssThreadSyntheticParentEvent(event)
 
-  const wrappedContent = isHighlightableKind ? (
-    <SelectionHighlightTrigger event={displayEvent}>{content}</SelectionHighlightTrigger>
-  ) : (
-    content
-  )
-
   return (
     <CreateHighlightContext.Provider value={openHighlight}>
       <div
@@ -814,7 +808,13 @@ export default function Note({
           />
         ) : null}
         <IValue event={event} className="mt-2" />
-        {wrappedContent}
+        {isHighlightableKind ? (
+          <SelectionHighlightTrigger event={displayEvent} openHighlight={openHighlight}>
+            {content}
+          </SelectionHighlightTrigger>
+        ) : (
+          content
+        )}
       </div>
       {postEditorOpen ? (
         <PostEditor
