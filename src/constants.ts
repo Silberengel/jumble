@@ -654,6 +654,8 @@ export const ExtendedKind = {
   BADGE_DEFINITION: 30009,
   /** Web page bookmark (URL in i/I or r tags); used in RSS+Web relay discovery */
   WEB_BOOKMARK: 39701,
+  /** EduFeed AMB: Open Educational Resource metadata (parameterized replaceable). */
+  LEARNING_RESOURCE: 30142,
   /** NIP-34 / Git Republic: repository announcement (addressable) */
   GIT_REPO_ANNOUNCEMENT: 30617,
   /** NIP-34 / Git Republic: issue */
@@ -1002,7 +1004,8 @@ export const SUPPORTED_KINDS = [
   ExtendedKind.APPLICATION_HANDLER_INFO,
   ExtendedKind.GIT_REPO_ANNOUNCEMENT,
   ExtendedKind.GIT_ISSUE,
-  ExtendedKind.GIT_RELEASE
+  ExtendedKind.GIT_RELEASE,
+  ExtendedKind.LEARNING_RESOURCE
 ]
 
 /**

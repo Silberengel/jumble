@@ -42,6 +42,7 @@ import EventPowLabel from '../EventPowLabel'
 import Zap from '../Note/Zap'
 import MoneroTip from '../Note/MoneroTip'
 import GitRepublicEventCard from '../Note/GitRepublicEventCard'
+import LearningResourceCard from '../Note/LearningResourceCard'
 
 /** Inert event so hooks can run before `event` is defined. */
 const CONTENT_PREVIEW_HOOK_PLACEHOLDER = {
@@ -417,6 +418,19 @@ export default function ContentPreview({
       )
     }
     return withKindRow(<GitRepublicEventCard variant="compact" event={previewEvent} />)
+  }
+
+  if (event.kind === ExtendedKind.LEARNING_RESOURCE) {
+    if (forParentReplyBlurb) {
+      const name = previewEvent.tags.find((t) => t[0] === 'name')?.[1]?.trim()
+      const line = name || previewEvent.content?.trim() || t('Learning resource', { defaultValue: 'Learning resource' })
+      return (
+        <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
+          <div className={cn('min-w-0 truncate text-sm', previewBody)}>{line}</div>
+        </div>
+      )
+    }
+    return withKindRow(<LearningResourceCard variant="compact" event={previewEvent} />)
   }
 
   if (isNip25ReactionKind(event.kind)) {

@@ -25,7 +25,8 @@ const RENDERABLE_NOTE_KINDS = new Set<number>([
   ExtendedKind.CITATION_EXTERNAL,
   ExtendedKind.CITATION_HARDCOPY,
   ExtendedKind.CITATION_PROMPT,
-  ExtendedKind.WEB_BOOKMARK
+  ExtendedKind.WEB_BOOKMARK,
+  ExtendedKind.LEARNING_RESOURCE
 ])
 
 /**

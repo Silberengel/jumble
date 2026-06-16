@@ -137,6 +137,8 @@ export function getKindDescription(
       return { number: 8, description: 'Badge award' }
     case ExtendedKind.WEB_BOOKMARK:
       return { number: 39701, description: 'Web bookmark' }
+    case ExtendedKind.LEARNING_RESOURCE:
+      return { number: 30142, description: 'Learning resource' }
     case ExtendedKind.GIT_REPO_ANNOUNCEMENT:
       return { number: 30617, description: 'Git repository' }
     case ExtendedKind.GIT_ISSUE:

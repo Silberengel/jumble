@@ -90,6 +90,7 @@ import CitationCard from '@/components/CitationCard'
 import FollowPackPreview from '../ContentPreview/FollowPackPreview'
 import CalendarEventContent from '../CalendarEventContent'
 import GitRepublicEventCard from './GitRepublicEventCard'
+import LearningResourceCard from './LearningResourceCard'
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
   ExtendedKind.PUBLICATION_CONTENT,
@@ -626,6 +627,8 @@ export default function Note({
     event.kind === ExtendedKind.GIT_RELEASE
   ) {
     content = <GitRepublicEventCard className="mt-2" event={displayEvent} />
+  } else if (event.kind === ExtendedKind.LEARNING_RESOURCE) {
+    content = <LearningResourceCard className="mt-2" event={displayEvent} />
   } else if (event.kind === kinds.ShortTextNote || event.kind === ExtendedKind.COMMENT) {
     content = renderEventContent({ hideMetadata: true })
   } else {

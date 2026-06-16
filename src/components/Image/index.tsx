@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { markMediaUrlRevealed, wasMediaUrlRevealed } from '@/lib/revealed-media-session'
+import { markMediaUrlsRevealed, subscribeRevealedMedia, wasMediaUrlRevealed } from '@/lib/revealed-media-session'
 import {
   isRenderableMediaUrl,
   isSafeMediaUrl,
@@ -127,8 +127,10 @@ export default function Image({
   const effectiveHoldUntilClick = holdUntilClick && !autoLoadForAuthor
 
   const urlOk = !!url?.trim()
-  const [revealed, setRevealed] = useState(!effectiveHoldUntilClick)
-  const [isLoading, setIsLoading] = useState(urlOk && !effectiveHoldUntilClick)
+  const revealedInitially = (hold: boolean, mediaUrl: string | undefined) =>
+    !hold || Boolean(mediaUrl?.trim() && wasMediaUrlRevealed(mediaUrl))
+  const [revealed, setRevealed] = useState(() => revealedInitially(effectiveHoldUntilClick, url))
+  const [isLoading, setIsLoading] = useState(() => urlOk && revealedInitially(effectiveHoldUntilClick, url))
   const [displaySkeleton, setDisplaySkeleton] = useState(urlOk)
   const [hasError, setHasError] = useState(!urlOk)
   const [imageUrl, setImageUrl] = useState(() => resolvePrimalBlossomPlayableUrl(url ?? ''))
@@ -227,6 +229,22 @@ export default function Image({
     setIsLoading(showImmediately)
   }, [url, effectiveHoldUntilClick])
 
+  useEffect(() => {
+    if (!effectiveHoldUntilClick) return
+    const syncFromSession = () => {
+      if (!url?.trim() || !wasMediaUrlRevealed(url)) return
+      setRevealed((prev) => {
+        if (prev) return prev
+        loadSettledRef.current = false
+        setIsLoading(true)
+        setDisplaySkeleton(true)
+        setHasError(false)
+        return true
+      })
+    }
+    return subscribeRevealedMedia(syncFromSession)
+  }, [effectiveHoldUntilClick, url])
+
   const notifyLoaded = useCallback(() => {
     if (loadSettledRef.current) return
     loadSettledRef.current = true
@@ -238,7 +256,8 @@ export default function Image({
     // Unmount blurhash/skeleton immediately — keeping z-10 overlay (even at opacity-0) leaves bg-muted/40
     // and canvas layers visible as odd tinted bands until delayed teardown.
     setDisplaySkeleton(false)
-  }, [captureIntrinsicDim])
+    markMediaUrlsRevealed([url ?? '', imageUrl])
+  }, [captureIntrinsicDim, url, imageUrl])
 
   // Cached images are often `complete` before `onLoad` is attached (feed mounts many cards at once).
   useLayoutEffect(() => {
@@ -327,7 +346,7 @@ export default function Image({
   const handleReveal = () => {
     if (revealed) return
     userRevealedRef.current = true
-    if (url?.trim()) markMediaUrlRevealed(url)
+    markMediaUrlsRevealed([url ?? '', imageUrl])
     setRevealed(true)
     setIsLoading(true)
   }
