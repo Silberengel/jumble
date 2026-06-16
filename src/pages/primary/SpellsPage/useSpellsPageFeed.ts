@@ -41,6 +41,7 @@ import {
   MEDIA_SPELL_KINDS,
   NOTIFICATION_SPELL_KINDS,
   applyFauxSpellCapsToSubRequests,
+  buildDiscussionsSpellRelayUrls,
   buildNotificationSpellRelayUrls,
   ensureFauxSpellRelayStackTouchesFastRead
 } from './fauxSpellFeeds'
@@ -395,23 +396,26 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     )
       return []
     const fauxSpellSkipSocialKindBlocked =
+      selectedFauxSpell === 'discussions' ||
       selectedFauxSpell === 'calendar' ||
       selectedFauxSpell === 'followPacks' ||
       selectedFauxSpell === 'media' ||
       selectedFauxSpell === 'nostrSpecs' ||
       selectedFauxSpell === 'bookmarks' ||
       selectedFauxSpell === 'interests'
-    const feedUrls = ensureFauxSpellRelayStackTouchesFastRead(
-      getRelayUrlsWithFavoritesFastReadAndInbox(
-        favoriteRelays,
-        blockedRelays,
-        userReadInboxUrls(relayList, cacheRelayListEvent),
-        {
-          userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
-          applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
-        }
-      )
+    const baseFeedUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
+      favoriteRelays,
+      blockedRelays,
+      userReadInboxUrls(relayList, cacheRelayListEvent),
+      {
+        userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
+        applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
+      }
     )
+    const feedUrls =
+      selectedFauxSpell === 'discussions'
+        ? buildDiscussionsSpellRelayUrls(baseFeedUrls, blockedRelays)
+        : ensureFauxSpellRelayStackTouchesFastRead(baseFeedUrls)
 
     if (selectedFauxSpell === 'notifications') {
       if (!notificationsFeedPubkey) return []

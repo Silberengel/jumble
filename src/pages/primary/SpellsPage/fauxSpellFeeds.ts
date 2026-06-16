@@ -13,6 +13,7 @@ import {
   DEFAULT_FEED_SHOW_KINDS,
   ExtendedKind,
   FAST_READ_RELAY_URLS,
+  FAST_WRITE_RELAY_URLS,
   PROFILE_MEDIA_TAB_KINDS,
   READ_ONLY_RELAY_URLS,
   SEARCHABLE_RELAY_URLS
@@ -263,6 +264,40 @@ export function buildDiscussionFilter(): Filter {
     kinds: [ExtendedKind.DISCUSSION],
     limit: FAUX_SPELL_EVENT_LIMIT
   }
+}
+
+/**
+ * Kind 11 threads are often published to {@link FAST_WRITE_RELAY_URLS} (nos.lol, primal, …).
+ * The generic faux-spell read stack only merges inbox + favorites + {@link FAST_READ_RELAY_URLS}, which
+ * missed write-tier relays the legacy Discussions page always queried.
+ */
+export function buildDiscussionsSpellRelayUrls(
+  personalUrls: readonly string[],
+  blockedRelays: readonly string[] = []
+): string[] {
+  const blocked = new Set(
+    blockedRelays
+      .map((b) => (normalizeAnyRelayUrl(b) || b.trim()).toLowerCase())
+      .filter(Boolean)
+  )
+  const allow = (u: string) => !blocked.has((normalizeAnyRelayUrl(u) || u.trim()).toLowerCase())
+  const personal = dedupeNormalizeRelayUrlsOrdered([...personalUrls]).filter(allow)
+  const writeLayer = dedupeNormalizeRelayUrlsOrdered(
+    FAST_WRITE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
+  ).filter(allow)
+  const capped = feedRelayPolicyUrls(
+    [
+      { source: 'viewer-read', urls: personal },
+      { source: 'fast-write', urls: writeLayer }
+    ],
+    {
+      operation: 'read',
+      maxRelays: FAUX_SPELL_MAX_RELAYS,
+      applySocialKindBlockedFilter: false,
+      allowThirdPartyLocalRelays: true
+    }
+  )
+  return ensureFauxSpellRelayStackTouchesFastRead(capped)
 }
 
 export function buildMediaSpellFilter(): Filter {
