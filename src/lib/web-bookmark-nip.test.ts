@@ -3,9 +3,11 @@ import { createWebBookmarkDraftEvent } from '@/lib/draft-event'
 import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
 import {
   expandWebBookmarkDTagQueryValues,
+  getWebBookmarkReplaceableEventNaddr,
   urlToWebBookmarkDTag,
   webBookmarkDTagToUrl
 } from '@/lib/web-bookmark-nip'
+import { relayHintsForEmbeddedNotePointer } from '@/lib/event'
 import { describe, expect, it } from 'vitest'
 import type { Event } from 'nostr-tools'
 
@@ -81,5 +83,43 @@ describe('web bookmark NIP-B0 d-tag', () => {
       ['published_at', '1738863000'],
       ['t', 'travel']
     ])
+  })
+
+  it('resolves replaceable event bookmarks from a-tag or coordinate d-tag', () => {
+    const coord =
+      '30023:5a12b41ec15b466321e88c371be2dc47d9193f9c8bba4ab09fc50045bd35aedf:4g2mkzxv'
+    const event: Pick<Event, 'kind' | 'tags'> = {
+      kind: ExtendedKind.WEB_BOOKMARK,
+      tags: [
+        ['d', coord],
+        ['a', coord, 'wss://dev.relay.edufeed.org/'],
+        ['title', 'Community Hub Framework']
+      ]
+    }
+    const naddr = getWebBookmarkReplaceableEventNaddr(event)
+    expect(naddr).toMatch(/^naddr1/)
+    expect(getWebBookmarkArticleUrl(event)).toBeUndefined()
+  })
+
+  it('prioritizes matching a-tag relay for embedded naddr fetch', () => {
+    const coord =
+      '30023:5a12b41ec15b466321e88c371be2dc47d9193f9c8bba4ab09fc50045bd35aedf:4g2mkzxv'
+    const relay = 'wss://dev.relay.edufeed.org/'
+    const bookmark = {
+      kind: ExtendedKind.WEB_BOOKMARK,
+      id: '0'.repeat(64),
+      pubkey: '1'.repeat(64),
+      created_at: 1,
+      sig: 'sig',
+      content: '',
+      tags: [
+        ['d', coord],
+        ['a', coord, relay],
+        ['title', 'Community Hub Framework']
+      ]
+    } as Event
+    const naddr = getWebBookmarkReplaceableEventNaddr(bookmark)!
+    const hints = relayHintsForEmbeddedNotePointer(naddr, bookmark)
+    expect(hints[0]).toMatch(/dev\.relay\.edufeed\.org/i)
   })
 })

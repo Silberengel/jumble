@@ -97,7 +97,7 @@ export function getWebBookmarkArticleUrl(event: Pick<Event, 'kind' | 'tags'>): s
     }
   }
   const dTag = event.tags.find((t) => t[0] === 'd')?.[1]?.trim()
-  if (dTag) {
+  if (dTag && !/^\d+:[0-9a-f]{64}:/i.test(dTag)) {
     const fromD = normalizeHttpArticleUrl(dTag)
     if (fromD) return fromD
   }

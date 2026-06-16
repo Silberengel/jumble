@@ -702,6 +702,58 @@ export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
   return [...new Set(normalized)]
 }
 
+/** Deduped wss hints with parent `a`/`e`/`q` relays that match the embedded pointer listed first. */
+export function relayHintsForEmbeddedNotePointer(
+  notePointer: string,
+  containingEvent?: Event
+): string[] {
+  if (!containingEvent) return []
+  const prioritized: string[] = []
+  const pushHint = (raw: string | undefined) => {
+    const hint = raw?.trim()
+    if (!hint || (!hint.startsWith('wss://') && !hint.startsWith('ws://'))) return
+    const n = normalizeUrl(hint) || hint
+    if (urlIsNonLocalForRemoteViewer(n)) prioritized.push(hint)
+  }
+  const trimmed = notePointer.trim()
+
+  let naddrCoord: string | undefined
+  let targetHex: string | undefined
+  try {
+    const { type, data } = nip19.decode(trimmed)
+    if (type === 'naddr') {
+      naddrCoord = normalizeReplaceableCoordinateString(
+        getReplaceableCoordinate(data.kind, data.pubkey, data.identifier ?? '')
+      )
+      for (const r of data.relays ?? []) pushHint(r)
+    } else if (type === 'nevent') {
+      targetHex = data.id.toLowerCase()
+      for (const r of data.relays ?? []) pushHint(r)
+    } else if (type === 'note') {
+      targetHex = data.toLowerCase()
+    }
+  } catch {
+    if (/^[0-9a-f]{64}$/i.test(trimmed)) targetHex = trimmed.toLowerCase()
+  }
+
+  for (const tag of containingEvent.tags) {
+    if (naddrCoord && tag[0] === 'a' && tag[1]?.trim()) {
+      const coord = normalizeReplaceableCoordinateString(tag[1].trim())
+      if (coord === naddrCoord) pushHint(tag[2])
+    }
+    if (targetHex && tag[0] === 'e' && tag[1]?.trim().toLowerCase() === targetHex) {
+      pushHint(tag[2])
+    }
+  }
+
+  const merged = [...prioritized, ...relayHintWssUrlsFromEvent(containingEvent)]
+  return [
+    ...new Set(
+      merged.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u))
+    )
+  ]
+}
+
 function getEmbeddedPubkeys(event: Event) {
   const cache = EVENT_EMBEDDED_PUBKEYS_CACHE.get(event.id)
   if (cache) return cache

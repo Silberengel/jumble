@@ -106,6 +106,7 @@ describe('imeta-content-match', () => {
       tags: [['imeta', `url ${url}`, 'm image/jpeg']]
     })
     expect(getOrphanedImetaMedia(event)).toHaveLength(0)
+    expect(getSuppressedImetaMedia(event)).toHaveLength(0)
   })
 
   it('mediaBlobIdentityKey matches blossom path and imeta x tag', () => {
@@ -159,5 +160,28 @@ describe('imeta-content-match', () => {
     expect(
       shouldHideOrphanedImetaInAccordion(1, 'https://example.com/photo.jpg')
     ).toBe(false)
+  })
+
+  it('getSuppressedImetaMedia is empty when imeta URL literally matches kind-1 content', () => {
+    const url =
+      'https://cdn.nostrcheck.me/6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93/d8bcf79ca7559dee73b99d5091afba7f600905c23056ae9e0ae803f39b64ac1c.png'
+    const content = `🫠\n${url}`
+    const event = fakeEvent({
+      kind: 1,
+      content,
+      tags: [
+        [
+          'imeta',
+          `url ${url}`,
+          'm image/png',
+          'x d8bcf79ca7559dee73b99d5091afba7f600905c23056ae9e0ae803f39b64ac1c',
+          'ox d8bcf79ca7559dee73b99d5091afba7f600905c23056ae9e0ae803f39b64ac1c'
+        ]
+      ]
+    })
+    expect(hasMediaUrlInContent(content)).toBe(true)
+    expect(shouldHideOrphanedImetaInAccordion(1, content)).toBe(false)
+    expect(getOrphanedImetaMedia(event)).toHaveLength(0)
+    expect(getSuppressedImetaMedia(event)).toHaveLength(0)
   })
 })

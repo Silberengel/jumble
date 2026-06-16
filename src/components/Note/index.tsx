@@ -35,6 +35,7 @@ import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import {
   getWebBookmarkArticleUrl,
   getWebExternalReactionTargetUrl,
@@ -47,6 +48,7 @@ import {
 import { CreateHighlightContext } from './CreateHighlightContext'
 import SelectionHighlightTrigger from './SelectionHighlightTrigger'
 import AudioPlayer from '../AudioPlayer'
+import { EmbeddedNote } from '../Embedded'
 import WebPreview from '../WebPreview'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import { FormattedTimestamp } from '../FormattedTimestamp'
@@ -459,6 +461,7 @@ export default function Note({
       </div>
     }
   } else if (event.kind === ExtendedKind.WEB_BOOKMARK) {
+    const embeddedNaddr = getWebBookmarkReplaceableEventNaddr(displayEvent)
     const href = getWebBookmarkArticleUrl(displayEvent)
     const title = displayEvent.tags.find((tag) => tag[0] === 'title')?.[1]?.trim()
     const description = displayEvent.content?.trim()
@@ -467,7 +470,14 @@ export default function Note({
         {title ? (
           <h3 className="mt-2 text-base font-semibold leading-snug break-words">{title}</h3>
         ) : null}
-        {href ? (
+        {embeddedNaddr ? (
+          <EmbeddedNote
+            noteId={embeddedNaddr}
+            className="mt-2"
+            containingEvent={event}
+            showFull={showFull}
+          />
+        ) : href ? (
           <div className="mt-2 not-prose max-w-full space-y-2">
             <a
               href={href}

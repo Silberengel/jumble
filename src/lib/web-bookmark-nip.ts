@@ -1,8 +1,56 @@
+import { ExtendedKind } from '@/constants'
+import { generateBech32IdFromATag } from '@/lib/tag'
 import {
   canonicalizeRssArticleUrl,
   expandArticleUrlThreadQueryValues,
   normalizeHttpArticleUrl
 } from '@/lib/rss-article'
+import { nip19, type Event } from 'nostr-tools'
+
+const REPLACEABLE_COORDINATE_RE = /^(\d+):([0-9a-f]{64}):(.*)$/i
+
+/** NIP-33 coordinate in an `a` or `d` tag: `<kind>:<hex pubkey>:<d identifier>`. */
+export function parseReplaceableCoordinateTag(value: string): {
+  kind: number
+  pubkey: string
+  identifier: string
+} | null {
+  const m = REPLACEABLE_COORDINATE_RE.exec(value.trim())
+  if (!m) return null
+  const kind = Number(m[1])
+  if (!Number.isFinite(kind)) return null
+  return { kind, pubkey: m[2]!.toLowerCase(), identifier: m[3]! }
+}
+
+/**
+ * kind 39701 bookmark targeting a Nostr replaceable event (`a` tag or coordinate `d` tag)
+ * instead of an http(s) page. Returns naddr bech32 for {@link EmbeddedNote}.
+ */
+export function getWebBookmarkReplaceableEventNaddr(
+  event: Pick<Event, 'kind' | 'tags'>
+): string | undefined {
+  if (event.kind !== ExtendedKind.WEB_BOOKMARK) return undefined
+
+  for (const tag of event.tags) {
+    if (tag[0] !== 'a' || !tag[1]?.trim()) continue
+    const naddr = generateBech32IdFromATag(tag)
+    if (naddr) return naddr
+  }
+
+  const dTag = event.tags.find((t) => t[0] === 'd')?.[1]?.trim()
+  if (!dTag) return undefined
+  const coord = parseReplaceableCoordinateTag(dTag)
+  if (!coord) return undefined
+  try {
+    return nip19.naddrEncode({
+      kind: coord.kind,
+      pubkey: coord.pubkey,
+      identifier: coord.identifier
+    })
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * NIP-B0: `d` tag is the URL without the scheme (`https://` / `http://` assumed).

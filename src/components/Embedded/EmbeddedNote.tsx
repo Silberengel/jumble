@@ -32,7 +32,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useReply } from '@/providers/ReplyProvider'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { relayHintWssUrlsFromEvent } from '@/lib/event'
+import { relayHintsForEmbeddedNotePointer } from '@/lib/event'
 import { Event, nip19 } from 'nostr-tools'
 import ClientSelect from '../ClientSelect'
 import MainNoteCard from '../NoteCard/MainNoteCard'
@@ -235,8 +235,8 @@ function EmbeddedNoteFetched({
   eventRef.current = event
 
   const relayHintsFromParent = useMemo(
-    () => relayHintWssUrlsFromEvent(containingEvent),
-    [containingEvent?.id]
+    () => relayHintsForEmbeddedNotePointer(noteId, containingEvent),
+    [noteId, containingEvent?.id]
   )
   const menuRelayUrls = useMemo(
     () =>
@@ -354,6 +354,13 @@ function EmbeddedNoteFetched({
         if (cancelled) return
         if (chosen) {
           resolve(chosen)
+          return
+        }
+        const hintRelays = opts?.relayHints?.filter(Boolean) ?? []
+        if (hintRelays.length > 0) {
+          const fromHints = await client.fetchEventWithExternalRelays(noteKey, hintRelays)
+          if (cancelled) return
+          if (fromHints && resolve(fromHints)) return
         }
       } finally {
         if (!cancelled) setIsFetching(false)
@@ -552,23 +559,23 @@ function buildEmbedWideRelayUrlsStatic(
   relayHintsFromParent: string[],
   viewerInboxRelayUrls: string[]
 ): string[] {
+  const rest = preferPublicIndexRelaysFirst(
+    dedupeRelayUrls([
+      ...getAggrAwareSearchRelayUrls(),
+      ...viewerInboxRelayUrls,
+      ...nip66Service.getSearchableRelayUrls(),
+      ...FAST_READ_RELAY_URLS,
+      ...PROFILE_RELAY_URLS,
+      ...menuRelayUrls
+    ])
+  )
   return sanitizeRelayUrlsForFetch(
     feedRelayPolicyUrls(
       [
-        {
-          source: 'fallback',
-          urls: preferPublicIndexRelaysFirst(
-            dedupeRelayUrls([
-              ...getAggrAwareSearchRelayUrls(),
-              ...relayHintsFromParent,
-              ...viewerInboxRelayUrls,
-              ...nip66Service.getSearchableRelayUrls(),
-              ...FAST_READ_RELAY_URLS,
-              ...PROFILE_RELAY_URLS,
-              ...menuRelayUrls
-            ])
-          )
-        }
+        ...(relayHintsFromParent.length
+          ? [{ source: 'relay-hint' as const, urls: relayHintsFromParent, explicit: true }]
+          : []),
+        { source: 'fallback', urls: rest }
       ],
       {
         operation: 'read',
@@ -581,7 +588,7 @@ function buildEmbedWideRelayUrlsStatic(
 
 /** NIP-65 / nevent relays / seen-on — merged into a second wide REQ if the first pass missed. */
 async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event): Promise<string[]> {
-  const hintRelays: string[] = []
+  const hintRelays: string[] = [...relayHintsForEmbeddedNotePointer(noteId, containingEvent)]
   const resolvedHexId = (() => {
     const h = hexEventIdFromNoteId(noteId)
     if (h) return h

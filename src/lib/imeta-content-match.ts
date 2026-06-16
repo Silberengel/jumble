@@ -116,12 +116,15 @@ export function getSuppressedImetaMedia(event: Event, content?: string): TImetaI
   const suppressedUrls = suppressImetaUrlSet(event, text, hideOrphaned)
   if (suppressedUrls.size === 0) return []
 
+  const contentUrls = collectMediaUrlsInContent(text)
   const out: TImetaInfo[] = []
   const seen = new Set<string>()
   for (const info of getImetaInfosFromEvent(event)) {
     const cleaned = cleanUrl(info.url)
     if (!cleaned || seen.has(cleaned)) continue
     if (!suppressedUrls.has(cleaned)) continue
+    // Inline content already renders this URL — accordion is for mirror/orphan hosts only.
+    if (!hideOrphaned && contentUrls.has(cleaned)) continue
     if (!isEmbeddableImeta(info, cleaned)) continue
     seen.add(cleaned)
     out.push({ ...info, url: cleaned })

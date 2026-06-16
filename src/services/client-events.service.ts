@@ -389,6 +389,7 @@ export class EventService {
             break
           case 'naddr': {
             const ident = data.identifier ?? ''
+            pointerHasFetchHints = Boolean(data.relays?.length)
             const fromSession = this.getSessionEventIfMatchingNaddr({
               pubkey: data.pubkey,
               kind: data.kind,
