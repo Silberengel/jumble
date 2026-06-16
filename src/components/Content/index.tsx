@@ -26,7 +26,8 @@ import {
   EmbeddedMention,
   EmbeddedNote,
   EmbeddedWebsocketUrl,
-  HttpNostrAwareUrl
+  HttpNostrAwareUrl,
+  HttpUrlOpenGraphOrLink
 } from '../Embedded'
 import PaytoLink from '../PaytoLink'
 import Emoji from '../Emoji'
@@ -37,7 +38,6 @@ import FountainEmbeddedPlayer from '../FountainEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '../WavlakeEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '../ZapStreamLiveEventEmbed'
-import WebPreview from '../WebPreview'
 import { toNote } from '@/lib/link'
 import { YOUTUBE_URL_REGEX } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
@@ -184,7 +184,7 @@ export default function Content({
     return parseContent(normalized, PARSE_CONTENT_PARSERS_NOTE_TEXT)
   }, [_content, emojiInfos])
 
-  // Extract HTTP/HTTPS links from content nodes (in order of appearance) for WebPreview cards at bottom
+  // Extract HTTP/HTTPS links from content nodes (for tag dedup and inline render via HttpUrlOpenGraphOrLink).
   // Exclude YouTube URLs, images, and media (they're rendered separately)
   const contentLinks = useMemo(() => {
     if (!nodes) return []
@@ -525,7 +525,7 @@ export default function Content({
     <div className={cn('text-wrap break-words whitespace-pre-wrap', className)}>
       {iArticleUrl && (
         <div className="mb-2 max-w-full">
-          <WebPreview url={iArticleUrl} className="w-full" authorPubkey={authorPubkey} />
+          <HttpUrlOpenGraphOrLink url={iArticleUrl} containingEvent={event} block />
         </div>
       )}
       {/* Render images that appear in content in a single carousel at the top */}
@@ -724,7 +724,7 @@ export default function Content({
               />
             )
           }
-          // Regular URL, not an image or media - show WebPreview (skip if same as i-tag article)
+          // Regular URL — hyperlink or OG card (skip if same as i-tag article)
           if (iArticleCleaned && cleanedUrl === iArticleCleaned) {
             return null
           }
@@ -844,22 +844,17 @@ export default function Content({
         />
       )}
 
-      {/* WebPreview cards for links from content (in order of appearance) */}
-      {contentLinks.length > 0 && (
-        <div className="space-y-3 mt-6 pt-4 border-t">
-          <h3 className="text-sm font-semibold text-muted-foreground mb-3">Links</h3>
-          {contentLinks.map((url, index) => (
-            <WebPreview key={`content-${index}-${url}`} url={url} className="w-full" authorPubkey={authorPubkey} />
-          ))}
-        </div>
-      )}
-
-      {/* WebPreview cards for links from tags */}
+      {/* Tag-only links: card when OG exists, otherwise hyperlink */}
       {tagLinks.length > 0 && (
         <div className="space-y-3 mt-6 pt-4 border-t">
           <h3 className="text-sm font-semibold text-muted-foreground mb-3">Related Links</h3>
           {tagLinks.map((url, index) => (
-            <WebPreview key={`tag-${index}-${url}`} url={url} className="w-full" authorPubkey={authorPubkey} />
+            <HttpUrlOpenGraphOrLink
+              key={`tag-${index}-${url}`}
+              url={url}
+              containingEvent={event}
+              block
+            />
           ))}
         </div>
       )}

@@ -1,6 +1,7 @@
 export * from './EmbeddedCalendarEvent'
 export * from './HttpNostrAwareUrl'
 export * from './EmbeddedHashtag'
+export * from './HttpUrlOpenGraphOrLink'
 export * from './EmbeddedLNInvoice'
 export * from './EmbeddedMention'
 export * from './EmbeddedNormalUrl'

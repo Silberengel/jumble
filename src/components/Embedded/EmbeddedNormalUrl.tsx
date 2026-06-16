@@ -6,7 +6,7 @@ export function EmbeddedNormalUrl({ url, children }: { url: string; children?: R
   // Clean tracking parameters from URLs before displaying/linking
   const cleanedUrl = cleanUrl(url)
   
-  // Render all URLs as green text links (like hashtags) - WebPreview cards shown at bottom
+  // Render all URLs as green text links when no OG card is shown.
   return (
     <a
       className={URI_LINK_CLASS}

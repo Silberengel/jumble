@@ -12,8 +12,8 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmbeddedMention } from './EmbeddedMention'
 import { EmbeddedNormalUrl } from './EmbeddedNormalUrl'
+import { HttpUrlOpenGraphOrLink } from './HttpUrlOpenGraphOrLink'
 import { EmbeddedNote } from './EmbeddedNote'
-import WebPreview from '@/components/WebPreview'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
@@ -109,11 +109,11 @@ export function HttpNostrAwareUrl({
 
   if (renderMode === 'article') {
     return (
-      <WebPreview
+      <HttpUrlOpenGraphOrLink
         url={cleaned}
+        containingEvent={containingEvent}
         className={cn('mt-2', className)}
-        authorPubkey={containingEvent?.pubkey}
-        sourceEvent={containingEvent}
+        block
       />
     )
   }
@@ -131,7 +131,7 @@ export function HttpNostrAwareUrl({
     )
   }
 
-  return <EmbeddedNormalUrl url={url} />
+  return <HttpUrlOpenGraphOrLink url={url} containingEvent={containingEvent} className={className} />
 }
 
 function ExpandableExternalNostrLink({

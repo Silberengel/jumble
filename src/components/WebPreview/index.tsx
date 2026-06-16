@@ -13,6 +13,7 @@ import { useMemo, useEffect, useState } from 'react'
 import Image from '../Image'
 import Username from '../Username'
 import { resolveImwaldRouteSocialCopy } from '@/lib/document-meta'
+import { hasUsableOpenGraphMetadata } from '@/lib/open-graph-preview'
 import { cleanUrl, isSafeMediaUrl } from '@/lib/url'
 import { tagNameEquals } from '@/lib/tag'
 import { queryService } from '@/services/client.service'
@@ -139,22 +140,29 @@ export default function WebPreview({
   url,
   className,
   authorPubkey,
-  sourceEvent
+  sourceEvent,
+  prefetchedOpenGraph
 }: {
   url: string
   className?: string
   authorPubkey?: string | null
   /** Note being rendered; content-warning tags block OG/image autoload. */
   sourceEvent?: Event | null
+  /** Skip OG fetch/loading when caller already resolved metadata (e.g. {@link HttpUrlOpenGraphOrLink}). */
+  prefetchedOpenGraph?: { title?: string; description?: string; image?: string }
 }) {
   const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey, sourceEvent)
   const { isSmallScreen } = useScreenSize()
 
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])
   /** Link cards and URLs in highlights stay visible on cellular; OG fetch is gated by the same policy as heavy media. */
-  const { title, description, image, ogLoading } = useFetchWebMetadata(cleanedUrl, {
-    fetchEnabled: autoLoadMedia
+  const fetchedMetadata = useFetchWebMetadata(cleanedUrl, {
+    fetchEnabled: autoLoadMedia && !prefetchedOpenGraph
   })
+  const title = prefetchedOpenGraph?.title ?? fetchedMetadata.title
+  const description = prefetchedOpenGraph?.description ?? fetchedMetadata.description
+  const image = prefetchedOpenGraph?.image ?? fetchedMetadata.image
+  const ogLoading = prefetchedOpenGraph ? false : fetchedMetadata.ogLoading
 
   const hostname = useMemo(() => {
     try {
@@ -476,7 +484,7 @@ export default function WebPreview({
   }, [image])
 
   // Prefer the page's own Open Graph / meta when the fetch returns anything useful.
-  const hasOpengraphData = !isInternalAppLink && (title || description || image)
+  const hasOpengraphData = !isInternalAppLink && hasUsableOpenGraphMetadata({ title, description, image })
 
   // While OG is loading for external URLs, avoid flashing the nostr / hostname fallback.
   if (!isInternalAppLink && ogLoading) {
@@ -690,7 +698,7 @@ export default function WebPreview({
       )
     }
 
-    // Basic fallback for non-nostr URLs — internal Imwald links get route-specific titles (not the shared index.html OG).
+    // Internal Imwald links get route-specific titles (not the shared index.html OG).
     const imwaldPreview =
       isInternalAppLink &&
       (() => {
@@ -701,47 +709,51 @@ export default function WebPreview({
         }
       })()
 
-    return (
-      <div
-        className={cn(
-          WEB_PREVIEW_CARD,
-          'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-3 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
-          className
-        )}
-      >
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <div className="flex items-start gap-2 mb-1">
-            <div className="flex-1 min-w-0">
-              <div className="web-preview-title font-display font-semibold text-brand-wordmark truncate">
-                {imwaldPreview ? imwaldPreview.ogTitle : hostname}
+    if (imwaldPreview) {
+      return (
+        <div
+          className={cn(
+            WEB_PREVIEW_CARD,
+            'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-3 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
+            className
+          )}
+        >
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex items-start gap-2 mb-1">
+              <div className="flex-1 min-w-0">
+                <div className="web-preview-title font-display font-semibold text-brand-wordmark truncate">
+                  {imwaldPreview.ogTitle}
+                </div>
+                <div className="web-preview-muted text-muted-foreground line-clamp-3 mt-0.5">
+                  {imwaldPreview.description}
+                </div>
               </div>
-              {imwaldPreview && (
-                <div className="web-preview-muted text-muted-foreground line-clamp-3 mt-0.5">{imwaldPreview.description}</div>
-              )}
+              <a
+                href={cleanedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex-shrink-0"
+              >
+                <ExternalLink className="w-3 h-3 text-primary" />
+              </a>
             </div>
+            <hr className="mt-4 mb-2 border-t border-border" />
             <a
               href={cleanedUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="flex-shrink-0"
+              className="web-preview-muted text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
             >
-              <ExternalLink className="w-3 h-3 text-primary" />
+              {cleanedUrl}
             </a>
           </div>
-          <hr className="mt-4 mb-2 border-t border-border" />
-          <a
-            href={cleanedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="web-preview-muted text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
-          >
-            {cleanedUrl}
-          </a>
         </div>
-      </div>
-    )
+      )
+    }
+
+    return null
   }
 
   // All OG images render on left with cropping

@@ -5,7 +5,7 @@ import UserAvatar from '@/components/UserAvatar'
 import { MediaAutoLoadEventProvider } from '@/providers/MediaAutoLoadEventContext'
 import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
-import WebPreview from '@/components/WebPreview'
+import { HttpUrlOpenGraphOrLink } from '@/components/Embedded'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
@@ -3195,7 +3195,6 @@ function parseMarkdownContentMarked(
     fullCalendarInvite?: { naddr: string; event: Event }
     suppressStandaloneWebPreviewCleanedUrls?: ReadonlySet<string>
     containingEvent?: Event
-    webPreviewAuthorPubkey?: string
     webPreviewSourceEvent?: Event
     /** Hold images as placeholders until clicked (lightbox). False in detail/full views. */
     lazyMedia?: boolean
@@ -3216,15 +3215,11 @@ function parseMarkdownContentMarked(
     fullCalendarInvite,
     suppressStandaloneWebPreviewCleanedUrls,
     containingEvent,
-    webPreviewAuthorPubkey,
     webPreviewSourceEvent,
     lazyMedia = true,
     resolveImetaForImageUrl
   } = options
-  const webPreviewEventProps = {
-    authorPubkey: webPreviewAuthorPubkey ?? containingEvent?.pubkey ?? eventPubkey,
-    sourceEvent: webPreviewSourceEvent ?? containingEvent
-  }
+  const ogLinkContainingEvent = webPreviewSourceEvent ?? containingEvent
   const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
 
   /** Direct image URLs on their own line: render Image (NIP-94 / Amethyst-style), not WebPreview — WebPreview skips OG fetch when autoLoadMedia is off but still shows a link card. */
@@ -3800,7 +3795,7 @@ function parseMarkdownContentMarked(
                       <ZapStreamLiveEventEmbed
                         url={cleaned}
                         className="max-w-[400px]"
-                        containingEvent={containingEvent}
+                        containingEvent={ogLinkContainingEvent}
                         showFull={!lazyMedia}
                       />
                     </div>
@@ -3846,10 +3841,11 @@ function parseMarkdownContentMarked(
                   )
                 }
                 return (
-                  <WebPreview
+                  <HttpUrlOpenGraphOrLink
                     key={`${key}-line-webpreview-${lineIdx}`}
                     url={cleaned}
-                    {...webPreviewEventProps}
+                    containingEvent={ogLinkContainingEvent}
+                    block
                   />
                 )
               }
@@ -4039,7 +4035,7 @@ function parseMarkdownContentMarked(
             </p>
           )
         }
-        return <WebPreview key={`${key}-webpreview`} url={cleaned} {...webPreviewEventProps} />
+        return <HttpUrlOpenGraphOrLink key={`${key}-webpreview`} url={cleaned} containingEvent={ogLinkContainingEvent} block />
       }
     }
 
@@ -4134,10 +4130,11 @@ function parseMarkdownContentMarked(
           )
         }
         return (
-          <WebPreview
+          <HttpUrlOpenGraphOrLink
             key={`${key}-sole-link-webpreview`}
             url={soleHref}
-            {...webPreviewEventProps}
+            containingEvent={ogLinkContainingEvent}
+            block
           />
         )
       }
@@ -4229,7 +4226,7 @@ function parseMarkdownContentMarked(
                   <ZapStreamLiveEventEmbed
                     url={cleaned}
                     className="max-w-[400px]"
-                    containingEvent={containingEvent}
+                    containingEvent={ogLinkContainingEvent}
                     showFull={!lazyMedia}
                   />
                 </div>
@@ -6180,7 +6177,6 @@ export default function MarkdownArticle({
       emojiInfos,
       fullCalendarInvite,
       containingEvent: event,
-      webPreviewAuthorPubkey: event.pubkey,
       webPreviewSourceEvent: event,
       lazyMedia,
       resolveImetaForImageUrl,
@@ -6321,12 +6317,7 @@ export default function MarkdownArticle({
       >
         {iArticleUrl && !suppressITagArticleWebPreview && (
           <div className="not-prose mb-4 max-w-full">
-            <WebPreview
-              url={iArticleUrl}
-              className="w-full"
-              authorPubkey={event.pubkey}
-              sourceEvent={event}
-            />
+            <HttpUrlOpenGraphOrLink url={iArticleUrl} containingEvent={event} block className="w-full" />
           </div>
         )}
         {/* Metadata */}
@@ -6571,27 +6562,26 @@ export default function MarkdownArticle({
         {bottomContentLinks.length > 0 && (
           <div className="not-prose space-y-3 mt-6">
             {bottomContentLinks.map((url, index) => (
-              <WebPreview
+              <HttpUrlOpenGraphOrLink
                 key={`content-${index}-${url}`}
                 url={url}
+                containingEvent={event}
+                block
                 className="w-full"
-                authorPubkey={event.pubkey}
-                sourceEvent={event}
               />
             ))}
           </div>
         )}
 
-        {/* WebPreview cards for links from tags (only if not already in content) */}
         {leftoverTagLinks.length > 0 && (
           <div className="not-prose space-y-3 mt-6">
             {leftoverTagLinks.map((url, index) => (
-            <WebPreview
+            <HttpUrlOpenGraphOrLink
               key={`tag-${index}-${url}`}
               url={url}
+              containingEvent={event}
+              block
               className="w-full"
-              authorPubkey={event.pubkey}
-              sourceEvent={event}
             />
           ))}
         </div>

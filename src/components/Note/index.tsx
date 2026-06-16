@@ -49,7 +49,7 @@ import { CreateHighlightContext } from './CreateHighlightContext'
 import SelectionHighlightTrigger from './SelectionHighlightTrigger'
 import AudioPlayer from '../AudioPlayer'
 import { EmbeddedNote } from '../Embedded'
-import WebPreview from '../WebPreview'
+import { HttpUrlOpenGraphOrLink } from '../Embedded'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import NoteOptions from '../NoteOptions'
@@ -479,16 +479,8 @@ export default function Note({
             showFull={false}
           />
         ) : href ? (
-          <div className="mt-2 not-prose max-w-full space-y-2">
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary underline-offset-4 hover:text-foreground hover:underline transition-colors break-all"
-            >
-              {href}
-            </a>
-            <WebPreview url={href} className="w-full" authorPubkey={event.pubkey} sourceEvent={event} />
+          <div className="mt-2 not-prose max-w-full">
+            <HttpUrlOpenGraphOrLink url={href} containingEvent={event} block className="w-full" />
           </div>
         ) : null}
         {description ? (
@@ -568,7 +560,7 @@ export default function Note({
       <>
         {voiceArticleUrl && (
           <div className="mt-2 not-prose max-w-full">
-            <WebPreview url={voiceArticleUrl} className="w-full" authorPubkey={event.pubkey} sourceEvent={event} />
+            <HttpUrlOpenGraphOrLink url={voiceArticleUrl} containingEvent={event} block className="w-full" />
           </div>
         )}
         <AudioPlayer className="mt-2" src={event.content} />
@@ -803,7 +795,7 @@ export default function Note({
         </div>
         {webReactionParentUrl ? (
           <div className="mt-2 not-prose max-w-full" data-parent-note-preview>
-            <WebPreview url={webReactionParentUrl} className="w-full" />
+            <HttpUrlOpenGraphOrLink url={webReactionParentUrl} containingEvent={event} block className="w-full" />
           </div>
         ) : parentEventId ? (
           <ParentNotePreview
