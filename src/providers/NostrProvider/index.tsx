@@ -2076,7 +2076,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       publishRelayCandidates = await client.determineTargetRelays(event, {
         ...options,
         favoriteRelayUrls,
-        blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent)
+        blockedRelayUrls: options.blockedRelayUrls ?? blockedRelayUrlsFromEvent(blockedRelaysEvent),
+        viewerRelayList: relayList
       })
       const relays = publishRelayCandidates
       publishTrace?.step('determineTargetRelays done', {

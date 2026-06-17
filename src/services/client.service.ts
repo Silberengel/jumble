@@ -41,7 +41,6 @@ import storage from '@/services/local-storage.service'
 import {
   collectReadInboxUrlsFromRelayList,
   collectRemoteReadInboxUrlsFromRelayList,
-  collectUserReadInboxUrls,
   collectViewerReadInboxUrls
 } from '@/lib/viewer-read-inboxes'
 import {
@@ -100,6 +99,7 @@ import {
   getRelayUrlFromRelayReviewEvent
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { promiseWithTimeout } from '@/lib/async-timeout'
 import type { PublishTrace } from '@/lib/publish-trace'
 import { hiddenNetworkRelayUnavailableReason } from '@/lib/hidden-network-relay'
 import { fetchHiddenNetworkRelayStatus } from '@/lib/hidden-network-relay-status'
@@ -955,12 +955,6 @@ class ClientService extends EventTarget {
     return collectUserWriteOutboxUrls(relayList).length > 0
   }
 
-  private relayListUsableForInboxOrdering(relayList: TRelayList): boolean {
-    return (
-      this.relayListHasWriteUrls(relayList) || collectUserReadInboxUrls(relayList).length > 0
-    )
-  }
-
   /** IndexedDB/session first; network only when no write relays are cached (keeps publish off the 20s path). */
   private async peekOrFetchRelayListForPublish(pubkey: string): Promise<TRelayList> {
     try {
@@ -1063,14 +1057,19 @@ class ClientService extends EventTarget {
   private async prioritizeSpecifiedRelayPickerUrls(
     pickerUrls: string[],
     event: NEvent,
-    favoriteRelayUrls: string[] = []
+    favoriteRelayUrls: string[] = [],
+    viewerRelayList?: TRelayList | null
   ): Promise<string[]> {
     const deduped = dedupeNormalizeRelayUrlsOrdered(pickerUrls)
     let relayList: TRelayList
-    try {
-      relayList = await this.peekOrFetchRelayListForPublish(event.pubkey)
-    } catch {
-      relayList = this.emptyRelayListForPublish()
+    if (viewerRelayList) {
+      relayList = viewerRelayList
+    } else {
+      try {
+        relayList = await this.peekOrFetchRelayListForPublish(event.pubkey)
+      } catch {
+        relayList = this.emptyRelayListForPublish()
+      }
     }
     const writeSet = new Set<string>()
     for (const u of relayList.write ?? []) {
@@ -1156,53 +1155,6 @@ class ClientService extends EventTarget {
     }
   }
 
-  private async fetchRelayListsWithPublishTimeout(pubkeys: string[]): Promise<TRelayList[]> {
-    if (pubkeys.length === 0) return []
-    const peeked = await Promise.all(
-      pubkeys.map((pk) =>
-        this.peekRelayListFromStorage(pk).catch(() => this.emptyRelayListForPublish())
-      )
-    )
-    const missingPubkeys = pubkeys.filter((_, i) => !this.relayListUsableForInboxOrdering(peeked[i]))
-    if (missingPubkeys.length === 0) return peeked
-
-    const mergeFetchedIntoPeeked = (fetched: TRelayList[]): TRelayList[] => {
-      const byPk = new Map(missingPubkeys.map((pk, i) => [pk, fetched[i]]))
-      return pubkeys.map((pk, i) => {
-        if (this.relayListUsableForInboxOrdering(peeked[i])) return peeked[i]
-        return byPk.get(pk) ?? peeked[i]
-      })
-    }
-
-    try {
-      const fetched = await Promise.race([
-        this.fetchRelayLists(missingPubkeys),
-        new Promise<TRelayList[]>((resolve) =>
-          setTimeout(() => {
-            logger.warn('[DetermineTargetRelays] fetchRelayLists timed out; using IndexedDB / default merge', {
-              pubkeyCount: missingPubkeys.length
-            })
-            void Promise.all(missingPubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
-              .then(resolve)
-              .catch(() => resolve(missingPubkeys.map(() => this.emptyRelayListForPublish())))
-          }, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS)
-        )
-      ])
-      return mergeFetchedIntoPeeked(fetched)
-    } catch (err) {
-      logger.warn('[DetermineTargetRelays] fetchRelayLists failed', {
-        pubkeyCount: missingPubkeys.length,
-        error: err instanceof Error ? err.message : String(err)
-      })
-      try {
-        const fetched = await Promise.all(missingPubkeys.map((pk) => this.peekRelayListFromStorage(pk)))
-        return mergeFetchedIntoPeeked(fetched)
-      } catch {
-        return pubkeys.map(() => this.emptyRelayListForPublish())
-      }
-    }
-  }
-
   /**
    * Determine which relays to publish an event to.
    * Fallbacks (used when user relay list is empty or fetch fails):
@@ -1211,6 +1163,36 @@ class ClientService extends EventTarget {
    * - Favorite relays: FAST_WRITE_RELAY_URLS (added to additional)
    * - Report events: FAST_WRITE_RELAY_URLS when no user/seen relays
    */
+  /** IndexedDB peek only — publish must not wait on network NIP-65 for reply/mention inboxes. */
+  private peekRelayListsFromStorageForPublish(pubkeys: string[]): Promise<TRelayList[]> {
+    return Promise.all(
+      pubkeys.map((pk) => this.peekRelayListFromStorageForPublish(pk))
+    )
+  }
+
+  /** Bounded IndexedDB peek for publish (IDB can stall under heavy background writes). */
+  private async peekRelayListFromStorageForPublish(pubkey: string): Promise<TRelayList> {
+    const empty = this.emptyRelayListForPublish()
+    try {
+      const peeked = await promiseWithTimeout(
+        this.peekRelayListFromStorage(pubkey),
+        PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS
+      )
+      return peeked ?? empty
+    } catch {
+      return empty
+    }
+  }
+
+  /** Viewer list from React state when available; otherwise bounded peek / network. */
+  private async authorRelayListForPublish(
+    pubkey: string,
+    viewerRelayList?: TRelayList | null
+  ): Promise<TRelayList> {
+    if (viewerRelayList) return viewerRelayList
+    return this.fetchRelayListWithPublishTimeout(pubkey)
+  }
+
   async determineTargetRelays(
     event: NEvent,
     {
@@ -1218,7 +1200,8 @@ class ClientService extends EventTarget {
       additionalRelayUrls,
       favoriteRelayUrls,
       blockedRelayUrls,
-      publishTrace
+      publishTrace,
+      viewerRelayList
     }: TPublishOptions = {}
   ) {
     this.publishTransientRelayUrls.clear()
@@ -1234,9 +1217,9 @@ class ClientService extends EventTarget {
       blockedRelays: blockedRelayUrls,
       applySocialKindBlockedFilter: isSocialKindBlockedKind(event.kind)
     }
-    const policyRelayList = await this.peekRelayListFromStorage(event.pubkey).catch(() =>
-      this.emptyRelayListForPublish()
-    )
+    const policyRelayList = viewerRelayList
+      ? viewerRelayList
+      : await this.peekRelayListFromStorageForPublish(event.pubkey)
     const useGlobalRelayDefaults = viewerUsesGlobalRelayDefaults({
       viewerPubkey: event.pubkey,
       favoriteRelayUrls: favoriteRelayUrls ?? [],
@@ -1253,7 +1236,7 @@ class ClientService extends EventTarget {
     }
     // For Report events, always include user's write relays first, then add seen relays if they're write-capable
     if (event.kind === kinds.Report) {
-      const relayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
+      const relayList = await this.authorRelayListForPublish(event.pubkey, viewerRelayList)
       const userWriteRelays = await collectViewerWriteOutboxUrls(event.pubkey, relayList)
       
       // Get seen relays where the reported event was found
@@ -1328,13 +1311,15 @@ class ClientService extends EventTarget {
       ).filter((p) => p !== event.pubkey)
       const recipientListsPromise =
         recipientPubkeys.length > 0
-          ? this.fetchRelayListsWithPublishTimeout(recipientPubkeys)
+          ? this.peekRelayListsFromStorageForPublish(recipientPubkeys)
           : Promise.resolve([] as TRelayList[])
       const [authorRelayList, recipientRelayLists] = await Promise.all([
-        this.fetchRelayListWithPublishTimeout(event.pubkey),
+        this.authorRelayListForPublish(event.pubkey, viewerRelayList),
         recipientListsPromise
       ])
-      const authorWrite = await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
+      const authorWrite = viewerRelayList
+        ? collectUserWriteOutboxUrls(viewerRelayList)
+        : await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
       const recipientRead = dedupeNormalizeRelayUrlsOrdered(
         recipientRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
       )
@@ -1359,12 +1344,14 @@ class ClientService extends EventTarget {
       const senderPubkeys =
         paymentSenderPubkey && isValidPubkey(paymentSenderPubkey) ? [paymentSenderPubkey] : []
       const [authorRelayList, senderRelayLists] = await Promise.all([
-        this.fetchRelayListWithPublishTimeout(event.pubkey),
+        this.authorRelayListForPublish(event.pubkey, viewerRelayList),
         senderPubkeys.length > 0
-          ? this.fetchRelayListsWithPublishTimeout(senderPubkeys)
+          ? this.peekRelayListsFromStorageForPublish(senderPubkeys)
           : Promise.resolve([] as TRelayList[])
       ])
-      const authorWrite = await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
+      const authorWrite = viewerRelayList
+        ? collectUserWriteOutboxUrls(viewerRelayList)
+        : await collectViewerWriteOutboxUrls(event.pubkey, authorRelayList)
       const authorRead = collectRecipientInboxUrls(authorRelayList)
       const senderInboxes = dedupeNormalizeRelayUrlsOrdered(
         senderRelayLists.flatMap((rl) => collectRecipientInboxUrls(rl))
@@ -1404,7 +1391,7 @@ class ClientService extends EventTarget {
       if (event.kind === ExtendedKind.SPELL) {
         let spellRelayList: TRelayList | undefined
         try {
-          spellRelayList = await this.fetchRelayListWithPublishTimeout(event.pubkey)
+          spellRelayList = await this.authorRelayListForPublish(event.pubkey, viewerRelayList)
         } catch (err) {
           logger.warn('[DetermineTargetRelays] fetchRelayList failed for spell', {
             pubkey: event.pubkey,
@@ -1412,7 +1399,9 @@ class ClientService extends EventTarget {
           })
           spellRelayList = this.emptyRelayListForPublish()
         }
-        const spellWriteFilteredRaw = await collectViewerWriteOutboxUrls(event.pubkey, spellRelayList)
+        const spellWriteFilteredRaw = viewerRelayList
+          ? collectUserWriteOutboxUrls(viewerRelayList)
+          : await collectViewerWriteOutboxUrls(event.pubkey, spellRelayList)
         const spellWriteFiltered = spellWriteFilteredRaw.filter((url) => !isReadOnlyRelayUrl(url))
         return finish(
           this.filterPublishingRelays(
@@ -1443,9 +1432,9 @@ class ClientService extends EventTarget {
       const ctxPubkeys = shouldMergeContextInboxes ? this.collectReplyAndMentionPubkeys(event) : []
       const relayListsPromise =
         ctxPubkeys.length > 0
-          ? this.fetchRelayListsWithPublishTimeout(ctxPubkeys)
+          ? this.peekRelayListsFromStorageForPublish(ctxPubkeys)
           : Promise.resolve([] as TRelayList[])
-      const relayListPromise = this.fetchRelayListWithPublishTimeout(event.pubkey)
+      const relayListPromise = this.authorRelayListForPublish(event.pubkey, viewerRelayList)
       const [relayLists, relayList] = await Promise.all([relayListsPromise, relayListPromise])
       relayLists.forEach((rl) => {
         authorInboxFromContext.push(...collectRemoteReadInboxUrlsFromRelayList(rl))
@@ -1507,10 +1496,12 @@ class ClientService extends EventTarget {
           writeRelays: relayList?.write?.slice(0, MAX_PUBLISH_RELAYS) ?? []
         })
       }
-      const userWritesOrdered = await collectViewerWriteOutboxUrls(
-        event.pubkey,
-        relayList ?? this.emptyRelayListForPublish()
-      )
+      const userWritesOrdered = viewerRelayList
+        ? collectUserWriteOutboxUrls(viewerRelayList)
+        : await collectViewerWriteOutboxUrls(
+            event.pubkey,
+            relayList ?? this.emptyRelayListForPublish()
+          )
       relays = this.filterPublishingRelays(
         buildPrioritizedWriteRelayUrls({
           userWriteRelays: userWritesOrdered,
@@ -1561,7 +1552,12 @@ class ClientService extends EventTarget {
        * context pubkey (can take tens of seconds on bad networks). Reorder only within the picker set:
        * author's NIP-65 write relays first, then favorites among the selection, then remaining picker order.
        */
-      relays = await this.prioritizeSpecifiedRelayPickerUrls(relays, event, favoriteRelayUrls ?? [])
+      relays = await this.prioritizeSpecifiedRelayPickerUrls(
+        relays,
+        event,
+        favoriteRelayUrls ?? [],
+        viewerRelayList
+      )
       if (checkedCount > relays.length) {
         logger.info('[Publish] Relay picker: checked count exceeds per-publish cap (stage 1)', {
           checkedInRelayPicker: checkedCount,

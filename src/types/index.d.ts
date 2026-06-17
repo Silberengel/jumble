@@ -215,6 +215,8 @@ export type TPublishOptions = {
   addClientTag?: boolean
   /** Phased `[PublishTrace]` INFO logs for publish stalls (dev reply/post debugging). */
   publishTrace?: import('@/lib/publish-trace').PublishTrace
+  /** In-memory viewer relay list from NostrProvider — avoids blocking publish on IndexedDB / network NIP-65. */
+  viewerRelayList?: import('@/types').TRelayList | null
 }
 
 /** Options for {@link ClientService.publishEvent} (second argument bundle in code: favorites + internal retry pass). */

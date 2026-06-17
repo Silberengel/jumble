@@ -1,4 +1,5 @@
-import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
+import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS, SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS } from '@/constants'
+import { promiseWithTimeout } from '@/lib/async-timeout'
 import { getParentEventHexId, isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
 import { isSuperchatKind, isProfileWallSuperchat, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
@@ -20,7 +21,11 @@ import type { TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds, nip19 } from 'nostr-tools'
 import type { TFunction } from 'i18next'
 import type { TRootInfo } from './types'
-import { THREAD_REPLY_LIMIT } from './types'
+import {
+  MISSING_THREAD_REPLY_SEARCH_RELAY_TIMEOUT_MS,
+  MISSING_THREAD_REPLY_SEARCH_TIMEOUT_MS,
+  THREAD_REPLY_LIMIT
+} from './types'
 
 export function threadResponseFilterOptions(rootInfo: TRootInfo | undefined) {
   return rootInfo?.type === 'I' ? { allowPageTargetedReactions: true as const } : undefined
@@ -70,8 +75,42 @@ export function missingStatsReplyLookupPointers(meta: { id: string; pubkey: stri
   return [...new Set(out)]
 }
 
+function acceptMissingStatsReplyEvent(ev: NEvent | undefined, hex: string): NEvent | undefined {
+  return ev && statsReplyHexIdsEqual(ev.id, hex) ? ev : undefined
+}
+
+/** First task that returns an accepted event wins; all may run in parallel. */
+function raceMissingStatsReplyFetches(
+  tasks: Array<() => Promise<NEvent | undefined>>,
+  hex: string
+): Promise<NEvent | undefined> {
+  if (tasks.length === 0) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    let settled = 0
+    let found = false
+    for (const run of tasks) {
+      void run()
+        .then((ev) => {
+          settled++
+          const hit = acceptMissingStatsReplyEvent(ev, hex)
+          if (!found && hit) {
+            found = true
+            resolve(hit)
+            return
+          }
+          if (settled >= tasks.length && !found) resolve(undefined)
+        })
+        .catch(() => {
+          settled++
+          if (settled >= tasks.length && !found) resolve(undefined)
+        })
+    }
+  })
+}
+
 /**
- * Resolve one stats-backed missing reply: search relays, then the normal {@link eventService.fetchEvent} pipeline.
+ * Resolve one stats-backed missing reply. Parallel search-relay REQ + fetchEvent pipeline,
+ * bounded so the UI does not wait on serial 40s+28s per pointer.
  */
 export async function fetchMissingStatsReplyEvent(
   meta: { id: string; pubkey: string },
@@ -80,30 +119,32 @@ export async function fetchMissingStatsReplyEvent(
   const hex = normalizeHexEventId(meta.id)
   if (!hex) return undefined
 
-  const pointers = missingStatsReplyLookupPointers(meta)
   const urls = relayUrls.filter(Boolean)
+  const tasks: Array<() => Promise<NEvent | undefined>> = []
 
-  for (const pointer of pointers) {
-    if (urls.length > 0) {
-      try {
-        const fromSearch = await client.fetchEventWithExternalRelays(pointer, urls)
-        if (fromSearch && statsReplyHexIdsEqual(fromSearch.id, hex)) {
-          return fromSearch
+  if (urls.length > 0) {
+    tasks.push(async () => {
+      const rows = await queryService.fetchEvents(
+        urls,
+        [{ ids: [hex], limit: 1 }],
+        {
+          foreground: true,
+          globalTimeout: MISSING_THREAD_REPLY_SEARCH_RELAY_TIMEOUT_MS,
+          eoseTimeout: SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS,
+          immediateReturn: true,
+          relayOpSource: 'MissingThreadReply.search'
         }
-      } catch {
-        /* try next pointer / fetchEvent */
-      }
-    }
-    try {
-      const fromFetch = await eventService.fetchEventForceRetry(pointer)
-      if (fromFetch && statsReplyHexIdsEqual(fromFetch.id, hex)) {
-        return fromFetch
-      }
-    } catch {
-      /* try next pointer */
-    }
+      )
+      return rows.sort((a, b) => b.created_at - a.created_at)[0]
+    })
   }
-  return undefined
+
+  tasks.push(async () => eventService.fetchEvent(hex, { threadContext: true }))
+
+  return promiseWithTimeout(
+    raceMissingStatsReplyFetches(tasks, hex),
+    MISSING_THREAD_REPLY_SEARCH_TIMEOUT_MS
+  )
 }
 
 /** Whether `evt` is a direct or nested reply under the opened note (not a sibling branch). */

@@ -29,3 +29,16 @@ export async function racePromiseWithTimeout<T>(
     if (timer !== undefined) clearTimeout(timer)
   }
 }
+
+/** Resolves `undefined` when `promise` does not settle within `ms` (no throw). */
+export function promiseWithTimeout<T>(
+  promise: Promise<T>,
+  ms: number
+): Promise<T | undefined> {
+  return Promise.race([
+    promise.catch(() => undefined as T | undefined),
+    new Promise<T | undefined>((resolve) => {
+      setTimeout(() => resolve(undefined), ms)
+    })
+  ])
+}
