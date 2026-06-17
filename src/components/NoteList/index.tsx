@@ -203,6 +203,13 @@ function scrollRootClientHeight(scrollRoot: HTMLElement | Window): number {
   return scrollRoot === window ? window.innerHeight : (scrollRoot as HTMLElement).clientHeight
 }
 
+function isFeedScrollNearTop(anchor: HTMLElement | null, thresholdPx = AUTO_MERGE_NEW_EVENTS_TOP_PX): boolean {
+  const parent = getNearestScrollableAncestor(anchor)
+  const root: HTMLElement | Window = parent ?? window
+  const top = root === window ? window.scrollY : (root as HTMLElement).scrollTop
+  return top <= thresholdPx
+}
+
 /**
  * When building visible rows, scan this many merged-timeline events at most. Previously we only looked at the first
  * {@link showCount} events then filtered — with “posts only”, kind filters, and mutes, most of those could be hidden
@@ -3579,7 +3586,10 @@ const NoteList = forwardRef(
                   ? 'home'
                   : eventMatchesProfileTimelineRequest(event)
                     ? 'profile'
-                    : 'pending'
+                    : hostPrimaryPageNameRef.current === 'feed' &&
+                        isFeedScrollNearTop(feedRootRef.current)
+                      ? 'home'
+                      : 'pending'
               liveOnNewPendingRef.current.push({ event, route })
               scheduleLiveOnNewFlush()
             },
@@ -3877,7 +3887,10 @@ const NoteList = forwardRef(
                 const route: 'profile' | 'home' | 'pending' =
                   (pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)
                     ? 'profile'
-                    : 'pending'
+                    : hostPrimaryPageNameRef.current === 'feed' &&
+                        isFeedScrollNearTop(feedRootRef.current)
+                      ? 'home'
+                      : 'pending'
                 liveOnNewPendingRef.current.push({ event, route })
                 scheduleLiveOnNewFlush()
               }

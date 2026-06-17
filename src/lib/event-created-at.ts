@@ -3,23 +3,38 @@ import type { Event } from 'nostr-tools'
 /** Nostr timelines did not exist before ~2020. */
 export const EVENT_CREATED_AT_MIN_SEC = 1_577_836_800
 
-export function isFutureEventCreatedAt(
-  createdAt: number,
-  nowSec = Math.floor(Date.now() / 1000)
-): boolean {
-  if (!Number.isFinite(createdAt)) return true
-  return Math.trunc(createdAt) > nowSec
+/** Small relay/client clock skew (NIP-01); still rejects far-future spam like year-2100 notes. */
+export const EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC = 120
+
+export function normalizeEventCreatedAtSec(createdAt: unknown): number | null {
+  if (typeof createdAt === 'number' && Number.isFinite(createdAt)) {
+    return Math.trunc(createdAt)
+  }
+  if (typeof createdAt === 'string' && createdAt.trim() !== '') {
+    const n = Number(createdAt)
+    if (Number.isFinite(n)) return Math.trunc(n)
+  }
+  return null
 }
 
-/** False for nonsense timestamps (future, pre-Nostr, non-finite). */
-export function isPlausibleEventCreatedAt(
-  createdAt: number,
+export function isFutureEventCreatedAt(
+  createdAt: unknown,
   nowSec = Math.floor(Date.now() / 1000)
 ): boolean {
-  if (!Number.isFinite(createdAt)) return false
-  const t = Math.trunc(createdAt)
+  const t = normalizeEventCreatedAtSec(createdAt)
+  if (t === null) return true
+  return t > nowSec + EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC
+}
+
+/** False for nonsense timestamps (far future, pre-Nostr, non-finite). */
+export function isPlausibleEventCreatedAt(
+  createdAt: unknown,
+  nowSec = Math.floor(Date.now() / 1000)
+): boolean {
+  const t = normalizeEventCreatedAtSec(createdAt)
+  if (t === null) return false
   if (t < EVENT_CREATED_AT_MIN_SEC) return false
-  if (t > nowSec) return false
+  if (t > nowSec + EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC) return false
   return true
 }
 
@@ -28,8 +43,9 @@ export function getEventTimelineSortCreatedAt(
   event: Pick<Event, 'created_at'>,
   nowSec = Math.floor(Date.now() / 1000)
 ): number {
-  const t = Math.trunc(event.created_at)
-  return isPlausibleEventCreatedAt(t, nowSec) ? t : 0
+  const t = normalizeEventCreatedAtSec(event.created_at)
+  if (t === null || !isPlausibleEventCreatedAt(t, nowSec)) return 0
+  return t
 }
 
 export function compareEventsNewestFirst(a: Event, b: Event, nowSec = Math.floor(Date.now() / 1000)): number {

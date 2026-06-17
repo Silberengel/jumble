@@ -99,10 +99,10 @@ function explicitLookupMatchesEvent(eventId: string, lookup?: string): boolean {
 const DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND = 34236
 
 /**
- * Single gate for subscribe/cache/IDB read paths: drop future or pre-Nostr timestamps, kind-1 JSON-object spam,
- * drift.gits.net spam, long opaque random strings, and malformed relay reviews. Optional
- * {@link ShouldDropEventOnIngestOptions} relaxes
- * kind-1 spam drops for explicit id fetch.
+ * Single gate for subscribe/cache/IDB read paths: drop far-future or pre-Nostr timestamps,
+ * kind-1 JSON-object spam, Kacti broadcast spam, drift.gits.net spam, long opaque random strings,
+ * and malformed relay reviews. Optional {@link ShouldDropEventOnIngestOptions} relaxes
+ * kind-1 spam drops for explicit id fetch (not timestamp checks).
  */
 export function shouldDropEventOnIngest(
   event: NEvent,

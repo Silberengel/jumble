@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   compareEventsNewestFirst,
+  EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC,
   getEventTimelineSortCreatedAt,
   isFutureEventCreatedAt,
-  isPlausibleEventCreatedAt
+  isPlausibleEventCreatedAt,
+  normalizeEventCreatedAtSec
 } from '@/lib/event-created-at'
 import type { Event } from 'nostr-tools'
 
@@ -25,27 +27,35 @@ const ATPROTO_PROXY_SPAM: Event = {
   sig: 'ca467c72557efd49293c687bd0c5858ba92168f9a057bd0cedb2a1d8eb5cbb5f22202eddaa5ccaa8ef2a54e68eea12850bafa009cbcd0fb24a1a8afa49675455'
 }
 
+describe('normalizeEventCreatedAtSec', () => {
+  it('coerces numeric strings', () => {
+    expect(normalizeEventCreatedAtSec(String(NOW - 60))).toBe(NOW - 60)
+  })
+})
+
 describe('isFutureEventCreatedAt', () => {
-  it('treats any timestamp after now as future', () => {
-    expect(isFutureEventCreatedAt(NOW + 1, NOW)).toBe(true)
+  it('treats timestamps beyond drift as future', () => {
+    expect(isFutureEventCreatedAt(NOW + EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC + 1, NOW)).toBe(true)
     expect(isFutureEventCreatedAt(ATPROTO_PROXY_SPAM.created_at, NOW)).toBe(true)
   })
 
-  it('accepts now and the past', () => {
-    expect(isFutureEventCreatedAt(NOW, NOW)).toBe(false)
-    expect(isFutureEventCreatedAt(NOW - 60, NOW)).toBe(false)
+  it('allows small clock skew', () => {
+    expect(isFutureEventCreatedAt(NOW + 30, NOW)).toBe(false)
   })
 })
 
 describe('isPlausibleEventCreatedAt', () => {
   it('rejects far-future timestamps', () => {
     expect(isPlausibleEventCreatedAt(ATPROTO_PROXY_SPAM.created_at, NOW)).toBe(false)
-    expect(isPlausibleEventCreatedAt(NOW + 1, NOW)).toBe(false)
+    expect(isPlausibleEventCreatedAt(NOW + EVENT_CREATED_AT_MAX_FUTURE_DRIFT_SEC + 1, NOW)).toBe(
+      false
+    )
   })
 
-  it('accepts timestamps at or before now', () => {
+  it('accepts timestamps at or before now and within drift', () => {
     expect(isPlausibleEventCreatedAt(NOW - 60, NOW)).toBe(true)
     expect(isPlausibleEventCreatedAt(NOW, NOW)).toBe(true)
+    expect(isPlausibleEventCreatedAt(NOW + 30, NOW)).toBe(true)
   })
 })
 
