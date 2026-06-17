@@ -1,6 +1,6 @@
 import { ExtendedKind, NOTE_STATS_OP_REFERENCE_KINDS } from '@/constants'
 import { getParentEventHexId, isNip56ReportEvent, kind1QuotesThreadRoot } from '@/lib/event'
-import { isSuperchatKind, replyFeedSuperchatsFirst } from '@/lib/superchat'
+import { isSuperchatKind, isProfileWallSuperchat, replyFeedSuperchatsFirst } from '@/lib/superchat'
 import { eventReferencesThreadTarget } from '@/lib/op-reference-tags'
 import { muteSetHas } from '@/lib/mute-set'
 import type { TRepliesMap } from '@/lib/reply-index'
@@ -370,6 +370,19 @@ export function collectDisplayedThreadReplies(
     if (isPollVoteKind(evt)) continue
     if (shouldHideThreadResponseEvent(evt, mutePubkeySet, hideContentMentioningMutedUsers, threadResponseFilterOptions(rootInfo))) continue
     if (statsReplyIds?.has(evt.id)) {
+      if (
+        isSuperchatKind(evt.kind) &&
+        !shouldIncludeSuperchatInThreadReply(
+          evt,
+          opEvent,
+          rootInfo,
+          isDiscussionRoot,
+          threadWalk,
+          opEvent.pubkey
+        )
+      ) {
+        continue
+      }
       seen.add(evt.id)
       out.push(evt)
       continue
@@ -787,6 +800,37 @@ export function replyMatchesThreadForList(
     return true
   }
   return false
+}
+
+/** Attested superchat / zap rows allowed under “Antworten” for the opened note. */
+export function shouldIncludeSuperchatInThreadReply(
+  evt: NEvent,
+  opEvent: NEvent,
+  rootInfo: TRootInfo | undefined,
+  isDiscussionRoot: boolean,
+  threadWalk: ReadonlyMap<string, NEvent>,
+  recipientPubkey?: string
+): boolean {
+  if (!isSuperchatKind(evt.kind)) return false
+  if (!rootInfo) return false
+  if (recipientPubkey && isProfileWallSuperchat(evt, recipientPubkey)) return false
+
+  const opHex = openNoteHexId(opEvent)?.toLowerCase()
+  if (!opHex) return false
+
+  const directTargetHex = getParentEventHexId(evt)?.toLowerCase()
+  if (directTargetHex === opHex) return true
+
+  if (!replyMatchesThreadForList(evt, opEvent, rootInfo, isDiscussionRoot, threadWalk)) {
+    return false
+  }
+  const viewingThreadRoot =
+    (rootInfo.type === 'E' && rootInfo.id.trim().toLowerCase() === opHex) ||
+    (rootInfo.type === 'A' && rootInfo.eventId.trim().toLowerCase() === opHex)
+  if (!viewingThreadRoot && !replyIsInSubtreeBelowOpenNote(evt, opHex, threadWalk)) {
+    return false
+  }
+  return true
 }
 
 /** NIP-69 poll responses (kind 1018): aggregated in the poll UI, not as thread rows under “Antworten”. */

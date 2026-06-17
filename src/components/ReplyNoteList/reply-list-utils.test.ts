@@ -5,7 +5,8 @@ import type { TRepliesMap } from '@/lib/reply-index'
 import {
   classifyUnresolvedStatsReplyMissingPlacement,
   insertMissingStatsReplyPlaceholders,
-  partitionStatsRepliesForMissingPlaceholders
+  partitionStatsRepliesForMissingPlaceholders,
+  shouldIncludeSuperchatInThreadReply
 } from './reply-list-utils'
 import type { TRootInfo } from './types'
 
@@ -119,5 +120,45 @@ describe('insertMissingStatsReplyPlaceholders', () => {
     const out = insertMissingStatsReplyPlaceholders(resolved, stats, 'oldest')
     expect(out).toHaveLength(1)
     expect(out[0]?.type).toBe('event')
+  })
+})
+
+describe('shouldIncludeSuperchatInThreadReply', () => {
+  const recipient = 'r'.repeat(64)
+  const rootHex = 'f'.repeat(64)
+  const openHex = 'a'.repeat(64)
+  const rootInfo: TRootInfo = { type: 'E', id: rootHex, pubkey: recipient }
+  const openNote = note(openHex, 500, kinds.ShortTextNote, [['e', rootHex, '', 'reply']])
+
+  it('rejects profile-wall superchats with no note reference', () => {
+    const payment = note('p'.repeat(64), 100, ExtendedKind.PAYMENT_NOTIFICATION, [
+      ['p', recipient],
+      ['amount', '0']
+    ])
+    expect(
+      shouldIncludeSuperchatInThreadReply(payment, openNote, rootInfo, false, new Map(), recipient)
+    ).toBe(false)
+  })
+
+  it('rejects attested superchats while rootInfo is still loading', () => {
+    const payment = note('p'.repeat(64), 100, ExtendedKind.PAYMENT_NOTIFICATION, [
+      ['p', recipient],
+      ['e', openHex],
+      ['amount', '1000']
+    ])
+    expect(
+      shouldIncludeSuperchatInThreadReply(payment, openNote, undefined, false, new Map(), recipient)
+    ).toBe(false)
+  })
+
+  it('includes superchats tagged to the opened note', () => {
+    const payment = note('p'.repeat(64), 100, ExtendedKind.PAYMENT_NOTIFICATION, [
+      ['p', recipient],
+      ['e', openHex],
+      ['amount', '1000']
+    ])
+    expect(
+      shouldIncludeSuperchatInThreadReply(payment, openNote, rootInfo, false, new Map(), recipient)
+    ).toBe(true)
   })
 })

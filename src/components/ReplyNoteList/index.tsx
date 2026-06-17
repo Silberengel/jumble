@@ -83,6 +83,7 @@ import {
   replyFeedZapsFirst,
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
+  shouldIncludeSuperchatInThreadReply,
   threadBacklinkRelationLabel,
   threadResponseFilterOptions,
   eventsToThreadFeedItems,
@@ -137,12 +138,30 @@ function ReplyNoteList({
   const isDiscussionRoot = event.kind === ExtendedKind.DISCUSSION
   const threadRelayUrlsRef = useRef<string[]>([])
   const replyFetchGenRef = useRef(0)
+  const shouldIncludeAttestedSuperchat = useCallback(
+    (evt: NEvent) => {
+      const threadWalk = new Map<string, NEvent>()
+      for (const { events: bucket } of repliesMap.values()) {
+        for (const e of bucket) threadWalk.set(e.id.toLowerCase(), e)
+      }
+      return shouldIncludeSuperchatInThreadReply(
+        evt,
+        event,
+        rootInfo,
+        isDiscussionRoot,
+        threadWalk,
+        event.pubkey
+      )
+    },
+    [event, rootInfo, isDiscussionRoot, repliesMap]
+  )
   const { attestedPaymentIds, applyAttestedSuperchatWave } = useThreadAttestedPayments(
     event.pubkey,
     addReplies,
     threadRelayUrlsRef,
     browsingRelayUrls,
-    replyFetchGenRef
+    replyFetchGenRef,
+    shouldIncludeAttestedSuperchat
   )
 
   const replyDuplicateWebPreviewHints = useMemo(() => {
@@ -201,6 +220,16 @@ function ReplyNoteList({
         )
       ) {
         return false
+      }
+      if (isSuperchatKind(evt.kind)) {
+        return shouldIncludeSuperchatInThreadReply(
+          evt,
+          event,
+          rootInfo,
+          isDiscussionRoot,
+          threadWalkFromRepliesMap,
+          event.pubkey
+        )
       }
       if (statsReplyIds.has(evt.id)) return true
       if (

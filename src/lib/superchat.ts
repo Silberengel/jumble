@@ -403,6 +403,19 @@ function isProfileWallThreadReference(
   return true
 }
 
+/** Profile-wall payment (no note/thread `e`/`a` ref) — not a thread reply under any note. */
+export function isProfileWallSuperchat(
+  event: Event,
+  profilePubkey: string,
+  profileEventId?: string
+): boolean {
+  return (
+    isProfileWallPaymentNotification(event, profilePubkey, profileEventId) ||
+    isProfileWallZapReceipt(event, profilePubkey, profileEventId) ||
+    isProfileWallMoneroTip(event, profilePubkey, profileEventId)
+  )
+}
+
 /** Kind 9740 on a profile wall: `p` is the profile owner and there is no note/thread reference. */
 export function isProfileWallPaymentNotification(
   event: Event,

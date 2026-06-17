@@ -13,13 +13,23 @@ import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { Event as NEvent } from 'nostr-tools'
 import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
 
+function filterAttestedTargets(
+  events: NEvent[],
+  shouldInclude?: (evt: NEvent) => boolean
+): NEvent[] {
+  if (!shouldInclude) return events
+  return events.filter(shouldInclude)
+}
+
 /** Attested kind 9735/9740 ids + hydration for the thread recipient (OP). */
 export function useThreadAttestedPayments(
   recipientPubkey: string | undefined,
   addReplies: (events: NEvent[]) => void,
   threadRelayUrlsRef: MutableRefObject<string[]>,
   browsingRelayUrls: string[],
-  replyFetchGenRef: MutableRefObject<number>
+  replyFetchGenRef: MutableRefObject<number>,
+  /** When set, only attested payment targets that belong on this thread are merged. */
+  shouldIncludeAttestedTarget?: (evt: NEvent) => boolean
 ) {
   const [attestedPaymentIds, setAttestedPaymentIds] = useState<Set<string>>(() =>
     recipientPubkey ? resolveAttestedPaymentIdSetSync(recipientPubkey) : new Set()
@@ -48,20 +58,32 @@ export function useThreadAttestedPayments(
 
       const syncIds = resolveAttestedPaymentIdSetSync(pk)
       mergeAttestedPaymentIds(syncIds)
-      const syncTargets = peekAttestedSuperchatTargetEvents(syncIds)
+      const syncTargets = filterAttestedTargets(
+        peekAttestedSuperchatTargetEvents(syncIds),
+        shouldIncludeAttestedTarget
+      )
       if (syncTargets.length > 0) addReplies(syncTargets)
 
       const attestedIds = await resolveAttestedPaymentIdSet(pk, relayAttestations)
       if (fetchGeneration !== replyFetchGenRef.current) return
       mergeAttestedPaymentIds(attestedIds)
 
-      const targets = await hydrateAttestedSuperchatTargetEvents(attestedIds, relayUrls, {
-        foreground
-      })
+      const targets = filterAttestedTargets(
+        await hydrateAttestedSuperchatTargetEvents(attestedIds, relayUrls, {
+          foreground
+        }),
+        shouldIncludeAttestedTarget
+      )
       if (fetchGeneration !== replyFetchGenRef.current) return
       if (targets.length > 0) addReplies(targets)
     },
-    [recipientPubkey, addReplies, mergeAttestedPaymentIds, replyFetchGenRef]
+    [
+      recipientPubkey,
+      addReplies,
+      mergeAttestedPaymentIds,
+      replyFetchGenRef,
+      shouldIncludeAttestedTarget
+    ]
   )
 
   useEffect(() => {
@@ -71,7 +93,10 @@ export function useThreadAttestedPayments(
 
     const syncIds = resolveAttestedPaymentIdSetSync(pk)
     mergeAttestedPaymentIds(syncIds)
-    const syncTargets = peekAttestedSuperchatTargetEvents(syncIds)
+    const syncTargets = filterAttestedTargets(
+      peekAttestedSuperchatTargetEvents(syncIds),
+      shouldIncludeAttestedTarget
+    )
     if (syncTargets.length > 0) addReplies(syncTargets)
 
     void (async () => {
@@ -92,7 +117,8 @@ export function useThreadAttestedPayments(
     mergeAttestedPaymentIds,
     applyAttestedSuperchatWave,
     threadRelayUrlsRef,
-    replyFetchGenRef
+    replyFetchGenRef,
+    shouldIncludeAttestedTarget
   ])
 
   useEffect(() => {
@@ -108,11 +134,16 @@ export function useThreadAttestedPayments(
       if (!targetId) return
       mergeAttestedPaymentIds(new Set([targetId]))
       const cached = client.peekSessionCachedEvent(targetId)
-      if (cached) addReplies([cached])
+      if (cached) {
+        const ok = filterAttestedTargets([cached], shouldIncludeAttestedTarget)
+        if (ok.length > 0) addReplies(ok)
+      }
       void client
         .fetchEvent(targetId, { relayHints: threadRelayUrlsRef.current })
         .then((target) => {
-          if (target) addReplies([target])
+          if (!target) return
+          const ok = filterAttestedTargets([target], shouldIncludeAttestedTarget)
+          if (ok.length > 0) addReplies(ok)
         })
         .catch(() => {
           /* optional */
@@ -120,7 +151,13 @@ export function useThreadAttestedPayments(
     }
     client.addEventListener('newEvent', handleAttestation)
     return () => client.removeEventListener('newEvent', handleAttestation)
-  }, [recipientPubkey, addReplies, mergeAttestedPaymentIds, threadRelayUrlsRef])
+  }, [
+    recipientPubkey,
+    addReplies,
+    mergeAttestedPaymentIds,
+    threadRelayUrlsRef,
+    shouldIncludeAttestedTarget
+  ])
 
   return { attestedPaymentIds, mergeAttestedPaymentIds, applyAttestedSuperchatWave }
 }
