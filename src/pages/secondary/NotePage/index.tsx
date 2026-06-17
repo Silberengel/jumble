@@ -548,13 +548,13 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
           !eventPointersReferenceSameNote(parentEventId, rootEventId) &&
           !eventPointersReferenceSameNote(parentEventId, finalEvent.id) &&
           (parentEventForStrip ? (
-            <div key={`parent-note-${parentEventForStrip.id}`} className="mb-3 mt-1">
-              {!isConsecutive(rootEventForStrip, parentEventForStrip) ? (
-                <Ellipsis className="ml-3.5 mb-1 text-muted-foreground/60 size-3" />
-              ) : null}
-              <Note event={parentEventForStrip} hideParentNotePreview showFull hidePollOptions />
-              <div className="ml-5 w-px h-3 bg-border" />
-            </div>
+            <ParentNote
+              key={`parent-note-${parentEventForStrip.id}`}
+              event={parentEventForStrip}
+              eventBech32Id={parentEventId}
+              isFetching={false}
+              isConsecutive={isConsecutive(rootEventForStrip, parentEventForStrip)}
+            />
           ) : isFetchingParentEvent ? (
             <ThreadContextSkeleton key={`parent-note-skeleton-${finalEvent.id}`} />
           ) : null)}
@@ -692,7 +692,7 @@ function ParentNote({
           className="truncate flex-1"
           onClick={navigate}
         >
-          <ContentPreview event={event} hidePollOptions />
+          <ContentPreview event={event} hidePollOptions forParentReplyBlurb />
         </div>
       </div>
       {isConsecutive ? (

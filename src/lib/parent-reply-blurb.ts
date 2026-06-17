@@ -1,12 +1,16 @@
 import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind } from '@/constants'
+import { getCalendarEventMeta, isCalendarEventKind } from '@/lib/calendar-event'
+import { getKindDescription } from '@/lib/kind-description'
 import { getMusicTrackFromEvent, musicTrackDisplayLine } from '@/lib/music-track'
 import {
   getLiveEventMetadataFromEvent,
-  getLongFormArticleMetadataFromEvent
+  getLongFormArticleMetadataFromEvent,
+  getPublicationIndexMetadataFromEvent
 } from '@/lib/event-metadata'
 import { tagNameEquals } from '@/lib/tag'
 import { formatNip32LabelSnippet } from '@/lib/nip32-label'
 import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
+import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
 import { Event, kinds } from 'nostr-tools'
 
 export const PARENT_REPLY_BLURB_MAX = 150
@@ -55,13 +59,61 @@ export function getParentReplyBlurbDisplayText(
   if (
     event.kind === kinds.LongFormArticle ||
     event.kind === ExtendedKind.PUBLICATION ||
-    event.kind === ExtendedKind.PUBLICATION_CONTENT
+    event.kind === ExtendedKind.PUBLICATION_CONTENT ||
+    event.kind === ExtendedKind.WIKI_ARTICLE ||
+    event.kind === ExtendedKind.NOSTR_SPECIFICATION
   ) {
-    const meta = getLongFormArticleMetadataFromEvent(event)
+    const meta =
+      event.kind === ExtendedKind.PUBLICATION
+        ? getPublicationIndexMetadataFromEvent(event)
+        : getLongFormArticleMetadataFromEvent(event)
     if (meta.title?.trim()) return truncateBlurb(stripMarkupForPreview(meta.title.trim()), maxLen)
     if (meta.summary?.trim()) {
       return truncateBlurb(stripMarkupForPreview(meta.summary), maxLen)
     }
+  }
+
+  if (
+    event.kind === ExtendedKind.GIT_REPO_ANNOUNCEMENT ||
+    event.kind === ExtendedKind.GIT_ISSUE ||
+    event.kind === ExtendedKind.GIT_RELEASE
+  ) {
+    const nameTag = event.tags.find(tagNameEquals('name'))?.[1]?.trim()
+    if (nameTag) return truncateBlurb(stripMarkupForPreview(nameTag), maxLen)
+    const releaseTag = event.tags.find((t) => t[0] === 'tag')?.[1]?.trim()
+    if (releaseTag && event.kind === ExtendedKind.GIT_RELEASE) {
+      return truncateBlurb(stripMarkupForPreview(releaseTag), maxLen)
+    }
+    const descriptionTag = event.tags.find(tagNameEquals('description'))?.[1]?.trim()
+    if (descriptionTag && event.kind === ExtendedKind.GIT_REPO_ANNOUNCEMENT) {
+      return truncateBlurb(stripMarkupForPreview(descriptionTag), maxLen)
+    }
+  }
+
+  if (isCalendarEventKind(event.kind)) {
+    const cal = getCalendarEventMeta(event)
+    if (cal.title?.trim()) return truncateBlurb(stripMarkupForPreview(cal.title), maxLen)
+    if (cal.summary?.trim()) return truncateBlurb(stripMarkupForPreview(cal.summary), maxLen)
+  }
+
+  if (event.kind === ExtendedKind.WEB_BOOKMARK) {
+    const href = getWebBookmarkArticleUrl(event)
+    if (href) return truncateBlurb(href, maxLen)
+  }
+
+  if (event.kind === ExtendedKind.LEARNING_RESOURCE) {
+    const name = event.tags.find(tagNameEquals('name'))?.[1]?.trim()
+    if (name) return truncateBlurb(stripMarkupForPreview(name), maxLen)
+  }
+
+  if (event.kind === ExtendedKind.GROUP_METADATA || event.kind === kinds.CommunityDefinition) {
+    const name = event.tags.find(tagNameEquals('name'))?.[1]?.trim()
+    if (name) return truncateBlurb(stripMarkupForPreview(name), maxLen)
+  }
+
+  if (event.kind === ExtendedKind.FOLLOW_PACK) {
+    const name = event.tags.find(tagNameEquals('name'))?.[1]?.trim()
+    if (name) return truncateBlurb(stripMarkupForPreview(name), maxLen)
   }
 
   if (event.kind === kinds.LiveEvent || event.kind === 30312 || event.kind === 30313) {
@@ -86,4 +138,9 @@ export function getParentReplyBlurbDisplayText(
 
 export function parentReplyPollQuestionBlurb(content: string, maxLen = PARENT_REPLY_BLURB_MAX): string {
   return truncateBlurb(stripMarkupForPreview(content ?? ''), maxLen)
+}
+
+/** Short kind label when no title/subject/content snippet is available. */
+export function getParentReplyBlurbFallbackLabel(event: Event): string {
+  return getKindDescription(event.kind, event).description
 }

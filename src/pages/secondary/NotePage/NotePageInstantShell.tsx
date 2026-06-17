@@ -26,7 +26,7 @@ function ThreadContextPreview({ event }: { event: Event }) {
       <div className="flex items-center gap-2">
         <UserAvatar userId={event.pubkey} size="small" className="shrink-0" deferRemoteAvatar={false} />
         <div className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-          <ContentPreview event={event} hidePollOptions />
+          <ContentPreview event={event} hidePollOptions forParentReplyBlurb />
         </div>
       </div>
     </div>
