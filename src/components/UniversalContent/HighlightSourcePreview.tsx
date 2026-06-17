@@ -5,9 +5,10 @@
 import { useMemo } from 'react'
 import { nip19 } from 'nostr-tools'
 import logger from '@/lib/logger'
-import WebPreview from '../WebPreview'
+import { HttpUrlOpenGraphOrLink } from '@/components/Embedded'
 import { EmbeddedNote } from '../Embedded/EmbeddedNote'
 import { ExternalLink } from 'lucide-react'
+import { isLikelyWebPageUrl } from '@/lib/url'
 
 interface HighlightSourcePreviewProps {
   source: {
@@ -97,10 +98,23 @@ export default function HighlightSourcePreview({ source, className }: HighlightS
       )
     }
   } else if (source.type === 'url') {
-    // For URLs, show WebPreview
-    content = (
-      <WebPreview url={source.value} className="w-full" />
-    )
+    if (isLikelyWebPageUrl(source.value)) {
+      content = <HttpUrlOpenGraphOrLink url={source.value} block className="w-full" />
+    } else {
+      content = (
+        <div className={`p-3 border rounded-lg bg-muted/50 ${className}`}>
+          <a
+            href={source.value.startsWith('nostr:') ? source.value : `nostr:${source.value}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="flex items-center gap-2 text-primary hover:underline break-words"
+          >
+            <span className="font-mono text-sm">{source.value.slice(0, 48)}…</span>
+            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+          </a>
+        </div>
+      )
+    }
   }
 
   // Render content in a wrapper div

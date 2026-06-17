@@ -7,10 +7,12 @@ import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
 import { useSmartNoteNavigationOptional } from '@/PageManager'
 import { toNote } from '@/lib/link'
-import { isPseudoNostrHttpsUrl } from '@/lib/url'
+import { isPseudoNostrHttpsUrl, isLikelyWebPageUrl, simplifyUrl } from '@/lib/url'
+import { getHighlightSourceHttpUrl } from '@/lib/rss-article'
 import { useFetchEvent } from '@/hooks'
 import { useEffect, useState, useMemo } from 'react'
 import { ExtendedKind } from '@/constants'
+import { useTranslation } from 'react-i18next'
 import { resolveNip84HighlightDisplay } from '@/lib/nip84-highlight-display'
 
 function stripOuterQuotes(s: string): string {
@@ -109,6 +111,7 @@ export default function Highlight({
   event: Event
   className?: string
 }) {
+  const { t } = useTranslation()
   // State for storing the referenced event's author
   const [referencedEventAuthor, setReferencedEventAuthor] = useState<string | null>(null)
   const [sourceEventId, setSourceEventId] = useState<string | null>(null)
@@ -313,10 +316,17 @@ export default function Highlight({
       }
     }, [sourceTag, referencedEventAuthor, hasSpecialCard])
 
-    const { fullText, markedSpan } = useMemo(
+    const { fullText, markedSpan, mode, sourceAnchorHint } = useMemo(
       () => resolveNip84HighlightDisplay(event),
       [event.id, event.content, event.tags]
     )
+
+    const httpSourceUrl = useMemo(() => getHighlightSourceHttpUrl(event), [event.tags])
+
+    const httpSourceAlreadyLinked =
+      !!httpSourceUrl &&
+      source?.type === 'url' &&
+      isLikelyWebPageUrl(source.value)
 
     const markClassName =
       'bg-green-200 dark:bg-green-600 dark:text-white px-1 rounded font-medium'
@@ -325,6 +335,15 @@ export default function Highlight({
       const cleanFull = stripOuterQuotes(fullText)
       const cleanMark = stripOuterQuotes(markedSpan)
       if (!cleanFull) return null
+
+      if (mode === 'web-annotation') {
+        return (
+          <mark className={markClassName} data-nip84-highlight="annotation">
+            {cleanFull}
+          </mark>
+        )
+      }
+
       if (!cleanMark || cleanFull === cleanMark) {
         return (
           <mark className={markClassName} data-nip84-highlight="span">
@@ -350,15 +369,34 @@ export default function Highlight({
           )}
         </span>
       ))
-    }, [fullText, markedSpan])
+    }, [fullText, markedSpan, mode])
 
     return (
       <div className={`bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4 ${className || ''}`}>
         <div className="flex-1 min-w-0">
-            {/* Full quoted text with highlighted portion (context, textquoteselector, or textpositionselector) */}
             {quotedBody && (
               <div className="note-content text-base font-normal mb-4 whitespace-pre-wrap break-words border-l-4 border-green-500 pl-5 py-4 leading-relaxed bg-green-50/30 dark:bg-green-950/20 rounded-r-lg">
                 <div>{quotedBody}</div>
+                {httpSourceUrl ? (
+                  <p className="mt-3 text-sm border-t border-green-200/60 dark:border-green-800/60 pt-3">
+                    <span className="text-muted-foreground">{t('Source', { defaultValue: 'Source' })}: </span>
+                    <a
+                      href={httpSourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-primary hover:underline underline-offset-2 break-all"
+                    >
+                      {simplifyUrl(httpSourceUrl) || httpSourceUrl}
+                    </a>
+                  </p>
+                ) : null}
+                {sourceAnchorHint ? (
+                  <p className="mt-2 text-xs text-muted-foreground italic">
+                    {t('Passage on source page', { defaultValue: 'Passage on source page' })}:{' '}
+                    {sourceAnchorHint}
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -369,8 +407,8 @@ export default function Highlight({
               </div>
             )}
 
-            {/* Source preview card */}
-            {source && (
+            {/* Source preview card (skip bare http link when Source: line above already links it) */}
+            {source && !httpSourceAlreadyLinked && (
               <div className="mt-3">
                 {/* Only show simple author card if:
                     1. We have the author pubkey
