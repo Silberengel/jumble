@@ -4303,8 +4303,11 @@ const NoteList = forwardRef(
         // Reveal more visible rows from the already-loaded buffer before paging relays / IndexedDB.
         if (!bufferExhaustedForVisibleQuotaRef.current) {
           const step = Math.max(revealBatchSize ?? REVEAL_BATCH_STEP, MIN_LOAD_MORE_VISIBLE)
-          setShowCount((prev) => prev + step)
-          return
+          if (showCountRef.current < eventsRef.current.length) {
+            setShowCount((prev) => prev + step)
+            return
+          }
+          // Every merged timeline row is already eligible for display — fetch older pages.
         }
 
         if (feedFullSearchEventsRef.current !== null) return
@@ -4330,71 +4333,76 @@ const NoteList = forwardRef(
           try {
             const until = latestEvents.length ? latestEvents[latestEvents.length - 1].created_at - 1 : dayjs().unix()
             const existingIds = new Set(latestEvents.map((e) => e.id))
-            const pageRuntime = new FeedRuntime({
-              descriptorKey: `timeline:${latestTimelineKey}`,
-              sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
-            })
-            pageRuntime.seed(latestEvents, { hasMore: latestHasMore, nextCursor: until })
-            const pageSnapshot = await pageRuntime.loadMore(
-              async ({ cursor }) => {
-                newEvents = await client.loadMoreTimeline(
-                  latestTimelineKey,
-                  cursor ?? until,
-                  LIMIT,
-                  existingIds
-                )
-                return {
-                  relayEvents: newEvents,
-                  hasMore: newEvents.length > 0,
-                  nextCursor: newEvents.length
-                    ? Math.min(...newEvents.map((event) => event.created_at)) - 1
-                    : cursor
-                }
-              }
+            const diskReq = subRequestsRef.current as Array<{ urls: string[]; filter: TSubRequestFilter }>
+
+            newEvents = await client.getLocalFeedEventsOlderThan(
+              diskReq,
+              until,
+              LIMIT,
+              existingIds
             )
-            logFeedDiagnostics(
-              'note-list-load-more',
-              buildFeedDiagnosticsSnapshot({
-                descriptor: createFeedDescriptor({
-                  surface: 'custom',
-                  id: latestTimelineKey,
-                  mode: 'live',
-                  requests: subRequestsRef.current,
-                  pagination: { enabled: true }
-                }),
-                relayPolicy: {
-                  urls: Array.from(new Set(subRequestsRef.current.flatMap((request) => request.urls))),
-                  dropped: []
-                },
-                runtime: pageSnapshot
-              })
-            )
-            
+
             if (newEvents.length === 0) {
-              const localFirstPage = await client.getLocalFeedEventsOlderThan(
-                subRequestsRef.current as Array<{ urls: string[]; filter: TSubRequestFilter }>,
-                until,
-                LIMIT,
-                existingIds
+              const pageRuntime = new FeedRuntime({
+                descriptorKey: `timeline:${latestTimelineKey}`,
+                sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+              })
+              pageRuntime.seed(latestEvents, { hasMore: latestHasMore, nextCursor: until })
+              const pageSnapshot = await pageRuntime.loadMore(
+                async ({ cursor }) => {
+                  newEvents = await client.loadMoreTimeline(
+                    latestTimelineKey,
+                    cursor ?? until,
+                    LIMIT,
+                    existingIds
+                  )
+                  return {
+                    relayEvents: newEvents,
+                    hasMore: newEvents.length > 0,
+                    nextCursor: newEvents.length
+                      ? Math.min(...newEvents.map((event) => event.created_at)) - 1
+                      : cursor
+                  }
+                }
               )
-              if (localFirstPage.length > 0) {
-                newEvents = localFirstPage
-              }
+              logFeedDiagnostics(
+                'note-list-load-more',
+                buildFeedDiagnosticsSnapshot({
+                  descriptor: createFeedDescriptor({
+                    surface: 'custom',
+                    id: latestTimelineKey,
+                    mode: 'live',
+                    requests: subRequestsRef.current,
+                    pagination: { enabled: true }
+                  }),
+                  relayPolicy: {
+                    urls: Array.from(new Set(subRequestsRef.current.flatMap((request) => request.urls))),
+                    dropped: []
+                  },
+                  runtime: pageSnapshot
+                })
+              )
             }
 
             // CRITICAL FIX: Be extremely conservative about stopping the feed
             // Only stop if we're absolutely certain there are no more events
             if (newEvents.length === 0) {
-              // Check if timeline has more cached refs that we haven't loaded yet
-              const hasMoreCached =
-                client.hasMoreTimelineEvents?.(latestTimelineKey, until, existingIds) ?? false
-              
-              if (hasMoreCached) {
-                // There are more cached events, keep hasMore true and try again
+              const hasMoreCached = await client.hasMoreTimelineEventsIncludingPersisted(
+                latestTimelineKey,
+                until,
+                existingIds
+              )
+              const hasMoreLocal = await client.hasMoreLocalFeedEventsOlderThan(
+                diskReq,
+                until,
+                existingIds
+              )
+
+              if (hasMoreCached || hasMoreLocal) {
+                setHasMore(true)
                 setLoading(false)
-                // Retry after a short delay to allow IndexedDB to catch up
                 setTimeout(() => {
-                  if (hasMoreRef.current && !loadingRef.current) {
+                  if (!loadingRef.current) {
                     loadMore()
                   }
                 }, 300)
@@ -4487,6 +4495,30 @@ const NoteList = forwardRef(
             }
 
             if (toAppend.length === 0) {
+              const oldestLoaded = latestEvents.length
+                ? latestEvents[latestEvents.length - 1]!.created_at - 1
+                : dayjs().unix()
+              const hasMoreCached = await client.hasMoreTimelineEventsIncludingPersisted(
+                latestTimelineKey,
+                oldestLoaded,
+                existingIds
+              )
+              const hasMoreLocal = await client.hasMoreLocalFeedEventsOlderThan(
+                diskReq,
+                oldestLoaded,
+                existingIds
+              )
+              if (hasMoreCached || hasMoreLocal) {
+                setHasMore(true)
+                setLoading(false)
+                setTimeout(() => {
+                  if (!loadingRef.current) {
+                    loadMore()
+                  }
+                }, 300)
+                return
+              }
+
               consecutiveEmptyRef.current += 1
               const eventCount = latestEvents.length
               const shouldStop = consecutiveEmptyRef.current >= (eventCount < 50 ? 30 : 15)
@@ -4640,6 +4672,25 @@ const NoteList = forwardRef(
         }
       }
     }, [timelineSubscriptionKey])
+
+    // When filters leave the feed sparse but IndexedDB / timeline shards still have rows, page automatically.
+    useEffect(() => {
+      if (loading) return
+      if (!bufferExhaustedForVisibleQuota) return
+      if (feedFullSearchEventsRef.current !== null) return
+      if (!timelineKeyRef.current) return
+
+      const timer = window.setTimeout(() => {
+        loadMoreInvokerRef.current?.()
+      }, 150)
+      return () => window.clearTimeout(timer)
+    }, [
+      bufferExhaustedForVisibleQuota,
+      filteredEvents.length,
+      events.length,
+      loading,
+      timelineSubscriptionKey
+    ])
 
     // Eager embed prefetch for visible rows (deduped in EventService; ingest also prefetches on add).
     useEffect(() => {

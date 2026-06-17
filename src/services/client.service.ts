@@ -2800,6 +2800,37 @@ class ClientService extends EventTarget {
     return refsHaveOlder(timeline.refs)
   }
 
+  /** In-memory timeline refs plus persisted shard refs (IndexedDB) not yet loaded into `events` state. */
+  async hasMoreTimelineEventsIncludingPersisted(
+    key: string,
+    until: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ): Promise<boolean> {
+    if (this.hasMoreTimelineEvents(key, until, excludeIds)) return true
+
+    const timeline = this.timelines[key]
+    if (!timeline || Array.isArray(timeline) || timeline.disablePersist) return false
+
+    try {
+      const st = await indexedDb.getTimelinePersistedState(key)
+      return (st?.refs ?? []).some(
+        ([id, createdAt]) => createdAt <= until && !excludeIds.has(id)
+      )
+    } catch {
+      return false
+    }
+  }
+
+  /** True when session / archive / publication stores still have rows older than `until` for these filters. */
+  async hasMoreLocalFeedEventsOlderThan(
+    subRequests: { urls: string[]; filter: TSubRequestFilter }[],
+    until: number,
+    excludeIds: ReadonlySet<string> = new Set()
+  ): Promise<boolean> {
+    const rows = await this.getLocalFeedEventsOlderThan(subRequests, until, 1, excludeIds)
+    return rows.length > 0
+  }
+
   async loadMoreTimeline(
     key: string,
     until: number,
