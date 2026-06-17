@@ -118,11 +118,17 @@ function isExpectedDevAppNoise(message: string): boolean {
     return true
   }
   if (
-    message.includes('feeds.nostrarchives.com') &&
+    (message.includes('feeds.nostrarchives.com') || message.includes('search.nostrarchives.com')) &&
     (message.includes('CORS') ||
       message.includes('Gleiche-Quelle') ||
       message.includes('Cross-Origin') ||
       message.includes('Access-Control-Allow-Origin'))
+  ) {
+    return true
+  }
+  if (
+    message.includes('api.nostrarchives.com') &&
+    (message.includes('404') || message.includes('Not Found'))
   ) {
     return true
   }

@@ -43,6 +43,7 @@ import {
   persistFeedSince
 } from '@/lib/feed-since-persist'
 import { scrollActivity } from '@/lib/scroll-activity.service'
+import { getRegisteredPrimaryFeedScrollElement } from '@/lib/mobile-primary-feed-scroll'
 import { isTouchDevice } from '@/lib/utils'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
@@ -203,9 +204,22 @@ function scrollRootClientHeight(scrollRoot: HTMLElement | Window): number {
   return scrollRoot === window ? window.innerHeight : (scrollRoot as HTMLElement).clientHeight
 }
 
-function isFeedScrollNearTop(anchor: HTMLElement | null, thresholdPx = AUTO_MERGE_NEW_EVENTS_TOP_PX): boolean {
-  const parent = getNearestScrollableAncestor(anchor)
-  const root: HTMLElement | Window = parent ?? window
+function resolveFeedScrollRoot(
+  anchor: HTMLElement | null,
+  cachedScrollRoot?: HTMLElement | Window | null
+): HTMLElement | Window {
+  if (cachedScrollRoot) return cachedScrollRoot
+  const registered = getRegisteredPrimaryFeedScrollElement()
+  if (registered && anchor && registered.contains(anchor)) return registered
+  return getNearestScrollableAncestor(anchor) ?? window
+}
+
+function isFeedScrollNearTop(
+  anchor: HTMLElement | null,
+  cachedScrollRoot?: HTMLElement | Window | null,
+  thresholdPx = AUTO_MERGE_NEW_EVENTS_TOP_PX
+): boolean {
+  const root = resolveFeedScrollRoot(anchor, cachedScrollRoot)
   const top = root === window ? window.scrollY : (root as HTMLElement).scrollTop
   return top <= thresholdPx
 }
@@ -976,6 +990,8 @@ const NoteList = forwardRef(
     const bottomRef = useRef<HTMLDivElement | null>(null)
     /** List root for intersection / load-more wiring (outer NoteList shell). */
     const feedRootRef = useRef<HTMLDivElement | null>(null)
+    /** Cached scrollport from {@link wireScrollPrefetch} — avoids DOM walks on every live `onNew`. */
+    const feedScrollRootRef = useRef<HTMLElement | Window | null>(null)
     const loadMoreInvokerRef = useRef<(() => void) | null>(null)
     const bottomIntersectionObserverRef = useRef<IntersectionObserver | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
@@ -1260,11 +1276,12 @@ const NoteList = forwardRef(
     useLayoutEffect(() => {
       const candidates = new Set<string>()
       const emojiAuthors = new Set<string>()
-      for (const e of timelineEventsForFilter) {
+      const profileSyncCap = Math.min(120, Math.max(showCount + 64, 64))
+      for (const e of timelineEventsForFilter.slice(0, profileSyncCap)) {
         collectProfilePrefetchPubkeysFromEvent(e, candidates)
         collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
       }
-      for (const e of newEvents) {
+      for (const e of newEvents.slice(0, 32)) {
         collectProfilePrefetchPubkeysFromEvent(e, candidates)
         collectReactionAuthorPubkeysForEmojiPrefetch([e], emojiAuthors)
       }
@@ -1973,6 +1990,7 @@ const NoteList = forwardRef(
       const anchor = feedRootRef.current
       const parent = getNearestScrollableAncestor(anchor)
       const root: HTMLElement | Window = parent ?? window
+      feedScrollRootRef.current = root
       const top = root === window ? window.scrollY : (root as HTMLElement).scrollTop
       if (top > AUTO_MERGE_NEW_EVENTS_TOP_PX) return
       flushPendingNewEventsIntoTimeline()
@@ -2155,7 +2173,6 @@ const NoteList = forwardRef(
           pauseTimelineForPrimaryFreeze ? 'frozen' : 'live',
           timelineSubscriptionKey,
           feedSubscriptionKey ?? '',
-          sessionSnapshotIdentityKey,
           subRequestsKey,
           timelineResubscribeKindKey,
           seeAllFeedEvents ? '1' : '0',
@@ -2172,7 +2189,6 @@ const NoteList = forwardRef(
         pauseTimelineForPrimaryFreeze,
         timelineSubscriptionKey,
         feedSubscriptionKey,
-        sessionSnapshotIdentityKey,
         subRequestsKey,
         timelineResubscribeKindKey,
         seeAllFeedEvents,
@@ -2464,6 +2480,45 @@ const NoteList = forwardRef(
           )
         }
 
+        /** Home feed: merge every relay match; kind/reply toggles filter visible rows only. */
+        const narrowLiveBatchForIngress = (evs: Event[]) =>
+          hostPrimaryPageNameRef.current === 'feed' ? narrowLiveBatchForLocalWarmup(evs) : narrowLiveBatch(evs)
+
+        const passesLiveIngressKindGate = (event: Event) => {
+          if (hostPrimaryPageNameRef.current === 'feed') return true
+          if (!withKindFilterRef.current) return true
+          const kindlessFirehose =
+            allowKindlessRelayExploreRef.current && showAllKindsRef.current
+          if (!kindlessFirehose) {
+            if (!showAllKindsRef.current) {
+              return eventPassesNoteListKindPicker(
+                event,
+                effectiveShowKindsRef.current,
+                showKind1OPsRef.current,
+                showKind1RepliesRef.current,
+                showKind1111Ref.current
+              )
+            }
+            if (!useFilterAsIsRef.current && !effectiveShowKindsRef.current.includes(event.kind)) {
+              return false
+            }
+            if (
+              clientSideKindFilterRef.current &&
+              useFilterAsIsRef.current &&
+              !effectiveShowKindsRef.current.includes(event.kind)
+            ) {
+              return false
+            }
+            if (event.kind === kinds.ShortTextNote) {
+              const isReply = isReplyNoteEvent(event)
+              if (isReply && !showKind1RepliesRef.current) return false
+              if (!isReply && !showKind1OPsRef.current) return false
+            }
+            if (event.kind === ExtendedKind.COMMENT && !showKind1111Ref.current) return false
+          }
+          return true
+        }
+
         const eventMatchesProfileTimelineRequest = (event: Event) =>
           isProfileTimelineFeed &&
           mappedSubRequests.some(({ filter }) =>
@@ -2475,9 +2530,21 @@ const NoteList = forwardRef(
           const batch = liveOnNewPendingRef.current.splice(0)
           if (batch.length === 0) return
 
-          const profileBatch = batch.filter((row) => row.route === 'profile').map((row) => row.event)
-          const homeBatch = batch.filter((row) => row.route === 'home').map((row) => row.event)
-          const pendingBatch = batch.filter((row) => row.route === 'pending').map((row) => row.event)
+          const atFeedTop =
+            hostPrimaryPageNameRef.current === 'feed' &&
+            isFeedScrollNearTop(feedRootRef.current, feedScrollRootRef.current)
+
+          const profileBatch: Event[] = []
+          const homeBatch: Event[] = []
+          const pendingBatch: Event[] = []
+
+          for (const row of batch) {
+            let route = row.route
+            if (route === 'pending' && atFeedTop) route = 'home'
+            if (route === 'profile') profileBatch.push(row.event)
+            else if (route === 'home') homeBatch.push(row.event)
+            else pendingBatch.push(row.event)
+          }
 
           if (profileBatch.length > 0 || homeBatch.length > 0) {
             setEvents((oldEvents) => {
@@ -2713,7 +2780,12 @@ const NoteList = forwardRef(
         }
 
         if (!keepExistingTimelineEvents) {
-          if (restoredFromSession && sessionSnap && sessionSnap.length > 0) {
+          if (
+            restoredFromSession &&
+            sessionSnap &&
+            sessionSnap.length > 0 &&
+            eventsRef.current.length === 0
+          ) {
             feedPaintSessionPendingRef.current = true
             const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
             timelineMergeBootstrapRef.current = restored.slice()
@@ -3390,7 +3462,7 @@ const NoteList = forwardRef(
                   clearTimeout(kindlessEoseTimeoutRef.current)
                   kindlessEoseTimeoutRef.current = null
                 }
-                const narrowed = narrowLiveBatch(batch)
+                const narrowed = narrowLiveBatchForIngress(batch)
                 const paintDoneBefore = feedPaintLiveRelayDoneRef.current
                 if (!feedPaintLiveRelayDoneRef.current) {
                   if (narrowed.length > 0) {
@@ -3545,40 +3617,7 @@ const NoteList = forwardRef(
             onNew: (event: Event) => {
               if (!effectActive) return
               feedRelayReturnedAnyEventRef.current = true
-              if (withKindFilterRef.current) {
-                const kindlessFirehose =
-                  allowKindlessRelayExploreRef.current && showAllKindsRef.current
-                if (!kindlessFirehose) {
-                  if (!showAllKindsRef.current) {
-                    if (
-                      !eventPassesNoteListKindPicker(
-                        event,
-                        effectiveShowKindsRef.current,
-                        showKind1OPsRef.current,
-                        showKind1RepliesRef.current,
-                        showKind1111Ref.current
-                      )
-                    ) {
-                      return
-                    }
-                  } else {
-                    if (!useFilterAsIsRef.current && !effectiveShowKindsRef.current.includes(event.kind))
-                      return
-                    if (
-                      clientSideKindFilterRef.current &&
-                      useFilterAsIsRef.current &&
-                      !effectiveShowKindsRef.current.includes(event.kind)
-                    )
-                      return
-                    if (event.kind === kinds.ShortTextNote) {
-                      const isReply = isReplyNoteEvent(event)
-                      if (isReply && !showKind1RepliesRef.current) return
-                      if (!isReply && !showKind1OPsRef.current) return
-                    }
-                    if (event.kind === ExtendedKind.COMMENT && !showKind1111Ref.current) return
-                  }
-                }
-              }
+              if (!passesLiveIngressKindGate(event)) return
               if (shouldHideEventRef.current(event)) return
               const isOwnPublish = Boolean(pubkey && event.pubkey === pubkey)
               const route: 'profile' | 'home' | 'pending' =
@@ -3586,8 +3625,7 @@ const NoteList = forwardRef(
                   ? 'home'
                   : eventMatchesProfileTimelineRequest(event)
                     ? 'profile'
-                    : hostPrimaryPageNameRef.current === 'feed' &&
-                        isFeedScrollNearTop(feedRootRef.current)
+                    : hostPrimaryPageNameRef.current === 'feed'
                       ? 'home'
                       : 'pending'
               liveOnNewPendingRef.current.push({ event, route })
@@ -3748,6 +3786,13 @@ const NoteList = forwardRef(
           : LIMIT
 
       const narrowDeltaBatch = (evs: Event[]) => {
+        if (hostPrimaryPageNameRef.current === 'feed') {
+          const shardFilters = mappedDelta.map(({ filter }) => filter as Filter)
+          if (shardFilters.length === 0) return evs
+          return evs.filter((ev) =>
+            shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
+          )
+        }
         if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
         if (withKindFilterRef.current && !showAllKindsRef.current) {
           return evs.filter((e) =>
@@ -3849,7 +3894,7 @@ const NoteList = forwardRef(
               onNew: (event: Event) => {
                 if (!deltaActive) return
                 feedRelayReturnedAnyEventRef.current = true
-                if (withKindFilterRef.current) {
+                if (hostPrimaryPageNameRef.current !== 'feed' && withKindFilterRef.current) {
                   const kindlessFirehose =
                     allowKindlessRelayExploreRef.current && showAllKindsRef.current
                   if (!kindlessFirehose) {
@@ -3887,8 +3932,8 @@ const NoteList = forwardRef(
                 const route: 'profile' | 'home' | 'pending' =
                   (pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)
                     ? 'profile'
-                    : hostPrimaryPageNameRef.current === 'feed' &&
-                        isFeedScrollNearTop(feedRootRef.current)
+                    : mergeLiveEventsImmediatelyRef.current ||
+                        hostPrimaryPageNameRef.current === 'feed'
                       ? 'home'
                       : 'pending'
                 liveOnNewPendingRef.current.push({ event, route })
@@ -4645,8 +4690,8 @@ const NoteList = forwardRef(
 
       const wireScrollPrefetch = () => {
         const anchor = feedRootRef.current
-        const parent = getNearestScrollableAncestor(anchor)
-        const next: HTMLElement | Window = parent ?? window
+        const next = resolveFeedScrollRoot(anchor, null)
+        feedScrollRootRef.current = next
         if (scrollPrefetchTarget && scrollPrefetchTarget !== next) {
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
           scrollPrefetchTarget.removeEventListener('scroll', onScrollFlushNewNotesAtTop)

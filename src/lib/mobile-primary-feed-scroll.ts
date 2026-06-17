@@ -10,6 +10,11 @@ export function registerMobilePrimaryFeedScrollElement(el: HTMLElement | null): 
   registeredScrollElement = el
 }
 
+/** Primary feed scrollport when registered (mobile + desktop {@link PrimaryPageLayout}). */
+export function getRegisteredPrimaryFeedScrollElement(): HTMLElement | null {
+  return registeredScrollElement
+}
+
 export function saveMobilePrimaryFeedScroll(page: TPrimaryPageName, top: number): void {
   if (!Number.isFinite(top) || top < 0) return
   scrollByPage.set(page, top)

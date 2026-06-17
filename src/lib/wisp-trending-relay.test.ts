@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWispTrendingNotesRelayUrl,
   ensureTrendingInFavoriteRelayList,
+  isNostrArchivesSearchRelayUrl,
   isWispTrendingNotesRelayUrl
 } from '@/lib/wisp-trending-relay'
 import { setViewerPersonalRelayKeys } from '@/lib/read-only-relay-personal'
@@ -38,5 +39,12 @@ describe('ensureTrendingInFavoriteRelayList', () => {
     const out = ensureTrendingInFavoriteRelayList(['wss://relay.example.com/'], { forFeed: true })
     expect(out).toEqual(['wss://relay.example.com/'])
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
+  })
+})
+
+describe('isNostrArchivesSearchRelayUrl', () => {
+  it('matches the nostrarchives search relay', () => {
+    expect(isNostrArchivesSearchRelayUrl('wss://search.nostrarchives.com')).toBe(true)
+    expect(isNostrArchivesSearchRelayUrl('wss://relay.example.com/')).toBe(false)
   })
 })

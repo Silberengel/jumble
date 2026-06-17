@@ -58,13 +58,13 @@ const PrimaryPageLayout = forwardRef(
     )
 
     useLayoutEffect(() => {
-      if (!isSmallScreen) {
+      if (current !== pageName) {
         registerMobilePrimaryFeedScrollElement(null)
         return
       }
       registerMobilePrimaryFeedScrollElement(scrollAreaRef.current)
       return () => registerMobilePrimaryFeedScrollElement(null)
-    }, [isSmallScreen, display, current, pageName])
+    }, [current, pageName])
 
     useEffect(() => {
       if (!isSmallScreen || current !== pageName) return

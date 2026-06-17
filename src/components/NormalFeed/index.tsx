@@ -263,6 +263,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           homeFeedListMode={isMainFeed ? listMode : undefined}
           homeFeedSeenOnAllowlistOp={homeFeedSeenOnAllowlistOp}
           homeFeedSeenOnAllowlistReplies={homeFeedSeenOnAllowlistReplies}
+          mergeLiveEventsImmediately={isMainFeed}
           useFilterAsIs={useFilterAsIs}
           clientSideKindFilter={clientSideKindFilter}
           allowKindlessRelayExplore={allowKindlessRelayExplore}

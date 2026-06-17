@@ -1,4 +1,4 @@
-import { ExtendedKind } from '@/constants'
+import { ExtendedKind, NOSTR_ARCHIVES_SEARCH_RELAY_URL } from '@/constants'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 
@@ -69,6 +69,13 @@ export function ensureTrendingInFavoriteRelayList(
   }
 
   return out
+}
+
+/** True when `url` is the nostrarchives NIP-50 search relay (WebSocket only — no HTTP NIP-11 document). */
+export function isNostrArchivesSearchRelayUrl(url: string): boolean {
+  const norm = (normalizeUrl(url) || url).trim().toLowerCase()
+  const search = (normalizeUrl(NOSTR_ARCHIVES_SEARCH_RELAY_URL) || NOSTR_ARCHIVES_SEARCH_RELAY_URL).toLowerCase()
+  return norm === search || norm.startsWith(`${search}/`)
 }
 
 /** True when `url` is any nostrarchives notes trending WebSocket feed (path `/notes/trending/...`). */
