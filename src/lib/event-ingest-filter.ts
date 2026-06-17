@@ -1,4 +1,5 @@
 import { ExtendedKind } from '@/constants'
+import { isPlausibleEventCreatedAt } from '@/lib/event-created-at'
 import { getRelayUrlFromRelayReviewEvent } from '@/lib/event-metadata'
 import type { Event as NEvent } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
@@ -98,7 +99,7 @@ function explicitLookupMatchesEvent(eventId: string, lookup?: string): boolean {
 const DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND = 34236
 
 /**
- * Single gate for subscribe/cache/IDB read paths: drop kind-1 JSON-object spam, Kacti broadcast spam,
+ * Single gate for subscribe/cache/IDB read paths: drop future or pre-Nostr timestamps, kind-1 JSON-object spam,
  * drift.gits.net spam, long opaque random strings, and malformed relay reviews. Optional
  * {@link ShouldDropEventOnIngestOptions} relaxes
  * kind-1 spam drops for explicit id fetch.
@@ -107,10 +108,11 @@ export function shouldDropEventOnIngest(
   event: NEvent,
   options?: ShouldDropEventOnIngestOptions
 ): boolean {
+  if (!isPlausibleEventCreatedAt(event.created_at)) return true
+  const relaxKind1Spam = explicitLookupMatchesEvent(event.id, options?.explicitNoteLookupHexId)
   if (event.kind === DEPRECATED_NIP71_SHORT_VIDEO_ADDRESSABLE_KIND) return true
   if (isIncompleteRelayReviewIngest(event)) return true
   if (isStringifiedJsonObjectContentNostrEvent(event)) return true
-  const relaxKind1Spam = explicitLookupMatchesEvent(event.id, options?.explicitNoteLookupHexId)
   if (isKactiBroadcastSpamKind1(event)) {
     if (!relaxKind1Spam) return true
   }

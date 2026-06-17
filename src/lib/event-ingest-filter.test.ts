@@ -71,4 +71,34 @@ describe('shouldDropEventOnIngest', () => {
       })
     ).toBe(false)
   })
+
+  it('drops kind-1 notes with far-future created_at', () => {
+    const spam: Event = {
+      kind: 1,
+      content: 'test',
+      created_at: 4_130_944_797,
+      id: '2f99b9a8418df688728fbc763cd442e9ab6e570b4fa362abfc4bf8cb9f030b60',
+      pubkey: '394b6923d5bc126cd42ec1a645f04c3ab7e2d62a80b15bf077d6bb6a6bd9a9b7',
+      sig: 'ca467c72557efd49293c687bd0c5858ba92168f9a057bd0cedb2a1d8eb5cbb5f22202eddaa5ccaa8ef2a54e68eea12850bafa009cbcd0fb24a1a8afa49675455',
+      tags: []
+    }
+    expect(shouldDropEventOnIngest(spam)).toBe(true)
+  })
+
+  it('still drops far-future created_at on explicit note lookup', () => {
+    expect(
+      shouldDropEventOnIngest(
+        {
+          kind: 1,
+          content: 'test',
+          created_at: 4_130_944_797,
+          id: '2f99b9a8418df688728fbc763cd442e9ab6e570b4fa362abfc4bf8cb9f030b60',
+          pubkey: '394b6923d5bc126cd42ec1a645f04c3ab7e2d62a80b15bf077d6bb6a6bd9a9b7',
+          sig: 'ca467c72557efd49293c687bd0c5858ba92168f9a057bd0cedb2a1d8eb5cbb5f22202eddaa5ccaa8ef2a54e68eea12850bafa009cbcd0fb24a1a8afa49675455',
+          tags: []
+        },
+        { explicitNoteLookupHexId: '2f99b9a8418df688728fbc763cd442e9ab6e570b4fa362abfc4bf8cb9f030b60' }
+      )
+    ).toBe(true)
+  })
 })

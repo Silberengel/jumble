@@ -89,6 +89,7 @@ function canonicalSeenOnEventId(eventId: string): string {
 }
 
 import { shouldDropEventOnIngest, type ShouldDropEventOnIngestOptions } from '@/lib/event-ingest-filter'
+import { compareEventsNewestFirst } from '@/lib/event-created-at'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import { bindLocalEventResolveSessionPeek, resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import {
@@ -2414,7 +2415,7 @@ class ClientService extends EventTarget {
       }
     })
     await Promise.all(shardReads)
-    merged.sort((a, b) => b.created_at - a.created_at)
+    merged.sort(compareEventsNewestFirst)
     return merged.slice(0, mergedTimelineLimit)
   }
 
@@ -2459,7 +2460,7 @@ class ClientService extends EventTarget {
       const timelineRows = await this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[])
       add(timelineRows)
       return [...byId.values()]
-        .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+        .sort(compareEventsNewestFirst)
         .slice(0, maxMatches)
     }
 
@@ -2500,7 +2501,7 @@ class ClientService extends EventTarget {
     }
 
     return [...byId.values()]
-      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .sort(compareEventsNewestFirst)
       .slice(0, maxMatches)
   }
 
@@ -2543,7 +2544,7 @@ class ClientService extends EventTarget {
     add(publicationRows)
 
     return [...byId.values()]
-      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .sort(compareEventsNewestFirst)
       .slice(0, limit)
   }
 
@@ -2704,7 +2705,7 @@ class ClientService extends EventTarget {
                 events.push(evt)
               })
               events = needSort
-                ? events.sort((a, b) => b.created_at - a.created_at).slice(0, mergedTimelineLimit)
+                ? events.sort(compareEventsNewestFirst).slice(0, mergedTimelineLimit)
                 : events.slice(0, mergedTimelineLimit)
               eventIdSet = new Set(events.map((evt) => evt.id))
 
@@ -2852,7 +2853,7 @@ class ClientService extends EventTarget {
         events.push(evt)
       })
     })
-    return events.sort((a, b) => b.created_at - a.created_at).slice(0, limit)
+    return events.sort(compareEventsNewestFirst).slice(0, limit)
   }
 
   subscribe(
@@ -3420,7 +3421,7 @@ class ClientService extends EventTarget {
         streamFlushDelayId = null
         if (eosedAt) return
         if (needSort) {
-          const sorted = [...events].sort((a, b) => b.created_at - a.created_at).slice(0, filter.limit)
+          const sorted = [...events].sort(compareEventsNewestFirst).slice(0, filter.limit)
           onEvents(sorted, false)
         } else {
           onEvents([...events], false)
@@ -3468,6 +3469,7 @@ class ClientService extends EventTarget {
     }
 
     const applySubscribedTimelineEvent = (evt: NEvent) => {
+      if (shouldDropEventOnIngest(evt)) return
       that.addEventToCache(evt)
       if (!eosedAt) {
         if (eventIds.has(evt.id)) return
@@ -3487,7 +3489,7 @@ class ClientService extends EventTarget {
         eventIds.add(evt.id)
         events.push(evt)
         if (needSort) {
-          events = events.sort((a, b) => b.created_at - a.created_at).slice(0, filter.limit)
+          events = events.sort(compareEventsNewestFirst).slice(0, filter.limit)
         }
         eventIds = new Set(events.map((e) => e.id))
         onEvents([...events], false)
@@ -3582,7 +3584,7 @@ class ClientService extends EventTarget {
         return onEvents([...events], true)
       }
 
-      events = events.sort((a, b) => b.created_at - a.created_at).slice(0, filter.limit)
+      events = events.sort(compareEventsNewestFirst).slice(0, filter.limit)
       eventIds = new Set(events.map((e) => e.id))
 
       const tl = that.timelines[key]
@@ -3722,7 +3724,7 @@ class ClientService extends EventTarget {
     const events = await resolveLocalEventsByHexIds(candidateRefs.slice(0, limit).map((r) => r[0]))
     return events
       .filter((e) => !shouldDropEventOnIngest(e) && e.created_at <= until)
-      .sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+      .sort(compareEventsNewestFirst)
       .slice(0, limit)
   }
 
@@ -3748,7 +3750,7 @@ class ClientService extends EventTarget {
     events.forEach((evt) => {
       this.addEventToCache(evt)
     })
-    events = events.sort((a, b) => b.created_at - a.created_at).slice(0, limit)
+    events = events.sort(compareEventsNewestFirst).slice(0, limit)
 
     if (!timeline.refs) {
       timeline.refs = []
@@ -4336,7 +4338,7 @@ class ClientService extends EventTarget {
         byPk.set(e.pubkey, e)
       }
     }
-    const profileEvents = [...byPk.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limitCap)
+    const profileEvents = [...byPk.values()].sort(compareEventsNewestFirst).slice(0, limitCap)
     await Promise.allSettled(profileEvents.map((profile) => this.addUsernameToIndex(profile)))
     profileEvents.forEach((profile) => this.updateProfileEventCache(profile))
     return profileEvents.map((profileEvent) => getProfileFromEvent(profileEvent))

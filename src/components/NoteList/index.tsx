@@ -17,6 +17,7 @@ import {
   isReplyNoteEvent,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
+import { compareEventsNewestFirst, isPlausibleEventCreatedAt } from '@/lib/event-created-at'
 import { collectReactionAuthorPubkeysForEmojiPrefetch } from '@/lib/reaction-display'
 import { prefetchAuthorNip30EmojisForPubkeys } from '@/lib/nip30-author-emojis'
 import { shouldFilterEvent } from '@/lib/event-filtering'
@@ -377,7 +378,7 @@ function mergeEventBatchesById(
   }
   return collapseStaleAddressableRevisions(
     Array.from(byId.values())
-      .sort((a, b) => b.created_at - a.created_at)
+      .sort(compareEventsNewestFirst)
   ).slice(0, cap)
 }
 
@@ -403,7 +404,7 @@ function mergeProgressiveSearchEvents(
   if (afterSort) {
     arr.sort(afterSort)
   } else {
-    arr.sort((a, b) => b.created_at - a.created_at)
+    arr.sort(compareEventsNewestFirst)
   }
   return arr
 }
@@ -434,7 +435,7 @@ function applyProgressiveSessionSearchLayer(params: ProgressiveSearchLocalLayerO
   let boot = client.getSessionEventsMatchingSearch(warmQ, cap, kindsForWarm)
   boot = boot.filter((ev) => eventMatchesNip50LocalFullTextQuery(ev, warmQ))
   if (warmMatch) boot = boot.filter(warmMatch)
-  const sortCreated = (evs: Event[]) => [...evs].sort((a, b) => b.created_at - a.created_at)
+  const sortCreated = (evs: Event[]) => [...evs].sort(compareEventsNewestFirst)
   const finalizeOrder = (evs: Event[]) => (afterSort ? [...evs].sort(afterSort) : sortCreated(evs))
   if (!isStale() && boot.length) {
     setEvents((prev) => mergeProgressiveSearchEvents(prev, finalizeOrder(boot), afterSort))
@@ -762,8 +763,8 @@ const NoteList = forwardRef(
        */
       timelineLoadingSafetyTimeoutMs,
       /**
-       * When true, live `onNew` events merge into the visible timeline immediately (home feed behavior).
-       * Default false on Spells faux feeds: new rows go to {@link NewNotesButton} until the user scrolls near the top.
+       * When true, live `onNew` events merge into the visible timeline immediately.
+       * Default false: new rows go to {@link NewNotesButton} until the user scrolls near the top or taps the button.
        * Enable for notifications so mentions/replies appear without tapping “Show n new notes”.
        */
       mergeLiveEventsImmediately = false,
@@ -1421,6 +1422,7 @@ const NoteList = forwardRef(
       (evt: Event) => {
         if (pinnedEventHexIdSet.has(evt.id)) return true
         if (isEventDeleted(evt)) return true
+        if (!isPlausibleEventCreatedAt(evt.created_at)) return true
         if (hideReplies && isReplyNoteEvent(evt)) return true
         if (filterMutedNotes && muteSetHas(mutePubkeySet, evt.pubkey)) return true
         if (
@@ -2071,7 +2073,7 @@ const NoteList = forwardRef(
         }
         const runtime = new FeedRuntime({
           descriptorKey: `feed-full-search:${timelineSubscriptionKey}`,
-          sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id),
+          sortEvents: compareEventsNewestFirst,
           cap: FEED_FULL_SEARCH_MERGE_CAP
         })
         const runtimeSnapshot = await runtime.load(
@@ -2546,7 +2548,7 @@ const NoteList = forwardRef(
                 noteStatsService.updateNoteStatsByEvents(statsOnly, undefined)
               }
               if (kept.length === 0) return oldEvents
-              return [...kept, ...oldEvents].sort((a, b) => b.created_at - a.created_at)
+              return [...kept, ...oldEvents].sort(compareEventsNewestFirst)
             })
           }
         }
@@ -2741,7 +2743,7 @@ const NoteList = forwardRef(
                 const sessionHits = client
                   .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
                   .filter(matchesSpellLocal)
-                  .sort((a, b) => b.created_at - a.created_at)
+                  .sort(compareEventsNewestFirst)
 
                 if (!timelineEffectStale() && sessionHits.length > 0) {
                   const narrowedS = narrowLiveBatch(sessionHits)
@@ -2829,7 +2831,7 @@ const NoteList = forwardRef(
                       seen.add(ev.id)
                       combinedRaw.push(ev)
                     }
-                    combinedRaw.sort((a, b) => b.created_at - a.created_at)
+                    combinedRaw.sort(compareEventsNewestFirst)
                     if (combinedRaw.length > 0) {
                       const diskNarrowed = narrowLiveBatch(combinedRaw)
                       if (diskNarrowed.length > 0) {
@@ -2978,7 +2980,7 @@ const NoteList = forwardRef(
                 const sessionHits = client
                   .getSessionEventsMatchingSearch('', sessionScanCap, kindsForScan)
                   .filter(matchesTimelineLocal)
-                  .sort((a, b) => b.created_at - a.created_at)
+                  .sort(compareEventsNewestFirst)
 
                 if (!timelineEffectStale() && sessionHits.length > 0) {
                   const narrowedS = narrowLiveBatchForLocalWarmup(sessionHits)
@@ -3027,7 +3029,7 @@ const NoteList = forwardRef(
                       seen.add(ev.id)
                       combinedRaw.push(ev)
                     }
-                    combinedRaw.sort((a, b) => b.created_at - a.created_at)
+                    combinedRaw.sort(compareEventsNewestFirst)
                     if (combinedRaw.length > 0) {
                       const diskNarrowed = narrowLiveBatchForLocalWarmup(combinedRaw)
                       if (diskNarrowed.length > 0) {
@@ -3136,7 +3138,7 @@ const NoteList = forwardRef(
                 : oneShotFirstRelayGraceMs
             const runtime = new FeedRuntime({
               descriptorKey: timelineSubscriptionKey,
-              sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+              sortEvents: compareEventsNewestFirst
             })
             const runtimeSnapshot = await runtime.load(
               createFetchEventsFeedRuntimeLoader(client, {
@@ -3577,9 +3579,7 @@ const NoteList = forwardRef(
                   ? 'home'
                   : eventMatchesProfileTimelineRequest(event)
                     ? 'profile'
-                    : hostPrimaryPageNameRef.current === 'feed'
-                      ? 'home'
-                      : 'pending'
+                    : 'pending'
               liveOnNewPendingRef.current.push({ event, route })
               scheduleLiveOnNewFlush()
             },
@@ -3877,9 +3877,7 @@ const NoteList = forwardRef(
                 const route: 'profile' | 'home' | 'pending' =
                   (pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)
                     ? 'profile'
-                    : hostPrimaryPageNameRef.current === 'feed'
-                      ? 'home'
-                      : 'pending'
+                    : 'pending'
                 liveOnNewPendingRef.current.push({ event, route })
                 scheduleLiveOnNewFlush()
               }
@@ -4345,7 +4343,7 @@ const NoteList = forwardRef(
             if (newEvents.length === 0) {
               const pageRuntime = new FeedRuntime({
                 descriptorKey: `timeline:${latestTimelineKey}`,
-                sortEvents: (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+                sortEvents: compareEventsNewestFirst
               })
               pageRuntime.seed(latestEvents, { hasMore: latestHasMore, nextCursor: until })
               const pageSnapshot = await pageRuntime.loadMore(
