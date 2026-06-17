@@ -17,7 +17,7 @@ import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import noteStatsService from '@/services/note-stats.service'
 import client, { eventService, queryService } from '@/services/client.service'
 import type { TSubRequestFilter } from '@/types'
-import { Filter, Event as NEvent, kinds } from 'nostr-tools'
+import { Filter, Event as NEvent, kinds, nip19 } from 'nostr-tools'
 import type { TFunction } from 'i18next'
 import type { TRootInfo } from './types'
 import { THREAD_REPLY_LIMIT } from './types'
@@ -38,6 +38,72 @@ export {
 export function openNoteHexId(event: Pick<NEvent, 'id'>): string | undefined {
   const id = event.id?.trim().toLowerCase()
   return id && /^[0-9a-f]{64}$/.test(id) ? id : undefined
+}
+
+/** Lowercase 64-char hex event id, or null when not a note id. */
+export function normalizeHexEventId(id: string): string | null {
+  const trimmed = id.trim().toLowerCase()
+  return /^[0-9a-f]{64}$/.test(trimmed) ? trimmed : null
+}
+
+export function statsReplyHexIdsEqual(a: string, b: string): boolean {
+  const ha = normalizeHexEventId(a)
+  const hb = normalizeHexEventId(b)
+  if (ha && hb) return ha === hb
+  return a === b
+}
+
+/** Pointers to try for a stats-backed missing reply (hex first, then nevent / note1). */
+export function missingStatsReplyLookupPointers(meta: { id: string; pubkey: string }): string[] {
+  const hex = normalizeHexEventId(meta.id)
+  if (!hex) return []
+  const out = [hex]
+  try {
+    const pk = meta.pubkey?.trim()
+    if (pk && /^[0-9a-f]{64}$/i.test(pk)) {
+      out.push(nip19.neventEncode({ id: hex, author: pk.toLowerCase() }))
+    }
+    out.push(nip19.noteEncode(hex))
+  } catch {
+    /* hex-only */
+  }
+  return [...new Set(out)]
+}
+
+/**
+ * Resolve one stats-backed missing reply: search relays, then the normal {@link eventService.fetchEvent} pipeline.
+ */
+export async function fetchMissingStatsReplyEvent(
+  meta: { id: string; pubkey: string },
+  relayUrls: readonly string[]
+): Promise<NEvent | undefined> {
+  const hex = normalizeHexEventId(meta.id)
+  if (!hex) return undefined
+
+  const pointers = missingStatsReplyLookupPointers(meta)
+  const urls = relayUrls.filter(Boolean)
+
+  for (const pointer of pointers) {
+    if (urls.length > 0) {
+      try {
+        const fromSearch = await client.fetchEventWithExternalRelays(pointer, urls)
+        if (fromSearch && statsReplyHexIdsEqual(fromSearch.id, hex)) {
+          return fromSearch
+        }
+      } catch {
+        /* try next pointer / fetchEvent */
+      }
+    }
+    try {
+      const fromFetch = await eventService.fetchEventForceRetry(pointer)
+      if (fromFetch && statsReplyHexIdsEqual(fromFetch.id, hex)) {
+        return fromFetch
+      }
+    } catch {
+      /* try next pointer */
+    }
+  }
+  return undefined
 }
 
 /** Whether `evt` is a direct or nested reply under the opened note (not a sibling branch). */
@@ -78,7 +144,9 @@ export function buildNoteStatsReplyIdSet(
   const out = new Set<string>()
   if (!replies?.length) return out
   for (const r of replies) {
-    if (r.id) out.add(r.id)
+    if (!r.id) continue
+    const hex = normalizeHexEventId(r.id)
+    out.add(hex ?? r.id)
   }
   return out
 }
@@ -90,13 +158,14 @@ export function resolveEventsForStatsReplyIds(
 ): NEvent[] {
   if (!statsReplies?.length) return []
   const fromMap = dedupeEventsFromRepliesMap(repliesMap)
-  const byId = new Map(fromMap.map((e) => [e.id, e]))
+  const byId = new Map(fromMap.map((e) => [normalizeHexEventId(e.id) ?? e.id, e]))
   const out: NEvent[] = []
   const seen = new Set<string>()
   for (const { id } of statsReplies) {
-    if (seen.has(id)) continue
-    seen.add(id)
-    const mapped = byId.get(id)
+    const key = normalizeHexEventId(id) ?? id
+    if (seen.has(key)) continue
+    seen.add(key)
+    const mapped = byId.get(key)
     if (mapped) {
       out.push(mapped)
       continue
@@ -109,8 +178,10 @@ export function resolveEventsForStatsReplyIds(
 
 /** Map + session LRU lookup for a stats reply id (no network). */
 export function peekThreadStatsReplyEvent(id: string, repliesMap: TRepliesMap): NEvent | undefined {
-  const fromMap = dedupeEventsFromRepliesMap(repliesMap).find((e) => e.id === id)
+  const fromMap = dedupeEventsFromRepliesMap(repliesMap).find((e) => statsReplyHexIdsEqual(e.id, id))
   if (fromMap) return fromMap
+  const hex = normalizeHexEventId(id)
+  if (hex) return client.peekSessionCachedEvent(hex) ?? client.peekSessionCachedEvent(id)
   return client.peekSessionCachedEvent(id)
 }
 
@@ -157,7 +228,9 @@ export function partitionStatsRepliesForMissingPlaceholders(
   const replyThread: Array<{ id: string; pubkey: string; created_at: number }> = []
   const tail: Array<{ id: string; pubkey: string; created_at: number }> = []
   for (const meta of statsReplies ?? []) {
-    if (resolvedIds.has(meta.id)) continue
+    if (resolvedIds.has(meta.id) || [...resolvedIds].some((rid) => statsReplyHexIdsEqual(rid, meta.id))) {
+      continue
+    }
     if (classifyUnresolvedStatsReplyMissingPlacement(meta, rootInfo, repliesMap, opts) === 'tail') {
       tail.push(meta)
     } else {
@@ -243,11 +316,12 @@ export function insertMissingStatsReplyPlaceholders(
   const base = eventsToThreadFeedItems(sortedResolved)
   if (!statsReplies?.length) return base
 
-  const resolvedIds = new Set(sortedResolved.map((r) => r.id))
+  const resolvedIds = new Set(sortedResolved.map((r) => normalizeHexEventId(r.id) ?? r.id))
   const missing: Extract<TThreadFeedItem, { type: 'missing' }>[] = []
 
   for (const meta of statsReplies) {
-    if (resolvedIds.has(meta.id)) continue
+    const metaKey = normalizeHexEventId(meta.id) ?? meta.id
+    if (resolvedIds.has(metaKey)) continue
     if (!/^[0-9a-f]{64}$/i.test(meta.id)) continue
     if (opts?.mutePubkeySet && muteSetHas(opts.mutePubkeySet, meta.pubkey)) continue
     if (opts?.isEventDeleted) {
@@ -262,10 +336,10 @@ export function insertMissingStatsReplyPlaceholders(
       } as NEvent
       if (opts.isEventDeleted(stub)) continue
     }
-    if (missing.some((m) => m.id === meta.id)) continue
+    if (missing.some((m) => statsReplyHexIdsEqual(m.id, meta.id))) continue
     missing.push({
       type: 'missing',
-      id: meta.id,
+      id: metaKey,
       pubkey: meta.pubkey,
       created_at: meta.created_at
     })
@@ -721,7 +795,7 @@ export function replyIdPresentInRepliesMap(
   replyId: string
 ): boolean {
   for (const { events } of map.values()) {
-    if (events.some((e) => e.id === replyId)) return true
+    if (events.some((e) => statsReplyHexIdsEqual(e.id, replyId))) return true
   }
   return false
 }

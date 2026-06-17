@@ -77,6 +77,7 @@ import {
   loadThreadRepliesFromLocalStores,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
   moveReportsToEndPreserveOrder,
+  normalizeHexEventId,
   openNoteHexId,
   partitionAndSortBacklinkTail,
   replyIsInSubtreeBelowOpenNote,
@@ -398,7 +399,9 @@ function ReplyNoteList({
     [noteStats?.replies, noteStats?.updatedAt, sort, isEventDeleted, mutePubkeySet, tombstoneEpoch]
   )
   const statsMissingPartition = useMemo(() => {
-    const resolvedIds = new Set(replies.map((r) => r.id))
+    const resolvedIds = new Set(
+      replies.map((r) => normalizeHexEventId(r.id) ?? r.id)
+    )
     return partitionStatsRepliesForMissingPlaceholders(
       noteStats?.replies,
       resolvedIds,

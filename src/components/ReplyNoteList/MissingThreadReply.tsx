@@ -1,11 +1,16 @@
 import UserAvatar from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  fetchMissingStatsReplyEvent,
+  missingStatsReplyLookupPointers,
+  normalizeHexEventId
+} from '@/components/ReplyNoteList/reply-list-utils'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import client from '@/services/client.service'
 import { Search } from 'lucide-react'
-import { nip19, type Event } from 'nostr-tools'
+import type { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -27,11 +32,14 @@ export default function MissingThreadReply({
   const [searching, setSearching] = useState(false)
   const [triedSearch, setTriedSearch] = useState(false)
 
-  const nevent = useMemo(() => nip19.neventEncode({ id, author: pubkey }), [id, pubkey])
+  const lookupLabel = useMemo(() => {
+    const pointers = missingStatsReplyLookupPointers({ id, pubkey })
+    return pointers.find((p) => p.startsWith('nevent1')) ?? pointers[0] ?? id
+  }, [id, pubkey])
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(nevent)
+      await navigator.clipboard.writeText(lookupLabel)
       setCopied(true)
       toast.success(t('Copied!'))
       window.setTimeout(() => setCopied(false), 2000)
@@ -42,13 +50,19 @@ export default function MissingThreadReply({
 
   const onSearch = async () => {
     if (searching) return
+    if (!normalizeHexEventId(id)) {
+      toast.error(
+        t('Invalid event id for search', { defaultValue: 'Invalid event id for search' })
+      )
+      return
+    }
     setSearching(true)
     setTriedSearch(false)
     try {
       const relayUrls = sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
-      const found = await client.fetchEventWithExternalRelays(nevent, relayUrls)
+      const found = await fetchMissingStatsReplyEvent({ id, pubkey }, relayUrls)
       if (found) {
-        const hex = /^[0-9a-f]{64}$/i.test(found.id) ? found.id.toLowerCase() : id.toLowerCase()
+        const hex = normalizeHexEventId(found.id) ?? normalizeHexEventId(id)!
         client.addEventToCache(found, { explicitNoteLookupHexId: hex })
         onFound?.(found)
         toast.success(t('Note found', { defaultValue: 'Note found' }))
@@ -83,7 +97,7 @@ export default function MissingThreadReply({
             })}
           </p>
           <div className="rounded-md border border-border/60 bg-muted/30 px-2 py-1.5">
-            <code className="block break-all text-xs text-foreground/90">{nevent}</code>
+            <code className="block break-all text-xs text-foreground/90">{lookupLabel}</code>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onCopy} disabled={searching}>

@@ -459,6 +459,7 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://spatia-arcana.com',
   'wss://search.nostrarchives.com',
   'wss://nosmero.com/nip78-relay',
+  'wss://njump.me'
 ]
 
 /**
@@ -489,7 +490,8 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://relay.gifbuddy.lol',
   'wss://hist.nostr.land',
   'wss://essayist.decentnewsroom.com',
-  'wss://nosmero.com/nip78-relay'
+  'wss://nosmero.com/nip78-relay',
+  'wss://njump.me'
 ]
 
 // Optimized relay list for read operations
@@ -543,7 +545,9 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
   'wss://nos.lol',
-  'wss://relay.primal.net'
+  'wss://relay.primal.net',
+  /** Read-only cache gateway (fiatjaf/njump) — id / naddr lookups for missing embeds & threads. */
+  'wss://njump.me'
 ]
 
 /**
@@ -557,7 +561,8 @@ export const PROFILE_RELAY_URLS = [
   'wss://thecitadel.nostr1.com',
   'wss://indexer.coracle.social/',
   'wss://purplepag.es',
-  'wss://nos.lol'
+  'wss://nos.lol',
+  'wss://njump.me'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

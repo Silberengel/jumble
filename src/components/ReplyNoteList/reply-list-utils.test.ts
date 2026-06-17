@@ -5,8 +5,10 @@ import type { TRepliesMap } from '@/lib/reply-index'
 import {
   classifyUnresolvedStatsReplyMissingPlacement,
   insertMissingStatsReplyPlaceholders,
+  missingStatsReplyLookupPointers,
   partitionStatsRepliesForMissingPlaceholders,
-  shouldIncludeSuperchatInThreadReply
+  shouldIncludeSuperchatInThreadReply,
+  statsReplyHexIdsEqual
 } from './reply-list-utils'
 import type { TRootInfo } from './types'
 
@@ -120,6 +122,34 @@ describe('insertMissingStatsReplyPlaceholders', () => {
     const out = insertMissingStatsReplyPlaceholders(resolved, stats, 'oldest')
     expect(out).toHaveLength(1)
     expect(out[0]?.type).toBe('event')
+  })
+
+  it('skips placeholders when stats id casing differs from resolved event id', () => {
+    const idLower = 'e'.repeat(64)
+    const idUpper = idLower.toUpperCase()
+    const resolved = [note(idLower, 100)]
+    const stats = [{ id: idUpper, pubkey: 'a'.repeat(64), created_at: 100 }]
+    const out = insertMissingStatsReplyPlaceholders(resolved, stats, 'oldest')
+    expect(out).toHaveLength(1)
+    expect(out[0]?.type).toBe('event')
+  })
+})
+
+describe('missingStatsReplyLookupPointers', () => {
+  it('includes hex, nevent, and note1 for a stats row', () => {
+    const id = 'a'.repeat(64)
+    const pubkey = 'b'.repeat(64)
+    const pointers = missingStatsReplyLookupPointers({ id, pubkey })
+    expect(pointers[0]).toBe(id)
+    expect(pointers.some((p) => p.startsWith('nevent1'))).toBe(true)
+    expect(pointers.some((p) => p.startsWith('note1'))).toBe(true)
+  })
+})
+
+describe('statsReplyHexIdsEqual', () => {
+  it('matches ids regardless of case', () => {
+    const lower = 'c'.repeat(64)
+    expect(statsReplyHexIdsEqual(lower, lower.toUpperCase())).toBe(true)
   })
 })
 
