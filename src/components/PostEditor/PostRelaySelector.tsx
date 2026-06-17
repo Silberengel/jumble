@@ -73,6 +73,8 @@ export default function PostRelaySelector({
   const { addRandomRelaysToPublish } = useUserPreferences()
   const { pubkey, relayList, cacheRelayListEvent } = useNostr()
   const [publicLivelyRevision, setPublicLivelyRevision] = useState(0)
+  /** Bumped after background NIP-65 refresh for parent/mention pubkeys completes. */
+  const [contextRelayRefreshRevision, setContextRelayRefreshRevision] = useState(0)
   const userReadRelaysForSelection = useMemo(
     () => userReadInboxUrls(relayList, cacheRelayListEvent),
     [relayList, cacheRelayListEvent]
@@ -188,6 +190,44 @@ export default function PostRelaySelector({
   const memoizedRelaySets = useMemo(() => relaySets, [relaySets])
   const memoizedOpenFrom = useMemo(() => openFrom, [openFrom])
 
+  // Background refresh: parent author + mention NIP-65 (IDB first in relay effect; network refines list).
+  useEffect(() => {
+    if (!_parentEvent && !isPublicMessage) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        await relaySelectionService.refreshContextualRelayLists({
+          userWriteRelays: [],
+          userReadRelays: [],
+          favoriteRelays: memoizedFavoriteRelays,
+          blockedRelays: memoizedBlockedRelays,
+          relaySets: memoizedRelaySets,
+          parentEvent: _parentEvent,
+          isPublicMessage,
+          content: isDiscussionReply ? '' : postContent,
+          mentions: isPublicMessage ? mentions : undefined,
+          userPubkey: pubkey || undefined,
+          openFrom: memoizedOpenFrom
+        })
+        if (!cancelled) setContextRelayRefreshRevision((n) => n + 1)
+      } catch (error) {
+        logger.debug('[PostRelaySelector] contextual relay refresh failed', { error })
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    _parentEvent,
+    isPublicMessage,
+    isDiscussionReply,
+    pubkey,
+    memoizedOpenFrom,
+    contentRelaySignature,
+    mentionsRelaySignature
+  ])
+
   // Single relay-selection effect. Cleanup sets `active = false` so superseded runs never
   // commit stale state; only the latest run clears the loading indicator.
   useEffect(() => {
@@ -269,6 +309,7 @@ export default function PostRelaySelector({
     describeRelaySelection,
     addRandomRelaysToPublish,
     publicLivelyRevision,
+    contextRelayRefreshRevision,
     t
   ])
 

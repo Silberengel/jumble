@@ -12,6 +12,7 @@ import {
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
   PROFILE_BATCH_NETWORK_LOAD_TIMEOUT_MS,
   PROFILE_RELAY_URLS,
+  RELAY_PICKER_CONTEXT_REFRESH_TIMEOUT_MS,
   RECOMMENDED_BLOSSOM_SERVERS,
   isDocumentRelayKind
 } from '@/constants'
@@ -22,7 +23,7 @@ import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
-import { formatPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
+import { formatPubkey, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
 import { TProfile } from '@/types'
 import { LRUCache } from 'lru-cache'
@@ -43,7 +44,7 @@ import {
   shouldDeferPerPubkeyProfileNetwork,
   unregisterProfileBatchPubkeys
 } from '@/lib/profile-batch-coordinator'
-import { isPromiseTimeoutError, racePromiseWithTimeout } from '@/lib/async-timeout'
+import { isPromiseTimeoutError, promiseWithTimeout, racePromiseWithTimeout } from '@/lib/async-timeout'
 import { networkKindsForReplaceableFetch } from '@/lib/replaceable-fetch-kinds'
 
 export type FetchProfileEventOptions = {
@@ -436,6 +437,78 @@ export class ReplaceableEventService {
         /* ignore */
       }
     }
+  }
+
+  /**
+   * Refresh kind 10002 / 10243 / 10432 from profile relays for publish-picker context.
+   * Always queries the network and persists when the relay copy is newer than IndexedDB.
+   */
+  async refreshRelayMailboxEventsFromNetwork(
+    pubkeys: readonly string[],
+    timeoutMs = RELAY_PICKER_CONTEXT_REFRESH_TIMEOUT_MS
+  ): Promise<void> {
+    const unique = [...new Set(pubkeys.filter((p) => isValidPubkey(p)))]
+    if (unique.length === 0) return
+
+    const mailboxKinds = [kinds.RelayList, ExtendedKind.HTTP_RELAY_LIST, ExtendedKind.CACHE_RELAYS]
+    await promiseWithTimeout(
+      Promise.all(mailboxKinds.map((kind) => this.refreshReplaceableKindFromProfileRelays(unique, kind))),
+      timeoutMs
+    ).catch(() => undefined)
+  }
+
+  private async refreshReplaceableKindFromProfileRelays(pubkeys: string[], kind: number): Promise<void> {
+    const relayUrls = prependAggrNostrLandIfViewerEligible(
+      stripLocalNetworkRelaysForWssReq(
+        Array.from(
+          new Set(
+            [...PROFILE_RELAY_URLS, ...FAST_READ_RELAY_URLS].map((u) => normalizeUrl(u) || u.trim()).filter(Boolean)
+          )
+        )
+      )
+    )
+    if (relayUrls.length === 0) return
+
+    let events: NEvent[]
+    try {
+      events = await this.queryService.query(
+        relayUrls,
+        { authors: pubkeys, kinds: networkKindsForReplaceableFetch(kind), limit: pubkeys.length },
+        undefined,
+        {
+          replaceableRace: false,
+          eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+          globalTimeout: RELAY_PICKER_CONTEXT_REFRESH_TIMEOUT_MS,
+          foreground: true
+        }
+      )
+    } catch {
+      return
+    }
+
+    const newestByAuthor = new Map<string, NEvent>()
+    for (const event of events) {
+      if (shouldDropEventOnIngest(event)) continue
+      if (event.kind !== kind) continue
+      const cur = newestByAuthor.get(event.pubkey)
+      if (!cur || cur.created_at < event.created_at) newestByAuthor.set(event.pubkey, event)
+    }
+
+    await Promise.allSettled(
+      [...newestByAuthor.values()].map(async (event) => {
+        let stored: NEvent | null | undefined
+        try {
+          stored = await indexedDb.getReplaceableEvent(event.pubkey, event.kind)
+        } catch {
+          stored = undefined
+        }
+        if (stored && stored.created_at >= event.created_at) return
+        await this.updateReplaceableEventFromBigRelaysCache(event)
+        if (event.kind === kinds.RelayList) {
+          client.updateRelayListCache(event)
+        }
+      })
+    )
   }
 
   /**

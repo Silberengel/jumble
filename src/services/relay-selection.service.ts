@@ -1,5 +1,5 @@
 import { Event, kinds } from 'nostr-tools'
-import { ExtendedKind, FAST_WRITE_RELAY_URLS, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS, RANDOM_PUBLISH_RELAY_COUNT } from '@/constants'
+import { ExtendedKind, FAST_WRITE_RELAY_URLS, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS, RANDOM_PUBLISH_RELAY_COUNT, RELAY_PICKER_CONTEXT_PUBKEY_CAP } from '@/constants'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { collectRecipientInboxUrls, collectSenderOutboxUrls } from '@/lib/public-message-publish-relays'
 import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
@@ -14,7 +14,8 @@ import {
   normalizeAnyRelayUrl,
   normalizeRelayUrlByScheme
 } from '@/lib/url'
-import { TRelaySet, TRelayList } from '@/types'
+import { isValidPubkey } from '@/lib/pubkey'
+import { TRelayList, TRelaySet } from '@/types'
 import logger from '@/lib/logger'
 import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
@@ -116,6 +117,53 @@ class RelaySelectionService {
       relayTypes,
       randomRelayUrls: contextWithRandom.randomRelayUrls ?? []
     }
+  }
+
+  /** Parent author + reply/PM mention pubkeys whose NIP-65 should be refreshed when the picker opens. */
+  async collectContextRelayPubkeys(context: RelaySelectionContext): Promise<string[]> {
+    const { parentEvent, isPublicMessage, content, mentions, userPubkey } = context
+    if (!parentEvent && !isPublicMessage) return []
+
+    const seen = new Set<string>()
+    const out: string[] = []
+    const add = (pk: string | undefined) => {
+      if (!pk || !isValidPubkey(pk) || pk === userPubkey || seen.has(pk)) return
+      seen.add(pk)
+      out.push(pk)
+    }
+
+    if (parentEvent) add(parentEvent.pubkey)
+
+    if (isPublicMessage && userPubkey) {
+      if (mentions && mentions.length > 0) {
+        mentions.forEach((pk) => add(pk))
+      } else if (content) {
+        const extracted = await this.extractMentions(content, parentEvent)
+        extracted.forEach((pk) => add(pk))
+      }
+    } else if (parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE && userPubkey) {
+      add(parentEvent.pubkey)
+      parentEvent.tags.forEach(([tagName, tagValue]) => {
+        if (tagName === 'p') add(tagValue)
+      })
+    } else if (parentEvent && userPubkey) {
+      if (content) {
+        const extracted = await this.extractMentions(content, parentEvent)
+        extracted.forEach((pk) => add(pk))
+      }
+      parentEvent.tags.forEach(([tagName, tagValue]) => {
+        if (['p', 'P'].includes(tagName)) add(tagValue)
+      })
+    }
+
+    return out.slice(0, RELAY_PICKER_CONTEXT_PUBKEY_CAP)
+  }
+
+  /** Bounded network refresh for {@link collectContextRelayPubkeys}; no-op when empty. */
+  async refreshContextualRelayLists(context: RelaySelectionContext): Promise<void> {
+    const pubkeys = await this.collectContextRelayPubkeys(context)
+    if (pubkeys.length === 0) return
+    await client.refreshContextRelayListsForPicker(pubkeys)
   }
 
   /**

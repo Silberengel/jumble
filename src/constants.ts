@@ -111,6 +111,11 @@ export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 5_000
  */
 export const FETCH_RELAY_LIST_UI_TIMEOUT_MS = 10_000
 
+/** Background NIP-65 refresh for reply/mention pubkeys when the publish relay picker opens. */
+export const RELAY_PICKER_CONTEXT_REFRESH_TIMEOUT_MS = 10_000
+/** Max distinct pubkeys to refresh per picker open (parent + mentions). */
+export const RELAY_PICKER_CONTEXT_PUBKEY_CAP = 10
+
 /**
  * Hard cap for {@link useFetchRelayList}: if {@link ClientService.fetchRelayList} never settles (deduped hang,
  * IDB edge case), clear the in-flight dedupe entry and fall back to {@link ClientService.peekRelayListFromStorage}

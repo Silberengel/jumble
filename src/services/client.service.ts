@@ -5042,6 +5042,13 @@ class ClientService extends EventTarget {
   }
 
   /**
+   * Background refresh of parent/mention NIP-65 for the publish relay picker (bounded; IDB-only fallback on timeout).
+   */
+  async refreshContextRelayListsForPicker(pubkeys: readonly string[]): Promise<void> {
+    await this.replaceableEventService.refreshRelayMailboxEventsFromNetwork(pubkeys)
+  }
+
+  /**
    * Write targets for republishing from the cache browser: merged NIP-65 WS outbox + kind 10432 cache relays +
    * kind 10243 HTTP write relays (same merge as {@link peekRelayListFromStorage}). No FAST_WRITE padding.
    */
