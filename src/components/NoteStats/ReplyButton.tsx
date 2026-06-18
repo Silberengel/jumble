@@ -9,10 +9,14 @@ import {
 } from '@/services/note-stats.service'
 import { MessageCircle } from 'lucide-react'
 import { Event } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PostEditor from '../PostEditor/LazyPostEditor'
 import { preloadPostEditorChunk } from '../PostEditor/preload-post-editor-chunk'
+import { preloadComposerPageChunk } from '@/pages/secondary/ComposerPage/ComposerPageRoute'
+import { navigateToComposer } from '@/lib/open-composer'
+import { useSecondaryPage } from '@/PageManager'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 
 type ReplyButtonProps = {
   event: Event
@@ -23,6 +27,8 @@ type ReplyButtonProps = {
 export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: ReplyButtonProps) {
   const { t } = useTranslation()
   const { pubkey, checkLogin } = useNostr()
+  const { isSmallScreen } = useScreenSize()
+  const { push } = useSecondaryPage()
   const { signControlProps } = useSignGatedControl()
   const { replyCount, hasReplied } = useMemo(() => {
     const hasReplied = pubkey
@@ -45,9 +51,13 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
     replyCount >= 100 ? '99+' : replyCount > 0 || statsLoaded ? String(replyCount) : ''
   const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    preloadPostEditorChunk()
-  }, [])
+  const preloadReplyComposer = () => {
+    if (isSmallScreen) {
+      void preloadComposerPageChunk()
+    } else {
+      void preloadPostEditorChunk()
+    }
+  }
 
   return (
     <>
@@ -57,14 +67,14 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
           'flex gap-1.5 items-center enabled:hover:text-blue-400 px-2 h-full min-h-11 touch-manipulation',
           hasReplied ? 'text-blue-400' : 'text-muted-foreground'
         )}
-        onPointerEnter={() => preloadPostEditorChunk()}
-        onFocus={() => preloadPostEditorChunk()}
+        onPointerEnter={preloadReplyComposer}
+        onFocus={preloadReplyComposer}
         onClick={(e) => {
           e.stopPropagation()
-          void preloadPostEditorChunk().then(() => {
-            checkLogin(() => {
-              setOpen(true)
-            })
+          checkLogin(() => {
+            if (!navigateToComposer(push, isSmallScreen, { parentEvent: event })) {
+              void preloadPostEditorChunk().then(() => setOpen(true))
+            }
           })
         }}
         {...signControlProps({ title: t('Reply') })}
@@ -74,7 +84,9 @@ export function ReplyButtonWithStats({ event, hideCount = false, noteStats }: Re
           <div className="text-sm tabular-nums">{replyCountLabel}</div>
         )}
       </button>
-      <PostEditor parentEvent={event} open={open} setOpen={setOpen} />
+      {!isSmallScreen ? (
+        <PostEditor parentEvent={event} open={open} setOpen={setOpen} />
+      ) : null}
     </>
   )
 }

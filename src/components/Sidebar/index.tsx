@@ -23,9 +23,9 @@ export default function PrimaryPageSidebar() {
   const sidebarInsetX = 'px-2 xl:pl-4 xl:pr-3'
 
   return (
-    <div className="imwald-sidebar flex h-full min-h-0 w-[4.8rem] shrink-0 flex-col overflow-hidden pb-2 pt-4 xl:w-[15.6rem]">
+    <div className="imwald-sidebar flex h-full min-h-0 w-[4.8rem] shrink-0 flex-col overflow-hidden pt-4 xl:w-[15.6rem]">
       <div className="imwald-sidebar__atmosphere" aria-hidden />
-      <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           className={`imwald-sidebar__scroll min-h-0 flex-1 space-y-2 overflow-x-clip overflow-y-auto overscroll-contain ${sidebarInsetX}`}
         >
@@ -52,7 +52,9 @@ export default function PrimaryPageSidebar() {
             <SidebarCalendarWeekWidget />
           </div>
         </div>
-        <div className={`shrink-0 space-y-2 pt-2 ${sidebarInsetX}`}>
+        <div
+          className={`imwald-sidebar__footer shrink-0 border-t border-border/40 pt-2 pb-3 ${sidebarInsetX}`}
+        >
           <HelpAndAccountMenu variant="sidebar" />
         </div>
       </div>

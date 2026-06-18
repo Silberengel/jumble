@@ -84,7 +84,7 @@ import { getMediaKindFromFile } from '@/lib/media-kind-detection'
 import { hasPrivateRelays, getPrivateRelayUrls } from '@/lib/private-relays'
 import mediaUpload from '@/services/media-upload.service'
 import type { TPrePublishRelayCapPreview } from '@/lib/pre-publish-relay-cap'
-import { canPublishWithContent, publishRequiresNonemptyContent } from '@/lib/publish-content-required'
+import { canPublishWithContent } from '@/lib/publish-content-required'
 import { successfulPublishRelayUrls, type TRelayPublishStatus } from '@/lib/publish-relay-urls'
 import client, { eventService } from '@/services/client.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
@@ -133,6 +133,9 @@ import {
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 import { useAdvancedEventLabComposer } from '@/hooks/useAdvancedEventLabComposer'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
+import { useComposerController } from '@/hooks/useComposerController'
+import { getComposerModeFlags } from '@/components/Composer/composer-mode-flags'
+import { useRegisterComposerAdvancedPanel } from '@/contexts/composer-session-context'
 
 /** Let the UI paint before heavy work. `requestAnimationFrame` alone can stall indefinitely in hidden or throttled documents. */
 function yieldForPaintBeforeHeavyWork(): Promise<void> {
@@ -140,6 +143,34 @@ function yieldForPaintBeforeHeavyWork(): Promise<void> {
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     new Promise<void>((resolve) => setTimeout(resolve, 50))
   ])
+}
+
+/** Audio picked via the mic toolbar button (accept=audio/*), including mislabeled webm/mp4/m4a. */
+function fileLooksLikeMicAudioUpload(file: File): boolean {
+  const fileType = file.type
+  const fileName = file.name.toLowerCase()
+  const isAudioMime =
+    fileType.startsWith('audio/') ||
+    fileType === 'audio/mp4' ||
+    fileType === 'audio/x-m4a' ||
+    fileType === 'audio/m4a' ||
+    fileType === 'audio/webm' ||
+    fileType === 'audio/mpeg'
+  const isAudioExt = /\.(mp3|m4a|mka|ogg|wav|opus|aac|flac|mpeg|mp4)$/i.test(fileName)
+  const isM4aFile = /\.m4a$/i.test(fileName)
+  const isMp4Audio = /\.mp4$/i.test(fileName) && isAudioMime
+  const isWebmFile = /\.webm$/i.test(fileName)
+  const isOggFile = /\.ogg$/i.test(fileName)
+  const isMp3File = /\.mp3$/i.test(fileName)
+  return (
+    isAudioMime ||
+    isAudioExt ||
+    isM4aFile ||
+    isMp4Audio ||
+    isWebmFile ||
+    isOggFile ||
+    isMp3File
+  )
 }
 
 /** On mobile, title + kind-specific fields scroll in a capped header; the editor keeps the rest. */
@@ -171,7 +202,12 @@ export default function PostContent({
   pickerPortalContainer,
   advancedLabPortalContainer,
   advancedLabPortalRef,
-  onAdvancedLabOpenChange
+  onAdvancedLabOpenChange,
+  layoutMode = 'dialog',
+  composerMode = 'full',
+  onOpenOptions,
+  onPublishRequestRef,
+  onComposerUiStateChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
   open: boolean
@@ -194,6 +230,21 @@ export default function PostContent({
   advancedLabPortalRef?: RefObject<HTMLElement | null>
   /** Notifies the composer shell when the full-screen advanced lab opens or closes. */
   onAdvancedLabOpenChange?: (open: boolean) => void
+  /** Full-screen composer page (mobile) vs dialog shell. */
+  layoutMode?: 'dialog' | 'page'
+  /** Simplified UI for mobile page modes. */
+  composerMode?: 'full' | 'reply' | 'note' | 'discussion' | 'article'
+  onOpenOptions?: () => void
+  /** Parent page wires titlebar Publish to this ref. */
+  onPublishRequestRef?: RefObject<(() => void) | null>
+  onComposerUiStateChange?: (state: {
+    publishDisabled: boolean
+    posting: boolean
+    blockMessage: string | null
+    publishLabel?: string
+    hasDraft?: boolean
+    relaySelectedTotal?: number
+  }) => void
 }) {
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin, canSignEvents } = useNostr()
@@ -278,6 +329,7 @@ export default function PostContent({
     selectedContacted: number
     selectedTotal: number
   } | null>(null)
+  const [relayCapPreview, setRelayCapPreview] = useState<TPrePublishRelayCapPreview | null>(null)
   const [isHighlight, setIsHighlight] = useState(!!initialHighlightData)
   const [highlightData, setHighlightData] = useState<HighlightData>(
     initialHighlightData || {
@@ -384,6 +436,8 @@ export default function PostContent({
   const mediaNoteKindRef = useRef<number | null>(null)
   /** True when the hidden uploader was opened from Note type → Media Note (not toolbar paste/drop). */
   const mediaNoteUploaderIntentRef = useRef(false)
+  /** True when the mic toolbar button started an audio upload (root composer voice notes). */
+  const micAudioUploadIntentRef = useRef(false)
   const [mediaNoteUploadPending, setMediaNoteUploadPending] = useState(false)
   /** Stable auto d-tag when the field is left empty; `{ slug, value }` resets when article subtype changes. */
   const articleDTagFallbackRef = useRef<{ slug: string; value: string } | null>(null)
@@ -466,6 +520,7 @@ export default function PostContent({
   ])
 
   const handleRelayPublishCapChange = useCallback((preview: TPrePublishRelayCapPreview) => {
+    setRelayCapPreview(preview)
     if (preview.blocksPublish) {
       setRelayCapBlockInfo({
         outboxSlotsInPublish: preview.outboxSlotsInPublish,
@@ -631,73 +686,101 @@ export default function PostContent({
     parentEvent
   ])
 
-  const canPost = useMemo(() => {
-    const discussionOk =
-      !isDiscussionThread ||
-      !!parentEvent ||
-      (!!threadTitle.trim() &&
-        threadTitle.length <= 100 &&
-        !!threadTopicResolved &&
-        !!text.trim() &&
-        text.length <= 5000 &&
-        additionalRelayUrls.length > 0 &&
-        (!threadIsReadingGroup || (!!threadReadingAuthor.trim() && !!threadReadingSubject.trim())))
-    const requiresNonemptyContent = publishRequiresNonemptyContent(getDeterminedKind)
-    const hasNonemptyContent = text.trim().length > 0
-    const contentOk = requiresNonemptyContent
-      ? hasNonemptyContent
-      : (mediaNoteKind !== null && mediaUrl) || hasNonemptyContent
-    return (
-      canSignEvents &&
-      !posting &&
-      !uploadProgresses.length &&
-      discussionOk &&
-      contentOk &&
-      (!isPoll || pollCreateData.options.filter((option) => !!option.trim()).length >= 2) &&
-      (!isPublicMessage || extractedMentions.length > 0 || parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE) &&
-      (!isHighlight || highlightData.sourceValue.trim() !== '') &&
-      (!isCitationInternal || !!citationInternalCTag.trim()) &&
-      (!isCitationExternal || (!!citationExternalUrl.trim() && !!citationAccessedOn.trim())) &&
-      (!isCitationHardcopy || !!citationAccessedOn.trim()) &&
-      (!isCitationPrompt || (!!citationPromptLlm.trim() && !!citationAccessedOn.trim())) &&
-      (!isMusicTrack || (!!musicTrackTitle.trim() && !!musicTrackAudioUrl.trim())) &&
-      relayCapBlockInfo === null
-    )
-  }, [
-    canSignEvents,
-    text,
-    getDeterminedKind,
-    posting,
-    uploadProgresses,
-    mediaNoteKind,
-    mediaUrl,
-    isPoll,
-    pollCreateData,
-    isPublicMessage,
-    extractedMentions,
-    parentEvent,
-    additionalRelayUrls,
-    isHighlight,
-    highlightData,
-    isCitationInternal,
-    citationInternalCTag,
-    isCitationExternal,
-    citationExternalUrl,
-    citationAccessedOn,
-    isCitationHardcopy,
-    isCitationPrompt,
-    citationPromptLlm,
-    isDiscussionThread,
-    threadTitle,
-    threadTopicResolved,
-    threadIsReadingGroup,
-    threadReadingAuthor,
-    threadReadingSubject,
+  const composerBlockReasonInput = useMemo(
+    () => ({
+      canSignEvents,
+      posting,
+      uploadInProgress: uploadProgresses.length > 0,
+      text,
+      determinedKind: getDeterminedKind,
+      mediaNoteKind,
+      mediaUrl,
+      relayCapBlockInfo,
+      isPoll,
+      pollOptionCount: pollCreateData.options.filter((option) => !!option.trim()).length,
+      isPublicMessage,
+      extractedMentionCount: extractedMentions.length,
+      parentEventKind: parentEvent?.kind,
+      isHighlight,
+      highlightSourceEmpty: !highlightData.sourceValue.trim(),
+      isCitationInternal,
+      citationInternalCTag,
+      isCitationExternal,
+      citationExternalUrl,
+      citationAccessedOn,
+      isCitationHardcopy,
+      isCitationPrompt,
+      citationPromptLlm,
+      isMusicTrack,
+      musicTrackTitle,
+      musicTrackAudioUrl,
+      isDiscussionThread,
+      hasParentEvent: !!parentEvent,
+      threadTitle,
+      threadTopicResolved: !!threadTopicResolved,
+      threadContentOk: !!text.trim() && text.length <= 5000,
+      additionalRelayCount: additionalRelayUrls.length,
+      threadIsReadingGroup,
+      threadReadingAuthor,
+      threadReadingSubject
+    }),
+    [
+      canSignEvents,
+      posting,
+      uploadProgresses.length,
+      text,
+      getDeterminedKind,
+      mediaNoteKind,
+      mediaUrl,
+      relayCapBlockInfo,
+      isPoll,
+      pollCreateData.options,
+      isPublicMessage,
+      extractedMentions.length,
+      parentEvent?.kind,
+      isHighlight,
+      highlightData.sourceValue,
+      isCitationInternal,
+      citationInternalCTag,
+      isCitationExternal,
+      citationExternalUrl,
+      citationAccessedOn,
+      isCitationHardcopy,
+      isCitationPrompt,
+      citationPromptLlm,
+      isMusicTrack,
+      musicTrackTitle,
+      musicTrackAudioUrl,
+      isDiscussionThread,
+      parentEvent,
+      threadTitle,
+      threadTopicResolved,
+      threadIsReadingGroup,
+      threadReadingAuthor,
+      threadReadingSubject,
+      additionalRelayUrls.length
+    ]
+  )
+
+  const { canPost, blockMessage: composerBlockMessage } = useComposerController(
+    composerBlockReasonInput,
     relayCapBlockInfo,
-    isMusicTrack,
-    musicTrackTitle,
-    musicTrackAudioUrl
-  ])
+    t
+  )
+
+  const { isPageLayout, isReplyFastPath, showInlineAdvancedPanel, showDialogFooter } =
+    getComposerModeFlags({
+      layoutMode,
+      composerMode,
+      hasParentEvent: !!parentEvent
+    })
+
+  const publishLabelForShell = useMemo(() => {
+    if (parentEvent) return t('Reply')
+    if (isPublicMessage) return t('Send Public Message')
+    if (isDiscussionThread && !parentEvent) return t('Create Thread')
+    return t('Post')
+  }, [parentEvent, isPublicMessage, isDiscussionThread, t])
 
   const getDeterminedKindRef = useRef(getDeterminedKind)
   getDeterminedKindRef.current = getDeterminedKind
@@ -1631,6 +1714,32 @@ export default function PostContent({
     })
   }
 
+  const postRef = useRef(post)
+  postRef.current = post
+
+  useEffect(() => {
+    if (!onPublishRequestRef) return
+    const ref = onPublishRequestRef as React.MutableRefObject<(() => void) | null>
+    ref.current = () => {
+      void postRef.current()
+    }
+    return () => {
+      ref.current = null
+    }
+  }, [onPublishRequestRef])
+
+  const [pageFooterSlot, setPageFooterSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!isPageLayout || !open) {
+      setPageFooterSlot(null)
+      return
+    }
+    const sync = () => setPageFooterSlot(document.getElementById('composer-page-footer-slot'))
+    sync()
+    const t = window.setTimeout(sync, 0)
+    return () => window.clearTimeout(t)
+  }, [isPageLayout, open])
+
   const handlePollToggle = () => {
     if (parentEvent) return
 
@@ -1863,6 +1972,42 @@ export default function PostContent({
     ]
   )
 
+  const showComposerAudioUpload = useMemo(
+    () => {
+      if (parentEvent || isPublicMessage) return true
+      return !(
+        isPoll ||
+        isHighlight ||
+        isLongFormArticle ||
+        isWikiArticle ||
+        isNostrSpecification ||
+        isPublicationContent ||
+        isMusicTrack ||
+        isCitationInternal ||
+        isCitationExternal ||
+        isCitationHardcopy ||
+        isCitationPrompt ||
+        isDiscussionThread
+      )
+    },
+    [
+      parentEvent,
+      isPublicMessage,
+      isPoll,
+      isHighlight,
+      isLongFormArticle,
+      isWikiArticle,
+      isNostrSpecification,
+      isPublicationContent,
+      isMusicTrack,
+      isCitationInternal,
+      isCitationExternal,
+      isCitationHardcopy,
+      isCitationPrompt,
+      isDiscussionThread
+    ]
+  )
+
   const handleMusicTrackToggle = () => {
     if (parentEvent) return
     setIsMusicTrack((prev) => !prev)
@@ -2034,8 +2179,20 @@ export default function PostContent({
 
   const handleUploadEnd = (file: File) => {
     setUploadProgresses((prev) => prev.filter((item) => item.file !== file))
+    micAudioUploadIntentRef.current = false
     // Keep file in map until upload success is called
   }
+
+  const handleMicUploadStart = useCallback(
+    (file: File) => {
+      if (!showComposerAudioUpload || parentEvent || isPublicMessage) return
+      if (!fileLooksLikeMicAudioUpload(file)) return
+      micAudioUploadIntentRef.current = true
+      setMediaNoteKind(ExtendedKind.VOICE)
+      mediaNoteKindRef.current = ExtendedKind.VOICE
+    },
+    [showComposerAudioUpload, parentEvent, isPublicMessage]
+  )
 
   // Helper function to check if a file could be either audio or video
   const isAmbiguousMediaFile = (file: File): boolean => {
@@ -2351,8 +2508,13 @@ export default function PostContent({
           appendUploadedUrlToComposer(url, imageUrlLooksLikeHttpImage(url))
         }
       } else {
-        // For new posts, check if file is ambiguous (could be audio or video)
-        if (isAmbiguousMediaFile(uploadingFile)) {
+        // Mic toolbar uploads publish as voice notes; skip the ambiguous webm/mp4 dialog.
+        if (micAudioUploadIntentRef.current && fileLooksLikeMicAudioUpload(uploadingFile)) {
+          micAudioUploadIntentRef.current = false
+          await processMediaUpload(url, tags, uploadingFile, ExtendedKind.VOICE, {
+            skipComposerUrlAppend: urlAlreadyInEditor === true
+          })
+        } else if (isAmbiguousMediaFile(uploadingFile)) {
           // Show dialog to let user choose
           setPendingMediaUpload({
             url,
@@ -2362,12 +2524,12 @@ export default function PostContent({
           })
           setShowMediaKindDialog(true)
           return
+        } else {
+          // Not ambiguous, auto-detect and process
+          await processMediaUpload(url, tags, uploadingFile, undefined, {
+            skipComposerUrlAppend: urlAlreadyInEditor === true
+          })
         }
-        
-        // Not ambiguous, auto-detect and process
-        await processMediaUpload(url, tags, uploadingFile, undefined, {
-          skipComposerUrlAppend: urlAlreadyInEditor === true
-        })
       }
     } catch (error) {
       logger.error('Error in handleMediaUploadSuccess', { error })
@@ -2386,6 +2548,7 @@ export default function PostContent({
     () => ({
       onUploadSuccess: handleMediaUploadSuccess,
       onUploadStart: handleUploadStart,
+      onMicUploadStart: handleMicUploadStart,
       onUploadEnd: handleUploadEnd,
       onProgress: handleUploadProgress,
       onUploadCompressPhase: handleUploadCompressPhase,
@@ -2394,6 +2557,7 @@ export default function PostContent({
     [
       handleMediaUploadSuccess,
       handleUploadStart,
+      handleMicUploadStart,
       handleUploadEnd,
       handleUploadProgress,
       handleUploadCompressPhase,
@@ -2410,14 +2574,21 @@ export default function PostContent({
         insertText={insertComposerText}
         insertEmoji={insertComposerEmoji}
         upload={toolbarUploadHandlers}
-        showAudioUpload={Boolean(parentEvent || isPublicMessage)}
-        audioUploadTitle={parentEvent ? t('Upload Audio Comment') : t('Upload Audio Message')}
+        showAudioUpload={showComposerAudioUpload}
+        audioUploadTitle={
+          parentEvent
+            ? t('Upload Audio Comment')
+            : isPublicMessage
+              ? t('Upload Audio Message')
+              : t('Voice Note')
+        }
         audioButtonHighlighted={
-          mediaNoteKind === ExtendedKind.VOICE_COMMENT ||
-          (isPublicMessage && mediaNoteKind === ExtendedKind.VOICE)
+          mediaNoteKind === ExtendedKind.VOICE_COMMENT || mediaNoteKind === ExtendedKind.VOICE
         }
         showMoreOptions={showMoreOptions}
         onToggleMoreOptions={() => setShowMoreOptions((pre) => !pre)}
+        onOpenComposerOptions={isPageLayout ? onOpenOptions : undefined}
+        showAdvancedSettings={!isPageLayout || !!onOpenOptions}
         pickerPortalContainer={portalOverride ?? pickerPortalContainer}
         orientation={toolbarOrientation}
       />
@@ -2426,52 +2597,52 @@ export default function PostContent({
       insertComposerText,
       insertComposerEmoji,
       toolbarUploadHandlers,
+      showComposerAudioUpload,
       parentEvent,
       isPublicMessage,
       mediaNoteKind,
       showMoreOptions,
+      isPageLayout,
+      onOpenOptions,
       pickerPortalContainer,
       t
     ]
   )
 
-  const composerAdvancedPanel = useMemo(
-    () => (
-      <PostEditorAdvancedPanel
-        show={showMoreOptions}
-        posting={posting}
-        addClientTag={addClientTag}
-        setAddClientTag={setAddClientTag}
-        isNsfw={isNsfw}
-        setIsNsfw={setIsNsfw}
-        contentWarningLabel={contentWarningLabel}
-        setContentWarningLabel={setContentWarningLabel}
-        minPow={minPow}
-        setMinPow={setMinPow}
-        showMentionsPicker={!isHighlight}
-        mentionsContent={text}
-        mentionsParentEvent={isPublicMessage ? undefined : parentEvent}
-        mentions={isPublicMessage ? extractedMentions : mentions}
-        setMentions={isPublicMessage ? setExtractedMentions : setMentions}
-        showRelayPicker={
-          !isPublicationContent &&
-          !isCitationInternal &&
-          !isCitationExternal &&
-          !isCitationHardcopy &&
-          !isCitationPrompt
-        }
-        setAdditionalRelayUrls={setAdditionalRelayUrls}
-        onRelayPublishCapChange={handleRelayPublishCapChange}
-        relayParentEvent={parentEvent}
-        relayOpenFrom={openFrom}
-        relayContent={text}
-        relayIsPublicMessage={isPublicMessage}
-        relayMentions={extractedMentions}
-        relayCapBlockInfo={relayCapBlockInfo}
-        discussionThreadRelayError={threadErrors.relay}
-        isDiscussionThread={isDiscussionThread}
-      />
-    ),
+  const composerAdvancedPanelProps = useMemo(
+    () => ({
+      show: showMoreOptions,
+      posting,
+      addClientTag,
+      setAddClientTag,
+      isNsfw,
+      setIsNsfw,
+      contentWarningLabel,
+      setContentWarningLabel,
+      minPow,
+      setMinPow,
+      showMentionsPicker: !isHighlight,
+      mentionsContent: text,
+      mentionsParentEvent: isPublicMessage ? undefined : parentEvent,
+      mentions: isPublicMessage ? extractedMentions : mentions,
+      setMentions: isPublicMessage ? setExtractedMentions : setMentions,
+      showRelayPicker:
+        !isPublicationContent &&
+        !isCitationInternal &&
+        !isCitationExternal &&
+        !isCitationHardcopy &&
+        !isCitationPrompt,
+      setAdditionalRelayUrls,
+      onRelayPublishCapChange: handleRelayPublishCapChange,
+      relayParentEvent: parentEvent,
+      relayOpenFrom: openFrom,
+      relayContent: text,
+      relayIsPublicMessage: isPublicMessage,
+      relayMentions: extractedMentions,
+      relayCapBlockInfo,
+      discussionThreadRelayError: threadErrors.relay,
+      isDiscussionThread
+    }),
     [
       showMoreOptions,
       posting,
@@ -2497,6 +2668,60 @@ export default function PostContent({
       handleRelayPublishCapChange
     ]
   )
+
+  const composerAdvancedPanel = useMemo(
+    () => <PostEditorAdvancedPanel {...composerAdvancedPanelProps} />,
+    [composerAdvancedPanelProps]
+  )
+
+  const sessionAdvancedPanelProps = useMemo(
+    () => (isPageLayout ? { ...composerAdvancedPanelProps, show: true } : null),
+    [isPageLayout, composerAdvancedPanelProps]
+  )
+
+  useRegisterComposerAdvancedPanel(sessionAdvancedPanelProps)
+
+  const composerUiStateRef = useRef({
+    publishDisabled: true,
+    posting: false,
+    blockMessage: null as string | null,
+    publishLabel: '',
+    hasDraft: false,
+    relaySelectedTotal: undefined as number | undefined
+  })
+
+  useEffect(() => {
+    if (!onComposerUiStateChange) return
+    const next = {
+      publishDisabled: !canPost,
+      posting,
+      blockMessage: composerBlockMessage,
+      publishLabel: publishLabelForShell,
+      hasDraft: text.trim().length > 0,
+      relaySelectedTotal: relayCapPreview?.selectedTotal
+    }
+    const prev = composerUiStateRef.current
+    if (
+      prev.publishDisabled === next.publishDisabled &&
+      prev.posting === next.posting &&
+      prev.blockMessage === next.blockMessage &&
+      prev.publishLabel === next.publishLabel &&
+      prev.hasDraft === next.hasDraft &&
+      prev.relaySelectedTotal === next.relaySelectedTotal
+    ) {
+      return
+    }
+    composerUiStateRef.current = next
+    onComposerUiStateChange(next)
+  }, [
+    onComposerUiStateChange,
+    canPost,
+    posting,
+    composerBlockMessage,
+    publishLabelForShell,
+    text,
+    relayCapPreview?.selectedTotal
+  ])
 
   const handleArticleToggle = (type: 'longform' | 'wiki' | 'nostr-specification' | 'publication') => {
     if (parentEvent) return // Can't create articles as replies
@@ -2680,8 +2905,9 @@ export default function PostContent({
               : 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pr-1'
           )}
         >
-          <ComposerHeaderScroll enabled={isSmallScreen || (isDiscussionThread && !parentEvent)}>
+          <ComposerHeaderScroll enabled={(isSmallScreen && !isPageLayout) || (isDiscussionThread && !parentEvent)}>
       {/* Dynamic Title based on mode */}
+      {!isPageLayout ? (
       <div className="text-lg font-semibold">
         {(() => {
           const determinedKind = getDeterminedKind
@@ -2728,8 +2954,9 @@ export default function PostContent({
           }
         })()}
       </div>
+      ) : null}
       
-      {parentEvent && (
+      {parentEvent && !isPageLayout && (
         <div className="shrink-0 max-h-32 overflow-y-auto rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           {getParentReplyBlurbDisplayText(parentEvent, 320)}
         </div>
@@ -3547,6 +3774,7 @@ export default function PostContent({
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
           headerActions={(() => {
+              if (isReplyFastPath) return null
               const ActiveIcon =
                 isLongFormArticle ? FileText :
                 isWikiArticle ? FileText :
@@ -3897,6 +4125,17 @@ export default function PostContent({
         </Uploader>
       )}
         </div>
+      {isPageLayout && pageFooterSlot
+        ? createPortal(
+            <div className="flex min-w-0 w-full items-center gap-1.5 px-1">
+              <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+                {renderComposerFormatToolbar()}
+              </div>
+            </div>,
+            pageFooterSlot
+          )
+        : null}
+      {showDialogFooter ? (
       <div
         className={cn(
           'min-w-0 shrink-0 space-y-2 border-t border-border bg-background pt-3',
@@ -3961,7 +4200,7 @@ export default function PostContent({
           </div>
         </div>
       </div>
-      {!advancedLabOpen ? composerAdvancedPanel : null}
+      {!advancedLabOpen && showInlineAdvancedPanel ? composerAdvancedPanel : null}
       <div className="flex gap-2 items-center justify-around sm:hidden">
         <Button
           type="button"
@@ -4018,6 +4257,7 @@ export default function PostContent({
         />
       ) : null}
       </div>
+      ) : null}
 
       {/* Media Kind Selection Dialog */}
       <Dialog open={showMediaKindDialog} onOpenChange={setShowMediaKindDialog}>

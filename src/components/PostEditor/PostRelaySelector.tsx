@@ -442,7 +442,10 @@ export default function PostRelaySelector({
       </span>
     ))
 
-  if (isSmallScreen) {
+  const usePopoverRelayPicker =
+    typeof window !== 'undefined' && window.location.pathname.startsWith('/compose')
+
+  if (isSmallScreen && !usePopoverRelayPicker) {
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium">{t('Post to')}</span>

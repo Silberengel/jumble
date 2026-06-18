@@ -40,6 +40,7 @@ import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds
 import { shouldIncludePaymentInFeed } from '@/lib/superchat'
 import {
   applyPersistedFeedSinceToSubRequests,
+  clearPersistedFeedSince,
   persistFeedSince
 } from '@/lib/feed-since-persist'
 import { scrollActivity } from '@/lib/scroll-activity.service'
@@ -133,6 +134,9 @@ import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/fee
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
+/** Home feed: auto-refresh when the newest visible note is older than this (stale cache / dead subs). */
+const STALE_HOME_FEED_MAX_AGE_SEC = 4 * 3600
+const STALE_HOME_FEED_REFRESH_COOLDOWN_MS = 10 * 60 * 1000
 /** Single-relay explore: kindless REQ cap (relay returns whatever it has, up to this many). */
 const RELAY_EXPLORE_LIMIT = SINGLE_RELAY_KINDLESS_REQ_LIMIT
 
@@ -1041,6 +1045,8 @@ const NoteList = forwardRef(
     const profileLocalPrimingPendingRef = useRef(false)
     /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
     const blankFeedVisibilityResumeRetryAtRef = useRef(0)
+    const staleHomeFeedRefreshAtRef = useRef(0)
+    const staleHomeFeedCheckAfterWaveRef = useRef(false)
     const refreshScheduleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const relayAuthoritativeFeedOnlyRef = useRef(relayAuthoritativeFeedOnly)
     relayAuthoritativeFeedOnlyRef.current = relayAuthoritativeFeedOnly
@@ -1259,6 +1265,7 @@ const NoteList = forwardRef(
 
     useLayoutEffect(() => {
       publicReadFallbackAttemptedRef.current = false
+      staleHomeFeedCheckAfterWaveRef.current = false
       if (!pauseTimelineForPrimaryFreeze) {
         setFeedTimelineEmptyUiReady(false)
         setFeedSubscribeRelayOutcomes([])
@@ -1949,11 +1956,14 @@ const NoteList = forwardRef(
       }
       blankFeedVisibilityResumeRetryAtRef.current = 0
       publicReadFallbackAttemptedRef.current = false
+      if (feedTimelineScopeKey) {
+        clearPersistedFeedSince(feedTimelineScopeKey)
+      }
       scrollToTop()
       setLoading(true)
       setFeedTimelineEmptyUiReady(false)
       setRefreshCount((count) => count + 1)
-    }, [scrollToTop])
+    }, [scrollToTop, feedTimelineScopeKey])
 
     const flushPendingNewEventsIntoTimeline = useCallback(() => {
       const pending = newEventsRef.current
@@ -4164,7 +4174,7 @@ const NoteList = forwardRef(
       if (relayAuthoritativeFeedOnly) return
       if (!timelinePublicReadFallback) return
       if (isMetadataRelaysOnlyPolicyActive()) return
-      if (isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
+      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return
       if (feedFullSearchEvents !== null) return
@@ -4274,6 +4284,36 @@ const NoteList = forwardRef(
       timelineSubscriptionKey,
       relayAuthoritativeFeedOnly
     ])
+
+    useEffect(() => {
+      if (hostPrimaryPageName !== 'feed') return
+      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
+      if (oneShotFetch || areAlgoRelays) return
+      if (feedSubscribeRelayOutcomes.length === 0) return
+      if (staleHomeFeedCheckAfterWaveRef.current) return
+      if (loadingRef.current || eventsRef.current.length === 0) return
+
+      staleHomeFeedCheckAfterWaveRef.current = true
+      const newest = eventsRef.current.reduce((max, ev) => Math.max(max, ev.created_at), 0)
+      const ageSec = Math.floor(Date.now() / 1000) - newest
+      if (ageSec <= STALE_HOME_FEED_MAX_AGE_SEC) return
+
+      const now = Date.now()
+      if (now - staleHomeFeedRefreshAtRef.current < STALE_HOME_FEED_REFRESH_COOLDOWN_MS) return
+      staleHomeFeedRefreshAtRef.current = now
+      logger.info('[NoteList] Stale home feed after relay wave — auto-refresh', {
+        ageSec,
+        relayOutcomes: feedSubscribeRelayOutcomes.length
+      })
+      refresh()
+    }, [
+      hostPrimaryPageName,
+      feedSubscriptionKey,
+      oneShotFetch,
+      areAlgoRelays,
+      feedSubscribeRelayOutcomes,
+      refresh
+    ])
     
     useEffect(() => {
       hasMoreRef.current = hasMore
@@ -4301,7 +4341,25 @@ const NoteList = forwardRef(
         const hiddenMs = hidAt != null ? Date.now() - hidAt : 0
         if (hiddenMs < 1500) return
         if (loadingRef.current) return
-        if (eventsRef.current.length > 0) return
+        if (eventsRef.current.length > 0) {
+          if (
+            hostPrimaryPageNameRef.current === 'feed' &&
+            isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)
+          ) {
+            const newest = eventsRef.current.reduce((max, ev) => Math.max(max, ev.created_at), 0)
+            const ageSec = Math.floor(Date.now() / 1000) - newest
+            if (ageSec > STALE_HOME_FEED_MAX_AGE_SEC) {
+              const now = Date.now()
+              if (now - staleHomeFeedRefreshAtRef.current >= STALE_HOME_FEED_REFRESH_COOLDOWN_MS) {
+                staleHomeFeedRefreshAtRef.current = now
+                logger.info('[NoteList] Stale home feed on tab resume — auto-refresh', { ageSec })
+                refresh()
+                return
+              }
+            }
+          }
+          return
+        }
         if (!subRequestsRef.current.length) return
         const now = Date.now()
         if (now - blankFeedVisibilityResumeRetryAtRef.current < 45_000) return
@@ -4311,7 +4369,7 @@ const NoteList = forwardRef(
       }
       document.addEventListener('visibilitychange', onVisibility)
       return () => document.removeEventListener('visibilitychange', onVisibility)
-    }, [refresh])
+    }, [refresh, feedSubscriptionKey])
 
     const bindBottomSentinelRef = useCallback((node: HTMLDivElement | null) => {
       bottomRef.current = node

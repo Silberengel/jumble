@@ -5,13 +5,6 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle
-} from '@/components/ui/sheet'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { pubkeyToNpub } from '@/lib/pubkey'
 import { preloadEmojiPicker } from '@/lib/emoji-picker-preload'
@@ -24,6 +17,9 @@ import { useNostr } from '@/providers/NostrProvider'
 import { cn } from '@/lib/utils'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
 import PostContent from './PostContent'
+import { ComposerShell } from '@/components/Composer'
+import { useSecondaryPageOptional } from '@/PageManager'
+import { navigateToComposer } from '@/lib/open-composer'
 
 function isOverlayDismissTarget(target: EventTarget | null): boolean {
   return (
@@ -41,7 +37,7 @@ function isNestedPickerTarget(target: EventTarget | null): boolean {
     target instanceof HTMLElement &&
     Boolean(
       target.closest(
-        '[data-advanced-lab-shell], [data-suggestion-popup], [data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
+        '[data-advanced-lab-shell], [data-suggestion-popup], [data-nested-picker-portal], [data-gif-picker-shell], [data-gif-picker-root], [data-meme-picker-shell], [data-meme-picker-root], [data-emoji-picker-root], [data-emoji-picker-shell], emoji-picker'
       )
     )
   )
@@ -72,10 +68,8 @@ export default function PostEditor({
   discussionDynamicTopics?: TDiscussionDynamicTopics | null
 }) {
   const { isSmallScreen } = useScreenSize()
+  const secondaryPage = useSecondaryPageOptional()
   const { isAccountSessionHydrating, isNip07LoginInFlight } = useNostr()
-  /** Lock sheet height at open so the mobile keyboard does not resize/jank the composer. */
-  const [mobileSheetHeightPx, setMobileSheetHeightPx] = useState<number | null>(null)
-  const wasOpenRef = useRef(false)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
   const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
   const advancedLabPortalRef = useRef<HTMLElement | null>(null)
@@ -143,24 +137,6 @@ export default function PostEditor({
     [blockDismissForAccountSwitch]
   )
 
-  useEffect(() => {
-    if (open && isSmallScreen && !wasOpenRef.current) {
-      const vh = window.visualViewport?.height ?? window.innerHeight
-      setMobileSheetHeightPx(Math.round(vh))
-    }
-    if (!open) {
-      setMobileSheetHeightPx(null)
-    }
-    wasOpenRef.current = open
-  }, [open, isSmallScreen])
-
-  useEffect(() => {
-    if (!open) return
-    postEditorService.setComposerShellOpen(true)
-    void preloadEmojiPicker()
-    return () => postEditorService.setComposerShellOpen(false)
-  }, [open])
-
   const effectiveDefaultContent = useMemo(() => {
     if (initialPublicMessageTo) {
       const npub = pubkeyToNpub(initialPublicMessageTo)
@@ -169,6 +145,47 @@ export default function PostEditor({
     }
     return defaultContent
   }, [initialPublicMessageTo, defaultContent])
+
+  const mobileRedirectPendingRef = useRef(false)
+
+  useEffect(() => {
+    if (!open || !isSmallScreen) {
+      mobileRedirectPendingRef.current = false
+      return
+    }
+    const push = secondaryPage?.push
+    if (!push) return
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/compose')) {
+      setOpen(false)
+      return
+    }
+    if (mobileRedirectPendingRef.current) return
+    mobileRedirectPendingRef.current = true
+
+    const navigated = navigateToComposer(push, true, {
+      defaultContent: effectiveDefaultContent,
+      parentEvent,
+      openFrom,
+      initialPublicMessageTo
+    })
+    if (navigated) setOpen(false)
+  }, [
+    open,
+    isSmallScreen,
+    secondaryPage,
+    effectiveDefaultContent,
+    parentEvent,
+    openFrom,
+    initialPublicMessageTo,
+    setOpen
+  ])
+
+  useEffect(() => {
+    if (!open) return
+    postEditorService.setComposerShellOpen(true)
+    void preloadEmojiPicker()
+    return () => postEditorService.setComposerShellOpen(false)
+  }, [open])
 
   const composerShell = (
     <PostContent
@@ -207,52 +224,7 @@ export default function PostEditor({
     typeof document !== 'undefined' ? createPortal(advancedLabPortalEl, document.body) : null
 
   if (isSmallScreen) {
-    return (
-      <>
-      <Sheet open={open} onOpenChange={handleComposerOpenChange} modal={false}>
-        <SheetContent
-          className="z-[51] flex w-full max-w-full flex-col border-none bg-background p-0 overflow-hidden data-[state=open]:duration-200 data-[state=closed]:duration-200"
-          style={
-            mobileSheetHeightPx != null
-              ? { height: mobileSheetHeightPx, maxHeight: mobileSheetHeightPx }
-              : { height: 'var(--vh, 100dvh)', maxHeight: 'var(--vh, 100dvh)' }
-          }
-          side="bottom"
-          hideClose
-          onInteractOutside={(e) => {
-            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
-          }}
-          onPointerDownOutside={(e) => {
-            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
-          }}
-          onFocusOutside={(e) => {
-            if (shouldBlockComposerOutsideDismiss(e.target)) e.preventDefault()
-          }}
-          onEscapeKeyDown={(e) => {
-            if (postEditor.isSuggestionPopupOpen) {
-              e.preventDefault()
-              postEditor.closeSuggestionPopup()
-            }
-          }}
-        >
-          <div
-            ref={setPickerPortal}
-            data-nested-picker-portal
-            className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
-            aria-hidden={false}
-          />
-          <div className="relative flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2 min-w-0 overflow-hidden">
-            <SheetHeader className="sr-only">
-              <SheetTitle>Post Editor</SheetTitle>
-              <SheetDescription>Create a new post or reply</SheetDescription>
-            </SheetHeader>
-            {composerShell}
-          </div>
-        </SheetContent>
-      </Sheet>
-      {advancedLabPortal}
-      </>
-    )
+    return advancedLabPortal
   }
 
   return (
@@ -284,12 +256,12 @@ export default function PostEditor({
           className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
           aria-hidden={false}
         />
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 pb-4 min-w-0">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden min-w-0">
             <DialogHeader className="sr-only">
               <DialogTitle>Post Editor</DialogTitle>
               <DialogDescription>Create a new post or reply</DialogDescription>
             </DialogHeader>
-            {composerShell}
+            <ComposerShell className="min-h-0 flex-1 px-4 pt-6 pb-4">{composerShell}</ComposerShell>
           </div>
       </DialogContent>
     </Dialog>

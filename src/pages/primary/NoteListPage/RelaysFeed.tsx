@@ -165,6 +165,7 @@ const RelaysFeed = forwardRef<
       relayAuthoritativeFeedOnly={relaySetFeedOnly}
       showFeedClientFilter
       hostPrimaryPageName="feed"
+      timelinePublicReadFallback
     />
   )
 })

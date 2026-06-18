@@ -398,6 +398,14 @@
     scrollbar-gutter: stable;
     scrollbar-width: thin;
   }
+
+  .imwald-sidebar__footer {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--sidebar-bottom) / 0.72) 0%,
+      hsl(var(--sidebar-bottom)) 40%
+    );
+  }
   .imwald-sidebar__scroll::-webkit-scrollbar {
     width: 8px;
   }

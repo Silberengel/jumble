@@ -49,6 +49,7 @@ const WalletPageLazy = lazy(() => import('./pages/secondary/WalletPage'))
 const FollowPacksRedirectLazy = lazy(() => import('./pages/secondary/FollowPacksRedirect'))
 const RssArticlePageLazy = lazy(() => import('./pages/secondary/RssArticlePage'))
 const CalendarDayEventsPageLazy = lazy(() => import('./pages/secondary/CalendarDayEventsPage'))
+const ComposerPageRouteLazy = lazy(() => import('./pages/secondary/ComposerPage/ComposerPageRoute'))
 
 const routeSuspenseFallback = null
 
@@ -63,6 +64,7 @@ function SR(C: LazyExoticComponent<ComponentType<any>>): ReactElement {
 const notePageElement = <NotePageRoute />
 const noteListPageElement = SR(NoteListPageLazy)
 const rssArticlePageElement = SR(RssArticlePageLazy)
+const composerPageElement = SR(ComposerPageRouteLazy)
 
 /** Primary segments used in contextual `/…/notes/:id` and `/…/rss-item/:key` routes. */
 const CONTEXTUAL_ROUTE_PREFIXES =
@@ -78,6 +80,9 @@ const contextualRssItemPathRe = new RegExp(
 const standardRssItemPathRe = /^\/rss-item\/([^/?#]+)$/
 
 const ROUTES = [
+  { path: '/compose', element: composerPageElement },
+  { path: '/compose/reply/:id', element: composerPageElement },
+  { path: '/compose/options', element: composerPageElement },
   { path: '/notes', element: noteListPageElement },
   { path: '/notes/:id', element: notePageElement },
   { path: '/discussions/notes/:id', element: notePageElement },

@@ -152,8 +152,8 @@ function SidebarAccountMenu({
           title={t('Account menu')}
           aria-label={t('Account menu')}
           className={cn(
-            'clickable h-12 min-w-0 justify-start gap-2 rounded-lg bg-transparent p-2 text-lg font-semibold text-foreground shadow-none hover:text-accent-foreground',
-            'w-12 xl:w-full xl:px-2 xl:py-2',
+            'clickable flex min-w-0 items-center justify-start gap-2 rounded-lg bg-transparent p-2 text-lg font-semibold text-foreground shadow-none hover:text-accent-foreground',
+            'h-12 w-12 shrink-0 xl:h-auto xl:min-h-12 xl:w-full xl:py-2',
             active && 'bg-accent/50'
           )}
         >

@@ -2830,6 +2830,13 @@ export default {
     'No RSS feed list found on relays': 'No RSS feed list found on relays',
     'Pinned posts': 'Pinned posts',
     'Publishing...': 'Publishing...',
+    'Publishing options': 'Publishing options',
+    'Options': 'Options',
+    'Fix relays': 'Fix relays',
+    'Discard draft?': 'Discard draft?',
+    'Your unsaved draft will be lost.': 'Your unsaved draft will be lost.',
+    'Keep editing': 'Keep editing',
+    Discard: 'Discard',
     'RSS article': 'RSS article',
     'RSS feed list refreshed': 'RSS feed list refreshed',
     'Save or discard your changes before refreshing from relays':

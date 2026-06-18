@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { DialogContext } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +26,9 @@ import {
 } from '@/services/meme.service'
 import mediaUpload from '@/services/media-upload.service'
 import { ExternalLink, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Slot } from '@radix-ui/react-slot'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /** In-session cache: survives Drawer/Dropdown open↔close without a relay re-fetch. */
 let _sessionMemes: MemeMetadata[] = []
@@ -35,6 +38,14 @@ import { toast } from 'sonner'
 const MEMEAMIGO_URL = 'https://www.memeamigo.lol/'
 const MEMEAMIGO_SEARCH_URL = (q: string) =>
   q.trim() ? `${MEMEAMIGO_URL}?q=${encodeURIComponent(q.trim())}` : MEMEAMIGO_URL
+
+function listFocusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => !el.hasAttribute('disabled'))
+}
 
 function mimeFromImageUrl(url: string): string {
   const lower = url.toLowerCase().split('?')[0] ?? ''
@@ -69,6 +80,9 @@ export default function MemePicker({
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
+  const inDialog = useContext(DialogContext)
+  /** Post composer on desktop: centered portal panel (dropdown clips inside dialog). */
+  const useDialogShell = inDialog && !isSmallScreen
   const { publish, pubkey } = useNostr()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -86,6 +100,10 @@ export default function MemePicker({
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const memeamigoPopupRef = useRef<Window | null>(null)
+  const pickerRootRef = useRef<HTMLDivElement>(null)
+  const composerPanelRef = useRef<HTMLDivElement>(null)
+  const searchFieldRef = useRef<HTMLInputElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
 
   const userReadRelays = useUserReadInboxUrls()
   const userWriteRelays = useUserWriteOutboxUrls()
@@ -154,10 +172,86 @@ export default function MemePicker({
     }
   }, [searchInput, open])
 
+  const preparePickerClose = useCallback(() => {
+    const el = document.activeElement
+    if (el instanceof HTMLElement && pickerRootRef.current?.contains(el)) {
+      el.blur()
+    }
+  }, [])
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (next && useDialogShell) {
+        restoreFocusRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
+      if (!next) {
+        preparePickerClose()
+        if (useDialogShell) {
+          const restore = restoreFocusRef.current
+          restoreFocusRef.current = null
+          if (restore?.isConnected) {
+            requestAnimationFrame(() => restore.focus())
+          }
+        }
+      }
+      setOpen(next)
+    },
+    [preparePickerClose, useDialogShell]
+  )
+
+  /** Composer portal: focus search and keep tab cycles inside the picker. */
+  useEffect(() => {
+    if (!open || !useDialogShell) return
+
+    const focusSearch = () => searchFieldRef.current?.focus({ preventScroll: true })
+    const raf = requestAnimationFrame(focusSearch)
+    const timer = window.setTimeout(focusSearch, 0)
+
+    const panel = composerPanelRef.current
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !panel) return
+      const focusables = listFocusableElements(panel)
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          event.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !panel.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [open, useDialogShell])
+
+  /** Escape closes the in-composer panel without dismissing the post editor dialog. */
+  useEffect(() => {
+    if (!open || !useDialogShell) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      handleOpenChange(false)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [open, useDialogShell, handleOpenChange])
+
   const handleSelect = (meme: MemeMetadata) => {
     const url = meme.fallbackUrl || meme.url
     onSelect?.(url)
-    setOpen(false)
+    handleOpenChange(false)
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,7 +327,7 @@ export default function MemePicker({
         window.removeEventListener('message', handler)
         memeamigoPopupRef.current = null
         onSelect?.(urlToInsert)
-        setOpen(false)
+        handleOpenChange(false)
       }
     }
     window.addEventListener('message', handler)
@@ -246,7 +340,7 @@ export default function MemePicker({
         clearTimeout(timer)
         window.removeEventListener('message', handler)
       })
-  }, [searchInput, onSelect])
+  }, [searchInput, onSelect, handleOpenChange])
 
   const descriptionForPublish = publishDescription.trim()
 
@@ -255,7 +349,7 @@ export default function MemePicker({
     if (!url || !/^https?:\/\//i.test(url)) return
     onSelect?.(url)
     setPasteUrl('')
-    setOpen(false)
+    handleOpenChange(false)
     if (pubkey) {
       setPublishingPaste(true)
       try {
@@ -293,11 +387,13 @@ export default function MemePicker({
         setPublishingPaste(false)
       }
     }
-  }, [pasteUrl, pubkey, onSelect, publish, userWriteRelays, descriptionForPublish])
+  }, [pasteUrl, pubkey, onSelect, publish, userWriteRelays, descriptionForPublish, handleOpenChange, t])
 
   const isDrawer = isSmallScreen
   const content = (
     <div
+      ref={pickerRootRef}
+      data-meme-picker-root
       className={cn(
         'flex min-w-0 w-full flex-col gap-2 p-2',
         isDrawer ? 'min-h-0 flex-1 overflow-hidden' : 'min-w-[280px] max-w-[360px]'
@@ -305,6 +401,7 @@ export default function MemePicker({
     >
       <div className="flex items-center gap-1 shrink-0">
         <Input
+          ref={searchFieldRef}
           placeholder={t('Search memes')}
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -315,7 +412,7 @@ export default function MemePicker({
           variant="ghost"
           size="icon"
           className="shrink-0 size-8"
-          onClick={() => setOpen(false)}
+          onClick={() => handleOpenChange(false)}
           aria-label={t('Close')}
         >
           <X className="size-4" />
@@ -499,7 +596,7 @@ export default function MemePicker({
 
   if (isSmallScreen) {
     return (
-      <Drawer open={open} onOpenChange={setOpen} handleOnly shouldScaleBackground={false}>
+      <Drawer open={open} onOpenChange={handleOpenChange} handleOnly shouldScaleBackground={false}>
         <DrawerTrigger asChild>{children}</DrawerTrigger>
         <DrawerContent
           dragHandle="vaul"
@@ -517,8 +614,55 @@ export default function MemePicker({
     )
   }
 
+  if (useDialogShell) {
+    const portalTarget = portalContainer ?? (typeof document !== 'undefined' ? document.body : null)
+    const overlayPositionClass = portalContainer ? 'absolute inset-0' : 'fixed inset-0'
+    return (
+      <>
+        <Slot
+          onClick={(event: React.MouseEvent) => {
+            event.stopPropagation()
+            handleOpenChange(true)
+          }}
+        >
+          {children}
+        </Slot>
+        {open && portalTarget
+          ? createPortal(
+              <div
+                data-meme-picker-shell
+                className={cn(
+                  'pointer-events-none z-[290] flex items-center justify-center p-4',
+                  overlayPositionClass
+                )}
+              >
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={t('Close')}
+                  className="pointer-events-auto absolute inset-0 z-0 cursor-default border-0 bg-transparent p-0"
+                  onClick={() => handleOpenChange(false)}
+                />
+                <div
+                  ref={composerPanelRef}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={t('Choose a meme')}
+                  className="pointer-events-auto relative z-10 flex max-h-[min(85dvh,640px)] w-[min(360px,calc(100vw-2rem))] max-w-[360px] flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg outline-none"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
+                </div>
+              </div>,
+              portalTarget
+            )
+          : null}
+      </>
+    )
+  }
+
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent side="top" className="p-0" portalContainer={portalContainer}>
         {content}

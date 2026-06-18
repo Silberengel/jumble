@@ -92,6 +92,14 @@ export function applyPersistedFeedSinceToSubRequests(
   })
 }
 
+export function clearPersistedFeedSince(scopeKey: string | undefined): void {
+  if (!scopeKey) return
+  const map = readScopeMap()
+  if (!(scopeKey in map)) return
+  delete map[scopeKey]
+  writeScopeMap(map)
+}
+
 export function resetPersistedFeedSinceForTests(): void {
   try {
     localStorage.removeItem(STORAGE_KEY)

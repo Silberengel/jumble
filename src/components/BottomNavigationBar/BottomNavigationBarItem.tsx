@@ -6,13 +6,15 @@ export default function BottomNavigationBarItem({
   children,
   active = false,
   prominent = false,
-  onClick
+  onClick,
+  onPointerEnter
 }: {
   children: React.ReactNode
   active?: boolean
   /** Slightly larger icon (e.g. home feed). */
   prominent?: boolean
   onClick: MouseEventHandler
+  onPointerEnter?: MouseEventHandler
 }) {
   return (
     <Button
@@ -27,6 +29,7 @@ export default function BottomNavigationBarItem({
       )}
       variant="ghost"
       onClick={onClick}
+      onPointerEnter={onPointerEnter}
     >
       {children}
     </Button>

@@ -13,6 +13,8 @@ import { MentionAndEventToolbarButtons } from './PostTextarea/Mention/MentionAnd
 export type PostEditorFormatToolbarUploadHandlers = {
   onUploadSuccess: (result: { url: string; tags: string[][]; file?: File }) => void
   onUploadStart?: (file: File, cancel: () => void) => void
+  /** Root composer mic button — marks upload as voice note before shared onUploadStart runs. */
+  onMicUploadStart?: (file: File) => void
   onUploadEnd?: (file: File) => void
   onProgress?: (file: File, progress: number) => void
   onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
@@ -30,6 +32,8 @@ export type PostEditorFormatToolbarProps = {
   onToggleMoreOptions: () => void
   /** When set (reply/post dialog), pickers portal here so Radix does not mark them inert. */
   pickerPortalContainer?: HTMLElement | null
+  /** When set, Settings opens composer options instead of toggling inline advanced panel. */
+  onOpenComposerOptions?: () => void
   /** When false, hide the settings (advanced options) toggle. */
   showAdvancedSettings?: boolean
   /** Stack icons in a column (advanced lab sidebar). */
@@ -52,6 +56,7 @@ export function PostEditorFormatToolbar({
   onToggleMoreOptions,
   pickerPortalContainer,
   showAdvancedSettings = true,
+  onOpenComposerOptions,
   orientation = 'horizontal'
 }: PostEditorFormatToolbarProps) {
   const { t } = useTranslation()
@@ -70,7 +75,10 @@ export function PostEditorFormatToolbar({
       {showAudioUpload && (
         <Uploader
           onUploadSuccess={upload.onUploadSuccess}
-          onUploadStart={upload.onUploadStart}
+          onUploadStart={(file, cancel) => {
+            upload.onMicUploadStart?.(file)
+            upload.onUploadStart?.(file, cancel)
+          }}
           onUploadEnd={upload.onUploadEnd}
           onProgress={upload.onProgress}
           onUploadCompressPhase={upload.onUploadCompressPhase}
@@ -142,7 +150,7 @@ export function PostEditorFormatToolbar({
           size="icon"
           title={t('Advanced')}
           className={cn(iconBtnClass, showMoreOptions && 'bg-accent')}
-          onClick={onToggleMoreOptions}
+          onClick={onOpenComposerOptions ?? onToggleMoreOptions}
         >
           <Settings />
         </Button>

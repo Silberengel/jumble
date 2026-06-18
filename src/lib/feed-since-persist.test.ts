@@ -3,6 +3,7 @@ import type { Filter } from 'nostr-tools'
 import type { TFeedSubRequest } from '@/types'
 import {
   applyPersistedFeedSinceToSubRequests,
+  clearPersistedFeedSince,
   getPersistedFeedSince,
   persistFeedSince,
   resetPersistedFeedSinceForTests
@@ -23,6 +24,12 @@ describe('feed-since-persist', () => {
     expect(getPersistedFeedSince('home')).toBe(1000)
     persistFeedSince('home', [{ id: 'c', created_at: 1100 } as never])
     expect(getPersistedFeedSince('home')).toBe(1100)
+  })
+
+  it('clears persisted since for a scope', () => {
+    persistFeedSince('home', [{ id: 'a', created_at: 2000 } as never])
+    clearPersistedFeedSince('home')
+    expect(getPersistedFeedSince('home')).toBeUndefined()
   })
 
   it('applies since with overlap when no filter since/until', () => {
