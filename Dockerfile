@@ -64,6 +64,14 @@ RUN printf "server {\n\
         try_files \$uri =404;\n\
     }\n\
 \n\
+    # Runtime config (docker-entrypoint.sh); must revalidate after deploy/env changes.\n\
+    location = /config.json {\n\
+        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n\
+        add_header Pragma \"no-cache\";\n\
+        expires off;\n\
+        try_files \$uri =404;\n\
+    }\n\
+\n\
     # PWA: service worker + precache manifest must not be long-cached or browsers never see\n\
     # updates (VersionUpdateBanner stays hidden; About shows an old APP_VERSION from precache).\n\
     location = /sw.js {\n\

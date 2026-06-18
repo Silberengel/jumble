@@ -84,6 +84,7 @@ import {
   replyFeedZapsFirst,
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
+  seedThreadWalkFromLocalContext,
   shouldIncludeSuperchatInThreadReply,
   threadBacklinkRelationLabel,
   threadResponseFilterOptions,
@@ -857,6 +858,7 @@ function ReplyNoteList({
         if (!rootInfo) return // Type guard
 
         const streamWalk = new Map<string, NEvent>()
+        seedThreadWalkFromLocalContext(streamWalk, rootInfo, event)
         try {
           // READ from: thread hints, author/user NIP-65, favorites, cache — then DEFAULT_FAVORITE_RELAYS fallback.
           const opAuthorPubkey = rootInfo.type === 'E' || rootInfo.type === 'A' ? rootInfo.pubkey : undefined
@@ -1005,6 +1007,7 @@ function ReplyNoteList({
           const threadWalkFromBatch = new Map<string, NEvent>(
             allReplies.map((e) => [e.id.toLowerCase(), e] as const)
           )
+          seedThreadWalkFromLocalContext(threadWalkFromBatch, rootInfo, event)
 
           const statsIdsForFetch = buildNoteStatsReplyIdSet(
             noteStatsService.getNoteStats(event.id)?.replies
@@ -1247,6 +1250,24 @@ function ReplyNoteList({
           logger.error('[ReplyNoteList] Error fetching replies:', error)
         } finally {
           if (fetchGeneration === replyFetchGenRef.current) {
+            try {
+              const statsIdList =
+                noteStatsService.getNoteStats(event.id)?.replies?.map((r) => r.id) ?? []
+              const lateLocal = await loadThreadRepliesFromLocalStores(
+                rootInfo,
+                event,
+                isDiscussionRoot,
+                mutePubkeySet,
+                hideContentMentioningMutedUsers,
+                { statsReplyIds: statsIdList }
+              )
+              if (fetchGeneration === replyFetchGenRef.current && lateLocal.length > 0) {
+                addReplies(lateLocal)
+                discussionFeedCache.setCachedReplies(rootInfo, lateLocal)
+              }
+            } catch (e) {
+              logger.debug('[ReplyNoteList] Late local thread load failed', e)
+            }
             setLoading(false)
           }
         }

@@ -17,6 +17,7 @@ import {
   useFetchThreadContextEvent,
   useNip84HighlightTargetEvents
 } from '@/hooks'
+import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
 import noteStatsService from '@/services/note-stats.service'
@@ -60,6 +61,7 @@ import { getEventTypeName } from '@/lib/content/event-type-name'
 import NotFound from './NotFound'
 import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
 import { ThreadReplyProvider } from '@/providers/ThreadReplyProvider'
+import { THREAD_REPLY_LIMIT } from '@/components/ReplyNoteList/types'
 import { preloadPostEditorChunk } from '@/components/PostEditor/preload-post-editor-chunk'
 
 function eventPointerHexId(pointer: string | undefined): string | undefined {
@@ -227,15 +229,27 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
 
+  const { addReplies } = useReplyIngress()
   const [archivesSeedProfiles, setArchivesSeedProfiles] = useState<TProfile[]>([])
 
   useEffect(() => {
     if (!finalEvent?.id) return
+    let cancelled = false
     setArchivesSeedProfiles([])
-    prewarmArchivesNotePage(finalEvent.id, 50, (bundle) => {
+    prewarmArchivesNotePage(finalEvent.id, THREAD_REPLY_LIMIT, (bundle) => {
+      if (cancelled) return
       setArchivesSeedProfiles(profilesFromArchivesNotePageBundle(bundle))
+      if (bundle.replies.length > 0) {
+        addReplies(bundle.replies)
+        noteStatsService.updateNoteStatsByEvents(bundle.replies, finalEvent.pubkey, {
+          statsRootEvent: finalEvent
+        })
+      }
     })
-  }, [finalEvent?.id])
+    return () => {
+      cancelled = true
+    }
+  }, [finalEvent?.id, addReplies])
 
   /** Resolve nostr embeds after first paint — avoids competing with thread/profile batch on open. */
   useEffect(() => {

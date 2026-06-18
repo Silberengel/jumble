@@ -15,6 +15,7 @@ import {
 import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { buildThreadInteractionFilters } from '@/lib/thread-interaction-req'
 import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
+import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import noteStatsService from '@/services/note-stats.service'
 import client, { eventService, queryService } from '@/services/client.service'
 import type { TSubRequestFilter } from '@/types'
@@ -39,6 +40,26 @@ export {
   THREAD_PROFILE_BATCH_DEBOUNCE_MS,
   THREAD_PROFILE_CHUNK
 } from './types'
+
+/** Session + navigation context for parent walks while relay batches stream out-of-order. */
+export function seedThreadWalkFromLocalContext(
+  walk: Map<string, NEvent>,
+  rootInfo: TRootInfo,
+  opEvent: NEvent
+): void {
+  const opHex = openNoteHexId(opEvent)
+  if (rootInfo.type === 'E' || rootInfo.type === 'A') {
+    for (const e of eventService.getSessionThreadInteractionEvents(rootInfo, opHex)) {
+      walk.set(e.id.toLowerCase(), e)
+    }
+  }
+  for (const e of eventService.getSessionEventsForNoteStatsTarget(opEvent, { maxScan: 40_000 })) {
+    walk.set(e.id.toLowerCase(), e)
+  }
+  for (const e of getCachedThreadContextEvents(opEvent)) {
+    walk.set(e.id.toLowerCase(), e)
+  }
+}
 
 export function openNoteHexId(event: Pick<NEvent, 'id'>): string | undefined {
   const id = event.id?.trim().toLowerCase()
