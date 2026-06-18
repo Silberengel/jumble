@@ -91,6 +91,7 @@ import LearningResourceCard from './LearningResourceCard'
 import MarkdownArticle from './LazyMarkdownArticle'
 import AsciidocArticle from './LazyAsciidocArticle'
 import PostEditor from '../PostEditor/LazyPostEditor'
+import { openComposerAfterOverlay } from '../PostEditor/open-composer-after-overlay'
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
   ExtendedKind.PUBLICATION_CONTENT,
@@ -322,9 +323,11 @@ export default function Note({
   }, [])
 
   const openPublicMessage = useCallback((pubkey: string) => {
+    setHighlightData(undefined)
+    setHighlightDefaultContent('')
     setPublicMessageTo(pubkey)
     setCallInviteContent(null)
-    setPostEditorOpen(true)
+    openComposerAfterOverlay(setPostEditorOpen)
   }, [])
 
   const openCallInvite = useCallback((url: string) => {
@@ -332,7 +335,7 @@ export default function Note({
     setPublicMessageTo(null)
     setHighlightData(undefined)
     setHighlightDefaultContent('')
-    setPostEditorOpen(true)
+    openComposerAfterOverlay(setPostEditorOpen)
   }, [])
 
   const isHighlightableKind =

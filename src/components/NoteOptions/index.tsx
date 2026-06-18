@@ -50,6 +50,7 @@ export default function NoteOptions({
 
   const closeDrawer = () => {
     setIsDrawerOpen(false)
+    setMenuOpen(false)
     setShowSubMenu(false)
     setSubMenuSearchable(false)
   }
