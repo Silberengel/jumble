@@ -135,6 +135,7 @@ import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 import { useAdvancedEventLabComposer } from '@/hooks/useAdvancedEventLabComposer'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
 import { useComposerController } from '@/hooks/useComposerController'
+import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import { getComposerModeFlags } from '@/components/Composer/composer-mode-flags'
 import { useRegisterComposerAdvancedPanel } from '@/contexts/composer-session-context'
 
@@ -310,6 +311,7 @@ export default function PostContent({
   const handleEditorNonemptyChange = useCallback((nonempty: boolean) => {
     setEditorHasContent(nonempty)
   }, [])
+  useActivityTraceRender('PostContent', { textLen: text.length, editorHasContent })
   const textareaRef = useRef<TPostTextareaHandle>(null)
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)

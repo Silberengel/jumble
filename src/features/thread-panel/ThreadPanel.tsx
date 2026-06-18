@@ -5,6 +5,7 @@ import {
   isNip18RepostKind
 } from '@/lib/event'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import {
   isNestedThreadReplyParentKind,
   isSuperchatKind
@@ -569,6 +570,10 @@ function ThreadPanel({
     if (!rootInfo) return
     const fetchGeneration = threadPanelEngineRef.current.bumpGeneration()
     replyFetchGenRef.current = fetchGeneration
+    activityTrace.trace('ingest', 'ThreadPanel.fetch.start', {
+      generation: fetchGeneration,
+      rootId: event.id.slice(0, 12)
+    })
 
     const init = async () => {
       const cachedStatsReplies = noteStatsService.getNoteStats(event.id)?.replies

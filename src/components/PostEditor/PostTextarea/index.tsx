@@ -2,6 +2,7 @@ import { ExtendedKind } from '@/constants'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
+import activityTrace from '@/lib/activity-trace'
 import customEmojiService from '@/services/custom-emoji.service'
 import postEditorCache from '@/services/post-editor-cache.service'
 import postEditorService from '@/services/post-editor.service'
@@ -178,6 +179,7 @@ const PostTextarea = forwardRef<
       const json = ed.getJSON()
       const live = parseEditorJsonToText(json)
       setText(live)
+      activityTrace.trace('editor', 'PostTextarea.syncToParent', { chars: live.length })
       postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, json)
       notifyEditorNonempty(ed)
     }, [defaultContent, kind, notifyEditorNonempty, parentEvent, setText])

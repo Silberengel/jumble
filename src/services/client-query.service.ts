@@ -29,6 +29,7 @@ import {
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import { getViewerNostrLandAggrSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import {
   canonicalRelaySessionKey,
@@ -479,6 +480,11 @@ export class QueryService {
       endRelayScope()
       return []
     }
+    activityTrace.trace('relay', 'query.start', {
+      source: options?.relayOpSource ?? 'QueryService.query',
+      relayCount: urls.length,
+      filterCount: sanitizedFilters.length
+    })
     if (options?.signal?.aborted) {
       endRelayScope()
       return []
@@ -965,6 +971,11 @@ export class QueryService {
     }
 
     const opSource = relayOpMeta?.source ?? 'QueryService.subscribe'
+    activityTrace.trace('relay', 'subscribe.start', {
+      source: opSource,
+      relayCount: groupedRequests.length,
+      filterCount: filters.length
+    })
     const opBatch =
       groupedRequests.length > 0
         ? new RelaySubscribeOpBatch(opSource, groupedRequests, {

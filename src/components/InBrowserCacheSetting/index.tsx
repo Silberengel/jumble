@@ -3,14 +3,24 @@ import {
   clearAppServiceWorkerAndCaches,
   refreshAppBrowserCache
 } from '@/lib/app-cache-maintenance'
-import { clearConsoleLogBuffer } from '@/lib/console-log-buffer'
+import { clearConsoleLogBuffer, isActivityTraceLogEntry } from '@/lib/console-log-buffer'
 import { useConsoleLogBuffer } from '@/hooks/useConsoleLogBuffer'
+import { setActivityTraceEnabled, useActivityTraceEnabled } from '@/hooks/useActivityTraceEnabled'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2, RefreshCw, Database, X, Terminal, XCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import postEditorCache from '@/services/post-editor-cache.service'
@@ -20,6 +30,8 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { toast } from 'sonner'
 import { useCacheBrowser } from '../../contexts/cache-browser-context'
+
+type ConsoleLogFilter = 'all' | 'errors-warnings' | 'trace'
 
 export default function InBrowserCacheSetting() {
   const { t } = useTranslation()
@@ -31,9 +43,10 @@ export default function InBrowserCacheSetting() {
   } = useNostr()
   const { openBrowseCache } = useCacheBrowser()
   const consoleLogs = useConsoleLogBuffer()
+  const activityTraceEnabled = useActivityTraceEnabled()
   const [showConsoleLogs, setShowConsoleLogs] = useState(false)
   const [consoleLogSearch, setConsoleLogSearch] = useState('')
-  const [consoleLogLevel, setConsoleLogLevel] = useState<'errors-warnings' | 'all'>('all')
+  const [consoleLogFilter, setConsoleLogFilter] = useState<ConsoleLogFilter>('all')
   const [cacheRefreshBusy, setCacheRefreshBusy] = useState(false)
 
   const handleClearCache = async () => {
@@ -138,7 +151,7 @@ export default function InBrowserCacheSetting() {
   const handleShowConsoleLogs = () => {
     setShowConsoleLogs(true)
     setConsoleLogSearch('')
-    setConsoleLogLevel('all')
+    setConsoleLogFilter('all')
   }
 
   const handleClearConsoleLogs = () => {
@@ -148,18 +161,20 @@ export default function InBrowserCacheSetting() {
 
   const filteredConsoleLogs = useMemo(() => {
     let filtered = [...consoleLogs]
-    if (consoleLogLevel === 'errors-warnings') {
-      filtered = filtered.filter(log => log.type === 'error' || log.type === 'warn')
+    if (consoleLogFilter === 'errors-warnings') {
+      filtered = filtered.filter((log) => log.type === 'error' || log.type === 'warn')
+    } else if (consoleLogFilter === 'trace') {
+      filtered = filtered.filter(isActivityTraceLogEntry)
     }
     if (consoleLogSearch.trim()) {
       const query = consoleLogSearch.toLowerCase().trim()
-      filtered = filtered.filter(log =>
-        log.message.toLowerCase().includes(query) ||
-        log.type.toLowerCase().includes(query)
+      filtered = filtered.filter(
+        (log) =>
+          log.message.toLowerCase().includes(query) || log.type.toLowerCase().includes(query)
       )
     }
     return filtered
-  }, [consoleLogs, consoleLogSearch, consoleLogLevel])
+  }, [consoleLogs, consoleLogSearch, consoleLogFilter])
 
   const renderConsoleLogList = () =>
     filteredConsoleLogs.length === 0 ? (
@@ -174,9 +189,13 @@ export default function InBrowserCacheSetting() {
         <div
           key={index}
           className={`p-2 rounded border ${
-            log.type === 'error' ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800' :
-            log.type === 'warn' ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800' :
-            'bg-background border-border'
+            log.type === 'error'
+              ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+              : log.type === 'warn'
+                ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800'
+                : isActivityTraceLogEntry(log)
+                  ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 dark:border-cyan-800'
+                  : 'bg-background border-border'
           }`}
         >
           <div className="flex items-start gap-2">
@@ -217,30 +236,42 @@ export default function InBrowserCacheSetting() {
     )
 
   const consoleLogFilters = (
-    <div className="flex min-w-0 flex-wrap gap-2">
+    <div className="flex min-w-0 flex-col gap-3">
       <Input
         placeholder={t('Search logs...')}
         value={consoleLogSearch}
         onChange={(e) => setConsoleLogSearch(e.target.value)}
-        className="min-w-0 flex-1 basis-[min(100%,12rem)]"
+        className="min-w-0 w-full"
       />
-      <div className="flex shrink-0 gap-1">
-        <Button
-          type="button"
-          variant={consoleLogLevel === 'errors-warnings' ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={() => setConsoleLogLevel('errors-warnings')}
-        >
-          {t('Errors & warnings')}
-        </Button>
-        <Button
-          type="button"
-          variant={consoleLogLevel === 'all' ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={() => setConsoleLogLevel('all')}
-        >
-          {t('All')}
-        </Button>
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Label htmlFor="console-log-filter" className="shrink-0 text-xs text-muted-foreground">
+            {t('Log filter')}
+          </Label>
+          <Select
+            value={consoleLogFilter}
+            onValueChange={(value) => setConsoleLogFilter(value as ConsoleLogFilter)}
+          >
+            <SelectTrigger id="console-log-filter" className="h-8 min-w-[10rem] flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('All')}</SelectItem>
+              <SelectItem value="errors-warnings">{t('Errors & warnings')}</SelectItem>
+              <SelectItem value="trace">{t('Trace')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Label htmlFor="activity-trace-toggle" className="text-xs text-muted-foreground">
+            {t('Activity trace')}
+          </Label>
+          <Switch
+            id="activity-trace-toggle"
+            checked={activityTraceEnabled}
+            onCheckedChange={(checked) => setActivityTraceEnabled(checked, true)}
+          />
+        </div>
       </div>
     </div>
   )

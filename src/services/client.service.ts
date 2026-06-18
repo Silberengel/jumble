@@ -100,6 +100,7 @@ import {
   getRelayUrlFromRelayReviewEvent
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import { promiseWithTimeout } from '@/lib/async-timeout'
 import type { PublishTrace } from '@/lib/publish-trace'
 import { hiddenNetworkRelayUnavailableReason } from '@/lib/hidden-network-relay'
@@ -1721,6 +1722,11 @@ class ClientService extends EventTarget {
 
   async publishEvent(relayUrls: string[], event: NEvent, publishExtras?: TPublishEventExtras) {
     const trace: PublishTrace | undefined = publishExtras?.publishTrace
+    activityTrace.trace('publish', 'client.publishEvent', {
+      kind: event.kind,
+      relayCount: relayUrls.length,
+      eventId: event.id.slice(0, 12)
+    })
     const skipOutboxRetry = publishExtras?.skipOutboxRetry === true
     trace?.step('publishEvent begin', { pickerRelays: relayUrls.length, skipOutboxRetry })
     let userOutboxUrls: string[] = []

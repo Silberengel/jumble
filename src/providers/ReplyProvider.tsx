@@ -1,6 +1,7 @@
 import { mergeRepliesIntoMap, type TRepliesMap } from '@/lib/reply-index'
+import activityTrace from '@/lib/activity-trace'
 import type { Event } from 'nostr-tools'
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 type TReplyContext = {
   repliesMap: TRepliesMap
@@ -35,6 +36,7 @@ export function ReplyProvider({ children }: { children: React.ReactNode }) {
 
   const addReplies = useCallback((replies: Event[]) => {
     if (replies.length === 0) return
+    activityTrace.trace('ingest', 'ReplyProvider.addReplies', { count: replies.length })
     setRepliesMap((prev) => mergeRepliesIntoMap(prev, replies))
   }, [])
 
@@ -45,6 +47,10 @@ export function ReplyProvider({ children }: { children: React.ReactNode }) {
     }),
     [repliesMap, addReplies]
   )
+
+  useEffect(() => {
+    activityTrace.trace('provider', 'ReplyProvider.repliesMap', { buckets: repliesMap.size })
+  }, [repliesMap])
 
   return (
     <ReplyAddContext.Provider value={addReplies}>

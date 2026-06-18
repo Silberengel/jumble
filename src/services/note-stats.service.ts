@@ -16,6 +16,7 @@ import { getCachedBtcUsdRate } from '@/lib/btc-usd-rate'
 import { getCachedXmrUsdRate } from '@/lib/xmr-usd-rate'
 import { getPaymentNotificationInfo } from '@/lib/superchat'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import {
   canonicalizeRssArticleUrl,
   expandArticleUrlThreadQueryValues,
@@ -597,6 +598,10 @@ class NoteStatsService {
     }
 
     this.processBatchRunning = true
+    activityTrace.trace('stats', 'NoteStats.processBatch.start', {
+      foreground: this.pendingForeground.size,
+      background: this.pendingEvents.size
+    })
     if (this.batchTimeout) {
       clearTimeout(this.batchTimeout)
       this.batchTimeout = null
@@ -976,6 +981,7 @@ class NoteStatsService {
 
   subscribeNoteStats(noteId: string, callback: () => void) {
     const key = this.statsKey(noteId)
+    activityTrace.trace('stats', 'NoteStats.subscribe', { noteId: key.slice(0, 12) })
     let set = this.noteStatsSubscribers.get(key)
     if (!set) {
       set = new Set()
@@ -1170,6 +1176,8 @@ class NoteStatsService {
       statsRootEvent?: Event
     }
   ) {
+    if (events.length === 0) return
+    activityTrace.trace('stats', 'NoteStats.updateByEvents', { count: events.length })
     const updatedEventIdSet = new Set<string>()
 
     // Process events in batches for better performance

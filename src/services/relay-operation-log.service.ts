@@ -1,5 +1,6 @@
 import { closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
+import activityTrace from '@/lib/activity-trace'
 import logger from '@/lib/logger'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import type { Filter } from 'nostr-tools'
@@ -213,6 +214,11 @@ export class RelaySubscribeOpBatch {
   }
 
   logBegin(): void {
+    activityTrace.trace('relay', 'subscribe.batch_begin', {
+      batchId: this.batchId,
+      source: this.source,
+      relaySlotCount: this.grouped.length
+    })
     if (this.quiet) return
     const uniqueRelays = [...new Set(this.grouped.map((g) => g.url))]
     this.logLine('[RelayOp] batch_begin', {
@@ -295,6 +301,17 @@ export class RelaySubscribeOpBatch {
       closedCount: nClosed,
       timeoutCount: nTimeout
     }
+
+    activityTrace.trace('relay', 'subscribe.batch_end', {
+      batchId: this.batchId,
+      source: this.source,
+      status,
+      elapsedMs,
+      eoseCount: nEose,
+      closedCount: nClosed,
+      timeoutCount: nTimeout,
+      relayCount: rows.length
+    })
 
     if (!this.quiet) {
       if (this.logLevel === 'debug') {

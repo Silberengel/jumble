@@ -10,6 +10,7 @@ import {
 } from '@/lib/live-activities'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -74,6 +75,7 @@ export function LiveActivitiesProvider({ children }: { children: React.ReactNode
     }
 
     const run = async () => {
+      activityTrace.trace('poll', 'LiveActivities.refresh', { loggedIn: Boolean(pubkey) })
       const loggedIn = Boolean(pubkey)
       const urls = buildLiveActivitiesRelayUrls({
         loggedIn,

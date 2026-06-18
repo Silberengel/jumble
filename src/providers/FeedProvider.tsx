@@ -13,6 +13,7 @@ import {
   resolveHomeFeedPrimaryRelayUrls
 } from '@/lib/home-feed-relay-source'
 import logger from '@/lib/logger'
+import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import {
   syncViewerRelayStackNostrLandAggrEligible,
   urlsForViewerNostrLandAggrEligibilitySync
@@ -71,6 +72,7 @@ function buildHomeReplyFeedRelayUrls(
 
 export function FeedProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
+  useActivityTraceRender('FeedProvider')
   const { isInitialized, relayList, cacheRelayListEvent, pubkey } = useNostr()
   const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
   const [homeFeedRelaySource, setHomeFeedRelaySourceState] = useState(() =>

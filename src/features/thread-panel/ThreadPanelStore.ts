@@ -1,4 +1,5 @@
 import { mergeRepliesIntoMap } from '@/lib/reply-index'
+import activityTrace from '@/lib/activity-trace'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import type { Event } from 'nostr-tools'
@@ -25,6 +26,11 @@ export function ingestThreadPanelEvents(
   opts?: ThreadPanelIngestOptions
 ): ThreadPanelStoreSnapshot {
   if (events.length === 0) return store
+
+  activityTrace.trace('ingest', 'ThreadPanelStore.ingest', {
+    count: events.length,
+    source: _source
+  })
 
   const nextById = new Map(store.byId)
   for (const ev of events) {

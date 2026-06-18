@@ -27,6 +27,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
+import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
@@ -924,6 +925,7 @@ const NoteList = forwardRef(
     ref
   ) => {
     const { t } = useTranslation()
+    useActivityTraceRender('NoteList')
     const { startLogin, pubkey } = useNostr()
     const { mutePubkeySet } = useMuteList()
     const contentPolicy = useContentPolicyOptional()

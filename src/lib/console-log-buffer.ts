@@ -10,6 +10,8 @@ const MAX_ENTRIES = 1000
 const buffer: ConsoleLogEntry[] = []
 const listeners = new Set<() => void>()
 let initialized = false
+/** Skip ring-buffer capture while activity trace (or similar) writes directly + mirrors to console. */
+let consoleCaptureSuppressed = 0
 /** Same reference between mutations so `useSyncExternalStore` does not loop (React #185). */
 let snapshot: readonly ConsoleLogEntry[] = buffer
 
@@ -76,7 +78,42 @@ function formatArgs(args: unknown[]): { message: string; formattedParts: Array<{
   return { message, formattedParts: [{ text: message }] }
 }
 
+function pushEntry(entry: ConsoleLogEntry) {
+  buffer.push(entry)
+  if (buffer.length > MAX_ENTRIES) {
+    buffer.splice(0, buffer.length - MAX_ENTRIES)
+  }
+  notifyListeners()
+}
+
+/** Append a log line to the in-app console modal (and notify subscribers). */
+export function appendConsoleLogEntry(
+  entry: Omit<ConsoleLogEntry, 'timestamp'> & { timestamp?: number }
+): void {
+  pushEntry({
+    type: entry.type,
+    message: entry.message,
+    formattedParts: entry.formattedParts,
+    timestamp: entry.timestamp ?? Date.now()
+  })
+}
+
+/** Run `fn` without double-capturing mirrored `console.*` output. */
+export function withConsoleCaptureSuppressed(fn: () => void): void {
+  consoleCaptureSuppressed++
+  try {
+    fn()
+  } finally {
+    consoleCaptureSuppressed--
+  }
+}
+
+export function isActivityTraceLogEntry(log: ConsoleLogEntry): boolean {
+  return log.type === 'trace' || log.message.includes('[ActivityTrace]')
+}
+
 function captureLog(type: string, ...args: unknown[]) {
+  if (consoleCaptureSuppressed > 0) return
   const { message, formattedParts } = formatArgs(args)
   // nostr-tools emits relay NOTICE via console.debug; keep buffer useful for real diagnostics.
   if (message.includes('NOTICE from')) {
@@ -85,11 +122,7 @@ function captureLog(type: string, ...args: unknown[]) {
   if (import.meta.env.DEV && message.includes('[feed:')) {
     return
   }
-  buffer.push({ type, message, formattedParts, timestamp: Date.now() })
-  if (buffer.length > MAX_ENTRIES) {
-    buffer.splice(0, buffer.length - MAX_ENTRIES)
-  }
-  notifyListeners()
+  pushEntry({ type, message, formattedParts, timestamp: Date.now() })
 }
 
 /** Ring buffer of recent console output (installed at app startup). */

@@ -13,6 +13,7 @@ import {
 import { persistArchivesPayloadEvents, persistArchivesEventsIfNew } from '@/lib/nostr-archives-ingest'
 import { archivesJsonToVerifiedEvent } from '@/lib/nostr-archives-event'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import storage from '@/services/local-storage.service'
 import type {
   TArchivesApiResult,
@@ -195,6 +196,7 @@ class NostrArchivesApiService {
     if (!this.consumeRateLimit()) {
       return { ok: false, reason: 'rate_limited' }
     }
+    activityTrace.trace('api', 'Archives.fetch', { path })
 
     const url = `${NOSTR_ARCHIVES_API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
     const ac = new AbortController()

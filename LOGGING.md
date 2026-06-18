@@ -84,3 +84,52 @@ To enable debug mode:
    ```
 
 Debug mode shows debug-level logs with timestamps, levels, and caller hints.
+
+## Activity trace (background noise / performance)
+
+Separate from general debug logging. Tracks **what runs when**: renders, relay REQ/subscribe waves, ingest, note-stats batches, publish, Archives API, polls, etc.
+
+### Enable
+
+```javascript
+// Recommended: trace + debug relay detail
+imwaldDebug.traceOn({ verbose: true })
+
+// Or trace only (sampled renders, 5s counter summary)
+imwaldTrace.enable()
+
+// Persist across reload
+localStorage.setItem('imwald-trace', 'true')
+localStorage.setItem('imwald-debug', 'true') // optional: full logger debug
+location.reload()
+```
+
+### Console commands
+
+| Command | Purpose |
+|---------|---------|
+| `imwaldTrace.summary()` | Top counters right now |
+| `imwaldTrace.recent(50)` | Last 50 traced events |
+| `imwaldTrace.enable({ verbose: true })` | Log every event (firehose) |
+| `imwaldTrace.disable()` | Stop tracing |
+| `imwaldDebug.traceSummary()` | Same as summary (works even if trace off) |
+
+### Categories
+
+- **render** — `PostContent`, `NoteList`, `FeedProvider`, …
+- **relay** — subscribe/query batches (also `[RelayOp]` when debug on)
+- **ingest** — reply map, thread panel store
+- **stats** — note-stats subscribe / batch / merge
+- **publish** — `client.publishEvent`
+- **provider** — e.g. `ReplyProvider` map size changes
+- **poll** — e.g. live activities refresh
+- **api** — Nostr Archives REST
+- **editor** — debounced composer text sync to parent
+
+Every **5 seconds** while trace is on, a collapsed summary table prints to the console and a text summary is appended to **Settings → Cache → Console Logs**.
+
+### In-app Console Logs modal
+
+- **Log filter** dropdown: All | Errors & warnings | **Trace**
+- **Activity trace** switch: turns tracing on/off (persists in `localStorage` as `imwald-trace`)
+- Trace lines are written directly into the console log buffer (cyan highlight in the modal)
