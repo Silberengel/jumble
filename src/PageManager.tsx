@@ -908,6 +908,9 @@ function MainContentArea({
     noteView: false
   })
 
+  const pagesKey = primaryPages.map((p) => p.name).join(',')
+  const noteView = !!primaryNoteView
+
   // Listen for note page title updates
   useEffect(() => {
     const handleTitleUpdate = () => {
@@ -919,25 +922,25 @@ function MainContentArea({
     }
   }, [])
 
-  const pagesKey = primaryPages.map((p) => p.name).join(',')
-  const noteView = !!primaryNoteView
-  const prevDbg = mainContentDebugRef.current
-  if (
-    prevDbg.currentPrimaryPage !== currentPrimaryPage ||
-    prevDbg.pages !== pagesKey ||
-    prevDbg.noteView !== noteView
-  ) {
-    mainContentDebugRef.current = {
-      currentPrimaryPage,
-      pages: pagesKey,
-      noteView
+  useEffect(() => {
+    const prevDbg = mainContentDebugRef.current
+    if (
+      prevDbg.currentPrimaryPage !== currentPrimaryPage ||
+      prevDbg.pages !== pagesKey ||
+      prevDbg.noteView !== noteView
+    ) {
+      mainContentDebugRef.current = {
+        currentPrimaryPage,
+        pages: pagesKey,
+        noteView
+      }
+      logger.debug('MainContentArea rendering:', {
+        currentPrimaryPage,
+        primaryPages: primaryPages.map((p) => p.name),
+        primaryNoteView: noteView
+      })
     }
-    logger.debug('MainContentArea rendering:', {
-      currentPrimaryPage,
-      primaryPages: primaryPages.map((p) => p.name),
-      primaryNoteView: noteView
-    })
-  }
+  }, [currentPrimaryPage, pagesKey, noteView, primaryPages])
   
   // flex + min-h-0 + min-w-0 so primary pages get a real height in flex parents and can shrink horizontally (double-pane).
   return (

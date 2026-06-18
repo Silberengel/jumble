@@ -1,7 +1,7 @@
 import { mergeRepliesIntoMap, type TRepliesMap } from '@/lib/reply-index'
 import activityTrace from '@/lib/activity-trace'
 import type { Event } from 'nostr-tools'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 type TReplyContext = {
   repliesMap: TRepliesMap
@@ -33,12 +33,29 @@ export const useReply = () => {
 
 export function ReplyProvider({ children }: { children: React.ReactNode }) {
   const [repliesMap, setRepliesMap] = useState<TRepliesMap>(() => new Map())
+  const pendingRepliesRef = useRef<Event[]>([])
+  const flushScheduledRef = useRef(false)
 
-  const addReplies = useCallback((replies: Event[]) => {
-    if (replies.length === 0) return
-    activityTrace.trace('ingest', 'ReplyProvider.addReplies', { count: replies.length })
-    setRepliesMap((prev) => mergeRepliesIntoMap(prev, replies))
+  const flushPendingReplies = useCallback(() => {
+    flushScheduledRef.current = false
+    const batch = pendingRepliesRef.current
+    if (batch.length === 0) return
+    pendingRepliesRef.current = []
+    activityTrace.trace('ingest', 'ReplyProvider.addReplies', { count: batch.length })
+    setRepliesMap((prev) => mergeRepliesIntoMap(prev, batch))
   }, [])
+
+  const addReplies = useCallback(
+    (replies: Event[]) => {
+      if (replies.length === 0) return
+      pendingRepliesRef.current.push(...replies)
+      if (!flushScheduledRef.current) {
+        flushScheduledRef.current = true
+        requestAnimationFrame(flushPendingReplies)
+      }
+    },
+    [flushPendingReplies]
+  )
 
   const replyContextValue = useMemo(
     () => ({

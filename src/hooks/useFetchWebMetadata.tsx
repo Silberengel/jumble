@@ -1,6 +1,6 @@
+import { fetchWebMetadataCached } from '@/lib/web-metadata-cache'
 import { TWebMetadata } from '@/types'
 import { useEffect, useState } from 'react'
-import webService from '@/services/web.service'
 import logger from '@/lib/logger'
 import { isLikelyWebPageUrl } from '@/lib/url'
 
@@ -21,22 +21,34 @@ export function useFetchWebMetadata(
       return
     }
 
+    let cancelled = false
     logger.debug('[useFetchWebMetadata] Fetching OG metadata', { url })
 
     setOgLoading(true)
     setMetadata({})
 
-    webService.fetchWebMetadata(url)
+    fetchWebMetadataCached(url)
       .then((metadata) => {
-        logger.debug('[useFetchWebMetadata] Received metadata', { url, hasTitle: !!metadata.title, hasDescription: !!metadata.description, hasImage: !!metadata.image })
+        if (cancelled) return
+        logger.debug('[useFetchWebMetadata] Received metadata', {
+          url,
+          hasTitle: !!metadata.title,
+          hasDescription: !!metadata.description,
+          hasImage: !!metadata.image
+        })
         setMetadata(metadata)
       })
       .catch((error) => {
+        if (cancelled) return
         logger.debug('[useFetchWebMetadata] Failed to fetch metadata', { url, error })
       })
       .finally(() => {
-        setOgLoading(false)
+        if (!cancelled) setOgLoading(false)
       })
+
+    return () => {
+      cancelled = true
+    }
   }, [url, fetchEnabled])
 
   return { ...metadata, ogLoading }

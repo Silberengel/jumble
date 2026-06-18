@@ -366,8 +366,14 @@ export function getProfileFromEvent(event: Event) {
   }
 }
 
+const paymentInfoByEventId = new Map<string, TPaymentInfo | null>()
+
 export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
   if (event.kind !== 10133) return null
+
+  if (paymentInfoByEventId.has(event.id)) {
+    return paymentInfoByEventId.get(event.id) ?? null
+  }
   
   // Parse JSON content as fallback
   let paymentInfo: any = {}
@@ -445,6 +451,7 @@ export function getPaymentInfoFromEvent(event: Event): TPaymentInfo | null {
     content: event.content?.substring(0, 200)
   })
   
+  paymentInfoByEventId.set(event.id, result)
   return result
 }
 

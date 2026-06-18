@@ -3,14 +3,18 @@ import {
   clearAppServiceWorkerAndCaches,
   refreshAppBrowserCache
 } from '@/lib/app-cache-maintenance'
-import { clearConsoleLogBuffer, isActivityTraceLogEntry } from '@/lib/console-log-buffer'
+import {
+  clearConsoleLogBuffer,
+  downloadConsoleLogEntriesJsonl,
+  isActivityTraceLogEntry
+} from '@/lib/console-log-buffer'
 import { useConsoleLogBuffer } from '@/hooks/useConsoleLogBuffer'
 import { setActivityTraceEnabled, useActivityTraceEnabled } from '@/hooks/useActivityTraceEnabled'
 import logger from '@/lib/logger'
 import { useNostr } from '@/providers/NostrProvider'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Trash2, RefreshCw, Database, X, Terminal, XCircle } from 'lucide-react'
+import { Trash2, RefreshCw, Database, X, Terminal, XCircle, Download } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -176,6 +180,15 @@ export default function InBrowserCacheSetting() {
     return filtered
   }, [consoleLogs, consoleLogSearch, consoleLogFilter])
 
+  const handleDownloadConsoleLogs = () => {
+    if (filteredConsoleLogs.length === 0) {
+      toast.error(t('No logs to download'))
+      return
+    }
+    downloadConsoleLogEntriesJsonl(filteredConsoleLogs)
+    toast.success(t('Console logs downloaded'))
+  }
+
   const renderConsoleLogList = () =>
     filteredConsoleLogs.length === 0 ? (
       <div className="text-muted-foreground p-4 text-center">
@@ -327,6 +340,10 @@ export default function InBrowserCacheSetting() {
                   </DrawerDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleDownloadConsoleLogs}>
+                    <Download className="h-4 w-4 mr-2" />
+                    {t('Download JSONL')}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={handleClearConsoleLogs}>
                     <Trash2 className="h-4 w-4 mr-2" />
                     {t('Clear')}
@@ -355,6 +372,10 @@ export default function InBrowserCacheSetting() {
                   </DialogDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleDownloadConsoleLogs}>
+                    <Download className="h-4 w-4 mr-2" />
+                    {t('Download JSONL')}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={handleClearConsoleLogs}>
                     <Trash2 className="h-4 w-4 mr-2" />
                     {t('Clear')}

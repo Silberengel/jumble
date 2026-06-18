@@ -15,8 +15,9 @@ import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
 
 function filterAttestedTargets(
   events: NEvent[],
-  shouldInclude?: (evt: NEvent) => boolean
+  shouldIncludeRef?: MutableRefObject<((evt: NEvent) => boolean) | undefined>
 ): NEvent[] {
+  const shouldInclude = shouldIncludeRef?.current
   if (!shouldInclude) return events
   return events.filter(shouldInclude)
 }
@@ -28,8 +29,8 @@ export function useThreadAttestedPayments(
   threadRelayUrlsRef: MutableRefObject<string[]>,
   browsingRelayUrls: string[],
   replyFetchGenRef: MutableRefObject<number>,
-  /** When set, only attested payment targets that belong on this thread are merged. */
-  shouldIncludeAttestedTarget?: (evt: NEvent) => boolean
+  /** Ref to filter — avoids re-running effects when thread reply map changes. */
+  shouldIncludeAttestedTargetRef?: MutableRefObject<((evt: NEvent) => boolean) | undefined>
 ) {
   const [attestedPaymentIds, setAttestedPaymentIds] = useState<Set<string>>(() =>
     recipientPubkey ? resolveAttestedPaymentIdSetSync(recipientPubkey) : new Set()
@@ -60,7 +61,7 @@ export function useThreadAttestedPayments(
       mergeAttestedPaymentIds(syncIds)
       const syncTargets = filterAttestedTargets(
         peekAttestedSuperchatTargetEvents(syncIds),
-        shouldIncludeAttestedTarget
+        shouldIncludeAttestedTargetRef
       )
       if (syncTargets.length > 0) addReplies(syncTargets)
 
@@ -72,7 +73,7 @@ export function useThreadAttestedPayments(
         await hydrateAttestedSuperchatTargetEvents(attestedIds, relayUrls, {
           foreground
         }),
-        shouldIncludeAttestedTarget
+        shouldIncludeAttestedTargetRef
       )
       if (fetchGeneration !== replyFetchGenRef.current) return
       if (targets.length > 0) addReplies(targets)
@@ -82,7 +83,7 @@ export function useThreadAttestedPayments(
       addReplies,
       mergeAttestedPaymentIds,
       replyFetchGenRef,
-      shouldIncludeAttestedTarget
+      shouldIncludeAttestedTargetRef
     ]
   )
 
@@ -95,7 +96,7 @@ export function useThreadAttestedPayments(
     mergeAttestedPaymentIds(syncIds)
     const syncTargets = filterAttestedTargets(
       peekAttestedSuperchatTargetEvents(syncIds),
-      shouldIncludeAttestedTarget
+      shouldIncludeAttestedTargetRef
     )
     if (syncTargets.length > 0) addReplies(syncTargets)
 
@@ -117,8 +118,7 @@ export function useThreadAttestedPayments(
     mergeAttestedPaymentIds,
     applyAttestedSuperchatWave,
     threadRelayUrlsRef,
-    replyFetchGenRef,
-    shouldIncludeAttestedTarget
+    replyFetchGenRef
   ])
 
   useEffect(() => {
@@ -135,14 +135,14 @@ export function useThreadAttestedPayments(
       mergeAttestedPaymentIds(new Set([targetId]))
       const cached = client.peekSessionCachedEvent(targetId)
       if (cached) {
-        const ok = filterAttestedTargets([cached], shouldIncludeAttestedTarget)
+        const ok = filterAttestedTargets([cached], shouldIncludeAttestedTargetRef)
         if (ok.length > 0) addReplies(ok)
       }
       void client
         .fetchEvent(targetId, { relayHints: threadRelayUrlsRef.current })
         .then((target) => {
           if (!target) return
-          const ok = filterAttestedTargets([target], shouldIncludeAttestedTarget)
+          const ok = filterAttestedTargets([target], shouldIncludeAttestedTargetRef)
           if (ok.length > 0) addReplies(ok)
         })
         .catch(() => {
@@ -156,7 +156,7 @@ export function useThreadAttestedPayments(
     addReplies,
     mergeAttestedPaymentIds,
     threadRelayUrlsRef,
-    shouldIncludeAttestedTarget
+    shouldIncludeAttestedTargetRef
   ])
 
   return { attestedPaymentIds, mergeAttestedPaymentIds, applyAttestedSuperchatWave }

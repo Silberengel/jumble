@@ -2078,6 +2078,7 @@ export default {
     'Connect Wallet': 'Connect Wallet',
     'Console Logs': 'Console Logs',
     'Console logs cleared': 'Console logs cleared',
+    'Console logs downloaded': 'Console logs downloaded',
     'Content is required': 'Content is required',
     'Content must be 5000 characters or less': 'Content must be 5000 characters or less',
     Controversial: 'Controversial',
@@ -2305,6 +2306,7 @@ export default {
     'No items in this store.': 'No items in this store.',
     'No items match your search.': 'No items match your search.',
     'No logs match the current filters': 'No logs match the current filters',
+    'No logs to download': 'No logs to download',
     'No posts found': 'No posts found',
     'No posts match your search': 'No posts match your search',
     'No relays available. Please configure relays in settings.':
@@ -2772,6 +2774,7 @@ export default {
     'Nostr specs': 'Nostr specs',
     'Nostr spec affected kinds': 'Kinds {{kinds}}',
     'Download as Markdown file': 'Download as Markdown file',
+    'Download JSONL': 'Download JSONL',
     'You can only delete your own notes': 'You can only delete your own notes',
     'You must be logged in to create a thread': 'You must be logged in to create a thread',
     'You need to add at least one media server in order to upload media files.':

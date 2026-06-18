@@ -26,6 +26,18 @@ function notifyListeners() {
   }
 }
 
+let notifyScheduled = false
+
+/** Defer subscriber updates so console capture during render cannot trigger setState in other trees. */
+function scheduleNotifyListeners() {
+  if (notifyScheduled) return
+  notifyScheduled = true
+  queueMicrotask(() => {
+    notifyScheduled = false
+    notifyListeners()
+  })
+}
+
 function formatArgs(args: unknown[]): { message: string; formattedParts: Array<{ text: string; style?: string }> } {
   if (args.length > 0 && typeof args[0] === 'string' && args[0].includes('%c')) {
     const formatString = args[0]
@@ -83,7 +95,7 @@ function pushEntry(entry: ConsoleLogEntry) {
   if (buffer.length > MAX_ENTRIES) {
     buffer.splice(0, buffer.length - MAX_ENTRIES)
   }
-  notifyListeners()
+  scheduleNotifyListeners()
 }
 
 /** Append a log line to the in-app console modal (and notify subscribers). */
@@ -133,6 +145,43 @@ export function getConsoleLogBuffer(): readonly ConsoleLogEntry[] {
 export function clearConsoleLogBuffer() {
   buffer.length = 0
   notifyListeners()
+}
+
+/** Serialize log entries as JSONL (one JSON object per line). */
+export function consoleLogEntriesToJsonl(entries: readonly ConsoleLogEntry[]): string {
+  return entries
+    .map((entry) =>
+      JSON.stringify({
+        timestamp: entry.timestamp,
+        iso: new Date(entry.timestamp).toISOString(),
+        type: entry.type,
+        message: entry.message
+      })
+    )
+    .join('\n')
+    .concat(entries.length > 0 ? '\n' : '')
+}
+
+function defaultConsoleLogDownloadFilename(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `imwald-console-logs-${stamp}.jsonl`
+}
+
+/** Download log entries as a `.jsonl` file in the browser. */
+export function downloadConsoleLogEntriesJsonl(
+  entries: readonly ConsoleLogEntry[],
+  filename = defaultConsoleLogDownloadFilename()
+): void {
+  const blob = new Blob([consoleLogEntriesToJsonl(entries)], { type: 'application/x-ndjson' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
 }
 
 export function subscribeConsoleLogBuffer(listener: () => void): () => void {

@@ -133,35 +133,39 @@ function ThreadPanel({
     singleRelayAuthoritativeRead ?? browsingRelayUrls.length === 1
   const rootInfo = useThreadRootInfo(event)
   const { repliesMap, addReplies, ingest } = useThreadPanelStore(event)
+  const repliesMapRef = useRef(repliesMap)
+  repliesMapRef.current = repliesMap
   const isDiscussionRoot = isDiscussionThreadRoot(event)
   const threadRelayUrlsRef = useRef<string[]>([])
   const threadPanelEngineRef = useRef(new ThreadPanelEngine())
   const replyFetchGenRef = useRef(0)
-  const shouldIncludeAttestedSuperchat = useCallback(
-    (evt: NEvent) => {
-      const threadWalk = new Map<string, NEvent>()
-      for (const { events: bucket } of repliesMap.values()) {
-        for (const e of bucket) threadWalk.set(e.id.toLowerCase(), e)
-      }
-      return shouldIncludeSuperchatInThreadReply(
-        evt,
-        event,
-        rootInfo,
-        isDiscussionRoot,
-        threadWalk,
-        event.pubkey
-      )
-    },
-    [event, rootInfo, isDiscussionRoot, repliesMap]
-  )
+  const panelRootRef = useRef<HTMLDivElement>(null)
+  const [effectsActive, setEffectsActive] = useState(true)
+  const shouldIncludeAttestedSuperchatRef = useRef<(evt: NEvent) => boolean>(() => true)
+  shouldIncludeAttestedSuperchatRef.current = (evt: NEvent) => {
+    const threadWalk = new Map<string, NEvent>()
+    for (const { events: bucket } of repliesMapRef.current.values()) {
+      for (const e of bucket) threadWalk.set(e.id.toLowerCase(), e)
+    }
+    return shouldIncludeSuperchatInThreadReply(
+      evt,
+      event,
+      rootInfo,
+      isDiscussionRoot,
+      threadWalk,
+      event.pubkey
+    )
+  }
   const { attestedPaymentIds, applyAttestedSuperchatWave } = useThreadAttestedPayments(
     event.pubkey,
     addReplies,
     threadRelayUrlsRef,
     browsingRelayUrls,
     replyFetchGenRef,
-    shouldIncludeAttestedSuperchat
+    shouldIncludeAttestedSuperchatRef
   )
+  const applyAttestedSuperchatWaveRef = useRef(applyAttestedSuperchatWave)
+  applyAttestedSuperchatWaveRef.current = applyAttestedSuperchatWave
 
   const replyDuplicateWebPreviewHints = useMemo(() => {
     const out: string[] = [...(duplicateWebPreviewCleanedUrlHints ?? [])]
@@ -372,10 +376,45 @@ function ThreadPanel({
     setThreadRelaysRevision(0)
   }, [event.id])
 
+  /** Pause relay fetch / live work when the panel is off-screen or the tab is hidden. */
   useEffect(() => {
+    const el = panelRootRef.current
+    if (!el) return
+
+    let intersecting = true
+    const syncActive = () => {
+      setEffectsActive(intersecting && document.visibilityState === 'visible')
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        intersecting = entry?.isIntersecting ?? false
+        syncActive()
+      },
+      { threshold: 0 }
+    )
+    observer.observe(el)
+    document.addEventListener('visibilitychange', syncActive)
+    syncActive()
+
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', syncActive)
+    }
+  }, [event.id])
+
+  useEffect(() => {
+    if (effectsActive) return
+    const nextGen = threadPanelEngineRef.current.bumpGeneration()
+    replyFetchGenRef.current = nextGen
+  }, [effectsActive])
+
+  useEffect(() => {
+    if (!effectsActive) return
     const fromStats = noteStats?.replies
     if (!fromStats?.length) return
 
+    const map = repliesMapRef.current
     const statsIdSet = buildNoteStatsReplyIdSet(fromStats)
     const sessionHits = eventService
       .getSessionEventsForNoteStatsTarget(event, { maxScan: 40_000 })
@@ -384,7 +423,7 @@ function ThreadPanel({
 
     const candidates = fromStats.filter(
       (r) =>
-        !replyIdPresentInRepliesMap(repliesMap, r.id) &&
+        !replyIdPresentInRepliesMap(map, r.id) &&
         !client.peekSessionCachedEvent(r.id) &&
         !statsHydratedReplyIdsRef.current.has(r.id)
     )
@@ -400,9 +439,10 @@ function ThreadPanel({
       if (!cancelled && fromArchive.length > 0) addReplies(fromArchive)
 
       const relayUrls = threadRelayUrlsRef.current
+      const mapAfterArchive = repliesMapRef.current
       const stillMissing = unresolved.filter(
         (r) =>
-          !replyIdPresentInRepliesMap(repliesMap, r.id) &&
+          !replyIdPresentInRepliesMap(mapAfterArchive, r.id) &&
           !client.peekSessionCachedEvent(r.id) &&
           !fromArchive.some((e) => e.id === r.id)
       )
@@ -428,22 +468,23 @@ function ThreadPanel({
     event.id,
     noteStats?.replies,
     noteStats?.updatedAt,
-    repliesMap,
     addReplies,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
     refreshToken,
-    threadRelaysRevision
+    threadRelaysRevision,
+    effectsActive
   ])
 
   /** When stats counted many replies but the thread REQ returned few, run the same social filters as note-stats. */
   const statsRelaySyncGenRef = useRef(0)
   useEffect(() => {
+    if (!effectsActive) return
     const statsLen = noteStats?.replies?.length ?? 0
     if (statsLen < 3) return
     const resolved = buildRepliesListAlignedWithNoteStats(
       noteStats?.replies,
-      repliesMap,
+      repliesMapRef.current,
       [],
       mutePubkeySet,
       hideContentMentioningMutedUsers,
@@ -504,12 +545,15 @@ function ThreadPanel({
     event,
     noteStats?.replies?.length,
     noteStats?.updatedAt,
-    repliesMap,
     statsReplyIds,
     addReplies,
     mutePubkeySet,
     hideContentMentioningMutedUsers,
-    refreshToken
+    refreshToken,
+    rootInfo,
+    isEventDeleted,
+    threadResponseHideOpts,
+    effectsActive
   ])
 
   const onNewReply = useCallback(
@@ -552,7 +596,7 @@ function ThreadPanel({
   )
 
   useEffect(() => {
-    if (!rootInfo) return
+    if (!rootInfo || !effectsActive) return
     const handleEventPublished = (data: Event) => {
       const ce = data as CustomEvent<NEvent>
       const evt = ce.detail
@@ -564,10 +608,10 @@ function ThreadPanel({
     return () => {
       client.removeEventListener('newEvent', handleEventPublished)
     }
-  }, [rootInfo, event, onNewReply, isDiscussionRoot])
+  }, [rootInfo, event, onNewReply, isDiscussionRoot, effectsActive])
 
   useEffect(() => {
-    if (!rootInfo) return
+    if (!rootInfo || !effectsActive) return
     const fetchGeneration = threadPanelEngineRef.current.bumpGeneration()
     replyFetchGenRef.current = fetchGeneration
     activityTrace.trace('ingest', 'ThreadPanel.fetch.start', {
@@ -754,7 +798,7 @@ function ThreadPanel({
 
           void attestationTask.then((relayAttestations) => {
             if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
-            void applyAttestedSuperchatWave(
+            void applyAttestedSuperchatWaveRef.current(
               relayAttestations,
               relayUrlsForThreadReq,
               fetchGeneration,
@@ -1057,7 +1101,7 @@ function ThreadPanel({
     hideContentMentioningMutedUsers,
     isDiscussionRoot,
     statsForeground,
-    applyAttestedSuperchatWave
+    effectsActive
   ])
 
   useEffect(() => {
@@ -1172,7 +1216,7 @@ function ThreadPanel({
   return (
     <ThreadPanelProvider ingest={ingest}>
     <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
-    <div className="pb-12">
+    <div className="pb-12" ref={panelRootRef}>
       {loading && <LoadingBar />}
       <div>
         {displayRows.map((row, ri) => {
