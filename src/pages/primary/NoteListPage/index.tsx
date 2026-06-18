@@ -23,7 +23,7 @@ import Logo from '@/assets/Logo'
 import HomeFeedRelaySourceSelect from '@/components/HomeFeedRelaySourceSelect'
 import { DiscussionsTitlebarButton } from '@/components/Sidebar/DiscussionsButton'
 import { LibraryTitlebarButton } from '@/components/Sidebar/LibraryButton'
-import RelaysFeed from './RelaysFeed'
+import HomeFeed from '@/features/home-feed/HomeFeed'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 const NoteListPage = forwardRef<TPageRef>((_, ref) => {
@@ -102,7 +102,7 @@ const NoteListPage = forwardRef<TPageRef>((_, ref) => {
       displayScrollToTopButton
     >
       <div className="min-w-0 pt-2">
-        <RelaysFeed
+        <HomeFeed
           ref={feedRef}
           setSubHeader={setHomeSubHeaderStable}
           onSubHeaderRefresh={runFeedRefresh}

@@ -28,9 +28,8 @@ import {
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
-import { eventSeenOnMatchesAllowlist } from '@/lib/relay-allowlist'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
-import { isLocalNetworkUrl, normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { collapseStaleAddressableRevisions } from '@/lib/replaceable-revision'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
@@ -56,11 +55,10 @@ import noteStatsService from '@/services/note-stats.service'
 import indexedDb from '@/services/indexed-db.service'
 import {
   getSessionFeedSnapshot,
-  getSessionFeedSnapshotWithFeedFallback,
   hardReloadPreservingFeedSnapshots,
   setSessionFeedSnapshot
 } from '@/services/session-feed-snapshot.service'
-import type { TFeedSubRequest, TNoteListMode, TSubRequestFilter } from '@/types'
+import type { TFeedSubRequest, TSubRequestFilter } from '@/types'
 import dayjs from 'dayjs'
 import { type Event, type Filter, kinds } from 'nostr-tools'
 import { decode } from 'nostr-tools/nip19'
@@ -134,9 +132,6 @@ import { buildFeedDiagnosticsSnapshot, logFeedDiagnostics } from '@/features/fee
 
 const LIMIT = 150 // Per-shard REQ limit for timeline + loadMore (larger batches = fewer round-trips)
 const ALGO_LIMIT = 200 // Increased from 500 for algorithm feeds
-/** Home feed: auto-refresh when the newest visible note is older than this (stale cache / dead subs). */
-const STALE_HOME_FEED_MAX_AGE_SEC = 4 * 3600
-const STALE_HOME_FEED_REFRESH_COOLDOWN_MS = 10 * 60 * 1000
 /** Single-relay explore: kindless REQ cap (relay returns whatever it has, up to this many). */
 const RELAY_EXPLORE_LIMIT = SINGLE_RELAY_KINDLESS_REQ_LIMIT
 
@@ -216,16 +211,6 @@ function resolveFeedScrollRoot(
   const registered = getRegisteredPrimaryFeedScrollElement()
   if (registered && anchor && registered.contains(anchor)) return registered
   return getNearestScrollableAncestor(anchor) ?? window
-}
-
-function isFeedScrollNearTop(
-  anchor: HTMLElement | null,
-  cachedScrollRoot?: HTMLElement | Window | null,
-  thresholdPx = AUTO_MERGE_NEW_EVENTS_TOP_PX
-): boolean {
-  const root = resolveFeedScrollRoot(anchor, cachedScrollRoot)
-  const top = root === window ? window.scrollY : (root as HTMLElement).scrollTop
-  return top <= thresholdPx
 }
 
 /**
@@ -772,12 +757,6 @@ const NoteList = forwardRef(
        * relay URL set is a strict superset of the old one (which would otherwise keep stale rows).
        */
       feedTimelineScopeKey,
-      /** Home {@link NormalFeed} surface: Notes vs Replies (posts vs postsAndReplies). */
-      homeFeedListMode,
-      /** Home favorites: relays allowed for “Seen on” + stats on the Notes tab (favorites + trending). */
-      homeFeedSeenOnAllowlistOp,
-      /** Home favorites: wider stack for Replies (adds NIP-65, cache, HTTP index). */
-      homeFeedSeenOnAllowlistReplies,
       /** Spells page: bumps when user picks a feed; used with {@link onSpellFeedFirstPaint}. */
       spellFeedInstrumentToken,
       /** Spells page: fired once when the filtered list first has rows after a picker change. */
@@ -906,9 +885,6 @@ const NoteList = forwardRef(
       mergeTimelineWhenSubRequestFiltersMatch?: boolean
       followingFeedDeltaSubRequests?: TFeedSubRequest[]
       feedTimelineScopeKey?: string
-      homeFeedListMode?: TNoteListMode
-      homeFeedSeenOnAllowlistOp?: string[]
-      homeFeedSeenOnAllowlistReplies?: string[]
       spellFeedInstrumentToken?: number
       onSpellFeedFirstPaint?: (detail: { eventCount: number; firstEventId: string }) => void
       timelineLoadingSafetyTimeoutMs?: number
@@ -1045,8 +1021,6 @@ const NoteList = forwardRef(
     const profileLocalPrimingPendingRef = useRef(false)
     /** Avoid subscribe storms when the tab stays empty (dead relays): visibility resume used to call `refresh()` every few seconds. */
     const blankFeedVisibilityResumeRetryAtRef = useRef(0)
-    const staleHomeFeedRefreshAtRef = useRef(0)
-    const staleHomeFeedCheckAfterWaveRef = useRef(false)
     const refreshScheduleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const relayAuthoritativeFeedOnlyRef = useRef(relayAuthoritativeFeedOnly)
     relayAuthoritativeFeedOnlyRef.current = relayAuthoritativeFeedOnly
@@ -1214,44 +1188,6 @@ const NoteList = forwardRef(
 
     const timelineSubscriptionKey = feedSubscriptionKey ?? subRequestsKey
 
-    const homeFeedSeenOnAllowlistOpKey = useMemo(
-      () =>
-        homeFeedSeenOnAllowlistOp?.length
-          ? [...homeFeedSeenOnAllowlistOp]
-              .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-              .filter(Boolean)
-              .sort()
-              .join('|')
-          : '',
-      [homeFeedSeenOnAllowlistOp]
-    )
-    const homeFeedSeenOnAllowlistRepliesKey = useMemo(
-      () =>
-        homeFeedSeenOnAllowlistReplies?.length
-          ? [...homeFeedSeenOnAllowlistReplies]
-              .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-              .filter(Boolean)
-              .sort()
-              .join('|')
-          : '',
-      [homeFeedSeenOnAllowlistReplies]
-    )
-
-    const homeFeedActiveSeenOnAllowlist = useMemo(() => {
-      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return undefined
-      if (homeFeedListMode === 'postsAndReplies') {
-        return homeFeedSeenOnAllowlistRepliesKey ? homeFeedSeenOnAllowlistReplies : undefined
-      }
-      return homeFeedSeenOnAllowlistOpKey ? homeFeedSeenOnAllowlistOp : undefined
-    }, [
-      feedSubscriptionKey,
-      homeFeedListMode,
-      homeFeedSeenOnAllowlistOpKey,
-      homeFeedSeenOnAllowlistRepliesKey,
-      homeFeedSeenOnAllowlistOp,
-      homeFeedSeenOnAllowlistReplies
-    ])
-
     const prevSubRequestsKeyForTimelineRef = useRef<string | null>(null)
     const feedTimelineScopePrevRef = useRef<string | undefined>(undefined)
     /** Detect pull-to-refresh so preserve-mode feeds still clear; unrelated dep changes must not clear. */
@@ -1265,7 +1201,6 @@ const NoteList = forwardRef(
 
     useLayoutEffect(() => {
       publicReadFallbackAttemptedRef.current = false
-      staleHomeFeedCheckAfterWaveRef.current = false
       if (!pauseTimelineForPrimaryFreeze) {
         setFeedTimelineEmptyUiReady(false)
         setFeedSubscribeRelayOutcomes([])
@@ -1334,7 +1269,6 @@ const NoteList = forwardRef(
       () =>
         buildFeedSessionSnapshotKey({
           feedKey: timelineSubscriptionKey,
-          homeSurface: homeFeedListMode,
           allowKindlessRelayExplore,
           showAllKinds,
           kindsKey: showKindsKey,
@@ -1345,7 +1279,6 @@ const NoteList = forwardRef(
         }),
       [
         timelineSubscriptionKey,
-        homeFeedListMode,
         showKindsKey,
         showKind1OPs,
         showKind1Replies,
@@ -1480,17 +1413,6 @@ const NoteList = forwardRef(
 
         if (extraShouldHideEvent?.(evt)) return true
 
-        if (
-          homeFeedActiveSeenOnAllowlist &&
-          (homeFeedListMode === 'posts' || relayAuthoritativeFeedOnly) &&
-          !eventSeenOnMatchesAllowlist(
-            client.getSeenEventRelayUrls(evt.id),
-            homeFeedActiveSeenOnAllowlist
-          )
-        ) {
-          return true
-        }
-
         return false
       },
       [
@@ -1501,10 +1423,7 @@ const NoteList = forwardRef(
         pinnedEventHexIdSet,
         isEventDeleted,
         incomingPaymentRecipientPubkey,
-        extraShouldHideEvent,
-        homeFeedActiveSeenOnAllowlist,
-        homeFeedListMode,
-        relayAuthoritativeFeedOnly
+        extraShouldHideEvent
       ]
     )
 
@@ -2397,13 +2316,7 @@ const NoteList = forwardRef(
         const sessionSnap =
           !userPulledRefresh &&
           (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeEarly)
-            ? (getSessionFeedSnapshot(sessionSnapshotIdentityKey) ??
-                (hostPrimaryPageNameRef.current === 'feed'
-                  ? getSessionFeedSnapshotWithFeedFallback(
-                      sessionSnapshotIdentityKey,
-                      timelineSubscriptionKey
-                    )
-                  : undefined))
+            ? getSessionFeedSnapshot(sessionSnapshotIdentityKey)
             : undefined
         const restoredFromSession = !keepExistingTimelineEvents && !!(sessionSnap?.length)
 
@@ -2450,8 +2363,7 @@ const NoteList = forwardRef(
           ? getProfileAuthorWarmupSpec(profileMappedForRefresh)
           : null
 
-        /**
-         * Relay kindless firehose: keep the full batch. Else when the kind picker applies, narrow like
+        /** Relay kindless firehose: keep the full batch. Else when the kind picker applies, narrow like
          * {@link applyKindPickerInUi}. Remaining spell paths use kinds-only narrowing when client-side kind filter runs.
          */
         const narrowLiveBatch = (evs: Event[]) => {
@@ -2480,22 +2392,7 @@ const NoteList = forwardRef(
           return filterEvsToMappedTimelineReqKinds(evs, mappedSubRequests)
         }
 
-        /** Home feed: paint IndexedDB/session rows matching the REQ filter; kind picker applies in UI only. */
-        const narrowLiveBatchForLocalWarmup = (evs: Event[]) => {
-          if (hostPrimaryPageNameRef.current !== 'feed') return narrowLiveBatch(evs)
-          const shardFilters = mappedSubRequests.map(({ filter }) => filter as Filter)
-          if (shardFilters.length === 0) return narrowLiveBatch(evs)
-          return evs.filter((ev) =>
-            shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
-          )
-        }
-
-        /** Home feed: merge every relay match; kind/reply toggles filter visible rows only. */
-        const narrowLiveBatchForIngress = (evs: Event[]) =>
-          hostPrimaryPageNameRef.current === 'feed' ? narrowLiveBatchForLocalWarmup(evs) : narrowLiveBatch(evs)
-
         const passesLiveIngressKindGate = (event: Event) => {
-          if (hostPrimaryPageNameRef.current === 'feed') return true
           if (!withKindFilterRef.current) return true
           const kindlessFirehose =
             allowKindlessRelayExploreRef.current && showAllKindsRef.current
@@ -2540,19 +2437,13 @@ const NoteList = forwardRef(
           const batch = liveOnNewPendingRef.current.splice(0)
           if (batch.length === 0) return
 
-          const atFeedTop =
-            hostPrimaryPageNameRef.current === 'feed' &&
-            isFeedScrollNearTop(feedRootRef.current, feedScrollRootRef.current)
-
           const profileBatch: Event[] = []
           const homeBatch: Event[] = []
           const pendingBatch: Event[] = []
 
           for (const row of batch) {
-            let route = row.route
-            if (route === 'pending' && atFeedTop) route = 'home'
-            if (route === 'profile') profileBatch.push(row.event)
-            else if (route === 'home') homeBatch.push(row.event)
+            if (row.route === 'profile') profileBatch.push(row.event)
+            else if (row.route === 'home') homeBatch.push(row.event)
             else pendingBatch.push(row.event)
           }
 
@@ -3072,7 +2963,7 @@ const NoteList = forwardRef(
                   .sort(compareEventsNewestFirst)
 
                 if (!timelineEffectStale() && sessionHits.length > 0) {
-                  const narrowedS = narrowLiveBatchForLocalWarmup(sessionHits)
+                  const narrowedS = narrowLiveBatch(sessionHits)
                   if (narrowedS.length > 0) {
                     const mergedS = collapseDuplicateNip18RepostTimelineRows(
                       mergeEventBatchesById([], narrowedS, eventCapEarly, areAlgoRelays)
@@ -3120,7 +3011,7 @@ const NoteList = forwardRef(
                     }
                     combinedRaw.sort(compareEventsNewestFirst)
                     if (combinedRaw.length > 0) {
-                      const diskNarrowed = narrowLiveBatchForLocalWarmup(combinedRaw)
+                      const diskNarrowed = narrowLiveBatch(combinedRaw)
                       if (diskNarrowed.length > 0) {
                         const merged = collapseDuplicateNip18RepostTimelineRows(
                           mergeEventBatchesById(localMergeBase, diskNarrowed, eventCapEarly, areAlgoRelays)
@@ -3472,7 +3363,7 @@ const NoteList = forwardRef(
                   clearTimeout(kindlessEoseTimeoutRef.current)
                   kindlessEoseTimeoutRef.current = null
                 }
-                const narrowed = narrowLiveBatchForIngress(batch)
+                const narrowed = narrowLiveBatch(batch)
                 const paintDoneBefore = feedPaintLiveRelayDoneRef.current
                 if (!feedPaintLiveRelayDoneRef.current) {
                   if (narrowed.length > 0) {
@@ -3635,9 +3526,7 @@ const NoteList = forwardRef(
                   ? 'home'
                   : eventMatchesProfileTimelineRequest(event)
                     ? 'profile'
-                    : hostPrimaryPageNameRef.current === 'feed'
-                      ? 'home'
-                      : 'pending'
+                    : 'pending'
               liveOnNewPendingRef.current.push({ event, route })
               scheduleLiveOnNewFlush()
             },
@@ -3796,13 +3685,6 @@ const NoteList = forwardRef(
           : LIMIT
 
       const narrowDeltaBatch = (evs: Event[]) => {
-        if (hostPrimaryPageNameRef.current === 'feed') {
-          const shardFilters = mappedDelta.map(({ filter }) => filter as Filter)
-          if (shardFilters.length === 0) return evs
-          return evs.filter((ev) =>
-            shardFilters.some((f) => eventMatchesSubRequestFilterWithWindow(ev, f))
-          )
-        }
         if (allowKindlessRelayExploreRef.current && showAllKindsRef.current) return evs
         if (withKindFilterRef.current && !showAllKindsRef.current) {
           return evs.filter((e) =>
@@ -3904,7 +3786,7 @@ const NoteList = forwardRef(
               onNew: (event: Event) => {
                 if (!deltaActive) return
                 feedRelayReturnedAnyEventRef.current = true
-                if (hostPrimaryPageNameRef.current !== 'feed' && withKindFilterRef.current) {
+                if (withKindFilterRef.current) {
                   const kindlessFirehose =
                     allowKindlessRelayExploreRef.current && showAllKindsRef.current
                   if (!kindlessFirehose) {
@@ -3942,8 +3824,7 @@ const NoteList = forwardRef(
                 const route: 'profile' | 'home' | 'pending' =
                   (pubkey && event.pubkey === pubkey) || eventMatchesProfileDeltaRequest(event)
                     ? 'profile'
-                    : mergeLiveEventsImmediatelyRef.current ||
-                        hostPrimaryPageNameRef.current === 'feed'
+                    : mergeLiveEventsImmediatelyRef.current
                       ? 'home'
                       : 'pending'
                 liveOnNewPendingRef.current.push({ event, route })
@@ -4174,7 +4055,10 @@ const NoteList = forwardRef(
       if (relayAuthoritativeFeedOnly) return
       if (!timelinePublicReadFallback) return
       if (isMetadataRelaysOnlyPolicyActive()) return
-      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
+      const isProfileFeed =
+        hostPrimaryPageNameRef.current === 'profile' ||
+        isProfileTimelineSubscriptionKey(timelineSubscriptionKey)
+      if (!isProfileFeed && !isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
       if (oneShotFetch || areAlgoRelays) return
       if (!navigator.onLine) return
       if (feedFullSearchEvents !== null) return
@@ -4286,36 +4170,6 @@ const NoteList = forwardRef(
     ])
 
     useEffect(() => {
-      if (hostPrimaryPageName !== 'feed') return
-      if (!isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)) return
-      if (oneShotFetch || areAlgoRelays) return
-      if (feedSubscribeRelayOutcomes.length === 0) return
-      if (staleHomeFeedCheckAfterWaveRef.current) return
-      if (loadingRef.current || eventsRef.current.length === 0) return
-
-      staleHomeFeedCheckAfterWaveRef.current = true
-      const newest = eventsRef.current.reduce((max, ev) => Math.max(max, ev.created_at), 0)
-      const ageSec = Math.floor(Date.now() / 1000) - newest
-      if (ageSec <= STALE_HOME_FEED_MAX_AGE_SEC) return
-
-      const now = Date.now()
-      if (now - staleHomeFeedRefreshAtRef.current < STALE_HOME_FEED_REFRESH_COOLDOWN_MS) return
-      staleHomeFeedRefreshAtRef.current = now
-      logger.info('[NoteList] Stale home feed after relay wave — auto-refresh', {
-        ageSec,
-        relayOutcomes: feedSubscribeRelayOutcomes.length
-      })
-      refresh()
-    }, [
-      hostPrimaryPageName,
-      feedSubscriptionKey,
-      oneShotFetch,
-      areAlgoRelays,
-      feedSubscribeRelayOutcomes,
-      refresh
-    ])
-    
-    useEffect(() => {
       hasMoreRef.current = hasMore
     }, [hasMore])
     
@@ -4342,22 +4196,6 @@ const NoteList = forwardRef(
         if (hiddenMs < 1500) return
         if (loadingRef.current) return
         if (eventsRef.current.length > 0) {
-          if (
-            hostPrimaryPageNameRef.current === 'feed' &&
-            isHomePrimaryFeedSubscriptionKey(feedSubscriptionKey)
-          ) {
-            const newest = eventsRef.current.reduce((max, ev) => Math.max(max, ev.created_at), 0)
-            const ageSec = Math.floor(Date.now() / 1000) - newest
-            if (ageSec > STALE_HOME_FEED_MAX_AGE_SEC) {
-              const now = Date.now()
-              if (now - staleHomeFeedRefreshAtRef.current >= STALE_HOME_FEED_REFRESH_COOLDOWN_MS) {
-                staleHomeFeedRefreshAtRef.current = now
-                logger.info('[NoteList] Stale home feed on tab resume — auto-refresh', { ageSec })
-                refresh()
-                return
-              }
-            }
-          }
           return
         }
         if (!subRequestsRef.current.length) return
@@ -5167,7 +5005,6 @@ const NoteList = forwardRef(
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
               deferAuthorAvatar
               hideEngagementChrome
-              seenOnAllowlist={homeFeedActiveSeenOnAllowlist}
               showPaymentAttestationAction={showPaymentAttestationAction}
             />
           ))
