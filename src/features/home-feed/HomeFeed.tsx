@@ -3,7 +3,10 @@ import FeedFilterToolbarRow, { feedFilterRowChromeClass } from '@/components/Fee
 import type { TNoteListRef } from '@/components/NoteList'
 import { Button } from '@/components/ui/button'
 import { useFeedProfileBatchFromEvents } from '@/hooks/useFeedProfileBatchFromEvents'
+import { HOME_FEED_RELAY_SOURCE_FAVORITES } from '@/lib/home-feed-relay-source'
+import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
+import { useFeed } from '@/providers/feed-context'
 import { cn } from '@/lib/utils'
 import {
   forwardRef,
@@ -38,6 +41,7 @@ const HomeFeed = forwardRef<
   }
 >(function HomeFeed({ setSubHeader, onSubHeaderRefresh }, ref) {
   const { t } = useTranslation()
+  const { relayUrls, homeFeedRelaySource } = useFeed()
   const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
   const filterMutedNotes = true
   const feedRootRef = useRef<HTMLDivElement>(null)
@@ -78,11 +82,14 @@ const HomeFeed = forwardRef<
     [refresh, flushPendingNew]
   )
 
-  const onFeedFilterTabRowSlotRef = useCallback((_node: HTMLDivElement | null) => {
-    /* search slot unused on home feed rewrite */
-  }, [])
-
   const showKindsKey = useMemo(() => JSON.stringify(showKinds), [showKinds])
+
+  const feedRelayUrls = useMemo(() => {
+    if (homeFeedRelaySource === HOME_FEED_RELAY_SOURCE_FAVORITES) {
+      return ensureHomeFeedTrendingRelay(relayUrls)
+    }
+    return relayUrls
+  }, [homeFeedRelaySource, relayUrls])
 
   const handleShowKindsChange = useCallback((_newShowKinds: number[]) => {
     const root = scrollRootRef.current ?? getNearestScrollableAncestor(feedRootRef.current)
@@ -99,11 +106,10 @@ const HomeFeed = forwardRef<
         showKinds={showKinds}
         onShowKindsChange={handleShowKindsChange}
         onRefresh={onSubHeaderRefresh}
-        feedFilterTabRowSlotRef={onFeedFilterTabRowSlotRef}
-        includeFeedSearchSlot={false}
+        relayUrls={feedRelayUrls}
       />
     ),
-    [onSubHeaderRefresh, showKinds, handleShowKindsChange]
+    [feedRelayUrls, onSubHeaderRefresh, showKinds, handleShowKindsChange]
   )
 
   useEffect(() => {

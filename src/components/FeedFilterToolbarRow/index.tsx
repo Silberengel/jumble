@@ -1,3 +1,4 @@
+import { FeedRelaysIconRow } from '@/components/FeedRelaysIconRow'
 import KindFilter from '@/components/KindFilter'
 import { RefreshButton } from '@/components/RefreshButton'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ export default function FeedFilterToolbarRow({
   onRefresh,
   feedFilterTabRowSlotRef,
   includeFeedSearchSlot = false,
+  relayUrls,
   className
 }: {
   showKinds: number[]
@@ -25,8 +27,12 @@ export default function FeedFilterToolbarRow({
   /** Host element for {@link NoteList} feed-client-filter toggle via portal. */
   feedFilterTabRowSlotRef?: Ref<HTMLDivElement>
   includeFeedSearchSlot?: boolean
+  /** Relays queried by this feed (home feed without {@link NoteList}). */
+  relayUrls?: readonly string[]
   className?: string
 }) {
+  const showRelayToolbar = (relayUrls?.length ?? 0) > 0 || includeFeedSearchSlot
+
   return (
     <div
       className={cn(
@@ -36,11 +42,19 @@ export default function FeedFilterToolbarRow({
     >
       {onRefresh != null ? <RefreshButton onClick={onRefresh} /> : null}
       <KindFilter showKinds={showKinds} onShowKindsChange={onShowKindsChange} />
-      {includeFeedSearchSlot ? (
+      {showRelayToolbar ? (
         <div
           ref={feedFilterTabRowSlotRef}
           className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-1 overflow-hidden"
-        />
+        >
+          {relayUrls?.length ? (
+            <FeedRelaysIconRow
+              urls={relayUrls}
+              compact
+              className="min-w-0 flex-1 overflow-x-auto scrollbar-hide"
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
